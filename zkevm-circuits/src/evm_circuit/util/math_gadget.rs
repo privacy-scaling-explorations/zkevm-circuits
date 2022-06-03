@@ -783,23 +783,15 @@ pub(crate) fn generate_lagrange_base_polynomial<
 /// MulAddWordsGadget.
 #[derive(Clone, Debug)]
 pub(crate) struct MulAddWordsGadget<F> {
-    pub a: util::Word<F>,
-    pub b: util::Word<F>,
-    pub c: util::Word<F>,
-    pub d: util::Word<F>,
+    pub words: [util::Word<F>; 4],
     carry_lo: [Cell<F>; 9],
     carry_hi: [Cell<F>; 9],
     overflow: Expression<F>,
 }
 
 impl<F: Field> MulAddWordsGadget<F> {
-    pub(crate) fn construct(
-        cb: &mut ConstraintBuilder<F>,
-        a: util::Word<F>,
-        b: util::Word<F>,
-        c: util::Word<F>,
-        d: util::Word<F>,
-    ) -> Self {
+    pub(crate) fn construct(cb: &mut ConstraintBuilder<F>, words: [util::Word<F>; 4]) -> Self {
+        let (a, b, c, d) = (&words[0], &words[1], &words[2], &words[3]);
         let carry_lo = cb.query_bytes();
         let carry_hi = cb.query_bytes();
         let carry_lo_expr = from_bytes::expr(&carry_lo);
@@ -846,10 +838,7 @@ impl<F: Field> MulAddWordsGadget<F> {
         );
 
         Self {
-            a,
-            b,
-            c,
-            d,
+            words,
             carry_lo,
             carry_hi,
             overflow,
@@ -863,10 +852,6 @@ impl<F: Field> MulAddWordsGadget<F> {
         words: [Word; 4],
     ) -> Result<(), Error> {
         let (a, b, c, d) = (words[0], words[1], words[2], words[3]);
-        self.a.assign(region, offset, Some(a.to_le_bytes()))?;
-        self.b.assign(region, offset, Some(b.to_le_bytes()))?;
-        self.c.assign(region, offset, Some(c.to_le_bytes()))?;
-        self.d.assign(region, offset, Some(d.to_le_bytes()))?;
 
         let a_limbs = split_u256_limb64(&a);
         let b_limbs = split_u256_limb64(&b);

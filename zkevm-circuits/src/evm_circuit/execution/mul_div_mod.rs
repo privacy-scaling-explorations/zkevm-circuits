@@ -13,7 +13,7 @@ use crate::{
     util::Expr,
 };
 use bus_mapping::evm::OpcodeId;
-use eth_types::{Field, U256};
+use eth_types::{Field, ToLittleEndian, U256};
 use halo2_proofs::plonk::Error;
 
 /// MulGadget verifies opcode MUL, DIV, and MOD.
@@ -55,7 +55,7 @@ impl<F: Field> ExecutionGadget<F> for MulDivModGadget<F> {
         let d = cb.query_word();
 
         let mul_add_words =
-            MulAddWordsGadget::construct(cb, a.clone(), b.clone(), c.clone(), d.clone());
+            MulAddWordsGadget::construct(cb, [a.clone(), b.clone(), c.clone(), d.clone()]);
         let divisor_is_zero = IsZeroGadget::construct(cb, sum::expr(&b.cells));
         let lt_word = LtWordGadget::construct(cb, &c, &b);
 
@@ -65,7 +65,7 @@ impl<F: Field> ExecutionGadget<F> for MulDivModGadget<F> {
         // The push is product for MUL, quotient for DIV, and residue for MOD
         // Note that for DIV/MOD, when divisor == 0, the push value is also 0.
         cb.stack_pop(select::expr(is_mul.clone(), a.expr(), d.expr()));
-        cb.stack_pop(mul_add_words.b.expr());
+        cb.stack_pop(b.expr());
         cb.stack_push(
             is_mul.clone() * d.expr()
                 + is_div * a.expr() * (1.expr() - divisor_is_zero.expr())
@@ -132,6 +132,10 @@ impl<F: Field> ExecutionGadget<F> for MulDivModGadget<F> {
             ),
             _ => unreachable!(),
         };
+        self.mul_add_words.words[0].assign(region, offset, Some(a.to_le_bytes()))?;
+        self.mul_add_words.words[1].assign(region, offset, Some(b.to_le_bytes()))?;
+        self.mul_add_words.words[2].assign(region, offset, Some(c.to_le_bytes()))?;
+        self.mul_add_words.words[3].assign(region, offset, Some(d.to_le_bytes()))?;
         self.mul_add_words.assign(region, offset, [a, b, c, d])?;
         self.lt_word.assign(region, offset, c, b)?;
         let b_sum = (0..32).fold(0, |acc, idx| acc + b.byte(idx) as u64);
