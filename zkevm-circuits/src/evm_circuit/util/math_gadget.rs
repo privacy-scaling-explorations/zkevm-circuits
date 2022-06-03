@@ -932,23 +932,13 @@ impl<F: Field> MulAddWordsGadget<F> {
 ///   t6 + carry_2 = d_hi
 #[derive(Clone, Debug)]
 pub(crate) struct MulAddWords512Gadget<F> {
-    pub a: util::Word<F>,
-    pub b: util::Word<F>,
-    pub c: util::Word<F>,
-    pub d: util::Word<F>,
-    pub e: util::Word<F>,
     carry_0: [Cell<F>; 9],
     carry_1: [Cell<F>; 9],
     carry_2: [Cell<F>; 9],
 }
 
 impl<F: Field> MulAddWords512Gadget<F> {
-    pub(crate) fn construct(cb: &mut ConstraintBuilder<F>) -> Self {
-        let a = cb.query_word();
-        let b = cb.query_word();
-        let c = cb.query_word();
-        let d = cb.query_word();
-        let e = cb.query_word();
+    pub(crate) fn construct(cb: &mut ConstraintBuilder<F>, words: [&util::Word<F>; 5]) -> Self {
         let carry_0 = cb.query_bytes();
         let carry_1 = cb.query_bytes();
         let carry_2 = cb.query_bytes();
@@ -956,21 +946,23 @@ impl<F: Field> MulAddWords512Gadget<F> {
         let carry_1_expr = from_bytes::expr(&carry_1);
         let carry_2_expr = from_bytes::expr(&carry_2);
 
+        // Split input words in limbs
         let mut a_limbs = vec![];
         let mut b_limbs = vec![];
         for trunk in 0..4 {
             let idx = (trunk * 8) as usize;
-            a_limbs.push(from_bytes::expr(&a.cells[idx..idx + 8]));
-            b_limbs.push(from_bytes::expr(&b.cells[idx..idx + 8]));
+            a_limbs.push(from_bytes::expr(&words[0].cells[idx..idx + 8]));
+            b_limbs.push(from_bytes::expr(&words[1].cells[idx..idx + 8]));
         }
 
-        let c_lo = from_bytes::expr(&c.cells[0..16]);
-        let c_hi = from_bytes::expr(&c.cells[16..32]);
-        let d_lo = from_bytes::expr(&d.cells[0..16]);
-        let d_hi = from_bytes::expr(&d.cells[16..32]);
-        let e_lo = from_bytes::expr(&e.cells[0..16]);
-        let e_hi = from_bytes::expr(&e.cells[16..32]);
+        let c_lo = from_bytes::expr(&words[2].cells[0..16]);
+        let c_hi = from_bytes::expr(&words[2].cells[16..32]);
+        let d_lo = from_bytes::expr(&words[3].cells[0..16]);
+        let d_hi = from_bytes::expr(&words[3].cells[16..32]);
+        let e_lo = from_bytes::expr(&words[4].cells[0..16]);
+        let e_hi = from_bytes::expr(&words[4].cells[16..32]);
 
+        // Limb multiplication
         let t0 = a_limbs[0].clone() * b_limbs[0].clone();
         let t1 = a_limbs[0].clone() * b_limbs[1].clone() + a_limbs[1].clone() * b_limbs[0].clone();
         let t2 = a_limbs[0].clone() * b_limbs[2].clone()
@@ -1007,11 +999,6 @@ impl<F: Field> MulAddWords512Gadget<F> {
         cb.require_equal("t6 + carry_2 == d_hi", t6.expr() + carry_2_expr, d_hi);
 
         Self {
-            a,
-            b,
-            c,
-            d,
-            e,
             carry_0,
             carry_1,
             carry_2,
@@ -1025,16 +1012,11 @@ impl<F: Field> MulAddWords512Gadget<F> {
         words: [Word; 5],
     ) -> Result<(), Error> {
         let (a, b, c, d, e) = (words[0], words[1], words[2], words[3], words[4]);
-        self.a.assign(region, offset, Some(a.to_le_bytes()))?;
-        self.b.assign(region, offset, Some(b.to_le_bytes()))?;
-        self.c.assign(region, offset, Some(c.to_le_bytes()))?;
-        self.d.assign(region, offset, Some(d.to_le_bytes()))?;
-        self.e.assign(region, offset, Some(e.to_le_bytes()))?;
 
         let a_limbs = split_u256_limb64(&a);
         let b_limbs = split_u256_limb64(&b);
         let (c_lo, c_hi) = split_u256(&c);
-        let (d_lo, d_hi) = split_u256(&d);
+        let (d_lo, _d_hi) = split_u256(&d);
         let (e_lo, e_hi) = split_u256(&e);
 
         let t0 = a_limbs[0] * b_limbs[0];
@@ -1047,7 +1029,7 @@ impl<F: Field> MulAddWords512Gadget<F> {
 
         let t4 = a_limbs[1] * b_limbs[3] + a_limbs[2] * b_limbs[2] + a_limbs[3] * b_limbs[1];
         let t5 = a_limbs[2] * b_limbs[3] + a_limbs[3] * b_limbs[2];
-        let t6 = a_limbs[3] * b_limbs[3];
+        let _t6 = a_limbs[3] * b_limbs[3];
 
         let carry_0 = (t0 + (t1 << 64) + c_lo - e_lo) >> 128;
         let carry_1 = (t2 + (t3 << 64) + c_hi + carry_0 - e_hi) >> 128;

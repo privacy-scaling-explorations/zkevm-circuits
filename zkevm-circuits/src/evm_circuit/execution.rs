@@ -54,6 +54,7 @@ mod memory;
 mod memory_copy;
 mod msize;
 mod mul_div_mod;
+mod mulmod;
 mod origin;
 mod pc;
 mod pop;
@@ -98,6 +99,7 @@ use memory::MemoryGadget;
 use memory_copy::CopyToMemoryGadget;
 use msize::MsizeGadget;
 use mul_div_mod::MulDivModGadget;
+use mulmod::MulModGadget;
 use origin::OriginGadget;
 use pc::PcGadget;
 use pop::PopGadget;
@@ -147,6 +149,7 @@ pub(crate) struct ExecutionConfig<F> {
     end_tx_gadget: EndTxGadget<F>,
     // opcode gadgets
     add_sub_gadget: AddSubGadget<F>,
+    mulmod_gadget: MulModGadget<F>,
     bitwise_gadget: BitwiseGadget<F>,
     byte_gadget: ByteGadget<F>,
     call_gadget: CallGadget<F>,
@@ -338,6 +341,7 @@ impl<F: Field> ExecutionConfig<F> {
             end_tx_gadget: configure_gadget!(),
             // opcode gadgets
             add_sub_gadget: configure_gadget!(),
+            mulmod_gadget: configure_gadget!(),
             bitwise_gadget: configure_gadget!(),
             byte_gadget: configure_gadget!(),
             call_gadget: configure_gadget!(),
@@ -772,6 +776,7 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::EndBlock => assign_exec_step!(self.end_block_gadget),
             // opcode
             ExecutionState::ADD_SUB => assign_exec_step!(self.add_sub_gadget),
+            ExecutionState::MULMOD => assign_exec_step!(self.mulmod_gadget),
             ExecutionState::BITWISE => assign_exec_step!(self.bitwise_gadget),
             ExecutionState::BYTE => assign_exec_step!(self.byte_gadget),
             ExecutionState::CALL => assign_exec_step!(self.call_gadget),
