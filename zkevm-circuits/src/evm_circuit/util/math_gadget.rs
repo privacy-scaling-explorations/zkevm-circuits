@@ -923,7 +923,7 @@ pub(crate) struct ShrWordsGadget<F> {
     shf_mod64: Cell<F>,
     // 1 << shf_mod64
     p_lo: Cell<F>,
-    // 1 << (64 - shf_mod64))
+    // 1 << (64 - shf_mod64)
     p_hi: Cell<F>,
     // shift < 256
     shf_lt256: IsZeroGadget<F>,
