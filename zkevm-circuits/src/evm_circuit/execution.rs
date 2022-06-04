@@ -20,6 +20,7 @@ use halo2_proofs::{
     poly::Rotation,
 };
 use std::{collections::HashMap, convert::TryInto, iter};
+use strum::IntoEnumIterator;
 
 mod add_sub;
 mod begin_tx;
@@ -530,7 +531,7 @@ impl<F: Field> ExecutionConfig<F> {
                         (
                             "Only ExecutionState which halts or BeginTx can transit to EndTx",
                             ExecutionState::EndTx,
-                            ExecutionState::iterator()
+                            ExecutionState::iter()
                                 .filter(ExecutionState::halts)
                                 .chain(iter::once(ExecutionState::BeginTx))
                                 .collect(),

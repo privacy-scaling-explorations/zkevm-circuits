@@ -130,6 +130,7 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
                 let next_src_addr_end = cb.query_cell();
                 let next_is_persistent = cb.query_bool();
                 let next_tx_id = cb.query_cell();
+                let next_data_start_index = cb.query_cell();
 
                 cb.require_equal(
                     "next_src_addr = memory_offset",
@@ -152,6 +153,10 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
                     is_persistent.expr(),
                 );
                 cb.require_equal("next_tx_id = tx_id", next_tx_id.expr(), tx_id.expr());
+                cb.require_zero(
+                    "next_data_start_index starts with 0",
+                    next_data_start_index.expr(),
+                );
             },
         );
 
@@ -256,7 +261,7 @@ mod test {
         ToBigEndian, Word,
     };
     use halo2_proofs::arithmetic::BaseExt;
-    use halo2_proofs::pairing::bn256::Fr as Fp;
+    use halo2_proofs::pairing::bn256::Fr;
     use std::convert::TryInto;
 
     // make dynamic byte code sequence base on topics
@@ -280,7 +285,7 @@ mod test {
     }
 
     fn test_ok(memory_start: Word, msize: Word, topics: &[Word], is_persistent: bool) {
-        let randomness = Fp::rand();
+        let randomness = Fr::rand();
         let bytecode = make_log_byte_code(memory_start, memory_start, topics);
         let call_id = 1;
         let tx_id = 1;
@@ -383,7 +388,7 @@ mod test {
                     tx_id,
                     log_id: log_id.try_into().unwrap(),
                     field_tag: TxLogFieldTag::Topic,
-                    index: idx.try_into().unwrap(),
+                    index: idx,
                     value: *topic,
                 });
             }

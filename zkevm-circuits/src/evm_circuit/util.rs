@@ -264,7 +264,7 @@ impl<F: FieldExt> CellManager<F> {
         }
         match best_index {
             Some(index) => index,
-            None => unreachable!(format!("not enough cells for query: {:?}", cell_type)),
+            None => unreachable!("not enough cells for query: {:?}", cell_type),
         }
     }
 
@@ -305,6 +305,7 @@ pub(crate) struct RandomLinearCombination<F, const N: usize> {
 impl<F: FieldExt, const N: usize> RandomLinearCombination<F, N> {
     const N_BYTES: usize = N;
 
+    // TODO: replace `bytes` type by a reference
     pub(crate) fn random_linear_combine(bytes: [u8; N], randomness: F) -> F {
         rlc::value(&bytes, randomness)
     }

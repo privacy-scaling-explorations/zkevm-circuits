@@ -19,7 +19,7 @@ use eth_types::evm_types::OpcodeId;
 use eth_types::{Address, Field, ToLittleEndian, ToScalar, ToWord, Word};
 use eth_types::{ToAddress, U256};
 use halo2_proofs::arithmetic::{BaseExt, FieldExt};
-use halo2_proofs::pairing::bn256::Fr as Fp;
+use halo2_proofs::pairing::bn256::Fr;
 use itertools::Itertools;
 use sha3::{Digest, Keccak256};
 use std::{collections::HashMap, convert::TryInto, iter};
@@ -429,8 +429,9 @@ impl RwMap {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub enum Rw {
+    Start,
     TxAccessListAccount {
         rw_counter: usize,
         is_write: bool,
@@ -509,9 +510,9 @@ pub enum Rw {
         log_id: u64, // pack this can index together into address?
         field_tag: TxLogFieldTag,
         // topic index (0..4) if field_tag is TxLogFieldTag:Topic
-        // byte index (0..32) if field_tag is TxLogFieldTag:Data
+        // byte index if field_tag is TxLogFieldTag:Data
         // 0 for other field tags
-        index: u8,
+        index: usize,
 
         // when it is topic field, value can be word type
         value: Word,
@@ -674,6 +675,7 @@ impl Rw {
 
     pub fn rw_counter(&self) -> usize {
         match self {
+            Self::Start => 0,
             Self::Memory { rw_counter, .. }
             | Self::Stack { rw_counter, .. }
             | Self::AccountStorage { rw_counter, .. }
@@ -690,6 +692,7 @@ impl Rw {
 
     pub fn is_write(&self) -> bool {
         match self {
+            Self::Start => false,
             Self::Memory { is_write, .. }
             | Self::Stack { is_write, .. }
             | Self::AccountStorage { is_write, .. }
@@ -706,6 +709,7 @@ impl Rw {
 
     pub fn tag(&self) -> RwTableTag {
         match self {
+            Self::Start => RwTableTag::Start,
             Self::Memory { .. } => RwTableTag::Memory,
             Self::Stack { .. } => RwTableTag::Stack,
             Self::AccountStorage { .. } => RwTableTag::AccountStorage,
@@ -731,7 +735,7 @@ impl Rw {
             Self::CallContext { call_id, .. }
             | Self::Stack { call_id, .. }
             | Self::Memory { call_id, .. } => Some(*call_id),
-            Self::Account { .. } | Self::AccountDestructed { .. } => None,
+            Self::Start | Self::Account { .. } | Self::AccountDestructed { .. } => None,
         }
     }
 
@@ -759,7 +763,10 @@ impl Rw {
             Self::TxLog { log_id, index, .. } => {
                 Some((U256::from(*index as u64) + (U256::from(*log_id) << 8)).to_address())
             }
-            Self::CallContext { .. } | Self::TxRefund { .. } | Self::TxReceipt { .. } => None,
+            Self::Start
+            | Self::CallContext { .. }
+            | Self::TxRefund { .. }
+            | Self::TxReceipt { .. } => None,
         }
     }
 
@@ -769,7 +776,8 @@ impl Rw {
             Self::CallContext { field_tag, .. } => Some(*field_tag as u64),
             Self::TxLog { field_tag, .. } => Some(*field_tag as u64),
             Self::TxReceipt { field_tag, .. } => Some(*field_tag as u64),
-            Self::Memory { .. }
+            Self::Start
+            | Self::Memory { .. }
             | Self::Stack { .. }
             | Self::AccountStorage { .. }
             | Self::TxAccessListAccount { .. }
@@ -783,7 +791,8 @@ impl Rw {
         match self {
             Self::AccountStorage { storage_key, .. }
             | Self::TxAccessListAccountStorage { storage_key, .. } => Some(*storage_key),
-            Self::CallContext { .. }
+            Self::Start
+            | Self::CallContext { .. }
             | Self::Stack { .. }
             | Self::Memory { .. }
             | Self::TxRefund { .. }
@@ -795,8 +804,9 @@ impl Rw {
         }
     }
 
-    fn value_assignment<F: Field>(&self, randomness: F) -> F {
+    pub fn value_assignment<F: Field>(&self, randomness: F) -> F {
         match self {
+            Self::Start => F::zero(),
             Self::CallContext {
                 field_tag, value, ..
             } => {
@@ -842,7 +852,8 @@ impl Rw {
                 is_destructed_prev, ..
             } => Some(F::from(*is_destructed_prev as u64)),
             Self::TxRefund { value_prev, .. } => Some(F::from(*value_prev)),
-            Self::Stack { .. }
+            Self::Start
+            | Self::Stack { .. }
             | Self::Memory { .. }
             | Self::CallContext { .. }
             | Self::TxLog { .. }
@@ -1273,7 +1284,7 @@ fn tx_convert(tx: &circuit_input_builder::Transaction, id: usize, is_last_tx: bo
                     circuit_input_builder::CodeSource::Memory => {
                         CodeSource::Account(call.code_hash.to_word())
                     }
-                    _ => unimplemented!(),
+                    _ => unimplemented!("unimplemented code source {:#?}", call.code_source),
                 },
                 rw_counter_end_of_reversion: call.rw_counter_end_of_reversion,
                 caller_id: call.caller_id,
@@ -1315,9 +1326,9 @@ fn tx_convert(tx: &circuit_input_builder::Transaction, id: usize, is_last_tx: bo
 pub fn block_convert(
     block: &circuit_input_builder::Block,
     code_db: &bus_mapping::state_db::CodeDB,
-) -> Block<Fp> {
+) -> Block<Fr> {
     Block {
-        randomness: Fp::rand(),
+        randomness: Fr::rand(),
         context: block.into(),
         rws: RwMap::from(&block.container),
         txs: block
