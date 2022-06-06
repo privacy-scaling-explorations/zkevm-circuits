@@ -92,7 +92,7 @@ impl<F: Field> StateCircuit<F> {
     /// powers of randomness for instance columns
     pub fn instance(&self) -> Vec<Vec<F>> {
         (1..32)
-            .map(|exp| vec![self.randomness.pow(&[exp, 0, 0, 0]); self.rows.len()])
+            .map(|exp| vec![self.randomness.pow(&[exp, 0, 0, 0]); self.rows.len() + 1])
             .collect()
     }
 }
@@ -235,6 +235,12 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
                             storage_key,
                         )?;
                     }
+                    region.assign_advice(
+                        || "value",
+                        config.value,
+                        offset,
+                        || Ok(row.value_assignment(self.randomness)),
+                    )?;
 
                     if offset != 0 {
                         lexicographic_ordering_chip.assign(&mut region, offset, row, prev_row)?;

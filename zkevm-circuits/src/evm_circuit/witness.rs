@@ -804,7 +804,7 @@ impl Rw {
         }
     }
 
-    fn value_assignment<F: Field>(&self, randomness: F) -> F {
+    pub fn value_assignment<F: Field>(&self, randomness: F) -> F {
         match self {
             Self::Start => F::zero(),
             Self::CallContext {
@@ -1185,6 +1185,7 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::DIFFICULTY | OpcodeId::BASEFEE => ExecutionState::BLOCKCTXU256,
                     OpcodeId::GAS => ExecutionState::GAS,
                     OpcodeId::SELFBALANCE => ExecutionState::SELFBALANCE,
+                    OpcodeId::SHR => ExecutionState::SHR,
                     OpcodeId::SLOAD => ExecutionState::SLOAD,
                     OpcodeId::SSTORE => ExecutionState::SSTORE,
                     OpcodeId::CALLDATASIZE => ExecutionState::CALLDATASIZE,
