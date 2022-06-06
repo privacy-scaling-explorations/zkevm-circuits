@@ -791,6 +791,8 @@ pub enum TxLogField {
     Topic,
     /// data of log entry
     Data,
+    /* TODO: Add `TopicLength` and `DataLength`, which will be used for the RLP encoding of the
+     * Tx Receipt */
 }
 
 /// Represents TxLog read/write operation.
@@ -798,7 +800,11 @@ pub enum TxLogField {
 pub struct TxLogOp {
     /// tx_id of TxLog, starts with 1 in rw table, and it's unique per Tx
     pub tx_id: usize,
-    /// id of log entry
+    /// id of log entry, starts with 1 in rw table, it's unique within Tx,
+    /// currently it is also field of execution step, As field of execution
+    /// step, it resets to zero (in begin_tx), and increases with each Log* step
+    /// the reason why rw table's `log_id` start with 1 instead of zero is that
+    /// zero `log_id` represents no log steps(no any logs inserting) executed
     pub log_id: usize,
     /// field of TxLogField
     pub field: TxLogField,
