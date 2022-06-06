@@ -783,15 +783,14 @@ pub(crate) fn generate_lagrange_base_polynomial<
 /// MulAddWordsGadget.
 #[derive(Clone, Debug)]
 pub(crate) struct MulAddWordsGadget<F> {
-    pub words: [util::Word<F>; 4],
     carry_lo: [Cell<F>; 9],
     carry_hi: [Cell<F>; 9],
     overflow: Expression<F>,
 }
 
 impl<F: Field> MulAddWordsGadget<F> {
-    pub(crate) fn construct(cb: &mut ConstraintBuilder<F>, words: [util::Word<F>; 4]) -> Self {
-        let (a, b, c, d) = (&words[0], &words[1], &words[2], &words[3]);
+    pub(crate) fn construct(cb: &mut ConstraintBuilder<F>, words: [&util::Word<F>; 4]) -> Self {
+        let (a, b, c, d) = (words[0], words[1], words[2], words[3]);
         let carry_lo = cb.query_bytes();
         let carry_hi = cb.query_bytes();
         let carry_lo_expr = from_bytes::expr(&carry_lo);
@@ -838,7 +837,6 @@ impl<F: Field> MulAddWordsGadget<F> {
         );
 
         Self {
-            words,
             carry_lo,
             carry_hi,
             overflow,

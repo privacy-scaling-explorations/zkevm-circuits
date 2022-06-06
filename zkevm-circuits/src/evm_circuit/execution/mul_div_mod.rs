@@ -3,6 +3,7 @@ use crate::{
         execution::ExecutionGadget,
         step::ExecutionState,
         util::{
+            self,
             common_gadget::SameContextGadget,
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
             math_gadget::{IsZeroGadget, LtWordGadget, MulAddWordsGadget},
@@ -24,6 +25,8 @@ use halo2_proofs::plonk::Error;
 #[derive(Clone, Debug)]
 pub(crate) struct MulDivModGadget<F> {
     same_context: SameContextGadget<F>,
+    /// Words a, b, c, d
+    pub words: [util::Word<F>; 4],
     /// Gadget that verifies a * b + c = d
     mul_add_words: MulAddWordsGadget<F>,
     /// Check if divisor is zero for DIV and MOD
@@ -54,8 +57,7 @@ impl<F: Field> ExecutionGadget<F> for MulDivModGadget<F> {
         let c = cb.query_word();
         let d = cb.query_word();
 
-        let mul_add_words =
-            MulAddWordsGadget::construct(cb, [a.clone(), b.clone(), c.clone(), d.clone()]);
+        let mul_add_words = MulAddWordsGadget::construct(cb, [&a, &b, &c, &d]);
         let divisor_is_zero = IsZeroGadget::construct(cb, sum::expr(&b.cells));
         let lt_word = LtWordGadget::construct(cb, &c, &b);
 
@@ -98,6 +100,7 @@ impl<F: Field> ExecutionGadget<F> for MulDivModGadget<F> {
         let same_context = SameContextGadget::construct(cb, opcode, step_state_transition);
 
         Self {
+            words: [a, b, c, d],
             same_context,
             mul_add_words,
             divisor_is_zero,
@@ -132,10 +135,10 @@ impl<F: Field> ExecutionGadget<F> for MulDivModGadget<F> {
             ),
             _ => unreachable!(),
         };
-        self.mul_add_words.words[0].assign(region, offset, Some(a.to_le_bytes()))?;
-        self.mul_add_words.words[1].assign(region, offset, Some(b.to_le_bytes()))?;
-        self.mul_add_words.words[2].assign(region, offset, Some(c.to_le_bytes()))?;
-        self.mul_add_words.words[3].assign(region, offset, Some(d.to_le_bytes()))?;
+        self.words[0].assign(region, offset, Some(a.to_le_bytes()))?;
+        self.words[1].assign(region, offset, Some(b.to_le_bytes()))?;
+        self.words[2].assign(region, offset, Some(c.to_le_bytes()))?;
+        self.words[3].assign(region, offset, Some(d.to_le_bytes()))?;
         self.mul_add_words.assign(region, offset, [a, b, c, d])?;
         self.lt_word.assign(region, offset, c, b)?;
         let b_sum = (0..32).fold(0, |acc, idx| acc + b.byte(idx) as u64);
