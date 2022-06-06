@@ -35,6 +35,7 @@ use random_linear_combination::{Chip as RlcChip, Config as RlcConfig, Queries as
 use std::collections::HashMap;
 use std::iter::once;
 
+const N_ROWS: usize = 1 << 16;
 const N_LIMBS_RW_COUNTER: usize = 2;
 const N_LIMBS_ACCOUNT_ADDRESS: usize = 10;
 const N_LIMBS_ID: usize = 2;
@@ -201,8 +202,21 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
         layouter.assign_region(
             || "rw table",
             |mut region| {
-                let rows = once(&Rw::Start).chain(&self.rows);
-                let prev_rows = once(&Rw::Start).chain(rows.clone());
+                let padding_rw_counter_start = 1 + self
+                    .rows
+                    .iter()
+                    .map(Rw::rw_counter)
+                    .max()
+                    .unwrap_or_default();
+                let padding = (self.rows.len()..N_ROWS).map(|i| Rw::Padding {
+                    rw_counter: i + padding_rw_counter_start,
+                });
+
+                let rows = once(Rw::Start)
+                    .chain(self.rows.iter().cloned())
+                    .chain(padding);
+                let prev_rows = once(None).chain(rows.clone().map(Some));
+
                 for (offset, (row, prev_row)) in rows.zip(prev_rows).enumerate() {
                     region.assign_fixed(|| "selector", config.selector, offset, || Ok(F::one()))?;
                     config
@@ -244,8 +258,8 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
                         || Ok(row.value_assignment(self.randomness)),
                     )?;
 
-                    if offset != 0 {
-                        lexicographic_ordering_chip.assign(&mut region, offset, row, prev_row)?;
+                    if let Some(prev_row) = prev_row {
+                        lexicographic_ordering_chip.assign(&mut region, offset, &row, &prev_row)?;
 
                         let id_change = F::from(row.id().unwrap_or_default() as u64)
                             - F::from(prev_row.id().unwrap_or_default() as u64);
