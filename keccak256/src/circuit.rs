@@ -93,38 +93,11 @@ impl<F: Field> KeccakConfig<F> {
             let perm_count = meta.query_advice(perm_count, Rotation::cur());
             let state_finalize = generate_lagrange_base_polynomial(state_tag, 2, 0..=3);
             let perm_lookup_val = perm_count * Expression::Constant(F::from(136u64)) - input_len;
-            // TODO: Permutation + Padding
             vec![(
                 q_enable * state_finalize * perm_lookup_val,
                 range_check_136.range,
             )]
         });
-
-        // TODO: Pending to do the Lookup for the Permutation RLC check multipliyng the
-        // selector by the is_continue_state tag
-        meta.lookup("Valid permutation + padding", |meta| {
-            let q_enable = meta.query_selector(q_enable);
-            let state_tag = meta.query_advice(state_tag, Rotation::cur());
-            let input_len = meta.query_advice(input_len, Rotation::cur());
-            let perm_count = meta.query_advice(perm_count, Rotation::cur());
-            let state_continue = generate_lagrange_base_polynomial(state_tag, 1, 0..=3);
-
-            // We check: `input_len - (136 * (perm_count + 1))`. If it evaluates to 0, we
-            // need to pad and absorb.
-            let have_to_pad_and_absorb = input_len
-                - (Expression::Constant(F::from(136u64))
-                    * (perm_count.clone() + Expression::Constant(F::one())));
-            vec![(
-                q_enable * state_con * perm_lookup_val,
-                range_check_136.range,
-            )]
-        });
-
-        /*
-        1. Send to NewConfig: input_RLC, padded_input_RLC and output_RLC
-        2. get_allocated_state and next_inputs and check `input_rlc` matches.
-        3. Compute permutation with padde_input and check output_rlc
-        */
 
         meta.create_gate("Start State", |meta| {
             let q_enable = meta.query_selector(q_enable);
@@ -145,14 +118,14 @@ impl<F: Field> KeccakConfig<F> {
             let state_finalize = generate_lagrange_base_polynomial(state_tag.clone(), 2, 0..=3);
             let state_end = generate_lagrange_base_polynomial(state_tag, 3, 0..=3);
 
-            let next_state_start =
-                generate_lagrange_base_polynomial(next_state_tag.clone(), 0, 0..=3);
-            let next_state_continue =
-                generate_lagrange_base_polynomial(next_state_tag.clone(), 1, 0..=3);
-            let next_state_finalize =
-                generate_lagrange_base_polynomial(next_state_tag.clone(), 2, 0..=3);
-            let next_state_end =
-                generate_lagrange_base_polynomial(next_state_tag.clone(), 3, 0..=3);
+            let next_state_start = Expression::Constant(F::one())
+                - generate_lagrange_base_polynomial(next_state_tag.clone(), 0, 0..=3);
+            let next_state_continue = Expression::Constant(F::one())
+                - generate_lagrange_base_polynomial(next_state_tag.clone(), 1, 0..=3);
+            let next_state_finalize = Expression::Constant(F::one())
+                - generate_lagrange_base_polynomial(next_state_tag.clone(), 2, 0..=3);
+            let next_state_end = Expression::Constant(F::one())
+                - generate_lagrange_base_polynomial(next_state_tag.clone(), 3, 0..=3);
 
             // We need to make sure that the lagrange interpolation results are boolean.
             // This expressions will be zero if the values are boolean.
@@ -166,6 +139,15 @@ impl<F: Field> KeccakConfig<F> {
             let is_bool_next_state_finalize = bool_constraint_expr(next_state_finalize.clone());
             let is_bool_next_state_end = bool_constraint_expr(next_state_end.clone());
 
+            let bool_state_checks = q_enable.clone()
+                * (is_bool_cur_state_start
+                    + is_bool_cur_state_continue
+                    + is_bool_cur_state_finalize
+                    + is_bool_cur_state_end
+                    + is_bool_next_state_start
+                    + is_bool_next_state_continue
+                    + is_bool_next_state_finalize
+                    + is_bool_next_state_end);
             // ------------------------------------------------------- //
             // --------------------- Start State --------------------- //
             // ------------------------------------------------------- //
@@ -174,10 +156,7 @@ impl<F: Field> KeccakConfig<F> {
             // Finalize, End)` Note that the second condition is constrained via
             // negation. If it's not within `(Continue, Finalize, End)` it has to be
             // `Start`.
-            let start_tag_correctness = (Expression::Constant(F::one()) - next_state_start)
-                + is_bool_cur_state_start
-                + is_bool_next_state_start;
-
+            //
             // Check `input_len === input === perm_count === acc_input === output === 0`
             // We do also need to make sure that we can't add non-binary numbers and get a
             // 0.
@@ -193,7 +172,7 @@ impl<F: Field> KeccakConfig<F> {
                 + output_rlc;
 
             let start_constraint =
-                (q_enable.clone() * state_start) * (start_tag_correctness + zero_assumptions);
+                (q_enable.clone() * state_start) * (next_state_start + zero_assumptions);
 
             // ------------------------------------------------------- //
             // -------------------- Continue State ------------------- //
@@ -201,8 +180,6 @@ impl<F: Field> KeccakConfig<F> {
 
             let absortion_check = {
                 // `next.state_tag === Finalize`
-                let next_state_tag_absortion = is_bool_next_state_finalize
-                    + (Expression::Constant(F::one()) - next_state_finalize.clone());
                 let next_input_is_zero =
                     next_input.clone() + bool_constraint_expr(next_input.clone());
                 let have_to_pad_and_absorb = input_len
@@ -212,7 +189,7 @@ impl<F: Field> KeccakConfig<F> {
                 // Absortion check
                 state_continue.clone()
                     * have_to_pad_and_absorb
-                    * (next_state_tag_absortion + next_input_is_zero)
+                    * (next_state_finalize.clone() + next_input_is_zero)
             };
 
             // `next.acc_input === curr.acc_input * r**136 + next.input`
@@ -223,9 +200,8 @@ impl<F: Field> KeccakConfig<F> {
             let next_row_validity_perm_count =
                 next_perm_count.clone() - perm_count + Expression::Constant(F::one());
             // `next.state_tag in (Continue, Finalize)`
-            let next_state_continue_or_finalize = (Expression::Constant(F::one())
-                - next_state_finalize.clone())
-                * (Expression::Constant(F::one()) - next_state_continue.clone());
+            let next_state_continue_or_finalize =
+                next_state_finalize.clone() * next_state_continue.clone();
 
             // Next Row validity + State transition Continue
             let continue_constraint = (q_enable.clone() * state_continue)
@@ -244,9 +220,8 @@ impl<F: Field> KeccakConfig<F> {
             let next_row_validity_input = next_acc_input - acc_input;
 
             // State transition: (Continue, Finalize, End) all 3 states allowed
-            let state_transition_finalize = (Expression::Constant(F::one()) - next_state_continue)
-                * (Expression::Constant(F::one()) - next_state_finalize)
-                * (Expression::Constant(F::one()) - next_state_end.clone());
+            let state_transition_finalize =
+                next_state_continue * next_state_finalize * next_state_end.clone();
 
             let finalize_constraint = (q_enable * state_finalize)
                 * (state_transition_finalize
@@ -258,9 +233,10 @@ impl<F: Field> KeccakConfig<F> {
             // ------------------------------------------------------- //
 
             // State transition: next.state_tag === End
-            let end_constraint = state_end * (Expression::Constant(F::one()) - next_state_end);
+            let end_constraint = state_end * next_state_end;
 
             vec![
+                bool_state_checks,
                 start_constraint,
                 continue_constraint,
                 finalize_constraint,
