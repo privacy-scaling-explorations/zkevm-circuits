@@ -29,7 +29,7 @@ use crate::{
         IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, IS_CODEHASH_MOD_POS, IS_EXT_LONG_EVEN_C16_POS,
         IS_EXT_LONG_EVEN_C1_POS, IS_EXT_LONG_ODD_C16_POS, IS_EXT_LONG_ODD_C1_POS,
         IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS, IS_NONCE_MOD_POS, IS_STORAGE_MOD_POS,
-        LAYOUT_OFFSET, NOT_FIRST_LEVEL_POS, IS_ACCOUNT_DELETE_MOD_POS,
+        LAYOUT_OFFSET, NOT_FIRST_LEVEL_POS, IS_ACCOUNT_DELETE_MOD_POS, IS_NON_EXISTING_ACCOUNT_POS,
     },
     roots::RootsChip,
     storage_root_in_account_leaf::StorageRootChip,
@@ -150,6 +150,7 @@ pub struct MPTConfig<F> {
     is_balance_mod: Column<Advice>,
     is_codehash_mod: Column<Advice>,
     is_account_delete_mod: Column<Advice>,
+    is_non_existing_account: Column<Advice>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -384,6 +385,7 @@ impl<F: FieldExt> MPTConfig<F> {
         let is_balance_mod = meta.advice_column();
         let is_codehash_mod = meta.advice_column();
         let is_account_delete_mod = meta.advice_column();
+        let is_non_existing_account = meta.advice_column();
 
         SelectorsChip::<F>::configure(
             meta,
@@ -416,6 +418,7 @@ impl<F: FieldExt> MPTConfig<F> {
             is_balance_mod,
             is_codehash_mod,
             is_account_delete_mod,
+            is_non_existing_account,
         );
 
         RootsChip::<F>::configure(
@@ -1119,6 +1122,7 @@ impl<F: FieldExt> MPTConfig<F> {
             is_balance_mod,
             is_codehash_mod,
             is_account_delete_mod,
+            is_non_existing_account,
         }
     }
 
@@ -1640,14 +1644,14 @@ impl<F: FieldExt> MPTConfig<F> {
 
                         let l = row.len();
                         let s_root_rlc = hash_into_rlc(
-                            &row[l - 4 * HASH_WIDTH - COUNTER_WITNESS_LEN - IS_ACCOUNT_DELETE_MOD_POS
-                                ..l - 4 * HASH_WIDTH - COUNTER_WITNESS_LEN - IS_ACCOUNT_DELETE_MOD_POS
+                            &row[l - 4 * HASH_WIDTH - COUNTER_WITNESS_LEN - IS_NON_EXISTING_ACCOUNT_POS
+                                ..l - 4 * HASH_WIDTH - COUNTER_WITNESS_LEN - IS_NON_EXISTING_ACCOUNT_POS
                                     + HASH_WIDTH],
                             self.acc_r,
                         );
                         let c_root_rlc = hash_into_rlc(
-                            &row[l - 3 * HASH_WIDTH - COUNTER_WITNESS_LEN - IS_ACCOUNT_DELETE_MOD_POS
-                                ..l - 3 * HASH_WIDTH - COUNTER_WITNESS_LEN - IS_ACCOUNT_DELETE_MOD_POS
+                            &row[l - 3 * HASH_WIDTH - COUNTER_WITNESS_LEN - IS_NON_EXISTING_ACCOUNT_POS
+                                ..l - 3 * HASH_WIDTH - COUNTER_WITNESS_LEN - IS_NON_EXISTING_ACCOUNT_POS
                                     + HASH_WIDTH],
                             self.acc_r,
                         );
@@ -1676,10 +1680,10 @@ impl<F: FieldExt> MPTConfig<F> {
                             // prevent omitting account proof (and having only storage proof
                             // with the appropriate address_rlc)
                             let address_rlc = hash_into_rlc(
-                                &row[l - 2 * HASH_WIDTH - COUNTER_WITNESS_LEN - IS_ACCOUNT_DELETE_MOD_POS
+                                &row[l - 2 * HASH_WIDTH - COUNTER_WITNESS_LEN - IS_NON_EXISTING_ACCOUNT_POS
                                     ..l - 2 * HASH_WIDTH
                                         - COUNTER_WITNESS_LEN
-                                        - IS_ACCOUNT_DELETE_MOD_POS
+                                        - IS_NON_EXISTING_ACCOUNT_POS
                                         + HASH_WIDTH],
                                 self.acc_r,
                             );
@@ -1692,8 +1696,8 @@ impl<F: FieldExt> MPTConfig<F> {
                         }
 
                         let counter_u32: u32 = u32::from_be_bytes(
-                            row[l - HASH_WIDTH - COUNTER_WITNESS_LEN - IS_ACCOUNT_DELETE_MOD_POS
-                                ..l - HASH_WIDTH - COUNTER_WITNESS_LEN - IS_ACCOUNT_DELETE_MOD_POS
+                            row[l - HASH_WIDTH - COUNTER_WITNESS_LEN - IS_NON_EXISTING_ACCOUNT_POS
+                                ..l - HASH_WIDTH - COUNTER_WITNESS_LEN - IS_NON_EXISTING_ACCOUNT_POS
                                     + COUNTER_WITNESS_LEN]
                                 .try_into()
                                 .expect("slice of incorrect length"),
@@ -1734,6 +1738,12 @@ impl<F: FieldExt> MPTConfig<F> {
                             self.is_account_delete_mod,
                             offset,
                             || Ok(F::from(row[row.len() - IS_ACCOUNT_DELETE_MOD_POS] as u64)),
+                        )?;
+                        region.assign_advice(
+                            || "is_non_existing_account",
+                            self.is_non_existing_account,
+                            offset,
+                            || Ok(F::from(row[row.len() - IS_NON_EXISTING_ACCOUNT_POS] as u64)),
                         )?;
 
                         if row[row.len() - 1] == 0 {
@@ -3172,6 +3182,8 @@ impl<F: FieldExt> MPTConfig<F> {
 
 #[cfg(test)]
 mod tests {
+    use crate::param::IS_NON_EXISTING_ACCOUNT_POS;
+
     use super::*;
 
     use halo2_proofs::{
@@ -3264,8 +3276,8 @@ mod tests {
                     let mut pub_root_rlc = Fp::zero();
                     let l = row.len();
                     let pub_root_rlc = hash_into_rlc(
-                        &row[l - HASH_WIDTH - IS_ACCOUNT_DELETE_MOD_POS
-                            ..l - HASH_WIDTH - IS_ACCOUNT_DELETE_MOD_POS + HASH_WIDTH],
+                        &row[l - HASH_WIDTH - IS_NON_EXISTING_ACCOUNT_POS
+                            ..l - HASH_WIDTH - IS_NON_EXISTING_ACCOUNT_POS + HASH_WIDTH],
                         acc_r,
                     );
 

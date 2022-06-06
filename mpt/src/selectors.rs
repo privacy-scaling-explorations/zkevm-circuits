@@ -49,6 +49,7 @@ impl<F: FieldExt> SelectorsChip<F> {
         is_balance_mod: Column<Advice>,
         is_codehash_mod: Column<Advice>,
         is_account_delete_mod: Column<Advice>,
+        is_non_existing_account: Column<Advice>,
     ) -> SelectorsConfig {
         let config = SelectorsConfig {};
         let one = Expression::Constant(F::one());
@@ -87,6 +88,7 @@ impl<F: FieldExt> SelectorsChip<F> {
             let is_balance_mod = meta.query_advice(is_balance_mod, Rotation::cur());
             let is_codehash_mod = meta.query_advice(is_codehash_mod, Rotation::cur());
             let is_account_delete_mod = meta.query_advice(is_account_delete_mod, Rotation::cur());
+            let is_non_existing_account = meta.query_advice(is_non_existing_account, Rotation::cur());
 
             constraints.push((
                 "bool check not_first_level",
@@ -205,11 +207,15 @@ impl<F: FieldExt> SelectorsChip<F> {
                 "bool check is_account_delete_mod",
                 get_bool_constraint(q_enable.clone(), is_account_delete_mod.clone()),
             ));
+            constraints.push((
+                "bool check is_non_existing_account",
+                get_bool_constraint(q_enable.clone(), is_non_existing_account.clone()),
+            ));
 
             constraints.push((
-                "is_storage_mod + is_nonce_mod + is_balance_mod + is_codehash_mod + is_account_delete_mod = 1",
+                "is_storage_mod + is_nonce_mod + is_balance_mod + is_codehash_mod + is_account_delete_mod + is_non_existing_account = 1",
                 q_enable.clone()
-                    * (is_storage_mod + is_nonce_mod + is_balance_mod + is_codehash_mod + is_account_delete_mod
+                    * (is_storage_mod + is_nonce_mod + is_balance_mod + is_codehash_mod + is_account_delete_mod + is_non_existing_account
                         - one.clone()),
             ));
 
@@ -386,6 +392,8 @@ impl<F: FieldExt> SelectorsChip<F> {
                 let is_codehash_mod_cur = meta.query_advice(is_codehash_mod, Rotation::cur());
                 let is_account_delete_mod_prev = meta.query_advice(is_account_delete_mod, Rotation::prev());
                 let is_account_delete_mod_cur = meta.query_advice(is_account_delete_mod, Rotation::cur());
+                let is_non_existing_account_cur = meta.query_advice(is_non_existing_account, Rotation::prev());
+                let is_non_existing_account_prev = meta.query_advice(is_non_existing_account, Rotation::cur());
 
                 let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
 
@@ -462,6 +470,21 @@ impl<F: FieldExt> SelectorsChip<F> {
                         * (one.clone() - is_branch_init_cur.clone())
                         * (one.clone() - is_account_leaf_key_s_cur.clone())
                         * (is_account_delete_mod_cur - is_account_delete_mod_prev),
+                ));
+
+                constraints.push((
+                    "is_non_existing_account does not change outside first level",
+                    q_not_first.clone()
+                        * not_first_level.clone()
+                        * (is_non_existing_account_cur.clone() - is_non_existing_account_prev.clone()),
+                ));
+                constraints.push((
+                    "is_account_delete_mod does not change inside first level except in the first row",
+                    q_not_first.clone()
+                        * (one.clone() - not_first_level.clone())
+                        * (one.clone() - is_branch_init_cur.clone())
+                        * (one.clone() - is_account_leaf_key_s_cur.clone())
+                        * (is_non_existing_account_cur.clone() - is_non_existing_account_prev.clone()),
                 ));
 
                 constraints
