@@ -12,11 +12,12 @@ use eth_types::{
     evm_types::{MemoryAddress, StackAddress},
     Address, Field, ToAddress, Word, U256,
 };
+use halo2_proofs::poly::commitment::Params;
 use halo2_proofs::{
     arithmetic::{BaseExt, Field as halo2_field},
     dev::{MockProver, VerifyFailure},
-    pairing::bn256::Fr,
-    plonk::{Advice, Circuit, Column, ConstraintSystem},
+    pairing::bn256::{Bn256, Fr, G1Affine},
+    plonk::{keygen_vk, Advice, Circuit, Column, ConstraintSystem},
 };
 use std::collections::{BTreeSet, HashMap};
 use strum::IntoEnumIterator;
@@ -88,6 +89,31 @@ fn degree() {
     let mut meta = ConstraintSystem::<Fr>::default();
     StateCircuit::configure(&mut meta);
     assert_eq!(meta.degree(), 16);
+}
+
+#[test]
+fn verifying_key_independent_of_rw_length() {
+    let randomness = Fr::rand();
+    let degree = 17;
+    let params = Params::<G1Affine>::unsafe_setup::<Bn256>(degree);
+
+    let no_rows = StateCircuit::new(randomness, RwMap::default());
+    let one_row = StateCircuit::new(
+        randomness,
+        RwMap::from(&OperationContainer {
+            memory: vec![Operation::new(
+                RWCounter::from(1),
+                RW::WRITE,
+                MemoryOp::new(1, MemoryAddress::from(0), 32),
+            )],
+            ..Default::default()
+        }),
+    );
+
+    assert_eq!(
+        format!("{:?}", keygen_vk(&params, &no_rows).unwrap()),
+        format!("{:?}", keygen_vk(&params, &one_row).unwrap())
+    );
 }
 
 #[test]
