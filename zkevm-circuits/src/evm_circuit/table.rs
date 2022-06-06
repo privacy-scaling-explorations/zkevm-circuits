@@ -156,6 +156,7 @@ pub enum RwTableTag {
     CallContext,
     TxLog,
     TxReceipt,
+    Padding,
 }
 
 impl RwTableTag {
