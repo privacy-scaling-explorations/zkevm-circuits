@@ -6,14 +6,15 @@ use halo2_proofs::{
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
     poly::Rotation,
 };
-use itertools::Itertools;
-use std::{convert::TryInto, marker::PhantomData};
+use std::convert::TryInto;
+
+use super::base_conversion::BaseConversionConfig;
 
 #[derive(Clone, Debug)]
 pub struct AbsorbConfig<F> {
     q_mixing: Selector,
     state: [Column<Advice>; 25],
-    _marker: PhantomData<F>,
+    base_conversion_config: BaseConversionConfig<F>,
 }
 
 impl<F: Field> AbsorbConfig<F> {
@@ -26,6 +27,7 @@ impl<F: Field> AbsorbConfig<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         state: [Column<Advice>; 25],
+        base_conversion_config: BaseConversionConfig<F>,
     ) -> AbsorbConfig<F> {
         // def absorb(state: List[List[int], next_input: List[List[int]):
         //     for x in range(5):
@@ -75,7 +77,7 @@ impl<F: Field> AbsorbConfig<F> {
         AbsorbConfig {
             q_mixing,
             state,
-            _marker: PhantomData,
+            base_conversion_config,
         }
     }
 
@@ -84,28 +86,28 @@ impl<F: Field> AbsorbConfig<F> {
         region: &mut Region<F>,
         offset: usize,
         flag: AssignedCell<F, F>,
-        next_input: [F; NEXT_INPUTS_LANES],
+        // Passed in base-9
+        next_input: [AssignedCell<F, F>; NEXT_INPUTS_LANES],
     ) -> Result<AssignedCell<F, F>, Error> {
-        // Generate next_input in base-9.
-        let mut next_mixing = state_to_biguint::<F, NEXT_INPUTS_LANES>(next_input);
-        for (x, y) in (0..5).cartesian_product(0..5) {
-            // Assign only first 17 values.
-            if x >= 3 && y >= 1 {
-                break;
-            }
-            next_mixing[(x, y)] = convert_b2_to_b9(next_mixing[(x, y)].clone().try_into().unwrap())
-        }
-        let next_input = state_bigint_to_field::<F, NEXT_INPUTS_LANES>(next_mixing);
+        // // Generate next_input in base-9.
+        // let mut next_mixing = state_to_biguint::<F, NEXT_INPUTS_LANES>(next_input);
+        // for (x, y) in (0..5).cartesian_product(0..5) {
+        //     // Assign only first 17 values.
+        //     if x >= 3 && y >= 1 {
+        //         break;
+        //     }
+        //     next_mixing[(x, y)] = convert_b2_to_b9(next_mixing[(x,
+        // y)].clone().try_into().unwrap()) }
+        // let next_input = state_bigint_to_field::<F, NEXT_INPUTS_LANES>(next_mixing);
 
-        // Assign next_mixing.
-        for (idx, lane) in next_input.iter().enumerate() {
-            region.assign_advice(
-                || format!("assign next_input {}", idx),
-                self.state[idx],
-                offset,
-                || Ok(*lane),
-            )?;
-        }
+        // Copy next_inputs in base9
+        next_input
+            .iter()
+            .enumerate()
+            .map(|(idx, cell)| {
+                cell.copy_advice(|| "Assign next_inputs", region, self.state[idx], offset)
+            })
+            .collect::<Result<Vec<AssignedCell<F, F>>, Error>>()?;
 
         // Assign flag at last column(17th).
         let flag_assig_cell = flag.copy_advice(
@@ -118,16 +120,21 @@ impl<F: Field> AbsorbConfig<F> {
         Ok(flag_assig_cell)
     }
 
-    /// Doc this $
+    /// TODO: Doc this
     pub fn copy_state_flag_next_inputs(
         &self,
         layouter: &mut impl Layouter<F>,
         in_state: &[AssignedCell<F, F>; 25],
         out_state: [F; 25],
         // Passed in base-2 and converted internally after witnessing it.
-        next_input: [F; NEXT_INPUTS_LANES],
+        next_input: [AssignedCell<F, F>; NEXT_INPUTS_LANES],
         flag: AssignedCell<F, F>,
     ) -> Result<([AssignedCell<F, F>; 25], AssignedCell<F, F>), Error> {
+        // Convert base of `next_inputs` from 2 to 9
+        let next_inputs_b9 =
+            self.base_conversion_config
+                .assign_state(layouter, &next_input, flag.clone())?;
+
         layouter.assign_region(
             || "Absorb state assignations",
             |mut region| {
@@ -147,8 +154,12 @@ impl<F: Field> AbsorbConfig<F> {
                 self.q_mixing.enable(&mut region, offset)?;
 
                 // Assign `next_inputs` and flag.
-                let flag =
-                    self.assign_next_inp_and_flag(&mut region, offset, flag.clone(), next_input)?;
+                let flag = self.assign_next_inp_and_flag(
+                    &mut region,
+                    offset,
+                    flag.clone(),
+                    next_inputs_b9.clone(),
+                )?;
 
                 offset += 1;
                 // Assign out_state at offset + 2
@@ -177,6 +188,7 @@ mod tests {
     use super::*;
     use crate::common::State;
     use crate::keccak_arith::KeccakFArith;
+    use crate::permutation::tables::FromBinaryTableConfig;
     use halo2_proofs::circuit::Layouter;
     use halo2_proofs::pairing;
     use halo2_proofs::plonk::{Advice, Column, ConstraintSystem, Error};
@@ -194,15 +206,22 @@ mod tests {
         struct MyCircuit<F> {
             in_state: [F; 25],
             out_state: [F; 25],
-            next_input: [F; NEXT_INPUTS_LANES],
+            next_inputs: [F; NEXT_INPUTS_LANES],
             is_mixing: bool,
             _marker: PhantomData<F>,
         }
+
+        #[derive(Clone)]
+        struct MyConfig<F> {
+            absorb_conf: AbsorbConfig<F>,
+            table: FromBinaryTableConfig<F>,
+        }
+
         impl<F: Field> Circuit<F> for MyCircuit<F>
         where
             F: PrimeField<Repr = [u8; 32]>,
         {
-            type Config = AbsorbConfig<F>;
+            type Config = MyConfig<F>;
             type FloorPlanner = SimpleFloorPlanner;
 
             fn without_witnesses(&self) -> Self {
@@ -219,8 +238,19 @@ mod tests {
                     .collect::<Vec<_>>()
                     .try_into()
                     .unwrap();
+                let table = FromBinaryTableConfig::configure(meta);
+                let base_info = table.get_base_info(true);
+                let base_conv_lane = meta.advice_column();
+                let base_conversion_config = BaseConversionConfig::configure(
+                    meta,
+                    base_info,
+                    base_conv_lane,
+                    state[NEXT_INPUTS_LANES],
+                );
 
-                AbsorbConfig::configure(meta, state)
+                let absorb_conf = AbsorbConfig::configure(meta, state, base_conversion_config);
+
+                MyConfig { absorb_conf, table }
             }
 
             fn synthesize(
@@ -228,6 +258,9 @@ mod tests {
                 config: Self::Config,
                 mut layouter: impl Layouter<F>,
             ) -> Result<(), Error> {
+                // Load the table
+                config.table.load(&mut layouter)?;
+
                 let val: F = (self.is_mixing as u64).into();
                 let flag: AssignedCell<F, F> = layouter.assign_region(
                     || "witness_is_mixing_flag",
@@ -235,7 +268,7 @@ mod tests {
                         let offset = 1;
                         region.assign_advice(
                             || "assign is_mixing",
-                            config.state[NEXT_INPUTS_LANES + 1],
+                            config.absorb_conf.state[NEXT_INPUTS_LANES + 1],
                             offset,
                             || Ok(val),
                         )
@@ -250,7 +283,7 @@ mod tests {
                         for (idx, val) in self.in_state.iter().enumerate() {
                             let cell = region.assign_advice(
                                 || "witness input state",
-                                config.state[idx],
+                                config.absorb_conf.state[idx],
                                 0,
                                 || Ok(*val),
                             )?;
@@ -261,11 +294,31 @@ mod tests {
                     },
                 )?;
 
-                config.copy_state_flag_next_inputs(
+                // Witness `next_inputs`.
+                let next_inputs: [AssignedCell<F, F>; NEXT_INPUTS_LANES] = layouter.assign_region(
+                    || "Witness input state",
+                    |mut region| {
+                        let mut state: Vec<AssignedCell<F, F>> =
+                            Vec::with_capacity(NEXT_INPUTS_LANES);
+                        for (idx, val) in self.next_inputs.iter().enumerate() {
+                            let cell = region.assign_advice(
+                                || "witness next_inputs",
+                                config.absorb_conf.state[idx],
+                                1,
+                                || Ok(*val),
+                            )?;
+                            state.push(cell)
+                        }
+
+                        Ok(state.try_into().unwrap())
+                    },
+                )?;
+
+                config.absorb_conf.copy_state_flag_next_inputs(
                     &mut layouter,
                     &in_state,
                     self.out_state,
-                    self.next_input,
+                    next_inputs,
                     flag,
                 )?;
 
@@ -292,15 +345,21 @@ mod tests {
         // Convert the input to base9 as the gadget already expects it like this
         // since it's always the output of IotaB9.
         let mut in_state = StateBigInt::from(input1);
+
         for (x, y) in (0..5).cartesian_product(0..5) {
-            in_state[(x, y)] = convert_b2_to_b9(input1[x][y])
+            in_state[(x, y)] = convert_b2_to_b9(input1[x][y]);
+            //next_inputs[(x, y)] = convert_b2_to_b9(input2[x][y]);
         }
 
         let in_state = state_bigint_to_field(in_state);
         let out_state =
             state_bigint_to_field(KeccakFArith::absorb(&StateBigInt::from(input1), &input2));
 
-        let next_input = state_bigint_to_field(StateBigInt::from(input2));
+        // // Get next_inputs in b9
+        // for (x, y) in (0..5).cartesian_product(0..5) {
+        //     next_inputs[(x, y)] = convert_b2_to_b9(input2[x][y]);
+        // }
+        let next_inputs = state_bigint_to_field(StateBigInt::from(input2));
 
         // With flag set to true, the gate should trigger.
         {
@@ -309,12 +368,12 @@ mod tests {
             let circuit = MyCircuit::<Fp> {
                 in_state,
                 out_state,
-                next_input,
+                next_inputs,
                 is_mixing: true,
                 _marker: PhantomData,
             };
 
-            let prover = MockProver::<Fp>::run(9, &circuit, vec![]).unwrap();
+            let prover = MockProver::<Fp>::run(17, &circuit, vec![]).unwrap();
 
             assert_eq!(prover.verify(), Ok(()));
 
@@ -323,12 +382,12 @@ mod tests {
             let circuit = MyCircuit::<Fp> {
                 in_state,
                 out_state: in_state,
-                next_input,
+                next_inputs,
                 is_mixing: true,
                 _marker: PhantomData,
             };
 
-            let prover = MockProver::<Fp>::run(9, &circuit, vec![]).unwrap();
+            let prover = MockProver::<Fp>::run(17, &circuit, vec![]).unwrap();
 
             assert!(prover.verify().is_err());
         }
@@ -339,12 +398,12 @@ mod tests {
             let circuit = MyCircuit::<Fp> {
                 in_state,
                 out_state: in_state,
-                next_input,
+                next_inputs,
                 is_mixing: false,
                 _marker: PhantomData,
             };
 
-            let prover = MockProver::<Fp>::run(9, &circuit, vec![]).unwrap();
+            let prover = MockProver::<Fp>::run(17, &circuit, vec![]).unwrap();
 
             assert_eq!(prover.verify(), Ok(()));
         }

@@ -9,7 +9,7 @@ use eth_types::Field;
 use std::convert::TryInto;
 
 #[derive(Clone, Debug)]
-pub(crate) struct BaseConversionConfig<F> {
+pub struct BaseConversionConfig<F> {
     q_running_sum: Selector,
     q_lookup: Selector,
     base_info: BaseInfo<F>,
@@ -24,7 +24,7 @@ pub(crate) struct BaseConversionConfig<F> {
 
 impl<F: Field> BaseConversionConfig<F> {
     /// Side effect: lane and parent_flag is equality enabled
-    pub(crate) fn configure(
+    pub fn configure(
         meta: &mut ConstraintSystem<F>,
         base_info: BaseInfo<F>,
         input_lane: Column<Advice>,
@@ -87,7 +87,7 @@ impl<F: Field> BaseConversionConfig<F> {
         }
     }
 
-    pub(crate) fn assign_lane(
+    pub fn assign_lane(
         &self,
         layouter: &mut impl Layouter<F>,
         input: AssignedCell<F, F>,
@@ -154,7 +154,7 @@ impl<F: Field> BaseConversionConfig<F> {
         )
     }
 
-    pub(crate) fn assign_state<const N: usize>(
+    pub fn assign_state<const N: usize>(
         &self,
         layouter: &mut impl Layouter<F>,
         state: &[AssignedCell<F, F>; N],

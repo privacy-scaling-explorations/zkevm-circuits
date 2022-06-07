@@ -8,7 +8,7 @@ pub struct KeccakFArith {}
 impl KeccakFArith {
     pub fn permute_and_absorb(
         a: &mut StateBigInt,
-        next_inputs: Option<&State>,
+        next_inputs: Option<State>,
     ) -> Option<StateBigInt> {
         for rc in ROUND_CONSTANTS.iter().take(PERMUTATION - 1) {
             let s1 = KeccakFArith::theta(a);
@@ -91,9 +91,9 @@ impl KeccakFArith {
         out
     }
 
-    pub fn mixing(a: &StateBigInt, next_input: Option<&State>, rc: u64) -> StateBigInt {
+    pub fn mixing(a: &StateBigInt, next_input: Option<State>, rc: u64) -> StateBigInt {
         if let Some(next_input) = next_input {
-            let out_1 = KeccakFArith::absorb(a, next_input);
+            let out_1 = KeccakFArith::absorb(a, &next_input);
 
             // Base conversion from 9 to 13
             let mut out_2 = StateBigInt::default();
@@ -188,7 +188,7 @@ impl Sponge {
                 }
                 continue;
             }
-            KeccakFArith::permute_and_absorb(&mut state_bit_int, Some(&next_inputs));
+            KeccakFArith::permute_and_absorb(&mut state_bit_int, Some(next_inputs));
         }
         KeccakFArith::permute_and_absorb(&mut state_bit_int, None);
         for (x, y) in (0..5).cartesian_product(0..5) {
