@@ -49,6 +49,7 @@ impl ExecStep {
         call_index: usize,
         rwc: RWCounter,
         reversible_write_counter: usize,
+        log_id: usize,
     ) -> Self {
         ExecStep {
             exec_state: ExecState::Op(step.op),
@@ -61,7 +62,7 @@ impl ExecStep {
             call_index,
             rwc,
             reversible_write_counter,
-            log_id: 0,
+            log_id,
             bus_mapping_instance: Vec::new(),
             error: None,
             aux_data: None,
@@ -101,6 +102,8 @@ pub enum ExecState {
     EndTx,
     /// Virtual step Copy To Memory
     CopyToMemory,
+    /// Virtual step Copy To Log
+    CopyToLog,
     /// Virtal step Copy Code To Memory
     CopyCodeToMemory,
 }
@@ -128,6 +131,15 @@ impl ExecState {
     pub fn is_swap(&self) -> bool {
         if let ExecState::Op(op) = self {
             op.is_swap()
+        } else {
+            false
+        }
+    }
+
+    /// Returns `true` if `ExecState` is an opcode and the opcode is a `Logn`.
+    pub fn is_log(&self) -> bool {
+        if let ExecState::Op(op) = self {
+            op.is_log()
         } else {
             false
         }
