@@ -7,7 +7,7 @@ use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
 use crate::{
-    helpers::{compute_rlc, get_bool_constraint, hash_expr_into_rlc},
+    helpers::{compute_rlc, get_bool_constraint, bytes_expr_into_rlc},
     param::{
         HASH_WIDTH, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, IS_BRANCH_C_PLACEHOLDER_POS,
         IS_BRANCH_S_PLACEHOLDER_POS, IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS,
@@ -369,7 +369,7 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
             for column in c_advices.iter() {
                 sc_hash.push(meta.query_advice(*column, Rotation::cur()));
             }
-            let hash_rlc = hash_expr_into_rlc(&sc_hash, acc_r);
+            let hash_rlc = bytes_expr_into_rlc(&sc_hash, acc_r);
             constraints.push((
                 q_not_first.clone()
                     * q_enable.clone()
@@ -465,7 +465,7 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
                 for column in c_advices.iter() {
                     sc_hash.push(meta.query_advice(*column, Rotation::cur()));
                 }
-                let hash_rlc = hash_expr_into_rlc(&sc_hash, acc_r);
+                let hash_rlc = bytes_expr_into_rlc(&sc_hash, acc_r);
                 let root = meta.query_advice(inter_root, Rotation::cur());
 
                 let is_branch_init_prev = meta.query_advice(is_branch_init, Rotation::prev());

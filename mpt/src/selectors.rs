@@ -49,7 +49,8 @@ impl<F: FieldExt> SelectorsChip<F> {
         is_balance_mod: Column<Advice>,
         is_codehash_mod: Column<Advice>,
         is_account_delete_mod: Column<Advice>,
-        is_non_existing_account: Column<Advice>,
+        is_non_existing_account_proof: Column<Advice>,
+        is_non_existing_account_row: Column<Advice>,
     ) -> SelectorsConfig {
         let config = SelectorsConfig {};
         let one = Expression::Constant(F::one());
@@ -88,7 +89,8 @@ impl<F: FieldExt> SelectorsChip<F> {
             let is_balance_mod = meta.query_advice(is_balance_mod, Rotation::cur());
             let is_codehash_mod = meta.query_advice(is_codehash_mod, Rotation::cur());
             let is_account_delete_mod = meta.query_advice(is_account_delete_mod, Rotation::cur());
-            let is_non_existing_account = meta.query_advice(is_non_existing_account, Rotation::cur());
+            let is_non_existing_account_row = meta.query_advice(is_non_existing_account_row, Rotation::cur());
+            let is_non_existing_account_proof = meta.query_advice(is_non_existing_account_proof, Rotation::cur());
 
             constraints.push((
                 "bool check not_first_level",
@@ -208,14 +210,18 @@ impl<F: FieldExt> SelectorsChip<F> {
                 get_bool_constraint(q_enable.clone(), is_account_delete_mod.clone()),
             ));
             constraints.push((
-                "bool check is_non_existing_account",
-                get_bool_constraint(q_enable.clone(), is_non_existing_account.clone()),
+                "bool check is_non_existing_account_row",
+                get_bool_constraint(q_enable.clone(), is_non_existing_account_row.clone()),
+            ));
+            constraints.push((
+                "bool check is_non_existing_account_proof",
+                get_bool_constraint(q_enable.clone(), is_non_existing_account_proof.clone()),
             ));
 
             constraints.push((
                 "is_storage_mod + is_nonce_mod + is_balance_mod + is_codehash_mod + is_account_delete_mod + is_non_existing_account = 1",
                 q_enable.clone()
-                    * (is_storage_mod + is_nonce_mod + is_balance_mod + is_codehash_mod + is_account_delete_mod + is_non_existing_account
+                    * (is_storage_mod + is_nonce_mod + is_balance_mod + is_codehash_mod + is_account_delete_mod + is_non_existing_account_proof
                         - one.clone()),
             ));
 
@@ -282,6 +288,12 @@ impl<F: FieldExt> SelectorsChip<F> {
                 let is_extension_node_c_cur =
                     meta.query_advice(is_extension_node_c, Rotation::cur());
 
+                let is_non_existing_account_row_prev =
+                    meta.query_advice(is_non_existing_account_row, Rotation::prev());
+                let is_non_existing_account_row_cur =
+                    meta.query_advice(is_non_existing_account_row, Rotation::cur());
+
+
                 // Branch init can start after another branch (means after extension node S)
                 // or after account leaf in added branch (account -> storage proof)
                 // or after storage leaf in added branch (after key/value proof ends).
@@ -320,9 +332,14 @@ impl<F: FieldExt> SelectorsChip<F> {
                     q_not_first.clone() * (is_account_leaf_key_s_prev - is_account_leaf_key_c_cur),
                 ));
                 constraints.push((
-                    "account leaf key c -> account leaf nonce balance S",
+                    "account leaf key c -> non existing account row",
                     q_not_first.clone()
-                        * (is_account_leaf_key_c_prev - is_account_leaf_nonce_balance_s_cur),
+                        * (is_account_leaf_key_c_prev - is_non_existing_account_row_cur),
+                ));
+                constraints.push((
+                    "non existing account row -> account leaf nonce balance S",
+                    q_not_first.clone()
+                        * (is_non_existing_account_row_prev - is_account_leaf_nonce_balance_s_cur),
                 ));
                 constraints.push((
                     "account leaf nonce balance S -> account leaf nonce balance C",
@@ -392,8 +409,8 @@ impl<F: FieldExt> SelectorsChip<F> {
                 let is_codehash_mod_cur = meta.query_advice(is_codehash_mod, Rotation::cur());
                 let is_account_delete_mod_prev = meta.query_advice(is_account_delete_mod, Rotation::prev());
                 let is_account_delete_mod_cur = meta.query_advice(is_account_delete_mod, Rotation::cur());
-                let is_non_existing_account_cur = meta.query_advice(is_non_existing_account, Rotation::prev());
-                let is_non_existing_account_prev = meta.query_advice(is_non_existing_account, Rotation::cur());
+                let is_non_existing_account_proof_cur = meta.query_advice(is_non_existing_account_proof, Rotation::prev());
+                let is_non_existing_account_proof_prev = meta.query_advice(is_non_existing_account_proof, Rotation::cur());
 
                 let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
 
@@ -476,7 +493,7 @@ impl<F: FieldExt> SelectorsChip<F> {
                     "is_non_existing_account does not change outside first level",
                     q_not_first.clone()
                         * not_first_level.clone()
-                        * (is_non_existing_account_cur.clone() - is_non_existing_account_prev.clone()),
+                        * (is_non_existing_account_proof_cur.clone() - is_non_existing_account_proof_prev.clone()),
                 ));
                 constraints.push((
                     "is_account_delete_mod does not change inside first level except in the first row",
@@ -484,7 +501,7 @@ impl<F: FieldExt> SelectorsChip<F> {
                         * (one.clone() - not_first_level.clone())
                         * (one.clone() - is_branch_init_cur.clone())
                         * (one.clone() - is_account_leaf_key_s_cur.clone())
-                        * (is_non_existing_account_cur.clone() - is_non_existing_account_prev.clone()),
+                        * (is_non_existing_account_proof_cur.clone() - is_non_existing_account_proof_prev.clone()),
                 ));
 
                 constraints

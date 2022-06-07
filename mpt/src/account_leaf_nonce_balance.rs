@@ -75,7 +75,10 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
             // s_rlp1  s_rlp2  c_rlp1  c_rlp2  s_advices  c_advices
             // 184     80      248     78      nonce      balance
 
-            let rot = -2;
+            let mut rot = -(ACCOUNT_LEAF_NONCE_BALANCE_S_IND - ACCOUNT_LEAF_KEY_S_IND);
+            if !is_s {
+                rot = -(ACCOUNT_LEAF_NONCE_BALANCE_C_IND - ACCOUNT_LEAF_KEY_C_IND);
+            }
             let c128 = Expression::Constant(F::from(128));
             let c248 = Expression::Constant(F::from(248));
 
@@ -88,22 +91,12 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
 
             let mut is_nonce_long = meta.query_advice(
                 sel1,
-                Rotation(-(ACCOUNT_LEAF_NONCE_BALANCE_S_IND - ACCOUNT_LEAF_KEY_S_IND)),
+                Rotation(rot),
             );
             let mut is_balance_long = meta.query_advice(
                 sel2,
-                Rotation(-(ACCOUNT_LEAF_NONCE_BALANCE_S_IND - ACCOUNT_LEAF_KEY_S_IND)),
+                Rotation(rot),
             );
-            if !is_s {
-                is_nonce_long = meta.query_advice(
-                    sel1,
-                    Rotation(-(ACCOUNT_LEAF_NONCE_BALANCE_C_IND - ACCOUNT_LEAF_KEY_C_IND)),
-                );
-                is_balance_long = meta.query_advice(
-                    sel2,
-                    Rotation(-(ACCOUNT_LEAF_NONCE_BALANCE_C_IND - ACCOUNT_LEAF_KEY_C_IND)),
-                );
-            }
 
             constraints.push((
                 "bool check is_nonce_long",

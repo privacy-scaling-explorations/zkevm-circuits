@@ -7,7 +7,7 @@ use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
 use crate::{
-    helpers::{get_is_extension_node, hash_expr_into_rlc, into_words_expr},
+    helpers::{get_is_extension_node, bytes_expr_into_rlc, into_words_expr},
     param::{
         HASH_WIDTH, IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS, KECCAK_INPUT_WIDTH,
         KECCAK_OUTPUT_WIDTH, LAYOUT_OFFSET,
@@ -87,7 +87,7 @@ impl<F: FieldExt> StorageRootChip<F> {
                             .push(meta.query_advice(*column, Rotation(rot_into_branch_init - 2)));
                     }
                 }
-                let hash_rlc = hash_expr_into_rlc(&sc_hash, acc_r);
+                let hash_rlc = bytes_expr_into_rlc(&sc_hash, acc_r);
                 let mut constraints = vec![];
                 constraints.push((
                     not_first_level.clone()
@@ -161,7 +161,7 @@ impl<F: FieldExt> StorageRootChip<F> {
                             .push(meta.query_advice(*column, Rotation(rot_into_branch_init - 2)));
                     }
                 }
-                let hash_rlc = hash_expr_into_rlc(&sc_hash, acc_r);
+                let hash_rlc = bytes_expr_into_rlc(&sc_hash, acc_r);
 
                 let mut constraints = vec![];
                 constraints.push((
@@ -222,7 +222,7 @@ impl<F: FieldExt> StorageRootChip<F> {
                         );
                     }
                 }
-                let hash_rlc = hash_expr_into_rlc(&sc_hash, acc_r);
+                let hash_rlc = bytes_expr_into_rlc(&sc_hash, acc_r);
 
                 let mut constraints = vec![];
                 constraints.push((
@@ -283,7 +283,7 @@ impl<F: FieldExt> StorageRootChip<F> {
                     sc_hash.push(meta.query_advice(*column, Rotation(rot - 1)));
                 }
             }
-            let hash_rlc = hash_expr_into_rlc(&sc_hash, acc_r);
+            let hash_rlc = bytes_expr_into_rlc(&sc_hash, acc_r);
 
             let mut constraints = vec![];
             constraints.push((

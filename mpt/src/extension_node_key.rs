@@ -378,21 +378,24 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
             // because we first have branch rows and then extension rows):
             constraints.push((
                 "long even sel2 branch",
-                    after_first_level.clone()
+                        q_not_first.clone()
+                        * after_first_level.clone()
                         * is_ext_long_even_c1.clone()
                         * (key_rlc_branch.clone() - key_rlc_cur.clone() -
                             modified_node_cur.clone() * key_rlc_mult_prev_level.clone() * mult_diff.clone())
             ));
             constraints.push((
                 "long even sel2 branch mult",
-                    after_first_level
+                        q_not_first.clone()
+                        * after_first_level
                         * is_ext_long_even_c1.clone()
                         * (key_rlc_mult_branch.clone() - key_rlc_mult_prev_level.clone() * mult_diff.clone() * r_table[0].clone())
                         // mult_diff is checked in a lookup below
             ));
 
             // long odd not first level not first storage selector:
-            let long_odd = not_first_level.clone()
+            let long_odd = q_not_first.clone()
+                    * not_first_level.clone()
                     * (one.clone() - is_account_leaf_in_added_branch_prev.clone())
                     * is_extension_c_row.clone()
                     * (is_ext_long_odd_c16.clone() + is_ext_long_odd_c1.clone());
@@ -437,7 +440,8 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
             ));
 
             // short: 
-            let short = not_first_level.clone()
+            let short = q_not_first.clone()
+                * not_first_level.clone()
                 * (one.clone() - is_account_leaf_in_added_branch_prev.clone())
                 * is_extension_c_row.clone()
                 * (is_ext_short_c16.clone() + is_ext_short_c1.clone());

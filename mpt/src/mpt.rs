@@ -19,7 +19,7 @@ use crate::{
     branch_rlc_init::BranchRLCInitChip,
     extension_node::ExtensionNodeChip,
     extension_node_key::ExtensionNodeKeyChip,
-    helpers::{get_is_extension_node, hash_into_rlc},
+    helpers::{get_is_extension_node, bytes_into_rlc},
     leaf_key::LeafKeyChip,
     leaf_key_in_added_branch::LeafKeyInAddedBranchChip,
     leaf_value::LeafValueChip,
@@ -150,7 +150,8 @@ pub struct MPTConfig<F> {
     is_balance_mod: Column<Advice>,
     is_codehash_mod: Column<Advice>,
     is_account_delete_mod: Column<Advice>,
-    is_non_existing_account: Column<Advice>,
+    is_non_existing_account_proof: Column<Advice>,
+    is_non_existing_account_row: Column<Advice>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -385,7 +386,8 @@ impl<F: FieldExt> MPTConfig<F> {
         let is_balance_mod = meta.advice_column();
         let is_codehash_mod = meta.advice_column();
         let is_account_delete_mod = meta.advice_column();
-        let is_non_existing_account = meta.advice_column();
+        let is_non_existing_account_proof = meta.advice_column();
+        let is_non_existing_account_row = meta.advice_column();
 
         SelectorsChip::<F>::configure(
             meta,
@@ -418,7 +420,8 @@ impl<F: FieldExt> MPTConfig<F> {
             is_balance_mod,
             is_codehash_mod,
             is_account_delete_mod,
-            is_non_existing_account,
+            is_non_existing_account_proof,
+            is_non_existing_account_row,
         );
 
         RootsChip::<F>::configure(
@@ -1122,7 +1125,8 @@ impl<F: FieldExt> MPTConfig<F> {
             is_balance_mod,
             is_codehash_mod,
             is_account_delete_mod,
-            is_non_existing_account,
+            is_non_existing_account_proof,
+            is_non_existing_account_row,
         }
     }
 
@@ -1150,6 +1154,7 @@ impl<F: FieldExt> MPTConfig<F> {
         is_leaf_in_added_branch: bool,
         is_extension_node_s: bool,
         is_extension_node_c: bool,
+        is_non_existing_account_row: bool,
         offset: usize,
     ) -> Result<(), Error> {
         region.assign_advice(
@@ -1372,6 +1377,12 @@ impl<F: FieldExt> MPTConfig<F> {
             offset,
             || Ok(F::from(is_extension_node_c as u64)),
         )?;
+        region.assign_advice(
+            || "assign is non existing account row".to_string(),
+            self.is_non_existing_account_row,
+            offset,
+            || Ok(F::from(is_non_existing_account_row as u64)),
+        )?;
 
         region.assign_advice(
             || "assign s_rlp1".to_string(),
@@ -1441,7 +1452,7 @@ impl<F: FieldExt> MPTConfig<F> {
     ) -> Result<(), Error> {
         self.assign_row(
             region, row, true, false, false, 0, 0, false, false, false, false, false, false, false,
-            false, false, false, false, 0, false, false, false, offset,
+            false, false, false, false, 0, false, false, false, false, offset,
         )?;
 
         Ok(())
@@ -1483,6 +1494,7 @@ impl<F: FieldExt> MPTConfig<F> {
             false,
             false,
             drifted_pos,
+            false,
             false,
             false,
             false,
@@ -1643,13 +1655,13 @@ impl<F: FieldExt> MPTConfig<F> {
                         )?;
 
                         let l = row.len();
-                        let s_root_rlc = hash_into_rlc(
+                        let s_root_rlc = bytes_into_rlc(
                             &row[l - 4 * HASH_WIDTH - COUNTER_WITNESS_LEN - IS_NON_EXISTING_ACCOUNT_POS
                                 ..l - 4 * HASH_WIDTH - COUNTER_WITNESS_LEN - IS_NON_EXISTING_ACCOUNT_POS
                                     + HASH_WIDTH],
                             self.acc_r,
                         );
-                        let c_root_rlc = hash_into_rlc(
+                        let c_root_rlc = bytes_into_rlc(
                             &row[l - 3 * HASH_WIDTH - COUNTER_WITNESS_LEN - IS_NON_EXISTING_ACCOUNT_POS
                                 ..l - 3 * HASH_WIDTH - COUNTER_WITNESS_LEN - IS_NON_EXISTING_ACCOUNT_POS
                                     + HASH_WIDTH],
@@ -1679,7 +1691,7 @@ impl<F: FieldExt> MPTConfig<F> {
                             // address_rlc can be set only in account leaf row - this is to
                             // prevent omitting account proof (and having only storage proof
                             // with the appropriate address_rlc)
-                            let address_rlc = hash_into_rlc(
+                            let address_rlc = bytes_into_rlc(
                                 &row[l - 2 * HASH_WIDTH - COUNTER_WITNESS_LEN - IS_NON_EXISTING_ACCOUNT_POS
                                     ..l - 2 * HASH_WIDTH
                                         - COUNTER_WITNESS_LEN
@@ -1741,7 +1753,7 @@ impl<F: FieldExt> MPTConfig<F> {
                         )?;
                         region.assign_advice(
                             || "is_non_existing_account",
-                            self.is_non_existing_account,
+                            self.is_non_existing_account_proof,
                             offset,
                             || Ok(F::from(row[row.len() - IS_NON_EXISTING_ACCOUNT_POS] as u64)),
                         )?;
@@ -1760,8 +1772,8 @@ impl<F: FieldExt> MPTConfig<F> {
                             let mut c_hash = witness[ind + 1 + pv.modified_node as usize]
                                 [C_START..C_START + HASH_WIDTH]
                                 .to_vec();
-                            pv.s_mod_node_hash_rlc = hash_into_rlc(&s_hash, self.acc_r);
-                            pv.c_mod_node_hash_rlc = hash_into_rlc(&c_hash, self.acc_r);
+                            pv.s_mod_node_hash_rlc = bytes_into_rlc(&s_hash, self.acc_r);
+                            pv.c_mod_node_hash_rlc = bytes_into_rlc(&c_hash, self.acc_r);
 
                             if row[IS_BRANCH_S_PLACEHOLDER_POS] == 1 {
                                 // We put hash of a node that moved down to the added branch.
@@ -1769,7 +1781,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                 s_hash = witness[ind + 1 + pv.drifted_pos as usize]
                                     [S_START..S_START + HASH_WIDTH]
                                     .to_vec();
-                                pv.s_mod_node_hash_rlc = hash_into_rlc(&s_hash, self.acc_r);
+                                pv.s_mod_node_hash_rlc = bytes_into_rlc(&s_hash, self.acc_r);
                                 pv.is_branch_s_placeholder = true
                             } else {
                                 pv.is_branch_s_placeholder = false
@@ -1778,7 +1790,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                 c_hash = witness[ind + 1 + pv.drifted_pos as usize]
                                     [C_START..C_START + HASH_WIDTH]
                                     .to_vec();
-                                pv.c_mod_node_hash_rlc = hash_into_rlc(&c_hash, self.acc_r);
+                                pv.c_mod_node_hash_rlc = bytes_into_rlc(&c_hash, self.acc_r);
                                 pv.is_branch_c_placeholder = true
                             } else {
                                 pv.is_branch_c_placeholder = false
@@ -2243,6 +2255,7 @@ impl<F: FieldExt> MPTConfig<F> {
                             || row[row.len() - 1] == 15
                             || row[row.len() - 1] == 16
                             || row[row.len() - 1] == 17
+                            || row[row.len() - 1] == 18
                         {
                             // leaf s or leaf c or leaf key s or leaf key c
                             region.assign_fixed(
@@ -2273,6 +2286,7 @@ impl<F: FieldExt> MPTConfig<F> {
                             let mut is_leaf_in_added_branch = false;
                             let mut is_extension_node_s = false;
                             let mut is_extension_node_c = false;
+                            let mut is_non_existing_account = false;
 
                             if row[row.len() - 1] == 2 {
                                 is_leaf_s = true;
@@ -2308,6 +2322,8 @@ impl<F: FieldExt> MPTConfig<F> {
                                 is_extension_node_s = true;
                             } else if row[row.len() - 1] == 17 {
                                 is_extension_node_c = true;
+                            } else if row[row.len() - 1] == 18 {
+                                is_non_existing_account = true;
                             }
 
                             self.assign_row(
@@ -2333,6 +2349,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                 is_leaf_in_added_branch,
                                 is_extension_node_s,
                                 is_extension_node_c,
+                                is_non_existing_account,
                                 offset,
                             )?;
 
@@ -2599,6 +2616,16 @@ impl<F: FieldExt> MPTConfig<F> {
                                 // Assigning acc_s, acc_mult_s below together with acc_c
                                 // (key_rlc_prev) and acc_c_mult
                                 // (key_rlc_mult_prev).
+
+                                // TODO
+                                let partial_address_rlc = bytes_into_rlc(
+                                    &row[l - 2 * HASH_WIDTH - COUNTER_WITNESS_LEN - IS_NON_EXISTING_ACCOUNT_POS
+                                        ..l - 2 * HASH_WIDTH
+                                            - COUNTER_WITNESS_LEN
+                                            - IS_NON_EXISTING_ACCOUNT_POS
+                                            + key_len],
+                                    self.acc_r,
+                                );
 
                                 if row[row.len() - 1] == 6 {
                                     pv.acc_account_s = acc;
@@ -3014,6 +3041,8 @@ impl<F: FieldExt> MPTConfig<F> {
                                     F::zero(),
                                     offset,
                                 )?;
+                            } else if row[row.len() - 1] == 18 {
+                                // TODO
                             }
 
                             offset += 1;
@@ -3070,7 +3099,7 @@ impl<F: FieldExt> MPTConfig<F> {
                         || Ok(rlc),
                     )?;
 
-                    let hash_rlc = hash_into_rlc(&hash, self.acc_r);
+                    let hash_rlc = bytes_into_rlc(&hash, self.acc_r);
                     region.assign_fixed(
                         || "Keccak table",
                         self.keccak_table[1],
@@ -3262,7 +3291,7 @@ mod tests {
                 let path = f.path();
                 let mut parts = path.to_str().unwrap().split("-");
                 parts.next();
-                let file = std::fs::File::open(path);
+                let file = std::fs::File::open(path.clone());
                 let reader = std::io::BufReader::new(file.unwrap());
                 let w: Vec<Vec<u8>> = serde_json::from_reader(reader).unwrap();
                 let circuit = MyCircuit::<Fp> {
@@ -3275,7 +3304,7 @@ mod tests {
                 for row in w.iter().filter(|r| r[r.len() - 1] != 5) {
                     let mut pub_root_rlc = Fp::zero();
                     let l = row.len();
-                    let pub_root_rlc = hash_into_rlc(
+                    let pub_root_rlc = bytes_into_rlc(
                         &row[l - HASH_WIDTH - IS_NON_EXISTING_ACCOUNT_POS
                             ..l - HASH_WIDTH - IS_NON_EXISTING_ACCOUNT_POS + HASH_WIDTH],
                         acc_r,
@@ -3284,6 +3313,7 @@ mod tests {
                     pub_root.push(pub_root_rlc);
                 }
 
+                println!("{:?}", path);
                 let prover = MockProver::<Fp>::run(9, &circuit, vec![pub_root]).unwrap();
                 assert_eq!(prover.verify(), Ok(()));
 

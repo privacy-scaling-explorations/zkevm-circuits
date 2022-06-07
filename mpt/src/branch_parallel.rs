@@ -6,7 +6,7 @@ use halo2_proofs::{
 use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
-use crate::{helpers::hash_expr_into_rlc, param::HASH_WIDTH};
+use crate::{helpers::bytes_expr_into_rlc, param::HASH_WIDTH};
 
 #[derive(Clone, Debug)]
 pub(crate) struct BranchParallelConfig {}
@@ -139,7 +139,7 @@ impl<F: FieldExt> BranchParallelChip<F> {
             for column in advices.iter() {
                 sc_hash.push(meta.query_advice(*column, Rotation::cur()));
             }
-            let hash_rlc = hash_expr_into_rlc(&sc_hash, acc_r);
+            let hash_rlc = bytes_expr_into_rlc(&sc_hash, acc_r);
 
             // In placeholder branch (when is_modified != is_at_drifted_pos) the following
             // constraint could be satisfied by the attacker by putting hash of is_modified
