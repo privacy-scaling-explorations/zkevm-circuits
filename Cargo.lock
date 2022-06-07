@@ -505,7 +505,7 @@ dependencies = [
  "bus-mapping",
  "eth-types",
  "ff 0.11.1",
- "halo2_proofs 0.1.0-beta.1",
+ "halo2_proofs 0.1.0-beta.1 (git+https://github.com/privacy-scaling-explorations/halo2.git?tag=v2022_06_03)",
  "itertools",
  "keccak256",
  "rand",
@@ -1183,7 +1183,7 @@ version = "0.1.0"
 dependencies = [
  "ethers-core",
  "ethers-providers",
- "halo2_proofs 0.1.0-beta.1",
+ "halo2_proofs 0.1.0-beta.1 (git+https://github.com/privacy-scaling-explorations/halo2.git?tag=v2022_06_03)",
  "hex",
  "itertools",
  "lazy_static",
@@ -1711,7 +1711,7 @@ version = "0.1.0"
 dependencies = [
  "digest 0.7.6",
  "eth-types",
- "halo2_proofs 0.1.0-beta.1",
+ "halo2_proofs 0.1.0-beta.1 (git+https://github.com/privacy-scaling-explorations/halo2.git?tag=v2022_06_03)",
  "rand",
  "rand_xorshift",
  "sha3 0.7.3",
@@ -1843,6 +1843,23 @@ checksum = "eabb4a44450da02c90444cf74558da904edde8fb4e9035a9a6a4e15445af0bd7"
 [[package]]
 name = "halo2_proofs"
 version = "0.1.0-beta.1"
+source = "git+https://github.com/appliedzkp/halo2.git?tag=v2022_03_06#90f0487e986a8d7a323ec78e7de5ad8bbeeebbd5"
+dependencies = [
+ "blake2b_simd 1.0.0",
+ "bumpalo",
+ "cfg-if 0.1.10",
+ "ff 0.11.1",
+ "group 0.11.0",
+ "pairing_bn256 0.1.1 (git+https://github.com/appliedzkp/pairing)",
+ "rand",
+ "rand_core",
+ "rayon",
+ "subtle",
+]
+
+[[package]]
+name = "halo2_proofs"
+version = "0.1.0-beta.1"
 source = "git+https://github.com/privacy-scaling-explorations/halo2.git?tag=v2022_06_03#1fc67702da729b41bfeebc9764c4c6effbd1f9ad"
 dependencies = [
  "blake2b_simd 1.0.0",
@@ -1850,7 +1867,7 @@ dependencies = [
  "cfg-if 0.1.10",
  "ff 0.11.1",
  "group 0.11.0",
- "pairing_bn256",
+ "pairing_bn256 0.1.1 (git+https://github.com/appliedzkp/pairing?tag=v0.1.1)",
  "plotters",
  "rand",
  "rand_core",
@@ -1879,7 +1896,7 @@ version = "0.1.0"
 source = "git+https://github.com/privacy-scaling-explorations/halo2wrong?tag=v2022_06_03#15bb5c9749079b0ee73da4feb740466e64eba740"
 dependencies = [
  "cfg-if 0.1.10",
- "halo2_proofs 0.1.0-beta.1",
+ "halo2_proofs 0.1.0-beta.1 (git+https://github.com/privacy-scaling-explorations/halo2.git?tag=v2022_06_03)",
  "halo2_proofs 0.1.0-beta.3",
  "num-bigint",
  "num-integer",
@@ -2161,7 +2178,7 @@ dependencies = [
  "eth-types",
  "ethers",
  "ff 0.11.1",
- "halo2_proofs 0.1.0-beta.1",
+ "halo2_proofs 0.1.0-beta.1 (git+https://github.com/privacy-scaling-explorations/halo2.git?tag=v2022_06_03)",
  "lazy_static",
  "log",
  "pretty_assertions",
@@ -2239,7 +2256,7 @@ version = "0.1.0"
 dependencies = [
  "eth-types",
  "gadgets",
- "halo2_proofs 0.1.0-beta.1",
+ "halo2_proofs 0.1.0-beta.1 (git+https://github.com/privacy-scaling-explorations/halo2.git?tag=v2022_06_03)",
  "itertools",
  "lazy_static",
  "num-bigint",
@@ -2422,6 +2439,22 @@ dependencies = [
  "external-tracer",
  "itertools",
  "lazy_static",
+]
+
+[[package]]
+name = "mpt"
+version = "0.1.0"
+dependencies = [
+ "ark-std",
+ "halo2_proofs 0.1.0-beta.1 (git+https://github.com/appliedzkp/halo2.git?tag=v2022_03_06)",
+ "itertools",
+ "keccak256",
+ "num-bigint",
+ "num-traits",
+ "pairing_bn256 0.1.1 (git+https://github.com/appliedzkp/pairing)",
+ "rand_xorshift",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -2631,6 +2664,19 @@ dependencies = [
 name = "pairing_bn256"
 version = "0.1.1"
 source = "git+https://github.com/appliedzkp/pairing?tag=v0.1.1#1da2920e0e0b3de5929111e9d6193b6b4f0d99e3"
+dependencies = [
+ "ff 0.11.1",
+ "group 0.11.0",
+ "rand",
+ "rand_core",
+ "static_assertions",
+ "subtle",
+]
+
+[[package]]
+name = "pairing_bn256"
+version = "0.1.1"
+source = "git+https://github.com/appliedzkp/pairing#1da2920e0e0b3de5929111e9d6193b6b4f0d99e3"
 dependencies = [
  "ff 0.11.1",
  "group 0.11.0",
@@ -2968,7 +3014,7 @@ dependencies = [
  "env_logger",
  "eth-types",
  "ethers-providers",
- "halo2_proofs 0.1.0-beta.1",
+ "halo2_proofs 0.1.0-beta.1 (git+https://github.com/privacy-scaling-explorations/halo2.git?tag=v2022_06_03)",
  "hyper",
  "log",
  "rand",
@@ -4372,7 +4418,7 @@ dependencies = [
  "ff 0.11.1",
  "gadgets",
  "group 0.11.0",
- "halo2_proofs 0.1.0-beta.1",
+ "halo2_proofs 0.1.0-beta.1 (git+https://github.com/privacy-scaling-explorations/halo2.git?tag=v2022_06_03)",
  "hex",
  "integer",
  "itertools",

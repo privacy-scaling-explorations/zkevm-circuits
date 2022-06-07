@@ -10,7 +10,8 @@ members = [
     "eth-types",
     "external-tracer",
     "mock",
-    "prover"
+    "prover",
+    "mpt"
 ]
 
 [patch.crates-io]
