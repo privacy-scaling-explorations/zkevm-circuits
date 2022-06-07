@@ -49,8 +49,9 @@ const IOTA_ROUND_CST: [u64; 24] = [
 ];
 
 const ABSORB_LOOKUP_RANGE: usize = 3;
-const THETA_LOOKUP_RANGE: usize = 6;
-const RHO_PI_LOOKUP_RANGE: usize = 4;
+const THETA_C_LOOKUP_RANGE: usize = 6;
+const THETA_T_LOOKUP_RANGE: usize = 3;
+const RHO_PI_LOOKUP_RANGE: usize = 3;
 const CHI_BASE_LOOKUP_RANGE: usize = 5;
 const CHI_EXT_LOOKUP_RANGE: usize = 7;
 
@@ -81,8 +82,12 @@ fn get_num_bits_per_absorb_lookup() -> usize {
     get_num_bits_per_lookup(ABSORB_LOOKUP_RANGE)
 }
 
-fn get_num_bits_per_theta_lookup() -> usize {
-    get_num_bits_per_lookup(THETA_LOOKUP_RANGE)
+fn get_num_bits_per_theta_c_lookup() -> usize {
+    get_num_bits_per_lookup(THETA_C_LOOKUP_RANGE)
+}
+
+fn get_num_bits_per_theta_t_lookup() -> usize {
+    get_num_bits_per_lookup(THETA_T_LOOKUP_RANGE)
 }
 
 fn get_num_bits_per_rho_pi_lookup() -> usize {
@@ -429,11 +434,12 @@ impl<F: Field> KeccakPackedConfig<F> {
         });
 
         let mut cb = BaseConstraintBuilder::new(5);
-        let mut lookup_counter = 0;
+        let mut total_lookup_counter = 0;
 
         let pre_b = b.clone();
 
         // Absorb
+        let mut lookup_counter = 0;
         let part_size = get_num_bits_per_absorb_lookup();
         let input = absorb_from_expr + absorb_data_expr;
         let absorb_fat = split(meta, &mut cell_values, &mut cb, input, 0, part_size);
@@ -446,9 +452,16 @@ impl<F: Field> KeccakPackedConfig<F> {
             normalize_3,
         );
         cb.require_equal("absorb result", decode(absorb_res), absorb_result_expr);
+        println!("- Post absorb:");
+        println!("Lookups: {}", lookup_counter);
+        println!("Columns: {}", cell_values.len());
+        total_lookup_counter += lookup_counter;
 
         // Theta
-        let part_size = get_num_bits_per_theta_lookup();
+        let mut lookup_counter = 0;
+        let part_size = get_num_bits_per_theta_c_lookup();
+        let part_size_c = get_num_bits_per_theta_c_lookup();
+        let part_size_t = get_num_bits_per_theta_t_lookup();
         let mut bc = Vec::new();
         for i in 0..5 {
             let c = b[i][0].clone()
@@ -456,9 +469,9 @@ impl<F: Field> KeccakPackedConfig<F> {
                 + b[i][2].clone()
                 + b[i][3].clone()
                 + b[i][4].clone();
-            let bc_fat = split(meta, &mut cell_values, &mut cb, c, 1, part_size);
+            let bc_fat = split(meta, &mut cell_values, &mut cb, c, 1, part_size_c);
             let bc_thin = transform(
-                "theta",
+                "theta c",
                 meta,
                 &mut cell_values,
                 &mut lookup_counter,
@@ -471,16 +484,28 @@ impl<F: Field> KeccakPackedConfig<F> {
         let mut ob = vec![vec![0u64.expr(); 5]; 5];
         for i in 0..5 {
             let t = decode(bc[(i + 4) % 5].clone())
-                + decode(rotate(bc[(i + 1) % 5].clone(), 1, part_size));
+                + decode(rotate(bc[(i + 1) % 5].clone(), 1, part_size_c));
+            let t_fat = split(meta, &mut cell_values, &mut cb, t, 0, part_size_t);
+            let t_thin = decode(transform(
+                "theta t",
+                meta,
+                &mut cell_values,
+                &mut lookup_counter,
+                t_fat.clone(),
+                normalize_3,
+            ));
             for j in 0..5 {
-                ob[i][j] = b[i][j].clone() + t.clone();
+                ob[i][j] = b[i][j].clone() + t_thin.clone();
             }
         }
         b = ob.clone();
+        println!("- Post theta:");
         println!("Lookups: {}", lookup_counter);
         println!("Columns: {}", cell_values.len());
+        total_lookup_counter += lookup_counter;
 
         // Rho/Pi
+        let mut lookup_counter = 0;
         let part_size = get_num_bits_per_rho_pi_lookup();
         let mut ob = vec![vec![0u64.expr(); 5]; 5];
         for i in 0..5 {
@@ -499,15 +524,18 @@ impl<F: Field> KeccakPackedConfig<F> {
                     &mut cell_values,
                     &mut lookup_counter,
                     b_fat.clone(),
-                    normalize_4,
+                    normalize_3,
                 ));
             }
         }
         b = ob.clone();
+        println!("- Post rho/pi:");
         println!("Lookups: {}", lookup_counter);
         println!("Columns: {}", cell_values.len());
+        total_lookup_counter += lookup_counter;
 
         // Chi
+        let mut lookup_counter = 0;
         let part_size_base = get_num_bits_per_base_chi_lookup();
         let part_size_ext = get_num_bits_per_ext_chi_lookup();
         let mut ob = vec![vec![0u64.expr(); 5]; 5];
@@ -546,6 +574,10 @@ impl<F: Field> KeccakPackedConfig<F> {
             }
         }
         b = ob.clone();
+        println!("- Post chi:");
+        println!("Lookups: {}", lookup_counter);
+        println!("Columns: {}", cell_values.len());
+        total_lookup_counter += lookup_counter;
 
         meta.create_gate("round", |meta| {
             cb.gate(meta.query_fixed(q_round, Rotation::cur()))
@@ -590,10 +622,10 @@ impl<F: Field> KeccakPackedConfig<F> {
 
         println!("Degree: {}", meta.degree());
         println!("Minimum rows: {}", meta.minimum_rows());
-        println!("Lookups: {}", lookup_counter);
+        println!("Lookups: {}", total_lookup_counter);
         println!("Columns: {}", cell_values.len());
         println!("part_size absorb: {}", get_num_bits_per_absorb_lookup());
-        println!("part_size theta: {}", get_num_bits_per_theta_lookup());
+        println!("part_size theta: {}", get_num_bits_per_theta_c_lookup());
         println!("part_size rho/pi: {}", get_num_bits_per_rho_pi_lookup());
         println!("part_size chi base: {}", get_num_bits_per_base_chi_lookup());
         println!("part_size chi ext: {}", get_num_bits_per_ext_chi_lookup());
@@ -735,12 +767,12 @@ impl<F: Field> KeccakPackedConfig<F> {
     }
 
     pub(crate) fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
-        let part_size = get_num_bits_per_theta_lookup();
+        let part_size = get_num_bits_per_lookup(6);
         layouter.assign_table(
             || "normalize_6 table",
             |mut table| {
                 for (offset, perm) in (0..part_size)
-                    .map(|_| 0..THETA_LOOKUP_RANGE as u64)
+                    .map(|_| 0..6 as u64)
                     .multi_cartesian_product()
                     .enumerate()
                 {
@@ -771,12 +803,12 @@ impl<F: Field> KeccakPackedConfig<F> {
             },
         )?;
 
-        let part_size = get_num_bits_per_rho_pi_lookup();
+        let part_size = get_num_bits_per_lookup(4);
         layouter.assign_table(
             || "normalize_4 table",
             |mut table| {
                 for (offset, perm) in (0..part_size)
-                    .map(|_| 0..RHO_PI_LOOKUP_RANGE as u64)
+                    .map(|_| 0..4 as u64)
                     .multi_cartesian_product()
                     .enumerate()
                 {
@@ -807,12 +839,12 @@ impl<F: Field> KeccakPackedConfig<F> {
             },
         )?;
 
-        let part_size = get_num_bits_per_absorb_lookup();
+        let part_size = get_num_bits_per_lookup(3);
         layouter.assign_table(
             || "normalize_3 table",
             |mut table| {
                 for (offset, perm) in (0..part_size)
-                    .map(|_| 0..ABSORB_LOOKUP_RANGE as u64)
+                    .map(|_| 0..3 as u64)
                     .multi_cartesian_product()
                     .enumerate()
                 {
@@ -992,7 +1024,9 @@ fn keccak<F: Field>(bytes: Vec<u8>) -> Vec<KeccakRow<F>> {
             let _absorb_result = transform_value(&mut cell_values, absorb_fat.clone(), |v| v & 1);
 
             // Theta
-            let part_size = get_num_bits_per_theta_lookup();
+            let part_size = get_num_bits_per_theta_c_lookup();
+            let part_size_c = get_num_bits_per_theta_c_lookup();
+            let part_size_t = get_num_bits_per_theta_t_lookup();
             let mut bc = Vec::new();
             for i in 0..5 {
                 let c = b[i][0].clone()
@@ -1000,16 +1034,22 @@ fn keccak<F: Field>(bytes: Vec<u8>) -> Vec<KeccakRow<F>> {
                     + b[i][2].clone()
                     + b[i][3].clone()
                     + b[i][4].clone();
-                let bc_fat = split_value::<F>(&mut cell_values, c, 1, part_size);
+                let bc_fat = split_value::<F>(&mut cell_values, c, 1, part_size_c);
                 let bc_thin = transform_value(&mut cell_values, bc_fat.clone(), |v| v & 1);
                 bc.push(bc_thin);
             }
             let mut ob = [[Word::zero(); 5]; 5];
             for i in 0..5 {
                 let t = decode_value(bc[(i + 4) % 5].clone())
-                    + decode_value(rotate_value(bc[(i + 1) % 5].clone(), 1, part_size));
+                    + decode_value(rotate_value(bc[(i + 1) % 5].clone(), 1, part_size_c));
+                let t_fat = split_value::<F>(&mut cell_values, t, 0, part_size_t);
+                let t_thin = decode_value(transform_value(
+                    &mut cell_values,
+                    t_fat.clone(),
+                    |v| v & 1,
+                ));
                 for j in 0..5 {
-                    ob[i][j] = b[i][j].clone() + t.clone();
+                    ob[i][j] = b[i][j].clone() + t_thin.clone();
                 }
             }
             b = ob.clone();
