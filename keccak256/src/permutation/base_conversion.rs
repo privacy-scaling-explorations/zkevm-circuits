@@ -154,12 +154,12 @@ impl<F: Field> BaseConversionConfig<F> {
         )
     }
 
-    pub(crate) fn assign_state(
+    pub(crate) fn assign_state<const N: usize>(
         &self,
         layouter: &mut impl Layouter<F>,
-        state: &[AssignedCell<F, F>; 25],
+        state: &[AssignedCell<F, F>; N],
         flag: AssignedCell<F, F>,
-    ) -> Result<[AssignedCell<F, F>; 25], Error> {
+    ) -> Result<[AssignedCell<F, F>; N], Error> {
         let state: Result<Vec<AssignedCell<F, F>>, Error> = state
             .iter()
             .map(|lane| {
@@ -169,7 +169,7 @@ impl<F: Field> BaseConversionConfig<F> {
             .into_iter()
             .collect();
         let state = state?;
-        let state: [AssignedCell<F, F>; 25] = state.try_into().unwrap();
+        let state: [AssignedCell<F, F>; N] = state.try_into().unwrap();
         Ok(state)
     }
 }
