@@ -1,3 +1,4 @@
+use array_init::array_init;
 use bus_mapping::evm::OpcodeId;
 use eth_types::Field;
 use halo2_proofs::plonk::Error;
@@ -8,7 +9,7 @@ use crate::{
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition},
-            CachedRegion, Cell, RandomLinearCombination,
+            from_bytes, CachedRegion, Cell, RandomLinearCombination,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -20,6 +21,7 @@ use super::ExecutionGadget;
 #[derive(Clone, Debug)]
 pub(crate) struct CodesizeGadget<F> {
     same_context: SameContextGadget<F>,
+    codesize_bytes: [Cell<F>; 8],
     codesize: Cell<F>,
 }
 
@@ -31,20 +33,21 @@ impl<F: Field> ExecutionGadget<F> for CodesizeGadget<F> {
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
+        let codesize_bytes = array_init(|_| cb.query_cell());
+
         let code_hash = cb.curr.state.code_hash.clone();
         let codesize = cb.bytecode_length(code_hash.expr());
-        let codesize_rlc = RandomLinearCombination::random_linear_combine_expr(
-            [codesize.expr()],
-            cb.power_of_randomness(),
-        );
 
         cb.require_equal(
-            "Constraint: code size (bytecode table) == stack top",
-            codesize_rlc.expr(),
+            "Constraint: bytecode length lookup == codesize",
+            from_bytes::expr(&codesize_bytes),
             codesize.expr(),
         );
 
-        cb.stack_push(codesize_rlc);
+        cb.stack_push(RandomLinearCombination::random_linear_combine_expr(
+            codesize_bytes.clone().map(|c| c.expr()),
+            cb.power_of_randomness(),
+        ));
 
         let step_state_transition = StepStateTransition {
             gas_left: Transition::Delta(-OpcodeId::CODESIZE.constant_gas_cost().expr()),
@@ -57,6 +60,7 @@ impl<F: Field> ExecutionGadget<F> for CodesizeGadget<F> {
 
         Self {
             same_context,
+            codesize_bytes,
             codesize,
         }
     }
@@ -73,6 +77,15 @@ impl<F: Field> ExecutionGadget<F> for CodesizeGadget<F> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
         let codesize = block.rws[step.rw_indices[0]].stack_value().as_u64();
+
+        for (c, b) in self
+            .codesize_bytes
+            .iter()
+            .zip(codesize.to_le_bytes().iter())
+        {
+            c.assign(region, offset, Some(F::from(*b as u64)))?;
+        }
+
         self.codesize
             .assign(region, offset, Some(F::from(codesize)))?;
 
@@ -82,22 +95,23 @@ impl<F: Field> ExecutionGadget<F> for CodesizeGadget<F> {
 
 #[cfg(test)]
 mod tests {
-    use eth_types::bytecode;
+    use eth_types::{bytecode, Word};
     use mock::TestContext;
 
     use crate::test_util::run_test_circuits;
 
-    #[test]
-    fn test_codesize_gadget() {
-        let code = bytecode! {
-            PUSH1(0x20)
-            PUSH1(0x30)
-            ADD
-            POP
-            CALLER
+    fn test_ok(large: bool) {
+        let mut code = bytecode! {};
+        if large {
+            for _ in 0..128 {
+                code.push(1, Word::from(0));
+            }
+        }
+        let tail = bytecode! {
             CODESIZE
             STOP
         };
+        code.append(&tail);
 
         assert_eq!(
             run_test_circuits(
@@ -106,5 +120,15 @@ mod tests {
             ),
             Ok(())
         );
+    }
+
+    #[test]
+    fn test_codesize_gadget() {
+        test_ok(false);
+    }
+
+    #[test]
+    fn test_codesize_gadget_large() {
+        test_ok(true);
     }
 }
