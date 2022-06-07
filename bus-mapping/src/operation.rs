@@ -108,6 +108,8 @@ pub enum Target {
     CallContext,
     /// Means the target of the operation is the TxReceipt.
     TxReceipt,
+    /// Means the target of the operation is the TxLog.
+    TxLog,
 }
 
 /// Trait used for Operation Kinds.
@@ -779,6 +781,93 @@ impl CallContextOp {
     }
 }
 
+/// Represents a field parameter of the TxLog that can be accessed via EVM
+/// execution.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum TxLogField {
+    /// contract address
+    Address,
+    /// topic of log entry
+    Topic,
+    /// data of log entry
+    Data,
+    /* TODO: Add `TopicLength` and `DataLength`, which will be used for the RLP encoding of the
+     * Tx Receipt */
+}
+
+/// Represents TxLog read/write operation.
+#[derive(Clone, PartialEq, Eq)]
+pub struct TxLogOp {
+    /// tx_id of TxLog, starts with 1 in rw table, and it's unique per Tx
+    pub tx_id: usize,
+    /// id of log entry, starts with 1 in rw table, it's unique within Tx,
+    /// currently it is also field of execution step, As field of execution
+    /// step, it resets to zero (in begin_tx), and increases with each Log* step
+    /// the reason why rw table's `log_id` start with 1 instead of zero is that
+    /// zero `log_id` represents no log steps(no any logs inserting) executed
+    pub log_id: usize,
+    /// field of TxLogField
+    pub field: TxLogField,
+    /// topic index if field is Topic
+    /// byte index if field is Data
+    /// it would be zero for other field tags
+    pub index: usize,
+    /// value
+    pub value: Word,
+}
+
+impl TxLogOp {
+    /// Create a new instance of a `TxLogOp` from it's components.
+    pub fn new(
+        tx_id: usize,
+        log_id: usize,
+        field: TxLogField,
+        index: usize,
+        value: Word,
+    ) -> TxLogOp {
+        TxLogOp {
+            tx_id,
+            log_id,
+            field,
+            index,
+            value,
+        }
+    }
+}
+
+impl fmt::Debug for TxLogOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("TxLogOp { ")?;
+        f.write_fmt(format_args!(
+            "tx_id: {:?}, log_id: {:?}, field: {:?}, index: {:?}, value: {:?}",
+            self.tx_id, self.log_id, self.field, self.index, self.value,
+        ))?;
+        f.write_str(" }")
+    }
+}
+
+impl PartialOrd for TxLogOp {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for TxLogOp {
+    fn cmp(&self, other: &Self) -> Ordering {
+        (&self.tx_id, &self.log_id, &self.field).cmp(&(&other.tx_id, &other.log_id, &other.field))
+    }
+}
+
+impl Op for TxLogOp {
+    fn into_enum(self) -> OpEnum {
+        OpEnum::TxLog(self)
+    }
+
+    fn reverse(&self) -> Self {
+        unreachable!("TxLog can't be reverted")
+    }
+}
+
 /// Represents a field parameter of the TxReceipt that can be accessed via EVM
 /// execution.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -860,6 +949,8 @@ pub enum OpEnum {
     CallContext(CallContextOp),
     /// TxReceipt
     TxReceipt(TxReceiptOp),
+    /// TxLog
+    TxLog(TxLogOp),
 }
 
 /// Operation is a Wrapper over a type that implements Op with a RWCounter.
