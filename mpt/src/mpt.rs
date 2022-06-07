@@ -7,27 +7,18 @@ use keccak256::plain::Keccak;
 use pairing::arithmetic::FieldExt;
 use std::convert::TryInto;
 
+use crate::param::WITNESS_ROW_WIDTH;
+use crate::param::{
+    BRANCH_0_C_START, BRANCH_0_KEY_POS, BRANCH_0_S_START, C_RLP_START, C_START, DRIFTED_POS,
+    HASH_WIDTH, IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS, KECCAK_INPUT_WIDTH,
+    KECCAK_OUTPUT_WIDTH, S_RLP_START, S_START,
+};
 use crate::{
     branch_hash_in_parent::BranchHashInParentChip,
     branch_rlc::BranchRLCChip,
     branch_rlc_init::BranchRLCInitChip,
-    helpers::{get_is_extension_node, bytes_into_rlc},
-    param::{
-        ACCOUNT_LEAF_KEY_C_IND, ACCOUNT_LEAF_KEY_S_IND, ACCOUNT_LEAF_NONCE_BALANCE_C_IND,
-        ACCOUNT_LEAF_NONCE_BALANCE_S_IND, COUNTER_WITNESS_LEN, IS_BALANCE_MOD_POS,
-        IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, IS_CODEHASH_MOD_POS, IS_EXT_LONG_EVEN_C16_POS,
-        IS_EXT_LONG_EVEN_C1_POS, IS_EXT_LONG_ODD_C16_POS, IS_EXT_LONG_ODD_C1_POS,
-        IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS, IS_NONCE_MOD_POS, IS_STORAGE_MOD_POS,
-        LAYOUT_OFFSET, NOT_FIRST_LEVEL_POS, IS_ACCOUNT_DELETE_MOD_POS, IS_NON_EXISTING_ACCOUNT_POS,
-    },
-};
-use crate::{param::WITNESS_ROW_WIDTH};
-use crate::{
-    param::{
-        BRANCH_0_C_START, BRANCH_0_KEY_POS, BRANCH_0_S_START, C_RLP_START, C_START, DRIFTED_POS,
-        HASH_WIDTH, IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS, KECCAK_INPUT_WIDTH,
-        KECCAK_OUTPUT_WIDTH, S_RLP_START, S_START,
-    },
+    helpers::{bytes_into_rlc, get_is_extension_node},
+    param::{COUNTER_WITNESS_LEN, IS_NON_EXISTING_ACCOUNT_POS, LAYOUT_OFFSET, NOT_FIRST_LEVEL_POS},
 };
 
 /*
@@ -969,50 +960,6 @@ impl<F: FieldExt> MPTConfig<F> {
                     let mut offset = 0;
                     let mut pv = ProofVariables::new();
 
-                    let compute_acc_and_mult =
-                        |row: &Vec<u8>, acc: &mut F, mult: &mut F, start: usize, len: usize| {
-                            for i in 0..len {
-                                *acc += F::from(row[start + i] as u64) * *mult;
-                                *mult *= self.acc_r;
-                            }
-                        };
-
-                    let compute_rlc_and_assign =
-                        |region: &mut Region<'_, F>,
-                         row: &Vec<u8>,
-                         pv: &mut ProofVariables<F>,
-                         offset: usize,
-                         s_start: usize, c_start: usize, len_s: usize, len_c: usize| -> Result<(), Error> {
-                            compute_acc_and_mult(
-                                row,
-                                &mut pv.rlc1,
-                                &mut F::one(),
-                                s_start,
-                                len_s,
-                            );
-                            region.assign_advice(
-                                || "assign s_mod_node_hash_rlc".to_string(),
-                                self.s_mod_node_hash_rlc,
-                                offset,
-                                || Ok(pv.rlc1),
-                            )?;
-
-                            compute_acc_and_mult(
-                                row,
-                                &mut pv.rlc2,
-                                &mut F::one(),
-                                c_start,
-                                len_c,
-                            );
-                            region.assign_advice(
-                                || "assign c_mod_node_hash_rlc".to_string(),
-                                self.c_mod_node_hash_rlc,
-                                offset,
-                                || Ok(pv.rlc2),
-                            )?;
-                            Ok(())
-                        };
-
                     // filter out rows that are just to be hashed
                     for (ind, row) in witness.iter().filter(|r| r[r.len() - 1] != 5).enumerate() {
                         if offset > 0 {
@@ -1024,7 +971,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                 pv = ProofVariables::new();
                             }
                         }
-                        
+
                         region.assign_advice(
                             || "not first level",
                             self.not_first_level,
@@ -1034,14 +981,24 @@ impl<F: FieldExt> MPTConfig<F> {
 
                         let l = row.len();
                         let s_root_rlc = bytes_into_rlc(
-                            &row[l - 4 * HASH_WIDTH - COUNTER_WITNESS_LEN - IS_NON_EXISTING_ACCOUNT_POS
-                                ..l - 4 * HASH_WIDTH - COUNTER_WITNESS_LEN - IS_NON_EXISTING_ACCOUNT_POS
+                            &row[l
+                                - 4 * HASH_WIDTH
+                                - COUNTER_WITNESS_LEN
+                                - IS_NON_EXISTING_ACCOUNT_POS
+                                ..l - 4 * HASH_WIDTH
+                                    - COUNTER_WITNESS_LEN
+                                    - IS_NON_EXISTING_ACCOUNT_POS
                                     + HASH_WIDTH],
                             self.acc_r,
                         );
                         let c_root_rlc = bytes_into_rlc(
-                            &row[l - 3 * HASH_WIDTH - COUNTER_WITNESS_LEN - IS_NON_EXISTING_ACCOUNT_POS
-                                ..l - 3 * HASH_WIDTH - COUNTER_WITNESS_LEN - IS_NON_EXISTING_ACCOUNT_POS
+                            &row[l
+                                - 3 * HASH_WIDTH
+                                - COUNTER_WITNESS_LEN
+                                - IS_NON_EXISTING_ACCOUNT_POS
+                                ..l - 3 * HASH_WIDTH
+                                    - COUNTER_WITNESS_LEN
+                                    - IS_NON_EXISTING_ACCOUNT_POS
                                     + HASH_WIDTH],
                             self.acc_r,
                         );
@@ -1359,7 +1316,8 @@ impl<F: FieldExt> MPTConfig<F> {
                                 pv.key_rlc_prev = F::zero();
                                 pv.key_rlc_mult_prev = F::one();
                                 pv.key_rlc_sel = true;
-                                // TODO: check whether all constraints are implemented (extension_node_rlc ...)
+                                // TODO: check whether all constraints are
+                                // implemented (extension_node_rlc ...)
                             } else if row[row.len() - 1] == 13 {
                                 is_leaf_s_value = true;
                             } else if row[row.len() - 1] == 14 {
@@ -1400,62 +1358,6 @@ impl<F: FieldExt> MPTConfig<F> {
                                 is_non_existing_account,
                                 offset,
                             )?;
-
-                            let mut assign_long_short = |region: &mut Region<'_, F>, long: bool| {
-                                let mut is_short = false;
-                                let mut is_long = false;
-                                if long {
-                                    is_long = true;
-                                } else {
-                                    is_short = true;
-                                }
-                                region
-                                    .assign_advice(
-                                        || "assign s_modified_node_rlc".to_string(),
-                                        self.s_mod_node_hash_rlc,
-                                        offset,
-                                        || Ok(F::from(is_long as u64)),
-                                    )
-                                    .ok();
-                                region
-                                    .assign_advice(
-                                        || "assign c_modified_node_rlc".to_string(),
-                                        self.c_mod_node_hash_rlc,
-                                        offset,
-                                        || Ok(F::from(is_short as u64)),
-                                    )
-                                    .ok();
-                            };
-
-                            let compute_key_rlc =
-                                |key_rlc: &mut F, key_rlc_mult: &mut F, start: usize| {
-                                    let even_num_of_nibbles = row[start + 1] == 32;
-                                    // If odd number of nibbles, we have nibble+48 in s_advices[0].
-                                    if !even_num_of_nibbles {
-                                        *key_rlc +=
-                                            F::from((row[start + 1] - 48) as u64) * *key_rlc_mult;
-                                        *key_rlc_mult *= self.acc_r;
-
-                                        let len = row[start] as usize - 128;
-                                        compute_acc_and_mult(
-                                            row,
-                                            key_rlc,
-                                            key_rlc_mult,
-                                            start + 2,
-                                            len - 1, // -1 because one byte was already considered
-                                        );
-                                    } else {
-                                        let len = row[start] as usize - 128;
-                                        compute_acc_and_mult(
-                                            row,
-                                            key_rlc,
-                                            key_rlc_mult,
-                                            start + 2,
-                                            len - 1, /* -1 because the first byte doesn't
-                                                      * contain any key byte (it's just 32) */
-                                        );
-                                    }
-                                };
 
                             offset += 1;
                         }

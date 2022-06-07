@@ -64,27 +64,37 @@ impl<F: FieldExt> BranchRLCInitChip<F> {
             let one = Expression::Constant(F::one());
             constraints.push((
                 "branch init two_rlp_bytes_s boolean",
-                q_enable.clone() * two_rlp_bytes_s.clone() * (one.clone() - two_rlp_bytes_s.clone()),
+                q_enable.clone()
+                    * two_rlp_bytes_s.clone()
+                    * (one.clone() - two_rlp_bytes_s.clone()),
             ));
             constraints.push((
                 "branch init two_rlp_bytes_c boolean",
-                q_enable.clone() * two_rlp_bytes_c.clone() * (one.clone() - two_rlp_bytes_c.clone()),
+                q_enable.clone()
+                    * two_rlp_bytes_c.clone()
+                    * (one.clone() - two_rlp_bytes_c.clone()),
             ));
             constraints.push((
                 "branch init three_rlp_bytes_s boolean",
-                q_enable.clone() * three_rlp_bytes_s.clone() * (one.clone() - three_rlp_bytes_s.clone()),
+                q_enable.clone()
+                    * three_rlp_bytes_s.clone()
+                    * (one.clone() - three_rlp_bytes_s.clone()),
             ));
             constraints.push((
                 "branch init three_rlp_bytes_c boolean",
-                q_enable.clone() * three_rlp_bytes_c.clone() * (one.clone() - three_rlp_bytes_c.clone()),
+                q_enable.clone()
+                    * three_rlp_bytes_c.clone()
+                    * (one.clone() - three_rlp_bytes_c.clone()),
             ));
             constraints.push((
                 "branch init two_rlp_bytes_s + three_rlp_bytes_s = 1",
-                q_enable.clone() * (one.clone() - two_rlp_bytes_s.clone() - three_rlp_bytes_s.clone()),
+                q_enable.clone()
+                    * (one.clone() - two_rlp_bytes_s.clone() - three_rlp_bytes_s.clone()),
             ));
             constraints.push((
                 "branch init two_rlp_bytes_c + three_rlp_bytes_c = 1",
-                q_enable.clone() * (one.clone() - two_rlp_bytes_c.clone() - three_rlp_bytes_c.clone()),
+                q_enable.clone()
+                    * (one.clone() - two_rlp_bytes_c.clone() - three_rlp_bytes_c.clone()),
             ));
 
             let s_rlp1 = meta.query_advice(s_advices[2], Rotation::cur());
