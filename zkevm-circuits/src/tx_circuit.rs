@@ -420,11 +420,11 @@ mod tx_circuit_tests {
             <Secp256k1Affine as CurveAffine>::CurveExt::random(&mut rng).to_affine();
 
         let randomness = F::random(&mut rng);
-        let mut power_of_randomness: Vec<Vec<F>> = (1..POW_RAND_SIZE + 1)
+        let mut instance: Vec<Vec<F>> = (1..POW_RAND_SIZE + 1)
             .map(|exp| vec![randomness.pow(&[exp as u64, 0, 0, 0]); txs.len() * VERIF_HEIGHT])
             .collect();
         // SignVerifyChip -> ECDSAChip -> MainGate instance column
-        power_of_randomness.push(vec![]);
+        instance.push(vec![]);
         let circuit = TxCircuit::<F, MAX_TXS, MAX_CALLDATA> {
             sign_verify: SignVerifyChip {
                 aux_generator,
@@ -436,7 +436,7 @@ mod tx_circuit_tests {
             chain_id,
         };
 
-        let prover = match MockProver::run(k, &circuit, power_of_randomness) {
+        let prover = match MockProver::run(k, &circuit, instance) {
             Ok(prover) => prover,
             Err(e) => panic!("{:#?}", e),
         };

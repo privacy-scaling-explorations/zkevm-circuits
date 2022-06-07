@@ -5,6 +5,7 @@ mod tests {
     use crate::bench_params::DEGREE;
     use ark_std::{end_timer, start_timer};
     use env_logger::Env;
+    use eth_types::{address, geth_types::Transaction, word, Bytes};
     use group::{Curve, Group};
     use halo2_proofs::arithmetic::{BaseExt, CurveAffine, Field};
     use halo2_proofs::plonk::{create_proof, keygen_pk, keygen_vk, verify_proof, SingleVerifier};
@@ -39,14 +40,31 @@ mod tests {
         let aux_generator =
             <Secp256k1Affine as CurveAffine>::CurveExt::random(&mut rng).to_affine();
         let chain_id: u64 = 1337;
-        let txs = Vec::new();
+
+        // Transaction generated with `zkevm-circuits/src/tx_circuit.rs:rand_tx` using
+        // `rng = ChaCha20Rng::seed_from_u64(42)`
+        let txs = vec![Transaction {
+            from: address!("0x5f9b7e36af4ff81688f712fb738bbbc1b7348aae"),
+            to: Some(address!("0x701653d7ae8ddaa5c8cee1ee056849f271827926")),
+            nonce: word!("0x3"),
+            gas_limit: word!("0x7a120"),
+            value: word!("0x3e8"),
+            gas_price: word!("0x4d2"),
+            gas_fee_cap: word!("0x0"),
+            gas_tip_cap: word!("0x0"),
+            call_data: Bytes::from(b"hello"),
+            access_list: None,
+            v: 2710,
+            r: word!("0xaf180d27f90b2b20808bc7670ce0aca862bc2b5fa39c195ab7b1a96225ee14d7"),
+            s: word!("0x61159fa4664b698ea7d518526c96cd94cf4d8adf418000754be106a3a133f866"),
+        }];
 
         let randomness = Fr::random(&mut rng);
-        let mut instances: Vec<Vec<Fr>> = (1..POW_RAND_SIZE + 1)
-            .map(|exp| vec![randomness.pow(&[exp as u64, 0, 0, 0]); txs.len() * VERIF_HEIGHT])
+        let mut instance: Vec<Vec<Fr>> = (1..POW_RAND_SIZE + 1)
+            .map(|exp| vec![randomness.pow(&[exp as u64, 0, 0, 0]); MAX_TXS * VERIF_HEIGHT])
             .collect();
         // SignVerifyChip -> ECDSAChip -> MainGate instance column
-        instances.push(vec![]);
+        instance.push(vec![]);
         let circuit = TxCircuit::<Fr, MAX_TXS, MAX_CALLDATA> {
             sign_verify: SignVerifyChip {
                 aux_generator,
@@ -66,7 +84,8 @@ mod tests {
         let start1 = start_timer!(|| setup_message);
         let general_params: Params<G1Affine> =
             Params::<G1Affine>::unsafe_setup::<Bn256>(DEGREE.try_into().unwrap());
-        let verifier_params: ParamsVerifier<Bn256> = general_params.verifier(DEGREE * 2).unwrap();
+        let verifier_params: ParamsVerifier<Bn256> =
+            general_params.verifier(MAX_TXS * VERIF_HEIGHT).unwrap();
         end_timer!(start1);
 
         // Initialize the proving key
@@ -78,12 +97,12 @@ mod tests {
         // Bench proof generation time
         let proof_message = format!("Tx Proof generation with {} degree", DEGREE);
         let start2 = start_timer!(|| proof_message);
-        let instances_slice: Vec<&[Fr]> = instances.iter().map(|v| &v[..]).collect();
+        let instance_slices: Vec<&[Fr]> = instance.iter().map(|v| &v[..]).collect();
         create_proof(
             &general_params,
             &pk,
             &[circuit],
-            &[&instances_slice[..]],
+            &[&instance_slices[..]],
             rng,
             &mut transcript,
         )
@@ -100,7 +119,7 @@ mod tests {
             &verifier_params,
             pk.get_vk(),
             strategy,
-            &[&instances_slice[..]],
+            &[&instance_slices[..]],
             &mut verifier_transcript,
         )
         .expect("failed to verify bench circuit");
