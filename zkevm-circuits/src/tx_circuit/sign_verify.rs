@@ -1,3 +1,5 @@
+//! Circuit to verify multiple ECDSA secp256k1 signatures.
+
 // Naming notes:
 // - *_be: Big-Endian bytes
 // - *_le: Little-Endian bytes
@@ -45,9 +47,12 @@ pub const VERIF_HEIGHT: usize = 1;
 /// Auxiliary Gadget to verify a that a message hash is signed by the public
 /// key corresponding to an Ethereum Address.
 #[derive(Default, Debug)]
-pub(crate) struct SignVerifyChip<F: FieldExt, const MAX_VERIF: usize> {
+pub struct SignVerifyChip<F: FieldExt, const MAX_VERIF: usize> {
+    /// Aux generator for EccChip
     pub aux_generator: Secp256k1Affine,
+    /// Window size for EccChip
     pub window_size: usize,
+    /// Marker
     pub _marker: PhantomData<F>,
 }
 
@@ -102,8 +107,9 @@ fn copy_integer_bytes_le<F: FieldExt>(
     Ok(())
 }
 
+/// SignVerify Configuration
 #[derive(Debug, Clone)]
-pub struct SignVerifyConfig<F: FieldExt> {
+pub(crate) struct SignVerifyConfig<F: FieldExt> {
     q_enable: Selector,
     pk_hash: [Column<Advice>; 32],
     // When address is 0, we disable the signature verification by using a dummy pk, msg_hash and
@@ -127,7 +133,7 @@ pub struct SignVerifyConfig<F: FieldExt> {
 }
 
 impl<F: FieldExt> SignVerifyConfig<F> {
-    pub fn new(
+    pub(crate) fn new(
         meta: &mut ConstraintSystem<F>,
         power_of_randomness: [Expression<F>; POW_RAND_SIZE],
     ) -> Self {
@@ -259,13 +265,13 @@ impl<F: FieldExt> SignVerifyConfig<F> {
     }
 }
 
-pub struct KeccakAux {
+pub(crate) struct KeccakAux {
     input: [u8; 64],
     output: [u8; 32],
 }
 
 impl<F: FieldExt> SignVerifyConfig<F> {
-    pub fn load_range(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
+    pub(crate) fn load_range(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
         let bit_len_lookup = BIT_LEN_LIMB / NUMBER_OF_LOOKUP_LIMBS;
         let range_chip = RangeChip::<F>::new(self.range_config.clone(), bit_len_lookup);
         range_chip.load_limb_range_table(layouter)?;
@@ -299,7 +305,7 @@ impl<F: FieldExt> SignVerifyConfig<F> {
         Ok(())
     }
 
-    pub fn load_keccak(
+    pub(crate) fn load_keccak(
         &self,
         layouter: &mut impl Layouter<F>,
         auxs: Vec<KeccakAux>,
@@ -335,16 +341,16 @@ impl<F: FieldExt> SignVerifyConfig<F> {
         Ok(())
     }
 
-    pub fn ecc_chip_config(&self) -> EccConfig {
+    pub(crate) fn ecc_chip_config(&self) -> EccConfig {
         EccConfig::new(self.range_config.clone(), self.main_gate_config.clone())
     }
 
-    pub fn integer_chip_config(&self) -> IntegerConfig {
+    pub(crate) fn integer_chip_config(&self) -> IntegerConfig {
         IntegerConfig::new(self.range_config.clone(), self.main_gate_config.clone())
     }
 }
 
-pub struct AssignedECDSA<F: FieldExt> {
+pub(crate) struct AssignedECDSA<F: FieldExt> {
     pk_x_le: [AssignedValue<F>; 32],
     pk_y_le: [AssignedValue<F>; 32],
     msg_hash_le: [AssignedValue<F>; 32],
@@ -627,7 +633,7 @@ impl<F: FieldExt, const MAX_VERIF: usize> SignVerifyChip<F, MAX_VERIF> {
         ))
     }
 
-    pub fn assign(
+    pub(crate) fn assign(
         &self,
         config: &SignVerifyConfig<F>,
         layouter: &mut impl Layouter<F>,
@@ -809,7 +815,7 @@ mod sign_verify_tests {
     }
 
     impl<F: FieldExt> TestCircuitSignVerifyConfig<F> {
-        pub fn new(meta: &mut ConstraintSystem<F>) -> Self {
+        pub(crate) fn new(meta: &mut ConstraintSystem<F>) -> Self {
             // This gate is used just to get the array of expressions from the power of
             // randomness instance column, so that later on we don't need to query
             // columns everywhere, and can pass the power of randomness array
