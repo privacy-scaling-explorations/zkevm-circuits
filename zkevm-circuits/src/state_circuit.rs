@@ -206,7 +206,6 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
                 let padding = (0..padding_length).map(|i| Rw::Start {
                     rw_counter: u32::MAX as usize + i - padding_length + 1,
                 });
-                dbg!(padding.len() + self.rows.len());
 
                 let rows = padding.chain(self.rows.iter().cloned());
                 let prev_rows = once(None).chain(rows.clone().map(Some));
