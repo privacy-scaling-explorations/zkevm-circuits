@@ -526,9 +526,6 @@ pub enum Rw {
         field_tag: TxReceiptFieldTag,
         value: u64,
     },
-    Padding {
-        rw_counter: usize,
-    },
 }
 #[derive(Default, Clone, Copy)]
 pub struct RwRow<F: FieldExt> {
@@ -691,14 +688,13 @@ impl Rw {
             | Self::AccountDestructed { rw_counter, .. }
             | Self::CallContext { rw_counter, .. }
             | Self::TxLog { rw_counter, .. }
-            | Self::TxReceipt { rw_counter, .. }
-            | Self::Padding { rw_counter } => *rw_counter,
+            | Self::TxReceipt { rw_counter, .. } => *rw_counter,
         }
     }
 
     pub fn is_write(&self) -> bool {
         match self {
-            Self::Start { .. } | Self::Padding { .. } => false,
+            Self::Start { .. } => false,
             Self::Memory { is_write, .. }
             | Self::Stack { is_write, .. }
             | Self::AccountStorage { is_write, .. }
@@ -727,7 +723,6 @@ impl Rw {
             Self::CallContext { .. } => RwTableTag::CallContext,
             Self::TxLog { .. } => RwTableTag::TxLog,
             Self::TxReceipt { .. } => RwTableTag::TxReceipt,
-            Self::Padding { .. } => RwTableTag::Padding,
         }
     }
 
@@ -742,10 +737,7 @@ impl Rw {
             Self::CallContext { call_id, .. }
             | Self::Stack { call_id, .. }
             | Self::Memory { call_id, .. } => Some(*call_id),
-            Self::Start { .. }
-            | Self::Account { .. }
-            | Self::AccountDestructed { .. }
-            | Self::Padding { .. } => None,
+            Self::Start { .. } | Self::Account { .. } | Self::AccountDestructed { .. } => None,
         }
     }
 
@@ -776,8 +768,7 @@ impl Rw {
             Self::Start { .. }
             | Self::CallContext { .. }
             | Self::TxRefund { .. }
-            | Self::TxReceipt { .. }
-            | Self::Padding { .. } => None,
+            | Self::TxReceipt { .. } => None,
         }
     }
 
@@ -794,8 +785,7 @@ impl Rw {
             | Self::TxAccessListAccount { .. }
             | Self::TxAccessListAccountStorage { .. }
             | Self::TxRefund { .. }
-            | Self::AccountDestructed { .. }
-            | Self::Padding { .. } => None,
+            | Self::AccountDestructed { .. } => None,
         }
     }
 
@@ -812,14 +802,13 @@ impl Rw {
             | Self::TxAccessListAccount { .. }
             | Self::AccountDestructed { .. }
             | Self::TxLog { .. }
-            | Self::TxReceipt { .. }
-            | Self::Padding { .. } => None,
+            | Self::TxReceipt { .. } => None,
         }
     }
 
     pub fn value_assignment<F: Field>(&self, randomness: F) -> F {
         match self {
-            Self::Start { .. } | Self::Padding { .. } => F::zero(),
+            Self::Start { .. } => F::zero(),
             Self::CallContext {
                 field_tag, value, ..
             } => {
@@ -879,8 +868,7 @@ impl Rw {
             | Self::Memory { .. }
             | Self::CallContext { .. }
             | Self::TxLog { .. }
-            | Self::TxReceipt { .. }
-            | Self::Padding { .. } => None,
+            | Self::TxReceipt { .. } => None,
         }
     }
 
