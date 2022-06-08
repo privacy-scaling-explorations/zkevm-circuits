@@ -56,6 +56,7 @@ pub struct SortKeysConfig {
     id: MpiConfig<u32, N_LIMBS_ID>,
     address: MpiConfig<Address, N_LIMBS_ACCOUNT_ADDRESS>,
     field_tag: Column<Advice>,
+    is_field_tag_unchanged: IsZeroConfig<F>,
     storage_key: RlcConfig<N_BYTES_WORD>,
     rw_counter: MpiConfig<u32, N_LIMBS_RW_COUNTER>,
 }
@@ -117,6 +118,7 @@ impl<F: Field, const N_ROWS: usize> Circuit<F> for StateCircuit<F, N_ROWS> {
         let [is_write, field_tag, value] = [0; 3].map(|_| meta.advice_column());
 
         let tag = BinaryNumberChip::configure(meta, selector);
+       
 
         let id = MpiChip::configure(meta, selector, lookups.u16);
         let address = MpiChip::configure(meta, selector, lookups.u16);

@@ -1,6 +1,6 @@
 use super::{StateCircuit, StateConfig};
 use crate::evm_circuit::{
-    table::{AccountFieldTag, CallContextFieldTag, RwTableTag},
+    table::{AccountFieldTag, CallContextFieldTag, TxLogFieldTag},
     witness::{Rw, RwMap},
 };
 use crate::state_circuit::binary_number::AsBits;
@@ -333,6 +333,160 @@ fn storage_key_rlc() {
     }];
 
     assert_eq!(verify(rows), Ok(()));
+}
+
+#[test]
+fn tx_log_ok() {
+    let rows = vec![
+        Rw::TxLog {
+            rw_counter: 1,
+            is_write: true,
+            tx_id: 1,
+            log_id: 1,
+            field_tag: TxLogFieldTag::Address,
+            index: 0usize,
+            value: U256::one(),
+        },
+        Rw::TxLog {
+            rw_counter: 2,
+            is_write: true,
+            tx_id: 1,
+            log_id: 1,
+            field_tag: TxLogFieldTag::Data,
+            index: 0usize,
+            value: U256::from(3u64),
+        },
+        Rw::TxLog {
+            rw_counter: 3,
+            is_write: true,
+            tx_id: 1,
+            log_id: 1,
+            field_tag: TxLogFieldTag::Data,
+            index: 1usize,
+            value: U256::from(3u64),
+        },
+        Rw::TxLog {
+            rw_counter: 4,
+            is_write: true,
+            tx_id: 1,
+            log_id: 1,
+            field_tag: TxLogFieldTag::Topic,
+            index: 0usize,
+            value: U256::one(),
+        },
+        Rw::TxLog {
+            rw_counter: 5,
+            is_write: true,
+            tx_id: 1,
+            log_id: 1,
+            field_tag: TxLogFieldTag::Topic,
+            index: 1usize,
+            value: U256::from(2u64),
+        },
+        /*  Rw::TxLog {
+         *     rw_counter: 4,
+         *     is_write: true,
+         *     tx_id: 2,
+         *     log_id: 1,
+         *     field_tag: TxLogFieldTag::Address,
+         *     index: 0 as usize,
+         *     value: U256::from(10u64),
+         *  }, */
+    ];
+
+    assert_eq!(verify(rows), Ok(()));
+}
+
+/// negative tests for tx log
+#[test]
+fn tx_log_index_not_increase_by_1() {
+    let rows = vec![
+        Rw::TxLog {
+            rw_counter: 1,
+            is_write: true,
+            tx_id: 1,
+            log_id: 1,
+            field_tag: TxLogFieldTag::Address,
+            index: 0usize,
+            value: U256::one(),
+        },
+        Rw::TxLog {
+            rw_counter: 2,
+            is_write: true,
+            tx_id: 1,
+            log_id: 1,
+            field_tag: TxLogFieldTag::Topic,
+            index: 0usize,
+            value: U256::one(),
+        },
+        Rw::TxLog {
+            rw_counter: 3,
+            is_write: true,
+            tx_id: 1,
+            log_id: 1,
+            field_tag: TxLogFieldTag::Topic,
+            index: 2usize,
+            value: U256::from(2u64),
+        },
+    ];
+
+    //assert_eq!(verify(rows), Ok(()));
+    assert_error_matches(verify(rows), "index = pre_index + 1");
+}
+
+///topic_index in range [0,4)
+#[test]
+fn tx_log_index_out_of_range() {
+    let rows = vec![
+        Rw::TxLog {
+            rw_counter: 1,
+            is_write: true,
+            tx_id: 1,
+            log_id: 1,
+            field_tag: TxLogFieldTag::Address,
+            index: 0usize,
+            value: U256::one(),
+        },
+        Rw::TxLog {
+            rw_counter: 2,
+            is_write: true,
+            tx_id: 1,
+            log_id: 1,
+            field_tag: TxLogFieldTag::Topic,
+            index: 5usize,
+            value: U256::one(),
+        },
+    ];
+
+    //assert_eq!(verify(rows), Ok(()));
+    assert_error_matches(verify(rows), "topic_index in range [0,4)");
+}
+
+/// for address field index is zero
+#[test]
+fn tx_log_address_field_invalid_index() {
+    let rows = vec![
+        Rw::TxLog {
+            rw_counter: 1,
+            is_write: true,
+            tx_id: 1,
+            log_id: 1,
+            field_tag: TxLogFieldTag::Address,
+            index: 1usize,
+            value: U256::one(),
+        },
+        Rw::TxLog {
+            rw_counter: 2,
+            is_write: true,
+            tx_id: 1,
+            log_id: 1,
+            field_tag: TxLogFieldTag::Topic,
+            index: 0usize,
+            value: U256::one(),
+        },
+    ];
+
+    assert_error_matches(verify(rows), "index is zero for address");
 }
 
 #[test]

@@ -22,10 +22,12 @@ pub struct Queries<F: Field> {
     pub is_write: Expression<F>,
     pub tag: Expression<F>,
     pub tag_bits: [Expression<F>; 4],
+    pub prev_tag_bits: [Expression<F>; 4],
     pub id: MpiQueries<F, N_LIMBS_ID>,
     pub is_tag_and_id_unchanged: Expression<F>,
     pub address: MpiQueries<F, N_LIMBS_ACCOUNT_ADDRESS>,
     pub field_tag: Expression<F>,
+    pub is_field_tag_unchanged: Expression<F>,
     pub storage_key: RlcQueries<F, N_BYTES_WORD>,
     pub value: Expression<F>,
     pub lookups: LookupsQueries<F>,
@@ -95,6 +97,9 @@ impl<F: Field> ConstraintBuilder<F> {
         });
         self.condition(q.tag_matches(RwTableTag::CallContext), |cb| {
             cb.build_call_context_constraints(q)
+        });
+        self.condition(q.tag_matches(RwTableTag::TxLog), |cb| {
+            cb.build_tx_log_constraints(q)
         });
     }
 
@@ -234,8 +239,78 @@ impl<F: Field> ConstraintBuilder<F> {
         // TODO: Missing constraints
     }
 
+    fn build_tx_log_constraints(&mut self, q: &Queries<F>) {
+        self.require_equal(
+            "is_write is always true for TxLog",
+            q.is_write.clone(),
+            1.expr(),
+        );
+        self.require_in_set(
+            "field_tag in TxLogFieldTag range",
+            q.field_tag(),
+            set::<F, TxLogFieldTag>(),
+        );
+        // reset log_id when tx_id increases
+        let no_tag_change = 1.expr() - q.tag_change();
+        self.condition(q.id_change() * no_tag_change, |cb| {
+            cb.require_zero(
+                "reset log_id to one when tx_id increases",
+                q.tx_log_id(false) - 1.expr(),
+            );
+            // TODO: first field_tag is Address
+            cb.require_equal(
+                "first field_tag is Address",
+                q.field_tag_matches(TxLogFieldTag::Address),
+                1.expr(),
+            );
+            // tx_id increases by 1
+            cb.require_equal("tx_id increases by 1", q.id_change(), 1.expr());
+        });
+
+        self.condition(q.field_tag_matches(TxLogFieldTag::Address), |cb| {
+            cb.require_zero("index is zero for address ", q.tx_log_index(false))
+        });
+
+        // increase log_id when tag changes to Address if tx id stay same
+        self.condition(
+            q.is_id_unchanged.clone()
+                * q.prev_tag_matches(RwTableTag::TxLog)
+                * q.field_tag_matches(TxLogFieldTag::Address),
+            |cb| cb.require_equal("log_id = pre_log_id + 1", q.tx_log_id(false), 1.expr()),
+        );
+
+        // if tag Topic appear, topic_index in range [0,4),can only increase by one when
+        // tag stays same.
+        self.condition(q.field_tag_matches(TxLogFieldTag::Topic), |cb| {
+            let topic_index = q.tx_log_index(false);
+            cb.require_zero(
+                "topic_index in range [0,4) ",
+                topic_index.clone()
+                    * (1.expr() - topic_index.clone())
+                    * (2.expr() - topic_index.clone())
+                    * (3.expr() - topic_index),
+            )
+        });
+        // constrain index is increasing by 1 when field_tag stay same
+        // let no_field_tag_change= 1.expr() - q.field_tag_change();
+        self.condition(
+            q.prev_tag_matches(RwTableTag::TxLog) * q.is_field_tag_unchanged.clone(),
+            |cb| {
+                cb.require_equal(
+                    "index = pre_index + 1",
+                    q.tx_log_index(false),
+                    q.tx_log_index(true) + 1.expr(),
+                )
+            },
+        );
+    }
+
     fn require_zero(&mut self, name: &'static str, e: Expression<F>) {
         self.constraints.push((name, self.condition.clone() * e));
+    }
+
+    fn require_equal(&mut self, name: &'static str, left: Expression<F>, right: Expression<F>) {
+        self.require_zero(name, left - right)
     }
 
     fn require_boolean(&mut self, name: &'static str, e: Expression<F>) {
@@ -294,11 +369,23 @@ impl<F: Field> Queries<F> {
         self.field_tag.clone()
     }
 
+    fn tag_change(&self) -> Expression<F> {
+        self.tag() - self.prev_tag.clone()
+    }
+
     fn value(&self) -> Expression<F> {
         self.value.clone()
     }
 
     fn tag_matches(&self, tag: RwTableTag) -> Expression<F> {
+        BinaryNumberConfig::<RwTableTag, 4>::value_equals_expr(tag, self.tag_bits.clone())
+    }
+
+    fn prev_tag_matches(&self, tag: RwTableTag) -> Expression<F> {
+        BinaryNumberConfig::<RwTableTag, 4>::value_equals_expr(tag, self.tag_bits.clone())
+    }
+
+    fn field_tag_matches(&self, tag: TxLogFieldTag) -> Expression<F> {
         BinaryNumberConfig::<RwTableTag, 4>::value_equals_expr(tag, self.tag_bits.clone())
     }
 
@@ -313,11 +400,28 @@ impl<F: Field> Queries<F> {
     fn rw_counter_change(&self) -> Expression<F> {
         self.rw_counter.value.clone() - self.rw_counter.value_prev.clone()
     }
+
+    fn tx_log_index(&self, is_pre: bool) -> Expression<F> {
+        if is_pre {
+            from_digits(&self.address.limbs_prev[0..2], (1u64 << 16).expr())
+        } else {
+            from_digits(&self.address.limbs[0..2], (1u64 << 16).expr())
+        }
+    }
+
+    fn tx_log_id(&self, is_pre: bool) -> Expression<F> {
+        if is_pre {
+            from_digits(&self.address.limbs_prev[2..4], (1u64 << 16).expr())
+        } else {
+            from_digits(&self.address.limbs[2..4], (1u64 << 16).expr())
+        }
+    }
 }
 
 fn from_digits<F: Field>(digits: &[Expression<F>], base: Expression<F>) -> Expression<F> {
     digits
         .iter()
+        .rev()
         .fold(Expression::Constant(F::zero()), |result, digit| {
             digit.clone() + result * base.clone()
         })
