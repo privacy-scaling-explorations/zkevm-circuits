@@ -96,7 +96,7 @@ impl<F: Field> StateCircuit<F> {
     /// powers of randomness for instance columns
     pub fn instance(&self) -> Vec<Vec<F>> {
         (1..32)
-            .map(|exp| vec![self.randomness.pow(&[exp, 0, 0, 0]); self.rows.len() + 1])
+            .map(|exp| vec![self.randomness.pow(&[exp, 0, 0, 0]); N_ROWS])
             .collect()
     }
 }
@@ -202,19 +202,13 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
         layouter.assign_region(
             || "rw table",
             |mut region| {
-                let padding_rw_counter_start = 1 + self
-                    .rows
-                    .iter()
-                    .map(Rw::rw_counter)
-                    .max()
-                    .unwrap_or_default();
-                let padding = (self.rows.len()..N_ROWS).map(|i| Rw::Padding {
-                    rw_counter: i + padding_rw_counter_start,
+                let padding_length = N_ROWS - self.rows.len();
+                let padding = (0..padding_length).map(|i| Rw::Start {
+                    rw_counter: u32::MAX as usize + i - padding_length + 1,
                 });
+                dbg!(padding.len() + self.rows.len());
 
-                let rows = once(Rw::Start)
-                    .chain(self.rows.iter().cloned())
-                    .chain(padding);
+                let rows = padding.chain(self.rows.iter().cloned());
                 let prev_rows = once(None).chain(rows.clone().map(Some));
 
                 for (offset, (row, prev_row)) in rows.zip(prev_rows).enumerate() {
@@ -281,9 +275,10 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
                 }
 
                 #[cfg(test)]
-                for ((column, offset), &f) in &self.overrides {
+                for ((column, row_offset), &f) in &self.overrides {
                     let advice_column = column.value(&config);
-                    region.assign_advice(|| "override", advice_column, *offset, || Ok(f))?;
+                    let offset = *row_offset + padding_length;
+                    region.assign_advice(|| "override", advice_column, offset, || Ok(f))?;
                 }
 
                 Ok(())

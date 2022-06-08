@@ -431,7 +431,9 @@ impl RwMap {
 
 #[derive(Clone, Copy, Debug)]
 pub enum Rw {
-    Start,
+    Start {
+        rw_counter: usize,
+    },
     TxAccessListAccount {
         rw_counter: usize,
         is_write: bool,
@@ -678,8 +680,8 @@ impl Rw {
 
     pub fn rw_counter(&self) -> usize {
         match self {
-            Self::Start => 0,
-            Self::Memory { rw_counter, .. }
+            Self::Start { rw_counter }
+            | Self::Memory { rw_counter, .. }
             | Self::Stack { rw_counter, .. }
             | Self::AccountStorage { rw_counter, .. }
             | Self::TxAccessListAccount { rw_counter, .. }
@@ -696,7 +698,7 @@ impl Rw {
 
     pub fn is_write(&self) -> bool {
         match self {
-            Self::Start | Self::Padding { .. } => false,
+            Self::Start { .. } | Self::Padding { .. } => false,
             Self::Memory { is_write, .. }
             | Self::Stack { is_write, .. }
             | Self::AccountStorage { is_write, .. }
@@ -713,7 +715,7 @@ impl Rw {
 
     pub fn tag(&self) -> RwTableTag {
         match self {
-            Self::Start => RwTableTag::Start,
+            Self::Start { .. } => RwTableTag::Start,
             Self::Memory { .. } => RwTableTag::Memory,
             Self::Stack { .. } => RwTableTag::Stack,
             Self::AccountStorage { .. } => RwTableTag::AccountStorage,
@@ -740,7 +742,7 @@ impl Rw {
             Self::CallContext { call_id, .. }
             | Self::Stack { call_id, .. }
             | Self::Memory { call_id, .. } => Some(*call_id),
-            Self::Start
+            Self::Start { .. }
             | Self::Account { .. }
             | Self::AccountDestructed { .. }
             | Self::Padding { .. } => None,
@@ -771,7 +773,7 @@ impl Rw {
             Self::TxLog { log_id, index, .. } => {
                 Some((U256::from(*index as u64) + (U256::from(*log_id) << 8)).to_address())
             }
-            Self::Start
+            Self::Start { .. }
             | Self::CallContext { .. }
             | Self::TxRefund { .. }
             | Self::TxReceipt { .. }
@@ -785,7 +787,7 @@ impl Rw {
             Self::CallContext { field_tag, .. } => Some(*field_tag as u64),
             Self::TxLog { field_tag, .. } => Some(*field_tag as u64),
             Self::TxReceipt { field_tag, .. } => Some(*field_tag as u64),
-            Self::Start
+            Self::Start { .. }
             | Self::Memory { .. }
             | Self::Stack { .. }
             | Self::AccountStorage { .. }
@@ -801,7 +803,7 @@ impl Rw {
         match self {
             Self::AccountStorage { storage_key, .. }
             | Self::TxAccessListAccountStorage { storage_key, .. } => Some(*storage_key),
-            Self::Start
+            Self::Start { .. }
             | Self::CallContext { .. }
             | Self::Stack { .. }
             | Self::Memory { .. }
@@ -817,7 +819,7 @@ impl Rw {
 
     pub fn value_assignment<F: Field>(&self, randomness: F) -> F {
         match self {
-            Self::Start | Self::Padding { .. } => F::zero(),
+            Self::Start { .. } | Self::Padding { .. } => F::zero(),
             Self::CallContext {
                 field_tag, value, ..
             } => {
@@ -872,7 +874,7 @@ impl Rw {
                 is_destructed_prev, ..
             } => Some(F::from(*is_destructed_prev as u64)),
             Self::TxRefund { value_prev, .. } => Some(F::from(*value_prev)),
-            Self::Start
+            Self::Start { .. }
             | Self::Stack { .. }
             | Self::Memory { .. }
             | Self::CallContext { .. }

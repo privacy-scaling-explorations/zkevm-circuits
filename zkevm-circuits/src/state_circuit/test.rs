@@ -1,4 +1,4 @@
-use super::{StateCircuit, StateConfig};
+use super::{StateCircuit, StateConfig, N_ROWS};
 use crate::evm_circuit::{
     table::{AccountFieldTag, CallContextFieldTag, RwTableTag},
     witness::{Rw, RwMap},
@@ -333,7 +333,7 @@ fn address_limb_mismatch() {
         value: U256::zero(),
         value_prev: U256::zero(),
     }];
-    let overrides = HashMap::from([((AdviceColumn::Address, 1), Fr::from(10))]);
+    let overrides = HashMap::from([((AdviceColumn::Address, 0), Fr::from(10))]);
 
     let result = verify_with_overrides(rows, overrides);
 
@@ -351,8 +351,8 @@ fn address_limb_out_of_range() {
         value_prev: U256::zero(),
     }];
     let overrides = HashMap::from([
-        ((AdviceColumn::AddressLimb0, 1), Fr::from(1 << 16)),
-        ((AdviceColumn::AddressLimb1, 1), Fr::zero()),
+        ((AdviceColumn::AddressLimb0, 0), Fr::from(1 << 16)),
+        ((AdviceColumn::AddressLimb1, 0), Fr::zero()),
     ]);
 
     let result = verify_with_overrides(rows, overrides);
@@ -373,9 +373,9 @@ fn storage_key_mismatch() {
         committed_value: U256::from(5),
     }];
     let overrides = HashMap::from([
-        ((AdviceColumn::StorageKey, 1), Fr::from(10)),
+        ((AdviceColumn::StorageKey, 0), Fr::from(10)),
         (
-            (AdviceColumn::StorageKeyChangeInverse, 1),
+            (AdviceColumn::StorageKeyChangeInverse, 0),
             Fr::from(10).invert().unwrap(),
         ),
     ]);
@@ -398,11 +398,11 @@ fn storage_key_byte_out_of_range() {
         committed_value: U256::from(5),
     }];
     let overrides = HashMap::from([
-        ((AdviceColumn::StorageKey, 1), Fr::from(256)),
-        ((AdviceColumn::StorageKeyByte0, 1), Fr::from(256)),
-        ((AdviceColumn::StorageKeyByte1, 1), Fr::zero()),
+        ((AdviceColumn::StorageKey, 0), Fr::from(256)),
+        ((AdviceColumn::StorageKeyByte0, 0), Fr::from(256)),
+        ((AdviceColumn::StorageKeyByte1, 0), Fr::zero()),
         (
-            (AdviceColumn::StorageKeyChangeInverse, 1),
+            (AdviceColumn::StorageKeyChangeInverse, 0),
             Fr::from(256).invert().unwrap(),
         ),
     ]);
@@ -421,7 +421,7 @@ fn is_write_nonbinary() {
         field_tag: CallContextFieldTag::TxId,
         value: U256::one(),
     }];
-    let overrides = HashMap::from([((AdviceColumn::IsWrite, 1), Fr::from(4))]);
+    let overrides = HashMap::from([((AdviceColumn::IsWrite, 0), Fr::from(4))]);
 
     let result = verify_with_overrides(rows, overrides);
 
@@ -635,8 +635,7 @@ fn read_inconsistency() {
 
 #[test]
 fn invalid_start_rw_counter() {
-    // Start row is included automatically.
-    let rows = vec![];
+    let rows = vec![Rw::Start {rw_counter: 10}];
     let overrides = HashMap::from([
         ((AdviceColumn::RwCounter, 0), Fr::from(2)),
         ((AdviceColumn::RwCounterLimb0, 0), Fr::from(2)),
@@ -682,7 +681,7 @@ fn invalid_memory_value() {
         memory_address: 10,
         byte: 0,
     }];
-    let overrides = HashMap::from([((AdviceColumn::Value, 1), Fr::from(256))]);
+    let overrides = HashMap::from([((AdviceColumn::Value, 0), Fr::from(256))]);
 
     let result = verify_with_overrides(rows, overrides);
 
@@ -776,8 +775,9 @@ fn prover(rows: Vec<Rw>, overrides: HashMap<(AdviceColumn, usize), Fr>) -> MockP
 }
 
 fn verify(rows: Vec<Rw>) -> Result<(), Vec<VerifyFailure>> {
-    let n_rows = rows.len();
-    prover(rows, HashMap::new()).verify_at_rows(0..n_rows + 1, 0..n_rows + 1)
+    let used_rows = rows.len();
+    prover(rows, HashMap::new())
+        .verify_at_rows(N_ROWS - used_rows..N_ROWS, N_ROWS - used_rows..N_ROWS)
 }
 
 fn verify_with_overrides(
@@ -787,8 +787,8 @@ fn verify_with_overrides(
     // Sanity check that the original RwTable without overrides is valid.
     assert_eq!(verify(rows.clone()), Ok(()));
 
-    let n_rows = rows.len();
-    prover(rows, overrides).verify_at_rows(0..n_rows + 1, 0..n_rows + 1)
+    let used_rows = rows.len();
+    prover(rows, overrides).verify_at_rows(N_ROWS - used_rows..N_ROWS, N_ROWS - used_rows..N_ROWS)
 }
 
 fn assert_error_matches(result: Result<(), Vec<VerifyFailure>>, name: &str) {

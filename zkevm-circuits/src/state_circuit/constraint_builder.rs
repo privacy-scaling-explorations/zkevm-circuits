@@ -104,7 +104,10 @@ impl<F: Field> ConstraintBuilder<F> {
     }
 
     fn build_start_constraints(&mut self, q: &Queries<F>) {
-        self.require_zero("rw_counter is 0 for Start", q.rw_counter.value.clone());
+        self.require_zero("field_tag is 0 for Stack", q.field_tag());
+        self.require_zero("address is 0 for Stack", q.address.value.clone());
+        self.require_zero("id is 0 for Stack", q.id());
+        self.require_zero("storage_key is 0 for Stack", q.storage_key.encoded.clone());
     }
 
     fn build_memory_constraints(&mut self, q: &Queries<F>) {
