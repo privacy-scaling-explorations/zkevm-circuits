@@ -71,8 +71,33 @@ struct AccountLeaf {
 }
 
 #[derive(Clone, Debug)]
+struct StorageLeafCols {
+    is_leaf_s: Column<Advice>,
+    is_leaf_s_value: Column<Advice>,
+    is_leaf_c: Column<Advice>,
+    is_leaf_c_value: Column<Advice>,
+    /** it is at drifted_pos position in added branch,
+    * note that this row could be omitted when there
+    * is no added branch but then it would open a
+    * vulnerability because the attacker could omit
+    * these row in cases when it's needed too (and
+    * constraints happen in this row) */
+    is_leaf_in_added_branch: Column<Advice>,
+}
+
+#[derive(Default)]
+struct StorageLeaf {
+    is_leaf_s: bool,
+    is_leaf_s_value: bool,
+    is_leaf_c: bool,
+    is_leaf_c_value: bool,
+    is_leaf_in_added_branch: bool,
+}
+
+#[derive(Clone, Debug)]
 pub struct MPTConfig<F> {
     account_leaf: AccountLeafCols,
+    storage_leaf: StorageLeafCols,
     q_enable: Column<Fixed>,
     q_not_first: Column<Fixed>, // not first row
     not_first_level: Column<Advice>,
@@ -81,10 +106,6 @@ pub struct MPTConfig<F> {
     is_branch_init: Column<Advice>,
     is_branch_child: Column<Advice>,
     is_last_branch_child: Column<Advice>,
-    is_leaf_s: Column<Advice>,
-    is_leaf_s_value: Column<Advice>,
-    is_leaf_c: Column<Advice>,
-    is_leaf_c_value: Column<Advice>,
     node_index: Column<Advice>,
     is_modified: Column<Advice>,   // whether this branch node is modified
     modified_node: Column<Advice>, // index of the modified node
@@ -92,12 +113,6 @@ pub struct MPTConfig<F> {
     drifted_pos: Column<Advice>,   /* needed when leaf is turned into branch - first nibble of
                                     * the key stored in a leaf (because the existing leaf will
                                     * jump to this position in added branch) */
-    is_leaf_in_added_branch: Column<Advice>, /* it is at drifted_pos position in added branch,
-                                              * note that this row could be omitted when there
-                                              * is no added branch but then it would open a
-                                              * vulnerability because the attacker could omit
-                                              * these row in cases when it's needed too (and
-                                              * constraints happen in this row) */
     is_extension_node_s: Column<Advice>, /* contains extension node key (s_advices) and hash of
                                           * the branch (c_advices) */
     is_extension_node_c: Column<Advice>,
@@ -286,10 +301,14 @@ impl<F: FieldExt> MPTConfig<F> {
         let is_branch_init = meta.advice_column();
         let is_branch_child = meta.advice_column();
         let is_last_branch_child = meta.advice_column();
-        let is_leaf_s = meta.advice_column();
-        let is_leaf_s_value = meta.advice_column();
-        let is_leaf_c = meta.advice_column();
-        let is_leaf_c_value = meta.advice_column();
+
+        let storage_leaf = StorageLeafCols {
+            is_leaf_s : meta.advice_column(),
+            is_leaf_s_value : meta.advice_column(),
+            is_leaf_c : meta.advice_column(),
+            is_leaf_c_value : meta.advice_column(),
+            is_leaf_in_added_branch : meta.advice_column(),
+        };
 
         let account_leaf = AccountLeafCols {
             is_account_leaf_key_s : meta.advice_column(),
@@ -307,7 +326,6 @@ impl<F: FieldExt> MPTConfig<F> {
 
         let is_at_drifted_pos = meta.advice_column();
         let drifted_pos = meta.advice_column();
-        let is_leaf_in_added_branch = meta.advice_column();
         let is_extension_node_s = meta.advice_column();
         let is_extension_node_c = meta.advice_column();
 
@@ -462,6 +480,7 @@ impl<F: FieldExt> MPTConfig<F> {
 
         MPTConfig {
             account_leaf,
+            storage_leaf,
             q_enable,
             q_not_first,
             not_first_level,
@@ -470,16 +489,11 @@ impl<F: FieldExt> MPTConfig<F> {
             is_branch_init,
             is_branch_child,
             is_last_branch_child,
-            is_leaf_s,
-            is_leaf_s_value,
-            is_leaf_c,
-            is_leaf_c_value,
             node_index,
             is_modified,
             modified_node,
             is_at_drifted_pos,
             drifted_pos,
-            is_leaf_in_added_branch,
             is_extension_node_s,
             is_extension_node_c,
             s_rlp1,
@@ -520,17 +534,13 @@ impl<F: FieldExt> MPTConfig<F> {
         region: &mut Region<'_, F>,
         row: &[u8],
         account_leaf: AccountLeaf,
+        storage_leaf: StorageLeaf,
         is_branch_init: bool,
         is_branch_child: bool,
         is_last_branch_child: bool,
         node_index: u8,
         modified_node: u8,
-        is_leaf_s: bool,
-        is_leaf_s_value: bool,
-        is_leaf_c: bool,
-        is_leaf_c_value: bool,
         drifted_pos: u8,
-        is_leaf_in_added_branch: bool,
         is_extension_node_s: bool,
         is_extension_node_c: bool,
         is_non_existing_account_row: bool,
@@ -671,28 +681,34 @@ impl<F: FieldExt> MPTConfig<F> {
 
         region.assign_advice(
             || "assign is_leaf_s".to_string(),
-            self.is_leaf_s,
+            self.storage_leaf.is_leaf_s,
             offset,
-            || Ok(F::from(is_leaf_s as u64)),
+            || Ok(F::from(storage_leaf.is_leaf_s as u64)),
         )?;
         region.assign_advice(
             || "assign is_leaf_c".to_string(),
-            self.is_leaf_c,
+            self.storage_leaf.is_leaf_c,
             offset,
-            || Ok(F::from(is_leaf_c as u64)),
+            || Ok(F::from(storage_leaf.is_leaf_c as u64)),
         )?;
 
         region.assign_advice(
             || "assign is_leaf_s_value".to_string(),
-            self.is_leaf_s_value,
+            self.storage_leaf.is_leaf_s_value,
             offset,
-            || Ok(F::from(is_leaf_s_value as u64)),
+            || Ok(F::from(storage_leaf.is_leaf_s_value as u64)),
         )?;
         region.assign_advice(
             || "assign is_leaf_c_value".to_string(),
-            self.is_leaf_c_value,
+            self.storage_leaf.is_leaf_c_value,
             offset,
-            || Ok(F::from(is_leaf_c_value as u64)),
+            || Ok(F::from(storage_leaf.is_leaf_c_value as u64)),
+        )?;
+        region.assign_advice(
+            || "assign is leaf in added branch".to_string(),
+            self.storage_leaf.is_leaf_in_added_branch,
+            offset,
+            || Ok(F::from(storage_leaf.is_leaf_in_added_branch as u64)),
         )?;
 
         region.assign_advice(
@@ -737,13 +753,7 @@ impl<F: FieldExt> MPTConfig<F> {
             offset,
             || Ok(F::from(account_leaf.is_account_leaf_in_added_branch as u64)),
         )?;
-
-        region.assign_advice(
-            || "assign is leaf in added branch".to_string(),
-            self.is_leaf_in_added_branch,
-            offset,
-            || Ok(F::from(is_leaf_in_added_branch as u64)),
-        )?;
+ 
         region.assign_advice(
             || "assign is extension node s".to_string(),
             self.is_extension_node_s,
@@ -823,8 +833,23 @@ impl<F: FieldExt> MPTConfig<F> {
         offset: usize,
     ) -> Result<(), Error> {
         let account_leaf = AccountLeaf::default();
+        let storage_leaf = StorageLeaf::default();
+
         self.assign_row(
-            region, row, account_leaf, true, false, false, 0, 0, false, false, false, false, 0, false, false, false, false, offset,
+            region,
+            row,
+            account_leaf,
+            storage_leaf,
+            false,
+            false,
+            false,
+            0,
+            0,
+            0,
+            false,
+            false,
+            false,
+            offset,
         )?;
 
         Ok(())
@@ -847,22 +872,19 @@ impl<F: FieldExt> MPTConfig<F> {
         offset: usize,
     ) -> Result<(), Error> {
         let account_leaf = AccountLeaf::default();
+        let storage_leaf = StorageLeaf::default();
 
         self.assign_row(
             region,
             row,
             account_leaf,
+            storage_leaf,
             false,
             true,
             node_index == 15,
             node_index,
             key,
-            false,
-            false,
-            false,
-            false,
             drifted_pos,
-            false,
             false,
             false,
             false,
@@ -1270,21 +1292,18 @@ impl<F: FieldExt> MPTConfig<F> {
                                 offset,
                                 || Ok(F::one()),
                             )?;
-                            let mut is_leaf_s = false;
-                            let mut is_leaf_s_value = false;
-                            let mut is_leaf_c = false;
-                            let mut is_leaf_c_value = false;
 
                             let mut account_leaf = AccountLeaf::default();
-                            let mut is_leaf_in_added_branch = false;
+                            let mut storage_leaf = StorageLeaf::default();
+
                             let mut is_extension_node_s = false;
                             let mut is_extension_node_c = false;
                             let mut is_non_existing_account = false;
 
                             if row[row.len() - 1] == 2 {
-                                is_leaf_s = true;
+                                storage_leaf.is_leaf_s = true;
                             } else if row[row.len() - 1] == 3 {
-                                is_leaf_c = true;
+                                storage_leaf.is_leaf_c = true;
                             } else if row[row.len() - 1] == 6 {
                                 account_leaf.is_account_leaf_key_s = true;
                             } else if row[row.len() - 1] == 4 {
@@ -1307,11 +1326,11 @@ impl<F: FieldExt> MPTConfig<F> {
                                 // TODO: check whether all constraints are
                                 // implemented (extension_node_rlc ...)
                             } else if row[row.len() - 1] == 13 {
-                                is_leaf_s_value = true;
+                                storage_leaf.is_leaf_s_value = true;
                             } else if row[row.len() - 1] == 14 {
-                                is_leaf_c_value = true;
+                                storage_leaf.is_leaf_c_value = true;
                             } else if row[row.len() - 1] == 15 {
-                                is_leaf_in_added_branch = true;
+                                storage_leaf.is_leaf_in_added_branch = true;
                             } else if row[row.len() - 1] == 16 {
                                 is_extension_node_s = true;
                             } else if row[row.len() - 1] == 17 {
@@ -1324,17 +1343,13 @@ impl<F: FieldExt> MPTConfig<F> {
                                 &mut region,
                                 &row[0..row.len() - 1].to_vec(),
                                 account_leaf,
+                                storage_leaf,
                                 false,
                                 false,
                                 false,
                                 0,
                                 0,
-                                is_leaf_s,
-                                is_leaf_s_value,
-                                is_leaf_c,
-                                is_leaf_c_value,
                                 0,
-                                is_leaf_in_added_branch,
                                 is_extension_node_s,
                                 is_extension_node_c,
                                 is_non_existing_account,
