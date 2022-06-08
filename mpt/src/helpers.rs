@@ -71,11 +71,11 @@ pub fn range_lookups<F: FieldExt>(
 
             let s = meta.query_advice(col, Rotation::cur());
             constraints.push((
-                Expression::Constant(F::from(tag.clone() as u64)),
+                Expression::Constant(F::from(tag as u64)),
                 meta.query_fixed(fixed_table[0], Rotation::cur()),
             ));
             constraints.push((
-                q_enable.clone() * s,
+                q_enable * s,
                 meta.query_fixed(fixed_table[1], Rotation::cur()),
             ));
 
@@ -119,7 +119,7 @@ pub fn key_len_lookup<F: FieldExt>(
             meta.query_fixed(fixed_table[0], Rotation::cur()),
         ));
         constraints.push((
-            q_enable.clone() * s * key_len_rem,
+            q_enable * s * key_len_rem,
             meta.query_fixed(fixed_table[1], Rotation::cur()),
         ));
 
@@ -153,7 +153,7 @@ pub fn mult_diff_lookup<F: FieldExt>(
             meta.query_fixed(fixed_table[1], Rotation::cur()),
         ));
         constraints.push((
-            q_enable.clone() * mult_diff_nonce,
+            q_enable * mult_diff_nonce,
             meta.query_fixed(fixed_table[2], Rotation::cur()),
         ));
 
@@ -166,7 +166,7 @@ pub fn get_bool_constraint<F: FieldExt>(
     expr: Expression<F>,
 ) -> Expression<F> {
     let one = Expression::Constant(F::from(1_u64));
-    q_enable * expr.clone() * (one - expr.clone())
+    q_enable * expr.clone() * (one - expr)
 }
 
 pub fn get_is_extension_node<F: FieldExt>(
@@ -230,8 +230,8 @@ pub fn get_is_extension_node_one_nibble<F: FieldExt>(
 pub(crate) fn bytes_into_rlc<F: FieldExt>(message: &[u8], r: F) -> F {
     let mut rlc = F::zero();
     let mut mult = F::one();
-    for i in 0..message.len() {
-        rlc += F::from(message[i] as u64) * mult;
+    for &m in message.iter() {
+        rlc += F::from(m as u64) * mult;
         mult *= r;
     }
 
@@ -241,8 +241,8 @@ pub(crate) fn bytes_into_rlc<F: FieldExt>(message: &[u8], r: F) -> F {
 pub(crate) fn bytes_expr_into_rlc<F: FieldExt>(message: &[Expression<F>], r: F) -> Expression<F> {
     let mut rlc = Expression::Constant(F::zero());
     let mut mult = F::one();
-    for i in 0..message.len() {
-        rlc = rlc + message[i].clone() * mult;
+    for m in message.iter() {
+        rlc = rlc + m.clone() * mult;
         mult *= r;
     }
 

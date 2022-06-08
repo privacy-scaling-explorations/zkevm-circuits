@@ -94,7 +94,7 @@ impl<F: FieldExt> BranchRLCInitChip<F> {
             constraints.push((
                 "branch init two_rlp_bytes_c + three_rlp_bytes_c = 1",
                 q_enable.clone()
-                    * (one.clone() - two_rlp_bytes_c.clone() - three_rlp_bytes_c.clone()),
+                    * (one - two_rlp_bytes_c.clone() - three_rlp_bytes_c.clone()),
             ));
 
             let s_rlp1 = meta.query_advice(s_advices[2], Rotation::cur());

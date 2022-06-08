@@ -253,7 +253,7 @@ impl<F: FieldExt> MPTConfig<F> {
 
         let one = Expression::Constant(F::one());
         let mut r_table = vec![];
-        let mut r = one.clone();
+        let mut r = one;
         for _ in 0..HASH_WIDTH {
             r = r * acc_r;
             r_table.push(r.clone());
@@ -782,14 +782,7 @@ impl<F: FieldExt> MPTConfig<F> {
 
         // not all columns may be needed
         let get_val = |curr_ind: usize| {
-            let val;
-            if curr_ind >= row.len() {
-                val = 0;
-            } else {
-                val = row[curr_ind];
-            }
-
-            val as u64
+            if curr_ind >= row.len() { 0 } else { row[curr_ind] as u64 }
         };
 
         region.assign_advice(
@@ -820,7 +813,7 @@ impl<F: FieldExt> MPTConfig<F> {
     fn assign_branch_init(
         &self,
         region: &mut Region<'_, F>,
-        row: &Vec<u8>,
+        row: &[u8],
         offset: usize,
     ) -> Result<(), Error> {
         self.assign_row(
@@ -1394,14 +1387,13 @@ impl<F: FieldExt> MPTConfig<F> {
         layouter.assign_region(
             || "keccak table",
             |mut region| {
-                let mut offset = 0;
 
-                for t in to_be_hashed.iter() {
+                for (offset, t) in to_be_hashed.iter().enumerate() {
                     let hash = self.compute_keccak(t);
                     let mut rlc = F::zero();
                     let mut mult = F::one();
 
-                    for (ind, i) in t.iter().enumerate() {
+                    for i in t.iter() {
                         rlc += F::from(*i as u64) * mult;
                         mult *= self.acc_r;
                     }
@@ -1420,8 +1412,6 @@ impl<F: FieldExt> MPTConfig<F> {
                         offset,
                         || Ok(hash_rlc),
                     )?;
-
-                    offset += 1;
                 }
 
                 Ok(())
@@ -1456,7 +1446,7 @@ impl<F: FieldExt> MPTConfig<F> {
                         offset,
                         || Ok(mult),
                     )?;
-                    mult = mult * self.acc_r;
+                    mult *= self.acc_r;
 
                     offset += 1;
                 }
@@ -1531,22 +1521,17 @@ mod tests {
 
     use halo2_proofs::{
         circuit::{Layouter, SimpleFloorPlanner},
-        dev::{MockProver, VerifyFailure},
+        dev::{MockProver},
         plonk::{
-            create_proof, keygen_pk, keygen_vk, verify_proof, Advice, Circuit, Column,
-            ConstraintSystem, Error,
+            Circuit, ConstraintSystem, Error,
         },
-        poly::commitment::Params,
-        transcript::{Blake2bRead, Blake2bWrite, Challenge255},
     };
 
-    use ark_std::{end_timer, rand::SeedableRng, start_timer};
     use pairing::{
         arithmetic::FieldExt,
-        bn256::{Bn256, Fr as Fp},
+        bn256::{Fr as Fp},
     };
-    use rand_xorshift::XorShiftRng;
-    use std::{fs, marker::PhantomData};
+    use std::{marker::PhantomData};
 
     #[test]
     fn test_mpt() {
@@ -1588,23 +1573,68 @@ mod tests {
             }
         }
 
-        // for debugging:
-        let path = "mpt/tests";
-        // let path = "tests";
-        let files = fs::read_dir(path).unwrap();
-        files
-            .filter_map(Result::ok)
-            .filter(|d| {
-                if let Some(e) = d.path().extension() {
-                    e == "json"
-                } else {
-                    false
-                }
-            })
-            .for_each(|f| {
-                let path = f.path();
-                let mut parts = path.to_str().unwrap().split("-");
-                parts.next();
+
+        let list_to_run = [
+            "AddBranchLong.json",
+            "DeleteBranchTwoLevels.json",
+            "Delete.json",
+            "BalanceModCLong.json",
+            "ExtensionDeletedTwoKeyBytesSel1.json",
+            "ExtensionAddedOneKeyByteSel2.json",
+            "ExtensionDeletedOneKeyByteSel1.json",
+            "ExtensionThreeKeyBytesSel2.json",
+            "UpdateOneLevelEvenAddress.json",
+            "ExtensionOneKeyByteSel2.json",
+            "ExtensionTwoKeyBytesSel1.json",
+            "NonceModCLong.json",
+            "ExtensionAddedTwoKeyBytesSel1.json",
+            "FromNilToValue.json",
+            "ExtensionInFirstStorageLevelTwoKeyBytes.json",
+            "ExtensionThreeKeyBytes.json",
+            "NonceModCShort.json",
+            "AccountDeletePlaceholderBranch.json",
+            "AddBranchTwoLevels.json",
+            "DeleteBranch.json",
+            "ExtensionAddedInFirstStorageLevelTwoKeyBytes.json",
+            "UpdateOneLevel1.json",
+            "AccountDeletePlaceholderExtension.json",
+            "LeafAddedToEmptyTrie.json",
+            "AddAccount.json",
+            "UpdateTwoLevels.json",
+            "UpdateOneLevelBigVal.json",
+            "DeleteBranchTwoLevelsLong.json",
+            "ExtensionAddedThreeKeyBytesSel2.json",
+            "ExtensionInFirstStorageLevel.json",
+            "UpdateOneLevel.json",
+            "ImplicitlyCreateAccountWithBalance.json",
+            "ExtensionTwoKeyBytesSel2.json",
+            "UpdateThreeLevels.json",
+            "AddBranchTwoLevelsLong.json",
+            "ExtensionAddedTwoKeyBytesSel2.json",
+            "ExtensionDeletedThreeKeyBytesSel2.json",
+            "AddBranch.json",
+            "AccountAddPlaceholderExtension.json",
+            "UpdateTwoLevelsBigVal.json",
+            "ExtensionAddedInFirstStorageLevelOneKeyByte.json",
+            "AccountAddPlaceholderBranch.json",
+            "ExtensionOneKeyByteSel1.json",
+            "DeleteBranchLong.json",
+            "ImplicitlyCreateAccountWithNonce.json",
+            "DeleteToEmptyTrie.json",
+            "ExtensionAddedOneKeyByteSel1.json",
+            "ExtensionDeletedOneKeyByteSel2.json",
+            "UpdateTwoModifications.json",
+            "ExtensionDeletedTwoKeyBytesSel2.json",
+            "OnlyLeafInStorageProof.json",
+            "DeleteAccount.json",
+            "ExtensionInFirstStorageLevelOneKeyByte.json",
+            "BalanceModCShort.json",
+        ];
+
+        list_to_run
+            .iter().for_each (|path| {
+                let path = format!("mpt/tests/{}", path);
+                println!("{:?}", path);
                 let file = std::fs::File::open(path.clone());
                 let reader = std::io::BufReader::new(file.unwrap());
                 let w: Vec<Vec<u8>> = serde_json::from_reader(reader).unwrap();
@@ -1616,7 +1646,6 @@ mod tests {
                 let mut pub_root = vec![];
                 let acc_r = Fp::one() + Fp::one();
                 for row in w.iter().filter(|r| r[r.len() - 1] != 5) {
-                    let mut pub_root_rlc = Fp::zero();
                     let l = row.len();
                     let pub_root_rlc = bytes_into_rlc(
                         &row[l - HASH_WIDTH - IS_NON_EXISTING_ACCOUNT_POS
@@ -1630,62 +1659,6 @@ mod tests {
                 println!("{:?}", path);
                 let prover = MockProver::<Fp>::run(9, &circuit, vec![pub_root]).unwrap();
                 assert_eq!(prover.verify(), Ok(()));
-
-                /*
-                let degree: u32 = 12;
-
-                let rng = XorShiftRng::from_seed([
-                    0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb,
-                    0x37, 0x32, 0x54, 0x06, 0xbc, 0xe5,
-                ]);
-
-                // Bench setup generation
-                let setup_message =
-                    format!("Setup generation with degree = {}", degree);
-                let start1 = start_timer!(|| setup_message);
-                let general_params = Setup::<Bn256>::new(degree, rng);
-                end_timer!(start1);
-
-                let vk = keygen_vk(&general_params, &circuit).unwrap();
-                let pk = keygen_pk(&general_params, vk, &circuit).unwrap();
-
-                // Prove
-                let mut transcript =
-                    Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
-
-                // Bench proof generation time
-                let proof_message =
-                    format!("MPT Proof generation with 2^{} rows", degree);
-                let start2 = start_timer!(|| proof_message);
-                create_proof(
-                    &general_params,
-                    &pk,
-                    &[circuit],
-                    &[&[]],
-                    &mut transcript,
-                )
-                .unwrap();
-                let proof = transcript.finalize();
-                end_timer!(start2);
-
-                // Verify
-                let verifier_params =
-                    Setup::<Bn256>::verifier_params(&general_params, 0)
-                        .unwrap();
-                let mut verifier_transcript =
-                    Blake2bRead::<_, _, Challenge255<_>>::init(&proof[..]);
-
-                // Bench verification time
-                let start3 = start_timer!(|| "MPT Proof verification");
-                verify_proof(
-                    &verifier_params,
-                    pk.get_vk(),
-                    &[&[]],
-                    &mut verifier_transcript,
-                )
-                .unwrap();
-                end_timer!(start3);
-                */
             });
     }
 }

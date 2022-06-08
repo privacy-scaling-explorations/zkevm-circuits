@@ -96,8 +96,7 @@ impl<F: FieldExt> BranchHashInParentChip<F> {
             let mult = meta.query_advice(acc_mult, Rotation::cur());
             let branch_acc = acc + c128 * mult;
 
-            let mut constraints = vec![];
-            constraints.push((
+            let mut constraints = vec![(
                 not_first_level.clone()
                     * is_last_branch_child.clone()
                     * (one.clone() - is_account_leaf_in_added_branch_prev.clone()) // we don't check this in the first storage level
@@ -105,17 +104,17 @@ impl<F: FieldExt> BranchHashInParentChip<F> {
                     * (one.clone() - is_extension_node.clone())
                     * branch_acc, // TODO: replace with acc once ValueNode is added
                 meta.query_fixed(keccak_table[0], Rotation::cur()),
-            ));
+            )];
             // Any rotation that lands into branch can be used instead of -19.
             let mod_node_hash_rlc_cur = meta.query_advice(mod_node_hash_rlc, Rotation(-19));
             let keccak_table_i = meta.query_fixed(keccak_table[1], Rotation::cur());
             constraints.push((
-                not_first_level.clone()
-                        * is_last_branch_child.clone()
+                not_first_level
+                        * is_last_branch_child
                         * (one.clone()
-                            - is_account_leaf_in_added_branch_prev.clone()) // we don't check this in the first storage level
-                        * (one.clone() - is_branch_placeholder.clone())
-                        * (one.clone() - is_extension_node.clone())
+                            - is_account_leaf_in_added_branch_prev) // we don't check this in the first storage level
+                        * (one.clone() - is_branch_placeholder)
+                        * (one.clone() - is_extension_node)
                         * mod_node_hash_rlc_cur,
                 keccak_table_i,
             ));
