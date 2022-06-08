@@ -75,8 +75,7 @@ impl<F: Field> ExecutionGadget<F> for MulModGadget<F> {
         let zero = cb.query_word();
 
         // 1.  k1 * n + a_reduced  == a
-        let mul =
-            MulAddWordsGadget::construct(cb, k1.clone(), n.clone(), a_reduced.clone(), a.clone());
+        let mul = MulAddWordsGadget::construct(cb, [&k1, &n, &a_reduced, &a]);
 
         // 2.  a_reduced * b + 0 == d * 2^256 + e
         let mul512_left = MulAddWords512Gadget::construct(cb, [&a_reduced, &b, &zero, &d, &e]);
@@ -152,8 +151,8 @@ impl<F: Field> ExecutionGadget<F> for MulModGadget<F> {
         let prod = a_reduced.full_mul(b);
         let mut prod_bytes = [0u8; 64];
         prod.to_little_endian(&mut prod_bytes);
-        let d = U256::from_little_endian(&prod_bytes[..32]);
-        let e = U256::from_little_endian(&prod_bytes[32..]);
+        let d = U256::from_little_endian(&prod_bytes[0..32]);
+        let e = U256::from_little_endian(&prod_bytes[32..64]);
 
         let (r, k2) = if n.is_zero() {
             (a_reduced * b, U256::zero())
