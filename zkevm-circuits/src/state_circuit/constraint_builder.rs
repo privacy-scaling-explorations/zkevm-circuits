@@ -8,7 +8,7 @@ use super::{
 use crate::evm_circuit::{
     param::N_BYTES_WORD,
     table::{AccountFieldTag, RwTableTag},
-    util::{and, not, or},
+    util::{not, or},
 };
 use crate::util::Expr;
 use eth_types::Field;
