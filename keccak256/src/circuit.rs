@@ -2,6 +2,7 @@ use self::padding::PaddingConfig;
 use crate::{
     keccak_arith::Keccak,
     permutation::{
+        circuit::KeccakFConfig,
         mixing::MixingConfig,
         tables::{FromBase9TableConfig, RangeCheckConfig},
     },
@@ -32,15 +33,30 @@ pub enum StateTag {
     End = 3,
 }
 
+/*
+KeccakConfig
+1. Fill lookup rows from other circuits which hold a &mut to the Config (or similar)
+2. Once a hash is added it includes all the constraints that valiodate that the hash is correct.
+
+
+KeccakTable {
+
+}
+keccakt_table.add_hash(&[u8])
+keccak_table.lookup()
+*/
+
 pub struct KeccakConfig<F: Field> {
     table: FromBase9TableConfig<F>,
     round_ctant_b9: Column<Advice>,
     round_ctant_b13: Column<Advice>,
     round_constants_b9: Column<Instance>,
     round_constants_b13: Column<Instance>,
-    mixing_config: MixingConfig<F>,
+    keccak_f_config: KeccakFConfig<F>,
     padding_config: PaddingConfig<F>,
     q_enable: Selector,
+    state: [Column<Advice>; 25],
+    next_inputs: [Column<Advice>; NEXT_INPUTS_WORDS],
     state_tag: Column<Advice>,
     input_len: Column<Advice>,
     input: Column<Advice>,
@@ -73,6 +89,18 @@ impl<F: Field> KeccakConfig<F> {
             round_constants_b13,
         );
 
+        let state = [(); 25].map(|_| meta.advice_column()).map(|col| {
+            meta.enable_equality(col);
+            col
+        });
+
+        let next_inputs = [(); NEXT_INPUTS_WORDS]
+            .map(|_| meta.advice_column())
+            .map(|col| {
+                meta.enable_equality(col);
+                col
+            });
+
         let q_enable = meta.selector();
         let randomness = meta.instance_column();
         let state_tag = meta.advice_column();
@@ -83,6 +111,8 @@ impl<F: Field> KeccakConfig<F> {
         let acc_input = meta.advice_column();
         let output_rlc = meta.advice_column();
         let range_check_136 = RangeCheckConfig::<F, 136>::configure(meta);
+
+        let keccak_f_config = KeccakFConfig::configure(meta, state, next_inputs);
 
         // Lookup to activate the valid Finalize place check
         // `(curr.perm_count * 136 - input_len) in 1~136`
@@ -250,9 +280,11 @@ impl<F: Field> KeccakConfig<F> {
             round_ctant_b13,
             round_constants_b9,
             round_constants_b13,
-            mixing_config,
+            keccak_f_config,
             padding_config,
             q_enable,
+            state,
+            next_inputs,
             state_tag,
             input_len,
             input,
