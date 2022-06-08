@@ -49,7 +49,30 @@ use crate::{
 */
 
 #[derive(Clone, Debug)]
+struct AccountLeafCols {
+    is_account_leaf_key_s: Column<Advice>,
+    is_account_leaf_key_c: Column<Advice>,
+    is_account_leaf_nonce_balance_s: Column<Advice>,
+    is_account_leaf_nonce_balance_c: Column<Advice>,
+    is_account_leaf_storage_codehash_s: Column<Advice>,
+    is_account_leaf_storage_codehash_c: Column<Advice>,
+    is_account_leaf_in_added_branch: Column<Advice>,
+}
+
+#[derive(Default)]
+struct AccountLeaf {
+    is_account_leaf_key_s: bool,
+    is_account_leaf_key_c: bool,
+    is_account_leaf_nonce_balance_s: bool,
+    is_account_leaf_nonce_balance_c: bool,
+    is_account_leaf_storage_codehash_s: bool,
+    is_account_leaf_storage_codehash_c: bool,
+    is_account_leaf_in_added_branch: bool,
+}
+
+#[derive(Clone, Debug)]
 pub struct MPTConfig<F> {
+    account_leaf: AccountLeafCols,
     q_enable: Column<Fixed>,
     q_not_first: Column<Fixed>, // not first row
     not_first_level: Column<Advice>,
@@ -62,13 +85,6 @@ pub struct MPTConfig<F> {
     is_leaf_s_value: Column<Advice>,
     is_leaf_c: Column<Advice>,
     is_leaf_c_value: Column<Advice>,
-    is_account_leaf_key_s: Column<Advice>,
-    is_account_leaf_key_c: Column<Advice>,
-    is_account_leaf_nonce_balance_s: Column<Advice>,
-    is_account_leaf_nonce_balance_c: Column<Advice>,
-    is_account_leaf_storage_codehash_s: Column<Advice>,
-    is_account_leaf_storage_codehash_c: Column<Advice>,
-    is_account_leaf_in_added_branch: Column<Advice>,
     node_index: Column<Advice>,
     is_modified: Column<Advice>,   // whether this branch node is modified
     modified_node: Column<Advice>, // index of the modified node
@@ -275,14 +291,16 @@ impl<F: FieldExt> MPTConfig<F> {
         let is_leaf_c = meta.advice_column();
         let is_leaf_c_value = meta.advice_column();
 
-        let is_account_leaf_key_s = meta.advice_column();
-        let is_account_leaf_key_c = meta.advice_column();
-        let is_account_leaf_nonce_balance_s = meta.advice_column();
-        let is_account_leaf_nonce_balance_c = meta.advice_column();
-        let is_account_leaf_storage_codehash_s = meta.advice_column();
-        let is_account_leaf_storage_codehash_c = meta.advice_column();
-        let is_account_leaf_in_added_branch = meta.advice_column();
-
+        let account_leaf = AccountLeafCols {
+            is_account_leaf_key_s : meta.advice_column(),
+            is_account_leaf_key_c : meta.advice_column(),
+            is_account_leaf_nonce_balance_s : meta.advice_column(),
+            is_account_leaf_nonce_balance_c : meta.advice_column(),
+            is_account_leaf_storage_codehash_s : meta.advice_column(),
+            is_account_leaf_storage_codehash_c : meta.advice_column(),
+            is_account_leaf_in_added_branch : meta.advice_column(),
+        };
+        
         let node_index = meta.advice_column();
         let is_modified = meta.advice_column();
         let modified_node = meta.advice_column();
@@ -371,7 +389,7 @@ impl<F: FieldExt> MPTConfig<F> {
             inter_start_root,
             not_first_level,
             q_not_first,
-            is_account_leaf_in_added_branch,
+            account_leaf.is_account_leaf_in_added_branch,
             is_last_branch_child,
             s_advices[IS_BRANCH_S_PLACEHOLDER_POS - LAYOUT_OFFSET],
             s_advices,
@@ -386,7 +404,7 @@ impl<F: FieldExt> MPTConfig<F> {
             inter_final_root,
             not_first_level,
             q_not_first,
-            is_account_leaf_in_added_branch,
+            account_leaf.is_account_leaf_in_added_branch,
             is_last_branch_child,
             s_advices[IS_BRANCH_C_PLACEHOLDER_POS - LAYOUT_OFFSET],
             s_advices,
@@ -443,6 +461,7 @@ impl<F: FieldExt> MPTConfig<F> {
         );
 
         MPTConfig {
+            account_leaf,
             q_enable,
             q_not_first,
             not_first_level,
@@ -455,13 +474,6 @@ impl<F: FieldExt> MPTConfig<F> {
             is_leaf_s_value,
             is_leaf_c,
             is_leaf_c_value,
-            is_account_leaf_key_s,
-            is_account_leaf_key_c,
-            is_account_leaf_nonce_balance_s,
-            is_account_leaf_nonce_balance_c,
-            is_account_leaf_storage_codehash_s,
-            is_account_leaf_storage_codehash_c,
-            is_account_leaf_in_added_branch,
             node_index,
             is_modified,
             modified_node,
@@ -507,6 +519,7 @@ impl<F: FieldExt> MPTConfig<F> {
         &self,
         region: &mut Region<'_, F>,
         row: &[u8],
+        account_leaf: AccountLeaf,
         is_branch_init: bool,
         is_branch_child: bool,
         is_last_branch_child: bool,
@@ -516,13 +529,6 @@ impl<F: FieldExt> MPTConfig<F> {
         is_leaf_s_value: bool,
         is_leaf_c: bool,
         is_leaf_c_value: bool,
-        is_account_leaf_key_s: bool,
-        is_account_leaf_key_c: bool,
-        is_account_leaf_nonce_balance_s: bool,
-        is_account_leaf_nonce_balance_c: bool,
-        is_account_leaf_storage_codehash_s: bool,
-        is_account_leaf_storage_codehash_c: bool,
-        is_account_leaf_in_added_branch: bool,
         drifted_pos: u8,
         is_leaf_in_added_branch: bool,
         is_extension_node_s: bool,
@@ -691,45 +697,45 @@ impl<F: FieldExt> MPTConfig<F> {
 
         region.assign_advice(
             || "assign is account leaf key s".to_string(),
-            self.is_account_leaf_key_s,
+            self.account_leaf.is_account_leaf_key_s,
             offset,
-            || Ok(F::from(is_account_leaf_key_s as u64)),
+            || Ok(F::from(account_leaf.is_account_leaf_key_s as u64)),
         )?;
         region.assign_advice(
             || "assign is account leaf key c".to_string(),
-            self.is_account_leaf_key_c,
+            self.account_leaf.is_account_leaf_key_c,
             offset,
-            || Ok(F::from(is_account_leaf_key_c as u64)),
+            || Ok(F::from(account_leaf.is_account_leaf_key_c as u64)),
         )?;
         region.assign_advice(
             || "assign is account leaf nonce balance s".to_string(),
-            self.is_account_leaf_nonce_balance_s,
+            self.account_leaf.is_account_leaf_nonce_balance_s,
             offset,
-            || Ok(F::from(is_account_leaf_nonce_balance_s as u64)),
+            || Ok(F::from(account_leaf.is_account_leaf_nonce_balance_s as u64)),
         )?;
         region.assign_advice(
             || "assign is account leaf nonce balance c".to_string(),
-            self.is_account_leaf_nonce_balance_c,
+            self.account_leaf.is_account_leaf_nonce_balance_c,
             offset,
-            || Ok(F::from(is_account_leaf_nonce_balance_c as u64)),
+            || Ok(F::from(account_leaf.is_account_leaf_nonce_balance_c as u64)),
         )?;
         region.assign_advice(
             || "assign is account leaf storage codehash s".to_string(),
-            self.is_account_leaf_storage_codehash_s,
+            self.account_leaf.is_account_leaf_storage_codehash_s,
             offset,
-            || Ok(F::from(is_account_leaf_storage_codehash_s as u64)),
+            || Ok(F::from(account_leaf.is_account_leaf_storage_codehash_s as u64)),
         )?;
         region.assign_advice(
             || "assign is account leaf storage codehash c".to_string(),
-            self.is_account_leaf_storage_codehash_c,
+            self.account_leaf.is_account_leaf_storage_codehash_c,
             offset,
-            || Ok(F::from(is_account_leaf_storage_codehash_c as u64)),
+            || Ok(F::from(account_leaf.is_account_leaf_storage_codehash_c as u64)),
         )?;
         region.assign_advice(
             || "assign is account leaf in added branch".to_string(),
-            self.is_account_leaf_in_added_branch,
+            self.account_leaf.is_account_leaf_in_added_branch,
             offset,
-            || Ok(F::from(is_account_leaf_in_added_branch as u64)),
+            || Ok(F::from(account_leaf.is_account_leaf_in_added_branch as u64)),
         )?;
 
         region.assign_advice(
@@ -816,9 +822,9 @@ impl<F: FieldExt> MPTConfig<F> {
         row: &[u8],
         offset: usize,
     ) -> Result<(), Error> {
+        let account_leaf = AccountLeaf::default();
         self.assign_row(
-            region, row, true, false, false, 0, 0, false, false, false, false, false, false, false,
-            false, false, false, false, 0, false, false, false, false, offset,
+            region, row, account_leaf, true, false, false, 0, 0, false, false, false, false, 0, false, false, false, false, offset,
         )?;
 
         Ok(())
@@ -840,21 +846,17 @@ impl<F: FieldExt> MPTConfig<F> {
         c_rlp1: i32,
         offset: usize,
     ) -> Result<(), Error> {
+        let account_leaf = AccountLeaf::default();
+
         self.assign_row(
             region,
             row,
+            account_leaf,
             false,
             true,
             node_index == 15,
             node_index,
             key,
-            false,
-            false,
-            false,
-            false,
-            false,
-            false,
-            false,
             false,
             false,
             false,
@@ -1273,14 +1275,7 @@ impl<F: FieldExt> MPTConfig<F> {
                             let mut is_leaf_c = false;
                             let mut is_leaf_c_value = false;
 
-                            let mut is_account_leaf_key_s = false;
-                            let mut is_account_leaf_key_c = false;
-                            let mut is_account_leaf_nonce_balance_s = false;
-                            let mut is_account_leaf_nonce_balance_c = false;
-                            let mut is_account_leaf_storage_codehash_s = false;
-                            let mut is_account_leaf_storage_codehash_c = false;
-                            let mut is_account_leaf_in_added_branch = false;
-
+                            let mut account_leaf = AccountLeaf::default();
                             let mut is_leaf_in_added_branch = false;
                             let mut is_extension_node_s = false;
                             let mut is_extension_node_c = false;
@@ -1291,19 +1286,19 @@ impl<F: FieldExt> MPTConfig<F> {
                             } else if row[row.len() - 1] == 3 {
                                 is_leaf_c = true;
                             } else if row[row.len() - 1] == 6 {
-                                is_account_leaf_key_s = true;
+                                account_leaf.is_account_leaf_key_s = true;
                             } else if row[row.len() - 1] == 4 {
-                                is_account_leaf_key_c = true;
+                                account_leaf.is_account_leaf_key_c = true;
                             } else if row[row.len() - 1] == 7 {
-                                is_account_leaf_nonce_balance_s = true;
+                                account_leaf.is_account_leaf_nonce_balance_s = true;
                             } else if row[row.len() - 1] == 8 {
-                                is_account_leaf_nonce_balance_c = true;
+                                account_leaf.is_account_leaf_nonce_balance_c = true;
                             } else if row[row.len() - 1] == 9 {
-                                is_account_leaf_storage_codehash_s = true;
+                                account_leaf.is_account_leaf_storage_codehash_s = true;
                             } else if row[row.len() - 1] == 11 {
-                                is_account_leaf_storage_codehash_c = true;
+                                account_leaf.is_account_leaf_storage_codehash_c = true;
                             } else if row[row.len() - 1] == 10 {
-                                is_account_leaf_in_added_branch = true;
+                                account_leaf.is_account_leaf_in_added_branch = true;
                                 pv.key_rlc = F::zero(); // account address until here, storage key from here on
                                 pv.key_rlc_mult = F::one();
                                 pv.key_rlc_prev = F::zero();
@@ -1328,6 +1323,7 @@ impl<F: FieldExt> MPTConfig<F> {
                             self.assign_row(
                                 &mut region,
                                 &row[0..row.len() - 1].to_vec(),
+                                account_leaf,
                                 false,
                                 false,
                                 false,
@@ -1337,13 +1333,6 @@ impl<F: FieldExt> MPTConfig<F> {
                                 is_leaf_s_value,
                                 is_leaf_c,
                                 is_leaf_c_value,
-                                is_account_leaf_key_s,
-                                is_account_leaf_key_c,
-                                is_account_leaf_nonce_balance_s,
-                                is_account_leaf_nonce_balance_c,
-                                is_account_leaf_storage_codehash_s,
-                                is_account_leaf_storage_codehash_c,
-                                is_account_leaf_in_added_branch,
                                 0,
                                 is_leaf_in_added_branch,
                                 is_extension_node_s,
