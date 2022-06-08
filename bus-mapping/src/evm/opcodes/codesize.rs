@@ -53,12 +53,21 @@ mod codesize_tests {
         operation::{StackOp, RW},
     };
 
-    #[test]
-    fn codesize_opcode_impl() {
-        let code = bytecode! {
+    fn test_ok(large: bool) {
+        let mut code = bytecode! {};
+        let mut st_addr = 1023;
+        if large {
+            for _ in 0..128 {
+                code.push(1, Word::from(0));
+            }
+            st_addr -= 128;
+        }
+        let tail = bytecode! {
             CODESIZE
             STOP
         };
+        code.append(&tail);
+        let codesize = code.to_vec().len();
 
         let block: GethData = TestContext::<2, 1>::new(
             None,
@@ -86,7 +95,13 @@ mod codesize_tests {
         assert_eq!(op.rw(), RW::WRITE);
         assert_eq!(
             op.op(),
-            &StackOp::new(1, StackAddress::from(1023), Word::from(2))
+            &StackOp::new(1, StackAddress::from(st_addr), Word::from(codesize))
         );
+    }
+
+    #[test]
+    fn codesize_opcode_impl() {
+        test_ok(false);
+        test_ok(true);
     }
 }
