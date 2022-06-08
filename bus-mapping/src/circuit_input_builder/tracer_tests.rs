@@ -47,11 +47,18 @@ impl CircuitInputBuilderTx {
             false,
         )
         .unwrap();
+
+        let prev_log_id = if tx.is_steps_empty() {
+            0
+        } else {
+            tx.last_step().log_id
+        };
+
         Self {
             builder,
             tx,
             tx_ctx,
-            step: ExecStep::new(geth_step, 0, RWCounter::new(), 0),
+            step: ExecStep::new(geth_step, 0, RWCounter::new(), 0, prev_log_id),
         }
     }
 
