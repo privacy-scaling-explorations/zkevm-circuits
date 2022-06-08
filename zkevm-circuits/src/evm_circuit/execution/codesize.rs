@@ -33,7 +33,7 @@ impl<F: Field> ExecutionGadget<F> for CodesizeGadget<F> {
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
-        let codesize_bytes = array_init(|_| cb.query_cell());
+        let codesize_bytes = array_init(|_| cb.query_byte());
 
         let code_hash = cb.curr.state.code_hash.clone();
         let codesize = cb.bytecode_length(code_hash.expr());
