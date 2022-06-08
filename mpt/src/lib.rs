@@ -2,6 +2,7 @@ pub mod account_leaf_key;
 pub mod account_leaf_key_in_added_branch;
 pub mod account_leaf_nonce_balance;
 pub mod account_leaf_storage_codehash;
+pub mod account_non_existing;
 pub mod branch;
 pub mod branch_hash_in_parent;
 pub mod branch_key;

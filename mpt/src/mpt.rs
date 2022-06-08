@@ -32,7 +32,7 @@ use crate::{
         LAYOUT_OFFSET, NOT_FIRST_LEVEL_POS, IS_ACCOUNT_DELETE_MOD_POS, IS_NON_EXISTING_ACCOUNT_POS,
     },
     roots::RootsChip,
-    storage_root_in_account_leaf::StorageRootChip,
+    storage_root_in_account_leaf::StorageRootChip, account_non_existing::AccountNonExistingChip,
 };
 use crate::{branch_key::BranchKeyChip, param::WITNESS_ROW_WIDTH};
 use crate::{
@@ -916,6 +916,7 @@ impl<F: FieldExt> MPTConfig<F> {
             address_rlc,
             sel2,
             is_account_delete_mod,
+            is_non_existing_account_proof,
             true,
         );
 
@@ -946,7 +947,31 @@ impl<F: FieldExt> MPTConfig<F> {
             address_rlc,
             sel2,
             is_account_delete_mod,
+            is_non_existing_account_proof,
             false,
+        );
+
+        AccountNonExistingChip::<F>::configure(
+            meta,
+            |meta| {
+                let q_enable = meta.query_fixed(q_enable, Rotation::cur());
+                let is_account_non_existing_row =
+                    meta.query_advice(is_non_existing_account_row, Rotation::cur());
+                let is_account_non_existing_proof =
+                    meta.query_advice(is_non_existing_account_proof, Rotation::cur());
+
+                q_enable * is_account_non_existing_row * is_account_non_existing_proof
+            },
+            not_first_level,
+            s_rlp2,
+            c_rlp1,
+            c_rlp2,
+            s_advices,
+            key_rlc,
+            key_rlc_mult,
+            r_table.clone(),
+            fixed_table.clone(),
+            address_rlc,
         );
 
         AccountLeafNonceBalanceChip::<F>::configure(
@@ -1601,7 +1626,7 @@ impl<F: FieldExt> MPTConfig<F> {
                          row: &Vec<u8>,
                          pv: &mut ProofVariables<F>,
                          offset: usize,
-                         s_start: usize, c_start: usize, len_s: usize, len_c: usize| {
+                         s_start: usize, c_start: usize, len_s: usize, len_c: usize| -> Result<(), Error> {
                             compute_acc_and_mult(
                                 row,
                                 &mut pv.rlc1,
@@ -1614,7 +1639,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                 self.s_mod_node_hash_rlc,
                                 offset,
                                 || Ok(pv.rlc1),
-                            );
+                            )?;
 
                             compute_acc_and_mult(
                                 row,
@@ -1628,7 +1653,9 @@ impl<F: FieldExt> MPTConfig<F> {
                                 self.c_mod_node_hash_rlc,
                                 offset,
                                 || Ok(pv.rlc2),
-                            );
+                            )?;
+
+                            Ok(())
                         };
 
                     // filter out rows that are just to be hashed
@@ -1718,7 +1745,7 @@ impl<F: FieldExt> MPTConfig<F> {
                             || "counter",
                             self.counter,
                             offset,
-                            || Ok(F::from(counter_u32.into())),
+                            || Ok(F::from(counter_u32 as u64)),
                         )?;
 
                         region.assign_advice(
@@ -2617,16 +2644,6 @@ impl<F: FieldExt> MPTConfig<F> {
                                 // (key_rlc_prev) and acc_c_mult
                                 // (key_rlc_mult_prev).
 
-                                // TODO
-                                let partial_address_rlc = bytes_into_rlc(
-                                    &row[l - 2 * HASH_WIDTH - COUNTER_WITNESS_LEN - IS_NON_EXISTING_ACCOUNT_POS
-                                        ..l - 2 * HASH_WIDTH
-                                            - COUNTER_WITNESS_LEN
-                                            - IS_NON_EXISTING_ACCOUNT_POS
-                                            + key_len],
-                                    self.acc_r,
-                                );
-
                                 if row[row.len() - 1] == 6 {
                                     pv.acc_account_s = acc;
                                     pv.acc_mult_account_s = acc_mult
@@ -2721,13 +2738,13 @@ impl<F: FieldExt> MPTConfig<F> {
                                 // Note: Below, it first computes and assigns the nonce RLC and balance RLC without
                                 // RLP specific byte (there is a RLP specific byte when nonce/balance RLP length > 1).
                                 if nonce_len == 1 && balance_len == 1 {
-                                    compute_rlc_and_assign(&mut region, row, &mut pv, offset, S_START, C_START, HASH_WIDTH, HASH_WIDTH);
+                                    compute_rlc_and_assign(&mut region, row, &mut pv, offset, S_START, C_START, HASH_WIDTH, HASH_WIDTH)?;
                                 } else if nonce_len > 1 && balance_len == 1 {
-                                    compute_rlc_and_assign(&mut region, row, &mut pv, offset, S_START+1, C_START, HASH_WIDTH-1, HASH_WIDTH);
+                                    compute_rlc_and_assign(&mut region, row, &mut pv, offset, S_START+1, C_START, HASH_WIDTH-1, HASH_WIDTH)?;
                                 } else if nonce_len == 1 && balance_len > 1 {
-                                    compute_rlc_and_assign(&mut region, row, &mut pv, offset, S_START, C_START+1, HASH_WIDTH, HASH_WIDTH-1);
+                                    compute_rlc_and_assign(&mut region, row, &mut pv, offset, S_START, C_START+1, HASH_WIDTH, HASH_WIDTH-1)?;
                                 } else if nonce_len > 1 && balance_len > 1 {
-                                    compute_rlc_and_assign(&mut region, row, &mut pv, offset, S_START+1, C_START+1, HASH_WIDTH-1, HASH_WIDTH-1);
+                                    compute_rlc_and_assign(&mut region, row, &mut pv, offset, S_START+1, C_START+1, HASH_WIDTH-1, HASH_WIDTH-1)?;
                                 }
                                 if row[row.len() - 1] == 7 {
                                     pv.nonce_value_s = pv.rlc1;
@@ -3041,8 +3058,19 @@ impl<F: FieldExt> MPTConfig<F> {
                                     F::zero(),
                                     offset,
                                 )?;
-                            } else if row[row.len() - 1] == 18 {
-                                // TODO
+                            } else if row[row.len() - 1] == 18 { 
+                                let key_len = witness[offset-1][2] as usize - 128;
+                                let is_long = witness[offset-1][3] as usize == 32;
+    
+                                let partial_address_rlc = bytes_into_rlc(
+                                    &row[l - 2 * HASH_WIDTH - COUNTER_WITNESS_LEN - IS_NON_EXISTING_ACCOUNT_POS
+                                        ..l - 2 * HASH_WIDTH
+                                            - COUNTER_WITNESS_LEN
+                                            - IS_NON_EXISTING_ACCOUNT_POS
+                                            + key_len],
+                                    self.acc_r,
+                                );
+
                             }
 
                             offset += 1;

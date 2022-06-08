@@ -262,7 +262,7 @@ impl<F: FieldExt> LeafValueChip<F> {
                     q_enable.clone()
                         * sel.clone()
                         * is_leaf_without_branch.clone()
-                        * (s.clone() - Expression::Constant(F::from(empty_trie_hash[ind].into()))),
+                        * (s.clone() - Expression::Constant(F::from(empty_trie_hash[ind] as u64))),
                 ));
             }
 

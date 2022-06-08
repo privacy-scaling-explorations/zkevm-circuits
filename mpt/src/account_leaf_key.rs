@@ -46,6 +46,7 @@ impl<F: FieldExt> AccountLeafKeyChip<F> {
         address_rlc: Column<Advice>,
         sel2: Column<Advice>,
         is_account_delete_mod: Column<Advice>,
+        is_account_non_existing_proof: Column<Advice>,
         is_s: bool,
     ) -> AccountLeafKeyConfig {
         let config = AccountLeafKeyConfig {};
@@ -144,6 +145,9 @@ impl<F: FieldExt> AccountLeafKeyChip<F> {
 
                 let is_leaf_in_first_level =
                     one.clone() - meta.query_advice(not_first_level, Rotation::cur());
+                    
+                let is_non_existing_account_proof =
+                    meta.query_advice(is_account_non_existing_proof, Rotation::cur());
 
                 let key_rlc_acc_start =
                     meta.query_advice(key_rlc, Rotation(rot_into_first_branch_child));
@@ -210,6 +214,7 @@ impl<F: FieldExt> AccountLeafKeyChip<F> {
                     q_enable
                         * (one.clone() - is_branch_placeholder.clone())
                         * (one.clone() - is_leaf_in_first_level.clone())
+                        * (one.clone() - is_non_existing_account_proof.clone())
                         * (key_rlc.clone() - address_rlc.clone()),
                 ));
 
