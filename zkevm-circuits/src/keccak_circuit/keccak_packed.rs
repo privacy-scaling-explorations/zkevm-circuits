@@ -96,7 +96,6 @@ fn get_num_bits_per_rho_pi_lookup() -> usize {
 
 fn get_num_bits_per_base_chi_lookup() -> usize {
     get_num_bits_per_lookup(CHI_BASE_LOOKUP_RANGE)
-    //get_num_bits_per_lookup(CHI_EXT_LOOKUP_RANGE)
 }
 
 fn get_num_bits_per_ext_chi_lookup() -> usize {
@@ -307,13 +306,13 @@ fn get_rotate_count(count: usize, part_size: usize) -> usize {
 
 fn rotate<F: Field>(parts: Vec<Part<F>>, count: usize, part_size: usize) -> Vec<Part<F>> {
     let mut rotated_parts = parts.clone();
-    rotated_parts.rotate_left(get_rotate_count(count, part_size));
+    rotated_parts.rotate_right(get_rotate_count(count, part_size));
     rotated_parts
 }
 
 fn rotate_value(parts: Vec<PartValue>, count: usize, part_size: usize) -> Vec<PartValue> {
     let mut rotated_parts = parts.clone();
-    rotated_parts.rotate_left(get_rotate_count(count, part_size));
+    rotated_parts.rotate_right(get_rotate_count(count, part_size));
     rotated_parts
 }
 
@@ -508,24 +507,30 @@ impl<F: Field> KeccakPackedConfig<F> {
         let mut lookup_counter = 0;
         let part_size = get_num_bits_per_rho_pi_lookup();
         let mut ob = vec![vec![0u64.expr(); 5]; 5];
+        let mut ob_parts = vec![vec![Vec::new(); 5]; 5];
         for i in 0..5 {
             for j in 0..5 {
-                let b_fat = split(
-                    meta,
-                    &mut cell_values,
-                    &mut cb,
-                    b[i][j].clone(),
+                let b_fat = rotate(
+                    split(
+                        meta,
+                        &mut cell_values,
+                        &mut cb,
+                        b[i][j].clone(),
+                        RHOM[i][j],
+                        part_size,
+                    ),
                     RHOM[i][j],
-                    part_size,
+                    part_size
                 );
-                ob[i][j] = decode(transform(
+                ob_parts[j][(2*i+3*j)%5] = transform(
                     "rho/pi",
                     meta,
                     &mut cell_values,
                     &mut lookup_counter,
                     b_fat.clone(),
                     normalize_3,
-                ));
+                );
+                ob[j][(2*i+3*j)%5] = decode(ob_parts[j][(2*i+3*j)%5].clone());
             }
         }
         b = ob.clone();
@@ -539,6 +544,7 @@ impl<F: Field> KeccakPackedConfig<F> {
         let part_size_base = get_num_bits_per_base_chi_lookup();
         let part_size_ext = get_num_bits_per_ext_chi_lookup();
         let mut ob = vec![vec![0u64.expr(); 5]; 5];
+        let mut num_parts = 0;
         for i in 0..5 {
             for j in 0..5 {
                 if i == 0 && j == 0 {
@@ -547,6 +553,7 @@ impl<F: Field> KeccakPackedConfig<F> {
                         - b[(i + 1) % 5][j].clone()
                         - 2.expr() * round_cst_expr.clone();
                     let fat = split(meta, &mut cell_values, &mut cb, input, 0, part_size_ext);
+                    num_parts += fat.len();
                     ob[i][j] = decode(transform(
                         "chi ext",
                         meta,
@@ -561,6 +568,7 @@ impl<F: Field> KeccakPackedConfig<F> {
                         - 2.expr() * b[i][j].clone()
                         - b[(i + 2) % 5][j].clone();
                     let fat = split(meta, &mut cell_values, &mut cb, input, 0, part_size_base);
+                    num_parts += fat.len();
                     ob[i][j] = decode(transform(
                         "chi base",
                         meta,
@@ -577,6 +585,7 @@ impl<F: Field> KeccakPackedConfig<F> {
         println!("- Post chi:");
         println!("Lookups: {}", lookup_counter);
         println!("Columns: {}", cell_values.len());
+        println!("num_parts: {}", num_parts);
         total_lookup_counter += lookup_counter;
 
         meta.create_gate("round", |meta| {
@@ -951,8 +960,8 @@ impl<F: Field> KeccakPackedConfig<F> {
 
 fn get_absorb_positions() -> Vec<(usize, usize)> {
     let mut absorb_positions = Vec::new();
-    for i in 0..5 {
-        for j in 0..5 {
+    for j in 0..5 {
+        for i in 0..5 {
             if i + j * 5 < 17 {
                 absorb_positions.push((i, j));
             }
@@ -964,7 +973,7 @@ fn get_absorb_positions() -> Vec<(usize, usize)> {
 fn keccak<F: Field>(bytes: Vec<u8>) -> Vec<KeccakRow<F>> {
     let mut rows: Vec<KeccakRow<F>> = Vec::new();
 
-    let mut bits = to_bits(&bytes);
+    let mut bits = /*to_bits(&bytes)*/bytes.clone();
     let rate: usize = 136 * 8;
 
     let mut b = [[Word::zero(); 5]; 5];
@@ -1055,13 +1064,17 @@ fn keccak<F: Field>(bytes: Vec<u8>) -> Vec<KeccakRow<F>> {
             b = ob.clone();
 
             // Rho/Pi
-            let part_size = get_num_bits_per_rho_pi_lookup();
+            let part_size = get_num_bits_per_base_chi_lookup();
             let mut ob = [[Word::zero(); 5]; 5];
             for i in 0..5 {
                 for j in 0..5 {
                     let b_fat =
-                        split_value(&mut cell_values, b[i][j].clone(), RHOM[i][j], part_size);
-                    ob[i][j] =
+                    rotate_value(
+                        split_value(&mut cell_values, b[i][j].clone(), RHOM[i][j], part_size),
+                        RHOM[i][j],
+                        part_size
+                    );
+                    ob[j][(2*i+3*j)%5] =
                         decode_value(transform_value(&mut cell_values, b_fat.clone(), |v| v & 1));
                 }
             }
@@ -1109,6 +1122,12 @@ fn keccak<F: Field>(bytes: Vec<u8>) -> Vec<KeccakRow<F>> {
                 q_end: q_end as u64,
                 cell_values,
             });
+        }
+    }
+
+    for i in 0..5 {
+        for j in 0..5 {
+            println!("[{}][{}]: {:?}", i, j, b[i][j]);
         }
     }
 
@@ -1202,7 +1221,12 @@ mod tests {
     #[test]
     fn packed_keccak_simple() {
         let k = 8;
-        let inputs = keccak(vec![0b01011010u8; 200]);
+
+
+        let SHA3in = [0, 0, 1, 0, 1, 0, 0, 1, 0, 0, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 1, 0, 1, 0, 1, 0, 0, 1, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 1, 1, 0, 1, 0, 1, 1, 1, 0, 1, 0, 0, 1, 0, 1, 1, 1, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 1, 1, 0, 1, 0, 1, 1, 0, 0, 1, 1, 1, 0, 0, 0, 1, 1, 0, 1, 1, 0, 1, 0, 1, 0, 1, 1, 0, 1, 0, 1, 1, 0, 0, 1, 0, 0, 0, 1, 1, 0, 0, 1, 1, 1, 0, 0, 1, 1, 0, 1, 1, 1, 0, 0, 1, 1, 0, 1, 1, 1, 1, 0, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 0, 1, 1, 1, 0, 1, 1, 0, 1, 1, 0, 0, 1, 0, 0, 1, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 1, 0, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 0, 1, 1, 0, 0, 0, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 1, 0, 0, 0, 1, 1, 0, 0, 1, 0, 1, 0, 1, 0, 0, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 0, 1, 1, 0, 1, 1, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 1, 0, 1, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0, 1, 1, 1, 0, 0, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 0, 1, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 1, 0, 1, 1, 1, 0, 0, 1, 0, 1, 0, 0, 0, 0, 1, 0, 1, 0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 1, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 1, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 1, 0, 1, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 0, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 0, 0, 1, 1, 1, 1, 0, 0, 1, 1, 0, 1, 1, 1, 0, 1, 1, 1, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 1, 0, 0, 0, 1, 0, 0, 1, 1, 0, 1, 0, 0, 1, 1, 0, 1, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 1, 0, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 1, 0, 0, 1, 0, 1, 0, 1, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 1, 0, 1, 0, 0, 1, 1, 0, 1, 1, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 1, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1, 1, 0, 1, 0, 1, 0, 1, 0, 0, 0, 1, 1, 0, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 1, 0, 0, 0, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 0, 0, 0, 1, 1, 1, 0, 0, 0, 1, 1, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1, 1, 0, 1, 0, 1, 0, 0, 0, 0, 1, 1, 0, 0, 0, 1, 1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1, 0, 1, 0, 1, 1, 0, 1, 0, 1, 0, 1, 0, 1, 1, 1, 0, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 0, 1, 0, 1, 0, 1, 1, 0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 1, 1, 0, 1, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 0, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 1, 0, 1, 1, 1, 0, 0, 0, 0, 0, 1, 0, 1, 1, 0, 0, 0, 1, 1, 1, 1, 0, 0, 1, 0, 0, 1, 0, 0, 0, 1, 1, 0, 1, 1, 0, 0, 0, 1, 0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 1, 1, 0, 0, 0, 0, 0, 1, 0, 1, 1, 0, 0, 0, 0, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 1];
+
+        //let inputs = keccak(vec![0b01011010u8; 200]);
+        let inputs = keccak(SHA3in.to_vec());
         verify::<Fr>(k, inputs, true);
     }
 }
