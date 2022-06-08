@@ -10,8 +10,8 @@ use crate::{
     helpers::{compute_rlc, key_len_lookup, mult_diff_lookup, range_lookups},
     mpt::FixedTableTag,
     param::{
-        HASH_WIDTH, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS, IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS, IS_EXT_LONG_ODD_C16_POS, IS_EXT_LONG_ODD_C1_POS, 
-        IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS, LAYOUT_OFFSET, R_TABLE_LEN,
+        HASH_WIDTH, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS,
+        IS_BRANCH_S_PLACEHOLDER_POS, LAYOUT_OFFSET,
     },
 };
 
@@ -131,7 +131,6 @@ impl<F: FieldExt> AccountNonExistingChip<F> {
             FixedTableTag::Range256,
             fixed_table,
         );
-        // s_rlp1 is always 248 (checked above)
         range_lookups(
             meta,
             q_enable,

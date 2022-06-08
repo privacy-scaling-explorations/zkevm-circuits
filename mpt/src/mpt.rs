@@ -3060,9 +3060,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                 )?;
                             } else if row[row.len() - 1] == 18 { 
                                 let key_len = witness[offset-1][2] as usize - 128;
-                                let is_long = witness[offset-1][3] as usize == 32;
-    
-                                let partial_address_rlc = bytes_into_rlc(
+                                let address_rlc = bytes_into_rlc(
                                     &row[l - 2 * HASH_WIDTH - COUNTER_WITNESS_LEN - IS_NON_EXISTING_ACCOUNT_POS
                                         ..l - 2 * HASH_WIDTH
                                             - COUNTER_WITNESS_LEN
@@ -3070,6 +3068,8 @@ impl<F: FieldExt> MPTConfig<F> {
                                             + key_len],
                                     self.acc_r,
                                 );
+
+                                // TODO
 
                             }
 
