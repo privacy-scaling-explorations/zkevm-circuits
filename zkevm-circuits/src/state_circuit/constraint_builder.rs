@@ -1,8 +1,9 @@
 use super::{
-    binary_number::AsBits, lookups::Queries as LookupsQueries,
+    binary_number::{AsBits, Config as BinaryNumberConfig},
+    lookups::Queries as LookupsQueries,
     multiple_precision_integer::Queries as MpiQueries,
-    random_linear_combination::Queries as RlcQueries, N_LIMBS_ACCOUNT_ADDRESS, N_LIMBS_ID,
-    N_LIMBS_RW_COUNTER,
+    random_linear_combination::Queries as RlcQueries,
+    N_LIMBS_ACCOUNT_ADDRESS, N_LIMBS_ID, N_LIMBS_RW_COUNTER,
 };
 use crate::evm_circuit::{
     param::N_BYTES_WORD,
@@ -292,18 +293,7 @@ impl<F: Field> Queries<F> {
     }
 
     fn tag_matches(&self, tag: RwTableTag) -> Expression<F> {
-        and::expr(
-            tag.as_bits()
-                .iter()
-                .zip(&self.tag_bits)
-                .map(|(&bit, query)| {
-                    if bit {
-                        query.clone()
-                    } else {
-                        not::expr(query.clone())
-                    }
-                }),
-        )
+        BinaryNumberConfig::<RwTableTag, 4>::value_equals_expr(&tag.as_bits(), &self.tag_bits)
     }
 
     fn first_access(&self) -> Expression<F> {

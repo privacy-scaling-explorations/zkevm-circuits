@@ -16,6 +16,7 @@ use std::marker::PhantomData;
 use strum::IntoEnumIterator;
 
 pub trait AsBits<const N: usize> {
+    // Return the bits of self, starting from the most significant.
     fn as_bits(&self) -> [bool; N];
 }
 
@@ -74,18 +75,24 @@ where
     ) -> impl FnOnce(&mut VirtualCells<'_, F>) -> Expression<F> + '_ {
         let bits = value.as_bits();
         move |meta: &mut VirtualCells<'_, F>| {
-            and::expr(
-                bits.iter()
-                    .zip(&self.bits.map(|bit| meta.query_advice(bit, rotation)))
-                    .map(|(&bit, query)| {
-                        if bit {
-                            query.clone()
-                        } else {
-                            not::expr(query.clone())
-                        }
-                    }),
+            Self::value_equals_expr(
+                &bits,
+                &self.bits.map(|bit| meta.query_advice(bit, rotation)),
             )
         }
+    }
+
+    pub fn value_equals_expr<F: Field>(
+        value: &[bool],
+        expressions: &[Expression<F>],
+    ) -> Expression<F> {
+        and::expr(value.iter().zip(expressions).map(|(&bit, expression)| {
+            if bit {
+                expression.clone()
+            } else {
+                not::expr(expression.clone())
+            }
+        }))
     }
 }
 
