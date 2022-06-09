@@ -1273,9 +1273,16 @@ impl<F: Field> MulAddWords512Gadget<F> {
         let t5 = a_limbs[2] * b_limbs[3] + a_limbs[3] * b_limbs[2];
         let _t6 = a_limbs[3] * b_limbs[3];
 
+        dbg!(t0, t1, t2, t3, t4, t5, _t6);
+        dbg!(c_lo, c_hi, d_lo, _d_hi, e_lo, e_hi);
         let carry_0 = (t0 + (t1 << 64) + c_lo - e_lo) >> 128;
+        dbg!(carry_0);
         let carry_1 = (t2 + (t3 << 64) + c_hi + carry_0 - e_hi) >> 128;
+        dbg!(carry_1);
         let carry_2 = (t4 + (t5 << 64) + carry_1 - d_lo) >> 128;
+        dbg!(carry_2);
+
+        // dbg!(carry_0, carry_1, carry_2);
 
         self.carry_0
             .iter()
@@ -1294,6 +1301,67 @@ impl<F: Field> MulAddWords512Gadget<F> {
             .zip(carry_2.to_le_bytes().iter())
             .map(|(cell, byte)| cell.assign(region, offset, Some(F::from(*byte as u64))))
             .collect::<Result<Vec<_>, _>>()?;
+        Ok(())
+    }
+}
+
+/// a mod n = r, if n!=0
+/// r = 0,       if n==0
+#[derive(Clone, Debug)]
+pub(crate) struct ModGadget<F> {
+    k: util::Word<F>,
+    n_is_zero: IsZeroGadget<F>,
+    r_is_zero: IsZeroGadget<F>,
+    lt: LtWordGadget<F>,
+}
+impl<F: Field> ModGadget<F> {
+    pub(crate) fn construct(cb: &mut ConstraintBuilder<F>, words: [&util::Word<F>; 3]) -> Self {
+        let (a, n, r) = (words[0], words[1], words[2]);
+        let k = cb.query_word();
+        // let n_is_zero = IsZeroGadget::construct(cb, n.expr());
+        // let r_is_zero = IsZeroGadget::construct(cb, r.expr());
+        let n_is_zero = IsZeroGadget::construct(cb, sum::expr(&n.cells));
+        let r_is_zero = IsZeroGadget::construct(cb, sum::expr(&r.cells));
+        let lt = LtWordGadget::construct(cb, &r, &n);
+
+        cb.add_constraint(
+            " (r + k*n - a) * (2 - n!=0 - r!=0) ",
+            (r.expr() + k.expr() * n.expr() - a.expr())
+                * (2.expr() - n_is_zero.expr() - r_is_zero.expr()),
+        );
+        cb.add_constraint(
+            " (1 - (r<n) - (n!=0)) ",
+            1.expr() - lt.expr() - n_is_zero.expr(),
+        );
+        Self {
+            k,
+            n_is_zero,
+            r_is_zero,
+            lt,
+        }
+    }
+
+    pub(crate) fn assign(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+        a: Word,
+        n: Word,
+        r: Word,
+        _randomness: F,
+    ) -> Result<(), Error> {
+        let k = if n.is_zero() { Word::zero() } else { a / n };
+
+        self.k.assign(region, offset, Some(k.to_le_bytes()))?;
+        // let n_as_f = util::Word::random_linear_combine(n.to_le_bytes(), randomness);
+        // let r_as_f = util::Word::random_linear_combine(r.to_le_bytes(), randomness);
+        let n_sum = (0..32).fold(0, |acc, idx| acc + n.byte(idx) as u64);
+        let r_sum = (0..32).fold(0, |acc, idx| acc + r.byte(idx) as u64);
+        dbg!(n_sum, r_sum);
+        self.n_is_zero.assign(region, offset, F::from(n_sum))?;
+        self.r_is_zero.assign(region, offset, F::from(r_sum))?;
+        self.lt.assign(region, offset, r, n)?;
+
         Ok(())
     }
 }

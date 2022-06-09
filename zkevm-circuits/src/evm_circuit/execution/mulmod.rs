@@ -1,4 +1,3 @@
-#![allow(unused_imports)]
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
@@ -7,19 +6,16 @@ use crate::{
             self,
             common_gadget::SameContextGadget,
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
-            math_gadget::{IsZeroGadget, LtGadget, MulAddWords512Gadget, MulAddWordsGadget},
-            not, CachedRegion,
+            math_gadget::{IsZeroGadget, LtWordGadget, ModGadget, MulAddWords512Gadget},
+            not, sum, CachedRegion,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     util::Expr,
 };
 use bus_mapping::evm::OpcodeId;
-use eth_types::{Field, ToLittleEndian, ToScalar, U256, U512};
-use halo2_proofs::{
-    circuit::Region,
-    plonk::{Error, Expression},
-};
+use eth_types::{Field, ToLittleEndian, U256};
+use halo2_proofs::plonk::{Error, Expression};
 
 /// MulModGadget verifies opcod MULMOD
 /// Verify a * b = r (mod n)
@@ -37,12 +33,11 @@ pub(crate) struct MulModGadget<F> {
     zero: util::Word<F>,
     d: util::Word<F>,
     e: util::Word<F>,
-
-    mul: MulAddWordsGadget<F>,
+    modword: ModGadget<F>,
     mul512_left: MulAddWords512Gadget<F>,
     mul512_right: MulAddWords512Gadget<F>,
     n_is_zero: IsZeroGadget<F>,
-    lt: [LtGadget<F, 8>; 2],
+    lt: LtWordGadget<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for MulModGadget<F> {
@@ -69,7 +64,7 @@ impl<F: Field> ExecutionGadget<F> for MulModGadget<F> {
         let zero = cb.query_word();
 
         // 1.  k1 * n + a_reduced  == a
-        let mul = MulAddWordsGadget::construct(cb, [&k1, &n, &a_reduced, &a]);
+        let modword = ModGadget::construct(cb, [&a, &n, &a_reduced]);
 
         // 2.  a_reduced * b + 0 == d * 2^256 + e
         let mul512_left = MulAddWords512Gadget::construct(cb, [&a_reduced, &b, &zero, &d, &e]);
@@ -77,18 +72,20 @@ impl<F: Field> ExecutionGadget<F> for MulModGadget<F> {
         // 3.  k2 * n + r == d * 2^256 + e
         let mul512_right = MulAddWords512Gadget::construct(cb, [&k2, &n, &r, &d, &e]);
 
-        let n_is_zero = IsZeroGadget::construct(cb, n.expr());
-        let lt1 = LtGadget::construct(cb, r.expr(), n.expr());
-        let lt2 = LtGadget::construct(cb, a_reduced.expr(), n.expr());
-
-        // (a_reduced < n & r < n ) or n == 0
-        let is_valid: Expression<F> = 1.expr() - ((lt1.expr() * lt2.expr()) + n_is_zero.expr());
-        cb.add_constraint(" 1 - ((a_reduced < n) * (r < n) - (n==0)) ", is_valid);
+        // (r < n ) or n == 0
+        let n_is_zero = IsZeroGadget::construct(cb, sum::expr(&n.cells));
+        let lt = LtWordGadget::construct(cb, &r, &n);
+        cb.add_constraint(
+            " (1 - (r < n) - (n!=0)) ",
+            1.expr() - lt.expr() - n_is_zero.expr(),
+        );
 
         cb.stack_pop(a.expr());
         cb.stack_pop(b.expr());
         cb.stack_pop(n.expr());
-        cb.stack_push(r.expr() * not::expr(n_is_zero.expr()));
+        cb.stack_push(r.expr());
+        // TODO Remove this, r is correct since the addition of ModGadget
+        // cb.stack_push(r.expr() * not::expr(n_is_zero.expr()));
 
         // State transition
         let step_state_transition = StepStateTransition {
@@ -109,11 +106,11 @@ impl<F: Field> ExecutionGadget<F> for MulModGadget<F> {
             zero,
             d,
             e,
-            mul,
+            modword,
             mul512_left,
             mul512_right,
             n_is_zero,
-            lt: [lt1, lt2],
+            lt,
         }
     }
 
@@ -131,69 +128,68 @@ impl<F: Field> ExecutionGadget<F> for MulModGadget<F> {
         let [r, n, b, a] = [3, 2, 1, 0]
             .map(|idx| step.rw_indices[idx])
             .map(|idx| block.rws[idx].stack_value());
-
+        self.words[0].assign(region, offset, Some(a.to_le_bytes()))?;
+        self.words[1].assign(region, offset, Some(b.to_le_bytes()))?;
+        self.words[2].assign(region, offset, Some(n.to_le_bytes()))?;
+        self.words[3].assign(region, offset, Some(r.to_le_bytes()))?;
         // 1. Reduction of a mod n
         let (a_reduced, k1) = if n.is_zero() {
-            (a, U256::zero())
+            (U256::zero(), U256::zero())
         } else {
             (a % n, a / n)
         };
 
-        // 2. Compute r
-        // d, e = a_reduced * b // 2^256, a_reduced*b % 2^256
-        // let prod: U512 = U512::from(a_reduced) * U512::from(b);
+        // 2. Compute r = a*b mod n
         let prod = a_reduced.full_mul(b);
         let mut prod_bytes = [0u8; 64];
         prod.to_little_endian(&mut prod_bytes);
-        let d = U256::from_little_endian(&prod_bytes[0..32]);
-        let e = U256::from_little_endian(&prod_bytes[32..64]);
+        let d = U256::from_little_endian(&prod_bytes[32..64]);
+        let e = U256::from_little_endian(&prod_bytes[0..32]);
 
         let (r, k2) = if n.is_zero() {
-            (a_reduced * b, U256::zero())
+            (U256::zero(), U256::zero())
         } else {
-            (r, (a_reduced * b) / n)
+            // k2 <= b , always fits in U256
+            (r, U256::try_from(prod / n).unwrap())
         };
 
-        // 3. n == zero check
-        if n.is_zero() {
-            (a_reduced * b, U256::zero())
-        } else {
-            (r, (a_reduced * b) / n)
-        };
-
+        dbg!(a, b, r, n, d, e, a_reduced, prod, k1, k2);
         self.k1.assign(region, offset, Some(k1.to_le_bytes()))?;
         self.k2.assign(region, offset, Some(k2.to_le_bytes()))?;
         self.a_reduced
             .assign(region, offset, Some(a_reduced.to_le_bytes()))?;
+        self.d.assign(region, offset, Some(d.to_le_bytes()))?;
+        self.e.assign(region, offset, Some(e.to_le_bytes()))?;
         self.zero
-            .assign(region, offset, Some(U256::from(0u32).to_le_bytes()))?;
+            .assign(region, offset, Some(U256::zero().to_le_bytes()))?;
 
-        self.mul.assign(region, offset, [k1, n, a_reduced, a])?;
+        self.modword
+            .assign(region, offset, a, n, a_reduced, block.randomness)?;
         self.mul512_left
-            .assign(region, offset, [a_reduced, b, U256::from(0u32), d, e])?;
+            .assign(region, offset, [a_reduced, b, U256::zero(), d, e])?;
         self.mul512_right.assign(region, offset, [k2, n, r, d, e])?;
 
-        let n_as_f = util::Word::random_linear_combine(n.to_le_bytes(), block.randomness);
-        let r_as_f = util::Word::random_linear_combine(r.to_le_bytes(), block.randomness);
-        let a_reduced_as_f =
-            util::Word::random_linear_combine(a_reduced.to_le_bytes(), block.randomness);
-        self.lt[0].assign(region, offset, a_reduced_as_f, n_as_f)?;
-        self.lt[1].assign(region, offset, r_as_f, n_as_f)?;
+        self.lt.assign(region, offset, r, n)?;
 
-        self.n_is_zero.assign(region, offset, n_as_f)?;
+        // TODO test and remove
+        // let n_as_f = util::Word::random_linear_combine(n.to_le_bytes(),
+        // block.randomness);
+        // self.n_is_zero.assign(region, offset, n_as_f)?;
+        let n_sum = (0..32).fold(0, |acc, idx| acc + n.byte(idx) as u64);
+        dbg!(n_sum);
+        self.n_is_zero.assign(region, offset, F::from(n_sum))?;
         Ok(())
     }
 }
 
 #[cfg(test)]
 mod test {
-    use crate::evm_circuit::test::rand_word;
     use crate::test_util::run_test_circuits;
-    use eth_types::evm_types::{OpcodeId, Stack};
+    use eth_types::evm_types::Stack;
     use eth_types::{bytecode, Word};
     use mock::TestContext;
 
-    fn test(a: u32, b: u32, n: u32, r: Option<u32>) -> bool {
+    fn test(a: Word, b: Word, n: Word, r: Option<Word>) -> bool {
         let bytecode = bytecode! {
             PUSH32(n)
             PUSH32(b)
@@ -215,33 +211,36 @@ mod test {
         }
         run_test_circuits(ctx, None).is_ok()
     }
+    fn test_u32(a: u32, b: u32, n: u32, r: Option<u32>) -> bool {
+        test(a.into(), b.into(), n.into(), r.map(Word::from))
+    }
 
     #[test]
     fn mulmod_simple() {
-        assert_eq!(true, test(7, 18, 10, None));
-        assert_eq!(true, test(7, 1, 10, None));
+        assert_eq!(true, test_u32(7, 12, 10, None));
+        assert_eq!(true, test_u32(7, 1, 10, None));
     }
 
     #[test]
     fn mulmod_division_by_zero() {
-        assert_eq!(true, test(7, 1, 0, None));
+        assert_eq!(true, test_u32(7, 1, 0, None));
     }
 
     #[test]
     fn mulmod_bad_r_on_nonzero_n() {
-        assert_eq!(true, test(7, 18, 10, Some(5)));
-        assert_eq!(false, test(7, 18, 10, Some(6)));
+        assert_eq!(true, test_u32(7, 18, 10, Some(6)));
+        assert_eq!(false, test_u32(7, 18, 10, Some(7)));
     }
 
     #[test]
     fn mulmod_bad_r_on_zero_n() {
-        assert_eq!(true, test(2, 3, 0, Some(0)));
-        assert_eq!(false, test(2, 3, 0, Some(1)));
+        assert_eq!(true, test_u32(2, 3, 0, Some(0)));
+        assert_eq!(false, test_u32(2, 3, 0, Some(1)));
     }
 
     #[test]
     fn mulmod_bad_r_bigger_n() {
-        assert_eq!(true, test(2, 3, 5, Some(1)));
-        assert_eq!(false, test(2, 3, 5, Some(5)));
+        assert_eq!(true, test_u32(2, 3, 5, Some(1)));
+        assert_eq!(false, test_u32(2, 3, 5, Some(5)));
     }
 }
