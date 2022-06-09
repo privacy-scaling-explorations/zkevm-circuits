@@ -318,6 +318,8 @@ mod tests {
         #[derive(Clone)]
         struct MyConfig<F> {
             mixing_conf: MixingConfig<F>,
+            state: [Column<Advice>; 25],
+            next_inputs: [Column<Advice>; NEXT_INPUTS_LANES],
             table_b9_b13: FromBase9TableConfig<F>,
             table_b2_b9: FromBinaryTableConfig<F>,
         }
@@ -371,7 +373,7 @@ mod tests {
                             for (idx, val) in self.in_state.iter().enumerate() {
                                 let cell = region.assign_advice(
                                     || "witness input state",
-                                    config.mixing_conf.state[idx],
+                                    config.state[idx],
                                     offset,
                                     || Ok(*val),
                                 )?;
@@ -396,7 +398,7 @@ mod tests {
                             {
                                 let cell = region.assign_advice(
                                     || "witness next_inputs",
-                                    config.mixing_conf.state[idx],
+                                    config.next_inputs[idx],
                                     offset,
                                     || Ok(*val),
                                 )?;
