@@ -67,38 +67,39 @@ impl<F: Field> ConstraintBuilder<F> {
 
     pub fn build(&mut self, q: &Queries<F>) {
         self.build_general_constraints(q);
-        self.condition(q.tag_matches(RwTableTag::Start), |cb| {
+        self.condition(q.tag_matches(RwTableTag::Start, false), |cb| {
             cb.build_start_constraints(q)
         });
-        self.condition(q.tag_matches(RwTableTag::Memory), |cb| {
+        self.condition(q.tag_matches(RwTableTag::Memory, false), |cb| {
             cb.build_memory_constraints(q)
         });
-        self.condition(q.tag_matches(RwTableTag::Stack), |cb| {
+        self.condition(q.tag_matches(RwTableTag::Stack, false), |cb| {
             cb.build_stack_constraints(q)
         });
-        self.condition(q.tag_matches(RwTableTag::AccountStorage), |cb| {
+        self.condition(q.tag_matches(RwTableTag::AccountStorage, false), |cb| {
             cb.build_account_storage_constraints(q)
         });
-        self.condition(q.tag_matches(RwTableTag::TxAccessListAccount), |cb| {
-            cb.build_tx_access_list_account_constraints(q)
-        });
         self.condition(
-            q.tag_matches(RwTableTag::TxAccessListAccountStorage),
+            q.tag_matches(RwTableTag::TxAccessListAccount, false),
+            |cb| cb.build_tx_access_list_account_constraints(q),
+        );
+        self.condition(
+            q.tag_matches(RwTableTag::TxAccessListAccountStorage, false),
             |cb| cb.build_tx_access_list_account_storage_constraints(q),
         );
-        self.condition(q.tag_matches(RwTableTag::TxRefund), |cb| {
+        self.condition(q.tag_matches(RwTableTag::TxRefund, false), |cb| {
             cb.build_tx_refund_constraints(q)
         });
-        self.condition(q.tag_matches(RwTableTag::Account), |cb| {
+        self.condition(q.tag_matches(RwTableTag::Account, false), |cb| {
             cb.build_account_constraints(q)
         });
-        self.condition(q.tag_matches(RwTableTag::AccountDestructed), |cb| {
+        self.condition(q.tag_matches(RwTableTag::AccountDestructed, false), |cb| {
             cb.build_account_destructed_constraints(q)
         });
-        self.condition(q.tag_matches(RwTableTag::CallContext), |cb| {
+        self.condition(q.tag_matches(RwTableTag::CallContext, false), |cb| {
             cb.build_call_context_constraints(q)
         });
-        self.condition(q.tag_matches(RwTableTag::TxLog), |cb| {
+        self.condition(q.tag_matches(RwTableTag::TxLog, false), |cb| {
             cb.build_tx_log_constraints(q)
         });
     }
@@ -257,7 +258,7 @@ impl<F: Field> ConstraintBuilder<F> {
                 "reset log_id to one when tx_id increases",
                 q.tx_log_id(false) - 1.expr(),
             );
-            // TODO: first field_tag is Address
+            // constrain first field_tag is Address when tx id increases
             cb.require_equal(
                 "first field_tag is Address",
                 q.field_tag_matches(TxLogFieldTag::Address),
@@ -274,7 +275,7 @@ impl<F: Field> ConstraintBuilder<F> {
         // increase log_id when tag changes to Address if tx id stay same
         self.condition(
             q.is_id_unchanged.clone()
-                * q.prev_tag_matches(RwTableTag::TxLog)
+                * q.tag_matches(RwTableTag::TxLog, true)
                 * q.field_tag_matches(TxLogFieldTag::Address),
             |cb| cb.require_equal("log_id = pre_log_id + 1", q.tx_log_id(false), 1.expr()),
         );
@@ -294,7 +295,7 @@ impl<F: Field> ConstraintBuilder<F> {
         // constrain index is increasing by 1 when field_tag stay same
         // let no_field_tag_change= 1.expr() - q.field_tag_change();
         self.condition(
-            q.prev_tag_matches(RwTableTag::TxLog) * q.is_field_tag_unchanged.clone(),
+            q.tag_matches(RwTableTag::TxLog, true) * q.is_field_tag_unchanged.clone(),
             |cb| {
                 cb.require_equal(
                     "index = pre_index + 1",

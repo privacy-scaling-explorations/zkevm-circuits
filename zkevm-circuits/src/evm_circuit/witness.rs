@@ -765,7 +765,6 @@ impl Rw {
             Self::TxLog { log_id, index, .. } => {
                 // both use 32 bits for log id and index, which are enough
                 Some((U256::from(*index as u64) + (U256::from(*log_id) << 32)).to_address())
-                //Some(U256([*log_id, *index as u64, 0, 0]).to_address())
             }
             Self::Start { .. }
             | Self::CallContext { .. }

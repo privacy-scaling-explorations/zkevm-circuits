@@ -383,6 +383,8 @@ fn tx_log_ok() {
             index: 1usize,
             value: U256::from(2u64),
         },
+        /* TODO: after issue https://github.com/privacy-scaling-explorations/zkevm-circuits/issues/561
+         * resolved, we can test tx_id increases' cases */
         /*  Rw::TxLog {
          *     rw_counter: 4,
          *     is_write: true,
