@@ -1,6 +1,5 @@
 use crate::{
     circuit_input_builder::{CircuitInputStateRef, ExecStep},
-    constants::MAX_CODE_SIZE,
     Error,
 };
 
@@ -22,10 +21,6 @@ impl Opcode for Codesize {
         let code_source = state.call()?.code_hash;
         let code = state.code(code_source)?;
         let codesize = code.len();
-
-        if codesize > MAX_CODE_SIZE {
-            return Err(Error::CodesizeNotPermitted);
-        }
 
         debug_assert_eq!(codesize, geth_steps[1].stack.last()?.as_usize());
 
@@ -54,10 +49,8 @@ mod codesize_tests {
 
     use crate::{
         circuit_input_builder::ExecState,
-        constants::MAX_CODE_SIZE,
         mock::BlockData,
         operation::{StackOp, RW},
-        Error,
     };
 
     fn test_ok(large: bool) {
@@ -110,42 +103,5 @@ mod codesize_tests {
     fn codesize_opcode_impl() {
         test_ok(false);
         test_ok(true);
-    }
-
-    #[test]
-    fn codesize_above_max() -> Result<(), String> {
-        let pop = bytecode! {
-            POP
-        };
-        let mut code = bytecode! {};
-        for _ in 0..MAX_CODE_SIZE / 3 {
-            code.push(1, Word::from(0));
-            code.append(&pop);
-        }
-        let tail = bytecode! {
-            CODESIZE
-            STOP
-        };
-        code.append(&tail);
-
-        let block: GethData = TestContext::<2, 1>::new(
-            None,
-            account_0_code_account_1_no_code(code),
-            tx_from_1_to_0,
-            |block, _tx| block.number(0xcafeu64),
-        )
-        .unwrap()
-        .into();
-
-        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
-        let err = builder
-            .handle_block(&block.eth_block, &block.geth_traces)
-            .err()
-            .unwrap();
-
-        match err {
-            Error::CodesizeNotPermitted => Ok(()),
-            _ => Err(String::from("expected err: CodesizeNotPermitted")),
-        }
     }
 }
