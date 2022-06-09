@@ -254,9 +254,11 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
         let current_cumulative_gas_used: u64 = if tx.id == 1 {
             0
         } else {
+            // first transaction needs TxReceiptFieldTag::COUNT(3) lookups to tx receipt,
+            // while later transactions need 4 (with one extra cumulative gas read) lookups
             let rw = &block.rws[(
                 RwTableTag::TxReceipt,
-                (tx.id - 1) * TxReceiptFieldTag::COUNT - 1,
+                (tx.id - 2) * (TxReceiptFieldTag::COUNT + 1) + 2,
             )];
             rw.receipt_value()
         };
@@ -280,8 +282,8 @@ mod test {
     use crate::evm_circuit::{
         test::run_test_circuit_incomplete_fixed_table, witness::block_convert,
     };
-    use eth_types::{self, address, bytecode, geth_types::GethData, Word};
-    use mock::TestContext;
+    use eth_types::{self, bytecode, geth_types::GethData};
+    use mock::{eth, test_ctx::helpers::account_0_code_account_1_no_code, TestContext};
 
     fn test_ok(block: GethData) {
         let block_data = bus_mapping::mock::BlockData::new_from_geth_data(block);
@@ -313,26 +315,22 @@ mod test {
         // Multiple txs
         test_ok(
             // Get the execution steps from the external tracer
-            TestContext::<2, 2>::new(
+            TestContext::<2, 3>::new(
                 None,
-                |accs| {
-                    accs[0]
-                        .address(address!("0x00000000000000000000000000000000000000fe"))
-                        .balance(Word::from(10u64.pow(19)))
-                        .code(bytecode! { STOP });
-                    accs[1]
-                        .address(address!("0x00000000000000000000000000000000000000fd"))
-                        .balance(Word::from(10u64.pow(19)));
-                },
+                account_0_code_account_1_no_code(bytecode! { STOP }),
                 |mut txs, accs| {
                     txs[0]
                         .to(accs[0].address)
                         .from(accs[1].address)
-                        .value(Word::from(10u64.pow(17)));
+                        .value(eth(1));
                     txs[1]
                         .to(accs[0].address)
                         .from(accs[1].address)
-                        .value(Word::from(10u64.pow(17)));
+                        .value(eth(1));
+                    txs[2]
+                        .to(accs[0].address)
+                        .from(accs[1].address)
+                        .value(eth(1));
                 },
                 |block, _tx| block.number(0xcafeu64),
             )

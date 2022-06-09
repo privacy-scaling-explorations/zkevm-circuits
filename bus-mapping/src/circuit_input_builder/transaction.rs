@@ -282,4 +282,18 @@ impl Transaction {
     pub(crate) fn push_call(&mut self, call: Call) {
         self.calls.push(call);
     }
+
+    /// Return last step in this transaction.
+    pub fn last_step(&self) -> &ExecStep {
+        if self.steps().is_empty() {
+            panic!("there is no steps in tx");
+        }
+
+        &self.steps[self.steps.len() - 1]
+    }
+
+    /// Return whether the steps in this transaction is empty
+    pub fn is_steps_empty(&self) -> bool {
+        self.steps.is_empty()
+    }
 }
