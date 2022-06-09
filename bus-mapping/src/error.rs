@@ -25,6 +25,8 @@ pub enum Error {
     StorageKeyNotFound(Address, Word),
     /// Code not found in the CodeDB
     CodeNotFound(H256),
+    /// Code is above maximum permitted size.
+    CodesizeNotPermitted,
     /// Unable to figure out error at a [`GethExecStep`]
     UnexpectedExecStepError(&'static str, GethExecStep),
     /// Invalid [`eth_types::GethExecTrace`] due to an invalid/unexpected value
