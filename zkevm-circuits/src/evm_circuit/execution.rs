@@ -35,6 +35,7 @@ mod caller;
 mod callvalue;
 mod chainid;
 mod codecopy;
+mod codesize;
 mod comparator;
 mod copy_code_to_memory;
 mod copy_to_log;
@@ -80,6 +81,7 @@ use caller::CallerGadget;
 use callvalue::CallValueGadget;
 use chainid::ChainIdGadget;
 use codecopy::CodeCopyGadget;
+use codesize::CodesizeGadget;
 use comparator::ComparatorGadget;
 use copy_code_to_memory::CopyCodeToMemoryGadget;
 use copy_to_log::CopyToLogGadget;
@@ -159,6 +161,7 @@ pub(crate) struct ExecutionConfig<F> {
     caller_gadget: CallerGadget<F>,
     chainid_gadget: ChainIdGadget<F>,
     codecopy_gadget: CodeCopyGadget<F>,
+    codesize_gadget: CodesizeGadget<F>,
     comparator_gadget: ComparatorGadget<F>,
     copy_code_to_memory_gadget: CopyCodeToMemoryGadget<F>,
     copy_to_log_gadget: CopyToLogGadget<F>,
@@ -351,6 +354,7 @@ impl<F: Field> ExecutionConfig<F> {
             caller_gadget: configure_gadget!(),
             chainid_gadget: configure_gadget!(),
             codecopy_gadget: configure_gadget!(),
+            codesize_gadget: configure_gadget!(),
             comparator_gadget: configure_gadget!(),
             dup_gadget: configure_gadget!(),
             extcodehash_gadget: configure_gadget!(),
@@ -786,6 +790,7 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::CALLVALUE => assign_exec_step!(self.call_value_gadget),
             ExecutionState::CHAINID => assign_exec_step!(self.chainid_gadget),
             ExecutionState::CODECOPY => assign_exec_step!(self.codecopy_gadget),
+            ExecutionState::CODESIZE => assign_exec_step!(self.codesize_gadget),
             ExecutionState::CMP => assign_exec_step!(self.comparator_gadget),
             ExecutionState::DUP => assign_exec_step!(self.dup_gadget),
             ExecutionState::EXTCODEHASH => assign_exec_step!(self.extcodehash_gadget),
