@@ -307,27 +307,20 @@ impl<F: FieldExt> LeafKeyChip<F> {
 
             let is_long = meta.query_advice(s_mod_node_hash_rlc, Rotation::cur());
             let is_short = meta.query_advice(c_mod_node_hash_rlc, Rotation::cur());
-
             let is_leaf_in_first_level =
                 meta.query_advice(is_account_leaf_in_added_branch, Rotation(rot_into_account));
 
-            let key_rlc_acc_start = Expression::Constant(F::zero());
-            let key_mult_start = one.clone();
-
             let c32 = Expression::Constant(F::from(32));
-            let c48 = Expression::Constant(F::from(48));
 
-            // This is the case like sel2 = 1 (there 32 in s_rlp2 or s_advices[0] for
-            // short and long RLP respectively).
+            // Note: when leaf is in the first level, the key stored in the leaf is always of length 33 -
+            // the first byte being 32 (when after branch, the information whether there the key is odd or even
+            // is in s_advices[IS_BRANCH_C16_POS - LAYOUT_OFFSET] (see sel1/sel2).
 
             // For short RLP (key starts at s_advices[0]):
-
-            // If sel1 = 1, we have one nibble+48 in s_advices[0].
             let s_advice0 = meta.query_advice(s_advices[0], Rotation::cur());
-            let mut key_rlc_acc_short = key_rlc_acc_start.clone();
-            let key_mult = key_mult_start.clone();
+            let mut key_rlc_acc_short = Expression::Constant(F::zero());
+            let key_mult = one.clone();
 
-            // If sel2 = 1 and !is_branch_placeholder, we have 32 in s_advices[0].
             constraints.push((
                 "Leaf key acc s_advice0",
                 q_enable.clone()
@@ -363,12 +356,9 @@ impl<F: FieldExt> LeafKeyChip<F> {
             ));
 
             // For long RLP (key starts at s_advices[1]):
-
-            // If sel1 = 1, we have nibble+48 in s_advices[1].
             let s_advice1 = meta.query_advice(s_advices[1], Rotation::cur());
-            let mut key_rlc_acc_long = key_rlc_acc_start.clone();
+            let mut key_rlc_acc_long = Expression::Constant(F::zero());
 
-            // If sel2 = 1 and !is_branch_placeholder, we have 32 in s_advices[1].
             constraints.push((
                 "Leaf key acc s_advice1",
                 q_enable.clone()
@@ -392,8 +382,6 @@ impl<F: FieldExt> LeafKeyChip<F> {
             let c_rlp2 = meta.query_advice(c_rlp2, Rotation::cur());
             key_rlc_acc_long = key_rlc_acc_long + c_rlp2 * key_mult.clone() * r_table[30].clone();
 
-            // No need to distinguish between sel1 and sel2 here as it was already
-            // when computing key_rlc_acc_long.
             constraints.push((
                 "Key RLC long",
                 q_enable.clone()

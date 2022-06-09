@@ -2379,7 +2379,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                 offset,
                             )?;
 
-                            let mut assign_long_short = |region: &mut Region<'_, F>, long: bool| {
+                            let assign_long_short = |region: &mut Region<'_, F>, long: bool| {
                                 let mut is_short = false;
                                 let mut is_long = false;
                                 if long {
