@@ -11,7 +11,7 @@ use crate::helpers::get_bool_constraint;
 #[derive(Clone, Debug)]
 pub(crate) struct SelectorsConfig {}
 
-// Ensures selectors are booleans. Ensures the proper order of rows.
+// Ensures selectors are booleans and the proper order of rows.
 pub(crate) struct SelectorsChip<F> {
     config: SelectorsConfig,
     _marker: PhantomData<F>,

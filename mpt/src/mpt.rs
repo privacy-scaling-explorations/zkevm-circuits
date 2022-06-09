@@ -898,7 +898,6 @@ impl<F: FieldExt> MPTConfig<F> {
 
                 q_enable * is_account_leaf_key_s
             },
-            q_not_first,
             not_first_level,
             s_rlp1,
             s_rlp2,
@@ -929,7 +928,6 @@ impl<F: FieldExt> MPTConfig<F> {
 
                 q_enable * is_account_leaf_key_c
             },
-            q_not_first,
             not_first_level,
             s_rlp1,
             s_rlp2,
@@ -969,6 +967,7 @@ impl<F: FieldExt> MPTConfig<F> {
             s_advices,
             key_rlc,
             key_rlc_mult,
+            acc_s,
             r_table.clone(),
             fixed_table.clone(),
             address_rlc,
@@ -3060,17 +3059,33 @@ impl<F: FieldExt> MPTConfig<F> {
                                 )?;
                             } else if row[row.len() - 1] == 18 { 
                                 let key_len = witness[offset-1][2] as usize - 128;
-                                let address_rlc = bytes_into_rlc(
-                                    &row[l - 2 * HASH_WIDTH - COUNTER_WITNESS_LEN - IS_NON_EXISTING_ACCOUNT_POS
-                                        ..l - 2 * HASH_WIDTH
-                                            - COUNTER_WITNESS_LEN
-                                            - IS_NON_EXISTING_ACCOUNT_POS
-                                            + key_len],
-                                    self.acc_r,
-                                );
+                                let row_prev = &witness[offset - 1];
+                                let mut sum = F::zero();
+                                let mut sum_prev = F::zero();
+                                for i in 0..key_len {
+                                    sum += F::from(row[3+i] as u64);
+                                    sum_prev += F::from(row_prev[3+i] as u64);
+                                }
+                                let diff_inv = F::invert(&(sum - sum_prev)).unwrap();
 
-                                // TODO
-
+                                region.assign_advice(
+                                    || "assign sum".to_string(),
+                                    self.key_rlc,
+                                    offset,
+                                    || Ok(sum),
+                                )?;
+                                region.assign_advice(
+                                    || "assign sum prev".to_string(),
+                                    self.key_rlc_mult,
+                                    offset,
+                                    || Ok(sum_prev),
+                                )?;
+                                region.assign_advice(
+                                    || "assign diff inv".to_string(),
+                                    self.acc_s,
+                                    offset,
+                                    || Ok(diff_inv),
+                                )?;
                             }
 
                             offset += 1;
@@ -3330,7 +3345,6 @@ mod tests {
                 let mut pub_root = vec![];
                 let acc_r = Fp::one() + Fp::one();
                 for row in w.iter().filter(|r| r[r.len() - 1] != 5) {
-                    let mut pub_root_rlc = Fp::zero();
                     let l = row.len();
                     let pub_root_rlc = bytes_into_rlc(
                         &row[l - HASH_WIDTH - IS_NON_EXISTING_ACCOUNT_POS

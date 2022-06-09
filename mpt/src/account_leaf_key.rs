@@ -28,7 +28,6 @@ impl<F: FieldExt> AccountLeafKeyChip<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         q_enable: impl Fn(&mut VirtualCells<'_, F>) -> Expression<F> + Copy,
-        q_not_first: Column<Fixed>,
         not_first_level: Column<Advice>,
         s_rlp1: Column<Advice>,
         s_rlp2: Column<Advice>,
@@ -467,7 +466,6 @@ impl<F: FieldExt> AccountLeafKeyChip<F> {
             key_rlc_acc = key_rlc_acc + c_rlp2 * key_mult * r_table[31].clone();
 
             let key_rlc = meta.query_advice(key_rlc, Rotation::cur());
-            let address_rlc = meta.query_advice(address_rlc, Rotation::cur());
 
             // Key RLC is to be checked to verify that the proper key is used.
             constraints.push((
