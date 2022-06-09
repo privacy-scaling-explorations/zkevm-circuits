@@ -1106,7 +1106,7 @@ impl<F: Field> MulAddWordsGadget<F> {
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        a: Word, b: Word, c: Word, d: Word
+        words: [Word;4]
     ) -> Result<(), Error> {
         let (a, b, c, d) = (words[0], words[1], words[2], words[3]);
 

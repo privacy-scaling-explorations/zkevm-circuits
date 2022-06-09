@@ -18,20 +18,34 @@ use crate::{
     },
     util::Expr,
 };
+
 use bus_mapping::evm::OpcodeId;
 use eth_types::{Field, ToLittleEndian, ToScalar, U256};
 use halo2_proofs::{circuit::Region, plonk::Error};
 
-#[derive(Clone, Debug)]
-pub(crate) struct AddModGadget<F> {
-    same_context: SameContextGadget<F>,
+pub struct AddModMathGadget<F> {
+    muladd_k_n_areduced: MulAddWordsGadget<F>,
+    
     sum_areduced_b: AddWordsGadget<F, 2, false>,
+    muladd_d_n_r: MulAddWords512Gadget<F>,
+    
     n_is_zero: IsZeroGadget<F>,
     cmp_r_n: CmpWordsGadget<F>,
     cmp_areduced_n: CmpWordsGadget<F>,
-    a_reduced: RandomLinearCombination<F, 32>,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct AddModGadget<F> {
+    same_context: SameContextGadget<F>,
+
     muladd_k_n_areduced: MulAddWordsGadget<F>,
+    
+    sum_areduced_b: AddWordsGadget<F, 2, false>,
     muladd_d_n_r: MulAddWords512Gadget<F>,
+    
+    n_is_zero: IsZeroGadget<F>,
+    cmp_r_n: CmpWordsGadget<F>,
+    cmp_areduced_n: CmpWordsGadget<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for AddModGadget<F> {
@@ -56,7 +70,7 @@ impl<F: Field> ExecutionGadget<F> for AddModGadget<F> {
         let n_is_zero = IsZeroGadget::construct(cb, n.clone().expr());
 
         // check k * N + a_reduced == a without overflow
-        let muladd_k_n_areduced = MulAddWordsGadget::construct(cb, k,n.clone(),a_reduced.clone(),a.clone());
+        let muladd_k_n_areduced = MulAddWordsGadget::construct(cb, [&k,&n,&a_reduced,&a]);
         cb.require_zero("k * N + a_reduced does not overflow", muladd_k_n_areduced.overflow());
 
         // check d * n + r ==  a_reduced  + b 
@@ -109,7 +123,6 @@ impl<F: Field> ExecutionGadget<F> for AddModGadget<F> {
 
         Self {
             muladd_d_n_r,
-            a_reduced,
             muladd_k_n_areduced,
             same_context,
             cmp_r_n,
@@ -160,12 +173,11 @@ impl<F: Field> ExecutionGadget<F> for AddModGadget<F> {
         };
 
         self.muladd_k_n_areduced
-            .assign(region, offset, k, n, a_reduced, a)?;
+            .assign(region, offset, [k, n, a_reduced, a])?;
 
         self.sum_areduced_b
             .assign(region, offset, [a_reduced, b], a_reduced_plus_b)?;
 
-        dbg!(d, n, r, a_reduced_plus_b_overflow, a_reduced_plus_b);
         self.muladd_d_n_r.assign(
             region,
             offset,
@@ -213,7 +225,9 @@ mod test {
                 .unwrap();
             last.stack = Stack::from_vec(vec![r]);
         }
-        run_test_circuits(ctx, None).is_ok()
+        run_test_circuits(ctx, None).unwrap();
+        true
+
     }
     fn test_u32(a: u32, b: u32, c: u32, r: Option<u32>) -> bool {
         test(a.into(), b.into(), c.into(), r.map(Word::from))
