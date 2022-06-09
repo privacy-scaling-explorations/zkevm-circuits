@@ -21,8 +21,12 @@ pub struct Queries<F: Field> {
     pub rw_counter: MpiQueries<F, N_LIMBS_RW_COUNTER>,
     pub is_write: Expression<F>,
     pub tag: Expression<F>,
+<<<<<<< HEAD
     pub tag_bits: [Expression<F>; 4],
     pub prev_tag_bits: [Expression<F>; 4],
+=======
+    pub is_tag_unchanged: Expression<F>,
+>>>>>>> add is_tag_unchanged to reduce degree
     pub id: MpiQueries<F, N_LIMBS_ID>,
     pub is_tag_and_id_unchanged: Expression<F>,
     pub address: MpiQueries<F, N_LIMBS_ACCOUNT_ADDRESS>,
@@ -67,39 +71,38 @@ impl<F: Field> ConstraintBuilder<F> {
 
     pub fn build(&mut self, q: &Queries<F>) {
         self.build_general_constraints(q);
-        self.condition(q.tag_matches(RwTableTag::Start, false), |cb| {
+        self.condition(q.tag_matches(RwTableTag::Start), |cb| {
             cb.build_start_constraints(q)
         });
-        self.condition(q.tag_matches(RwTableTag::Memory, false), |cb| {
+        self.condition(q.tag_matches(RwTableTag::Memory), |cb| {
             cb.build_memory_constraints(q)
         });
-        self.condition(q.tag_matches(RwTableTag::Stack, false), |cb| {
+        self.condition(q.tag_matches(RwTableTag::Stack), |cb| {
             cb.build_stack_constraints(q)
         });
-        self.condition(q.tag_matches(RwTableTag::AccountStorage, false), |cb| {
+        self.condition(q.tag_matches(RwTableTag::AccountStorage), |cb| {
             cb.build_account_storage_constraints(q)
         });
+        self.condition(q.tag_matches(RwTableTag::TxAccessListAccount), |cb| {
+            cb.build_tx_access_list_account_constraints(q)
+        });
         self.condition(
-            q.tag_matches(RwTableTag::TxAccessListAccount, false),
-            |cb| cb.build_tx_access_list_account_constraints(q),
-        );
-        self.condition(
-            q.tag_matches(RwTableTag::TxAccessListAccountStorage, false),
+            q.tag_matches(RwTableTag::TxAccessListAccountStorage),
             |cb| cb.build_tx_access_list_account_storage_constraints(q),
         );
-        self.condition(q.tag_matches(RwTableTag::TxRefund, false), |cb| {
+        self.condition(q.tag_matches(RwTableTag::TxRefund), |cb| {
             cb.build_tx_refund_constraints(q)
         });
-        self.condition(q.tag_matches(RwTableTag::Account, false), |cb| {
+        self.condition(q.tag_matches(RwTableTag::Account), |cb| {
             cb.build_account_constraints(q)
         });
-        self.condition(q.tag_matches(RwTableTag::AccountDestructed, false), |cb| {
+        self.condition(q.tag_matches(RwTableTag::AccountDestructed), |cb| {
             cb.build_account_destructed_constraints(q)
         });
-        self.condition(q.tag_matches(RwTableTag::CallContext, false), |cb| {
+        self.condition(q.tag_matches(RwTableTag::CallContext), |cb| {
             cb.build_call_context_constraints(q)
         });
-        self.condition(q.tag_matches(RwTableTag::TxLog, false), |cb| {
+        self.condition(q.tag_matches(RwTableTag::TxLog), |cb| {
             cb.build_tx_log_constraints(q)
         });
     }
@@ -252,8 +255,7 @@ impl<F: Field> ConstraintBuilder<F> {
             set::<F, TxLogFieldTag>(),
         );
         // reset log_id when tx_id increases
-        let no_tag_change = 1.expr() - q.tag_change();
-        self.condition(q.id_change() * no_tag_change, |cb| {
+        self.condition(q.id_change() * q.is_tag_unchanged.clone(), |cb| {
             cb.require_zero(
                 "reset log_id to one when tx_id increases",
                 q.tx_log_id(false) - 1.expr(),
@@ -265,19 +267,25 @@ impl<F: Field> ConstraintBuilder<F> {
                 1.expr(),
             );
             // tx_id increases by 1
-            cb.require_equal("tx_id increases by 1", q.id_change(), 1.expr());
+            cb.require_equal("tx_i by 1", q.id_change(), 1.expr());
         });
 
         self.condition(q.field_tag_matches(TxLogFieldTag::Address), |cb| {
             cb.require_zero("index is zero for address ", q.tx_log_index(false))
         });
 
-        // increase log_id when tag changes to Address if tx id stay same
+        // increase log_id when tag changes to Address within same tx
         self.condition(
             q.is_id_unchanged.clone()
-                * q.tag_matches(RwTableTag::TxLog, true)
+                * q.is_tag_unchanged.clone()
                 * q.field_tag_matches(TxLogFieldTag::Address),
-            |cb| cb.require_equal("log_id = pre_log_id + 1", q.tx_log_id(false), 1.expr()),
+            |cb| {
+                cb.require_equal(
+                    "log_id = pre_log_id + 1",
+                    q.tx_log_id(false),
+                    q.tx_log_id(true) + 1.expr(),
+                )
+            },
         );
 
         // if tag Topic appear, topic_index in range [0,4),can only increase by one when
@@ -295,7 +303,7 @@ impl<F: Field> ConstraintBuilder<F> {
         // constrain index is increasing by 1 when field_tag stay same
         // let no_field_tag_change= 1.expr() - q.field_tag_change();
         self.condition(
-            q.tag_matches(RwTableTag::TxLog, true) * q.is_field_tag_unchanged.clone(),
+            q.is_tag_unchanged.clone() * q.is_field_tag_unchanged.clone(),
             |cb| {
                 cb.require_equal(
                     "index = pre_index + 1",
@@ -370,22 +378,27 @@ impl<F: Field> Queries<F> {
         self.field_tag.clone()
     }
 
-    fn tag_change(&self) -> Expression<F> {
-        self.tag() - self.prev_tag.clone()
-    }
-
     fn value(&self) -> Expression<F> {
         self.value.clone()
     }
 
     fn tag_matches(&self, tag: RwTableTag) -> Expression<F> {
+<<<<<<< HEAD
         BinaryNumberConfig::<RwTableTag, 4>::value_equals_expr(tag, self.tag_bits.clone())
     }
 
     fn prev_tag_matches(&self, tag: RwTableTag) -> Expression<F> {
         BinaryNumberConfig::<RwTableTag, 4>::value_equals_expr(tag, self.tag_bits.clone())
+=======
+        generate_lagrange_base_polynomial(
+            self.tag.clone(),
+            tag as usize,
+            RwTableTag::iter().map(|x| x as usize),
+        )
+>>>>>>> add is_tag_unchanged to reduce degree
     }
 
+    // TODO: make this method to applied for all ttype Ops' field
     fn field_tag_matches(&self, tag: TxLogFieldTag) -> Expression<F> {
         BinaryNumberConfig::<RwTableTag, 4>::value_equals_expr(tag, self.tag_bits.clone())
     }
