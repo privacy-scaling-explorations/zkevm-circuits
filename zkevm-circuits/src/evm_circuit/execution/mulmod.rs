@@ -27,8 +27,7 @@ pub(crate) struct MulModGadget<F> {
     // a, b, n, r
     pub words: [util::Word<F>; 4],
 
-    k1: util::Word<F>,
-    k2: util::Word<F>,
+    k: util::Word<F>,
     a_reduced: util::Word<F>,
     zero: util::Word<F>,
     d: util::Word<F>,
@@ -53,8 +52,7 @@ impl<F: Field> ExecutionGadget<F> for MulModGadget<F> {
         let n = cb.query_word();
         let r = cb.query_word();
 
-        let k1 = cb.query_word();
-        let k2 = cb.query_word();
+        let k = cb.query_word();
 
         let a_reduced = cb.query_word();
         let d = cb.query_word();
@@ -69,7 +67,7 @@ impl<F: Field> ExecutionGadget<F> for MulModGadget<F> {
         let mul512_left = MulAddWords512Gadget::construct(cb, [&a_reduced, &b, &zero, &d, &e]);
 
         // 3.  k2 * n + r == d * 2^256 + e
-        let mul512_right = MulAddWords512Gadget::construct(cb, [&k2, &n, &r, &d, &e]);
+        let mul512_right = MulAddWords512Gadget::construct(cb, [&k, &n, &r, &d, &e]);
 
         // (r < n ) or n == 0
         let n_is_zero = IsZeroGadget::construct(cb, sum::expr(&n.cells));
@@ -97,8 +95,7 @@ impl<F: Field> ExecutionGadget<F> for MulModGadget<F> {
         Self {
             words: [a, b, n, r],
             same_context,
-            k1,
-            k2,
+            k,
             a_reduced,
             zero,
             d,
@@ -130,11 +127,7 @@ impl<F: Field> ExecutionGadget<F> for MulModGadget<F> {
         self.words[2].assign(region, offset, Some(n.to_le_bytes()))?;
         self.words[3].assign(region, offset, Some(r.to_le_bytes()))?;
         // 1. Reduction of a mod n
-        let (a_reduced, k1) = if n.is_zero() {
-            (U256::zero(), U256::zero())
-        } else {
-            (a % n, a / n)
-        };
+        let a_reduced = if n.is_zero() { U256::zero() } else { a % n };
 
         // 2. Compute r = a*b mod n
         let prod = a_reduced.full_mul(b);
@@ -143,16 +136,14 @@ impl<F: Field> ExecutionGadget<F> for MulModGadget<F> {
         let d = U256::from_little_endian(&prod_bytes[32..64]);
         let e = U256::from_little_endian(&prod_bytes[0..32]);
 
-        let (r, k2) = if n.is_zero() {
+        let (r, k) = if n.is_zero() {
             (U256::zero(), U256::zero())
         } else {
             // k2 <= b , always fits in U256
             (r, U256::try_from(prod / n).unwrap())
         };
 
-        dbg!(a, b, r, n, d, e, a_reduced, prod, k1, k2);
-        self.k1.assign(region, offset, Some(k1.to_le_bytes()))?;
-        self.k2.assign(region, offset, Some(k2.to_le_bytes()))?;
+        self.k.assign(region, offset, Some(k.to_le_bytes()))?;
         self.a_reduced
             .assign(region, offset, Some(a_reduced.to_le_bytes()))?;
         self.d.assign(region, offset, Some(d.to_le_bytes()))?;
@@ -164,7 +155,7 @@ impl<F: Field> ExecutionGadget<F> for MulModGadget<F> {
             .assign(region, offset, a, n, a_reduced, block.randomness)?;
         self.mul512_left
             .assign(region, offset, [a_reduced, b, U256::zero(), d, e])?;
-        self.mul512_right.assign(region, offset, [k2, n, r, d, e])?;
+        self.mul512_right.assign(region, offset, [k, n, r, d, e])?;
 
         self.lt.assign(region, offset, r, n)?;
 
