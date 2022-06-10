@@ -12,7 +12,7 @@ use crate::{
     mpt::FixedTableTag,
     param::{
         ACCOUNT_LEAF_KEY_C_IND, ACCOUNT_LEAF_KEY_S_IND, ACCOUNT_LEAF_NONCE_BALANCE_C_IND,
-        ACCOUNT_LEAF_NONCE_BALANCE_S_IND, HASH_WIDTH,
+        ACCOUNT_LEAF_NONCE_BALANCE_S_IND, HASH_WIDTH, ACCOUNT_NON_EXISTING_IND,
     },
 };
 
@@ -50,6 +50,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
         is_balance_mod: Column<Advice>,
         is_codehash_mod: Column<Advice>,
         is_account_delete_mod: Column<Advice>,
+        is_non_existing_account_proof: Column<Advice>,
         fixed_table: [Column<Fixed>; 3],
         is_s: bool,
     ) -> AccountLeafNonceBalanceConfig {
@@ -76,8 +77,10 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
             // 184     80      248     78      nonce      balance
 
             let mut rot = -(ACCOUNT_LEAF_NONCE_BALANCE_S_IND - ACCOUNT_LEAF_KEY_S_IND);
+            let mut rot_into_non_existing = -(ACCOUNT_LEAF_NONCE_BALANCE_S_IND - ACCOUNT_NON_EXISTING_IND);
             if !is_s {
                 rot = -(ACCOUNT_LEAF_NONCE_BALANCE_C_IND - ACCOUNT_LEAF_KEY_C_IND);
+                rot_into_non_existing = -(ACCOUNT_LEAF_NONCE_BALANCE_C_IND - ACCOUNT_NON_EXISTING_IND);
             }
             let c128 = Expression::Constant(F::from(128));
             let c248 = Expression::Constant(F::from(248));
@@ -89,11 +92,11 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
             let mult_diff_nonce = meta.query_advice(mult_diff_nonce, Rotation::cur());
             let mult_diff_balance = meta.query_advice(mult_diff_balance, Rotation::cur());
 
-            let mut is_nonce_long = meta.query_advice(
+            let is_nonce_long = meta.query_advice(
                 sel1,
                 Rotation(rot),
             );
-            let mut is_balance_long = meta.query_advice(
+            let is_balance_long = meta.query_advice(
                 sel2,
                 Rotation(rot),
             );
@@ -124,6 +127,24 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
             let s_advices0_cur = meta.query_advice(s_advices[0], Rotation::cur());
             let s_advices1_cur = meta.query_advice(s_advices[1], Rotation::cur());
 
+            // When non_existing_account_proof and wrong leaf, these constraints need to be checked (the wrong
+            // leaf is being checked). When non_existing_account_proof and not wrong leaf (there are only branches
+            // in the proof and a placeholder account leaf), these constraints are not checked. It is checked
+            // that there is nil in the parent branch at the proper position (see account_non_existing), note
+            // that we need (placeholder) account leaf for lookups and to know when to check that parent branch
+            // has a nil.
+            let is_wrong_leaf = meta.query_advice(s_rlp1, Rotation(rot_into_non_existing));
+            let is_non_existing_account_proof = meta.query_advice(is_non_existing_account_proof, Rotation::cur());
+
+            constraints.push((
+                "is_wrong_leaf is bool",
+                q_enable.clone()
+                    * (one.clone() - is_wrong_leaf.clone())
+                    * is_wrong_leaf.clone(),
+            ));
+            // Note: (is_non_existing_account_proof.clone() - is_wrong_leaf.clone() - one.clone())
+            // cannot be 0 when is_non_existing_account_proof = 0.
+
             let s_rlp1 = meta.query_advice(s_rlp1, Rotation::cur());
             let rlp_len = meta.query_advice(s_rlp2, Rotation(rot));
             let s_rlp2 = meta.query_advice(s_rlp2, Rotation::cur());
@@ -137,7 +158,9 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
             let c_rlp2 = meta.query_advice(c_rlp2, Rotation::cur());
             constraints.push((
                 "leaf nonce balance c_rlp1",
-                q_enable.clone() * (c_rlp1.clone() - c248.clone()),
+                q_enable.clone()
+                * (is_non_existing_account_proof.clone() - is_wrong_leaf.clone() - one.clone())
+                * (c_rlp1.clone() - c248.clone()),
             ));
             expr = expr + c_rlp1.clone() * acc_mult_prev.clone() * r_table[rind].clone();
             rind += 1;
@@ -290,19 +313,28 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
             184     77      248     75      7 (short nonce , only one byte)   135 (means balance is of length 7) 28 ... 59
             */
 
-            constraints.push(("RLP 1", q_enable.clone() * (s_rlp1.clone() - c184)));
-            constraints.push(("RLP 2", q_enable.clone() * (c_rlp1.clone() - c248)));
+            constraints.push(("RLP 1", q_enable.clone()
+                * (is_non_existing_account_proof.clone() - is_wrong_leaf.clone() - one.clone())
+                * (s_rlp1.clone() - c184)));
+            constraints.push(("RLP 2", q_enable.clone()
+                * (is_non_existing_account_proof.clone() - is_wrong_leaf.clone() - one.clone())
+                * (c_rlp1.clone() - c248)));
             constraints.push((
                 "RLP 3",
-                q_enable.clone() * (s_rlp2.clone() - c_rlp2.clone() - one.clone() - one.clone()),
+                q_enable.clone()
+                * (is_non_existing_account_proof.clone() - is_wrong_leaf.clone() - one.clone())
+                * (s_rlp2.clone() - c_rlp2.clone() - one.clone() - one.clone()),
             ));
             constraints.push((
                 "RLP 4",
-                q_enable.clone() * (c_rlp2.clone() - nonce_len - balance_len - c66),
+                q_enable.clone()
+                * (is_non_existing_account_proof.clone() - is_wrong_leaf.clone() - one.clone())
+                * (c_rlp2.clone() - nonce_len - balance_len - c66),
             ));
             constraints.push((
                 "account leaf RLP length",
                 q_enable.clone()
+                    * (is_non_existing_account_proof.clone() - is_wrong_leaf.clone() - one.clone())
                     * (rlp_len - key_len - one.clone() - s_rlp2 - one.clone() - one.clone()),
                 // -1 because key_len is stored in 1 column
                 // -1 because of s_rlp1

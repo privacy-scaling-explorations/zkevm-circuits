@@ -10,8 +10,7 @@ use crate::{
     helpers::{compute_rlc, key_len_lookup, mult_diff_lookup, range_lookups},
     mpt::FixedTableTag,
     param::{
-        HASH_WIDTH, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS,
-        IS_BRANCH_S_PLACEHOLDER_POS, LAYOUT_OFFSET,
+        HASH_WIDTH, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, LAYOUT_OFFSET,
     },
 };
 
@@ -29,6 +28,7 @@ impl<F: FieldExt> AccountNonExistingChip<F> {
         meta: &mut ConstraintSystem<F>,
         q_enable: impl Fn(&mut VirtualCells<'_, F>) -> Expression<F> + Copy,
         not_first_level: Column<Advice>,
+        s_rlp1: Column<Advice>,
         s_rlp2: Column<Advice>,
         c_rlp1: Column<Advice>,
         c_rlp2: Column<Advice>,
@@ -36,6 +36,7 @@ impl<F: FieldExt> AccountNonExistingChip<F> {
         key_rlc: Column<Advice>,
         key_rlc_mult: Column<Advice>,
         acc_s: Column<Advice>,
+        sel1: Column<Advice>, // should be the same as sel2 as both parallel proofs are the same for non_existing_account_proof
         r_table: Vec<Expression<F>>,
         fixed_table: [Column<Fixed>; 3],
         address_rlc: Column<Advice>,
@@ -58,37 +59,45 @@ impl<F: FieldExt> AccountNonExistingChip<F> {
                 let is_leaf_in_first_level =
                     one.clone() - meta.query_advice(not_first_level, Rotation::cur());
 
+                // Wrong leaf has a meaning only for non existing account proof. For this proof, there are two cases:
+                // 1. A leaf is returned that is not at the required address (wrong leaf).
+                // 2. Only branches are returned and there is nil object at address position. Placeholder account leaf is added in this case.
+                let is_wrong_leaf = meta.query_advice(s_rlp1, Rotation::cur());
+                // is_wrong_leaf is checked to be bool in account_leaf_nonce_balance (q_enable in this chip
+                // is true only when non_existing_account).
+
                 let key_rlc_acc_start =
                     meta.query_advice(key_rlc, Rotation(rot_into_first_branch_child));
                 let key_mult_start =
                     meta.query_advice(key_rlc_mult, Rotation(rot_into_first_branch_child));
 
                 // sel1, sel2 is in init branch
-                let sel1 = meta.query_advice(
+                let c16 = meta.query_advice(
                     s_advices[IS_BRANCH_C16_POS - LAYOUT_OFFSET],
                     Rotation(rot_into_first_branch_child - 1),
                 );
-                let sel2 = meta.query_advice(
+                let c1 = meta.query_advice(
                     s_advices[IS_BRANCH_C1_POS - LAYOUT_OFFSET],
                     Rotation(rot_into_first_branch_child - 1),
                 );
 
                 let c48 = Expression::Constant(F::from(48));
 
-                // If sel1 = 1, we have nibble+48 in s_advices[0].
+                // If c16 = 1, we have nibble+48 in s_advices[0].
                 let s_advice1 = meta.query_advice(s_advices[1], Rotation::cur());
                 let mut key_rlc_acc = key_rlc_acc_start.clone()
-                    + (s_advice1.clone() - c48) * key_mult_start.clone() * sel1.clone();
-                let mut key_mult = key_mult_start.clone() * r_table[0].clone() * sel1;
-                key_mult = key_mult + key_mult_start.clone() * sel2.clone(); // set to key_mult_start if sel2, stays key_mult if sel1
+                    + (s_advice1.clone() - c48) * key_mult_start.clone() * c16.clone();
+                let mut key_mult = key_mult_start.clone() * r_table[0].clone() * c16;
+                key_mult = key_mult + key_mult_start.clone() * c1.clone(); // set to key_mult_start if sel2, stays key_mult if sel1
 
-                // If sel2 = 1, we have 32 in s_advices[0].
+                // If c1 = 1, we have 32 in s_advices[0].
                 constraints.push((
                     "Account leaf key acc s_advice1",
                     q_enable.clone()
                         * (one.clone() - is_leaf_in_first_level.clone())
+                        * is_wrong_leaf.clone()
                         * (s_advice1 - c32.clone())
-                        * sel2,
+                        * c1,
                 ));
 
                 let s_advices2 = meta.query_advice(s_advices[2], Rotation::cur());
@@ -111,6 +120,7 @@ impl<F: FieldExt> AccountNonExistingChip<F> {
                     "Account address RLC",
                     q_enable.clone()
                         * (one.clone() - is_leaf_in_first_level.clone())
+                        * is_wrong_leaf.clone()
                         * (key_rlc_acc.clone() - address_rlc.clone()),
                 ));
 
@@ -122,13 +132,24 @@ impl<F: FieldExt> AccountNonExistingChip<F> {
                     "Address of a leaf is different than address being inquired (corresponding to address_rlc)",
                     q_enable.clone()
                         * (one.clone() - is_leaf_in_first_level.clone())
+                        * is_wrong_leaf.clone()
                         * (one.clone() - (sum - sum_prev) * diff_inv),
+                ));
+
+                let is_nil_object = meta.query_advice(sel1, Rotation(rot_into_first_branch_child));
+                constraints.push((
+                    "Nil object in parent branch",
+                    q_enable.clone()
+                        * (one.clone() - is_leaf_in_first_level.clone())
+                        * (one.clone() - is_wrong_leaf)
+                        * (one.clone() - is_nil_object),
                 ));
 
                 constraints
             },
         );
 
+        // TODO: (one.clone() - is_wrong_leaf) in first level
         // TODO: prepare test
         meta.create_gate("Non existing account proof leaf address RLC (leaf in first level)", |meta| {
             let q_enable = q_enable(meta);
@@ -136,6 +157,8 @@ impl<F: FieldExt> AccountNonExistingChip<F> {
 
             let is_leaf_in_first_level =
                 one.clone() - meta.query_advice(not_first_level, Rotation::cur());
+            
+            let is_wrong_leaf = meta.query_advice(s_rlp1, Rotation::cur());
 
             // Note: when leaf is in the first level, the key stored in the leaf is always of length 33 -
             // the first byte being 32 (when after branch, the information whether there the key is odd or even
@@ -146,7 +169,10 @@ impl<F: FieldExt> AccountNonExistingChip<F> {
 
             constraints.push((
                 "Account leaf key acc s_advice1",
-                q_enable.clone() * (s_advice1 - c32) * is_leaf_in_first_level.clone(),
+                q_enable.clone()
+                * (s_advice1 - c32)
+                * is_wrong_leaf.clone()
+                * is_leaf_in_first_level.clone(),
             ));
 
             let s_advices2 = meta.query_advice(s_advices[2], Rotation::cur());
@@ -168,6 +194,7 @@ impl<F: FieldExt> AccountNonExistingChip<F> {
                 "Computed account address RLC same as value in address_rlc column",
                 q_enable.clone()
                 * is_leaf_in_first_level.clone()
+                * is_wrong_leaf.clone()
                 * (key_rlc_acc.clone() - address_rlc.clone()),
             ));
 
@@ -178,7 +205,8 @@ impl<F: FieldExt> AccountNonExistingChip<F> {
             constraints.push((
                 "Address of a leaf is different than address being inquired (corresponding to address_rlc)",
                 q_enable.clone()
-                    * (one.clone() - is_leaf_in_first_level.clone())
+                    * is_leaf_in_first_level.clone()
+                    * is_wrong_leaf
                     * (one.clone() - (sum - sum_prev) * diff_inv),
             ));
 

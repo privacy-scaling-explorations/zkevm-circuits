@@ -961,6 +961,7 @@ impl<F: FieldExt> MPTConfig<F> {
                 q_enable * is_account_non_existing_row * is_account_non_existing_proof
             },
             not_first_level,
+            s_rlp1,
             s_rlp2,
             c_rlp1,
             c_rlp2,
@@ -968,6 +969,7 @@ impl<F: FieldExt> MPTConfig<F> {
             key_rlc,
             key_rlc_mult,
             acc_s,
+            sel1,
             r_table.clone(),
             fixed_table.clone(),
             address_rlc,
@@ -1002,6 +1004,7 @@ impl<F: FieldExt> MPTConfig<F> {
             is_balance_mod,
             is_codehash_mod,
             is_account_delete_mod,
+            is_non_existing_account_proof,
             fixed_table.clone(),
             true,
         );
@@ -1035,6 +1038,7 @@ impl<F: FieldExt> MPTConfig<F> {
             is_balance_mod,
             is_codehash_mod,
             is_account_delete_mod,
+            is_non_existing_account_proof,
             fixed_table.clone(),
             false,
         );
@@ -1045,6 +1049,7 @@ impl<F: FieldExt> MPTConfig<F> {
             q_not_first,
             not_first_level,
             is_account_leaf_storage_codehash_s,
+            s_rlp1,
             s_rlp2,
             c_rlp2,
             s_advices,
@@ -1063,6 +1068,7 @@ impl<F: FieldExt> MPTConfig<F> {
             is_balance_mod,
             is_codehash_mod,
             is_account_delete_mod,
+            is_non_existing_account_proof,
             true,
         );
 
@@ -1072,6 +1078,7 @@ impl<F: FieldExt> MPTConfig<F> {
             q_not_first,
             not_first_level,
             is_account_leaf_storage_codehash_c,
+            s_rlp1,
             s_rlp2,
             c_rlp2,
             s_advices,
@@ -1090,6 +1097,7 @@ impl<F: FieldExt> MPTConfig<F> {
             is_balance_mod,
             is_codehash_mod,
             is_account_delete_mod,
+            is_non_existing_account_proof,
             false,
         );
 
@@ -3066,7 +3074,10 @@ impl<F: FieldExt> MPTConfig<F> {
                                     sum += F::from(row[3+i] as u64);
                                     sum_prev += F::from(row_prev[3+i] as u64);
                                 }
-                                let diff_inv = F::invert(&(sum - sum_prev)).unwrap();
+                                let mut diff_inv = F::zero();
+                                if sum != sum_prev {
+                                    diff_inv = F::invert(&(sum - sum_prev)).unwrap();
+                                }
 
                                 region.assign_advice(
                                     || "assign sum".to_string(),
