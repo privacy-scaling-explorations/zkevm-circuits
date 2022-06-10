@@ -223,6 +223,7 @@ mod test {
     fn mulmod_bad_r_on_nonzero_n() {
         assert_eq!(true, test_u32(7, 18, 10, Some(6)));
         assert_eq!(false, test_u32(7, 18, 10, Some(7)));
+        assert_eq!(false, test_u32(7, 18, 10, Some(5)));
     }
 
     #[test]

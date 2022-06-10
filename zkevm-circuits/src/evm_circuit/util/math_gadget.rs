@@ -1272,9 +1272,9 @@ impl<F: Field> MulAddWords512Gadget<F> {
         let t4 = a_limbs[1] * b_limbs[3] + a_limbs[2] * b_limbs[2] + a_limbs[3] * b_limbs[1];
         let t5 = a_limbs[2] * b_limbs[3] + a_limbs[3] * b_limbs[2];
 
-        let carry_0 = (t0 + (t1 << 64) + c_lo - e_lo) >> 128;
-        let carry_1 = (t2 + (t3 << 64) + c_hi + carry_0 - e_hi) >> 128;
-        let carry_2 = (t4 + (t5 << 64) + carry_1 - d_lo) >> 128;
+        let carry_0 = ((t0 + (t1 << 64) + c_lo).saturating_sub(e_lo)) >> 128;
+        let carry_1 = ((t2 + (t3 << 64) + c_hi + carry_0).saturating_sub(e_hi)) >> 128;
+        let carry_2 = ((t4 + (t5 << 64) + carry_1).saturating_sub(d_lo)) >> 128;
 
         self.carry_0
             .iter()
