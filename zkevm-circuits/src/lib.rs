@@ -1,5 +1,8 @@
 //! # zk_evm
 
+#![allow(incomplete_features)]
+// Needed by DummyGadget in evm circuit
+#![feature(adt_const_params)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 // Temporary until we have more of the crate implemented.
 #![allow(dead_code)]
