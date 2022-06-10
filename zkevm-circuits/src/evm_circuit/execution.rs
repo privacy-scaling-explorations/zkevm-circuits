@@ -23,6 +23,7 @@ use std::{collections::HashMap, convert::TryInto, iter};
 use strum::IntoEnumIterator;
 
 mod add_sub;
+mod addmod;
 mod begin_tx;
 mod bitwise;
 mod block_ctx;
@@ -69,6 +70,7 @@ mod stop;
 mod swap;
 
 use add_sub::AddSubGadget;
+use addmod::AddModGadget;
 use begin_tx::BeginTxGadget;
 use bitwise::BitwiseGadget;
 use block_ctx::{BlockCtxU160Gadget, BlockCtxU256Gadget, BlockCtxU64Gadget};
@@ -151,6 +153,7 @@ pub(crate) struct ExecutionConfig<F> {
     end_tx_gadget: EndTxGadget<F>,
     // opcode gadgets
     add_sub_gadget: AddSubGadget<F>,
+    addmod_gadget: AddModGadget<F>,
     bitwise_gadget: BitwiseGadget<F>,
     byte_gadget: ByteGadget<F>,
     call_gadget: CallGadget<F>,
@@ -344,6 +347,7 @@ impl<F: Field> ExecutionConfig<F> {
             end_tx_gadget: configure_gadget!(),
             // opcode gadgets
             add_sub_gadget: configure_gadget!(),
+            addmod_gadget: configure_gadget!(),
             bitwise_gadget: configure_gadget!(),
             byte_gadget: configure_gadget!(),
             call_gadget: configure_gadget!(),
@@ -780,6 +784,7 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::EndBlock => assign_exec_step!(self.end_block_gadget),
             // opcode
             ExecutionState::ADD_SUB => assign_exec_step!(self.add_sub_gadget),
+            ExecutionState::ADDMOD => assign_exec_step!(self.addmod_gadget),
             ExecutionState::BITWISE => assign_exec_step!(self.bitwise_gadget),
             ExecutionState::BYTE => assign_exec_step!(self.byte_gadget),
             ExecutionState::CALL => assign_exec_step!(self.call_gadget),
