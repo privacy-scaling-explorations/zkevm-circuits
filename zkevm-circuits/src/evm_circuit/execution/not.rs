@@ -13,8 +13,7 @@ use crate::{
     util::Expr,
 };
 use eth_types::evm_types::OpcodeId;
-use eth_types::Field;
-use eth_types::ToLittleEndian;
+use eth_types::{Field, ToLittleEndian};
 use halo2_proofs::plonk::Error;
 
 #[derive(Clone, Debug)]
@@ -40,7 +39,7 @@ impl<F: Field> ExecutionGadget<F> for NotGadget<F> {
 
         for idx in 0..32 {
             cb.add_lookup(
-                "Bitwise lookup",
+                "input XOR output is all 1's",
                 Lookup::Fixed {
                     tag: FixedTableTag::BitwiseXor.expr(),
                     values: [
