@@ -7,7 +7,7 @@ use crate::{
             common_gadget::SameContextGadget,
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
             math_gadget::{IsZeroGadget, LtWordGadget, ModGadget, MulAddWords512Gadget},
-            not, sum, CachedRegion,
+            sum, CachedRegion,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -15,7 +15,7 @@ use crate::{
 };
 use bus_mapping::evm::OpcodeId;
 use eth_types::{Field, ToLittleEndian, U256};
-use halo2_proofs::plonk::{Error, Expression};
+use halo2_proofs::plonk::Error;
 
 /// MulModGadget verifies opcod MULMOD
 /// Verify a * b = r (mod n)
@@ -60,7 +60,6 @@ impl<F: Field> ExecutionGadget<F> for MulModGadget<F> {
         let d = cb.query_word();
         let e = cb.query_word();
 
-        // TODO Review this
         let zero = cb.query_word();
 
         // 1.  k1 * n + a_reduced  == a
@@ -84,8 +83,6 @@ impl<F: Field> ExecutionGadget<F> for MulModGadget<F> {
         cb.stack_pop(b.expr());
         cb.stack_pop(n.expr());
         cb.stack_push(r.expr());
-        // TODO Remove this, r is correct since the addition of ModGadget
-        // cb.stack_push(r.expr() * not::expr(n_is_zero.expr()));
 
         // State transition
         let step_state_transition = StepStateTransition {
@@ -171,10 +168,6 @@ impl<F: Field> ExecutionGadget<F> for MulModGadget<F> {
 
         self.lt.assign(region, offset, r, n)?;
 
-        // TODO test and remove
-        // let n_as_f = util::Word::random_linear_combine(n.to_le_bytes(),
-        // block.randomness);
-        // self.n_is_zero.assign(region, offset, n_as_f)?;
         let n_sum = (0..32).fold(0, |acc, idx| acc + n.byte(idx) as u64);
         dbg!(n_sum);
         self.n_is_zero.assign(region, offset, F::from(n_sum))?;
