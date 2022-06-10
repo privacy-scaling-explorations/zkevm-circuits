@@ -200,7 +200,7 @@ mod test {
                 .struct_logs
                 .last_mut()
                 .unwrap();
-            last.stack = Stack::from_vec(vec![r.into()]);
+            last.stack = Stack::from_vec(vec![r]);
         }
         run_test_circuits(ctx, None).is_ok()
     }
@@ -210,31 +210,31 @@ mod test {
 
     #[test]
     fn mulmod_simple() {
-        assert_eq!(true, test_u32(7, 12, 10, None));
-        assert_eq!(true, test_u32(7, 1, 10, None));
+        assert!(test_u32(7, 12, 10, None));
+        assert!(test_u32(7, 1, 10, None));
     }
 
     #[test]
     fn mulmod_division_by_zero() {
-        assert_eq!(true, test_u32(7, 1, 0, None));
+        assert!(test_u32(7, 1, 0, None));
     }
 
     #[test]
     fn mulmod_bad_r_on_nonzero_n() {
-        assert_eq!(true, test_u32(7, 18, 10, Some(6)));
-        assert_eq!(false, test_u32(7, 18, 10, Some(7)));
-        assert_eq!(false, test_u32(7, 18, 10, Some(5)));
+        assert!(test_u32(7, 18, 10, Some(6)));
+        assert!(!test_u32(7, 18, 10, Some(7)));
+        assert!(!test_u32(7, 18, 10, Some(5)));
     }
 
     #[test]
     fn mulmod_bad_r_on_zero_n() {
-        assert_eq!(true, test_u32(2, 3, 0, Some(0)));
-        assert_eq!(false, test_u32(2, 3, 0, Some(1)));
+        assert!(test_u32(2, 3, 0, Some(0)));
+        assert!(!test_u32(2, 3, 0, Some(1)));
     }
 
     #[test]
     fn mulmod_bad_r_bigger_n() {
-        assert_eq!(true, test_u32(2, 3, 5, Some(1)));
-        assert_eq!(false, test_u32(2, 3, 5, Some(5)));
+        assert!(test_u32(2, 3, 5, Some(1)));
+        assert!(!test_u32(2, 3, 5, Some(5)));
     }
 }

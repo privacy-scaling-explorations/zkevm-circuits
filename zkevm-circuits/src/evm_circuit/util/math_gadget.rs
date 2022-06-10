@@ -1313,7 +1313,7 @@ impl<F: Field> ModGadget<F> {
         let k = cb.query_word();
         let n_is_zero = IsZeroGadget::construct(cb, sum::expr(&n.cells));
         let r_is_zero = IsZeroGadget::construct(cb, sum::expr(&r.cells));
-        let lt = LtWordGadget::construct(cb, &r, &n);
+        let lt = LtWordGadget::construct(cb, r, n);
 
         cb.add_constraint(
             " (r + k*n - a) * (2 - n!=0 - r!=0) ",
