@@ -4,16 +4,139 @@ use crate::gate_helpers::f_to_biguint;
 use crate::permutation::rho_helpers::{get_overflow_detector, BASE_NUM_OF_CHUNKS};
 use eth_types::Field;
 use halo2_proofs::{
-    circuit::Layouter,
-    plonk::{ConstraintSystem, Error, TableColumn},
+    circuit::{AssignedCell, Layouter},
+    plonk::{Advice, Column, ConstraintSystem, Error, TableColumn},
+    poly::Rotation,
 };
 use itertools::Itertools;
 use std::convert::TryInto;
 use std::marker::PhantomData;
+use strum_macros::{Display, EnumIter};
+
+use super::rho_helpers::{STEP2_RANGE, STEP3_RANGE};
 
 const MAX_CHUNKS: usize = 64;
 const NUM_OF_BINARY_CHUNKS: usize = 16;
 const NUM_OF_B9_CHUNKS: usize = 5;
+
+#[derive(EnumIter, Display, Clone, Copy)]
+enum TableTags {
+    Range12 = 0,
+    Range169,
+    SpecialChunk,
+}
+
+#[derive(Debug, Clone)]
+pub struct StackableTable<F> {
+    tag: (Column<Advice>, TableColumn),
+    col1: (Column<Advice>, TableColumn),
+    col2: (Column<Advice>, TableColumn),
+    _marker: PhantomData<F>,
+}
+
+impl<F: Field> StackableTable<F> {
+    pub(crate) fn configure(
+        meta: &mut ConstraintSystem<F>,
+        adv_cols: [Column<Advice>; 3],
+        table_cols: [TableColumn; 3],
+    ) -> Self {
+        let tag = (adv_cols[0], table_cols[0]);
+        let col1 = (adv_cols[1], table_cols[1]);
+        let col2 = (adv_cols[2], table_cols[2]);
+        let q_enable = meta.complex_selector();
+        meta.lookup("stackable lookup", |meta| {
+            let q_enable = meta.query_selector(q_enable);
+            vec![tag, col1, col2]
+                .iter()
+                .map(|&(adv_col, table_col)| {
+                    (
+                        q_enable.clone() * meta.query_advice(adv_col, Rotation::cur()),
+                        table_col,
+                    )
+                })
+                .collect_vec()
+        });
+        Self {
+            tag,
+            col1,
+            col2,
+            _marker: PhantomData,
+        }
+    }
+    pub(crate) fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
+        for &(tag, k) in [
+            (TableTags::Range12, STEP2_RANGE),
+            (TableTags::Range169, STEP3_RANGE),
+        ]
+        .iter()
+        {
+            layouter.assign_table(
+                || format!("range {}", tag),
+                |mut table| {
+                    for i in 0..=k {
+                        table.assign_cell(
+                            || format!("tag range{}", tag),
+                            self.tag.1,
+                            i as usize,
+                            || Ok(F::from(tag as u64)),
+                        )?;
+                        table.assign_cell(
+                            || format!("range{}", tag),
+                            self.col1.1,
+                            i as usize,
+                            || Ok(F::from(i)),
+                        )?;
+                        table.assign_cell(
+                            || format!("dummy col range{}", tag),
+                            self.col2.1,
+                            i as usize,
+                            || Ok(F::zero()),
+                        )?;
+                    }
+                    Ok(())
+                },
+            )?;
+        }
+        layouter.assign_table(
+            || "Special chunks",
+            |mut table| {
+                let mut offset = 0;
+                for i in 0..B13 {
+                    for j in 0..(B13 - i) {
+                        let (low, high) = (i, j);
+                        let last_chunk = F::from(low as u64)
+                            + F::from(high as u64)
+                                * F::from(B13 as u64).pow(&[LANE_SIZE as u64, 0, 0, 0]);
+                        let output_coef = F::from(convert_b13_coef(low + high) as u64);
+                        table.assign_cell(
+                            || "tag special chunks",
+                            self.tag.1,
+                            offset,
+                            || Ok(F::from(TableTags::SpecialChunk as u64)),
+                        )?;
+                        table.assign_cell(
+                            || "last chunk",
+                            self.col1.1,
+                            offset,
+                            || Ok(last_chunk),
+                        )?;
+                        table.assign_cell(
+                            || "output coef",
+                            self.col2.1,
+                            offset,
+                            || Ok(output_coef),
+                        )?;
+                        offset += 1;
+                    }
+                }
+                Ok(())
+            },
+        )
+    }
+    pub(crate) fn lookup_range(value: AssignedCell<F, F>) -> Result<(), Error> {
+        Ok(())
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct RangeCheckConfig<F, const K: u64> {
