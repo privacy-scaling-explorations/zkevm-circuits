@@ -92,19 +92,25 @@ impl<F: Field> ExecutionGadget<F> for MulDivModShlShrGadget<F> {
 
         cb.require_zero(
             "remainder == 0 for both opcode MUL and SHL",
-            (is_mul + is_shl) * (1.expr() - remainder_is_zero.expr()),
+            (is_mul.clone() + is_shl.clone()) * (1.expr() - remainder_is_zero.expr()),
         );
 
         cb.require_zero(
             "overflow == 0 for opcode DIV, MOD and SHR",
-            (is_div + is_mod + is_shr) * mul_add_words.overflow(),
+            (is_div.clone() + is_mod.clone() + is_shr.clone()) * mul_add_words.overflow(),
         );
+
+        let gas_cost = is_mul * OpcodeId::MUL.constant_gas_cost().expr()
+            + is_div * OpcodeId::DIV.constant_gas_cost().expr()
+            + is_mod * OpcodeId::MOD.constant_gas_cost().expr()
+            + is_shl * OpcodeId::SHL.constant_gas_cost().expr()
+            + is_shr * OpcodeId::SHR.constant_gas_cost().expr();
 
         let step_state_transition = StepStateTransition {
             rw_counter: Delta(3.expr()),
             program_counter: Delta(1.expr()),
             stack_pointer: Delta(1.expr()),
-            gas_left: Delta(-OpcodeId::MUL.constant_gas_cost().expr()),
+            gas_left: Delta(-gas_cost),
             ..Default::default()
         };
 
@@ -250,10 +256,10 @@ mod test {
     use eth_types::{bytecode, Word};
     use mock::TestContext;
 
-    fn test_ok(opcode: OpcodeId, a: Word, b: Word) {
+    fn test_ok(opcode: OpcodeId, pop1: Word, pop2: Word) {
         let bytecode = bytecode! {
-            PUSH32(b)
-            PUSH32(a)
+            PUSH32(pop1)
+            PUSH32(pop2)
             #[start]
             .write_op(opcode)
             STOP
@@ -269,65 +275,77 @@ mod test {
     }
 
     #[test]
-    fn mul_gadget_simple() {
-        test_ok(OpcodeId::MUL, 0x030201.into(), 0x060504.into());
+    fn mul_gadget_tests() {
+        test_ok(OpcodeId::MUL, Word::from(0xABCD), Word::from(0x1234));
+        test_ok(OpcodeId::MUL, Word::from(0xABCD), Word::from(0x1234) << 240);
+        test_ok(
+            OpcodeId::MUL,
+            Word::from(0xABCD) << 240,
+            Word::from(0x1234) << 240,
+        );
+        let max_word = Word::from_big_endian(&[255_u8; 32]);
+        test_ok(OpcodeId::MUL, max_word, Word::from(0x1234));
+        test_ok(OpcodeId::MUL, max_word, Word::from(0));
+        test_ok(OpcodeId::MUL, rand_word(), rand_word());
     }
 
     #[test]
-    fn mul_gadget_overflow() {
-        let a = Word::from_dec_str("3402823669209384634633746074317682114560").unwrap(); // 2**128 * 10
-        let b = Word::from_dec_str("34028236692093846346337460743176821145600").unwrap(); // 2**128 * 100
-        test_ok(OpcodeId::MUL, a, b);
-
-        let a = Word::from_dec_str("3402823669209384634633746074317682114560").unwrap(); // 2**128 * 10
-        let b = Word::from_dec_str("34028236692093846346337460743176821145500").unwrap(); // (2**128 - 1) * 100
-        test_ok(OpcodeId::MUL, a, b);
-    }
-
-    #[test]
-    fn mul_gadget_rand() {
-        let a = rand_word();
-        let b = rand_word();
-        test_ok(OpcodeId::MUL, a, b);
-    }
-
-    #[test]
-    fn div_gadget_simple() {
-        test_ok(OpcodeId::DIV, 0xFFFFFF.into(), 0xABC.into());
-        test_ok(OpcodeId::DIV, 0xABC.into(), 0xFFFFFF.into());
-        test_ok(OpcodeId::DIV, 0xFFFFFF.into(), 0xFFFFFFF.into());
-        test_ok(OpcodeId::DIV, 0xABC.into(), 0.into());
+    fn div_gadget_tests() {
+        test_ok(OpcodeId::DIV, Word::from(0xABCD), Word::from(0x1234));
+        test_ok(OpcodeId::DIV, Word::from(0xABCD), Word::from(0x1234) << 240);
         test_ok(
             OpcodeId::DIV,
-            Word::from_big_endian(&[255u8; 32]),
-            0xABCDEF.into(),
+            Word::from(0xABCD) << 240,
+            Word::from(0x1234) << 240,
         );
+        let max_word = Word::from_big_endian(&[255_u8; 32]);
+        test_ok(OpcodeId::DIV, max_word, Word::from(0x1234));
+        test_ok(OpcodeId::DIV, max_word, Word::from(0));
+        test_ok(OpcodeId::DIV, rand_word(), rand_word());
     }
 
     #[test]
-    fn div_gadget_rand() {
-        let dividend = rand_word();
-        let divisor = rand_word();
-        test_ok(OpcodeId::DIV, dividend, divisor);
-    }
-
-    #[test]
-    fn mod_gadget_simple() {
-        test_ok(OpcodeId::MOD, 0xFFFFFF.into(), 0xABC.into());
-        test_ok(OpcodeId::MOD, 0xABC.into(), 0xFFFFFF.into());
-        test_ok(OpcodeId::MOD, 0xFFFFFF.into(), 0xFFFFFFF.into());
-        test_ok(OpcodeId::MOD, 0xABC.into(), 0.into());
+    fn mod_gadget_tests() {
+        test_ok(OpcodeId::MOD, Word::from(0xABCD), Word::from(0x1234));
+        test_ok(OpcodeId::MOD, Word::from(0xABCD), Word::from(0x1234) << 240);
         test_ok(
             OpcodeId::MOD,
-            Word::from_big_endian(&[255u8; 32]),
-            0xABCDEF.into(),
+            Word::from(0xABCD) << 240,
+            Word::from(0x1234) << 240,
         );
+        let max_word = Word::from_big_endian(&[255_u8; 32]);
+        test_ok(OpcodeId::MOD, max_word, Word::from(0x1234));
+        test_ok(OpcodeId::MOD, max_word, Word::from(0));
+        test_ok(OpcodeId::MOD, rand_word(), rand_word());
     }
 
     #[test]
-    fn mod_gadget_rand() {
-        let dividend = rand_word();
-        let divisor = rand_word();
-        test_ok(OpcodeId::MOD, dividend, divisor);
+    fn shl_gadget_tests() {
+        test_ok(OpcodeId::SHL, Word::from(0xABCD) << 240, Word::from(8));
+        test_ok(OpcodeId::SHL, Word::from(0x1234) << 240, Word::from(7));
+        test_ok(OpcodeId::SHL, Word::from(0x8765) << 240, Word::from(17));
+        test_ok(OpcodeId::SHL, Word::from(0x4321) << 240, Word::from(0));
+        test_ok(OpcodeId::SHL, Word::from(0xFFFF), Word::from(256));
+        test_ok(OpcodeId::SHL, Word::from(0x12345), Word::from(256 + 8 + 1));
+        let max_word = Word::from_big_endian(&[255_u8; 32]);
+        test_ok(OpcodeId::SHL, max_word, Word::from(63));
+        test_ok(OpcodeId::SHL, max_word, Word::from(128));
+        test_ok(OpcodeId::SHL, max_word, Word::from(129));
+        test_ok(OpcodeId::SHL, rand_word(), rand_word());
+    }
+
+    #[test]
+    fn shr_gadget_tests() {
+        test_ok(OpcodeId::SHR, Word::from(0xABCD), Word::from(8));
+        test_ok(OpcodeId::SHR, Word::from(0x1234), Word::from(7));
+        test_ok(OpcodeId::SHR, Word::from(0x8765), Word::from(17));
+        test_ok(OpcodeId::SHR, Word::from(0x4321), Word::from(0));
+        test_ok(OpcodeId::SHR, Word::from(0xFFFF), Word::from(256));
+        test_ok(OpcodeId::SHR, Word::from(0x12345), Word::from(256 + 8 + 1));
+        let max_word = Word::from_big_endian(&[255_u8; 32]);
+        test_ok(OpcodeId::SHR, max_word, Word::from(63));
+        test_ok(OpcodeId::SHR, max_word, Word::from(128));
+        test_ok(OpcodeId::SHR, max_word, Word::from(129));
+        test_ok(OpcodeId::SHR, rand_word(), rand_word());
     }
 }
