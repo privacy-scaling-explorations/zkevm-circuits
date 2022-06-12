@@ -1,9 +1,8 @@
 use crate::{
     circuit_input_builder::{
-        CircuitInputStateRef, CopyCodeToMemoryAuxData, ExecState, ExecStep, StepAuxiliaryData,
+        CircuitInputStateRef, CopyDetails, ExecState, ExecStep, StepAuxiliaryData,
     },
     constants::MAX_COPY_BYTES,
-    operation::RW,
     Error,
 };
 use eth_types::{GethExecStep, ToWord};
@@ -37,57 +36,38 @@ fn gen_codecopy_step(
     let length = geth_step.stack.nth_last(2)?;
 
     // stack reads
-    state.push_stack_op(
+    state.stack_read(
         &mut exec_step,
-        RW::READ,
         geth_step.stack.nth_last_filled(0),
         dest_offset,
     )?;
-    state.push_stack_op(
+    state.stack_read(
         &mut exec_step,
-        RW::READ,
         geth_step.stack.nth_last_filled(1),
         code_offset,
     )?;
-    state.push_stack_op(
-        &mut exec_step,
-        RW::READ,
-        geth_step.stack.nth_last_filled(2),
-        length,
-    )?;
+    state.stack_read(&mut exec_step, geth_step.stack.nth_last_filled(2), length)?;
+
     Ok(exec_step)
 }
 
 fn gen_memory_copy_step(
     state: &mut CircuitInputStateRef,
     exec_step: &mut ExecStep,
-    aux_data: CopyCodeToMemoryAuxData,
+    aux_data: StepAuxiliaryData,
     code: &[u8],
 ) -> Result<(), Error> {
-    let CopyCodeToMemoryAuxData {
-        src_addr,
-        dst_addr,
-        bytes_left,
-        src_addr_end,
-        code_source: _,
-    } = aux_data;
-
-    for idx in 0..std::cmp::min(bytes_left as usize, MAX_COPY_BYTES) {
-        let addr = (src_addr as usize) + idx;
-        let byte = if addr < (src_addr_end as usize) {
+    for idx in 0..std::cmp::min(aux_data.bytes_left as usize, MAX_COPY_BYTES) {
+        let addr = (aux_data.src_addr as usize) + idx;
+        let byte = if addr < (aux_data.src_addr_end as usize) {
             code[addr]
         } else {
             0
         };
-        state.push_memory_op(
-            exec_step,
-            RW::WRITE,
-            ((dst_addr as usize) + idx).into(),
-            byte,
-        )?;
+        state.memory_write(exec_step, ((aux_data.dst_addr as usize) + idx).into(), byte)?;
     }
 
-    exec_step.aux_data = Some(StepAuxiliaryData::CopyCodeToMemory(aux_data));
+    exec_step.aux_data = Some(aux_data);
 
     Ok(())
 }
@@ -100,11 +80,11 @@ fn gen_memory_copy_steps(
     let code_offset = geth_steps[0].stack.nth_last(1)?.as_u64();
     let length = geth_steps[0].stack.nth_last(2)?.as_u64();
 
-    let code_source = state.call()?.code_hash;
-    let code = state.code(code_source)?;
+    let code_hash = state.call()?.code_hash;
+    let code = state.code(code_hash)?;
     let src_addr_end = code.len() as u64;
 
-    let code_source = code_source.to_word();
+    let code_hash = code_hash.to_word();
     let mut copied = 0;
     let mut steps = vec![];
     while copied < length {
@@ -113,13 +93,13 @@ fn gen_memory_copy_steps(
         gen_memory_copy_step(
             state,
             &mut exec_step,
-            CopyCodeToMemoryAuxData {
-                src_addr: code_offset + copied,
-                dst_addr: dest_offset + copied,
+            StepAuxiliaryData::new(
+                code_offset + copied,
+                dest_offset + copied,
+                length - copied,
                 src_addr_end,
-                bytes_left: length - copied,
-                code_source,
-            },
+                CopyDetails::Code(code_hash),
+            ),
             &code,
         )?;
         steps.push(exec_step);
@@ -144,7 +124,7 @@ mod codecopy_tests {
 
     use crate::{
         mock::BlockData,
-        operation::{MemoryOp, StackOp},
+        operation::{MemoryOp, StackOp, RW},
     };
 
     use super::*;

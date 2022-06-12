@@ -89,10 +89,7 @@ async fn main() {
         }
 
         let contract = compiled
-            .get(
-                &path_sol.to_str().expect("path is not str").to_string(),
-                name,
-            )
+            .get(path_sol.to_str().expect("path is not str"), name)
             .expect("contract not found");
         let abi = contract.abi.expect("no abi found").clone();
         let bin = contract.bin.expect("no bin found").clone();
@@ -345,7 +342,13 @@ async fn main() {
         let pending_tx = PendingTransaction::new(*tx_hash, wallets[i].inner());
         let receipt = pending_tx.confirmations(0usize).await.unwrap().unwrap();
         let expected_status = if i % 2 == 0 { 1u64 } else { 0u64 };
-        assert_eq!(receipt.status, Some(U64::from(expected_status)));
+        assert_eq!(
+            receipt.status,
+            Some(U64::from(expected_status)),
+            "failed tx hash: {:?}, receipt: {:#?}",
+            tx_hash,
+            receipt
+        );
     }
     let block_num = prov.get_block_number().await.expect("cannot get block_num");
     blocks.insert(

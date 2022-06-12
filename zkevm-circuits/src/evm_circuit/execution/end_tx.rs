@@ -3,21 +3,26 @@ use crate::{
         execution::ExecutionGadget,
         param::N_BYTES_GAS,
         step::ExecutionState,
-        table::{BlockContextFieldTag, CallContextFieldTag, TxContextFieldTag},
+        table::{
+            BlockContextFieldTag, CallContextFieldTag, RwTableTag, TxContextFieldTag,
+            TxReceiptFieldTag,
+        },
         util::{
             common_gadget::UpdateBalanceGadget,
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
             math_gadget::{
-                AddWordsGadget, ConstantDivisionGadget, MinMaxGadget, MulWordByU64Gadget,
+                AddWordsGadget, ConstantDivisionGadget, IsEqualGadget, MinMaxGadget,
+                MulWordByU64Gadget,
             },
-            Cell,
+            CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     util::Expr,
 };
 use eth_types::{evm_types::MAX_REFUND_QUOTIENT_OF_GAS_USED, Field, ToScalar};
-use halo2_proofs::{circuit::Region, plonk::Error};
+use halo2_proofs::plonk::Error;
+use strum::EnumCount;
 
 #[derive(Clone, Debug)]
 pub(crate) struct EndTxGadget<F> {
@@ -33,6 +38,9 @@ pub(crate) struct EndTxGadget<F> {
     mul_effective_tip_by_gas_used: MulWordByU64Gadget<F>,
     coinbase: Cell<F>,
     coinbase_reward: UpdateBalanceGadget<F, 2, true>,
+    current_cumulative_gas_used: Cell<F>,
+    is_first_tx: IsEqualGadget<F>,
+    is_persistent: Cell<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
@@ -42,6 +50,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
+        let is_persistent = cb.call_context(None, CallContextFieldTag::IsPersistent);
 
         let [tx_gas, tx_caller_address] =
             [TxContextFieldTag::Gas, TxContextFieldTag::CallerAddress]
@@ -85,12 +94,48 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
         let sub_gas_price_by_base_fee =
             AddWordsGadget::construct(cb, [effective_tip.clone(), base_fee], tx_gas_price);
         let mul_effective_tip_by_gas_used =
-            MulWordByU64Gadget::construct(cb, effective_tip, gas_used);
+            MulWordByU64Gadget::construct(cb, effective_tip, gas_used.clone());
         let coinbase_reward = UpdateBalanceGadget::construct(
             cb,
             coinbase.expr(),
             vec![mul_effective_tip_by_gas_used.product().clone()],
             None,
+        );
+
+        // constrain tx receipt fields
+        cb.tx_receipt_lookup(
+            tx_id.expr(),
+            TxReceiptFieldTag::PostStateOrStatus,
+            is_persistent.expr(),
+        );
+        cb.tx_receipt_lookup(
+            tx_id.expr(),
+            TxReceiptFieldTag::LogLength,
+            cb.curr.state.log_id.expr(),
+        );
+
+        let is_first_tx = IsEqualGadget::construct(cb, tx_id.expr(), 1.expr());
+
+        let current_cumulative_gas_used = cb.query_cell();
+        cb.condition(is_first_tx.expr(), |cb| {
+            cb.require_zero(
+                "current_cumulative_gas_used is zero when tx is first tx",
+                current_cumulative_gas_used.expr(),
+            );
+        });
+
+        cb.condition(1.expr() - is_first_tx.expr(), |cb| {
+            cb.tx_receipt_lookup(
+                tx_id.expr() - 1.expr(),
+                TxReceiptFieldTag::CumulativeGasUsed,
+                current_cumulative_gas_used.expr(),
+            );
+        });
+
+        cb.tx_receipt_lookup(
+            tx_id.expr(),
+            TxReceiptFieldTag::CumulativeGasUsed,
+            gas_used + current_cumulative_gas_used.expr(),
         );
 
         cb.condition(
@@ -104,7 +149,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
                 );
 
                 cb.require_step_state_transition(StepStateTransition {
-                    rw_counter: Delta(5.expr()),
+                    rw_counter: Delta(10.expr() - is_first_tx.expr()),
                     ..StepStateTransition::any()
                 });
             },
@@ -114,7 +159,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             cb.next.execution_state_selector([ExecutionState::EndBlock]),
             |cb| {
                 cb.require_step_state_transition(StepStateTransition {
-                    rw_counter: Delta(4.expr()),
+                    rw_counter: Delta(9.expr() - is_first_tx.expr()),
                     ..StepStateTransition::any()
                 });
             },
@@ -133,22 +178,25 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             mul_effective_tip_by_gas_used,
             coinbase,
             coinbase_reward,
+            current_cumulative_gas_used,
+            is_first_tx,
+            is_persistent,
         }
     }
 
     fn assign_exec_step(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
         tx: &Transaction,
-        _: &Call,
+        call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
         let gas_used = tx.gas - step.gas_left;
-        let (refund, _) = block.rws[step.rw_indices[1]].tx_refund_value_pair();
+        let (refund, _) = block.rws[step.rw_indices[2]].tx_refund_value_pair();
         let [(caller_balance, caller_balance_prev), (coinbase_balance, coinbase_balance_prev)] =
-            [step.rw_indices[2], step.rw_indices[3]].map(|idx| block.rws[idx].account_value_pair());
+            [step.rw_indices[3], step.rw_indices[4]].map(|idx| block.rws[idx].account_value_pair());
 
         self.tx_id
             .assign(region, offset, Some(F::from(tx.id as u64)))?;
@@ -203,6 +251,28 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             coinbase_balance,
         )?;
 
+        let current_cumulative_gas_used: u64 = if tx.id == 1 {
+            0
+        } else {
+            // first transaction needs TxReceiptFieldTag::COUNT(3) lookups to tx receipt,
+            // while later transactions need 4 (with one extra cumulative gas read) lookups
+            let rw = &block.rws[(
+                RwTableTag::TxReceipt,
+                (tx.id - 2) * (TxReceiptFieldTag::COUNT + 1) + 2,
+            )];
+            rw.receipt_value()
+        };
+
+        self.current_cumulative_gas_used.assign(
+            region,
+            offset,
+            Some(F::from(current_cumulative_gas_used)),
+        )?;
+        self.is_first_tx
+            .assign(region, offset, F::from(tx.id as u64), F::one())?;
+        self.is_persistent
+            .assign(region, offset, Some(F::from(call.is_persistent as u64)))?;
+
         Ok(())
     }
 }
@@ -212,8 +282,8 @@ mod test {
     use crate::evm_circuit::{
         test::run_test_circuit_incomplete_fixed_table, witness::block_convert,
     };
-    use eth_types::{self, address, bytecode, geth_types::GethData, Word};
-    use mock::TestContext;
+    use eth_types::{self, bytecode, geth_types::GethData};
+    use mock::{eth, test_ctx::helpers::account_0_code_account_1_no_code, TestContext};
 
     fn test_ok(block: GethData) {
         let block_data = bus_mapping::mock::BlockData::new_from_geth_data(block);
@@ -245,26 +315,22 @@ mod test {
         // Multiple txs
         test_ok(
             // Get the execution steps from the external tracer
-            TestContext::<2, 2>::new(
+            TestContext::<2, 3>::new(
                 None,
-                |accs| {
-                    accs[0]
-                        .address(address!("0x00000000000000000000000000000000000000fe"))
-                        .balance(Word::from(10u64.pow(19)))
-                        .code(bytecode! { STOP });
-                    accs[1]
-                        .address(address!("0x00000000000000000000000000000000000000fd"))
-                        .balance(Word::from(10u64.pow(19)));
-                },
+                account_0_code_account_1_no_code(bytecode! { STOP }),
                 |mut txs, accs| {
                     txs[0]
                         .to(accs[0].address)
                         .from(accs[1].address)
-                        .value(Word::from(10u64.pow(17)));
+                        .value(eth(1));
                     txs[1]
                         .to(accs[0].address)
                         .from(accs[1].address)
-                        .value(Word::from(10u64.pow(17)));
+                        .value(eth(1));
+                    txs[2]
+                        .to(accs[0].address)
+                        .from(accs[1].address)
+                        .value(eth(1));
                 },
                 |block, _tx| block.number(0xcafeu64),
             )

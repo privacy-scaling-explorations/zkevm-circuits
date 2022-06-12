@@ -4,16 +4,23 @@ use crate::evm_circuit::{
     step::ExecutionState,
     table::{
         AccountFieldTag, BlockContextFieldTag, BytecodeFieldTag, CallContextFieldTag, RwTableTag,
-        TxContextFieldTag,
+        TxContextFieldTag, TxLogFieldTag, TxReceiptFieldTag,
     },
     util::RandomLinearCombination,
 };
-use bus_mapping::circuit_input_builder::{self, ExecError, OogError, StepAuxiliaryData};
-use bus_mapping::operation::{self, AccountField, CallContextField};
+
+use bus_mapping::{
+    circuit_input_builder::{self, StepAuxiliaryData},
+    error::{ExecError, OogError},
+    operation::{self, AccountField, CallContextField, TxLogField, TxReceiptField},
+};
+
 use eth_types::evm_types::OpcodeId;
 use eth_types::{Address, Field, ToLittleEndian, ToScalar, ToWord, Word};
+use eth_types::{ToAddress, U256};
 use halo2_proofs::arithmetic::{BaseExt, FieldExt};
-use pairing::bn256::Fr as Fp;
+use halo2_proofs::pairing::bn256::Fr;
+use itertools::Itertools;
 use sha3::{Digest, Keccak256};
 use std::{collections::HashMap, convert::TryInto, iter};
 
@@ -304,6 +311,8 @@ pub struct ExecStep {
     pub memory_size: u64,
     /// The counter for reversible writes
     pub reversible_write_counter: usize,
+    /// The counter for log index within tx
+    pub log_id: usize,
     /// The opcode corresponds to the step
     pub opcode: Option<OpcodeId>,
     /// Step auxiliary data
@@ -420,8 +429,9 @@ impl RwMap {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub enum Rw {
+    Start,
     TxAccessListAccount {
         rw_counter: usize,
         is_write: bool,
@@ -493,6 +503,27 @@ pub enum Rw {
         memory_address: u64,
         byte: u8,
     },
+    TxLog {
+        rw_counter: usize,
+        is_write: bool,
+        tx_id: usize,
+        log_id: u64, // pack this can index together into address?
+        field_tag: TxLogFieldTag,
+        // topic index (0..4) if field_tag is TxLogFieldTag:Topic
+        // byte index if field_tag is TxLogFieldTag:Data
+        // 0 for other field tags
+        index: usize,
+
+        // when it is topic field, value can be word type
+        value: Word,
+    },
+    TxReceipt {
+        rw_counter: usize,
+        is_write: bool,
+        tx_id: usize,
+        field_tag: TxReceiptFieldTag,
+        value: u64,
+    },
 }
 #[derive(Default, Clone, Copy)]
 pub struct RwRow<F: FieldExt> {
@@ -528,20 +559,6 @@ impl<F: FieldExt> From<[F; 11]> for RwRow<F> {
 }
 
 impl Rw {
-    pub fn rw_counter(&self) -> usize {
-        match self {
-            Self::TxAccessListAccount { rw_counter, .. } => (*rw_counter),
-            Self::TxAccessListAccountStorage { rw_counter, .. } => (*rw_counter),
-            Self::Stack { rw_counter, .. } => (*rw_counter),
-            Self::Memory { rw_counter, .. } => (*rw_counter),
-            Self::Account { rw_counter, .. } => (*rw_counter),
-            Self::AccountDestructed { rw_counter, .. } => (*rw_counter),
-            Self::CallContext { rw_counter, .. } => (*rw_counter),
-            Self::AccountStorage { rw_counter, .. } => (*rw_counter),
-            Self::TxRefund { rw_counter, .. } => (*rw_counter),
-        }
-    }
-
     pub fn tx_access_list_value_pair(&self) -> (bool, bool) {
         match self {
             Self::TxAccessListAccount {
@@ -614,6 +631,20 @@ impl Rw {
         }
     }
 
+    pub fn log_value(&self) -> Word {
+        match self {
+            Self::TxLog { value, .. } => *value,
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn receipt_value(&self) -> u64 {
+        match self {
+            Self::TxReceipt { value, .. } => *value,
+            _ => unreachable!(),
+        }
+    }
+
     pub fn memory_value(&self) -> u8 {
         match self {
             Self::Memory { byte, .. } => *byte,
@@ -622,207 +653,232 @@ impl Rw {
     }
 
     pub fn table_assignment<F: Field>(&self, randomness: F) -> RwRow<F> {
+        RwRow {
+            rw_counter: F::from(self.rw_counter() as u64),
+            is_write: F::from(self.is_write() as u64),
+            tag: F::from(self.tag() as u64),
+            key1: F::from(self.id().unwrap_or_default() as u64),
+            key2: self.address().unwrap_or_default().to_scalar().unwrap(),
+            key3: F::from(self.field_tag().unwrap_or_default() as u64),
+            key4: RandomLinearCombination::random_linear_combine(
+                self.storage_key().unwrap_or_default().to_le_bytes(),
+                randomness,
+            ),
+            value: self.value_assignment(randomness),
+            value_prev: self.value_prev_assignment(randomness).unwrap_or_default(),
+            aux1: F::zero(), // only used for AccountStorage::tx_id, which moved to key1.
+            aux2: self
+                .committed_value_assignment(randomness)
+                .unwrap_or_default(),
+        }
+    }
+
+    pub fn rw_counter(&self) -> usize {
+        match self {
+            Self::Start => 0,
+            Self::Memory { rw_counter, .. }
+            | Self::Stack { rw_counter, .. }
+            | Self::AccountStorage { rw_counter, .. }
+            | Self::TxAccessListAccount { rw_counter, .. }
+            | Self::TxAccessListAccountStorage { rw_counter, .. }
+            | Self::TxRefund { rw_counter, .. }
+            | Self::Account { rw_counter, .. }
+            | Self::AccountDestructed { rw_counter, .. }
+            | Self::CallContext { rw_counter, .. }
+            | Self::TxLog { rw_counter, .. }
+            | Self::TxReceipt { rw_counter, .. } => *rw_counter,
+        }
+    }
+
+    pub fn is_write(&self) -> bool {
+        match self {
+            Self::Start => false,
+            Self::Memory { is_write, .. }
+            | Self::Stack { is_write, .. }
+            | Self::AccountStorage { is_write, .. }
+            | Self::TxAccessListAccount { is_write, .. }
+            | Self::TxAccessListAccountStorage { is_write, .. }
+            | Self::TxRefund { is_write, .. }
+            | Self::Account { is_write, .. }
+            | Self::AccountDestructed { is_write, .. }
+            | Self::CallContext { is_write, .. }
+            | Self::TxLog { is_write, .. }
+            | Self::TxReceipt { is_write, .. } => *is_write,
+        }
+    }
+
+    pub fn tag(&self) -> RwTableTag {
+        match self {
+            Self::Start => RwTableTag::Start,
+            Self::Memory { .. } => RwTableTag::Memory,
+            Self::Stack { .. } => RwTableTag::Stack,
+            Self::AccountStorage { .. } => RwTableTag::AccountStorage,
+            Self::TxAccessListAccount { .. } => RwTableTag::TxAccessListAccount,
+            Self::TxAccessListAccountStorage { .. } => RwTableTag::TxAccessListAccountStorage,
+            Self::TxRefund { .. } => RwTableTag::TxRefund,
+            Self::Account { .. } => RwTableTag::Account,
+            Self::AccountDestructed { .. } => RwTableTag::AccountDestructed,
+            Self::CallContext { .. } => RwTableTag::CallContext,
+            Self::TxLog { .. } => RwTableTag::TxLog,
+            Self::TxReceipt { .. } => RwTableTag::TxReceipt,
+        }
+    }
+
+    pub fn id(&self) -> Option<usize> {
+        match self {
+            Self::AccountStorage { tx_id, .. }
+            | Self::TxAccessListAccount { tx_id, .. }
+            | Self::TxAccessListAccountStorage { tx_id, .. }
+            | Self::TxRefund { tx_id, .. }
+            | Self::TxLog { tx_id, .. }
+            | Self::TxReceipt { tx_id, .. } => Some(*tx_id),
+            Self::CallContext { call_id, .. }
+            | Self::Stack { call_id, .. }
+            | Self::Memory { call_id, .. } => Some(*call_id),
+            Self::Start | Self::Account { .. } | Self::AccountDestructed { .. } => None,
+        }
+    }
+
+    pub fn address(&self) -> Option<Address> {
         match self {
             Self::TxAccessListAccount {
-                rw_counter,
-                is_write,
-                tx_id,
-                account_address,
-                is_warm,
-                is_warm_prev,
-            } => [
-                F::from(*rw_counter as u64),
-                F::from(*is_write as u64),
-                F::from(RwTableTag::TxAccessListAccount as u64),
-                F::from(*tx_id as u64),
-                account_address.to_scalar().unwrap(),
-                F::zero(),
-                F::zero(),
-                F::from(*is_warm as u64),
-                F::from(*is_warm_prev as u64),
-                F::zero(),
-                F::zero(),
-            ]
-            .into(),
-            Self::TxAccessListAccountStorage {
-                rw_counter,
-                is_write,
-                tx_id,
-                account_address,
-                storage_key,
-                is_warm,
-                is_warm_prev,
-            } => [
-                F::from(*rw_counter as u64),
-                F::from(*is_write as u64),
-                F::from(RwTableTag::TxAccessListAccountStorage as u64),
-                F::from(*tx_id as u64),
-                account_address.to_scalar().unwrap(),
-                F::zero(),
-                RandomLinearCombination::random_linear_combine(
-                    storage_key.to_le_bytes(),
-                    randomness,
-                ),
-                F::from(*is_warm as u64),
-                F::from(*is_warm_prev as u64),
-                F::zero(),
-                F::zero(),
-            ]
-            .into(),
-            Self::TxRefund {
-                rw_counter,
-                is_write,
-                tx_id,
-                value,
-                value_prev,
-            } => [
-                F::from(*rw_counter as u64),
-                F::from(*is_write as u64),
-                F::from(RwTableTag::TxRefund as u64),
-                F::from(*tx_id as u64),
-                F::zero(),
-                F::zero(),
-                F::zero(),
-                F::from(*value),
-                F::from(*value_prev),
-                F::zero(),
-                F::zero(),
-            ]
-            .into(),
-            Self::Account {
-                rw_counter,
-                is_write,
-                account_address,
-                field_tag,
-                value,
-                value_prev,
-            } => {
-                let to_scalar = |value: &Word| match field_tag {
-                    AccountFieldTag::Nonce => value.to_scalar().unwrap(),
-                    _ => RandomLinearCombination::random_linear_combine(
-                        value.to_le_bytes(),
-                        randomness,
-                    ),
-                };
-                [
-                    F::from(*rw_counter as u64),
-                    F::from(*is_write as u64),
-                    F::from(RwTableTag::Account as u64),
-                    F::zero(),
-                    account_address.to_scalar().unwrap(),
-                    F::from(*field_tag as u64),
-                    F::zero(),
-                    to_scalar(value),
-                    to_scalar(value_prev),
-                    F::zero(),
-                    F::zero(),
-                ]
-                .into()
+                account_address, ..
             }
+            | Self::TxAccessListAccountStorage {
+                account_address, ..
+            }
+            | Self::Account {
+                account_address, ..
+            }
+            | Self::AccountStorage {
+                account_address, ..
+            }
+            | Self::AccountDestructed {
+                account_address, ..
+            } => Some(*account_address),
+            Self::Memory { memory_address, .. } => Some(U256::from(*memory_address).to_address()),
+            Self::Stack { stack_pointer, .. } => {
+                Some(U256::from(*stack_pointer as u64).to_address())
+            }
+            Self::TxLog { log_id, index, .. } => {
+                Some((U256::from(*index as u64) + (U256::from(*log_id) << 8)).to_address())
+            }
+            Self::Start
+            | Self::CallContext { .. }
+            | Self::TxRefund { .. }
+            | Self::TxReceipt { .. } => None,
+        }
+    }
+
+    pub fn field_tag(&self) -> Option<u64> {
+        match self {
+            Self::Account { field_tag, .. } => Some(*field_tag as u64),
+            Self::CallContext { field_tag, .. } => Some(*field_tag as u64),
+            Self::TxLog { field_tag, .. } => Some(*field_tag as u64),
+            Self::TxReceipt { field_tag, .. } => Some(*field_tag as u64),
+            Self::Start
+            | Self::Memory { .. }
+            | Self::Stack { .. }
+            | Self::AccountStorage { .. }
+            | Self::TxAccessListAccount { .. }
+            | Self::TxAccessListAccountStorage { .. }
+            | Self::TxRefund { .. }
+            | Self::AccountDestructed { .. } => None,
+        }
+    }
+
+    pub fn storage_key(&self) -> Option<Word> {
+        match self {
+            Self::AccountStorage { storage_key, .. }
+            | Self::TxAccessListAccountStorage { storage_key, .. } => Some(*storage_key),
+            Self::Start
+            | Self::CallContext { .. }
+            | Self::Stack { .. }
+            | Self::Memory { .. }
+            | Self::TxRefund { .. }
+            | Self::Account { .. }
+            | Self::TxAccessListAccount { .. }
+            | Self::AccountDestructed { .. }
+            | Self::TxLog { .. }
+            | Self::TxReceipt { .. } => None,
+        }
+    }
+
+    pub fn value_assignment<F: Field>(&self, randomness: F) -> F {
+        match self {
+            Self::Start => F::zero(),
             Self::CallContext {
-                rw_counter,
-                is_write,
-                call_id,
-                field_tag,
-                value,
-            } => [
-                F::from(*rw_counter as u64),
-                F::from(*is_write as u64),
-                F::from(RwTableTag::CallContext as u64),
-                F::from(*call_id as u64),
-                F::zero(),
-                F::from(*field_tag as u64),
-                F::zero(),
+                field_tag, value, ..
+            } => {
                 match field_tag {
+                    // Only these two tags have values that may not fit into a scalar, so we need to
+                    // RLC.
                     CallContextFieldTag::CodeSource | CallContextFieldTag::Value => {
                         RandomLinearCombination::random_linear_combine(
                             value.to_le_bytes(),
                             randomness,
                         )
                     }
-                    CallContextFieldTag::CallerAddress
-                    | CallContextFieldTag::CalleeAddress
-                    | CallContextFieldTag::IsSuccess => value.to_scalar().unwrap(),
-                    _ => F::from(value.low_u64()),
-                },
-                F::zero(),
-                F::zero(),
-                F::zero(),
-            ]
-            .into(),
-            Self::Stack {
-                rw_counter,
-                is_write,
-                call_id,
-                stack_pointer,
-                value,
-            } => [
-                F::from(*rw_counter as u64),
-                F::from(*is_write as u64),
-                F::from(RwTableTag::Stack as u64),
-                F::from(*call_id as u64),
-                F::zero(),
-                F::from(*stack_pointer as u64),
-                F::zero(),
-                RandomLinearCombination::random_linear_combine(value.to_le_bytes(), randomness),
-                F::zero(),
-                F::zero(),
-                F::zero(),
-            ]
-            .into(),
-            Self::Memory {
-                rw_counter,
-                is_write,
-                call_id,
-                memory_address,
-                byte,
-            } => [
-                F::from(*rw_counter as u64),
-                F::from(*is_write as u64),
-                F::from(RwTableTag::Memory as u64),
-                F::from(*call_id as u64),
-                F::zero(),
-                F::from(*memory_address),
-                F::zero(),
-                F::from(*byte as u64),
-                F::zero(),
-                F::zero(),
-                F::zero(),
-            ]
-            .into(),
-            Self::AccountStorage {
-                rw_counter,
-                is_write,
-                account_address,
-                storage_key,
-                value,
-                value_prev,
-                tx_id,
-                committed_value,
-            } => [
-                F::from(*rw_counter as u64),
-                F::from(*is_write as u64),
-                F::from(RwTableTag::AccountStorage as u64),
-                F::zero(),
-                account_address.to_scalar().unwrap(),
-                F::zero(),
-                RandomLinearCombination::random_linear_combine(
-                    storage_key.to_le_bytes(),
-                    randomness,
-                ),
-                RandomLinearCombination::random_linear_combine(value.to_le_bytes(), randomness),
-                RandomLinearCombination::random_linear_combine(
+                    _ => value.to_scalar().unwrap(),
+                }
+            }
+            Self::Account { value, .. }
+            | Self::AccountStorage { value, .. }
+            | Self::Stack { value, .. } => {
+                RandomLinearCombination::random_linear_combine(value.to_le_bytes(), randomness)
+            }
+
+            Self::TxLog {
+                field_tag, value, ..
+            } => match field_tag {
+                TxLogFieldTag::Topic => {
+                    RandomLinearCombination::random_linear_combine(value.to_le_bytes(), randomness)
+                }
+                _ => value.to_scalar().unwrap(),
+            },
+
+            Self::TxAccessListAccount { is_warm, .. }
+            | Self::TxAccessListAccountStorage { is_warm, .. } => F::from(*is_warm as u64),
+            Self::AccountDestructed { is_destructed, .. } => F::from(*is_destructed as u64),
+            Self::Memory { byte, .. } => F::from(u64::from(*byte)),
+            Self::TxRefund { value, .. } | Self::TxReceipt { value, .. } => F::from(*value),
+        }
+    }
+
+    fn value_prev_assignment<F: Field>(&self, randomness: F) -> Option<F> {
+        match self {
+            Self::Account { value_prev, .. } | Self::AccountStorage { value_prev, .. } => {
+                Some(RandomLinearCombination::random_linear_combine(
                     value_prev.to_le_bytes(),
                     randomness,
-                ),
-                F::from(*tx_id as u64),
-                RandomLinearCombination::random_linear_combine(
-                    committed_value.to_le_bytes(),
-                    randomness,
-                ),
-            ]
-            .into(),
-            _ => unimplemented!(),
+                ))
+            }
+            Self::TxAccessListAccount { is_warm_prev, .. }
+            | Self::TxAccessListAccountStorage { is_warm_prev, .. } => {
+                Some(F::from(*is_warm_prev as u64))
+            }
+            Self::AccountDestructed {
+                is_destructed_prev, ..
+            } => Some(F::from(*is_destructed_prev as u64)),
+            Self::TxRefund { value_prev, .. } => Some(F::from(*value_prev)),
+            Self::Start
+            | Self::Stack { .. }
+            | Self::Memory { .. }
+            | Self::CallContext { .. }
+            | Self::TxLog { .. }
+            | Self::TxReceipt { .. } => None,
+        }
+    }
+
+    fn committed_value_assignment<F: Field>(&self, randomness: F) -> Option<F> {
+        match self {
+            Self::AccountStorage {
+                committed_value, ..
+            } => Some(RandomLinearCombination::random_linear_combine(
+                committed_value.to_le_bytes(),
+                randomness,
+            )),
+            _ => None,
         }
     }
 }
@@ -1020,6 +1076,44 @@ impl From<&operation::OperationContainer> for RwMap {
                 })
                 .collect(),
         );
+        rws.insert(
+            RwTableTag::TxLog,
+            container
+                .tx_log
+                .iter()
+                .map(|op| Rw::TxLog {
+                    rw_counter: op.rwc().into(),
+                    is_write: op.rw().is_write(),
+                    tx_id: op.op().tx_id,
+                    log_id: op.op().log_id as u64,
+                    field_tag: match op.op().field {
+                        TxLogField::Address => TxLogFieldTag::Address,
+                        TxLogField::Topic => TxLogFieldTag::Topic,
+                        TxLogField::Data => TxLogFieldTag::Data,
+                    },
+                    index: op.op().index,
+                    value: op.op().value,
+                })
+                .collect(),
+        );
+        rws.insert(
+            RwTableTag::TxReceipt,
+            container
+                .tx_receipt
+                .iter()
+                .map(|op| Rw::TxReceipt {
+                    rw_counter: op.rwc().into(),
+                    is_write: op.rw().is_write(),
+                    tx_id: op.op().tx_id,
+                    field_tag: match op.op().field {
+                        TxReceiptField::PostStateOrStatus => TxReceiptFieldTag::PostStateOrStatus,
+                        TxReceiptField::LogLength => TxReceiptFieldTag::LogLength,
+                        TxReceiptField::CumulativeGasUsed => TxReceiptFieldTag::CumulativeGasUsed,
+                    },
+                    value: op.op().value,
+                })
+                .collect(),
+        );
 
         Self(rws)
     }
@@ -1084,6 +1178,9 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                 if op.is_swap() {
                     return ExecutionState::SWAP;
                 }
+                if op.is_log() {
+                    return ExecutionState::LOG;
+                }
                 match op {
                     OpcodeId::ADD | OpcodeId::SUB => ExecutionState::ADD_SUB,
                     OpcodeId::MUL | OpcodeId::DIV | OpcodeId::MOD => ExecutionState::MUL_DIV_MOD,
@@ -1117,6 +1214,7 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::DIFFICULTY | OpcodeId::BASEFEE => ExecutionState::BLOCKCTXU256,
                     OpcodeId::GAS => ExecutionState::GAS,
                     OpcodeId::SELFBALANCE => ExecutionState::SELFBALANCE,
+                    OpcodeId::SHR => ExecutionState::SHR,
                     OpcodeId::SLOAD => ExecutionState::SLOAD,
                     OpcodeId::SSTORE => ExecutionState::SSTORE,
                     OpcodeId::CALLDATASIZE => ExecutionState::CALLDATASIZE,
@@ -1127,12 +1225,14 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::ORIGIN => ExecutionState::ORIGIN,
                     OpcodeId::CODECOPY => ExecutionState::CODECOPY,
                     OpcodeId::CALLDATALOAD => ExecutionState::CALLDATALOAD,
+                    OpcodeId::CODESIZE => ExecutionState::CODESIZE,
                     _ => unimplemented!("unimplemented opcode {:?}", op),
                 }
             }
             circuit_input_builder::ExecState::BeginTx => ExecutionState::BeginTx,
             circuit_input_builder::ExecState::EndTx => ExecutionState::EndTx,
             circuit_input_builder::ExecState::CopyToMemory => ExecutionState::CopyToMemory,
+            circuit_input_builder::ExecState::CopyToLog => ExecutionState::CopyToLog,
             circuit_input_builder::ExecState::CopyCodeToMemory => ExecutionState::CopyCodeToMemory,
         }
     }
@@ -1163,6 +1263,8 @@ fn step_convert(step: &circuit_input_builder::ExecStep) -> ExecStep {
                     operation::Target::Account => RwTableTag::Account,
                     operation::Target::AccountDestructed => RwTableTag::AccountDestructed,
                     operation::Target::CallContext => RwTableTag::CallContext,
+                    operation::Target::TxReceipt => RwTableTag::TxReceipt,
+                    operation::Target::TxLog => RwTableTag::TxLog,
                 };
                 (tag, x.as_usize())
             })
@@ -1179,6 +1281,7 @@ fn step_convert(step: &circuit_input_builder::ExecStep) -> ExecStep {
         },
         memory_size: step.memory_size as u64,
         reversible_write_counter: step.reversible_write_counter,
+        log_id: step.log_id,
         aux_data: step.aux_data.map(Into::into),
     }
 }
@@ -1210,7 +1313,10 @@ fn tx_convert(tx: &circuit_input_builder::Transaction, id: usize, is_last_tx: bo
                     circuit_input_builder::CodeSource::Address(_) => {
                         CodeSource::Account(call.code_hash.to_word())
                     }
-                    _ => unimplemented!(),
+                    circuit_input_builder::CodeSource::Memory => {
+                        CodeSource::Account(call.code_hash.to_word())
+                    }
+                    _ => unimplemented!("unimplemented code source {:#?}", call.code_source),
                 },
                 rw_counter_end_of_reversion: call.rw_counter_end_of_reversion,
                 caller_id: call.caller_id,
@@ -1234,7 +1340,8 @@ fn tx_convert(tx: &circuit_input_builder::Transaction, id: usize, is_last_tx: bo
             .chain(
                 (if is_last_tx {
                     Some(iter::once(ExecStep {
-                        rw_counter: tx.steps().last().unwrap().rwc.0 + 4,
+                        // if it is the first tx,  less 1 rw lookup, refer to end_tx gadget
+                        rw_counter: tx.steps().last().unwrap().rwc.0 + 9 - (id == 1) as usize,
                         execution_state: ExecutionState::EndBlock,
                         ..Default::default()
                     }))
@@ -1251,9 +1358,9 @@ fn tx_convert(tx: &circuit_input_builder::Transaction, id: usize, is_last_tx: bo
 pub fn block_convert(
     block: &circuit_input_builder::Block,
     code_db: &bus_mapping::state_db::CodeDB,
-) -> Block<Fp> {
+) -> Block<Fr> {
     Block {
-        randomness: Fp::rand(),
+        randomness: Fr::rand(),
         context: block.into(),
         rws: RwMap::from(&block.container),
         txs: block
@@ -1268,7 +1375,10 @@ pub fn block_convert(
             .flat_map(|tx| {
                 tx.calls()
                     .iter()
-                    .map(|call| Bytecode::new(code_db.0.get(&call.code_hash).unwrap().to_vec()))
+                    .map(|call| call.code_hash)
+                    .unique()
+                    .into_iter()
+                    .map(|code_hash| Bytecode::new(code_db.0.get(&code_hash).unwrap().to_vec()))
             })
             .collect(),
     }

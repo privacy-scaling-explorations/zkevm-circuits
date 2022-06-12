@@ -1,6 +1,6 @@
 use super::Opcode;
 use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
-use crate::operation::{CallContextField, CallContextOp, TxRefundOp};
+use crate::operation::{CallContextField, TxRefundOp};
 use crate::{
     operation::{StorageOp, TxAccessListAccountStorageOp, RW},
     Error,
@@ -24,41 +24,38 @@ impl Opcode for Sstore {
 
         let contract_addr = state.call()?.address;
 
-        state.push_op(
+        state.call_context_read(
             &mut exec_step,
-            RW::READ,
-            CallContextOp {
-                call_id: state.call()?.call_id,
-                field: CallContextField::TxId,
-                value: Word::from(state.tx_ctx.id()),
-            },
+            state.call()?.call_id,
+            CallContextField::TxId,
+            Word::from(state.tx_ctx.id()),
         );
-        state.push_op(
+        state.call_context_read(
             &mut exec_step,
-            RW::READ,
-            CallContextOp {
-                call_id: state.call()?.call_id,
-                field: CallContextField::RwCounterEndOfReversion,
-                value: Word::from(state.call()?.rw_counter_end_of_reversion),
-            },
+            state.call()?.call_id,
+            CallContextField::IsStatic,
+            Word::from(state.call()?.is_static as u8),
         );
-        state.push_op(
+
+        state.call_context_read(
             &mut exec_step,
-            RW::READ,
-            CallContextOp {
-                call_id: state.call()?.call_id,
-                field: CallContextField::IsPersistent,
-                value: Word::from(state.call()?.is_persistent as u8),
-            },
+            state.call()?.call_id,
+            CallContextField::RwCounterEndOfReversion,
+            Word::from(state.call()?.rw_counter_end_of_reversion),
         );
-        state.push_op(
+
+        state.call_context_read(
             &mut exec_step,
-            RW::READ,
-            CallContextOp {
-                call_id: state.call()?.call_id,
-                field: CallContextField::CalleeAddress,
-                value: state.call()?.address.to_word(),
-            },
+            state.call()?.call_id,
+            CallContextField::IsPersistent,
+            Word::from(state.call()?.is_persistent as u8),
+        );
+
+        state.call_context_read(
+            &mut exec_step,
+            state.call()?.call_id,
+            CallContextField::CalleeAddress,
+            state.call()?.address.to_word(),
         );
 
         let key = geth_step.stack.nth_last(0)?;
@@ -66,8 +63,8 @@ impl Opcode for Sstore {
         let value = geth_step.stack.nth_last(1)?;
         let value_stack_position = geth_step.stack.nth_last_filled(1);
 
-        state.push_stack_op(&mut exec_step, RW::READ, key_stack_position, key)?;
-        state.push_stack_op(&mut exec_step, RW::READ, value_stack_position, value)?;
+        state.stack_read(&mut exec_step, key_stack_position, key)?;
+        state.stack_read(&mut exec_step, value_stack_position, value)?;
 
         let is_warm = state
             .sdb
@@ -122,7 +119,7 @@ mod sstore_tests {
     use super::*;
     use crate::circuit_input_builder::ExecState;
     use crate::mock::BlockData;
-    use crate::operation::StackOp;
+    use crate::operation::{CallContextOp, StackOp};
     use eth_types::bytecode;
     use eth_types::evm_types::{OpcodeId, StackAddress};
     use eth_types::geth_types::GethData;
@@ -187,7 +184,44 @@ mod sstore_tests {
             .unwrap();
 
         assert_eq!(
-            [4, 5]
+            [0, 1, 2, 3, 4]
+                .map(|idx| &builder.block.container.call_context
+                    [step.bus_mapping_instance[idx].as_usize()])
+                .map(|operation| (operation.rw(), operation.op())),
+            [
+                (
+                    RW::READ,
+                    &CallContextOp::new(1, CallContextField::TxId, Word::from(0x01)),
+                ),
+                (
+                    RW::READ,
+                    &CallContextOp::new(1, CallContextField::IsStatic, Word::from(0x00)),
+                ),
+                (
+                    RW::READ,
+                    &CallContextOp::new(
+                        1,
+                        CallContextField::RwCounterEndOfReversion,
+                        Word::from(0x00)
+                    ),
+                ),
+                (
+                    RW::READ,
+                    &CallContextOp::new(1, CallContextField::IsPersistent, Word::from(0x01)),
+                ),
+                (
+                    RW::READ,
+                    &CallContextOp::new(
+                        1,
+                        CallContextField::CalleeAddress,
+                        MOCK_ACCOUNTS[0].to_word(),
+                    ),
+                ),
+            ]
+        );
+
+        assert_eq!(
+            [5, 6]
                 .map(|idx| &builder.block.container.stack[step.bus_mapping_instance[idx].as_usize()])
                 .map(|operation| (operation.rw(), operation.op())),
             [
@@ -202,7 +236,7 @@ mod sstore_tests {
             ]
         );
 
-        let storage_op = &builder.block.container.storage[step.bus_mapping_instance[6].as_usize()];
+        let storage_op = &builder.block.container.storage[step.bus_mapping_instance[7].as_usize()];
         assert_eq!(
             (storage_op.rw(), storage_op.op()),
             (
@@ -217,7 +251,7 @@ mod sstore_tests {
                 )
             )
         );
-        let refund_op = &builder.block.container.tx_refund[step.bus_mapping_instance[8].as_usize()];
+        let refund_op = &builder.block.container.tx_refund[step.bus_mapping_instance[9].as_usize()];
         assert_eq!(
             (refund_op.rw(), refund_op.op()),
             (

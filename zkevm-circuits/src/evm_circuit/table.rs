@@ -4,26 +4,33 @@ use halo2_proofs::{
     plonk::{Advice, Column, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
+use strum::IntoEnumIterator;
+use strum_macros::{EnumCount, EnumIter};
 
-pub trait LookupTable<F: FieldExt, const W: usize> {
-    fn table_exprs(&self, meta: &mut VirtualCells<F>) -> [Expression<F>; W];
+pub trait LookupTable<F: FieldExt> {
+    fn table_exprs(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>>;
 }
 
-impl<F: FieldExt, const W: usize> LookupTable<F, W> for [Column<Advice>; W] {
-    fn table_exprs(&self, meta: &mut VirtualCells<F>) -> [Expression<F>; W] {
-        self.map(|column| meta.query_advice(column, Rotation::cur()))
+impl<F: FieldExt, const W: usize> LookupTable<F> for [Column<Advice>; W] {
+    fn table_exprs(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>> {
+        self.iter()
+            .map(|column| meta.query_advice(*column, Rotation::cur()))
+            .collect()
     }
 }
 
-impl<F: FieldExt, const W: usize> LookupTable<F, W> for [Column<Fixed>; W] {
-    fn table_exprs(&self, meta: &mut VirtualCells<F>) -> [Expression<F>; W] {
-        self.map(|column| meta.query_fixed(column, Rotation::cur()))
+impl<F: FieldExt, const W: usize> LookupTable<F> for [Column<Fixed>; W] {
+    fn table_exprs(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>> {
+        self.iter()
+            .map(|column| meta.query_fixed(*column, Rotation::cur()))
+            .collect()
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, EnumIter)]
 pub enum FixedTableTag {
-    Range5 = 1,
+    Zero = 0,
+    Range5,
     Range16,
     Range32,
     Range64,
@@ -35,31 +42,14 @@ pub enum FixedTableTag {
     BitwiseOr,
     BitwiseXor,
     ResponsibleOpcode,
+    Pow2,
 }
 
 impl FixedTableTag {
-    pub fn iterator() -> impl Iterator<Item = Self> {
-        [
-            Self::Range5,
-            Self::Range16,
-            Self::Range32,
-            Self::Range64,
-            Self::Range256,
-            Self::Range512,
-            Self::Range1024,
-            Self::SignByte,
-            Self::BitwiseAnd,
-            Self::BitwiseOr,
-            Self::BitwiseXor,
-            Self::ResponsibleOpcode,
-        ]
-        .iter()
-        .copied()
-    }
-
     pub fn build<F: FieldExt>(&self) -> Box<dyn Iterator<Item = [F; 4]>> {
         let tag = F::from(*self as u64);
         match self {
+            Self::Zero => Box::new((0..1).map(move |_| [tag, F::zero(), F::zero(), F::zero()])),
             Self::Range5 => {
                 Box::new((0..5).map(move |value| [tag, F::from(value), F::zero(), F::zero()]))
             }
@@ -99,7 +89,7 @@ impl FixedTableTag {
                 (0..256).map(move |rhs| [tag, F::from(lhs), F::from(rhs), F::from(lhs ^ rhs)])
             })),
             Self::ResponsibleOpcode => {
-                Box::new(ExecutionState::iterator().flat_map(move |execution_state| {
+                Box::new(ExecutionState::iter().flat_map(move |execution_state| {
                     execution_state
                         .responsible_opcodes()
                         .into_iter()
@@ -113,6 +103,14 @@ impl FixedTableTag {
                         })
                 }))
             }
+            Self::Pow2 => Box::new((0..65).map(move |value| {
+                [
+                    tag,
+                    F::from(value),
+                    F::from_u128(1_u128 << value),
+                    F::zero(),
+                ]
+            })),
         }
     }
 }
@@ -144,10 +142,11 @@ pub enum BlockContextFieldTag {
     ChainId,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, EnumIter)]
 pub enum RwTableTag {
-    Memory = 2,
+    Start = 1,
     Stack,
+    Memory,
     AccountStorage,
     TxAccessListAccount,
     TxAccessListAccountStorage,
@@ -155,6 +154,8 @@ pub enum RwTableTag {
     Account,
     AccountDestructed,
     CallContext,
+    TxLog,
+    TxReceipt,
 }
 
 impl RwTableTag {
@@ -171,7 +172,7 @@ impl RwTableTag {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, EnumIter)]
 pub enum AccountFieldTag {
     Nonce = 1,
     Balance,
@@ -186,6 +187,20 @@ pub enum BytecodeFieldTag {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
+pub enum TxLogFieldTag {
+    Address = 1,
+    Topic,
+    Data,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, EnumIter, EnumCount)]
+pub enum TxReceiptFieldTag {
+    PostStateOrStatus = 1,
+    CumulativeGasUsed,
+    LogLength,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, EnumIter)]
 pub enum CallContextFieldTag {
     RwCounterEndOfReversion = 1,
     CallerId,
@@ -223,14 +238,17 @@ impl_expr!(AccountFieldTag);
 impl_expr!(BytecodeFieldTag);
 impl_expr!(CallContextFieldTag);
 impl_expr!(BlockContextFieldTag);
+impl_expr!(TxLogFieldTag);
+impl_expr!(TxReceiptFieldTag);
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, EnumIter)]
 pub(crate) enum Table {
     Fixed,
     Tx,
     Rw,
     Bytecode,
     Block,
+    Byte,
 }
 
 #[derive(Clone, Debug)]
@@ -295,6 +313,11 @@ pub(crate) enum Lookup<F> {
         /// Value of the field.
         value: Expression<F>,
     },
+    /// Lookup to byte value.
+    Byte {
+        /// Value of the field.
+        value: Expression<F>,
+    },
     /// Conditional lookup enabled by the first element.
     Conditional(Expression<F>, Box<Lookup<F>>),
 }
@@ -311,6 +334,7 @@ impl<F: FieldExt> Lookup<F> {
             Self::Rw { .. } => Table::Rw,
             Self::Bytecode { .. } => Table::Bytecode,
             Self::Block { .. } => Table::Block,
+            Self::Byte { .. } => Table::Byte,
             Self::Conditional(_, lookup) => lookup.table(),
         }
     }
@@ -355,6 +379,9 @@ impl<F: FieldExt> Lookup<F> {
                 value,
             } => {
                 vec![field_tag.clone(), number.clone(), value.clone()]
+            }
+            Self::Byte { value } => {
+                vec![value.clone()]
             }
             Self::Conditional(condition, lookup) => lookup
                 .input_exprs()

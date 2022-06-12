@@ -121,8 +121,6 @@ use std::marker::PhantomData;
 
 #[derive(Debug, Clone)]
 pub struct LaneRotateConversionConfig<F> {
-    rotation: u32,
-    lane_idx: usize,
     q_normal: Selector,
     q_special: Selector,
     input_coef: Column<Advice>,
@@ -138,34 +136,20 @@ pub struct LaneRotateConversionConfig<F> {
 impl<F: Field> LaneRotateConversionConfig<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
-        lane_idx: usize,
-        lane: Column<Advice>,
         base13_to_9_table: &Base13toBase9TableConfig<F>,
         special_chunk_table: &SpecialChunkTableConfig<F>,
+        advices: [Column<Advice>; 5],
+        fixed: [Column<Fixed>; 3],
     ) -> Self {
-        meta.enable_equality(lane);
-        let rotation = {
-            let x = lane_idx / 5;
-            let y = lane_idx % 5;
-            ROTATION_CONSTANTS[x][y]
-        };
-
         let q_normal = meta.complex_selector();
         let q_special = meta.complex_selector();
-        let input_coef = meta.advice_column();
-        let input_pob = meta.fixed_column();
-        let input_acc = meta.advice_column();
-        let output_coef = meta.advice_column();
-        let output_pob = meta.fixed_column();
-        let output_acc = meta.advice_column();
-        let overflow_detector = meta.advice_column();
-
-        let constant = meta.fixed_column();
-        meta.enable_constant(constant);
+        let [input_coef, input_acc, output_coef, output_acc, overflow_detector] = advices;
+        let [input_pob, output_pob, constant] = fixed;
 
         meta.enable_equality(input_acc);
         meta.enable_equality(output_acc);
         meta.enable_equality(overflow_detector);
+        meta.enable_constant(constant);
 
         // | coef | 13**x | acc       |
         // |------|-------|-----------|
@@ -228,8 +212,6 @@ impl<F: Field> LaneRotateConversionConfig<F> {
             ]
         });
         Self {
-            rotation,
-            lane_idx,
             q_normal,
             q_special,
             input_coef,
@@ -247,6 +229,7 @@ impl<F: Field> LaneRotateConversionConfig<F> {
         &self,
         layouter: &mut impl Layouter<F>,
         lane_base_13: AssignedCell<F, F>,
+        lane_idx: usize,
     ) -> Result<
         (
             AssignedCell<F, F>,
@@ -255,15 +238,20 @@ impl<F: Field> LaneRotateConversionConfig<F> {
         ),
         Error,
     > {
+        let rotation = {
+            let x = lane_idx / 5;
+            let y = lane_idx % 5;
+            ROTATION_CONSTANTS[x][y]
+        };
         let (conversions, special) = RhoLane::new(
             f_to_biguint(*lane_base_13.value().unwrap_or(&F::zero())),
-            self.rotation,
+            rotation,
         )
         .get_full_witness();
         layouter.assign_region(
             || "lane rotate conversion",
             |mut region| {
-                let slices = slice_lane(self.rotation);
+                let slices = slice_lane(rotation);
                 let (step2_od, step3_od) = {
                     let mut step2_od: Vec<AssignedCell<F, F>> = vec![];
                     let mut step3_od: Vec<AssignedCell<F, F>> = vec![];
@@ -322,7 +310,7 @@ impl<F: Field> LaneRotateConversionConfig<F> {
                             }
                         }
                         let od = {
-                            let value = F::from(conv.overflow_detector.value.into());
+                            let value = F::from(conv.overflow_detector.value as u64);
                             let od = region.assign_advice(
                                 || "Overflow detector",
                                 self.overflow_detector,
@@ -356,13 +344,13 @@ impl<F: Field> LaneRotateConversionConfig<F> {
                         || "Special output coef",
                         self.output_coef,
                         offset,
-                        || Ok(F::from(special.output_coef.into())),
+                        || Ok(F::from(special.output_coef as u64)),
                     )?;
                     region.assign_fixed(
                         || "Special output power of base",
                         self.output_pob,
                         offset,
-                        || Ok(F::from(B9.into()).pow(&[self.rotation.into(), 0, 0, 0])),
+                        || Ok(F::from(B9 as u64).pow(&[rotation.into(), 0, 0, 0])),
                     )?;
                     region.assign_advice(
                         || "Special output acc pre",
@@ -395,10 +383,9 @@ pub struct SumConfig<F> {
 }
 impl<F: Field> SumConfig<F> {
     // We assume the input columns are all copiable
-    pub fn configure(meta: &mut ConstraintSystem<F>) -> Self {
+    pub fn configure(meta: &mut ConstraintSystem<F>, advices: [Column<Advice>; 2]) -> Self {
         let q_enable = meta.selector();
-        let x = meta.advice_column();
-        let sum = meta.advice_column();
+        let [x, sum] = advices;
 
         meta.enable_equality(x);
         meta.enable_equality(sum);
@@ -432,7 +419,7 @@ impl<F: Field> SumConfig<F> {
                     self.q_enable.enable(&mut region, offset)?;
                     xs_item.copy_advice(|| "x", &mut region, self.x, offset)?;
                     region.assign_advice(|| "sum", self.sum, offset, || Ok(sum))?;
-                    sum += xs_item.value().unwrap_or(&F::zero());
+                    sum += xs_item.value().copied().unwrap_or_default();
                     offset += 1;
                 }
                 let sum = region.assign_advice(|| "last sum", self.sum, offset, || Ok(sum))?;
@@ -445,49 +432,41 @@ impl<F: Field> SumConfig<F> {
 
 #[derive(Debug, Clone)]
 pub struct OverflowCheckConfig<F> {
-    q_enable: Selector,
-    step2_sum_config: SumConfig<F>,
-    step3_sum_config: SumConfig<F>,
-    step2_acc: Column<Advice>,
-    step3_acc: Column<Advice>,
+    q_step2: Selector,
+    q_step3: Selector,
+    sum_config: SumConfig<F>,
+    acc: Column<Advice>,
 }
 impl<F: Field> OverflowCheckConfig<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
-        cols_to_copy: Vec<Column<Advice>>,
         step2_range_table: &RangeCheckConfig<F, STEP2_RANGE>,
         step3_range_table: &RangeCheckConfig<F, STEP3_RANGE>,
+        advices: [Column<Advice>; 2],
     ) -> Self {
-        for &col in cols_to_copy.iter() {
-            meta.enable_equality(col);
-        }
-        let step2_sum_config = SumConfig::configure(meta);
-        let step3_sum_config = SumConfig::configure(meta);
+        let sum_config = SumConfig::configure(meta, advices);
 
-        let q_enable = meta.complex_selector();
-        let step2_acc = meta.advice_column();
-        let step3_acc = meta.advice_column();
-        meta.enable_equality(step2_acc);
-        meta.enable_equality(step3_acc);
+        let q_step2 = meta.complex_selector();
+        let q_step3 = meta.complex_selector();
+        let acc = advices[0];
+        meta.enable_equality(acc);
 
-        meta.lookup("Overflow step 2", |meta| {
-            let q_enable = meta.query_selector(q_enable);
-            let step2_acc = meta.query_advice(step2_acc, Rotation::cur());
-            vec![(q_enable * step2_acc, step2_range_table.range)]
+        meta.lookup("Overflow check step2", |meta| {
+            let q_step2 = meta.query_selector(q_step2);
+            let acc = meta.query_advice(acc, Rotation::cur());
+            vec![(q_step2 * acc, step2_range_table.range)]
         });
-
-        meta.lookup("Overflow step 3", |meta| {
-            let q_enable = meta.query_selector(q_enable);
-            let step3_acc = meta.query_advice(step3_acc, Rotation::cur());
-            vec![(q_enable * step3_acc, step3_range_table.range)]
+        meta.lookup("Overflow check step3", |meta| {
+            let q_step3 = meta.query_selector(q_step3);
+            let acc = meta.query_advice(acc, Rotation::cur());
+            vec![(q_step3 * acc, step3_range_table.range)]
         });
 
         Self {
-            q_enable,
-            step2_sum_config,
-            step3_sum_config,
-            step2_acc,
-            step3_acc,
+            q_step2,
+            q_step3,
+            sum_config,
+            acc,
         }
     }
     pub fn assign_region(
@@ -496,16 +475,17 @@ impl<F: Field> OverflowCheckConfig<F> {
         step2_cells: Vec<AssignedCell<F, F>>,
         step3_cells: Vec<AssignedCell<F, F>>,
     ) -> Result<(), Error> {
-        let step2_sum = self.step2_sum_config.assign_region(layouter, step2_cells)?;
-        let step3_sum = self.step3_sum_config.assign_region(layouter, step3_cells)?;
+        let step2_sum = self.sum_config.assign_region(layouter, step2_cells)?;
+        let step3_sum = self.sum_config.assign_region(layouter, step3_cells)?;
         layouter.assign_region(
             || "Overflow range check",
             |mut region| {
                 let offset = 0;
-                self.q_enable.enable(&mut region, offset)?;
-                // Copy constrain Steps 2 and 3 sums to `step2_acc` and `step3_acc` columns.
-                step2_sum.copy_advice(|| "Step2 sum", &mut region, self.step2_acc, offset)?;
-                step3_sum.copy_advice(|| "Step3 sum", &mut region, self.step3_acc, offset)?;
+                self.q_step2.enable(&mut region, offset)?;
+                step2_sum.copy_advice(|| "Step2 sum", &mut region, self.acc, offset)?;
+                let offset = 1;
+                self.q_step3.enable(&mut region, offset)?;
+                step3_sum.copy_advice(|| "Step3 sum", &mut region, self.acc, offset)?;
 
                 Ok(())
             },

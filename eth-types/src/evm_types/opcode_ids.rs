@@ -4,6 +4,7 @@ use core::fmt::Debug;
 use lazy_static::lazy_static;
 use regex::Regex;
 use serde::{de, Deserialize, Serialize};
+use std::fmt;
 use std::str::FromStr;
 
 /// Opcode enum. One-to-one corresponding to an `u8` value.
@@ -327,6 +328,10 @@ impl OpcodeId {
     /// Returns `true` if the `OpcodeId` is a `SWAPn`.
     pub fn is_swap(&self) -> bool {
         self.as_u8() >= Self::SWAP1.as_u8() && self.as_u8() <= Self::SWAP16.as_u8()
+    }
+    /// Returns `true` if the `OpcodeId` is a `LOGn`.
+    pub fn is_log(&self) -> bool {
+        self.as_u8() >= Self::LOG0.as_u8() && self.as_u8() <= Self::LOG4.as_u8()
     }
 }
 
@@ -962,5 +967,11 @@ impl<'de> Deserialize<'de> for OpcodeId {
     {
         let s = String::deserialize(deserializer)?;
         OpcodeId::from_str(&s).map_err(de::Error::custom)
+    }
+}
+
+impl fmt::Display for OpcodeId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?}", self)
     }
 }

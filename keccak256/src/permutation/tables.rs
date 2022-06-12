@@ -87,7 +87,7 @@ impl<F: Field> Base13toBase9TableConfig<F> {
                         || {
                             Ok(F::from(
                                 get_overflow_detector(b13_chunks.clone().try_into().unwrap())
-                                    .into(),
+                                    as u64,
                             ))
                         },
                     )?;
@@ -128,10 +128,10 @@ impl<F: Field> SpecialChunkTableConfig<F> {
                 for i in 0..B13 {
                     for j in 0..(B13 - i) {
                         let (low, high) = (i, j);
-                        let last_chunk = F::from(low.into())
-                            + F::from(high.into())
-                                * F::from(B13.into()).pow(&[LANE_SIZE as u64, 0, 0, 0]);
-                        let output_coef = F::from(convert_b13_coef(low + high).into());
+                        let last_chunk = F::from(low as u64)
+                            + F::from(high as u64)
+                                * F::from(B13 as u64).pow(&[LANE_SIZE as u64, 0, 0, 0]);
+                        let output_coef = F::from(convert_b13_coef(low + high) as u64);
                         table.assign_cell(
                             || "last chunk",
                             self.last_chunk,
@@ -176,20 +176,10 @@ pub(crate) struct BaseInfo<F> {
 
 impl<F: Field> BaseInfo<F> {
     pub fn input_pob(&self) -> F {
-        F::from(self.input_base.into()).pow(&[self.num_chunks as u64, 0, 0, 0])
+        F::from(self.input_base as u64).pow(&[self.num_chunks as u64, 0, 0, 0])
     }
     pub fn output_pob(&self) -> F {
-        F::from(self.output_base.into()).pow(&[self.num_chunks as u64, 0, 0, 0])
-    }
-
-    pub fn slice_count(self) -> usize {
-        // Just want the `self.max_chunks.div_ceil(self.num_chunks)`
-        (0..self.max_chunks)
-            .chunks(self.num_chunks)
-            .into_iter()
-            .map(|_| 0)
-            .collect_vec()
-            .len()
+        F::from(self.output_base as u64).pow(&[self.num_chunks as u64, 0, 0, 0])
     }
 
     pub fn compute_coefs(&self, input: F) -> Result<(Vec<F>, Vec<F>, F), Error> {
@@ -236,6 +226,7 @@ impl<F: Field> BaseInfo<F> {
     }
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct FromBinaryTableConfig<F> {
     base2: TableColumn,
@@ -244,6 +235,7 @@ pub struct FromBinaryTableConfig<F> {
     _marker: PhantomData<F>,
 }
 
+#[allow(dead_code)]
 impl<F: Field> FromBinaryTableConfig<F> {
     pub(crate) fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
         layouter.assign_table(
