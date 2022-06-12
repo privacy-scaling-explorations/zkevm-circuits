@@ -54,14 +54,12 @@ mod logs;
 mod memory;
 mod memory_copy;
 mod msize;
-mod mul_div_mod;
+mod mul_div_mod_shl_shr;
 mod origin;
 mod pc;
 mod pop;
 mod push;
 mod selfbalance;
-mod shl;
-mod shr;
 mod signed_comparator;
 mod signextend;
 mod sload;
@@ -101,14 +99,12 @@ use logs::LogGadget;
 use memory::MemoryGadget;
 use memory_copy::CopyToMemoryGadget;
 use msize::MsizeGadget;
-use mul_div_mod::MulDivModGadget;
+use mul_div_mod_shl_shr::MulDivModShlShrGadget;
 use origin::OriginGadget;
 use pc::PcGadget;
 use pop::PopGadget;
 use push::PushGadget;
 use selfbalance::SelfbalanceGadget;
-use shl::ShlGadget;
-use shr::ShrGadget;
 use signed_comparator::SignedComparatorGadget;
 use signextend::SignextendGadget;
 use sload::SloadGadget;
@@ -178,14 +174,12 @@ pub(crate) struct ExecutionConfig<F> {
     log_gadget: LogGadget<F>,
     memory_gadget: MemoryGadget<F>,
     msize_gadget: MsizeGadget<F>,
-    mul_div_mod_gadget: MulDivModGadget<F>,
+    mul_div_mod_shl_shr_gadget: MulDivModShlShrGadget<F>,
     origin_gadget: OriginGadget<F>,
     pc_gadget: PcGadget<F>,
     pop_gadget: PopGadget<F>,
     push_gadget: PushGadget<F>,
     selfbalance_gadget: SelfbalanceGadget<F>,
-    shl_gadget: ShlGadget<F>,
-    shr_gadget: ShrGadget<F>,
     signed_comparator_gadget: SignedComparatorGadget<F>,
     signextend_gadget: SignextendGadget<F>,
     sload_gadget: SloadGadget<F>,
@@ -370,14 +364,12 @@ impl<F: Field> ExecutionConfig<F> {
             log_gadget: configure_gadget!(),
             memory_gadget: configure_gadget!(),
             msize_gadget: configure_gadget!(),
-            mul_div_mod_gadget: configure_gadget!(),
+            mul_div_mod_shl_shr_gadget: configure_gadget!(),
             origin_gadget: configure_gadget!(),
             pc_gadget: configure_gadget!(),
             pop_gadget: configure_gadget!(),
             push_gadget: configure_gadget!(),
             selfbalance_gadget: configure_gadget!(),
-            shl_gadget: configure_gadget!(),
-            shr_gadget: configure_gadget!(),
             signed_comparator_gadget: configure_gadget!(),
             signextend_gadget: configure_gadget!(),
             sload_gadget: configure_gadget!(),
@@ -807,7 +799,9 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::LOG => assign_exec_step!(self.log_gadget),
             ExecutionState::MEMORY => assign_exec_step!(self.memory_gadget),
             ExecutionState::MSIZE => assign_exec_step!(self.msize_gadget),
-            ExecutionState::MUL_DIV_MOD => assign_exec_step!(self.mul_div_mod_gadget),
+            ExecutionState::MUL_DIV_MOD_SHL_SHR => {
+                assign_exec_step!(self.mul_div_mod_shl_shr_gadget)
+            }
             ExecutionState::ORIGIN => assign_exec_step!(self.origin_gadget),
             ExecutionState::PC => assign_exec_step!(self.pc_gadget),
             ExecutionState::POP => assign_exec_step!(self.pop_gadget),
@@ -817,8 +811,6 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::BLOCKCTXU160 => assign_exec_step!(self.block_ctx_u160_gadget),
             ExecutionState::BLOCKCTXU256 => assign_exec_step!(self.block_ctx_u256_gadget),
             ExecutionState::SELFBALANCE => assign_exec_step!(self.selfbalance_gadget),
-            ExecutionState::SHL => assign_exec_step!(self.shl_gadget),
-            ExecutionState::SHR => assign_exec_step!(self.shr_gadget),
             ExecutionState::SIGNEXTEND => assign_exec_step!(self.signextend_gadget),
             ExecutionState::SLOAD => assign_exec_step!(self.sload_gadget),
             ExecutionState::SSTORE => assign_exec_step!(self.sstore_gadget),
