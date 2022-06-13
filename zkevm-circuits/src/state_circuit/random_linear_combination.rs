@@ -1,4 +1,4 @@
-use crate::evm_circuit::util::RandomLinearCombination as RLC;
+use crate::evm_circuit::util::rlc;
 use eth_types::{Field, ToLittleEndian, U256};
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter, Region},
@@ -52,7 +52,7 @@ impl<const N: usize> Config<N> {
             || "encoded value in rlc",
             self.encoded,
             offset,
-            || Ok(RLC::random_linear_combine(bytes, randomness)),
+            || Ok(rlc::value(&bytes, randomness)),
         )
     }
 }
@@ -91,13 +91,9 @@ impl<F: Field, const N: usize> Chip<F, N> {
             let selector = meta.query_fixed(selector, Rotation::cur());
             let encoded = meta.query_advice(encoded, Rotation::cur());
             let bytes = bytes.map(|c| meta.query_advice(c, Rotation::cur()));
-            let power_of_randomness: Vec<_> = power_of_randomness
-                .iter()
-                .map(|c| meta.query_instance(*c, Rotation::cur()))
-                .collect();
-            vec![
-                selector * (encoded - RLC::random_linear_combine_expr(bytes, &power_of_randomness)),
-            ]
+            let power_of_randomness =
+                power_of_randomness.map(|c| meta.query_instance(c, Rotation::cur()));
+            vec![selector * (encoded - rlc::expr(&bytes, &power_of_randomness))]
         });
 
         Config { encoded, bytes }

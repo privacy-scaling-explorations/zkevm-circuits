@@ -184,7 +184,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             call_id: To(call_id.expr()),
             is_root: To(true.expr()),
             is_create: To(false.expr()),
-            code_source: To(code_hash.expr()),
+            code_hash: To(code_hash.expr()),
             gas_left: To(gas_left),
             reversible_write_counter: To(2.expr()),
             log_id: To(0.expr()),

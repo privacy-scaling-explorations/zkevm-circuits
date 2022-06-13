@@ -336,15 +336,13 @@ pub(crate) struct StepState<F> {
     pub(crate) is_root: Cell<F>,
     /// Whether the call is a create call
     pub(crate) is_create: Cell<F>,
-    // This is the identifier of current executed bytecode, which is used to
-    // lookup current executed code and used to do code copy. In most time,
-    // it would be bytecode_hash, but when it comes to root creation call, the
-    // executed bytecode is actually from transaction calldata, so it might be
-    // tx_id if we decide to lookup different table.
-    // However, how to handle root creation call is yet to be determined, see
-    // issue https://github.com/appliedzkp/zkevm-specs/issues/73 for more
-    // discussion.
-    pub(crate) code_source: Cell<F>,
+    /// Denotes the hash of the bytecode for the current call.
+    /// In the case of a contract creation root call, this denotes the hash of
+    /// the tx calldata.
+    /// In the case of a contract creation internal call, this denotes the hash
+    /// of the chunk of bytes from caller's memory that represent the
+    /// contract init code.
+    pub(crate) code_hash: Cell<F>,
     /// The program counter
     pub(crate) program_counter: Cell<F>,
     /// The stack pointer
@@ -386,7 +384,7 @@ impl<F: FieldExt> Step<F> {
                 call_id: cell_manager.query_cell(CellType::Storage),
                 is_root: cell_manager.query_cell(CellType::Storage),
                 is_create: cell_manager.query_cell(CellType::Storage),
-                code_source: cell_manager.query_cell(CellType::Storage),
+                code_hash: cell_manager.query_cell(CellType::Storage),
                 program_counter: cell_manager.query_cell(CellType::Storage),
                 stack_pointer: cell_manager.query_cell(CellType::Storage),
                 gas_left: cell_manager.query_cell(CellType::Storage),
@@ -446,7 +444,7 @@ impl<F: FieldExt> Step<F> {
             .assign(region, offset, Some(F::from(call.is_create as u64)))?;
         match call.code_source {
             CodeSource::Account(code_hash) => {
-                self.state.code_source.assign(
+                self.state.code_hash.assign(
                     region,
                     offset,
                     Some(RandomLinearCombination::random_linear_combine(

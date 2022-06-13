@@ -294,7 +294,7 @@ impl<F: Field> ExecutionGadget<F> for CallGadget<F> {
                 call_id: To(callee_call_id.expr()),
                 is_root: To(false.expr()),
                 is_create: To(false.expr()),
-                code_source: To(callee_code_hash.expr()),
+                code_hash: To(callee_code_hash.expr()),
                 gas_left: To(callee_gas_left),
                 reversible_write_counter: To(2.expr()),
                 ..StepStateTransition::new_context()

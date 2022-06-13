@@ -17,4 +17,5 @@ pub mod rw_table;
 pub mod state_circuit;
 #[cfg(test)]
 pub mod test_util;
+pub mod tx_circuit;
 pub mod util;

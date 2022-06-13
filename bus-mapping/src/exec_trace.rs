@@ -23,6 +23,7 @@ impl fmt::Debug for OperationRef {
                 Target::AccountDestructed => "AccountDestructed",
                 Target::CallContext => "CallContext",
                 Target::TxReceipt => "TxReceipt",
+                Target::TxLog => "TxLog",
             },
             self.1
         ))
