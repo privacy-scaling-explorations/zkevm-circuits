@@ -537,13 +537,11 @@ impl<F: FieldExt> MPTConfig<F> {
         ExtensionNodeChip::<F>::configure(
             meta,
             |meta| {
-                // We need to do the lookup only if we are one after last branch child.
-                let is_after_last_branch_child =
-                    meta.query_advice(is_last_branch_child, Rotation(-1));
+                let is_extension_node_s = meta.query_advice(is_extension_node_s, Rotation::cur());
                 // is_extension_node is in branch init row
                 let is_extension_node = get_is_extension_node(meta, s_advices, -17);
 
-                is_after_last_branch_child * is_extension_node
+                is_extension_node_s * is_extension_node
             },
             inter_start_root,
             not_first_level,
@@ -569,13 +567,11 @@ impl<F: FieldExt> MPTConfig<F> {
         ExtensionNodeChip::<F>::configure(
             meta,
             |meta| {
-                // We need to do the lookup only if we are two after last branch child.
-                let is_after_last_branch_child =
-                    meta.query_advice(is_last_branch_child, Rotation(-2));
+                let is_extension_node_c = meta.query_advice(is_extension_node_c, Rotation::cur());
                 // is_extension_node is in branch init row
                 let is_extension_node = get_is_extension_node(meta, s_advices, -18);
 
-                is_after_last_branch_child * is_extension_node
+                is_extension_node_c * is_extension_node
             },
             inter_final_root,
             not_first_level,
