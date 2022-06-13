@@ -26,7 +26,7 @@ impl<F: Field, const N_POP: usize, const N_PUSH: usize, const S: ExecutionState>
     const EXECUTION_STATE: ExecutionState = S;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
-        log::debug!(
+        log::warn!(
             "evm circuit: ExecutionState::{:?} is implemented with DummyGadget",
             S
         );
