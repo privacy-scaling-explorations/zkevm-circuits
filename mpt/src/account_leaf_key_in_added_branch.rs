@@ -50,7 +50,6 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchChip<F> {
         drifted_pos: Column<Advice>,
         sel1: Column<Advice>,
         sel2: Column<Advice>,
-        is_account_leaf_in_added_branch: Column<Advice>,
         r_table: Vec<Expression<F>>,
         fixed_table: [Column<Fixed>; 3],
         keccak_table: [Column<Fixed>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],

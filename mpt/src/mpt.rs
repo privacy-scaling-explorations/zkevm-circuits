@@ -829,7 +829,6 @@ impl<F: FieldExt> MPTConfig<F> {
             drifted_pos,
             sel1,
             sel2,
-            is_account_leaf_in_added_branch,
             r_table.clone(),
             fixed_table.clone(),
             keccak_table.clone(),
