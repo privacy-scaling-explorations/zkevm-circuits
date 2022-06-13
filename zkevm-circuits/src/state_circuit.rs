@@ -214,7 +214,7 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
                         offset,
                         || Ok(if row.is_write() { F::one() } else { F::zero() }),
                     )?;
-                    tag_chip.assign(&mut region, offset, row.tag())?;
+                    tag_chip.assign(&mut region, offset, &row.tag())?;
                     if let Some(id) = row.id() {
                         config.id.assign(&mut region, offset, id as u32)?;
                     }
