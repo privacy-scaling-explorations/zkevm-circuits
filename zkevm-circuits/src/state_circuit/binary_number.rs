@@ -45,10 +45,8 @@ impl<const N: usize> AsBits<N> for usize {
 }
 
 #[derive(Clone, Copy)]
-pub struct Config<T, const N: usize>
-where
-    T: AsBits<N>,
-{
+pub struct Config<T, const N: usize> {
+    // Must be constrained to be binary for correctness.
     pub bits: [Column<Advice>; N],
     _marker: PhantomData<T>,
 }
@@ -70,36 +68,41 @@ where
 
     pub fn value_equals<F: Field, S: AsBits<N>>(
         &self,
-        value: &S,
+        value: S,
         rotation: Rotation,
-    ) -> impl FnOnce(&mut VirtualCells<'_, F>) -> Expression<F> + '_ {
-        let bits = value.as_bits();
-        move |meta: &mut VirtualCells<'_, F>| {
-            Self::value_equals_expr(
-                &bits,
-                &self.bits.map(|bit| meta.query_advice(bit, rotation)),
-            )
-        }
+    ) -> impl FnOnce(&mut VirtualCells<'_, F>) -> Expression<F> {
+        let bits = self.bits;
+        move |meta| Self::value_equals_expr(value, bits.map(|bit| meta.query_advice(bit, rotation)))
     }
 
-    pub fn value_equals_expr<F: Field>(
-        value: &[bool],
-        expressions: &[Expression<F>],
+    // Returns an expression that evaluates to 1 if expressions are equal to value
+    // as bits. The returned expression is of degree N.
+    pub fn value_equals_expr<F: Field, S: AsBits<N>>(
+        value: S,
+        expressions: [Expression<F>; N], // must be binary.
     ) -> Expression<F> {
-        and::expr(value.iter().zip(expressions).map(|(&bit, expression)| {
-            if bit {
-                expression.clone()
-            } else {
-                not::expr(expression.clone())
-            }
-        }))
+        and::expr(
+            value
+                .as_bits()
+                .iter()
+                .zip(&expressions)
+                .map(|(&bit, expression)| {
+                    if bit {
+                        expression.clone()
+                    } else {
+                        not::expr(expression.clone())
+                    }
+                }),
+        )
     }
 }
 
-pub struct Chip<F: Field, T, const N: usize>
-where
-    T: AsBits<N>,
-{
+// This chip helps working with binary encoding of integers of length N bits by:
+//  - enforcing that the binary representation is in the valid range defined by
+//    T.
+//  - creating expressions (via the Config) that evaluate to 1 when the bits
+//    match a specific value and 0 otherwise.
+pub struct Chip<F: Field, T, const N: usize> {
     config: Config<T, N>,
     _marker: PhantomData<F>,
 }
@@ -138,7 +141,7 @@ where
                 let selector = meta.query_fixed(selector, Rotation::cur());
                 invalid_values
                     .map(|i| {
-                        let value_equals_i = config.value_equals(&i, Rotation::cur());
+                        let value_equals_i = config.value_equals(i, Rotation::cur());
                         selector.clone() * value_equals_i(meta)
                     })
                     .collect::<Vec<_>>()
@@ -152,7 +155,7 @@ where
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
-        value: RwTableTag,
+        value: &T,
     ) -> Result<(), Error> {
         for (&bit, &column) in value.as_bits().iter().zip(&self.config.bits) {
             region.assign_advice(
