@@ -490,6 +490,45 @@ fn tx_log_address_field_invalid_index() {
     assert_error_matches(verify(rows), "index is zero for address");
 }
 
+/// within tx for non address field tag row, log id not change
+#[test]
+fn tx_log_id_change_within_tx() {
+    let rows = vec![
+        Rw::TxLog {
+            rw_counter: 1,
+            is_write: true,
+            tx_id: 1,
+            log_id: 1,
+            field_tag: TxLogFieldTag::Address,
+            index: 0usize,
+            value: U256::one(),
+        },
+        Rw::TxLog {
+            rw_counter: 2,
+            is_write: true,
+            tx_id: 1,
+            log_id: 1,
+            field_tag: TxLogFieldTag::Topic,
+            index: 0usize,
+            value: U256::one(),
+        },
+        Rw::TxLog {
+            rw_counter: 3,
+            is_write: true,
+            tx_id: 1,
+            log_id: 2,
+            field_tag: TxLogFieldTag::Topic,
+            index: 1usize,
+            value: U256::one(),
+        },
+    ];
+
+    assert_error_matches(
+        verify(rows),
+        "log_id will not change if field_tag != Address within tx",
+    );
+}
+
 #[test]
 fn address_limb_mismatch() {
     let rows = vec![Rw::Account {

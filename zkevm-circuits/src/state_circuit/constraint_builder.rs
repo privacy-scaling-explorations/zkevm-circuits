@@ -262,12 +262,12 @@ impl<F: Field> ConstraintBuilder<F> {
             );
             // constrain first field_tag is Address when tx id increases
             cb.require_equal(
-                "first field_tag is Address",
+                "first field_tag is Address when tx changes",
                 q.field_tag_matches(TxLogFieldTag::Address),
                 1.expr(),
             );
             // tx_id increases by 1
-            cb.require_equal("tx_i by 1", q.id_change(), 1.expr());
+            cb.require_equal("tx_id increases by 1", q.id_change(), 1.expr());
         });
 
         self.condition(q.field_tag_matches(TxLogFieldTag::Address), |cb| {
@@ -288,6 +288,20 @@ impl<F: Field> ConstraintBuilder<F> {
             },
         );
 
+        // within same tx, log_id will not change if field_tag != Address
+        self.condition(
+            q.is_id_unchanged.clone()
+                * q.is_tag_unchanged.clone()
+                * (1.expr() - q.field_tag_matches(TxLogFieldTag::Address)),
+            |cb| {
+                cb.require_equal(
+                    "log_id will not change if field_tag != Address within tx",
+                    q.tx_log_id(false),
+                    q.tx_log_id(true),
+                )
+            },
+        );
+
         // if tag Topic appear, topic_index in range [0,4),can only increase by one when
         // tag stays same.
         self.condition(q.field_tag_matches(TxLogFieldTag::Topic), |cb| {
@@ -301,7 +315,6 @@ impl<F: Field> ConstraintBuilder<F> {
             )
         });
         // constrain index is increasing by 1 when field_tag stay same
-        // let no_field_tag_change= 1.expr() - q.field_tag_change();
         self.condition(
             q.is_tag_unchanged.clone() * q.is_field_tag_unchanged.clone(),
             |cb| {
