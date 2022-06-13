@@ -1,18 +1,22 @@
+use std::convert::TryInto;
+
 use self::padding::PaddingConfig;
 use crate::{
     keccak_arith::Keccak,
     permutation::{
+        base_conversion::BaseConversionConfig,
         circuit::KeccakFConfig,
         mixing::MixingConfig,
-        tables::{FromBase9TableConfig, RangeCheckConfig},
+        tables::{FromBase9TableConfig, FromBinaryTableConfig, RangeCheckConfig},
     },
 };
 use eth_types::Field;
 use gadgets::expression::*;
 use halo2_proofs::{
-    plonk::{Advice, Column, ConstraintSystem, Expression, Instance, Selector},
+    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Instance, Selector},
     poly::Rotation,
 };
+use itertools::Itertools;
 
 pub mod padding;
 pub mod word_builder;
@@ -21,6 +25,7 @@ pub const MAX_INPUT_BYTES: usize = MAX_INPUT_WORDS * BYTES_PER_WORD;
 pub const MAX_INPUT_WORDS: usize = MAX_PERM_ROUNDS * NEXT_INPUTS_WORDS;
 pub const BYTES_PER_WORD: usize = 8;
 pub const NEXT_INPUTS_WORDS: usize = 17;
+pub const NEXT_INPUTS_BYTES: usize = NEXT_INPUTS_WORDS * 8;
 pub const MAX_PERM_ROUNDS: usize = 10;
 
 #[derive(Debug, Clone, Copy)]
@@ -47,7 +52,8 @@ keccak_table.lookup()
 */
 
 pub struct KeccakConfig<F: Field> {
-    table: FromBase9TableConfig<F>,
+    base_conv_b9_b13: BaseConversionConfig<F>,
+    base_conv_b2_b9: BaseConversionConfig<F>,
     round_ctant_b9: Column<Advice>,
     round_ctant_b13: Column<Advice>,
     round_constants_b9: Column<Instance>,
@@ -77,16 +83,27 @@ impl<F: Field> KeccakConfig<F> {
         meta.enable_equality(round_ctant_b9);
         meta.enable_equality(round_ctant_b13);
 
+        let base_conv_lane = meta.advice_column();
+        meta.enable_equality(base_conv_lane);
+
+        let flag = meta.advice_column();
+        meta.enable_equality(flag);
+
         let padding_config = PaddingConfig::configure(meta);
 
-        let table = FromBase9TableConfig::configure(meta);
-        let mixing_config = MixingConfig::configure(
+        let table_b9 = FromBase9TableConfig::configure(meta);
+        let table_b2 = FromBinaryTableConfig::configure(meta);
+        let base_conv_b9_b13 = BaseConversionConfig::configure(
             meta,
-            &table,
-            round_ctant_b9,
-            round_ctant_b13,
-            round_constants_b9,
-            round_constants_b13,
+            table_b9.get_base_info(false),
+            base_conv_lane,
+            flag,
+        );
+        let base_conv_b2_b9 = BaseConversionConfig::configure(
+            meta,
+            table_b2.get_base_info(true),
+            base_conv_lane,
+            flag,
         );
 
         let state = [(); 25].map(|_| meta.advice_column()).map(|col| {
@@ -112,7 +129,14 @@ impl<F: Field> KeccakConfig<F> {
         let output_rlc = meta.advice_column();
         let range_check_136 = RangeCheckConfig::<F, 136>::configure(meta);
 
-        let keccak_f_config = KeccakFConfig::configure(meta, state, next_inputs);
+        let keccak_f_config = KeccakFConfig::configure(
+            meta,
+            state,
+            base_conv_b9_b13.clone(),
+            base_conv_b2_b9.clone(),
+            base_conv_lane,
+            flag,
+        );
 
         // Lookup to activate the valid Finalize place check
         // `(curr.perm_count * 136 - input_len) in 1~136`
@@ -275,7 +299,8 @@ impl<F: Field> KeccakConfig<F> {
         });
 
         Self {
-            table,
+            base_conv_b9_b13,
+            base_conv_b2_b9,
             round_ctant_b9,
             round_ctant_b13,
             round_constants_b9,
@@ -294,5 +319,9 @@ impl<F: Field> KeccakConfig<F> {
             output_rlc,
             range_check_config: range_check_136,
         }
+    }
+
+    pub fn add_hash(&self, hash: &[u8]) -> Result<(), Error> {
+        unimplemented!()
     }
 }
