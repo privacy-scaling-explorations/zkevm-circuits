@@ -110,8 +110,8 @@ impl<F: FieldExt> AccountNonExistingChip<F> {
 
                 let c_rlp1 = meta.query_advice(c_rlp1, Rotation::cur());
                 let c_rlp2 = meta.query_advice(c_rlp2, Rotation::cur());
-                key_rlc_acc = key_rlc_acc + c_rlp1 * key_mult.clone() * r_table[30].clone();
-                key_rlc_acc = key_rlc_acc + c_rlp2 * key_mult * r_table[31].clone();
+                key_rlc_acc = key_rlc_acc + c_rlp1 * key_mult.clone() * r_table[29].clone();
+                key_rlc_acc = key_rlc_acc + c_rlp2 * key_mult * r_table[30].clone();
 
                 let address_rlc = meta.query_advice(address_rlc, Rotation::cur());
 
@@ -185,8 +185,8 @@ impl<F: FieldExt> AccountNonExistingChip<F> {
 
             let c_rlp1 = meta.query_advice(c_rlp1, Rotation::cur());
             let c_rlp2 = meta.query_advice(c_rlp2, Rotation::cur());
-            key_rlc_acc = key_rlc_acc + c_rlp1 * r_table[30].clone();
-            key_rlc_acc = key_rlc_acc + c_rlp2 * r_table[31].clone();
+            key_rlc_acc = key_rlc_acc + c_rlp1 * r_table[29].clone();
+            key_rlc_acc = key_rlc_acc + c_rlp2 * r_table[30].clone();
 
             let address_rlc = meta.query_advice(address_rlc, Rotation::cur());
 
