@@ -62,16 +62,20 @@ impl<F: Field> ExecutionGadget<F> for SignedDivModGadget<F> {
 
         let is_sdiv = (OpcodeId::SMOD.expr() - opcode.expr()) * F::from(2).invert().unwrap();
 
-        let mul_add_words = MulAddWordsGadget::construct(cb);
-        let divisor_is_zero = IsZeroGadget::construct(cb, sum::expr(&mul_add_words.b.cells));
-        let quotient_is_zero = IsZeroGadget::construct(cb, sum::expr(&mul_add_words.a.cells));
-        let lt_word = LtWordGadget::construct(cb, &mul_add_words.c, &mul_add_words.b);
+        let a = cb.query_word();
+        let b = cb.query_word();
+        let c = cb.query_word();
+        let d = cb.query_word();
+        let mul_add_words = MulAddWordsGadget::construct(cb, [&a, &b, &c, &d]);
+        let divisor_is_zero = IsZeroGadget::construct(cb, sum::expr(&b.cells));
+        let quotient_is_zero = IsZeroGadget::construct(cb, sum::expr(&a.cells));
+        let lt_word = LtWordGadget::construct(cb, &c, &b);
 
         let abs_words = [
-            AbsWordGadget::construct(cb, &mul_add_words.a),
-            AbsWordGadget::construct(cb, &mul_add_words.b),
-            AbsWordGadget::construct(cb, &mul_add_words.c),
-            AbsWordGadget::construct(cb, &mul_add_words.d),
+            AbsWordGadget::construct(cb, &a),
+            AbsWordGadget::construct(cb, &b),
+            AbsWordGadget::construct(cb, &c),
+            AbsWordGadget::construct(cb, &d),
         ];
 
         cb.stack_pop(abs_words[3].x.expr());
