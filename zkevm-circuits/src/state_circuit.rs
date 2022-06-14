@@ -35,7 +35,9 @@ use random_linear_combination::{Chip as RlcChip, Config as RlcConfig, Queries as
 use std::collections::HashMap;
 use std::iter::once;
 
+// TODO: use a better value for production.
 const N_ROWS: usize = 1 << 16;
+
 const N_LIMBS_RW_COUNTER: usize = 2;
 const N_LIMBS_ACCOUNT_ADDRESS: usize = 10;
 const N_LIMBS_ID: usize = 2;
@@ -289,6 +291,8 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
 fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: &StateConfig<F>) -> Queries<F> {
     Queries {
         selector: meta.query_fixed(c.selector, Rotation::cur()),
+        lexicographic_ordering_selector: meta
+            .query_fixed(c.lexicographic_ordering.selector, Rotation::cur()),
         rw_counter: MpiQueries::new(meta, c.rw_counter),
         is_write: meta.query_advice(c.is_write, Rotation::cur()),
         tag: c.tag.value(Rotation::cur())(meta),

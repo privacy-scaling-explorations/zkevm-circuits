@@ -17,6 +17,7 @@ use strum::IntoEnumIterator;
 #[derive(Clone)]
 pub struct Queries<F: Field> {
     pub selector: Expression<F>,
+    pub lexicographic_ordering_selector: Expression<F>,
     pub rw_counter: MpiQueries<F, N_LIMBS_RW_COUNTER>,
     pub is_write: Expression<F>,
     pub tag: Expression<F>,
@@ -108,6 +109,10 @@ impl<F: Field> ConstraintBuilder<F> {
         self.require_zero("address is 0 for Stack", q.address.value.clone());
         self.require_zero("id is 0 for Stack", q.id());
         self.require_zero("storage_key is 0 for Stack", q.storage_key.encoded.clone());
+        self.require_zero(
+            "rw_counter increases by 1 for every non-first row",
+            q.lexicographic_ordering_selector.clone() * (q.rw_counter_change() - 1.expr()),
+        );
     }
 
     fn build_memory_constraints(&mut self, q: &Queries<F>) {
@@ -310,6 +315,10 @@ impl<F: Field> Queries<F> {
 
     fn address_change(&self) -> Expression<F> {
         self.address.value.clone() - self.address.value_prev.clone()
+    }
+
+    fn rw_counter_change(&self) -> Expression<F> {
+        self.rw_counter.value.clone() - self.rw_counter.value_prev.clone()
     }
 }
 
