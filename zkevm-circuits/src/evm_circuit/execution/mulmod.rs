@@ -160,7 +160,6 @@ impl<F: Field> ExecutionGadget<F> for MulModGadget<F> {
         self.lt.assign(region, offset, r, n)?;
 
         let n_sum = (0..32).fold(0, |acc, idx| acc + n.byte(idx) as u64);
-        dbg!(n_sum);
         self.n_is_zero.assign(region, offset, F::from(n_sum))?;
         Ok(())
     }
@@ -170,7 +169,7 @@ impl<F: Field> ExecutionGadget<F> for MulModGadget<F> {
 mod test {
     use crate::test_util::run_test_circuits;
     use eth_types::evm_types::Stack;
-    use eth_types::{bytecode, Word};
+    use eth_types::{bytecode, Word, U256};
     use mock::TestContext;
 
     fn test(a: Word, b: Word, n: Word, r: Option<Word>) -> bool {
@@ -195,6 +194,7 @@ mod test {
         }
         run_test_circuits(ctx, None).is_ok()
     }
+
     fn test_u32(a: u32, b: u32, n: u32, r: Option<u32>) -> bool {
         test(a.into(), b.into(), n.into(), r.map(Word::from))
     }
@@ -203,6 +203,34 @@ mod test {
     fn mulmod_simple() {
         assert!(test_u32(7, 12, 10, None));
         assert!(test_u32(7, 1, 10, None));
+    }
+
+    #[test]
+    fn mulmod_edge() {
+        assert!(test(
+            U256::from_str_radix("0xffffffffffffffffffffffffffffffffffffffffffff", 16).unwrap(),
+            U256::from_str_radix("0xffffffffffffffffffffffffffffffffffffffffffff", 16).unwrap(),
+            U256::from_str_radix("0xffffffffffffffffffffffffffffffffffffffffffff", 16).unwrap(),
+            None
+        ));
+        assert!(test(
+            U256::from_str_radix("0xffffffffffffffffffffffffffffffffffffffffffff", 16).unwrap(),
+            U256::from_str_radix("0xffffffffffffffffffffffffffffffffffffffffffff", 16).unwrap(),
+            U256::from_str_radix("0x00000000000000000000000000000000000000000001", 16).unwrap(),
+            None
+        ));
+        assert!(test(
+            U256::from_str_radix("0xffffffffffffffffffffffffffffffffffffffffffff", 16).unwrap(),
+            U256::from_str_radix("0xffffffffffffffffffffffffffffffffffffffffffff", 16).unwrap(),
+            U256::from_str_radix("0x00000000000000000000000000000000000000000000", 16).unwrap(),
+            None
+        ));
+        assert!(test(
+            U256::from_str_radix("0xfffffffffffffffffffffffffffffffffffffffffffe", 16).unwrap(),
+            U256::from_str_radix("0xffffffffffffffffffffffffffffffffffffffffffff", 16).unwrap(),
+            U256::from_str_radix("0xffffffffffffffffffffffffffffffffffffffffffff", 16).unwrap(),
+            None
+        ));
     }
 
     #[test]
