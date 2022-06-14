@@ -105,6 +105,13 @@ impl<F: Field> ExecutionGadget<F> for MulDivModShlShrGadget<F> {
             (is_div.clone() + is_mod.clone() + is_shr.clone()) * mul_add_words.overflow(),
         );
 
+        cb.require_zero(
+            "pop1 == pop1.cells[0] when divisor != 0 for opcode SHL and SHR",
+            (is_shl.clone() + is_shr.clone())
+                * (1.expr() - divisor_is_zero.expr())
+                * (pop1.expr() - pop1.cells[0].expr()),
+        );
+
         let gas_cost = is_mul * OpcodeId::MUL.constant_gas_cost().expr()
             + is_div * OpcodeId::DIV.constant_gas_cost().expr()
             + is_mod * OpcodeId::MOD.constant_gas_cost().expr()
