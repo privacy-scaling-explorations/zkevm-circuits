@@ -2,7 +2,7 @@ use halo2_proofs::{
     plonk::{Advice, Column, ConstraintSystem, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
-use pairing::arithmetic::FieldExt;
+use eth_types::Field;
 
 use crate::{
     mpt::FixedTableTag,
@@ -14,7 +14,7 @@ use crate::{
 };
 
 // Turn 32 hash cells into 4 cells containing keccak words.
-pub fn into_words_expr<F: FieldExt>(hash: Vec<Expression<F>>) -> Vec<Expression<F>> {
+pub fn into_words_expr<F: Field>(hash: Vec<Expression<F>>) -> Vec<Expression<F>> {
     let mut words = vec![];
     for i in 0..4 {
         let mut word = Expression::Constant(F::zero());
@@ -29,7 +29,7 @@ pub fn into_words_expr<F: FieldExt>(hash: Vec<Expression<F>>) -> Vec<Expression<
     words
 }
 
-pub fn compute_rlc<F: FieldExt>(
+pub fn compute_rlc<F: Field>(
     meta: &mut VirtualCells<F>,
     advices: Vec<Column<Advice>>,
     mut rind: usize,
@@ -57,7 +57,7 @@ pub fn compute_rlc<F: FieldExt>(
     rlc
 }
 
-pub fn range_lookups<F: FieldExt>(
+pub fn range_lookups<F: Field>(
     meta: &mut ConstraintSystem<F>,
     q_enable: impl Fn(&mut VirtualCells<'_, F>) -> Expression<F>,
     columns: Vec<Column<Advice>>,
@@ -98,7 +98,7 @@ pub fn range_lookups<F: FieldExt>(
 // 0) (key_len - 5) * byte < 33 * 255 (Note that this will be true only if byte
 // = 0) (key_len - 6) * byte < 33 * 255 (Note that this will be true only if
 // byte = 0) ...
-pub fn key_len_lookup<F: FieldExt>(
+pub fn key_len_lookup<F: Field>(
     meta: &mut ConstraintSystem<F>,
     q_enable: impl Fn(&mut VirtualCells<'_, F>) -> Expression<F>,
     ind: usize,
@@ -127,7 +127,7 @@ pub fn key_len_lookup<F: FieldExt>(
     });
 }
 
-pub fn mult_diff_lookup<F: FieldExt>(
+pub fn mult_diff_lookup<F: Field>(
     meta: &mut ConstraintSystem<F>,
     q_enable: impl Fn(&mut VirtualCells<'_, F>) -> Expression<F>,
     addition: usize,
@@ -161,7 +161,7 @@ pub fn mult_diff_lookup<F: FieldExt>(
     });
 }
 
-pub fn get_bool_constraint<F: FieldExt>(
+pub fn get_bool_constraint<F: Field>(
     q_enable: Expression<F>,
     expr: Expression<F>,
 ) -> Expression<F> {
@@ -169,7 +169,7 @@ pub fn get_bool_constraint<F: FieldExt>(
     q_enable * expr.clone() * (one - expr)
 }
 
-pub fn get_is_extension_node<F: FieldExt>(
+pub fn get_is_extension_node<F: Field>(
     meta: &mut VirtualCells<F>,
     s_advices: [Column<Advice>; HASH_WIDTH],
     rot: i32,
@@ -210,7 +210,7 @@ pub fn get_is_extension_node<F: FieldExt>(
         + is_ext_long_odd_c1
 }
 
-pub fn get_is_extension_node_one_nibble<F: FieldExt>(
+pub fn get_is_extension_node_one_nibble<F: Field>(
     meta: &mut VirtualCells<F>,
     s_advices: [Column<Advice>; HASH_WIDTH],
     rot: i32,
@@ -227,7 +227,7 @@ pub fn get_is_extension_node_one_nibble<F: FieldExt>(
     is_ext_short_c16 + is_ext_short_c1
 }
 
-pub(crate) fn bytes_into_rlc<F: FieldExt>(message: &[u8], r: F) -> F {
+pub(crate) fn bytes_into_rlc<F: Field>(message: &[u8], r: F) -> F {
     let mut rlc = F::zero();
     let mut mult = F::one();
     for &m in message.iter() {
@@ -238,7 +238,7 @@ pub(crate) fn bytes_into_rlc<F: FieldExt>(message: &[u8], r: F) -> F {
     rlc
 }
 
-pub(crate) fn bytes_expr_into_rlc<F: FieldExt>(message: &[Expression<F>], r: F) -> Expression<F> {
+pub(crate) fn bytes_expr_into_rlc<F: Field>(message: &[Expression<F>], r: F) -> Expression<F> {
     let mut rlc = Expression::Constant(F::zero());
     let mut mult = F::one();
     for m in message.iter() {

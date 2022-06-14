@@ -4,7 +4,7 @@ use halo2_proofs::{
     poly::Rotation,
 };
 use keccak256::plain::Keccak;
-use pairing::arithmetic::FieldExt;
+use eth_types::Field;
 use std::convert::TryInto;
 
 use crate::param::WITNESS_ROW_WIDTH;
@@ -17,7 +17,7 @@ use crate::{
     branch_hash_in_parent::BranchHashInParentChip,
     branch_rlc::BranchRLCChip,
     branch_rlc_init::BranchRLCInitChip,
-    helpers::{bytes_into_rlc, get_is_extension_node},
+    helpers::bytes_into_rlc,
     param::{COUNTER_WITNESS_LEN, IS_NON_EXISTING_ACCOUNT_POS, LAYOUT_OFFSET, NOT_FIRST_LEVEL_POS},
 };
 
@@ -215,7 +215,7 @@ struct ProofVariables<F> {
     before_account_leaf: bool,
 }
 
-impl<F: FieldExt> ProofVariables<F> {
+impl<F: Field> ProofVariables<F> {
     fn new() -> ProofVariables<F> {
         ProofVariables {
             modified_node: 0,
@@ -260,7 +260,7 @@ impl<F: FieldExt> ProofVariables<F> {
     }
 }
 
-impl<F: FieldExt> MPTConfig<F> {
+impl<F: Field> MPTConfig<F> {
     pub(crate) fn configure(meta: &mut ConstraintSystem<F>) -> Self {
         let pub_root = meta.instance_column();
         let inter_start_root = meta.advice_column(); // state root before modification - first level S hash needs to be the same as
@@ -1526,15 +1526,13 @@ mod tests {
     use halo2_proofs::{
         circuit::{Layouter, SimpleFloorPlanner},
         dev::{MockProver},
+        pairing::bn256::Fr as Fp,
         plonk::{
             Circuit, ConstraintSystem, Error,
         },
     };
 
-    use pairing::{
-        arithmetic::FieldExt,
-        bn256::{Fr as Fp},
-    };
+    use eth_types::Field;
     use std::{marker::PhantomData};
 
     #[test]
@@ -1545,7 +1543,7 @@ mod tests {
             witness: Vec<Vec<u8>>,
         }
 
-        impl<F: FieldExt> Circuit<F> for MyCircuit<F> {
+        impl<F: Field> Circuit<F> for MyCircuit<F> {
             type Config = MPTConfig<F>;
             type FloorPlanner = SimpleFloorPlanner;
 

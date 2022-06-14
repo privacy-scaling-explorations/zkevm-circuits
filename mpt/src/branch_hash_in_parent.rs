@@ -1,9 +1,9 @@
 use halo2_proofs::{
     circuit::Chip,
-    plonk::{Advice, Column, ConstraintSystem, Expression, Fixed, Instance},
+    plonk::{Advice, Column, ConstraintSystem, Expression, Fixed},
     poly::Rotation,
 };
-use pairing::arithmetic::FieldExt;
+use eth_types::Field;
 use std::marker::PhantomData;
 
 use crate::{
@@ -19,7 +19,7 @@ pub(crate) struct BranchHashInParentChip<F> {
     _marker: PhantomData<F>,
 }
 
-impl<F: FieldExt> BranchHashInParentChip<F> {
+impl<F: Field> BranchHashInParentChip<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         inter_root: Column<Advice>,
@@ -133,7 +133,7 @@ impl<F: FieldExt> BranchHashInParentChip<F> {
     }
 }
 
-impl<F: FieldExt> Chip<F> for BranchHashInParentChip<F> {
+impl<F: Field> Chip<F> for BranchHashInParentChip<F> {
     type Config = BranchHashInParentConfig;
     type Loaded = ();
 

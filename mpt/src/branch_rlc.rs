@@ -3,7 +3,7 @@ use halo2_proofs::{
     plonk::{Advice, Column, ConstraintSystem, Expression, VirtualCells},
     poly::Rotation,
 };
-use pairing::arithmetic::FieldExt;
+use eth_types::Field;
 use std::marker::PhantomData;
 
 use crate::param::{HASH_WIDTH, R_TABLE_LEN};
@@ -18,7 +18,7 @@ pub(crate) struct BranchRLCChip<F> {
     _marker: PhantomData<F>,
 }
 
-impl<F: FieldExt> BranchRLCChip<F> {
+impl<F: Field> BranchRLCChip<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         q_enable: impl FnOnce(&mut VirtualCells<'_, F>) -> Expression<F>,
@@ -92,7 +92,7 @@ impl<F: FieldExt> BranchRLCChip<F> {
     }
 }
 
-impl<F: FieldExt> Chip<F> for BranchRLCChip<F> {
+impl<F: Field> Chip<F> for BranchRLCChip<F> {
     type Config = BranchRLCConfig;
     type Loaded = ();
 
