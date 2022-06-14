@@ -23,13 +23,10 @@ use halo2_proofs::plonk::Error;
 #[derive(Clone, Debug)]
 pub(crate) struct MulModGadget<F> {
     same_context: SameContextGadget<F>,
-
     // a, b, n, r
     pub words: [util::Word<F>; 4],
-
     k: util::Word<F>,
     a_reduced: util::Word<F>,
-    zero: util::Word<F>,
     d: util::Word<F>,
     e: util::Word<F>,
     modword: ModGadget<F>,
@@ -58,16 +55,14 @@ impl<F: Field> ExecutionGadget<F> for MulModGadget<F> {
         let d = cb.query_word();
         let e = cb.query_word();
 
-        let zero = cb.query_word();
-
         // 1.  k1 * n + a_reduced  == a
         let modword = ModGadget::construct(cb, [&a, &n, &a_reduced]);
 
         // 2.  a_reduced * b + 0 == d * 2^256 + e
-        let mul512_left = MulAddWords512Gadget::construct(cb, [&a_reduced, &b, &zero, &d, &e]);
+        let mul512_left = MulAddWords512Gadget::construct(cb, [&a_reduced, &b, &d, &e], None);
 
         // 3.  k2 * n + r == d * 2^256 + e
-        let mul512_right = MulAddWords512Gadget::construct(cb, [&k, &n, &r, &d, &e]);
+        let mul512_right = MulAddWords512Gadget::construct(cb, [&k, &n, &d, &e], Some(&r));
 
         // (r < n ) or n == 0
         let n_is_zero = IsZeroGadget::construct(cb, sum::expr(&n.cells));
@@ -97,7 +92,6 @@ impl<F: Field> ExecutionGadget<F> for MulModGadget<F> {
             same_context,
             k,
             a_reduced,
-            zero,
             d,
             e,
             modword,
@@ -148,14 +142,13 @@ impl<F: Field> ExecutionGadget<F> for MulModGadget<F> {
             .assign(region, offset, Some(a_reduced.to_le_bytes()))?;
         self.d.assign(region, offset, Some(d.to_le_bytes()))?;
         self.e.assign(region, offset, Some(e.to_le_bytes()))?;
-        self.zero
-            .assign(region, offset, Some(U256::zero().to_le_bytes()))?;
 
         self.modword
             .assign(region, offset, a, n, a_reduced, block.randomness)?;
         self.mul512_left
-            .assign(region, offset, [a_reduced, b, U256::zero(), d, e])?;
-        self.mul512_right.assign(region, offset, [k, n, r, d, e])?;
+            .assign(region, offset, [a_reduced, b, d, e], None)?;
+        self.mul512_right
+            .assign(region, offset, [k, n, d, e], Some(r))?;
 
         self.lt.assign(region, offset, r, n)?;
 
