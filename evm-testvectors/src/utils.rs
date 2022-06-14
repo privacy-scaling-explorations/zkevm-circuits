@@ -1,5 +1,5 @@
 use anyhow::Result;
-use eth_types::{evm_types::OpcodeId, GethExecTrace, U256, H256};
+use eth_types::{evm_types::OpcodeId, GethExecTrace, U256};
 use prettytable::Table;
 use zkevm_circuits::test_util::{get_fixed_table, BytecodeTestConfig, FixedTableConfig};
 
@@ -54,9 +54,9 @@ pub fn config_bytecode_test_config<OPS: Iterator<Item = OpcodeId>>(
 }
 
 pub fn print_trace(trace: GethExecTrace) -> Result<()> {
-    fn  u256_to_str(u: &U256) -> String {
+    fn u256_to_str(u: &U256) -> String {
         if u.leading_zeros() < 26 {
-            format!("{:x}",u)
+            format!("{:x}", u)
         } else {
             u.to_string()
         }

@@ -5,8 +5,10 @@ use bus_mapping::mock::BlockData;
 use eth_types::{
     evm_types::Gas, geth_types, geth_types::Account, Address, Bytes, GethExecTrace, H256, U256, U64,
 };
+use ethers_core::{types::TransactionRequest, utils::keccak256};
+use ethers_signers::LocalWallet;
 use external_tracer::TraceConfig;
-use std::collections::HashMap;
+use std::{collections::HashMap, str::FromStr};
 use thiserror::Error;
 use zkevm_circuits::test_util::BytecodeTestConfig;
 
@@ -205,6 +207,23 @@ impl std::fmt::Display for StateTest {
 
 impl StateTest {
     fn into_traceconfig(self) -> (String, TraceConfig, StateTestResult) {
+        let wallet = LocalWallet::from_str(&hex::encode(self.secret_key.0)).unwrap();
+        let mut tx = TransactionRequest::new()
+            .from(self.from)
+            .nonce(self.nonce)
+            .value(self.value)
+            .data(self.data.clone())
+            .gas(self.gas_limit)
+            .gas_price(self.gas_price);
+
+        if let Some(to) = self.to {
+            tx = tx.to(to);
+        }
+
+        let tx_rlp = tx.rlp(1u64);
+        let sighash = keccak256(tx_rlp.as_ref()).into();
+        let sig = wallet.sign_hash(sighash, true);
+
         (
             self.id,
             TraceConfig {
@@ -218,6 +237,7 @@ impl StateTest {
                     gas_limit: U256::from(self.env.current_gas_limit),
                     base_fee: U256::one(),
                 },
+
                 transactions: vec![geth_types::Transaction {
                     from: self.from,
                     to: self.to,
@@ -229,6 +249,9 @@ impl StateTest {
                     gas_tip_cap: U256::zero(),
                     call_data: self.data,
                     access_list: None,
+                    v: sig.v,
+                    r: sig.r,
+                    s: sig.s,
                 }],
                 accounts: self.pre,
             },
@@ -315,7 +338,9 @@ impl StateTest {
             .map_err(|err| StateTestError::CircuitInput(err.to_string()))?;
 
         if geth_traces[0].struct_logs.len() > config.max_steps {
-            return Err(StateTestError::SkipTestMaxSteps(geth_traces[0].struct_logs.len()));
+            return Err(StateTestError::SkipTestMaxSteps(
+                geth_traces[0].struct_logs.len(),
+            ));
         }
         // we are not checking here geth_traces[0].failed, since
         // there are some tests that makes the tx failing

@@ -163,13 +163,13 @@ impl Bytecode {
 
     /// Append asm
     pub fn append_asm(&mut self, op: &str) {
-        if op.starts_with("PUSH") {
-            let n_value: Vec<_> = op[4..].splitn(3, ['(', ')']).collect();
-            let n = usize::from_str_radix(&n_value[0], 10).unwrap();
+        if let Some(push) = op.strip_prefix("PUSH") {
+            let n_value: Vec<_> = push.splitn(3, ['(', ')']).collect();
+            let n = n_value[0].parse::<usize>().unwrap();
             let value = if n_value[1].starts_with("0x") {
                 Word::from_str_radix(&n_value[1][2..], 16).unwrap()
             } else {
-                Word::from_str_radix(&n_value[1], 10).unwrap()
+                Word::from_str_radix(n_value[1], 10).unwrap()
             };
             self.push(n, value);
         } else {
@@ -192,7 +192,7 @@ impl Bytecode {
     }
 
     /// create iterator
-    pub fn iter<'a>(&'a self) -> BytecodeIterator<'a> {
+    pub fn iter(&self) -> BytecodeIterator<'_> {
         BytecodeIterator(self.code.iter())
     }
 }
@@ -207,7 +207,7 @@ pub enum OpcodeWithData {
 }
 
 impl OpcodeWithData {
-    /// get the opcode 
+    /// get the opcode
     pub fn opcode(&self) -> OpcodeId {
         match self {
             OpcodeWithData::Opcode(op) => *op,
@@ -220,18 +220,20 @@ impl OpcodeWithData {
 
 impl FromStr for OpcodeWithData {
     type Err = String;
+
+    #[allow(clippy::manual_range_contains)]
     fn from_str(op: &str) -> Result<Self, Self::Err> {
         let err = || format!("unable to parse {}", op);
-        if op.starts_with("PUSH") {
-            let n_value: Vec<_> = op[4..].splitn(3, ['(', ')']).collect();
-            let n = usize::from_str_radix(&n_value[0], 10).map_err(|_| err())?;
+        if let Some(push) = op.strip_prefix("PUSH") {
+            let n_value: Vec<_> = push.splitn(3, ['(', ')']).collect();
+            let n = n_value[0].parse::<usize>().map_err(|_| err())?;
             if n < 1 || n > 32 {
                 return Err(err());
             }
             let value = if n_value[1].starts_with("0x") {
                 Word::from_str_radix(&n_value[1][2..], 16)
             } else {
-                Word::from_str_radix(&n_value[1], 10)
+                Word::from_str_radix(n_value[1], 10)
             }
             .map_err(|_| err())?;
             Ok(OpcodeWithData::Push(n, value))

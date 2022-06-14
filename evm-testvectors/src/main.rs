@@ -6,18 +6,18 @@ mod statetest;
 mod utils;
 mod yaml;
 
-use compiler::Compiler;
-use yaml::YamlStateTestBuilder;
-use json::JsonStateTestBuilder;
 use anyhow::{bail, Result};
 use clap::Parser;
+use compiler::Compiler;
 use eth_types::evm_types::Gas;
+use json::JsonStateTestBuilder;
 use rayon::prelude::*;
 use result_cache::ResultCache;
 use statetest::{StateTest, StateTestConfig, StateTestError};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::RwLock;
+use yaml::YamlStateTestBuilder;
 use zkevm_circuits::test_util::BytecodeTestConfig;
 
 use crate::utils::config_bytecode_test_config;
@@ -30,11 +30,7 @@ extern crate prettytable;
 #[clap(author, version, about, long_about = None)]
 struct Args {
     /// Path of test files
-    #[clap(
-        short,
-        long,
-        default_value = "tests/src/GeneralStateTestsFiller/**"
-    )]
+    #[clap(short, long, default_value = "tests/src/GeneralStateTestsFiller/**")]
     path: String,
 
     /// Test to execute
@@ -55,46 +51,36 @@ struct Args {
 }
 
 const TEST_IGNORE_LIST: [&str; 0] = [];
-const FILE_IGNORE_LIST: [&str;33] = [
-    
+const FILE_IGNORE_LIST: [&str; 33] = [
     // unimplemented
-
     "EIP1559",
     "EIP2930",
     "stPreCompiledContracts",
     "stZeroKnowledge",
- 
-    // too big 
-
+    // too big
     "stTimeConsuming",
     "stExample",
     "stQuadraticComplexityTest",
     "50000",
-    
-    // makes panic 
-     
-    "randomStatetest", // crashes geth?
-    "bufferFiller.yml",    // we are using U256::as_xxx() that panics
-   
+    // makes panic
+    "randomStatetest",  // crashes geth?
+    "bufferFiller.yml", // we are using U256::as_xxx() that panics
     // defines asm
-
-    "stackLimitGas_1023Filler.json", 
-    "stackLimitGas_1024Filler.json", 
-    "stackLimitGas_1025Filler.json", 
-    "stackLimitPush31_1023Filler.json", 
-    "stackLimitPush31_1024Filler.json", 
-    "stackLimitPush31_1025Filler.json", 
-    "stackLimitPush32_1023Filler.json", 
-    "stackLimitPush32_1024Filler.json", 
-    "stackLimitPush32_1025Filler.json", 
+    "stackLimitGas_1023Filler.json",
+    "stackLimitGas_1024Filler.json",
+    "stackLimitGas_1025Filler.json",
+    "stackLimitPush31_1023Filler.json",
+    "stackLimitPush31_1024Filler.json",
+    "stackLimitPush31_1025Filler.json",
+    "stackLimitPush32_1023Filler.json",
+    "stackLimitPush32_1024Filler.json",
+    "stackLimitPush32_1025Filler.json",
     "sloadGasCostFiller.json",
-    "selfBalanceCallTypesFiller.json", 
+    "selfBalanceCallTypesFiller.json",
     "selfBalanceGasCostFiller.json",
-    "selfBalanceUpdateFiller.json", 
-    "chainIdGasCostFiller.json", 
-    
+    "selfBalanceUpdateFiller.json",
+    "chainIdGasCostFiller.json",
     // bad json
-
     "Opcodes_TransactionInitFiller",
     "static_CallContractToCreateContractAndCallItOOGFiller.json", // bad json
     "dummyFiller.json",
@@ -272,7 +258,7 @@ fn main() -> Result<()> {
     for file in files {
         if let Some(ext) = file.extension() {
             let ext = &*ext.to_string_lossy();
-            if !["yml","json"].contains(&ext) {
+            if !["yml", "json"].contains(&ext) {
                 continue;
             }
             let path = file.as_path().to_string_lossy();
@@ -280,19 +266,19 @@ fn main() -> Result<()> {
             let result = match ext {
                 "yml" => YamlStateTestBuilder::new(&mut compiler).from_yaml(&path, &src),
                 "json" => JsonStateTestBuilder::new(&mut compiler).from_json(&path, &src),
-                _ => unreachable!(),         
+                _ => unreachable!(),
             };
             let mut tcs = match result {
                 Err(err) => {
-                 if args.test.is_none() {
-                     log::warn!("Failed to load {}: {:?}", path, err);
-                 }
-                Vec::new()
-             }
+                    if args.test.is_none() {
+                        log::warn!("Failed to load {}: {:?}", path, err);
+                    }
+                    Vec::new()
+                }
                 Ok(tcs) => tcs,
             };
- 
-        tests.append(&mut tcs);
+
+            tests.append(&mut tcs);
         }
     }
 

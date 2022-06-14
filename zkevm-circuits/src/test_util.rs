@@ -1,3 +1,4 @@
+//! Testing utils
 use crate::{
     evm_circuit::{table::FixedTableTag, witness::Block},
     state_circuit::StateCircuit,
@@ -15,11 +16,15 @@ fn init_env_logger() {
     // Enable RUST_LOG during tests
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("error")).init();
 }
+/// Fixed lookup table configuration
 pub enum FixedTableConfig {
+    /// Partial fixed lookup table See get_fixed_table
     Incomplete,
+    /// Full lookup table
     Complete,
 }
 
+/// Get fixed table
 pub fn get_fixed_table(conf: FixedTableConfig) -> Vec<FixedTableTag> {
     match conf {
         FixedTableConfig::Incomplete => {
@@ -41,11 +46,16 @@ pub fn get_fixed_table(conf: FixedTableConfig) -> Vec<FixedTableTag> {
     }
 }
 
+/// Configuration for the bytecode test
 #[derive(Debug, Clone)]
 pub struct BytecodeTestConfig {
+    /// Enable evm circuit test
     pub enable_evm_circuit_test: bool,
+    /// Enable evm circuit lookup tags
     pub evm_circuit_lookup_tags: Vec<FixedTableTag>,
+    /// Enable state circuit test
     pub enable_state_circuit_test: bool,
+    /// Gas limit
     pub gas_limit: u64,
 }
 
@@ -60,6 +70,7 @@ impl Default for BytecodeTestConfig {
     }
 }
 
+/// Run test circuits
 pub fn run_test_circuits<const NACC: usize, const NTX: usize>(
     test_ctx: TestContext<NACC, NTX>,
     config: Option<BytecodeTestConfig>,
@@ -77,6 +88,7 @@ pub fn run_test_circuits<const NACC: usize, const NTX: usize>(
     test_circuits_using_witness_block(block, config.unwrap_or_default())
 }
 
+/// Test circuits using witness block
 pub fn test_circuits_using_witness_block(
     block: Block<Fr>,
     config: BytecodeTestConfig,
