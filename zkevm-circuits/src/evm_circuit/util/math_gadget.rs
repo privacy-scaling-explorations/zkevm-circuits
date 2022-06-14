@@ -1168,9 +1168,9 @@ impl<F: Field> ShrWordsGadget<F> {
 /// and allocate 9 bytes for them each
 ///
 /// Finally we just prove:
-///   t0 + t1 * 2^64 + c_lo = e_lo + carry_0
-///   t2 + t3 * 2^64 + c_hi + carry_0 = e_hi + carry_1
-///   t4 + t5 * 2^64 + carry_1 = d_lo + carry_2
+///   t0 + t1 * 2^64 + c_lo = e_lo + carry_0 * 2^128
+///   t2 + t3 * 2^64 + c_hi + carry_0 = e_hi + carry_1 * 2^128
+///   t4 + t5 * 2^64 + carry_1 = d_lo + carry_2 * 2^128
 ///   t6 + carry_2 = d_hi
 #[derive(Clone, Debug)]
 pub(crate) struct MulAddWords512Gadget<F> {

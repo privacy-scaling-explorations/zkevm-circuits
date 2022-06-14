@@ -17,7 +17,7 @@ use bus_mapping::evm::OpcodeId;
 use eth_types::{Field, ToLittleEndian, U256};
 use halo2_proofs::plonk::Error;
 
-/// MulModGadget verifies opcod MULMOD
+/// MulModGadget verifies opcode MULMOD
 /// Verify a * b = r (mod n)
 /// where a, b, n, r are 256-bit words
 #[derive(Clone, Debug)]
@@ -73,7 +73,7 @@ impl<F: Field> ExecutionGadget<F> for MulModGadget<F> {
         let n_is_zero = IsZeroGadget::construct(cb, sum::expr(&n.cells));
         let lt = LtWordGadget::construct(cb, &r, &n);
         cb.add_constraint(
-            " (1 - (r < n) - (n!=0)) ",
+            " (1 - (r < n) - (n==0)) ",
             1.expr() - lt.expr() - n_is_zero.expr(),
         );
 
