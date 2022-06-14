@@ -39,6 +39,7 @@ mod codesize;
 mod comparator;
 mod copy_code_to_memory;
 mod copy_to_log;
+mod dummy;
 mod dup;
 mod end_block;
 mod end_tx;
@@ -85,6 +86,7 @@ use codesize::CodesizeGadget;
 use comparator::ComparatorGadget;
 use copy_code_to_memory::CopyCodeToMemoryGadget;
 use copy_to_log::CopyToLogGadget;
+use dummy::DummyGadget;
 use dup::DupGadget;
 use end_block::EndBlockGadget;
 use end_tx::EndTxGadget;
@@ -183,6 +185,7 @@ pub(crate) struct ExecutionConfig<F> {
     push_gadget: PushGadget<F>,
     selfbalance_gadget: SelfbalanceGadget<F>,
     shr_gadget: ShrGadget<F>,
+    sha3_gadget: DummyGadget<F, 2, 1, { ExecutionState::SHA3 }>,
     signed_comparator_gadget: SignedComparatorGadget<F>,
     signextend_gadget: SignextendGadget<F>,
     sload_gadget: SloadGadget<F>,
@@ -373,6 +376,7 @@ impl<F: Field> ExecutionConfig<F> {
             pop_gadget: configure_gadget!(),
             push_gadget: configure_gadget!(),
             selfbalance_gadget: configure_gadget!(),
+            sha3_gadget: configure_gadget!(),
             shr_gadget: configure_gadget!(),
             signed_comparator_gadget: configure_gadget!(),
             signextend_gadget: configure_gadget!(),
@@ -813,6 +817,7 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::BLOCKCTXU160 => assign_exec_step!(self.block_ctx_u160_gadget),
             ExecutionState::BLOCKCTXU256 => assign_exec_step!(self.block_ctx_u256_gadget),
             ExecutionState::SELFBALANCE => assign_exec_step!(self.selfbalance_gadget),
+            ExecutionState::SHA3 => assign_exec_step!(self.sha3_gadget),
             ExecutionState::SHR => assign_exec_step!(self.shr_gadget),
             ExecutionState::SIGNEXTEND => assign_exec_step!(self.signextend_gadget),
             ExecutionState::SLOAD => assign_exec_step!(self.sload_gadget),
