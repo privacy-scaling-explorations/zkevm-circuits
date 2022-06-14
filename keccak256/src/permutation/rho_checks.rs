@@ -108,6 +108,7 @@ use crate::arith_helpers::*;
 use crate::common::ROTATION_CONSTANTS;
 use crate::gate_helpers::{biguint_to_f, f_to_biguint};
 use crate::permutation::{
+    generic::GenericConfig,
     rho_helpers::*,
     tables::{Base13toBase9TableConfig, RangeCheckConfig, SpecialChunkTableConfig},
 };
@@ -118,8 +119,6 @@ use halo2_proofs::{
     poly::Rotation,
 };
 use std::marker::PhantomData;
-
-use super::generic::GenericConfig;
 
 #[derive(Debug, Clone)]
 pub struct LaneRotateConversionConfig<F> {

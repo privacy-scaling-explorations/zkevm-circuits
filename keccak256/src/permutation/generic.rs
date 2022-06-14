@@ -18,6 +18,7 @@ pub struct GenericConfig<F> {
     _marker: PhantomData<F>,
 }
 
+#[allow(dead_code)]
 impl<F: Field> GenericConfig<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
