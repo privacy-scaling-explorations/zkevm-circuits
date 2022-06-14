@@ -4,7 +4,7 @@ use crate::gate_helpers::f_to_biguint;
 use crate::permutation::rho_helpers::{get_overflow_detector, BASE_NUM_OF_CHUNKS};
 use eth_types::Field;
 use halo2_proofs::{
-    circuit::{AssignedCell, Layouter},
+    circuit::{AssignedCell, Layouter, Table},
     plonk::{Advice, Column, ConstraintSystem, Error, TableColumn},
     poly::Rotation,
 };
@@ -20,7 +20,7 @@ const NUM_OF_BINARY_CHUNKS: usize = 16;
 const NUM_OF_B9_CHUNKS: usize = 5;
 
 #[derive(EnumIter, Display, Clone, Copy)]
-enum TableTags {
+pub(crate) enum TableTags {
     Range12 = 0,
     Range169,
     SpecialChunk,
@@ -46,15 +46,15 @@ impl<F: Field> StackableTable<F> {
         let q_enable = meta.complex_selector();
         meta.lookup("stackable lookup", |meta| {
             let q_enable = meta.query_selector(q_enable);
-            vec![tag, col1, col2]
-                .iter()
-                .map(|&(adv_col, table_col)| {
-                    (
-                        q_enable.clone() * meta.query_advice(adv_col, Rotation::cur()),
-                        table_col,
-                    )
-                })
-                .collect_vec()
+            let tag_adv = meta.query_advice(tag.0, Rotation::cur());
+            let col1_adv = meta.query_advice(col1.0, Rotation::cur());
+            let col2_adv = meta.query_advice(col2.0, Rotation::cur());
+
+            vec![
+                (q_enable.clone() * tag_adv, tag.1),
+                (q_enable.clone() * col1_adv, col1.1),
+                (q_enable * col2_adv, col2.1),
+            ]
         });
         Self {
             tag,
@@ -63,78 +63,119 @@ impl<F: Field> StackableTable<F> {
             _marker: PhantomData,
         }
     }
-    pub(crate) fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
-        for &(tag, k) in [
-            (TableTags::Range12, STEP2_RANGE),
-            (TableTags::Range169, STEP3_RANGE),
-        ]
-        .iter()
-        {
-            layouter.assign_table(
-                || format!("range {}", tag),
-                |mut table| {
-                    for i in 0..=k {
-                        table.assign_cell(
-                            || format!("tag range{}", tag),
-                            self.tag.1,
-                            i as usize,
-                            || Ok(F::from(tag as u64)),
-                        )?;
-                        table.assign_cell(
-                            || format!("range{}", tag),
-                            self.col1.1,
-                            i as usize,
-                            || Ok(F::from(i)),
-                        )?;
-                        table.assign_cell(
-                            || format!("dummy col range{}", tag),
-                            self.col2.1,
-                            i as usize,
-                            || Ok(F::zero()),
-                        )?;
-                    }
-                    Ok(())
-                },
+
+    fn load_range(
+        &self,
+        table: &mut Table<F>,
+        offset: usize,
+        tag: TableTags,
+        k: u64,
+    ) -> Result<usize, Error> {
+        let mut offset = offset;
+        for i in 0..=k {
+            table.assign_cell(
+                || format!("tag range{}", tag),
+                self.tag.1,
+                offset,
+                || Ok(F::from(tag as u64)),
             )?;
+            table.assign_cell(
+                || format!("range{}", tag),
+                self.col1.1,
+                offset,
+                || Ok(F::from(i)),
+            )?;
+            table.assign_cell(
+                || format!("dummy col range{}", tag),
+                self.col2.1,
+                offset,
+                || Ok(F::zero()),
+            )?;
+            offset += 1;
         }
+        Ok(offset)
+    }
+    fn load_special_chunks(&self, table: &mut Table<F>, offset: usize) -> Result<usize, Error> {
+        let mut offset = offset;
+        for i in 0..B13 {
+            for j in 0..(B13 - i) {
+                let (low, high) = (i, j);
+                let last_chunk = F::from(low as u64)
+                    + F::from(high as u64) * F::from(B13 as u64).pow(&[LANE_SIZE as u64, 0, 0, 0]);
+                let output_coef = F::from(convert_b13_coef(low + high) as u64);
+                table.assign_cell(
+                    || "tag special chunks",
+                    self.tag.1,
+                    offset,
+                    || Ok(F::from(TableTags::SpecialChunk as u64)),
+                )?;
+                table.assign_cell(|| "last chunk", self.col1.1, offset, || Ok(last_chunk))?;
+                table.assign_cell(|| "output coef", self.col2.1, offset, || Ok(output_coef))?;
+                offset += 1;
+            }
+        }
+        Ok(offset)
+    }
+    pub(crate) fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
         layouter.assign_table(
-            || "Special chunks",
+            || "stackable",
             |mut table| {
                 let mut offset = 0;
-                for i in 0..B13 {
-                    for j in 0..(B13 - i) {
-                        let (low, high) = (i, j);
-                        let last_chunk = F::from(low as u64)
-                            + F::from(high as u64)
-                                * F::from(B13 as u64).pow(&[LANE_SIZE as u64, 0, 0, 0]);
-                        let output_coef = F::from(convert_b13_coef(low + high) as u64);
-                        table.assign_cell(
-                            || "tag special chunks",
-                            self.tag.1,
-                            offset,
-                            || Ok(F::from(TableTags::SpecialChunk as u64)),
-                        )?;
-                        table.assign_cell(
-                            || "last chunk",
-                            self.col1.1,
-                            offset,
-                            || Ok(last_chunk),
-                        )?;
-                        table.assign_cell(
-                            || "output coef",
-                            self.col2.1,
-                            offset,
-                            || Ok(output_coef),
-                        )?;
-                        offset += 1;
-                    }
+                for &(tag, k) in [
+                    (TableTags::Range12, STEP2_RANGE),
+                    (TableTags::Range169, STEP3_RANGE),
+                ]
+                .iter()
+                {
+                    offset = self.load_range(&mut table, offset, tag, k)?;
+                }
+                self.load_special_chunks(&mut table, offset)?;
+                Ok(())
+            },
+        )
+    }
+
+    pub(crate) fn lookup_range(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        values: &[AssignedCell<F, F>],
+        tag: TableTags,
+    ) -> Result<(), Error> {
+        layouter.assign_region(
+            || format!("lookup for {}", tag),
+            |mut region| {
+                let tag = F::from(tag as u64);
+                for (offset, v) in values.iter().enumerate() {
+                    region.assign_advice_from_constant(|| "tag", self.tag.0, offset, tag)?;
+                    v.copy_advice(|| "value", &mut region, self.col1.0, offset)?;
+                    region.assign_advice_from_constant(
+                        || "dummy",
+                        self.col2.0,
+                        offset,
+                        F::zero(),
+                    )?;
                 }
                 Ok(())
             },
         )
     }
-    pub(crate) fn lookup_range(value: AssignedCell<F, F>) -> Result<(), Error> {
-        Ok(())
+    pub(crate) fn lookup_special_chunks(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        values: &[(AssignedCell<F, F>, AssignedCell<F, F>)],
+    ) -> Result<(), Error> {
+        layouter.assign_region(
+            || "lookup for special chunks",
+            |mut region| {
+                let tag = F::from(TableTags::SpecialChunk as u64);
+                for (offset, (last_chunk, output_coef)) in values.iter().enumerate() {
+                    region.assign_advice_from_constant(|| "tag", self.tag.0, offset, tag)?;
+                    last_chunk.copy_advice(|| "last chunk", &mut region, self.col1.0, offset)?;
+                    output_coef.copy_advice(|| "output coef", &mut region, self.col2.0, offset)?;
+                }
+                Ok(())
+            },
+        )
     }
 }
 
