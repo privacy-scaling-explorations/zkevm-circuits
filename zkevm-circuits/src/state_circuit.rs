@@ -70,7 +70,7 @@ pub struct StateCircuit<F: Field> {
     pub(crate) randomness: F,
     pub(crate) rows: Vec<Rw>,
     #[cfg(test)]
-    overrides: HashMap<(test::AdviceColumn, usize), F>,
+    overrides: HashMap<(test::AdviceColumn, isize), F>,
 }
 
 impl<F: Field> StateCircuit<F> {
@@ -278,7 +278,7 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
                 #[cfg(test)]
                 for ((column, row_offset), &f) in &self.overrides {
                     let advice_column = column.value(&config);
-                    let offset = *row_offset + padding_length;
+                    let offset = padding_length + usize::try_from(*row_offset).unwrap();
                     region.assign_advice(|| "override", advice_column, offset, || Ok(f))?;
                 }
 

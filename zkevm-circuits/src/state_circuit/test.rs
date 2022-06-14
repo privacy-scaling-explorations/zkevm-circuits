@@ -763,7 +763,7 @@ fn invalid_tags() {
     }
 }
 
-fn prover(rows: Vec<Rw>, overrides: HashMap<(AdviceColumn, usize), Fr>) -> MockProver<Fr> {
+fn prover(rows: Vec<Rw>, overrides: HashMap<(AdviceColumn, isize), Fr>) -> MockProver<Fr> {
     let randomness = Fr::rand();
     let circuit = StateCircuit {
         randomness,
@@ -783,7 +783,7 @@ fn verify(rows: Vec<Rw>) -> Result<(), Vec<VerifyFailure>> {
 
 fn verify_with_overrides(
     rows: Vec<Rw>,
-    overrides: HashMap<(AdviceColumn, usize), Fr>,
+    overrides: HashMap<(AdviceColumn, isize), Fr>,
 ) -> Result<(), Vec<VerifyFailure>> {
     // Sanity check that the original RwTable without overrides is valid.
     assert_eq!(verify(rows.clone()), Ok(()));
