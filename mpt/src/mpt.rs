@@ -14,9 +14,9 @@ use crate::param::{
     KECCAK_OUTPUT_WIDTH, S_RLP_START, S_START,
 };
 use crate::{
-    branch_hash_in_parent::BranchHashInParentChip,
-    branch_rlc::BranchRLCChip,
-    branch_rlc_init::BranchRLCInitChip,
+    branch_hash_in_parent::BranchHashInParentConfig,
+    branch_rlc::BranchRLCConfig,
+    branch_rlc_init::BranchRLCInitConfig,
     helpers::bytes_into_rlc,
     param::{COUNTER_WITNESS_LEN, IS_NON_EXISTING_ACCOUNT_POS, LAYOUT_OFFSET, NOT_FIRST_LEVEL_POS},
 };
@@ -402,7 +402,7 @@ impl<F: Field> MPTConfig<F> {
         let is_non_existing_account_proof = meta.advice_column();
         let is_non_existing_account_row = meta.advice_column();
 
-        BranchHashInParentChip::<F>::configure(
+        BranchHashInParentConfig::<F>::configure(
             meta,
             inter_start_root,
             not_first_level,
@@ -417,7 +417,7 @@ impl<F: Field> MPTConfig<F> {
             keccak_table,
         );
 
-        BranchHashInParentChip::<F>::configure(
+        BranchHashInParentConfig::<F>::configure(
             meta,
             inter_final_root,
             not_first_level,
@@ -432,7 +432,7 @@ impl<F: Field> MPTConfig<F> {
             keccak_table,
         );
 
-        BranchRLCInitChip::<F>::configure(
+        BranchRLCInitConfig::<F>::configure(
             meta,
             |meta| {
                 meta.query_advice(is_branch_init, Rotation::cur())
@@ -448,7 +448,7 @@ impl<F: Field> MPTConfig<F> {
             acc_r,
         );
 
-        BranchRLCChip::<F>::configure(
+        BranchRLCConfig::<F>::configure(
             meta,
             |meta| {
                 let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
@@ -463,7 +463,7 @@ impl<F: Field> MPTConfig<F> {
             r_table.clone(),
         );
 
-        BranchRLCChip::<F>::configure(
+        BranchRLCConfig::<F>::configure(
             meta,
             |meta| {
                 let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
@@ -840,7 +840,7 @@ impl<F: Field> MPTConfig<F> {
             row,
             account_leaf,
             storage_leaf,
-            false,
+            true,
             false,
             false,
             0,
@@ -989,6 +989,12 @@ impl<F: Field> MPTConfig<F> {
                             }
                         }
 
+                        region.assign_fixed(
+                            || "q_enable",
+                            self.q_enable,
+                            offset,
+                            || Ok(F::one()),
+                        )?;
                         region.assign_advice(
                             || "not first level",
                             self.not_first_level,
@@ -1079,13 +1085,6 @@ impl<F: Field> MPTConfig<F> {
                                 pv.drifted_pos = pv.modified_node
                             }
 
-                            region.assign_fixed(
-                                || "q_enable",
-                                self.q_enable,
-                                offset,
-                                || Ok(F::one()),
-                            )?;
-
                             if ind == 0 {
                                 region.assign_fixed(
                                     || "not first",
@@ -1158,13 +1157,6 @@ impl<F: Field> MPTConfig<F> {
                             offset += 1;
                         } else if row[row.len() - 1] == 1 {
                             // branch child
-                            region.assign_fixed(
-                                || "q_enable",
-                                self.q_enable,
-                                offset,
-                                || Ok(F::one()),
-                            )?;
-
                             region.assign_fixed(
                                 || "not first",
                                 self.q_not_first,
@@ -1279,13 +1271,7 @@ impl<F: Field> MPTConfig<F> {
                             || row[row.len() - 1] == 17
                             || row[row.len() - 1] == 18
                         {
-                            // leaf s or leaf c or leaf key s or leaf key c
-                            region.assign_fixed(
-                                || "q_enable",
-                                self.q_enable,
-                                offset,
-                                || Ok(F::one()),
-                            )?;
+                            // leaf s or leaf c or leaf key s or leaf key c 
                             region.assign_fixed(
                                 || "not first",
                                 self.q_not_first,

@@ -1,5 +1,4 @@
 use halo2_proofs::{
-    circuit::Chip,
     plonk::{Advice, Column, ConstraintSystem, Expression, VirtualCells},
     poly::Rotation,
 };
@@ -9,17 +8,14 @@ use std::marker::PhantomData;
 use crate::param::HASH_WIDTH;
 
 #[derive(Clone, Debug)]
-pub(crate) struct BranchRLCInitConfig {}
+pub(crate) struct BranchRLCInitConfig<F> {
+    _marker: PhantomData<F>,
+}
 
 // BranchRLCInitChip verifies the random linear combination for the branch init
 // row. The rest of random linear combination is checked in branch_acc, the
 // whole RLC is used to check the hash of a branch.
-pub(crate) struct BranchRLCInitChip<F> {
-    config: BranchRLCInitConfig,
-    _marker: PhantomData<F>,
-}
-
-impl<F: Field> BranchRLCInitChip<F> {
+impl<F: Field> BranchRLCInitConfig<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         q_enable: impl FnOnce(&mut VirtualCells<'_, F>) -> Expression<F>,
@@ -31,8 +27,8 @@ impl<F: Field> BranchRLCInitChip<F> {
         acc_c: Column<Advice>,
         acc_mult_c: Column<Advice>,
         acc_r: F,
-    ) -> BranchRLCInitConfig {
-        let config = BranchRLCInitConfig {};
+    ) -> BranchRLCInitConfig<F> {
+        let config = BranchRLCInitConfig { _marker: PhantomData, }; 
 
         // TODO: constraints for branch init (also byte range lookups)
 
@@ -157,25 +153,5 @@ impl<F: Field> BranchRLCInitChip<F> {
         });
 
         config
-    }
-
-    pub fn construct(config: BranchRLCInitConfig) -> Self {
-        Self {
-            config,
-            _marker: PhantomData,
-        }
-    }
-}
-
-impl<F: Field> Chip<F> for BranchRLCInitChip<F> {
-    type Config = BranchRLCInitConfig;
-    type Loaded = ();
-
-    fn config(&self) -> &Self::Config {
-        &self.config
-    }
-
-    fn loaded(&self) -> &Self::Loaded {
-        &()
     }
 }
