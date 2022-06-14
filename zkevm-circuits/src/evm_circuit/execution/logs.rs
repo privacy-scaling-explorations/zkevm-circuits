@@ -159,8 +159,8 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
         //             next_is_persistent.expr(),
         //             is_persistent.expr(),
         //         );
-        //         cb.require_equal("next_tx_id = tx_id", next_tx_id.expr(), tx_id.expr());
-        //         cb.require_zero(
+        //         cb.require_equal("next_tx_id = tx_id", next_tx_id.expr(),
+        // tx_id.expr());         cb.require_zero(
         //             "next_data_start_index starts with 0",
         //             next_data_start_index.expr(),
         //         );

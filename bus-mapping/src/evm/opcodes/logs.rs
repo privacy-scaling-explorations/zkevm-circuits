@@ -186,7 +186,7 @@ fn gen_log_copy_steps(
         let mut exec_step = state.new_step(&geth_steps[1])?;
         exec_step.log_id += 1;
 
-        exec_step.exec_state = ExecState::CopyToLog;
+        // exec_step.exec_state = ExecState::CopyToLog;
         gen_log_copy_step(
             state,
             geth_steps,
