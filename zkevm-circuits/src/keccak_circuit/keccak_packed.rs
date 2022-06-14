@@ -100,16 +100,7 @@ fn get_num_bits_per_theta_t_lookup() -> usize {
 
 fn get_num_bits_per_rho_pi_lookup() -> usize {
     if get_byte_mode() {
-        let num = get_num_bits_per_lookup(CHI_BASE_LOOKUP_RANGE.max(RHO_PI_LOOKUP_RANGE));
-        if num >= 16 {
-            16
-        } else if num >= 8 {
-            8
-        } else if num >= 4 {
-            4
-        } else {
-            2
-        }
+        get_num_bits_per_lookup(CHI_BASE_LOOKUP_RANGE.max(RHO_PI_LOOKUP_RANGE))
     } else {
         get_num_bits_per_lookup(RHO_PI_LOOKUP_RANGE)
     }
@@ -117,16 +108,7 @@ fn get_num_bits_per_rho_pi_lookup() -> usize {
 
 fn get_num_bits_per_base_chi_lookup() -> usize {
     if get_byte_mode() {
-        let num = get_num_bits_per_lookup(CHI_BASE_LOOKUP_RANGE.max(RHO_PI_LOOKUP_RANGE));
-        if num >= 16 {
-            16
-        } else if num >= 8 {
-            8
-        } else if num >= 4 {
-            4
-        } else {
-            2
-        }
+        get_num_bits_per_lookup(CHI_BASE_LOOKUP_RANGE.max(RHO_PI_LOOKUP_RANGE))
     } else {
         get_num_bits_per_lookup(CHI_BASE_LOOKUP_RANGE)
     }
@@ -251,10 +233,30 @@ fn split<F: Field>(
     cell_values: &mut Vec<Column<Advice>>,
     cb: &mut BaseConstraintBuilder<F>,
     input: Expression<F>,
-    pos: usize,
+    rot: usize,
     target_part_size: usize,
+    normalize: bool,
 ) -> Vec<Part<F>> {
-    let offset = (64 - pos) % target_part_size;
+    let mut parts = Vec::new();
+    let word = get_word_parts(target_part_size, rot, true);
+    for word_part in word.parts {
+        let cell_column = meta.advice_column();
+        cell_values.push(cell_column);
+
+        let mut part = 0.expr();
+        meta.create_gate("Query parts", |meta| {
+            part = meta.query_advice(cell_column, Rotation::cur());
+            vec![0u64.expr()]
+        });
+
+        parts.push(Part {
+            num_bits: word_part.bits.len(),
+            parts: vec![part.clone()],
+            expr: part.clone(),
+        });
+    }
+
+    /*let offset = (64 - pos) % target_part_size;
     let mut num_bits_left = 64;
     let mut parts = Vec::new();
     while num_bits_left > 0 {
@@ -275,14 +277,10 @@ fn split<F: Field>(
             vec![0u64.expr()]
         });
 
-        parts.push(Part {
-            num_bits: part_size,
-            parts: vec![part.clone()],
-            expr: part.clone(),
-        });
+
 
         num_bits_left -= part_size;
-    }
+    }*/
 
     // Input parts need to equal original input expression
     cb.require_equal("split", decode(parts.clone()), input);
@@ -293,14 +291,32 @@ fn split<F: Field>(
 fn split_value<F: Field>(
     cell_values: &mut Vec<F>,
     input: Word,
-    pos: usize,
+    rot: usize,
     target_part_size: usize,
+    normalize: bool,
 ) -> Vec<PartValue> {
-    let offset = (64 - pos) % target_part_size;
     let input_bits = unpack(input);
     assert_eq!(pack(&input_bits), input);
 
-    let mut num_bits_left = 64;
+    let mut parts = Vec::new();
+    let word = get_word_parts(target_part_size, rot, true);
+    for word_part in word.parts {
+        let mut value = 0u64;
+        let mut factor = 1u64;
+        for idx in 0..word_part.bits.len() {
+            let bit_pos = word_part.bits[idx];
+            assert!(input_bits[bit_pos] < BIT_SIZE as u8);
+            value += (input_bits[bit_pos] as u64) * factor;
+            factor *= BIT_SIZE as u64;
+        }
+        cell_values.push(F::from(value));
+        parts.push(PartValue {
+            num_bits: word_part.bits.len(),
+            value: Word::from(value),
+        });
+    }
+
+    /*let mut num_bits_left = 64;
     let mut bit_pos = 0;
     let mut parts = Vec::new();
     while num_bits_left > 0 {
@@ -329,10 +345,11 @@ fn split_value<F: Field>(
         });
 
         num_bits_left -= part_size;
-    }
+    }*/
     assert_eq!(decode_value(parts.clone()), input);
     parts
 }
+
 
 fn get_rotate_count(count: usize, part_size: usize) -> usize {
     (count + part_size - 1) / part_size
@@ -413,26 +430,99 @@ fn pack_bit<F: Field>(value: usize, count: usize) -> Expression<F> {
     Expression::Constant(packed)
 }
 
-// TODO: use this to combine two small parts to a full part to reduce
-// lookups/output columns
+fn target_part_sizes(part_size: usize) -> Vec<usize> {
+    let num_full_chunks = 64 / part_size;
+    let partial_chunk_size = 64 % part_size;
+    let mut part_sizes = vec![part_size; num_full_chunks];
+    if partial_chunk_size > 0 {
+        part_sizes.push(partial_chunk_size);
+    }
+    part_sizes
+}
+
+
+/// Part
+#[derive(Clone, Debug)]
+pub(crate) struct PartInfo {
+    bits: Vec<usize>,
+}
+
+
+/// Part
+#[derive(Clone, Debug)]
+pub(crate) struct WordParts {
+    parts: Vec<PartInfo>,
+    rot_idx: usize,
+}
+
+fn get_word_parts(part_size: usize, rot: usize, normalize: bool) -> WordParts {
+    let mut bits = (0usize..64).collect::<Vec<_>>();
+    bits.rotate_right(rot);
+
+    //println!("part: {}, rot: {}", part_size, rot);
+
+    let mut parts = Vec::new();
+    let mut rot_idx = 0;
+
+    let mut idx = 0;
+    let target_sizes = target_part_sizes(part_size);
+    for part_size in target_sizes {
+        let mut num_consumed = 0;
+        while num_consumed < part_size {
+            let mut part_bits: Vec<usize> = Vec::new();
+            while num_consumed < part_size/* && (num_consumed == 0 || !(normalize && bits[idx] == 0))*/ {
+                if normalize && part_bits.len() > 0 && bits[idx] == 0 {
+                    break;
+                }
+                if bits[idx] == 0 {
+                    rot_idx = parts.len();
+                }
+                part_bits.push(bits[idx]);
+                idx += 1;
+                num_consumed += 1;
+            }
+            parts.push(PartInfo {
+                bits: part_bits,
+            });
+        }
+    }
+
+    /*for part in parts.iter() {
+        println!("{:?}", part);
+    }*/
+
+    parts.rotate_left(rot_idx);
+    assert_eq!(parts[0].bits[0], 0);
+
+    WordParts {
+        parts,
+        rot_idx,
+    }
+}
+
 fn combine_sub_parts<F: Field>(input: Vec<Part<F>>, part_size: usize) -> Vec<Part<F>> {
+    let target_sizes = target_part_sizes(part_size);
+    let mut counter = 0;
     let mut parts = Vec::new();
     let mut input_iter = input.iter();
     while let Some(input_part) = input_iter.next() {
-        if input_part.num_bits == part_size {
+        if input_part.num_bits == target_sizes[counter] {
             parts.push(input_part.clone());
+            counter += 1;
         } else {
             if let Some(extra_part) = input_iter.next() {
-                assert_eq!(input_part.num_bits + extra_part.num_bits, part_size);
+                assert_eq!(input_part.num_bits + extra_part.num_bits, target_sizes[counter]);
 
                 let factor = F::from(8u64).pow(&[input_part.num_bits as u64, 0, 0, 0]);
                 let expr = input_part.expr.clone() + extra_part.expr.clone() * factor;
 
                 parts.push(Part {
-                    num_bits: part_size,
+                    num_bits: target_sizes[counter],
                     expr,
                     parts: vec![input_part.expr.clone(), extra_part.expr.clone()],
-                })
+                });
+
+                counter += 1;
             } else {
                 unreachable!();
             }
@@ -442,22 +532,33 @@ fn combine_sub_parts<F: Field>(input: Vec<Part<F>>, part_size: usize) -> Vec<Par
 }
 
 fn combine_sub_parts_value(input: Vec<PartValue>, part_size: usize) -> Vec<PartValue> {
+
+    //println!("{:?}", input);
+
+    let target_sizes = target_part_sizes(part_size);
+
+    //println!("{:?}", target_sizes);
+
+    let mut counter = 0;
     let mut parts = Vec::new();
     let mut input_iter = input.iter();
     while let Some(input_part) = input_iter.next() {
-        if input_part.num_bits == part_size {
+        if input_part.num_bits == target_sizes[counter] {
             parts.push(input_part.clone());
+            counter += 1;
         } else {
             if let Some(extra_part) = input_iter.next() {
-                assert_eq!(input_part.num_bits + extra_part.num_bits, part_size);
+                assert_eq!(input_part.num_bits + extra_part.num_bits, target_sizes[counter]);
 
                 let factor = 8u64.pow(input_part.num_bits as u32);
                 let value = input_part.value + extra_part.value.clone() * factor;
 
                 parts.push(PartValue {
                     value,
-                    num_bits: part_size,
-                })
+                    num_bits: target_sizes[counter],
+                });
+
+                counter += 1;
             } else {
                 unreachable!();
             }
@@ -529,7 +630,7 @@ impl<F: Field> KeccakPackedConfig<F> {
         let mut lookup_counter = 0;
         let part_size = get_num_bits_per_absorb_lookup();
         let input = absorb_from_expr + absorb_data_expr;
-        let absorb_fat = split(meta, &mut cell_values, &mut cb, input, 0, part_size);
+        let absorb_fat = split(meta, &mut cell_values, &mut cb, input, 0, part_size, false);
         let absorb_res = transform(
             "absorb",
             meta,
@@ -546,7 +647,6 @@ impl<F: Field> KeccakPackedConfig<F> {
 
         // Theta
         let mut lookup_counter = 0;
-        let part_size = get_num_bits_per_theta_c_lookup();
         let part_size_c = get_num_bits_per_theta_c_lookup();
         let part_size_t = get_num_bits_per_theta_t_lookup();
         let mut bc = Vec::new();
@@ -556,7 +656,7 @@ impl<F: Field> KeccakPackedConfig<F> {
                 + b[i][2].clone()
                 + b[i][3].clone()
                 + b[i][4].clone();
-            let bc_fat = split(meta, &mut cell_values, &mut cb, c, 1, part_size_c);
+            let bc_fat = split(meta, &mut cell_values, &mut cb, c, 1, part_size_c, false);
             let bc_thin = transform(
                 "theta c",
                 meta,
@@ -578,7 +678,7 @@ impl<F: Field> KeccakPackedConfig<F> {
             } else {
                 let t = decode(bc[(i + 4) % 5].clone())
                     + decode(rotate(bc[(i + 1) % 5].clone(), 1, part_size_c));
-                let t_fat = split(meta, &mut cell_values, &mut cb, t, 0, part_size_t);
+                let t_fat = split(meta, &mut cell_values, &mut cb, t, 0, part_size_t, false);
                 let t_thin = decode(transform(
                     "theta t",
                     meta,
@@ -603,6 +703,7 @@ impl<F: Field> KeccakPackedConfig<F> {
         let part_size = get_num_bits_per_base_chi_lookup();
         let mut ob = vec![vec![0u64.expr(); 5]; 5];
         let mut ob_parts = vec![vec![Vec::new(); 5]; 5];
+        let mut num_parts = 0;
         for i in 0..5 {
             for j in 0..5 {
                 let b_fat = rotate(
@@ -613,6 +714,7 @@ impl<F: Field> KeccakPackedConfig<F> {
                         b[i][j].clone(),
                         RHOM[i][j],
                         part_size,
+                        true,
                     ),
                     RHOM[i][j],
                     part_size
@@ -625,8 +727,10 @@ impl<F: Field> KeccakPackedConfig<F> {
                     b_fat.clone(),
                     if get_byte_mode() { normalize_4 } else { normalize_3 },
                 );
+                //num_parts += b_thin.len();
                 if get_byte_mode() {
                     ob_parts[j][(2*i+3*j)%5] = combine_sub_parts(b_thin.clone(), part_size);
+                    num_parts += ob_parts[j][(2*i+3*j)%5].len();
                 }
                 ob[j][(2*i+3*j)%5] = decode(b_thin.clone());
             }
@@ -643,7 +747,6 @@ impl<F: Field> KeccakPackedConfig<F> {
         let part_size_base = get_num_bits_per_base_chi_lookup();
         let part_size_ext = get_num_bits_per_ext_chi_lookup();
         let mut ob = vec![vec![0u64.expr(); 5]; 5];
-        let mut num_parts = 0;
         for i in 0..5 {
             for j in 0..5 {
                 if i == 0 && j == 0 {
@@ -651,8 +754,7 @@ impl<F: Field> KeccakPackedConfig<F> {
                         - 2.expr() * b[i][j].clone()
                         - b[(i + 1) % 5][j].clone()
                         - 2.expr() * round_cst_expr.clone();
-                    let fat = split(meta, &mut cell_values, &mut cb, input, 0, part_size_ext);
-                    num_parts += fat.len();
+                    let fat = split(meta, &mut cell_values, &mut cb, input, 0, part_size_ext, false);
                     ob[i][j] = decode(transform(
                         "chi ext",
                         meta,
@@ -681,8 +783,7 @@ impl<F: Field> KeccakPackedConfig<F> {
                         let input = pack_bit(3, 64) + b[(i + 1) % 5][j].clone()
                             - 2.expr() * b[i][j].clone()
                             - b[(i + 2) % 5][j].clone();
-                        fat = split(meta, &mut cell_values, &mut cb, input, 0, part_size_base);
-                        //num_parts += fat.len();
+                        fat = split(meta, &mut cell_values, &mut cb, input, 0, part_size_base, false);
                     }
                     ob[i][j] = decode(transform(
                         "chi base",
@@ -1144,7 +1245,7 @@ fn keccak<F: Field>(bytes: Vec<u8>) -> Vec<KeccakRow<F>> {
             // Absorb
             let part_size = get_num_bits_per_absorb_lookup();
             let input = absorb_data.from + absorb_data.absorb;
-            let absorb_fat = split_value::<F>(&mut cell_values, input, 0, part_size);
+            let absorb_fat = split_value::<F>(&mut cell_values, input, 0, part_size, false);
             let _absorb_result = transform_value(&mut cell_values, absorb_fat.clone(), |v| v & 1);
 
             // Theta
@@ -1158,7 +1259,7 @@ fn keccak<F: Field>(bytes: Vec<u8>) -> Vec<KeccakRow<F>> {
                     + b[i][2].clone()
                     + b[i][3].clone()
                     + b[i][4].clone();
-                let bc_fat = split_value::<F>(&mut cell_values, c, 1, part_size_c);
+                let bc_fat = split_value::<F>(&mut cell_values, c, 1, part_size_c, false);
                 let bc_thin = transform_value(&mut cell_values, bc_fat.clone(), |v| v & 1);
                 bc.push(bc_thin);
             }
@@ -1173,7 +1274,7 @@ fn keccak<F: Field>(bytes: Vec<u8>) -> Vec<KeccakRow<F>> {
                 } else {
                     let t = decode_value(bc[(i + 4) % 5].clone())
                         + decode_value(rotate_value(bc[(i + 1) % 5].clone(), 1, part_size_c));
-                    let t_fat = split_value::<F>(&mut cell_values, t, 0, part_size_t);
+                    let t_fat = split_value::<F>(&mut cell_values, t, 0, part_size_t, false);
                     let t_thin = decode_value(transform_value(
                         &mut cell_values,
                         t_fat.clone(),
@@ -1195,7 +1296,7 @@ fn keccak<F: Field>(bytes: Vec<u8>) -> Vec<KeccakRow<F>> {
                 for j in 0..5 {
                     let b_fat =
                     rotate_value(
-                        split_value(&mut cell_values, b[i][j].clone(), RHOM[i][j], part_size),
+                        split_value(&mut cell_values, b[i][j].clone(), RHOM[i][j], part_size, true),
                         RHOM[i][j],
                         part_size
                     );
@@ -1221,7 +1322,7 @@ fn keccak<F: Field>(bytes: Vec<u8>) -> Vec<KeccakRow<F>> {
                             - b[(i + 1) % 5][j].clone()
                             - Word::from(2u64)
                                 * pack_u64(if round < 24 { IOTA_ROUND_CST[round] } else { 0 });
-                        let fat = split_value(&mut cell_values, input, 0, part_size_ext);
+                        let fat = split_value(&mut cell_values, input, 0, part_size_ext, false);
                         ob[i][j] =
                             decode_value(transform_value(&mut cell_values, fat.clone(), |v| {
                                 CHI_EXT_LOOKUP_TABLE[*v as usize]
@@ -1243,7 +1344,7 @@ fn keccak<F: Field>(bytes: Vec<u8>) -> Vec<KeccakRow<F>> {
                             let input = all_threes + b[(i + 1) % 5][j].clone()
                                 - Word::from(2u64) * b[i][j].clone()
                                 - b[(i + 2) % 5][j].clone();
-                            fat = split_value(&mut cell_values, input, 0, part_size_base);
+                            fat = split_value(&mut cell_values, input, 0, part_size_base, false);
                         }
                         ob[i][j] =
                             decode_value(transform_value(&mut cell_values, fat.clone(), |v| {
@@ -1363,7 +1464,7 @@ mod tests {
 
     #[test]
     fn packed_keccak_simple() {
-        let k = 10;
+        let k = 8;
 
 
         let SHA3in = [0, 0, 1, 0, 1, 0, 0, 1, 0, 0, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 1, 0, 1, 0, 1, 0, 0, 1, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 1, 1, 0, 1, 0, 1, 1, 1, 0, 1, 0, 0, 1, 0, 1, 1, 1, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 1, 1, 0, 1, 0, 1, 1, 0, 0, 1, 1, 1, 0, 0, 0, 1, 1, 0, 1, 1, 0, 1, 0, 1, 0, 1, 1, 0, 1, 0, 1, 1, 0, 0, 1, 0, 0, 0, 1, 1, 0, 0, 1, 1, 1, 0, 0, 1, 1, 0, 1, 1, 1, 0, 0, 1, 1, 0, 1, 1, 1, 1, 0, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 0, 1, 1, 1, 0, 1, 1, 0, 1, 1, 0, 0, 1, 0, 0, 1, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 1, 0, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 0, 1, 1, 0, 0, 0, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 1, 0, 0, 0, 1, 1, 0, 0, 1, 0, 1, 0, 1, 0, 0, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 0, 1, 1, 0, 1, 1, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 1, 0, 1, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0, 1, 1, 1, 0, 0, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 0, 1, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 1, 0, 1, 1, 1, 0, 0, 1, 0, 1, 0, 0, 0, 0, 1, 0, 1, 0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 1, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 1, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 1, 0, 1, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 0, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 0, 0, 1, 1, 1, 1, 0, 0, 1, 1, 0, 1, 1, 1, 0, 1, 1, 1, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 1, 0, 0, 0, 1, 0, 0, 1, 1, 0, 1, 0, 0, 1, 1, 0, 1, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 1, 0, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 1, 0, 0, 1, 0, 1, 0, 1, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 1, 0, 1, 0, 0, 1, 1, 0, 1, 1, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 1, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1, 1, 0, 1, 0, 1, 0, 1, 0, 0, 0, 1, 1, 0, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 1, 0, 0, 0, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 0, 0, 0, 1, 1, 1, 0, 0, 0, 1, 1, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1, 1, 0, 1, 0, 1, 0, 0, 0, 0, 1, 1, 0, 0, 0, 1, 1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1, 0, 1, 0, 1, 1, 0, 1, 0, 1, 0, 1, 0, 1, 1, 1, 0, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 0, 1, 0, 1, 0, 1, 1, 0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 1, 1, 0, 1, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 0, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 1, 0, 1, 1, 1, 0, 0, 0, 0, 0, 1, 0, 1, 1, 0, 0, 0, 1, 1, 1, 1, 0, 0, 1, 0, 0, 1, 0, 0, 0, 1, 1, 0, 1, 1, 0, 0, 0, 1, 0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 1, 1, 0, 0, 0, 0, 0, 1, 0, 1, 1, 0, 0, 0, 0, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 1];
