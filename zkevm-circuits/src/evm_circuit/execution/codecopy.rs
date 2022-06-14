@@ -11,7 +11,6 @@ use crate::{
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition},
-            from_bytes,
             memory_gadget::{MemoryAddressGadget, MemoryCopierGasGadget, MemoryExpansionGadget},
             CachedRegion, Cell, MemoryAddress,
         },
@@ -59,7 +58,7 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
         cb.stack_pop(size.expr());
 
         // Construct memory address in the destionation (memory) to which we copy code.
-        let dst_memory_addr = MemoryAddressGadget::construct(cb, dest_memory_offset, size.clone());
+        let dst_memory_addr = MemoryAddressGadget::construct(cb, dest_memory_offset, size);
 
         // Fetch the hash of bytecode running in current environment.
         let code_hash = cb.curr.state.code_hash.clone();

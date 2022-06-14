@@ -2,9 +2,7 @@ use super::Opcode;
 use crate::operation::{CallContextField, MemoryOp, RW};
 use crate::Error;
 use crate::{
-    circuit_input_builder::{
-        CircuitInputStateRef, CopyDetails, ExecState, ExecStep, StepAuxiliaryData,
-    },
+    circuit_input_builder::{CircuitInputStateRef, CopyDetails, ExecStep, StepAuxiliaryData},
     constants::MAX_COPY_BYTES,
 };
 use eth_types::GethExecStep;
@@ -18,7 +16,7 @@ impl Opcode for Calldatacopy {
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];
-        let mut exec_steps = vec![gen_calldatacopy_step(state, geth_step)?];
+        let exec_steps = vec![gen_calldatacopy_step(state, geth_step)?];
         // let memory_copy_steps = gen_memory_copy_steps(state, geth_steps)?;
         // exec_steps.extend(memory_copy_steps);
         Ok(exec_steps)
@@ -84,8 +82,7 @@ fn gen_calldatacopy_step(
     Ok(exec_step)
 }
 
-
-fn memory_copy(
+fn gen_memory_copy_step(
     state: &mut CircuitInputStateRef,
     exec_step: &mut ExecStep,
     src_addr: u64,

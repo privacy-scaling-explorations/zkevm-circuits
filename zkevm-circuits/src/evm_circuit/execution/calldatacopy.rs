@@ -10,7 +10,6 @@ use crate::{
                 ConstraintBuilder, StepStateTransition,
                 Transition::{Delta, To},
             },
-            from_bytes,
             memory_gadget::{MemoryAddressGadget, MemoryCopierGasGadget, MemoryExpansionGadget},
             CachedRegion, Cell, MemoryAddress,
         },
@@ -144,8 +143,8 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
         //             next_from_tx.expr(),
         //             cb.curr.state.is_root.expr(),
         //         );
-        //         cb.require_equal("next_src_id = src_id", next_src_id.expr(), src_id.expr());
-        //     },
+        //         cb.require_equal("next_src_id = src_id", next_src_id.expr(),
+        // src_id.expr());     },
         // );
 
         // State transition

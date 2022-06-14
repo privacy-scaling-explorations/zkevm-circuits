@@ -564,9 +564,7 @@ impl<F: Field> ExecutionConfig<F> {
                         ),
                     ])
                     .filter(move |(_, from, _)| *from == G::EXECUTION_STATE)
-                    .map(|(_, _, to)| {
-                        1.expr() - step_next.execution_state_selector(to)
-                    }),
+                    .map(|(_, _, to)| 1.expr() - step_next.execution_state_selector(to)),
                 )
                 .chain(
                     IntoIterator::into_iter([
@@ -590,19 +588,17 @@ impl<F: Field> ExecutionConfig<F> {
                         ),
                     ])
                     .filter(move |(_, _, from)| !from.contains(&G::EXECUTION_STATE))
-                    .map(|(_, to, _)| {
-                        step_next.execution_state_selector([to])
-                    }),
+                    .map(|(_, to, _)| step_next.execution_state_selector([to])),
                 )
                 // Accumulate all state transition checks.
                 // This can be done because all summed values are enforced to be boolean.
                 .reduce(|accum, poly| accum + poly)
                 .map(move |poly| {
-                        q_usable.clone()
-                            * q_step.clone()
-                            * (1.expr() - q_step_last.clone())
-                            * step_curr.execution_state_selector([G::EXECUTION_STATE])
-                            * poly
+                    q_usable.clone()
+                        * q_step.clone()
+                        * (1.expr() - q_step_last.clone())
+                        * step_curr.execution_state_selector([G::EXECUTION_STATE])
+                        * poly
                 })
         });
 

@@ -1,11 +1,8 @@
 use crate::{
-    circuit_input_builder::{
-        CircuitInputStateRef, CopyDetails, ExecState, ExecStep, StepAuxiliaryData,
-    },
-    constants::MAX_COPY_BYTES,
+    circuit_input_builder::{CircuitInputStateRef, ExecStep},
     Error,
 };
-use eth_types::{GethExecStep, ToWord};
+use eth_types::GethExecStep;
 
 use super::Opcode;
 
@@ -18,7 +15,7 @@ impl Opcode for Codecopy {
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];
-        let mut exec_steps = vec![gen_codecopy_step(state, geth_step)?];
+        let exec_steps = vec![gen_codecopy_step(state, geth_step)?];
         // let memory_copy_steps = gen_memory_copy_steps(state, geth_steps)?;
         // exec_steps.extend(memory_copy_steps);
         Ok(exec_steps)
@@ -126,10 +123,8 @@ mod codecopy_tests {
 
     use crate::{
         mock::BlockData,
-        operation::{MemoryOp, StackOp, RW},
+        operation::{MemoryOp, StackOp, RW}, circuit_input_builder::ExecState,
     };
-
-    use super::*;
 
     #[test]
     fn codecopy_opcode_impl() {

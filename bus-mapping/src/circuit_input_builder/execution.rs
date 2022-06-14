@@ -1,6 +1,6 @@
 //! Execution step related module.
 
-use crate::{error::ExecError, exec_trace::OperationRef, operation::RWCounter, opeation::RW};
+use crate::{error::ExecError, exec_trace::OperationRef, operation::RWCounter, operation::RW};
 use eth_types::{
     evm_types::{Gas, GasCost, OpcodeId, ProgramCounter},
     GethExecStep, U256,
