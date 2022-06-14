@@ -1503,7 +1503,7 @@ dependencies = [
  "log",
  "mock",
  "once_cell",
- "pairing_bn256",
+ "pairing_bn256 0.1.1 (git+https://github.com/appliedzkp/pairing)",
  "prettytable-rs",
  "rayon",
  "regex",
@@ -1920,7 +1920,7 @@ dependencies = [
  "cfg-if 0.1.10",
  "ff 0.11.1",
  "group 0.11.0",
- "pairing_bn256",
+ "pairing_bn256 0.1.1 (git+https://github.com/appliedzkp/pairing?tag=v0.1.1)",
  "plotters",
  "rand",
  "rand_core",
@@ -2583,6 +2583,19 @@ dependencies = [
 name = "pairing_bn256"
 version = "0.1.1"
 source = "git+https://github.com/appliedzkp/pairing?tag=v0.1.1#1da2920e0e0b3de5929111e9d6193b6b4f0d99e3"
+dependencies = [
+ "ff 0.11.1",
+ "group 0.11.0",
+ "rand",
+ "rand_core",
+ "static_assertions",
+ "subtle",
+]
+
+[[package]]
+name = "pairing_bn256"
+version = "0.1.1"
+source = "git+https://github.com/appliedzkp/pairing#1da2920e0e0b3de5929111e9d6193b6b4f0d99e3"
 dependencies = [
  "ff 0.11.1",
  "group 0.11.0",
