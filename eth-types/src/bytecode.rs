@@ -197,7 +197,7 @@ impl Bytecode {
     }
 }
 
-/// TODO
+/// An ASM entry
 #[derive(Clone, PartialEq, Eq)]
 pub enum OpcodeWithData {
     ///
@@ -207,7 +207,7 @@ pub enum OpcodeWithData {
 }
 
 impl OpcodeWithData {
-    /// TODO
+    /// get the opcode 
     pub fn opcode(&self) -> OpcodeId {
         match self {
             OpcodeWithData::Opcode(op) => *op,
@@ -251,7 +251,7 @@ impl ToString for OpcodeWithData {
     }
 }
 
-/// TODO
+/// Iterator over the bytecode to retrieve individual opcodes
 pub struct BytecodeIterator<'a>(std::slice::Iter<'a, u8>);
 impl<'a> Iterator for BytecodeIterator<'a> {
     type Item = OpcodeWithData;
