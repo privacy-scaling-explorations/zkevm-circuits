@@ -20,6 +20,7 @@ use halo2_proofs::{
     poly::Rotation,
 };
 use std::{collections::HashMap, convert::TryInto, iter};
+use strum::IntoEnumIterator;
 
 mod add_sub;
 mod begin_tx;
@@ -34,9 +35,11 @@ mod caller;
 mod callvalue;
 mod chainid;
 mod codecopy;
+mod codesize;
 mod comparator;
 mod copy_code_to_memory;
 mod copy_to_log;
+mod dummy;
 mod dup;
 mod end_block;
 mod end_tx;
@@ -58,6 +61,7 @@ mod pc;
 mod pop;
 mod push;
 mod selfbalance;
+mod shr;
 mod signed_comparator;
 mod signextend;
 mod sload;
@@ -78,9 +82,11 @@ use caller::CallerGadget;
 use callvalue::CallValueGadget;
 use chainid::ChainIdGadget;
 use codecopy::CodeCopyGadget;
+use codesize::CodesizeGadget;
 use comparator::ComparatorGadget;
 use copy_code_to_memory::CopyCodeToMemoryGadget;
 use copy_to_log::CopyToLogGadget;
+use dummy::DummyGadget;
 use dup::DupGadget;
 use end_block::EndBlockGadget;
 use end_tx::EndTxGadget;
@@ -102,6 +108,7 @@ use pc::PcGadget;
 use pop::PopGadget;
 use push::PushGadget;
 use selfbalance::SelfbalanceGadget;
+use shr::ShrGadget;
 use signed_comparator::SignedComparatorGadget;
 use signextend::SignextendGadget;
 use sload::SloadGadget;
@@ -156,6 +163,7 @@ pub(crate) struct ExecutionConfig<F> {
     caller_gadget: CallerGadget<F>,
     chainid_gadget: ChainIdGadget<F>,
     codecopy_gadget: CodeCopyGadget<F>,
+    codesize_gadget: CodesizeGadget<F>,
     comparator_gadget: ComparatorGadget<F>,
     copy_code_to_memory_gadget: CopyCodeToMemoryGadget<F>,
     copy_to_log_gadget: CopyToLogGadget<F>,
@@ -176,6 +184,8 @@ pub(crate) struct ExecutionConfig<F> {
     pop_gadget: PopGadget<F>,
     push_gadget: PushGadget<F>,
     selfbalance_gadget: SelfbalanceGadget<F>,
+    shr_gadget: ShrGadget<F>,
+    sha3_gadget: DummyGadget<F, 2, 1, { ExecutionState::SHA3 }>,
     signed_comparator_gadget: SignedComparatorGadget<F>,
     signextend_gadget: SignextendGadget<F>,
     sload_gadget: SloadGadget<F>,
@@ -347,6 +357,7 @@ impl<F: Field> ExecutionConfig<F> {
             caller_gadget: configure_gadget!(),
             chainid_gadget: configure_gadget!(),
             codecopy_gadget: configure_gadget!(),
+            codesize_gadget: configure_gadget!(),
             comparator_gadget: configure_gadget!(),
             dup_gadget: configure_gadget!(),
             extcodehash_gadget: configure_gadget!(),
@@ -365,6 +376,8 @@ impl<F: Field> ExecutionConfig<F> {
             pop_gadget: configure_gadget!(),
             push_gadget: configure_gadget!(),
             selfbalance_gadget: configure_gadget!(),
+            sha3_gadget: configure_gadget!(),
+            shr_gadget: configure_gadget!(),
             signed_comparator_gadget: configure_gadget!(),
             signextend_gadget: configure_gadget!(),
             sload_gadget: configure_gadget!(),
@@ -526,7 +539,7 @@ impl<F: Field> ExecutionConfig<F> {
                         (
                             "Only ExecutionState which halts or BeginTx can transit to EndTx",
                             ExecutionState::EndTx,
-                            ExecutionState::iterator()
+                            ExecutionState::iter()
                                 .filter(ExecutionState::halts)
                                 .chain(iter::once(ExecutionState::BeginTx))
                                 .collect(),
@@ -781,6 +794,7 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::CALLVALUE => assign_exec_step!(self.call_value_gadget),
             ExecutionState::CHAINID => assign_exec_step!(self.chainid_gadget),
             ExecutionState::CODECOPY => assign_exec_step!(self.codecopy_gadget),
+            ExecutionState::CODESIZE => assign_exec_step!(self.codesize_gadget),
             ExecutionState::CMP => assign_exec_step!(self.comparator_gadget),
             ExecutionState::DUP => assign_exec_step!(self.dup_gadget),
             ExecutionState::EXTCODEHASH => assign_exec_step!(self.extcodehash_gadget),
@@ -803,6 +817,8 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::BLOCKCTXU160 => assign_exec_step!(self.block_ctx_u160_gadget),
             ExecutionState::BLOCKCTXU256 => assign_exec_step!(self.block_ctx_u256_gadget),
             ExecutionState::SELFBALANCE => assign_exec_step!(self.selfbalance_gadget),
+            ExecutionState::SHA3 => assign_exec_step!(self.sha3_gadget),
+            ExecutionState::SHR => assign_exec_step!(self.shr_gadget),
             ExecutionState::SIGNEXTEND => assign_exec_step!(self.signextend_gadget),
             ExecutionState::SLOAD => assign_exec_step!(self.sload_gadget),
             ExecutionState::SSTORE => assign_exec_step!(self.sstore_gadget),

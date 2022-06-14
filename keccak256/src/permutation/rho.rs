@@ -7,13 +7,12 @@ use crate::permutation::{
 use eth_types::Field;
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter},
-    plonk::{Advice, Column, ConstraintSystem, Error},
+    plonk::{Advice, Column, ConstraintSystem, Error, Fixed},
 };
 use std::convert::TryInto;
 
 #[derive(Debug, Clone)]
 pub struct RhoConfig<F> {
-    state: [Column<Advice>; 25],
     lane_config: LaneRotateConversionConfig<F>,
     overflow_check_config: OverflowCheckConfig<F>,
     base13_to_9_table: Base13toBase9TableConfig<F>,
@@ -23,19 +22,32 @@ pub struct RhoConfig<F> {
 }
 
 impl<F: Field> RhoConfig<F> {
-    pub fn configure(meta: &mut ConstraintSystem<F>, state: [Column<Advice>; 25]) -> Self {
+    pub fn configure(
+        meta: &mut ConstraintSystem<F>,
+        state: [Column<Advice>; 25],
+        fixed: [Column<Fixed>; 3],
+    ) -> Self {
+        state.iter().for_each(|col| meta.enable_equality(*col));
         let base13_to_9_table = Base13toBase9TableConfig::configure(meta);
         let special_chunk_table = SpecialChunkTableConfig::configure(meta);
         let step2_range_table = RangeCheckConfig::<F, STEP2_RANGE>::configure(meta);
         let step3_range_table = RangeCheckConfig::<F, STEP3_RANGE>::configure(meta);
 
-        let lane_config =
-            LaneRotateConversionConfig::configure(meta, &base13_to_9_table, &special_chunk_table);
+        let lane_config = LaneRotateConversionConfig::configure(
+            meta,
+            &base13_to_9_table,
+            &special_chunk_table,
+            state[0..5].try_into().unwrap(),
+            fixed,
+        );
 
-        let overflow_check_config =
-            OverflowCheckConfig::configure(meta, &step2_range_table, &step3_range_table);
+        let overflow_check_config = OverflowCheckConfig::configure(
+            meta,
+            &step2_range_table,
+            &step3_range_table,
+            state[5..7].try_into().unwrap(),
+        );
         Self {
-            state,
             lane_config,
             overflow_check_config,
             base13_to_9_table,
@@ -71,13 +83,11 @@ impl<F: Field> RhoConfig<F> {
 
         let step2_od_join = lane_and_ods
             .iter()
-            .map(|(_, step2_od, _)| step2_od.clone())
-            .flatten()
+            .flat_map(|(_, step2_od, _)| step2_od.clone())
             .collect::<Vec<_>>();
         let step3_od_join = lane_and_ods
             .iter()
-            .map(|(_, _, step3_od)| step3_od.clone())
-            .flatten()
+            .flat_map(|(_, _, step3_od)| step3_od.clone())
             .collect::<Vec<_>>();
         self.overflow_check_config.assign_region(
             &mut layouter.namespace(|| "Final overflow check"),
@@ -105,7 +115,9 @@ mod tests {
     use crate::keccak_arith::*;
     use halo2_proofs::circuit::Layouter;
     use halo2_proofs::pairing::bn256::Fr as Fp;
+    use halo2_proofs::plonk::Selector;
     use halo2_proofs::plonk::{Advice, Column, ConstraintSystem, Error};
+    use halo2_proofs::poly::Rotation;
     use halo2_proofs::{circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit};
     use itertools::Itertools;
     use std::convert::TryInto;
@@ -117,8 +129,15 @@ mod tests {
             in_state: [F; 25],
             out_state: [F; 25],
         }
+
+        #[derive(Clone)]
+        struct MyConfig<F> {
+            q_enable: Selector,
+            rho_config: RhoConfig<F>,
+            state: [Column<Advice>; 25],
+        }
         impl<F: Field> Circuit<F> for MyCircuit<F> {
-            type Config = RhoConfig<F>;
+            type Config = MyConfig<F>;
             type FloorPlanner = SimpleFloorPlanner;
 
             fn without_witnesses(&self) -> Self {
@@ -127,16 +146,37 @@ mod tests {
 
             fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
                 let state: [Column<Advice>; 25] = (0..25)
-                    .map(|_| {
-                        let col = meta.advice_column();
-                        meta.enable_equality(col);
-                        col
-                    })
+                    .map(|_| meta.advice_column())
                     .collect::<Vec<_>>()
                     .try_into()
                     .unwrap();
 
-                RhoConfig::configure(meta, state)
+                let fixed = [
+                    meta.fixed_column(),
+                    meta.fixed_column(),
+                    meta.fixed_column(),
+                ];
+
+                let rho_config = RhoConfig::configure(meta, state, fixed);
+
+                let q_enable = meta.selector();
+                meta.create_gate("Check states", |meta| {
+                    let q_enable = meta.query_selector(q_enable);
+                    state
+                        .iter()
+                        .map(|col| {
+                            let final_state = meta.query_advice(*col, Rotation::cur());
+                            let expected_final_state = meta.query_advice(*col, Rotation::next());
+                            q_enable.clone() * (final_state - expected_final_state)
+                        })
+                        .collect::<Vec<_>>()
+                });
+
+                MyConfig {
+                    q_enable,
+                    rho_config,
+                    state,
+                }
             }
 
             fn synthesize(
@@ -144,7 +184,7 @@ mod tests {
                 config: Self::Config,
                 mut layouter: impl Layouter<F>,
             ) -> Result<(), Error> {
-                config.load(&mut layouter)?;
+                config.rho_config.load(&mut layouter)?;
                 let state = layouter.assign_region(
                     || "assign input state",
                     |mut region| {
@@ -169,7 +209,37 @@ mod tests {
                         Ok(state)
                     },
                 )?;
-                config.assign_rotation_checks(&mut layouter, &state)?;
+                let out_state = config
+                    .rho_config
+                    .assign_rotation_checks(&mut layouter, &state)?;
+                layouter.assign_region(
+                    || "check final states",
+                    |mut region| {
+                        config.q_enable.enable(&mut region, 0)?;
+                        out_state.iter().enumerate().for_each(|(idx, cell)| {
+                            cell.copy_advice(
+                                || "out_state obtained",
+                                &mut region,
+                                config.state[idx],
+                                0,
+                            )
+                            .unwrap();
+                        });
+
+                        self.out_state.iter().enumerate().for_each(|(idx, &value)| {
+                            region
+                                .assign_advice(
+                                    || format!("lane {}", idx),
+                                    config.state[idx],
+                                    1,
+                                    || Ok(value),
+                                )
+                                .unwrap();
+                        });
+
+                        Ok(())
+                    },
+                )?;
 
                 Ok(())
             }
@@ -206,7 +276,7 @@ mod tests {
         {
             use plotters::prelude::*;
             let root =
-                BitMapBackend::new("rho-test-circuit.png", (16384, 65536)).into_drawing_area();
+                BitMapBackend::new("rho-test-circuit.png", (1024, 16384)).into_drawing_area();
             root.fill(&WHITE).unwrap();
             let root = root.titled("Rho", ("sans-serif", 60)).unwrap();
             halo2_proofs::dev::CircuitLayout::default()

@@ -29,3 +29,11 @@ lazy_static! {
         address!("0x000000000000000000000000000000000cafe555"),
     ];
 }
+
+pub fn eth(x: u64) -> Word {
+    Word::from(x) * Word::from(10u64.pow(18))
+}
+
+pub fn gwei(x: u64) -> Word {
+    Word::from(x) * Word::from(10u64.pow(9))
+}

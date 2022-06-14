@@ -16,7 +16,6 @@ pub struct XiConfig<F> {
 }
 
 impl<F: Field> XiConfig<F> {
-    pub const OFFSET: usize = 2;
     // We assume state is recieved in base-9.
     pub fn configure(
         q_enable: Selector,

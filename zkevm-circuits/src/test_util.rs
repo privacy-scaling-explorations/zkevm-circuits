@@ -34,6 +34,7 @@ pub fn get_fixed_table(conf: FixedTableConfig) -> Vec<FixedTableTag> {
                 FixedTableTag::Range1024,
                 FixedTableTag::SignByte,
                 FixedTableTag::ResponsibleOpcode,
+                FixedTableTag::Pow2,
             ]
         }
         FixedTableConfig::Complete => FixedTableTag::iter().collect(),
