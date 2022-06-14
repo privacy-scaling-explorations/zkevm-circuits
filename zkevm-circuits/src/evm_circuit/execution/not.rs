@@ -37,16 +37,12 @@ impl<F: Field> ExecutionGadget<F> for NotGadget<F> {
         cb.stack_pop(input.expr());
         cb.stack_push(output.expr());
 
-        for idx in 0..32 {
+        for (i, o) in input.cells.iter().zip(output.cells.iter()) {
             cb.add_lookup(
                 "input XOR output is all 1's",
                 Lookup::Fixed {
                     tag: FixedTableTag::BitwiseXor.expr(),
-                    values: [
-                        input.cells[idx].expr(),
-                        output.cells[idx].expr(),
-                        255.expr(),
-                    ],
+                    values: [i.expr(), o.expr(), 255.expr()],
                 },
             );
         }
