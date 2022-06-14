@@ -39,6 +39,7 @@ pub enum AdviceColumn {
     TagBit1,
     TagBit2,
     TagBit3,
+    RwCounterLimb1,
 }
 
 impl AdviceColumn {
@@ -59,6 +60,7 @@ impl AdviceColumn {
             Self::TagBit1 => config.tag.bits[1],
             Self::TagBit2 => config.tag.bits[2],
             Self::TagBit3 => config.tag.bits[3],
+            Self::RwCounterLimb1 => config.rw_counter.limbs[1],
         }
     }
 }
@@ -645,6 +647,37 @@ fn invalid_start_rw_counter() {
     let result = verify_with_overrides(rows, overrides);
 
     assert_error_matches(result, "rw_counter is 0 for Start");
+}
+
+#[test]
+fn all_padding() {
+    assert_eq!(
+        prover(vec![], HashMap::new()).verify_at_rows(0..100, 0..100),
+        Ok(())
+    );
+}
+
+#[test]
+fn skipped_start_rw_counter() {
+    let rows = vec![];
+
+    let first_padding_row_offset = -isize::try_from(N_ROWS).unwrap();
+    let overrides = HashMap::from([
+        (
+            (AdviceColumn::RwCounter, first_padding_row_offset),
+            // The correct assignment is (1 << 32) - (1 << 16). Choosing this new value for the
+            // rw_counter allows us to not have to override assigments in the lexicographic
+            // ordering chip.
+            Fr::from((1 << 32) - (1 << 17)),
+        ),
+        (
+            (AdviceColumn::RwCounterLimb1, first_padding_row_offset),
+            Fr::from((1 << 16) - 2),
+        ),
+    ]);
+
+    let result = prover(rows, overrides).verify_at_rows(0..10, 0..10);
+    assert_error_matches(result, "rw_counter increases by 1 for every non-first row");
 }
 
 #[test]

@@ -205,9 +205,13 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
             || "rw table",
             |mut region| {
                 let padding_length = N_ROWS - self.rows.len();
+                dbg!(N_ROWS);
+                dbg!(padding_length);
                 let padding = (0..padding_length).map(|i| Rw::Start {
                     rw_counter: u32::MAX as usize + i - padding_length + 1,
                 });
+
+                // dbg!(u32::MAX as usize - padding_length + 1)
 
                 let rows = padding.chain(self.rows.iter().cloned());
                 let prev_rows = once(None).chain(rows.clone().map(Some));
@@ -278,7 +282,10 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
                 #[cfg(test)]
                 for ((column, row_offset), &f) in &self.overrides {
                     let advice_column = column.value(&config);
-                    let offset = padding_length + usize::try_from(*row_offset).unwrap();
+                    let offset =
+                        usize::try_from(isize::try_from(padding_length).unwrap() + *row_offset)
+                            .unwrap();
+                    dbg!(offset);
                     region.assign_advice(|| "override", advice_column, offset, || Ok(f))?;
                 }
 
