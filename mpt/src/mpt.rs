@@ -978,7 +978,8 @@ impl<F: Field> MPTConfig<F> {
                     let mut offset = 0;
                     let mut pv = ProofVariables::new();
 
-                    // filter out rows that are just to be hashed
+                    // Note: filter out rows that are just to be hashed. We cannot simply use ind instead of offset
+                    // because hashing rows appear in the middle of other rows.
                     for (ind, row) in witness.iter().filter(|r| r[r.len() - 1] != 5).enumerate() {
                         if offset > 0 {
                             let row_prev = &witness[offset - 1];
@@ -996,6 +997,15 @@ impl<F: Field> MPTConfig<F> {
                             offset,
                             || Ok(F::one()),
                         )?;
+
+                        let q_not_first = if ind == 0 { F::zero() } else { F::one() };
+                        region.assign_fixed(
+                            || "not first",
+                            self.q_not_first,
+                            offset,
+                            || Ok(q_not_first),
+                        )?;
+
                         region.assign_advice(
                             || "not first level",
                             self.not_first_level,
@@ -1085,22 +1095,7 @@ impl<F: Field> MPTConfig<F> {
                             {
                                 pv.drifted_pos = pv.modified_node
                             }
-
-                            if ind == 0 {
-                                region.assign_fixed(
-                                    || "not first",
-                                    self.q_not_first,
-                                    offset,
-                                    || Ok(F::zero()),
-                                )?;
-                            } else {
-                                region.assign_fixed(
-                                    || "not first",
-                                    self.q_not_first,
-                                    offset,
-                                    || Ok(F::one()),
-                                )?;
-                            }
+ 
                             self.assign_branch_init(
                                 &mut region,
                                 &row[0..row.len() - 1].to_vec(),
@@ -1154,16 +1149,8 @@ impl<F: Field> MPTConfig<F> {
                                 pv.acc_mult_c,
                                 offset,
                             )?;
-
-                            offset += 1;
                         } else if row[row.len() - 1] == 1 {
                             // branch child
-                            region.assign_fixed(
-                                || "not first",
-                                self.q_not_first,
-                                offset,
-                                || Ok(F::one()),
-                            )?;
 
                             if pv.node_index == 0 {
                                 // If it's not extension node, rlc and rlc_mult in extension row
@@ -1254,16 +1241,9 @@ impl<F: Field> MPTConfig<F> {
                                 offset,
                             )?;
 
-                            offset += 1;
                             pv.node_index += 1;
                         } else if row[row.len() - 1] != 5 {
                             // leaf s or leaf c or leaf key s or leaf key c 
-                            region.assign_fixed(
-                                || "not first",
-                                self.q_not_first,
-                                offset,
-                                || Ok(F::one()),
-                            )?;
 
                             let mut account_leaf = AccountLeaf::default();
                             let mut storage_leaf = StorageLeaf::default();
@@ -1327,9 +1307,8 @@ impl<F: Field> MPTConfig<F> {
                                 is_non_existing_account,
                                 offset,
                             )?;
-
-                            offset += 1;
                         }
+                        offset += 1;
                     }
 
                     Ok(())
