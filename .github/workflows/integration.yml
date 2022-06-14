@@ -57,7 +57,5 @@ jobs:
       - run: ./run.sh --steps "gendata"
       - run: ./run.sh --steps "tests" --tests "rpc"
       - run: ./run.sh --steps "tests" --tests "circuit_input_builder"
-      # Uncomment once the evm and state circuits tests pass for the block
-      # where Greeter.sol is deployed.
-      # - run: ./run.sh --steps "tests" --tests "circuits"
+      - run: ./run.sh --steps "tests" --tests "circuits"
       - run: ./run.sh --steps "cleanup"

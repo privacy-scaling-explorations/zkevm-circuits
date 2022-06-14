@@ -6,7 +6,7 @@ use super::{
 use crate::evm_circuit::{
     param::N_BYTES_WORD,
     table::{AccountFieldTag, RwTableTag},
-    util::{math_gadget::generate_lagrange_base_polynomial, not},
+    util::{math_gadget::generate_lagrange_base_polynomial, not, or},
 };
 use crate::util::Expr;
 use eth_types::Field;
@@ -21,6 +21,7 @@ pub struct Queries<F: Field> {
     pub tag: Expression<F>,
     pub prev_tag: Expression<F>,
     pub id: MpiQueries<F, N_LIMBS_ID>,
+    pub is_id_unchanged: Expression<F>,
     pub address: MpiQueries<F, N_LIMBS_ACCOUNT_ADDRESS>,
     pub field_tag: Expression<F>,
     pub storage_key: RlcQueries<F, N_BYTES_WORD>,
@@ -134,14 +135,10 @@ impl<F: Field> ConstraintBuilder<F> {
             "stack address fits into 10 bits",
             (q.address.value.clone(), q.lookups.u10.clone()),
         );
-        // this pushes the degree to 17....
-        self.condition(q.first_access(), |cb| {
-            cb.require_zero(
-                // previous tag is Start <=> this is the first stack rw
-                "previous tag is Start or address change is 0 or 1",
-                (q.prev_tag.clone() - RwTableTag::Start.expr())
-                    * q.address_change()
-                    * (1.expr() - q.address_change()),
+        self.condition(q.is_id_unchanged.clone(), |cb| {
+            cb.require_boolean(
+                "if call id is the same, address change is 0 or 1",
+                q.address_change(),
             )
         });
     }
@@ -302,10 +299,13 @@ impl<F: Field> Queries<F> {
     }
 
     fn first_access(&self) -> Expression<F> {
-        not::expr(
-            self.lexicographic_ordering_upper_limb_difference_is_zero
-                .clone(),
-        ) * not::expr(self.is_storage_key_unchanged.clone())
+        or::expr(&[
+            not::expr(
+                self.lexicographic_ordering_upper_limb_difference_is_zero
+                    .clone(),
+            ),
+            not::expr(self.is_storage_key_unchanged.clone()),
+        ])
     }
 
     fn address_change(&self) -> Expression<F> {

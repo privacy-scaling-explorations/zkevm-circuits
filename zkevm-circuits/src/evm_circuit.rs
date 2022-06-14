@@ -66,7 +66,7 @@ impl<F: Field> EvmCircuit<F> {
             || "fixed table",
             |mut region| {
                 for (offset, row) in std::iter::once([F::zero(); 4])
-                    .chain(fixed_table_tags.iter().map(|tag| tag.build()).flatten())
+                    .chain(fixed_table_tags.iter().flat_map(|tag| tag.build()))
                     .enumerate()
                 {
                     for (column, value) in self.fixed_table.iter().zip_eq(row) {
@@ -152,10 +152,8 @@ pub mod test {
     };
     use eth_types::{Field, Word};
     use halo2_proofs::{
-        arithmetic::BaseExt,
         circuit::{Layouter, SimpleFloorPlanner},
         dev::{MockProver, VerifyFailure},
-        pairing::bn256::Fr as Fp,
         plonk::{Advice, Circuit, Column, ConstraintSystem, Error},
         poly::Rotation,
     };
@@ -184,10 +182,6 @@ pub mod test {
 
     pub(crate) fn rand_word() -> Word {
         Word::from_big_endian(&rand_bytes_array::<32>())
-    }
-
-    pub(crate) fn rand_fp() -> Fp {
-        Fp::rand()
     }
 
     #[derive(Clone)]
@@ -381,6 +375,10 @@ pub mod test {
             let bytecode_table = [(); 5].map(|_| meta.advice_column());
             let block_table = [(); 3].map(|_| meta.advice_column());
 
+            // This gate is used just to get the array of expressions from the power of
+            // randomness instance column, so that later on we don't need to query
+            // columns everywhere, and can pass the power of randomness array
+            // expression everywhere.  The gate itself doesn't add any constraints.
             let power_of_randomness = {
                 let columns = [(); 31].map(|_| meta.instance_column());
                 let mut power_of_randomness = None;
@@ -493,6 +491,7 @@ pub mod test {
                 FixedTableTag::Range1024,
                 FixedTableTag::SignByte,
                 FixedTableTag::ResponsibleOpcode,
+                FixedTableTag::Pow2,
             ],
         )
     }

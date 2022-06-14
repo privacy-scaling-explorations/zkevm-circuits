@@ -17,7 +17,6 @@ pub struct ThetaConfig<F> {
 }
 
 impl<F: Field> ThetaConfig<F> {
-    pub const OFFSET: usize = 2;
     pub fn configure(
         q_enable: Selector,
         meta: &mut ConstraintSystem<F>,

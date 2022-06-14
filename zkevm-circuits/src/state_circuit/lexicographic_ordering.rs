@@ -60,8 +60,8 @@ use std::ops::Mul;
 
 // Packing the field into 480 bits:
 //   4 bits for tag,
-// + 4 bits for field_tag // TODO: this actually needs 5 bits. Either reduce id
-// + 24 bits for id       // to 23 bits, or add diff_3 etc.
+// + 5 bits for field_tag
+// + 23 bits for id
 // + 160 bits for address,
 // + 256 bits for storage key
 // + 32  bits for rw_counter
@@ -70,10 +70,12 @@ use std::ops::Mul;
 
 #[derive(Clone)]
 pub struct Config<F: Field> {
+    pub(crate) selector: Column<Fixed>,
     upper_limb_difference: Column<Advice>,
     pub(crate) upper_limb_difference_is_zero: IsZeroConfig<F>,
     lower_limb_difference: Column<Advice>,
     lower_limb_difference_is_zero: IsZeroConfig<F>,
+    // TODO: remove these columns from the config
     tag: Column<Advice>,
     field_tag: Column<Advice>,
     id_limbs: [Column<Advice>; N_LIMBS_ID],
@@ -95,7 +97,6 @@ impl<F: Field> Chip<F> {
     // TODO: fix this to not have too many arguments?
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
-        selector: Column<Fixed>,
         tag: Column<Advice>,
         field_tag: Column<Advice>,
         id_limbs: [Column<Advice>; N_LIMBS_ID],
@@ -104,6 +105,7 @@ impl<F: Field> Chip<F> {
         rw_counter_limbs: [Column<Advice>; N_LIMBS_RW_COUNTER],
         u16_range: Column<Fixed>,
     ) -> Config<F> {
+        let selector = meta.fixed_column();
         let [upper_limb_difference, upper_limb_difference_inverse, lower_limb_difference, lower_limb_difference_inverse] =
             [0; 4].map(|_| meta.advice_column());
         let [upper_limb_difference_is_zero_config, lower_limb_difference_is_zero_config] = [
@@ -127,6 +129,7 @@ impl<F: Field> Chip<F> {
             .clone();
 
         let config = Config {
+            selector,
             upper_limb_difference,
             upper_limb_difference_is_zero: upper_limb_difference_is_zero_config,
             lower_limb_difference,
@@ -215,6 +218,13 @@ impl<F: Field> Chip<F> {
         cur: &Rw,
         prev: &Rw,
     ) -> Result<(), Error> {
+        region.assign_fixed(
+            || "upper_limb_difference",
+            self.config.selector,
+            offset,
+            || Ok(F::one()),
+        )?;
+
         // this doesn't make sense that we have to "construct" the chip every time we
         // assign?
         let upper_limb_difference_is_zero_chip =
@@ -230,13 +240,17 @@ impl<F: Field> Chip<F> {
             .zip(&prev_be_limbs)
             .enumerate()
             .find(|(_, (a, b))| a != b);
-        let (index, (cur_limb, prev_limb)) = find_result.expect("repeated rw counter");
+        let (index, (cur_limb, prev_limb)) = if cfg!(test) {
+            find_result.unwrap_or((30, (&0, &0)))
+        } else {
+            find_result.expect("repeated rw counter")
+        };
 
-        let mut upper_limb_difference = F::from((cur_limb - prev_limb) as u64);
+        let mut upper_limb_difference = F::from(*cur_limb as u64) - F::from(*prev_limb as u64);
         let mut lower_limb_difference = lower_limb_difference_value(&cur_be_limbs, &prev_be_limbs);
         if index >= 15 {
+            lower_limb_difference = upper_limb_difference;
             upper_limb_difference = F::zero();
-            lower_limb_difference = F::from((cur_limb - prev_limb) as u64);
         }
 
         region.assign_advice(
@@ -280,7 +294,7 @@ impl<F: Field> Queries<F> {
     }
 
     fn packed_tags(&self) -> Expression<F> {
-        (1u64 << 4).expr() * self.tag.clone() + self.field_tag.clone()
+        (1u64 << 5).expr() * self.tag.clone() + self.field_tag.clone()
     }
 
     fn storage_key_be_limbs(&self) -> Vec<Expression<F>> {
@@ -302,24 +316,26 @@ impl<F: Field> Queries<F> {
             .chain(self.rw_counter_limbs.iter().rev())
             .cloned()
             .collect();
-        // most significant byte of id should be 0, so safe to overwrite it with packed
-        // tags.
-        limbs[0] = limbs[0].clone() + self.packed_tags() * (1u64 << 8).expr();
+        // The packed tags are shifted left by 7 bits so that they occupy the most
+        // significant 9 bits of the first 16-bit limb.
+        limbs[0] = limbs[0].clone() + self.packed_tags() * (1u64 << 7).expr();
         limbs
     }
 }
 
 fn rw_to_be_limbs(row: &Rw) -> Vec<u16> {
+    let mut id = row.id().unwrap_or_default() as u32;
+    assert_eq!(id.to_be_bytes().len(), 4);
+    // The max value of `id` is 2^23 - 1, so the 9 most significant bits should be
+    // 0. We use these 9 bits to hold value of `tag` and `field_tag`.
+    assert!(id < (1 << 23));
+    id += (((row.tag() as u32) << 5) + (row.field_tag().unwrap_or_default() as u32)) << 23;
+
     let mut be_bytes = vec![];
-    be_bytes.extend_from_slice(&(row.id().unwrap_or_default() as u32).to_be_bytes());
+    be_bytes.extend_from_slice(&id.to_be_bytes());
     be_bytes.extend_from_slice(&(row.address().unwrap_or_default().0));
     be_bytes.extend_from_slice(&(row.storage_key().unwrap_or_default().to_be_bytes()));
     be_bytes.extend_from_slice(&((row.rw_counter() as u32).to_be_bytes()));
-
-    // check that the first byte of id is not used, and overwrites it with packed
-    // tags.
-    assert_eq!(be_bytes[0], 0);
-    be_bytes[0] = row.field_tag().unwrap_or_default() as u8 + ((row.tag() as u8) << 4);
 
     be_bytes
         .iter()

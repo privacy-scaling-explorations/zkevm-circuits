@@ -12,14 +12,14 @@ use crate::evm_circuit::{
 use bus_mapping::{
     circuit_input_builder::{self, StepAuxiliaryData},
     error::{ExecError, OogError},
-    operation::{self, AccountField, CallContextField, TxReceiptField},
+    operation::{self, AccountField, CallContextField, TxLogField, TxReceiptField},
 };
 
 use eth_types::evm_types::OpcodeId;
 use eth_types::{Address, Field, ToLittleEndian, ToScalar, ToWord, Word};
 use eth_types::{ToAddress, U256};
 use halo2_proofs::arithmetic::{BaseExt, FieldExt};
-use halo2_proofs::pairing::bn256::Fr as Fp;
+use halo2_proofs::pairing::bn256::Fr;
 use itertools::Itertools;
 use sha3::{Digest, Keccak256};
 use std::{collections::HashMap, convert::TryInto, iter};
@@ -429,8 +429,9 @@ impl RwMap {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub enum Rw {
+    Start,
     TxAccessListAccount {
         rw_counter: usize,
         is_write: bool,
@@ -509,9 +510,9 @@ pub enum Rw {
         log_id: u64, // pack this can index together into address?
         field_tag: TxLogFieldTag,
         // topic index (0..4) if field_tag is TxLogFieldTag:Topic
-        // byte index (0..32) if field_tag is TxLogFieldTag:Data
+        // byte index if field_tag is TxLogFieldTag:Data
         // 0 for other field tags
-        index: u8,
+        index: usize,
 
         // when it is topic field, value can be word type
         value: Word,
@@ -674,6 +675,7 @@ impl Rw {
 
     pub fn rw_counter(&self) -> usize {
         match self {
+            Self::Start => 0,
             Self::Memory { rw_counter, .. }
             | Self::Stack { rw_counter, .. }
             | Self::AccountStorage { rw_counter, .. }
@@ -690,6 +692,7 @@ impl Rw {
 
     pub fn is_write(&self) -> bool {
         match self {
+            Self::Start => false,
             Self::Memory { is_write, .. }
             | Self::Stack { is_write, .. }
             | Self::AccountStorage { is_write, .. }
@@ -706,6 +709,7 @@ impl Rw {
 
     pub fn tag(&self) -> RwTableTag {
         match self {
+            Self::Start => RwTableTag::Start,
             Self::Memory { .. } => RwTableTag::Memory,
             Self::Stack { .. } => RwTableTag::Stack,
             Self::AccountStorage { .. } => RwTableTag::AccountStorage,
@@ -731,7 +735,7 @@ impl Rw {
             Self::CallContext { call_id, .. }
             | Self::Stack { call_id, .. }
             | Self::Memory { call_id, .. } => Some(*call_id),
-            Self::Account { .. } | Self::AccountDestructed { .. } => None,
+            Self::Start | Self::Account { .. } | Self::AccountDestructed { .. } => None,
         }
     }
 
@@ -759,7 +763,10 @@ impl Rw {
             Self::TxLog { log_id, index, .. } => {
                 Some((U256::from(*index as u64) + (U256::from(*log_id) << 8)).to_address())
             }
-            Self::CallContext { .. } | Self::TxRefund { .. } | Self::TxReceipt { .. } => None,
+            Self::Start
+            | Self::CallContext { .. }
+            | Self::TxRefund { .. }
+            | Self::TxReceipt { .. } => None,
         }
     }
 
@@ -769,7 +776,8 @@ impl Rw {
             Self::CallContext { field_tag, .. } => Some(*field_tag as u64),
             Self::TxLog { field_tag, .. } => Some(*field_tag as u64),
             Self::TxReceipt { field_tag, .. } => Some(*field_tag as u64),
-            Self::Memory { .. }
+            Self::Start
+            | Self::Memory { .. }
             | Self::Stack { .. }
             | Self::AccountStorage { .. }
             | Self::TxAccessListAccount { .. }
@@ -783,7 +791,8 @@ impl Rw {
         match self {
             Self::AccountStorage { storage_key, .. }
             | Self::TxAccessListAccountStorage { storage_key, .. } => Some(*storage_key),
-            Self::CallContext { .. }
+            Self::Start
+            | Self::CallContext { .. }
             | Self::Stack { .. }
             | Self::Memory { .. }
             | Self::TxRefund { .. }
@@ -795,8 +804,9 @@ impl Rw {
         }
     }
 
-    fn value_assignment<F: Field>(&self, randomness: F) -> F {
+    pub fn value_assignment<F: Field>(&self, randomness: F) -> F {
         match self {
+            Self::Start => F::zero(),
             Self::CallContext {
                 field_tag, value, ..
             } => {
@@ -814,10 +824,19 @@ impl Rw {
             }
             Self::Account { value, .. }
             | Self::AccountStorage { value, .. }
-            | Self::Stack { value, .. }
-            | Self::TxLog { value, .. } => {
+            | Self::Stack { value, .. } => {
                 RandomLinearCombination::random_linear_combine(value.to_le_bytes(), randomness)
             }
+
+            Self::TxLog {
+                field_tag, value, ..
+            } => match field_tag {
+                TxLogFieldTag::Topic => {
+                    RandomLinearCombination::random_linear_combine(value.to_le_bytes(), randomness)
+                }
+                _ => value.to_scalar().unwrap(),
+            },
+
             Self::TxAccessListAccount { is_warm, .. }
             | Self::TxAccessListAccountStorage { is_warm, .. } => F::from(*is_warm as u64),
             Self::AccountDestructed { is_destructed, .. } => F::from(*is_destructed as u64),
@@ -842,7 +861,8 @@ impl Rw {
                 is_destructed_prev, ..
             } => Some(F::from(*is_destructed_prev as u64)),
             Self::TxRefund { value_prev, .. } => Some(F::from(*value_prev)),
-            Self::Stack { .. }
+            Self::Start
+            | Self::Stack { .. }
             | Self::Memory { .. }
             | Self::CallContext { .. }
             | Self::TxLog { .. }
@@ -1057,6 +1077,26 @@ impl From<&operation::OperationContainer> for RwMap {
                 .collect(),
         );
         rws.insert(
+            RwTableTag::TxLog,
+            container
+                .tx_log
+                .iter()
+                .map(|op| Rw::TxLog {
+                    rw_counter: op.rwc().into(),
+                    is_write: op.rw().is_write(),
+                    tx_id: op.op().tx_id,
+                    log_id: op.op().log_id as u64,
+                    field_tag: match op.op().field {
+                        TxLogField::Address => TxLogFieldTag::Address,
+                        TxLogField::Topic => TxLogFieldTag::Topic,
+                        TxLogField::Data => TxLogFieldTag::Data,
+                    },
+                    index: op.op().index,
+                    value: op.op().value,
+                })
+                .collect(),
+        );
+        rws.insert(
             RwTableTag::TxReceipt,
             container
                 .tx_receipt
@@ -1174,6 +1214,8 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::DIFFICULTY | OpcodeId::BASEFEE => ExecutionState::BLOCKCTXU256,
                     OpcodeId::GAS => ExecutionState::GAS,
                     OpcodeId::SELFBALANCE => ExecutionState::SELFBALANCE,
+                    OpcodeId::SHA3 => ExecutionState::SHA3,
+                    OpcodeId::SHR => ExecutionState::SHR,
                     OpcodeId::SLOAD => ExecutionState::SLOAD,
                     OpcodeId::SSTORE => ExecutionState::SSTORE,
                     OpcodeId::CALLDATASIZE => ExecutionState::CALLDATASIZE,
@@ -1184,12 +1226,14 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::ORIGIN => ExecutionState::ORIGIN,
                     OpcodeId::CODECOPY => ExecutionState::CODECOPY,
                     OpcodeId::CALLDATALOAD => ExecutionState::CALLDATALOAD,
+                    OpcodeId::CODESIZE => ExecutionState::CODESIZE,
                     _ => unimplemented!("unimplemented opcode {:?}", op),
                 }
             }
             circuit_input_builder::ExecState::BeginTx => ExecutionState::BeginTx,
             circuit_input_builder::ExecState::EndTx => ExecutionState::EndTx,
             circuit_input_builder::ExecState::CopyToMemory => ExecutionState::CopyToMemory,
+            circuit_input_builder::ExecState::CopyToLog => ExecutionState::CopyToLog,
             circuit_input_builder::ExecState::CopyCodeToMemory => ExecutionState::CopyCodeToMemory,
         }
     }
@@ -1221,6 +1265,7 @@ fn step_convert(step: &circuit_input_builder::ExecStep) -> ExecStep {
                     operation::Target::AccountDestructed => RwTableTag::AccountDestructed,
                     operation::Target::CallContext => RwTableTag::CallContext,
                     operation::Target::TxReceipt => RwTableTag::TxReceipt,
+                    operation::Target::TxLog => RwTableTag::TxLog,
                 };
                 (tag, x.as_usize())
             })
@@ -1272,7 +1317,7 @@ fn tx_convert(tx: &circuit_input_builder::Transaction, id: usize, is_last_tx: bo
                     circuit_input_builder::CodeSource::Memory => {
                         CodeSource::Account(call.code_hash.to_word())
                     }
-                    _ => unimplemented!(),
+                    _ => unimplemented!("unimplemented code source {:#?}", call.code_source),
                 },
                 rw_counter_end_of_reversion: call.rw_counter_end_of_reversion,
                 caller_id: call.caller_id,
@@ -1314,9 +1359,9 @@ fn tx_convert(tx: &circuit_input_builder::Transaction, id: usize, is_last_tx: bo
 pub fn block_convert(
     block: &circuit_input_builder::Block,
     code_db: &bus_mapping::state_db::CodeDB,
-) -> Block<Fp> {
+) -> Block<Fr> {
     Block {
-        randomness: Fp::rand(),
+        randomness: Fr::rand(),
         context: block.into(),
         rws: RwMap::from(&block.container),
         txs: block
