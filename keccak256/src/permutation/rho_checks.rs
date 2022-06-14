@@ -108,9 +108,7 @@ use crate::arith_helpers::*;
 use crate::common::ROTATION_CONSTANTS;
 use crate::gate_helpers::{biguint_to_f, f_to_biguint};
 use crate::permutation::{
-    generic::GenericConfig,
-    rho_helpers::*,
-    tables::{Base13toBase9TableConfig, RangeCheckConfig, SpecialChunkTableConfig},
+    generic::GenericConfig, rho_helpers::*, tables::Base13toBase9TableConfig,
 };
 use eth_types::Field;
 use halo2_proofs::{
@@ -133,7 +131,6 @@ impl<F: Field> LaneRotateConversionConfig<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         base13_to_9_table: &Base13toBase9TableConfig<F>,
-        special_chunk_table: &SpecialChunkTableConfig<F>,
         advices: [Column<Advice>; 3],
         constant: Column<Fixed>,
         generic: GenericConfig<F>,
@@ -155,20 +152,6 @@ impl<F: Field> LaneRotateConversionConfig<F> {
                 (q_normal.clone() * base13_coef, base13_to_9_table.base13),
                 (q_normal.clone() * base9_coef, base13_to_9_table.base9),
                 (q_normal * od, base13_to_9_table.overflow_detector),
-            ]
-        });
-
-        meta.lookup("special chunk", |meta| {
-            let q_special = meta.query_selector(q_special);
-            let input_coef = meta.query_advice(input_coef, Rotation::cur());
-            let output_coef = meta.query_advice(output_coef, Rotation::cur());
-
-            vec![
-                (
-                    q_special.clone() * input_coef,
-                    special_chunk_table.last_chunk,
-                ),
-                (q_special * output_coef, special_chunk_table.output_coef),
             ]
         });
         Self {
@@ -295,66 +278,5 @@ impl<F: Field> LaneRotateConversionConfig<F> {
             self.generic
                 .linear_combine_consts(layouter, output_coefs, output_pobs, None)?;
         Ok((output_lane, step2_od, step3_od))
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct OverflowCheckConfig<F> {
-    q_step2: Selector,
-    q_step3: Selector,
-    generic: GenericConfig<F>,
-    acc: Column<Advice>,
-}
-impl<F: Field> OverflowCheckConfig<F> {
-    pub fn configure(
-        meta: &mut ConstraintSystem<F>,
-        step2_range_table: &RangeCheckConfig<F, STEP2_RANGE>,
-        step3_range_table: &RangeCheckConfig<F, STEP3_RANGE>,
-        acc: Column<Advice>,
-        generic: GenericConfig<F>,
-    ) -> Self {
-        let q_step2 = meta.complex_selector();
-        let q_step3 = meta.complex_selector();
-        meta.enable_equality(acc);
-
-        meta.lookup("Overflow check step2", |meta| {
-            let q_step2 = meta.query_selector(q_step2);
-            let acc = meta.query_advice(acc, Rotation::cur());
-            vec![(q_step2 * acc, step2_range_table.range)]
-        });
-        meta.lookup("Overflow check step3", |meta| {
-            let q_step3 = meta.query_selector(q_step3);
-            let acc = meta.query_advice(acc, Rotation::cur());
-            vec![(q_step3 * acc, step3_range_table.range)]
-        });
-
-        Self {
-            q_step2,
-            q_step3,
-            generic,
-            acc,
-        }
-    }
-    pub fn assign_region(
-        &self,
-        layouter: &mut impl Layouter<F>,
-        step2_cells: Vec<AssignedCell<F, F>>,
-        step3_cells: Vec<AssignedCell<F, F>>,
-    ) -> Result<(), Error> {
-        let step2_sum = self.generic.running_sum(layouter, step2_cells, None)?;
-        let step3_sum = self.generic.running_sum(layouter, step3_cells, None)?;
-        layouter.assign_region(
-            || "Overflow range check",
-            |mut region| {
-                let offset = 0;
-                self.q_step2.enable(&mut region, offset)?;
-                step2_sum.copy_advice(|| "Step2 sum", &mut region, self.acc, offset)?;
-                let offset = 1;
-                self.q_step3.enable(&mut region, offset)?;
-                step3_sum.copy_advice(|| "Step3 sum", &mut region, self.acc, offset)?;
-
-                Ok(())
-            },
-        )
     }
 }

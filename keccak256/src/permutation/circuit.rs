@@ -3,15 +3,21 @@ use crate::{
     common::{NEXT_INPUTS_LANES, PERMUTATION, ROUND_CONSTANTS},
     keccak_arith::*,
     permutation::{
-        base_conversion::BaseConversionConfig, generic::GenericConfig, iota::IotaConstants,
-        mixing::MixingConfig, pi::pi_gate_permutation, rho::RhoConfig,
-        tables::FromBase9TableConfig, theta::ThetaConfig, xi::XiConfig,
+        base_conversion::BaseConversionConfig,
+        generic::GenericConfig,
+        iota::IotaConstants,
+        mixing::MixingConfig,
+        pi::pi_gate_permutation,
+        rho::RhoConfig,
+        tables::{FromBase9TableConfig, StackableTable},
+        theta::ThetaConfig,
+        xi::XiConfig,
     },
 };
 use eth_types::Field;
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter, Region},
-    plonk::{Advice, Column, ConstraintSystem, Error, Selector},
+    plonk::{Advice, Column, ConstraintSystem, Error, Selector, TableColumn},
     poly::Rotation,
 };
 use itertools::Itertools;
@@ -45,11 +51,18 @@ impl<F: Field> KeccakFConfig<F> {
 
         let fixed = meta.fixed_column();
         let generic = GenericConfig::configure(meta, state[0..3].try_into().unwrap(), fixed);
+        let table_cols: [TableColumn; 3] = (0..3)
+            .map(|_| meta.lookup_table_column())
+            .collect_vec()
+            .try_into()
+            .unwrap();
+        let stackable =
+            StackableTable::configure(meta, state[0..3].try_into().unwrap(), table_cols);
 
         // theta
         let theta_config = ThetaConfig::configure(meta.selector(), meta, state);
         // rho
-        let rho_config = RhoConfig::configure(meta, state, fixed, &generic);
+        let rho_config = RhoConfig::configure(meta, state, fixed, &generic, stackable);
         // xi
         let xi_config = XiConfig::configure(meta.selector(), meta, state);
 
