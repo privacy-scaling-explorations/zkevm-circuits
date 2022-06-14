@@ -6,7 +6,9 @@ use crate::{
             self,
             common_gadget::SameContextGadget,
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
-            math_gadget::{IsZeroGadget, LtWordGadget, MulAddWordsGadget},
+            math_gadget::{
+                generate_lagrange_base_polynomial, IsZeroGadget, LtWordGadget, MulAddWordsGadget,
+            },
             sum, CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
@@ -27,9 +29,12 @@ use halo2_proofs::plonk::{Error, Expression};
 #[derive(Clone, Debug)]
 pub(crate) struct MulDivModShlShrGadget<F> {
     same_context: SameContextGadget<F>,
-    /// Words quotient, divisor, remainder, dividend and
-    /// pop1 (used for shift value of SHL and SHR)
-    pub words: [util::Word<F>; 5],
+    quotient: util::Word<F>,
+    divisor: util::Word<F>,
+    remainder: util::Word<F>,
+    dividend: util::Word<F>,
+    /// Shift word used for opcode SHL and SHR
+    pop1: util::Word<F>,
     /// Gadget that verifies quotient * divisor + remainder = dividend
     mul_add_words: MulAddWordsGadget<F>,
     /// Check if divisor is zero for opcode DIV, MOD and SHR
@@ -47,11 +52,11 @@ impl<F: Field> ExecutionGadget<F> for MulDivModShlShrGadget<F> {
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
-        let is_mul = is_mul(&opcode);
-        let is_div = is_div(&opcode);
-        let is_mod = is_mod(&opcode);
-        let is_shl = is_shl(&opcode);
-        let is_shr = is_shr(&opcode);
+        let is_mul = is_opcode(&opcode, OpcodeId::MUL);
+        let is_div = is_opcode(&opcode, OpcodeId::DIV);
+        let is_mod = is_opcode(&opcode, OpcodeId::MOD);
+        let is_shl = is_opcode(&opcode, OpcodeId::SHL);
+        let is_shr = is_opcode(&opcode, OpcodeId::SHR);
 
         let quotient = cb.query_word();
         let divisor = cb.query_word();
@@ -118,7 +123,11 @@ impl<F: Field> ExecutionGadget<F> for MulDivModShlShrGadget<F> {
 
         Self {
             same_context,
-            words: [quotient, divisor, remainder, dividend, pop1],
+            quotient,
+            divisor,
+            remainder,
+            dividend,
+            pop1,
             mul_add_words,
             divisor_is_zero,
             remainder_is_zero,
@@ -139,13 +148,8 @@ impl<F: Field> ExecutionGadget<F> for MulDivModShlShrGadget<F> {
         let indices = [step.rw_indices[0], step.rw_indices[1], step.rw_indices[2]];
         let [pop1, pop2, push] = indices.map(|idx| block.rws[idx].stack_value());
 
-        // Shift values are only used for opcode SHL and SHR.
+        // First byte of shift word used for opcode SHL and SHR
         let shf0 = pop1.to_le_bytes()[0];
-        let shf_lt256 = pop1
-            .to_le_bytes()
-            .iter()
-            .fold(0, |acc, val| acc + *val as u128)
-            - shf0 as u128;
 
         let (quotient, divisor, remainder, dividend) = match step.opcode.unwrap() {
             OpcodeId::MUL => (pop1, pop2, U256::from(0), push),
@@ -162,7 +166,7 @@ impl<F: Field> ExecutionGadget<F> for MulDivModShlShrGadget<F> {
             ),
             OpcodeId::SHL => (
                 pop2,
-                if shf_lt256 == 0 {
+                if U256::from(shf0) == pop1 {
                     U256::from(1) << shf0
                 } else {
                     U256::from(0)
@@ -171,7 +175,7 @@ impl<F: Field> ExecutionGadget<F> for MulDivModShlShrGadget<F> {
                 push,
             ),
             OpcodeId::SHR => {
-                let divisor = if shf_lt256 == 0 {
+                let divisor = if U256::from(shf0) == pop1 {
                     U256::from(1) << shf0
                 } else {
                     U256::from(0)
@@ -180,11 +184,16 @@ impl<F: Field> ExecutionGadget<F> for MulDivModShlShrGadget<F> {
             }
             _ => unreachable!(),
         };
-        self.words[0].assign(region, offset, Some(quotient.to_le_bytes()))?;
-        self.words[1].assign(region, offset, Some(divisor.to_le_bytes()))?;
-        self.words[2].assign(region, offset, Some(remainder.to_le_bytes()))?;
-        self.words[3].assign(region, offset, Some(dividend.to_le_bytes()))?;
-        self.words[4].assign(region, offset, Some(pop1.to_le_bytes()))?;
+
+        self.quotient
+            .assign(region, offset, Some(quotient.to_le_bytes()))?;
+        self.divisor
+            .assign(region, offset, Some(divisor.to_le_bytes()))?;
+        self.remainder
+            .assign(region, offset, Some(remainder.to_le_bytes()))?;
+        self.dividend
+            .assign(region, offset, Some(dividend.to_le_bytes()))?;
+        self.pop1.assign(region, offset, Some(pop1.to_le_bytes()))?;
         self.mul_add_words
             .assign(region, offset, [quotient, divisor, remainder, dividend])?;
         let divisor_sum = (0..32).fold(0, |acc, idx| acc + divisor.byte(idx) as u64);
@@ -198,55 +207,21 @@ impl<F: Field> ExecutionGadget<F> for MulDivModShlShrGadget<F> {
     }
 }
 
-// The opcode value for MUL, DIV, MOD, SHL and SHR are 2, 4, 6, 0x1b and 0x1c.
-// When the opcode is MUL, the result of below formula is 5200:
-// (DIV - opcode) * (MOD- opcode) * (SHL - opcode) * (SHR - opcode)
-// To make `is_mul` be either 0 or 1, the result needs to be divided by 5200,
-// which is equivalent to multiply it by inversion of 5200.
-// And calculate `is_div`, `is_mod`, `is_shl` and `is_shr` respectively.
 #[inline]
-fn is_mul<F: Field>(opcode: &Cell<F>) -> Expression<F> {
-    (OpcodeId::DIV.expr() - opcode.expr())
-        * (OpcodeId::MOD.expr() - opcode.expr())
-        * (OpcodeId::SHL.expr() - opcode.expr())
-        * (OpcodeId::SHR.expr() - opcode.expr())
-        * F::from(5200).invert().unwrap()
-}
-
-#[inline]
-fn is_div<F: Field>(opcode: &Cell<F>) -> Expression<F> {
-    (opcode.expr() - OpcodeId::MUL.expr())
-        * (OpcodeId::MOD.expr() - opcode.expr())
-        * (OpcodeId::SHL.expr() - opcode.expr())
-        * (OpcodeId::SHR.expr() - opcode.expr())
-        * F::from(2208).invert().unwrap()
-}
-
-#[inline]
-fn is_mod<F: Field>(opcode: &Cell<F>) -> Expression<F> {
-    (opcode.expr() - OpcodeId::MUL.expr())
-        * (opcode.expr() - OpcodeId::DIV.expr())
-        * (OpcodeId::SHL.expr() - opcode.expr())
-        * (OpcodeId::SHR.expr() - opcode.expr())
-        * F::from(3696).invert().unwrap()
-}
-
-#[inline]
-fn is_shl<F: Field>(opcode: &Cell<F>) -> Expression<F> {
-    (opcode.expr() - OpcodeId::MUL.expr())
-        * (opcode.expr() - OpcodeId::DIV.expr())
-        * (opcode.expr() - OpcodeId::MOD.expr())
-        * (OpcodeId::SHR.expr() - opcode.expr())
-        * F::from(12075).invert().unwrap()
-}
-
-#[inline]
-fn is_shr<F: Field>(opcode: &Cell<F>) -> Expression<F> {
-    (opcode.expr() - OpcodeId::MUL.expr())
-        * (opcode.expr() - OpcodeId::DIV.expr())
-        * (opcode.expr() - OpcodeId::MOD.expr())
-        * (opcode.expr() - OpcodeId::SHL.expr())
-        * F::from(13728).invert().unwrap()
+fn is_opcode<F: Field>(opcode: &Cell<F>, opcode_id: OpcodeId) -> Expression<F> {
+    generate_lagrange_base_polynomial(
+        opcode,
+        opcode_id.as_u8() as usize,
+        [
+            OpcodeId::MUL,
+            OpcodeId::DIV,
+            OpcodeId::MOD,
+            OpcodeId::SHL,
+            OpcodeId::SHR,
+        ]
+        .into_iter()
+        .map(|op_id| op_id.as_u8() as usize),
+    )
 }
 
 #[cfg(test)]
