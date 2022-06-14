@@ -446,6 +446,7 @@ impl<F: Field> MPTConfig<F> {
             acc_c,
             acc_mult_c,
             acc_r,
+            fixed_table,
         );
 
         BranchRLCConfig::<F>::configure(
@@ -1255,22 +1256,7 @@ impl<F: Field> MPTConfig<F> {
 
                             offset += 1;
                             pv.node_index += 1;
-                        } else if row[row.len() - 1] == 2
-                            || row[row.len() - 1] == 3
-                            || row[row.len() - 1] == 4
-                            || row[row.len() - 1] == 6
-                            || row[row.len() - 1] == 7
-                            || row[row.len() - 1] == 8
-                            || row[row.len() - 1] == 9
-                            || row[row.len() - 1] == 10
-                            || row[row.len() - 1] == 11
-                            || row[row.len() - 1] == 13
-                            || row[row.len() - 1] == 14
-                            || row[row.len() - 1] == 15
-                            || row[row.len() - 1] == 16
-                            || row[row.len() - 1] == 17
-                            || row[row.len() - 1] == 18
-                        {
+                        } else if row[row.len() - 1] != 5 {
                             // leaf s or leaf c or leaf key s or leaf key c 
                             region.assign_fixed(
                                 || "not first",

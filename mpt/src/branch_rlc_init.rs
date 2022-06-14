@@ -1,11 +1,15 @@
 use halo2_proofs::{
-    plonk::{Advice, Column, ConstraintSystem, Expression, VirtualCells},
+    plonk::{Advice, Column, ConstraintSystem, Expression, VirtualCells, Fixed},
     poly::Rotation,
 };
 use eth_types::Field;
 use std::marker::PhantomData;
+use crate::{
+    helpers::range_lookups,
+    mpt::FixedTableTag,
+    param::HASH_WIDTH,
+};
 
-use crate::param::HASH_WIDTH;
 
 #[derive(Clone, Debug)]
 pub(crate) struct BranchRLCInitConfig<F> {
@@ -18,7 +22,7 @@ pub(crate) struct BranchRLCInitConfig<F> {
 impl<F: Field> BranchRLCInitConfig<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
-        q_enable: impl FnOnce(&mut VirtualCells<'_, F>) -> Expression<F>,
+        q_enable: impl Fn(&mut VirtualCells<'_, F>) -> Expression<F> + Copy,
         s_rlp1: Column<Advice>,
         s_rlp2: Column<Advice>,
         s_advices: [Column<Advice>; HASH_WIDTH],
@@ -27,10 +31,9 @@ impl<F: Field> BranchRLCInitConfig<F> {
         acc_c: Column<Advice>,
         acc_mult_c: Column<Advice>,
         acc_r: F,
+        fixed_table: [Column<Fixed>; 3],
     ) -> BranchRLCInitConfig<F> {
         let config = BranchRLCInitConfig { _marker: PhantomData, }; 
-
-        // TODO: constraints for branch init (also byte range lookups)
 
         // Short RLP, meta data contains two bytes: 248, 81
         // [1,0,1,0,248,81,0,248,81,0,3,0,0,0,...
@@ -151,6 +154,21 @@ impl<F: Field> BranchRLCInitConfig<F> {
 
             constraints
         });
+
+        range_lookups(
+            meta,
+            q_enable,
+            s_advices.to_vec(),
+            FixedTableTag::Range256,
+            fixed_table,
+        );
+        range_lookups(
+            meta,
+            q_enable,
+            [s_rlp1, s_rlp2].to_vec(),
+            FixedTableTag::Range256,
+            fixed_table,
+        );
 
         config
     }
