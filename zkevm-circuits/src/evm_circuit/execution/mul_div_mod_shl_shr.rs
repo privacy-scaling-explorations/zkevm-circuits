@@ -11,7 +11,7 @@ use crate::{
             math_gadget::{
                 generate_lagrange_base_polynomial, IsZeroGadget, LtWordGadget, MulAddWordsGadget,
             },
-            select, sum, CachedRegion, Cell,
+            sum, CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
