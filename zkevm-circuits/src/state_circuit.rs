@@ -1,4 +1,5 @@
 //! The state circuit implementation.
+mod binary_number;
 mod constraint_builder;
 mod lexicographic_ordering;
 mod lookups;
@@ -9,9 +10,11 @@ mod test;
 
 use crate::evm_circuit::{
     param::N_BYTES_WORD,
+    table::RwTableTag,
     util::RandomLinearCombination,
     witness::{Rw, RwMap},
 };
+use binary_number::{Chip as BinaryNumberChip, Config as BinaryNumberConfig};
 use constraint_builder::{ConstraintBuilder, Queries};
 use eth_types::{Address, Field, ToLittleEndian};
 use gadgets::is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction};
@@ -43,7 +46,7 @@ pub struct StateConfig<F: Field> {
     // https://github.com/privacy-scaling-explorations/zkevm-circuits/issues/407
     rw_counter: MpiConfig<u32, N_LIMBS_RW_COUNTER>,
     is_write: Column<Advice>,
-    tag: Column<Advice>,
+    tag: BinaryNumberConfig<RwTableTag, 4>,
     id: MpiConfig<u32, N_LIMBS_ID>,
     is_id_unchanged: IsZeroConfig<F>,
     address: MpiConfig<Address, N_LIMBS_ACCOUNT_ADDRESS>,
@@ -110,8 +113,10 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
         let lookups = LookupsChip::configure(meta);
         let power_of_randomness = [0; N_BYTES_WORD - 1].map(|_| meta.instance_column());
 
-        let [is_write, tag, field_tag, value, is_id_unchanged_column, is_storage_key_unchanged_column] =
-            [0; 6].map(|_| meta.advice_column());
+        let [is_write, field_tag, value, is_id_unchanged_column, is_storage_key_unchanged_column] =
+            [0; 5].map(|_| meta.advice_column());
+
+        let tag = BinaryNumberChip::configure(meta, selector);
 
         let id = MpiChip::configure(meta, selector, lookups.u16);
         let address = MpiChip::configure(meta, selector, lookups.u16);
@@ -191,6 +196,8 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
         let lexicographic_ordering_chip =
             LexicographicOrderingChip::construct(config.lexicographic_ordering.clone());
 
+        let tag_chip = BinaryNumberChip::construct(config.tag);
+
         layouter.assign_region(
             || "rw table",
             |mut region| {
@@ -207,12 +214,7 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
                         offset,
                         || Ok(if row.is_write() { F::one() } else { F::zero() }),
                     )?;
-                    region.assign_advice(
-                        || "tag",
-                        config.tag,
-                        offset,
-                        || Ok(F::from(row.tag() as u64)),
-                    )?;
+                    tag_chip.assign(&mut region, offset, &row.tag())?;
                     if let Some(id) = row.id() {
                         config.id.assign(&mut region, offset, id as u32)?;
                     }
@@ -281,8 +283,11 @@ fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: &StateConfig<F>) -> Quer
         selector: meta.query_fixed(c.selector, Rotation::cur()),
         rw_counter: MpiQueries::new(meta, c.rw_counter),
         is_write: meta.query_advice(c.is_write, Rotation::cur()),
-        tag: meta.query_advice(c.tag, Rotation::cur()),
-        prev_tag: meta.query_advice(c.tag, Rotation::prev()),
+        tag: c.tag.value(Rotation::cur())(meta),
+        tag_bits: c
+            .tag
+            .bits
+            .map(|bit| meta.query_advice(bit, Rotation::cur())),
         id: MpiQueries::new(meta, c.id),
         is_id_unchanged: c.is_id_unchanged.is_zero_expression.clone(),
         address: MpiQueries::new(meta, c.address),
