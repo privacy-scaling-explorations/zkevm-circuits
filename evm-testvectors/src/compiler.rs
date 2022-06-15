@@ -195,11 +195,10 @@ impl Compiler {
     }
 }
 
-//Binary:
 #[cfg(test)]
 mod test {
     #[test]
-    #[cfg(feature = "test-docker")]
+    #[cfg(not(feature = "ignore-test-docker"))]
     fn test_docker_lll() -> anyhow::Result<()> {
         let out = super::Compiler::new(true, None)?.lll(
             "[[0]] (+ 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff 4)",
@@ -211,7 +210,7 @@ mod test {
         Ok(())
     }
     #[test]
-    #[cfg(feature = "test-docker")]
+    #[cfg(not(feature = "ignore-test-docker"))]
     fn test_docker_yul() -> anyhow::Result<()> {
         let out = super::Compiler::new(true, None)?.yul(
             r#"
@@ -234,7 +233,7 @@ mod test {
         Ok(())
     }
     #[test]
-    #[cfg(feature = "test-docker")]
+    #[cfg(not(feature = "ignore-test-docker"))]
     fn test_docker_solidity() -> anyhow::Result<()> {
         let out = super::Compiler::new(true, None)?.solidity("contract A{}")?;
         assert_eq!(

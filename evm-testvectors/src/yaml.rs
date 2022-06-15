@@ -660,8 +660,8 @@ arith:
             secret_key: Bytes::from(hex::decode(
                 "45a915e4d060149eb4365960e6a7a45f334393093061116b197e3240065ff2d8",
             )?),
-            from: a94f5.clone(),
-            to: Some(ccccc.clone()),
+            from: a94f5,
+            to: Some(ccccc),
             gas_limit: 80000000,
             gas_price: U256::from(10u64),
             nonce: U256::zero(),
@@ -669,9 +669,9 @@ arith:
             data: Bytes::from(&[0]),
             pre: HashMap::from([
                 (
-                    ccccc.clone(),
+                    ccccc,
                     Account {
-                        address: ccccc.clone(),
+                        address: ccccc,
                         balance: U256::from(1000000000000u64),
                         code: Bytes::from(&[0x60, 0x01, 0x00]),
                         nonce: U256::zero(),
@@ -680,9 +680,9 @@ arith:
                     },
                 ),
                 (
-                    a94f5.clone(),
+                    a94f5,
                     Account {
-                        address: a94f5.clone(),
+                        address: a94f5,
                         balance: U256::from(1000000000000u64),
                         code: Bytes::default(),
                         nonce: U256::zero(),
@@ -692,9 +692,9 @@ arith:
                 ),
             ]),
             result: HashMap::from([(
-                ccccc.clone(),
+                ccccc,
                 AccountMatch {
-                    address: ccccc.clone(),
+                    address: ccccc,
                     balance: Some(U256::from(1000000000001u64)),
                     nonce: Some(U256::from(0)),
                     code: Some(Bytes::from(&[0x60, 0x01, 0x00])),

@@ -31,4 +31,4 @@ clap = { version = "3.1", features = ["derive"] }
 ethers-signers = "0.6"
 
 [features]
-test-docker = []
+ignore-test-docker = []

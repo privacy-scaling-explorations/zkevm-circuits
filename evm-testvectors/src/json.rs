@@ -563,9 +563,9 @@ mod test {
             value: U256::from(100000u64),
             data: Bytes::from(hex::decode("6001")?),
             pre: HashMap::from([(
-                acc095e.clone(),
+                acc095e,
                 Account {
-                    address: acc095e.clone(),
+                    address: acc095e,
                     nonce: U256::from(0u64),
                     balance: U256::from(1000000000000000000u64),
                     code: Bytes::from(hex::decode("600160010160005500")?),
@@ -573,9 +573,9 @@ mod test {
                 },
             )]),
             result: HashMap::from([(
-                acc095e.clone(),
+                acc095e,
                 AccountMatch {
-                    address: acc095e.clone(),
+                    address: acc095e,
                     nonce: Some(U256::from(1u64)),
                     balance: None,
                     code: Some(Bytes::from(hex::decode("600160010160005500")?)),

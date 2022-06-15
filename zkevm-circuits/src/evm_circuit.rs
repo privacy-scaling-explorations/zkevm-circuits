@@ -421,9 +421,7 @@ pub mod test {
             config.load_rws(&mut layouter, &self.block.rws, self.block.randomness)?;
             config.load_bytecodes(&mut layouter, &self.block.bytecodes, self.block.randomness)?;
             config.load_block(&mut layouter, &self.block.context, self.block.randomness)?;
-            config
-                .evm_circuit
-                .assign_block_exact(&mut layouter, &self.block)
+            config.evm_circuit.assign_block(&mut layouter, &self.block)
         }
     }
 
