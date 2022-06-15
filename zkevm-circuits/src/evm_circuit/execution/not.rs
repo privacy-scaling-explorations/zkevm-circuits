@@ -127,7 +127,8 @@ mod test {
     #[test]
     fn not_gadget_rand() {
         let a = rand_word();
-        // the debug statement is useful for random tests so in case it fails, the failing example shows up in the logs. 
+        // the debug statement is useful for random tests so in case it fails, the
+        // failing example shows up in the logs.
         dbg!(a);
         test_ok(a);
     }
