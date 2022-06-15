@@ -600,7 +600,7 @@ impl<F: Field> KeccakPackedConfig<F> {
             vec![0u64.expr()]
         });
 
-        let mut cb = BaseConstraintBuilder::new(5);
+        let mut cb = BaseConstraintBuilder::new(3);
         let mut total_lookup_counter = 0;
 
         let pre_b = b.clone();
@@ -828,14 +828,14 @@ impl<F: Field> KeccakPackedConfig<F> {
         });
 
         meta.create_gate("absorb", |meta| {
-            let mut cb = BaseConstraintBuilder::new(5);
+            let mut cb = BaseConstraintBuilder::new(3);
 
             b = pre_b.clone();
 
             let absorb_positions = get_absorb_positions();
             let mut a_slice = 0;
-            for i in 0..5 {
-                for j in 0..5 {
+            for j in 0..5 {
+                for i in 0..5 {
                     if absorb_positions.contains(&(i, j)) {
                         cb.require_equal(
                             "absorb verify input",
@@ -870,9 +870,12 @@ impl<F: Field> KeccakPackedConfig<F> {
         println!("Columns: {}", cell_values.len());
         println!("part_size absorb: {}", get_num_bits_per_absorb_lookup());
         println!("part_size theta: {}", get_num_bits_per_theta_c_lookup());
+        println!("part_size theta c: {}", get_num_bits_per_lookup(THETA_C_LOOKUP_RANGE));
+        println!("part_size theta t: {}", get_num_bits_per_lookup(4));
         println!("part_size rho/pi: {}", get_num_bits_per_rho_pi_lookup());
         println!("part_size chi base: {}", get_num_bits_per_base_chi_lookup());
         println!("part_size chi ext: {}", get_num_bits_per_ext_chi_lookup());
+        println!("uniform part sizes: {:?}", target_part_sizes(get_num_bits_per_theta_c_lookup()));
 
         KeccakPackedConfig {
             q_enable,
@@ -1205,10 +1208,8 @@ fn get_absorb_positions() -> Vec<(usize, usize)> {
     absorb_positions
 }
 
-fn keccak<F: Field>(bytes: Vec<u8>) -> Vec<KeccakRow<F>> {
-    let mut rows: Vec<KeccakRow<F>> = Vec::new();
-
-    let mut bits = /*to_bits(&bytes)*/bytes.clone();
+fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bits: Vec<u8>) {
+    let mut bits = /*to_bits(&bytes)*/bits.clone();
     let rate: usize = 136 * 8;
 
     let mut b = [[Word::zero(); 5]; 5];
@@ -1240,22 +1241,18 @@ fn keccak<F: Field>(bytes: Vec<u8>) -> Vec<KeccakRow<F>> {
             });
         }
 
-        let mut counter = 0;
         for round in 0..25 {
             let mut cell_values = Vec::new();
 
             let mut absorb_data = AbsorbData::default();
-            if counter < rate / 64 {
-                absorb_data = absorb_rows[counter].clone();
-                counter += 1;
+            if round < rate / 64 {
+                absorb_data = absorb_rows[round].clone();
             }
 
-            let mut counter = 0;
             let mut s_bits = [F::zero(); 25];
             for i in 0..5 {
                 for j in 0..5 {
-                    s_bits[counter] = b[i][j].to_scalar().unwrap();
-                    counter += 1;
+                    s_bits[i*5 + j] = b[i][j].to_scalar().unwrap();
                 }
             }
 
@@ -1400,7 +1397,13 @@ fn keccak<F: Field>(bytes: Vec<u8>) -> Vec<KeccakRow<F>> {
             println!("[{}][{}]: {:?}", i, j, b[i][j]);
         }
     }
+}
 
+fn multi_keccak<F: Field>(bytes: Vec<Vec<u8>>) -> Vec<KeccakRow<F>> {
+    let mut rows: Vec<KeccakRow<F>> = Vec::new();
+    for bytes in bytes {
+        keccak(&mut rows, bytes);
+    }
     rows
 }
 
@@ -1492,7 +1495,7 @@ mod tests {
     fn packed_keccak_simple() {
         let k = 8;
 
-        let SHA3in = [
+        let input_a = [
             0, 0, 1, 0, 1, 0, 0, 1, 0, 0, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 1, 0, 1, 0, 1, 0, 0, 1, 0,
             1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 1, 1, 0, 1, 0, 1, 1, 1, 0, 1, 0,
             0, 1, 0, 1, 1, 1, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 1, 1, 0, 1, 0, 1, 1, 0,
@@ -1530,8 +1533,8 @@ mod tests {
             0, 0, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 1,
         ];
 
-        //let inputs = keccak(vec![0b01011010u8; 200]);
-        let inputs = keccak(SHA3in.to_vec());
+        let input_b = vec![1u8; 2000];
+        let inputs = multi_keccak(vec![input_a.to_vec(), input_b.to_vec(), input_a.to_vec(), input_b.to_vec()]);
         verify::<Fr>(k, inputs, true);
     }
 }
