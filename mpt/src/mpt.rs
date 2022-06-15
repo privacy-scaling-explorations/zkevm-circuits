@@ -7,7 +7,7 @@ use keccak256::plain::Keccak;
 use eth_types::Field;
 use std::convert::TryInto;
 
-use crate::param::WITNESS_ROW_WIDTH;
+use crate::param::{WITNESS_ROW_WIDTH, IS_STORAGE_MOD_POS, IS_ACCOUNT_DELETE_MOD_POS, IS_CODEHASH_MOD_POS, IS_BALANCE_MOD_POS, IS_NONCE_MOD_POS};
 use crate::param::{
     BRANCH_0_C_START, BRANCH_0_KEY_POS, BRANCH_0_S_START, C_RLP_START, C_START, DRIFTED_POS,
     HASH_WIDTH, IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS, KECCAK_INPUT_WIDTH,
@@ -47,6 +47,26 @@ use crate::{
     We start with top level branch and then we follow branches (could be also extension
     nodes) down to the leaf.
 */
+
+#[derive(Clone, Debug)]
+struct ProofTypeCols {
+    is_storage_mod: Column<Advice>,
+    is_nonce_mod: Column<Advice>,
+    is_balance_mod: Column<Advice>,
+    is_codehash_mod: Column<Advice>,
+    is_account_delete_mod: Column<Advice>,
+    is_non_existing_account_proof: Column<Advice>,
+}
+
+#[derive(Default)]
+struct ProofType {
+    is_storage_mod: bool,
+    is_nonce_mod: bool,
+    is_balance_mod: bool,
+    is_codehash_mod: bool,
+    is_account_delete_mod: bool,
+    is_non_existing_account_proof: bool,
+}
 
 #[derive(Clone, Debug)]
 struct AccountLeafCols {
@@ -129,6 +149,7 @@ struct Branch {
 
 #[derive(Clone, Debug)]
 pub struct MPTConfig<F> {
+    proof_type: ProofTypeCols,
     account_leaf: AccountLeafCols,
     storage_leaf: StorageLeafCols,
     q_enable: Column<Fixed>,
@@ -173,13 +194,7 @@ pub struct MPTConfig<F> {
                                   * address_rlc computed in the account leaf key row. Needed to
                                   * enable lookup for storage key/value (to have address RLC in
                                   * the same row as storage key/value). */
-    counter: Column<Advice>,
-    is_storage_mod: Column<Advice>,
-    is_nonce_mod: Column<Advice>,
-    is_balance_mod: Column<Advice>,
-    is_codehash_mod: Column<Advice>,
-    is_account_delete_mod: Column<Advice>,
-    is_non_existing_account_proof: Column<Advice>,
+    counter: Column<Advice>, 
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -318,6 +333,15 @@ impl<F: Field> MPTConfig<F> {
         // s_mod_node_hash_rlc and c_mod_node_hash_rlc), so we can choose the
         // rotations smartly to have at least as possible of them
 
+        let proof_type = ProofTypeCols {
+            is_storage_mod: meta.advice_column(),
+            is_nonce_mod: meta.advice_column(),
+            is_balance_mod: meta.advice_column(),
+            is_codehash_mod: meta.advice_column(),
+            is_account_delete_mod: meta.advice_column(),
+            is_non_existing_account_proof: meta.advice_column(),
+        };
+
         let storage_leaf = StorageLeafCols {
             is_leaf_s : meta.advice_column(),
             is_leaf_s_value : meta.advice_column(),
@@ -415,13 +439,7 @@ impl<F: Field> MPTConfig<F> {
 
         let address_rlc = meta.advice_column();
         let counter = meta.advice_column();
-        let is_storage_mod = meta.advice_column();
-        let is_nonce_mod = meta.advice_column();
-        let is_balance_mod = meta.advice_column();
-        let is_codehash_mod = meta.advice_column();
-        let is_account_delete_mod = meta.advice_column();
-        let is_non_existing_account_proof = meta.advice_column();
-
+        
         BranchHashInParentConfig::<F>::configure(
             meta,
             inter_start_root,
@@ -500,6 +518,7 @@ impl<F: Field> MPTConfig<F> {
         );
 
         MPTConfig {
+            proof_type,
             account_leaf,
             storage_leaf,
             q_enable,
@@ -531,12 +550,6 @@ impl<F: Field> MPTConfig<F> {
             fixed_table,
             address_rlc,
             counter,
-            is_storage_mod,
-            is_nonce_mod,
-            is_balance_mod,
-            is_codehash_mod,
-            is_account_delete_mod,
-            is_non_existing_account_proof,
         }
     }
 
@@ -1040,6 +1053,43 @@ impl<F: Field> MPTConfig<F> {
                             self.inter_final_root,
                             offset,
                             || Ok(c_root_rlc),
+                        )?;
+
+                        region.assign_advice(
+                            || "is_storage_mod",
+                            self.proof_type.is_storage_mod,
+                            offset,
+                            || Ok(F::from(row[row.len() - IS_STORAGE_MOD_POS] as u64)),
+                        )?;
+                        region.assign_advice(
+                            || "is_nonce_mod",
+                            self.proof_type.is_nonce_mod,
+                            offset,
+                            || Ok(F::from(row[row.len() - IS_NONCE_MOD_POS] as u64)),
+                        )?;
+                        region.assign_advice(
+                            || "is_balance_mod",
+                            self.proof_type.is_balance_mod,
+                            offset,
+                            || Ok(F::from(row[row.len() - IS_BALANCE_MOD_POS] as u64)),
+                        )?;
+                        region.assign_advice(
+                            || "is_codehash_mod",
+                            self.proof_type.is_codehash_mod,
+                            offset,
+                            || Ok(F::from(row[row.len() - IS_CODEHASH_MOD_POS] as u64)),
+                        )?;
+                        region.assign_advice(
+                            || "is_account_delete_mod",
+                            self.proof_type.is_account_delete_mod,
+                            offset,
+                            || Ok(F::from(row[row.len() - IS_ACCOUNT_DELETE_MOD_POS] as u64)),
+                        )?;
+                        region.assign_advice(
+                            || "is_non_existing_account",
+                            self.proof_type.is_non_existing_account_proof,
+                            offset,
+                            || Ok(F::from(row[row.len() - IS_NON_EXISTING_ACCOUNT_POS] as u64)),
                         )?;
 
                         if row[row.len() - 1] == 0 {
