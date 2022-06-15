@@ -103,7 +103,7 @@ impl FixedTableTag {
                         })
                 }))
             }
-            Self::Pow2 => Box::new((0..65).map(move |value| {
+            Self::Pow2 => Box::new((0..128).map(move |value| {
                 [
                     tag,
                     F::from(value),
