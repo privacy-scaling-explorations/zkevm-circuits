@@ -33,12 +33,12 @@ use halo2_proofs::{
 
 use crate::evm_types::{memory::Memory, stack::Stack, storage::Storage};
 use crate::evm_types::{Gas, GasCost, OpcodeId, ProgramCounter};
+pub use ethers_core::abi::ethereum_types::U512;
 use ethers_core::types;
 pub use ethers_core::types::{
     transaction::{eip2930::AccessList, response::Transaction},
     Address, Block, Bytes, H160, H256, U256, U64,
 };
-pub use primitive_types::U512;
 
 use serde::{de, Deserialize};
 use std::collections::HashMap;
