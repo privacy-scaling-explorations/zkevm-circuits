@@ -1328,6 +1328,12 @@ impl<F: Field> MulAddWords512Gadget<F> {
 /// Constraints the words a, n, r such that:
 /// a mod n = r, if n!=0
 /// r = 0,       if n==0
+///
+/// We use the auxiliary a_or_zero word, whose value is constrained to be: a if
+/// n!=0, 0 if n==0. This allows to use the equation k * n + r = a_or_zero to
+/// verify the modulus, which holds with r=0 in the case of n=0. Unlike the
+/// usual k * n + r = a, which forces r = a when n=0, this equation assures that
+/// r<n or r=n=0.
 #[derive(Clone, Debug)]
 pub(crate) struct ModGadget<F> {
     k: util::Word<F>,
@@ -1348,14 +1354,19 @@ impl<F: Field> ModGadget<F> {
         let mul = MulAddWordsGadget::construct(cb, [&k, n, r, &a_or_zero]);
         let eq = IsEqualGadget::construct(cb, a.expr(), a_or_zero.expr());
         let lt = LtWordGadget::construct(cb, r, n);
+        // Constraint the aux variable a_or_zero to be =a or =0 if n==0:
+        // (a == a_zero) ^ (n == 0 & a_or_zero == 0)
         cb.add_constraint(
-            " (1 - (a == a_or_zero)) * ( 1 - (n == 0))",
+            " (1 - (a == a_or_zero)) * ( 1 - (n == 0) * (a_or_zero == 0)",
             (1.expr() - eq.expr()) * (1.expr() - n_is_zero.expr() * a_or_is_zero.expr()),
         );
+
+        // Constrain the result r to be valid: (r<n) ^ n==0
         cb.add_constraint(
             " (1 - (r<n) - (n==0) ",
             1.expr() - lt.expr() - n_is_zero.expr(),
         );
+
         Self {
             k,
             a_or_zero,
