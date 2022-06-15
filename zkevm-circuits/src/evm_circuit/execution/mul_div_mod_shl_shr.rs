@@ -37,12 +37,12 @@ pub(crate) struct MulDivModShlShrGadget<F> {
     dividend: util::Word<F>,
     /// Shift word used for opcode SHL and SHR
     pop1: util::Word<F>,
-    /// `shift[0] / 128`, will check if it is equal with high-16 bytes of
-    /// divisor for opcode SHL and SHR
-    shf_div128: Cell<F>,
-    /// `shift[0] % 128`, will lookup with low-16 bytes of divisor in Pow2 table
-    /// for opcode SHL and SHR
-    shf_mod128: Cell<F>,
+    /// For opcode SHL and SHR, it is `shift[0]` if `shift[0]` is less than 128,
+    /// and 0 otherwise.
+    shf_lo: Cell<F>,
+    /// For opcode SHL and SHR, it is `shift[0] - 128` if `shift[0]` is greater
+    /// than or equal to 128, and 0 otherwise.
+    shf_hi: Cell<F>,
     /// Gadget that verifies quotient * divisor + remainder = dividend
     mul_add_words: MulAddWordsGadget<F>,
     /// Check if low-16 bytes of divisor is zero
@@ -73,8 +73,8 @@ impl<F: Field> ExecutionGadget<F> for MulDivModShlShrGadget<F> {
         let remainder = cb.query_word();
         let dividend = cb.query_word();
         let pop1 = cb.query_word();
-        let shf_div128 = cb.query_cell();
-        let shf_mod128 = cb.query_cell();
+        let shf_lo = cb.query_cell();
+        let shf_hi = cb.query_cell();
 
         let mul_add_words =
             MulAddWordsGadget::construct(cb, [&quotient, &divisor, &remainder, &dividend]);
@@ -126,29 +126,34 @@ impl<F: Field> ExecutionGadget<F> for MulDivModShlShrGadget<F> {
                 * (pop1.expr() - pop1.cells[0].expr()),
         );
 
-        // Constrain `divisor_lo == 2^shf_mod128` when `divisor_lo != 0`, and
-        // `divisor_hi == shf_div128` for opcode SHL and SHR.
+        // For opcode SHL and SHR, Constrain `divisor_lo == 2^shf_lo` when
+        // `divisor_lo != 0`, and `divisor_hi == 2^shf_hi` when `divisor_hi != 0`.
         let divisor_lo = from_bytes::expr(&divisor.cells[..16]);
         let divisor_hi = from_bytes::expr(&divisor.cells[16..]);
         cb.condition(
             (is_shl.clone() + is_shr.clone()) * (1.expr() - divisor_lo_is_zero.expr()),
             |cb| {
                 cb.add_lookup(
-                    "Pow2 lookup of shf_mod128 and divisor_lo for opcode SHL and SHR",
+                    "Pow2 lookup of shf_lo and divisor_lo for opcode SHL and SHR",
                     Lookup::Fixed {
                         tag: FixedTableTag::Pow2.expr(),
-                        values: [shf_mod128.expr(), divisor_lo.expr(), 0.expr()],
+                        values: [shf_lo.expr(), divisor_lo.expr(), 0.expr()],
                     },
                 );
             },
         );
-        cb.condition(is_shl.clone() + is_shr.clone(), |cb| {
-            cb.require_equal(
-                "divisor_hi == shf_div128 for opcode SHL and SHR ",
-                divisor_hi.expr(),
-                shf_div128.expr(),
-            );
-        });
+        cb.condition(
+            (is_shl.clone() + is_shr.clone()) * (1.expr() - divisor_hi_is_zero.expr()),
+            |cb| {
+                cb.add_lookup(
+                    "Pow2 lookup of shf_hi and divisor_hi for opcode SHL and SHR",
+                    Lookup::Fixed {
+                        tag: FixedTableTag::Pow2.expr(),
+                        values: [shf_hi.expr(), divisor_hi.expr(), 0.expr()],
+                    },
+                );
+            },
+        );
 
         let gas_cost = is_mul * OpcodeId::MUL.constant_gas_cost().expr()
             + is_div * OpcodeId::DIV.constant_gas_cost().expr()
@@ -173,8 +178,8 @@ impl<F: Field> ExecutionGadget<F> for MulDivModShlShrGadget<F> {
             remainder,
             dividend,
             pop1,
-            shf_div128,
-            shf_mod128,
+            shf_lo,
+            shf_hi,
             mul_add_words,
             divisor_lo_is_zero,
             divisor_hi_is_zero,
@@ -196,10 +201,14 @@ impl<F: Field> ExecutionGadget<F> for MulDivModShlShrGadget<F> {
         let indices = [step.rw_indices[0], step.rw_indices[1], step.rw_indices[2]];
         let [pop1, pop2, push] = indices.map(|idx| block.rws[idx].stack_value());
 
-        // Shift values are used for opcode SHL and SHR.
+        // Get the first byte of shift value for opcode SHL and SHR. And split it by 128
+        // to avoid overflow.
         let shf0 = pop1.to_le_bytes()[0];
-        let shf_div128 = shf0 / 128;
-        let shf_mod128 = shf0 % 128;
+        let (shf_lo, shf_hi) = if shf0 < 128 {
+            (shf0, 0)
+        } else {
+            (0, shf0 - 128)
+        };
 
         let (quotient, divisor, remainder, dividend) = match step.opcode.unwrap() {
             OpcodeId::MUL => (pop1, pop2, U256::from(0), push),
@@ -244,10 +253,10 @@ impl<F: Field> ExecutionGadget<F> for MulDivModShlShrGadget<F> {
         self.dividend
             .assign(region, offset, Some(dividend.to_le_bytes()))?;
         self.pop1.assign(region, offset, Some(pop1.to_le_bytes()))?;
-        self.shf_div128
-            .assign(region, offset, Some(u64::from(shf_div128).into()))?;
-        self.shf_mod128
-            .assign(region, offset, Some(u64::from(shf_mod128).into()))?;
+        self.shf_lo
+            .assign(region, offset, Some(u64::from(shf_lo).into()))?;
+        self.shf_hi
+            .assign(region, offset, Some(u64::from(shf_hi).into()))?;
         self.mul_add_words
             .assign(region, offset, [quotient, divisor, remainder, dividend])?;
         let divisor_lo_sum = (0..16).fold(0, |acc, idx| acc + divisor.byte(idx) as u64);
