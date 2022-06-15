@@ -294,7 +294,7 @@ impl<F: FieldExt> SelectorsChip<F> {
                     meta.query_advice(is_non_existing_account_row, Rotation::cur());
 
 
-                // Branch init can start after another branch (means after extension node S)
+                // Branch init can start after another branch (means after extension node C)
                 // or after account leaf in added branch (account -> storage proof)
                 // or after storage leaf in added branch (after key/value proof ends).
                 // Also, it can be in the first row.
