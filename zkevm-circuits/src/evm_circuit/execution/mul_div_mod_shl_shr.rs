@@ -37,10 +37,10 @@ pub(crate) struct MulDivModShlShrGadget<F> {
     dividend: util::Word<F>,
     /// Shift word used for opcode SHL and SHR
     pop1: util::Word<F>,
-    /// shift[0] / 64, will check if it is equal with high-16 bytes of divisor
+    /// `shift[0] / 64`, will check if it is equal with high-16 bytes of divisor
     /// for opcode SHL and SHR
     shf_div64: Cell<F>,
-    /// shift[0] % 64, will check if it is equal with low-16 bytes of divisor
+    /// `shift[0] % 64`, will check if it is equal with low-16 bytes of divisor
     /// for opcode SHL and SHR
     shf_mod64: Cell<F>,
     /// Gadget that verifies quotient * divisor + remainder = dividend
