@@ -375,22 +375,16 @@ mod test {
 
     #[test]
     fn shr_gadget_tests() {
-        /*
         test_ok(OpcodeId::SHR, Word::from(0xABCD), Word::from(8));
         test_ok(OpcodeId::SHR, Word::from(0x1234), Word::from(7));
         test_ok(OpcodeId::SHR, Word::from(0x8765), Word::from(17));
         test_ok(OpcodeId::SHR, Word::from(0x4321), Word::from(0));
         test_ok(OpcodeId::SHR, Word::from(0xFFFF), Word::from(256));
         test_ok(OpcodeId::SHR, Word::from(0x12345), Word::from(256 + 8 + 1));
-        */
         let max_word = Word::from_big_endian(&[255_u8; 32]);
-        /*
         test_ok(OpcodeId::SHR, max_word, Word::from(63));
         test_ok(OpcodeId::SHR, max_word, Word::from(128));
-        */
         test_ok(OpcodeId::SHR, max_word, Word::from(129));
-        /*
         test_ok(OpcodeId::SHR, rand_word(), rand_word());
-        */
     }
 }
