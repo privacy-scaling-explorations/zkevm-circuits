@@ -3,8 +3,8 @@
 Thank you for investing your time in contributing to our project! 
 
 Before starting, we encourage you to take a look to the following documentation as it might help you in your first contribution adventure:
-- https://github.com/appliedzkp/zkevm-docs
-- https://github.com/appliedzkp/zkevm-specs
+- https://github.com/privacy-scaling-explorations/zkevm-docs
+- https://github.com/privacy-scaling-explorations/zkevm-specs
 
 ## General considerations
 - Make atomic PRs. Focused on a single feature or topic. Don't mix different topics or issues in the same PR if it can be avoided.
