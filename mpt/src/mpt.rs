@@ -565,6 +565,54 @@ impl<F: Field> MPTConfig<F> {
         )?;
 
         region.assign_advice(
+            || "assign is_last_branch_child".to_string(),
+            self.branch.is_last_branch_child,
+            offset,
+            || Ok(F::from(branch.is_last_branch_child as u64)),
+        )?;
+
+        region.assign_advice(
+            || "assign node_index".to_string(),
+            self.branch.node_index,
+            offset,
+            || Ok(F::from(branch.node_index as u64)),
+        )?;
+
+        region.assign_advice(
+            || "assign modified node".to_string(),
+            self.branch.modified_node,
+            offset,
+            || Ok(F::from(branch.modified_node as u64)),
+        )?;
+
+        region.assign_advice(
+            || "assign drifted_pos".to_string(),
+            self.branch.drifted_pos,
+            offset,
+            || Ok(F::from(branch.drifted_pos as u64)),
+        )?;
+
+        region.assign_advice(
+            || "assign is_at_drifted_pos".to_string(),
+            self.branch.is_at_drifted_pos,
+            offset,
+            || Ok(F::from((branch.drifted_pos == branch.node_index) as u64)),
+        )?;
+
+        region.assign_advice(
+            || "assign is extension node s".to_string(),
+            self.branch.is_extension_node_s,
+            offset,
+            || Ok(F::from(branch.is_extension_node_s as u64)),
+        )?;
+        region.assign_advice(
+            || "assign is extension node c".to_string(),
+            self.branch.is_extension_node_c,
+            offset,
+            || Ok(F::from(branch.is_extension_node_c as u64)),
+        )?;
+
+        region.assign_advice(
             || "assign acc_s".to_string(),
             self.acc_s,
             offset,
@@ -605,42 +653,7 @@ impl<F: Field> MPTConfig<F> {
             self.c_mod_node_hash_rlc,
             offset,
             || Ok(F::zero()),
-        )?;
-
-        region.assign_advice(
-            || "assign is_last_branch_child".to_string(),
-            self.branch.is_last_branch_child,
-            offset,
-            || Ok(F::from(branch.is_last_branch_child as u64)),
-        )?;
-
-        region.assign_advice(
-            || "assign node_index".to_string(),
-            self.branch.node_index,
-            offset,
-            || Ok(F::from(branch.node_index as u64)),
-        )?;
-
-        region.assign_advice(
-            || "assign modified node".to_string(),
-            self.branch.modified_node,
-            offset,
-            || Ok(F::from(branch.modified_node as u64)),
-        )?;
-
-        region.assign_advice(
-            || "assign drifted_pos".to_string(),
-            self.branch.drifted_pos,
-            offset,
-            || Ok(F::from(branch.drifted_pos as u64)),
-        )?;
-
-        region.assign_advice(
-            || "assign is_at_drifted_pos".to_string(),
-            self.branch.is_at_drifted_pos,
-            offset,
-            || Ok(F::from((branch.drifted_pos == branch.node_index) as u64)),
-        )?;
+        )?; 
 
         region.assign_advice(
             || "assign key rlc".to_string(),
@@ -756,20 +769,7 @@ impl<F: Field> MPTConfig<F> {
             self.account_leaf.is_account_leaf_in_added_branch,
             offset,
             || Ok(F::from(account_leaf.is_account_leaf_in_added_branch as u64)),
-        )?;
- 
-        region.assign_advice(
-            || "assign is extension node s".to_string(),
-            self.branch.is_extension_node_s,
-            offset,
-            || Ok(F::from(branch.is_extension_node_s as u64)),
-        )?;
-        region.assign_advice(
-            || "assign is extension node c".to_string(),
-            self.branch.is_extension_node_c,
-            offset,
-            || Ok(F::from(branch.is_extension_node_c as u64)),
-        )?;
+        )?; 
         region.assign_advice(
             || "assign is non existing account row".to_string(),
             self.is_non_existing_account_row,
@@ -872,6 +872,8 @@ impl<F: Field> MPTConfig<F> {
         let account_leaf = AccountLeaf::default();
         let storage_leaf = StorageLeaf::default();
         let mut branch = Branch::default();
+        branch.is_branch_child = true;
+        branch.is_last_branch_child = node_index == 15;
         branch.node_index = node_index;
         branch.modified_node = key;
         branch.drifted_pos = drifted_pos;
