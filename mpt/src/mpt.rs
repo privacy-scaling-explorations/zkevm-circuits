@@ -52,6 +52,7 @@ use crate::{
 struct AccountLeafCols {
     is_account_leaf_key_s: Column<Advice>,
     is_account_leaf_key_c: Column<Advice>,
+    is_non_existing_account_row: Column<Advice>,
     is_account_leaf_nonce_balance_s: Column<Advice>,
     is_account_leaf_nonce_balance_c: Column<Advice>,
     is_account_leaf_storage_codehash_s: Column<Advice>,
@@ -63,6 +64,7 @@ struct AccountLeafCols {
 struct AccountLeaf {
     is_account_leaf_key_s: bool,
     is_account_leaf_key_c: bool,
+    is_non_existing_account_row: bool,
     is_account_leaf_nonce_balance_s: bool,
     is_account_leaf_nonce_balance_c: bool,
     is_account_leaf_storage_codehash_s: bool,
@@ -178,7 +180,6 @@ pub struct MPTConfig<F> {
     is_codehash_mod: Column<Advice>,
     is_account_delete_mod: Column<Advice>,
     is_non_existing_account_proof: Column<Advice>,
-    is_non_existing_account_row: Column<Advice>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -328,6 +329,7 @@ impl<F: Field> MPTConfig<F> {
         let account_leaf = AccountLeafCols {
             is_account_leaf_key_s : meta.advice_column(),
             is_account_leaf_key_c : meta.advice_column(),
+            is_non_existing_account_row : meta.advice_column(),
             is_account_leaf_nonce_balance_s : meta.advice_column(),
             is_account_leaf_nonce_balance_c : meta.advice_column(),
             is_account_leaf_storage_codehash_s : meta.advice_column(),
@@ -419,7 +421,6 @@ impl<F: Field> MPTConfig<F> {
         let is_codehash_mod = meta.advice_column();
         let is_account_delete_mod = meta.advice_column();
         let is_non_existing_account_proof = meta.advice_column();
-        let is_non_existing_account_row = meta.advice_column();
 
         BranchHashInParentConfig::<F>::configure(
             meta,
@@ -536,7 +537,6 @@ impl<F: Field> MPTConfig<F> {
             is_codehash_mod,
             is_account_delete_mod,
             is_non_existing_account_proof,
-            is_non_existing_account_row,
         }
     }
 
@@ -547,7 +547,6 @@ impl<F: Field> MPTConfig<F> {
         account_leaf: AccountLeaf,
         storage_leaf: StorageLeaf,
         branch: Branch,
-        is_non_existing_account_row: bool,
         offset: usize,
     ) -> Result<(), Error> {
         region.assign_advice(
@@ -741,6 +740,12 @@ impl<F: Field> MPTConfig<F> {
             || Ok(F::from(account_leaf.is_account_leaf_key_c as u64)),
         )?;
         region.assign_advice(
+            || "assign is non existing account row".to_string(),
+            self.account_leaf.is_non_existing_account_row,
+            offset,
+            || Ok(F::from(account_leaf.is_non_existing_account_row as u64)),
+        )?;
+        region.assign_advice(
             || "assign is account leaf nonce balance s".to_string(),
             self.account_leaf.is_account_leaf_nonce_balance_s,
             offset,
@@ -770,13 +775,7 @@ impl<F: Field> MPTConfig<F> {
             offset,
             || Ok(F::from(account_leaf.is_account_leaf_in_added_branch as u64)),
         )?; 
-        region.assign_advice(
-            || "assign is non existing account row".to_string(),
-            self.is_non_existing_account_row,
-            offset,
-            || Ok(F::from(is_non_existing_account_row as u64)),
-        )?;
-
+        
         region.assign_advice(
             || "assign s_rlp1".to_string(),
             self.s_rlp1,
@@ -846,7 +845,6 @@ impl<F: Field> MPTConfig<F> {
             account_leaf,
             storage_leaf,
             branch,
-            false,
             offset,
         )?;
 
@@ -884,7 +882,6 @@ impl<F: Field> MPTConfig<F> {
             account_leaf,
             storage_leaf,
             branch,
-            false,
             offset,
         )?;
 
@@ -1243,8 +1240,6 @@ impl<F: Field> MPTConfig<F> {
                             let mut storage_leaf = StorageLeaf::default();
                             let mut branch = Branch::default();
 
-                            let mut is_non_existing_account = false;
-
                             if row[row.len() - 1] == 2 {
                                 storage_leaf.is_leaf_s = true;
                             } else if row[row.len() - 1] == 3 {
@@ -1281,7 +1276,7 @@ impl<F: Field> MPTConfig<F> {
                             } else if row[row.len() - 1] == 17 {
                                 branch.is_extension_node_c = true;
                             } else if row[row.len() - 1] == 18 {
-                                is_non_existing_account = true;
+                                account_leaf.is_non_existing_account_row = true;
                             }
 
                             self.assign_row(
@@ -1290,7 +1285,6 @@ impl<F: Field> MPTConfig<F> {
                                 account_leaf,
                                 storage_leaf,
                                 branch,
-                                is_non_existing_account,
                                 offset,
                             )?;
                         }
