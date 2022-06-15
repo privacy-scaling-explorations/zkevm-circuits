@@ -40,7 +40,7 @@ pub(crate) struct MulDivModShlShrGadget<F> {
     /// `shift[0] / 128`, will check if it is equal with high-16 bytes of
     /// divisor for opcode SHL and SHR
     shf_div128: Cell<F>,
-    /// `shift[0] % 128`, will check if it is equal with low-16 bytes of divisor
+    /// `shift[0] % 128`, will lookup with low-16 bytes of divisor in Pow2 table
     /// for opcode SHL and SHR
     shf_mod128: Cell<F>,
     /// Gadget that verifies quotient * divisor + remainder = dividend
@@ -149,19 +149,6 @@ impl<F: Field> ExecutionGadget<F> for MulDivModShlShrGadget<F> {
                 shf_div128.expr(),
             );
         });
-        /*
-        cb.add_lookup(
-            "Pow2 lookup of shf_div128 and divisor_hi for opcode SHL and SHR",
-            Lookup::Fixed {
-                tag: FixedTableTag::Pow2.expr(),
-                values: [
-                    select::expr(is_valid_shf_hi.expr(), shf_div128.expr(), 0.expr()),
-                    select::expr(is_valid_shf_hi.expr(), divisor_hi.expr(), 1.expr()),
-                    0.expr(),
-                ],
-            },
-        );
-        */
 
         let gas_cost = is_mul * OpcodeId::MUL.constant_gas_cost().expr()
             + is_div * OpcodeId::DIV.constant_gas_cost().expr()
@@ -381,22 +368,16 @@ mod test {
 
     #[test]
     fn shr_gadget_tests() {
-        /*
         test_ok(OpcodeId::SHR, Word::from(0xABCD), Word::from(8));
         test_ok(OpcodeId::SHR, Word::from(0x1234), Word::from(7));
         test_ok(OpcodeId::SHR, Word::from(0x8765), Word::from(17));
         test_ok(OpcodeId::SHR, Word::from(0x4321), Word::from(0));
         test_ok(OpcodeId::SHR, Word::from(0xFFFF), Word::from(256));
         test_ok(OpcodeId::SHR, Word::from(0x12345), Word::from(256 + 8 + 1));
-        */
         let max_word = Word::from_big_endian(&[255_u8; 32]);
-        /*
         test_ok(OpcodeId::SHR, max_word, Word::from(63));
-        */
         test_ok(OpcodeId::SHR, max_word, Word::from(128));
-        /*
         test_ok(OpcodeId::SHR, max_word, Word::from(129));
         test_ok(OpcodeId::SHR, rand_word(), rand_word());
-        */
     }
 }
