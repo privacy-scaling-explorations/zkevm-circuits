@@ -40,7 +40,7 @@ const N_LIMBS_ID: usize = 2;
 #[derive(Clone)]
 pub struct StateConfig<F: Field> {
     selector: Column<Fixed>, // Figure out why you get errors when this is Selector.
-    // https://github.com/appliedzkp/zkevm-circuits/issues/407
+    // https://github.com/privacy-scaling-explorations/zkevm-circuits/issues/407
     rw_counter: MpiConfig<u32, N_LIMBS_RW_COUNTER>,
     is_write: Column<Advice>,
     tag: Column<Advice>,
