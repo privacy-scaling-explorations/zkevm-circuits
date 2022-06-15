@@ -2,14 +2,16 @@ use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
         step::ExecutionState,
+        table::{FixedTableTag, Lookup},
         util::{
             self,
             common_gadget::SameContextGadget,
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
+            from_bytes,
             math_gadget::{
                 generate_lagrange_base_polynomial, IsZeroGadget, LtWordGadget, MulAddWordsGadget,
             },
-            sum, CachedRegion, Cell,
+            select, sum, CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -35,11 +37,19 @@ pub(crate) struct MulDivModShlShrGadget<F> {
     dividend: util::Word<F>,
     /// Shift word used for opcode SHL and SHR
     pop1: util::Word<F>,
+    /// shift[0] / 64, will check if it is equal with high-16 bytes of divisor
+    /// for opcode SHL and SHR
+    shf_div64: Cell<F>,
+    /// shift[0] % 64, will check if it is equal with low-16 bytes of divisor
+    /// for opcode SHL and SHR
+    shf_mod64: Cell<F>,
     /// Gadget that verifies quotient * divisor + remainder = dividend
     mul_add_words: MulAddWordsGadget<F>,
-    /// Check if divisor is zero for opcode DIV, MOD and SHR
-    divisor_is_zero: IsZeroGadget<F>,
-    /// Check if remainder is zero for opcode MUL and SHL
+    /// Check if low-16 bytes of divisor is zero
+    divisor_lo_is_zero: IsZeroGadget<F>,
+    /// Check if high-16 bytes of divisor is zero
+    divisor_hi_is_zero: IsZeroGadget<F>,
+    /// Check if remainder is zero
     remainder_is_zero: IsZeroGadget<F>,
     /// Check if remainder < divisor when divisor != 0
     remainder_lt_divisor: LtWordGadget<F>,
@@ -63,10 +73,14 @@ impl<F: Field> ExecutionGadget<F> for MulDivModShlShrGadget<F> {
         let remainder = cb.query_word();
         let dividend = cb.query_word();
         let pop1 = cb.query_word();
+        let shf_div64 = cb.query_cell();
+        let shf_mod64 = cb.query_cell();
 
         let mul_add_words =
             MulAddWordsGadget::construct(cb, [&quotient, &divisor, &remainder, &dividend]);
-        let divisor_is_zero = IsZeroGadget::construct(cb, sum::expr(&divisor.cells));
+        let divisor_lo_is_zero = IsZeroGadget::construct(cb, sum::expr(&divisor.cells[..16]));
+        let divisor_hi_is_zero = IsZeroGadget::construct(cb, sum::expr(&divisor.cells[16..]));
+        let divisor_is_zero = divisor_lo_is_zero.expr() * divisor_hi_is_zero.expr();
         let remainder_is_zero = IsZeroGadget::construct(cb, sum::expr(&remainder.cells));
         let remainder_lt_divisor = LtWordGadget::construct(cb, &remainder, &divisor);
 
@@ -112,6 +126,37 @@ impl<F: Field> ExecutionGadget<F> for MulDivModShlShrGadget<F> {
                 * (pop1.expr() - pop1.cells[0].expr()),
         );
 
+        // Constrain `divisor_lo = 2^shf_mod64` when `divisor_lo != 0`, and
+        // `divisor_hi = 2^shf_div64` when `divisor_hi != 0` for opcode SHL and SHR.
+        let divisor_lo = from_bytes::expr(&divisor.cells[..16]);
+        let divisor_hi = from_bytes::expr(&divisor.cells[16..]);
+        let is_valid_shf_lo =
+            (is_shl.clone() + is_shr.clone()) * (1.expr() - divisor_lo_is_zero.expr());
+        let is_valid_shf_hi =
+            (is_shl.clone() + is_shr.clone()) * (1.expr() - divisor_hi_is_zero.expr());
+        cb.add_lookup(
+            "Pow2 lookup of shf_mod64 and divisor_lo for opcode SHL and SHR",
+            Lookup::Fixed {
+                tag: FixedTableTag::Pow2.expr(),
+                values: [
+                    select::expr(is_valid_shf_lo.expr(), shf_mod64.expr(), 0.expr()),
+                    select::expr(is_valid_shf_lo.expr(), divisor_lo.expr(), 1.expr()),
+                    0.expr(),
+                ],
+            },
+        );
+        cb.add_lookup(
+            "Pow2 lookup of shf_div64 and divisor_hi for opcode SHL and SHR",
+            Lookup::Fixed {
+                tag: FixedTableTag::Pow2.expr(),
+                values: [
+                    select::expr(is_valid_shf_hi.expr(), shf_div64.expr(), 0.expr()),
+                    select::expr(is_valid_shf_hi.expr(), divisor_hi.expr(), 1.expr()),
+                    0.expr(),
+                ],
+            },
+        );
+
         let gas_cost = is_mul * OpcodeId::MUL.constant_gas_cost().expr()
             + is_div * OpcodeId::DIV.constant_gas_cost().expr()
             + is_mod * OpcodeId::MOD.constant_gas_cost().expr()
@@ -135,8 +180,11 @@ impl<F: Field> ExecutionGadget<F> for MulDivModShlShrGadget<F> {
             remainder,
             dividend,
             pop1,
+            shf_div64,
+            shf_mod64,
             mul_add_words,
-            divisor_is_zero,
+            divisor_lo_is_zero,
+            divisor_hi_is_zero,
             remainder_is_zero,
             remainder_lt_divisor,
         }
@@ -155,8 +203,10 @@ impl<F: Field> ExecutionGadget<F> for MulDivModShlShrGadget<F> {
         let indices = [step.rw_indices[0], step.rw_indices[1], step.rw_indices[2]];
         let [pop1, pop2, push] = indices.map(|idx| block.rws[idx].stack_value());
 
-        // First byte of shift word used for opcode SHL and SHR
+        // Shift values are used for opcode SHL and SHR.
         let shf0 = pop1.to_le_bytes()[0];
+        let shf_div64 = shf0 / 64;
+        let shf_mod64 = shf0 % 64;
 
         let (quotient, divisor, remainder, dividend) = match step.opcode.unwrap() {
             OpcodeId::MUL => (pop1, pop2, U256::from(0), push),
@@ -201,11 +251,18 @@ impl<F: Field> ExecutionGadget<F> for MulDivModShlShrGadget<F> {
         self.dividend
             .assign(region, offset, Some(dividend.to_le_bytes()))?;
         self.pop1.assign(region, offset, Some(pop1.to_le_bytes()))?;
+        self.shf_div64
+            .assign(region, offset, Some(u64::from(shf_div64).into()))?;
+        self.shf_mod64
+            .assign(region, offset, Some(u64::from(shf_mod64).into()))?;
         self.mul_add_words
             .assign(region, offset, [quotient, divisor, remainder, dividend])?;
-        let divisor_sum = (0..32).fold(0, |acc, idx| acc + divisor.byte(idx) as u64);
-        self.divisor_is_zero
-            .assign(region, offset, F::from(divisor_sum))?;
+        let divisor_lo_sum = (0..16).fold(0, |acc, idx| acc + divisor.byte(idx) as u64);
+        let divisor_hi_sum = (16..32).fold(0, |acc, idx| acc + divisor.byte(idx) as u64);
+        self.divisor_lo_is_zero
+            .assign(region, offset, F::from(divisor_lo_sum))?;
+        self.divisor_hi_is_zero
+            .assign(region, offset, F::from(divisor_hi_sum))?;
         let remainder_sum = (0..32).fold(0, |acc, idx| acc + remainder.byte(idx) as u64);
         self.remainder_is_zero
             .assign(region, offset, F::from(remainder_sum))?;
