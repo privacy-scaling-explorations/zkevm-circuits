@@ -183,18 +183,18 @@ impl<F: Field> StackableTable<F> {
     pub(crate) fn lookup_special_chunks(
         &self,
         layouter: &mut impl Layouter<F>,
-        values: &[(AssignedCell<F, F>, AssignedCell<F, F>)],
+        last_chunk: &AssignedCell<F, F>,
+        output_coef: &AssignedCell<F, F>,
     ) -> Result<(), Error> {
         layouter.assign_region(
             || "lookup for special chunks",
             |mut region| {
+                let offset = 0;
                 let tag = F::from(TableTags::SpecialChunk as u64);
-                for (offset, (last_chunk, output_coef)) in values.iter().enumerate() {
-                    self.q_enable.enable(&mut region, offset)?;
-                    region.assign_advice_from_constant(|| "tag", self.tag.0, offset, tag)?;
-                    last_chunk.copy_advice(|| "last chunk", &mut region, self.col1.0, offset)?;
-                    output_coef.copy_advice(|| "output coef", &mut region, self.col2.0, offset)?;
-                }
+                self.q_enable.enable(&mut region, offset)?;
+                region.assign_advice_from_constant(|| "tag", self.tag.0, offset, tag)?;
+                last_chunk.copy_advice(|| "last chunk", &mut region, self.col1.0, offset)?;
+                output_coef.copy_advice(|| "output coef", &mut region, self.col2.0, offset)?;
                 Ok(())
             },
         )
@@ -219,6 +219,7 @@ impl<F: Field, const K: u64> RangeCheckConfig<F, K> {
             },
         )
     }
+    #[allow(dead_code)]
     pub(crate) fn configure(meta: &mut ConstraintSystem<F>) -> Self {
         Self {
             range: meta.lookup_table_column(),

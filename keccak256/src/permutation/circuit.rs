@@ -25,6 +25,7 @@ use std::convert::TryInto;
 #[derive(Clone, Debug)]
 pub struct KeccakFConfig<F: Field> {
     generic: GenericConfig<F>,
+    stackable: StackableTable<F>,
     theta_config: ThetaConfig<F>,
     rho_config: RhoConfig<F>,
     xi_config: XiConfig<F>,
@@ -62,7 +63,8 @@ impl<F: Field> KeccakFConfig<F> {
         // theta
         let theta_config = ThetaConfig::configure(meta.selector(), meta, state);
         // rho
-        let rho_config = RhoConfig::configure(meta, state, fixed, &generic, stackable);
+        let rho_config =
+            RhoConfig::configure(meta, state, fixed, generic.clone(), stackable.clone());
         // xi
         let xi_config = XiConfig::configure(meta.selector(), meta, state);
 
@@ -103,6 +105,7 @@ impl<F: Field> KeccakFConfig<F> {
 
         KeccakFConfig {
             generic,
+            stackable,
             theta_config,
             rho_config,
             xi_config,
@@ -116,6 +119,7 @@ impl<F: Field> KeccakFConfig<F> {
     }
 
     pub fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
+        self.stackable.load(layouter)?;
         self.rho_config.load(layouter)?;
         self.from_b9_table.load(layouter)
     }

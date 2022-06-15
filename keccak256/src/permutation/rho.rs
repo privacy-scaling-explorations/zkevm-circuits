@@ -16,7 +16,7 @@ pub struct RhoConfig<F> {
     lane_config: LaneRotateConversionConfig<F>,
     base13_to_9_table: Base13toBase9TableConfig<F>,
     stackable: StackableTable<F>,
-    sum: SumConfig<F>,
+    generic: GenericConfig<F>,
 }
 
 impl<F: Field> RhoConfig<F> {
@@ -24,7 +24,7 @@ impl<F: Field> RhoConfig<F> {
         meta: &mut ConstraintSystem<F>,
         state: [Column<Advice>; 25],
         fixed: Column<Fixed>,
-        generic: &GenericConfig<F>,
+        generic: GenericConfig<F>,
         stackable: StackableTable<F>,
     ) -> Self {
         state.iter().for_each(|col| meta.enable_equality(*col));
@@ -36,13 +36,13 @@ impl<F: Field> RhoConfig<F> {
             state[0..3].try_into().unwrap(),
             fixed,
             generic.clone(),
+            stackable.clone(),
         );
-        let sum = SumConfig::configure(meta, [state[0], state[1]]);
         Self {
             lane_config,
             base13_to_9_table,
             stackable,
-            sum,
+            generic,
         }
     }
     pub fn assign_rotation_checks(
@@ -78,8 +78,8 @@ impl<F: Field> RhoConfig<F> {
             .iter()
             .flat_map(|(_, _, step3_od)| step3_od.clone())
             .collect::<Vec<_>>();
-        let step2_sum = self.sum.assign_region(layouter, step2_od_join)?;
-        let step3_sum = self.sum.assign_region(layouter, step3_od_join)?;
+        let step2_sum = self.generic.running_sum(layouter, step2_od_join, None)?;
+        let step3_sum = self.generic.running_sum(layouter, step3_od_join, None)?;
         self.stackable.lookup_range_12(layouter, &[step2_sum])?;
         self.stackable.lookup_range_169(layouter, &[step3_sum])?;
         Ok(next_state)
@@ -150,7 +150,7 @@ mod tests {
                     GenericConfig::configure(meta, state[0..3].try_into().unwrap(), fixed);
 
                 let rho_config =
-                    RhoConfig::configure(meta, state, fixed, &generic, stackable.clone());
+                    RhoConfig::configure(meta, state, fixed, generic.clone(), stackable.clone());
 
                 let q_enable = meta.selector();
                 meta.create_gate("Check states", |meta| {

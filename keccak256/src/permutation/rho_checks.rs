@@ -108,7 +108,9 @@ use crate::arith_helpers::*;
 use crate::common::ROTATION_CONSTANTS;
 use crate::gate_helpers::{biguint_to_f, f_to_biguint};
 use crate::permutation::{
-    generic::GenericConfig, rho_helpers::*, tables::Base13toBase9TableConfig,
+    generic::GenericConfig,
+    rho_helpers::*,
+    tables::{Base13toBase9TableConfig, StackableTable},
 };
 use eth_types::Field;
 use halo2_proofs::{
@@ -120,11 +122,11 @@ use halo2_proofs::{
 #[derive(Debug, Clone)]
 pub struct LaneRotateConversionConfig<F> {
     q_normal: Selector,
-    q_special: Selector,
     input_coef: Column<Advice>,
     output_coef: Column<Advice>,
     pub overflow_detector: Column<Advice>,
     generic: GenericConfig<F>,
+    stackable: StackableTable<F>,
 }
 
 impl<F: Field> LaneRotateConversionConfig<F> {
@@ -134,9 +136,9 @@ impl<F: Field> LaneRotateConversionConfig<F> {
         advices: [Column<Advice>; 3],
         constant: Column<Fixed>,
         generic: GenericConfig<F>,
+        stackable: StackableTable<F>,
     ) -> Self {
         let q_normal = meta.complex_selector();
-        let q_special = meta.complex_selector();
         let [input_coef, output_coef, overflow_detector] = advices;
 
         meta.enable_equality(overflow_detector);
@@ -156,11 +158,11 @@ impl<F: Field> LaneRotateConversionConfig<F> {
         });
         Self {
             q_normal,
-            q_special,
             input_coef,
             output_coef,
             overflow_detector,
             generic,
+            stackable,
         }
     }
 
@@ -235,6 +237,16 @@ impl<F: Field> LaneRotateConversionConfig<F> {
                             _ => unreachable!(),
                         }
                     }
+                    // Special chunk
+                    let final_output_coef = region.assign_advice(
+                        || "Special output coef",
+                        self.output_coef,
+                        slices.len(),
+                        || Ok(F::from(special.output_coef as u64)),
+                    )?;
+                    let final_output_pob = F::from(B9 as u64).pow(&[rotation.into(), 0, 0, 0]);
+                    output_coefs.push(final_output_coef);
+                    output_pobs.push(final_output_pob);
 
                     Ok((
                         input_coefs,
@@ -253,26 +265,8 @@ impl<F: Field> LaneRotateConversionConfig<F> {
             .generic
             .sub_advice(layouter, lane_base_13, input_from_chunks)?;
 
-        let (final_output_coef, final_output_pob) = layouter.assign_region(
-            || "special chunks",
-            |mut region| {
-                let offset = 0;
-                self.q_special.enable(&mut region, offset)?;
-                diff.copy_advice(|| "input lane diff", &mut region, self.input_coef, offset)?;
-                let output_coef = region.assign_advice(
-                    || "Special output coef",
-                    self.output_coef,
-                    offset,
-                    || Ok(F::from(special.output_coef as u64)),
-                )?;
-                let final_output_pob = F::from(B9 as u64).pow(&[rotation.into(), 0, 0, 0]);
-                Ok((output_coef, final_output_pob))
-            },
-        )?;
-        let mut output_coefs = output_coefs;
-        output_coefs.push(final_output_coef);
-        let mut output_pobs = output_pobs;
-        output_pobs.push(final_output_pob);
+        self.stackable
+            .lookup_special_chunks(layouter, &diff, output_coefs.last().unwrap())?;
 
         let output_lane =
             self.generic
