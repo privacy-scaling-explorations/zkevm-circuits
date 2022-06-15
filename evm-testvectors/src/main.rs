@@ -112,7 +112,7 @@ fn run_test_suite(tcs: Vec<StateTest>, config: StateTestConfig) -> Result<()> {
         if TEST_IGNORE_LIST.iter().any(|t| id.as_str().contains(t)) {
             return;
         }
-        if results.read().unwrap().contains(&id.as_str()) {
+        if results.read().unwrap().contains(id.as_str()) {
             return;
         }
 
@@ -192,7 +192,7 @@ fn run_bytecode(code: &str, mut bytecode_test_config: BytecodeTestConfig) -> Res
         bytecode
     } else {
         let mut bytecode = bytecode::Bytecode::default();
-        for op in code.split(";") {
+        for op in code.split(';') {
             let op = bytecode::OpcodeWithData::from_str(op.trim()).unwrap();
             bytecode.append_op(op);
         }
@@ -227,7 +227,7 @@ fn main() -> Result<()> {
     };
 
     if let Some(raw) = &args.raw {
-        run_bytecode(&raw, bytecode_test_config)?;
+        run_bytecode(raw, bytecode_test_config)?;
         return Ok(());
     }
 
@@ -242,7 +242,7 @@ fn main() -> Result<()> {
 
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
-    let files = glob::glob(&format!("{}", args.path))
+    let files = glob::glob(&args.path)
         .expect("Failed to read glob pattern")
         .map(|f| f.unwrap())
         .filter(|f| {

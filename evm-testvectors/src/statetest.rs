@@ -111,21 +111,21 @@ impl std::fmt::Display for StateTest {
 
         let format = |v: &str, k: &str| -> String {
             let mut text = String::new();
-            let k = if k.len() == 0 {
+            let k = if k.is_empty() {
                 k.to_string()
             } else {
                 format!("{} :", k)
             };
             let max_len = max_len - k.len();
             for i in 0..=v.len() / max_len {
-                if i == 0 && k.len() > 0 {
+                if i == 0 && !k.is_empty() {
                     text.push_str(&k);
                 } else {
-                    let padding: String = std::iter::repeat(" ").take(k.len()).collect();
+                    let padding: String = " ".repeat(k.len());
                     text.push_str(&padding);
                 }
                 text.push_str(&v[i * max_len..std::cmp::min((i + 1) * max_len, v.len())]);
-                text.push_str("\n");
+                text.push('\n');
             }
             text
         };
@@ -143,7 +143,7 @@ impl std::fmt::Display for StateTest {
         table.add_row(row!["number", format!("{}", self.env.current_number)]);
         table.add_row(row!["timestamp", format!("{}", self.env.current_timestamp)]);
         table.add_row(row!["prev_hash", format!("{:?}", self.env.previous_hash)]);
-        table.add_row(row!["sk", format!("{}", hex::encode(&self.secret_key))]);
+        table.add_row(row!["sk", hex::encode(&self.secret_key)]);
         table.add_row(row!["from", format!("{:?}", self.from)]);
         table.add_row(row!["to", format!("{:?}", self.to)]);
         table.add_row(row!["gas_limit", format!("{}", self.gas_limit)]);
@@ -161,7 +161,7 @@ impl std::fmt::Display for StateTest {
             if let Some(pre) = self.pre.get(addr) {
                 state.insert("balance".to_string(), format!("{}", pre.balance));
                 state.insert("nonce".to_string(), format!("{}", pre.nonce));
-                state.insert("code".to_string(), format!("{}", hex::encode(&pre.code)));
+                state.insert("code".to_string(), hex::encode(&pre.code).to_string());
                 for (key, value) in &pre.storage {
                     let (k, v) = (format!("slot {}", key), format!("{}", value));
                     state.insert(k, v);
@@ -199,7 +199,7 @@ impl std::fmt::Display for StateTest {
             }
             table.add_row(row![format!("{:?}", addr), text]);
         }
-        write!(f, "{}", table.to_string())?;
+        write!(f, "{}", table)?;
 
         Ok(())
     }
@@ -264,7 +264,7 @@ impl StateTest {
     ) -> Result<(), StateTestError> {
         // check if the generated account data is the expected one
         for (address, expected) in post {
-            let (_, actual) = builder.sdb.get_account(&address);
+            let (_, actual) = builder.sdb.get_account(address);
 
             if expected.balance.map(|v| v == actual.balance) == Some(false) {
                 return Err(StateTestError::BalanceMismatch {
@@ -294,11 +294,11 @@ impl StateTest {
                 }
             }
             for (slot, expected_value) in &expected.storage {
-                let actual_value = actual.storage.get(&slot).cloned().unwrap_or(U256::zero());
+                let actual_value = actual.storage.get(slot).cloned().unwrap_or_else(U256::zero);
                 if expected_value != &actual_value {
                     return Err(StateTestError::StorageMismatch {
-                        slot: slot.clone(),
-                        expected: expected_value.clone(),
+                        slot: *slot,
+                        expected: *expected_value,
                         found: actual_value,
                     });
                 }
@@ -322,7 +322,7 @@ impl StateTest {
     }
 
     pub fn geth_trace(self) -> Result<GethExecTrace, StateTestError> {
-        let (_, trace_config, _) = self.clone().into_traceconfig();
+        let (_, trace_config, _) = self.into_traceconfig();
 
         let mut geth_traces = external_tracer::trace(&trace_config)
             .map_err(|err| StateTestError::CircuitInput(err.to_string()))?;

@@ -25,14 +25,14 @@ pub fn encode_funccall(spec: &str) -> Result<Bytes> {
     };
 
     let encode_type = |t, v: &str| match t {
-        &ParamType::Uint(256) => {
-            if v.starts_with("0x") {
-                U256::from_str_radix(&v[2..], 16).map(Token::Uint)
+        ParamType::Uint(256) => {
+            if let Some(hex) = v.strip_prefix("0x") {
+                U256::from_str_radix(hex, 16).map(Token::Uint)
             } else {
                 U256::from_str_radix(v, 10).map(Token::Uint)
             }
         }
-        &ParamType::Bool => match v.to_lowercase().as_str() {
+        ParamType::Bool => match v.to_lowercase().as_str() {
             "true" | "0x01" => Ok(Token::Bool(true)),
             "false" | "0x00" => Ok(Token::Bool(false)),
             _ => panic!("unexpected boolean '{}'", v),
@@ -53,7 +53,7 @@ pub fn encode_funccall(spec: &str) -> Result<Bytes> {
     let args: Vec<Token> = func_params
         .iter()
         .zip(args)
-        .map(|(typ, val)| encode_type(&typ.kind, val))
+        .map(|(typ, val)| encode_type(typ.kind.clone(), val))
         .collect::<std::result::Result<_, _>>()?;
 
     // generate and return calldata

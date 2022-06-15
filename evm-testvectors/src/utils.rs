@@ -44,9 +44,7 @@ pub fn config_bytecode_test_config<OPS: Iterator<Item = OpcodeId>>(
     cfg: &mut BytecodeTestConfig,
     mut ops: OPS,
 ) {
-    let needs_complete_fixed_table = ops
-        .find(|op| OPCODES_NEED_FULL_FIXED_TABLE.contains(op))
-        .is_some();
+    let needs_complete_fixed_table = ops.any(|op| OPCODES_NEED_FULL_FIXED_TABLE.contains(&op));
 
     if needs_complete_fixed_table {
         cfg.evm_circuit_lookup_tags = get_fixed_table(FixedTableConfig::Complete);
@@ -111,7 +109,7 @@ pub fn print_trace(trace: GethExecTrace) -> Result<()> {
             format!("{}", step.gas.0),
             format!("{}", step.gas_cost.0),
             format!("{}", step.depth),
-            step.error.unwrap_or("".to_string()),
+            step.error.unwrap_or_else(|| "".to_string()),
             split(step.stack.0.iter().map(u256_to_str).collect(), 30),
             split(step.memory.0.iter().map(ToString::to_string).collect(), 30),
             split(kv(step.storage.0), 30)

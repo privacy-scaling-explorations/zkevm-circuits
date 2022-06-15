@@ -104,7 +104,8 @@ impl<'a> YamlStateTestBuilder<'a> {
                 .collect::<Result<_>>()?;
 
             // TODO: check handling this
-            let gas_price = Self::parse_u256(&yaml_transaction["gasPrice"]).unwrap_or(U256::one());
+            let gas_price =
+                Self::parse_u256(&yaml_transaction["gasPrice"]).unwrap_or_else(|_| U256::one());
 
             // TODO handle maxPriorityFeePerGas
             // TODO maxFeePerGas
@@ -242,7 +243,7 @@ impl<'a> YamlStateTestBuilder<'a> {
             tags.insert("".to_string(), "".to_string());
         } else {
             while !it.is_empty() {
-                if it.starts_with(":") {
+                if it.starts_with(':') {
                     let tag = &it[..it.find(&[' ', '\n']).expect("unable to find end tag")];
                     it = &it[tag.len() + 1..];
                     let value_len = if tag == ":yul" || tag == ":solidity" {
@@ -263,8 +264,8 @@ impl<'a> YamlStateTestBuilder<'a> {
     /// returns the element as an address
     fn parse_address(yaml: &Yaml) -> Result<Address> {
         if let Some(as_str) = yaml.as_str() {
-            if as_str.starts_with("0x") {
-                Ok(Address::from_slice(&hex::decode(&as_str[2..])?))
+            if let Some(hex) = as_str.strip_prefix("0x") {
+                Ok(Address::from_slice(&hex::decode(hex)?))
             } else {
                 Ok(Address::from_slice(&hex::decode(as_str)?))
             }
@@ -316,15 +317,19 @@ impl<'a> YamlStateTestBuilder<'a> {
             let notag = notag.trim();
             if notag.is_empty() {
                 Ok((Bytes::default(), label))
-            } else if notag.starts_with("{") {
+            } else if notag.starts_with('{') {
                 Ok((self.compiler.lll(notag)?, label))
-            } else if notag.starts_with("0x") {
-                Ok((Bytes::from(hex::decode(&notag[2..])?), label))
+            } else if let Some(hex) = notag.strip_prefix("0x") {
+                Ok((Bytes::from(hex::decode(hex)?), label))
             } else {
                 bail!("do not know what to do with calldata (1): '{:?}'", yaml);
             }
         } else if let Some(raw) = tags.get(":raw") {
-            Ok((Bytes::from(hex::decode(&raw[2..])?), label))
+            if let Some(hex) = raw.strip_prefix("0x") {
+                Ok((Bytes::from(hex::decode(hex)?), label))
+            } else {
+                bail!("bad encoded calldata (3) {:?}", yaml)
+            }
         } else if let Some(abi) = tags.get(":abi") {
             Ok((abi::encode_funccall(abi)?, label))
         } else if let Some(yul) = tags.get(":yul") {
@@ -350,17 +355,21 @@ impl<'a> YamlStateTestBuilder<'a> {
         let tags = Self::decompose_tags(&as_str);
 
         let mut code = if let Some(notag) = tags.get("") {
-            if notag.starts_with("0x") {
-                Bytes::from(hex::decode(&tags[""][2..])?)
+            if let Some(hex) = notag.strip_prefix("0x") {
+                Bytes::from(hex::decode(hex)?)
             } else if notag.starts_with('{') {
                 self.compiler.lll(notag)?
-            } else if notag.trim().len() == 0 {
+            } else if notag.trim().is_empty() {
                 Bytes::default()
             } else {
                 bail!("do not know what to do with code(1) {:?} '{}'", yaml, notag);
             }
         } else if let Some(raw) = tags.get(":raw") {
-            Bytes::from(hex::decode(&raw[2..])?)
+            if let Some(hex) = raw.strip_prefix("0x") {
+                Bytes::from(hex::decode(hex)?)
+            } else {
+                bail!("do not know what to do with code(3) '{:?}'", yaml);
+            }
         } else if let Some(yul) = tags.get(":yul") {
             self.compiler.yul(yul)?
         } else if let Some(solidity) = tags.get(":solidity") {
@@ -371,7 +380,7 @@ impl<'a> YamlStateTestBuilder<'a> {
         };
 
         // TODO: remote the finish with STOP if does not finish with it when fixed
-        if code.0.len() > 0 && code.0[code.0.len() - 1] != OpcodeId::STOP.as_u8() {
+        if !code.0.is_empty() && code.0[code.0.len() - 1] != OpcodeId::STOP.as_u8() {
             let mut code_stop = Vec::new();
             code_stop.extend_from_slice(&code.0);
             code_stop.push(OpcodeId::STOP.as_u8());
@@ -384,8 +393,8 @@ impl<'a> YamlStateTestBuilder<'a> {
     /// parse a hash entry
     fn parse_hash(yaml: &Yaml) -> Result<H256> {
         let value = yaml.as_str().context("not a str")?;
-        if value.starts_with("0x") {
-            Ok(H256::from_slice(&hex::decode(&value[2..])?))
+        if let Some(hex) = value.strip_prefix("0x") {
+            Ok(H256::from_slice(&hex::decode(hex)?))
         } else {
             Ok(H256::from_slice(&hex::decode(value)?))
         }
@@ -462,7 +471,7 @@ impl<'a> YamlStateTestBuilder<'a> {
                 if let Some(label) = tags.get(":label") {
                     // label
                     refs.push(Ref::Label(label.to_string()))
-                } else if as_str.contains("-") {
+                } else if as_str.contains('-') {
                     // range
                     let mut range = as_str.splitn(2, '-');
                     let lo = range.next().unwrap().parse::<usize>()?;

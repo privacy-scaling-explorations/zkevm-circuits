@@ -210,13 +210,13 @@ impl<'a> JsonStateTestBuilder<'a> {
     ) -> Result<HashMap<Address, Account>> {
         let mut accounts = HashMap::new();
         for (address, acc) in accounts_pre {
-            let address = Self::parse_address(&address)?;
+            let address = Self::parse_address(address)?;
             let mut storage = HashMap::new();
             for (k, v) in &acc.storage {
-                storage.insert(Self::parse_u256(&k)?, Self::parse_u256(&v)?);
+                storage.insert(Self::parse_u256(k)?, Self::parse_u256(v)?);
             }
             let account = Account {
-                address: address.clone(),
+                address,
                 balance: Self::parse_u256(&acc.balance)?,
                 nonce: Self::parse_u256(&acc.nonce)?,
                 code: self.parse_code(&acc.code)?,
@@ -234,15 +234,15 @@ impl<'a> JsonStateTestBuilder<'a> {
     ) -> Result<HashMap<Address, AccountMatch>> {
         let mut accounts = HashMap::new();
         for (address, acc) in accounts_post {
-            let address = Self::parse_address(&address)?;
+            let address = Self::parse_address(address)?;
             let mut storage: HashMap<U256, U256> = HashMap::new();
             if let Some(acc_storage) = &acc.storage {
                 for (k, v) in acc_storage {
-                    storage.insert(Self::parse_u256(&k)?, Self::parse_u256(&v)?);
+                    storage.insert(Self::parse_u256(k)?, Self::parse_u256(v)?);
                 }
             }
             let account = AccountMatch {
-                address: address.clone(),
+                address,
                 balance: acc
                     .balance
                     .as_ref()
@@ -271,7 +271,7 @@ impl<'a> JsonStateTestBuilder<'a> {
             tags.insert("".to_string(), "".to_string());
         } else {
             while !it.is_empty() {
-                if it.starts_with(":") {
+                if it.starts_with(':') {
                     let tag = &it[..it.find(&[' ', '\n']).expect("unable to find end tag")];
                     it = &it[tag.len() + 1..];
                     let value_len = if tag == ":yul" || tag == ":solidity" {
@@ -291,9 +291,9 @@ impl<'a> JsonStateTestBuilder<'a> {
     }
     /// returns the element as an address
     fn parse_address(as_str: &str) -> Result<Address> {
-        if as_str.starts_with("0x") {
+        if let Some(hex) = as_str.strip_prefix("0x") {
             Ok(Address::from_slice(
-                &hex::decode(&as_str[2..]).context("parse_address")?,
+                &hex::decode(hex).context("parse_address")?,
             ))
         } else {
             Ok(Address::from_slice(
@@ -312,8 +312,8 @@ impl<'a> JsonStateTestBuilder<'a> {
 
     /// returns the element as an array of bytes
     fn parse_bytes(as_str: &str) -> Result<Bytes> {
-        if let Some(stripped) = as_str.strip_prefix("0x") {
-            Ok(Bytes::from(hex::decode(stripped).context("parse_bytes")?))
+        if let Some(hex) = as_str.strip_prefix("0x") {
+            Ok(Bytes::from(hex::decode(hex).context("parse_bytes")?))
         } else {
             Ok(Bytes::from(hex::decode(as_str).context("parse_bytes")?))
         }
@@ -321,14 +321,14 @@ impl<'a> JsonStateTestBuilder<'a> {
 
     /// parse entry as code, can be 0x, :raw or { LLL }
     fn parse_code(&mut self, as_str: &str) -> Result<Bytes> {
-        let tags = Self::decompose_tags(&as_str);
+        let tags = Self::decompose_tags(as_str);
 
         let mut code = if let Some(notag) = tags.get("") {
             if notag.starts_with("0x") {
                 Bytes::from(hex::decode(&tags[""][2..]).context("parse_code")?)
             } else if notag.starts_with('{') {
                 self.compiler.lll(notag)?
-            } else if notag.trim().len() == 0 {
+            } else if notag.trim().is_empty() {
                 Bytes::default()
             } else {
                 bail!(
@@ -348,7 +348,7 @@ impl<'a> JsonStateTestBuilder<'a> {
         };
 
         // TODO: remote the finish with STOP if does not finish with it when fixed
-        if code.0.len() > 0 && code.0[code.0.len() - 1] != OpcodeId::STOP.as_u8() {
+        if !code.0.is_empty() && code.0[code.0.len() - 1] != OpcodeId::STOP.as_u8() {
             let mut code_stop = Vec::new();
             code_stop.extend_from_slice(&code.0);
             code_stop.push(OpcodeId::STOP.as_u8());
@@ -366,10 +366,10 @@ impl<'a> JsonStateTestBuilder<'a> {
             let notag = notag.trim();
             if notag.is_empty() {
                 Ok(Bytes::default())
-            } else if notag.starts_with("{") {
+            } else if notag.starts_with('{') {
                 Ok(self.compiler.lll(notag)?)
-            } else if notag.starts_with("0x") {
-                Ok(Bytes::from(hex::decode(&notag[2..])?))
+            } else if let Some(hex) = notag.strip_prefix("0x") {
+                Ok(Bytes::from(hex::decode(hex)?))
             } else {
                 bail!("do not know what to do with calldata (1): '{:?}'", as_str);
             }
@@ -390,10 +390,8 @@ impl<'a> JsonStateTestBuilder<'a> {
 
     /// parse a hash entry
     fn parse_hash(value: &str) -> Result<H256> {
-        if value.starts_with("0x") {
-            Ok(H256::from_slice(
-                &hex::decode(&value[2..]).context("parse_hash")?,
-            ))
+        if let Some(hex) = value.strip_prefix("0x") {
+            Ok(H256::from_slice(&hex::decode(hex).context("parse_hash")?))
         } else {
             Ok(H256::from_slice(&hex::decode(value).context("parse_hash")?))
         }

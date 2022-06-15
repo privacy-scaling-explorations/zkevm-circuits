@@ -1,3 +1,5 @@
+#![allow(clippy::map_entry)]
+
 use anyhow::{bail, Context, Result};
 use eth_types::{Bytes, H256};
 use keccak256::plain::Keccak;
@@ -61,18 +63,10 @@ impl Cache {
     }
 }
 
+#[derive(Default)]
 pub struct Compiler {
     cache: Option<Cache>,
     compile: bool,
-}
-
-impl Default for Compiler {
-    fn default() -> Self {
-        Self {
-            cache: None,
-            compile: false,
-        }
-    }
 }
 
 impl Compiler {
@@ -103,7 +97,7 @@ impl Compiler {
 
         if output.status.success() {
             let raw_output = String::from_utf8(output.stdout)?;
-            return Ok(raw_output);
+            Ok(raw_output)
         } else {
             let err = String::from_utf8(output.stderr)?;
             bail!(
@@ -112,7 +106,7 @@ impl Compiler {
                 err,
                 stdin
             )
-        };
+        }
     }
 
     /// compiles LLL code
