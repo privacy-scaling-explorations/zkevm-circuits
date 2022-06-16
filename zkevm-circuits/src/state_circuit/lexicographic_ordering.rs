@@ -73,9 +73,7 @@ use strum_macros::EnumIter;
 // = 480 bits
 
 #[derive(Clone, Copy, Debug, EnumIter)]
-// TODO: unpub this
-// should call this limb index
-pub enum Limb {
+enum LimbIndex {
     Tag,
     Id1,
     Id0,
@@ -125,7 +123,7 @@ impl AsBits<5> for Limb {
 #[derive(Clone, Copy)]
 pub struct Config {
     pub(crate) selector: Column<Fixed>,
-    pub first_different_limb: BinaryNumberConfig<Limb, 5>,
+    pub first_different_limb: BinaryNumberConfig<LimbIndex, 5>,
     limb_difference: Column<Advice>,
     limb_difference_inverse: Column<Advice>,
 }

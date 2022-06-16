@@ -106,7 +106,6 @@ impl<F: Field> ConstraintBuilder<F> {
         self.require_zero("rw_counter is 0 for Start", q.rw_counter.value.clone());
     }
 
-    // 4+ 5 + 1 + 1+ 1 = 12 -> can reduce to 11...
     fn build_memory_constraints(&mut self, q: &Queries<F>) {
         self.require_zero("field_tag is 0 for Memory", q.field_tag());
         self.require_zero("storage_key is 0 for Memory", q.storage_key.encoded.clone());

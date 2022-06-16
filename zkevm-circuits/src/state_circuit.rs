@@ -40,7 +40,7 @@ const N_LIMBS_ID: usize = 2;
 #[derive(Clone, Copy)]
 pub struct StateConfig {
     selector: Column<Fixed>, // Figure out why you get errors when this is Selector.
-    // https://github.com/appliedzkp/zkevm-circuits/issues/407
+    // https://github.com/privacy-scaling-explorations/zkevm-circuits/issues/407
     sort_keys: SortKeysConfig,
     is_write: Column<Advice>,
     value: Column<Advice>,
