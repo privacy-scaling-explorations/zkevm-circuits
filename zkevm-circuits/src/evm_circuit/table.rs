@@ -27,6 +27,37 @@ impl<F: FieldExt, const W: usize> LookupTable<F> for [Column<Fixed>; W] {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
+pub enum CopyDataTag {
+    Memory,
+    Bytecode,
+    TxCalldata,
+    TxLog,
+}
+
+impl CopyDataTag {
+    pub fn pairs<F: FieldExt>(tag: F) -> Box<dyn Iterator<Item = [F; 4]>> {
+        Box::new(
+            [
+                // calldatacopy (internal)
+                (CopyDataTag::Memory, CopyDataTag::Memory),
+                // calldatacopy (root)
+                (CopyDataTag::TxCalldata, CopyDataTag::Memory),
+                // create/create2 (internal)
+                (CopyDataTag::Memory, CopyDataTag::Bytecode),
+                // create/create2 (root)
+                (CopyDataTag::TxCalldata, CopyDataTag::Bytecode),
+                // codecopy/extcodecopy
+                (CopyDataTag::Bytecode, CopyDataTag::Memory),
+                // log
+                (CopyDataTag::Memory, CopyDataTag::TxLog),
+            ]
+            .iter()
+            .map(move |(src, dst)| [tag, F::from(*src as u64), F::from(*dst as u64), F::zero()]),
+        )
+    }
+}
+
 #[derive(Clone, Copy, Debug, EnumIter)]
 pub enum FixedTableTag {
     Zero = 0,
@@ -43,6 +74,7 @@ pub enum FixedTableTag {
     BitwiseXor,
     ResponsibleOpcode,
     Pow2,
+    CopyPairs,
 }
 
 impl FixedTableTag {
@@ -111,6 +143,7 @@ impl FixedTableTag {
                     F::zero(),
                 ]
             })),
+            Self::CopyPairs => CopyDataTag::pairs(tag),
         }
     }
 }
