@@ -202,7 +202,6 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
         });
 
         // Check hash of a leaf to be state root when leaf without branch.
-        // TODO: prepare test
         // Note 1: first level branch compared to root in branch_hash_in_parent.
         // Note 2: placeholder account leaf can appear in the first level, in this
         // case it will be positioned after placeholder branch (because there is always
@@ -247,7 +246,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
         meta.lookup_any("account_leaf_storage_codehash: hash of a leaf", |meta| {
             let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
 
-            let mut is_account_leaf_storage_codehash =
+            let is_account_leaf_storage_codehash =
                 meta.query_advice(is_account_leaf_storage_codehash, Rotation::cur());
 
             // Placeholder leaf appears when a new account is created (and no existing leaf

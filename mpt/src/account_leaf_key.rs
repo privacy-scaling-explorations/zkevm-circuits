@@ -220,7 +220,6 @@ impl<F: FieldExt> AccountLeafKeyChip<F> {
             },
         );
 
-        // TODO: prepare test
         meta.create_gate("Account leaf address RLC (leaf in first level)", |meta| {
             let q_enable = q_enable(meta);
             let mut constraints = vec![];
@@ -292,7 +291,6 @@ impl<F: FieldExt> AccountLeafKeyChip<F> {
                 - meta.query_advice(not_first_level, Rotation(rot_into_first_branch_child));
             let is_account_in_first_level =
                 one.clone() - meta.query_advice(not_first_level, Rotation::cur());
-            let no_prev_key_rlc = is_branch_in_first_level + is_account_in_first_level;
             // If account is in the first level or the branch above the account leaf is in
             // the first level, there is no branch a level above from where the
             // key_rlc could be copied.
@@ -304,11 +302,11 @@ impl<F: FieldExt> AccountLeafKeyChip<F> {
             // causes ConstraintPoisened
 
             // key_rlc_mult_prev_level = 1 if no_prev_key_rlc
-            let key_rlc_mult_prev_level = (one.clone() - no_prev_key_rlc.clone())
+            let key_rlc_mult_prev_level = (one.clone() - is_branch_in_first_level.clone())
                 * meta.query_advice(key_rlc_mult, Rotation(rot_into_prev_branch))
-                + no_prev_key_rlc.clone();
+                + is_branch_in_first_level.clone();
             // key_rlc_prev_level = 0 if no_prev_key_rlc
-            let key_rlc_prev_level = (one.clone() - no_prev_key_rlc)
+            let key_rlc_prev_level = (one.clone() - is_branch_in_first_level.clone())
                 * meta.query_advice(key_rlc, Rotation(rot_into_prev_branch));
 
             let rlc_prev = meta.query_advice(key_rlc_prev, Rotation::cur());
@@ -316,11 +314,11 @@ impl<F: FieldExt> AccountLeafKeyChip<F> {
 
             constraints.push((
                 "Previous key RLC",
-                q_enable.clone() * (rlc_prev - key_rlc_prev_level),
+                q_enable.clone() * (one.clone() - is_account_in_first_level.clone()) * (rlc_prev - key_rlc_prev_level),
             ));
             constraints.push((
                 "Previous key RLC mult",
-                q_enable * (mult_prev - key_rlc_mult_prev_level),
+                q_enable * (one.clone() - is_account_in_first_level) * (mult_prev - key_rlc_mult_prev_level),
             ));
 
             constraints

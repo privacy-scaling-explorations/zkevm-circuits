@@ -1645,6 +1645,14 @@ impl<F: FieldExt> MPTConfig<F> {
                             pv.before_account_leaf = false;
                         }
 
+                        let q_not_first = if ind == 0 { F::zero() } else { F::one() };
+                         region.assign_fixed(
+                             || "not first",
+                             self.q_not_first,
+                             offset,
+                             || Ok(q_not_first),
+                         )?;
+
                         region.assign_advice(
                             || "not first level",
                             self.not_first_level,
@@ -1810,21 +1818,6 @@ impl<F: FieldExt> MPTConfig<F> {
                                 || Ok(F::one()),
                             )?;
 
-                            if ind == 0 {
-                                region.assign_fixed(
-                                    || "not first",
-                                    self.q_not_first,
-                                    offset,
-                                    || Ok(F::zero()),
-                                )?;
-                            } else {
-                                region.assign_fixed(
-                                    || "not first",
-                                    self.q_not_first,
-                                    offset,
-                                    || Ok(F::one()),
-                                )?;
-                            }
                             self.assign_branch_init(
                                 &mut region,
                                 &row[0..row.len() - 1].to_vec(),
@@ -1905,13 +1898,6 @@ impl<F: FieldExt> MPTConfig<F> {
                             region.assign_fixed(
                                 || "q_enable",
                                 self.q_enable,
-                                offset,
-                                || Ok(F::one()),
-                            )?;
-
-                            region.assign_fixed(
-                                || "not first",
-                                self.q_not_first,
                                 offset,
                                 || Ok(F::one()),
                             )?;
@@ -2262,12 +2248,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                 offset,
                                 || Ok(F::one()),
                             )?;
-                            region.assign_fixed(
-                                || "not first",
-                                self.q_not_first,
-                                offset,
-                                || Ok(F::one()),
-                            )?;
+                            
                             let mut is_leaf_s = false;
                             let mut is_leaf_s_value = false;
                             let mut is_leaf_c = false;
