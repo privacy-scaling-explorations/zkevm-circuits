@@ -24,6 +24,7 @@ enum TableTags {
     Range12 = 0,
     Range169,
     SpecialChunk,
+    BooleanFlag,
 }
 
 #[derive(Debug, Clone)]
@@ -121,6 +122,22 @@ impl<F: Field> StackableTable<F> {
         }
         Ok(offset)
     }
+
+    fn load_boolean_flag(&self, table: &mut Table<F>, offset: usize) -> Result<usize, Error> {
+        let mut offset = offset;
+        for (left, right) in [(true, false), (false, true)] {
+            table.assign_cell(
+                || "tag boolean flag",
+                self.tag.1,
+                offset,
+                || Ok(F::from(TableTags::BooleanFlag as u64)),
+            )?;
+            table.assign_cell(|| "left", self.col1.1, offset, || Ok(F::from(left)))?;
+            table.assign_cell(|| "right", self.col2.1, offset, || Ok(F::from(right)))?;
+            offset += 1;
+        }
+        Ok(offset)
+    }
     pub(crate) fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
         layouter.assign_table(
             || "stackable",
@@ -135,6 +152,7 @@ impl<F: Field> StackableTable<F> {
                     offset = self.load_range(&mut table, offset, tag, k)?;
                 }
                 self.load_special_chunks(&mut table, offset)?;
+                self.load_boolean_flag(&mut table, offset)?;
                 Ok(())
             },
         )
@@ -196,6 +214,40 @@ impl<F: Field> StackableTable<F> {
                 last_chunk.copy_advice(|| "last chunk", &mut region, self.col1.0, offset)?;
                 output_coef.copy_advice(|| "output coef", &mut region, self.col2.0, offset)?;
                 Ok(())
+            },
+        )
+    }
+    /// Output two boolean cells. Prover can choose to enable one and disable
+    /// another, but not both.
+    pub(crate) fn assign_boolean_flag(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        is_left: Option<bool>,
+    ) -> Result<(AssignedCell<F, F>, AssignedCell<F, F>), Error> {
+        layouter.assign_region(
+            || "lookup for boolean flag",
+            |mut region| {
+                let offset = 0;
+                self.q_enable.enable(&mut region, offset)?;
+                region.assign_advice_from_constant(
+                    || "tag",
+                    self.tag.0,
+                    offset,
+                    F::from(TableTags::BooleanFlag as u64),
+                )?;
+                let left = region.assign_advice(
+                    || "left",
+                    self.col1.0,
+                    offset,
+                    || is_left.map(|flag| F::from(flag)).ok_or(Error::Synthesis),
+                )?;
+                let right = region.assign_advice(
+                    || "right",
+                    self.col2.0,
+                    offset,
+                    || is_left.map(|flag| F::from(!flag)).ok_or(Error::Synthesis),
+                )?;
+                Ok((left, right))
             },
         )
     }
