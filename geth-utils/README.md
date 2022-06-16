@@ -1,6 +1,6 @@
 # Go Ethereum Utility
 
-The module `gethutil` tried to provide identical output from APIs `debug_trace*` of latest `geth` as test vectors for [`zkevm-circuits`](https://github.com/appliedzkp/zkevm-circuits).
+The module `gethutil` tried to provide identical output from APIs `debug_trace*` of latest `geth` as test vectors for [`zkevm-circuits`](https://github.com/privacy-scaling-explorations/zkevm-circuits).
 
 ## Usage
 
