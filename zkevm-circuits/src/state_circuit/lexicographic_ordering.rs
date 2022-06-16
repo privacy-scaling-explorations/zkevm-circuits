@@ -172,7 +172,7 @@ impl Config {
             for (limb, e) in Limb::iter().zip(limb_difference_possible_values(cur, prev)) {
                 constraints.push(
                     selector.clone()
-                        * first_different_limb.value_equals(&limb, Rotation::cur())(meta)
+                        * first_different_limb.value_equals(limb, Rotation::cur())(meta)
                         * e,
                 )
             }
@@ -193,7 +193,7 @@ impl Config {
                 {
                     constraints.push(
                         selector.clone()
-                            * first_different_limb.value_equals(&limb, Rotation::cur())(meta)
+                            * first_different_limb.value_equals(limb, Rotation::cur())(meta)
                             * (limb_difference.clone() - cur_expression + prev_expression),
                     );
                 }
@@ -231,7 +231,7 @@ impl Config {
             find_result.expect("repeated rw counter")
         };
 
-        BinaryNumberChip::construct(self.first_different_limb).assign(region, offset, index)?;
+        BinaryNumberChip::construct(self.first_different_limb).assign(region, offset, &index)?;
 
         let limb_difference = F::from(*cur_limb as u64) - F::from(*prev_limb as u64);
         region.assign_advice(
