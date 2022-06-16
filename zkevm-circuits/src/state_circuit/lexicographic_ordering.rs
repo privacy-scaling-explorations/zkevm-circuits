@@ -1,6 +1,9 @@
-use super::{N_LIMBS_ACCOUNT_ADDRESS, N_LIMBS_ID, N_LIMBS_RW_COUNTER};
+use super::{
+    binary_number::Config as BinaryNumberConfig, N_LIMBS_ACCOUNT_ADDRESS, N_LIMBS_ID,
+    N_LIMBS_RW_COUNTER,
+};
 use crate::{
-    evm_circuit::{param::N_BYTES_WORD, witness::Rw},
+    evm_circuit::{param::N_BYTES_WORD, table::RwTableTag, witness::Rw},
     util::Expr,
 };
 use eth_types::{Field, ToBigEndian};
@@ -76,7 +79,7 @@ pub struct Config<F: Field> {
     lower_limb_difference: Column<Advice>,
     lower_limb_difference_is_zero: IsZeroConfig<F>,
     // TODO: remove these columns from the config
-    tag: Column<Advice>,
+    tag: BinaryNumberConfig<RwTableTag, 4>,
     field_tag: Column<Advice>,
     id_limbs: [Column<Advice>; N_LIMBS_ID],
     address_limbs: [Column<Advice>; N_LIMBS_ACCOUNT_ADDRESS],
@@ -97,7 +100,7 @@ impl<F: Field> Chip<F> {
     // TODO: fix this to not have too many arguments?
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
-        tag: Column<Advice>,
+        tag: BinaryNumberConfig<RwTableTag, 4>,
         field_tag: Column<Advice>,
         id_limbs: [Column<Advice>; N_LIMBS_ID],
         address_limbs: [Column<Advice>; N_LIMBS_ACCOUNT_ADDRESS],
@@ -282,9 +285,10 @@ struct Queries<F: Field> {
 
 impl<F: Field> Queries<F> {
     fn new(meta: &mut VirtualCells<'_, F>, config: &Config<F>, rotation: Rotation) -> Self {
+        let tag = config.tag.value(rotation)(meta);
         let mut query_advice = |column| meta.query_advice(column, rotation);
         Self {
-            tag: query_advice(config.tag),
+            tag,
             field_tag: query_advice(config.field_tag),
             id_limbs: config.id_limbs.map(&mut query_advice),
             address_limbs: config.address_limbs.map(&mut query_advice),
