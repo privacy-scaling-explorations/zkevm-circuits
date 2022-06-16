@@ -1240,7 +1240,7 @@ impl<F: Field> MulAddWords512Gadget<F> {
             );
         } else {
             cb.require_equal(
-                "(t0 + t1 ⋅ 2^64) + carry_0 ⋅ 2^128",
+                "(t0 + t1 ⋅ 2^64) == e_lo + carry_0 ⋅ 2^128",
                 t0.expr() + t1.expr() * pow_of_two_expr(64),
                 e_lo + carry_0_expr.clone() * pow_of_two_expr(128),
             );
