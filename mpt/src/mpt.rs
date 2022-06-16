@@ -162,6 +162,7 @@ pub enum FixedTableTag {
     RangeKeyLen256,
 }
 
+#[derive(Default)]
 struct ProofVariables<F> {
     modified_node: u8,
     s_mod_node_hash_rlc: F,
@@ -208,46 +209,14 @@ struct ProofVariables<F> {
 }
 
 impl<F: FieldExt> ProofVariables<F> {
-    fn new() -> ProofVariables<F> {
-        ProofVariables {
-            modified_node: 0,
-            s_mod_node_hash_rlc: F::zero(),
-            c_mod_node_hash_rlc: F::zero(),
-            node_index: 0,
-            acc_s: F::zero(),
-            acc_mult_s: F::zero(),
-            acc_account_s: F::zero(),
-            acc_mult_account_s: F::zero(),
-            acc_account_c: F::zero(),
-            acc_mult_account_c: F::zero(),
-            acc_nonce_balance_s: F::zero(),
-            acc_mult_nonce_balance_s: F::zero(),
-            acc_nonce_balance_c: F::zero(),
-            acc_mult_nonce_balance_c: F::zero(),
-            acc_c: F::zero(),
-            acc_mult_c: F::zero(),
-            key_rlc: F::zero(),
+    fn new() -> Self {
+        Self {
             key_rlc_mult: F::one(),
-            extension_node_rlc: F::zero(),
-            key_rlc_prev: F::zero(),
             key_rlc_mult_prev: F::one(),
             mult_diff: F::one(),
             key_rlc_sel: true,
-            is_branch_s_placeholder: false,
-            is_branch_c_placeholder: false,
-            drifted_pos: 0,
-            rlp_len_rem_s: 0,
-            rlp_len_rem_c: 0,
-            is_extension_node: false,
-            is_even: false,
-            is_odd: false,
-            is_short: false,
-            is_long: false,
-            rlc1: F::zero(),
-            rlc2: F::zero(),
-            nonce_value_s: F::zero(),
-            balance_value_s: F::zero(),
             before_account_leaf: true,
+            ..Default::default()
         }
     }
 }
