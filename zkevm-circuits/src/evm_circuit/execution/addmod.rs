@@ -80,7 +80,8 @@ impl<F: Field> ExecutionGadget<F> for AddModGadget<F> {
         let sum_areduced_b_overflow = cb.query_word();
         let muladd_d_n_r = MulAddWords512Gadget::construct(
             cb,
-            [&d, &n, &r, &sum_areduced_b_overflow, sum_areduced_b.sum()],
+            [&d, &n, &sum_areduced_b_overflow, sum_areduced_b.sum()],
+            Some(&r),
         );
 
         cb.require_equal(
@@ -203,7 +204,8 @@ impl<F: Field> ExecutionGadget<F> for AddModGadget<F> {
         self.muladd_d_n_r.assign(
             region,
             offset,
-            [d, n, r, a_reduced_plus_b_overflow, a_reduced_plus_b],
+            [d, n, a_reduced_plus_b, a_reduced_plus_b_overflow],
+            Some(r),
         )?;
 
         self.cmp_r_n.assign(region, offset, r, n)?;
@@ -255,7 +257,7 @@ mod test {
     #[test]
     fn addmod_simple() {
         assert!(test_u32(1, 1, 10, None));
-        assert!(test_u32(1, 1, 10, None));
+        assert!(test_u32(1, 1, 11, None));
     }
 
     #[test]

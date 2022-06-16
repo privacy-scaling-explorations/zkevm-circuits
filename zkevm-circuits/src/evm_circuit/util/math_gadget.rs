@@ -1242,9 +1242,9 @@ impl<F: Field> CmpWordsGadget<F> {
 /// and allocate 9 bytes for them each
 ///
 /// Finally we just prove:
-///   t0 + t1 * 2^64 + c_lo = e_lo + carry_0
-///   t2 + t3 * 2^64 + c_hi + carry_0 = e_hi + carry_1
-///   t4 + t5 * 2^64 + carry_1 = d_lo + carry_2
+//   t0 + t1 * 2^64 + c_lo = e_lo + carry_0 * 2^128
+///   t2 + t3 * 2^64 + c_hi + carry_0 = e_hi + carry_1 * 2^128
+///   t4 + t5 * 2^64 + carry_1 = d_lo + carry_2 * 2^128
 ///   t6 + carry_2 = d_hi
 #[derive(Clone, Debug)]
 pub(crate) struct MulAddWords512Gadget<F> {
@@ -1254,7 +1254,13 @@ pub(crate) struct MulAddWords512Gadget<F> {
 }
 
 impl<F: Field> MulAddWords512Gadget<F> {
-    pub(crate) fn construct(cb: &mut ConstraintBuilder<F>, words: [&util::Word<F>; 5]) -> Self {
+    /// words argument is: a, b, d, e
+    /// Addend is the optional c.
+    pub(crate) fn construct(
+        cb: &mut ConstraintBuilder<F>,
+        words: [&util::Word<F>; 4],
+        addend: Option<&util::Word<F>>,
+    ) -> Self {
         let carry_0 = cb.query_bytes();
         let carry_1 = cb.query_bytes();
         let carry_2 = cb.query_bytes();
@@ -1271,12 +1277,10 @@ impl<F: Field> MulAddWords512Gadget<F> {
             b_limbs.push(from_bytes::expr(&words[1].cells[idx..idx + 8]));
         }
 
-        let c_lo = from_bytes::expr(&words[2].cells[0..16]);
-        let c_hi = from_bytes::expr(&words[2].cells[16..32]);
-        let d_lo = from_bytes::expr(&words[3].cells[0..16]);
-        let d_hi = from_bytes::expr(&words[3].cells[16..32]);
-        let e_lo = from_bytes::expr(&words[4].cells[0..16]);
-        let e_hi = from_bytes::expr(&words[4].cells[16..32]);
+        let d_lo = from_bytes::expr(&words[2].cells[0..16]);
+        let d_hi = from_bytes::expr(&words[2].cells[16..32]);
+        let e_lo = from_bytes::expr(&words[3].cells[0..16]);
+        let e_hi = from_bytes::expr(&words[3].cells[16..32]);
 
         // Limb multiplication
         let t0 = a_limbs[0].clone() * b_limbs[0].clone();
@@ -1294,17 +1298,33 @@ impl<F: Field> MulAddWords512Gadget<F> {
         let t5 = a_limbs[2].clone() * b_limbs[3].clone() + a_limbs[3].clone() * b_limbs[2].clone();
         let t6 = a_limbs[3].clone() * b_limbs[3].clone();
 
-        cb.require_equal(
-            "(t0 + t1 ⋅ 2^64) + c_lo == e_lo + carry_0 ⋅ 2^128",
-            t0.expr() + t1.expr() * pow_of_two_expr(64) + c_lo,
-            e_lo + carry_0_expr.clone() * pow_of_two_expr(128),
-        );
+        if let Some(c) = addend {
+            let c_lo = from_bytes::expr(&c.cells[0..16]);
+            let c_hi = from_bytes::expr(&c.cells[16..32]);
+            cb.require_equal(
+                "(t0 + t1 ⋅ 2^64) + c_lo == e_lo + carry_0 ⋅ 2^128",
+                t0.expr() + t1.expr() * pow_of_two_expr(64) + c_lo,
+                e_lo + carry_0_expr.clone() * pow_of_two_expr(128),
+            );
 
-        cb.require_equal(
-            "(t2 + t3 ⋅ 2^64) + c_hi + carry_0 == e_hi + carry_1 ⋅ 2^128",
-            t2.expr() + t3.expr() * pow_of_two_expr(64) + c_hi + carry_0_expr,
-            e_hi + carry_1_expr.clone() * pow_of_two_expr(128),
-        );
+            cb.require_equal(
+                "(t2 + t3 ⋅ 2^64) + c_hi + carry_0 == e_hi + carry_1 ⋅ 2^128",
+                t2.expr() + t3.expr() * pow_of_two_expr(64) + c_hi + carry_0_expr,
+                e_hi + carry_1_expr.clone() * pow_of_two_expr(128),
+            );
+        } else {
+            cb.require_equal(
+                "(t0 + t1 ⋅ 2^64) == e_lo + carry_0 ⋅ 2^128",
+                t0.expr() + t1.expr() * pow_of_two_expr(64),
+                e_lo + carry_0_expr.clone() * pow_of_two_expr(128),
+            );
+
+            cb.require_equal(
+                "(t2 + t3 ⋅ 2^64) + carry_0 == e_hi + carry_1 ⋅ 2^128",
+                t2.expr() + t3.expr() * pow_of_two_expr(64) + carry_0_expr,
+                e_hi + carry_1_expr.clone() * pow_of_two_expr(128),
+            );
+        }
 
         cb.require_equal(
             "(t4 + t5 ⋅ 2^64) + carry_1 == d_lo + carry_2 ⋅ 2^128",
@@ -1325,13 +1345,13 @@ impl<F: Field> MulAddWords512Gadget<F> {
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        words: [Word; 5],
+        words: [Word; 4],
+        addend: Option<Word>,
     ) -> Result<(), Error> {
-        let (a, b, c, d, e) = (words[0], words[1], words[2], words[3], words[4]);
+        let (a, b, d, e) = (words[0], words[1], words[2], words[3]);
 
         let a_limbs = split_u256_limb64(&a);
         let b_limbs = split_u256_limb64(&b);
-        let (c_lo, c_hi) = split_u256(&c);
         let (d_lo, _d_hi) = split_u256(&d);
         let (e_lo, e_hi) = split_u256(&e);
 
@@ -1346,8 +1366,16 @@ impl<F: Field> MulAddWords512Gadget<F> {
         let t4 = a_limbs[1] * b_limbs[3] + a_limbs[2] * b_limbs[2] + a_limbs[3] * b_limbs[1];
         let t5 = a_limbs[2] * b_limbs[3] + a_limbs[3] * b_limbs[2];
 
-        let carry_0 = ((t0 + (t1 << 64) + c_lo).saturating_sub(e_lo)) >> 128;
-        let carry_1 = ((t2 + (t3 << 64) + c_hi + carry_0).saturating_sub(e_hi)) >> 128;
+        let (carry_0, carry_1) = if let Some(c) = addend {
+            let (c_lo, c_hi) = split_u256(&c);
+            let carry_0 = ((t0 + (t1 << 64) + c_lo).saturating_sub(e_lo)) >> 128;
+            let carry_1 = ((t2 + (t3 << 64) + c_hi + carry_0).saturating_sub(e_hi)) >> 128;
+            (carry_0, carry_1)
+        } else {
+            let carry_0 = ((t0 + (t1 << 64)).saturating_sub(e_lo)) >> 128;
+            let carry_1 = ((t2 + (t3 << 64) + carry_0).saturating_sub(e_hi)) >> 128;
+            (carry_0, carry_1)
+        };
         let carry_2 = ((t4 + (t5 << 64) + carry_1).saturating_sub(d_lo)) >> 128;
 
         self.carry_0
@@ -1367,6 +1395,92 @@ impl<F: Field> MulAddWords512Gadget<F> {
             .zip(carry_2.to_le_bytes().iter())
             .map(|(cell, byte)| cell.assign(region, offset, Some(F::from(*byte as u64))))
             .collect::<Result<Vec<_>, _>>()?;
+        Ok(())
+    }
+}
+
+/// Constraints the words a, n, r such that:
+/// a mod n = r, if n!=0
+/// r = 0,       if n==0
+///
+/// We use the auxiliary a_or_zero word, whose value is constrained to be: a if
+/// n!=0, 0 if n==0. This allows to use the equation k * n + r = a_or_zero to
+/// verify the modulus, which holds with r=0 in the case of n=0. Unlike the
+/// usual k * n + r = a, which forces r = a when n=0, this equation assures that
+/// r<n or r=n=0.
+#[derive(Clone, Debug)]
+pub(crate) struct ModGadget<F> {
+    k: util::Word<F>,
+    a_or_zero: util::Word<F>,
+    mul: MulAddWordsGadget<F>,
+    n_is_zero: IsZeroGadget<F>,
+    a_or_is_zero: IsZeroGadget<F>,
+    eq: IsEqualGadget<F>,
+    lt: LtWordGadget<F>,
+}
+impl<F: Field> ModGadget<F> {
+    pub(crate) fn construct(cb: &mut ConstraintBuilder<F>, words: [&util::Word<F>; 3]) -> Self {
+        let (a, n, r) = (words[0], words[1], words[2]);
+        let k = cb.query_word();
+        let a_or_zero = cb.query_word();
+        let n_is_zero = IsZeroGadget::construct(cb, sum::expr(&n.cells));
+        let a_or_is_zero = IsZeroGadget::construct(cb, sum::expr(&a_or_zero.cells));
+        let mul = MulAddWordsGadget::construct(cb, [&k, n, r, &a_or_zero]);
+        let eq = IsEqualGadget::construct(cb, a.expr(), a_or_zero.expr());
+        let lt = LtWordGadget::construct(cb, r, n);
+        // Constraint the aux variable a_or_zero to be =a or =0 if n==0:
+        // (a == a_zero) ^ (n == 0 & a_or_zero == 0)
+        cb.add_constraint(
+            " (1 - (a == a_or_zero)) * ( 1 - (n == 0) * (a_or_zero == 0)",
+            (1.expr() - eq.expr()) * (1.expr() - n_is_zero.expr() * a_or_is_zero.expr()),
+        );
+
+        // Constrain the result r to be valid: (r<n) ^ n==0
+        cb.add_constraint(
+            " (1 - (r<n) - (n==0) ",
+            1.expr() - lt.expr() - n_is_zero.expr(),
+        );
+
+        Self {
+            k,
+            a_or_zero,
+            mul,
+            n_is_zero,
+            a_or_is_zero,
+            eq,
+            lt,
+        }
+    }
+
+    pub(crate) fn assign(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+        a: Word,
+        n: Word,
+        r: Word,
+        randomness: F,
+    ) -> Result<(), Error> {
+        let k = if n.is_zero() { Word::zero() } else { a / n };
+        let a_or_zero = if n.is_zero() { Word::zero() } else { a };
+
+        self.k.assign(region, offset, Some(k.to_le_bytes()))?;
+        self.a_or_zero
+            .assign(region, offset, Some(a_or_zero.to_le_bytes()))?;
+        let n_sum = (0..32).fold(0, |acc, idx| acc + n.byte(idx) as u64);
+        let a_or_zero_sum = (0..32).fold(0, |acc, idx| acc + a_or_zero.byte(idx) as u64);
+        self.n_is_zero.assign(region, offset, F::from(n_sum))?;
+        self.a_or_is_zero
+            .assign(region, offset, F::from(a_or_zero_sum))?;
+        self.mul.assign(region, offset, [k, n, r, a_or_zero])?;
+        self.lt.assign(region, offset, r, n)?;
+        self.eq.assign(
+            region,
+            offset,
+            util::Word::random_linear_combine(a.to_le_bytes(), randomness),
+            util::Word::random_linear_combine(a_or_zero.to_le_bytes(), randomness),
+        )?;
+
         Ok(())
     }
 }
