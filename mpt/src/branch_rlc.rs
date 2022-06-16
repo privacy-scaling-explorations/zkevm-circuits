@@ -5,7 +5,7 @@ use halo2_proofs::{
 use eth_types::Field;
 use std::marker::PhantomData;
 
-use crate::param::{HASH_WIDTH, R_TABLE_LEN};
+use crate::{param::{HASH_WIDTH, R_TABLE_LEN}, mpt::MainCols};
 
 #[derive(Clone, Debug)]
 pub(crate) struct BranchRLCConfig<F> {
@@ -18,8 +18,7 @@ impl<F: Field> BranchRLCConfig<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         q_enable: impl FnOnce(&mut VirtualCells<'_, F>) -> Expression<F>,
-        rlp2: Column<Advice>,
-        advices: [Column<Advice>; HASH_WIDTH],
+        main: MainCols,
         branch_acc: Column<Advice>,
         branch_mult: Column<Advice>,
         r_table: Vec<Expression<F>>,
@@ -30,7 +29,7 @@ impl<F: Field> BranchRLCConfig<F> {
             let q_enable = q_enable(meta);
 
             let mut constraints = vec![];
-            let rlp2 = meta.query_advice(rlp2, Rotation::cur());
+            let rlp2 = meta.query_advice(main.rlp2, Rotation::cur());
             let branch_acc_prev = meta.query_advice(branch_acc, Rotation::prev());
             let branch_acc_cur = meta.query_advice(branch_acc, Rotation::cur());
             let branch_mult_prev = meta.query_advice(branch_mult, Rotation::prev());
@@ -58,7 +57,7 @@ impl<F: Field> BranchRLCConfig<F> {
 
             // non-empty
             let mut expr = c160 * branch_mult_prev.clone();
-            for (ind, col) in advices.iter().enumerate() {
+            for (ind, col) in main.bytes.iter().enumerate() {
                 let s = meta.query_advice(*col, Rotation::cur());
                 expr = expr + s * branch_mult_prev.clone() * r_table[ind].clone();
             }

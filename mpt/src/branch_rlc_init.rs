@@ -6,7 +6,7 @@ use eth_types::Field;
 use std::marker::PhantomData;
 use crate::{
     helpers::range_lookups,
-    mpt::FixedTableTag,
+    mpt::{FixedTableTag, MainCols},
     param::HASH_WIDTH,
 };
 
@@ -23,9 +23,7 @@ impl<F: Field> BranchRLCInitConfig<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         q_enable: impl Fn(&mut VirtualCells<'_, F>) -> Expression<F> + Copy,
-        s_rlp1: Column<Advice>,
-        s_rlp2: Column<Advice>,
-        s_advices: [Column<Advice>; HASH_WIDTH],
+        s_main: MainCols,
         acc_s: Column<Advice>,
         acc_mult_s: Column<Advice>,
         acc_c: Column<Advice>,
@@ -54,11 +52,11 @@ impl<F: Field> BranchRLCInitConfig<F> {
             let branch_mult_s_cur = meta.query_advice(acc_mult_s, Rotation::cur());
             let branch_mult_c_cur = meta.query_advice(acc_mult_c, Rotation::cur());
 
-            let two_rlp_bytes_s = meta.query_advice(s_rlp1, Rotation::cur());
-            let three_rlp_bytes_s = meta.query_advice(s_rlp2, Rotation::cur());
+            let two_rlp_bytes_s = meta.query_advice(s_main.rlp1, Rotation::cur());
+            let three_rlp_bytes_s = meta.query_advice(s_main.rlp2, Rotation::cur());
 
-            let two_rlp_bytes_c = meta.query_advice(s_advices[0], Rotation::cur());
-            let three_rlp_bytes_c = meta.query_advice(s_advices[1], Rotation::cur());
+            let two_rlp_bytes_c = meta.query_advice(s_main.bytes[0], Rotation::cur());
+            let three_rlp_bytes_c = meta.query_advice(s_main.bytes[1], Rotation::cur());
 
             let one = Expression::Constant(F::one());
             constraints.push((
@@ -96,13 +94,13 @@ impl<F: Field> BranchRLCInitConfig<F> {
                     * (one - two_rlp_bytes_c.clone() - three_rlp_bytes_c.clone()),
             ));
 
-            let s_rlp1 = meta.query_advice(s_advices[2], Rotation::cur());
-            let s_rlp2 = meta.query_advice(s_advices[3], Rotation::cur());
-            let s_rlp3 = meta.query_advice(s_advices[4], Rotation::cur());
+            let s_rlp1 = meta.query_advice(s_main.bytes[2], Rotation::cur());
+            let s_rlp2 = meta.query_advice(s_main.bytes[3], Rotation::cur());
+            let s_rlp3 = meta.query_advice(s_main.bytes[4], Rotation::cur());
 
-            let c_rlp1 = meta.query_advice(s_advices[5], Rotation::cur());
-            let c_rlp2 = meta.query_advice(s_advices[6], Rotation::cur());
-            let c_rlp3 = meta.query_advice(s_advices[7], Rotation::cur());
+            let c_rlp1 = meta.query_advice(s_main.bytes[5], Rotation::cur());
+            let c_rlp2 = meta.query_advice(s_main.bytes[6], Rotation::cur());
+            let c_rlp3 = meta.query_advice(s_main.bytes[7], Rotation::cur());
 
             let acc_s_two = s_rlp1.clone() + s_rlp2.clone() * acc_r;
             constraints.push((
@@ -158,14 +156,14 @@ impl<F: Field> BranchRLCInitConfig<F> {
         range_lookups(
             meta,
             q_enable,
-            s_advices.to_vec(),
+            s_main.bytes.to_vec(),
             FixedTableTag::Range256,
             fixed_table,
         );
         range_lookups(
             meta,
             q_enable,
-            [s_rlp1, s_rlp2].to_vec(),
+            [s_main.rlp1, s_main.rlp2].to_vec(),
             FixedTableTag::Range256,
             fixed_table,
         );

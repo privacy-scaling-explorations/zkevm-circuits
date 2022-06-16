@@ -7,7 +7,7 @@ use std::marker::PhantomData;
 
 use crate::{
     helpers::get_is_extension_node,
-    param::{HASH_WIDTH, KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH},
+    param::{KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH, IS_BRANCH_S_PLACEHOLDER_POS, IS_BRANCH_C_PLACEHOLDER_POS, LAYOUT_OFFSET}, mpt::MainCols,
 };
 
 #[derive(Clone, Debug)]
@@ -23,12 +23,12 @@ impl<F: Field> BranchHashInParentConfig<F> {
         q_not_first: Column<Fixed>,
         is_account_leaf_in_added_branch: Column<Advice>,
         is_last_branch_child: Column<Advice>,
-        is_branch_placeholder: Column<Advice>,
-        s_advices: [Column<Advice>; HASH_WIDTH],
+        s_main: MainCols,
         mod_node_hash_rlc: Column<Advice>,
         acc: Column<Advice>,
         acc_mult: Column<Advice>,
         keccak_table: [Column<Fixed>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
+        is_s: bool,
     ) -> Self {
         let config = BranchHashInParentConfig { _marker: PhantomData, }; 
         let one = Expression::Constant(F::from(1_u64));
@@ -82,9 +82,12 @@ impl<F: Field> BranchHashInParentConfig<F> {
             let is_last_branch_child = meta.query_advice(is_last_branch_child, Rotation::cur());
 
             // When placeholder branch, we don't check its hash in a parent.
-            let is_branch_placeholder = meta.query_advice(is_branch_placeholder, Rotation(-16));
+            let mut is_branch_placeholder = meta.query_advice(s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - LAYOUT_OFFSET], Rotation(-16));
+            if !is_s {
+                is_branch_placeholder = meta.query_advice(s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - LAYOUT_OFFSET], Rotation(-16));
+            }
 
-            let is_extension_node = get_is_extension_node(meta, s_advices, -16);
+            let is_extension_node = get_is_extension_node(meta, s_main.bytes, -16);
 
             // TODO: acc currently doesn't have branch ValueNode info (which 128 if nil)
             let acc = meta.query_advice(acc, Rotation::cur());

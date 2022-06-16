@@ -58,16 +58,6 @@ struct ProofTypeCols {
     is_non_existing_account_proof: Column<Advice>,
 }
 
-#[derive(Default)]
-struct ProofType {
-    is_storage_mod: bool,
-    is_nonce_mod: bool,
-    is_balance_mod: bool,
-    is_codehash_mod: bool,
-    is_account_delete_mod: bool,
-    is_non_existing_account_proof: bool,
-}
-
 #[derive(Clone, Debug)]
 struct AccountLeafCols {
     is_account_leaf_key_s: Column<Advice>,
@@ -148,6 +138,13 @@ struct Branch {
 }
 
 #[derive(Clone, Debug)]
+pub(crate) struct MainCols { // Main as opposed to other columns which are selectors and RLCs
+    pub(crate) rlp1: Column<Advice>,
+    pub(crate) rlp2: Column<Advice>,
+    pub(crate) bytes: [Column<Advice>; HASH_WIDTH],
+}
+
+#[derive(Clone, Debug)]
 pub struct MPTConfig<F> {
     proof_type: ProofTypeCols,
     account_leaf: AccountLeafCols,
@@ -158,12 +155,8 @@ pub struct MPTConfig<F> {
     inter_start_root: Column<Advice>,
     inter_final_root: Column<Advice>, 
     branch: BranchCols,
-    s_rlp1: Column<Advice>,
-    s_rlp2: Column<Advice>,
-    c_rlp1: Column<Advice>,
-    c_rlp2: Column<Advice>,
-    s_advices: [Column<Advice>; HASH_WIDTH],
-    c_advices: [Column<Advice>; HASH_WIDTH],
+    s_main: MainCols,
+    c_main: MainCols,
     s_mod_node_hash_rlc: Column<Advice>, /* modified node s_advices RLC when s_advices present
                                           * hash (used also for leaf long/short) */
     c_mod_node_hash_rlc: Column<Advice>, /* modified node c_advices RLC when c_advices present
@@ -194,7 +187,6 @@ pub struct MPTConfig<F> {
                                   * address_rlc computed in the account leaf key row. Needed to
                                   * enable lookup for storage key/value (to have address RLC in
                                   * the same row as storage key/value). */
-    counter: Column<Advice>, 
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -342,23 +334,26 @@ impl<F: Field> MPTConfig<F> {
             is_extension_node_s: meta.advice_column(),
             is_extension_node_c: meta.advice_column(),
         };
+
+        let s_main = MainCols {
+            rlp1: meta.advice_column(),
+            rlp2: meta.advice_column(),
+            bytes: (0..HASH_WIDTH)
+                .map(|_| meta.advice_column())
+                .collect::<Vec<_>>()
+                .try_into()
+                .unwrap(),
+        };
+        let c_main = MainCols {
+            rlp1: meta.advice_column(),
+            rlp2: meta.advice_column(),
+            bytes: (0..HASH_WIDTH)
+                .map(|_| meta.advice_column())
+                .collect::<Vec<_>>()
+                .try_into()
+                .unwrap(),
+        };
         
-        let s_rlp1 = meta.advice_column();
-        let s_rlp2 = meta.advice_column();
-        let s_advices: [Column<Advice>; HASH_WIDTH] = (0..HASH_WIDTH)
-            .map(|_| meta.advice_column())
-            .collect::<Vec<_>>()
-            .try_into()
-            .unwrap();
-
-        let c_rlp1 = meta.advice_column();
-        let c_rlp2 = meta.advice_column();
-        let c_advices: [Column<Advice>; HASH_WIDTH] = (0..HASH_WIDTH)
-            .map(|_| meta.advice_column())
-            .collect::<Vec<_>>()
-            .try_into()
-            .unwrap();
-
         let keccak_table: [Column<Fixed>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH] = (0
             ..KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH)
             .map(|_| meta.fixed_column())
@@ -407,7 +402,6 @@ impl<F: Field> MPTConfig<F> {
         // the rlc would be multiplied by acc_r when row[i] = 0.
 
         let address_rlc = meta.advice_column();
-        let counter = meta.advice_column();
         
         BranchHashInParentConfig::<F>::configure(
             meta,
@@ -416,12 +410,12 @@ impl<F: Field> MPTConfig<F> {
             q_not_first,
             account_leaf.is_account_leaf_in_added_branch,
             branch.is_last_branch_child,
-            s_advices[IS_BRANCH_S_PLACEHOLDER_POS - LAYOUT_OFFSET],
-            s_advices,
+            s_main.clone(), // used only to retrieve info from branch init
             s_mod_node_hash_rlc,
             acc_s,
             acc_mult_s,
             keccak_table,
+            true,
         );
 
         BranchHashInParentConfig::<F>::configure(
@@ -431,12 +425,12 @@ impl<F: Field> MPTConfig<F> {
             q_not_first,
             account_leaf.is_account_leaf_in_added_branch,
             branch.is_last_branch_child,
-            s_advices[IS_BRANCH_C_PLACEHOLDER_POS - LAYOUT_OFFSET],
-            s_advices,
+            s_main.clone(), // used only to retrieve info from branch init
             c_mod_node_hash_rlc,
             acc_c,
             acc_mult_c,
             keccak_table,
+            false,
         );
 
         BranchRLCInitConfig::<F>::configure(
@@ -445,9 +439,7 @@ impl<F: Field> MPTConfig<F> {
                 meta.query_advice(branch.is_branch_init, Rotation::cur())
                     * meta.query_fixed(q_enable, Rotation::cur())
             },
-            s_rlp1,
-            s_rlp2,
-            s_advices,
+            s_main.clone(),
             acc_s,
             acc_mult_s,
             acc_c,
@@ -464,8 +456,7 @@ impl<F: Field> MPTConfig<F> {
 
                 q_not_first * is_branch_child
             },
-            s_rlp2,
-            s_advices,
+            s_main.clone(),
             acc_s,
             acc_mult_s,
             r_table.clone(),
@@ -479,8 +470,7 @@ impl<F: Field> MPTConfig<F> {
 
                 q_not_first * is_branch_child
             },
-            c_rlp2,
-            c_advices,
+            c_main.clone(),
             acc_c,
             acc_mult_c,
             r_table.clone(),
@@ -496,12 +486,8 @@ impl<F: Field> MPTConfig<F> {
             inter_start_root,
             inter_final_root,
             branch,
-            s_rlp1,
-            s_rlp2,
-            c_rlp1,
-            c_rlp2,
-            s_advices,
-            c_advices,
+            s_main,
+            c_main,
             s_mod_node_hash_rlc,
             c_mod_node_hash_rlc,
             acc_s,
@@ -518,7 +504,6 @@ impl<F: Field> MPTConfig<F> {
             keccak_table,
             fixed_table,
             address_rlc,
-            counter,
         }
     }
 
@@ -760,14 +745,14 @@ impl<F: Field> MPTConfig<F> {
         
         region.assign_advice(
             || "assign s_rlp1".to_string(),
-            self.s_rlp1,
+            self.s_main.rlp1,
             offset,
             || Ok(F::from(row[0] as u64)),
         )?;
 
         region.assign_advice(
             || "assign s_rlp2".to_string(),
-            self.s_rlp2,
+            self.s_main.rlp2,
             offset,
             || Ok(F::from(row[1] as u64)),
         )?;
@@ -775,7 +760,7 @@ impl<F: Field> MPTConfig<F> {
         for idx in 0..HASH_WIDTH {
             region.assign_advice(
                 || format!("assign s_advice {}", idx),
-                self.s_advices[idx],
+                self.s_main.bytes[idx],
                 offset,
                 || Ok(F::from(row[LAYOUT_OFFSET + idx] as u64)),
             )?;
@@ -788,22 +773,22 @@ impl<F: Field> MPTConfig<F> {
 
         region.assign_advice(
             || "assign c_rlp1".to_string(),
-            self.c_rlp1,
+            self.c_main.rlp1,
             offset,
             || Ok(F::from(get_val(WITNESS_ROW_WIDTH / 2))),
         )?;
         region.assign_advice(
             || "assign c_rlp2".to_string(),
-            self.c_rlp2,
+            self.c_main.rlp2,
             offset,
             || Ok(F::from(get_val(WITNESS_ROW_WIDTH / 2 + 1))),
         )?;
 
-        for (idx, _c) in self.c_advices.iter().enumerate() {
+        for (idx, _c) in self.c_main.bytes.iter().enumerate() {
             let val = get_val(WITNESS_ROW_WIDTH / 2 + LAYOUT_OFFSET + idx);
             region.assign_advice(
                 || format!("assign c_advice {}", idx),
-                self.c_advices[idx],
+                self.c_main.bytes[idx],
                 offset,
                 || Ok(F::from(val)),
             )?;
@@ -891,13 +876,13 @@ impl<F: Field> MPTConfig<F> {
 
         region.assign_advice(
             || "s_rlp1",
-            self.s_rlp1,
+            self.s_main.rlp1,
             offset,
             || Ok(F::from(s_rlp1 as u64)),
         )?;
         region.assign_advice(
             || "c_rlp1",
-            self.c_rlp1,
+            self.c_main.rlp1,
             offset,
             || Ok(F::from(c_rlp1 as u64)),
         )?;
