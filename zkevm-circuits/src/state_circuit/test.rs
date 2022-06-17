@@ -37,11 +37,11 @@ pub enum AdviceColumn {
     Value,
     RwCounter,
     RwCounterLimb0,
+    RwCounterLimb1,
     TagBit0,
     TagBit1,
     TagBit2,
     TagBit3,
-    RwCounterLimb1,
 }
 
 impl AdviceColumn {
@@ -58,11 +58,11 @@ impl AdviceColumn {
             Self::Value => config.value,
             Self::RwCounter => config.rw_counter.value,
             Self::RwCounterLimb0 => config.rw_counter.limbs[0],
+            Self::RwCounterLimb1 => config.rw_counter.limbs[1],
             Self::TagBit0 => config.tag.bits[0],
             Self::TagBit1 => config.tag.bits[1],
             Self::TagBit2 => config.tag.bits[2],
             Self::TagBit3 => config.tag.bits[3],
-            Self::RwCounterLimb1 => config.rw_counter.limbs[1],
         }
     }
 }
@@ -661,24 +661,16 @@ fn all_padding() {
 
 #[test]
 fn skipped_start_rw_counter() {
-    let rows = vec![];
-
-    let first_padding_row_offset = -isize::try_from(N_ROWS).unwrap();
     let overrides = HashMap::from([
         (
-            (AdviceColumn::RwCounter, first_padding_row_offset),
-            // The correct assignment is (1 << 32) - (1 << 16). Choosing this new value for the
-            // rw_counter allows us to not have to override assigments in the lexicographic
-            // ordering chip.
-            Fr::from((1 << 32) - (1 << 17)),
+            (AdviceColumn::RwCounter, -1),
+            // The original assignment is 1 << 16.
+            Fr::from((1 << 16) + 1),
         ),
-        (
-            (AdviceColumn::RwCounterLimb1, first_padding_row_offset),
-            Fr::from((1 << 16) - 2),
-        ),
+        ((AdviceColumn::RwCounterLimb0, -1), Fr::one()),
     ]);
 
-    let result = prover(rows, overrides).verify_at_rows(0..10, 0..10);
+    let result = prover(vec![], overrides).verify_at_rows(N_ROWS - 1..N_ROWS, N_ROWS - 1..N_ROWS);
     assert_error_matches(result, "rw_counter increases by 1 for every non-first row");
 }
 
@@ -777,6 +769,7 @@ fn invalid_stack_address_change() {
 
 #[test]
 fn invalid_tags() {
+    let first_row_offset = -isize::try_from(N_ROWS).unwrap();
     let tags: BTreeSet<usize> = RwTableTag::iter().map(|x| x as usize).collect();
     for i in 0..16 {
         if tags.contains(&i) {
@@ -786,13 +779,13 @@ fn invalid_tags() {
             .as_bits()
             .map(|bit| if bit { Fr::one() } else { Fr::zero() });
         let overrides = HashMap::from([
-            ((AdviceColumn::TagBit0, 0), bits[0]),
-            ((AdviceColumn::TagBit1, 0), bits[1]),
-            ((AdviceColumn::TagBit2, 0), bits[2]),
-            ((AdviceColumn::TagBit3, 0), bits[3]),
+            ((AdviceColumn::TagBit0, first_row_offset), bits[0]),
+            ((AdviceColumn::TagBit1, first_row_offset), bits[1]),
+            ((AdviceColumn::TagBit2, first_row_offset), bits[2]),
+            ((AdviceColumn::TagBit3, first_row_offset), bits[3]),
         ]);
 
-        let result = verify_with_overrides(vec![], overrides);
+        let result = prover(vec![], overrides).verify_at_rows(0..1, 0..1);
 
         assert_error_matches(result, "binary number value in range");
     }
@@ -823,8 +816,11 @@ fn verify_with_overrides(
     // Sanity check that the original RwTable without overrides is valid.
     assert_eq!(verify(rows.clone()), Ok(()));
 
-    let used_rows = rows.len();
-    prover(rows, overrides).verify_at_rows(N_ROWS - used_rows..N_ROWS, N_ROWS - used_rows..N_ROWS)
+    let n_active_rows = rows.len();
+    prover(rows, overrides).verify_at_rows(
+        N_ROWS - n_active_rows..N_ROWS,
+        N_ROWS - n_active_rows..N_ROWS,
+    )
 }
 
 fn assert_error_matches(result: Result<(), Vec<VerifyFailure>>, name: &str) {
