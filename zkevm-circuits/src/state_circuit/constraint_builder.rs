@@ -249,29 +249,22 @@ impl<F: Field> ConstraintBuilder<F> {
             q.is_write.clone(),
             1.expr(),
         );
-        self.require_in_set(
-            "field_tag in TxLogFieldTag range",
-            q.field_tag(),
-            set::<F, TxLogFieldTag>(),
-        );
+
         // reset log_id when tx_id increases
         self.condition(q.id_change() * q.is_tag_unchanged.clone(), |cb| {
+            // tx_id increases by 1
+            cb.require_equal("tx_id increases by 1", q.id_change(), 1.expr());
             cb.require_zero(
                 "reset log_id to one when tx_id increases",
                 q.tx_log_id(false) - 1.expr(),
             );
+
             // constrain first field_tag is Address when tx id increases
             cb.require_equal(
                 "first field_tag is Address when tx changes",
                 q.field_tag_matches(TxLogFieldTag::Address),
                 1.expr(),
             );
-            // tx_id increases by 1
-            cb.require_equal("tx_id increases by 1", q.id_change(), 1.expr());
-        });
-
-        self.condition(q.field_tag_matches(TxLogFieldTag::Address), |cb| {
-            cb.require_zero("index is zero for address ", q.tx_log_index(false))
         });
 
         // increase log_id when tag changes to Address within same tx
@@ -302,18 +295,6 @@ impl<F: Field> ConstraintBuilder<F> {
             },
         );
 
-        // if tag Topic appear, topic_index in range [0,4),can only increase by one when
-        // tag stays same.
-        self.condition(q.field_tag_matches(TxLogFieldTag::Topic), |cb| {
-            let topic_index = q.tx_log_index(false);
-            cb.require_zero(
-                "topic_index in range [0,4) ",
-                topic_index.clone()
-                    * (1.expr() - topic_index.clone())
-                    * (2.expr() - topic_index.clone())
-                    * (3.expr() - topic_index),
-            )
-        });
         // constrain index is increasing by 1 when field_tag stay same
         self.condition(
             q.is_tag_unchanged.clone() * q.is_field_tag_unchanged.clone(),
@@ -325,6 +306,22 @@ impl<F: Field> ConstraintBuilder<F> {
                 )
             },
         );
+
+        self.condition(q.field_tag_matches(TxLogFieldTag::Address), |cb| {
+            cb.require_zero("index is zero for address ", q.tx_log_index(false))
+        });
+
+        // if tag Topic appear, topic_index in range [0,4)
+        self.condition(q.field_tag_matches(TxLogFieldTag::Topic), |cb| {
+            let topic_index = q.tx_log_index(false);
+            cb.require_zero(
+                "topic_index in range [0,4) ",
+                topic_index.clone()
+                    * (1.expr() - topic_index.clone())
+                    * (2.expr() - topic_index.clone())
+                    * (3.expr() - topic_index),
+            )
+        });
     }
 
     fn require_zero(&mut self, name: &'static str, e: Expression<F>) {
