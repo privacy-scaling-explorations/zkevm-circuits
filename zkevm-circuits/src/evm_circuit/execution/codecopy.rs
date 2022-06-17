@@ -212,14 +212,22 @@ mod tests {
 
     use crate::test_util::run_test_circuits;
 
-    fn test_ok(memory_offset: usize, code_offset: usize, size: usize) {
-        let code = bytecode! {
+    fn test_ok(memory_offset: usize, code_offset: usize, size: usize, large: bool) {
+        let mut code = bytecode! {};
+        if large {
+            for _ in 0..128 {
+                code.push(1, Word::from(0));
+            }
+        }
+        let tail = bytecode! {
             PUSH32(Word::from(size))
             PUSH32(Word::from(code_offset))
             PUSH32(Word::from(memory_offset))
             CODECOPY
             STOP
         };
+        code.append(&tail);
+
         assert_eq!(
             run_test_circuits(
                 TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap(),
@@ -231,8 +239,13 @@ mod tests {
 
     #[test]
     fn codecopy_gadget() {
-        test_ok(0x00, 0x00, 0x20);
-        test_ok(0x20, 0x30, 0x30);
-        test_ok(0x10, 0x20, 0x42);
+        test_ok(0x00, 0x00, 0x20, false);
+        test_ok(0x20, 0x30, 0x30, false);
+        test_ok(0x10, 0x20, 0x42, false);
+    }
+
+    #[test]
+    fn codecopy_gadget_large() {
+        test_ok(0x00, 0x00, 0x40, true);
     }
 }

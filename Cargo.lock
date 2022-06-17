@@ -503,13 +503,16 @@ version = "0.1.0"
 dependencies = [
  "ark-std",
  "bus-mapping",
+ "env_logger",
  "eth-types",
  "ff 0.11.1",
+ "group 0.11.0",
  "halo2_proofs 0.1.0-beta.1",
  "itertools",
  "keccak256",
  "rand",
  "rand_xorshift",
+ "secp256k1",
  "zkevm-circuits",
 ]
 

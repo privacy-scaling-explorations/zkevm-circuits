@@ -12,7 +12,7 @@ use crate::evm_circuit::{
 use bus_mapping::{
     circuit_input_builder::{self, StepAuxiliaryData},
     error::{ExecError, OogError},
-    operation::{self, AccountField, CallContextField, TxReceiptField},
+    operation::{self, AccountField, CallContextField, TxLogField, TxReceiptField},
 };
 
 use eth_types::evm_types::OpcodeId;
@@ -842,10 +842,19 @@ impl Rw {
             }
             Self::Account { value, .. }
             | Self::AccountStorage { value, .. }
-            | Self::Stack { value, .. }
-            | Self::TxLog { value, .. } => {
+            | Self::Stack { value, .. } => {
                 RandomLinearCombination::random_linear_combine(value.to_le_bytes(), randomness)
             }
+
+            Self::TxLog {
+                field_tag, value, ..
+            } => match field_tag {
+                TxLogFieldTag::Topic => {
+                    RandomLinearCombination::random_linear_combine(value.to_le_bytes(), randomness)
+                }
+                _ => value.to_scalar().unwrap(),
+            },
+
             Self::TxAccessListAccount { is_warm, .. }
             | Self::TxAccessListAccountStorage { is_warm, .. } => F::from(*is_warm as u64),
             Self::AccountDestructed { is_destructed, .. } => F::from(*is_destructed as u64),
@@ -1086,6 +1095,26 @@ impl From<&operation::OperationContainer> for RwMap {
                 .collect(),
         );
         rws.insert(
+            RwTableTag::TxLog,
+            container
+                .tx_log
+                .iter()
+                .map(|op| Rw::TxLog {
+                    rw_counter: op.rwc().into(),
+                    is_write: op.rw().is_write(),
+                    tx_id: op.op().tx_id,
+                    log_id: op.op().log_id as u64,
+                    field_tag: match op.op().field {
+                        TxLogField::Address => TxLogFieldTag::Address,
+                        TxLogField::Topic => TxLogFieldTag::Topic,
+                        TxLogField::Data => TxLogFieldTag::Data,
+                    },
+                    index: op.op().index,
+                    value: op.op().value,
+                })
+                .collect(),
+        );
+        rws.insert(
             RwTableTag::TxReceipt,
             container
                 .tx_receipt
@@ -1173,6 +1202,7 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                 match op {
                     OpcodeId::ADD | OpcodeId::SUB => ExecutionState::ADD_SUB,
                     OpcodeId::MUL | OpcodeId::DIV | OpcodeId::MOD => ExecutionState::MUL_DIV_MOD,
+                    OpcodeId::MULMOD => ExecutionState::MULMOD,
                     OpcodeId::EQ | OpcodeId::LT | OpcodeId::GT => ExecutionState::CMP,
                     OpcodeId::SLT | OpcodeId::SGT => ExecutionState::SCMP,
                     OpcodeId::SIGNEXTEND => ExecutionState::SIGNEXTEND,
@@ -1203,6 +1233,7 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::DIFFICULTY | OpcodeId::BASEFEE => ExecutionState::BLOCKCTXU256,
                     OpcodeId::GAS => ExecutionState::GAS,
                     OpcodeId::SELFBALANCE => ExecutionState::SELFBALANCE,
+                    OpcodeId::SHA3 => ExecutionState::SHA3,
                     OpcodeId::SHR => ExecutionState::SHR,
                     OpcodeId::SLOAD => ExecutionState::SLOAD,
                     OpcodeId::SSTORE => ExecutionState::SSTORE,
@@ -1214,12 +1245,14 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::ORIGIN => ExecutionState::ORIGIN,
                     OpcodeId::CODECOPY => ExecutionState::CODECOPY,
                     OpcodeId::CALLDATALOAD => ExecutionState::CALLDATALOAD,
+                    OpcodeId::CODESIZE => ExecutionState::CODESIZE,
                     _ => unimplemented!("unimplemented opcode {:?}", op),
                 }
             }
             circuit_input_builder::ExecState::BeginTx => ExecutionState::BeginTx,
             circuit_input_builder::ExecState::EndTx => ExecutionState::EndTx,
             circuit_input_builder::ExecState::CopyToMemory => ExecutionState::CopyToMemory,
+            circuit_input_builder::ExecState::CopyToLog => ExecutionState::CopyToLog,
             circuit_input_builder::ExecState::CopyCodeToMemory => ExecutionState::CopyCodeToMemory,
         }
     }
@@ -1251,6 +1284,7 @@ fn step_convert(step: &circuit_input_builder::ExecStep) -> ExecStep {
                     operation::Target::AccountDestructed => RwTableTag::AccountDestructed,
                     operation::Target::CallContext => RwTableTag::CallContext,
                     operation::Target::TxReceipt => RwTableTag::TxReceipt,
+                    operation::Target::TxLog => RwTableTag::TxLog,
                 };
                 (tag, x.as_usize())
             })

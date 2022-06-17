@@ -1,4 +1,5 @@
 //! The state circuit implementation.
+mod binary_number;
 mod constraint_builder;
 mod lexicographic_ordering;
 mod lookups;
@@ -10,11 +11,13 @@ mod test;
 use crate::{
     evm_circuit::{
         param::N_BYTES_WORD,
+    table::RwTableTag,
         util::RandomLinearCombination,
         witness::{RwMap, RwRow},
     },
     rw_table::RwTable,
 };
+use binary_number::{Chip as BinaryNumberChip, Config as BinaryNumberConfig};
 use constraint_builder::{ConstraintBuilder, Queries};
 use eth_types::{Address, Field, ToLittleEndian};
 use gadgets::is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction};
@@ -40,7 +43,7 @@ const N_LIMBS_ID: usize = 2;
 #[derive(Clone)]
 pub struct StateConfig<F, const QUICK_CHECK: bool> {
     // Figure out why you get errors when this is Selector.
-    // https://github.com/appliedzkp/zkevm-circuits/issues/407
+    // https://github.com/privacy-scaling-explorations/zkevm-circuits/issues/407
     selector: Column<Fixed>,
     rw_table: RwTable,
     rw_counter_mpi: MpiConfig<u32, N_LIMBS_RW_COUNTER>,
@@ -258,6 +261,8 @@ impl<F: Field, const QUICK_CHECK: bool> Circuit<F> for StateCircuitBase<F, QUICK
             IsZeroChip::construct(config.is_storage_key_unchanged.clone());
         let lexicographic_ordering_chip =
             LexicographicOrderingChip::construct(config.lexicographic_ordering.clone());
+
+        let tag_chip = BinaryNumberChip::construct(config.tag);
 
         layouter.assign_region(
             || "rw table",

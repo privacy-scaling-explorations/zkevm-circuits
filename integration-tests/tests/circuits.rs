@@ -17,6 +17,7 @@ lazy_static! {
 }
 
 async fn test_evm_circuit_block(block_num: u64) {
+    log::info!("test evm circuit, block number: {}", block_num);
     let cli = get_client();
     let cli = BuilderClient::new(cli).await.unwrap();
     let builder = cli.gen_inputs(block_num).await.unwrap();
@@ -29,6 +30,7 @@ async fn test_state_circuit_block(block_num: u64) {
     use halo2_proofs::arithmetic::BaseExt;
     use halo2_proofs::pairing::bn256::Fr;
 
+    log::info!("test state circuit, block number: {}", block_num);
     let cli = get_client();
     let cli = BuilderClient::new(cli).await.unwrap();
     let builder = cli.gen_inputs(block_num).await.unwrap();
@@ -77,6 +79,7 @@ macro_rules! declare_tests {
     };
 }
 
+/*
 declare_tests!(
     test_evm_circuit_block_transfer_0,
     test_state_circuit_block_transfer_0,
@@ -92,6 +95,7 @@ declare_tests!(
     test_state_circuit_multiple_transfers_0,
     "Multiple transfers 0"
 );
+*/
 declare_tests!(
     test_evm_circuit_erc20_openzeppelin_transfer_fail,
     test_state_circuit_erc20_openzeppelin_transfer_fail,

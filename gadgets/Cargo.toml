@@ -5,7 +5,7 @@ edition = "2021"
 authors = ["The appliedzkp team"]
 
 [dependencies]
-halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2.git", tag = "v2022_06_03" }
+halo2_proofs = { version = "0.1.0-beta.1" }
 sha3 = "0.7.2"
 eth-types = { path = "../eth-types" }
 digest = "0.7.6"

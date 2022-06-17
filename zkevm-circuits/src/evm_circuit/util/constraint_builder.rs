@@ -1044,6 +1044,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
     pub(crate) fn tx_log_lookup(
         &mut self,
         tx_id: Expression<F>,
+        log_id: Expression<F>,
         tag: TxLogFieldTag,
         index: Expression<F>,
         value: Expression<F>,
@@ -1054,7 +1055,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
             RwTableTag::TxLog,
             RwValues::new(
                 tx_id,
-                index + (1u64 << 8).expr() * self.curr.state.log_id.expr(),
+                index + (1u64 << 8).expr() * log_id,
                 tag.expr(),
                 0.expr(),
                 value,

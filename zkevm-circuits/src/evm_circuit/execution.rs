@@ -35,9 +35,11 @@ mod caller;
 mod callvalue;
 mod chainid;
 mod codecopy;
+mod codesize;
 mod comparator;
 mod copy_code_to_memory;
 mod copy_to_log;
+mod dummy;
 mod dup;
 mod end_block;
 mod end_tx;
@@ -54,6 +56,7 @@ mod memory;
 mod memory_copy;
 mod msize;
 mod mul_div_mod;
+mod mulmod;
 mod origin;
 mod pc;
 mod pop;
@@ -80,9 +83,11 @@ use caller::CallerGadget;
 use callvalue::CallValueGadget;
 use chainid::ChainIdGadget;
 use codecopy::CodeCopyGadget;
+use codesize::CodesizeGadget;
 use comparator::ComparatorGadget;
 use copy_code_to_memory::CopyCodeToMemoryGadget;
 use copy_to_log::CopyToLogGadget;
+use dummy::DummyGadget;
 use dup::DupGadget;
 use end_block::EndBlockGadget;
 use end_tx::EndTxGadget;
@@ -99,6 +104,7 @@ use memory::MemoryGadget;
 use memory_copy::CopyToMemoryGadget;
 use msize::MsizeGadget;
 use mul_div_mod::MulDivModGadget;
+use mulmod::MulModGadget;
 use origin::OriginGadget;
 use pc::PcGadget;
 use pop::PopGadget;
@@ -159,6 +165,7 @@ pub(crate) struct ExecutionConfig<F> {
     caller_gadget: CallerGadget<F>,
     chainid_gadget: ChainIdGadget<F>,
     codecopy_gadget: CodeCopyGadget<F>,
+    codesize_gadget: CodesizeGadget<F>,
     comparator_gadget: ComparatorGadget<F>,
     copy_code_to_memory_gadget: CopyCodeToMemoryGadget<F>,
     copy_to_log_gadget: CopyToLogGadget<F>,
@@ -174,12 +181,14 @@ pub(crate) struct ExecutionConfig<F> {
     memory_gadget: MemoryGadget<F>,
     msize_gadget: MsizeGadget<F>,
     mul_div_mod_gadget: MulDivModGadget<F>,
+    mulmod_gadget: MulModGadget<F>,
     origin_gadget: OriginGadget<F>,
     pc_gadget: PcGadget<F>,
     pop_gadget: PopGadget<F>,
     push_gadget: PushGadget<F>,
     selfbalance_gadget: SelfbalanceGadget<F>,
     shr_gadget: ShrGadget<F>,
+    sha3_gadget: DummyGadget<F, 2, 1, { ExecutionState::SHA3 }>,
     signed_comparator_gadget: SignedComparatorGadget<F>,
     signextend_gadget: SignextendGadget<F>,
     sload_gadget: SloadGadget<F>,
@@ -351,6 +360,7 @@ impl<F: Field> ExecutionConfig<F> {
             caller_gadget: configure_gadget!(),
             chainid_gadget: configure_gadget!(),
             codecopy_gadget: configure_gadget!(),
+            codesize_gadget: configure_gadget!(),
             comparator_gadget: configure_gadget!(),
             dup_gadget: configure_gadget!(),
             extcodehash_gadget: configure_gadget!(),
@@ -364,11 +374,13 @@ impl<F: Field> ExecutionConfig<F> {
             memory_gadget: configure_gadget!(),
             msize_gadget: configure_gadget!(),
             mul_div_mod_gadget: configure_gadget!(),
+            mulmod_gadget: configure_gadget!(),
             origin_gadget: configure_gadget!(),
             pc_gadget: configure_gadget!(),
             pop_gadget: configure_gadget!(),
             push_gadget: configure_gadget!(),
             selfbalance_gadget: configure_gadget!(),
+            sha3_gadget: configure_gadget!(),
             shr_gadget: configure_gadget!(),
             signed_comparator_gadget: configure_gadget!(),
             signextend_gadget: configure_gadget!(),
@@ -786,6 +798,7 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::CALLVALUE => assign_exec_step!(self.call_value_gadget),
             ExecutionState::CHAINID => assign_exec_step!(self.chainid_gadget),
             ExecutionState::CODECOPY => assign_exec_step!(self.codecopy_gadget),
+            ExecutionState::CODESIZE => assign_exec_step!(self.codesize_gadget),
             ExecutionState::CMP => assign_exec_step!(self.comparator_gadget),
             ExecutionState::DUP => assign_exec_step!(self.dup_gadget),
             ExecutionState::EXTCODEHASH => assign_exec_step!(self.extcodehash_gadget),
@@ -799,6 +812,7 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::MEMORY => assign_exec_step!(self.memory_gadget),
             ExecutionState::MSIZE => assign_exec_step!(self.msize_gadget),
             ExecutionState::MUL_DIV_MOD => assign_exec_step!(self.mul_div_mod_gadget),
+            ExecutionState::MULMOD => assign_exec_step!(self.mulmod_gadget),
             ExecutionState::ORIGIN => assign_exec_step!(self.origin_gadget),
             ExecutionState::PC => assign_exec_step!(self.pc_gadget),
             ExecutionState::POP => assign_exec_step!(self.pop_gadget),
@@ -808,6 +822,7 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::BLOCKCTXU160 => assign_exec_step!(self.block_ctx_u160_gadget),
             ExecutionState::BLOCKCTXU256 => assign_exec_step!(self.block_ctx_u256_gadget),
             ExecutionState::SELFBALANCE => assign_exec_step!(self.selfbalance_gadget),
+            ExecutionState::SHA3 => assign_exec_step!(self.sha3_gadget),
             ExecutionState::SHR => assign_exec_step!(self.shr_gadget),
             ExecutionState::SIGNEXTEND => assign_exec_step!(self.signextend_gadget),
             ExecutionState::SLOAD => assign_exec_step!(self.sload_gadget),

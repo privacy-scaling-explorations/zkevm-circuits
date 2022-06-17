@@ -3,6 +3,7 @@ use crate::{
         execution::ExecutionGadget,
         step::ExecutionState,
         util::{
+            self,
             common_gadget::SameContextGadget,
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
             math_gadget::{IsZeroGadget, LtWordGadget, MulAddWordsGadget},
@@ -13,7 +14,7 @@ use crate::{
     util::Expr,
 };
 use bus_mapping::evm::OpcodeId;
-use eth_types::{Field, U256};
+use eth_types::{Field, ToLittleEndian, U256};
 use halo2_proofs::plonk::Error;
 
 /// MulGadget verifies opcode MUL, DIV, and MOD.
@@ -24,6 +25,8 @@ use halo2_proofs::plonk::Error;
 #[derive(Clone, Debug)]
 pub(crate) struct MulDivModGadget<F> {
     same_context: SameContextGadget<F>,
+    /// Words a, b, c, d
+    pub words: [util::Word<F>; 4],
     /// Gadget that verifies a * b + c = d
     mul_add_words: MulAddWordsGadget<F>,
     /// Check if divisor is zero for DIV and MOD
@@ -49,31 +52,32 @@ impl<F: Field> ExecutionGadget<F> for MulDivModGadget<F> {
         let is_mod = (opcode.expr() - OpcodeId::MUL.expr())
             * (opcode.expr() - OpcodeId::DIV.expr())
             * F::from(8).invert().unwrap();
-        let mul_add_words = MulAddWordsGadget::construct(cb);
-        let divisor_is_zero = IsZeroGadget::construct(cb, sum::expr(&mul_add_words.b.cells));
-        let lt_word = LtWordGadget::construct(cb, &mul_add_words.c, &mul_add_words.b);
+        let a = cb.query_word();
+        let b = cb.query_word();
+        let c = cb.query_word();
+        let d = cb.query_word();
+
+        let mul_add_words = MulAddWordsGadget::construct(cb, [&a, &b, &c, &d]);
+        let divisor_is_zero = IsZeroGadget::construct(cb, sum::expr(&b.cells));
+        let lt_word = LtWordGadget::construct(cb, &c, &b);
 
         // Pop a and b from the stack, push result on the stack
         // The first pop is multiplier for MUL and dividend for DIV/MOD
         // The second pop is multiplicand for MUL and divisor for DIV/MOD
         // The push is product for MUL, quotient for DIV, and residue for MOD
         // Note that for DIV/MOD, when divisor == 0, the push value is also 0.
-        cb.stack_pop(select::expr(
-            is_mul.clone(),
-            mul_add_words.a.expr(),
-            mul_add_words.d.expr(),
-        ));
-        cb.stack_pop(mul_add_words.b.expr());
+        cb.stack_pop(select::expr(is_mul.clone(), a.expr(), d.expr()));
+        cb.stack_pop(b.expr());
         cb.stack_push(
-            is_mul.clone() * mul_add_words.d.expr()
-                + is_div * mul_add_words.a.expr() * (1.expr() - divisor_is_zero.expr())
-                + is_mod * mul_add_words.c.expr() * (1.expr() - divisor_is_zero.expr()),
+            is_mul.clone() * d.expr()
+                + is_div * a.expr() * (1.expr() - divisor_is_zero.expr())
+                + is_mod * c.expr() * (1.expr() - divisor_is_zero.expr()),
         );
 
         // Constraint for MUL case
         cb.add_constraint(
             "c == 0 for opcode MUL",
-            is_mul.clone() * sum::expr(&mul_add_words.c.cells),
+            is_mul.clone() * sum::expr(&c.cells),
         );
 
         // Constraints for DIV and MOD cases
@@ -96,6 +100,7 @@ impl<F: Field> ExecutionGadget<F> for MulDivModGadget<F> {
         let same_context = SameContextGadget::construct(cb, opcode, step_state_transition);
 
         Self {
+            words: [a, b, c, d],
             same_context,
             mul_add_words,
             divisor_is_zero,
@@ -130,6 +135,10 @@ impl<F: Field> ExecutionGadget<F> for MulDivModGadget<F> {
             ),
             _ => unreachable!(),
         };
+        self.words[0].assign(region, offset, Some(a.to_le_bytes()))?;
+        self.words[1].assign(region, offset, Some(b.to_le_bytes()))?;
+        self.words[2].assign(region, offset, Some(c.to_le_bytes()))?;
+        self.words[3].assign(region, offset, Some(d.to_le_bytes()))?;
         self.mul_add_words.assign(region, offset, [a, b, c, d])?;
         self.lt_word.assign(region, offset, c, b)?;
         let b_sum = (0..32).fold(0, |acc, idx| acc + b.byte(idx) as u64);

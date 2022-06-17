@@ -25,9 +25,11 @@ mod caller;
 mod callvalue;
 mod chainid;
 mod codecopy;
+mod codesize;
 mod dup;
 mod extcodehash;
 mod gasprice;
+mod logs;
 mod mload;
 mod mstore;
 mod number;
@@ -46,9 +48,11 @@ use calldatasize::Calldatasize;
 use caller::Caller;
 use callvalue::Callvalue;
 use codecopy::Codecopy;
+use codesize::Codesize;
 use dup::Dup;
 use extcodehash::Extcodehash;
 use gasprice::GasPrice;
+use logs::Log;
 use mload::Mload;
 use mstore::Mstore;
 use origin::Origin;
@@ -118,7 +122,7 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         OpcodeId::SHL => StackOnlyOpcode::<2, 1>::gen_associated_ops,
         OpcodeId::SHR => StackOnlyOpcode::<2, 1>::gen_associated_ops,
         OpcodeId::SAR => StackOnlyOpcode::<2, 1>::gen_associated_ops,
-        // OpcodeId::SHA3 => {},
+        OpcodeId::SHA3 => StackOnlyOpcode::<2, 1>::gen_associated_ops,
         // OpcodeId::ADDRESS => {},
         // OpcodeId::BALANCE => {},
         OpcodeId::ORIGIN => Origin::gen_associated_ops,
@@ -127,9 +131,9 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         OpcodeId::CALLDATASIZE => Calldatasize::gen_associated_ops,
         OpcodeId::CALLDATALOAD => Calldataload::gen_associated_ops,
         OpcodeId::CALLDATACOPY => Calldatacopy::gen_associated_ops,
-        // OpcodeId::CODESIZE => {},
         OpcodeId::GASPRICE => GasPrice::gen_associated_ops,
         OpcodeId::CODECOPY => Codecopy::gen_associated_ops,
+        OpcodeId::CODESIZE => Codesize::gen_associated_ops,
         // OpcodeId::EXTCODESIZE => {},
         // OpcodeId::EXTCODECOPY => {},
         // OpcodeId::RETURNDATASIZE => {},
@@ -188,11 +192,11 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         OpcodeId::SWAP14 => Swap::<14>::gen_associated_ops,
         OpcodeId::SWAP15 => Swap::<15>::gen_associated_ops,
         OpcodeId::SWAP16 => Swap::<16>::gen_associated_ops,
-        // OpcodeId::LOG0 => {},
-        // OpcodeId::LOG1 => {},
-        // OpcodeId::LOG2 => {},
-        // OpcodeId::LOG3 => {},
-        // OpcodeId::LOG4 => {},
+        OpcodeId::LOG0 => Log::gen_associated_ops,
+        OpcodeId::LOG1 => Log::gen_associated_ops,
+        OpcodeId::LOG2 => Log::gen_associated_ops,
+        OpcodeId::LOG3 => Log::gen_associated_ops,
+        OpcodeId::LOG4 => Log::gen_associated_ops,
         // OpcodeId::CREATE => {},
         OpcodeId::CALL => Call::gen_associated_ops,
         // OpcodeId::CALLCODE => {},
