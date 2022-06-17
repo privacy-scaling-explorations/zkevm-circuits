@@ -9,7 +9,7 @@ use crate::{
 use eth_types::{Field, ToBigEndian};
 use halo2_proofs::{
     circuit::Region,
-    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
+    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, Instance, VirtualCells},
     poly::Rotation,
 };
 use itertools::Itertools;
@@ -104,6 +104,7 @@ impl Config {
         meta: &mut ConstraintSystem<F>,
         keys: SortKeysConfig,
         u16_range: Column<Fixed>,
+        power_of_randomness: [Column<Instance>; 31],
     ) -> Self {
         let selector = meta.fixed_column();
         let first_different_limb = BinaryNumberChip::configure(meta, selector);
@@ -136,10 +137,13 @@ impl Config {
             let selector = meta.query_fixed(selector, Rotation::cur());
             let cur = Queries::new(meta, keys, Rotation::cur());
             let prev = Queries::new(meta, keys, Rotation::prev());
+            let powers_of_randomness =
+                power_of_randomness.map(|i| meta.query_instance(i, Rotation::cur()));
 
             let mut constraints = vec![];
-            // RLC this?
-            for (limb, e) in LimbIndex::iter().zip(limb_difference_possible_values(cur, prev)) {
+            for (limb, e) in
+                LimbIndex::iter().zip(rlc_limb_differences(cur, prev, powers_of_randomness))
+            {
                 constraints.push(
                     selector.clone()
                         * first_different_limb.value_equals(limb, Rotation::cur())(meta)
@@ -282,15 +286,22 @@ fn rw_to_be_limbs(row: &Rw) -> Vec<u16> {
         .collect()
 }
 
-fn limb_difference_possible_values<F: Field>(
+fn rlc_limb_differences<F: Field>(
     cur: Queries<F>,
     prev: Queries<F>,
+    powers_of_randomness: [Expression<F>; 31],
 ) -> Vec<Expression<F>> {
     let mut result = vec![];
     let mut partial_sum = 0u64.expr();
-    for (cur_limb, prev_limb) in cur.be_limbs().iter().zip(&prev.be_limbs()) {
+    let powers_of_randomness = once(1.expr()).chain(powers_of_randomness.into_iter());
+    for ((cur_limb, prev_limb), powers_of_randomness) in cur
+        .be_limbs()
+        .iter()
+        .zip(&prev.be_limbs())
+        .zip(powers_of_randomness)
+    {
         result.push(partial_sum.clone());
-        partial_sum = partial_sum * (1u64 << 16).expr() + cur_limb.clone() - prev_limb.clone();
+        partial_sum = partial_sum + powers_of_randomness * (cur_limb.clone() - prev_limb.clone());
     }
     result
 }

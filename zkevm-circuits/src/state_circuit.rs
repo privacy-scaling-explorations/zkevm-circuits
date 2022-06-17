@@ -132,8 +132,12 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
             rw_counter,
         };
 
-        let lexicographic_ordering =
-            LexicographicOrderingConfig::configure(meta, sort_keys, lookups.u16);
+        let lexicographic_ordering = LexicographicOrderingConfig::configure(
+            meta,
+            sort_keys,
+            lookups.u16,
+            power_of_randomness,
+        );
 
         let config = Self::Config {
             selector,
