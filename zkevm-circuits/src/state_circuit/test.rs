@@ -1,4 +1,4 @@
-use super::{StateCircuit, StateConfig, N_ROWS};
+use super::{StateCircuit, StateConfig};
 use crate::evm_circuit::{
     table::{AccountFieldTag, CallContextFieldTag, RwTableTag},
     witness::{Rw, RwMap},
@@ -21,6 +21,8 @@ use halo2_proofs::{
 };
 use std::collections::{BTreeSet, HashMap};
 use strum::IntoEnumIterator;
+
+const N_ROWS: usize = 1 << 16;
 
 #[derive(Hash, Eq, PartialEq)]
 pub enum AdviceColumn {
@@ -78,7 +80,7 @@ fn test_state_circuit_ok(
     });
 
     let randomness = Fr::rand();
-    let circuit = StateCircuit::new(randomness, rw_map);
+    let circuit = StateCircuit::<Fr, N_ROWS>::new(randomness, rw_map);
     let power_of_randomness = circuit.instance();
 
     let prover = MockProver::<Fr>::run(19, &circuit, power_of_randomness).unwrap();
@@ -89,7 +91,7 @@ fn test_state_circuit_ok(
 #[test]
 fn degree() {
     let mut meta = ConstraintSystem::<Fr>::default();
-    StateCircuit::configure(&mut meta);
+    StateCircuit::<Fr, N_ROWS>::configure(&mut meta);
     assert_eq!(meta.degree(), 16);
 }
 
@@ -99,8 +101,8 @@ fn verifying_key_independent_of_rw_length() {
     let degree = 17;
     let params = Params::<G1Affine>::unsafe_setup::<Bn256>(degree);
 
-    let no_rows = StateCircuit::new(randomness, RwMap::default());
-    let one_row = StateCircuit::new(
+    let no_rows = StateCircuit::<Fr, N_ROWS>::new(randomness, RwMap::default());
+    let one_row = StateCircuit::<Fr, N_ROWS>::new(
         randomness,
         RwMap::from(&OperationContainer {
             memory: vec![Operation::new(
@@ -798,7 +800,7 @@ fn invalid_tags() {
 
 fn prover(rows: Vec<Rw>, overrides: HashMap<(AdviceColumn, isize), Fr>) -> MockProver<Fr> {
     let randomness = Fr::rand();
-    let circuit = StateCircuit {
+    let circuit = StateCircuit::<Fr, N_ROWS> {
         randomness,
         rows,
         overrides,

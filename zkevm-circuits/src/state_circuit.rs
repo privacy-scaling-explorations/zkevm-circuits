@@ -35,9 +35,6 @@ use random_linear_combination::{Chip as RlcChip, Config as RlcConfig, Queries as
 use std::collections::HashMap;
 use std::iter::once;
 
-// TODO: use a better value for production.
-const N_ROWS: usize = 1 << 16;
-
 const N_LIMBS_RW_COUNTER: usize = 2;
 const N_LIMBS_ACCOUNT_ADDRESS: usize = 10;
 const N_LIMBS_ID: usize = 2;
@@ -66,14 +63,14 @@ type Lookup<F> = (&'static str, Expression<F>, Expression<F>);
 
 /// State Circuit for proving RwTable is valid
 #[derive(Default)]
-pub struct StateCircuit<F: Field> {
+pub struct StateCircuit<F: Field, const N_ROWS: usize> {
     pub(crate) randomness: F,
     pub(crate) rows: Vec<Rw>,
     #[cfg(test)]
     overrides: HashMap<(test::AdviceColumn, isize), F>,
 }
 
-impl<F: Field> StateCircuit<F> {
+impl<F: Field, const N_ROWS: usize> StateCircuit<F, N_ROWS> {
     /// make a new state circuit from an RwMap
     pub fn new(randomness: F, rw_map: RwMap) -> Self {
         let mut rows: Vec<_> = rw_map.0.into_values().flatten().collect();
@@ -103,7 +100,7 @@ impl<F: Field> StateCircuit<F> {
     }
 }
 
-impl<F: Field> Circuit<F> for StateCircuit<F> {
+impl<F: Field, const N_ROWS: usize> Circuit<F> for StateCircuit<F, N_ROWS> {
     type Config = StateConfig<F>;
     type FloorPlanner = SimpleFloorPlanner;
 

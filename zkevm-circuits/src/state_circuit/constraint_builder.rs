@@ -105,10 +105,10 @@ impl<F: Field> ConstraintBuilder<F> {
     }
 
     fn build_start_constraints(&mut self, q: &Queries<F>) {
-        self.require_zero("field_tag is 0 for Stack", q.field_tag());
-        self.require_zero("address is 0 for Stack", q.address.value.clone());
-        self.require_zero("id is 0 for Stack", q.id());
-        self.require_zero("storage_key is 0 for Stack", q.storage_key.encoded.clone());
+        self.require_zero("field_tag is 0 for Start", q.field_tag());
+        self.require_zero("address is 0 for Start", q.address.value.clone());
+        self.require_zero("id is 0 for Start", q.id());
+        self.require_zero("storage_key is 0 for Start", q.storage_key.encoded.clone());
         self.require_zero(
             "rw_counter increases by 1 for every non-first row",
             q.lexicographic_ordering_selector.clone() * (q.rw_counter_change() - 1.expr()),
