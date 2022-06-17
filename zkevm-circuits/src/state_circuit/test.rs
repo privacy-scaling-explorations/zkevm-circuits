@@ -37,6 +37,11 @@ pub enum AdviceColumn {
     TagBit1,
     TagBit2,
     TagBit3,
+    LimbIndexBit0,
+    LimbIndexBit1,
+    LimbIndexBit2,
+    LimbIndexBit3,
+    LimbIndexBit4,
 }
 
 impl AdviceColumn {
@@ -56,6 +61,11 @@ impl AdviceColumn {
             Self::TagBit1 => config.sort_keys.tag.bits[1],
             Self::TagBit2 => config.sort_keys.tag.bits[2],
             Self::TagBit3 => config.sort_keys.tag.bits[3],
+            Self::LimbIndexBit0 => config.lexicographic_ordering.first_different_limb.bits[0],
+            Self::LimbIndexBit1 => config.lexicographic_ordering.first_different_limb.bits[1],
+            Self::LimbIndexBit2 => config.lexicographic_ordering.first_different_limb.bits[2],
+            Self::LimbIndexBit3 => config.lexicographic_ordering.first_different_limb.bits[3],
+            Self::LimbIndexBit4 => config.lexicographic_ordering.first_different_limb.bits[4],
         }
     }
 }
@@ -547,6 +557,39 @@ fn nonlexicographic_order_rw_counter() {
 
     assert_eq!(verify(vec![first, second]), Ok(()));
     assert_error_matches(verify(vec![second, first]), "limb_difference fits into u16");
+}
+
+#[test]
+fn lexicographic_ordering_previous_limb_differences_nonzero() {
+    let rows = vec![
+        Rw::TxRefund {
+            rw_counter: 1,
+            is_write: true,
+            tx_id: 23,
+            value: 20,
+            value_prev: 40,
+        },
+        Rw::Account {
+            rw_counter: 2,
+            is_write: true,
+            account_address: Address::zero(),
+            field_tag: AccountFieldTag::Nonce,
+            value: Word::zero(),
+            value_prev: Word::zero(),
+        },
+    ];
+
+    let overrides = HashMap::from([
+        ((AdviceColumn::LimbIndexBit0, 2), Fr::one()),
+        ((AdviceColumn::LimbIndexBit1, 2), Fr::one()),
+        ((AdviceColumn::LimbIndexBit2, 2), Fr::one()),
+        ((AdviceColumn::LimbIndexBit3, 2), Fr::one()),
+        ((AdviceColumn::LimbIndexBit4, 2), Fr::one()),
+    ]);
+
+    let result = verify_with_overrides(rows, overrides);
+
+    assert_error_matches(result, "limbs match before first_different_limb");
 }
 
 #[test]
