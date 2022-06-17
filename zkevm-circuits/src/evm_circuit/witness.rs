@@ -569,7 +569,7 @@ pub enum Rw {
 pub struct RwRow<F> {
     pub rw_counter: u64,
     pub is_write: bool,
-    pub tag: u64,
+    pub tag: RwTableTag,
     pub id: u64,
     pub address: Address,
     pub field_tag: u64,
@@ -677,7 +677,7 @@ impl Rw {
         RwRow {
             rw_counter: self.rw_counter() as u64,
             is_write: self.is_write(),
-            tag: self.tag() as u64,
+            tag: self.tag(),
             id: self.id().unwrap_or_default() as u64,
             address: self.address().unwrap_or_default(),
             field_tag: self.field_tag().unwrap_or_default() as u64,

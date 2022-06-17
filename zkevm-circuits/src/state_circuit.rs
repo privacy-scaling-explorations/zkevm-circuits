@@ -11,7 +11,7 @@ mod test;
 use crate::{
     evm_circuit::{
         param::N_BYTES_WORD,
-    table::RwTableTag,
+        table::RwTableTag,
         util::RandomLinearCombination,
         witness::{RwMap, RwRow},
     },
@@ -46,6 +46,7 @@ pub struct StateConfig<F, const QUICK_CHECK: bool> {
     // https://github.com/privacy-scaling-explorations/zkevm-circuits/issues/407
     selector: Column<Fixed>,
     rw_table: RwTable,
+    tag_bits: BinaryNumberConfig<RwTableTag, 4>,
     rw_counter_mpi: MpiConfig<u32, N_LIMBS_RW_COUNTER>,
     id_mpi: MpiConfig<u32, N_LIMBS_ID>,
     address_mpi: MpiConfig<Address, N_LIMBS_ACCOUNT_ADDRESS>,
@@ -108,6 +109,7 @@ impl<F: Field, const QUICK_CHECK: bool> StateCircuitBase<F, QUICK_CHECK> {
         &self,
         config: &StateConfig<F, QUICK_CHECK>,
         region: &mut Region<F>,
+        tag_chip: &binary_number::Chip<F, RwTableTag, 4_usize>,
         is_storage_key_unchanged: &IsZeroChip<F>,
         is_id_unchanged: &IsZeroChip<F>,
         lexicographic_ordering_chip: &LexicographicOrderingChip<F>,
@@ -121,6 +123,7 @@ impl<F: Field, const QUICK_CHECK: bool> StateCircuitBase<F, QUICK_CHECK> {
             .rw_table
             .assign_row(region, offset, self.randomness, &row)?;
 
+        tag_chip.assign(region, offset, &row.tag)?;
         config
             .rw_counter_mpi
             .assign(region, offset, row.rw_counter as u32)?;
@@ -165,7 +168,10 @@ impl<F: Field, const QUICK_CHECK: bool> StateCircuitBase<F, QUICK_CHECK> {
     }
 }
 
-impl<F: Field, const QUICK_CHECK: bool> Circuit<F> for StateCircuitBase<F, QUICK_CHECK> {
+impl<F: Field, const QUICK_CHECK: bool> Circuit<F> for StateCircuitBase<F, QUICK_CHECK>
+where
+    F: Field,
+{
     type Config = StateConfig<F, QUICK_CHECK>;
     type FloorPlanner = SimpleFloorPlanner;
 
@@ -192,9 +198,11 @@ impl<F: Field, const QUICK_CHECK: bool> Circuit<F> for StateCircuitBase<F, QUICK
         );
         let rw_counter_mpi = MpiChip::configure(meta, rw_table.rw_counter, selector, lookups);
 
+        let tag_bits = BinaryNumberChip::configure(meta, selector);
+
         let lexicographic_ordering = LexicographicOrderingChip::configure(
             meta,
-            rw_table.tag,
+            tag_bits,
             rw_table.field_tag,
             id_mpi.limbs,
             address_mpi.limbs,
@@ -227,6 +235,7 @@ impl<F: Field, const QUICK_CHECK: bool> Circuit<F> for StateCircuitBase<F, QUICK
             rw_table,
             lexicographic_ordering,
             address_mpi,
+            tag_bits,
             id_mpi,
             rw_counter_mpi,
             storage_key_rlc,
@@ -262,7 +271,7 @@ impl<F: Field, const QUICK_CHECK: bool> Circuit<F> for StateCircuitBase<F, QUICK
         let lexicographic_ordering_chip =
             LexicographicOrderingChip::construct(config.lexicographic_ordering.clone());
 
-        let tag_chip = BinaryNumberChip::construct(config.tag);
+        let tag_chip = BinaryNumberChip::construct(config.tag_bits);
 
         layouter.assign_region(
             || "rw table",
@@ -272,6 +281,7 @@ impl<F: Field, const QUICK_CHECK: bool> Circuit<F> for StateCircuitBase<F, QUICK
                     self.assign_row(
                         &config,
                         &mut region,
+                        &tag_chip,
                         &is_storage_key_unchanged,
                         &is_id_unchanged,
                         &lexicographic_ordering_chip,
@@ -306,8 +316,12 @@ fn queries<F: Field, const QUICK_CHECK: bool>(
         rw_counter: MpiQueries::new(meta, c.rw_counter_mpi),
         is_write: meta.query_advice(c.rw_table.is_write, Rotation::cur()),
         aux2: meta.query_advice(c.rw_table.aux2, Rotation::cur()),
-        tag: meta.query_advice(c.rw_table.tag, Rotation::cur()),
-        prev_tag: meta.query_advice(c.rw_table.tag, Rotation::prev()),
+        tag: c.tag_bits.value(Rotation::cur())(meta),
+        tag_bits: c
+            .tag_bits
+            .bits
+            .map(|bit| meta.query_advice(bit, Rotation::cur())),
+        //prev_tag: meta.query_advice(c.rw_table.tag, Rotation::prev()),
         id: MpiQueries::new(meta, c.id_mpi),
         is_id_unchanged: c.is_id_unchanged.is_zero_expression.clone(),
         address: MpiQueries::new(meta, c.address_mpi),

@@ -1,5 +1,5 @@
-use super::{lookups,
-    binary_number::Config as BinaryNumberConfig, N_LIMBS_ACCOUNT_ADDRESS, N_LIMBS_ID,
+use super::{
+    binary_number::Config as BinaryNumberConfig, lookups, N_LIMBS_ACCOUNT_ADDRESS, N_LIMBS_ID,
     N_LIMBS_RW_COUNTER,
 };
 use crate::{

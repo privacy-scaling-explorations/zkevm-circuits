@@ -57,10 +57,10 @@ impl AdviceColumn {
             Self::Value => config.rw_table.value,
             Self::RwCounter => config.rw_table.rw_counter,
             Self::RwCounterLimb0 => config.rw_counter_mpi.limbs[0],
-            Self::TagBit0 => config.tag.bits[0],
-            Self::TagBit1 => config.tag.bits[1],
-            Self::TagBit2 => config.tag.bits[2],
-            Self::TagBit3 => config.tag.bits[3],
+            Self::TagBit0 => config.tag_bits.bits[0],
+            Self::TagBit1 => config.tag_bits.bits[1],
+            Self::TagBit2 => config.tag_bits.bits[2],
+            Self::TagBit3 => config.tag_bits.bits[3],
         }
     }
 }
@@ -769,7 +769,7 @@ fn invalid_tags() {
             ((AdviceColumn::TagBit3, 0), bits[3]),
         ]);
 
-        let result = verify_with_overrides(vec![], overrides);
+        let result = verify_with_overrides(vec![Rw::Start], overrides);
 
         assert_error_matches(result, "binary number value in range");
     }

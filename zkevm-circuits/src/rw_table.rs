@@ -84,7 +84,7 @@ impl RwTable {
         for (column, value) in [
             (self.rw_counter, F::from(row.rw_counter)),
             (self.is_write, F::from(row.is_write)),
-            (self.tag, F::from(row.tag)),
+            (self.tag, F::from(row.tag as u64)),
             (self.id, F::from(row.id)),
             (self.address, (row.address.to_scalar().unwrap())),
             (self.field_tag, F::from(row.field_tag)),

@@ -159,6 +159,12 @@ pub enum RwTableTag {
     TxReceipt,
 }
 
+impl Default for RwTableTag {
+    fn default() -> Self {
+        RwTableTag::Start
+    }
+}
+
 impl RwTableTag {
     pub fn is_reversible(self) -> bool {
         return matches!(

@@ -7,7 +7,7 @@ use super::{
 use crate::evm_circuit::{
     param::N_BYTES_WORD,
     table::{AccountFieldTag, RwTableTag},
-    util::{math_gadget::generate_lagrange_base_polynomial, not, or, select},
+    util::{not, or, select},
 };
 use crate::util::Expr;
 use eth_types::Field;
