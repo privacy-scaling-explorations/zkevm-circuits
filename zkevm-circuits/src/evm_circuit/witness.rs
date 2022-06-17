@@ -1188,6 +1188,7 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     | OpcodeId::MOD
                     | OpcodeId::SHL
                     | OpcodeId::SHR => ExecutionState::MUL_DIV_MOD_SHL_SHR,
+                    OpcodeId::MULMOD => ExecutionState::MULMOD,
                     OpcodeId::EQ | OpcodeId::LT | OpcodeId::GT => ExecutionState::CMP,
                     OpcodeId::SLT | OpcodeId::SGT => ExecutionState::SCMP,
                     OpcodeId::SIGNEXTEND => ExecutionState::SIGNEXTEND,

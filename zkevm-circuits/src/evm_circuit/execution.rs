@@ -56,6 +56,7 @@ mod memory;
 mod memory_copy;
 mod msize;
 mod mul_div_mod_shl_shr;
+mod mulmod;
 mod origin;
 mod pc;
 mod pop;
@@ -102,6 +103,7 @@ use memory::MemoryGadget;
 use memory_copy::CopyToMemoryGadget;
 use msize::MsizeGadget;
 use mul_div_mod_shl_shr::MulDivModShlShrGadget;
+use mulmod::MulModGadget;
 use origin::OriginGadget;
 use pc::PcGadget;
 use pop::PopGadget;
@@ -177,6 +179,7 @@ pub(crate) struct ExecutionConfig<F> {
     memory_gadget: MemoryGadget<F>,
     msize_gadget: MsizeGadget<F>,
     mul_div_mod_shl_shr_gadget: MulDivModShlShrGadget<F>,
+    mulmod_gadget: MulModGadget<F>,
     origin_gadget: OriginGadget<F>,
     pc_gadget: PcGadget<F>,
     pop_gadget: PopGadget<F>,
@@ -368,6 +371,7 @@ impl<F: Field> ExecutionConfig<F> {
             memory_gadget: configure_gadget!(),
             msize_gadget: configure_gadget!(),
             mul_div_mod_shl_shr_gadget: configure_gadget!(),
+            mulmod_gadget: configure_gadget!(),
             origin_gadget: configure_gadget!(),
             pc_gadget: configure_gadget!(),
             pop_gadget: configure_gadget!(),
@@ -806,6 +810,7 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::MUL_DIV_MOD_SHL_SHR => {
                 assign_exec_step!(self.mul_div_mod_shl_shr_gadget)
             }
+            ExecutionState::MULMOD => assign_exec_step!(self.mulmod_gadget),
             ExecutionState::ORIGIN => assign_exec_step!(self.origin_gadget),
             ExecutionState::PC => assign_exec_step!(self.pc_gadget),
             ExecutionState::POP => assign_exec_step!(self.pop_gadget),
