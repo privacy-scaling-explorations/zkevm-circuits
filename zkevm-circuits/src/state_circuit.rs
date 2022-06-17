@@ -263,6 +263,8 @@ fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: &StateConfig) -> Queries
         id: MpiQueries::new(meta, c.sort_keys.id),
         // this isn't binary! only 0 if most significant 3 bits are all 0 and at most 1 of the two
         // least significant bits is 1.
+        // TODO: this can mask off just the top 3 bits if you want, since the 4th limb index is
+        // Address9, which is always 0 for Rw::Stack rows.
         is_tag_and_id_unchanged: 4.expr()
             * (meta.query_advice(
                 c.lexicographic_ordering.first_different_limb.bits[0],
