@@ -718,7 +718,7 @@ fn invalid_stack_address_change() {
 
     assert_error_matches(
         verify(rows),
-        "if previous row is Stack with unchanged call id, address change is 0 or 1",
+        "if previous row is also Stack with unchanged call id, address change is 0 or 1",
     );
 }
 
