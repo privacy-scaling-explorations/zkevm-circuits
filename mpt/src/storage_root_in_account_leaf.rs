@@ -7,7 +7,7 @@ use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
 use crate::{
-    helpers::{get_is_extension_node, bytes_expr_into_rlc, into_words_expr},
+    helpers::{get_is_extension_node, bytes_expr_into_rlc},
     param::{
         HASH_WIDTH, IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS, KECCAK_INPUT_WIDTH,
         KECCAK_OUTPUT_WIDTH, LAYOUT_OFFSET,
@@ -25,6 +25,7 @@ pub(crate) struct StorageRootChip<F> {
 impl<F: FieldExt> StorageRootChip<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
+        q_enable: Column<Fixed>,
         not_first_level: Column<Advice>,
         is_leaf_s_value: Column<Advice>,
         is_leaf_c_value: Column<Advice>,
@@ -50,7 +51,7 @@ impl<F: FieldExt> StorageRootChip<F> {
             |meta| {
                 // Note: we are in the same row (last branch child) for S and C.
                 let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
-                let mut rot_into_branch_init = -16;
+                let rot_into_branch_init = -16;
 
                 let is_account_leaf_in_added_branch = meta.query_advice(
                     is_account_leaf_in_added_branch,
@@ -194,12 +195,18 @@ impl<F: FieldExt> StorageRootChip<F> {
                 let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
 
                 // Check in leaf value row.
+                // TODO: check these rotations (in all gates of this chip) after account_leaf_in_added_branch
+                // has been added - check the tests for account in the first level, should return error
+                // (check TestOnlyLeafInStorageProof in witness generator)
                 let mut rot_into_last_account_row = -2;
                 let mut is_leaf = meta.query_advice(is_leaf_s_value, Rotation::cur());
                 if !is_s {
                     rot_into_last_account_row = -4;
                     is_leaf = meta.query_advice(is_leaf_c_value, Rotation::cur());
                 }
+
+                // Note: if leaf is a placeholder, the root in account leaf needs to be hash of empty trie
+                // (see the gate below)
                 let is_placeholder = meta.query_advice(sel, Rotation::cur());
 
                 let is_account_leaf_in_added_branch = meta.query_advice(
@@ -245,6 +252,36 @@ impl<F: FieldExt> StorageRootChip<F> {
                 constraints
             },
         );
+
+        meta.create_gate("storage leaf in first level - placeholder", |meta| {
+            let q_enable = meta.query_fixed(q_enable, Rotation::cur());
+            let mut constraints = vec![];
+
+            let mut rot_into_storage_root = -2;
+            let mut is_leaf = meta.query_advice(is_leaf_s_value, Rotation::cur());
+            if !is_s {
+                rot_into_storage_root = -4;
+                is_leaf = meta.query_advice(is_leaf_c_value, Rotation::cur());
+            }
+            let is_placeholder = meta.query_advice(sel, Rotation::cur());
+    
+            let empty_trie_hash: Vec<u8> = vec![
+                86, 232, 31, 23, 27, 204, 85, 166, 255, 131, 69, 230, 146, 192, 248, 110, 91, 72,
+                224, 27, 153, 108, 173, 192, 1, 98, 47, 181, 227, 99, 180, 33,
+            ];
+            for (ind, col) in s_advices.iter().enumerate() {
+                let s = meta.query_advice(*col, Rotation(rot_into_storage_root));
+                constraints.push((
+                    "If placeholder leaf without branch (sel = 1), then storage trie is empty",
+                    q_enable.clone()
+                        * is_placeholder.clone()
+                        * is_leaf.clone()
+                        * (s.clone() - Expression::Constant(F::from(empty_trie_hash[ind] as u64))),
+                ));
+            }
+
+            constraints
+        });
 
         // If there is no branch, just a leaf, but after a placeholder.
         meta.lookup_any("storage_root_in_account_leaf 4: root of the first level storage leaf (after placeholder) in account leaf", |meta| {

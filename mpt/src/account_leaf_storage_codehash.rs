@@ -366,7 +366,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
 
         let sel = |meta: &mut VirtualCells<F>| {
             let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
-            let mut q_enable = q_not_first.clone()
+            let q_enable = q_not_first.clone()
                 * meta.query_advice(is_account_leaf_storage_codehash, Rotation::cur());
 
             q_enable

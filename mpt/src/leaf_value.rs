@@ -51,7 +51,6 @@ impl<F: FieldExt> LeafValueChip<F> {
         fixed_table: [Column<Fixed>; 3],
     ) -> LeafValueConfig {
         let config = LeafValueConfig {};
-        let one = Expression::Constant(F::one());
 
         // TODO: use r_table
 
@@ -72,14 +71,13 @@ impl<F: FieldExt> LeafValueChip<F> {
         // leaf without branch.
         meta.create_gate("Leaf & leaf value RLC", |meta| {
             let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
-            let mut is_leaf = meta.query_advice(is_leaf_value, Rotation::cur());
+            let is_leaf = meta.query_advice(is_leaf_value, Rotation::cur());
             let q_enable = q_not_first * is_leaf;
 
             let mut constraints = vec![];
 
             let c128 = Expression::Constant(F::from(128));
             let c192 = Expression::Constant(F::from(192));
-            let c248 = Expression::Constant(F::from(248));
             let is_long = meta.query_advice(s_mod_node_hash_rlc, Rotation::cur());
             let is_short = meta.query_advice(c_mod_node_hash_rlc, Rotation::cur());
             let is_leaf_long = meta.query_advice(s_mod_node_hash_rlc, Rotation::prev());
@@ -106,8 +104,8 @@ impl<F: FieldExt> LeafValueChip<F> {
             // value of length 32 (the first RLP byte means 33 bytes after it, the second
             // RLP byte means 32 bytes after it).
 
-            let mut leaf_rlc_prev = meta.query_advice(acc_s, Rotation::prev());
-            let mut leaf_mult_prev = meta.query_advice(acc_mult_s, Rotation::prev());
+            let leaf_rlc_prev = meta.query_advice(acc_s, Rotation::prev());
+            let leaf_mult_prev = meta.query_advice(acc_mult_s, Rotation::prev());
             let s_rlp2_prev = meta.query_advice(s_rlp2, Rotation::prev());
             let s_rlp2_cur = meta.query_advice(s_rlp2, Rotation::cur());
 
@@ -272,7 +270,7 @@ impl<F: FieldExt> LeafValueChip<F> {
         meta.lookup_any("leaf hash in parent", |meta| {
             let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
             let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
-            let mut is_leaf = meta.query_advice(is_leaf_value, Rotation::cur());
+            let is_leaf = meta.query_advice(is_leaf_value, Rotation::cur());
             let q_enable = q_not_first * not_first_level * is_leaf;
 
             let rlc = meta.query_advice(acc_s, Rotation::cur());
@@ -322,7 +320,7 @@ impl<F: FieldExt> LeafValueChip<F> {
         meta.lookup_any("leaf hash in parent (branch placeholder)", |meta| {
             let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
             let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
-            let mut is_leaf = meta.query_advice(is_leaf_value, Rotation::cur());
+            let is_leaf = meta.query_advice(is_leaf_value, Rotation::cur());
             let q_enable = q_not_first * not_first_level * is_leaf;
 
             let mut rlc = meta.query_advice(acc_s, Rotation::prev());
@@ -435,7 +433,7 @@ impl<F: FieldExt> LeafValueChip<F> {
 
         let sel = |meta: &mut VirtualCells<F>| {
             let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
-            let mut is_leaf = meta.query_advice(is_leaf_value, Rotation::cur());
+            let is_leaf = meta.query_advice(is_leaf_value, Rotation::cur());
             not_first_level * is_leaf
         };
 

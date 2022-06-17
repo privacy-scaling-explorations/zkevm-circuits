@@ -10,6 +10,8 @@ use std::marker::PhantomData;
 pub(crate) struct RootsConfig {}
 
 // Constraints for roots and not_first_level selector.
+// Note: comparing the roots with the hash of branch/extension node (or account leaf if in the first level)
+// is done in branch_hash_in_parent/extension_node (account_leaf_storage_codehash).
 pub(crate) struct RootsChip<F> {
     config: RootsConfig,
     _marker: PhantomData<F>,
@@ -24,6 +26,7 @@ impl<F: FieldExt> RootsChip<F> {
         is_leaf_in_added_branch: Column<Advice>,
         is_branch_init: Column<Advice>,
         is_account_leaf_key_s: Column<Advice>,
+        is_storage_leaf_key_s: Column<Advice>,
         inter_start_root: Column<Advice>,
         inter_final_root: Column<Advice>,
         address_rlc: Column<Advice>,
@@ -40,6 +43,7 @@ impl<F: FieldExt> RootsChip<F> {
             let not_first_level_cur = meta.query_advice(not_first_level, Rotation::cur());
             let is_branch_init = meta.query_advice(is_branch_init, Rotation::cur());
             let is_account_leaf_key_s = meta.query_advice(is_account_leaf_key_s, Rotation::cur());
+            let is_storage_leaf_key_s = meta.query_advice(is_storage_leaf_key_s, Rotation::cur());
             let is_leaf_in_added_branch_prev = meta.query_advice(is_leaf_in_added_branch, Rotation::prev());
 
             let start_root_prev = meta.query_advice(inter_start_root, Rotation::prev());
@@ -119,10 +123,11 @@ impl<F: FieldExt> RootsChip<F> {
             // could potentially put first levels at wrong places, but then address/key
             // RLC constraints would fail.
             constraints.push((
-                "not_first_level doesn't change except at is_branch_init or is_account_leaf",
+                "not_first_level doesn't change except at is_branch_init or is_account_leaf_key_s or is_storage_leaf_key_s",
                 q_not_first.clone()
                     * (one.clone() - is_branch_init.clone())
                     * (one.clone() - is_account_leaf_key_s.clone())
+                    * (one.clone() - is_storage_leaf_key_s.clone()) // when storage proof doesn't have branches/extension nodes
                     * (not_first_level_cur.clone() - not_first_level_prev.clone()),
             )); 
 

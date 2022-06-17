@@ -1,6 +1,6 @@
 use halo2_proofs::{
     circuit::Chip,
-    plonk::{Advice, Column, ConstraintSystem, Expression, Fixed, Instance},
+    plonk::{Advice, Column, ConstraintSystem, Expression, Fixed},
     poly::Rotation,
 };
 use pairing::arithmetic::FieldExt;
@@ -38,7 +38,7 @@ impl<F: FieldExt> BranchHashInParentChip<F> {
         let one = Expression::Constant(F::from(1_u64));
 
         meta.lookup_any(
-            "account first level branch hash - compared to root",
+            "branch in first level - hash compared to root",
             |meta| {
                 let mut constraints = vec![];
                 let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());

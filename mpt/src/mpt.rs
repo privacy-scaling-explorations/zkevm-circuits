@@ -401,6 +401,7 @@ impl<F: FieldExt> MPTConfig<F> {
             is_leaf_in_added_branch,
             is_branch_init,
             is_account_leaf_key_s,
+            is_leaf_s,
             inter_start_root,
             inter_final_root,
             address_rlc,
@@ -588,6 +589,7 @@ impl<F: FieldExt> MPTConfig<F> {
 
         StorageRootChip::<F>::configure(
             meta,
+            q_enable,
             not_first_level,
             is_leaf_s_value,
             is_leaf_c_value,
@@ -606,6 +608,7 @@ impl<F: FieldExt> MPTConfig<F> {
 
         StorageRootChip::<F>::configure(
             meta,
+            q_enable,
             not_first_level,
             is_leaf_s_value,
             is_leaf_c_value,
