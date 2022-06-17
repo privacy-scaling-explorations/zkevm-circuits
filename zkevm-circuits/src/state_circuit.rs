@@ -242,7 +242,7 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
 }
 
 fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: &StateConfig) -> Queries<F> {
-    let x = meta.query_advice(
+    let final_bits_sum = meta.query_advice(
         c.lexicographic_ordering.first_different_limb.bits[3],
         Rotation::cur(),
     ) + meta.query_advice(
@@ -263,7 +263,7 @@ fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: &StateConfig) -> Queries
         id: MpiQueries::new(meta, c.sort_keys.id),
         // this isn't binary! only 0 if most significant 3 bits are all 0 and at most 1 of the two
         // least significant bits is 1.
-        is_tag_and_id_unchanged: 10.expr()
+        is_tag_and_id_unchanged: 4.expr()
             * (meta.query_advice(
                 c.lexicographic_ordering.first_different_limb.bits[0],
                 Rotation::cur(),
@@ -274,7 +274,7 @@ fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: &StateConfig) -> Queries
                 c.lexicographic_ordering.first_different_limb.bits[2],
                 Rotation::cur(),
             ))
-            + x.clone() * (1.expr() - x),
+            + final_bits_sum.clone() * (1.expr() - final_bits_sum),
         address: MpiQueries::new(meta, c.sort_keys.address),
         field_tag: meta.query_advice(c.sort_keys.field_tag, Rotation::cur()),
         storage_key: RlcQueries::new(meta, c.sort_keys.storage_key),
