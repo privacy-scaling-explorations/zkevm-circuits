@@ -137,7 +137,7 @@ impl<F: Field> ConstraintBuilder<F> {
         );
         self.condition(q.is_tag_and_id_unchanged.clone(), |cb| {
             cb.require_boolean(
-                "if previous row is Stack with unchanged call id, address change is 0 or 1",
+                "if previous row is also Stack with unchanged call id, address change is 0 or 1",
                 q.address_change(),
             )
         });

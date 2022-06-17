@@ -162,13 +162,13 @@ impl Config {
                 let limb_difference = meta.query_advice(limb_difference, Rotation::cur());
 
                 let mut constraints = vec![];
-                for ((limb, cur_expression), prev_expression) in
+                for ((i, cur_limb), prev_limb) in
                     LimbIndex::iter().zip(cur.be_limbs()).zip(prev.be_limbs())
                 {
                     constraints.push(
                         selector.clone()
-                            * first_different_limb.value_equals(limb, Rotation::cur())(meta)
-                            * (limb_difference.clone() - cur_expression + prev_expression),
+                            * first_different_limb.value_equals(i, Rotation::cur())(meta)
+                            * (limb_difference.clone() - cur_limb + prev_limb),
                     );
                 }
                 constraints
