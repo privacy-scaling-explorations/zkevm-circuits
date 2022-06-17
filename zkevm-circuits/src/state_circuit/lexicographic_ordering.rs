@@ -18,62 +18,33 @@ use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
 
 // We use this chip to show that the rows of the rw table are in lexicographic
-// order, i.e. ordered by (tag, field_tag, id, address, storage_key, and
-// rw_counter). We do this by packing these 6 fields into a 480 bit value X, and
-// then showing that X_cur > X_prev. Let A0, A1, ..., A29 be the 30 16-bit limbs
-// of X_cur and B0, B1, ..., B29 be 30 16-bit limbs of X_prev, in big endian
+// order, i.e. ordered by (tag, id, address, field_tag, storage_key, and
+// rw_counter). We do this by packing these 6 fields into a 512 bit value X, and
+// then showing that X_cur > X_prev. Let A0, A1, ..., A31 be the 32 16-bit limbs
+// of X_cur and B0, B1, ..., B31 be 32 16-bit limbs of X_prev, in big endian
 // order.
 
 // Let
 // C0 = A0 - B0,
 // C1 = C0 << 16 + A1 - B1,
 // ...
-// C14 = C13 << 16 + A14 - B14,
-// and
-// C15 = A15 - B15,
-// C16 = C15 << 16 + A16 - B16,
-// ...
-// C29 = C28 << 16 + A29 - B29.
-// We have to split the 30 limbs into upper and lower halves between C14 and C15
-// because a field element can only hold 15 16-bit limbs.
+// C31 = C30 << 16 + A31 - B21.
 
-// X_cur > X_prev iff one of the following is true:
-// 1. one of C0, ..., C14 is non-zero and fits into 16 bits.
-// 2. all of C0, ..., C14 are 0 and one of C15, ..., C29 is non-zero and fits
-//    into 16 bits. (note that "all of C0, ..., C14 are 0" is equivalent to
-//    "C14 is 0".)
+// X_cur > X_prev iff one of C0, ..., C31 is non-zero and fits into 16 bits.
 
-// We show that one of these is true with the following constraints:
-//  1. upper_limb_difference is (at least) 1 of the 15 values C0, ..., C14.
-//  2. lower_limb_difference is (at least) 1 of the 15 values C15, ..., C29.
-//  3. upper_limb_difference fits into 16 bits.
-//  4. if upper_limb_difference is 0, then lower_limb_difference fits into 16
-//    bits.
-//  5. if upper_limb_difference is 0, then C14 is 0.
-//  6. at least one of upper_limb_difference or lower_limb_difference is not 0.
+// We show this with following advice columns and constraints:
+// - first_different_limb: first index where the limbs differ.
+// - limb_difference: the difference between the limbs at first_different_limb.
+// - limb_difference_inverse: the inverse of limb_difference
 
-// We satisfy these constraints by assigning upper_limb_difference
-// to be the first non-zero difference between the first 15 big-endian limbs of
-// X_cur and X_prev or 0 if the the limbs are all equal. E.g. if X_curr = (2, 1,
-// 6, ...) and X_prev = (2, 1, 2, ...), then upper_limb_difference = C2 = 6 - 2
-// = 4. If there is no difference between the first 15 pairs of limbs, then
-// lower_limb_difference is assigned to be the first non-zero difference between
-// the last 15 pairs of limbs. This non-zero difference will exist because there
-// are no duplicate entries in the rw table. If upper_limb_difference has a
-// non-zero value, then we assign lower_limb_difference to be the value of C29.
-
-// Packing the field into 480 bits:
-//   4 bits for tag,
-// + 5 bits for field_tag
-// + 23 bits for id
-// + 160 bits for address,
-// + 256 bits for storage key
-// + 32  bits for rw_counter
-// -----------------------------------
-// = 480 bits
+//  1. limb_difference fits into 16 bits.
+//  2. limb_difference is not zero because its inverse exists.
+//  3. limbs before first_different_limb are equal.
+//  4. limb_difference equals the difference of the limbs at
+// first_different_limb.
 
 #[derive(Clone, Copy, Debug, EnumIter)]
-enum LimbIndex {
+pub enum LimbIndex {
     Tag,
     Id1,
     Id0,
@@ -108,7 +79,7 @@ enum LimbIndex {
     RwCounter0,
 }
 
-impl AsBits<5> for Limb {
+impl AsBits<5> for LimbIndex {
     fn as_bits(&self) -> [bool; 5] {
         let mut bits = [false; 5];
         let mut x = *self as u8;
@@ -167,7 +138,8 @@ impl Config {
             let prev = Queries::new(meta, keys, Rotation::prev());
 
             let mut constraints = vec![];
-            for (limb, e) in Limb::iter().zip(limb_difference_possible_values(cur, prev)) {
+            // RLC this?
+            for (limb, e) in LimbIndex::iter().zip(limb_difference_possible_values(cur, prev)) {
                 constraints.push(
                     selector.clone()
                         * first_different_limb.value_equals(limb, Rotation::cur())(meta)
@@ -187,7 +159,7 @@ impl Config {
 
                 let mut constraints = vec![];
                 for ((limb, cur_expression), prev_expression) in
-                    Limb::iter().zip(cur.be_limbs()).zip(prev.be_limbs())
+                    LimbIndex::iter().zip(cur.be_limbs()).zip(prev.be_limbs())
                 {
                     constraints.push(
                         selector.clone()
@@ -219,12 +191,12 @@ impl Config {
         let cur_be_limbs = rw_to_be_limbs(cur);
         let prev_be_limbs = rw_to_be_limbs(prev);
 
-        let find_result = Limb::iter()
+        let find_result = LimbIndex::iter()
             .zip(&cur_be_limbs)
             .zip(&prev_be_limbs)
             .find(|((_, a), b)| a != b);
         let ((index, cur_limb), prev_limb) = if cfg!(test) {
-            find_result.unwrap_or(((Limb::RwCounter0, &0), &0))
+            find_result.unwrap_or(((LimbIndex::RwCounter0, &0), &0))
         } else {
             find_result.expect("repeated rw counter")
         };
@@ -325,11 +297,11 @@ fn limb_difference_possible_values<F: Field>(
 
 #[cfg(test)]
 mod test {
-    use super::Limb;
+    use super::LimbIndex;
     use strum::IntoEnumIterator;
 
     #[test]
     fn n_limbs() {
-        assert_eq!(Limb::iter().len(), 32);
+        assert_eq!(LimbIndex::iter().len(), 32);
     }
 }
