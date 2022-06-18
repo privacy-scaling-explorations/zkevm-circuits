@@ -451,6 +451,8 @@ fn get_word_parts(part_size: usize, rot: usize, normalize: bool) -> WordParts {
         println!("{:?}", part);
     }*/
 
+    assert_eq!(get_rotate_count(rot, part_size), rot_idx);
+
     parts.rotate_left(rot_idx);
     assert_eq!(parts[0].bits[0], 0);
 
@@ -870,12 +872,18 @@ impl<F: Field> KeccakPackedConfig<F> {
         println!("Columns: {}", cell_values.len());
         println!("part_size absorb: {}", get_num_bits_per_absorb_lookup());
         println!("part_size theta: {}", get_num_bits_per_theta_c_lookup());
-        println!("part_size theta c: {}", get_num_bits_per_lookup(THETA_C_LOOKUP_RANGE));
+        println!(
+            "part_size theta c: {}",
+            get_num_bits_per_lookup(THETA_C_LOOKUP_RANGE)
+        );
         println!("part_size theta t: {}", get_num_bits_per_lookup(4));
         println!("part_size rho/pi: {}", get_num_bits_per_rho_pi_lookup());
         println!("part_size chi base: {}", get_num_bits_per_base_chi_lookup());
         println!("part_size chi ext: {}", get_num_bits_per_ext_chi_lookup());
-        println!("uniform part sizes: {:?}", target_part_sizes(get_num_bits_per_theta_c_lookup()));
+        println!(
+            "uniform part sizes: {:?}",
+            target_part_sizes(get_num_bits_per_theta_c_lookup())
+        );
 
         KeccakPackedConfig {
             q_enable,
@@ -1252,7 +1260,7 @@ fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bits: Vec<u8>) {
             let mut s_bits = [F::zero(); 25];
             for i in 0..5 {
                 for j in 0..5 {
-                    s_bits[i*5 + j] = b[i][j].to_scalar().unwrap();
+                    s_bits[i * 5 + j] = b[i][j].to_scalar().unwrap();
                 }
             }
 
@@ -1534,7 +1542,12 @@ mod tests {
         ];
 
         let input_b = vec![1u8; 2000];
-        let inputs = multi_keccak(vec![input_a.to_vec(), input_b.to_vec(), input_a.to_vec(), input_b.to_vec()]);
+        let inputs = multi_keccak(vec![
+            input_a.to_vec(),
+            input_b.to_vec(),
+            input_a.to_vec(),
+            input_b.to_vec(),
+        ]);
         verify::<Fr>(k, inputs, true);
     }
 }

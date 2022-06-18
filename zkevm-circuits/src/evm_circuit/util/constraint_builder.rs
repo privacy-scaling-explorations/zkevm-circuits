@@ -235,7 +235,10 @@ impl<F: FieldExt> BaseConstraintBuilder<F> {
             .clone()
             .into_iter()
             .map(|(name, constraint)| (name, selector.clone() * constraint))
-            .filter(|(name, constraint)| { self.validate_degree(constraint.degree(), name); true })
+            .filter(|(name, constraint)| {
+                self.validate_degree(constraint.degree(), name);
+                true
+            })
             .collect()
     }
 }
