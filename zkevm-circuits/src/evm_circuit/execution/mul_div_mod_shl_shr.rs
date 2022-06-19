@@ -121,15 +121,18 @@ impl<F: Field> ExecutionGadget<F> for MulDivModShlShrGadget<F> {
         // `shf0 < 128`, and `divisor_hi == 2^(128 - shf0)` otherwise.
         let divisor_lo = from_bytes::expr(&divisor.cells[..16]);
         let divisor_hi = from_bytes::expr(&divisor.cells[16..]);
-        cb.condition(is_shl.clone() + is_shr.clone(), |cb| {
-            cb.add_lookup(
-                "Pow2 lookup of shf0, divisor_lo and divisor_hi for opcode SHL and SHR",
-                Lookup::Fixed {
-                    tag: FixedTableTag::Pow2.expr(),
-                    values: [shf0.expr(), divisor_lo.expr(), divisor_hi.expr()],
-                },
-            );
-        });
+        cb.condition(
+            (is_shl.clone() + is_shr.clone()) * (1.expr() - divisor_is_zero.expr()),
+            |cb| {
+                cb.add_lookup(
+                    "Pow2 lookup of shf0, divisor_lo and divisor_hi for opcode SHL and SHR",
+                    Lookup::Fixed {
+                        tag: FixedTableTag::Pow2.expr(),
+                        values: [shf0.expr(), divisor_lo.expr(), divisor_hi.expr()],
+                    },
+                );
+            },
+        );
 
         let gas_cost = is_mul * OpcodeId::MUL.constant_gas_cost().expr()
             + is_div * OpcodeId::DIV.constant_gas_cost().expr()
