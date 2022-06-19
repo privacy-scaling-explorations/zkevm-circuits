@@ -1,12 +1,13 @@
 use super::{
-    lookups::Queries as LookupsQueries, multiple_precision_integer::Queries as MpiQueries,
+    binary_number::Config as BinaryNumberConfig, lookups::Queries as LookupsQueries,
+    multiple_precision_integer::Queries as MpiQueries,
     random_linear_combination::Queries as RlcQueries, N_LIMBS_ACCOUNT_ADDRESS, N_LIMBS_ID,
     N_LIMBS_RW_COUNTER,
 };
 use crate::evm_circuit::{
     param::N_BYTES_WORD,
     table::{AccountFieldTag, RwTableTag},
-    util::{math_gadget::generate_lagrange_base_polynomial, not, or},
+    util::{not, or},
 };
 use crate::util::Expr;
 use eth_types::Field;
@@ -19,7 +20,7 @@ pub struct Queries<F: Field> {
     pub rw_counter: MpiQueries<F, N_LIMBS_RW_COUNTER>,
     pub is_write: Expression<F>,
     pub tag: Expression<F>,
-    pub prev_tag: Expression<F>,
+    pub tag_bits: [Expression<F>; 4],
     pub id: MpiQueries<F, N_LIMBS_ID>,
     pub is_id_unchanged: Expression<F>,
     pub address: MpiQueries<F, N_LIMBS_ACCOUNT_ADDRESS>,
@@ -98,7 +99,7 @@ impl<F: Field> ConstraintBuilder<F> {
     }
 
     fn build_general_constraints(&mut self, q: &Queries<F>) {
-        self.require_in_set("tag in RwTableTag range", q.tag(), set::<F, RwTableTag>());
+        // tag value in RwTableTag range is enforced in BinaryNumberChip
         self.require_boolean("is_write is boolean", q.is_write());
     }
 
@@ -291,11 +292,7 @@ impl<F: Field> Queries<F> {
     }
 
     fn tag_matches(&self, tag: RwTableTag) -> Expression<F> {
-        generate_lagrange_base_polynomial(
-            self.tag.clone(),
-            tag as usize,
-            RwTableTag::iter().map(|x| x as usize),
-        )
+        BinaryNumberConfig::<RwTableTag, 4>::value_equals_expr(tag, self.tag_bits.clone())
     }
 
     fn first_access(&self) -> Expression<F> {

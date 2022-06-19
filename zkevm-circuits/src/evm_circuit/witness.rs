@@ -1184,6 +1184,7 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                 match op {
                     OpcodeId::ADD | OpcodeId::SUB => ExecutionState::ADD_SUB,
                     OpcodeId::MUL | OpcodeId::DIV | OpcodeId::MOD => ExecutionState::MUL_DIV_MOD,
+                    OpcodeId::MULMOD => ExecutionState::MULMOD,
                     OpcodeId::SDIV | OpcodeId::SMOD => ExecutionState::SDIV_SMOD,
                     OpcodeId::EQ | OpcodeId::LT | OpcodeId::GT => ExecutionState::CMP,
                     OpcodeId::SLT | OpcodeId::SGT => ExecutionState::SCMP,
@@ -1215,6 +1216,7 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::DIFFICULTY | OpcodeId::BASEFEE => ExecutionState::BLOCKCTXU256,
                     OpcodeId::GAS => ExecutionState::GAS,
                     OpcodeId::SELFBALANCE => ExecutionState::SELFBALANCE,
+                    OpcodeId::SHA3 => ExecutionState::SHA3,
                     OpcodeId::SHR => ExecutionState::SHR,
                     OpcodeId::SLOAD => ExecutionState::SLOAD,
                     OpcodeId::SSTORE => ExecutionState::SSTORE,
