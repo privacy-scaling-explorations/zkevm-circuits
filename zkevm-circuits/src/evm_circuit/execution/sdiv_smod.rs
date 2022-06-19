@@ -4,6 +4,7 @@ use crate::{
         execution::ExecutionGadget,
         step::ExecutionState,
         util::{
+            self,
             common_gadget::SameContextGadget,
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
             math_gadget::{AbsWordGadget, IsZeroGadget, LtWordGadget, MulAddWordsGadget},
@@ -20,6 +21,8 @@ use halo2_proofs::plonk::Error;
 #[derive(Clone, Debug)]
 pub(crate) struct SignedDivModGadget<F> {
     same_context: SameContextGadget<F>,
+    /// Words a, b, c, d
+    words: [util::Word<F>; 4],
     mul_add_words: MulAddWordsGadget<F>,
     divisor_is_zero: IsZeroGadget<F>,
     quotient_is_zero: IsZeroGadget<F>,
@@ -122,6 +125,7 @@ impl<F: Field> ExecutionGadget<F> for SignedDivModGadget<F> {
         let same_context = SameContextGadget::construct(cb, opcode, step_state_transition);
 
         Self {
+            words: [a, b, c, d],
             same_context,
             mul_add_words,
             divisor_is_zero,
@@ -177,6 +181,10 @@ impl<F: Field> ExecutionGadget<F> for SignedDivModGadget<F> {
         let b_abs = get_word_abs(b);
         let c_abs = get_word_abs(c);
         let d_abs = get_word_abs(d);
+        self.words[0].assign(region, offset, Some(a_abs.to_le_bytes()))?;
+        self.words[1].assign(region, offset, Some(b_abs.to_le_bytes()))?;
+        self.words[2].assign(region, offset, Some(c_abs.to_le_bytes()))?;
+        self.words[3].assign(region, offset, Some(d_abs.to_le_bytes()))?;
         self.mul_add_words
             .assign(region, offset, [a_abs, b_abs, c_abs, d_abs])?;
         self.lt_word.assign(region, offset, c_abs, b_abs)?;
