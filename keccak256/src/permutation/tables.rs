@@ -219,6 +219,8 @@ impl<F: Field, const K: u64> RangeCheckConfig<F, K> {
             },
         )
     }
+    // dead_code reason: WordBuilderConfig is using it. We defer the decision to
+    // remove this after WordBuilderConfig is complete
     #[allow(dead_code)]
     pub(crate) fn configure(meta: &mut ConstraintSystem<F>) -> Self {
         Self {
