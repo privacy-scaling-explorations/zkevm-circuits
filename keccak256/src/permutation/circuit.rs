@@ -3,9 +3,9 @@ use crate::{
     common::{NEXT_INPUTS_LANES, PERMUTATION, ROUND_CONSTANTS},
     keccak_arith::*,
     permutation::{
-        base_conversion::BaseConversionConfig, iota::IotaConfig, mixing::MixingConfig,
-        pi::pi_gate_permutation, rho::RhoConfig, tables::FromBase9TableConfig, theta::ThetaConfig,
-        xi::XiConfig,
+        base_conversion::BaseConversionConfig, generic::GenericConfig, iota::IotaConstants,
+        mixing::MixingConfig, pi::pi_gate_permutation, rho::RhoConfig,
+        tables::FromBase9TableConfig, theta::ThetaConfig, xi::XiConfig,
     },
 };
 use eth_types::Field;
@@ -16,13 +16,12 @@ use halo2_proofs::{
 };
 use itertools::Itertools;
 use std::convert::TryInto;
-
 #[derive(Clone, Debug)]
 pub struct KeccakFConfig<F: Field> {
+    generic: GenericConfig<F>,
     theta_config: ThetaConfig<F>,
     rho_config: RhoConfig<F>,
     xi_config: XiConfig<F>,
-    iota_config: IotaConfig<F>,
     from_b9_table: FromBase9TableConfig<F>,
     base_conversion_config: BaseConversionConfig<F>,
     mixing_config: MixingConfig<F>,
@@ -34,7 +33,7 @@ pub struct KeccakFConfig<F: Field> {
 impl<F: Field> KeccakFConfig<F> {
     // We assume state is received in base-9.
     pub fn configure(meta: &mut ConstraintSystem<F>) -> Self {
-        let state = (0..25)
+        let state: [Column<Advice>; 25] = (0..25)
             .map(|_| {
                 let column = meta.advice_column();
                 meta.enable_equality(column);
@@ -44,20 +43,19 @@ impl<F: Field> KeccakFConfig<F> {
             .try_into()
             .unwrap();
 
-        let flag = meta.advice_column();
         let fixed = [
             meta.fixed_column(),
             meta.fixed_column(),
             meta.fixed_column(),
         ];
+        let generic = GenericConfig::configure(meta, state[0..3].try_into().unwrap(), fixed[0]);
 
         // theta
         let theta_config = ThetaConfig::configure(meta.selector(), meta, state);
         // rho
-        let rho_config = RhoConfig::configure(meta, state, fixed);
+        let rho_config = RhoConfig::configure(meta, state, fixed, &generic);
         // xi
         let xi_config = XiConfig::configure(meta.selector(), meta, state);
-        let iota_config = IotaConfig::configure(meta, state[0], flag, fixed[0]);
 
         // Allocate space for the activation flag of the base_conversion.
         let base_conv_activator = meta.advice_column();
@@ -76,8 +74,7 @@ impl<F: Field> KeccakFConfig<F> {
 
         // Mixing will make sure that the flag is binary constrained and that
         // the out state matches the expected result.
-        let mixing_config =
-            MixingConfig::configure(meta, &from_b9_table, iota_config.clone(), state);
+        let mixing_config = MixingConfig::configure(meta, &from_b9_table, state, generic.clone());
 
         // Allocate the `out state correctness` gate selector
         let q_out = meta.selector();
@@ -96,10 +93,10 @@ impl<F: Field> KeccakFConfig<F> {
         });
 
         KeccakFConfig {
+            generic,
             theta_config,
             rho_config,
             xi_config,
-            iota_config,
             from_b9_table,
             base_conversion_config,
             mixing_config,
@@ -161,9 +158,12 @@ impl<F: Field> KeccakFConfig<F> {
             }
 
             // iota_b9
-            state[0] = self
-                .iota_config
-                .assign_round_b9(layouter, state[0].clone(), round_idx)?;
+            let iota_constants = IotaConstants::default();
+            state[0] = self.generic.add_fixed(
+                layouter,
+                state[0].clone(),
+                iota_constants.a4_times_round_constants_b9[round_idx],
+            )?;
 
             // The resulting state is in Base-9 now. We now convert it to
             // base_13 which is what Theta requires again at the

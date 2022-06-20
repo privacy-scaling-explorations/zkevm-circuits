@@ -1,4 +1,5 @@
 use crate::permutation::{
+    generic::GenericConfig,
     rho_checks::{LaneRotateConversionConfig, OverflowCheckConfig},
     rho_helpers::{STEP2_RANGE, STEP3_RANGE},
     tables::{Base13toBase9TableConfig, RangeCheckConfig, SpecialChunkTableConfig},
@@ -26,6 +27,7 @@ impl<F: Field> RhoConfig<F> {
         meta: &mut ConstraintSystem<F>,
         state: [Column<Advice>; 25],
         fixed: [Column<Fixed>; 3],
+        generic: &GenericConfig<F>,
     ) -> Self {
         state.iter().for_each(|col| meta.enable_equality(*col));
         let base13_to_9_table = Base13toBase9TableConfig::configure(meta);
@@ -46,6 +48,7 @@ impl<F: Field> RhoConfig<F> {
             &step2_range_table,
             &step3_range_table,
             state[5..7].try_into().unwrap(),
+            generic.clone(),
         );
         Self {
             lane_config,
@@ -113,12 +116,13 @@ mod tests {
     use crate::common::*;
     use crate::gate_helpers::biguint_to_f;
     use crate::keccak_arith::*;
-    use halo2_proofs::circuit::Layouter;
-    use halo2_proofs::pairing::bn256::Fr as Fp;
-    use halo2_proofs::plonk::Selector;
-    use halo2_proofs::plonk::{Advice, Column, ConstraintSystem, Error};
-    use halo2_proofs::poly::Rotation;
-    use halo2_proofs::{circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit};
+    use halo2_proofs::{
+        circuit::{Layouter, SimpleFloorPlanner},
+        dev::MockProver,
+        pairing::bn256::Fr as Fp,
+        plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Selector},
+        poly::Rotation,
+    };
     use itertools::Itertools;
     use std::convert::TryInto;
 
@@ -156,8 +160,10 @@ mod tests {
                     meta.fixed_column(),
                     meta.fixed_column(),
                 ];
+                let generic =
+                    GenericConfig::configure(meta, state[0..3].try_into().unwrap(), fixed[0]);
 
-                let rho_config = RhoConfig::configure(meta, state, fixed);
+                let rho_config = RhoConfig::configure(meta, state, fixed, &generic);
 
                 let q_enable = meta.selector();
                 meta.create_gate("Check states", |meta| {
