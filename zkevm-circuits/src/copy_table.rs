@@ -1,5 +1,6 @@
 #![allow(missing_docs)]
-use gadgets::is_zero::{IsZeroChip, IsZeroConfig};
+use bus_mapping::{circuit_input_builder::CopyDataType, operation::RW};
+use gadgets::is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction};
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::Layouter,
@@ -10,38 +11,73 @@ use halo2_proofs::{
 use crate::{
     evm_circuit::{
         table::LookupTable,
-        util::{and, constraint_builder::BaseConstraintBuilder, not, or},
+        util::{and, constraint_builder::BaseConstraintBuilder, not, or, RandomLinearCombination},
         witness::Block,
     },
-    util::Expr,
+    util::{self, Expr},
 };
+
+impl<F: FieldExt> util::Expr<F> for CopyDataType {
+    fn expr(&self) -> Expression<F> {
+        Expression::Constant(F::from(*self as u64))
+    }
+}
 
 /// The rw table shared between evm circuit and state circuit
 #[derive(Clone, Debug)]
 pub struct CopyTable<F> {
+    /// Whether this row denotes a step. A read row is a step and a write row is
+    /// not.
     pub q_step: Selector,
+    /// Whether the row is the first read-write pair for a copy event.
     pub q_first: Column<Advice>,
+    /// Whether the row is the last read-write pair for a copy event.
     pub q_last: Column<Advice>,
+    /// The relevant ID for the read-write row, represented as a random linear
+    /// combination. The ID may be one of the below: 1. Call ID/Caller ID
+    /// for CopyDataType::Memory 2. Bytecode hash for CopyDataType::Bytecode
+    /// 3. Transaction ID for CopyDataType::TxCalldata
+    /// 4. Log ID for CopyDataType::TxLog
     pub id: Column<Advice>,
+    /// Log ID in case the row denotes a log write operation.
     pub log_id: Column<Advice>,
+    /// The tag of the row, denoting the copy data type.
     pub tag: Column<Advice>,
+    /// The source/destination address for this copy step.
     pub addr: Column<Advice>,
+    /// The end of the source buffer for the copy event.
     pub addr_end: Column<Advice>,
+    /// The number of bytes left to be copied.
     pub bytes_left: Column<Advice>,
+    /// The value copied in this copy step.
     pub value: Column<Advice>,
+    /// In case of a bytecode tag, this denotes whether or not the copied byte
+    /// is an opcode or push data byte.
     pub is_code: Column<Advice>,
+    /// Whether the row is padding.
     pub is_pad: Column<Advice>,
+    /// The associated read-write counter for this row.
     pub rw_counter: Column<Advice>,
+    /// Decrementing counter denoting reverse read-write counter.
     pub rwc_inc_left: Column<Advice>,
-
-    pub is_memory_inv: Column<Advice>,
+    /// Helper field for checking whether the row is tagged
+    /// CopyDataType::Bytecode.
     pub is_bytecode_inv: Column<Advice>,
-    pub is_tx_calldata_inv: Column<Advice>,
-    pub is_tx_log_inv: Column<Advice>,
-
-    pub is_memory: IsZeroConfig<F>,
+    /// IsZeroConfig for checking if the row is tagged CopyDataType::Bytecode.
     pub is_bytecode: IsZeroConfig<F>,
+    /// Helper field for checking whether the row is tagged
+    /// CopyDataType::Memory.
+    pub is_memory_inv: Column<Advice>,
+    /// IsZeroConfig for checking if the row is tagged CopyDataType::Memory.
+    pub is_memory: IsZeroConfig<F>,
+    /// Helper field for checking whether the row is tagged
+    /// CopyDataType::TxCalldata.
+    pub is_tx_calldata_inv: Column<Advice>,
+    /// IsZeroConfig for checking if the row is tagged CopyDataType::TxCalldata.
     pub is_tx_calldata: IsZeroConfig<F>,
+    /// Helper field for checking whether the row is tagged CopyDataType::TxLog.
+    pub is_tx_log_inv: Column<Advice>,
+    /// IsZeroConfig for checking if the row is tagged CopyDataType::TxLog.
     pub is_tx_log: IsZeroConfig<F>,
 }
 
@@ -81,33 +117,33 @@ impl<F: FieldExt> CopyTable<F> {
         let rw_counter = meta.advice_column();
         let rwc_inc_left = meta.advice_column();
 
-        let is_memory_inv = meta.advice_column();
         let is_bytecode_inv = meta.advice_column();
+        let is_memory_inv = meta.advice_column();
         let is_tx_calldata_inv = meta.advice_column();
         let is_tx_log_inv = meta.advice_column();
 
-        let is_memory = IsZeroChip::configure(
-            meta,
-            |_| 1.expr(),
-            |meta| meta.query_advice(tag, Rotation::cur()) - 1.expr(),
-            is_memory_inv,
-        );
         let is_bytecode = IsZeroChip::configure(
             meta,
             |_| 1.expr(),
-            |meta| meta.query_advice(tag, Rotation::cur()) - 2.expr(),
+            |meta| meta.query_advice(tag, Rotation::cur()) - CopyDataType::Bytecode.expr(),
+            is_memory_inv,
+        );
+        let is_memory = IsZeroChip::configure(
+            meta,
+            |_| 1.expr(),
+            |meta| meta.query_advice(tag, Rotation::cur()) - CopyDataType::Memory.expr(),
             is_memory_inv,
         );
         let is_tx_calldata = IsZeroChip::configure(
             meta,
             |_| 1.expr(),
-            |meta| meta.query_advice(tag, Rotation::cur()) - 3.expr(),
+            |meta| meta.query_advice(tag, Rotation::cur()) - CopyDataType::TxCalldata.expr(),
             is_memory_inv,
         );
         let is_tx_log = IsZeroChip::configure(
             meta,
             |_| 1.expr(),
-            |meta| meta.query_advice(tag, Rotation::cur()) - 4.expr(),
+            |meta| meta.query_advice(tag, Rotation::cur()) - CopyDataType::TxLog.expr(),
             is_memory_inv,
         );
 
@@ -281,6 +317,338 @@ impl<F: FieldExt> CopyTable<F> {
         layouter: &mut impl Layouter<F>,
         block: &Block<F>,
     ) -> Result<(), Error> {
-        todo!();
+        let is_bytecode_chip = IsZeroChip::construct(self.is_bytecode.clone());
+        let is_memory_chip = IsZeroChip::construct(self.is_memory.clone());
+        let is_tx_calldata_chip = IsZeroChip::construct(self.is_tx_calldata.clone());
+        let is_tx_log_chip = IsZeroChip::construct(self.is_tx_log.clone());
+
+        layouter.assign_region(
+            || "assign copy table",
+            |mut region| {
+                let mut offset = 0;
+                for copy_event in block.copy_events.iter() {
+                    for (step_count, copy_rw_pair) in copy_event.steps.chunks(2).enumerate() {
+                        debug_assert_eq!(
+                            copy_rw_pair.len(),
+                            2,
+                            "copy read-write pair of len: {}",
+                            copy_rw_pair.len()
+                        );
+
+                        // Read row
+                        let read_row = copy_rw_pair.get(0).cloned().unwrap();
+                        debug_assert_eq!(
+                            read_row.rw,
+                            RW::READ,
+                            "expected read row to be RW::READ",
+                        );
+                        // q_step enabled.
+                        self.q_step.enable(&mut region, 2 * offset)?;
+                        // q_first
+                        region.assign_advice(
+                            || format!("assign q_first {}", offset),
+                            self.q_first,
+                            offset,
+                            || Ok(if step_count == 0 { F::one() } else { F::zero() }),
+                        )?;
+                        // q_last
+                        region.assign_advice(
+                            || format!("assign q_last {}", offset),
+                            self.q_last,
+                            offset,
+                            || Ok(F::zero()),
+                        )?;
+                        // id
+                        region.assign_advice(
+                            || format!("assign id {}", offset),
+                            self.id,
+                            offset,
+                            || {
+                                Ok(RandomLinearCombination::random_linear_combine(
+                                    copy_event.src_id.bytes(),
+                                    block.randomness,
+                                ))
+                            },
+                        )?;
+                        // log_id
+                        region.assign_advice(
+                            || format!("assign log_id {}", offset),
+                            self.log_id,
+                            offset,
+                            || {
+                                Ok(if read_row.tag == CopyDataType::TxLog {
+                                    RandomLinearCombination::random_linear_combine(
+                                        copy_event.src_id.bytes(),
+                                        block.randomness,
+                                    )
+                                } else {
+                                    F::zero()
+                                })
+                            },
+                        )?;
+                        // tag
+                        region.assign_advice(
+                            || format!("assign tag {}", offset),
+                            self.tag,
+                            offset,
+                            || Ok(F::from(read_row.tag as u64)),
+                        )?;
+                        // addr
+                        region.assign_advice(
+                            || format!("assign addr {}", offset),
+                            self.addr,
+                            offset,
+                            || Ok(F::from(read_row.addr)),
+                        )?;
+                        // addr_end
+                        region.assign_advice(
+                            || format!("assign addr_end {}", offset),
+                            self.addr_end,
+                            offset,
+                            || Ok(read_row.addr_end.map_or(F::zero(), |v| F::from(v))),
+                        )?;
+                        // bytes_left
+                        region.assign_advice(
+                            || format!("assign bytes_left {}", offset),
+                            self.bytes_left,
+                            offset,
+                            || Ok(F::from(copy_event.length - step_count as u64)),
+                        )?;
+                        // value
+                        region.assign_advice(
+                            || format!("assign value {}", offset),
+                            self.value,
+                            offset,
+                            || Ok(F::from(read_row.value as u64)),
+                        )?;
+                        // is_code
+                        region.assign_advice(
+                            || format!("assign is_code {}", offset),
+                            self.is_code,
+                            offset,
+                            || Ok(read_row.is_code.map_or(F::zero(), |v| F::from(v))),
+                        )?;
+                        // is_pad
+                        region.assign_advice(
+                            || format!("assign is_pad {}", offset),
+                            self.is_pad,
+                            offset,
+                            || Ok(F::from(read_row.is_pad)),
+                        )?;
+                        // rw_counter
+                        region.assign_advice(
+                            || format!("assign rw_counter {}", offset),
+                            self.rw_counter,
+                            offset,
+                            || Ok(read_row.rwc.map_or(F::zero(), |v| F::from(v.0 as u64))),
+                        )?;
+                        // rwc_inc_left
+                        region.assign_advice(
+                            || format!("assign rwc_inc_left {}", offset),
+                            self.rwc_inc_left,
+                            offset,
+                            || Ok(F::zero()), // TODO(rohit): fix this
+                        )?;
+                        is_bytecode_chip.assign(
+                            &mut region,
+                            offset,
+                            Some(if copy_event.src_type == CopyDataType::Bytecode {
+                                F::zero()
+                            } else {
+                                F::one()
+                            }),
+                        )?;
+                        is_memory_chip.assign(
+                            &mut region,
+                            offset,
+                            Some(if copy_event.src_type == CopyDataType::Memory {
+                                F::zero()
+                            } else {
+                                F::one()
+                            }),
+                        )?;
+                        is_tx_calldata_chip.assign(
+                            &mut region,
+                            offset,
+                            Some(if copy_event.src_type == CopyDataType::TxCalldata {
+                                F::zero()
+                            } else {
+                                F::one()
+                            }),
+                        )?;
+                        is_tx_log_chip.assign(
+                            &mut region,
+                            offset,
+                            Some(if copy_event.src_type == CopyDataType::TxLog {
+                                F::zero()
+                            } else {
+                                F::one()
+                            }),
+                        )?;
+
+                        offset += 1;
+
+                        // Write row
+                        let write_row = copy_rw_pair.get(1).cloned().unwrap();
+                        debug_assert_eq!(
+                            write_row.rw,
+                            RW::WRITE,
+                            "expected write row to be RW::WRITE",
+                        );
+                        // q_step not enabled.
+                        // q_first
+                        region.assign_advice(
+                            || format!("assign q_first {}", offset),
+                            self.q_first,
+                            offset,
+                            || Ok(F::zero()),
+                        )?;
+                        // q_last
+                        region.assign_advice(
+                            || format!("assign q_last {}", offset),
+                            self.q_last,
+                            offset,
+                            || {
+                                Ok(if step_count == copy_event.steps.len() - 1 {
+                                    F::one()
+                                } else {
+                                    F::zero()
+                                })
+                            },
+                        )?;
+                        // id
+                        region.assign_advice(
+                            || format!("assign id {}", offset),
+                            self.id,
+                            offset,
+                            || {
+                                Ok(RandomLinearCombination::random_linear_combine(
+                                    copy_event.dst_id.bytes(),
+                                    block.randomness,
+                                ))
+                            },
+                        )?;
+                        // log_id
+                        region.assign_advice(
+                            || format!("assign log_id {}", offset),
+                            self.log_id,
+                            offset,
+                            || {
+                                Ok(if write_row.tag == CopyDataType::TxLog {
+                                    RandomLinearCombination::random_linear_combine(
+                                        copy_event.dst_id.bytes(),
+                                        block.randomness,
+                                    )
+                                } else {
+                                    F::zero()
+                                })
+                            },
+                        )?;
+                        // tag
+                        region.assign_advice(
+                            || format!("assign tag {}", offset),
+                            self.tag,
+                            offset,
+                            || Ok(F::from(write_row.tag as u64)),
+                        )?;
+                        // addr
+                        region.assign_advice(
+                            || format!("assign addr {}", offset),
+                            self.addr,
+                            offset,
+                            || Ok(F::from(write_row.addr)),
+                        )?;
+                        // addr_end
+                        region.assign_advice(
+                            || format!("assign addr_end {}", offset),
+                            self.addr_end,
+                            offset,
+                            || Ok(write_row.addr_end.map_or(F::zero(), |v| F::from(v))),
+                        )?;
+                        // bytes_left
+                        region.assign_advice(
+                            || format!("assign bytes_left {}", offset),
+                            self.bytes_left,
+                            offset,
+                            || Ok(F::zero()),
+                        )?;
+                        // value
+                        region.assign_advice(
+                            || format!("assign value {}", offset),
+                            self.value,
+                            offset,
+                            || Ok(F::from(write_row.value as u64)),
+                        )?;
+                        // is_code
+                        region.assign_advice(
+                            || format!("assign is_code {}", offset),
+                            self.is_code,
+                            offset,
+                            || Ok(write_row.is_code.map_or(F::zero(), |v| F::from(v))),
+                        )?;
+                        // is_pad
+                        region.assign_advice(
+                            || format!("assign is_pad {}", offset),
+                            self.is_pad,
+                            offset,
+                            || Ok(F::from(write_row.is_pad)),
+                        )?;
+                        // rw_counter
+                        region.assign_advice(
+                            || format!("assign rw_counter {}", offset),
+                            self.rw_counter,
+                            offset,
+                            || Ok(write_row.rwc.map_or(F::zero(), |v| F::from(v.0 as u64))),
+                        )?;
+                        // rwc_inc_left
+                        region.assign_advice(
+                            || format!("assign rwc_inc_left {}", offset),
+                            self.rwc_inc_left,
+                            offset,
+                            || Ok(F::zero()), // TODO(rohit): fix this
+                        )?;
+                        is_bytecode_chip.assign(
+                            &mut region,
+                            offset,
+                            Some(if copy_event.dst_type == CopyDataType::Bytecode {
+                                F::zero()
+                            } else {
+                                F::one()
+                            }),
+                        )?;
+                        is_memory_chip.assign(
+                            &mut region,
+                            offset,
+                            Some(if copy_event.dst_type == CopyDataType::Memory {
+                                F::zero()
+                            } else {
+                                F::one()
+                            }),
+                        )?;
+                        is_tx_calldata_chip.assign(
+                            &mut region,
+                            offset,
+                            Some(if copy_event.dst_type == CopyDataType::TxCalldata {
+                                F::zero()
+                            } else {
+                                F::one()
+                            }),
+                        )?;
+                        is_tx_log_chip.assign(
+                            &mut region,
+                            offset,
+                            Some(if copy_event.dst_type == CopyDataType::TxLog {
+                                F::zero()
+                            } else {
+                                F::one()
+                            }),
+                        )?;
+
+                        offset += 1;
+                    }
+                }
+                Ok(())
+            },
+        )
     }
 }

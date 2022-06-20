@@ -141,10 +141,10 @@ impl ExecState {
 }
 
 /// Defines the various source/destination types for a copy event.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CopyDataType {
     /// When the source for the copy event is the bytecode table.
-    Bytecode,
+    Bytecode = 1,
     /// When the source/destination for the copy event is memory.
     Memory,
     /// When the source for the copy event is tx's calldata.
@@ -183,6 +183,20 @@ pub enum NumberOrHash {
     Number(usize),
     /// Variant to indicate a 256-bits hash value.
     Hash(H256),
+}
+
+impl NumberOrHash {
+    /// Underlying big-endian bytes of the number of hash.
+    pub fn bytes(&self) -> [u8; 32] {
+        match self {
+            Self::Number(n) => {
+                let mut out = [0u8; 32];
+                out.copy_from_slice(&n.to_be_bytes());
+                out
+            }
+            Self::Hash(h) => h.to_fixed_bytes(),
+        }
+    }
 }
 
 /// Defines a copy event associated with EVM opcodes such as CALLDATACOPY,
