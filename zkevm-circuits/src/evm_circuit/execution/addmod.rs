@@ -204,7 +204,7 @@ impl<F: Field> ExecutionGadget<F> for AddModGadget<F> {
         self.muladd_d_n_r.assign(
             region,
             offset,
-            [d, n, a_reduced_plus_b, a_reduced_plus_b_overflow],
+            [d, n, a_reduced_plus_b_overflow, a_reduced_plus_b],
             Some(r),
         )?;
 
