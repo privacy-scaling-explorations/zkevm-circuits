@@ -244,20 +244,14 @@ impl<F: Field> MixingConfig<F> {
             base_conv_cells
         };
 
-        let mixing_res = self.assign_out_mixing_states(
+        self.assign_out_mixing_states(
             layouter,
             flag_bool,
             negated_flag,
             &mix_res,
             &non_mix_res,
             out_state,
-        );
-
-        if !flag_bool {
-            Ok(non_mix_res)
-        } else {
-            mixing_res
-        }
+        )
     }
 
     /// Copies the `[(Cell,F);25]` to the passed [Column<Advice>; 25].
