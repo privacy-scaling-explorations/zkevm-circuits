@@ -17,7 +17,7 @@ use crate::{
 };
 
 use bus_mapping::evm::OpcodeId;
-use eth_types::{Field, ToLittleEndian, U256};
+use eth_types::{Field, ToLittleEndian, U256, U512};
 use halo2_proofs::plonk::Error;
 
 #[derive(Clone, Debug)]
@@ -175,7 +175,9 @@ impl<F: Field> ExecutionGadget<F> for AddModGadget<F> {
             let (a_div_n, a_mod_n) = a.div_mod(n);
             k = a_div_n;
             a_reduced = a_mod_n;
-            d = (a_reduced + b) / n;
+            d = ((U512::from(a_reduced) + U512::from(b)) / U512::from(n))
+                .try_into()
+                .unwrap();
 
             let (sum, overflow) = a_reduced.overflowing_add(b);
             a_reduced_plus_b = sum;
@@ -264,6 +266,7 @@ mod test {
     fn addmod_limits() {
         assert!(test(Word::MAX, Word::MAX, 0.into(), None));
         assert!(test(Word::MAX, Word::MAX, 1.into(), None));
+        assert!(test(Word::MAX - 1, Word::MAX, Word::MAX, None));
         assert!(test(Word::MAX, Word::MAX, Word::MAX, None));
         assert!(test(Word::MAX, 1.into(), 0.into(), None));
         assert!(test(Word::MAX, 1.into(), 1.into(), None));
