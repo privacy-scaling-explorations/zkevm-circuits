@@ -108,6 +108,7 @@ use crate::arith_helpers::*;
 use crate::common::ROTATION_CONSTANTS;
 use crate::gate_helpers::{biguint_to_f, f_to_biguint};
 use crate::permutation::{
+    generic::GenericConfig,
     rho_helpers::*,
     tables::{Base13toBase9TableConfig, RangeCheckConfig, SpecialChunkTableConfig},
 };
@@ -375,66 +376,10 @@ impl<F: Field> LaneRotateConversionConfig<F> {
 }
 
 #[derive(Debug, Clone)]
-pub struct SumConfig<F> {
-    q_enable: Selector,
-    x: Column<Advice>,
-    sum: Column<Advice>,
-    _marker: PhantomData<F>,
-}
-impl<F: Field> SumConfig<F> {
-    // We assume the input columns are all copiable
-    pub fn configure(meta: &mut ConstraintSystem<F>, advices: [Column<Advice>; 2]) -> Self {
-        let q_enable = meta.selector();
-        let [x, sum] = advices;
-
-        meta.enable_equality(x);
-        meta.enable_equality(sum);
-
-        meta.create_gate("sum", |meta| {
-            let q_enable = meta.query_selector(q_enable);
-            let x = meta.query_advice(x, Rotation::cur());
-            let sum_next = meta.query_advice(sum, Rotation::next());
-            let sum = meta.query_advice(sum, Rotation::cur());
-            vec![q_enable * (sum_next - sum - x)]
-        });
-        Self {
-            q_enable,
-            x,
-            sum,
-            _marker: PhantomData,
-        }
-    }
-    pub fn assign_region(
-        &self,
-        layouter: &mut impl Layouter<F>,
-        xs: Vec<AssignedCell<F, F>>,
-    ) -> Result<AssignedCell<F, F>, Error> {
-        debug_assert!(xs.len() > 1);
-        layouter.assign_region(
-            || "running sum",
-            |mut region| {
-                let mut sum = F::zero();
-                let mut offset = 0;
-                for xs_item in xs.iter() {
-                    self.q_enable.enable(&mut region, offset)?;
-                    xs_item.copy_advice(|| "x", &mut region, self.x, offset)?;
-                    region.assign_advice(|| "sum", self.sum, offset, || Ok(sum))?;
-                    sum += xs_item.value().copied().unwrap_or_default();
-                    offset += 1;
-                }
-                let sum = region.assign_advice(|| "last sum", self.sum, offset, || Ok(sum))?;
-
-                Ok(sum)
-            },
-        )
-    }
-}
-
-#[derive(Debug, Clone)]
 pub struct OverflowCheckConfig<F> {
     q_step2: Selector,
     q_step3: Selector,
-    sum_config: SumConfig<F>,
+    generic: GenericConfig<F>,
     acc: Column<Advice>,
 }
 impl<F: Field> OverflowCheckConfig<F> {
@@ -443,9 +388,8 @@ impl<F: Field> OverflowCheckConfig<F> {
         step2_range_table: &RangeCheckConfig<F, STEP2_RANGE>,
         step3_range_table: &RangeCheckConfig<F, STEP3_RANGE>,
         advices: [Column<Advice>; 2],
+        generic: GenericConfig<F>,
     ) -> Self {
-        let sum_config = SumConfig::configure(meta, advices);
-
         let q_step2 = meta.complex_selector();
         let q_step3 = meta.complex_selector();
         let acc = advices[0];
@@ -465,7 +409,7 @@ impl<F: Field> OverflowCheckConfig<F> {
         Self {
             q_step2,
             q_step3,
-            sum_config,
+            generic,
             acc,
         }
     }
@@ -475,8 +419,8 @@ impl<F: Field> OverflowCheckConfig<F> {
         step2_cells: Vec<AssignedCell<F, F>>,
         step3_cells: Vec<AssignedCell<F, F>>,
     ) -> Result<(), Error> {
-        let step2_sum = self.sum_config.assign_region(layouter, step2_cells)?;
-        let step3_sum = self.sum_config.assign_region(layouter, step3_cells)?;
+        let step2_sum = self.generic.running_sum(layouter, step2_cells, None)?;
+        let step3_sum = self.generic.running_sum(layouter, step3_cells, None)?;
         layouter.assign_region(
             || "Overflow range check",
             |mut region| {

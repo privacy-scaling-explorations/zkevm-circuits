@@ -3,9 +3,9 @@ use crate::{
     common::{NEXT_INPUTS_LANES, PERMUTATION, ROUND_CONSTANTS},
     keccak_arith::*,
     permutation::{
-        base_conversion::BaseConversionConfig, iota::IotaConfig, mixing::MixingConfig,
-        pi::pi_gate_permutation, rho::RhoConfig, tables::FromBase9TableConfig, theta::ThetaConfig,
-        xi::XiConfig,
+        base_conversion::BaseConversionConfig, generic::GenericConfig, iota::IotaConfig,
+        mixing::MixingConfig, pi::pi_gate_permutation, rho::RhoConfig,
+        tables::FromBase9TableConfig, theta::ThetaConfig, xi::XiConfig,
     },
 };
 use eth_types::Field;
@@ -34,7 +34,7 @@ pub struct KeccakFConfig<F: Field> {
 impl<F: Field> KeccakFConfig<F> {
     // We assume state is received in base-9.
     pub fn configure(meta: &mut ConstraintSystem<F>) -> Self {
-        let state = (0..25)
+        let state: [Column<Advice>; 25] = (0..25)
             .map(|_| {
                 let column = meta.advice_column();
                 meta.enable_equality(column);
@@ -50,11 +50,12 @@ impl<F: Field> KeccakFConfig<F> {
             meta.fixed_column(),
             meta.fixed_column(),
         ];
+        let generic = GenericConfig::configure(meta, state[0..3].try_into().unwrap(), fixed[0]);
 
         // theta
         let theta_config = ThetaConfig::configure(meta.selector(), meta, state);
         // rho
-        let rho_config = RhoConfig::configure(meta, state, fixed);
+        let rho_config = RhoConfig::configure(meta, state, fixed, &generic);
         // xi
         let xi_config = XiConfig::configure(meta.selector(), meta, state);
         let iota_config = IotaConfig::configure(meta, state[0], flag, fixed[0]);
