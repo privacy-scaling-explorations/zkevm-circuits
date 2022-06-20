@@ -63,7 +63,7 @@ impl<F: FieldExt> LookupTable<F> for CopyTable<F> {
 }
 
 impl<F: FieldExt> CopyTable<F> {
-    pub fn construct(meta: &mut ConstraintSystem<F>) -> Self {
+    pub fn construct(meta: &mut ConstraintSystem<F>, fixed_table: &dyn LookupTable<F>) -> Self {
         let q_step = meta.complex_selector();
         let q_first = meta.advice_column();
         let q_last = meta.advice_column();

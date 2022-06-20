@@ -1,4 +1,5 @@
 use crate::{evm_circuit::step::ExecutionState, impl_expr};
+use bus_mapping::circuit_input_builder::CopyDataType;
 use halo2_proofs::{
     arithmetic::FieldExt,
     plonk::{Advice, Column, Expression, Fixed, VirtualCells},
@@ -27,35 +28,25 @@ impl<F: FieldExt, const W: usize> LookupTable<F> for [Column<Fixed>; W] {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
-pub enum CopyDataTag {
-    Memory,
-    Bytecode,
-    TxCalldata,
-    TxLog,
-}
-
-impl CopyDataTag {
-    pub fn pairs<F: FieldExt>(tag: F) -> Box<dyn Iterator<Item = [F; 4]>> {
-        Box::new(
-            [
-                // calldatacopy (internal)
-                (CopyDataTag::Memory, CopyDataTag::Memory),
-                // calldatacopy (root)
-                (CopyDataTag::TxCalldata, CopyDataTag::Memory),
-                // create/create2 (internal)
-                (CopyDataTag::Memory, CopyDataTag::Bytecode),
-                // create/create2 (root)
-                (CopyDataTag::TxCalldata, CopyDataTag::Bytecode),
-                // codecopy/extcodecopy
-                (CopyDataTag::Bytecode, CopyDataTag::Memory),
-                // log
-                (CopyDataTag::Memory, CopyDataTag::TxLog),
-            ]
-            .iter()
-            .map(move |(src, dst)| [tag, F::from(*src as u64), F::from(*dst as u64), F::zero()]),
-        )
-    }
+fn copy_pairs<F: FieldExt>(tag: F) -> Box<dyn Iterator<Item = [F; 4]>> {
+    Box::new(
+        [
+            // calldatacopy (internal)
+            (CopyDataType::Memory, CopyDataType::Memory),
+            // calldatacopy (root)
+            (CopyDataType::TxCalldata, CopyDataType::Memory),
+            // create/create2 (internal)
+            (CopyDataType::Memory, CopyDataType::Bytecode),
+            // create/create2 (root)
+            (CopyDataType::TxCalldata, CopyDataType::Bytecode),
+            // codecopy/extcodecopy
+            (CopyDataType::Bytecode, CopyDataType::Memory),
+            // log
+            (CopyDataType::Memory, CopyDataType::TxLog),
+        ]
+        .iter()
+        .map(move |(src, dst)| [tag, F::from(*src as u64), F::from(*dst as u64), F::zero()]),
+    )
 }
 
 #[derive(Clone, Copy, Debug, EnumIter)]
@@ -143,7 +134,7 @@ impl FixedTableTag {
                     F::zero(),
                 ]
             })),
-            Self::CopyPairs => CopyDataTag::pairs(tag),
+            Self::CopyPairs => copy_pairs(tag),
         }
     }
 }

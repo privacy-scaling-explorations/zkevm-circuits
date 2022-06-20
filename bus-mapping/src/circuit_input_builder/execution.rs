@@ -140,31 +140,58 @@ impl ExecState {
     }
 }
 
-pub enum DataType {
+/// Defines the various source/destination types for a copy event.
+#[derive(Clone, Copy)]
+pub enum CopyDataType {
+    /// When the source for the copy event is the bytecode table.
     Bytecode,
+    /// When the source/destination for the copy event is memory.
     Memory,
+    /// When the source for the copy event is tx's calldata.
     TxCalldata,
+    /// When the destination for the copy event is tx's log.
     TxLog,
 }
 
+/// Defines a single copy step in a copy event. This type is unified over the
+/// source/destination row in the copy table.
 pub struct CopyStep {
+    /// Address (source/destination) for the copy step.
     pub addr: u64,
+    /// Address (source) at which the copy event ends.
     pub addr_end: Option<u64>,
-    pub tag: DataType,
+    /// Represents the source/destination's type.
+    pub tag: CopyDataType,
+    /// Whether this step is a read or write step.
     pub rw: RW,
-    pub byte: u8,
+    /// Byte value copied in this step.
+    pub value: u8,
+    /// Optional field which is enabled only for the source being `bytecode`,
+    /// and represents whether or not the byte is an opcode.
     pub is_code: Option<bool>,
+    /// Represents whether or not the copy step is a padding row.
     pub is_pad: bool,
+    /// Represents the RW counter associated with this copy step.
     pub rwc: Option<RWCounter>,
 }
 
+/// Defines a copy event associated with EVM opcodes such as CALLDATACOPY,
+/// CODECOPY, CREATE, etc. More information:
+/// https://github.com/privacy-scaling-explorations/zkevm-specs/blob/master/specs/copy-proof.md.
 pub struct CopyEvent {
+    /// Represents the start address at the source of the copy event.
     pub src_addr: u64,
+    /// Represents the end address at the source of the copy event.
     pub src_addr_end: u64,
-    pub src_type: DataType,
+    /// Represents the source type.
+    pub src_type: CopyDataType,
+    /// Represents the start address at the destination of the copy event.
     pub dst_addr: u64,
-    pub dst_type: DataType,
+    /// Represents the destination type.
+    pub dst_type: CopyDataType,
+    /// Represents the number of bytes copied as a part of this copy event.
     pub length: u64,
+    /// Represents the list of copy steps in this copy event.
     pub steps: Vec<CopyStep>,
 }
 
