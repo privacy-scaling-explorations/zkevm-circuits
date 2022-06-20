@@ -80,7 +80,7 @@
 //! [`crate::permutation::tables::Base13toBase9TableConfig`] to lookup
 //! `overflow_detector`. We sum up all the overflow_detectors across 25 lanes,
 //! for each step 1, step 2, and step 3. At the end of the Rho step we perform
-//! the final overflow detector range check in [`OverflowCheckConfig`].
+//! the final overflow detector range check for them.
 //!
 //! The `OVERFLOW_TRANSFORM` maps step 1 to 0, step 2 to 1, step 3 to 13, and
 //! step 4 to 170. It is defined that any possible overflow would result the
