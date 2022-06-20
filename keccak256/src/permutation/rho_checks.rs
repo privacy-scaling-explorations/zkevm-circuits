@@ -124,7 +124,7 @@ pub struct LaneRotateConversionConfig<F> {
     q_normal: Selector,
     input_coef: Column<Advice>,
     output_coef: Column<Advice>,
-    pub overflow_detector: Column<Advice>,
+    overflow_detector: Column<Advice>,
     generic: GenericConfig<F>,
     stackable: StackableTable<F>,
 }
