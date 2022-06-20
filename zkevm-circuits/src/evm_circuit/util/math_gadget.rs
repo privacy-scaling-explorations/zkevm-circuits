@@ -1142,7 +1142,7 @@ impl<F: Field> ShrWordsGadget<F> {
 }
 
 #[derive(Clone, Debug)]
-/// CmpWordsGadget compares two words, exposing `eq`  and `lt` 
+/// CmpWordsGadget compares two words, exposing `eq`  and `lt`
 pub(crate) struct CmpWordsGadget<F> {
     comparison_lo: ComparisonGadget<F, 16>,
     comparison_hi: ComparisonGadget<F, 16>,
