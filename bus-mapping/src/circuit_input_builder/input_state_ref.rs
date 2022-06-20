@@ -2,7 +2,7 @@
 
 use super::{
     get_call_memory_offset_length, get_create_init_code, Block, BlockContext, Call, CallContext,
-    CallKind, CodeSource, ExecState, ExecStep, Transaction, TransactionContext,
+    CallKind, CodeSource, CopyEvent, ExecState, ExecStep, Transaction, TransactionContext,
 };
 use crate::{
     error::{get_step_reported_error, ExecError},
@@ -782,6 +782,11 @@ impl<'a> CircuitInputStateRef<'a> {
         self.tx_ctx.pop_call_ctx();
 
         Ok(())
+    }
+
+    /// Push a copy event to the state.
+    pub fn push_copy(&mut self, copy: CopyEvent) {
+        self.block.add_copy_event(copy);
     }
 
     pub(crate) fn get_step_err(

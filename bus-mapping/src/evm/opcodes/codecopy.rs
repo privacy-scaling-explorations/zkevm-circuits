@@ -1,5 +1,9 @@
 use crate::{
-    circuit_input_builder::{CircuitInputStateRef, ExecStep},
+    circuit_input_builder::{
+        CircuitInputStateRef, CopyDataType, CopyEvent, CopyStep, ExecStep, NumberOrHash,
+    },
+    constants::MAX_COPY_BYTES,
+    operation::RW,
     Error,
 };
 use eth_types::GethExecStep;
@@ -16,8 +20,8 @@ impl Opcode for Codecopy {
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];
         let exec_steps = vec![gen_codecopy_step(state, geth_step)?];
-        // let memory_copy_steps = gen_memory_copy_steps(state, geth_steps)?;
-        // exec_steps.extend(memory_copy_steps);
+        let copy_event = gen_copy_event(state, geth_steps)?;
+        state.push_copy(copy_event);
         Ok(exec_steps)
     }
 }
@@ -48,33 +52,54 @@ fn gen_codecopy_step(
     Ok(exec_step)
 }
 
-/*
-fn gen_memory_copy_step(
+fn gen_copy_steps(
     state: &mut CircuitInputStateRef,
-    exec_step: &mut ExecStep,
-    aux_data: StepAuxiliaryData,
+    src_addr: u64,
+    dst_addr: u64,
+    bytes_left: u64,
+    src_addr_end: u64,
     code: &[u8],
-) -> Result<(), Error> {
-    for idx in 0..std::cmp::min(aux_data.bytes_left as usize, MAX_COPY_BYTES) {
-        let addr = (aux_data.src_addr as usize) + idx;
-        let byte = if addr < (aux_data.src_addr_end as usize) {
-            code[addr]
+) -> Result<Vec<CopyStep>, Error> {
+    let cap = std::cmp::min(bytes_left as usize, MAX_COPY_BYTES);
+    let mut steps = Vec::with_capacity(2 * cap);
+    for idx in 0..cap {
+        let addr = (src_addr as usize) + idx;
+        let (value, is_pad) = if addr < (src_addr_end as usize) {
+            (code[addr], false)
         } else {
-            0
+            (0, true)
         };
-        state.memory_write(exec_step, ((aux_data.dst_addr as usize) + idx).into(), byte)?;
+        // Read
+        steps.push(CopyStep {
+            addr: addr as u64,
+            addr_end: Some(src_addr_end),
+            tag: CopyDataType::Bytecode,
+            rw: RW::READ,
+            value,
+            is_code: Some(true), // TODO(rohit): fix this
+            is_pad,
+            rwc: None,
+        });
+        // Write
+        steps.push(CopyStep {
+            addr: dst_addr + (idx as u64),
+            addr_end: None,
+            tag: CopyDataType::Memory,
+            rw: RW::WRITE,
+            value,
+            is_code: Some(true), // TODO(rohit): fix this
+            is_pad: false,
+            rwc: Some(state.block_ctx.rwc.inc_pre()),
+        })
     }
-
-    exec_step.aux_data = Some(aux_data);
-
-    Ok(())
+    Ok(steps)
 }
 
-fn gen_memory_copy_steps(
+fn gen_copy_event(
     state: &mut CircuitInputStateRef,
     geth_steps: &[GethExecStep],
-) -> Result<Vec<ExecStep>, Error> {
-    let dest_offset = geth_steps[0].stack.nth_last(0)?.as_u64();
+) -> Result<CopyEvent, Error> {
+    let dst_offset = geth_steps[0].stack.nth_last(0)?.as_u64();
     let code_offset = geth_steps[0].stack.nth_last(1)?.as_u64();
     let length = geth_steps[0].stack.nth_last(2)?.as_u64();
 
@@ -82,31 +107,33 @@ fn gen_memory_copy_steps(
     let code = state.code(code_hash)?;
     let src_addr_end = code.len() as u64;
 
-    let code_hash = code_hash.to_word();
     let mut copied = 0;
-    let mut steps = vec![];
+    let mut copy_steps = vec![];
     while copied < length {
-        let mut exec_step = state.new_step(&geth_steps[1])?;
-        exec_step.exec_state = ExecState::CopyCodeToMemory;
-        gen_memory_copy_step(
+        let int_copy_steps = gen_copy_steps(
             state,
-            &mut exec_step,
-            StepAuxiliaryData::new(
-                code_offset + copied,
-                dest_offset + copied,
-                length - copied,
-                src_addr_end,
-                CopyDetails::Code(code_hash),
-            ),
+            code_offset + copied,
+            dst_offset + copied,
+            length - copied,
+            src_addr_end,
             &code,
         )?;
-        steps.push(exec_step);
+        copy_steps.extend(int_copy_steps);
         copied += MAX_COPY_BYTES as u64;
     }
 
-    Ok(steps)
+    Ok(CopyEvent {
+        src_addr: code_offset,
+        src_addr_end,
+        src_type: CopyDataType::Bytecode,
+        src_id: NumberOrHash::Hash(code_hash),
+        dst_addr: dst_offset,
+        dst_type: CopyDataType::Memory,
+        dst_id: NumberOrHash::Number(state.call()?.caller_id),
+        length,
+        steps: copy_steps,
+    })
 }
- */
 
 #[cfg(test)]
 mod codecopy_tests {

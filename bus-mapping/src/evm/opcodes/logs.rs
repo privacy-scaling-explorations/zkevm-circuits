@@ -1,10 +1,9 @@
 use super::Opcode;
-use crate::operation::{CallContextField, TxLogField};
+use crate::circuit_input_builder::{CopyDataType, CopyEvent, CopyStep, NumberOrHash};
+use crate::operation::{CallContextField, TxLogField, RW};
 use crate::Error;
 use crate::{
-    circuit_input_builder::{
-        CircuitInputStateRef, CopyDetails, ExecState, ExecStep, StepAuxiliaryData,
-    },
+    circuit_input_builder::{CircuitInputStateRef, ExecState, ExecStep},
     constants::MAX_COPY_BYTES,
 };
 use eth_types::evm_types::{MemoryAddress, OpcodeId};
@@ -20,10 +19,9 @@ impl Opcode for Log {
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];
-
-        let mut exec_steps = vec![gen_log_step(state, geth_step)?];
-        let log_copy_steps = gen_log_copy_steps(state, geth_steps)?;
-        exec_steps.extend(log_copy_steps);
+        let exec_steps = vec![gen_log_step(state, geth_step)?];
+        let copy_event = gen_copy_event(state, geth_steps)?;
+        state.push_copy(copy_event);
         Ok(exec_steps)
     }
 }
@@ -119,88 +117,100 @@ fn gen_log_step(
     Ok(exec_step)
 }
 
-fn gen_log_copy_step(
+fn gen_copy_steps(
     state: &mut CircuitInputStateRef,
     geth_steps: &[GethExecStep],
-    exec_step: &mut ExecStep,
     src_addr: u64,
     src_addr_end: u64,
     bytes_left: usize,
     data_start_index: usize,
-) -> Result<(), Error> {
+) -> Result<Vec<CopyStep>, Error> {
     // Get memory data
     let memory_address: MemoryAddress = Word::from(src_addr).try_into()?;
     let mem_read_value = geth_steps[0].memory.read_word(memory_address).to_be_bytes();
-
-    let data_end_index = std::cmp::min(bytes_left, MAX_COPY_BYTES);
-    for (idx, _) in mem_read_value.iter().enumerate().take(data_end_index) {
+    let cap = std::cmp::min(bytes_left, MAX_COPY_BYTES);
+    let mut copy_steps = Vec::with_capacity(2 * cap);
+    for (idx, _) in mem_read_value.iter().enumerate().take(cap) {
         let addr = src_addr + idx as u64;
-        let byte = if addr < src_addr_end {
+        let (value, is_pad) = if addr < src_addr_end {
             let byte = mem_read_value[idx];
-            state.memory_read(exec_step, (addr as usize).into(), byte)?;
-            byte
+            (byte, false)
         } else {
-            0
+            (0, true)
         };
-        // write to tx log if persistent
-        let log_id = exec_step.log_id;
+
+        // Read
+        copy_steps.push(CopyStep {
+            addr,
+            addr_end: Some(src_addr_end),
+            tag: CopyDataType::Memory,
+            rw: RW::READ,
+            value,
+            is_code: None,
+            is_pad,
+            rwc: if !is_pad {
+                Some(state.block_ctx.rwc.inc_pre())
+            } else {
+                None
+            },
+        });
+
         if state.call()?.is_persistent {
-            state.tx_log_write(
-                exec_step,
-                state.tx_ctx.id(),
-                log_id,
-                TxLogField::Data,
-                data_start_index + idx,
-                Word::from(byte),
-            )?;
+            // Write
+            copy_steps.push(CopyStep {
+                addr: (data_start_index + idx) as u64,
+                addr_end: None,
+                tag: CopyDataType::TxLog,
+                rw: RW::WRITE,
+                value,
+                is_code: None,
+                is_pad: false,
+                rwc: Some(state.block_ctx.rwc.inc_pre()),
+            });
         }
     }
 
-    exec_step.aux_data = Some(StepAuxiliaryData::new(
-        src_addr,
-        0u64,
-        bytes_left as u64,
-        src_addr_end,
-        CopyDetails::Log((
-            state.call()?.is_persistent,
-            state.tx_ctx.id(),
-            data_start_index,
-        )),
-    ));
-
-    Ok(())
+    Ok(copy_steps)
 }
 
-fn gen_log_copy_steps(
+fn gen_copy_event(
     state: &mut CircuitInputStateRef,
     geth_steps: &[GethExecStep],
-) -> Result<Vec<ExecStep>, Error> {
+) -> Result<CopyEvent, Error> {
     let memory_start = geth_steps[0].stack.nth_last(0)?.as_u64();
     let msize = geth_steps[0].stack.nth_last(1)?.as_usize();
 
-    let (src_addr, buffer_addr_end) = (memory_start, memory_start + msize as u64);
+    let exec_step = state.new_step(&geth_steps[1])?;
+    let log_id = exec_step.log_id + 1;
+
+    let (src_addr, src_addr_end) = (memory_start, memory_start + msize as u64);
 
     let mut copied = 0;
     let mut steps = vec![];
     while copied < msize {
-        let mut exec_step = state.new_step(&geth_steps[1])?;
-        exec_step.log_id += 1;
-
-        // exec_step.exec_state = ExecState::CopyToLog;
-        gen_log_copy_step(
+        let int_copy_steps = gen_copy_steps(
             state,
             geth_steps,
-            &mut exec_step,
             src_addr + copied as u64,
-            buffer_addr_end,
+            src_addr_end,
             msize - copied,
             copied,
         )?;
-        steps.push(exec_step);
+        steps.extend(int_copy_steps);
         copied += MAX_COPY_BYTES;
     }
 
-    Ok(steps)
+    Ok(CopyEvent {
+        src_type: CopyDataType::Memory,
+        src_id: NumberOrHash::Number(state.call()?.call_id),
+        src_addr,
+        src_addr_end,
+        dst_type: CopyDataType::TxLog,
+        dst_id: NumberOrHash::Number(log_id),
+        dst_addr: 0,
+        length: msize as u64,
+        steps,
+    })
 }
 
 #[cfg(test)]

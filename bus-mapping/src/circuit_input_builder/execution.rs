@@ -3,7 +3,7 @@
 use crate::{error::ExecError, exec_trace::OperationRef, operation::RWCounter, operation::RW};
 use eth_types::{
     evm_types::{Gas, GasCost, OpcodeId, ProgramCounter},
-    GethExecStep, U256,
+    GethExecStep, H256, U256,
 };
 
 /// An execution step of the EVM.
@@ -141,7 +141,7 @@ impl ExecState {
 }
 
 /// Defines the various source/destination types for a copy event.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub enum CopyDataType {
     /// When the source for the copy event is the bytecode table.
     Bytecode,
@@ -155,6 +155,7 @@ pub enum CopyDataType {
 
 /// Defines a single copy step in a copy event. This type is unified over the
 /// source/destination row in the copy table.
+#[derive(Clone, Debug)]
 pub struct CopyStep {
     /// Address (source/destination) for the copy step.
     pub addr: u64,
@@ -175,9 +176,19 @@ pub struct CopyStep {
     pub rwc: Option<RWCounter>,
 }
 
+/// Defines an enum type that can hold either a number or a hash value.
+#[derive(Clone, Debug)]
+pub enum NumberOrHash {
+    /// Variant to indicate a number value.
+    Number(usize),
+    /// Variant to indicate a 256-bits hash value.
+    Hash(H256),
+}
+
 /// Defines a copy event associated with EVM opcodes such as CALLDATACOPY,
 /// CODECOPY, CREATE, etc. More information:
 /// https://github.com/privacy-scaling-explorations/zkevm-specs/blob/master/specs/copy-proof.md.
+#[derive(Clone, Debug)]
 pub struct CopyEvent {
     /// Represents the start address at the source of the copy event.
     pub src_addr: u64,
@@ -185,10 +196,14 @@ pub struct CopyEvent {
     pub src_addr_end: u64,
     /// Represents the source type.
     pub src_type: CopyDataType,
+    /// Represents the relevant ID for source.
+    pub src_id: NumberOrHash,
     /// Represents the start address at the destination of the copy event.
     pub dst_addr: u64,
     /// Represents the destination type.
     pub dst_type: CopyDataType,
+    /// Represents the relevant ID for destination.
+    pub dst_id: NumberOrHash,
     /// Represents the number of bytes copied as a part of this copy event.
     pub length: u64,
     /// Represents the list of copy steps in this copy event.
