@@ -150,7 +150,7 @@ mod tests {
                     GenericConfig::configure(meta, state[0..3].try_into().unwrap(), fixed);
 
                 let rho_config =
-                    RhoConfig::configure(meta, state, fixed, generic.clone(), stackable.clone());
+                    RhoConfig::configure(meta, state, fixed, generic, stackable.clone());
 
                 let q_enable = meta.selector();
                 meta.create_gate("Check states", |meta| {
