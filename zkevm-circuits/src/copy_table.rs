@@ -2,7 +2,8 @@
 use gadgets::is_zero::{IsZeroChip, IsZeroConfig};
 use halo2_proofs::{
     arithmetic::FieldExt,
-    plonk::{Advice, Column, ConstraintSystem, Expression, Selector, VirtualCells},
+    circuit::Layouter,
+    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector, VirtualCells},
     poly::Rotation,
 };
 
@@ -10,6 +11,7 @@ use crate::{
     evm_circuit::{
         table::LookupTable,
         util::{and, constraint_builder::BaseConstraintBuilder, not, or},
+        witness::Block,
     },
     util::Expr,
 };
@@ -272,5 +274,13 @@ impl<F: FieldExt> CopyTable<F> {
             is_tx_calldata,
             is_tx_log,
         }
+    }
+
+    pub fn assign_block(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        block: &Block<F>,
+    ) -> Result<(), Error> {
+        todo!();
     }
 }

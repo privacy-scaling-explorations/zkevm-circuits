@@ -10,7 +10,7 @@ use crate::evm_circuit::{
 };
 
 use bus_mapping::{
-    circuit_input_builder::{self, StepAuxiliaryData},
+    circuit_input_builder::{self, CopyEvent, StepAuxiliaryData},
     error::{ExecError, OogError},
     operation::{self, AccountField, CallContextField, TxLogField, TxReceiptField},
 };
@@ -36,6 +36,8 @@ pub struct Block<F> {
     pub bytecodes: HashMap<Word, Bytecode>,
     /// The block context
     pub context: BlockContext,
+    /// Copy events for the EVM circuit's Copy Table.
+    pub copy_events: Vec<CopyEvent>,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -1424,5 +1426,6 @@ pub fn block_convert(
                     })
             })
             .collect(),
+        copy_events: block.copy_events.clone(),
     }
 }

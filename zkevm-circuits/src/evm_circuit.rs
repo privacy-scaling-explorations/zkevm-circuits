@@ -102,18 +102,15 @@ impl<F: Field> EvmCircuit<F> {
         )
     }
 
-    /// Load copy table
-    pub fn load_copy_table(&self, _layouter: &impl Layouter<F>) -> Result<(), Error> {
-        todo!()
-    }
-
     /// Assign block
     pub fn assign_block(
         &self,
         layouter: &mut impl Layouter<F>,
         block: &Block<F>,
     ) -> Result<(), Error> {
-        self.execution.assign_block(layouter, block, false)
+        self.copy_table.assign_block(layouter, block)?;
+        self.execution.assign_block(layouter, block, false)?;
+        Ok(())
     }
 
     /// Assign exact steps in block without padding for unit test purpose
