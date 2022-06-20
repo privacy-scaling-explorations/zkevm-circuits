@@ -1142,6 +1142,7 @@ impl<F: Field> ShrWordsGadget<F> {
 }
 
 #[derive(Clone, Debug)]
+/// CmpWordsGadget compares two words, exposing `eq`  and `lt` 
 pub(crate) struct CmpWordsGadget<F> {
     comparison_lo: ComparisonGadget<F, 16>,
     comparison_hi: ComparisonGadget<F, 16>,
@@ -1242,7 +1243,7 @@ impl<F: Field> CmpWordsGadget<F> {
 /// and allocate 9 bytes for them each
 ///
 /// Finally we just prove:
-//   t0 + t1 * 2^64 + c_lo = e_lo + carry_0 * 2^128
+///   t0 + t1 * 2^64 + c_lo = e_lo + carry_0 * 2^128
 ///   t2 + t3 * 2^64 + c_hi + carry_0 = e_hi + carry_1 * 2^128
 ///   t4 + t5 * 2^64 + carry_1 = d_lo + carry_2 * 2^128
 ///   t6 + carry_2 = d_hi
