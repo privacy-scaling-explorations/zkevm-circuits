@@ -22,7 +22,7 @@ use witness::Block;
 pub struct EvmCircuit<F> {
     fixed_table: [Column<Fixed>; 4],
     byte_table: [Column<Fixed>; 1],
-    execution: ExecutionConfig<F>,
+    execution: Box<ExecutionConfig<F>>,
 }
 
 impl<F: Field> EvmCircuit<F> {
@@ -38,7 +38,7 @@ impl<F: Field> EvmCircuit<F> {
         let fixed_table = [(); 4].map(|_| meta.fixed_column());
         let byte_table = [(); 1].map(|_| meta.fixed_column());
 
-        let execution = ExecutionConfig::configure(
+        let execution = Box::new(ExecutionConfig::configure(
             meta,
             power_of_randomness,
             &fixed_table,
@@ -47,7 +47,7 @@ impl<F: Field> EvmCircuit<F> {
             rw_table,
             bytecode_table,
             block_table,
-        );
+        ));
 
         Self {
             fixed_table,
