@@ -131,33 +131,6 @@ fn verifying_key_independent_of_rw_length() {
 }
 
 #[test]
-fn verifying_key_independent_of_rw_length() {
-    let randomness = Fr::rand();
-    let degree = 17;
-    let params = Params::<G1Affine>::unsafe_setup::<Bn256>(degree);
-
-    let no_rows = StateCircuit::<Fr, N_ROWS>::new(randomness, RwMap::default());
-    let one_row = StateCircuit::<Fr, N_ROWS>::new(
-        randomness,
-        RwMap::from(&OperationContainer {
-            memory: vec![Operation::new(
-                RWCounter::from(1),
-                RW::WRITE,
-                MemoryOp::new(1, MemoryAddress::from(0), 32),
-            )],
-            ..Default::default()
-        }),
-    );
-
-    // halo2::plonk::VerifyingKey doesn't derive Eq, so we check for equality using
-    // its debug string.
-    assert_eq!(
-        format!("{:?}", keygen_vk(&params, &no_rows).unwrap()),
-        format!("{:?}", keygen_vk(&params, &one_row).unwrap())
-    );
-}
-
-#[test]
 fn state_circuit_simple_2() {
     let memory_op_0 = Operation::new(
         RWCounter::from(12),
