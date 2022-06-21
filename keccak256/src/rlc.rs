@@ -54,8 +54,8 @@ impl<F: Field, const N: usize> RlcConfig<F, N> {
         layouter: &mut impl Layouter<F>,
         witness: [AssignedCell<F, F>; N],
         randomness: AssignedCell<F, F>,
-        rlc: AssignedCell<F, F>,
-    ) -> Result<(), Error> {
+        rlc: F,
+    ) -> Result<AssignedCell<F, F>, Error> {
         layouter.assign_region(
             || "RLC",
             |mut region| {
@@ -71,12 +71,9 @@ impl<F: Field, const N: usize> RlcConfig<F, N> {
                 randomness.copy_advice(|| "RLC randomness", &mut region, self.randomness, 0)?;
 
                 // Assign RLC result
-                rlc.copy_advice(|| "RLC result", &mut region, self.rlc, 0)?;
-                Ok(())
+                region.assign_advice(|| "RLC result", self.rlc, 0, || Ok(rlc))
             },
-        )?;
-
-        Ok(())
+        )
     }
 }
 
@@ -198,9 +195,12 @@ mod rlc_tests {
                 },
             )?;
 
-            config
-                .rlc_config
-                .assign_rlc(&mut layouter, witness, randomness, rlc)?;
+            config.rlc_config.assign_rlc(
+                &mut layouter,
+                witness,
+                randomness,
+                rlc.value().cloned().ok_or(Error::Synthesis)?,
+            )?;
 
             Ok(())
         }
