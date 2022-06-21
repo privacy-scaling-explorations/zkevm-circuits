@@ -64,14 +64,14 @@ type Lookup<F> = (&'static str, Expression<F>, Expression<F>);
 
 /// State Circuit for proving RwTable is valid
 #[derive(Default)]
-pub struct StateCircuit<F: Field> {
+pub struct StateCircuit<F: Field, const N_ROWS: usize> {
     pub(crate) randomness: F,
     pub(crate) rows: Vec<Rw>,
     #[cfg(test)]
-    overrides: HashMap<(test::AdviceColumn, usize), F>,
+    overrides: HashMap<(test::AdviceColumn, isize), F>,
 }
 
-impl<F: Field> StateCircuit<F> {
+impl<F: Field, const N_ROWS: usize> StateCircuit<F, N_ROWS> {
     /// make a new state circuit from an RwMap
     pub fn new(randomness: F, rw_map: RwMap) -> Self {
         let mut rows: Vec<_> = rw_map.0.into_values().flatten().collect();
@@ -96,12 +96,12 @@ impl<F: Field> StateCircuit<F> {
     /// powers of randomness for instance columns
     pub fn instance(&self) -> Vec<Vec<F>> {
         (1..32)
-            .map(|exp| vec![self.randomness.pow(&[exp, 0, 0, 0]); self.rows.len() + 1])
+            .map(|exp| vec![self.randomness.pow(&[exp, 0, 0, 0]); N_ROWS])
             .collect()
     }
 }
 
-impl<F: Field> Circuit<F> for StateCircuit<F> {
+impl<F: Field, const N_ROWS: usize> Circuit<F> for StateCircuit<F, N_ROWS> {
     type Config = StateConfig;
     type FloorPlanner = SimpleFloorPlanner;
 
@@ -174,8 +174,12 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
         layouter.assign_region(
             || "rw table",
             |mut region| {
-                let rows = once(&Rw::Start).chain(&self.rows);
-                let prev_rows = once(&Rw::Start).chain(rows.clone());
+                let padding_length = N_ROWS - self.rows.len();
+                let padding = (1..=padding_length).map(|rw_counter| Rw::Start { rw_counter });
+
+                let rows = padding.chain(self.rows.iter().cloned());
+                let prev_rows = once(None).chain(rows.clone().map(Some));
+
                 for (offset, (row, prev_row)) in rows.zip(prev_rows).enumerate() {
                     region.assign_fixed(|| "selector", config.selector, offset, || Ok(F::one()))?;
                     config.sort_keys.rw_counter.assign(
@@ -222,17 +226,23 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
                         || Ok(row.value_assignment(self.randomness)),
                     )?;
 
-                    if offset != 0 {
-                        config
-                            .lexicographic_ordering
-                            .assign(&mut region, offset, row, prev_row)?;
+                    if let Some(prev_row) = prev_row {
+                        config.lexicographic_ordering.assign(
+                            &mut region,
+                            offset,
+                            &row,
+                            &prev_row,
+                        )?;
                     }
                 }
 
                 #[cfg(test)]
-                for ((column, offset), &f) in &self.overrides {
+                for ((column, row_offset), &f) in &self.overrides {
                     let advice_column = column.value(&config);
-                    region.assign_advice(|| "override", advice_column, *offset, || Ok(f))?;
+                    let offset =
+                        usize::try_from(isize::try_from(padding_length).unwrap() + *row_offset)
+                            .unwrap();
+                    region.assign_advice(|| "override", advice_column, offset, || Ok(f))?;
                 }
 
                 Ok(())
@@ -252,6 +262,8 @@ fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: &StateConfig) -> Queries
 
     Queries {
         selector: meta.query_fixed(c.selector, Rotation::cur()),
+        lexicographic_ordering_selector: meta
+            .query_fixed(c.lexicographic_ordering.selector, Rotation::cur()),
         rw_counter: MpiQueries::new(meta, c.sort_keys.rw_counter),
         is_write: meta.query_advice(c.is_write, Rotation::cur()),
         tag: c.sort_keys.tag.value(Rotation::cur())(meta),
