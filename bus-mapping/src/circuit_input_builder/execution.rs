@@ -155,7 +155,7 @@ pub enum CopyDataType {
 
 /// Defines a single copy step in a copy event. This type is unified over the
 /// source/destination row in the copy table.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct CopyStep {
     /// Address (source/destination) for the copy step.
     pub addr: u64,

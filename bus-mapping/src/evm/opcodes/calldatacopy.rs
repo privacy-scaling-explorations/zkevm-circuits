@@ -116,7 +116,7 @@ fn gen_copy_steps(
             value,
             is_code: None,
             is_pad,
-            rwc: if is_root {
+            rwc: if !is_root {
                 Some(state.block_ctx.rwc.inc_pre())
             } else {
                 None
@@ -190,9 +190,9 @@ fn gen_copy_event(
 #[cfg(test)]
 mod calldatacopy_tests {
     use crate::{
-        circuit_input_builder::ExecState,
+        circuit_input_builder::{CopyDataType, CopyStep, ExecState},
         mock::BlockData,
-        operation::{CallContextField, CallContextOp, MemoryOp, StackOp, RW},
+        operation::{CallContextField, CallContextOp, MemoryOp, RWCounter, StackOp, RW},
     };
     use eth_types::{
         bytecode,
@@ -377,10 +377,15 @@ mod calldatacopy_tests {
 
     #[test]
     fn calldatacopy_opcode_root() {
+        let size = 0x40;
+        let offset = 0x00;
+        let dst_offset = 0x00;
+        let calldata = vec![1, 3, 5, 7, 9, 2, 4, 6, 8];
+        let calldata_len = calldata.len();
         let code = bytecode! {
-            PUSH32(0)
-            PUSH32(0)
-            PUSH32(0x40)
+            PUSH32(size)
+            PUSH32(offset)
+            PUSH32(dst_offset)
             CALLDATACOPY
             STOP
         };
@@ -389,7 +394,12 @@ mod calldatacopy_tests {
         let block: GethData = TestContext::<2, 1>::new(
             None,
             account_0_code_account_1_no_code(code),
-            tx_from_1_to_0,
+            |mut txs, accs| {
+                txs[0]
+                    .to(accs[0].address)
+                    .from(accs[1].address)
+                    .input(calldata.clone().into());
+            },
             |block, _tx| block,
         )
         .unwrap()
@@ -415,15 +425,15 @@ mod calldatacopy_tests {
             [
                 (
                     RW::READ,
-                    &StackOp::new(1, StackAddress::from(1021), Word::from(0x40))
+                    &StackOp::new(1, StackAddress::from(1021), dst_offset.into())
                 ),
                 (
                     RW::READ,
-                    &StackOp::new(1, StackAddress::from(1022), Word::from(0))
+                    &StackOp::new(1, StackAddress::from(1022), offset.into())
                 ),
                 (
                     RW::READ,
-                    &StackOp::new(1, StackAddress::from(1023), Word::from(0))
+                    &StackOp::new(1, StackAddress::from(1023), size.into())
                 ),
             ]
         );
@@ -447,10 +457,55 @@ mod calldatacopy_tests {
                     &CallContextOp {
                         call_id: builder.block.txs()[0].calls()[0].call_id,
                         field: CallContextField::CallDataLength,
-                        value: Word::zero(),
+                        value: calldata_len.into(),
                     },
                 ),
             ]
         );
+
+        let copy_events = builder.block.copy_events.clone();
+
+        // single copy event with `size` reads and `size` writes.
+        assert_eq!(copy_events.len(), 1);
+        assert_eq!(copy_events[0].steps.len(), 2 * size);
+
+        let rwc_start = step.rwc.0 + 5;
+        for (idx, copy_rw_pair) in copy_events[0].steps.chunks(2).enumerate() {
+            assert_eq!(copy_rw_pair.len(), 2);
+            let (value, is_pad) = calldata
+                .get(offset as usize + idx)
+                .cloned()
+                .map_or((0, true), |v| (v, false));
+            // read
+            let read_step = copy_rw_pair[0].clone();
+            assert_eq!(
+                read_step,
+                CopyStep {
+                    addr: offset + idx as u64,
+                    addr_end: Some(calldata_len as u64),
+                    tag: CopyDataType::TxCalldata,
+                    rw: RW::READ,
+                    value,
+                    is_code: None,
+                    is_pad,
+                    rwc: None,
+                }
+            );
+            // write
+            let write_step = copy_rw_pair[1].clone();
+            assert_eq!(
+                write_step,
+                CopyStep {
+                    addr: dst_offset + idx as u64,
+                    addr_end: None,
+                    tag: CopyDataType::Memory,
+                    rw: RW::WRITE,
+                    value,
+                    is_code: None,
+                    is_pad: false,
+                    rwc: Some(RWCounter(rwc_start + idx)),
+                }
+            );
+        }
     }
 }

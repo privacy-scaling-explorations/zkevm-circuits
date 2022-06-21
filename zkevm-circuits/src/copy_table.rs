@@ -25,7 +25,7 @@ impl<F: FieldExt> util::Expr<F> for CopyDataType {
 
 /// The rw table shared between evm circuit and state circuit
 #[derive(Clone, Debug)]
-pub struct CopyTable<F> {
+pub struct CopyTableConfig<F> {
     /// Whether this row denotes a step. A read row is a step and a write row is
     /// not.
     pub q_step: Selector,
@@ -81,7 +81,7 @@ pub struct CopyTable<F> {
     pub is_tx_log: IsZeroConfig<F>,
 }
 
-impl<F: FieldExt> LookupTable<F> for CopyTable<F> {
+impl<F: FieldExt> LookupTable<F> for CopyTableConfig<F> {
     fn table_exprs(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>> {
         vec![
             meta.query_advice(self.q_first, Rotation::cur()),
@@ -100,8 +100,8 @@ impl<F: FieldExt> LookupTable<F> for CopyTable<F> {
     }
 }
 
-impl<F: FieldExt> CopyTable<F> {
-    pub fn construct(meta: &mut ConstraintSystem<F>, fixed_table: &dyn LookupTable<F>) -> Self {
+impl<F: FieldExt> CopyTableConfig<F> {
+    pub fn configure(meta: &mut ConstraintSystem<F>, fixed_table: &dyn LookupTable<F>) -> Self {
         let q_step = meta.complex_selector();
         let q_first = meta.advice_column();
         let q_last = meta.advice_column();
