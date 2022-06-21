@@ -230,7 +230,12 @@ mod test {
     use eth_types::{bytecode, Word};
     use mock::TestContext;
 
-    fn test(a: Word, b: Word, n: Word, r: Option<Word>) -> bool {
+    fn test(
+        a: Word,
+        b: Word,
+        n: Word,
+        r: Option<Word>,
+    ) -> Result<(), Vec<halo2_proofs::dev::VerifyFailure>> {
         let bytecode = bytecode! {
             PUSH32(n)
             PUSH32(b)
@@ -250,50 +255,55 @@ mod test {
                 .unwrap();
             last.stack = Stack::from_vec(vec![r]);
         }
-        run_test_circuits(ctx, None).is_ok()
+        run_test_circuits(ctx, None)
     }
-    fn test_u32(a: u32, b: u32, c: u32, r: Option<u32>) -> bool {
+    fn test_u32(
+        a: u32,
+        b: u32,
+        c: u32,
+        r: Option<u32>,
+    ) -> Result<(), Vec<halo2_proofs::dev::VerifyFailure>> {
         test(a.into(), b.into(), c.into(), r.map(Word::from))
     }
 
     #[test]
     fn addmod_simple() {
-        assert!(test_u32(1, 1, 10, None));
-        assert!(test_u32(1, 1, 11, None));
+        assert_eq!(test_u32(1, 1, 10, None), Ok(()));
+        assert_eq!(test_u32(1, 1, 11, None), Ok(()));
     }
 
     #[test]
     fn addmod_limits() {
-        assert!(test(Word::MAX, Word::MAX, 0.into(), None));
-        assert!(test(Word::MAX, Word::MAX, 1.into(), None));
-        assert!(test(Word::MAX - 1, Word::MAX, Word::MAX, None));
-        assert!(test(Word::MAX, Word::MAX, Word::MAX, None));
-        assert!(test(Word::MAX, 1.into(), 0.into(), None));
-        assert!(test(Word::MAX, 1.into(), 1.into(), None));
-        assert!(test(Word::MAX, 1.into(), Word::MAX, None));
-        assert!(test(Word::MAX, 0.into(), 0.into(), None));
-        assert!(test(Word::MAX, 0.into(), 1.into(), None));
-        assert!(test(Word::MAX, 0.into(), Word::MAX, None));
-        assert!(test(0.into(), 0.into(), 0.into(), None));
-        assert!(test(0.into(), 0.into(), 1.into(), None));
-        assert!(test(0.into(), 0.into(), Word::MAX, None));
+        assert_eq!(test(Word::MAX, Word::MAX, 0.into(), None), Ok(()));
+        assert_eq!(test(Word::MAX, Word::MAX, 1.into(), None), Ok(()));
+        assert_eq!(test(Word::MAX - 1, Word::MAX, Word::MAX, None), Ok(()));
+        assert_eq!(test(Word::MAX, Word::MAX, Word::MAX, None), Ok(()));
+        assert_eq!(test(Word::MAX, 1.into(), 0.into(), None), Ok(()));
+        assert_eq!(test(Word::MAX, 1.into(), 1.into(), None), Ok(()));
+        assert_eq!(test(Word::MAX, 1.into(), Word::MAX, None), Ok(()));
+        assert_eq!(test(Word::MAX, 0.into(), 0.into(), None), Ok(()));
+        assert_eq!(test(Word::MAX, 0.into(), 1.into(), None), Ok(()));
+        assert_eq!(test(Word::MAX, 0.into(), Word::MAX, None), Ok(()));
+        assert_eq!(test(0.into(), 0.into(), 0.into(), None), Ok(()));
+        assert_eq!(test(0.into(), 0.into(), 1.into(), None), Ok(()));
+        assert_eq!(test(0.into(), 0.into(), Word::MAX, None), Ok(()));
     }
 
     #[test]
     fn addmod_bad_r_on_nonzero_n() {
-        assert!(test_u32(7, 18, 10, Some(5)));
-        assert!(!test_u32(7, 18, 10, Some(6)));
+        assert_eq!(test_u32(7, 18, 10, Some(5)), Ok(()));
+        assert_ne!(test_u32(7, 18, 10, Some(6)), Ok(()));
     }
 
     #[test]
     fn addmod_bad_r_on_zero_n() {
-        assert!(test_u32(2, 3, 0, Some(0)));
-        assert!(!test_u32(2, 3, 0, Some(1)));
+        assert_eq!(test_u32(2, 3, 0, Some(0)), Ok(()));
+        assert_ne!(test_u32(2, 3, 0, Some(1)), Ok(()));
     }
 
     #[test]
     fn addmod_bad_r_bigger_n() {
-        assert!(test_u32(2, 3, 4, Some(1)));
-        assert!(!test_u32(2, 3, 4, Some(5)));
+        assert_eq!(test_u32(2, 3, 4, Some(1)), Ok(()));
+        assert_ne!(test_u32(2, 3, 4, Some(5)), Ok(()));
     }
 }
