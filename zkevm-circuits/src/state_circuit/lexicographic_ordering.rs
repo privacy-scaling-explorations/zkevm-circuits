@@ -39,8 +39,8 @@ use strum_macros::EnumIter;
 
 //  1. limb_difference fits into 16 bits.
 //  2. limb_difference is not zero because its inverse exists.
-//  3. limbs before first_different_limb are equal.
-//  4. limb_difference equals the difference of the limbs at
+//  3. RLC of the pairwise limb differences before the first_different_limb is
+// 0.  4. limb_difference equals the difference of the limbs at
 // first_different_limb.
 
 #[derive(Clone, Copy, Debug, EnumIter)]
@@ -154,13 +154,16 @@ impl Config {
         });
 
         meta.create_gate(
-            "limb_difference is equal to the difference at claimed limb",
+            "limb differences before first_different_limb are all 0",
             |meta| {
                 let selector = meta.query_fixed(selector, Rotation::cur());
                 let cur = Queries::new(meta, keys, Rotation::cur());
                 let prev = Queries::new(meta, keys, Rotation::prev());
                 let limb_difference = meta.query_advice(limb_difference, Rotation::cur());
 
+                // E.g. if first_different_limb = 5, four limb differences before need to be 0.
+                // Using RLC, we check that (cur_1 - prev_1) + r(cur_2 - prev_2) + r^2(cur_3 -
+                // prev_3) + r^3(cur_4 - prev_4) = 0.
                 let mut constraints = vec![];
                 for ((i, cur_limb), prev_limb) in
                     LimbIndex::iter().zip(cur.be_limbs()).zip(prev.be_limbs())
