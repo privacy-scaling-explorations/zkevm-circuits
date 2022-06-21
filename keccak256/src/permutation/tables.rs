@@ -1,6 +1,6 @@
 use crate::arith_helpers::{convert_b13_coef, convert_b9_coef, f_from_radix_be, B13, B2, B9};
 use crate::common::LANE_SIZE;
-use crate::gate_helpers::f_to_biguint;
+use crate::gate_helpers::{biguint_to_f, f_to_biguint};
 use crate::permutation::rho_helpers::{get_overflow_detector, BASE_NUM_OF_CHUNKS};
 use eth_types::Field;
 use halo2_proofs::{
@@ -12,7 +12,7 @@ use itertools::Itertools;
 use std::marker::PhantomData;
 use strum_macros::{Display, EnumIter};
 
-use super::rho_helpers::{STEP2_RANGE, STEP3_RANGE};
+use super::rho_helpers::{Conversion, STEP2_RANGE, STEP3_RANGE};
 
 const MAX_CHUNKS: usize = 64;
 const NUM_OF_BINARY_CHUNKS: usize = 16;
@@ -245,8 +245,8 @@ impl<F: Field> StackableTable<F> {
         &self,
         layouter: &mut impl Layouter<F>,
         last_chunk: &AssignedCell<F, F>,
-        output_coef: &AssignedCell<F, F>,
-    ) -> Result<(), Error> {
+        output_coef: &F,
+    ) -> Result<AssignedCell<F, F>, Error> {
         layouter.assign_region(
             || "lookup for special chunks",
             |mut region| {
@@ -265,13 +265,12 @@ impl<F: Field> StackableTable<F> {
                     self.lookup_config.col1.0,
                     offset,
                 )?;
-                output_coef.copy_advice(
+                region.assign_advice(
                     || "output coef",
-                    &mut region,
                     self.lookup_config.col2.0,
                     offset,
-                )?;
-                Ok(())
+                    || Ok(*output_coef),
+                )
             },
         )
     }
@@ -342,10 +341,7 @@ impl<F: Field, const K: u64> RangeCheckConfig<F, K> {
 
 #[derive(Debug, Clone)]
 pub struct Base13toBase9TableConfig<F> {
-    pub base13: TableColumn,
-    pub base9: TableColumn,
-    pub overflow_detector: TableColumn,
-    _marker: PhantomData<F>,
+    lookup_config: ThreeColumnsLookup<F>,
 }
 
 impl<F: Field> Base13toBase9TableConfig<F> {
@@ -361,14 +357,14 @@ impl<F: Field> Base13toBase9TableConfig<F> {
                 {
                     table.assign_cell(
                         || "base 13",
-                        self.base13,
+                        self.lookup_config.col0.1,
                         i,
                         || Ok(f_from_radix_be::<F>(&b13_chunks, B13)),
                     )?;
 
                     table.assign_cell(
                         || "base 9",
-                        self.base9,
+                        self.lookup_config.col1.1,
                         i,
                         || {
                             let converted_chunks: Vec<u8> = b13_chunks
@@ -380,7 +376,7 @@ impl<F: Field> Base13toBase9TableConfig<F> {
                     )?;
                     table.assign_cell(
                         || "overflow_detector",
-                        self.overflow_detector,
+                        self.lookup_config.col2.1,
                         i,
                         || {
                             Ok(F::from(
@@ -395,13 +391,77 @@ impl<F: Field> Base13toBase9TableConfig<F> {
         )
     }
 
-    pub(crate) fn configure(meta: &mut ConstraintSystem<F>) -> Self {
-        Self {
-            base13: meta.lookup_table_column(),
-            base9: meta.lookup_table_column(),
-            overflow_detector: meta.lookup_table_column(),
-            _marker: PhantomData,
-        }
+    /// We use col0 for base 13 input
+    /// we use col1 for base 9 output
+    /// we use col2 for overflow detector
+    pub(crate) fn configure(
+        meta: &mut ConstraintSystem<F>,
+        adv_cols: [Column<Advice>; 3],
+        table_cols: [TableColumn; 3],
+    ) -> Self {
+        let lookup_config =
+            ThreeColumnsLookup::configure(meta, adv_cols, table_cols, "from base 13");
+        Self { lookup_config }
+    }
+    pub(crate) fn assign_region(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        slices: &[(u32, u32)],
+        conversions: &[Conversion],
+    ) -> Result<
+        (
+            Vec<AssignedCell<F, F>>,
+            Vec<AssignedCell<F, F>>,
+            Vec<AssignedCell<F, F>>,
+            Vec<AssignedCell<F, F>>,
+        ),
+        Error,
+    > {
+        layouter.assign_region(
+            || "conversion lookup",
+            |mut region| {
+                let mut input_coefs: Vec<AssignedCell<F, F>> = vec![];
+                let mut output_coefs: Vec<AssignedCell<F, F>> = vec![];
+                let mut step2_od: Vec<AssignedCell<F, F>> = vec![];
+                let mut step3_od: Vec<AssignedCell<F, F>> = vec![];
+                for (offset, (&(_, step), conv)) in
+                    slices.iter().zip(conversions.iter()).enumerate()
+                {
+                    self.lookup_config.q_enable.enable(&mut region, offset)?;
+                    let input_coef = region.assign_advice(
+                        || "Input Coef",
+                        self.lookup_config.col0.0,
+                        offset,
+                        || Ok(biguint_to_f::<F>(&conv.input.coef)),
+                    )?;
+                    input_coefs.push(input_coef);
+
+                    let output_coef = region.assign_advice(
+                        || "Output Coef",
+                        self.lookup_config.col1.0,
+                        offset,
+                        || Ok(biguint_to_f::<F>(&conv.output.coef)),
+                    )?;
+                    output_coefs.push(output_coef);
+
+                    let od = region.assign_advice(
+                        || "Overflow detector",
+                        self.lookup_config.col2.0,
+                        offset,
+                        || Ok(F::from(conv.overflow_detector.value as u64)),
+                    )?;
+                    match step {
+                        1 => region.constrain_constant(od.cell(), F::zero())?,
+                        2 => step2_od.push(od),
+                        3 => step3_od.push(od),
+                        4 => { // Do nothing
+                        }
+                        _ => unreachable!(),
+                    }
+                }
+                Ok((input_coefs, output_coefs, step2_od, step3_od))
+            },
+        )
     }
 }
 

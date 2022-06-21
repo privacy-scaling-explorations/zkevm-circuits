@@ -8,7 +8,6 @@ pub(crate) mod iota;
 pub(crate) mod mixing;
 pub(crate) mod pi;
 pub(crate) mod rho;
-pub(crate) mod rho_checks;
 pub(crate) mod rho_helpers;
 pub(crate) mod tables;
 pub(crate) mod theta;
