@@ -206,8 +206,9 @@ fn gen_copy_event(
         src_addr,
         src_addr_end,
         dst_type: CopyDataType::TxLog,
-        dst_id: NumberOrHash::Number(log_id),
+        dst_id: NumberOrHash::Number(state.tx_ctx.id()),
         dst_addr: 0,
+        log_id: Some(log_id as u64),
         length: msize as u64,
         steps,
     })

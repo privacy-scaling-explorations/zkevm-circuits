@@ -218,6 +218,9 @@ pub struct CopyEvent {
     pub dst_type: CopyDataType,
     /// Represents the relevant ID for destination.
     pub dst_id: NumberOrHash,
+    /// An optional field to hold the log ID in case of the destination being
+    /// TxLog.
+    pub log_id: Option<u64>,
     /// Represents the number of bytes copied as a part of this copy event.
     pub length: u64,
     /// Represents the list of copy steps in this copy event.

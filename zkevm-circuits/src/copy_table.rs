@@ -375,16 +375,9 @@ impl<F: FieldExt> CopyTable<F> {
                             || format!("assign log_id {}", offset),
                             self.log_id,
                             offset,
-                            || {
-                                Ok(if read_row.tag == CopyDataType::TxLog {
-                                    RandomLinearCombination::random_linear_combine(
-                                        copy_event.src_id.bytes(),
-                                        block.randomness,
-                                    )
-                                } else {
-                                    F::zero()
-                                })
-                            },
+                            // read row does not have a log ID since TxLog can only be on the write
+                            // side.
+                            || Ok(F::zero()),
                         )?;
                         // tag
                         region.assign_advice(
@@ -533,16 +526,7 @@ impl<F: FieldExt> CopyTable<F> {
                             || format!("assign log_id {}", offset),
                             self.log_id,
                             offset,
-                            || {
-                                Ok(if write_row.tag == CopyDataType::TxLog {
-                                    RandomLinearCombination::random_linear_combine(
-                                        copy_event.dst_id.bytes(),
-                                        block.randomness,
-                                    )
-                                } else {
-                                    F::zero()
-                                })
-                            },
+                            || Ok(copy_event.log_id.map_or(F::zero(), |v| F::from(v))),
                         )?;
                         // tag
                         region.assign_advice(

@@ -181,6 +181,7 @@ fn gen_copy_event(
         dst_type: CopyDataType::Memory,
         dst_id: NumberOrHash::Number(state.call()?.call_id),
         dst_addr: memory_offset,
+        log_id: None,
         length,
         steps,
     })

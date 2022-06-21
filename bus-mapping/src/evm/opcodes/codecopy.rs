@@ -123,13 +123,14 @@ fn gen_copy_event(
     }
 
     Ok(CopyEvent {
-        src_addr: code_offset,
-        src_addr_end,
         src_type: CopyDataType::Bytecode,
         src_id: NumberOrHash::Hash(code_hash),
-        dst_addr: dst_offset,
+        src_addr: code_offset,
+        src_addr_end,
         dst_type: CopyDataType::Memory,
         dst_id: NumberOrHash::Number(state.call()?.caller_id),
+        dst_addr: dst_offset,
+        log_id: None,
         length,
         steps: copy_steps,
     })
