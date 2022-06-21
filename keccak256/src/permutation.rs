@@ -1,8 +1,12 @@
 #![allow(clippy::type_complexity)]
 #![allow(clippy::too_many_arguments)]
 
-use crate::circuit::NEXT_INPUTS_BYTES;
+use crate::circuit::{NEXT_INPUTS_BYTES, STATE_WORDS};
 use eth_types::Field;
+use halo2_proofs::{
+    circuit::{layouter, AssignedCell, Layouter},
+    plonk::Error,
+};
 use itertools::Itertools;
 use std::convert::TryInto;
 
@@ -20,9 +24,11 @@ pub(crate) mod tables;
 pub(crate) mod theta;
 pub(crate) mod xi;
 
+use crate::circuit::KeccakConfig;
+
 #[repr(transparent)]
 #[derive(Debug, Clone)]
-struct PermutationInputs<F>(pub(crate) Vec<NextInput<F>>);
+pub(crate) struct PermutationInputs<F>(pub(crate) Vec<NextInput<F>>);
 
 impl<F: Field> PermutationInputs<F> {
     pub fn new() -> Self {
@@ -40,16 +46,18 @@ impl<F: Field> PermutationInputs<F> {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-struct NextInput<F> {
-    bytes: [F; NEXT_INPUTS_BYTES],
+#[derive(Debug, Clone)]
+pub(crate) struct NextInput<F> {
+    unpadded_bytes: [F; NEXT_INPUTS_BYTES],
+    padded_bytes: [F; NEXT_INPUTS_BYTES],
     og_len: usize,
 }
 
 impl<F: Field> NextInput<F> {
     pub fn new() -> Self {
         Self {
-            bytes: [F::zero(); NEXT_INPUTS_BYTES],
+            unpadded_bytes: [F::zero(); NEXT_INPUTS_BYTES],
+            padded_bytes: [F::zero(); NEXT_INPUTS_BYTES],
             og_len: 0,
         }
     }
@@ -62,7 +70,11 @@ impl<F: Field> NextInput<F> {
             .collect_vec()
             .try_into()
             .unwrap();
-        Self { bytes, og_len: len }
+        Self {
+            unpadded_bytes: bytes.clone(),
+            padded_bytes: bytes,
+            og_len: len,
+        }
     }
 
     fn pad(&mut self) {
@@ -72,13 +84,13 @@ impl<F: Field> NextInput<F> {
         ) {
             (true, false) => (),
             (false, true) => {
-                if let Some(last) = self.bytes.last_mut() {
+                if let Some(last) = self.padded_bytes.last_mut() {
                     *last = F::from(0x81u64);
                 }
             }
             (false, false) => {
-                self.bytes[self.og_len] = F::from(0x80u64);
-                self.bytes[NEXT_INPUTS_BYTES - 1] = F::one();
+                self.padded_bytes[self.og_len] = F::from(0x80u64);
+                self.padded_bytes[NEXT_INPUTS_BYTES - 1] = F::one();
             }
             _ => unreachable!(),
         }
@@ -136,14 +148,14 @@ mod next_inputs {
             .map(|&byte| Fp::from(byte as u64))
             .collect_vec();
 
-        assert_eq!(perm_inputs.0[0].bytes, first_perm[..]);
+        assert_eq!(perm_inputs.0[0].padded_bytes, first_perm[..]);
 
         let second_perm = input[NEXT_INPUTS_BYTES..2 * NEXT_INPUTS_BYTES]
             .iter()
             .map(|&byte| Fp::from(byte as u64))
             .collect_vec();
 
-        assert_eq!(perm_inputs.0[1].bytes, second_perm[..]);
+        assert_eq!(perm_inputs.0[1].padded_bytes, second_perm[..]);
 
         let mut last_perm_expected = input[NEXT_INPUTS_BYTES * 2..]
             .iter()
@@ -154,6 +166,9 @@ mod next_inputs {
         last_perm_expected.extend_from_slice(&vec![Fp::zero(); 136 - 28]);
         last_perm_expected.extend_from_slice(&[Fp::one()]);
 
-        assert_eq!(perm_inputs.0.last().unwrap().bytes, last_perm_expected[..]);
+        assert_eq!(
+            perm_inputs.0.last().unwrap().padded_bytes,
+            last_perm_expected[..]
+        );
     }
 }
