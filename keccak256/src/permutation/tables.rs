@@ -18,6 +18,47 @@ const MAX_CHUNKS: usize = 64;
 const NUM_OF_BINARY_CHUNKS: usize = 16;
 const NUM_OF_B9_CHUNKS: usize = 5;
 
+#[derive(Debug, Clone)]
+struct ThreeColumnsLookup<F> {
+    q_enable: Selector,
+    pub(crate) col0: (Column<Advice>, TableColumn),
+    pub(crate) col1: (Column<Advice>, TableColumn),
+    pub(crate) col2: (Column<Advice>, TableColumn),
+    _marker: PhantomData<F>,
+}
+impl<F: Field> ThreeColumnsLookup<F> {
+    pub(crate) fn configure(
+        meta: &mut ConstraintSystem<F>,
+        adv_cols: [Column<Advice>; 3],
+        table_cols: [TableColumn; 3],
+        name: &'static str,
+    ) -> Self {
+        let col0 = (adv_cols[0], table_cols[0]);
+        let col1 = (adv_cols[1], table_cols[1]);
+        let col2 = (adv_cols[2], table_cols[2]);
+        let q_enable = meta.complex_selector();
+        meta.lookup(name, |meta| {
+            let q_enable = meta.query_selector(q_enable);
+            let col0_adv = meta.query_advice(col0.0, Rotation::cur());
+            let col1_adv = meta.query_advice(col1.0, Rotation::cur());
+            let col2_adv = meta.query_advice(col2.0, Rotation::cur());
+
+            vec![
+                (q_enable.clone() * col0_adv, col0.1),
+                (q_enable.clone() * col1_adv, col1.1),
+                (q_enable * col2_adv, col2.1),
+            ]
+        });
+        Self {
+            q_enable,
+            col0,
+            col1,
+            col2,
+            _marker: PhantomData,
+        }
+    }
+}
+
 #[derive(EnumIter, Display, Clone, Copy)]
 enum TableTags {
     Range12 = 0,
@@ -28,42 +69,20 @@ enum TableTags {
 
 #[derive(Debug, Clone)]
 pub struct StackableTable<F> {
-    q_enable: Selector,
-    tag: (Column<Advice>, TableColumn),
-    col1: (Column<Advice>, TableColumn),
-    col2: (Column<Advice>, TableColumn),
-    _marker: PhantomData<F>,
+    lookup_config: ThreeColumnsLookup<F>,
 }
 
 impl<F: Field> StackableTable<F> {
+    /// We use col0 for tag that restricts the lookup into certain rows
+    /// we use col1 and col2 for different purposes depend on the tag
     pub(crate) fn configure(
         meta: &mut ConstraintSystem<F>,
         adv_cols: [Column<Advice>; 3],
         table_cols: [TableColumn; 3],
     ) -> Self {
-        let tag = (adv_cols[0], table_cols[0]);
-        let col1 = (adv_cols[1], table_cols[1]);
-        let col2 = (adv_cols[2], table_cols[2]);
-        let q_enable = meta.complex_selector();
-        meta.lookup("stackable lookup", |meta| {
-            let q_enable = meta.query_selector(q_enable);
-            let tag_adv = meta.query_advice(tag.0, Rotation::cur());
-            let col1_adv = meta.query_advice(col1.0, Rotation::cur());
-            let col2_adv = meta.query_advice(col2.0, Rotation::cur());
-
-            vec![
-                (q_enable.clone() * tag_adv, tag.1),
-                (q_enable.clone() * col1_adv, col1.1),
-                (q_enable * col2_adv, col2.1),
-            ]
-        });
-        Self {
-            q_enable,
-            tag,
-            col1,
-            col2,
-            _marker: PhantomData,
-        }
+        let lookup_config =
+            ThreeColumnsLookup::configure(meta, adv_cols, table_cols, "stackable lookup");
+        Self { lookup_config }
     }
 
     fn load_range(
@@ -77,19 +96,19 @@ impl<F: Field> StackableTable<F> {
         for i in 0..=k {
             table.assign_cell(
                 || format!("tag range{}", tag),
-                self.tag.1,
+                self.lookup_config.col0.1,
                 offset,
                 || Ok(F::from(tag as u64)),
             )?;
             table.assign_cell(
                 || format!("range{}", tag),
-                self.col1.1,
+                self.lookup_config.col1.1,
                 offset,
                 || Ok(F::from(i)),
             )?;
             table.assign_cell(
                 || format!("dummy col range{}", tag),
-                self.col2.1,
+                self.lookup_config.col2.1,
                 offset,
                 || Ok(F::zero()),
             )?;
@@ -110,12 +129,22 @@ impl<F: Field> StackableTable<F> {
                 let output_coef = F::from(convert_b13_coef(low + high) as u64);
                 table.assign_cell(
                     || "tag special chunks",
-                    self.tag.1,
+                    self.lookup_config.col0.1,
                     offset,
                     || Ok(F::from(TableTags::SpecialChunk as u64)),
                 )?;
-                table.assign_cell(|| "last chunk", self.col1.1, offset, || Ok(last_chunk))?;
-                table.assign_cell(|| "output coef", self.col2.1, offset, || Ok(output_coef))?;
+                table.assign_cell(
+                    || "last chunk",
+                    self.lookup_config.col1.1,
+                    offset,
+                    || Ok(last_chunk),
+                )?;
+                table.assign_cell(
+                    || "output coef",
+                    self.lookup_config.col2.1,
+                    offset,
+                    || Ok(output_coef),
+                )?;
                 offset += 1;
             }
         }
@@ -127,12 +156,22 @@ impl<F: Field> StackableTable<F> {
         for (left, right) in [(true, false), (false, true)] {
             table.assign_cell(
                 || "tag boolean flag",
-                self.tag.1,
+                self.lookup_config.col0.1,
                 offset,
                 || Ok(F::from(TableTags::BooleanFlag as u64)),
             )?;
-            table.assign_cell(|| "left", self.col1.1, offset, || Ok(F::from(left)))?;
-            table.assign_cell(|| "right", self.col2.1, offset, || Ok(F::from(right)))?;
+            table.assign_cell(
+                || "left",
+                self.lookup_config.col1.1,
+                offset,
+                || Ok(F::from(left)),
+            )?;
+            table.assign_cell(
+                || "right",
+                self.lookup_config.col2.1,
+                offset,
+                || Ok(F::from(right)),
+            )?;
             offset += 1;
         }
         Ok(offset)
@@ -168,12 +207,17 @@ impl<F: Field> StackableTable<F> {
             |mut region| {
                 let tag = F::from(tag as u64);
                 for (offset, v) in values.iter().enumerate() {
-                    self.q_enable.enable(&mut region, offset)?;
-                    region.assign_advice_from_constant(|| "tag", self.tag.0, offset, tag)?;
-                    v.copy_advice(|| "value", &mut region, self.col1.0, offset)?;
+                    self.lookup_config.q_enable.enable(&mut region, offset)?;
+                    region.assign_advice_from_constant(
+                        || "tag",
+                        self.lookup_config.col0.0,
+                        offset,
+                        tag,
+                    )?;
+                    v.copy_advice(|| "value", &mut region, self.lookup_config.col1.0, offset)?;
                     region.assign_advice_from_constant(
                         || "dummy",
-                        self.col2.0,
+                        self.lookup_config.col2.0,
                         offset,
                         F::zero(),
                     )?;
@@ -208,10 +252,25 @@ impl<F: Field> StackableTable<F> {
             |mut region| {
                 let offset = 0;
                 let tag = F::from(TableTags::SpecialChunk as u64);
-                self.q_enable.enable(&mut region, offset)?;
-                region.assign_advice_from_constant(|| "tag", self.tag.0, offset, tag)?;
-                last_chunk.copy_advice(|| "last chunk", &mut region, self.col1.0, offset)?;
-                output_coef.copy_advice(|| "output coef", &mut region, self.col2.0, offset)?;
+                self.lookup_config.q_enable.enable(&mut region, offset)?;
+                region.assign_advice_from_constant(
+                    || "tag",
+                    self.lookup_config.col0.0,
+                    offset,
+                    tag,
+                )?;
+                last_chunk.copy_advice(
+                    || "last chunk",
+                    &mut region,
+                    self.lookup_config.col1.0,
+                    offset,
+                )?;
+                output_coef.copy_advice(
+                    || "output coef",
+                    &mut region,
+                    self.lookup_config.col2.0,
+                    offset,
+                )?;
                 Ok(())
             },
         )
@@ -227,22 +286,22 @@ impl<F: Field> StackableTable<F> {
             || "lookup for boolean flag",
             |mut region| {
                 let offset = 0;
-                self.q_enable.enable(&mut region, offset)?;
+                self.lookup_config.q_enable.enable(&mut region, offset)?;
                 region.assign_advice_from_constant(
                     || "tag",
-                    self.tag.0,
+                    self.lookup_config.col0.0,
                     offset,
                     F::from(TableTags::BooleanFlag as u64),
                 )?;
                 let left = region.assign_advice(
                     || "left",
-                    self.col1.0,
+                    self.lookup_config.col1.0,
                     offset,
                     || is_left.map(|flag| F::from(flag)).ok_or(Error::Synthesis),
                 )?;
                 let right = region.assign_advice(
                     || "right",
-                    self.col2.0,
+                    self.lookup_config.col2.0,
                     offset,
                     || is_left.map(|flag| F::from(!flag)).ok_or(Error::Synthesis),
                 )?;
