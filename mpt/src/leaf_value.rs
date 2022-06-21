@@ -399,10 +399,9 @@ impl<F: FieldExt> LeafValueChip<F> {
         // Note: For cases when storage leaf is in the first storage level, the
         // constraints are in storage_root_in_account_leaf.
 
-        // Check hash of a storage leaf to be state root when leaf without branch -
-        // Note: probably not needed, except if the circuit is used without account
-        // proof.
-        // TODO: prepare test
+        // Check hash of a storage leaf to be state root when leaf without branch.
+        // Note: needed only if circuit is used without account. Currently not used.
+        // Prepare test if we start using it.
         meta.lookup_any(
             "storage (no account proof) in first level leaf without branch - compared to root",
             |meta| {
