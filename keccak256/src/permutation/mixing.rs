@@ -1,35 +1,35 @@
 use super::super::arith_helpers::*;
+use super::generic::GenericConfig;
 use super::tables::FromBase9TableConfig;
-use super::{absorb::AbsorbConfig, base_conversion::BaseConversionConfig, iota::IotaConfig};
+use super::{absorb::AbsorbConfig, base_conversion::BaseConversionConfig, iota::IotaConstants};
 use crate::common::*;
 use crate::keccak_arith::KeccakFArith;
 use eth_types::Field;
-use halo2_proofs::circuit::{AssignedCell, Region};
-use halo2_proofs::plonk::{Expression, Selector};
-use halo2_proofs::poly::Rotation;
 use halo2_proofs::{
-    circuit::Layouter,
-    plonk::{Advice, Column, ConstraintSystem, Error},
+    circuit::{AssignedCell, Layouter, Region},
+    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
+    poly::Rotation,
 };
 use std::convert::TryInto;
 
 #[derive(Clone, Debug)]
 pub struct MixingConfig<F> {
-    iota_config: IotaConfig<F>,
+    iota_constants: IotaConstants<F>,
     absorb_config: AbsorbConfig<F>,
     base_conv_config: BaseConversionConfig<F>,
     state: [Column<Advice>; 25],
     flag: Column<Advice>,
     q_flag: Selector,
     q_out_copy: Selector,
+    generic: GenericConfig<F>,
 }
 
 impl<F: Field> MixingConfig<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         table: &FromBase9TableConfig<F>,
-        iota_config: IotaConfig<F>,
         state: [Column<Advice>; 25],
+        generic: GenericConfig<F>,
     ) -> MixingConfig<F> {
         // Allocate space for the flag column from which we will copy to all of
         // the sub-configs.
@@ -99,15 +99,17 @@ impl<F: Field> MixingConfig<F> {
             // the equality with the out_state of the permutation.
             [q_enable * ((left_side + right_side) - out_state)]
         });
+        let iota_constants = IotaConstants::default();
 
         MixingConfig {
-            iota_config,
+            iota_constants,
             absorb_config,
             base_conv_config,
             state,
             flag,
             q_flag,
             q_out_copy,
+            generic,
         }
     }
 
@@ -207,10 +209,14 @@ impl<F: Field> MixingConfig<F> {
         // IotaB9
         let non_mix_res = {
             let mut state = in_state.clone();
-            state[0] = self.iota_config.assign_b9_last_round(
+            // If `no_mixing` is true: add `A4 * round_constant_b9`
+            // Otherwise, do nothing and return the orignal lane value in the
+            // next cell
+            state[0] = self.generic.conditional_add_const(
                 layouter,
                 state[0].clone(),
                 negated_flag.clone(),
+                self.iota_constants.a4_times_round_constants_b9[PERMUTATION - 1],
             )?;
             state
         };
@@ -238,9 +244,15 @@ impl<F: Field> MixingConfig<F> {
         let mix_res = {
             let mut base_conv_cells = base_conv_cells;
 
-            base_conv_cells[0] =
-                self.iota_config
-                    .assign_round_b13(layouter, base_conv_cells[0].clone(), flag)?;
+            // If `mixing` is true: add round constant in base 13.
+            // Otherwise, do nothing and return the orignal lane value in the
+            // next cell
+            base_conv_cells[0] = self.generic.conditional_add_const(
+                layouter,
+                base_conv_cells[0].clone(),
+                flag,
+                self.iota_constants.round_constant_b13,
+            )?;
             base_conv_cells
         };
 
@@ -279,7 +291,6 @@ impl<F: Field> MixingConfig<F> {
 mod tests {
     use super::*;
     use crate::common::{State, ROUND_CONSTANTS};
-    use crate::permutation::iota::IotaConfig;
     use halo2_proofs::circuit::Layouter;
     use halo2_proofs::pairing::bn256::Fr as Fp;
     use halo2_proofs::plonk::{ConstraintSystem, Error};
@@ -326,10 +337,11 @@ mod tests {
                     .try_into()
                     .unwrap();
                 let fixed = meta.fixed_column();
-                let iota_config = IotaConfig::configure(meta, state[0], state[1], fixed);
+                let generic =
+                    GenericConfig::configure(meta, state[0..3].try_into().unwrap(), fixed);
 
                 MyConfig {
-                    mixing_conf: MixingConfig::configure(meta, &table, iota_config, state),
+                    mixing_conf: MixingConfig::configure(meta, &table, state, generic),
                     table,
                 }
             }
