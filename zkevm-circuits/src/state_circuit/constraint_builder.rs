@@ -258,7 +258,7 @@ impl<F: Field> ConstraintBuilder<F> {
             cb.require_equal("tx_id increases by 1", q.id_change(), 1.expr());
             cb.require_zero(
                 "reset log_id to one when tx_id increases",
-                q.tx_log_id(false) - 1.expr(),
+                q.tx_log_id() - 1.expr(),
             );
 
             // constrain first field_tag is Address when tx id increases
@@ -277,8 +277,8 @@ impl<F: Field> ConstraintBuilder<F> {
             |cb| {
                 cb.require_equal(
                     "log_id = pre_log_id + 1",
-                    q.tx_log_id(false),
-                    q.tx_log_id(true) + 1.expr(),
+                    q.tx_log_id(),
+                    q.tx_log_id_prev() + 1.expr(),
                 )
             },
         );
@@ -291,8 +291,8 @@ impl<F: Field> ConstraintBuilder<F> {
             |cb| {
                 cb.require_equal(
                     "log_id will not change if field_tag != Address within tx",
-                    q.tx_log_id(false),
-                    q.tx_log_id(true),
+                    q.tx_log_id(),
+                    q.tx_log_id_prev(),
                 )
             },
         );
@@ -303,19 +303,19 @@ impl<F: Field> ConstraintBuilder<F> {
             |cb| {
                 cb.require_equal(
                     "index = pre_index + 1",
-                    q.tx_log_index(false),
-                    q.tx_log_index(true) + 1.expr(),
+                    q.tx_log_index(),
+                    q.tx_log_index_prev() + 1.expr(),
                 )
             },
         );
 
         self.condition(q.field_tag_matches(TxLogFieldTag::Address), |cb| {
-            cb.require_zero("index is zero for address ", q.tx_log_index(false))
+            cb.require_zero("index is zero for address ", q.tx_log_index())
         });
 
         // if tag Topic appear, topic_index in range [0,4)
         self.condition(q.field_tag_matches(TxLogFieldTag::Topic), |cb| {
-            let topic_index = q.tx_log_index(false);
+            let topic_index = q.tx_log_index();
             cb.require_zero(
                 "topic_index in range [0,4) ",
                 topic_index.clone()
@@ -423,20 +423,20 @@ impl<F: Field> Queries<F> {
         self.rw_counter.value.clone() - self.rw_counter.value_prev.clone()
     }
 
-    fn tx_log_index(&self, is_pre: bool) -> Expression<F> {
-        if is_pre {
-            from_digits(&self.address.limbs_prev[0..2], (1u64 << 16).expr())
-        } else {
-            from_digits(&self.address.limbs[0..2], (1u64 << 16).expr())
-        }
+    fn tx_log_index(&self) -> Expression<F> {
+        from_digits(&self.address.limbs[0..2], (1u64 << 16).expr())
     }
 
-    fn tx_log_id(&self, is_pre: bool) -> Expression<F> {
-        if is_pre {
-            from_digits(&self.address.limbs_prev[3..5], (1u64 << 16).expr())
-        } else {
-            from_digits(&self.address.limbs[3..5], (1u64 << 16).expr())
-        }
+    fn tx_log_index_prev(&self) -> Expression<F> {
+        from_digits(&self.address.limbs_prev[0..2], (1u64 << 16).expr())
+    }
+
+    fn tx_log_id(&self) -> Expression<F> {
+        from_digits(&self.address.limbs[3..5], (1u64 << 16).expr())
+    }
+
+    fn tx_log_id_prev(&self) -> Expression<F> {
+        from_digits(&self.address.limbs[3..5], (1u64 << 16).expr())
     }
 }
 

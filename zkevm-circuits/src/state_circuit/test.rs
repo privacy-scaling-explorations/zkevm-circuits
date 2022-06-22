@@ -20,6 +20,7 @@ use halo2_proofs::{
     plonk::{keygen_vk, Advice, Circuit, Column, ConstraintSystem},
 };
 use std::collections::{BTreeSet, HashMap};
+use strum::IntoEnumIterator;
 
 const N_ROWS: usize = 1 << 16;
 
