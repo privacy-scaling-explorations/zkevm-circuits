@@ -124,48 +124,7 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
             [memory_address.address()],
         );
 
-        // If the iterative process has not yet finished, we constrain the next step to
-        // be another `CopyToLog` while adding some additional
-        // constraints to the auxiliary data.
-        // Constrain the next step CopyToLog if length != 0
-        // cb.constrain_next_step(
-        //     ExecutionState::CopyToLog,
-        //     Some(memory_address.has_length()),
-        //     |cb| {
-        //         let next_src_addr = cb.query_cell();
-        //         let next_bytes_left = cb.query_cell();
-        //         let next_src_addr_end = cb.query_cell();
-        //         let next_is_persistent = cb.query_bool();
-        //         let next_tx_id = cb.query_cell();
-        //         let next_data_start_index = cb.query_cell();
-
-        //         cb.require_equal(
-        //             "next_src_addr = memory_offset",
-        //             next_src_addr.expr(),
-        //             mstart.expr(),
-        //         );
-        //         cb.require_equal(
-        //             "next_bytes_left = length",
-        //             next_bytes_left.expr(),
-        //             memory_address.length(),
-        //         );
-        //         cb.require_equal(
-        //             "next_src_addr_end = memory_offset + length",
-        //             next_src_addr_end.expr(),
-        //             mstart.expr() + memory_address.length(),
-        //         );
-        //         cb.require_equal(
-        //             "next_is_persistent = is_persistent",
-        //             next_is_persistent.expr(),
-        //             is_persistent.expr(),
-        //         );
-        //         cb.require_equal("next_tx_id = tx_id", next_tx_id.expr(),
-        // tx_id.expr());         cb.require_zero(
-        //             "next_data_start_index starts with 0",
-        //             next_data_start_index.expr(),
-        //         );
-        //     },
-        // );
+        // TODO(rohit): lookup copy table.
 
         let gas_cost = GasCost::LOG.as_u64().expr()
             + GasCost::LOG.as_u64().expr() * topic_count.clone()

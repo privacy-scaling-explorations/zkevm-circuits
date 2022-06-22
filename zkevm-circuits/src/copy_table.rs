@@ -289,7 +289,6 @@ impl<F: FieldExt> CopyTableConfig<F> {
                 1.expr() - addr_lt_addr_end.is_lt(meta, None),
                 meta.query_advice(is_pad, Rotation::cur()),
             );
-
             cb.require_zero(
                 "is_pad == 0 for write row",
                 meta.query_advice(is_pad, Rotation::next()),

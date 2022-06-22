@@ -80,45 +80,7 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
             memory_expansion.gas_cost(),
         );
 
-        // Constrain the next step to be the internal `CopyCodeToMemory` step and add
-        // some preliminary checks on its auxiliary data.
-        // cb.constrain_next_step(
-        //     ExecutionState::CopyCodeToMemory,
-        //     Some(dst_memory_addr.has_length()),
-        //     |cb| {
-        //         let next_src_addr = cb.query_cell();
-        //         let next_dst_addr = cb.query_cell();
-        //         let next_bytes_left = cb.query_cell();
-        //         let next_src_addr_end = cb.query_cell();
-        //         let next_code_hash = cb.query_word();
-
-        //         cb.require_equal(
-        //             "next_src_addr == code_offset",
-        //             next_src_addr.expr(),
-        //             from_bytes::expr(&code_offset.cells),
-        //         );
-        //         cb.require_equal(
-        //             "next_dst_addr = memory_offset",
-        //             next_dst_addr.expr(),
-        //             dst_memory_addr.offset(),
-        //         );
-        //         cb.require_equal(
-        //             "next_bytes_left = length",
-        //             next_bytes_left.expr(),
-        //             size.expr(),
-        //         );
-        //         cb.require_equal(
-        //             "next_src_addr_end == code_size",
-        //             next_src_addr_end.expr(),
-        //             code_size.expr(),
-        //         );
-        //         cb.require_equal(
-        //             "next_code_hash == code_hash",
-        //             next_code_hash.expr(),
-        //             code_hash.expr(),
-        //         );
-        //     },
-        // );
+        // TODO(rohit): lookup copy table.
 
         // Expected state transition.
         let step_state_transition = StepStateTransition {
