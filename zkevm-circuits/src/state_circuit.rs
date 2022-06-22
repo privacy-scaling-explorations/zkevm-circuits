@@ -13,7 +13,7 @@ use crate::{
         param::N_BYTES_WORD,
         table::RwTableTag,
         util::RandomLinearCombination,
-        witness::{RwMap, RwRow, Rw},
+        witness::{Rw, RwMap, RwRow},
     },
     rw_table::RwTable,
 };
@@ -34,6 +34,7 @@ use multiple_precision_integer::{Chip as MpiChip, Config as MpiConfig, Queries a
 use random_linear_combination::{Chip as RlcChip, Config as RlcConfig, Queries as RlcQueries};
 #[cfg(test)]
 use std::collections::HashMap;
+use std::iter::once;
 
 const N_LIMBS_RW_COUNTER: usize = 2;
 const N_LIMBS_ACCOUNT_ADDRESS: usize = 10;
@@ -280,10 +281,13 @@ where
             || "rw table",
             |mut region| {
                 let padding_length = N_ROWS - self.rows.len();
-                let padding = (1..=padding_length).map(|rw_counter| (Rw::Start { rw_counter }).table_assignment(self.randomness));
+                let padding = (1..=padding_length)
+                    .map(|rw_counter| (Rw::Start { rw_counter }).table_assignment(self.randomness));
 
                 let rows = padding.chain(self.rows.iter().cloned());
-                for (offset, row) in rows.enumerate() {
+                let prev_rows = once(None).chain(rows.clone().map(Some));
+
+                for (offset, (row, prev_row)) in rows.zip(prev_rows).enumerate() {
                     log::trace!("state citcuit assign offset:{} row:{:#?}", offset, row);
                     self.assign_row(
                         &config,
@@ -294,11 +298,7 @@ where
                         &lexicographic_ordering_chip,
                         offset,
                         row,
-                        if offset == 0 {
-                            None
-                        } else {
-                            Some(self.rows[offset - 1])
-                        },
+                        prev_row,
                     )?;
                 }
 

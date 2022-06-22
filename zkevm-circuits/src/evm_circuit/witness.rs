@@ -462,7 +462,7 @@ impl RwMap {
             )
         });
 
-            rows.into_iter()
+        rows.into_iter()
             .map(|r| r.table_assignment(randomness))
             .collect()
     }

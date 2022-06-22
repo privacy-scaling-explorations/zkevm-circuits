@@ -1,6 +1,6 @@
 use crate::{
     evm_circuit::{table::FixedTableTag, witness::Block},
-    state_circuit::{StateCircuit},
+    state_circuit::StateCircuit,
 };
 use bus_mapping::mock::BlockData;
 use eth_types::geth_types::GethData;
