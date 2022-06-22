@@ -120,7 +120,9 @@ impl<F: Field> EvmCircuit<F> {
         layouter: &mut impl Layouter<F>,
         block: &Block<F>,
     ) -> Result<(), Error> {
-        self.execution.assign_block(layouter, block, true)
+        self.copy_table.assign_block(layouter, block)?;
+        self.execution.assign_block(layouter, block, true)?;
+        Ok(())
     }
 
     /// Calculate which rows are "actually" used in the circuit

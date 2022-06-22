@@ -1,6 +1,9 @@
 #![allow(missing_docs)]
 use bus_mapping::{circuit_input_builder::CopyDataType, operation::RW};
-use gadgets::is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction};
+use gadgets::{
+    is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction},
+    less_than::{LtChip, LtConfig},
+};
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::Layouter,
@@ -79,6 +82,10 @@ pub struct CopyTableConfig<F> {
     pub is_tx_log_inv: Column<Advice>,
     /// IsZeroConfig for checking if the row is tagged CopyDataType::TxLog.
     pub is_tx_log: IsZeroConfig<F>,
+    /// Lt chip to check: src_addr < src_addr_end.
+    /// Since `src_addr` and `src_addr_end` are u64, 8 bytes are sufficient for
+    /// the Lt chip.
+    pub addr_lt_addr_end: LtConfig<F, 8>,
 }
 
 impl<F: FieldExt> LookupTable<F> for CopyTableConfig<F> {
@@ -145,6 +152,13 @@ impl<F: FieldExt> CopyTableConfig<F> {
             |_| 1.expr(),
             |meta| meta.query_advice(tag, Rotation::cur()) - CopyDataType::TxLog.expr(),
             is_memory_inv,
+        );
+
+        let addr_lt_addr_end = LtChip::configure(
+            meta,
+            |_meta| 1.expr(),
+            |meta| meta.query_advice(addr, Rotation::cur()),
+            |meta| meta.query_advice(addr_end, Rotation::cur()),
         );
 
         meta.create_gate("verify row", |meta| {
@@ -270,9 +284,11 @@ impl<F: FieldExt> CopyTableConfig<F> {
                     meta.query_advice(value, Rotation::cur()),
                 ]),
             );
-
-            // TODO(rohit): is_pad == 1 - (src_addr < src_addr_end) for read row
-            // Need the LtGadget for this.
+            cb.require_equal(
+                "is_pad == 1 - (src_addr < src_addr_end) for read row",
+                1.expr() - addr_lt_addr_end.is_lt(meta, None),
+                meta.query_advice(is_pad, Rotation::cur()),
+            );
 
             cb.require_zero(
                 "is_pad == 0 for write row",
@@ -309,6 +325,8 @@ impl<F: FieldExt> CopyTableConfig<F> {
             is_bytecode,
             is_tx_calldata,
             is_tx_log,
+
+            addr_lt_addr_end,
         }
     }
 
