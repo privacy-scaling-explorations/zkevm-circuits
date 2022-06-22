@@ -151,7 +151,7 @@ impl<F: Field> StackableTable<F> {
                 {
                     offset = self.load_range(&mut table, offset, tag, k)?;
                 }
-                self.load_special_chunks(&mut table, offset)?;
+                offset = self.load_special_chunks(&mut table, offset)?;
                 self.load_boolean_flag(&mut table, offset)?;
                 Ok(())
             },
