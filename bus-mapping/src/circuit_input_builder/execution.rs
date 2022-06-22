@@ -177,7 +177,7 @@ pub struct CopyStep {
 }
 
 /// Defines an enum type that can hold either a number or a hash value.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum NumberOrHash {
     /// Variant to indicate a number value.
     Number(usize),

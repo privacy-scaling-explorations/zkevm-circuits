@@ -190,9 +190,9 @@ fn gen_copy_event(
 #[cfg(test)]
 mod calldatacopy_tests {
     use crate::{
-        circuit_input_builder::{CopyDataType, CopyStep, ExecState},
+        circuit_input_builder::{CopyDataType, CopyStep, ExecState, NumberOrHash},
         mock::BlockData,
-        operation::{CallContextField, CallContextOp, MemoryOp, RWCounter, StackOp, RW},
+        operation::{CallContextField, CallContextOp, RWCounter, StackOp, RW},
     };
     use eth_types::{
         bytecode,
@@ -335,44 +335,61 @@ mod calldatacopy_tests {
             ]
         );
 
-        // memory writes.
-        // 1. First `call_data_length` memory ops are RW::WRITE and come from the `CALL`
-        // opcode.    (we skip checking those)
-        // 2. Following that, we should have tuples of (RW::READ and RW::WRITE) where
-        // the caller    memory is read and the current call's memory is written
-        // to.
+        let copy_events = builder.block.copy_events.clone();
+        assert_eq!(copy_events.len(), 1);
+        assert_eq!(copy_events[0].steps.len(), 2 * copy_size);
+        assert_eq!(copy_events[0].src_id, NumberOrHash::Number(caller_id));
         assert_eq!(
-            builder.block.container.memory.len(),
-            call_data_length + 2 * copy_size
+            copy_events[0].dst_id,
+            NumberOrHash::Number(expected_call_id)
         );
+        assert_eq!(copy_events[0].length, copy_size as u64);
+        assert!(copy_events[0].log_id.is_none());
+        assert_eq!(copy_events[0].src_addr as usize, offset + call_data_offset);
         assert_eq!(
-            (call_data_length..(call_data_length + (2 * copy_size)))
-                .map(|idx| &builder.block.container.memory[idx])
-                .map(|op| (op.rw(), op.op().clone()))
-                .collect::<Vec<(RW, MemoryOp)>>(),
-            {
-                let mut memory_ops = Vec::with_capacity(2 * copy_size);
-                (0..copy_size).for_each(|idx| {
-                    memory_ops.push((
-                        RW::READ,
-                        MemoryOp::new(
-                            caller_id,
-                            (call_data_offset + offset + idx).into(),
-                            memory_a[call_data_offset + idx],
-                        ),
-                    ));
-                    memory_ops.push((
-                        RW::WRITE,
-                        MemoryOp::new(
-                            expected_call_id,
-                            (dst_offset + idx).into(),
-                            memory_a[call_data_offset + idx],
-                        ),
-                    ));
-                });
-                memory_ops
-            },
+            copy_events[0].src_addr_end as usize,
+            offset + call_data_offset + call_data_length
         );
+        assert_eq!(copy_events[0].dst_addr as usize, dst_offset);
+
+        let rwc_start = step.rwc.0 + 6;
+        for (idx, copy_rw_pair) in copy_events[0].steps.chunks(2).enumerate() {
+            assert_eq!(copy_rw_pair.len(), 2);
+            let (value, is_pad) = memory_a
+                .get(offset + call_data_offset + idx)
+                .cloned()
+                .map_or((0, true), |v| (v, false));
+            // Read
+            let read_step = copy_rw_pair[0].clone();
+            assert_eq!(
+                read_step,
+                CopyStep {
+                    addr: (offset + call_data_offset + idx) as u64,
+                    addr_end: Some((offset + call_data_offset + call_data_length) as u64),
+                    tag: CopyDataType::Memory,
+                    rw: RW::READ,
+                    is_code: None,
+                    value,
+                    is_pad,
+                    rwc: Some(RWCounter(rwc_start + 2 * idx)),
+                }
+            );
+            // Write
+            let write_step = copy_rw_pair[1].clone();
+            assert_eq!(
+                write_step,
+                CopyStep {
+                    addr: (dst_offset + idx) as u64,
+                    addr_end: None,
+                    tag: CopyDataType::Memory,
+                    rw: RW::WRITE,
+                    is_code: None,
+                    value,
+                    is_pad: false,
+                    rwc: Some(RWCounter(rwc_start + 2 * idx + 1)),
+                }
+            );
+        }
     }
 
     #[test]
