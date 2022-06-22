@@ -31,6 +31,9 @@ use strum_macros::EnumIter;
 // C31 = C30 << 16 + A31 - B21.
 
 // X_cur > X_prev iff one of C0, ..., C31 is non-zero and fits into 16 bits.
+// C16, ..., C31 do not necessarily fit into a field element, so to check that
+// Cn fits into 16 bits, we use an RLC to check that Cn-1 = 0 and then do a
+// lookup for An-Bn.
 
 // We show this with following advice columns and constraints:
 // - first_different_limb: first index where the limbs differ.
@@ -133,37 +136,40 @@ impl Config {
             vec![selector * (1.expr() - limb_difference * limb_difference_inverse)]
         });
 
-        meta.create_gate("limbs match before first_different_limb", |meta| {
-            let selector = meta.query_fixed(selector, Rotation::cur());
-            let cur = Queries::new(meta, keys, Rotation::cur());
-            let prev = Queries::new(meta, keys, Rotation::prev());
-            let powers_of_randomness =
-                power_of_randomness.map(|i| meta.query_instance(i, Rotation::cur()));
-
-            let mut constraints = vec![];
-            for (limb, e) in
-                LimbIndex::iter().zip(rlc_limb_differences(cur, prev, powers_of_randomness))
-            {
-                constraints.push(
-                    selector.clone()
-                        * first_different_limb.value_equals(limb, Rotation::cur())(meta)
-                        * e,
-                )
-            }
-            constraints
-        });
-
         meta.create_gate(
             "limb differences before first_different_limb are all 0",
             |meta| {
                 let selector = meta.query_fixed(selector, Rotation::cur());
                 let cur = Queries::new(meta, keys, Rotation::cur());
                 let prev = Queries::new(meta, keys, Rotation::prev());
+                let powers_of_randomness =
+                    power_of_randomness.map(|i| meta.query_instance(i, Rotation::cur()));
+
+                let mut constraints = vec![];
+                for (i, rlc_expression) in
+                    LimbIndex::iter().zip(rlc_limb_differences(cur, prev, powers_of_randomness))
+                {
+                    // E.g. if first_different_limb = 5, four limb differences before need to be 0.
+                    // Using RLC, we check that (cur_1 - prev_1) + r(cur_2 - prev_2) + r^2(cur_3 -
+                    // prev_3) + r^3(cur_4 - prev_4) = 0.
+                    constraints.push(
+                        selector.clone()
+                            * first_different_limb.value_equals(i, Rotation::cur())(meta)
+                            * rlc_expression,
+                    )
+                }
+                constraints
+            },
+        );
+
+        meta.create_gate(
+            "limb_difference equals difference of limbs at index",
+            |meta| {
+                let selector = meta.query_fixed(selector, Rotation::cur());
+                let cur = Queries::new(meta, keys, Rotation::cur());
+                let prev = Queries::new(meta, keys, Rotation::prev());
                 let limb_difference = meta.query_advice(limb_difference, Rotation::cur());
 
-                // E.g. if first_different_limb = 5, four limb differences before need to be 0.
-                // Using RLC, we check that (cur_1 - prev_1) + r(cur_2 - prev_2) + r^2(cur_3 -
-                // prev_3) + r^3(cur_4 - prev_4) = 0.
                 let mut constraints = vec![];
                 for ((i, cur_limb), prev_limb) in
                     LimbIndex::iter().zip(cur.be_limbs()).zip(prev.be_limbs())
