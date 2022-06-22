@@ -23,8 +23,7 @@ use std::collections::{BTreeSet, HashMap};
 use strum::IntoEnumIterator;
 
 const N_ROWS: usize = 1 << 16;
-
-#[derive(Hash, Eq, PartialEq)]
+#[derive(Hash, Eq, PartialEq, Clone)]
 pub enum AdviceColumn {
     IsWrite,
     Address,
@@ -45,24 +44,27 @@ pub enum AdviceColumn {
 }
 
 impl AdviceColumn {
-    pub fn value<F: Field>(&self, config: &StateConfig<F>) -> Column<Advice> {
+    pub fn value<F: Field, const QUICK_CHECK: bool>(
+        &self,
+        config: &StateConfig<F, QUICK_CHECK>,
+    ) -> Column<Advice> {
         match self {
-            Self::IsWrite => config.is_write,
-            Self::Address => config.address.value,
-            Self::AddressLimb0 => config.address.limbs[0],
-            Self::AddressLimb1 => config.address.limbs[1],
-            Self::StorageKey => config.storage_key.encoded,
-            Self::StorageKeyByte0 => config.storage_key.bytes[0],
-            Self::StorageKeyByte1 => config.storage_key.bytes[1],
+            Self::IsWrite => config.rw_table.is_write,
+            Self::Address => config.rw_table.address,
+            Self::AddressLimb0 => config.address_mpi.limbs[0],
+            Self::AddressLimb1 => config.address_mpi.limbs[1],
+            Self::StorageKey => config.rw_table.storage_key,
+            Self::StorageKeyByte0 => config.storage_key_rlc.bytes[0],
+            Self::StorageKeyByte1 => config.storage_key_rlc.bytes[1],
             Self::StorageKeyChangeInverse => config.is_storage_key_unchanged.value_inv,
-            Self::Value => config.value,
-            Self::RwCounter => config.rw_counter.value,
-            Self::RwCounterLimb0 => config.rw_counter.limbs[0],
-            Self::RwCounterLimb1 => config.rw_counter.limbs[1],
-            Self::TagBit0 => config.tag.bits[0],
-            Self::TagBit1 => config.tag.bits[1],
-            Self::TagBit2 => config.tag.bits[2],
-            Self::TagBit3 => config.tag.bits[3],
+            Self::Value => config.rw_table.value,
+            Self::RwCounter => config.rw_table.rw_counter,
+            Self::RwCounterLimb0 => config.rw_counter_mpi.limbs[0],
+            Self::RwCounterLimb1 => config.rw_counter_mpi.limbs[1],
+            Self::TagBit0 => config.tag_bits.bits[0],
+            Self::TagBit1 => config.tag_bits.bits[1],
+            Self::TagBit2 => config.tag_bits.bits[2],
+            Self::TagBit3 => config.tag_bits.bits[3],
         }
     }
 }
@@ -83,7 +85,8 @@ fn test_state_circuit_ok(
     let circuit = StateCircuit::<Fr, N_ROWS>::new(randomness, rw_map);
     let power_of_randomness = circuit.instance();
 
-    let prover = MockProver::<Fr>::run(19, &circuit, power_of_randomness).unwrap();
+    let prover =
+        MockProver::<Fr>::run(circuit.estimate_k(), &circuit, power_of_randomness).unwrap();
     let verify_result = prover.verify();
     assert_eq!(verify_result, Ok(()));
 }
@@ -158,7 +161,7 @@ fn state_circuit_simple_2() {
     );
 
     let storage_op_0 = Operation::new(
-        RWCounter::from(0),
+        RWCounter::from(1),
         RW::WRITE,
         StorageOp::new(
             U256::from(100).to_address(),
@@ -319,7 +322,7 @@ fn storage_key_rlc() {
         account_address: Address::default(),
         storage_key: U256::from(256),
         value: U256::zero(),
-        value_prev: U256::zero(),
+        value_prev: U256::from(5),
         tx_id: 4,
         committed_value: U256::from(5),
     }];
@@ -372,7 +375,7 @@ fn storage_key_mismatch() {
         account_address: Address::default(),
         storage_key: U256::from(6),
         value: U256::zero(),
-        value_prev: U256::zero(),
+        value_prev: U256::from(5),
         tx_id: 4,
         committed_value: U256::from(5),
     }];
@@ -397,7 +400,7 @@ fn storage_key_byte_out_of_range() {
         account_address: Address::default(),
         storage_key: U256::from(256),
         value: U256::zero(),
-        value_prev: U256::zero(),
+        value_prev: U256::from(5),
         tx_id: 4,
         committed_value: U256::from(5),
     }];
@@ -439,7 +442,7 @@ fn nonlexicographic_order_tag() {
         is_write: true,
         call_id: 1,
         memory_address: 10,
-        byte: 12,
+        byte: 0,
     };
     let second = Rw::CallContext {
         rw_counter: 2,
@@ -520,7 +523,7 @@ fn nonlexicographic_order_address() {
         account_address: address!("0x2000000000000000000000000000000000000000"),
         field_tag: AccountFieldTag::CodeHash,
         value: U256::one(),
-        value_prev: U256::one(),
+        value_prev: U256::zero(),
     };
 
     assert_eq!(verify(vec![first, second]), Ok(()));
@@ -538,7 +541,7 @@ fn nonlexicographic_order_storage_key_upper() {
         account_address: Address::default(),
         storage_key: U256::zero(),
         value: U256::zero(),
-        value_prev: U256::zero(),
+        value_prev: U256::from(5),
         tx_id: 4,
         committed_value: U256::from(5),
     };
@@ -548,7 +551,7 @@ fn nonlexicographic_order_storage_key_upper() {
         account_address: Address::default(),
         storage_key: U256::MAX - U256::one(),
         value: U256::zero(),
-        value_prev: U256::zero(),
+        value_prev: U256::from(5),
         tx_id: 4,
         committed_value: U256::from(5),
     };
@@ -568,7 +571,7 @@ fn nonlexicographic_order_storage_key_lower() {
         account_address: Address::default(),
         storage_key: U256::zero(),
         value: U256::zero(),
-        value_prev: U256::zero(),
+        value_prev: U256::from(5),
         tx_id: 4,
         committed_value: U256::from(5),
     };
@@ -578,7 +581,7 @@ fn nonlexicographic_order_storage_key_lower() {
         account_address: Address::default(),
         storage_key: U256::one(),
         value: U256::zero(),
-        value_prev: U256::zero(),
+        value_prev: U256::from(5),
         tx_id: 4,
         committed_value: U256::from(5),
     };
@@ -793,6 +796,11 @@ fn invalid_tags() {
 
 fn prover(rows: Vec<Rw>, overrides: HashMap<(AdviceColumn, isize), Fr>) -> MockProver<Fr> {
     let randomness = Fr::rand();
+    let rows = rows
+        .iter()
+        .map(|r| r.table_assignment(randomness))
+        .collect();
+
     let circuit = StateCircuit::<Fr, N_ROWS> {
         randomness,
         rows,
@@ -800,7 +808,7 @@ fn prover(rows: Vec<Rw>, overrides: HashMap<(AdviceColumn, isize), Fr>) -> MockP
     };
     let power_of_randomness = circuit.instance();
 
-    MockProver::<Fr>::run(17, &circuit, power_of_randomness).unwrap()
+    MockProver::<Fr>::run(circuit.estimate_k(), &circuit, power_of_randomness).unwrap()
 }
 
 fn verify(rows: Vec<Rw>) -> Result<(), Vec<VerifyFailure>> {
