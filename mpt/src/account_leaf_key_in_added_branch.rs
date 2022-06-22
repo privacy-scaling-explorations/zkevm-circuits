@@ -44,6 +44,7 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchChip<F> {
         acc_s: Column<Advice>,
         acc_mult_s: Column<Advice>,
         acc_c: Column<Advice>, // initially, key_rlc was used for mult_diff_nonce, but it caused PoisonedConstraint in extension_node_key
+        acc_mult_c: Column<Advice>,
         key_rlc: Column<Advice>,
         key_rlc_mult: Column<Advice>,
         mult_diff: Column<Advice>,
@@ -188,6 +189,7 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchChip<F> {
         */
 
         meta.create_gate("Account drifted leaf key RLC", |meta| {
+            // Drifted leaf in added branch has the same key as it had it before it drifted down to the new branch.
             let q_enable = q_enable(meta);
             let mut constraints = vec![];
 
@@ -196,6 +198,7 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchChip<F> {
             // stored in extension node row when there is NO extension node (the
             // constraint is in extension_node_key).
             let key_rlc_cur = meta.query_advice(key_rlc, Rotation(-ACCOUNT_DRIFTED_LEAF_IND-1));
+            // Note: key_rlc_cur means key RLC at added branch, we now need to add the bytes stored in drifted leaf key.
 
             // sel1 and sel2 determines whether drifted_pos needs to be
             // multiplied by 16 or not.
@@ -208,10 +211,10 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchChip<F> {
                 Rotation(rot_branch_init),
             );
 
-            // Note: previous key_rlc in sel1/sel2 could be queried instead.
-            let branch_rlc_mult = meta.query_advice(key_rlc_mult, Rotation(-30));
-
-            let mult_diff = meta.query_advice(mult_diff, Rotation(rot_branch_init + 1));
+            let is_branch_in_first_level = one.clone() - meta.query_advice(
+                not_first_level,
+                Rotation(rot_branch_init),
+            );
 
             // Key RLC of the drifted leaf needs to be the same as key RLC of the leaf
             // before it drifted down into extension/branch.
@@ -224,13 +227,14 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchChip<F> {
                 Rotation(rot_branch_init),
             );
 
+            // let branch_rlc_mult = meta.query_advice(key_rlc_mult, Rotation(-30));
+            // let branch_rlc_mult = meta.query_advice(acc_mult_c, Rotation(-(ACCOUNT_DRIFTED_LEAF_IND - ACCOUNT_LEAF_KEY_S_IND)));
+            let branch_rlc_mult = one.clone(); // TODO
+
+            let mult_diff = meta.query_advice(mult_diff, Rotation(rot_branch_init + 1)); 
+
             let leaf_key_s_rlc = meta.query_advice(key_rlc, Rotation(-(ACCOUNT_DRIFTED_LEAF_IND - ACCOUNT_LEAF_KEY_S_IND)));
             let leaf_key_c_rlc = meta.query_advice(key_rlc, Rotation(-(ACCOUNT_DRIFTED_LEAF_IND - ACCOUNT_LEAF_KEY_C_IND)));
-
-            let is_branch_in_first_level = one.clone() - meta.query_advice(
-                not_first_level,
-                Rotation(rot_branch_init),
-            );
 
             let is_one_nibble = get_is_extension_node_one_nibble(meta, s_advices, rot_branch_init);
 

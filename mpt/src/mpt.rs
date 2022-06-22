@@ -769,39 +769,6 @@ impl<F: FieldExt> MPTConfig<F> {
             keccak_table.clone(),
         );
 
-        AccountLeafKeyInAddedBranchChip::<F>::configure(
-            meta,
-            |meta| {
-                let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
-                let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
-                let is_account_leaf_in_added_branch =
-                    meta.query_advice(is_account_leaf_in_added_branch, Rotation::cur());
-
-                q_not_first * not_first_level * is_account_leaf_in_added_branch
-            },
-            not_first_level,
-            s_rlp1,
-            s_rlp2,
-            c_rlp1,
-            c_rlp2,
-            s_advices,
-            c_advices[0],
-            s_mod_node_hash_rlc,
-            c_mod_node_hash_rlc,
-            acc_s,
-            acc_mult_s,
-            acc_c, // mult_diff_nonce
-            key_rlc,
-            key_rlc_mult,
-            mult_diff,
-            drifted_pos,
-            sel1,
-            sel2,
-            r_table.clone(),
-            fixed_table.clone(),
-            keccak_table.clone(),
-        );
-
         LeafValueChip::<F>::configure(
             meta,
             inter_start_root,
@@ -1066,6 +1033,40 @@ impl<F: FieldExt> MPTConfig<F> {
             is_account_delete_mod,
             is_non_existing_account_proof,
             false,
+        );
+
+        AccountLeafKeyInAddedBranchChip::<F>::configure(
+            meta,
+            |meta| {
+                let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
+                let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
+                let is_account_leaf_in_added_branch =
+                    meta.query_advice(is_account_leaf_in_added_branch, Rotation::cur());
+
+                q_not_first * not_first_level * is_account_leaf_in_added_branch
+            },
+            not_first_level,
+            s_rlp1,
+            s_rlp2,
+            c_rlp1,
+            c_rlp2,
+            s_advices,
+            c_advices[0],
+            s_mod_node_hash_rlc,
+            c_mod_node_hash_rlc,
+            acc_s,
+            acc_mult_s,
+            acc_c, // mult_diff_nonce
+            acc_mult_c,
+            key_rlc,
+            key_rlc_mult,
+            mult_diff,
+            drifted_pos,
+            sel1,
+            sel2,
+            r_table.clone(),
+            fixed_table.clone(),
+            keccak_table.clone(),
         );
 
         MPTConfig {

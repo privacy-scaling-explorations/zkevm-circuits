@@ -45,6 +45,7 @@ impl<F: FieldExt> BranchHashInParentChip<F> {
                 let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
 
                 let is_last_branch_child = meta.query_advice(is_last_branch_child, Rotation::cur());
+                let is_branch_placeholder = meta.query_advice(is_branch_placeholder, Rotation(-16));
 
                 // TODO: acc currently doesn't have branch ValueNode info (which 128 if nil)
                 let acc = meta.query_advice(acc, Rotation::cur());
@@ -58,12 +59,17 @@ impl<F: FieldExt> BranchHashInParentChip<F> {
                     q_not_first.clone()
                         * is_last_branch_child.clone()
                         * (one.clone() - not_first_level.clone())
+                        * (one.clone() - is_branch_placeholder.clone())
                         * branch_acc, // TODO: replace with acc once ValueNode is added
                     meta.query_fixed(keccak_table[0], Rotation::cur()),
                 ));
                 let keccak_table_i = meta.query_fixed(keccak_table[1], Rotation::cur());
                 constraints.push((
-                    q_not_first * is_last_branch_child * (one.clone() - not_first_level) * root,
+                    q_not_first
+                        * is_last_branch_child 
+                        * (one.clone() - is_branch_placeholder.clone())
+                        * (one.clone() - not_first_level)
+                        * root,
                     keccak_table_i,
                 ));
 

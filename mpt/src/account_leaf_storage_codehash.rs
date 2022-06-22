@@ -311,9 +311,11 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
         meta.lookup_any(
             "account_leaf_storage_codehash: hash of a leaf (branch placeholder)",
             |meta| {
-                let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
+                let account_not_first_level = meta.query_advice(not_first_level, Rotation::cur());
+                // Any rotation that lands into branch can be used instead of -17.
+                let branch_placeholder_not_in_first_level = meta.query_advice(not_first_level, Rotation(-17));
 
-                let mut is_account_leaf_storage_codehash =
+                let is_account_leaf_storage_codehash =
                     meta.query_advice(is_account_leaf_storage_codehash, Rotation::cur());
 
                 // Note: placeholder leaf cannot appear when there is a branch placeholder
@@ -338,7 +340,8 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
 
                 let mut constraints = vec![];
                 constraints.push((
-                    not_first_level.clone()
+                    account_not_first_level.clone()
+                        * branch_placeholder_not_in_first_level.clone()
                         * is_branch_placeholder.clone()
                         * is_account_leaf_storage_codehash.clone()
                         * acc_s,
@@ -353,10 +356,66 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
                 }
                 let keccak_table_i = meta.query_fixed(keccak_table[1], Rotation::cur());
                 constraints.push((
-                    not_first_level.clone()
+                    account_not_first_level.clone()
+                        * branch_placeholder_not_in_first_level.clone()
                         * is_branch_placeholder.clone()
                         * is_account_leaf_storage_codehash.clone()
                         * mod_node_hash_rlc_cur_prev,
+                    keccak_table_i.clone(),
+                ));
+
+                constraints
+            },
+        );
+
+        meta.lookup_any(
+            "account_leaf_storage_codehash: hash of a leaf compared to root (branch placeholder in first level)",
+            |meta| {
+                let account_not_first_level = meta.query_advice(not_first_level, Rotation::cur());
+                // Any rotation that lands into branch can be used instead of -17.
+                let branch_placeholder_in_first_level = one.clone()
+                    - meta.query_advice(not_first_level, Rotation(-17));
+
+                let is_account_leaf_storage_codehash =
+                    meta.query_advice(is_account_leaf_storage_codehash, Rotation::cur());
+
+                // Note: placeholder leaf cannot appear when there is a branch placeholder
+                // (placeholder leaf appears when there is no leaf at certain
+                // position, while branch placeholder appears when there is a
+                // leaf on the way to this some position).
+
+                // Rotate into branch init:
+                let mut is_branch_placeholder = meta.query_advice(
+                    s_advices[IS_BRANCH_S_PLACEHOLDER_POS - LAYOUT_OFFSET],
+                    Rotation(-ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND - BRANCH_ROWS_NUM),
+                );
+                if !is_s {
+                    is_branch_placeholder = meta.query_advice(
+                        s_advices[IS_BRANCH_C_PLACEHOLDER_POS - LAYOUT_OFFSET],
+                        Rotation(-ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND - BRANCH_ROWS_NUM),
+                    );
+                }
+
+                // Note: accumulated in s (not in c) for c:
+                let acc_s = meta.query_advice(acc, Rotation::cur());
+
+                let mut constraints = vec![];
+                constraints.push((
+                    account_not_first_level.clone()
+                        * branch_placeholder_in_first_level.clone()
+                        * is_branch_placeholder.clone()
+                        * is_account_leaf_storage_codehash.clone()
+                        * acc_s,
+                    meta.query_fixed(keccak_table[0], Rotation::cur()),
+                ));
+                let root = meta.query_advice(inter_root, Rotation::cur());
+                let keccak_table_i = meta.query_fixed(keccak_table[1], Rotation::cur());
+                constraints.push((
+                    account_not_first_level.clone()
+                        * branch_placeholder_in_first_level.clone()
+                        * is_branch_placeholder.clone()
+                        * is_account_leaf_storage_codehash.clone()
+                        * root,
                     keccak_table_i.clone(),
                 ));
 
