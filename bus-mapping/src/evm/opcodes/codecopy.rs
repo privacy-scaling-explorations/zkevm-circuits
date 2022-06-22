@@ -6,7 +6,7 @@ use crate::{
     operation::RW,
     Error,
 };
-use eth_types::GethExecStep;
+use eth_types::{Bytecode, GethExecStep};
 
 use super::Opcode;
 
@@ -58,16 +58,18 @@ fn gen_copy_steps(
     dst_addr: u64,
     bytes_left: u64,
     src_addr_end: u64,
-    code: &[u8],
+    bytecode: &Bytecode,
 ) -> Result<Vec<CopyStep>, Error> {
     let cap = std::cmp::min(bytes_left as usize, MAX_COPY_BYTES);
     let mut steps = Vec::with_capacity(2 * cap);
     for idx in 0..cap {
         let addr = (src_addr as usize) + idx;
-        let (value, is_pad) = if addr < (src_addr_end as usize) {
-            (code[addr], false)
+        let (value, is_code, is_pad) = if addr < (src_addr_end as usize) {
+            bytecode
+                .get(addr)
+                .map_or((0, None, true), |e| (e.value, Some(e.is_code), false))
         } else {
-            (0, true)
+            (0, None, true)
         };
         // Read
         steps.push(CopyStep {
@@ -76,7 +78,7 @@ fn gen_copy_steps(
             tag: CopyDataType::Bytecode,
             rw: RW::READ,
             value,
-            is_code: Some(true), // TODO(rohit): fix this
+            is_code,
             is_pad,
             rwc: None,
         });
@@ -104,8 +106,11 @@ fn gen_copy_event(
     let length = geth_steps[0].stack.nth_last(2)?.as_u64();
 
     let code_hash = state.call()?.code_hash;
-    let code = state.code(code_hash)?;
-    let src_addr_end = code.len() as u64;
+    let bytecode: Bytecode = state
+        .code(code_hash)?
+        .try_into()
+        .map_err(eth_types::Error::BytecodeError)?;
+    let src_addr_end = bytecode.code().len() as u64;
 
     let mut copied = 0;
     let mut copy_steps = vec![];
@@ -116,7 +121,7 @@ fn gen_copy_event(
             dst_offset + copied,
             length - copied,
             src_addr_end,
-            &code,
+            &bytecode,
         )?;
         copy_steps.extend(int_copy_steps);
         copied += MAX_COPY_BYTES as u64;
@@ -235,11 +240,9 @@ mod codecopy_tests {
         let rwc_start = step.rwc.0 + 3;
         for (idx, copy_rw_pair) in copy_events[0].steps.chunks(2).enumerate() {
             assert_eq!(copy_rw_pair.len(), 2);
-            let (value, is_pad) = code
-                .code()
+            let (value, is_code, is_pad) = code
                 .get(code_offset + idx)
-                .cloned()
-                .map_or((0, true), |v| (v, false));
+                .map_or((0, None, true), |e| (e.value, Some(e.is_code), false));
             // Read
             let read_step = copy_rw_pair[0].clone();
             assert_eq!(
@@ -250,7 +253,7 @@ mod codecopy_tests {
                     tag: CopyDataType::Bytecode,
                     rw: RW::READ,
                     value,
-                    is_code: Some(true), // TODO(rohit): fix this
+                    is_code,
                     is_pad,
                     rwc: None,
                 }

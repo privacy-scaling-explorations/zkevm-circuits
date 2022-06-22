@@ -1216,7 +1216,7 @@ fn tracer_err_invalid_opcode() {
     // The second opcode is invalid (0x0f)
     let mut code = bytecode::Bytecode::default();
     code.write_op(OpcodeId::PC);
-    code.write(0x0f);
+    code.write(0x0f, true);
     let block: GethData = TestContext::<2, 1>::new(
         None,
         |accs| {

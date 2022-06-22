@@ -760,7 +760,7 @@ mod tests {
         // First add all non-push bytes, which should all be seen as code
         for byte in 0u8..=255u8 {
             if !is_push(byte) {
-                bytecode.write(byte);
+                bytecode.write(byte, true);
                 rows.push(BytecodeRow {
                     hash: Fr::zero(),
                     tag: Fr::from(BytecodeFieldTag::Byte as u64),
