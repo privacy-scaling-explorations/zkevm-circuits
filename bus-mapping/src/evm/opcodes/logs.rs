@@ -217,9 +217,9 @@ fn gen_copy_event(
 #[cfg(test)]
 mod log_tests {
     use crate::{
-        circuit_input_builder::ExecState,
+        circuit_input_builder::{CopyDataType, CopyStep, ExecState, NumberOrHash},
         mock::BlockData,
-        operation::{CallContextField, CallContextOp, MemoryOp, StackOp, TxLogField, TxLogOp, RW},
+        operation::{CallContextField, CallContextOp, RWCounter, StackOp, TxLogField, TxLogOp, RW},
     };
     use eth_types::{
         bytecode,
@@ -320,6 +320,8 @@ mod log_tests {
             .find(|step| step.exec_state == ExecState::Op(cur_op_code))
             .unwrap();
 
+        let expected_call_id = builder.block.txs()[0].calls()[step.call_index].call_id;
+
         assert_eq!(
             [0, 1]
                 .map(|idx| &builder.block.container.stack[step.bus_mapping_instance[idx].as_usize()])
@@ -396,37 +398,6 @@ mod log_tests {
                 ),]
             );
         }
-        // memory reads.
-        let mut log_data_ops = Vec::with_capacity(msize);
-        assert_eq!(
-            // skip first 32 writes of MSTORE ops
-            (mstart + 64..(mstart + 64 + msize))
-                .map(|idx| &builder.block.container.memory[idx])
-                .map(|op| (op.rw(), op.op().clone()))
-                .collect::<Vec<(RW, MemoryOp)>>(),
-            {
-                let mut memory_ops = Vec::with_capacity(msize);
-                (mstart..msize).for_each(|idx| {
-                    memory_ops.push((
-                        RW::READ,
-                        MemoryOp::new(1, (mstart + idx).into(), memory_data[mstart + idx]),
-                    ));
-                    // tx log addition
-                    log_data_ops.push((
-                        RW::WRITE,
-                        TxLogOp::new(
-                            1,
-                            step.log_id + 1, // because it is in next CopyToLog step
-                            TxLogField::Data,
-                            idx - mstart,
-                            Word::from(memory_data[mstart + idx]),
-                        ),
-                    ));
-                });
-
-                memory_ops
-            },
-        );
 
         // log topic writes
         let mut log_topic_ops = Vec::with_capacity(topic_count);
@@ -445,13 +416,71 @@ mod log_tests {
             { log_topic_ops },
         );
 
-        // log data writes
+        let copy_events = builder.block.copy_events.clone();
+        assert_eq!(copy_events.len(), 1);
+        assert_eq!(copy_events[0].steps.len(), 2 * msize);
+        assert_eq!(copy_events[0].src_type, CopyDataType::Memory);
         assert_eq!(
-            ((1 + topic_count)..msize + 1 + topic_count)
-                .map(|idx| &builder.block.container.tx_log[idx])
-                .map(|op| (op.rw(), op.op().clone()))
-                .collect::<Vec<(RW, TxLogOp)>>(),
-            { log_data_ops },
+            copy_events[0].src_id,
+            NumberOrHash::Number(expected_call_id)
         );
+        assert_eq!(copy_events[0].src_addr as usize, mstart);
+        assert_eq!(copy_events[0].src_addr_end as usize, mstart + msize);
+        assert_eq!(copy_events[0].dst_type, CopyDataType::TxLog);
+        assert_eq!(copy_events[0].dst_id, NumberOrHash::Number(1)); // tx_id
+        assert_eq!(copy_events[0].dst_addr as usize, 0);
+        assert_eq!(copy_events[0].length as usize, msize);
+        assert_eq!(copy_events[0].log_id, Some(step.log_id as u64 + 1));
+
+        let mut rwc_start = step.rwc.0 + // start of rwc
+            6 + // 2 stack reads + 4 call context reads
+            1 + // TxLogField::Address write
+            topic_count + // stack read for topics
+            topic_count; // TxLogField::Topic write
+        for (idx, copy_rw_pair) in copy_events[0].steps.chunks(2).enumerate() {
+            assert_eq!(copy_rw_pair.len(), 2);
+            let (value, is_pad) = memory_data
+                .get(mstart + idx)
+                .cloned()
+                .map_or((0, true), |v| (v, false));
+            // Read
+            let read_step = copy_rw_pair[0].clone();
+            assert_eq!(
+                read_step,
+                CopyStep {
+                    addr: (mstart + idx) as u64,
+                    addr_end: Some(msize as u64),
+                    rw: RW::READ,
+                    tag: CopyDataType::Memory,
+                    value,
+                    is_code: None,
+                    is_pad,
+                    rwc: if !is_pad {
+                        rwc_start += 1;
+                        Some(RWCounter(rwc_start - 1))
+                    } else {
+                        None
+                    },
+                }
+            );
+            // Write
+            let write_step = copy_rw_pair[1].clone();
+            assert_eq!(
+                write_step,
+                CopyStep {
+                    addr: idx as u64,
+                    addr_end: None,
+                    rw: RW::WRITE,
+                    tag: CopyDataType::TxLog,
+                    value,
+                    is_code: None,
+                    is_pad: false,
+                    rwc: {
+                        rwc_start += 1;
+                        Some(RWCounter(rwc_start - 1))
+                    },
+                }
+            );
+        }
     }
 }
