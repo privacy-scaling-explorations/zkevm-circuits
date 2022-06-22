@@ -6,8 +6,13 @@ use super::{
 };
 use crate::evm_circuit::{
     param::N_BYTES_WORD,
+<<<<<<< HEAD
     table::{AccountFieldTag, RwTableTag},
     util::not,
+=======
+    table::{AccountFieldTag, RwTableTag, TxLogFieldTag},
+    util::{math_gadget::generate_lagrange_base_polynomial, not, or},
+>>>>>>> merge fixing address expression for log
 };
 use crate::util::Expr;
 use eth_types::Field;
@@ -21,12 +26,9 @@ pub struct Queries<F: Field> {
     pub rw_counter: MpiQueries<F, N_LIMBS_RW_COUNTER>,
     pub is_write: Expression<F>,
     pub tag: Expression<F>,
-<<<<<<< HEAD
     pub tag_bits: [Expression<F>; 4],
     pub prev_tag_bits: [Expression<F>; 4],
-=======
     pub is_tag_unchanged: Expression<F>,
->>>>>>> add is_tag_unchanged to reduce degree
     pub id: MpiQueries<F, N_LIMBS_ID>,
     pub is_tag_and_id_unchanged: Expression<F>,
     pub address: MpiQueries<F, N_LIMBS_ACCOUNT_ADDRESS>,
@@ -393,24 +395,20 @@ impl<F: Field> Queries<F> {
     }
 
     fn tag_matches(&self, tag: RwTableTag) -> Expression<F> {
-<<<<<<< HEAD
         BinaryNumberConfig::<RwTableTag, 4>::value_equals_expr(tag, self.tag_bits.clone())
     }
 
     fn prev_tag_matches(&self, tag: RwTableTag) -> Expression<F> {
-        BinaryNumberConfig::<RwTableTag, 4>::value_equals_expr(tag, self.tag_bits.clone())
-=======
-        generate_lagrange_base_polynomial(
-            self.tag.clone(),
-            tag as usize,
-            RwTableTag::iter().map(|x| x as usize),
-        )
->>>>>>> add is_tag_unchanged to reduce degree
+        BinaryNumberConfig::<RwTableTag, 4>::value_equals_expr(tag, self.prev_tag_bits.clone())
     }
 
-    // TODO: make this method to applied for all ttype Ops' field
+    // TODO: make this method to be applied for all type's field if needed
     fn field_tag_matches(&self, tag: TxLogFieldTag) -> Expression<F> {
-        BinaryNumberConfig::<RwTableTag, 4>::value_equals_expr(tag, self.tag_bits.clone())
+        generate_lagrange_base_polynomial(
+            self.field_tag.clone(),
+            tag as usize,
+            TxLogFieldTag::iter().map(|x| x as usize),
+        )
     }
 
     fn first_access(&self) -> Expression<F> {
@@ -435,9 +433,9 @@ impl<F: Field> Queries<F> {
 
     fn tx_log_id(&self, is_pre: bool) -> Expression<F> {
         if is_pre {
-            from_digits(&self.address.limbs_prev[2..4], (1u64 << 16).expr())
+            from_digits(&self.address.limbs_prev[3..5], (1u64 << 16).expr())
         } else {
-            from_digits(&self.address.limbs[2..4], (1u64 << 16).expr())
+            from_digits(&self.address.limbs[3..5], (1u64 << 16).expr())
         }
     }
 }

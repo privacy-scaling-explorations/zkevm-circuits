@@ -1,6 +1,6 @@
 use super::{StateCircuit, StateConfig};
 use crate::evm_circuit::{
-    table::{AccountFieldTag, CallContextFieldTag, TxLogFieldTag},
+    table::{AccountFieldTag, CallContextFieldTag, RwTableTag, TxLogFieldTag},
     witness::{Rw, RwMap},
 };
 use crate::state_circuit::binary_number::AsBits;
@@ -337,8 +337,15 @@ fn storage_key_rlc() {
 #[test]
 fn tx_log_ok() {
     let rows = vec![
-        Rw::TxLog {
+        Rw::Stack {
             rw_counter: 1,
+            is_write: true,
+            call_id: 1,
+            stack_pointer: 1023,
+            value: U256::from(394500u64),
+        },
+        Rw::TxLog {
+            rw_counter: 2,
             is_write: true,
             tx_id: 1,
             log_id: 1,
@@ -347,7 +354,7 @@ fn tx_log_ok() {
             value: U256::one(),
         },
         Rw::TxLog {
-            rw_counter: 2,
+            rw_counter: 3,
             is_write: true,
             tx_id: 1,
             log_id: 1,
@@ -356,7 +363,7 @@ fn tx_log_ok() {
             value: U256::from(3u64),
         },
         Rw::TxLog {
-            rw_counter: 3,
+            rw_counter: 4,
             is_write: true,
             tx_id: 1,
             log_id: 1,
@@ -365,7 +372,7 @@ fn tx_log_ok() {
             value: U256::from(3u64),
         },
         Rw::TxLog {
-            rw_counter: 4,
+            rw_counter: 5,
             is_write: true,
             tx_id: 1,
             log_id: 1,
@@ -374,7 +381,7 @@ fn tx_log_ok() {
             value: U256::one(),
         },
         Rw::TxLog {
-            rw_counter: 5,
+            rw_counter: 6,
             is_write: true,
             tx_id: 1,
             log_id: 1,
