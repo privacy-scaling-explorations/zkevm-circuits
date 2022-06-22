@@ -436,7 +436,7 @@ impl<F: Field> Queries<F> {
     }
 
     fn tx_log_id_prev(&self) -> Expression<F> {
-        from_digits(&self.address.limbs[3..5], (1u64 << 16).expr())
+        from_digits(&self.address.limbs_prev[3..5], (1u64 << 16).expr())
     }
 }
 
