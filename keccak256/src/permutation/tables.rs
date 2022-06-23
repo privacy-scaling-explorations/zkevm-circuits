@@ -354,10 +354,12 @@ impl<F: Field, const K: u64> RangeCheckConfig<F, K> {
 #[derive(Debug, Clone)]
 pub struct Base13toBase9TableConfig<F> {
     lookup_config: ThreeColumnsLookup<F>,
+    // mapping from base13 input to base9 output and overflow detector
+    map: HashMap<[u8; 32], (F, F)>,
 }
 
 impl<F: Field> Base13toBase9TableConfig<F> {
-    pub(crate) fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
+    pub(crate) fn load(&mut self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
         layouter.assign_table(
             || "13 -> 9",
             |mut table| {
@@ -367,35 +369,38 @@ impl<F: Field> Base13toBase9TableConfig<F> {
                     .multi_cartesian_product()
                     .enumerate()
                 {
+                    let input_b13 = f_from_radix_be::<F>(&b13_chunks, B13);
+                    let output_b9 = f_from_radix_be::<F>(
+                        &b13_chunks
+                            .iter()
+                            .map(|&x| convert_b13_coef(x))
+                            .collect_vec(),
+                        B9,
+                    );
+                    let overflow_detector = F::from(get_overflow_detector(
+                        b13_chunks.clone().try_into().unwrap(),
+                    ) as u64);
+
+                    self.map
+                        .insert(input_b13.to_repr(), (output_b9, overflow_detector));
                     table.assign_cell(
                         || "base 13",
                         self.lookup_config.col0.1,
                         i,
-                        || Ok(f_from_radix_be::<F>(&b13_chunks, B13)),
+                        || Ok(input_b13),
                     )?;
 
                     table.assign_cell(
                         || "base 9",
                         self.lookup_config.col1.1,
                         i,
-                        || {
-                            let converted_chunks: Vec<u8> = b13_chunks
-                                .iter()
-                                .map(|&x| convert_b13_coef(x))
-                                .collect_vec();
-                            Ok(f_from_radix_be::<F>(&converted_chunks, B9))
-                        },
+                        || Ok(output_b9),
                     )?;
                     table.assign_cell(
                         || "overflow_detector",
                         self.lookup_config.col2.1,
                         i,
-                        || {
-                            Ok(F::from(
-                                get_overflow_detector(b13_chunks.clone().try_into().unwrap())
-                                    as u64,
-                            ))
-                        },
+                        || Ok(overflow_detector),
                     )?;
                 }
                 Ok(())
@@ -413,7 +418,8 @@ impl<F: Field> Base13toBase9TableConfig<F> {
     ) -> Self {
         let lookup_config =
             ThreeColumnsLookup::configure(meta, adv_cols, table_cols, "from base 13");
-        Self { lookup_config }
+        let map = HashMap::new();
+        Self { lookup_config, map }
     }
     pub(crate) fn assign_region(
         &self,
@@ -440,11 +446,13 @@ impl<F: Field> Base13toBase9TableConfig<F> {
                     slices.iter().zip(conversions.iter()).enumerate()
                 {
                     self.lookup_config.q_enable.enable(&mut region, offset)?;
+                    let input = biguint_to_f::<F>(&conv.input.coef);
+                    let outputs = self.map.get(&input.to_repr());
                     let input_coef = region.assign_advice(
                         || "Input Coef",
                         self.lookup_config.col0.0,
                         offset,
-                        || Ok(biguint_to_f::<F>(&conv.input.coef)),
+                        || Ok(input),
                     )?;
                     input_coefs.push(input_coef);
 
@@ -452,7 +460,7 @@ impl<F: Field> Base13toBase9TableConfig<F> {
                         || "Output Coef",
                         self.lookup_config.col1.0,
                         offset,
-                        || Ok(biguint_to_f::<F>(&conv.output.coef)),
+                        || outputs.map(|o| o.0).ok_or(Error::Synthesis),
                     )?;
                     output_coefs.push(output_coef);
 
@@ -460,7 +468,7 @@ impl<F: Field> Base13toBase9TableConfig<F> {
                         || "Overflow detector",
                         self.lookup_config.col2.0,
                         offset,
-                        || Ok(F::from(conv.overflow_detector.value as u64)),
+                        || outputs.map(|o| o.1).ok_or(Error::Synthesis),
                     )?;
                     match step {
                         1 => region.constrain_constant(od.cell(), F::zero())?,
