@@ -80,7 +80,7 @@ impl<F: FieldExt> IsZeroChip<F> {
             let value_inv = meta.query_advice(value_inv, Rotation::cur());
             let value = value(meta);
 
-            is_zero_expression = 1.expr() - value.clone() * value_inv.clone();
+            is_zero_expression = 1.expr() - value.clone() * value_inv;
 
             // This checks `value_inv ≡ value.invert()` when `value` is not
             // zero: value ⋅ (1 - value ⋅ value_inv)

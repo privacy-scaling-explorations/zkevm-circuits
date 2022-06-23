@@ -13,7 +13,10 @@ use halo2_proofs::{
 
 use crate::{
     evm_circuit::{
-        table::{LookupTable, BytecodeFieldTag, RwTableTag, TxLogFieldTag, TxContextFieldTag},
+        table::{
+            BytecodeFieldTag, FixedTableTag, LookupTable, RwTableTag, TxContextFieldTag,
+            TxLogFieldTag,
+        },
         util::{and, constraint_builder::BaseConstraintBuilder, not, or, RandomLinearCombination},
         witness::Block,
     },
@@ -303,7 +306,19 @@ impl<F: FieldExt> CopyTableConfig<F> {
             cb.gate(meta.query_selector(q_step))
         });
 
-        // TODO(rohit): fixed lookup to copy pairs.
+        meta.lookup_any("Copy pair lookup", |meta| {
+            let cond = meta.query_advice(is_first, Rotation::cur());
+            vec![
+                FixedTableTag::CopyPairs.expr(),
+                meta.query_advice(tag, Rotation::cur()),
+                meta.query_advice(tag, Rotation::next()),
+            ]
+            .into_iter()
+            .zip(fixed_table.table_exprs(meta).into_iter())
+            .map(|(arg, table)| (cond.clone() * arg, table))
+            .collect()
+        });
+
         meta.lookup_any("Memory lookup", |meta| {
             let cond = is_memory.expr() * (1.expr() - meta.query_advice(is_pad, Rotation::cur()));
             vec![
@@ -321,9 +336,8 @@ impl<F: FieldExt> CopyTableConfig<F> {
             ]
             .into_iter()
             .zip(rw_table.table_exprs(meta).into_iter())
-            .map(|(arg, table)| {
-                (cond.clone() * arg, table)
-            }).collect()
+            .map(|(arg, table)| (cond.clone() * arg, table))
+            .collect()
         });
 
         meta.lookup_any("TxLog lookup", |meta| {
@@ -343,9 +357,8 @@ impl<F: FieldExt> CopyTableConfig<F> {
             ]
             .into_iter()
             .zip(rw_table.table_exprs(meta).into_iter())
-            .map(|(arg, table)| {
-                (cond.clone() * arg, table)
-            }).collect()
+            .map(|(arg, table)| (cond.clone() * arg, table))
+            .collect()
         });
 
         meta.lookup_any("Bytecode lookup", |meta| {
@@ -359,13 +372,13 @@ impl<F: FieldExt> CopyTableConfig<F> {
             ]
             .into_iter()
             .zip(bytecode_table.table_exprs(meta).into_iter())
-            .map(|(arg, table)| {
-                (cond.clone() * arg, table)
-            }).collect()
+            .map(|(arg, table)| (cond.clone() * arg, table))
+            .collect()
         });
 
         meta.lookup_any("Tx calldata lookup", |meta| {
-            let cond = is_tx_calldata.expr() * (1.expr() - meta.query_advice(is_pad, Rotation::cur()));
+            let cond =
+                is_tx_calldata.expr() * (1.expr() - meta.query_advice(is_pad, Rotation::cur()));
             vec![
                 meta.query_advice(id, Rotation::cur()),
                 TxContextFieldTag::CallData.expr(),
@@ -374,9 +387,8 @@ impl<F: FieldExt> CopyTableConfig<F> {
             ]
             .into_iter()
             .zip(tx_table.table_exprs(meta).into_iter())
-            .map(|(arg, table)| {
-                (cond.clone() * arg, table)
-            }).collect()
+            .map(|(arg, table)| (cond.clone() * arg, table))
+            .collect()
         });
 
         Self {
