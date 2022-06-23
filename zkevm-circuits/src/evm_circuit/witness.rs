@@ -10,7 +10,7 @@ use crate::evm_circuit::{
 };
 
 use bus_mapping::{
-    circuit_input_builder::{self, CopyEvent, StepAuxiliaryData},
+    circuit_input_builder::{self, CopyEvent},
     error::{ExecError, OogError},
     operation::{self, AccountField, CallContextField, TxLogField, TxReceiptField},
 };
@@ -306,8 +306,6 @@ pub struct ExecStep {
     pub log_id: usize,
     /// The opcode corresponds to the step
     pub opcode: Option<OpcodeId>,
-    /// Step auxiliary data
-    pub aux_data: Option<StepAuxiliaryData>,
 }
 
 impl ExecStep {
@@ -1332,7 +1330,6 @@ fn step_convert(step: &circuit_input_builder::ExecStep) -> ExecStep {
         memory_size: step.memory_size as u64,
         reversible_write_counter: step.reversible_write_counter,
         log_id: step.log_id,
-        aux_data: step.aux_data.map(Into::into),
     }
 }
 
