@@ -130,7 +130,7 @@ impl<F: Field> KeccakFConfig<F> {
         }
     }
 
-    pub fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
+    pub fn load(&mut self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
         self.stackable.load(layouter)?;
         self.base13to9_config.load(layouter)?;
         self.from_b9_table.load(layouter)
@@ -331,7 +331,7 @@ mod tests {
 
             fn synthesize(
                 &self,
-                config: Self::Config,
+                mut config: Self::Config,
                 mut layouter: impl Layouter<F>,
             ) -> Result<(), Error> {
                 // Load the table

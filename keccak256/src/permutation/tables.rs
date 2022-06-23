@@ -9,7 +9,7 @@ use halo2_proofs::{
     poly::Rotation,
 };
 use itertools::Itertools;
-use std::marker::PhantomData;
+use std::collections::HashMap;
 use strum_macros::{Display, EnumIter};
 
 use super::rho_helpers::{Conversion, STEP2_RANGE, STEP3_RANGE};
@@ -70,6 +70,7 @@ enum TableTags {
 #[derive(Debug, Clone)]
 pub struct StackableTable<F> {
     lookup_config: ThreeColumnsLookup<F>,
+    special_chunks_map: HashMap<[u8; 32], F>,
 }
 
 impl<F: Field> StackableTable<F> {
@@ -82,7 +83,11 @@ impl<F: Field> StackableTable<F> {
     ) -> Self {
         let lookup_config =
             ThreeColumnsLookup::configure(meta, adv_cols, table_cols, "stackable lookup");
-        Self { lookup_config }
+        let special_chunks_map = HashMap::new();
+        Self {
+            lookup_config,
+            special_chunks_map,
+        }
     }
 
     fn load_range(
@@ -119,7 +124,7 @@ impl<F: Field> StackableTable<F> {
     /// The table describes all possible combinations of these two variables:
     /// - The last input accumulator: `high_value`*(13**64) + `low_value`, and
     /// - The last output coef: `convert_b13_coef(high_value + low_value)`
-    fn load_special_chunks(&self, table: &mut Table<F>, offset: usize) -> Result<usize, Error> {
+    fn load_special_chunks(&mut self, table: &mut Table<F>, offset: usize) -> Result<usize, Error> {
         let mut offset = offset;
         for i in 0..B13 {
             for j in 0..(B13 - i) {
@@ -127,6 +132,8 @@ impl<F: Field> StackableTable<F> {
                 let last_chunk = F::from(low as u64)
                     + F::from(high as u64) * F::from(B13 as u64).pow(&[LANE_SIZE as u64, 0, 0, 0]);
                 let output_coef = F::from(convert_b13_coef(low + high) as u64);
+                self.special_chunks_map
+                    .insert(last_chunk.to_repr(), output_coef);
                 table.assign_cell(
                     || "tag special chunks",
                     self.lookup_config.col0.1,
@@ -176,7 +183,7 @@ impl<F: Field> StackableTable<F> {
         }
         Ok(offset)
     }
-    pub(crate) fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
+    pub(crate) fn load(&mut self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
         layouter.assign_table(
             || "stackable",
             |mut table| {
@@ -245,7 +252,6 @@ impl<F: Field> StackableTable<F> {
         &self,
         layouter: &mut impl Layouter<F>,
         last_chunk: &AssignedCell<F, F>,
-        output_coef: &F,
     ) -> Result<AssignedCell<F, F>, Error> {
         layouter.assign_region(
             || "lookup for special chunks",
@@ -269,7 +275,13 @@ impl<F: Field> StackableTable<F> {
                     || "output coef",
                     self.lookup_config.col2.0,
                     offset,
-                    || Ok(*output_coef),
+                    || {
+                        last_chunk
+                            .value()
+                            .and_then(|&v| self.special_chunks_map.get(&v.to_repr()))
+                            .map(|v| v.to_owned())
+                            .ok_or(Error::Synthesis)
+                    },
                 )
             },
         )

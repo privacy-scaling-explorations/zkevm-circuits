@@ -50,13 +50,9 @@ pub fn assign_rho<F: Field>(
 
         let input_from_chunks =
             generic.linear_combine_consts(layouter, input_coefs, input_pobs, None)?;
-        let diff = generic.sub_advice(layouter, lane.clone(), input_from_chunks)?;
+        let last_chunk = generic.sub_advice(layouter, lane.clone(), input_from_chunks)?;
 
-        let final_output_coef = stackable.lookup_special_chunks(
-            layouter,
-            &diff,
-            &F::from(special.output_coef as u64),
-        )?;
+        let final_output_coef = stackable.lookup_special_chunks(layouter, &last_chunk)?;
         output_coefs.push(final_output_coef);
 
         let output_lane =
@@ -132,7 +128,7 @@ mod tests {
 
             fn synthesize(
                 &self,
-                config: Self::Config,
+                mut config: Self::Config,
                 mut layouter: impl Layouter<F>,
             ) -> Result<(), Error> {
                 config.base13to9_config.load(&mut layouter)?;
