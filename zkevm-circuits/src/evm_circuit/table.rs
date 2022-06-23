@@ -279,6 +279,7 @@ pub(crate) enum Table {
     Bytecode,
     Block,
     Byte,
+    Copy,
 }
 
 #[derive(Clone, Debug)]
@@ -348,6 +349,11 @@ pub(crate) enum Lookup<F> {
         /// Value of the field.
         value: Expression<F>,
     },
+    /// Lookup to copy table.
+    CopyTable {
+        /// Values corresponding to the copy table expressions.
+        values: [Expression<F>; 12],
+    },
     /// Conditional lookup enabled by the first element.
     Conditional(Expression<F>, Box<Lookup<F>>),
 }
@@ -365,6 +371,7 @@ impl<F: FieldExt> Lookup<F> {
             Self::Bytecode { .. } => Table::Bytecode,
             Self::Block { .. } => Table::Block,
             Self::Byte { .. } => Table::Byte,
+            Self::CopyTable { .. } => Table::Copy,
             Self::Conditional(_, lookup) => lookup.table(),
         }
     }
@@ -413,6 +420,7 @@ impl<F: FieldExt> Lookup<F> {
             Self::Byte { value } => {
                 vec![value.clone()]
             }
+            Self::CopyTable { values } => values.to_vec(),
             Self::Conditional(condition, lookup) => lookup
                 .input_exprs()
                 .into_iter()

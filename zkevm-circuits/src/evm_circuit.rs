@@ -40,13 +40,8 @@ impl<F: Field> EvmCircuit<F> {
     ) -> Self {
         let fixed_table = [(); 4].map(|_| meta.fixed_column());
         let byte_table = [(); 1].map(|_| meta.fixed_column());
-        let copy_table = Box::new(CopyTableConfig::configure(
-            meta,
-            &fixed_table,
-            tx_table,
-            rw_table,
-            bytecode_table,
-        ));
+        let copy_table =
+            CopyTableConfig::configure(meta, &fixed_table, tx_table, rw_table, bytecode_table);
         let execution = Box::new(ExecutionConfig::configure(
             meta,
             power_of_randomness,
@@ -56,12 +51,13 @@ impl<F: Field> EvmCircuit<F> {
             rw_table,
             bytecode_table,
             block_table,
+            &copy_table,
         ));
 
         Self {
             fixed_table,
             byte_table,
-            copy_table,
+            copy_table: Box::new(copy_table),
             execution,
         }
     }

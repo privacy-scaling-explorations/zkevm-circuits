@@ -100,7 +100,7 @@ impl<F: FieldExt> LookupTable<F> for CopyTableConfig<F> {
             meta.query_advice(self.id, Rotation::next()), // dst_id
             meta.query_advice(self.tag, Rotation::next()), // dst_tag
             meta.query_advice(self.addr, Rotation::cur()), // src_addr
-            meta.query_advice(self.addr_end, Rotation::cur()), // src_addr_end
+            meta.query_advice(self.addr_end, Rotation::cur()), // src_addr_boundary
             meta.query_advice(self.addr, Rotation::next()), // dst_addr
             meta.query_advice(self.bytes_left, Rotation::cur()), // length
             meta.query_advice(self.rw_counter, Rotation::cur()), // rw_counter
