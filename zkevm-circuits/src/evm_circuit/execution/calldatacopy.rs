@@ -11,13 +11,13 @@ use crate::{
                 Transition::{Delta, To},
             },
             memory_gadget::{MemoryAddressGadget, MemoryCopierGasGadget, MemoryExpansionGadget},
-            CachedRegion, Cell, MemoryAddress,
+            select, CachedRegion, Cell, MemoryAddress,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     util::Expr,
 };
-use bus_mapping::evm::OpcodeId;
+use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId};
 use eth_types::Field;
 use eth_types::ToLittleEndian;
 use halo2_proofs::plonk::Error;
@@ -53,7 +53,8 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
         cb.stack_pop(data_offset.expr());
         cb.stack_pop(length.expr());
 
-        let memory_address = MemoryAddressGadget::construct(cb, memory_offset, length);
+        let memory_address =
+            MemoryAddressGadget::construct(cb, memory_offset.clone(), length.clone());
         let src_id = cb.query_cell();
         let call_data_length = cb.query_cell();
         let call_data_offset = cb.query_cell();
@@ -107,12 +108,33 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
             memory_expansion.gas_cost(),
         );
 
-        // TODO(rohit): lookup to copy table.
+        let src_tag = select::expr(
+            cb.curr.state.is_root.expr(),
+            CopyDataType::TxCalldata.expr(),
+            CopyDataType::Memory.expr(),
+        );
+        let copy_rwc_inc = select::expr(
+            memory_address.has_length(),
+            cb.copy_table_lookup(
+                src_id.expr(),
+                src_tag,
+                cb.curr.state.call_id.expr(),
+                CopyDataType::Memory.expr(),
+                data_offset.expr() + call_data_offset.expr(),
+                call_data_offset.expr() + call_data_length.expr(),
+                memory_offset.expr(),
+                length.expr(),
+                cb.curr.state.rw_counter.expr() + cb.rw_counter_offset().expr(),
+                0.expr(), // log_id
+            )
+            .expr(),
+            0.expr(),
+        );
 
         // State transition
         let step_state_transition = StepStateTransition {
             // 1 tx id lookup + 3 stack pop + option(calldatalength lookup)
-            rw_counter: Delta(cb.rw_counter_offset()),
+            rw_counter: Delta(cb.rw_counter_offset() + copy_rwc_inc),
             program_counter: Delta(1.expr()),
             stack_pointer: Delta(3.expr()),
             gas_left: Delta(
