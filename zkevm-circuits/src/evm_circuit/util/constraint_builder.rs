@@ -1088,9 +1088,9 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         dst_addr: Expression<F>,
         length: Expression<F>,
         rw_counter: Expression<F>,
+        rwc_inc: Expression<F>,
         log_id: Expression<F>,
-    ) -> Cell<F> {
-        let cell = self.query_cell();
+    ) {
         self.add_lookup(
             "copy lookup",
             Lookup::CopyTable {
@@ -1105,12 +1105,11 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
                     dst_addr,
                     length,
                     rw_counter,
-                    cell.expr(),
+                    rwc_inc,
                     log_id,
                 ],
             },
         );
-        cell
     }
 
     // Validation

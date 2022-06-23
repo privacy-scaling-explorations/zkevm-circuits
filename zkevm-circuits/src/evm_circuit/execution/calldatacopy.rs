@@ -11,7 +11,7 @@ use crate::{
                 Transition::{Delta, To},
             },
             memory_gadget::{MemoryAddressGadget, MemoryCopierGasGadget, MemoryExpansionGadget},
-            select, CachedRegion, Cell, MemoryAddress,
+            not, select, CachedRegion, Cell, MemoryAddress,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -32,6 +32,7 @@ pub(crate) struct CallDataCopyGadget<F> {
     src_id: Cell<F>,
     call_data_length: Cell<F>,
     call_data_offset: Cell<F>, // Only used in the internal call
+    copy_rwc_inc: Cell<F>,
     memory_expansion: MemoryExpansionGadget<F, 1, N_BYTES_MEMORY_WORD_SIZE>,
     memory_copier_gas: MemoryCopierGasGadget<F>,
 }
@@ -108,13 +109,13 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
             memory_expansion.gas_cost(),
         );
 
+        let copy_rwc_inc = cb.query_cell();
         let src_tag = select::expr(
             cb.curr.state.is_root.expr(),
             CopyDataType::TxCalldata.expr(),
             CopyDataType::Memory.expr(),
         );
-        let copy_rwc_inc = select::expr(
-            memory_address.has_length(),
+        cb.condition(memory_address.has_length(), |cb| {
             cb.copy_table_lookup(
                 src_id.expr(),
                 src_tag,
@@ -125,16 +126,21 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
                 memory_offset.expr(),
                 length.expr(),
                 cb.curr.state.rw_counter.expr() + cb.rw_counter_offset().expr(),
+                copy_rwc_inc.expr(),
                 0.expr(), // log_id
-            )
-            .expr(),
-            0.expr(),
-        );
+            );
+        });
+        cb.condition(not::expr(memory_address.has_length()), |cb| {
+            cb.require_zero(
+                "if no bytes to copy, copy table rwc inc == 0",
+                copy_rwc_inc.expr(),
+            );
+        });
 
         // State transition
         let step_state_transition = StepStateTransition {
             // 1 tx id lookup + 3 stack pop + option(calldatalength lookup)
-            rw_counter: Delta(cb.rw_counter_offset() + copy_rwc_inc),
+            rw_counter: Delta(cb.rw_counter_offset() + copy_rwc_inc.expr()),
             program_counter: Delta(1.expr()),
             stack_pointer: Delta(3.expr()),
             gas_left: Delta(
@@ -152,6 +158,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
             src_id,
             call_data_length,
             call_data_offset,
+            copy_rwc_inc,
             memory_expansion,
             memory_copier_gas,
         }
@@ -197,6 +204,9 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
             .assign(region, offset, Some(F::from(call_data_length as u64)))?;
         self.call_data_offset
             .assign(region, offset, Some(F::from(call_data_offset as u64)))?;
+
+        // TODO(rohit): get correct rwc_inc from copy step.
+        self.copy_rwc_inc.assign(region, offset, Some(F::zero()))?;
 
         // Memory expansion
         let (_, memory_expansion_gas_cost) = self.memory_expansion.assign(
