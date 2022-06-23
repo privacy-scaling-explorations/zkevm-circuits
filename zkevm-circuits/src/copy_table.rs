@@ -13,7 +13,7 @@ use halo2_proofs::{
 
 use crate::{
     evm_circuit::{
-        table::LookupTable,
+        table::{LookupTable, BytecodeFieldTag, RwTableTag, TxLogFieldTag, TxContextFieldTag},
         util::{and, constraint_builder::BaseConstraintBuilder, not, or, RandomLinearCombination},
         witness::Block,
     },
@@ -33,9 +33,9 @@ pub struct CopyTableConfig<F> {
     /// not.
     pub q_step: Selector,
     /// Whether the row is the first read-write pair for a copy event.
-    pub q_first: Column<Advice>,
+    pub is_first: Column<Advice>,
     /// Whether the row is the last read-write pair for a copy event.
-    pub q_last: Column<Advice>,
+    pub is_last: Column<Advice>,
     /// The relevant ID for the read-write row, represented as a random linear
     /// combination. The ID may be one of the below: 1. Call ID/Caller ID
     /// for CopyDataType::Memory 2. Bytecode hash for CopyDataType::Bytecode
@@ -91,27 +91,33 @@ pub struct CopyTableConfig<F> {
 impl<F: FieldExt> LookupTable<F> for CopyTableConfig<F> {
     fn table_exprs(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>> {
         vec![
-            meta.query_advice(self.q_first, Rotation::cur()),
-            meta.query_advice(self.id, Rotation::cur()),
-            meta.query_advice(self.tag, Rotation::cur()),
-            meta.query_advice(self.id, Rotation::next()),
-            meta.query_advice(self.tag, Rotation::next()),
-            meta.query_advice(self.addr, Rotation::cur()),
-            meta.query_advice(self.addr_end, Rotation::cur()),
-            meta.query_advice(self.addr, Rotation::next()),
-            meta.query_advice(self.bytes_left, Rotation::cur()),
-            meta.query_advice(self.rw_counter, Rotation::cur()),
-            meta.query_advice(self.rwc_inc_left, Rotation::cur()),
-            meta.query_advice(self.log_id, Rotation::next()),
+            meta.query_advice(self.is_first, Rotation::cur()),
+            meta.query_advice(self.id, Rotation::cur()), // src_id
+            meta.query_advice(self.tag, Rotation::cur()), // src_tag
+            meta.query_advice(self.id, Rotation::next()), // dst_id
+            meta.query_advice(self.tag, Rotation::next()), // dst_tag
+            meta.query_advice(self.addr, Rotation::cur()), // src_addr
+            meta.query_advice(self.addr_end, Rotation::cur()), // src_addr_end
+            meta.query_advice(self.addr, Rotation::next()), // dst_addr
+            meta.query_advice(self.bytes_left, Rotation::cur()), // length
+            meta.query_advice(self.rw_counter, Rotation::cur()), // rw_counter
+            meta.query_advice(self.rwc_inc_left, Rotation::cur()), // rwc_inc_left
+            meta.query_advice(self.log_id, Rotation::next()), // log_id
         ]
     }
 }
 
 impl<F: FieldExt> CopyTableConfig<F> {
-    pub fn configure(meta: &mut ConstraintSystem<F>, fixed_table: &dyn LookupTable<F>) -> Self {
+    pub fn configure(
+        meta: &mut ConstraintSystem<F>,
+        fixed_table: &dyn LookupTable<F>,
+        tx_table: &dyn LookupTable<F>,
+        rw_table: &dyn LookupTable<F>,
+        bytecode_table: &dyn LookupTable<F>,
+    ) -> Self {
         let q_step = meta.complex_selector();
-        let q_first = meta.advice_column();
-        let q_last = meta.advice_column();
+        let is_first = meta.advice_column();
+        let is_last = meta.advice_column();
         let id = meta.advice_column();
         let log_id = meta.advice_column();
         let tag = meta.advice_column();
@@ -166,32 +172,32 @@ impl<F: FieldExt> CopyTableConfig<F> {
 
             cb.require_boolean("q_step == 0 || q_step == 1", meta.query_selector(q_step));
             cb.require_boolean(
-                "q_first == 0 || q_first == 1",
-                meta.query_advice(q_first, Rotation::cur()),
+                "is_first == 0 || is_first == 1",
+                meta.query_advice(is_first, Rotation::cur()),
             );
             cb.require_boolean(
-                "q_last == 0 || q_last == 1",
-                meta.query_advice(q_last, Rotation::cur()),
+                "is_last == 0 || is_last == 1",
+                meta.query_advice(is_last, Rotation::cur()),
             );
             cb.require_zero(
-                "q_first == 0 when q_step == 0",
+                "is_first == 0 when q_step == 0",
                 and::expr([
                     1.expr() - meta.query_selector(q_step),
-                    meta.query_advice(q_first, Rotation::cur()),
+                    meta.query_advice(is_first, Rotation::cur()),
                 ]),
             );
             cb.require_zero(
-                "q_last == 0 when q_step == 1",
+                "is_last == 0 when q_step == 1",
                 and::expr([
-                    meta.query_advice(q_last, Rotation::cur()),
+                    meta.query_advice(is_last, Rotation::cur()),
                     meta.query_selector(q_step),
                 ]),
             );
 
             cb.condition(
                 not::expr(or::expr([
-                    meta.query_advice(q_last, Rotation::cur()),
-                    meta.query_advice(q_last, Rotation::next()),
+                    meta.query_advice(is_last, Rotation::cur()),
+                    meta.query_advice(is_last, Rotation::next()),
                 ])),
                 |cb| {
                     cb.require_equal(
@@ -228,7 +234,7 @@ impl<F: FieldExt> CopyTableConfig<F> {
                     + not::expr(is_tx_log.is_zero_expression.clone()),
             ]);
             cb.condition(
-                not::expr(meta.query_advice(q_last, Rotation::cur())),
+                not::expr(meta.query_advice(is_last, Rotation::cur())),
                 |cb| {
                     cb.require_equal(
                         "rows[0].rw_counter + rw_diff == rows[1].rw_counter",
@@ -242,7 +248,7 @@ impl<F: FieldExt> CopyTableConfig<F> {
                     );
                 },
             );
-            cb.condition(meta.query_advice(q_last, Rotation::cur()), |cb| {
+            cb.condition(meta.query_advice(is_last, Rotation::cur()), |cb| {
                 cb.require_equal(
                     "rwc_inc_left == 1 for last row in the copy slot",
                     meta.query_advice(rwc_inc_left, Rotation::cur()),
@@ -259,14 +265,14 @@ impl<F: FieldExt> CopyTableConfig<F> {
             cb.require_zero(
                 "bytes_left == 1 for last step",
                 and::expr([
-                    meta.query_advice(q_last, Rotation::next()),
+                    meta.query_advice(is_last, Rotation::next()),
                     1.expr() - meta.query_advice(bytes_left, Rotation::cur()),
                 ]),
             );
             cb.require_zero(
                 "bytes_left == bytes_left_next + 1 for non-last step",
                 and::expr([
-                    1.expr() - meta.query_advice(q_last, Rotation::next()),
+                    1.expr() - meta.query_advice(is_last, Rotation::next()),
                     meta.query_advice(bytes_left, Rotation::cur())
                         - meta.query_advice(bytes_left, Rotation(2))
                         - 1.expr(),
@@ -298,11 +304,85 @@ impl<F: FieldExt> CopyTableConfig<F> {
         });
 
         // TODO(rohit): fixed lookup to copy pairs.
+        meta.lookup_any("Memory lookup", |meta| {
+            let cond = is_memory.expr() * (1.expr() - meta.query_advice(is_pad, Rotation::cur()));
+            vec![
+                meta.query_advice(rw_counter, Rotation::cur()),
+                1.expr() - meta.query_selector(q_step),
+                RwTableTag::Memory.expr(),
+                meta.query_advice(id, Rotation::cur()), // call_id
+                meta.query_advice(addr, Rotation::cur()), // memory address
+                0.expr(),
+                0.expr(),
+                meta.query_advice(value, Rotation::cur()),
+                0.expr(),
+                0.expr(),
+                0.expr(),
+            ]
+            .into_iter()
+            .zip(rw_table.table_exprs(meta).into_iter())
+            .map(|(arg, table)| {
+                (cond.clone() * arg, table)
+            }).collect()
+        });
+
+        meta.lookup_any("TxLog lookup", |meta| {
+            let cond = is_tx_log.expr();
+            vec![
+                meta.query_advice(rw_counter, Rotation::cur()),
+                1.expr(),
+                RwTableTag::TxLog.expr(),
+                meta.query_advice(id, Rotation::cur()), // tx_id
+                meta.query_advice(addr, Rotation::cur()), // byte_index || log_id
+                TxLogFieldTag::Data.expr(),
+                0.expr(),
+                meta.query_advice(value, Rotation::cur()),
+                0.expr(),
+                0.expr(),
+                0.expr(),
+            ]
+            .into_iter()
+            .zip(rw_table.table_exprs(meta).into_iter())
+            .map(|(arg, table)| {
+                (cond.clone() * arg, table)
+            }).collect()
+        });
+
+        meta.lookup_any("Bytecode lookup", |meta| {
+            let cond = is_bytecode.expr() * (1.expr() - meta.query_advice(is_pad, Rotation::cur()));
+            vec![
+                meta.query_advice(id, Rotation::cur()),
+                BytecodeFieldTag::Byte.expr(),
+                meta.query_advice(addr, Rotation::cur()),
+                meta.query_advice(is_code, Rotation::cur()),
+                meta.query_advice(value, Rotation::cur()),
+            ]
+            .into_iter()
+            .zip(bytecode_table.table_exprs(meta).into_iter())
+            .map(|(arg, table)| {
+                (cond.clone() * arg, table)
+            }).collect()
+        });
+
+        meta.lookup_any("Tx calldata lookup", |meta| {
+            let cond = is_tx_calldata.expr() * (1.expr() - meta.query_advice(is_pad, Rotation::cur()));
+            vec![
+                meta.query_advice(id, Rotation::cur()),
+                TxContextFieldTag::CallData.expr(),
+                meta.query_advice(addr, Rotation::cur()),
+                meta.query_advice(value, Rotation::cur()),
+            ]
+            .into_iter()
+            .zip(tx_table.table_exprs(meta).into_iter())
+            .map(|(arg, table)| {
+                (cond.clone() * arg, table)
+            }).collect()
+        });
 
         Self {
             q_step,
-            q_first,
-            q_last,
+            is_first,
+            is_last,
             id,
             log_id,
             tag,
@@ -361,17 +441,17 @@ impl<F: FieldExt> CopyTableConfig<F> {
                         );
                         // q_step enabled.
                         self.q_step.enable(&mut region, 2 * offset)?;
-                        // q_first
+                        // is_first
                         region.assign_advice(
-                            || format!("assign q_first {}", offset),
-                            self.q_first,
+                            || format!("assign is_first {}", offset),
+                            self.is_first,
                             offset,
                             || Ok(if step_count == 0 { F::one() } else { F::zero() }),
                         )?;
-                        // q_last
+                        // is_last
                         region.assign_advice(
-                            || format!("assign q_last {}", offset),
-                            self.q_last,
+                            || format!("assign is_last {}", offset),
+                            self.is_last,
                             offset,
                             || Ok(F::zero()),
                         )?;
@@ -506,17 +586,17 @@ impl<F: FieldExt> CopyTableConfig<F> {
                             "expected write row to be RW::WRITE",
                         );
                         // q_step not enabled.
-                        // q_first
+                        // is_first
                         region.assign_advice(
-                            || format!("assign q_first {}", offset),
-                            self.q_first,
+                            || format!("assign is_first {}", offset),
+                            self.is_first,
                             offset,
                             || Ok(F::zero()),
                         )?;
-                        // q_last
+                        // is_last
                         region.assign_advice(
-                            || format!("assign q_last {}", offset),
-                            self.q_last,
+                            || format!("assign is_last {}", offset),
+                            self.is_last,
                             offset,
                             || {
                                 Ok(if step_count == copy_event.steps.len() - 1 {
