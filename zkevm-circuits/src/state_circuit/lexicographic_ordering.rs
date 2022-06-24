@@ -296,6 +296,8 @@ fn rw_to_be_limbs(row: &Rw) -> Vec<u16> {
         .collect()
 }
 
+// Returns a vector of length 32 with the rlc of the limb differences between
+// from 0 to i-l. 0 for i=0,
 fn rlc_limb_differences<F: Field>(
     cur: Queries<F>,
     prev: Queries<F>,
@@ -304,14 +306,14 @@ fn rlc_limb_differences<F: Field>(
     let mut result = vec![];
     let mut partial_sum = 0u64.expr();
     let powers_of_randomness = once(1.expr()).chain(powers_of_randomness.into_iter());
-    for ((cur_limb, prev_limb), powers_of_randomness) in cur
+    for ((cur_limb, prev_limb), power_of_randomness) in cur
         .be_limbs()
         .iter()
         .zip(&prev.be_limbs())
         .zip(powers_of_randomness)
     {
         result.push(partial_sum.clone());
-        partial_sum = partial_sum + powers_of_randomness * (cur_limb.clone() - prev_limb.clone());
+        partial_sum = partial_sum + power_of_randomness * (cur_limb.clone() - prev_limb.clone());
     }
     result
 }
