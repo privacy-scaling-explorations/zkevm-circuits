@@ -227,9 +227,11 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchChip<F> {
                 Rotation(rot_branch_init),
             );
 
-            // let branch_rlc_mult = meta.query_advice(key_rlc_mult, Rotation(-30));
-            // let branch_rlc_mult = meta.query_advice(acc_mult_c, Rotation(-(ACCOUNT_DRIFTED_LEAF_IND - ACCOUNT_LEAF_KEY_S_IND)));
-            let branch_rlc_mult = one.clone(); // TODO
+            // Note: we could use rotation -30 to get branch_rlc_mult
+            // (like meta.query_advice(key_rlc_mult, Rotation(-30))), but this throws an error
+            // when account is in the first or second level. However, acc_mult_c in the account
+            // leaf row stores this value too (the constraints for this are in account_leaf_key).
+            let branch_rlc_mult = meta.query_advice(acc_mult_c, Rotation(-(ACCOUNT_DRIFTED_LEAF_IND - ACCOUNT_LEAF_KEY_S_IND)));
 
             let mult_diff = meta.query_advice(mult_diff, Rotation(rot_branch_init + 1)); 
 
@@ -370,7 +372,6 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchChip<F> {
             let nonce_rlc = (s_advices0_nonce.clone() + nonce_stored.clone() * r_table[0].clone()) * is_nonce_long.clone()
                 + nonce_stored.clone() * (one.clone() - is_nonce_long.clone()); 
             rlc = rlc + nonce_rlc * r_table[rind].clone() * acc_mult.clone();
-            rind +=1;
 
             let c_advices0_nonce = meta.query_advice(c_advices0, Rotation(nonce_rot));
             let balance_stored = meta.query_advice(c_mod_node_hash_rlc, Rotation(nonce_rot));
@@ -432,13 +433,13 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchChip<F> {
             ));
             };
 
-        meta.lookup_any("account_leaf_key_in_added_branch: drifted leaf hash the branch (S)", |meta| {
+        meta.lookup_any("account_leaf_key_in_added_branch: drifted leaf hash in the branch (S)", |meta| {
             let mut constraints = vec![];
             add_constraints(meta, &mut constraints, true);
             constraints
         });
 
-        meta.lookup_any("account_leaf_key_in_added_branch: drifted leaf hash the branch (C)", |meta| {
+        meta.lookup_any("account_leaf_key_in_added_branch: drifted leaf hash in the branch (C)", |meta| {
             let mut constraints = vec![];
             add_constraints(meta, &mut constraints, false);
             constraints

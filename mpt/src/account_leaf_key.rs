@@ -278,9 +278,8 @@ impl<F: FieldExt> AccountLeafKeyChip<F> {
             constraints
         });
 
-        // TODO: prepare test with account in the first level and placeholder branch in
-        // the first level. Check that key_rlc_prev stores key_rlc from the
-        // previous branch (needed when after the placeholder).
+        // Check that key_rlc_prev stores key_rlc from the previous branch
+        // (needed when after the placeholder).
         meta.create_gate("Previous level address RLC", |meta| {
             let q_enable = q_enable(meta);
             let mut constraints = vec![];
