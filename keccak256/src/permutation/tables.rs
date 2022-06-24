@@ -17,7 +17,9 @@ use super::rho_helpers::{Conversion, STEP2_RANGE, STEP3_RANGE};
 
 const MAX_CHUNKS: usize = 64;
 const NUM_OF_BINARY_CHUNKS: usize = 16;
-const NUM_OF_B9_CHUNKS: usize = 5;
+const NUM_OF_B9_CHUNKS_PER_SLICE: usize = 5;
+/// is ceil(`MAX_CHUNKS`/ `NUM_OF_B9_CHUNKS_PER_SLICE`) = 13
+const NUM_OF_B9_SLICES: usize = 13;
 
 #[derive(Debug, Clone)]
 struct ThreeColumnsLookup<F> {
@@ -486,71 +488,6 @@ impl<F: Field> Base13toBase9TableConfig<F> {
     }
 }
 
-#[derive(Clone, Debug)]
-pub(crate) struct BaseInfo<F> {
-    input_base: u8,
-    output_base: u8,
-    // How many chunks we perform in a lookup?
-    num_chunks: usize,
-    // How many chunks in total
-    pub max_chunks: usize,
-    pub input_tc: TableColumn,
-    pub output_tc: TableColumn,
-    _marker: PhantomData<F>,
-}
-
-impl<F: Field> BaseInfo<F> {
-    pub fn input_pob(&self) -> F {
-        F::from(self.input_base as u64).pow(&[self.num_chunks as u64, 0, 0, 0])
-    }
-    pub fn output_pob(&self) -> F {
-        F::from(self.output_base as u64).pow(&[self.num_chunks as u64, 0, 0, 0])
-    }
-
-    pub fn compute_coefs(&self, input: F) -> Result<(Vec<F>, Vec<F>, F), Error> {
-        // big-endian
-        let input_chunks: Vec<u8> = {
-            let raw = f_to_biguint(input);
-            let mut v = raw.to_radix_le(self.input_base.into());
-            debug_assert!(v.len() <= self.max_chunks);
-            // fill 0 to max chunks
-            v.resize(self.max_chunks, 0);
-            // v is big-endian now
-            v.reverse();
-            v
-        };
-        // Use rchunks + rev so that the remainder chunks stay at the big-endian
-        // side
-        let input_coefs: Vec<F> = input_chunks
-            .rchunks(self.num_chunks)
-            .rev()
-            .map(|chunks| f_from_radix_be(chunks, self.input_base))
-            .collect();
-        let convert_chunk = match self.input_base {
-            B2 => |x| x,
-            B13 => convert_b13_coef,
-            B9 => convert_b9_coef,
-            _ => unreachable!(),
-        };
-        let output: F = {
-            let converted_chunks: Vec<u8> =
-                input_chunks.iter().map(|&x| convert_chunk(x)).collect_vec();
-            f_from_radix_be(&converted_chunks, self.output_base)
-        };
-
-        let output_coefs: Vec<F> = input_chunks
-            .rchunks(self.num_chunks)
-            .rev()
-            .map(|chunks| {
-                let converted_chunks: Vec<u8> =
-                    chunks.iter().map(|&x| convert_chunk(x)).collect_vec();
-                f_from_radix_be(&converted_chunks, self.output_base)
-            })
-            .collect();
-        Ok((input_coefs, output_coefs, output))
-    }
-}
-
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct FromBinaryTableConfig<F> {
@@ -605,58 +542,78 @@ impl<F: Field> FromBinaryTableConfig<F> {
             _marker: PhantomData,
         }
     }
+}
 
-    pub(crate) fn get_base_info(&self, output_b9: bool) -> BaseInfo<F> {
-        BaseInfo {
-            input_base: B2,
-            output_base: if output_b9 { B9 } else { B13 },
-            num_chunks: NUM_OF_BINARY_CHUNKS,
-            max_chunks: MAX_CHUNKS,
-            input_tc: self.base2,
-            output_tc: if output_b9 { self.base9 } else { self.base13 },
-            _marker: PhantomData,
-        }
-    }
+fn compute_input_coefs<F: Field, const SLICES: usize>(
+    input: Option<&F>,
+    base: u8,
+    num_chunks: usize,
+) -> [Option<F>; SLICES] {
+    input.map_or([None; SLICES], |&input| {
+        // big-endian
+        let input_chunks: Vec<u8> = {
+            let raw = f_to_biguint(input);
+            let mut v = raw.to_radix_le(base.into());
+            debug_assert!(v.len() <= MAX_CHUNKS);
+            // fill 0 to max chunks
+            v.resize(MAX_CHUNKS, 0);
+            // v is big-endian now
+            v.reverse();
+            v
+        };
+        // Use rchunks + rev so that the remainder chunks stay at the big-endian
+        // side
+        let input_coefs = input_chunks
+            .rchunks(num_chunks)
+            .rev()
+            .map(|chunks| Some(f_from_radix_be(chunks, base)))
+            .collect_vec();
+        input_coefs.try_into().unwrap()
+    })
 }
 
 #[derive(Debug, Clone)]
 pub struct FromBase9TableConfig<F> {
-    base9: TableColumn,
-    base13: TableColumn,
-    base2: TableColumn,
-    _marker: PhantomData<F>,
+    lookup_config: ThreeColumnsLookup<F>,
+    // mapping from base9 input to base13 and base2 output
+    map: HashMap<[u8; 32], (F, F)>,
 }
 
 impl<F: Field> FromBase9TableConfig<F> {
-    pub fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
+    pub fn load(&mut self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
         layouter.assign_table(
             || "9 -> (2 and 13)",
             |mut table| {
                 // Iterate over all possible base 9 values of size 5
-                for (i, b9_chunks) in (0..NUM_OF_B9_CHUNKS)
+                for (i, b9_chunks) in (0..NUM_OF_B9_CHUNKS_PER_SLICE)
                     .map(|_| 0..B9)
                     .multi_cartesian_product()
                     .enumerate()
                 {
-                    table.assign_cell(
-                        || "base 9",
-                        self.base9,
-                        i,
-                        || Ok(f_from_radix_be::<F>(&b9_chunks, B9)),
-                    )?;
+                    let input_b9 = f_from_radix_be::<F>(&b9_chunks, B9);
                     let converted_chunks: Vec<u8> =
                         b9_chunks.iter().map(|&x| convert_b9_coef(x)).collect_vec();
+                    let output_b13 = f_from_radix_be::<F>(&converted_chunks, B13);
+                    let output_b2 = f_from_radix_be::<F>(&converted_chunks, B2);
+                    self.map.insert(input_b9.to_repr(), (output_b13, output_b2));
+                    table.assign_cell(
+                        || "base 9",
+                        self.lookup_config.col0.1,
+                        i,
+                        || Ok(input_b9),
+                    )?;
+
                     table.assign_cell(
                         || "base 13",
-                        self.base13,
+                        self.lookup_config.col1.1,
                         i,
-                        || Ok(f_from_radix_be::<F>(&converted_chunks, B13)),
+                        || Ok(output_b13),
                     )?;
                     table.assign_cell(
                         || "base 2",
-                        self.base2,
+                        self.lookup_config.col2.1,
                         i,
-                        || Ok(f_from_radix_be::<F>(&converted_chunks, B2)),
+                        || Ok(output_b2),
                     )?;
                 }
                 Ok(())
@@ -664,24 +621,66 @@ impl<F: Field> FromBase9TableConfig<F> {
         )
     }
 
-    pub fn configure(meta: &mut ConstraintSystem<F>) -> Self {
-        Self {
-            base2: meta.lookup_table_column(),
-            base9: meta.lookup_table_column(),
-            base13: meta.lookup_table_column(),
-            _marker: PhantomData,
-        }
+    pub fn configure(
+        meta: &mut ConstraintSystem<F>,
+        adv_cols: [Column<Advice>; 3],
+        table_cols: [TableColumn; 3],
+    ) -> Self {
+        let lookup_config = ThreeColumnsLookup::configure(meta, adv_cols, table_cols, "from base9");
+        let map = HashMap::new();
+        Self { lookup_config, map }
     }
+    pub fn assign_region(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        input: &AssignedCell<F, F>,
+    ) -> Result<
+        (
+            Vec<AssignedCell<F, F>>,
+            Vec<AssignedCell<F, F>>,
+            Vec<AssignedCell<F, F>>,
+        ),
+        Error,
+    > {
+        let input_coefs = compute_input_coefs::<F, NUM_OF_B9_SLICES>(
+            input.value(),
+            B9,
+            NUM_OF_B9_CHUNKS_PER_SLICE,
+        );
+        layouter.assign_region(
+            || "base 9",
+            |mut region| {
+                let mut input_cells = vec![];
+                let mut output_b13_cells = vec![];
+                let mut output_b2_cells = vec![];
+                for (offset, input_coef) in input_coefs.iter().enumerate() {
+                    let input = region.assign_advice(
+                        || "base 9",
+                        self.lookup_config.col0.0,
+                        offset,
+                        || input_coef.ok_or(Error::Synthesis),
+                    )?;
+                    input_cells.push(input.clone());
 
-    pub(crate) fn get_base_info(&self, output_b2: bool) -> BaseInfo<F> {
-        BaseInfo {
-            input_base: B9,
-            output_base: if output_b2 { B2 } else { B13 },
-            num_chunks: NUM_OF_B9_CHUNKS,
-            max_chunks: MAX_CHUNKS,
-            input_tc: self.base9,
-            output_tc: if output_b2 { self.base2 } else { self.base13 },
-            _marker: PhantomData,
-        }
+                    let output = input_coef.and_then(|v| self.map.get(&v.to_repr()));
+
+                    let output_b13 = region.assign_advice(
+                        || "base 13",
+                        self.lookup_config.col1.0,
+                        offset,
+                        || output.map(|v| v.0).ok_or(Error::Synthesis),
+                    )?;
+                    output_b13_cells.push(output_b13);
+                    let output_b2 = region.assign_advice(
+                        || "base 2",
+                        self.lookup_config.col2.0,
+                        offset,
+                        || output.map(|v| v.1).ok_or(Error::Synthesis),
+                    )?;
+                    output_b2_cells.push(output_b2);
+                }
+                Ok((input_cells, output_b13_cells, output_b2_cells))
+            },
+        )
     }
 }

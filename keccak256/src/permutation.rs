@@ -1,7 +1,6 @@
 #![allow(clippy::type_complexity)]
 #![allow(clippy::too_many_arguments)]
 pub(crate) mod absorb;
-pub(crate) mod base_conversion;
 pub mod circuit;
 pub(crate) mod generic;
 pub(crate) mod iota;

@@ -3,7 +3,6 @@ use crate::{
     common::{NEXT_INPUTS_LANES, PERMUTATION, ROUND_CONSTANTS},
     keccak_arith::*,
     permutation::{
-        base_conversion::BaseConversionConfig,
         generic::GenericConfig,
         iota::IotaConstants,
         mixing::MixingConfig,
@@ -29,11 +28,9 @@ pub struct KeccakFConfig<F: Field> {
     xi_config: XiConfig<F>,
     base13to9_config: Base13toBase9TableConfig<F>,
     from_b9_table: FromBase9TableConfig<F>,
-    base_conversion_config: BaseConversionConfig<F>,
     mixing_config: MixingConfig<F>,
     pub state: [Column<Advice>; 25],
     q_out: Selector,
-    base_conv_activator: Column<Advice>,
 }
 
 impl<F: Field> KeccakFConfig<F> {
@@ -61,6 +58,11 @@ impl<F: Field> KeccakFConfig<F> {
             .collect_vec()
             .try_into()
             .unwrap();
+        let from_base9_cols: [TableColumn; 3] = (0..3)
+            .map(|_| meta.lookup_table_column())
+            .collect_vec()
+            .try_into()
+            .unwrap();
         let stackable =
             StackableTable::configure(meta, state[0..3].try_into().unwrap(), stackable_cols);
         let base13to9_config = Base13toBase9TableConfig::configure(
@@ -74,26 +76,15 @@ impl<F: Field> KeccakFConfig<F> {
         // xi
         let xi_config = XiConfig::configure(meta.selector(), meta, state);
 
-        // Allocate space for the activation flag of the base_conversion.
-        let base_conv_activator = meta.advice_column();
-        meta.enable_equality(base_conv_activator);
         // Base conversion config.
-        let from_b9_table = FromBase9TableConfig::configure(meta);
-        let base_info = from_b9_table.get_base_info(false);
-        let base_conv_lane = meta.advice_column();
-        let base_conversion_config = BaseConversionConfig::configure(
-            meta,
-            base_info,
-            base_conv_lane,
-            base_conv_activator,
-            state[0..5].try_into().unwrap(),
-        );
+        let from_b9_table =
+            FromBase9TableConfig::configure(meta, state[0..3].try_into().unwrap(), from_base9_cols);
 
         // Mixing will make sure that the flag is binary constrained and that
         // the out state matches the expected result.
         let mixing_config = MixingConfig::configure(
             meta,
-            &from_b9_table,
+            from_b9_table.clone(),
             state,
             generic.clone(),
             stackable.clone(),
@@ -122,11 +113,9 @@ impl<F: Field> KeccakFConfig<F> {
             xi_config,
             base13to9_config,
             from_b9_table,
-            base_conversion_config,
             mixing_config,
             state,
             q_out,
-            base_conv_activator,
         }
     }
 
@@ -200,20 +189,18 @@ impl<F: Field> KeccakFConfig<F> {
             // base_13 which is what Theta requires again at the
             // start of the loop.
             state = {
-                let activation_flag = layouter.assign_region(
-                    || "Base conversion enable",
-                    |mut region| {
-                        region.assign_advice(
-                            || "Enable base conversion",
-                            self.base_conv_activator,
-                            0,
-                            || Ok(F::one()),
-                        )
-                    },
-                )?;
-
-                self.base_conversion_config
-                    .assign_state(layouter, &state, activation_flag)?
+                let state = state
+                    .iter()
+                    .map(|lane| {
+                        let (base9s, base_13s, _) =
+                            self.from_b9_table.assign_region(layouter, lane)?;
+                        self.generic
+                            .running_sum(layouter, base9s, Some(lane.clone()))?;
+                        self.generic.running_sum(layouter, base_13s, None)
+                    })
+                    .collect::<Result<Vec<AssignedCell<F, F>>, Error>>()?;
+                let state: [AssignedCell<F, F>; 25] = state.try_into().unwrap();
+                state
             }
         }
 

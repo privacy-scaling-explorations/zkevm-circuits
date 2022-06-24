@@ -1,7 +1,7 @@
 use super::super::arith_helpers::*;
 use super::generic::GenericConfig;
 use super::tables::{FromBase9TableConfig, StackableTable};
-use super::{absorb::AbsorbConfig, base_conversion::BaseConversionConfig, iota::IotaConstants};
+use super::{absorb::AbsorbConfig, iota::IotaConstants};
 use crate::common::*;
 use crate::keccak_arith::KeccakFArith;
 use eth_types::Field;
@@ -15,7 +15,7 @@ use halo2_proofs::{
 pub struct MixingConfig<F> {
     iota_constants: IotaConstants<F>,
     absorb_config: AbsorbConfig<F>,
-    base_conv_config: BaseConversionConfig<F>,
+    pub table: FromBase9TableConfig<F>,
     state: [Column<Advice>; 25],
     flag: Column<Advice>,
     q_out_copy: Selector,
@@ -26,7 +26,7 @@ pub struct MixingConfig<F> {
 impl<F: Field> MixingConfig<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
-        table: &FromBase9TableConfig<F>,
+        table: FromBase9TableConfig<F>,
         state: [Column<Advice>; 25],
         generic: GenericConfig<F>,
         stackable: StackableTable<F>,
@@ -35,16 +35,6 @@ impl<F: Field> MixingConfig<F> {
         meta.enable_equality(flag);
         // We mix -> Flag = true
         let absorb_config = AbsorbConfig::configure(meta, state);
-
-        let base_info = table.get_base_info(false);
-        let base_conv_lane = meta.advice_column();
-        let base_conv_config = BaseConversionConfig::configure(
-            meta,
-            base_info,
-            base_conv_lane,
-            flag,
-            state[0..5].try_into().unwrap(),
-        );
 
         let q_out_copy = meta.selector();
 
@@ -70,7 +60,7 @@ impl<F: Field> MixingConfig<F> {
         MixingConfig {
             iota_constants,
             absorb_config,
-            base_conv_config,
+            table,
             state,
             flag,
             q_out_copy,
@@ -172,10 +162,18 @@ impl<F: Field> MixingConfig<F> {
             flag.clone(),
         )?;
 
-        // Base conversion assign
-        let base_conv_cells =
-            self.base_conv_config
-                .assign_state(layouter, &out_state_absorb_cells, flag.clone())?;
+        let base_conv_cells = {
+            let mut state = vec![];
+            for lane in out_state_absorb_cells.iter() {
+                let (input_coefs, output_b13, _) = self.table.assign_region(layouter, &lane)?;
+                self.generic
+                    .running_sum(layouter, input_coefs, Some(lane.clone()))?;
+                let out_lane = self.generic.running_sum(layouter, output_b13, None)?;
+                state.push(out_lane);
+            }
+            let state: [AssignedCell<F, F>; 25] = state.try_into().unwrap();
+            state
+        };
 
         // IotaB13
         let mix_res = {
@@ -251,7 +249,6 @@ mod tests {
         #[derive(Clone)]
         struct MyConfig<F> {
             mixing_conf: MixingConfig<F>,
-            table: FromBase9TableConfig<F>,
             stackable: StackableTable<F>,
         }
 
@@ -264,8 +261,6 @@ mod tests {
             }
 
             fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-                let table = FromBase9TableConfig::configure(meta);
-
                 let state: [Column<Advice>; 25] = (0..25)
                     .map(|_| {
                         let col = meta.advice_column();
@@ -278,19 +273,31 @@ mod tests {
                 let fixed = meta.fixed_column();
                 let generic =
                     GenericConfig::configure(meta, state[0..3].try_into().unwrap(), fixed);
-                let table_cols: [TableColumn; 3] = (0..3)
+                let stackable_cols: [TableColumn; 3] = (0..3)
                     .map(|_| meta.lookup_table_column())
                     .collect_vec()
                     .try_into()
                     .unwrap();
-                let stackable =
-                    StackableTable::configure(meta, state[0..3].try_into().unwrap(), table_cols);
+                let fromb9_cols: [TableColumn; 3] = (0..3)
+                    .map(|_| meta.lookup_table_column())
+                    .collect_vec()
+                    .try_into()
+                    .unwrap();
+                let stackable = StackableTable::configure(
+                    meta,
+                    state[0..3].try_into().unwrap(),
+                    stackable_cols,
+                );
+                let table = FromBase9TableConfig::configure(
+                    meta,
+                    state[0..3].try_into().unwrap(),
+                    fromb9_cols,
+                );
                 let mixing_conf =
-                    MixingConfig::configure(meta, &table, state, generic, stackable.clone());
+                    MixingConfig::configure(meta, table, state, generic, stackable.clone());
 
                 MyConfig {
                     mixing_conf,
-                    table,
                     stackable,
                 }
             }
@@ -301,7 +308,7 @@ mod tests {
                 mut layouter: impl Layouter<F>,
             ) -> Result<(), Error> {
                 // Load the table
-                config.table.load(&mut layouter)?;
+                config.mixing_conf.table.load(&mut layouter)?;
                 config.stackable.load(&mut layouter)?;
                 let offset: usize = 0;
 
