@@ -6,13 +6,8 @@ use super::{
 };
 use crate::evm_circuit::{
     param::N_BYTES_WORD,
-<<<<<<< HEAD
     table::{AccountFieldTag, RwTableTag},
     util::not,
-=======
-    table::{AccountFieldTag, RwTableTag, TxLogFieldTag},
-    util::{math_gadget::generate_lagrange_base_polynomial, not, or},
->>>>>>> merge fixing address expression for log
 };
 use crate::util::Expr;
 use eth_types::Field;
@@ -33,7 +28,6 @@ pub struct Queries<F: Field> {
     pub is_tag_and_id_unchanged: Expression<F>,
     pub address: MpiQueries<F, N_LIMBS_ACCOUNT_ADDRESS>,
     pub field_tag: Expression<F>,
-    pub is_field_tag_unchanged: Expression<F>,
     pub storage_key: RlcQueries<F, N_BYTES_WORD>,
     pub value: Expression<F>,
     pub lookups: LookupsQueries<F>,
@@ -252,78 +246,81 @@ impl<F: Field> ConstraintBuilder<F> {
             1.expr(),
         );
 
-        // reset log_id when tx_id increases
+        // tx_id change must be increasing
         self.condition(q.id_change() * q.is_tag_unchanged.clone(), |cb| {
             // tx_id increases by 1
             cb.require_equal("tx_id increases by 1", q.id_change(), 1.expr());
-            cb.require_zero(
-                "reset log_id to one when tx_id increases",
-                q.tx_log_id() - 1.expr(),
-            );
+
+            // removed field_tag-specific constraints as issue
+            // https://github.com/privacy-scaling-explorations/zkevm-specs/issues/221
+            // cb.require_zero(
+            //     "reset log_id to one when tx_id increases",
+            //     q.tx_log_id() - 1.expr(),
+            // );
 
             // constrain first field_tag is Address when tx id increases
-            cb.require_equal(
-                "first field_tag is Address when tx changes",
-                q.field_tag_matches(TxLogFieldTag::Address),
-                1.expr(),
-            );
+            // cb.require_equal(
+            //     "first field_tag is Address when tx changes",
+            //     q.field_tag_matches(TxLogFieldTag::Address),
+            //     1.expr(),
+            // );
         });
 
         // increase log_id when tag changes to Address within same tx
-        self.condition(
-            q.is_id_unchanged.clone()
-                * q.is_tag_unchanged.clone()
-                * q.field_tag_matches(TxLogFieldTag::Address),
-            |cb| {
-                cb.require_equal(
-                    "log_id = pre_log_id + 1",
-                    q.tx_log_id(),
-                    q.tx_log_id_prev() + 1.expr(),
-                )
-            },
-        );
+        // self.condition(
+        //     q.is_id_unchanged.clone()
+        //         * q.is_tag_unchanged.clone()
+        //         * q.field_tag_matches(TxLogFieldTag::Address),
+        //     |cb| {
+        //         cb.require_equal(
+        //             "log_id = pre_log_id + 1",
+        //             q.tx_log_id(),
+        //             q.tx_log_id_prev() + 1.expr(),
+        //         )
+        //     },
+        // );
 
         // within same tx, log_id will not change if field_tag != Address
-        self.condition(
-            q.is_id_unchanged.clone()
-                * q.is_tag_unchanged.clone()
-                * (1.expr() - q.field_tag_matches(TxLogFieldTag::Address)),
-            |cb| {
-                cb.require_equal(
-                    "log_id will not change if field_tag != Address within tx",
-                    q.tx_log_id(),
-                    q.tx_log_id_prev(),
-                )
-            },
-        );
+        // self.condition(
+        //     q.is_id_unchanged.clone()
+        //         * q.is_tag_unchanged.clone()
+        //         * (1.expr() - q.field_tag_matches(TxLogFieldTag::Address)),
+        //     |cb| {
+        //         cb.require_equal(
+        //             "log_id will not change if field_tag != Address within
+        // tx",             q.tx_log_id(),
+        //             q.tx_log_id_prev(),
+        //         )
+        //     },
+        // );
 
         // constrain index is increasing by 1 when field_tag stay same
-        self.condition(
-            q.is_tag_unchanged.clone() * q.is_field_tag_unchanged.clone(),
-            |cb| {
-                cb.require_equal(
-                    "index = pre_index + 1",
-                    q.tx_log_index(),
-                    q.tx_log_index_prev() + 1.expr(),
-                )
-            },
-        );
+        // self.condition(
+        //     q.is_tag_unchanged.clone() * q.is_field_tag_unchanged.clone(),
+        //     |cb| {
+        //         cb.require_equal(
+        //             "index = pre_index + 1",
+        //             q.tx_log_index(),
+        //             q.tx_log_index_prev() + 1.expr(),
+        //         )
+        //     },
+        // );
 
-        self.condition(q.field_tag_matches(TxLogFieldTag::Address), |cb| {
-            cb.require_zero("index is zero for address ", q.tx_log_index())
-        });
+        // self.condition(q.field_tag_matches(TxLogFieldTag::Address), |cb| {
+        //     cb.require_zero("index is zero for address ", q.tx_log_index())
+        // });
 
         // if tag Topic appear, topic_index in range [0,4)
-        self.condition(q.field_tag_matches(TxLogFieldTag::Topic), |cb| {
-            let topic_index = q.tx_log_index();
-            cb.require_zero(
-                "topic_index in range [0,4) ",
-                topic_index.clone()
-                    * (1.expr() - topic_index.clone())
-                    * (2.expr() - topic_index.clone())
-                    * (3.expr() - topic_index),
-            )
-        });
+        // self.condition(q.field_tag_matches(TxLogFieldTag::Topic), |cb| {
+        //     let topic_index = q.tx_log_index();
+        //     cb.require_zero(
+        //         "topic_index in range [0,4) ",
+        //         topic_index.clone()
+        //             * (1.expr() - topic_index.clone())
+        //             * (2.expr() - topic_index.clone())
+        //             * (3.expr() - topic_index),
+        //     )
+        // });
     }
 
     fn require_zero(&mut self, name: &'static str, e: Expression<F>) {
@@ -400,15 +397,6 @@ impl<F: Field> Queries<F> {
 
     fn prev_tag_matches(&self, tag: RwTableTag) -> Expression<F> {
         BinaryNumberConfig::<RwTableTag, 4>::value_equals_expr(tag, self.prev_tag_bits.clone())
-    }
-
-    // TODO: make this method to be applied for all type's field if needed
-    fn field_tag_matches(&self, tag: TxLogFieldTag) -> Expression<F> {
-        generate_lagrange_base_polynomial(
-            self.field_tag.clone(),
-            tag as usize,
-            TxLogFieldTag::iter().map(|x| x as usize),
-        )
     }
 
     fn first_access(&self) -> Expression<F> {
