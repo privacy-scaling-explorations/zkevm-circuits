@@ -621,7 +621,7 @@ fn lexicographic_ordering_previous_limb_differences_nonzero() {
 
     let result = verify_with_overrides(rows, overrides);
 
-    assert_error_matches(result, "limbs match before first_different_limb");
+    assert_error_matches(result, "limb differences before first_different_limb are all 0");
 }
 
 #[test]
