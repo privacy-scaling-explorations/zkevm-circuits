@@ -177,8 +177,7 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
 
         let code = block
             .bytecodes
-            .iter()
-            .find(|b| b.hash == call.code_hash)
+            .get(&call.code_hash)
             .expect("could not find current environment's bytecode");
         self.code_size
             .assign(region, offset, Some(F::from(code.bytes.len() as u64)))?;

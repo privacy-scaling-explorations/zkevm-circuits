@@ -33,7 +33,7 @@ pub struct Block<F> {
     /// Read write events in the RwTable
     pub rws: RwMap,
     /// Bytecode used in the block
-    pub bytecodes: Vec<Bytecode>,
+    pub bytecodes: HashMap<Word, Bytecode>,
     /// The block context
     pub context: BlockContext,
 }
@@ -1395,7 +1395,10 @@ pub fn block_convert(
                     .map(|call| call.code_hash)
                     .unique()
                     .into_iter()
-                    .map(|code_hash| Bytecode::new(code_db.0.get(&code_hash).unwrap().to_vec()))
+                    .map(|code_hash| {
+                        let bytecode = Bytecode::new(code_db.0.get(&code_hash).unwrap().to_vec());
+                        (bytecode.hash, bytecode)
+                    })
             })
             .collect(),
     }

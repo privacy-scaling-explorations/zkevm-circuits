@@ -104,8 +104,7 @@ impl<F: Field> ExecutionGadget<F> for StopGadget<F> {
     ) -> Result<(), Error> {
         let code = block
             .bytecodes
-            .iter()
-            .find(|b| b.hash == call.code_hash)
+            .get(&call.code_hash)
             .expect("could not find current environment's bytecode");
         self.code_length
             .assign(region, offset, Some(F::from(code.bytes.len() as u64)))?;

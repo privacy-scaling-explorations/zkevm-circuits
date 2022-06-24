@@ -187,8 +187,7 @@ impl<F: Field> ExecutionGadget<F> for CopyCodeToMemoryGadget<F> {
 
         let code = block
             .bytecodes
-            .iter()
-            .find(|b| b.hash == code_hash)
+            .get(&code_hash)
             .unwrap_or_else(|| panic!("could not find bytecode with hash={:?}", code_hash));
         // Assign to the appropriate cells.
         self.src_addr
@@ -436,7 +435,7 @@ pub(crate) mod test {
                 ..Default::default()
             }],
             rws,
-            bytecodes: vec![dummy_code, code],
+            bytecodes: HashMap::from_iter([(dummy_code.hash, dummy_code), (code.hash, code)]),
             ..Default::default()
         };
         assert_eq!(run_test_circuit_incomplete_fixed_table(block), Ok(()));

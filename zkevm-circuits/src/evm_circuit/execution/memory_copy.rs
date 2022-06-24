@@ -412,7 +412,7 @@ pub mod test {
                 ..Default::default()
             }],
             rws,
-            bytecodes: vec![bytecode],
+            bytecodes: HashMap::from_iter([(bytecode.hash, bytecode)]),
             ..Default::default()
         };
         assert_eq!(run_test_circuit_incomplete_fixed_table(block), Ok(()));
@@ -469,7 +469,7 @@ pub mod test {
                 ..Default::default()
             }],
             rws,
-            bytecodes: vec![bytecode],
+            bytecodes: HashMap::from_iter([(bytecode.hash, bytecode)]),
             ..Default::default()
         };
         assert_eq!(run_test_circuit_incomplete_fixed_table(block), Ok(()));
