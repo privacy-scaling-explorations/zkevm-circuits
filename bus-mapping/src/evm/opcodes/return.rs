@@ -15,6 +15,9 @@ impl Opcode for Return {
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];
         let exec_step = state.new_step(geth_step)?;
+
+        // TODO: Generate associated operations of RETURN
+
         state.handle_return(geth_step)?;
         Ok(vec![exec_step])
     }

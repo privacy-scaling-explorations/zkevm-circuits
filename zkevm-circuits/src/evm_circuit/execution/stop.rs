@@ -22,7 +22,7 @@ use halo2_proofs::plonk::Error;
 
 #[derive(Clone, Debug)]
 pub(crate) struct StopGadget<F> {
-    code_size: Cell<F>,
+    code_length: Cell<F>,
     is_out_of_range: IsZeroGadget<F>,
     opcode: Cell<F>,
     restore_context: RestoreContextGadget<F>,
@@ -34,9 +34,11 @@ impl<F: Field> ExecutionGadget<F> for StopGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::STOP;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
-        let code_size = cb.bytecode_length(cb.curr.state.code_hash.expr());
-        let is_out_of_range =
-            IsZeroGadget::construct(cb, code_size.expr() - cb.curr.state.program_counter.expr());
+        let code_length = cb.bytecode_length(cb.curr.state.code_hash.expr());
+        let is_out_of_range = IsZeroGadget::construct(
+            cb,
+            code_length.expr() - cb.curr.state.program_counter.expr(),
+        );
         let opcode = cb.query_cell();
         cb.condition(1.expr() - is_out_of_range.expr(), |cb| {
             cb.opcode_lookup(opcode.expr(), 1.expr());
@@ -56,8 +58,8 @@ impl<F: Field> ExecutionGadget<F> for StopGadget<F> {
         let is_to_end_tx = cb.next.execution_state_selector([ExecutionState::EndTx]);
         cb.require_equal(
             "Go to EndTx only when is_root",
-            cb.curr.state.is_root.expr() + is_to_end_tx.clone(),
-            2.expr() * cb.curr.state.is_root.expr() * is_to_end_tx,
+            cb.curr.state.is_root.expr(),
+            is_to_end_tx,
         );
 
         // When it's a root call
@@ -84,7 +86,7 @@ impl<F: Field> ExecutionGadget<F> for StopGadget<F> {
         });
 
         Self {
-            code_size,
+            code_length,
             is_out_of_range,
             opcode,
             restore_context,
@@ -105,7 +107,7 @@ impl<F: Field> ExecutionGadget<F> for StopGadget<F> {
             .iter()
             .find(|b| b.hash == call.code_hash)
             .expect("could not find current environment's bytecode");
-        self.code_size
+        self.code_length
             .assign(region, offset, Some(F::from(code.bytes.len() as u64)))?;
 
         self.is_out_of_range.assign(

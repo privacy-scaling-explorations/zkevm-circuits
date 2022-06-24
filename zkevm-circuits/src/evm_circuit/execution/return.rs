@@ -24,8 +24,8 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
         let opcode = cb.query_cell();
         cb.opcode_lookup(opcode.expr(), 1.expr());
 
-        // Other constraints are ignored now for RETURN to serve as a mocking
-        // terminator
+        // TODO: Other constraints are ignored now for RETURN to serve as a
+        // mocking terminator
 
         Self { opcode }
     }

@@ -379,7 +379,7 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
                 (CallContextField::LastCalleeReturnDataLength, 0.into()),
                 (CallContextField::IsRoot, 1.into()),
                 (CallContextField::IsCreate, 0.into()),
-                (CallContextField::CodeSource, code_hash.to_word()),
+                (CallContextField::CodeHash, code_hash.to_word()),
             ] {
                 state.push_op(
                     &mut exec_step,

@@ -46,6 +46,10 @@ impl Opcode for Stop {
                 },
             );
         } else {
+            // The following part corresponds to
+            // Instruction.step_state_transition_to_restored_context
+            // in python spec, and should be reusable among all expected halting opcodes or
+            // exceptions. TODO: Refactor it as a helper function.
             let caller = state.caller()?.clone();
             state.push_op(
                 &mut exec_step,
@@ -65,7 +69,7 @@ impl Opcode for Stop {
                     CallContextField::IsCreate,
                     (caller.is_create() as u64).into(),
                 ),
-                (CallContextField::CodeSource, caller.code_hash.to_word()),
+                (CallContextField::CodeHash, caller.code_hash.to_word()),
                 (CallContextField::ProgramCounter, geth_step_next.pc.0.into()),
                 (
                     CallContextField::StackPointer,

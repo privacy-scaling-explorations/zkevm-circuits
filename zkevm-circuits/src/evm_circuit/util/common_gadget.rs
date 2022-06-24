@@ -106,7 +106,7 @@ impl<F: Field> RestoreContextGadget<F> {
             [
                 CallContextFieldTag::IsRoot,
                 CallContextFieldTag::IsCreate,
-                CallContextFieldTag::CodeSource,
+                CallContextFieldTag::CodeHash,
                 CallContextFieldTag::ProgramCounter,
                 CallContextFieldTag::StackPointer,
                 CallContextFieldTag::GasLeft,

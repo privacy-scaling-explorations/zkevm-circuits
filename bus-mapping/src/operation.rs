@@ -697,8 +697,8 @@ pub enum CallContextField {
     IsRoot,
     /// IsCreate
     IsCreate,
-    /// CodeSource
-    CodeSource,
+    /// CodeHash
+    CodeHash,
     /// ProgramCounter
     ProgramCounter,
     /// StackPointer

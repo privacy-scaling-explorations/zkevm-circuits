@@ -815,7 +815,7 @@ impl Rw {
                 match field_tag {
                     // Only these two tags have values that may not fit into a scalar, so we need to
                     // RLC.
-                    CallContextFieldTag::CodeSource | CallContextFieldTag::Value => {
+                    CallContextFieldTag::CodeHash | CallContextFieldTag::Value => {
                         RandomLinearCombination::random_linear_combine(
                             value.to_le_bytes(),
                             randomness,
@@ -1054,7 +1054,7 @@ impl From<&operation::OperationContainer> for RwMap {
                         }
                         CallContextField::IsRoot => CallContextFieldTag::IsRoot,
                         CallContextField::IsCreate => CallContextFieldTag::IsCreate,
-                        CallContextField::CodeSource => CallContextFieldTag::CodeSource,
+                        CallContextField::CodeHash => CallContextFieldTag::CodeHash,
                         CallContextField::ProgramCounter => CallContextFieldTag::ProgramCounter,
                         CallContextField::StackPointer => CallContextFieldTag::StackPointer,
                         CallContextField::GasLeft => CallContextFieldTag::GasLeft,

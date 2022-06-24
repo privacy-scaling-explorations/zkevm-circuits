@@ -281,7 +281,7 @@ impl<F: Field> ExecutionGadget<F> for CallGadget<F> {
                 (CallContextFieldTag::LastCalleeReturnDataLength, 0.expr()),
                 (CallContextFieldTag::IsRoot, 0.expr()),
                 (CallContextFieldTag::IsCreate, 0.expr()),
-                (CallContextFieldTag::CodeSource, callee_code_hash.expr()),
+                (CallContextFieldTag::CodeHash, callee_code_hash.expr()),
             ] {
                 cb.call_context_lookup(false.expr(), Some(callee_call_id.expr()), field_tag, value);
             }
