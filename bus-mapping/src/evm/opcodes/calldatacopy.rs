@@ -1,6 +1,6 @@
 use super::Opcode;
 use crate::circuit_input_builder::{CopyDataType, CopyEvent, CopyStep, NumberOrHash};
-use crate::operation::{CallContextField, RW};
+use crate::operation::{CallContextField, MemoryOp, RW};
 use crate::Error;
 use crate::{
     circuit_input_builder::{CircuitInputStateRef, ExecStep},
@@ -18,7 +18,7 @@ impl Opcode for Calldatacopy {
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];
         let exec_steps = vec![gen_calldatacopy_step(state, geth_step)?];
-        let copy_event = gen_copy_event(state, geth_steps)?;
+        let copy_event = gen_copy_event(state, geth_step)?;
         state.push_copy(copy_event);
         Ok(exec_steps)
     }
@@ -65,7 +65,6 @@ fn gen_calldatacopy_step(
             CallContextField::CallerId,
             state.call()?.caller_id.into(),
         );
-
         state.call_context_read(
             &mut exec_step,
             state.call()?.call_id,
@@ -85,6 +84,7 @@ fn gen_calldatacopy_step(
 
 fn gen_copy_steps(
     state: &mut CircuitInputStateRef,
+    exec_step: &mut ExecStep,
     src_addr: u64,
     dst_addr: u64,
     src_addr_end: u64,
@@ -95,12 +95,21 @@ fn gen_copy_steps(
     let mut copy_steps = Vec::with_capacity(2 * cap);
     for idx in 0..cap {
         let addr = src_addr + idx as u64;
-        let (value, is_pad) = if addr < src_addr_end {
+        let (value, is_pad, rwc) = if addr < src_addr_end {
             let byte =
                 state.call_ctx()?.call_data[(addr - state.call()?.call_data_offset) as usize];
-            (byte, false)
+            if !is_root {
+                state.push_op(
+                    exec_step,
+                    RW::READ,
+                    MemoryOp::new(state.call()?.caller_id, (addr as usize).into(), byte),
+                );
+                (byte, false, Some(state.block_ctx.rwc))
+            } else {
+                (byte, false, None)
+            }
         } else {
-            (0, true)
+            (0, true, None)
         };
         let tag = if is_root {
             CopyDataType::TxCalldata
@@ -116,13 +125,10 @@ fn gen_copy_steps(
             value,
             is_code: None,
             is_pad,
-            rwc: if !is_root {
-                Some(state.block_ctx.rwc.inc_pre())
-            } else {
-                None
-            },
+            rwc,
         });
         // Write
+        state.memory_write(exec_step, (dst_addr as usize + idx).into(), value)?;
         copy_steps.push(CopyStep {
             addr: dst_addr + idx as u64,
             addr_end: None,
@@ -131,7 +137,7 @@ fn gen_copy_steps(
             value,
             is_code: None,
             is_pad: false,
-            rwc: Some(state.block_ctx.rwc.inc_pre()),
+            rwc: Some(state.block_ctx.rwc),
         });
     }
     Ok(copy_steps)
@@ -139,11 +145,11 @@ fn gen_copy_steps(
 
 fn gen_copy_event(
     state: &mut CircuitInputStateRef,
-    geth_steps: &[GethExecStep],
+    geth_step: &GethExecStep,
 ) -> Result<CopyEvent, Error> {
-    let memory_offset = geth_steps[0].stack.nth_last(0)?.as_u64();
-    let data_offset = geth_steps[0].stack.nth_last(1)?.as_u64();
-    let length = geth_steps[0].stack.nth_last(2)?.as_u64();
+    let memory_offset = geth_step.stack.nth_last(0)?.as_u64();
+    let data_offset = geth_step.stack.nth_last(1)?.as_u64();
+    let length = geth_step.stack.nth_last(2)?.as_u64();
 
     let call_data_offset = state.call()?.call_data_offset;
     let call_data_length = state.call()?.call_data_length;
@@ -155,8 +161,10 @@ fn gen_copy_event(
     let mut copied = 0;
     let mut steps = vec![];
     while copied < length {
+        let mut exec_step = state.new_step(geth_step)?;
         let int_copy_steps = gen_copy_steps(
             state,
+            &mut exec_step,
             src_addr + copied as u64,
             memory_offset + copied as u64,
             src_addr_end,
@@ -192,7 +200,7 @@ mod calldatacopy_tests {
     use crate::{
         circuit_input_builder::{CopyDataType, CopyStep, ExecState, NumberOrHash},
         mock::BlockData,
-        operation::{CallContextField, CallContextOp, RWCounter, StackOp, RW},
+        operation::{CallContextField, CallContextOp, MemoryOp, RWCounter, StackOp, RW},
     };
     use eth_types::{
         bytecode,
@@ -335,6 +343,45 @@ mod calldatacopy_tests {
             ]
         );
 
+        // memory writes.
+        // 1. First `call_data_length` memory ops are RW::WRITE and come from the `CALL`
+        // opcode.    (we skip checking those)
+        // 2. Following that, we should have tuples of (RW::READ and RW::WRITE) where
+        // the caller    memory is read and the current call's memory is written
+        // to.
+        assert_eq!(
+            builder.block.container.memory.len(),
+            call_data_length + 2 * copy_size
+        );
+        assert_eq!(
+            (call_data_length..(call_data_length + (2 * copy_size)))
+                .map(|idx| &builder.block.container.memory[idx])
+                .map(|op| (op.rw(), op.op().clone()))
+                .collect::<Vec<(RW, MemoryOp)>>(),
+            {
+                let mut memory_ops = Vec::with_capacity(2 * copy_size);
+                (0..copy_size).for_each(|idx| {
+                    memory_ops.push((
+                        RW::READ,
+                        MemoryOp::new(
+                            caller_id,
+                            (call_data_offset + offset + idx).into(),
+                            memory_a[call_data_offset + idx],
+                        ),
+                    ));
+                    memory_ops.push((
+                        RW::WRITE,
+                        MemoryOp::new(
+                            expected_call_id,
+                            (dst_offset + idx).into(),
+                            memory_a[call_data_offset + idx],
+                        ),
+                    ));
+                });
+                memory_ops
+            },
+        );
+
         let copy_events = builder.block.copy_events.clone();
         assert_eq!(copy_events.len(), 1);
         assert_eq!(copy_events[0].steps.len(), 2 * copy_size);
@@ -352,7 +399,7 @@ mod calldatacopy_tests {
         );
         assert_eq!(copy_events[0].dst_addr as usize, dst_offset);
 
-        let rwc_start = step.rwc.0 + 6;
+        let mut rwc_start = step.rwc.0 + 6;
         for (idx, copy_rw_pair) in copy_events[0].steps.chunks(2).enumerate() {
             assert_eq!(copy_rw_pair.len(), 2);
             let (value, is_pad) = memory_a
@@ -371,7 +418,12 @@ mod calldatacopy_tests {
                     is_code: None,
                     value,
                     is_pad,
-                    rwc: Some(RWCounter(rwc_start + 2 * idx)),
+                    rwc: if !is_pad {
+                        rwc_start += 1;
+                        Some(RWCounter(rwc_start))
+                    } else {
+                        None
+                    },
                 }
             );
             // Write
@@ -386,7 +438,10 @@ mod calldatacopy_tests {
                     is_code: None,
                     value,
                     is_pad: false,
-                    rwc: Some(RWCounter(rwc_start + 2 * idx + 1)),
+                    rwc: {
+                        rwc_start += 1;
+                        Some(RWCounter(rwc_start))
+                    },
                 }
             );
         }
