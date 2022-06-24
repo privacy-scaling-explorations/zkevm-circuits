@@ -20,7 +20,7 @@ impl Opcode for Codecopy {
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];
         let exec_steps = vec![gen_codecopy_step(state, geth_step)?];
-        let copy_event = gen_copy_event(state, geth_steps)?;
+        let copy_event = gen_copy_event(state, geth_step)?;
         state.push_copy(copy_event);
         Ok(exec_steps)
     }
@@ -54,6 +54,7 @@ fn gen_codecopy_step(
 
 fn gen_copy_steps(
     state: &mut CircuitInputStateRef,
+    exec_step: &mut ExecStep,
     src_addr: u64,
     dst_addr: u64,
     bytes_left: u64,
@@ -83,6 +84,7 @@ fn gen_copy_steps(
             rwc: None,
         });
         // Write
+        state.memory_write(exec_step, (dst_addr as usize + idx).into(), value)?;
         steps.push(CopyStep {
             addr: dst_addr + (idx as u64),
             addr_end: None,
@@ -91,7 +93,7 @@ fn gen_copy_steps(
             value,
             is_code: None,
             is_pad: false,
-            rwc: Some(state.block_ctx.rwc.inc_pre()),
+            rwc: Some(state.block_ctx.rwc),
         })
     }
     Ok(steps)
@@ -99,11 +101,11 @@ fn gen_copy_steps(
 
 fn gen_copy_event(
     state: &mut CircuitInputStateRef,
-    geth_steps: &[GethExecStep],
+    geth_step: &GethExecStep,
 ) -> Result<CopyEvent, Error> {
-    let dst_offset = geth_steps[0].stack.nth_last(0)?.as_u64();
-    let code_offset = geth_steps[0].stack.nth_last(1)?.as_u64();
-    let length = geth_steps[0].stack.nth_last(2)?.as_u64();
+    let dst_offset = geth_step.stack.nth_last(0)?.as_u64();
+    let code_offset = geth_step.stack.nth_last(1)?.as_u64();
+    let length = geth_step.stack.nth_last(2)?.as_u64();
 
     let code_hash = state.call()?.code_hash;
     let bytecode: Bytecode = state
@@ -115,8 +117,10 @@ fn gen_copy_event(
     let mut copied = 0;
     let mut copy_steps = vec![];
     while copied < length {
+        let mut exec_step = state.new_step(geth_step)?;
         let int_copy_steps = gen_copy_steps(
             state,
+            &mut exec_step,
             code_offset + copied,
             dst_offset + copied,
             length - copied,
@@ -145,7 +149,7 @@ fn gen_copy_event(
 mod codecopy_tests {
     use eth_types::{
         bytecode,
-        evm_types::{OpcodeId, StackAddress},
+        evm_types::{MemoryAddress, OpcodeId, StackAddress},
         geth_types::GethData,
         Word, H256,
     };
@@ -158,7 +162,7 @@ mod codecopy_tests {
     use crate::{
         circuit_input_builder::{CopyDataType, CopyStep, ExecState, NumberOrHash},
         mock::BlockData,
-        operation::{RWCounter, StackOp, RW},
+        operation::{MemoryOp, RWCounter, StackOp, RW},
     };
 
     #[test]
@@ -218,6 +222,30 @@ mod codecopy_tests {
             ]
         );
 
+        // RW table memory writes.
+        assert_eq!(
+            (0..size)
+                .map(|idx| &builder.block.container.memory[idx])
+                .map(|op| (op.rw(), op.op().clone()))
+                .collect::<Vec<(RW, MemoryOp)>>(),
+            (0..size)
+                .map(|idx| {
+                    (
+                        RW::WRITE,
+                        MemoryOp::new(
+                            1,
+                            MemoryAddress::from(dst_offset + idx),
+                            if code_offset + idx < code.code().len() {
+                                code.code()[code_offset + idx]
+                            } else {
+                                0
+                            },
+                        ),
+                    )
+                })
+                .collect::<Vec<(RW, MemoryOp)>>(),
+        );
+
         let copy_events = builder.block.copy_events.clone();
         assert_eq!(copy_events.len(), 1);
         assert_eq!(copy_events[0].steps.len(), 2 * size);
@@ -237,7 +265,7 @@ mod codecopy_tests {
         assert!(copy_events[0].log_id.is_none());
         assert_eq!(copy_events[0].length as usize, size);
 
-        let rwc_start = step.rwc.0 + 3;
+        let mut rwc_start = step.rwc.0 + 3;
         for (idx, copy_rw_pair) in copy_events[0].steps.chunks(2).enumerate() {
             assert_eq!(copy_rw_pair.len(), 2);
             let (value, is_code, is_pad) = code
@@ -270,7 +298,10 @@ mod codecopy_tests {
                     value,
                     is_code: None,
                     is_pad: false,
-                    rwc: Some(RWCounter(rwc_start + idx)),
+                    rwc: {
+                        rwc_start += 1;
+                        Some(RWCounter(rwc_start))
+                    },
                 }
             );
         }
