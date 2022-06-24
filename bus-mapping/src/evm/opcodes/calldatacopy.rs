@@ -343,12 +343,13 @@ mod calldatacopy_tests {
             ]
         );
 
-        // memory writes.
+        // Memory reads/writes.
+        //
         // 1. First `call_data_length` memory ops are RW::WRITE and come from the `CALL`
-        // opcode.    (we skip checking those)
+        // opcode. We skip checking those.
+        //
         // 2. Following that, we should have tuples of (RW::READ and RW::WRITE) where
-        // the caller    memory is read and the current call's memory is written
-        // to.
+        // the caller memory is read and the current call's memory is written to.
         assert_eq!(
             builder.block.container.memory.len(),
             call_data_length + 2 * copy_size
@@ -361,21 +362,18 @@ mod calldatacopy_tests {
             {
                 let mut memory_ops = Vec::with_capacity(2 * copy_size);
                 (0..copy_size).for_each(|idx| {
+                    let value = if offset + call_data_offset + idx < memory_a.len() {
+                        memory_a[offset + call_data_offset + idx]
+                    } else {
+                        0
+                    };
                     memory_ops.push((
                         RW::READ,
-                        MemoryOp::new(
-                            caller_id,
-                            (call_data_offset + offset + idx).into(),
-                            memory_a[call_data_offset + idx],
-                        ),
+                        MemoryOp::new(caller_id, (call_data_offset + offset + idx).into(), value),
                     ));
                     memory_ops.push((
                         RW::WRITE,
-                        MemoryOp::new(
-                            expected_call_id,
-                            (dst_offset + idx).into(),
-                            memory_a[call_data_offset + idx],
-                        ),
+                        MemoryOp::new(expected_call_id, (dst_offset + idx).into(), value),
                     ));
                 });
                 memory_ops
@@ -488,6 +486,7 @@ mod calldatacopy_tests {
             .find(|step| step.exec_state == ExecState::Op(OpcodeId::CALLDATACOPY))
             .unwrap();
 
+        let expected_call_id = builder.block.txs()[0].calls()[step.call_index].call_id;
         assert_eq!(step.bus_mapping_instance.len(), 5);
 
         assert_eq!(
@@ -535,13 +534,40 @@ mod calldatacopy_tests {
             ]
         );
 
+        // Memory reads/writes.
+        //
+        // 1. Since its a root call, we should only have memory RW::WRITE where the
+        // current call's memory is written to.
+        assert_eq!(builder.block.container.memory.len(), size);
+        assert_eq!(
+            (0..size)
+                .map(|idx| &builder.block.container.memory[idx])
+                .map(|op| (op.rw(), op.op().clone()))
+                .collect::<Vec<(RW, MemoryOp)>>(),
+            {
+                let mut memory_ops = Vec::with_capacity(size);
+                (0..size).for_each(|idx| {
+                    let value = if offset + idx < calldata_len {
+                        calldata[offset + idx]
+                    } else {
+                        0
+                    };
+                    memory_ops.push((
+                        RW::WRITE,
+                        MemoryOp::new(expected_call_id, (dst_offset + idx).into(), value),
+                    ));
+                });
+                memory_ops
+            },
+        );
+
         let copy_events = builder.block.copy_events.clone();
 
         // single copy event with `size` reads and `size` writes.
         assert_eq!(copy_events.len(), 1);
         assert_eq!(copy_events[0].steps.len(), 2 * size);
 
-        let rwc_start = step.rwc.0 + 5;
+        let mut rwc_start = step.rwc.0 + 5;
         for (idx, copy_rw_pair) in copy_events[0].steps.chunks(2).enumerate() {
             assert_eq!(copy_rw_pair.len(), 2);
             let (value, is_pad) = calldata
@@ -553,7 +579,7 @@ mod calldatacopy_tests {
             assert_eq!(
                 read_step,
                 CopyStep {
-                    addr: offset + idx as u64,
+                    addr: (offset + idx) as u64,
                     addr_end: Some(calldata_len as u64),
                     tag: CopyDataType::TxCalldata,
                     rw: RW::READ,
@@ -568,14 +594,17 @@ mod calldatacopy_tests {
             assert_eq!(
                 write_step,
                 CopyStep {
-                    addr: dst_offset + idx as u64,
+                    addr: (dst_offset + idx) as u64,
                     addr_end: None,
                     tag: CopyDataType::Memory,
                     rw: RW::WRITE,
                     value,
                     is_code: None,
                     is_pad: false,
-                    rwc: Some(RWCounter(rwc_start + idx)),
+                    rwc: {
+                        rwc_start += 1;
+                        Some(RWCounter(rwc_start))
+                    },
                 }
             );
         }
