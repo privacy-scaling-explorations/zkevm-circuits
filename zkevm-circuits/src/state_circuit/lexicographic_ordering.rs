@@ -90,6 +90,7 @@ impl AsBits<5> for LimbIndex {
             bits[4 - i] = x % 2 == 1;
             x /= 2;
         }
+        assert_eq!(x, 0);
         bits
     }
 }
@@ -317,11 +318,14 @@ fn rlc_limb_differences<F: Field>(
 
 #[cfg(test)]
 mod test {
+    use super::super::binary_number::{from_bits, AsBits};
     use super::LimbIndex;
     use strum::IntoEnumIterator;
 
     #[test]
-    fn n_limbs() {
-        assert_eq!(LimbIndex::iter().len(), 32);
+    fn enough_bits_for_limb_index() {
+        for index in LimbIndex::iter() {
+            assert_eq!(from_bits(&index.as_bits()), index as usize);
+        }
     }
 }
