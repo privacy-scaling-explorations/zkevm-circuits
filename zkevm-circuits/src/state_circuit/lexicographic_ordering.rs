@@ -36,15 +36,17 @@ use strum_macros::EnumIter;
 // lookup for An-Bn.
 
 // We show this with following advice columns and constraints:
-// - first_different_limb: first index where the limbs differ.
+// - first_different_limb: first index where the limbs differ. We use a
+//   BinaryNumberChip here to reduce the degree of the constraints.
 // - limb_difference: the difference between the limbs at first_different_limb.
 // - limb_difference_inverse: the inverse of limb_difference
 
 //  1. limb_difference fits into 16 bits.
 //  2. limb_difference is not zero because its inverse exists.
-//  3. RLC of the pairwise limb differences before the first_different_limb is 0.
+//  3. RLC of the pairwise limb differences before the first_different_limb is
+//     zero.
 //  4. limb_difference equals the difference of the limbs at
-// first_different_limb.
+//     first_different_limb.
 
 #[derive(Clone, Copy, Debug, EnumIter)]
 pub enum LimbIndex {
