@@ -3019,9 +3019,11 @@ impl<F: FieldExt> MPTConfig<F> {
                                 let row_prev = &witness[offset - 1];
                                 let mut sum = F::zero();
                                 let mut sum_prev = F::zero();
+                                let mut mult = self.acc_r;
                                 for i in 0..key_len {
-                                    sum += F::from(row[3+i] as u64);
-                                    sum_prev += F::from(row_prev[3+i] as u64);
+                                    sum += F::from(row[3+i] as u64) * mult ;
+                                    sum_prev += F::from(row_prev[3+i] as u64) * mult;
+                                    mult *= self.acc_r;
                                 }
                                 let mut diff_inv = F::zero();
                                 if sum != sum_prev {

@@ -17,7 +17,16 @@ use crate::{
 #[derive(Clone, Debug)]
 pub(crate) struct AccountNonExistingConfig {}
 
-// Checks that the address does not exist.
+/*
+Checks that the address does not exist. There are two versions of proof:
+    1. A leaf is returned by getProof that is not at the required address (we call this a wrong leaf).
+    2. A branch is the last element of getProof and there is nil object at address position.
+       Placeholder account leaf is added in this case.
+
+1. In case of a wrong leaf, non_existing_account_row contains the nibbles of the address that was enquired
+while account_leaf_key contains the nibbles of the wrong leaf. We need to prove that the difference is nonzero.
+2. In case of nil object, we need to prove that the branch contains nil object (128) at the enquired address.
+*/
 pub(crate) struct AccountNonExistingChip<F> {
     config: AccountNonExistingConfig,
     _marker: PhantomData<F>,
@@ -61,7 +70,7 @@ impl<F: FieldExt> AccountNonExistingChip<F> {
 
                 // Wrong leaf has a meaning only for non existing account proof. For this proof, there are two cases:
                 // 1. A leaf is returned that is not at the required address (wrong leaf).
-                // 2. Only branches are returned and there is nil object at address position. Placeholder account leaf is added in this case.
+                // 2. A branch is returned as the last element of getProof and there is nil object at address position. Placeholder account leaf is added in this case.
                 let is_wrong_leaf = meta.query_advice(s_rlp1, Rotation::cur());
                 // is_wrong_leaf is checked to be bool in account_leaf_nonce_balance (q_enable in this chip
                 // is true only when non_existing_account).
@@ -108,10 +117,10 @@ impl<F: FieldExt> AccountNonExistingChip<F> {
                     key_rlc_acc = key_rlc_acc + s * key_mult.clone() * r_table[ind - 3].clone();
                 }
 
-                let c_rlp1 = meta.query_advice(c_rlp1, Rotation::cur());
-                let c_rlp2 = meta.query_advice(c_rlp2, Rotation::cur());
-                key_rlc_acc = key_rlc_acc + c_rlp1 * key_mult.clone() * r_table[29].clone();
-                key_rlc_acc = key_rlc_acc + c_rlp2 * key_mult * r_table[30].clone();
+                let c_rlp1_cur = meta.query_advice(c_rlp1, Rotation::cur());
+                let c_rlp2_cur = meta.query_advice(c_rlp2, Rotation::cur());
+                key_rlc_acc = key_rlc_acc + c_rlp1_cur.clone() * key_mult.clone() * r_table[29].clone();
+                key_rlc_acc = key_rlc_acc + c_rlp2_cur.clone() * key_mult * r_table[30].clone();
 
                 let address_rlc = meta.query_advice(address_rlc, Rotation::cur());
 
@@ -127,6 +136,39 @@ impl<F: FieldExt> AccountNonExistingChip<F> {
                 let sum = meta.query_advice(key_rlc, Rotation::cur());
                 let sum_prev = meta.query_advice(key_rlc_mult, Rotation::cur());
                 let diff_inv = meta.query_advice(acc_s, Rotation::cur());
+
+                let c_rlp1_prev = meta.query_advice(c_rlp1, Rotation::cur());
+                let c_rlp2_prev = meta.query_advice(c_rlp2, Rotation::cur());
+
+                let mut sum_check = Expression::Constant(F::zero());
+                let mut sum_prev_check = Expression::Constant(F::zero());
+                let mut mult = r_table[0].clone();
+                for ind in 1..HASH_WIDTH {
+                    sum_check = sum_check + meta.query_advice(s_advices[ind], Rotation::cur()) * mult.clone();
+                    sum_prev_check = sum_prev_check + meta.query_advice(s_advices[ind], Rotation::prev()) * mult.clone();
+                    mult = mult * r_table[0].clone();
+                }
+                sum_check = sum_check + c_rlp1_cur * mult.clone();
+                sum_prev_check = sum_prev_check + c_rlp1_prev * mult.clone();
+                mult = mult * r_table[0].clone();
+                sum_check = sum_check + c_rlp2_cur * mult.clone();
+                sum_prev_check = sum_prev_check + c_rlp2_prev * mult.clone();
+
+                constraints.push((
+                    "wrong leaf sum check",
+                    q_enable.clone()
+                        * (one.clone() - is_leaf_in_first_level.clone())
+                        * is_wrong_leaf.clone()
+                        * (sum.clone() - sum_check.clone()),
+                ));
+
+                constraints.push((
+                    "wrong leaf sum_prev check",
+                    q_enable.clone()
+                        * (one.clone() - is_leaf_in_first_level.clone())
+                        * is_wrong_leaf.clone()
+                        * (sum_prev.clone() - sum_prev_check.clone()),
+                ));
 
                 constraints.push((
                     "Address of a leaf is different than address being inquired (corresponding to address_rlc)",
@@ -183,10 +225,10 @@ impl<F: FieldExt> AccountNonExistingChip<F> {
                 key_rlc_acc = key_rlc_acc + s * r_table[ind - 3].clone();
             }
 
-            let c_rlp1 = meta.query_advice(c_rlp1, Rotation::cur());
-            let c_rlp2 = meta.query_advice(c_rlp2, Rotation::cur());
-            key_rlc_acc = key_rlc_acc + c_rlp1 * r_table[29].clone();
-            key_rlc_acc = key_rlc_acc + c_rlp2 * r_table[30].clone();
+            let c_rlp1_cur = meta.query_advice(c_rlp1, Rotation::cur());
+            let c_rlp2_cur = meta.query_advice(c_rlp2, Rotation::cur());
+            key_rlc_acc = key_rlc_acc + c_rlp1_cur * r_table[29].clone();
+            key_rlc_acc = key_rlc_acc + c_rlp2_cur * r_table[30].clone();
 
             let address_rlc = meta.query_advice(address_rlc, Rotation::cur());
 
@@ -201,6 +243,8 @@ impl<F: FieldExt> AccountNonExistingChip<F> {
             let sum = meta.query_advice(key_rlc, Rotation::cur());
             let sum_prev = meta.query_advice(key_rlc_mult, Rotation::cur());
             let diff_inv = meta.query_advice(acc_s, Rotation::cur());
+
+            // TODO: sum, sum_prev constraints
 
             constraints.push((
                 "Address of a leaf is different than address being inquired (corresponding to address_rlc)",
