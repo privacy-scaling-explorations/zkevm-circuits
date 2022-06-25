@@ -16,10 +16,11 @@ use strum_macros::{Display, EnumIter};
 use super::rho_helpers::{Conversion, STEP2_RANGE, STEP3_RANGE};
 
 const MAX_CHUNKS: usize = 64;
-const NUM_OF_BINARY_CHUNKS: usize = 16;
-const NUM_OF_B9_CHUNKS_PER_SLICE: usize = 5;
+pub const NUM_OF_BINARY_CHUNKS_PER_SLICE: usize = 16;
+pub const NUM_OF_BINARY_SLICES: usize = 4;
+pub const NUM_OF_B9_CHUNKS_PER_SLICE: usize = 5;
 /// is ceil(`MAX_CHUNKS`/ `NUM_OF_B9_CHUNKS_PER_SLICE`) = 13
-const NUM_OF_B9_SLICES: usize = 13;
+pub const NUM_OF_B9_SLICES: usize = 13;
 
 #[derive(Debug, Clone)]
 struct ThreeColumnsLookup<F> {
@@ -488,62 +489,6 @@ impl<F: Field> Base13toBase9TableConfig<F> {
     }
 }
 
-#[allow(dead_code)]
-#[derive(Debug, Clone)]
-pub struct FromBinaryTableConfig<F> {
-    base2: TableColumn,
-    base9: TableColumn,
-    base13: TableColumn,
-    _marker: PhantomData<F>,
-}
-
-#[allow(dead_code)]
-impl<F: Field> FromBinaryTableConfig<F> {
-    pub(crate) fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
-        layouter.assign_table(
-            || "2 -> (9 and 13)",
-            |mut table| {
-                // Iterate over all possible binary values of size 16
-                for (i, b2_chunks) in (0..NUM_OF_BINARY_CHUNKS)
-                    .map(|_| 0..B2)
-                    .multi_cartesian_product()
-                    .enumerate()
-                {
-                    table.assign_cell(
-                        || "base 2",
-                        self.base2,
-                        i,
-                        || Ok(f_from_radix_be::<F>(&b2_chunks, B2)),
-                    )?;
-
-                    table.assign_cell(
-                        || "base 9",
-                        self.base9,
-                        i,
-                        || Ok(f_from_radix_be::<F>(&b2_chunks, B9)),
-                    )?;
-                    table.assign_cell(
-                        || "base 13",
-                        self.base13,
-                        i,
-                        || Ok(f_from_radix_be::<F>(&b2_chunks, B13)),
-                    )?;
-                }
-                Ok(())
-            },
-        )
-    }
-
-    pub(crate) fn configure(meta: &mut ConstraintSystem<F>) -> Self {
-        Self {
-            base2: meta.lookup_table_column(),
-            base9: meta.lookup_table_column(),
-            base13: meta.lookup_table_column(),
-            _marker: PhantomData,
-        }
-    }
-}
-
 fn compute_input_coefs<F: Field, const SLICES: usize>(
     input: Option<&F>,
     base: u8,
@@ -654,6 +599,7 @@ impl<F: Field> FromBase9TableConfig<F> {
                 let mut output_b13_cells = vec![];
                 let mut output_b2_cells = vec![];
                 for (offset, input_coef) in input_coefs.iter().enumerate() {
+                    self.lookup_config.q_enable.enable(&mut region, offset)?;
                     let input = region.assign_advice(
                         || "base 9",
                         self.lookup_config.col0.0,
@@ -661,7 +607,6 @@ impl<F: Field> FromBase9TableConfig<F> {
                         || input_coef.ok_or(Error::Synthesis),
                     )?;
                     input_cells.push(input.clone());
-
                     let output = input_coef.and_then(|v| self.map.get(&v.to_repr()));
 
                     let output_b13 = region.assign_advice(
@@ -680,6 +625,120 @@ impl<F: Field> FromBase9TableConfig<F> {
                     output_b2_cells.push(output_b2);
                 }
                 Ok((input_cells, output_b13_cells, output_b2_cells))
+            },
+        )
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct FromBinaryTableConfig<F> {
+    lookup_config: ThreeColumnsLookup<F>,
+    // mapping from base9 input to base13 and base2 output
+    map: HashMap<[u8; 32], (F, F)>,
+}
+
+impl<F: Field> FromBinaryTableConfig<F> {
+    pub fn load(&mut self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
+        layouter.assign_table(
+            || "2 -> (9 and 13)",
+            |mut table| {
+                for (i, b2_chunks) in (0..NUM_OF_BINARY_CHUNKS_PER_SLICE)
+                    .map(|_| 0..B2)
+                    .multi_cartesian_product()
+                    .enumerate()
+                {
+                    let input_b2 = f_from_radix_be::<F>(&b2_chunks, B9);
+                    let output_b9 = f_from_radix_be::<F>(&b2_chunks, B9);
+                    let output_b13 = f_from_radix_be::<F>(&b2_chunks, B13);
+
+                    self.map.insert(input_b2.to_repr(), (output_b9, output_b13));
+                    // Iterate over all possible binary values of size 16
+
+                    table.assign_cell(
+                        || "base 2",
+                        self.lookup_config.col0.1,
+                        i,
+                        || Ok(input_b2),
+                    )?;
+
+                    table.assign_cell(
+                        || "base 9",
+                        self.lookup_config.col1.1,
+                        i,
+                        || Ok(output_b9),
+                    )?;
+                    table.assign_cell(
+                        || "base 13",
+                        self.lookup_config.col2.1,
+                        i,
+                        || Ok(output_b13),
+                    )?;
+                }
+                Ok(())
+            },
+        )
+    }
+
+    pub fn configure(
+        meta: &mut ConstraintSystem<F>,
+        adv_cols: [Column<Advice>; 3],
+        table_cols: [TableColumn; 3],
+    ) -> Self {
+        let lookup_config = ThreeColumnsLookup::configure(meta, adv_cols, table_cols, "from base9");
+        let map = HashMap::new();
+        Self { lookup_config, map }
+    }
+    pub fn assign_region(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        input: &AssignedCell<F, F>,
+    ) -> Result<
+        (
+            Vec<AssignedCell<F, F>>,
+            Vec<AssignedCell<F, F>>,
+            Vec<AssignedCell<F, F>>,
+        ),
+        Error,
+    > {
+        let input_coefs = compute_input_coefs::<F, NUM_OF_BINARY_SLICES>(
+            input.value(),
+            B2,
+            NUM_OF_BINARY_CHUNKS_PER_SLICE,
+        );
+        layouter.assign_region(
+            || "base 2",
+            |mut region| {
+                let mut input_cells = vec![];
+                let mut output_b9_cells = vec![];
+                let mut output_b13_cells = vec![];
+                for (offset, input_coef) in input_coefs.iter().enumerate() {
+                    self.lookup_config.q_enable.enable(&mut region, offset)?;
+                    let input = region.assign_advice(
+                        || "base 2",
+                        self.lookup_config.col0.0,
+                        offset,
+                        || input_coef.ok_or(Error::Synthesis),
+                    )?;
+                    input_cells.push(input.clone());
+
+                    let output = input_coef.and_then(|v| self.map.get(&v.to_repr()));
+
+                    let output_b9 = region.assign_advice(
+                        || "base 9",
+                        self.lookup_config.col1.0,
+                        offset,
+                        || output.map(|v| v.0).ok_or(Error::Synthesis),
+                    )?;
+                    output_b9_cells.push(output_b9);
+                    let output_b13 = region.assign_advice(
+                        || "base 13",
+                        self.lookup_config.col2.0,
+                        offset,
+                        || output.map(|v| v.1).ok_or(Error::Synthesis),
+                    )?;
+                    output_b13_cells.push(output_b13);
+                }
+                Ok((input_cells, output_b9_cells, output_b13_cells))
             },
         )
     }

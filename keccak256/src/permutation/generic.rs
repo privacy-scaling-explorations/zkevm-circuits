@@ -53,7 +53,7 @@ impl<F: Field> GenericConfig<F> {
     fn add_generic(
         &self,
         layouter: &mut impl Layouter<F>,
-        input: AssignedCell<F, F>,
+        input: Option<AssignedCell<F, F>>,
         left: Option<AssignedCell<F, F>>,
         right: Option<AssignedCell<F, F>>,
         value: Option<F>,
@@ -63,7 +63,11 @@ impl<F: Field> GenericConfig<F> {
             |mut region| {
                 let offset = 0;
                 self.q_enable.enable(&mut region, offset)?;
-                input.copy_advice(|| "input", &mut region, self.io, offset)?;
+                let input = input.as_ref().map_or(
+                    region.assign_advice_from_constant(|| "input is 0", self.io, offset, F::zero()),
+                    |input| input.copy_advice(|| "input", &mut region, self.io, offset),
+                )?;
+
                 let left = match &left {
                     Some(x) => {
                         // copy x to use as a flag
@@ -130,7 +134,7 @@ impl<F: Field> GenericConfig<F> {
         x: AssignedCell<F, F>,
         v: F,
     ) -> Result<AssignedCell<F, F>, Error> {
-        self.add_generic(layouter, input, Some(x), None, Some(v))
+        self.add_generic(layouter, Some(input), Some(x), None, Some(v))
     }
     /// input -= x
     pub fn sub_advice(
@@ -139,7 +143,7 @@ impl<F: Field> GenericConfig<F> {
         input: AssignedCell<F, F>,
         x: AssignedCell<F, F>,
     ) -> Result<AssignedCell<F, F>, Error> {
-        self.add_generic(layouter, input, Some(x), None, Some(-F::one()))
+        self.add_generic(layouter, Some(input), Some(x), None, Some(-F::one()))
     }
     /// input += v
     pub fn add_fixed(
@@ -148,7 +152,16 @@ impl<F: Field> GenericConfig<F> {
         input: AssignedCell<F, F>,
         value: F,
     ) -> Result<AssignedCell<F, F>, Error> {
-        self.add_generic(layouter, input, None, None, Some(value))
+        self.add_generic(layouter, Some(input), None, None, Some(value))
+    }
+    /// output = input * v
+    pub fn mul_fixed(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        input: AssignedCell<F, F>,
+        value: F,
+    ) -> Result<AssignedCell<F, F>, Error> {
+        self.add_generic(layouter, None, Some(input), None, Some(value))
     }
     /// input += flag * v
     /// No boolean check on the flag, we assume the flag is checked before
@@ -160,7 +173,7 @@ impl<F: Field> GenericConfig<F> {
         flag: AssignedCell<F, F>,
         value: F,
     ) -> Result<AssignedCell<F, F>, Error> {
-        self.add_generic(layouter, input, Some(flag), None, Some(value))
+        self.add_generic(layouter, Some(input), Some(flag), None, Some(value))
     }
     /// input += flag * x
     /// No boolean check on the flag, we assume the flag is checked before
@@ -172,7 +185,7 @@ impl<F: Field> GenericConfig<F> {
         flag: AssignedCell<F, F>,
         x: AssignedCell<F, F>,
     ) -> Result<AssignedCell<F, F>, Error> {
-        self.add_generic(layouter, input, Some(flag), Some(x), None)
+        self.add_generic(layouter, Some(input), Some(flag), Some(x), None)
     }
     fn linear_combine_generic(
         &self,
@@ -243,6 +256,10 @@ impl<F: Field> GenericConfig<F> {
                     )?;
                 }
                 if let Some(outcome) = &outcome {
+                    if outcome.value().is_some() && acc.value().is_some() {
+                        debug_assert_eq!(outcome.value(), acc.value());
+                    }
+
                     region.constrain_equal(outcome.cell(), acc.cell())?;
                 }
                 Ok(acc)
