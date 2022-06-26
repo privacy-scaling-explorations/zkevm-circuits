@@ -12,13 +12,14 @@ use crate::{
             },
             from_bytes,
             memory_gadget::{MemoryAddressGadget, MemoryExpansionGadget},
-            sum, CachedRegion, Cell, Word,
+            not, sum, CachedRegion, Cell, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     util::Expr,
 };
 use array_init::array_init;
+use bus_mapping::circuit_input_builder::CopyDataType;
 use eth_types::Field;
 use eth_types::{evm_types::GasCost, evm_types::OpcodeId, ToLittleEndian, ToScalar};
 use halo2_proofs::plonk::Error;
@@ -35,6 +36,7 @@ pub(crate) struct LogGadget<F> {
     is_static_call: Cell<F>,
     is_persistent: Cell<F>,
     tx_id: Cell<F>,
+    copy_rwc_inc: Cell<F>,
     memory_expansion: MemoryExpansionGadget<F, 1, N_BYTES_MEMORY_WORD_SIZE>,
 }
 
@@ -114,7 +116,7 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
         }
 
         // check memory copy
-        let memory_address = MemoryAddressGadget::construct(cb, mstart, msize.clone());
+        let memory_address = MemoryAddressGadget::construct(cb, mstart.clone(), msize.clone());
 
         // Calculate the next memory size and the gas cost for this memory
         // access
@@ -124,7 +126,28 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
             [memory_address.address()],
         );
 
-        // TODO(rohit): lookup copy table.
+        let copy_rwc_inc = cb.query_cell();
+        cb.condition(memory_address.has_length(), |cb| {
+            cb.copy_table_lookup(
+                cb.curr.state.call_id.expr(),
+                CopyDataType::Memory.expr(),
+                tx_id.expr(),
+                CopyDataType::TxLog.expr(),
+                mstart.expr(),
+                mstart.expr() + msize.expr(),
+                0.expr(),
+                msize.expr(),
+                cb.curr.state.rw_counter.expr() + cb.rw_counter_offset().expr(),
+                copy_rwc_inc.expr(),
+                cb.curr.state.log_id.expr() + 1.expr(),
+            );
+        });
+        cb.condition(not::expr(memory_address.has_length()), |cb| {
+            cb.require_zero(
+                "if no bytes to copy, copy table rwc inc == 0",
+                copy_rwc_inc.expr(),
+            );
+        });
 
         let gas_cost = GasCost::LOG.as_u64().expr()
             + GasCost::LOG.as_u64().expr() * topic_count.clone()
@@ -153,6 +176,7 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
             is_static_call,
             is_persistent,
             tx_id,
+            copy_rwc_inc,
             memory_expansion,
         }
     }
@@ -215,6 +239,9 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
             .assign(region, offset, Some(F::from(is_persistent)))?;
         self.tx_id
             .assign(region, offset, Some(F::from(tx.id as u64)))?;
+
+        // TODO(rohit): get the appropriate copy_rwc_inc.
+        self.copy_rwc_inc.assign(region, offset, Some(F::zero()))?;
 
         Ok(())
     }
