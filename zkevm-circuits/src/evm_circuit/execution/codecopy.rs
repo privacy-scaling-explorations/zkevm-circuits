@@ -1,6 +1,6 @@
 use std::convert::TryInto;
 
-use bus_mapping::evm::OpcodeId;
+use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId};
 use eth_types::{Field, ToLittleEndian};
 use halo2_proofs::plonk::Error;
 
@@ -12,7 +12,7 @@ use crate::{
             common_gadget::SameContextGadget,
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition},
             memory_gadget::{MemoryAddressGadget, MemoryCopierGasGadget, MemoryExpansionGadget},
-            CachedRegion, Cell, MemoryAddress,
+            not, CachedRegion, Cell, MemoryAddress,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -37,6 +37,9 @@ pub(crate) struct CodeCopyGadget<F> {
     /// Opcode CODECOPY needs to copy code bytes into memory. We account for
     /// the copying costs using the memory copier gas gadget.
     memory_copier_gas: MemoryCopierGasGadget<F>,
+    /// RW inverse counter from the copy table at the start of related copy
+    /// steps.
+    copy_rwc_inc: Cell<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
@@ -48,17 +51,18 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
         let opcode = cb.query_cell();
 
         // Query elements to be popped from the stack.
-        let dest_memory_offset = cb.query_cell();
+        let dst_memory_offset = cb.query_cell();
         let code_offset = cb.query_rlc();
         let size = cb.query_rlc();
 
         // Pop items from stack.
-        cb.stack_pop(dest_memory_offset.expr());
+        cb.stack_pop(dst_memory_offset.expr());
         cb.stack_pop(code_offset.expr());
         cb.stack_pop(size.expr());
 
         // Construct memory address in the destionation (memory) to which we copy code.
-        let dst_memory_addr = MemoryAddressGadget::construct(cb, dest_memory_offset, size);
+        let dst_memory_addr =
+            MemoryAddressGadget::construct(cb, dst_memory_offset.clone(), size.clone());
 
         // Fetch the hash of bytecode running in current environment.
         let code_hash = cb.curr.state.code_hash.clone();
@@ -80,7 +84,28 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
             memory_expansion.gas_cost(),
         );
 
-        // TODO(rohit): lookup copy table.
+        let copy_rwc_inc = cb.query_cell();
+        cb.condition(dst_memory_addr.has_length(), |cb| {
+            cb.copy_table_lookup(
+                code_hash.expr(),
+                CopyDataType::Bytecode.expr(),
+                cb.curr.state.call_id.expr(),
+                CopyDataType::Memory.expr(),
+                code_offset.expr(),
+                code_size.expr(),
+                dst_memory_offset.expr(),
+                size.expr(),
+                cb.curr.state.rw_counter.expr() + cb.rw_counter_offset().expr(),
+                copy_rwc_inc.expr(),
+                0.expr(), // log_id
+            );
+        });
+        cb.condition(not::expr(dst_memory_addr.has_length()), |cb| {
+            cb.require_zero(
+                "if no bytes to copy, copy table rwc inc == 0",
+                copy_rwc_inc.expr(),
+            );
+        });
 
         // Expected state transition.
         let step_state_transition = StepStateTransition {
@@ -102,6 +127,7 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
             dst_memory_addr,
             memory_expansion,
             memory_copier_gas,
+            copy_rwc_inc,
         }
     }
 
@@ -157,6 +183,9 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
         )?;
         self.memory_copier_gas
             .assign(region, offset, size.as_u64(), memory_expansion_cost)?;
+
+        // TODO(rohit): get correct rwc_inc from copy step.
+        self.copy_rwc_inc.assign(region, offset, Some(F::zero()))?;
 
         Ok(())
     }
