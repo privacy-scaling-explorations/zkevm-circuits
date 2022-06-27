@@ -10,11 +10,11 @@ use bus_mapping::operation::{
 use eth_types::{
     address,
     evm_types::{MemoryAddress, StackAddress},
-    Address, Field, ToAddress, Word, U256,
+    Address, ToAddress, Word, U256,
 };
 use halo2_proofs::poly::commitment::Params;
 use halo2_proofs::{
-    arithmetic::{BaseExt, Field as halo2_field},
+    arithmetic::BaseExt,
     dev::{MockProver, VerifyFailure},
     pairing::bn256::{Bn256, Fr, G1Affine},
     plonk::{keygen_vk, Advice, Circuit, Column, ConstraintSystem},
@@ -33,7 +33,6 @@ pub enum AdviceColumn {
     StorageKey,
     StorageKeyByte0,
     StorageKeyByte1,
-    StorageKeyChangeInverse,
     Value,
     RwCounter,
     RwCounterLimb0,
@@ -42,27 +41,36 @@ pub enum AdviceColumn {
     TagBit1,
     TagBit2,
     TagBit3,
+    LimbIndexBit0,
+    LimbIndexBit1,
+    LimbIndexBit2,
+    LimbIndexBit3,
+    LimbIndexBit4,
 }
 
 impl AdviceColumn {
-    pub fn value<F: Field>(&self, config: &StateConfig<F>) -> Column<Advice> {
+    pub fn value(&self, config: &StateConfig) -> Column<Advice> {
         match self {
             Self::IsWrite => config.is_write,
-            Self::Address => config.address.value,
-            Self::AddressLimb0 => config.address.limbs[0],
-            Self::AddressLimb1 => config.address.limbs[1],
-            Self::StorageKey => config.storage_key.encoded,
-            Self::StorageKeyByte0 => config.storage_key.bytes[0],
-            Self::StorageKeyByte1 => config.storage_key.bytes[1],
-            Self::StorageKeyChangeInverse => config.is_storage_key_unchanged.value_inv,
+            Self::Address => config.sort_keys.address.value,
+            Self::AddressLimb0 => config.sort_keys.address.limbs[0],
+            Self::AddressLimb1 => config.sort_keys.address.limbs[1],
+            Self::StorageKey => config.sort_keys.storage_key.encoded,
+            Self::StorageKeyByte0 => config.sort_keys.storage_key.bytes[0],
+            Self::StorageKeyByte1 => config.sort_keys.storage_key.bytes[1],
             Self::Value => config.value,
-            Self::RwCounter => config.rw_counter.value,
-            Self::RwCounterLimb0 => config.rw_counter.limbs[0],
-            Self::RwCounterLimb1 => config.rw_counter.limbs[1],
-            Self::TagBit0 => config.tag.bits[0],
-            Self::TagBit1 => config.tag.bits[1],
-            Self::TagBit2 => config.tag.bits[2],
-            Self::TagBit3 => config.tag.bits[3],
+            Self::RwCounter => config.sort_keys.rw_counter.value,
+            Self::RwCounterLimb0 => config.sort_keys.rw_counter.limbs[0],
+            Self::RwCounterLimb1 => config.sort_keys.rw_counter.limbs[1],
+            Self::TagBit0 => config.sort_keys.tag.bits[0],
+            Self::TagBit1 => config.sort_keys.tag.bits[1],
+            Self::TagBit2 => config.sort_keys.tag.bits[2],
+            Self::TagBit3 => config.sort_keys.tag.bits[3],
+            Self::LimbIndexBit0 => config.lexicographic_ordering.first_different_limb.bits[0],
+            Self::LimbIndexBit1 => config.lexicographic_ordering.first_different_limb.bits[1],
+            Self::LimbIndexBit2 => config.lexicographic_ordering.first_different_limb.bits[2],
+            Self::LimbIndexBit3 => config.lexicographic_ordering.first_different_limb.bits[3],
+            Self::LimbIndexBit4 => config.lexicographic_ordering.first_different_limb.bits[4],
         }
     }
 }
@@ -92,7 +100,7 @@ fn test_state_circuit_ok(
 fn degree() {
     let mut meta = ConstraintSystem::<Fr>::default();
     StateCircuit::<Fr, N_ROWS>::configure(&mut meta);
-    assert_eq!(meta.degree(), 16);
+    assert_eq!(meta.degree(), 9);
 }
 
 #[test]
@@ -376,13 +384,7 @@ fn storage_key_mismatch() {
         tx_id: 4,
         committed_value: U256::from(5),
     }];
-    let overrides = HashMap::from([
-        ((AdviceColumn::StorageKey, 0), Fr::from(10)),
-        (
-            (AdviceColumn::StorageKeyChangeInverse, 0),
-            Fr::from(10).invert().unwrap(),
-        ),
-    ]);
+    let overrides = HashMap::from([((AdviceColumn::StorageKey, 0), Fr::from(10))]);
 
     let result = verify_with_overrides(rows, overrides);
 
@@ -405,10 +407,6 @@ fn storage_key_byte_out_of_range() {
         ((AdviceColumn::StorageKey, 0), Fr::from(256)),
         ((AdviceColumn::StorageKeyByte0, 0), Fr::from(256)),
         ((AdviceColumn::StorageKeyByte1, 0), Fr::zero()),
-        (
-            (AdviceColumn::StorageKeyChangeInverse, 0),
-            Fr::from(256).invert().unwrap(),
-        ),
     ]);
 
     let result = verify_with_overrides(rows, overrides);
@@ -450,10 +448,7 @@ fn nonlexicographic_order_tag() {
     };
 
     assert_eq!(verify(vec![first, second]), Ok(()));
-    assert_error_matches(
-        verify(vec![second, first]),
-        "upper_limb_difference fits into u16",
-    );
+    assert_error_matches(verify(vec![second, first]), "limb_difference fits into u16");
 }
 
 #[test]
@@ -474,10 +469,7 @@ fn nonlexicographic_order_field_tag() {
     };
 
     assert_eq!(verify(vec![first, second]), Ok(()));
-    assert_error_matches(
-        verify(vec![second, first]),
-        "upper_limb_difference fits into u16",
-    );
+    assert_error_matches(verify(vec![second, first]), "limb_difference fits into u16");
 }
 
 #[test]
@@ -498,10 +490,7 @@ fn nonlexicographic_order_id() {
     };
 
     assert_eq!(verify(vec![first, second]), Ok(()));
-    assert_error_matches(
-        verify(vec![second, first]),
-        "upper_limb_difference fits into u16",
-    );
+    assert_error_matches(verify(vec![second, first]), "limb_difference fits into u16");
 }
 
 #[test]
@@ -524,10 +513,7 @@ fn nonlexicographic_order_address() {
     };
 
     assert_eq!(verify(vec![first, second]), Ok(()));
-    assert_error_matches(
-        verify(vec![second, first]),
-        "upper_limb_difference fits into u16",
-    );
+    assert_error_matches(verify(vec![second, first]), "limb_difference fits into u16");
 }
 
 #[test]
@@ -554,10 +540,7 @@ fn nonlexicographic_order_storage_key_upper() {
     };
 
     assert_eq!(verify(vec![first, second]), Ok(()));
-    assert_error_matches(
-        verify(vec![second, first]),
-        "upper_limb_difference fits into u16",
-    );
+    assert_error_matches(verify(vec![second, first]), "limb_difference fits into u16");
 }
 
 #[test]
@@ -584,10 +567,7 @@ fn nonlexicographic_order_storage_key_lower() {
     };
 
     assert_eq!(verify(vec![first, second]), Ok(()));
-    assert_error_matches(
-        verify(vec![second, first]),
-        "upper_limb_difference is zero or lower_limb_difference fits into u16",
-    );
+    assert_error_matches(verify(vec![second, first]), "limb_difference fits into u16");
 }
 
 #[test]
@@ -608,9 +588,42 @@ fn nonlexicographic_order_rw_counter() {
     };
 
     assert_eq!(verify(vec![first, second]), Ok(()));
+    assert_error_matches(verify(vec![second, first]), "limb_difference fits into u16");
+}
+
+#[test]
+fn lexicographic_ordering_previous_limb_differences_nonzero() {
+    let rows = vec![
+        Rw::TxRefund {
+            rw_counter: 1,
+            is_write: true,
+            tx_id: 23,
+            value: 20,
+            value_prev: 40,
+        },
+        Rw::Account {
+            rw_counter: 2,
+            is_write: true,
+            account_address: Address::zero(),
+            field_tag: AccountFieldTag::Nonce,
+            value: Word::zero(),
+            value_prev: Word::zero(),
+        },
+    ];
+
+    let overrides = HashMap::from([
+        ((AdviceColumn::LimbIndexBit0, 1), Fr::one()),
+        ((AdviceColumn::LimbIndexBit1, 1), Fr::one()),
+        ((AdviceColumn::LimbIndexBit2, 1), Fr::one()),
+        ((AdviceColumn::LimbIndexBit3, 1), Fr::one()),
+        ((AdviceColumn::LimbIndexBit4, 1), Fr::one()),
+    ]);
+
+    let result = verify_with_overrides(rows, overrides);
+
     assert_error_matches(
-        verify(vec![second, first]),
-        "upper_limb_difference is zero or lower_limb_difference fits into u16",
+        result,
+        "limb differences before first_different_limb are all 0",
     );
 }
 
@@ -763,7 +776,7 @@ fn invalid_stack_address_change() {
 
     assert_error_matches(
         verify(rows),
-        "if call id is the same, address change is 0 or 1",
+        "if previous row is also Stack with unchanged call id, address change is 0 or 1",
     );
 }
 

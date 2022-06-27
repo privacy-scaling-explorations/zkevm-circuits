@@ -7,7 +7,7 @@ use super::{
 use crate::evm_circuit::{
     param::N_BYTES_WORD,
     table::{AccountFieldTag, RwTableTag},
-    util::{not, or},
+    util::not,
 };
 use crate::util::Expr;
 use eth_types::Field;
@@ -23,15 +23,14 @@ pub struct Queries<F: Field> {
     pub tag: Expression<F>,
     pub tag_bits: [Expression<F>; 4],
     pub id: MpiQueries<F, N_LIMBS_ID>,
-    pub is_id_unchanged: Expression<F>,
+    pub is_tag_and_id_unchanged: Expression<F>,
     pub address: MpiQueries<F, N_LIMBS_ACCOUNT_ADDRESS>,
     pub field_tag: Expression<F>,
     pub storage_key: RlcQueries<F, N_BYTES_WORD>,
     pub value: Expression<F>,
     pub lookups: LookupsQueries<F>,
     pub power_of_randomness: [Expression<F>; N_BYTES_WORD - 1],
-    pub is_storage_key_unchanged: Expression<F>,
-    pub lexicographic_ordering_upper_limb_difference_is_zero: Expression<F>,
+    pub first_access: Expression<F>,
 }
 
 type Constraint<F> = (&'static str, Expression<F>);
@@ -144,9 +143,9 @@ impl<F: Field> ConstraintBuilder<F> {
             "stack address fits into 10 bits",
             (q.address.value.clone(), q.lookups.u10.clone()),
         );
-        self.condition(q.is_id_unchanged.clone(), |cb| {
+        self.condition(q.is_tag_and_id_unchanged.clone(), |cb| {
             cb.require_boolean(
-                "if call id is the same, address change is 0 or 1",
+                "if previous row is also Stack with unchanged call id, address change is 0 or 1",
                 q.address_change(),
             )
         });
@@ -304,13 +303,7 @@ impl<F: Field> Queries<F> {
     }
 
     fn first_access(&self) -> Expression<F> {
-        or::expr(&[
-            not::expr(
-                self.lexicographic_ordering_upper_limb_difference_is_zero
-                    .clone(),
-            ),
-            not::expr(self.is_storage_key_unchanged.clone()),
-        ])
+        self.first_access.clone()
     }
 
     fn address_change(&self) -> Expression<F> {
