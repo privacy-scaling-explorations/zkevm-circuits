@@ -10,7 +10,7 @@ use crate::{
     helpers::{compute_rlc, key_len_lookup, mult_diff_lookup, range_lookups},
     mpt::FixedTableTag,
     param::{
-        HASH_WIDTH, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, LAYOUT_OFFSET,
+        HASH_WIDTH, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, LAYOUT_OFFSET, ACCOUNT_NON_EXISTING_IND, BRANCH_ROWS_NUM,
     },
 };
 
@@ -54,9 +54,65 @@ impl<F: FieldExt> AccountNonExistingChip<F> {
         let one = Expression::Constant(F::one());
         let c32 = Expression::Constant(F::from(32));
         // key rlc is in the first branch node
-        let rot_into_first_branch_child = -20;
+        let rot_into_first_branch_child = -(ACCOUNT_NON_EXISTING_IND - 1 + BRANCH_ROWS_NUM);
 
-        // Checks that account_non_existing_row contains the nibbles that correspond to address_rlc.
+        let add_wrong_leaf_constraints =
+            |meta: &mut VirtualCells<F>,
+            constraints: &mut Vec<(&str, Expression<F>)>,
+            q_enable: Expression<F>,
+            c_rlp1_cur: Expression<F>,
+            c_rlp2_cur: Expression<F>,
+            is_leaf_in_first_level: Expression<F>,
+            is_wrong_leaf: Expression<F> | {
+                let sum = meta.query_advice(key_rlc, Rotation::cur());
+                let sum_prev = meta.query_advice(key_rlc_mult, Rotation::cur());
+                let diff_inv = meta.query_advice(acc_s, Rotation::cur());
+
+                let c_rlp1_prev = meta.query_advice(c_rlp1, Rotation::cur());
+                let c_rlp2_prev = meta.query_advice(c_rlp2, Rotation::cur());
+
+                let mut sum_check = Expression::Constant(F::zero());
+                let mut sum_prev_check = Expression::Constant(F::zero());
+                let mut mult = r_table[0].clone();
+                for ind in 1..HASH_WIDTH {
+                    sum_check = sum_check + meta.query_advice(s_advices[ind], Rotation::cur()) * mult.clone();
+                    sum_prev_check = sum_prev_check + meta.query_advice(s_advices[ind], Rotation::prev()) * mult.clone();
+                    mult = mult * r_table[0].clone();
+                }
+                sum_check = sum_check + c_rlp1_cur * mult.clone();
+                sum_prev_check = sum_prev_check + c_rlp1_prev * mult.clone();
+                mult = mult * r_table[0].clone();
+                sum_check = sum_check + c_rlp2_cur * mult.clone();
+                sum_prev_check = sum_prev_check + c_rlp2_prev * mult.clone();
+
+                constraints.push((
+                    "wrong leaf sum check",
+                    q_enable.clone()
+                        * (one.clone() - is_leaf_in_first_level.clone())
+                        * is_wrong_leaf.clone()
+                        * (sum.clone() - sum_check.clone()),
+                ));
+
+                constraints.push((
+                    "wrong leaf sum_prev check",
+                    q_enable.clone()
+                        * (one.clone() - is_leaf_in_first_level.clone())
+                        * is_wrong_leaf.clone()
+                        * (sum_prev.clone() - sum_prev_check.clone()),
+                ));
+
+                constraints.push((
+                    "Address of a leaf is different than address being inquired (corresponding to address_rlc)",
+                    q_enable.clone()
+                        * (one.clone() - is_leaf_in_first_level.clone())
+                        * is_wrong_leaf.clone()
+                        * (one.clone() - (sum - sum_prev) * diff_inv),
+                ));
+
+            };
+
+        // Checks that account_non_existing_row contains the nibbles that give address_rlc (after considering
+        // modified_node in branches/extension nodes above).
         // Note: currently, for non_existing_account proof S and C proofs are the same, thus there is never
         // a placeholder branch.
         meta.create_gate(
@@ -124,7 +180,7 @@ impl<F: FieldExt> AccountNonExistingChip<F> {
 
                 let address_rlc = meta.query_advice(address_rlc, Rotation::cur());
 
-                // Note: key_rlc_acc is computed as in account_leaf_key.
+                // Note: key_rlc_acc is computed as in account_leaf_key, but using non_existing_account row.
                 constraints.push((
                     "Account address RLC",
                     q_enable.clone()
@@ -133,51 +189,9 @@ impl<F: FieldExt> AccountNonExistingChip<F> {
                         * (key_rlc_acc.clone() - address_rlc.clone()),
                 ));
 
-                let sum = meta.query_advice(key_rlc, Rotation::cur());
-                let sum_prev = meta.query_advice(key_rlc_mult, Rotation::cur());
-                let diff_inv = meta.query_advice(acc_s, Rotation::cur());
-
-                let c_rlp1_prev = meta.query_advice(c_rlp1, Rotation::cur());
-                let c_rlp2_prev = meta.query_advice(c_rlp2, Rotation::cur());
-
-                let mut sum_check = Expression::Constant(F::zero());
-                let mut sum_prev_check = Expression::Constant(F::zero());
-                let mut mult = r_table[0].clone();
-                for ind in 1..HASH_WIDTH {
-                    sum_check = sum_check + meta.query_advice(s_advices[ind], Rotation::cur()) * mult.clone();
-                    sum_prev_check = sum_prev_check + meta.query_advice(s_advices[ind], Rotation::prev()) * mult.clone();
-                    mult = mult * r_table[0].clone();
-                }
-                sum_check = sum_check + c_rlp1_cur * mult.clone();
-                sum_prev_check = sum_prev_check + c_rlp1_prev * mult.clone();
-                mult = mult * r_table[0].clone();
-                sum_check = sum_check + c_rlp2_cur * mult.clone();
-                sum_prev_check = sum_prev_check + c_rlp2_prev * mult.clone();
-
-                constraints.push((
-                    "wrong leaf sum check",
-                    q_enable.clone()
-                        * (one.clone() - is_leaf_in_first_level.clone())
-                        * is_wrong_leaf.clone()
-                        * (sum.clone() - sum_check.clone()),
-                ));
-
-                constraints.push((
-                    "wrong leaf sum_prev check",
-                    q_enable.clone()
-                        * (one.clone() - is_leaf_in_first_level.clone())
-                        * is_wrong_leaf.clone()
-                        * (sum_prev.clone() - sum_prev_check.clone()),
-                ));
-
-                constraints.push((
-                    "Address of a leaf is different than address being inquired (corresponding to address_rlc)",
-                    q_enable.clone()
-                        * (one.clone() - is_leaf_in_first_level.clone())
-                        * is_wrong_leaf.clone()
-                        * (one.clone() - (sum - sum_prev) * diff_inv),
-                ));
-
+                add_wrong_leaf_constraints(meta, &mut constraints, q_enable.clone(), c_rlp1_cur,
+                    c_rlp2_cur, is_leaf_in_first_level.clone(), is_wrong_leaf.clone());
+ 
                 let is_nil_object = meta.query_advice(sel1, Rotation(rot_into_first_branch_child));
                 constraints.push((
                     "Nil object in parent branch",
@@ -191,8 +205,12 @@ impl<F: FieldExt> AccountNonExistingChip<F> {
             },
         );
 
-        // TODO: (one.clone() - is_wrong_leaf) in first level
-        // TODO: prepare test
+        // Proving that some account doesn't exist when there is only one account in the state trie.
+        // Note 1: the hash of the only account is checked to be state root in account_leaf_storage_codehash.
+        // Note 2: there is no nil_object case checked in this gate, because it is covered in the gate
+        // above. That's because when there is a branch (with nil object) in the first level,
+        // the account placeholder will be added below it and thus the account level won't be
+        // in the first level.
         meta.create_gate("Non existing account proof leaf address RLC (leaf in first level)", |meta| {
             let q_enable = q_enable(meta);
             let mut constraints = vec![];
@@ -227,8 +245,8 @@ impl<F: FieldExt> AccountNonExistingChip<F> {
 
             let c_rlp1_cur = meta.query_advice(c_rlp1, Rotation::cur());
             let c_rlp2_cur = meta.query_advice(c_rlp2, Rotation::cur());
-            key_rlc_acc = key_rlc_acc + c_rlp1_cur * r_table[29].clone();
-            key_rlc_acc = key_rlc_acc + c_rlp2_cur * r_table[30].clone();
+            key_rlc_acc = key_rlc_acc + c_rlp1_cur.clone() * r_table[29].clone();
+            key_rlc_acc = key_rlc_acc + c_rlp2_cur.clone() * r_table[30].clone();
 
             let address_rlc = meta.query_advice(address_rlc, Rotation::cur());
 
@@ -240,19 +258,8 @@ impl<F: FieldExt> AccountNonExistingChip<F> {
                 * (key_rlc_acc.clone() - address_rlc.clone()),
             ));
 
-            let sum = meta.query_advice(key_rlc, Rotation::cur());
-            let sum_prev = meta.query_advice(key_rlc_mult, Rotation::cur());
-            let diff_inv = meta.query_advice(acc_s, Rotation::cur());
-
-            // TODO: sum, sum_prev constraints
-
-            constraints.push((
-                "Address of a leaf is different than address being inquired (corresponding to address_rlc)",
-                q_enable.clone()
-                    * is_leaf_in_first_level.clone()
-                    * is_wrong_leaf
-                    * (one.clone() - (sum - sum_prev) * diff_inv),
-            ));
+            add_wrong_leaf_constraints(meta, &mut constraints, q_enable.clone(), c_rlp1_cur,
+                c_rlp2_cur, is_leaf_in_first_level.clone(), is_wrong_leaf.clone());
 
             constraints
         });
