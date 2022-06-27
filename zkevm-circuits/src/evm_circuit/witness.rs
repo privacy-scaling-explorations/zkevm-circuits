@@ -891,7 +891,7 @@ impl Rw {
         }
     }
 
-    fn committed_value_assignment<F: Field>(&self, randomness: F) -> Option<F> {
+    pub fn committed_value_assignment<F: Field>(&self, randomness: F) -> Option<F> {
         match self {
             Self::AccountStorage {
                 committed_value, ..
@@ -900,6 +900,18 @@ impl Rw {
                 randomness,
             )),
             _ => None,
+        }
+    }
+
+    pub fn initial_value_assignment<F: Field>(&self, randomness: F) -> F {
+        match self {
+            Self::AccountStorage {
+                committed_value, ..
+            } => RandomLinearCombination::random_linear_combine(
+                committed_value.to_le_bytes(),
+                randomness,
+            ),
+            _ => F::zero(),
         }
     }
 }
