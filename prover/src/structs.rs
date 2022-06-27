@@ -30,3 +30,9 @@ pub struct JsonRpcRequest<T: serde::Serialize> {
     pub method: String,
     pub params: T,
 }
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct Witness {
+    pub randomness: eth_types::U256,
+    pub input: eth_types::Bytes,
+}

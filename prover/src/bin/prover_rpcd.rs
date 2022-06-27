@@ -10,6 +10,7 @@ use std::env::var;
 use std::fs::File;
 use std::sync::Arc;
 
+use prover::compute_proof::compute_witness;
 use prover::shared_state::SharedState;
 use prover::structs::*;
 
@@ -175,10 +176,23 @@ async fn handle_method(
                 }
             }
         }
-        // TODO/TBD: add method to only return the witnesses for a block.
-        //  block table, tx table, etc...
-        //
         // TODO: Add the abilitity to abort the current task.
+
+        // returns required data for the L1 Verifier contract(s)
+        "witness" => {
+            if params.len() != 2 {
+                return Err("expected [block_num, rpc_url]".to_string());
+            }
+
+            let block_num = params[0].as_u64().ok_or("block number at params[0]")?;
+            let rpc_url = params[1].as_str().ok_or("rpc url at params[1]")?;
+            let result = compute_witness(&block_num, rpc_url).await;
+
+            match result {
+                Err(err) => Err(err.to_string()),
+                Ok(res) => Ok(serde_json::to_value(res).unwrap()),
+            }
+        }
 
         // the following methods can be used to programmatically
         // prune the `tasks` from the list.
