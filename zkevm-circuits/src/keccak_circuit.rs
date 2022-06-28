@@ -5,3 +5,6 @@ pub mod keccak_bit;
 
 /// Keccak packed
 pub mod keccak_packed;
+
+/// Keccak packed multi
+pub mod keccak_packed_multi;

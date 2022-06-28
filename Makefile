@@ -37,6 +37,9 @@ bit_keccak_bench: ## Run Bit Keccak Circuit benchmarks
 packed_keccak_bench: ## Run Packed Keccak Circuit benchmarks
 	@cargo test --profile bench bench_packed_keccak_circuit_prover -p circuit-benchmarks --features benches  -- --nocapture
 
+packed_multi_keccak_bench: ## Run Packed Multi Keccak Circuit benchmarks
+	@cargo test --profile bench bench_packed_multi_keccak_circuit_prover -p circuit-benchmarks --features benches  -- --nocapture
+
 circuit_benches: evm_bench state_bench ## Run All Circuit benchmarks
 
 

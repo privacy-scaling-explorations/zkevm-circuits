@@ -19,3 +19,7 @@ pub mod bit_keccak;
 #[cfg(test)]
 #[cfg(feature = "benches")]
 pub mod packed_keccak;
+
+#[cfg(test)]
+#[cfg(feature = "benches")]
+pub mod packed_multi_keccak;
