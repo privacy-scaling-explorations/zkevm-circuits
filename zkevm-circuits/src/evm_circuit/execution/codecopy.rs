@@ -184,8 +184,12 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
         self.memory_copier_gas
             .assign(region, offset, size.as_u64(), memory_expansion_cost)?;
 
-        // TODO(rohit): get correct rwc_inc from copy step.
-        self.copy_rwc_inc.assign(region, offset, Some(F::zero()))?;
+        let copy_rwc_inc = block.copy_events[0]
+            .steps
+            .first()
+            .map_or(F::zero(), |cs| F::from(cs.rwc_inc_left));
+        self.copy_rwc_inc
+            .assign(region, offset, Some(copy_rwc_inc))?;
 
         Ok(())
     }

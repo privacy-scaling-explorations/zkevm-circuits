@@ -1,11 +1,8 @@
 use super::Opcode;
+use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
 use crate::circuit_input_builder::{CopyDataType, CopyEvent, CopyStep, NumberOrHash};
 use crate::operation::{CallContextField, MemoryOp, RW};
 use crate::Error;
-use crate::{
-    circuit_input_builder::{CircuitInputStateRef, ExecStep},
-    constants::MAX_COPY_BYTES,
-};
 use eth_types::GethExecStep;
 
 #[derive(Clone, Copy, Debug)]
@@ -91,10 +88,10 @@ fn gen_copy_steps(
     bytes_left: u64,
     is_root: bool,
 ) -> Result<Vec<CopyStep>, Error> {
-    let cap = std::cmp::min(bytes_left as usize, MAX_COPY_BYTES);
-    let mut copy_steps = Vec::with_capacity(2 * cap);
-    for idx in 0..cap {
-        let addr = src_addr + idx as u64;
+    let mut copy_steps = Vec::with_capacity(2 * bytes_left as usize);
+    let rwc_start = state.block_ctx.rwc.0;
+    for idx in 0..bytes_left {
+        let addr = src_addr + idx;
         let (value, is_pad, rwc) = if addr < src_addr_end {
             let byte =
                 state.call_ctx()?.call_data[(addr - state.call()?.call_data_offset) as usize];
@@ -102,7 +99,7 @@ fn gen_copy_steps(
                 state.push_op(
                     exec_step,
                     RW::READ,
-                    MemoryOp::new(state.call()?.caller_id, (addr as usize).into(), byte),
+                    MemoryOp::new(state.call()?.caller_id, addr.into(), byte),
                 );
                 (byte, false, Some(state.block_ctx.rwc))
             } else {
@@ -126,11 +123,12 @@ fn gen_copy_steps(
             is_code: None,
             is_pad,
             rwc,
+            rwc_inc_left: 0,
         });
         // Write
-        state.memory_write(exec_step, (dst_addr as usize + idx).into(), value)?;
+        state.memory_write(exec_step, (dst_addr + idx).into(), value)?;
         copy_steps.push(CopyStep {
-            addr: dst_addr + idx as u64,
+            addr: dst_addr + idx,
             addr_end: None,
             tag: CopyDataType::Memory,
             rw: RW::WRITE,
@@ -138,7 +136,17 @@ fn gen_copy_steps(
             is_code: None,
             is_pad: false,
             rwc: Some(state.block_ctx.rwc),
+            rwc_inc_left: 0,
         });
+    }
+    let mut rwc_inc = state.block_ctx.rwc.0 - rwc_start;
+    if copy_steps.len() >= 2 {
+        for cs in copy_steps.iter_mut() {
+            cs.rwc_inc_left = rwc_inc as u64;
+            if cs.rwc.is_some() {
+                rwc_inc -= 1;
+            }
+        }
     }
     Ok(copy_steps)
 }
@@ -158,22 +166,16 @@ fn gen_copy_event(
         call_data_offset + call_data_length,
     );
 
-    let mut copied = 0;
-    let mut steps = vec![];
-    while copied < length {
-        let mut exec_step = state.new_step(geth_step)?;
-        let int_copy_steps = gen_copy_steps(
-            state,
-            &mut exec_step,
-            src_addr + copied as u64,
-            memory_offset + copied as u64,
-            src_addr_end,
-            length - copied,
-            state.call()?.is_root,
-        )?;
-        steps.extend(int_copy_steps);
-        copied += MAX_COPY_BYTES as u64;
-    }
+    let mut exec_step = state.new_step(geth_step)?;
+    let copy_steps = gen_copy_steps(
+        state,
+        &mut exec_step,
+        src_addr,
+        memory_offset,
+        src_addr_end,
+        length,
+        state.call()?.is_root,
+    )?;
 
     let (src_type, src_id) = if state.call()?.is_root {
         (CopyDataType::TxCalldata, state.tx_ctx.id())
@@ -191,7 +193,7 @@ fn gen_copy_event(
         dst_addr: memory_offset,
         log_id: None,
         length,
-        steps,
+        steps: copy_steps,
     })
 }
 
@@ -398,6 +400,7 @@ mod calldatacopy_tests {
         assert_eq!(copy_events[0].dst_addr as usize, dst_offset);
 
         let mut rwc_start = step.rwc.0 + 6;
+        let mut rwc_inc = copy_events[0].steps.first().unwrap().rwc_inc_left;
         for (idx, copy_rw_pair) in copy_events[0].steps.chunks(2).enumerate() {
             assert_eq!(copy_rw_pair.len(), 2);
             let (value, is_pad) = memory_a
@@ -422,8 +425,12 @@ mod calldatacopy_tests {
                     } else {
                         None
                     },
+                    rwc_inc_left: rwc_inc,
                 }
             );
+            if !is_pad {
+                rwc_inc -= 1;
+            }
             // Write
             let write_step = copy_rw_pair[1].clone();
             assert_eq!(
@@ -440,8 +447,10 @@ mod calldatacopy_tests {
                         rwc_start += 1;
                         Some(RWCounter(rwc_start))
                     },
+                    rwc_inc_left: rwc_inc,
                 }
             );
+            rwc_inc -= 1;
         }
     }
 
@@ -587,6 +596,7 @@ mod calldatacopy_tests {
                     is_code: None,
                     is_pad,
                     rwc: None,
+                    rwc_inc_left: (size - idx) as u64,
                 }
             );
             // write
@@ -605,6 +615,7 @@ mod calldatacopy_tests {
                         rwc_start += 1;
                         Some(RWCounter(rwc_start))
                     },
+                    rwc_inc_left: (size - idx) as u64,
                 }
             );
         }

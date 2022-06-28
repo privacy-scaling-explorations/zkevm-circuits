@@ -205,8 +205,12 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
         self.call_data_offset
             .assign(region, offset, Some(F::from(call_data_offset as u64)))?;
 
-        // TODO(rohit): get correct rwc_inc from copy step.
-        self.copy_rwc_inc.assign(region, offset, Some(F::zero()))?;
+        let copy_rwc_inc = block.copy_events[0]
+            .steps
+            .first()
+            .map_or(F::zero(), |cs| F::from(cs.rwc_inc_left));
+        self.copy_rwc_inc
+            .assign(region, offset, Some(copy_rwc_inc))?;
 
         // Memory expansion
         let (_, memory_expansion_gas_cost) = self.memory_expansion.assign(

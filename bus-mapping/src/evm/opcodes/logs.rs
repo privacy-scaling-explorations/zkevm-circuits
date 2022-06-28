@@ -151,6 +151,7 @@ fn gen_copy_steps(
             is_code: None,
             is_pad,
             rwc,
+            rwc_inc_left: 0,
         });
 
         // Write
@@ -172,6 +173,7 @@ fn gen_copy_steps(
                 is_code: None,
                 is_pad: false,
                 rwc: Some(state.block_ctx.rwc),
+                rwc_inc_left: 0,
             });
         }
     }
@@ -191,6 +193,7 @@ fn gen_copy_event(
 
     let (src_addr, src_addr_end) = (memory_start, memory_start + msize as u64);
 
+    let rwc_start = state.block_ctx.rwc.0;
     let mut copied = 0;
     let mut steps = vec![];
     while copied < msize {
@@ -205,6 +208,16 @@ fn gen_copy_event(
         )?;
         steps.extend(int_copy_steps);
         copied += MAX_COPY_BYTES;
+    }
+
+    let mut rwc_inc = state.block_ctx.rwc.0 - rwc_start;
+    if steps.len() >= 2 {
+        for cs in steps.iter_mut() {
+            cs.rwc_inc_left = rwc_inc as u64;
+            if cs.rwc.is_some() {
+                rwc_inc -= 1;
+            }
+        }
     }
 
     Ok(CopyEvent {
@@ -484,6 +497,7 @@ mod log_tests {
             1 + // TxLogField::Address write
             topic_count + // stack read for topics
             topic_count; // TxLogField::Topic write
+        let mut rwc_inc = copy_events[0].steps.first().unwrap().rwc_inc_left;
         for (idx, copy_rw_pair) in copy_events[0].steps.chunks(2).enumerate() {
             assert_eq!(copy_rw_pair.len(), 2);
             let (value, is_pad) = memory_data
@@ -508,8 +522,12 @@ mod log_tests {
                     } else {
                         None
                     },
+                    rwc_inc_left: rwc_inc,
                 }
             );
+            if !is_pad {
+                rwc_inc -= 1;
+            }
             // Write
             let write_step = copy_rw_pair[1].clone();
             assert_eq!(
@@ -526,8 +544,10 @@ mod log_tests {
                         rwc_start += 1;
                         Some(RWCounter(rwc_start))
                     },
+                    rwc_inc_left: rwc_inc,
                 }
             );
+            rwc_inc -= 1;
         }
     }
 }

@@ -2,7 +2,6 @@ use crate::{
     circuit_input_builder::{
         CircuitInputStateRef, CopyDataType, CopyEvent, CopyStep, ExecStep, NumberOrHash,
     },
-    constants::MAX_COPY_BYTES,
     operation::RW,
     Error,
 };
@@ -61,20 +60,19 @@ fn gen_copy_steps(
     src_addr_end: u64,
     bytecode: &Bytecode,
 ) -> Result<Vec<CopyStep>, Error> {
-    let cap = std::cmp::min(bytes_left as usize, MAX_COPY_BYTES);
-    let mut steps = Vec::with_capacity(2 * cap);
-    for idx in 0..cap {
-        let addr = (src_addr as usize) + idx;
-        let (value, is_code, is_pad) = if addr < (src_addr_end as usize) {
+    let mut steps = Vec::with_capacity(2 * bytes_left as usize);
+    for idx in 0..bytes_left {
+        let addr = src_addr + idx;
+        let (value, is_code, is_pad) = if addr < src_addr_end {
             bytecode
-                .get(addr)
+                .get(addr as usize)
                 .map_or((0, None, true), |e| (e.value, Some(e.is_code), false))
         } else {
             (0, None, true)
         };
         // Read
         steps.push(CopyStep {
-            addr: addr as u64,
+            addr,
             addr_end: Some(src_addr_end),
             tag: CopyDataType::Bytecode,
             rw: RW::READ,
@@ -82,11 +80,12 @@ fn gen_copy_steps(
             is_code,
             is_pad,
             rwc: None,
+            rwc_inc_left: bytes_left - idx,
         });
         // Write
-        state.memory_write(exec_step, (dst_addr as usize + idx).into(), value)?;
+        state.memory_write(exec_step, (dst_addr + idx).into(), value)?;
         steps.push(CopyStep {
-            addr: dst_addr + (idx as u64),
+            addr: dst_addr + idx,
             addr_end: None,
             tag: CopyDataType::Memory,
             rw: RW::WRITE,
@@ -94,6 +93,7 @@ fn gen_copy_steps(
             is_code: None,
             is_pad: false,
             rwc: Some(state.block_ctx.rwc),
+            rwc_inc_left: bytes_left - idx,
         })
     }
     Ok(steps)
@@ -114,22 +114,16 @@ fn gen_copy_event(
         .map_err(eth_types::Error::BytecodeError)?;
     let src_addr_end = bytecode.code().len() as u64;
 
-    let mut copied = 0;
-    let mut copy_steps = vec![];
-    while copied < length {
-        let mut exec_step = state.new_step(geth_step)?;
-        let int_copy_steps = gen_copy_steps(
-            state,
-            &mut exec_step,
-            code_offset + copied,
-            dst_offset + copied,
-            length - copied,
-            src_addr_end,
-            &bytecode,
-        )?;
-        copy_steps.extend(int_copy_steps);
-        copied += MAX_COPY_BYTES as u64;
-    }
+    let mut exec_step = state.new_step(geth_step)?;
+    let copy_steps = gen_copy_steps(
+        state,
+        &mut exec_step,
+        code_offset,
+        dst_offset,
+        length,
+        src_addr_end,
+        &bytecode,
+    )?;
 
     Ok(CopyEvent {
         src_type: CopyDataType::Bytecode,
@@ -284,6 +278,7 @@ mod codecopy_tests {
                     is_code,
                     is_pad,
                     rwc: None,
+                    rwc_inc_left: (size - idx) as u64,
                 }
             );
             // Write
@@ -302,6 +297,7 @@ mod codecopy_tests {
                         rwc_start += 1;
                         Some(RWCounter(rwc_start))
                     },
+                    rwc_inc_left: (size - idx) as u64,
                 }
             );
         }

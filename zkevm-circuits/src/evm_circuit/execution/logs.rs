@@ -240,8 +240,12 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
         self.tx_id
             .assign(region, offset, Some(F::from(tx.id as u64)))?;
 
-        // TODO(rohit): get the appropriate copy_rwc_inc.
-        self.copy_rwc_inc.assign(region, offset, Some(F::zero()))?;
+        let copy_rwc_inc = block.copy_events[0]
+            .steps
+            .first()
+            .map_or(F::zero(), |cs| F::from(cs.rwc_inc_left));
+        self.copy_rwc_inc
+            .assign(region, offset, Some(copy_rwc_inc))?;
 
         Ok(())
     }

@@ -170,6 +170,9 @@ pub struct CopyStep {
     pub is_pad: bool,
     /// Represents the RW counter associated with this copy step.
     pub rwc: Option<RWCounter>,
+    /// A decrementing value representing the RW counters left in the copy event
+    /// including the current step's RW counter.
+    pub rwc_inc_left: u64,
 }
 
 /// Defines an enum type that can hold either a number or a hash value.

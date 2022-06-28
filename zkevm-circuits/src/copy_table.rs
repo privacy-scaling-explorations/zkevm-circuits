@@ -549,7 +549,7 @@ impl<F: FieldExt> CopyTableConfig<F> {
                             || format!("assign rwc_inc_left {}", offset),
                             self.rwc_inc_left,
                             offset,
-                            || Ok(F::zero()), // TODO(rohit): fix this
+                            || Ok(F::from(read_row.rwc_inc_left)),
                         )?;
                         is_bytecode_chip.assign(
                             &mut region,
@@ -698,7 +698,7 @@ impl<F: FieldExt> CopyTableConfig<F> {
                             || format!("assign rwc_inc_left {}", offset),
                             self.rwc_inc_left,
                             offset,
-                            || Ok(F::zero()), // TODO(rohit): fix this
+                            || Ok(F::from(write_row.rwc_inc_left)),
                         )?;
                         is_bytecode_chip.assign(
                             &mut region,
