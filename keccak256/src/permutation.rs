@@ -1,14 +1,17 @@
 #![allow(clippy::type_complexity)]
 #![allow(clippy::too_many_arguments)]
 
-use crate::circuit::{NEXT_INPUTS_BYTES, STATE_WORDS};
+use crate::{
+    circuit::{StateTag, NEXT_INPUTS_BYTES, STATE_WORDS},
+    common::State,
+};
 use eth_types::Field;
 use halo2_proofs::{
     circuit::{layouter, AssignedCell, Layouter},
     plonk::Error,
 };
 use itertools::Itertools;
-use std::convert::TryInto;
+use std::{convert::TryInto, ops::Div};
 
 pub(crate) mod absorb;
 pub(crate) mod base_conversion;
@@ -36,10 +39,22 @@ impl<F: Field> PermutationInputs<F> {
     }
 
     pub fn from_bytes(mut bytes: &[u8]) -> Self {
+        let permutations = (bytes.len() as f64).div(NEXT_INPUTS_BYTES as f64).ceil() as usize;
+        let mut idx = 1;
         let mut perm_inputs = Self::new();
         let bytes = &mut bytes;
+        let state_tag = |idx| match permutations - idx > 0 {
+            true => StateTag::Continue,
+            false => StateTag::Finalize,
+            _ => unreachable!(),
+        };
+
+        // Add the Continue and Finalize permutations
         while bytes.len() > 0 {
-            perm_inputs.0.push(NextInput::from_bytes(bytes));
+            perm_inputs
+                .0
+                .push(NextInput::from_bytes(bytes, idx, state_tag(idx)));
+            idx += 1;
         }
 
         perm_inputs
@@ -48,9 +63,11 @@ impl<F: Field> PermutationInputs<F> {
 
 #[derive(Debug, Clone)]
 pub(crate) struct NextInput<F> {
-    unpadded_bytes: [F; NEXT_INPUTS_BYTES],
+    pub(crate) unpadded_bytes: [F; NEXT_INPUTS_BYTES],
     padded_bytes: [F; NEXT_INPUTS_BYTES],
-    og_len: usize,
+    pub(crate) og_len: usize,
+    pub(crate) state_tag: StateTag,
+    pub(crate) perm_count: usize,
 }
 
 impl<F: Field> NextInput<F> {
@@ -59,6 +76,8 @@ impl<F: Field> NextInput<F> {
             unpadded_bytes: [F::zero(); NEXT_INPUTS_BYTES],
             padded_bytes: [F::zero(); NEXT_INPUTS_BYTES],
             og_len: 0,
+            state_tag: StateTag::Start,
+            perm_count: 0,
         }
     }
 
@@ -74,6 +93,8 @@ impl<F: Field> NextInput<F> {
             unpadded_bytes: bytes.clone(),
             padded_bytes: bytes,
             og_len: len,
+            state_tag: StateTag::Start,
+            perm_count: 0,
         }
     }
 
@@ -96,7 +117,7 @@ impl<F: Field> NextInput<F> {
         }
     }
 
-    pub fn from_bytes(byte_slice: &mut &[u8]) -> Self {
+    pub fn from_bytes(byte_slice: &mut &[u8], perm_count: usize, state_tag: StateTag) -> Self {
         let len = if byte_slice.len() < NEXT_INPUTS_BYTES {
             byte_slice.len()
         } else {
@@ -109,6 +130,8 @@ impl<F: Field> NextInput<F> {
 
         let mut next_inp = Self::with_og_len(&bytes, len);
         next_inp.pad();
+        next_inp.perm_count = perm_count;
+        next_inp.state_tag = state_tag;
         next_inp
     }
 }
@@ -149,6 +172,7 @@ mod next_inputs {
             .collect_vec();
 
         assert_eq!(perm_inputs.0[0].padded_bytes, first_perm[..]);
+        assert!(perm_inputs.0[0].state_tag.is_continue());
 
         let second_perm = input[NEXT_INPUTS_BYTES..2 * NEXT_INPUTS_BYTES]
             .iter()
@@ -156,6 +180,7 @@ mod next_inputs {
             .collect_vec();
 
         assert_eq!(perm_inputs.0[1].padded_bytes, second_perm[..]);
+        assert!(perm_inputs.0[1].state_tag.is_continue());
 
         let mut last_perm_expected = input[NEXT_INPUTS_BYTES * 2..]
             .iter()
@@ -170,5 +195,6 @@ mod next_inputs {
             perm_inputs.0.last().unwrap().padded_bytes,
             last_perm_expected[..]
         );
+        assert!(perm_inputs.0.last().unwrap().state_tag.is_finalize());
     }
 }
