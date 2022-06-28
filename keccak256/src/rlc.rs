@@ -54,12 +54,12 @@ impl<F: Field, const N: usize> RlcConfig<F, N> {
         layouter: &mut impl Layouter<F>,
         witness: [AssignedCell<F, F>; N],
         randomness: AssignedCell<F, F>,
-        rlc: F,
     ) -> Result<AssignedCell<F, F>, Error> {
         layouter.assign_region(
             || "RLC",
             |mut region| {
                 self.q_enable.enable(&mut region, 0)?;
+                let rlc = crate::circuit::compute_rlc_cells(&witness, randomness.clone())?;
                 witness
                     .iter()
                     .enumerate()
@@ -72,6 +72,47 @@ impl<F: Field, const N: usize> RlcConfig<F, N> {
 
                 // Assign RLC result
                 region.assign_advice(|| "RLC result", self.rlc, 0, || Ok(rlc))
+            },
+        )
+    }
+
+    pub fn assign_rlc_retunring_last_randomness(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        witness: [AssignedCell<F, F>; N],
+        randomness: AssignedCell<F, F>,
+    ) -> Result<(AssignedCell<F, F>, AssignedCell<F, F>), Error> {
+        layouter.assign_region(
+            || "RLC",
+            |mut region| {
+                self.q_enable.enable(&mut region, 0)?;
+                let rlc = crate::circuit::compute_rlc_cells(&witness, randomness.clone())?;
+                witness
+                    .iter()
+                    .enumerate()
+                    .map(|(idx, cell)| -> Result<_, _> {
+                        cell.copy_advice(|| "RLC witness data", &mut region, self.witness[idx], 0)
+                    })
+                    .collect::<Result<Vec<_>, Error>>()?;
+
+                randomness.copy_advice(|| "RLC randomness", &mut region, self.randomness, 0)?;
+
+                // Assign RLC result
+                let rlc = region.assign_advice(|| "RLC result", self.rlc, 0, || Ok(rlc))?;
+
+                let mut last_randomness = randomness.value().copied().ok_or(Error::Synthesis)?;
+                for _ in 0..N {
+                    last_randomness *= last_randomness;
+                }
+
+                let last_randomness = region.assign_advice(
+                    || "Last randomness",
+                    self.randomness,
+                    1,
+                    || Ok(last_randomness),
+                )?;
+
+                Ok((rlc, last_randomness))
             },
         )
     }
@@ -120,6 +161,7 @@ mod rlc_tests {
             Self::default()
         }
 
+        // TODO: Fix this test by constraining the out RLC with the expected one.
         fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
             let witness = [(); N].map(|_| meta.advice_column()).map(|col| {
                 meta.enable_equality(col);
@@ -195,12 +237,9 @@ mod rlc_tests {
                 },
             )?;
 
-            config.rlc_config.assign_rlc(
-                &mut layouter,
-                witness,
-                randomness,
-                rlc.value().cloned().ok_or(Error::Synthesis)?,
-            )?;
+            config
+                .rlc_config
+                .assign_rlc(&mut layouter, witness, randomness)?;
 
             Ok(())
         }
