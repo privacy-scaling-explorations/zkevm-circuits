@@ -4,9 +4,11 @@ use super::{
 };
 use crate::{
     evm_circuit::{param::N_BYTES_WORD, witness::Rw},
+    impl_expr,
     util::Expr,
 };
 use eth_types::{Field, ToBigEndian};
+use halo2_proofs::arithmetic::FieldExt;
 use halo2_proofs::{
     circuit::Region,
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, Instance, VirtualCells},
@@ -83,6 +85,8 @@ pub enum LimbIndex {
     RwCounter1,
     RwCounter0,
 }
+
+impl_expr!(LimbIndex);
 
 impl AsBits<5> for LimbIndex {
     fn as_bits(&self) -> [bool; 5] {
@@ -234,8 +238,8 @@ impl Config {
         )?;
 
         Ok(match index {
-            LimbIndex::RwCounter0 | LimbIndex::RwCounter1 => true,
-            _ => false,
+            LimbIndex::RwCounter0 | LimbIndex::RwCounter1 => false,
+            _ => true,
         })
     }
 }

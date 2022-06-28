@@ -41,11 +41,11 @@ pub enum AdviceColumn {
     TagBit1,
     TagBit2,
     TagBit3,
-    LimbIndexBit0,
+    LimbIndexBit0, // most significant bit
     LimbIndexBit1,
     LimbIndexBit2,
     LimbIndexBit3,
-    LimbIndexBit4,
+    LimbIndexBit4, // least significant bit
 }
 
 impl AdviceColumn {
@@ -186,7 +186,7 @@ fn state_circuit_simple_2() {
             Word::from(32),
             Word::from(32),
             1usize,
-            Word::from(32),
+            Word::zero(),
         ),
     );
     let storage_op_2 = Operation::new(
@@ -198,7 +198,7 @@ fn state_circuit_simple_2() {
             Word::from(32),
             Word::from(32),
             1usize,
-            Word::from(32),
+            Word::zero(),
         ),
     );
 
@@ -326,10 +326,10 @@ fn storage_key_rlc() {
         is_write: false,
         account_address: Address::default(),
         storage_key: U256::from(256),
-        value: U256::zero(),
-        value_prev: U256::zero(),
+        value: U256::from(300),
+        value_prev: U256::from(300),
         tx_id: 4,
-        committed_value: U256::from(5),
+        committed_value: U256::from(300),
     }];
 
     assert_eq!(verify(rows), Ok(()));
@@ -455,10 +455,10 @@ fn storage_key_mismatch() {
         is_write: false,
         account_address: Address::default(),
         storage_key: U256::from(6),
-        value: U256::zero(),
-        value_prev: U256::zero(),
+        value: U256::from(34),
+        value_prev: U256::from(34),
         tx_id: 4,
-        committed_value: U256::from(5),
+        committed_value: U256::from(34),
     }];
     let overrides = HashMap::from([((AdviceColumn::StorageKey, 0), Fr::from(10))]);
 
@@ -474,10 +474,10 @@ fn storage_key_byte_out_of_range() {
         is_write: false,
         account_address: Address::default(),
         storage_key: U256::from(256),
-        value: U256::zero(),
-        value_prev: U256::zero(),
+        value: U256::from(500),
+        value_prev: U256::from(500),
         tx_id: 4,
-        committed_value: U256::from(5),
+        committed_value: U256::from(500),
     }];
     let overrides = HashMap::from([
         ((AdviceColumn::StorageKey, 0), Fr::from(256)),
@@ -520,7 +520,7 @@ fn nonlexicographic_order_tag() {
         is_write: false,
         call_id: 1,
         field_tag: CallContextFieldTag::IsSuccess,
-        value: U256::one(),
+        value: U256::zero(),
     };
 
     assert_eq!(verify(vec![first, second]), Ok(()));
@@ -531,14 +531,14 @@ fn nonlexicographic_order_tag() {
 fn nonlexicographic_order_field_tag() {
     let first = Rw::CallContext {
         rw_counter: 5,
-        is_write: false,
+        is_write: true,
         call_id: 0,
         field_tag: CallContextFieldTag::RwCounterEndOfReversion,
         value: U256::from(100),
     };
     let second = Rw::CallContext {
         rw_counter: 2,
-        is_write: false,
+        is_write: true,
         call_id: 0,
         field_tag: CallContextFieldTag::CallerId,
         value: U256::from(200),
@@ -552,14 +552,14 @@ fn nonlexicographic_order_field_tag() {
 fn nonlexicographic_order_id() {
     let first = Rw::CallContext {
         rw_counter: 1,
-        is_write: false,
+        is_write: true,
         call_id: 0,
         field_tag: CallContextFieldTag::RwCounterEndOfReversion,
         value: U256::from(100),
     };
     let second = Rw::CallContext {
         rw_counter: 2,
-        is_write: false,
+        is_write: true,
         call_id: 1,
         field_tag: CallContextFieldTag::RwCounterEndOfReversion,
         value: U256::from(200),
@@ -599,20 +599,20 @@ fn nonlexicographic_order_storage_key_upper() {
         is_write: false,
         account_address: Address::default(),
         storage_key: U256::zero(),
-        value: U256::zero(),
-        value_prev: U256::zero(),
+        value: U256::from(800),
+        value_prev: U256::from(800),
         tx_id: 4,
-        committed_value: U256::from(5),
+        committed_value: U256::from(800),
     };
     let second = Rw::AccountStorage {
         rw_counter: 1,
         is_write: false,
         account_address: Address::default(),
         storage_key: U256::MAX - U256::one(),
-        value: U256::zero(),
-        value_prev: U256::zero(),
+        value: U256::from(300),
+        value_prev: U256::from(300),
         tx_id: 4,
-        committed_value: U256::from(5),
+        committed_value: U256::from(300),
     };
 
     assert_eq!(verify(vec![first, second]), Ok(()));
@@ -626,20 +626,20 @@ fn nonlexicographic_order_storage_key_lower() {
         is_write: false,
         account_address: Address::default(),
         storage_key: U256::zero(),
-        value: U256::zero(),
-        value_prev: U256::zero(),
+        value: U256::from(200),
+        value_prev: U256::from(200),
         tx_id: 4,
-        committed_value: U256::from(5),
+        committed_value: U256::from(200),
     };
     let second = Rw::AccountStorage {
         rw_counter: 1,
         is_write: false,
         account_address: Address::default(),
         storage_key: U256::one(),
-        value: U256::zero(),
-        value_prev: U256::zero(),
+        value: U256::from(200),
+        value_prev: U256::from(200),
         tx_id: 4,
-        committed_value: U256::from(5),
+        committed_value: U256::from(200),
     };
 
     assert_eq!(verify(vec![first, second]), Ok(()));
@@ -680,19 +680,19 @@ fn lexicographic_ordering_previous_limb_differences_nonzero() {
         Rw::Account {
             rw_counter: 2,
             is_write: true,
-            account_address: Address::zero(),
+            account_address: address!("0x0000000000000000000000000000000000000001"),
             field_tag: AccountFieldTag::Nonce,
             value: Word::zero(),
             value_prev: Word::zero(),
         },
     ];
 
+    // overriding first_different_limb to be in AddressLimb0 instead of Tag. The
+    // limb difference between the two rows here is still 1, so no additional
+    // overrides are needed.
     let overrides = HashMap::from([
-        ((AdviceColumn::LimbIndexBit0, 1), Fr::one()),
         ((AdviceColumn::LimbIndexBit1, 1), Fr::one()),
         ((AdviceColumn::LimbIndexBit2, 1), Fr::one()),
-        ((AdviceColumn::LimbIndexBit3, 1), Fr::one()),
-        ((AdviceColumn::LimbIndexBit4, 1), Fr::one()),
     ]);
 
     let result = verify_with_overrides(rows, overrides);
@@ -704,7 +704,6 @@ fn lexicographic_ordering_previous_limb_differences_nonzero() {
 }
 
 #[test]
-#[ignore = "read consistency constraint not implemented"]
 fn read_inconsistency() {
     let rows = vec![
         Rw::Memory {
@@ -723,21 +722,7 @@ fn read_inconsistency() {
         },
     ];
 
-    assert_error_matches(verify(rows), "read consistency");
-}
-
-#[test]
-#[ignore = "fix and re-enable once BinaryNumberChip is used for LexicographicOrderingChip"]
-fn invalid_start_rw_counter() {
-    let rows = vec![Rw::Start { rw_counter: 10 }];
-    let overrides = HashMap::from([
-        ((AdviceColumn::RwCounter, 0), Fr::from(2)),
-        ((AdviceColumn::RwCounterLimb0, 0), Fr::from(2)),
-    ]);
-
-    let result = verify_with_overrides(rows, overrides);
-
-    assert_error_matches(result, "rw_counter is 0 for Start");
+    assert_error_matches(verify(rows), "non-first access reads don't change value");
 }
 
 #[test]
