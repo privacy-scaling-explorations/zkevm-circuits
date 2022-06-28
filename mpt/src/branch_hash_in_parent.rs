@@ -46,6 +46,7 @@ impl<F: FieldExt> BranchHashInParentChip<F> {
 
                 let is_last_branch_child = meta.query_advice(is_last_branch_child, Rotation::cur());
                 let is_branch_placeholder = meta.query_advice(is_branch_placeholder, Rotation(-16));
+                let is_extension_node = get_is_extension_node(meta, s_advices, -16);
 
                 // TODO: acc currently doesn't have branch ValueNode info (which 128 if nil)
                 let acc = meta.query_advice(acc, Rotation::cur());
@@ -58,6 +59,7 @@ impl<F: FieldExt> BranchHashInParentChip<F> {
                 constraints.push((
                     q_not_first.clone()
                         * is_last_branch_child.clone()
+                        * (one.clone() - is_extension_node.clone())
                         * (one.clone() - not_first_level.clone())
                         * (one.clone() - is_branch_placeholder.clone())
                         * branch_acc, // TODO: replace with acc once ValueNode is added
@@ -67,6 +69,7 @@ impl<F: FieldExt> BranchHashInParentChip<F> {
                 constraints.push((
                     q_not_first
                         * is_last_branch_child 
+                        * (one.clone() - is_extension_node.clone())
                         * (one.clone() - is_branch_placeholder.clone())
                         * (one.clone() - not_first_level)
                         * root,

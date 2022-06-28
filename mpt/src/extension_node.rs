@@ -450,8 +450,8 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
         // Correspondence between nibbles in C and bytes in S is checked in
         // extension_node_key.
 
-        // TODO: prepare test
-        meta.create_gate(
+        // The branch counterpart is in branch_hash_in_parent.
+        meta.lookup_any(
             "account first level extension node hash - compared to root",
             |meta| {
                 let q_enable = q_enable(meta);
@@ -460,22 +460,23 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
                 let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
                 let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
 
-                let mut sc_hash = vec![];
-                // Note: extension node has branch hash always in c_advices.
-                for column in c_advices.iter() {
-                    sc_hash.push(meta.query_advice(*column, Rotation::cur()));
-                }
-                let hash_rlc = bytes_expr_into_rlc(&sc_hash, acc_r);
+                let acc_c = meta.query_advice(acc_c, Rotation::cur());
                 let root = meta.query_advice(inter_root, Rotation::cur());
 
-                let is_branch_init_prev = meta.query_advice(is_branch_init, Rotation::prev());
                 constraints.push((
-                    "first level extension node",
+                    q_not_first.clone()
+                        * q_enable.clone()
+                        * (one.clone() - not_first_level.clone())
+                        * acc_c,
+                    meta.query_fixed(keccak_table[0], Rotation::cur()),
+                ));
+                let keccak_table_i = meta.query_fixed(keccak_table[1], Rotation::cur());
+                constraints.push((
                     q_not_first
                         * q_enable.clone()
                         * (one.clone() - not_first_level)
-                        * (one.clone() - is_branch_init_prev.clone()) // to prevent PoisonedConstraint
-                        * (hash_rlc - root),
+                        * root,
+                    keccak_table_i,
                 ));
 
                 constraints
