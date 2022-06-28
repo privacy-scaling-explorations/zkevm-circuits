@@ -181,10 +181,10 @@ impl<F: Field> PaddingConfig<F> {
     pub fn assign_region(
         &self,
         layouter: &mut impl Layouter<F>,
-        is_finalize: AssignedCell<F, F>,
-        input_len_cell: AssignedCell<F, F>,
-        acc_len_cell: AssignedCell<F, F>,
-        bytes: [u8; BYTES_LEN_17_WORDS],
+        is_finalize: bool,
+        input_len: usize,
+        acc_len: usize,
+        bytes: [F; BYTES_LEN_17_WORDS],
     ) -> Result<[AssignedCell<F, F>; 17], Error> {
         let diff_is_zero_chip = IsZeroChip::construct(self.diff_is_zero.clone());
         layouter.assign_region(
@@ -193,7 +193,7 @@ impl<F: Field> PaddingConfig<F> {
                 const LAST: usize = BYTES_LEN_17_WORDS - 1;
                 self.q_last.enable(&mut region, LAST)?;
                 let mut is_pad_zone = F::zero();
-                let mut padded_bytes = [0u8; BYTES_LEN_17_WORDS];
+                let mut padded_bytes = [F::zero(); BYTES_LEN_17_WORDS];
                 for (offset, &byte) in bytes.iter().enumerate().take(BYTES_LEN_17_WORDS) {
                     self.q_all.enable(&mut region, offset)?;
                     if offset != 0 {
@@ -202,35 +202,32 @@ impl<F: Field> PaddingConfig<F> {
                     if offset != LAST {
                         self.q_without_last.enable(&mut region, offset)?;
                     }
-                    is_finalize.clone().copy_advice(
+                    region.assign_advice(
                         || "flag enable",
-                        &mut region,
                         self.is_finalize,
                         offset,
+                        || Ok(F::from(is_finalize as u64)),
                     )?;
-                    input_len_cell.copy_advice(
+                    region.assign_advice(
                         || "input len",
-                        &mut region,
                         self.input_len,
                         offset,
+                        || Ok(F::from(input_len as u64)),
                     )?;
-                    let acc_len =
-                        acc_len_cell.value().cloned().unwrap_or_default() + F::from(offset as u64);
+                    let acc_len = F::from(acc_len as u64) + F::from(offset as u64);
                     region.assign_advice(
                         || "acc_len_rest",
                         self.acc_len,
                         offset,
                         || Ok(acc_len),
                     )?;
-                    let diff_value =
-                        Some(input_len_cell.value().cloned().unwrap_or_default() - acc_len);
+                    let diff_value = Some(F::from(input_len as u64) - acc_len);
                     let is_zero = diff_value
                         .map(|diff_value| F::from(diff_value == F::zero()))
                         .unwrap_or_default();
                     diff_is_zero_chip.assign(&mut region, offset, diff_value)?;
 
-                    let byte_f = F::from(byte as u64);
-                    region.assign_advice(|| "byte", self.byte, offset, || Ok(byte_f))?;
+                    region.assign_advice(|| "byte", self.byte, offset, || Ok(byte))?;
                     is_pad_zone += is_zero;
                     region.assign_advice(
                         || "is pad zone",
@@ -238,14 +235,13 @@ impl<F: Field> PaddingConfig<F> {
                         offset,
                         || Ok(is_pad_zone),
                     )?;
-                    let is_finalize_bit =
-                        is_finalize.value().cloned().unwrap_or_default() == F::one();
+
                     padded_bytes[offset] = byte
                         + diff_value
-                            .map(|diff_value| (diff_value == F::zero()) as u8)
+                            .map(|diff_value| F::from((diff_value == F::zero()) as u64))
                             .unwrap_or_default()
-                            * 0x80u8
-                        + (((offset == LAST) && is_finalize_bit) as u8);
+                            * F::from(0x80u64)
+                        + F::from(((offset == LAST) && is_finalize) as u64);
                 }
                 let padded_byte_cells: Result<Vec<_>, _> = padded_bytes
                     .iter()
@@ -256,7 +252,7 @@ impl<F: Field> PaddingConfig<F> {
                             || "padded byte",
                             self.padded_byte,
                             offset,
-                            || Ok(F::from(padded_byte as u64)),
+                            || Ok(padded_byte),
                         )
                     })
                     .collect();
@@ -296,8 +292,8 @@ mod tests {
     struct MyCircuit<F> {
         bytes: [u8; BYTES_LEN_17_WORDS],
         is_finalize: bool,
-        input_len: u64,
-        acc_len: u64,
+        input_len: usize,
+        acc_len: usize,
         _marker: PhantomData<F>,
     }
     impl<F: Field> Default for MyCircuit<F> {
@@ -349,38 +345,12 @@ mod tests {
             config: Self::Config,
             mut layouter: impl Layouter<F>,
         ) -> Result<(), Error> {
-            let (is_finalize, input_len, acc_len) = layouter.assign_region(
-                || "external values",
-                |mut region| {
-                    let offset = 0;
-                    let is_finalize = region.assign_advice(
-                        || "parent flag",
-                        config.is_finalize,
-                        offset,
-                        || Ok(F::from(self.is_finalize)),
-                    )?;
-                    let input_len = region.assign_advice(
-                        || "input len",
-                        config.input_len,
-                        offset,
-                        || Ok(F::from(self.input_len)),
-                    )?;
-                    let acc_len = region.assign_advice(
-                        || "acc len",
-                        config.acc_len,
-                        offset,
-                        || Ok(F::from(self.acc_len)),
-                    )?;
-                    Ok((is_finalize, input_len, acc_len))
-                },
-            )?;
-
             config.padding_conf.assign_region(
                 &mut layouter,
-                is_finalize,
-                input_len,
-                acc_len,
-                self.bytes,
+                self.is_finalize,
+                self.input_len,
+                self.acc_len,
+                self.bytes.map(|byte| F::from(byte as u64)),
             )?;
 
             Ok(())
