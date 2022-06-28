@@ -396,6 +396,22 @@ fn tx_log_ok() {
 }
 
 #[test]
+fn tx_log_bad() {
+    // is_write is false
+    let rows = vec![Rw::TxLog {
+        rw_counter: 2,
+        is_write: false,
+        tx_id: 1,
+        log_id: 1,
+        field_tag: TxLogFieldTag::Address,
+        index: 0usize,
+        value: U256::one(),
+    }];
+
+    assert_error_matches(verify(rows), "is_write is always true for TxLog");
+}
+
+#[test]
 fn address_limb_mismatch() {
     let rows = vec![Rw::Account {
         rw_counter: 1,

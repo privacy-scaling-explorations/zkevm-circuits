@@ -787,7 +787,6 @@ impl Rw {
         match self {
             Self::Account { field_tag, .. } => Some(*field_tag as u64),
             Self::CallContext { field_tag, .. } => Some(*field_tag as u64),
-            Self::TxLog { field_tag, .. } => Some(*field_tag as u64),
             Self::TxReceipt { field_tag, .. } => Some(*field_tag as u64),
             Self::Start { .. }
             | Self::Memory { .. }
@@ -796,6 +795,7 @@ impl Rw {
             | Self::TxAccessListAccount { .. }
             | Self::TxAccessListAccountStorage { .. }
             | Self::TxRefund { .. }
+            | Self::TxLog { .. }
             | Self::AccountDestructed { .. } => None,
         }
     }

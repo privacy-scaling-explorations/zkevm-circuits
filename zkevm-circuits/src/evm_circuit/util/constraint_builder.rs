@@ -1054,7 +1054,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             [
                 tx_id,
                 index + (1u64 << 32).expr() * field_tag.expr() + (1u64 << 48).expr() * log_id,
-                field_tag.expr(),
+                0.expr(),
                 0.expr(),
                 value,
                 0.expr(),

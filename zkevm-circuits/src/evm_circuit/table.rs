@@ -189,8 +189,8 @@ pub enum BytecodeFieldTag {
 #[derive(Clone, Copy, Debug, PartialEq, EnumIter)]
 pub enum TxLogFieldTag {
     Address = 1,
-    Data,
     Topic,
+    Data,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, EnumIter, EnumCount)]

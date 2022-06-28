@@ -22,8 +22,6 @@ pub struct Queries<F: Field> {
     pub is_write: Expression<F>,
     pub tag: Expression<F>,
     pub tag_bits: [Expression<F>; 4],
-    pub prev_tag_bits: [Expression<F>; 4],
-    pub is_tag_unchanged: Expression<F>,
     pub id: MpiQueries<F, N_LIMBS_ID>,
     pub is_tag_and_id_unchanged: Expression<F>,
     pub address: MpiQueries<F, N_LIMBS_ACCOUNT_ADDRESS>,
@@ -246,25 +244,19 @@ impl<F: Field> ConstraintBuilder<F> {
             1.expr(),
         );
 
-        // tx_id change must be increasing
-        self.condition(q.id_change() * q.is_tag_unchanged.clone(), |cb| {
-            // tx_id increases by 1
-            cb.require_equal("tx_id increases by 1", q.id_change(), 1.expr());
+        // removed following field_tag-specific constraints as issue
+        // https://github.com/privacy-scaling-explorations/zkevm-specs/issues/221
+        // cb.require_zero(
+        //     "reset log_id to one when tx_id increases",
+        //     q.tx_log_id() - 1.expr(),
+        // );
 
-            // removed field_tag-specific constraints as issue
-            // https://github.com/privacy-scaling-explorations/zkevm-specs/issues/221
-            // cb.require_zero(
-            //     "reset log_id to one when tx_id increases",
-            //     q.tx_log_id() - 1.expr(),
-            // );
-
-            // constrain first field_tag is Address when tx id increases
-            // cb.require_equal(
-            //     "first field_tag is Address when tx changes",
-            //     q.field_tag_matches(TxLogFieldTag::Address),
-            //     1.expr(),
-            // );
-        });
+        // constrain first field_tag is Address when tx id increases
+        // cb.require_equal(
+        //     "first field_tag is Address when tx changes",
+        //     q.field_tag_matches(TxLogFieldTag::Address),
+        //     1.expr(),
+        // );
 
         // increase log_id when tag changes to Address within same tx
         // self.condition(
@@ -393,10 +385,6 @@ impl<F: Field> Queries<F> {
 
     fn tag_matches(&self, tag: RwTableTag) -> Expression<F> {
         BinaryNumberConfig::<RwTableTag, 4>::value_equals_expr(tag, self.tag_bits.clone())
-    }
-
-    fn prev_tag_matches(&self, tag: RwTableTag) -> Expression<F> {
-        BinaryNumberConfig::<RwTableTag, 4>::value_equals_expr(tag, self.prev_tag_bits.clone())
     }
 
     fn first_access(&self) -> Expression<F> {
