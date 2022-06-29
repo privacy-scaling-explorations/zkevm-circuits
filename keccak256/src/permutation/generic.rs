@@ -63,54 +63,61 @@ impl<F: Field> GenericConfig<F> {
             |mut region| {
                 let offset = 0;
                 self.q_enable.enable(&mut region, offset)?;
-                let input = input.as_ref().map_or(
-                    region.assign_advice_from_constant(|| "input is 0", self.io, offset, F::zero()),
-                    |input| input.copy_advice(|| "input", &mut region, self.io, offset),
-                )?;
+                let input = input
+                    .as_ref()
+                    .map(|input| input.copy_advice(|| "input", &mut region, self.io, offset))
+                    .unwrap_or_else(|| {
+                        region.assign_advice_from_constant(
+                            || "input is 0",
+                            self.io,
+                            offset,
+                            F::zero(),
+                        )
+                    })?;
 
-                let left = match &left {
-                    Some(x) => {
+                let left = left
+                    .as_ref()
+                    .map(|x|
                         // copy x to use as a flag
-                        (*x).copy_advice(|| "left adv", &mut region, self.left, offset)?
-                    }
-                    None => {
+                        x.copy_advice(|| "left adv", &mut region, self.left, offset))
+                    .unwrap_or_else(|| {
                         // constrain advice to 1 for a simple add.
                         region.assign_advice_from_constant(
                             || "left const",
                             self.left,
                             offset,
                             F::one(),
-                        )?
-                    }
-                };
+                        )
+                    })?;
 
-                let right = match &right {
-                    Some(right) => {
+                let right = right
+                    .as_ref()
+                    .map(|right| {
                         if value.is_some() {
                             panic!("right and value can't be both some");
                         }
-                        right.copy_advice(|| "right adv", &mut region, self.right, offset)?
-                    }
-                    None => {
-                        match value {
-                            Some(value) => region.assign_advice_from_constant(
-                                || "fixed value",
-                                self.right,
-                                offset,
-                                value,
-                            )?,
-                            None => {
+                        right.copy_advice(|| "right adv", &mut region, self.right, offset)
+                    })
+                    .unwrap_or_else(|| {
+                        value
+                            .map(|value| {
+                                region.assign_advice_from_constant(
+                                    || "fixed value",
+                                    self.right,
+                                    offset,
+                                    value,
+                                )
+                            })
+                            .unwrap_or_else(|| {
                                 // constrain fixed to 1 for a simple add.
                                 region.assign_advice_from_constant(
                                     || "fixed value",
                                     self.right,
                                     offset,
                                     F::one(),
-                                )?
-                            }
-                        }
-                    }
-                };
+                                )
+                            })
+                    })?;
 
                 let offset = 1;
                 region.assign_advice(
@@ -118,9 +125,12 @@ impl<F: Field> GenericConfig<F> {
                     self.io,
                     offset,
                     || {
-                        Ok(input.value().cloned().ok_or(Error::Synthesis)?
-                            + left.value().cloned().ok_or(Error::Synthesis)?
-                                * right.value().cloned().ok_or(Error::Synthesis)?)
+                        input
+                            .value()
+                            .zip(left.value())
+                            .zip(right.value())
+                            .map(|((&input, &left), &right)| input + left * right)
+                            .ok_or(Error::Synthesis)
                     },
                 )
             },
@@ -217,50 +227,53 @@ impl<F: Field> GenericConfig<F> {
                 // | ...    |          ... |      ... |     ... |
                 // | N - 1  |              |  x_(N-1) | y_(N-1) |
                 // | N      |    (sum)     |          |         |
-                let mut acc = region.assign_advice(|| "input 0", self.io, 0, || Ok(F::zero()))?;
-                region.constrain_constant(acc.cell(), F::zero())?;
+                let mut acc =
+                    region.assign_advice_from_constant(|| "input 0", self.io, 0, F::zero())?;
+
                 let mut sum = F::zero();
                 for (offset, x) in xs.iter().enumerate() {
                     self.q_enable.enable(&mut region, offset)?;
                     x.copy_advice(|| "x", &mut region, self.left, offset)?;
-                    let right = {
-                        match &vs {
-                            Some(vs) => region.assign_advice_from_constant(
+                    let right = vs
+                        .as_ref()
+                        .map(|vs| {
+                            region.assign_advice_from_constant(
                                 || "v",
                                 self.right,
                                 offset,
                                 vs[offset],
-                            )?,
-                            None => match &ys {
-                                Some(ys) => ys[offset].copy_advice(
-                                    || "y",
-                                    &mut region,
-                                    self.right,
-                                    offset,
-                                )?,
-                                None => {
-                                    unreachable!()
-                                }
-                            },
-                        }
-                    };
+                            )
+                        })
+                        .unwrap_or_else(|| {
+                            ys.as_ref()
+                                .map(|ys| {
+                                    ys[offset].copy_advice(|| "y", &mut region, self.right, offset)
+                                })
+                                .expect("ys should have something")
+                        })?;
                     acc = region.assign_advice(
                         || "accumulation",
                         self.io,
                         offset + 1,
                         || {
-                            sum += x.value().cloned().ok_or(Error::Synthesis)?
-                                * right.value().cloned().ok_or(Error::Synthesis)?;
+                            sum += x
+                                .value()
+                                .zip(right.value())
+                                .map(|(&x, &right)| x * right)
+                                .ok_or(Error::Synthesis)?;
                             Ok(sum)
                         },
                     )?;
                 }
                 if let Some(outcome) = &outcome {
-                    if outcome.value().is_some() && acc.value().is_some() {
-                        debug_assert_eq!(outcome.value(), acc.value());
-                    }
-
                     region.constrain_equal(outcome.cell(), acc.cell())?;
+                }
+                if let Some((outcome, acc)) = outcome
+                    .as_ref()
+                    .map(|oc| oc.value().zip(acc.value()))
+                    .flatten()
+                {
+                    debug_assert_eq!(outcome, acc);
                 }
                 Ok(acc)
             },
