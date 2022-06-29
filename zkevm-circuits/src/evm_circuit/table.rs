@@ -1,5 +1,4 @@
 use crate::{evm_circuit::step::ExecutionState, impl_expr};
-use bus_mapping::circuit_input_builder::CopyDataType;
 use halo2_proofs::{
     arithmetic::FieldExt,
     plonk::{Advice, Column, Expression, Fixed, VirtualCells},
@@ -28,27 +27,6 @@ impl<F: FieldExt, const W: usize> LookupTable<F> for [Column<Fixed>; W] {
     }
 }
 
-fn copy_pairs<F: FieldExt>(tag: F) -> Box<dyn Iterator<Item = [F; 4]>> {
-    Box::new(
-        [
-            // calldatacopy (internal)
-            (CopyDataType::Memory, CopyDataType::Memory),
-            // calldatacopy (root)
-            (CopyDataType::TxCalldata, CopyDataType::Memory),
-            // create/create2 (internal)
-            (CopyDataType::Memory, CopyDataType::Bytecode),
-            // create/create2 (root)
-            (CopyDataType::TxCalldata, CopyDataType::Bytecode),
-            // codecopy/extcodecopy
-            (CopyDataType::Bytecode, CopyDataType::Memory),
-            // log
-            (CopyDataType::Memory, CopyDataType::TxLog),
-        ]
-        .iter()
-        .map(move |(src, dst)| [tag, F::from(*src as u64), F::from(*dst as u64), F::zero()]),
-    )
-}
-
 #[derive(Clone, Copy, Debug, EnumIter)]
 pub enum FixedTableTag {
     Zero = 0,
@@ -65,7 +43,6 @@ pub enum FixedTableTag {
     BitwiseXor,
     ResponsibleOpcode,
     Pow2,
-    CopyPairs,
 }
 
 impl FixedTableTag {
@@ -134,7 +111,6 @@ impl FixedTableTag {
                     F::zero(),
                 ]
             })),
-            Self::CopyPairs => copy_pairs(tag),
         }
     }
 }

@@ -13,10 +13,7 @@ use halo2_proofs::{
 
 use crate::{
     evm_circuit::{
-        table::{
-            BytecodeFieldTag, FixedTableTag, LookupTable, RwTableTag, TxContextFieldTag,
-            TxLogFieldTag,
-        },
+        table::{BytecodeFieldTag, LookupTable, RwTableTag, TxContextFieldTag, TxLogFieldTag},
         util::{and, constraint_builder::BaseConstraintBuilder, not, or, RandomLinearCombination},
         witness::Block,
     },
@@ -113,7 +110,6 @@ impl<F: FieldExt> LookupTable<F> for CopyTableConfig<F> {
 impl<F: FieldExt> CopyTableConfig<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
-        fixed_table: &dyn LookupTable<F>,
         tx_table: &dyn LookupTable<F>,
         rw_table: &dyn LookupTable<F>,
         bytecode_table: &dyn LookupTable<F>,
@@ -304,19 +300,6 @@ impl<F: FieldExt> CopyTableConfig<F> {
             );
 
             cb.gate(meta.query_selector(q_step))
-        });
-
-        meta.lookup_any("Copy pair lookup", |meta| {
-            let cond = meta.query_advice(is_first, Rotation::cur());
-            vec![
-                FixedTableTag::CopyPairs.expr(),
-                meta.query_advice(tag, Rotation::cur()),
-                meta.query_advice(tag, Rotation::next()),
-            ]
-            .into_iter()
-            .zip(fixed_table.table_exprs(meta).into_iter())
-            .map(|(arg, table)| (cond.clone() * arg, table))
-            .collect()
         });
 
         meta.lookup_any("Memory lookup", |meta| {
