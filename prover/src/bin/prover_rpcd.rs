@@ -240,7 +240,12 @@ async fn main() {
 
         // starts the duty cycle loop
         let ctx = shared_state.clone();
-        let h2 = tokio::spawn(async move {
+        // use a dedicated runtime for mixed async / heavy (blocking) compute
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let h2 = rt.spawn(async move {
             // lazily load params
             let params_path: String = var("PARAMS_PATH")
                 .expect("PARAMS_PATH env var")
