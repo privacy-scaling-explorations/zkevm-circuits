@@ -237,10 +237,10 @@ impl Config {
             || Ok(limb_difference.invert().unwrap()),
         )?;
 
-        Ok(match index {
-            LimbIndex::RwCounter0 | LimbIndex::RwCounter1 => false,
-            _ => true,
-        })
+        Ok(!matches!(
+            index,
+            LimbIndex::RwCounter0 | LimbIndex::RwCounter1
+        ))
     }
 }
 
