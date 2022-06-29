@@ -135,9 +135,6 @@ impl<F: Field> ConstraintBuilder<F> {
             "rw_counter increases by 1 for every non-first row",
             q.lexicographic_ordering_selector.clone() * (q.rw_counter_change() - 1.expr()),
         );
-        self.require_zero("", q.value.clone());
-        self.require_zero("", q.prev_value.clone());
-        self.require_zero("", q.committed_value.clone());
     }
 
     fn build_memory_constraints(&mut self, q: &Queries<F>) {
@@ -165,12 +162,11 @@ impl<F: Field> ConstraintBuilder<F> {
     fn build_stack_constraints(&mut self, q: &Queries<F>) {
         self.require_zero("field_tag is 0 for Stack", q.field_tag());
         self.require_zero("storage_key is 0 for Stack", q.storage_key.encoded.clone());
+        // TODO: replace this with stronger condition that is_write is always true.
         self.require_zero(
             "first access to new stack address is a write",
             q.first_access() * (1.expr() - q.is_write()),
         );
-        // this is true, but adding it breaks a bunch of negative tests.
-        // self.require_zero("", q.is_read());
         self.add_lookup(
             "stack address fits into 10 bits",
             (q.address.value.clone(), q.lookups.u10.clone()),
