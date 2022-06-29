@@ -244,8 +244,8 @@ impl<F: Field> ConstraintBuilder<F> {
             1.expr(),
         );
 
-        // removed following field_tag-specific constraints as issue
-        // https://github.com/privacy-scaling-explorations/zkevm-specs/issues/221
+        // Comment out the following field_tag-related constraints as it is
+        // duplicated between state circuit and evm circuit. For more information, please refer to https://github.com/privacy-scaling-explorations/zkevm-specs/issues/221
         // cb.require_zero(
         //     "reset log_id to one when tx_id increases",
         //     q.tx_log_id() - 1.expr(),
