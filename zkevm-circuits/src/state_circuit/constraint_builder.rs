@@ -203,7 +203,7 @@ impl<F: Field> ConstraintBuilder<F> {
 
         self.condition(q.first_access(), |cb| {
             cb.require_zero(
-                "initial value is commited value",
+                "initial AccountStorage value is commited value",
                 q.committed_value.clone() - q.prev_value.clone(),
             );
         });
@@ -215,7 +215,10 @@ impl<F: Field> ConstraintBuilder<F> {
             q.storage_key.encoded.clone(),
         );
         self.condition(q.first_access(), |cb| {
-            cb.require_zero("initial value is false", q.prev_value.clone());
+            cb.require_zero(
+                "initial TxAccessListAccount value is false",
+                q.prev_value.clone(),
+            );
         });
     }
 
@@ -225,7 +228,10 @@ impl<F: Field> ConstraintBuilder<F> {
             q.field_tag(),
         );
         self.condition(q.first_access(), |cb| {
-            cb.require_zero("initial value is false", q.prev_value.clone());
+            cb.require_zero(
+                "initial TxAccessListAccountStorage value is false",
+                q.prev_value.clone(),
+            );
         });
     }
 
@@ -237,7 +243,7 @@ impl<F: Field> ConstraintBuilder<F> {
             q.storage_key.encoded.clone(),
         );
         self.condition(q.first_access(), |cb| {
-            cb.require_zero("initial value is 0", q.prev_value.clone());
+            cb.require_zero("initial TxRefund value is 0", q.prev_value.clone());
         });
     }
 
@@ -280,7 +286,9 @@ impl<F: Field> ConstraintBuilder<F> {
             "field_tag in CallContextFieldTag range",
             (q.field_tag(), q.lookups.call_context_field_tag.clone()),
         );
-        // TODO: Missing constraints
+        self.condition(q.first_access(), |cb| {
+            cb.require_zero("initial CallContext value is 0", q.prev_value.clone());
+        });
     }
 
     fn build_tx_log_constraints(&mut self, q: &Queries<F>) {
@@ -434,10 +442,6 @@ impl<F: Field> Queries<F> {
     }
 
     fn first_access(&self) -> Expression<F> {
-        self.first_access.clone()
-    }
-
-    fn not_first_access(&self) -> Expression<F> {
         self.first_access.clone()
     }
 
