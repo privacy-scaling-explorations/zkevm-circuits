@@ -85,7 +85,13 @@ impl<F: Field> KeccakFConfig<F> {
 
         // Mixing will make sure that the flag is binary constrained and that
         // the out state matches the expected result.
-        let mixing_config = MixingConfig::configure(meta, &from_b9_table, state, generic.clone());
+        let mixing_config = MixingConfig::configure(
+            meta,
+            &from_b9_table,
+            state,
+            generic.clone(),
+            stackable.clone(),
+        );
 
         // Allocate the `out state correctness` gate selector
         let q_out = meta.selector();
