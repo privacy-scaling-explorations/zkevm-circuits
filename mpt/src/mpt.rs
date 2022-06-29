@@ -570,7 +570,6 @@ impl<F: FieldExt> MPTConfig<F> {
             not_first_level,
             is_branch_init,
             is_branch_child,
-            is_last_branch_child,
             is_account_leaf_in_added_branch,
             s_rlp1,
             s_rlp2,
@@ -1967,10 +1966,10 @@ impl<F: FieldExt> MPTConfig<F> {
                                                     * pv.key_rlc_mult;
 
                                             let ext_row_c = &witness[ind + 17];
-                                            let key_len = ext_row[1] as usize - 128 - 1;
+                                            let key_len = ext_row[1] as usize - 128;
 
                                             pv.mult_diff = F::one();
-                                            for k in 0..key_len {
+                                            for k in 0..key_len-1 {
                                                 let second_nibble = ext_row_c[S_START + k];
                                                 let first_nibble =
                                                     (ext_row[3 + k] - second_nibble) / 16;
@@ -2045,16 +2044,17 @@ impl<F: FieldExt> MPTConfig<F> {
 
                                             pv.key_rlc_mult *= self.acc_r;
 
-                                            let key_len = ext_row[1] as usize - 128 - 1; // -1 because the first byte is 0 (is_even)
+                                            let key_len = ext_row[1] as usize - 128;
 
                                             compute_acc_and_mult(
                                                 ext_row,
                                                 &mut pv.extension_node_rlc,
                                                 &mut pv.key_rlc_mult,
                                                 3, /* first two positions are RLPs, third
-                                                    * position is 0 (because is_even), we start
+                                                    * position is single nibble which is taken into
+                                                    * account above, we start
                                                     * with fourth */
-                                                key_len,
+                                                key_len - 1, // one byte is occupied by single nibble
                                             );
                                             pv.mult_diff = F::one();
                                             for _ in 0..key_len {

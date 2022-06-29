@@ -33,7 +33,6 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
         not_first_level: Column<Advice>, // to avoid rotating back when in the first branch (for key rlc)
         is_branch_init: Column<Advice>,
         is_branch_child: Column<Advice>,
-        is_last_branch_child: Column<Advice>,
         is_account_leaf_in_added_branch: Column<Advice>,
         s_rlp1: Column<Advice>,
         s_rlp2: Column<Advice>,
@@ -565,10 +564,14 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
             let is_short = is_ext_short_c16.clone()
                 + is_ext_short_c1.clone();
 
+            let is_even = is_ext_long_even_c16.clone() + is_ext_long_even_c1.clone();
             let s_rlp2 = meta.query_advice(s_rlp2, Rotation::prev());
-            // key_len = s_rlp2 - 128 - 1 if long
-            // key_len = 1 if short
-            let key_len = (s_rlp2 - c128.clone() - one.clone()) * is_long +
+            // key_len = s_rlp2 - 128 - 1   if long even
+            // key_len = s_rlp2 - 128 - 1   if is_ext_long_odd_c1
+            // key_len = s_rlp2 - 128       if is_ext_long_odd_c16
+            // key_len = 1                  if short
+            let key_len =
+                (s_rlp2 - c128.clone() - one.clone() * is_even - one.clone() * is_ext_long_odd_c1.clone()) * is_long +
                 is_short;
 
             let mult_diff = meta
