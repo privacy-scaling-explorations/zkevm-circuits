@@ -1,220 +1,196 @@
 use super::{
-    binary_number::Config as BinaryNumberConfig, N_LIMBS_ACCOUNT_ADDRESS, N_LIMBS_ID,
-    N_LIMBS_RW_COUNTER,
+    binary_number::{AsBits, Chip as BinaryNumberChip, Config as BinaryNumberConfig},
+    SortKeysConfig, N_LIMBS_ACCOUNT_ADDRESS, N_LIMBS_ID, N_LIMBS_RW_COUNTER,
 };
 use crate::{
-    evm_circuit::{param::N_BYTES_WORD, table::RwTableTag, witness::Rw},
+    evm_circuit::{param::N_BYTES_WORD, witness::Rw},
     util::Expr,
 };
 use eth_types::{Field, ToBigEndian};
-use gadgets::is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction};
 use halo2_proofs::{
     circuit::Region,
-    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
+    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, Instance, VirtualCells},
     poly::Rotation,
 };
 use itertools::Itertools;
-use std::ops::Mul;
+use std::iter::once;
+use strum::IntoEnumIterator;
+use strum_macros::EnumIter;
 
 // We use this chip to show that the rows of the rw table are in lexicographic
-// order, i.e. ordered by (tag, field_tag, id, address, storage_key, and
-// rw_counter). We do this by packing these 6 fields into a 480 bit value X, and
-// then showing that X_cur > X_prev. Let A0, A1, ..., A29 be the 30 16-bit limbs
-// of X_cur and B0, B1, ..., B29 be 30 16-bit limbs of X_prev, in big endian
+// order, i.e. ordered by (tag, id, address, field_tag, storage_key, and
+// rw_counter). We do this by packing these 6 fields into a 512 bit value X, and
+// then showing that X_cur > X_prev. Let A0, A1, ..., A31 be the 32 16-bit limbs
+// of X_cur and B0, B1, ..., B31 be 32 16-bit limbs of X_prev, in big endian
 // order.
 
 // Let
 // C0 = A0 - B0,
 // C1 = C0 << 16 + A1 - B1,
 // ...
-// C14 = C13 << 16 + A14 - B14,
-// and
-// C15 = A15 - B15,
-// C16 = C15 << 16 + A16 - B16,
-// ...
-// C29 = C28 << 16 + A29 - B29.
-// We have to split the 30 limbs into upper and lower halves between C14 and C15
-// because a field element can only hold 15 16-bit limbs.
+// C31 = C30 << 16 + A31 - B21.
 
-// X_cur > X_prev iff one of the following is true:
-// 1. one of C0, ..., C14 is non-zero and fits into 16 bits.
-// 2. all of C0, ..., C14 are 0 and one of C15, ..., C29 is non-zero and fits
-//    into 16 bits. (note that "all of C0, ..., C14 are 0" is equivalent to
-//    "C14 is 0".)
+// X_cur > X_prev iff one of C0, ..., C31 is non-zero and fits into 16 bits.
+// C16, ..., C31 do not necessarily fit into a field element, so to check that
+// Cn fits into 16 bits, we use an RLC to check that Cn-1 = 0 and then do a
+// lookup for An-Bn.
 
-// We show that one of these is true with the following constraints:
-//  1. upper_limb_difference is (at least) 1 of the 15 values C0, ..., C14.
-//  2. lower_limb_difference is (at least) 1 of the 15 values C15, ..., C29.
-//  3. upper_limb_difference fits into 16 bits.
-//  4. if upper_limb_difference is 0, then lower_limb_difference fits into 16
-//    bits.
-//  5. if upper_limb_difference is 0, then C14 is 0.
-//  6. at least one of upper_limb_difference or lower_limb_difference is not 0.
+// We show this with following advice columns and constraints:
+// - first_different_limb: first index where the limbs differ. We use a
+//   BinaryNumberChip here to reduce the degree of the constraints.
+// - limb_difference: the difference between the limbs at first_different_limb.
+// - limb_difference_inverse: the inverse of limb_difference
 
-// We satisfy these constraints by assigning upper_limb_difference
-// to be the first non-zero difference between the first 15 big-endian limbs of
-// X_cur and X_prev or 0 if the the limbs are all equal. E.g. if X_curr = (2, 1,
-// 6, ...) and X_prev = (2, 1, 2, ...), then upper_limb_difference = C2 = 6 - 2
-// = 4. If there is no difference between the first 15 pairs of limbs, then
-// lower_limb_difference is assigned to be the first non-zero difference between
-// the last 15 pairs of limbs. This non-zero difference will exist because there
-// are no duplicate entries in the rw table. If upper_limb_difference has a
-// non-zero value, then we assign lower_limb_difference to be the value of C29.
+//  1. limb_difference fits into 16 bits.
+//  2. limb_difference is not zero because its inverse exists.
+//  3. RLC of the pairwise limb differences before the first_different_limb is
+//     zero.
+//  4. limb_difference equals the difference of the limbs at
+//     first_different_limb.
 
-// Packing the field into 480 bits:
-//   4 bits for tag,
-// + 5 bits for field_tag
-// + 23 bits for id
-// + 160 bits for address,
-// + 256 bits for storage key
-// + 32  bits for rw_counter
-// -----------------------------------
-// = 480 bits
-
-#[derive(Clone)]
-pub struct Config<F: Field> {
-    pub(crate) selector: Column<Fixed>,
-    upper_limb_difference: Column<Advice>,
-    pub(crate) upper_limb_difference_is_zero: IsZeroConfig<F>,
-    lower_limb_difference: Column<Advice>,
-    lower_limb_difference_is_zero: IsZeroConfig<F>,
-    // TODO: remove these columns from the config
-    tag: BinaryNumberConfig<RwTableTag, 4>,
-    field_tag: Column<Advice>,
-    id_limbs: [Column<Advice>; N_LIMBS_ID],
-    address_limbs: [Column<Advice>; N_LIMBS_ACCOUNT_ADDRESS],
-    storage_key_bytes: [Column<Advice>; N_BYTES_WORD],
-    rw_counter_limbs: [Column<Advice>; N_LIMBS_RW_COUNTER],
+#[derive(Clone, Copy, Debug, EnumIter)]
+pub enum LimbIndex {
+    Tag,
+    Id1,
+    Id0,
+    Address9,
+    Address8,
+    Address7,
+    Address6,
+    Address5,
+    Address4,
+    Address3,
+    Address2,
+    Address1,
+    Address0,
+    FieldTag,
+    StorageKey15,
+    StorageKey14,
+    StorageKey13,
+    StorageKey12,
+    StorageKey11,
+    StorageKey10,
+    StorageKey9,
+    StorageKey8,
+    StorageKey7,
+    StorageKey6,
+    StorageKey5,
+    StorageKey4,
+    StorageKey3,
+    StorageKey2,
+    StorageKey1,
+    StorageKey0,
+    RwCounter1,
+    RwCounter0,
 }
 
-pub struct Chip<F: Field> {
-    config: Config<F>,
-}
-
-impl<F: Field> Chip<F> {
-    pub fn construct(config: Config<F>) -> Self {
-        Self { config }
+impl AsBits<5> for LimbIndex {
+    fn as_bits(&self) -> [bool; 5] {
+        let mut bits = [false; 5];
+        let mut x = *self as u8;
+        for i in 0..5 {
+            bits[4 - i] = x % 2 == 1;
+            x /= 2;
+        }
+        assert_eq!(x, 0);
+        bits
     }
+}
 
-    #[allow(clippy::too_many_arguments)]
-    // TODO: fix this to not have too many arguments?
-    pub fn configure(
+#[derive(Clone, Copy)]
+pub struct Config {
+    pub(crate) selector: Column<Fixed>,
+    pub first_different_limb: BinaryNumberConfig<LimbIndex, 5>,
+    limb_difference: Column<Advice>,
+    limb_difference_inverse: Column<Advice>,
+}
+
+impl Config {
+    pub fn configure<F: Field>(
         meta: &mut ConstraintSystem<F>,
-        tag: BinaryNumberConfig<RwTableTag, 4>,
-        field_tag: Column<Advice>,
-        id_limbs: [Column<Advice>; N_LIMBS_ID],
-        address_limbs: [Column<Advice>; N_LIMBS_ACCOUNT_ADDRESS],
-        storage_key_bytes: [Column<Advice>; N_BYTES_WORD],
-        rw_counter_limbs: [Column<Advice>; N_LIMBS_RW_COUNTER],
+        keys: SortKeysConfig,
         u16_range: Column<Fixed>,
-    ) -> Config<F> {
+        power_of_randomness: [Column<Instance>; 31],
+    ) -> Self {
         let selector = meta.fixed_column();
-        let [upper_limb_difference, upper_limb_difference_inverse, lower_limb_difference, lower_limb_difference_inverse] =
-            [0; 4].map(|_| meta.advice_column());
-        let [upper_limb_difference_is_zero_config, lower_limb_difference_is_zero_config] = [
-            (upper_limb_difference, upper_limb_difference_inverse),
-            (lower_limb_difference, lower_limb_difference_inverse),
-        ]
-        .map(|(value, advice)| {
-            IsZeroChip::configure(
-                meta,
-                |meta| meta.query_fixed(selector, Rotation::cur()),
-                |meta| meta.query_advice(value, Rotation::cur()),
-                advice,
-            )
-        });
-
-        let upper_limb_difference_is_zero = upper_limb_difference_is_zero_config
-            .is_zero_expression
-            .clone();
-        let lower_limb_difference_is_zero = lower_limb_difference_is_zero_config
-            .is_zero_expression
-            .clone();
+        let first_different_limb = BinaryNumberChip::configure(meta, selector);
+        let limb_difference = meta.advice_column();
+        let limb_difference_inverse = meta.advice_column();
 
         let config = Config {
             selector,
-            upper_limb_difference,
-            upper_limb_difference_is_zero: upper_limb_difference_is_zero_config,
-            lower_limb_difference,
-            lower_limb_difference_is_zero: lower_limb_difference_is_zero_config,
-            tag,
-            field_tag,
-            id_limbs,
-            address_limbs,
-            storage_key_bytes,
-            rw_counter_limbs,
+            first_different_limb,
+            limb_difference,
+            limb_difference_inverse,
         };
-        meta.create_gate("upper_limb_difference is one of 15 values", |meta| {
-            let selector = meta.query_fixed(selector, Rotation::cur());
-            let cur = Queries::new(meta, &config, Rotation::cur());
-            let prev = Queries::new(meta, &config, Rotation::prev());
-            let upper_limb_difference = meta.query_advice(upper_limb_difference, Rotation::cur());
-            vec![
-                selector
-                    * upper_limb_difference_possible_values(cur, prev)
-                        .iter()
-                        .map(|e| upper_limb_difference.clone() - e.clone())
-                        .fold(1.expr(), Expression::mul),
-            ]
-        });
-        assert!(meta.degree() <= 16);
-        meta.create_gate(
-            "upper_limb_difference is zero iff all 15 possible values are 0",
-            |meta| {
-                let selector = meta.query_fixed(selector, Rotation::cur());
-                let cur = Queries::new(meta, &config, Rotation::cur());
-                let prev = Queries::new(meta, &config, Rotation::prev());
-                vec![
-                    // all 15 possible values are 0 iff the final linear combination is 0
-                    selector
-                        * upper_limb_difference_is_zero.clone()
-                        * upper_limb_difference_possible_values(cur, prev)[14].clone(),
-                ]
-            },
-        );
-        meta.create_gate("lower_limb_difference is one of 15 values", |meta| {
-            let selector = meta.query_fixed(selector, Rotation::cur());
-            let cur = Queries::new(meta, &config, Rotation::cur());
-            let prev = Queries::new(meta, &config, Rotation::prev());
-            let lower_limb_difference = meta.query_advice(lower_limb_difference, Rotation::cur());
-            vec![
-                selector
-                    * lower_limb_difference_possible_values(cur, prev)
-                        .iter()
-                        .map(|e| lower_limb_difference.clone() - e.clone())
-                        .fold(1.expr(), Expression::mul),
-            ]
-        });
-        assert!(meta.degree() <= 16);
-        meta.lookup_any("upper_limb_difference fits into u16", |meta| {
-            let upper_limb_difference = meta.query_advice(upper_limb_difference, Rotation::cur());
+
+        meta.lookup_any("limb_difference fits into u16", |meta| {
             vec![(
-                upper_limb_difference,
+                meta.query_advice(limb_difference, Rotation::cur()),
                 meta.query_fixed(u16_range, Rotation::cur()),
             )]
         });
-        meta.lookup_any(
-            "upper_limb_difference is zero or lower_limb_difference fits into u16",
+
+        meta.create_gate("limb_difference is not zero", |meta| {
+            let selector = meta.query_fixed(selector, Rotation::cur());
+            let limb_difference = meta.query_advice(limb_difference, Rotation::cur());
+            let limb_difference_inverse =
+                meta.query_advice(limb_difference_inverse, Rotation::cur());
+            vec![selector * (1.expr() - limb_difference * limb_difference_inverse)]
+        });
+
+        meta.create_gate(
+            "limb differences before first_different_limb are all 0",
             |meta| {
-                let lower_limb_difference =
-                    meta.query_advice(lower_limb_difference, Rotation::cur());
-                vec![(
-                    upper_limb_difference_is_zero * lower_limb_difference,
-                    meta.query_fixed(u16_range, Rotation::cur()),
-                )]
+                let selector = meta.query_fixed(selector, Rotation::cur());
+                let cur = Queries::new(meta, keys, Rotation::cur());
+                let prev = Queries::new(meta, keys, Rotation::prev());
+                let powers_of_randomness =
+                    power_of_randomness.map(|i| meta.query_instance(i, Rotation::cur()));
+
+                let mut constraints = vec![];
+                for (i, rlc_expression) in
+                    LimbIndex::iter().zip(rlc_limb_differences(cur, prev, powers_of_randomness))
+                {
+                    // E.g. if first_different_limb = 5, four limb differences before need to be 0.
+                    // Using RLC, we check that (cur_1 - prev_1) + r(cur_2 - prev_2) + r^2(cur_3 -
+                    // prev_3) + r^3(cur_4 - prev_4) = 0.
+                    constraints.push(
+                        selector.clone()
+                            * first_different_limb.value_equals(i, Rotation::cur())(meta)
+                            * rlc_expression,
+                    )
+                }
+                constraints
             },
         );
-        assert!(meta.degree() <= 16);
-        meta.create_gate("lower_limb_difference is not zero", |meta| {
-            let selector = meta.query_fixed(selector, Rotation::cur());
-            vec![(selector * lower_limb_difference_is_zero)]
-        });
-        assert!(meta.degree() <= 16);
+
+        meta.create_gate(
+            "limb_difference equals difference of limbs at index",
+            |meta| {
+                let selector = meta.query_fixed(selector, Rotation::cur());
+                let cur = Queries::new(meta, keys, Rotation::cur());
+                let prev = Queries::new(meta, keys, Rotation::prev());
+                let limb_difference = meta.query_advice(limb_difference, Rotation::cur());
+
+                let mut constraints = vec![];
+                for ((i, cur_limb), prev_limb) in
+                    LimbIndex::iter().zip(cur.be_limbs()).zip(prev.be_limbs())
+                {
+                    constraints.push(
+                        selector.clone()
+                            * first_different_limb.value_equals(i, Rotation::cur())(meta)
+                            * (limb_difference.clone() - cur_limb + prev_limb),
+                    );
+                }
+                constraints
+            },
+        );
 
         config
     }
 
-    pub fn assign(
+    pub fn assign<F: Field>(
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
@@ -223,53 +199,40 @@ impl<F: Field> Chip<F> {
     ) -> Result<(), Error> {
         region.assign_fixed(
             || "upper_limb_difference",
-            self.config.selector,
+            self.selector,
             offset,
             || Ok(F::one()),
         )?;
 
-        // this doesn't make sense that we have to "construct" the chip every time we
-        // assign?
-        let upper_limb_difference_is_zero_chip =
-            IsZeroChip::construct(self.config.upper_limb_difference_is_zero.clone());
-        let lower_limb_difference_is_zero_chip =
-            IsZeroChip::construct(self.config.lower_limb_difference_is_zero.clone());
-
         let cur_be_limbs = rw_to_be_limbs(cur);
         let prev_be_limbs = rw_to_be_limbs(prev);
 
-        let find_result = cur_be_limbs
-            .iter()
+        let find_result = LimbIndex::iter()
+            .zip(&cur_be_limbs)
             .zip(&prev_be_limbs)
-            .enumerate()
-            .find(|(_, (a, b))| a != b);
-        let (index, (cur_limb, prev_limb)) = if cfg!(test) {
-            find_result.unwrap_or((30, (&0, &0)))
+            .find(|((_, a), b)| a != b);
+        let ((index, cur_limb), prev_limb) = if cfg!(test) {
+            find_result.unwrap_or(((LimbIndex::RwCounter0, &0), &0))
         } else {
             find_result.expect("repeated rw counter")
         };
 
-        let mut upper_limb_difference = F::from(*cur_limb as u64) - F::from(*prev_limb as u64);
-        let mut lower_limb_difference = lower_limb_difference_value(&cur_be_limbs, &prev_be_limbs);
-        if index >= 15 {
-            lower_limb_difference = upper_limb_difference;
-            upper_limb_difference = F::zero();
-        }
+        BinaryNumberChip::construct(self.first_different_limb).assign(region, offset, &index)?;
 
+        let limb_difference = F::from(*cur_limb as u64) - F::from(*prev_limb as u64);
         region.assign_advice(
-            || "upper_limb_difference",
-            self.config.upper_limb_difference,
+            || "limb_difference",
+            self.limb_difference,
             offset,
-            || Ok(upper_limb_difference),
+            || Ok(limb_difference),
         )?;
         region.assign_advice(
-            || "lower_limb_difference",
-            self.config.lower_limb_difference,
+            || "limb_difference_inverse",
+            self.limb_difference_inverse,
             offset,
-            || Ok(lower_limb_difference),
+            || Ok(limb_difference.invert().unwrap()),
         )?;
-        upper_limb_difference_is_zero_chip.assign(region, offset, Some(upper_limb_difference))?;
-        lower_limb_difference_is_zero_chip.assign(region, offset, Some(lower_limb_difference))?;
+
         Ok(())
     }
 }
@@ -284,21 +247,17 @@ struct Queries<F: Field> {
 }
 
 impl<F: Field> Queries<F> {
-    fn new(meta: &mut VirtualCells<'_, F>, config: &Config<F>, rotation: Rotation) -> Self {
-        let tag = config.tag.value(rotation)(meta);
+    fn new(meta: &mut VirtualCells<'_, F>, keys: SortKeysConfig, rotation: Rotation) -> Self {
+        let tag = keys.tag.value(rotation)(meta);
         let mut query_advice = |column| meta.query_advice(column, rotation);
         Self {
             tag,
-            field_tag: query_advice(config.field_tag),
-            id_limbs: config.id_limbs.map(&mut query_advice),
-            address_limbs: config.address_limbs.map(&mut query_advice),
-            storage_key_bytes: config.storage_key_bytes.map(&mut query_advice),
-            rw_counter_limbs: config.rw_counter_limbs.map(query_advice),
+            id_limbs: keys.id.limbs.map(&mut query_advice),
+            address_limbs: keys.address.limbs.map(&mut query_advice),
+            field_tag: query_advice(keys.field_tag),
+            storage_key_bytes: keys.storage_key.bytes.map(&mut query_advice),
+            rw_counter_limbs: keys.rw_counter.limbs.map(query_advice),
         }
-    }
-
-    fn packed_tags(&self) -> Expression<F> {
-        (1u64 << 5).expr() * self.tag.clone() + self.field_tag.clone()
     }
 
     fn storage_key_be_limbs(&self) -> Vec<Expression<F>> {
@@ -311,33 +270,24 @@ impl<F: Field> Queries<F> {
     }
 
     fn be_limbs(&self) -> Vec<Expression<F>> {
-        let mut limbs: Vec<_> = self
-            .id_limbs
-            .iter()
-            .rev()
+        once(&self.tag)
+            .chain(self.id_limbs.iter().rev())
             .chain(self.address_limbs.iter().rev())
+            .chain(once(&self.field_tag))
             .chain(&self.storage_key_be_limbs())
             .chain(self.rw_counter_limbs.iter().rev())
             .cloned()
-            .collect();
-        // The packed tags are shifted left by 7 bits so that they occupy the most
-        // significant 9 bits of the first 16-bit limb.
-        limbs[0] = limbs[0].clone() + self.packed_tags() * (1u64 << 7).expr();
-        limbs
+            .collect()
     }
 }
 
 fn rw_to_be_limbs(row: &Rw) -> Vec<u16> {
-    let mut id = row.id().unwrap_or_default() as u32;
-    assert_eq!(id.to_be_bytes().len(), 4);
-    // The max value of `id` is 2^23 - 1, so the 9 most significant bits should be
-    // 0. We use these 9 bits to hold value of `tag` and `field_tag`.
-    assert!(id < (1 << 23));
-    id += (((row.tag() as u32) << 5) + (row.field_tag().unwrap_or_default() as u32)) << 23;
-
-    let mut be_bytes = vec![];
-    be_bytes.extend_from_slice(&id.to_be_bytes());
+    let mut be_bytes = vec![0u8];
+    be_bytes.push(row.tag() as u8);
+    be_bytes.extend_from_slice(&(row.id().unwrap_or_default() as u32).to_be_bytes());
     be_bytes.extend_from_slice(&(row.address().unwrap_or_default().0));
+    be_bytes.push(0u8);
+    be_bytes.push(row.field_tag().unwrap_or_default() as u8);
     be_bytes.extend_from_slice(&(row.storage_key().unwrap_or_default().to_be_bytes()));
     be_bytes.extend_from_slice(&((row.rw_counter() as u32).to_be_bytes()));
 
@@ -348,39 +298,38 @@ fn rw_to_be_limbs(row: &Rw) -> Vec<u16> {
         .collect()
 }
 
-fn upper_limb_difference_possible_values<F: Field>(
+// Returns a vector of length 32 with the rlc of the limb differences between
+// from 0 to i-l. 0 for i=0,
+fn rlc_limb_differences<F: Field>(
     cur: Queries<F>,
     prev: Queries<F>,
+    powers_of_randomness: [Expression<F>; 31],
 ) -> Vec<Expression<F>> {
     let mut result = vec![];
     let mut partial_sum = 0u64.expr();
-    for (cur_limb, prev_limb) in cur.be_limbs()[..15].iter().zip(&prev.be_limbs()[..15]) {
-        partial_sum = partial_sum * (1u64 << 16).expr() + cur_limb.clone() - prev_limb.clone();
-        result.push(partial_sum.clone())
+    let powers_of_randomness = once(1.expr()).chain(powers_of_randomness.into_iter());
+    for ((cur_limb, prev_limb), power_of_randomness) in cur
+        .be_limbs()
+        .iter()
+        .zip(&prev.be_limbs())
+        .zip(powers_of_randomness)
+    {
+        result.push(partial_sum.clone());
+        partial_sum = partial_sum + power_of_randomness * (cur_limb.clone() - prev_limb.clone());
     }
     result
 }
 
-fn lower_limb_difference_possible_values<F: Field>(
-    cur: Queries<F>,
-    prev: Queries<F>,
-) -> Vec<Expression<F>> {
-    let mut result = vec![];
-    let mut partial_sum = 0u64.expr();
-    for (cur_limb, prev_limb) in cur.be_limbs()[15..].iter().zip(&prev.be_limbs()[15..]) {
-        partial_sum = partial_sum * (1u64 << 16).expr() + cur_limb.clone() - prev_limb.clone();
-        result.push(partial_sum.clone())
+#[cfg(test)]
+mod test {
+    use super::super::binary_number::{from_bits, AsBits};
+    use super::LimbIndex;
+    use strum::IntoEnumIterator;
+
+    #[test]
+    fn enough_bits_for_limb_index() {
+        for index in LimbIndex::iter() {
+            assert_eq!(from_bits(&index.as_bits()), index as usize);
+        }
     }
-    assert_eq!(result.len(), 15);
-    result
-}
-
-fn lower_limb_difference_value<F: Field>(cur_limbs: &[u16], prev_limbs: &[u16]) -> F {
-    be_limbs_to_value::<F>(&cur_limbs[15..]) - be_limbs_to_value::<F>(&prev_limbs[15..])
-}
-
-fn be_limbs_to_value<F: Field>(limbs: &[u16]) -> F {
-    limbs.iter().fold(F::zero(), |result, &limb| {
-        result * F::from(1u64 << 16) + F::from(limb as u64)
-    })
 }

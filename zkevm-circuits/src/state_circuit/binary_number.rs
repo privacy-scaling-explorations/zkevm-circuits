@@ -169,7 +169,7 @@ where
     }
 }
 
-fn from_bits(bits: &[bool]) -> usize {
+pub fn from_bits(bits: &[bool]) -> usize {
     bits.iter()
         .fold(0, |result, &bit| bit as usize + 2 * result)
 }
