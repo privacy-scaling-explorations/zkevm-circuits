@@ -1,12 +1,7 @@
 use crate::{
-    arith_helpers::*,
     common::{NEXT_INPUTS_LANES, PERMUTATION},
-    gate_helpers::biguint_to_f,
     permutation::{
         generic::GenericConfig,
-        iota::IotaConstants,
-        pi::pi_gate_permutation,
-        rho::assign_rho,
         tables::{Base13toBase9TableConfig, FromBase9TableConfig, StackableTable},
     },
 };
@@ -16,105 +11,14 @@ use halo2_proofs::{
     plonk::{Advice, Column, ConstraintSystem, Error, TableColumn},
 };
 use itertools::Itertools;
-use num_bigint::BigUint;
 
 use super::{
-    tables::{
-        FromBinaryTableConfig, NUM_OF_B9_CHUNKS_PER_SLICE, NUM_OF_B9_SLICES,
-        NUM_OF_BINARY_CHUNKS_PER_SLICE, NUM_OF_BINARY_SLICES,
+    components::{
+        assign_next_input, assign_rho, assign_theta, assign_xi, convert_from_b9_to_b13,
+        convert_to_b9_mul_a4, pi_gate_permutation, IotaConstants,
     },
-    theta::assign_theta,
-    xi::assign_xi,
+    tables::FromBinaryTableConfig,
 };
-
-fn assign_next_input<F: Field>(
-    layouter: &mut impl Layouter<F>,
-    next_input_col: &Column<Advice>,
-    next_input: &Option<[F; NEXT_INPUTS_LANES]>,
-) -> Result<[AssignedCell<F, F>; NEXT_INPUTS_LANES], Error> {
-    let next_input_b9 = layouter.assign_region(
-        || "next input words",
-        |mut region| {
-            let next_input = next_input.map_or(
-                [None; NEXT_INPUTS_LANES],
-                |v| -> [Option<F>; NEXT_INPUTS_LANES] {
-                    v.map(|vv| Some(vv))
-                        .iter()
-                        .cloned()
-                        .collect_vec()
-                        .try_into()
-                        .unwrap()
-                },
-            );
-            next_input
-                .iter()
-                .enumerate()
-                .map(|(offset, input)| {
-                    region.assign_advice(
-                        || "next input words",
-                        *next_input_col,
-                        offset,
-                        || Ok(input.unwrap_or_default()),
-                    )
-                })
-                .collect::<Result<Vec<_>, Error>>()
-        },
-    )?;
-    Ok(next_input_b9.try_into().unwrap())
-}
-
-fn convert_from_b9_to_b13<F: Field>(
-    layouter: &mut impl Layouter<F>,
-    from_b9_table: &FromBase9TableConfig<F>,
-    generic: &GenericConfig<F>,
-    state: [AssignedCell<F, F>; 25],
-    output_b2: bool,
-) -> Result<([AssignedCell<F, F>; 25], Option<[AssignedCell<F, F>; 25]>), Error> {
-    let (state_b13, state_b2): (Vec<AssignedCell<F, F>>, Vec<Option<AssignedCell<F, F>>>) = state
-        .iter()
-        .map(|lane| {
-            let (base9s, base_13s, base_2s) = from_b9_table.assign_region(layouter, lane)?;
-            let vs = (0..NUM_OF_B9_SLICES)
-                .map(|i| {
-                    biguint_to_f(&BigUint::from(B9).pow((NUM_OF_B9_CHUNKS_PER_SLICE * i) as u32))
-                })
-                .rev()
-                .collect_vec();
-            generic.linear_combine_consts(layouter, base9s, vs, Some(lane.clone()))?;
-            let vs = (0..NUM_OF_B9_SLICES)
-                .map(|i| {
-                    biguint_to_f(&BigUint::from(B13).pow((NUM_OF_B9_CHUNKS_PER_SLICE * i) as u32))
-                })
-                .rev()
-                .collect_vec();
-            let lane_b13 = generic.linear_combine_consts(layouter, base_13s, vs, None)?;
-            let lane_b2 = if output_b2 {
-                let vs = (0..NUM_OF_B9_SLICES)
-                    .map(|i| {
-                        biguint_to_f(
-                            &BigUint::from(B2).pow((NUM_OF_B9_CHUNKS_PER_SLICE * i) as u32),
-                        )
-                    })
-                    .rev()
-                    .collect_vec();
-                let lane_b2 = generic.linear_combine_consts(layouter, base_2s, vs, None)?;
-                Some(lane_b2)
-            } else {
-                None
-            };
-            Ok((lane_b13, lane_b2))
-        })
-        .collect::<Result<Vec<_>, Error>>()?
-        .iter()
-        .cloned()
-        .unzip();
-    let state_b2: Option<[AssignedCell<F, F>; 25]> = state_b2
-        .into_iter()
-        .collect::<Option<Vec<_>>>()
-        .map(|v| v.try_into().unwrap());
-
-    Ok((state_b13.try_into().unwrap(), state_b2))
-}
 
 #[derive(Clone, Debug)]
 pub struct KeccakFConfig<F: Field> {
@@ -237,43 +141,8 @@ impl<F: Field> KeccakFConfig<F> {
         let next_input = assign_next_input(layouter, &self.advice, &next_mixing)?;
 
         // Convert to base 9 and multiply by A4
-        let next_input = {
-            let next_input = next_input
-                .iter()
-                .map(|input| {
-                    let (base2s, base9s, _) = self.from_b2_table.assign_region(layouter, input)?;
-                    let vs = (0..NUM_OF_BINARY_SLICES)
-                        .map(|i| {
-                            biguint_to_f(
-                                &BigUint::from(B2).pow((NUM_OF_BINARY_CHUNKS_PER_SLICE * i) as u32),
-                            )
-                        })
-                        .rev()
-                        .collect_vec();
-                    self.generic.linear_combine_consts(
-                        layouter,
-                        base2s,
-                        vs,
-                        Some(input.clone()),
-                    )?;
-                    let vs = (0..NUM_OF_BINARY_SLICES)
-                        .map(|i| {
-                            biguint_to_f::<F>(
-                                &BigUint::from(B9).pow((NUM_OF_BINARY_CHUNKS_PER_SLICE * i) as u32),
-                            ) * F::from(A4)
-                        })
-                        .rev()
-                        .collect_vec();
-                    let output =
-                        self.generic
-                            .linear_combine_consts(layouter, base9s.clone(), vs, None)?;
-                    Ok(output)
-                })
-                .collect::<Result<Vec<AssignedCell<F, F>>, Error>>()?;
-            let next_input: [AssignedCell<F, F>; NEXT_INPUTS_LANES] =
-                next_input.try_into().unwrap();
-            next_input
-        };
+        let next_input =
+            convert_to_b9_mul_a4(layouter, &self.from_b2_table, &self.generic, &next_input)?;
 
         for (i, input) in next_input.iter().enumerate() {
             state[i] = self
@@ -296,13 +165,21 @@ impl<F: Field> KeccakFConfig<F> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::common::{State, NEXT_INPUTS_LANES};
-    use crate::gate_helpers::biguint_to_f;
-    use crate::keccak_arith::KeccakFArith;
-    use halo2_proofs::circuit::Layouter;
-    use halo2_proofs::pairing::bn256::Fr as Fp;
-    use halo2_proofs::plonk::{ConstraintSystem, Error};
-    use halo2_proofs::{circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit};
+    use crate::{
+        arith_helpers::{
+            convert_b2_to_b13, convert_b9_lane_to_b2_biguint, state_bigint_to_field, StateBigInt,
+        },
+        common::{State, NEXT_INPUTS_LANES},
+        gate_helpers::biguint_to_f,
+        keccak_arith::KeccakFArith,
+    };
+
+    use halo2_proofs::{
+        circuit::{Layouter, SimpleFloorPlanner},
+        dev::MockProver,
+        pairing::bn256::Fr as Fp,
+        plonk::{Circuit, ConstraintSystem, Error},
+    };
 
     #[test]
     fn test_keccak_round() {
