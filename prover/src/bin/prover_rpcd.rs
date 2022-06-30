@@ -150,18 +150,23 @@ async fn handle_method(
     match method {
         // enqueues a task for computating proof for any given block
         "proof" => {
-            if params.len() != 3 {
-                return Err("expected [block_num, rpc_url, retry_if_error]".to_string());
-            }
+            let err_msg = "block number at params[0]";
+            let block_num = params.get(0).ok_or(err_msg)?.as_u64().ok_or(err_msg)?;
 
-            let block_num = params[0].as_u64().ok_or("block number at params[0]")?;
-            let rpc_url = params[1].as_str().ok_or("rpc url at params[1]")?;
-            let retry_if_error = params[2]
-                .as_bool()
-                .ok_or("bool retry_if_error at params[2]")?;
+            let err_msg = "rpc url at params[1]";
+            let rpc_url = params.get(1).ok_or(err_msg)?.as_str().ok_or(err_msg)?;
+
+            let err_msg = "bool retry_if_error at params[2]";
+            let retry_if_error = params.get(2).ok_or(err_msg)?.as_bool().ok_or(err_msg)?;
+
+            // optional
+            let options: ProofRequestOptions = match params.get(3) {
+                Some(val) => serde_json::from_value(val.to_owned()).map_err(|e| e.to_string())?,
+                None => ProofRequestOptions::default(),
+            };
 
             match shared_state
-                .get_or_enqueue(&block_num, rpc_url, &retry_if_error)
+                .get_or_enqueue(&block_num, rpc_url, &retry_if_error, &options)
                 .await
             {
                 // No error

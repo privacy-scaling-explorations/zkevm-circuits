@@ -30,3 +30,9 @@ pub struct JsonRpcRequest<T: serde::Serialize> {
     pub method: String,
     pub params: T,
 }
+
+#[derive(Debug, Default, Clone, Copy, serde::Deserialize)]
+pub struct ProofRequestOptions {
+    /// Setups parameters on the fly
+    pub k: Option<u32>,
+}

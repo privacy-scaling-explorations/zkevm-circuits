@@ -1,15 +1,16 @@
-use halo2_proofs::pairing::bn256::G1Affine;
+use halo2_proofs::pairing::bn256::{Bn256, G1Affine};
 use halo2_proofs::poly::commitment::Params;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use crate::compute_proof::compute_proof;
-use crate::structs::Proofs;
+use crate::structs::{ProofRequestOptions, Proofs};
 
 #[derive(Debug, Clone)]
 pub struct ProofRequest {
     pub block_num: u64,
     pub rpc_url: String,
+    pub options: ProofRequestOptions,
     pub result: Option<Result<Proofs, String>>,
 }
 
@@ -42,6 +43,7 @@ impl SharedState {
         block_num: &u64,
         rpc_url: &str,
         retry_if_error: &bool,
+        options: &ProofRequestOptions,
     ) -> Option<Result<Proofs, String>> {
         let mut rw = self.rw.lock().await;
 
@@ -72,6 +74,7 @@ impl SharedState {
             let task = ProofRequest {
                 block_num: *block_num,
                 rpc_url: rpc_url.to_string(),
+                options: *options,
                 result: None,
             };
             log::info!("enqueue: {:#?}", task);
@@ -85,7 +88,7 @@ impl SharedState {
     /// - records if a task completed
     /// - starting a new task
     /// Blocks until completion but releases the lock of `self.rw` in between.
-    pub async fn duty_cycle(&self, params: Arc<Params<G1Affine>>) {
+    pub async fn duty_cycle(&self, default_params: Arc<Params<G1Affine>>) {
         let mut rw = self.rw.lock().await;
 
         if rw.pending_tasks > 0 {
@@ -103,7 +106,7 @@ impl SharedState {
 
         // needs to be cloned because of long running tasks and
         // the possibility that the task gets removed in the meantime
-        let pending_task = pending_task.unwrap().clone();
+        let mut pending_task = pending_task.unwrap().clone();
         {
             rw.pending_tasks += 1;
             log::info!("compute_proof: {:#?}", pending_task);
@@ -118,6 +121,10 @@ impl SharedState {
         let _pending_task = pending_task.clone();
         let task_result: Result<Result<Proofs, String>, tokio::task::JoinError> =
             tokio::spawn(async move {
+                let params = match _pending_task.options.k {
+                    Some(k) => Arc::new(Params::<G1Affine>::unsafe_setup::<Bn256>(k)),
+                    None => default_params,
+                };
                 let res = compute_proof(
                     params.as_ref(),
                     &_pending_task.block_num,
@@ -136,7 +143,16 @@ impl SharedState {
 
         // convert the JoinError to string - if applicable
         let task_result: Result<Proofs, String> = match task_result {
-            Err(err) => Err(err.to_string()),
+            Err(err) => match err.is_panic() {
+                true => {
+                    if let Some(msg) = err.into_panic().downcast_ref::<String>() {
+                        Err(msg.to_string())
+                    } else {
+                        Err("unknown panic".to_string())
+                    }
+                }
+                false => Err(err.to_string()),
+            },
             Ok(val) => val,
         };
 
@@ -155,11 +171,8 @@ impl SharedState {
                 task.result = Some(task_result);
             } else {
                 // task was already removed in the meantime, insert it again
-                rw.tasks.push(ProofRequest {
-                    block_num: pending_task.block_num,
-                    rpc_url: pending_task.rpc_url,
-                    result: Some(task_result),
-                });
+                pending_task.result = Some(task_result);
+                rw.tasks.push(pending_task);
             }
         }
     }
