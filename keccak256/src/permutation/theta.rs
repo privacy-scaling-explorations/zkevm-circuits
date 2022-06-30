@@ -14,14 +14,13 @@ pub fn assign_theta<F: Field>(
 ) -> Result<[AssignedCell<F, F>; 25], Error> {
     let theta_col_sums = (0..5)
         .map(|x| {
-            let col_sum = generic.running_sum(
+            generic.running_sum(
                 layouter,
                 (0..5).map(|y| state[5 * x + y].clone()).collect(),
                 None,
-            )?;
-            Ok(col_sum)
+            )
         })
-        .collect::<Result<Vec<AssignedCell<F, F>>, Error>>()?;
+        .collect::<Result<Vec<_>, Error>>()?;
 
     let out_state = (0..5)
         .cartesian_product(0..5)
@@ -32,10 +31,9 @@ pub fn assign_theta<F: Field>(
                 theta_col_sums[(x + 1) % 5].clone(),
             ];
             let vs = vec![F::one(), F::one(), F::from(B13 as u64)];
-            let new_lane = generic.linear_combine_consts(layouter, cells, vs, None)?;
-            Ok(new_lane)
+            generic.linear_combine_consts(layouter, cells, vs, None)
         })
-        .collect::<Result<Vec<AssignedCell<F, F>>, Error>>()?;
+        .collect::<Result<Vec<_>, Error>>()?;
 
     Ok(out_state.try_into().unwrap())
 }

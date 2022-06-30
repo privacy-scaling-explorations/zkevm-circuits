@@ -35,7 +35,6 @@ fn assign_next_input<F: Field>(
     let next_input_b9 = layouter.assign_region(
         || "next input words",
         |mut region| {
-            let mut next_input_b9: Vec<AssignedCell<F, F>> = vec![];
             let next_input = next_input.map_or(
                 [None; NEXT_INPUTS_LANES],
                 |v| -> [Option<F>; NEXT_INPUTS_LANES] {
@@ -47,16 +46,18 @@ fn assign_next_input<F: Field>(
                         .unwrap()
                 },
             );
-            for (offset, input) in next_input.iter().enumerate() {
-                let cell = region.assign_advice(
-                    || "next input words",
-                    *next_input_col,
-                    offset,
-                    || Ok(input.unwrap_or_default()),
-                )?;
-                next_input_b9.push(cell);
-            }
-            Ok(next_input_b9)
+            next_input
+                .iter()
+                .enumerate()
+                .map(|(offset, input)| {
+                    region.assign_advice(
+                        || "next input words",
+                        *next_input_col,
+                        offset,
+                        || Ok(input.unwrap_or_default()),
+                    )
+                })
+                .collect::<Result<Vec<_>, Error>>()
         },
     )?;
     Ok(next_input_b9.try_into().unwrap())

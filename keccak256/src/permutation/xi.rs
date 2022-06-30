@@ -21,10 +21,9 @@ pub fn assign_xi<F: Field>(
                 state[5 * ((x + 2) % 5) + y].clone(),
             ];
             let vs = vec![F::from(A1), F::from(A2), F::from(A3)];
-            let new_lane = generic.linear_combine_consts(layouter, cells, vs, None)?;
-            Ok(new_lane)
+            generic.linear_combine_consts(layouter, cells, vs, None)
         })
-        .collect::<Result<Vec<AssignedCell<F, F>>, Error>>()?;
+        .collect::<Result<Vec<_>, Error>>()?;
     Ok(out_state.try_into().unwrap())
 }
 
