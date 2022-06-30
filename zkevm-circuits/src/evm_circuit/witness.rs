@@ -1207,6 +1207,7 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::AND => ExecutionState::BITWISE,
                     OpcodeId::XOR => ExecutionState::BITWISE,
                     OpcodeId::OR => ExecutionState::BITWISE,
+                    OpcodeId::NOT => ExecutionState::NOT,
                     OpcodeId::POP => ExecutionState::POP,
                     OpcodeId::PUSH32 => ExecutionState::PUSH,
                     OpcodeId::BYTE => ExecutionState::BYTE,
