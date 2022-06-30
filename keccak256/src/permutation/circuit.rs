@@ -67,11 +67,12 @@ fn convert_from_b9_to_b13<F: Field>(
     from_b9_table: &FromBase9TableConfig<F>,
     generic: &GenericConfig<F>,
     state: [AssignedCell<F, F>; 25],
-) -> Result<[AssignedCell<F, F>; 25], Error> {
-    let state = state
+    output_b2: bool,
+) -> Result<([AssignedCell<F, F>; 25], Option<[AssignedCell<F, F>; 25]>), Error> {
+    let (state_b13, state_b2): (Vec<AssignedCell<F, F>>, Vec<Option<AssignedCell<F, F>>>) = state
         .iter()
         .map(|lane| {
-            let (base9s, base_13s, _) = from_b9_table.assign_region(layouter, lane)?;
+            let (base9s, base_13s, base_2s) = from_b9_table.assign_region(layouter, lane)?;
             let vs = (0..NUM_OF_B9_SLICES)
                 .map(|i| {
                     biguint_to_f(&BigUint::from(B9).pow((NUM_OF_B9_CHUNKS_PER_SLICE * i) as u32))
@@ -85,10 +86,33 @@ fn convert_from_b9_to_b13<F: Field>(
                 })
                 .rev()
                 .collect_vec();
-            generic.linear_combine_consts(layouter, base_13s, vs, None)
+            let lane_b13 = generic.linear_combine_consts(layouter, base_13s, vs, None)?;
+            let lane_b2 = if output_b2 {
+                let vs = (0..NUM_OF_B9_SLICES)
+                    .map(|i| {
+                        biguint_to_f(
+                            &BigUint::from(B2).pow((NUM_OF_B9_CHUNKS_PER_SLICE * i) as u32),
+                        )
+                    })
+                    .rev()
+                    .collect_vec();
+                let lane_b2 = generic.linear_combine_consts(layouter, base_2s, vs, None)?;
+                Some(lane_b2)
+            } else {
+                None
+            };
+            Ok((lane_b13, lane_b2))
         })
-        .collect::<Result<Vec<AssignedCell<F, F>>, Error>>()?;
-    Ok(state.try_into().unwrap())
+        .collect::<Result<Vec<_>, Error>>()?
+        .iter()
+        .cloned()
+        .unzip();
+    let state_b2: Option<[AssignedCell<F, F>; 25]> = state_b2
+        .into_iter()
+        .collect::<Option<Vec<_>>>()
+        .map(|v| v.try_into().unwrap());
+
+    Ok((state_b13.try_into().unwrap(), state_b2))
 }
 
 #[derive(Clone, Debug)]
@@ -158,13 +182,14 @@ impl<F: Field> KeccakFConfig<F> {
         self.from_b2_table.load(layouter)
     }
 
+    // Result b13 state for next round, b2 state for end result
     pub fn assign_all(
         &self,
         layouter: &mut impl Layouter<F>,
         in_state: [AssignedCell<F, F>; 25],
         flag: bool,
         next_mixing: Option<[F; NEXT_INPUTS_LANES]>,
-    ) -> Result<[AssignedCell<F, F>; 25], Error> {
+    ) -> Result<([AssignedCell<F, F>; 25], [AssignedCell<F, F>; 25]), Error> {
         let iota_constants = IotaConstants::default();
         let mut state = in_state;
 
@@ -197,7 +222,9 @@ impl<F: Field> KeccakFConfig<F> {
             // The resulting state is in Base-9 now. We now convert it to
             // base_13 which is what Theta requires again at the
             // start of the loop.
-            state = convert_from_b9_to_b13(layouter, &self.from_b9_table, &self.generic, state)?;
+            state =
+                convert_from_b9_to_b13(layouter, &self.from_b9_table, &self.generic, state, false)?
+                    .0;
         }
         let (f_mix, f_no_mix) = self.stackable.assign_boolean_flag(layouter, Some(flag))?;
         state[0] = self.generic.conditional_add_const(
@@ -252,14 +279,16 @@ impl<F: Field> KeccakFConfig<F> {
                 .generic
                 .conditional_add_advice(layouter, &state[i], &f_mix, &input)?;
         }
-        state = convert_from_b9_to_b13(layouter, &self.from_b9_table, &self.generic, state)?;
-        state[0] = self.generic.conditional_add_const(
+        let (mut state_b13, state_b2) =
+            convert_from_b9_to_b13(layouter, &self.from_b9_table, &self.generic, state, true)?;
+        let state_b2 = state_b2.unwrap();
+        state_b13[0] = self.generic.conditional_add_const(
             layouter,
-            &state[0],
+            &state_b13[0],
             &f_mix,
             &iota_constants.round_constant_b13,
         )?;
-        Ok(state.try_into().unwrap())
+        Ok((state_b13.try_into().unwrap(), state_b2))
     }
 }
 
@@ -326,18 +355,29 @@ mod tests {
                     },
                 )?;
 
-                let state =
+                let (state_b13, state_b2) =
                     config.assign_all(&mut layouter, state, self.is_mixing, self.next_mixing)?;
-
-                layouter.assign_region(
-                    || "check final states",
-                    |mut region| {
-                        for (assigned, value) in state.iter().zip(self.out_state.iter()) {
-                            region.constrain_constant(assigned.cell(), value)?;
-                        }
-                        Ok(())
-                    },
-                )
+                if self.is_mixing {
+                    layouter.assign_region(
+                        || "check final states",
+                        |mut region| {
+                            for (assigned, value) in state_b13.iter().zip(self.out_state.iter()) {
+                                region.constrain_constant(assigned.cell(), value)?;
+                            }
+                            Ok(())
+                        },
+                    )
+                } else {
+                    layouter.assign_region(
+                        || "check final states",
+                        |mut region| {
+                            for (assigned, value) in state_b2.iter().zip(self.out_state.iter()) {
+                                region.constrain_constant(assigned.cell(), value)?;
+                            }
+                            Ok(())
+                        },
+                    )
+                }
             }
         }
 
@@ -373,6 +413,11 @@ mod tests {
         // Compute out_state_non_mix
         let mut out_state_non_mix = in_state_biguint.clone();
         KeccakFArith::permute_and_absorb(&mut out_state_non_mix, None);
+
+        for (x, y) in (0..5).cartesian_product(0..5) {
+            out_state_non_mix[(x, y)] =
+                convert_b9_lane_to_b2_biguint(out_state_non_mix[(x, y)].clone())
+        }
 
         // Generate out_state as `[Fp;25]`
         let out_state_mix: [Fp; 25] = state_bigint_to_field(out_state_mix);
