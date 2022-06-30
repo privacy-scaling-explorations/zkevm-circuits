@@ -61,11 +61,12 @@ impl<F: Field> KeccakFConfig<F> {
         // the out state matches the expected result.
         let mixing_config = MixingConfig::configure(
             meta,
-            state,
             base_conv_config_b9.clone(),
             base_conv_config_b2,
-            flag,
+            state,
             generic.clone(),
+            stackable.clone(),
+            flag,
         );
 
         // Allocate the `out state correctness` gate selector

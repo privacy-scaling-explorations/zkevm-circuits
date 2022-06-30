@@ -1,13 +1,13 @@
 use super::super::arith_helpers::*;
 use super::generic::GenericConfig;
-use super::tables::FromBase9TableConfig;
+use super::tables::{FromBase9TableConfig, StackableTable};
 use super::{absorb::AbsorbConfig, base_conversion::BaseConversionConfig, iota::IotaConstants};
 use crate::common::*;
 use crate::keccak_arith::KeccakFArith;
 use eth_types::Field;
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter, Region},
-    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
+    plonk::{Advice, Column, ConstraintSystem, Error, Selector},
     poly::Rotation,
 };
 use std::convert::TryInto;
@@ -19,67 +19,23 @@ pub struct MixingConfig<F> {
     base_conv_config_b9_b13: BaseConversionConfig<F>,
     state: [Column<Advice>; 25],
     flag: Column<Advice>,
-    q_flag: Selector,
     q_out_copy: Selector,
     generic: GenericConfig<F>,
-    out_mixing: [Column<Advice>; 25],
+    stackable: StackableTable<F>,
 }
 
 impl<F: Field> MixingConfig<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
-        state: [Column<Advice>; 25],
         base_conv_config_b9_b13: BaseConversionConfig<F>,
         base_conv_config_b2_b9: BaseConversionConfig<F>,
-        flag: Column<Advice>,
+        state: [Column<Advice>; 25],
         generic: GenericConfig<F>,
+        stackable: StackableTable<F>,
+        flag: Column<Advice>,
     ) -> MixingConfig<F> {
         meta.enable_equality(flag);
-
-        let q_flag = meta.selector();
-
-        meta.create_gate("Ensure flag consistency", |meta| {
-            let q_flag = meta.query_selector(q_flag);
-
-            let negated_flag = meta.query_advice(flag, Rotation::next());
-            let flag = meta.query_advice(flag, Rotation::cur());
-            // We do a trick which consists on multiplying an internal selector
-            // which is always active by the actual `negated_flag`
-            // which will then enable or disable the gate.
-            //
-            // Force that `flag + negated_flag = 1`.
-            // This ensures that flag = !negated_flag.
-            let flag_consistency =
-                (flag.clone() + negated_flag.clone()) - Expression::Constant(F::one());
-
-            // Define bool constraint for flags.
-            // Based on: `(1-flag) * flag = 0` only if `flag` is boolean.
-            let bool_constraint = |flag: Expression<F>| -> Expression<F> {
-                (Expression::Constant(F::one()) - flag.clone()) * flag
-            };
-
-            // Add a constraint that sums up the results of the two branches
-            // constraining it to be equal to `out_state`.
-            [
-                q_flag.clone() * flag_consistency,
-                q_flag.clone() * bool_constraint(flag),
-                q_flag * bool_constraint(negated_flag),
-            ]
-        });
-
-        // Allocate out_mixing columns and enable copy constraints for them.
-        // Offset = 0 (Non mixing)
-        // Offset = 1 (Mixing)
-        let out_mixing: [Column<Advice>; 25] = (0..25)
-            .map(|_| {
-                let column = meta.advice_column();
-                meta.enable_equality(column);
-                column
-            })
-            .collect::<Vec<_>>()
-            .try_into()
-            .unwrap();
-
+        // We mix -> Flag = true
         let absorb_config = AbsorbConfig::configure(meta, state, base_conv_config_b2_b9);
 
         let q_out_copy = meta.selector();
@@ -109,42 +65,10 @@ impl<F: Field> MixingConfig<F> {
             base_conv_config_b9_b13,
             state,
             flag,
-            q_flag,
             q_out_copy,
             generic,
-            out_mixing,
+            stackable,
         }
-    }
-
-    /// Enforce flag constraints
-    pub fn enforce_flag_consistency(
-        &self,
-        layouter: &mut impl Layouter<F>,
-        flag_bool: bool,
-    ) -> Result<(AssignedCell<F, F>, AssignedCell<F, F>), Error> {
-        layouter.assign_region(
-            || "Flag and Negated flag assignation",
-            |mut region| {
-                self.q_flag.enable(&mut region, 0)?;
-                // Witness `is_mixing` flag
-                let flag = region.assign_advice(
-                    || "witness is_mixing",
-                    self.flag,
-                    0,
-                    || Ok(F::from(flag_bool as u64)),
-                )?;
-
-                // Witness negated `is_mixing` flag
-                let negated_flag = region.assign_advice(
-                    || "witness negated is_mixing",
-                    self.flag,
-                    1,
-                    || Ok(F::from(!flag_bool as u64)),
-                )?;
-
-                Ok((flag, negated_flag))
-            },
-        )
     }
 
     /// Enforce flag constraints
@@ -206,7 +130,9 @@ impl<F: Field> MixingConfig<F> {
         next_mixing: [AssignedCell<F, F>; NEXT_INPUTS_LANES],
     ) -> Result<[AssignedCell<F, F>; 25], Error> {
         // Enforce flag constraints and witness them.
-        let (flag, negated_flag) = self.enforce_flag_consistency(layouter, flag_bool)?;
+        let (flag, negated_flag) = self
+            .stackable
+            .assign_boolean_flag(layouter, Some(flag_bool))?;
 
         // If we don't mix:
         // IotaB9
@@ -301,12 +227,16 @@ impl<F: Field> MixingConfig<F> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::common::{State, ROUND_CONSTANTS};
-    use crate::permutation::tables::FromBinaryTableConfig;
-    use halo2_proofs::circuit::Layouter;
-    use halo2_proofs::pairing::bn256::Fr as Fp;
-    use halo2_proofs::plonk::{ConstraintSystem, Error};
-    use halo2_proofs::{circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit};
+    use crate::{
+        common::{State, ROUND_CONSTANTS},
+        permutation::tables::FromBinaryTableConfig,
+    };
+    use halo2_proofs::{
+        circuit::{Layouter, SimpleFloorPlanner},
+        dev::MockProver,
+        pairing::bn256::Fr as Fp,
+        plonk::{Circuit, ConstraintSystem, Error, TableColumn},
+    };
     use itertools::Itertools;
     use pretty_assertions::assert_eq;
     use std::convert::TryInto;
@@ -325,8 +255,6 @@ mod tests {
         #[derive(Clone)]
         struct MyConfig<F> {
             mixing_conf: MixingConfig<F>,
-            state: [Column<Advice>; 25],
-            next_inputs: [Column<Advice>; NEXT_INPUTS_LANES],
             table_b9_b13: FromBase9TableConfig<F>,
             table_b2_b9: FromBinaryTableConfig<F>,
         }
@@ -350,19 +278,8 @@ mod tests {
                     .try_into()
                     .unwrap();
 
-                let next_inputs =
-                    [(); NEXT_INPUTS_LANES]
-                        .map(|_| meta.advice_column())
-                        .map(|col| {
-                            meta.enable_equality(col);
-                            col
-                        });
-
                 let flag = meta.advice_column();
                 meta.enable_equality(flag);
-                let fixed = meta.fixed_column();
-                let generic =
-                    GenericConfig::configure(meta, state[0..3].try_into().unwrap(), fixed);
 
                 let table_b9_b13 = FromBase9TableConfig::configure(meta);
                 let table_b2_b9 = FromBinaryTableConfig::configure(meta);
@@ -386,17 +303,28 @@ mod tests {
                     state[0..5].try_into().unwrap(),
                 );
 
-                MyConfig {
-                    mixing_conf: MixingConfig::configure(
-                        meta,
-                        state,
-                        base_conv_config_b9_b13,
-                        base_conv_config_b2_b9,
-                        flag,
-                        generic,
-                    ),
+                let fixed = meta.fixed_column();
+                let generic =
+                    GenericConfig::configure(meta, state[0..3].try_into().unwrap(), fixed);
+                let table_cols: [TableColumn; 3] = (0..3)
+                    .map(|_| meta.lookup_table_column())
+                    .collect_vec()
+                    .try_into()
+                    .unwrap();
+                let stackable =
+                    StackableTable::configure(meta, state[0..3].try_into().unwrap(), table_cols);
+                let mixing_conf = MixingConfig::configure(
+                    meta,
+                    base_conv_config_b9_b13,
+                    base_conv_config_b2_b9,
                     state,
-                    next_inputs,
+                    generic,
+                    stackable.clone(),
+                    flag,
+                );
+
+                MyConfig {
+                    mixing_conf,
                     table_b9_b13,
                     table_b2_b9,
                 }
@@ -410,6 +338,7 @@ mod tests {
                 // Load the tables
                 config.table_b9_b13.load(&mut layouter)?;
                 config.table_b2_b9.load(&mut layouter)?;
+                config.mixing_conf.stackable.load(&mut layouter)?;
                 let offset: usize = 0;
 
                 let in_state = layouter.assign_region(
@@ -421,7 +350,7 @@ mod tests {
                             for (idx, val) in self.in_state.iter().enumerate() {
                                 let cell = region.assign_advice(
                                     || "witness input state",
-                                    config.state[idx],
+                                    config.mixing_conf.state[idx],
                                     offset,
                                     || Ok(*val),
                                 )?;
@@ -446,7 +375,7 @@ mod tests {
                             {
                                 let cell = region.assign_advice(
                                     || "witness next_inputs",
-                                    config.next_inputs[idx],
+                                    config.mixing_conf.state[idx],
                                     offset,
                                     || Ok(*val),
                                 )?;
@@ -565,6 +494,33 @@ mod tests {
                 out_state: out_non_mixing_state,
                 next_mixing,
                 is_mixing: true,
+            };
+
+            let prover = MockProver::<Fp>::run(17, &circuit, vec![]).unwrap();
+
+            assert!(prover.verify().is_err());
+        }
+
+        // With flag set to `true`, we mix.
+        {
+            let circuit = MyCircuit::<Fp> {
+                in_state,
+                out_state: out_mixing_state,
+                next_mixing,
+                is_mixing: true,
+            };
+
+            let prover = MockProver::<Fp>::run(17, &circuit, vec![]).unwrap();
+
+            assert_eq!(prover.verify(), Ok(()));
+
+            // With wrong input and/or output witnesses, the proof should fail
+            // to be verified.
+            let circuit = MyCircuit::<Fp> {
+                in_state,
+                out_state: in_state,
+                next_mixing,
+                is_mixing: false,
             };
 
             let prover = MockProver::<Fp>::run(17, &circuit, vec![]).unwrap();

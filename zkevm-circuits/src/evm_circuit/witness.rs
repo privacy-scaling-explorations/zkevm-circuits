@@ -762,8 +762,19 @@ impl Rw {
             Self::Stack { stack_pointer, .. } => {
                 Some(U256::from(*stack_pointer as u64).to_address())
             }
-            Self::TxLog { log_id, index, .. } => {
-                Some((U256::from(*index as u64) + (U256::from(*log_id) << 8)).to_address())
+            Self::TxLog {
+                log_id,
+                field_tag,
+                index,
+                ..
+            } => {
+                // make field_tag fit into one limb (16 bits)
+                Some(
+                    (U256::from(*index as u64)
+                        + (U256::from(*field_tag as u64) << 32)
+                        + (U256::from(*log_id) << 48))
+                        .to_address(),
+                )
             }
             Self::Start { .. }
             | Self::CallContext { .. }
@@ -776,7 +787,6 @@ impl Rw {
         match self {
             Self::Account { field_tag, .. } => Some(*field_tag as u64),
             Self::CallContext { field_tag, .. } => Some(*field_tag as u64),
-            Self::TxLog { field_tag, .. } => Some(*field_tag as u64),
             Self::TxReceipt { field_tag, .. } => Some(*field_tag as u64),
             Self::Start { .. }
             | Self::Memory { .. }
@@ -785,6 +795,7 @@ impl Rw {
             | Self::TxAccessListAccount { .. }
             | Self::TxAccessListAccountStorage { .. }
             | Self::TxRefund { .. }
+            | Self::TxLog { .. }
             | Self::AccountDestructed { .. } => None,
         }
     }

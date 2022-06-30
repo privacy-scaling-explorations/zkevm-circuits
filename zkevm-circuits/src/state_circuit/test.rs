@@ -1,6 +1,6 @@
 use super::{StateCircuit, StateConfig};
 use crate::evm_circuit::{
-    table::{AccountFieldTag, CallContextFieldTag, RwTableTag},
+    table::{AccountFieldTag, CallContextFieldTag, RwTableTag, TxLogFieldTag},
     witness::{Rw, RwMap},
 };
 use crate::state_circuit::binary_number::AsBits;
@@ -333,6 +333,82 @@ fn storage_key_rlc() {
     }];
 
     assert_eq!(verify(rows), Ok(()));
+}
+
+#[test]
+fn tx_log_ok() {
+    let rows = vec![
+        Rw::Stack {
+            rw_counter: 1,
+            is_write: true,
+            call_id: 1,
+            stack_pointer: 1023,
+            value: U256::from(394500u64),
+        },
+        Rw::TxLog {
+            rw_counter: 2,
+            is_write: true,
+            tx_id: 1,
+            log_id: 1,
+            field_tag: TxLogFieldTag::Address,
+            index: 0usize,
+            value: U256::one(),
+        },
+        Rw::TxLog {
+            rw_counter: 3,
+            is_write: true,
+            tx_id: 1,
+            log_id: 1,
+            field_tag: TxLogFieldTag::Topic,
+            index: 0usize,
+            value: U256::one(),
+        },
+        Rw::TxLog {
+            rw_counter: 4,
+            is_write: true,
+            tx_id: 1,
+            log_id: 1,
+            field_tag: TxLogFieldTag::Topic,
+            index: 1usize,
+            value: U256::from(2u64),
+        },
+        Rw::TxLog {
+            rw_counter: 5,
+            is_write: true,
+            tx_id: 1,
+            log_id: 1,
+            field_tag: TxLogFieldTag::Data,
+            index: 0usize,
+            value: U256::from(3u64),
+        },
+        Rw::TxLog {
+            rw_counter: 6,
+            is_write: true,
+            tx_id: 1,
+            log_id: 1,
+            field_tag: TxLogFieldTag::Data,
+            index: 1usize,
+            value: U256::from(3u64),
+        },
+    ];
+
+    assert_eq!(verify(rows), Ok(()));
+}
+
+#[test]
+fn tx_log_bad() {
+    // is_write is false
+    let rows = vec![Rw::TxLog {
+        rw_counter: 2,
+        is_write: false,
+        tx_id: 1,
+        log_id: 1,
+        field_tag: TxLogFieldTag::Address,
+        index: 0usize,
+        value: U256::one(),
+    }];
+
+    assert_error_matches(verify(rows), "is_write is always true for TxLog");
 }
 
 #[test]
