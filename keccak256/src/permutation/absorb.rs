@@ -1,3 +1,4 @@
+use super::base_conversion::BaseConversionConfig;
 use crate::arith_helpers::*;
 use crate::common::*;
 use eth_types::Field;
@@ -7,8 +8,6 @@ use halo2_proofs::{
     poly::Rotation,
 };
 use std::convert::TryInto;
-
-use super::base_conversion::BaseConversionConfig;
 
 #[derive(Clone, Debug)]
 pub struct AbsorbConfig<F> {
@@ -241,11 +240,17 @@ mod tests {
                 let table = FromBinaryTableConfig::configure(meta);
                 let base_info = table.get_base_info(true);
                 let base_conv_lane = meta.advice_column();
+                let advices = (0..5)
+                    .map(|_| meta.advice_column())
+                    .collect::<Vec<Column<Advice>>>()
+                    .try_into()
+                    .unwrap();
                 let base_conversion_config = BaseConversionConfig::configure(
                     meta,
                     base_info,
                     base_conv_lane,
                     state[NEXT_INPUTS_LANES],
+                    advices,
                 );
 
                 let absorb_conf = AbsorbConfig::configure(meta, state, base_conversion_config);
