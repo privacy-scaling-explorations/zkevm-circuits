@@ -386,10 +386,7 @@ mod test {
             None,
             |accs| {
                 accs[0].address(to).balance(eth(1)).code(code);
-                accs[1]
-                    .address(from)
-                    .balance(eth(1))
-                    .nonce(Word::from(multibyte_nonce));
+                accs[1].address(from).balance(eth(1)).nonce(multibyte_nonce);
             },
             |mut txs, _| {
                 txs[0].to(to).from(from).nonce(multibyte_nonce);
