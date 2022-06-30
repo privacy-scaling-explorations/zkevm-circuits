@@ -1043,7 +1043,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         &mut self,
         tx_id: Expression<F>,
         log_id: Expression<F>,
-        tag: TxLogFieldTag,
+        field_tag: TxLogFieldTag,
         index: Expression<F>,
         value: Expression<F>,
     ) {
@@ -1053,8 +1053,8 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             RwTableTag::TxLog,
             [
                 tx_id,
-                index + (1u64 << 8).expr() * log_id,
-                tag.expr(),
+                index + (1u64 << 32).expr() * field_tag.expr() + (1u64 << 48).expr() * log_id,
+                0.expr(),
                 0.expr(),
                 value,
                 0.expr(),
