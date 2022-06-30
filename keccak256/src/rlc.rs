@@ -147,6 +147,7 @@ mod rlc_tests {
     #[derive(Clone)]
     struct MyConfig<F: Field, const N: usize> {
         rlc_config: RlcConfig<F, N>,
+        q_enable: Selector,
         randomness: Column<Instance>,
         randomness_adv: Column<Advice>,
         witness: [Column<Advice>; N],
@@ -161,8 +162,8 @@ mod rlc_tests {
             Self::default()
         }
 
-        // TODO: Fix this test by constraining the out RLC with the expected one.
         fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
+            let q_enable = meta.selector();
             let witness = [(); N].map(|_| meta.advice_column()).map(|col| {
                 meta.enable_equality(col);
                 col
@@ -178,9 +179,16 @@ mod rlc_tests {
             meta.enable_equality(randomness_adv);
 
             let rlc_config = RlcConfig::configure(meta, witness, randomness_adv, rlc);
+            meta.create_gate("Constrain output", |meta| {
+                let obtained_rlc = meta.query_advice(rlc, Rotation::cur());
+                let result_rlc = meta.query_advice(rlc, Rotation::next());
+                let q_enable = meta.query_selector(q_enable);
+                [q_enable * (obtained_rlc - result_rlc)]
+            });
 
             MyConfig {
                 rlc_config,
+                q_enable,
                 randomness,
                 randomness_adv,
                 witness,
@@ -217,13 +225,6 @@ mod rlc_tests {
                 },
             )?;
 
-            let rlc = layouter.assign_region(
-                || "RLC result",
-                |mut region| {
-                    region.assign_advice(|| "RLC result", config.rlc, offset, || Ok(self.rlc))
-                },
-            )?;
-
             let randomness = layouter.assign_region(
                 || "RLC randomness",
                 |mut region| {
@@ -237,9 +238,25 @@ mod rlc_tests {
                 },
             )?;
 
-            config
+            let obtained_rlc = config
                 .rlc_config
                 .assign_rlc(&mut layouter, witness, randomness)?;
+
+            layouter.assign_region(
+                || "RLC result check",
+                |mut region| {
+                    config.q_enable.enable(&mut region, 0)?;
+                    region.assign_advice(|| "RLC result", config.rlc, 1, || Ok(self.rlc))?;
+                    obtained_rlc.copy_advice(
+                        || "Expected RLC result",
+                        &mut region,
+                        config.rlc,
+                        0,
+                    )?;
+
+                    Ok(())
+                },
+            )?;
 
             Ok(())
         }
