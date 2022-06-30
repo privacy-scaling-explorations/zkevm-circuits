@@ -158,14 +158,12 @@ pub struct Transaction {
 
 impl Transaction {
     pub fn table_assignments<F: Field>(&self, randomness: F) -> Vec<[F; 4]> {
-        dbg!(self.nonce);
         [
             vec![
                 [
                     F::from(self.id as u64),
                     F::from(TxContextFieldTag::Nonce as u64),
                     F::zero(),
-                    // not RLC
                     F::from(self.nonce),
                 ],
                 [

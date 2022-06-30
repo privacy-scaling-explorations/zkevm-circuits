@@ -385,7 +385,7 @@ mod test {
         let block: GethData = TestContext::<2, 1>::new(
             None,
             |accs| {
-                accs[0].address(to).balance(eth(1)).code(multibyte_nonce);
+                accs[0].address(to).balance(eth(1)).code(code);
                 accs[1]
                     .address(from)
                     .balance(eth(1))
