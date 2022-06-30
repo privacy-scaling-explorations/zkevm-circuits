@@ -2250,6 +2250,8 @@ dependencies = [
  "plotters",
  "pretty_assertions",
  "rand",
+ "strum",
+ "strum_macros",
 ]
 
 [[package]]

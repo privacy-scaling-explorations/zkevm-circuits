@@ -80,7 +80,7 @@
 //! [`crate::permutation::tables::Base13toBase9TableConfig`] to lookup
 //! `overflow_detector`. We sum up all the overflow_detectors across 25 lanes,
 //! for each step 1, step 2, and step 3. At the end of the Rho step we perform
-//! the final overflow detector range check in [`OverflowCheckConfig`].
+//! the final overflow detector range check for them.
 //!
 //! The `OVERFLOW_TRANSFORM` maps step 1 to 0, step 2 to 1, step 3 to 13, and
 //! step 4 to 170. It is defined that any possible overflow would result the
@@ -108,8 +108,9 @@ use crate::arith_helpers::*;
 use crate::common::ROTATION_CONSTANTS;
 use crate::gate_helpers::{biguint_to_f, f_to_biguint};
 use crate::permutation::{
+    generic::GenericConfig,
     rho_helpers::*,
-    tables::{Base13toBase9TableConfig, RangeCheckConfig, SpecialChunkTableConfig},
+    tables::{Base13toBase9TableConfig, StackableTable},
 };
 use eth_types::Field;
 use halo2_proofs::{
@@ -117,73 +118,31 @@ use halo2_proofs::{
     plonk::{Advice, Column, ConstraintSystem, Error, Fixed, Selector},
     poly::Rotation,
 };
-use std::marker::PhantomData;
 
 #[derive(Debug, Clone)]
 pub struct LaneRotateConversionConfig<F> {
     q_normal: Selector,
-    q_special: Selector,
     input_coef: Column<Advice>,
-    input_pob: Column<Fixed>,
-    input_acc: Column<Advice>,
     output_coef: Column<Advice>,
-    output_pob: Column<Fixed>,
-    output_acc: Column<Advice>,
-    pub overflow_detector: Column<Advice>,
-    _marker: PhantomData<F>,
+    overflow_detector: Column<Advice>,
+    generic: GenericConfig<F>,
+    stackable: StackableTable<F>,
 }
 
 impl<F: Field> LaneRotateConversionConfig<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         base13_to_9_table: &Base13toBase9TableConfig<F>,
-        special_chunk_table: &SpecialChunkTableConfig<F>,
-        advices: [Column<Advice>; 5],
-        fixed: [Column<Fixed>; 3],
+        advices: [Column<Advice>; 3],
+        constant: Column<Fixed>,
+        generic: GenericConfig<F>,
+        stackable: StackableTable<F>,
     ) -> Self {
         let q_normal = meta.complex_selector();
-        let q_special = meta.complex_selector();
-        let [input_coef, input_acc, output_coef, output_acc, overflow_detector] = advices;
-        let [input_pob, output_pob, constant] = fixed;
+        let [input_coef, output_coef, overflow_detector] = advices;
 
-        meta.enable_equality(input_acc);
-        meta.enable_equality(output_acc);
         meta.enable_equality(overflow_detector);
         meta.enable_constant(constant);
-
-        // | coef | 13**x | acc       |
-        // |------|-------|-----------|
-        // |  a   |  b    | c         |
-        // |  ... | ...   | c - a * b |
-        meta.create_gate("Running down input", |meta| {
-            let q_normal = meta.query_selector(q_normal);
-            let coef = meta.query_advice(input_coef, Rotation::cur());
-            let pob = meta.query_fixed(input_pob, Rotation::cur());
-            let acc = meta.query_advice(input_acc, Rotation::cur());
-            let acc_next = meta.query_advice(input_acc, Rotation::next());
-            vec![(
-                "delta_acc === - coef * power_of_base",
-                q_normal * (acc_next - acc + coef * pob),
-            )]
-        });
-        // | coef | 9**x  |    acc |
-        // |------|-------|--------|
-        // |  a   |  b    |      0 |
-        // |  ... | ...   |  a * b |
-        meta.create_gate("Running up for output", |meta| {
-            let q_normal = meta.query_selector(q_normal);
-            let q_special = meta.query_selector(q_special);
-            let coef = meta.query_advice(output_coef, Rotation::cur());
-            let pob = meta.query_fixed(output_pob, Rotation::cur());
-            let acc = meta.query_advice(output_acc, Rotation::cur());
-            let acc_next = meta.query_advice(output_acc, Rotation::next());
-            // delta_acc === coef * power_of_base
-            let poly = acc_next - acc - coef * pob;
-            vec![
-                ("check for q_normal", q_normal * poly.clone()),
-                ("check for q_special", q_special * poly),
-            ]
-        });
 
         meta.lookup("b13 -> b9 table", |meta| {
             let q_normal = meta.query_selector(q_normal);
@@ -197,31 +156,13 @@ impl<F: Field> LaneRotateConversionConfig<F> {
                 (q_normal * od, base13_to_9_table.overflow_detector),
             ]
         });
-
-        meta.lookup("special chunk", |meta| {
-            let q_special = meta.query_selector(q_special);
-            let input_acc = meta.query_advice(input_acc, Rotation::cur());
-            let output_coef = meta.query_advice(output_coef, Rotation::cur());
-
-            vec![
-                (
-                    q_special.clone() * input_acc,
-                    special_chunk_table.last_chunk,
-                ),
-                (q_special * output_coef, special_chunk_table.output_coef),
-            ]
-        });
         Self {
             q_normal,
-            q_special,
             input_coef,
-            input_pob,
-            input_acc,
             output_coef,
-            output_pob,
-            output_acc,
             overflow_detector,
-            _marker: PhantomData,
+            generic,
+            stackable,
         }
     }
 
@@ -248,247 +189,88 @@ impl<F: Field> LaneRotateConversionConfig<F> {
             rotation,
         )
         .get_full_witness();
-        layouter.assign_region(
-            || "lane rotate conversion",
-            |mut region| {
-                let slices = slice_lane(rotation);
-                let (step2_od, step3_od) = {
+        let slices = slice_lane(rotation);
+
+        let (input_coefs, input_pobs, output_coefs, output_pobs, step2_od, step3_od) = layouter
+            .assign_region(
+                || "lane rotate conversion",
+                |mut region| {
+                    let mut input_coefs: Vec<AssignedCell<F, F>> = vec![];
+                    let mut output_coefs: Vec<AssignedCell<F, F>> = vec![];
+                    let mut input_pobs: Vec<F> = vec![];
+                    let mut output_pobs: Vec<F> = vec![];
                     let mut step2_od: Vec<AssignedCell<F, F>> = vec![];
                     let mut step3_od: Vec<AssignedCell<F, F>> = vec![];
                     for (offset, (&(chunk_idx, step), conv)) in
                         slices.iter().zip(conversions.iter()).enumerate()
                     {
                         self.q_normal.enable(&mut region, offset)?;
-                        region.assign_advice(
+                        let input_coef = region.assign_advice(
                             || format!("Input Coef {}", chunk_idx),
                             self.input_coef,
                             offset,
                             || Ok(biguint_to_f::<F>(&conv.input.coef)),
                         )?;
-                        region.assign_fixed(
-                            || "Input power of base",
-                            self.input_pob,
-                            offset,
-                            || Ok(biguint_to_f::<F>(&conv.input.power_of_base)),
-                        )?;
-                        {
-                            let cell = region
-                                .assign_advice(
-                                    || "Input accumulator",
-                                    self.input_acc,
-                                    offset,
-                                    || Ok(biguint_to_f::<F>(&conv.input.pre_acc)),
-                                )?
-                                .cell();
-                            if offset == 0 {
-                                region.constrain_equal(lane_base_13.cell(), cell)?;
-                            }
-                        }
-                        region.assign_advice(
+                        input_coefs.push(input_coef);
+                        input_pobs.push(biguint_to_f::<F>(&conv.input.power_of_base));
+                        let output_coef = region.assign_advice(
                             || "Output Coef",
                             self.output_coef,
                             offset,
                             || Ok(biguint_to_f::<F>(&conv.output.coef)),
                         )?;
-                        region.assign_fixed(
-                            || "Output power of base",
-                            self.output_pob,
+                        output_coefs.push(output_coef);
+                        output_pobs.push(biguint_to_f::<F>(&conv.output.power_of_base));
+
+                        let od = region.assign_advice(
+                            || "Overflow detector",
+                            self.overflow_detector,
                             offset,
-                            || Ok(biguint_to_f::<F>(&conv.output.power_of_base)),
+                            || Ok(F::from(conv.overflow_detector.value as u64)),
                         )?;
-                        {
-                            let cell = region
-                                .assign_advice(
-                                    || "Output accumulator",
-                                    self.output_acc,
-                                    offset,
-                                    || Ok(biguint_to_f::<F>(&conv.output.pre_acc)),
-                                )?
-                                .cell();
-                            if offset == 0 {
-                                region.constrain_constant(cell, F::zero())?;
-                            }
-                        }
-                        let od = {
-                            let value = F::from(conv.overflow_detector.value as u64);
-                            let od = region.assign_advice(
-                                || "Overflow detector",
-                                self.overflow_detector,
-                                offset,
-                                || Ok(value),
-                            )?;
-                            if step == 1 {
-                                region.constrain_constant(od.cell(), F::zero())?;
-                            }
-                            od
-                        };
                         match step {
+                            1 => region.constrain_constant(od.cell(), F::zero())?,
                             2 => step2_od.push(od),
                             3 => step3_od.push(od),
-                            _ => {}
+                            4 => { // Do nothing
+                            }
+                            _ => unreachable!(),
                         }
                     }
-                    (step2_od, step3_od)
-                };
-                // special chunks
-                let output_lane = {
-                    let offset = slices.len();
-                    self.q_special.enable(&mut region, offset)?;
-                    region.assign_advice(
-                        || "Special Input acc",
-                        self.input_acc,
-                        offset,
-                        || Ok(biguint_to_f::<F>(&special.input)),
-                    )?;
-                    region.assign_advice(
+                    // Special chunk
+                    let final_output_coef = region.assign_advice(
                         || "Special output coef",
                         self.output_coef,
-                        offset,
+                        slices.len(),
                         || Ok(F::from(special.output_coef as u64)),
                     )?;
-                    region.assign_fixed(
-                        || "Special output power of base",
-                        self.output_pob,
-                        offset,
-                        || Ok(F::from(B9 as u64).pow(&[rotation.into(), 0, 0, 0])),
-                    )?;
-                    region.assign_advice(
-                        || "Special output acc pre",
-                        self.output_acc,
-                        offset,
-                        || Ok(biguint_to_f::<F>(&special.output_acc_pre)),
-                    )?;
-                    {
-                        let value = biguint_to_f::<F>(&special.output_acc_post);
-                        region.assign_advice(
-                            || "Special output acc post",
-                            self.output_acc,
-                            offset + 1,
-                            || Ok(value),
-                        )?
-                    }
-                };
-                Ok((output_lane, step2_od, step3_od))
-            },
-        )
-    }
-}
+                    let final_output_pob = F::from(B9 as u64).pow(&[rotation.into(), 0, 0, 0]);
+                    output_coefs.push(final_output_coef);
+                    output_pobs.push(final_output_pob);
 
-#[derive(Debug, Clone)]
-pub struct SumConfig<F> {
-    q_enable: Selector,
-    x: Column<Advice>,
-    sum: Column<Advice>,
-    _marker: PhantomData<F>,
-}
-impl<F: Field> SumConfig<F> {
-    // We assume the input columns are all copiable
-    pub fn configure(meta: &mut ConstraintSystem<F>, advices: [Column<Advice>; 2]) -> Self {
-        let q_enable = meta.selector();
-        let [x, sum] = advices;
+                    Ok((
+                        input_coefs,
+                        input_pobs,
+                        output_coefs,
+                        output_pobs,
+                        step2_od,
+                        step3_od,
+                    ))
+                },
+            )?;
+        let input_from_chunks =
+            self.generic
+                .linear_combine_consts(layouter, input_coefs, input_pobs, None)?;
+        let diff = self
+            .generic
+            .sub_advice(layouter, lane_base_13, input_from_chunks)?;
 
-        meta.enable_equality(x);
-        meta.enable_equality(sum);
+        self.stackable
+            .lookup_special_chunks(layouter, &diff, output_coefs.last().unwrap())?;
 
-        meta.create_gate("sum", |meta| {
-            let q_enable = meta.query_selector(q_enable);
-            let x = meta.query_advice(x, Rotation::cur());
-            let sum_next = meta.query_advice(sum, Rotation::next());
-            let sum = meta.query_advice(sum, Rotation::cur());
-            vec![q_enable * (sum_next - sum - x)]
-        });
-        Self {
-            q_enable,
-            x,
-            sum,
-            _marker: PhantomData,
-        }
-    }
-    pub fn assign_region(
-        &self,
-        layouter: &mut impl Layouter<F>,
-        xs: Vec<AssignedCell<F, F>>,
-    ) -> Result<AssignedCell<F, F>, Error> {
-        debug_assert!(xs.len() > 1);
-        layouter.assign_region(
-            || "running sum",
-            |mut region| {
-                let mut sum = F::zero();
-                let mut offset = 0;
-                for xs_item in xs.iter() {
-                    self.q_enable.enable(&mut region, offset)?;
-                    xs_item.copy_advice(|| "x", &mut region, self.x, offset)?;
-                    region.assign_advice(|| "sum", self.sum, offset, || Ok(sum))?;
-                    sum += xs_item.value().copied().unwrap_or_default();
-                    offset += 1;
-                }
-                let sum = region.assign_advice(|| "last sum", self.sum, offset, || Ok(sum))?;
-
-                Ok(sum)
-            },
-        )
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct OverflowCheckConfig<F> {
-    q_step2: Selector,
-    q_step3: Selector,
-    sum_config: SumConfig<F>,
-    acc: Column<Advice>,
-}
-impl<F: Field> OverflowCheckConfig<F> {
-    pub fn configure(
-        meta: &mut ConstraintSystem<F>,
-        step2_range_table: &RangeCheckConfig<F, STEP2_RANGE>,
-        step3_range_table: &RangeCheckConfig<F, STEP3_RANGE>,
-        advices: [Column<Advice>; 2],
-    ) -> Self {
-        let sum_config = SumConfig::configure(meta, advices);
-
-        let q_step2 = meta.complex_selector();
-        let q_step3 = meta.complex_selector();
-        let acc = advices[0];
-        meta.enable_equality(acc);
-
-        meta.lookup("Overflow check step2", |meta| {
-            let q_step2 = meta.query_selector(q_step2);
-            let acc = meta.query_advice(acc, Rotation::cur());
-            vec![(q_step2 * acc, step2_range_table.range)]
-        });
-        meta.lookup("Overflow check step3", |meta| {
-            let q_step3 = meta.query_selector(q_step3);
-            let acc = meta.query_advice(acc, Rotation::cur());
-            vec![(q_step3 * acc, step3_range_table.range)]
-        });
-
-        Self {
-            q_step2,
-            q_step3,
-            sum_config,
-            acc,
-        }
-    }
-    pub fn assign_region(
-        &self,
-        layouter: &mut impl Layouter<F>,
-        step2_cells: Vec<AssignedCell<F, F>>,
-        step3_cells: Vec<AssignedCell<F, F>>,
-    ) -> Result<(), Error> {
-        let step2_sum = self.sum_config.assign_region(layouter, step2_cells)?;
-        let step3_sum = self.sum_config.assign_region(layouter, step3_cells)?;
-        layouter.assign_region(
-            || "Overflow range check",
-            |mut region| {
-                let offset = 0;
-                self.q_step2.enable(&mut region, offset)?;
-                step2_sum.copy_advice(|| "Step2 sum", &mut region, self.acc, offset)?;
-                let offset = 1;
-                self.q_step3.enable(&mut region, offset)?;
-                step3_sum.copy_advice(|| "Step3 sum", &mut region, self.acc, offset)?;
-
-                Ok(())
-            },
-        )
+        let output_lane =
+            self.generic
+                .linear_combine_consts(layouter, output_coefs, output_pobs, None)?;
+        Ok((output_lane, step2_od, step3_od))
     }
 }

@@ -1,6 +1,6 @@
 use super::{StateCircuit, StateConfig};
 use crate::evm_circuit::{
-    table::{AccountFieldTag, CallContextFieldTag, RwTableTag},
+    table::{AccountFieldTag, CallContextFieldTag, RwTableTag, TxLogFieldTag},
     witness::{Rw, RwMap},
 };
 use crate::state_circuit::binary_number::AsBits;
@@ -10,16 +10,19 @@ use bus_mapping::operation::{
 use eth_types::{
     address,
     evm_types::{MemoryAddress, StackAddress},
-    Address, Field, ToAddress, Word, U256,
+    Address, ToAddress, Word, U256,
 };
+use halo2_proofs::poly::commitment::Params;
 use halo2_proofs::{
-    arithmetic::{BaseExt, Field as halo2_field},
+    arithmetic::BaseExt,
     dev::{MockProver, VerifyFailure},
-    pairing::bn256::Fr,
-    plonk::{Advice, Circuit, Column, ConstraintSystem},
+    pairing::bn256::{Bn256, Fr, G1Affine},
+    plonk::{keygen_vk, Advice, Circuit, Column, ConstraintSystem},
 };
 use std::collections::{BTreeSet, HashMap};
 use strum::IntoEnumIterator;
+
+const N_ROWS: usize = 1 << 16;
 
 #[derive(Hash, Eq, PartialEq)]
 pub enum AdviceColumn {
@@ -30,34 +33,44 @@ pub enum AdviceColumn {
     StorageKey,
     StorageKeyByte0,
     StorageKeyByte1,
-    StorageKeyChangeInverse,
     Value,
     RwCounter,
     RwCounterLimb0,
+    RwCounterLimb1,
     TagBit0,
     TagBit1,
     TagBit2,
     TagBit3,
+    LimbIndexBit0,
+    LimbIndexBit1,
+    LimbIndexBit2,
+    LimbIndexBit3,
+    LimbIndexBit4,
 }
 
 impl AdviceColumn {
-    pub fn value<F: Field>(&self, config: &StateConfig<F>) -> Column<Advice> {
+    pub fn value(&self, config: &StateConfig) -> Column<Advice> {
         match self {
             Self::IsWrite => config.is_write,
-            Self::Address => config.address.value,
-            Self::AddressLimb0 => config.address.limbs[0],
-            Self::AddressLimb1 => config.address.limbs[1],
-            Self::StorageKey => config.storage_key.encoded,
-            Self::StorageKeyByte0 => config.storage_key.bytes[0],
-            Self::StorageKeyByte1 => config.storage_key.bytes[1],
-            Self::StorageKeyChangeInverse => config.is_storage_key_unchanged.value_inv,
+            Self::Address => config.sort_keys.address.value,
+            Self::AddressLimb0 => config.sort_keys.address.limbs[0],
+            Self::AddressLimb1 => config.sort_keys.address.limbs[1],
+            Self::StorageKey => config.sort_keys.storage_key.encoded,
+            Self::StorageKeyByte0 => config.sort_keys.storage_key.bytes[0],
+            Self::StorageKeyByte1 => config.sort_keys.storage_key.bytes[1],
             Self::Value => config.value,
-            Self::RwCounter => config.rw_counter.value,
-            Self::RwCounterLimb0 => config.rw_counter.limbs[0],
-            Self::TagBit0 => config.tag.bits[0],
-            Self::TagBit1 => config.tag.bits[1],
-            Self::TagBit2 => config.tag.bits[2],
-            Self::TagBit3 => config.tag.bits[3],
+            Self::RwCounter => config.sort_keys.rw_counter.value,
+            Self::RwCounterLimb0 => config.sort_keys.rw_counter.limbs[0],
+            Self::RwCounterLimb1 => config.sort_keys.rw_counter.limbs[1],
+            Self::TagBit0 => config.sort_keys.tag.bits[0],
+            Self::TagBit1 => config.sort_keys.tag.bits[1],
+            Self::TagBit2 => config.sort_keys.tag.bits[2],
+            Self::TagBit3 => config.sort_keys.tag.bits[3],
+            Self::LimbIndexBit0 => config.lexicographic_ordering.first_different_limb.bits[0],
+            Self::LimbIndexBit1 => config.lexicographic_ordering.first_different_limb.bits[1],
+            Self::LimbIndexBit2 => config.lexicographic_ordering.first_different_limb.bits[2],
+            Self::LimbIndexBit3 => config.lexicographic_ordering.first_different_limb.bits[3],
+            Self::LimbIndexBit4 => config.lexicographic_ordering.first_different_limb.bits[4],
         }
     }
 }
@@ -75,7 +88,7 @@ fn test_state_circuit_ok(
     });
 
     let randomness = Fr::rand();
-    let circuit = StateCircuit::new(randomness, rw_map);
+    let circuit = StateCircuit::<Fr, N_ROWS>::new(randomness, rw_map);
     let power_of_randomness = circuit.instance();
 
     let prover = MockProver::<Fr>::run(19, &circuit, power_of_randomness).unwrap();
@@ -86,8 +99,35 @@ fn test_state_circuit_ok(
 #[test]
 fn degree() {
     let mut meta = ConstraintSystem::<Fr>::default();
-    StateCircuit::configure(&mut meta);
-    assert_eq!(meta.degree(), 16);
+    StateCircuit::<Fr, N_ROWS>::configure(&mut meta);
+    assert_eq!(meta.degree(), 9);
+}
+
+#[test]
+fn verifying_key_independent_of_rw_length() {
+    let randomness = Fr::rand();
+    let degree = 17;
+    let params = Params::<G1Affine>::unsafe_setup::<Bn256>(degree);
+
+    let no_rows = StateCircuit::<Fr, N_ROWS>::new(randomness, RwMap::default());
+    let one_row = StateCircuit::<Fr, N_ROWS>::new(
+        randomness,
+        RwMap::from(&OperationContainer {
+            memory: vec![Operation::new(
+                RWCounter::from(1),
+                RW::WRITE,
+                MemoryOp::new(1, MemoryAddress::from(0), 32),
+            )],
+            ..Default::default()
+        }),
+    );
+
+    // halo2::plonk::VerifyingKey doesn't derive Eq, so we check for equality using
+    // its debug string.
+    assert_eq!(
+        format!("{:?}", keygen_vk(&params, &no_rows).unwrap()),
+        format!("{:?}", keygen_vk(&params, &one_row).unwrap())
+    );
 }
 
 #[test]
@@ -296,6 +336,82 @@ fn storage_key_rlc() {
 }
 
 #[test]
+fn tx_log_ok() {
+    let rows = vec![
+        Rw::Stack {
+            rw_counter: 1,
+            is_write: true,
+            call_id: 1,
+            stack_pointer: 1023,
+            value: U256::from(394500u64),
+        },
+        Rw::TxLog {
+            rw_counter: 2,
+            is_write: true,
+            tx_id: 1,
+            log_id: 1,
+            field_tag: TxLogFieldTag::Address,
+            index: 0usize,
+            value: U256::one(),
+        },
+        Rw::TxLog {
+            rw_counter: 3,
+            is_write: true,
+            tx_id: 1,
+            log_id: 1,
+            field_tag: TxLogFieldTag::Topic,
+            index: 0usize,
+            value: U256::one(),
+        },
+        Rw::TxLog {
+            rw_counter: 4,
+            is_write: true,
+            tx_id: 1,
+            log_id: 1,
+            field_tag: TxLogFieldTag::Topic,
+            index: 1usize,
+            value: U256::from(2u64),
+        },
+        Rw::TxLog {
+            rw_counter: 5,
+            is_write: true,
+            tx_id: 1,
+            log_id: 1,
+            field_tag: TxLogFieldTag::Data,
+            index: 0usize,
+            value: U256::from(3u64),
+        },
+        Rw::TxLog {
+            rw_counter: 6,
+            is_write: true,
+            tx_id: 1,
+            log_id: 1,
+            field_tag: TxLogFieldTag::Data,
+            index: 1usize,
+            value: U256::from(3u64),
+        },
+    ];
+
+    assert_eq!(verify(rows), Ok(()));
+}
+
+#[test]
+fn tx_log_bad() {
+    // is_write is false
+    let rows = vec![Rw::TxLog {
+        rw_counter: 2,
+        is_write: false,
+        tx_id: 1,
+        log_id: 1,
+        field_tag: TxLogFieldTag::Address,
+        index: 0usize,
+        value: U256::one(),
+    }];
+
+    assert_error_matches(verify(rows), "is_write is always true for TxLog");
+}
+
+#[test]
 fn address_limb_mismatch() {
     let rows = vec![Rw::Account {
         rw_counter: 1,
@@ -305,7 +421,7 @@ fn address_limb_mismatch() {
         value: U256::zero(),
         value_prev: U256::zero(),
     }];
-    let overrides = HashMap::from([((AdviceColumn::Address, 1), Fr::from(10))]);
+    let overrides = HashMap::from([((AdviceColumn::Address, 0), Fr::from(10))]);
 
     let result = verify_with_overrides(rows, overrides);
 
@@ -323,8 +439,8 @@ fn address_limb_out_of_range() {
         value_prev: U256::zero(),
     }];
     let overrides = HashMap::from([
-        ((AdviceColumn::AddressLimb0, 1), Fr::from(1 << 16)),
-        ((AdviceColumn::AddressLimb1, 1), Fr::zero()),
+        ((AdviceColumn::AddressLimb0, 0), Fr::from(1 << 16)),
+        ((AdviceColumn::AddressLimb1, 0), Fr::zero()),
     ]);
 
     let result = verify_with_overrides(rows, overrides);
@@ -344,13 +460,7 @@ fn storage_key_mismatch() {
         tx_id: 4,
         committed_value: U256::from(5),
     }];
-    let overrides = HashMap::from([
-        ((AdviceColumn::StorageKey, 1), Fr::from(10)),
-        (
-            (AdviceColumn::StorageKeyChangeInverse, 1),
-            Fr::from(10).invert().unwrap(),
-        ),
-    ]);
+    let overrides = HashMap::from([((AdviceColumn::StorageKey, 0), Fr::from(10))]);
 
     let result = verify_with_overrides(rows, overrides);
 
@@ -370,13 +480,9 @@ fn storage_key_byte_out_of_range() {
         committed_value: U256::from(5),
     }];
     let overrides = HashMap::from([
-        ((AdviceColumn::StorageKey, 1), Fr::from(256)),
-        ((AdviceColumn::StorageKeyByte0, 1), Fr::from(256)),
-        ((AdviceColumn::StorageKeyByte1, 1), Fr::zero()),
-        (
-            (AdviceColumn::StorageKeyChangeInverse, 1),
-            Fr::from(256).invert().unwrap(),
-        ),
+        ((AdviceColumn::StorageKey, 0), Fr::from(256)),
+        ((AdviceColumn::StorageKeyByte0, 0), Fr::from(256)),
+        ((AdviceColumn::StorageKeyByte1, 0), Fr::zero()),
     ]);
 
     let result = verify_with_overrides(rows, overrides);
@@ -393,7 +499,7 @@ fn is_write_nonbinary() {
         field_tag: CallContextFieldTag::TxId,
         value: U256::one(),
     }];
-    let overrides = HashMap::from([((AdviceColumn::IsWrite, 1), Fr::from(4))]);
+    let overrides = HashMap::from([((AdviceColumn::IsWrite, 0), Fr::from(4))]);
 
     let result = verify_with_overrides(rows, overrides);
 
@@ -418,10 +524,7 @@ fn nonlexicographic_order_tag() {
     };
 
     assert_eq!(verify(vec![first, second]), Ok(()));
-    assert_error_matches(
-        verify(vec![second, first]),
-        "upper_limb_difference fits into u16",
-    );
+    assert_error_matches(verify(vec![second, first]), "limb_difference fits into u16");
 }
 
 #[test]
@@ -442,10 +545,7 @@ fn nonlexicographic_order_field_tag() {
     };
 
     assert_eq!(verify(vec![first, second]), Ok(()));
-    assert_error_matches(
-        verify(vec![second, first]),
-        "upper_limb_difference fits into u16",
-    );
+    assert_error_matches(verify(vec![second, first]), "limb_difference fits into u16");
 }
 
 #[test]
@@ -466,10 +566,7 @@ fn nonlexicographic_order_id() {
     };
 
     assert_eq!(verify(vec![first, second]), Ok(()));
-    assert_error_matches(
-        verify(vec![second, first]),
-        "upper_limb_difference fits into u16",
-    );
+    assert_error_matches(verify(vec![second, first]), "limb_difference fits into u16");
 }
 
 #[test]
@@ -492,10 +589,7 @@ fn nonlexicographic_order_address() {
     };
 
     assert_eq!(verify(vec![first, second]), Ok(()));
-    assert_error_matches(
-        verify(vec![second, first]),
-        "upper_limb_difference fits into u16",
-    );
+    assert_error_matches(verify(vec![second, first]), "limb_difference fits into u16");
 }
 
 #[test]
@@ -522,10 +616,7 @@ fn nonlexicographic_order_storage_key_upper() {
     };
 
     assert_eq!(verify(vec![first, second]), Ok(()));
-    assert_error_matches(
-        verify(vec![second, first]),
-        "upper_limb_difference fits into u16",
-    );
+    assert_error_matches(verify(vec![second, first]), "limb_difference fits into u16");
 }
 
 #[test]
@@ -552,10 +643,7 @@ fn nonlexicographic_order_storage_key_lower() {
     };
 
     assert_eq!(verify(vec![first, second]), Ok(()));
-    assert_error_matches(
-        verify(vec![second, first]),
-        "upper_limb_difference is zero or lower_limb_difference fits into u16",
-    );
+    assert_error_matches(verify(vec![second, first]), "limb_difference fits into u16");
 }
 
 #[test]
@@ -576,9 +664,42 @@ fn nonlexicographic_order_rw_counter() {
     };
 
     assert_eq!(verify(vec![first, second]), Ok(()));
+    assert_error_matches(verify(vec![second, first]), "limb_difference fits into u16");
+}
+
+#[test]
+fn lexicographic_ordering_previous_limb_differences_nonzero() {
+    let rows = vec![
+        Rw::TxRefund {
+            rw_counter: 1,
+            is_write: true,
+            tx_id: 23,
+            value: 20,
+            value_prev: 40,
+        },
+        Rw::Account {
+            rw_counter: 2,
+            is_write: true,
+            account_address: Address::zero(),
+            field_tag: AccountFieldTag::Nonce,
+            value: Word::zero(),
+            value_prev: Word::zero(),
+        },
+    ];
+
+    let overrides = HashMap::from([
+        ((AdviceColumn::LimbIndexBit0, 1), Fr::one()),
+        ((AdviceColumn::LimbIndexBit1, 1), Fr::one()),
+        ((AdviceColumn::LimbIndexBit2, 1), Fr::one()),
+        ((AdviceColumn::LimbIndexBit3, 1), Fr::one()),
+        ((AdviceColumn::LimbIndexBit4, 1), Fr::one()),
+    ]);
+
+    let result = verify_with_overrides(rows, overrides);
+
     assert_error_matches(
-        verify(vec![second, first]),
-        "upper_limb_difference is zero or lower_limb_difference fits into u16",
+        result,
+        "limb differences before first_different_limb are all 0",
     );
 }
 
@@ -606,9 +727,9 @@ fn read_inconsistency() {
 }
 
 #[test]
+#[ignore = "fix and re-enable once BinaryNumberChip is used for LexicographicOrderingChip"]
 fn invalid_start_rw_counter() {
-    // Start row is included automatically.
-    let rows = vec![];
+    let rows = vec![Rw::Start { rw_counter: 10 }];
     let overrides = HashMap::from([
         ((AdviceColumn::RwCounter, 0), Fr::from(2)),
         ((AdviceColumn::RwCounterLimb0, 0), Fr::from(2)),
@@ -617,6 +738,29 @@ fn invalid_start_rw_counter() {
     let result = verify_with_overrides(rows, overrides);
 
     assert_error_matches(result, "rw_counter is 0 for Start");
+}
+
+#[test]
+fn all_padding() {
+    assert_eq!(
+        prover(vec![], HashMap::new()).verify_at_rows(0..100, 0..100),
+        Ok(())
+    );
+}
+
+#[test]
+fn skipped_start_rw_counter() {
+    let overrides = HashMap::from([
+        (
+            (AdviceColumn::RwCounter, -1),
+            // The original assignment is 1 << 16.
+            Fr::from((1 << 16) + 1),
+        ),
+        ((AdviceColumn::RwCounterLimb0, -1), Fr::one()),
+    ]);
+
+    let result = prover(vec![], overrides).verify_at_rows(N_ROWS - 1..N_ROWS, N_ROWS - 1..N_ROWS);
+    assert_error_matches(result, "rw_counter increases by 1 for every non-first row");
 }
 
 #[test]
@@ -654,7 +798,7 @@ fn invalid_memory_value() {
         memory_address: 10,
         byte: 0,
     }];
-    let overrides = HashMap::from([((AdviceColumn::Value, 1), Fr::from(256))]);
+    let overrides = HashMap::from([((AdviceColumn::Value, 0), Fr::from(256))]);
 
     let result = verify_with_overrides(rows, overrides);
 
@@ -708,12 +852,13 @@ fn invalid_stack_address_change() {
 
     assert_error_matches(
         verify(rows),
-        "if call id is the same, address change is 0 or 1",
+        "if previous row is also Stack with unchanged call id, address change is 0 or 1",
     );
 }
 
 #[test]
 fn invalid_tags() {
+    let first_row_offset = -isize::try_from(N_ROWS).unwrap();
     let tags: BTreeSet<usize> = RwTableTag::iter().map(|x| x as usize).collect();
     for i in 0..16 {
         if tags.contains(&i) {
@@ -723,21 +868,21 @@ fn invalid_tags() {
             .as_bits()
             .map(|bit| if bit { Fr::one() } else { Fr::zero() });
         let overrides = HashMap::from([
-            ((AdviceColumn::TagBit0, 0), bits[0]),
-            ((AdviceColumn::TagBit1, 0), bits[1]),
-            ((AdviceColumn::TagBit2, 0), bits[2]),
-            ((AdviceColumn::TagBit3, 0), bits[3]),
+            ((AdviceColumn::TagBit0, first_row_offset), bits[0]),
+            ((AdviceColumn::TagBit1, first_row_offset), bits[1]),
+            ((AdviceColumn::TagBit2, first_row_offset), bits[2]),
+            ((AdviceColumn::TagBit3, first_row_offset), bits[3]),
         ]);
 
-        let result = verify_with_overrides(vec![], overrides);
+        let result = prover(vec![], overrides).verify_at_rows(0..1, 0..1);
 
         assert_error_matches(result, "binary number value in range");
     }
 }
 
-fn prover(rows: Vec<Rw>, overrides: HashMap<(AdviceColumn, usize), Fr>) -> MockProver<Fr> {
+fn prover(rows: Vec<Rw>, overrides: HashMap<(AdviceColumn, isize), Fr>) -> MockProver<Fr> {
     let randomness = Fr::rand();
-    let circuit = StateCircuit {
+    let circuit = StateCircuit::<Fr, N_ROWS> {
         randomness,
         rows,
         overrides,
@@ -748,19 +893,23 @@ fn prover(rows: Vec<Rw>, overrides: HashMap<(AdviceColumn, usize), Fr>) -> MockP
 }
 
 fn verify(rows: Vec<Rw>) -> Result<(), Vec<VerifyFailure>> {
-    let n_rows = rows.len();
-    prover(rows, HashMap::new()).verify_at_rows(0..n_rows + 1, 0..n_rows + 1)
+    let used_rows = rows.len();
+    prover(rows, HashMap::new())
+        .verify_at_rows(N_ROWS - used_rows..N_ROWS, N_ROWS - used_rows..N_ROWS)
 }
 
 fn verify_with_overrides(
     rows: Vec<Rw>,
-    overrides: HashMap<(AdviceColumn, usize), Fr>,
+    overrides: HashMap<(AdviceColumn, isize), Fr>,
 ) -> Result<(), Vec<VerifyFailure>> {
     // Sanity check that the original RwTable without overrides is valid.
     assert_eq!(verify(rows.clone()), Ok(()));
 
-    let n_rows = rows.len();
-    prover(rows, overrides).verify_at_rows(0..n_rows + 1, 0..n_rows + 1)
+    let n_active_rows = rows.len();
+    prover(rows, overrides).verify_at_rows(
+        N_ROWS - n_active_rows..N_ROWS,
+        N_ROWS - n_active_rows..N_ROWS,
+    )
 }
 
 fn assert_error_matches(result: Result<(), Vec<VerifyFailure>>, name: &str) {

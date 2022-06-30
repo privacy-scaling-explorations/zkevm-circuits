@@ -2,6 +2,7 @@
 name = "keccak256"
 version = "0.1.0"
 edition = "2021"
+license = "MIT OR Apache-2.0"
 
 [features]
 dev-graph = ["halo2_proofs/dev-graph", "plotters"]
@@ -15,6 +16,8 @@ plotters = { version = "0.3.0", optional = true }
 eth-types = { path = "../eth-types" }
 lazy_static = "1.4"
 gadgets = { path = "../gadgets" }
+strum = "0.24"
+strum_macros = "0.24"
 
 [dev-dependencies]
 pretty_assertions = "1.0"

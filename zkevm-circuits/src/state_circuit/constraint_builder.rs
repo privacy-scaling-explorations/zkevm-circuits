@@ -7,7 +7,7 @@ use super::{
 use crate::evm_circuit::{
     param::N_BYTES_WORD,
     table::{AccountFieldTag, RwTableTag},
-    util::{not, or},
+    util::not,
 };
 use crate::util::Expr;
 use eth_types::Field;
@@ -17,20 +17,20 @@ use strum::IntoEnumIterator;
 #[derive(Clone)]
 pub struct Queries<F: Field> {
     pub selector: Expression<F>,
+    pub lexicographic_ordering_selector: Expression<F>,
     pub rw_counter: MpiQueries<F, N_LIMBS_RW_COUNTER>,
     pub is_write: Expression<F>,
     pub tag: Expression<F>,
     pub tag_bits: [Expression<F>; 4],
     pub id: MpiQueries<F, N_LIMBS_ID>,
-    pub is_id_unchanged: Expression<F>,
+    pub is_tag_and_id_unchanged: Expression<F>,
     pub address: MpiQueries<F, N_LIMBS_ACCOUNT_ADDRESS>,
     pub field_tag: Expression<F>,
     pub storage_key: RlcQueries<F, N_BYTES_WORD>,
     pub value: Expression<F>,
     pub lookups: LookupsQueries<F>,
     pub power_of_randomness: [Expression<F>; N_BYTES_WORD - 1],
-    pub is_storage_key_unchanged: Expression<F>,
-    pub lexicographic_ordering_upper_limb_difference_is_zero: Expression<F>,
+    pub first_access: Expression<F>,
 }
 
 type Constraint<F> = (&'static str, Expression<F>);
@@ -96,6 +96,9 @@ impl<F: Field> ConstraintBuilder<F> {
         self.condition(q.tag_matches(RwTableTag::CallContext), |cb| {
             cb.build_call_context_constraints(q)
         });
+        self.condition(q.tag_matches(RwTableTag::TxLog), |cb| {
+            cb.build_tx_log_constraints(q)
+        });
     }
 
     fn build_general_constraints(&mut self, q: &Queries<F>) {
@@ -104,7 +107,14 @@ impl<F: Field> ConstraintBuilder<F> {
     }
 
     fn build_start_constraints(&mut self, q: &Queries<F>) {
-        self.require_zero("rw_counter is 0 for Start", q.rw_counter.value.clone());
+        self.require_zero("field_tag is 0 for Start", q.field_tag());
+        self.require_zero("address is 0 for Start", q.address.value.clone());
+        self.require_zero("id is 0 for Start", q.id());
+        self.require_zero("storage_key is 0 for Start", q.storage_key.encoded.clone());
+        self.require_zero(
+            "rw_counter increases by 1 for every non-first row",
+            q.lexicographic_ordering_selector.clone() * (q.rw_counter_change() - 1.expr()),
+        );
     }
 
     fn build_memory_constraints(&mut self, q: &Queries<F>) {
@@ -136,9 +146,9 @@ impl<F: Field> ConstraintBuilder<F> {
             "stack address fits into 10 bits",
             (q.address.value.clone(), q.lookups.u10.clone()),
         );
-        self.condition(q.is_id_unchanged.clone(), |cb| {
+        self.condition(q.is_tag_and_id_unchanged.clone(), |cb| {
             cb.require_boolean(
-                "if call id is the same, address change is 0 or 1",
+                "if previous row is also Stack with unchanged call id, address change is 0 or 1",
                 q.address_change(),
             )
         });
@@ -227,8 +237,90 @@ impl<F: Field> ConstraintBuilder<F> {
         // TODO: Missing constraints
     }
 
+    fn build_tx_log_constraints(&mut self, q: &Queries<F>) {
+        self.require_equal(
+            "is_write is always true for TxLog",
+            q.is_write.clone(),
+            1.expr(),
+        );
+
+        // Comment out the following field_tag-related constraints as it is
+        // duplicated between state circuit and evm circuit. For more information, please refer to https://github.com/privacy-scaling-explorations/zkevm-specs/issues/221
+        // cb.require_zero(
+        //     "reset log_id to one when tx_id increases",
+        //     q.tx_log_id() - 1.expr(),
+        // );
+
+        // constrain first field_tag is Address when tx id increases
+        // cb.require_equal(
+        //     "first field_tag is Address when tx changes",
+        //     q.field_tag_matches(TxLogFieldTag::Address),
+        //     1.expr(),
+        // );
+
+        // increase log_id when tag changes to Address within same tx
+        // self.condition(
+        //     q.is_id_unchanged.clone()
+        //         * q.is_tag_unchanged.clone()
+        //         * q.field_tag_matches(TxLogFieldTag::Address),
+        //     |cb| {
+        //         cb.require_equal(
+        //             "log_id = pre_log_id + 1",
+        //             q.tx_log_id(),
+        //             q.tx_log_id_prev() + 1.expr(),
+        //         )
+        //     },
+        // );
+
+        // within same tx, log_id will not change if field_tag != Address
+        // self.condition(
+        //     q.is_id_unchanged.clone()
+        //         * q.is_tag_unchanged.clone()
+        //         * (1.expr() - q.field_tag_matches(TxLogFieldTag::Address)),
+        //     |cb| {
+        //         cb.require_equal(
+        //             "log_id will not change if field_tag != Address within
+        // tx",             q.tx_log_id(),
+        //             q.tx_log_id_prev(),
+        //         )
+        //     },
+        // );
+
+        // constrain index is increasing by 1 when field_tag stay same
+        // self.condition(
+        //     q.is_tag_unchanged.clone() * q.is_field_tag_unchanged.clone(),
+        //     |cb| {
+        //         cb.require_equal(
+        //             "index = pre_index + 1",
+        //             q.tx_log_index(),
+        //             q.tx_log_index_prev() + 1.expr(),
+        //         )
+        //     },
+        // );
+
+        // self.condition(q.field_tag_matches(TxLogFieldTag::Address), |cb| {
+        //     cb.require_zero("index is zero for address ", q.tx_log_index())
+        // });
+
+        // if tag Topic appear, topic_index in range [0,4)
+        // self.condition(q.field_tag_matches(TxLogFieldTag::Topic), |cb| {
+        //     let topic_index = q.tx_log_index();
+        //     cb.require_zero(
+        //         "topic_index in range [0,4) ",
+        //         topic_index.clone()
+        //             * (1.expr() - topic_index.clone())
+        //             * (2.expr() - topic_index.clone())
+        //             * (3.expr() - topic_index),
+        //     )
+        // });
+    }
+
     fn require_zero(&mut self, name: &'static str, e: Expression<F>) {
         self.constraints.push((name, self.condition.clone() * e));
+    }
+
+    fn require_equal(&mut self, name: &'static str, left: Expression<F>, right: Expression<F>) {
+        self.require_zero(name, left - right)
     }
 
     fn require_boolean(&mut self, name: &'static str, e: Expression<F>) {
@@ -296,23 +388,38 @@ impl<F: Field> Queries<F> {
     }
 
     fn first_access(&self) -> Expression<F> {
-        or::expr(&[
-            not::expr(
-                self.lexicographic_ordering_upper_limb_difference_is_zero
-                    .clone(),
-            ),
-            not::expr(self.is_storage_key_unchanged.clone()),
-        ])
+        self.first_access.clone()
     }
 
     fn address_change(&self) -> Expression<F> {
         self.address.value.clone() - self.address.value_prev.clone()
+    }
+
+    fn rw_counter_change(&self) -> Expression<F> {
+        self.rw_counter.value.clone() - self.rw_counter.value_prev.clone()
+    }
+
+    fn tx_log_index(&self) -> Expression<F> {
+        from_digits(&self.address.limbs[0..2], (1u64 << 16).expr())
+    }
+
+    fn tx_log_index_prev(&self) -> Expression<F> {
+        from_digits(&self.address.limbs_prev[0..2], (1u64 << 16).expr())
+    }
+
+    fn tx_log_id(&self) -> Expression<F> {
+        from_digits(&self.address.limbs[3..5], (1u64 << 16).expr())
+    }
+
+    fn tx_log_id_prev(&self) -> Expression<F> {
+        from_digits(&self.address.limbs_prev[3..5], (1u64 << 16).expr())
     }
 }
 
 fn from_digits<F: Field>(digits: &[Expression<F>], base: Expression<F>) -> Expression<F> {
     digits
         .iter()
+        .rev()
         .fold(Expression::Constant(F::zero()), |result, digit| {
             digit.clone() + result * base.clone()
         })
