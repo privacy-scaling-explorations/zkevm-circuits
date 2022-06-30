@@ -22,13 +22,16 @@ pub struct MixingConfig<F> {
     q_flag: Selector,
     q_out_copy: Selector,
     generic: GenericConfig<F>,
+    out_mixing: [Column<Advice>; 25],
 }
 
 impl<F: Field> MixingConfig<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
-        table: &FromBase9TableConfig<F>,
         state: [Column<Advice>; 25],
+        base_conv_config_b9_b13: BaseConversionConfig<F>,
+        base_conv_config_b2_b9: BaseConversionConfig<F>,
+        flag: Column<Advice>,
         generic: GenericConfig<F>,
     ) -> MixingConfig<F> {
         meta.enable_equality(flag);
@@ -64,18 +67,20 @@ impl<F: Field> MixingConfig<F> {
             ]
         });
 
-        // We mix -> Flag = true
-        let absorb_config = AbsorbConfig::configure(meta, state);
+        // Allocate out_mixing columns and enable copy constraints for them.
+        // Offset = 0 (Non mixing)
+        // Offset = 1 (Mixing)
+        let out_mixing: [Column<Advice>; 25] = (0..25)
+            .map(|_| {
+                let column = meta.advice_column();
+                meta.enable_equality(column);
+                column
+            })
+            .collect::<Vec<_>>()
+            .try_into()
+            .unwrap();
 
-        let base_info = table.get_base_info(false);
-        let base_conv_lane = meta.advice_column();
-        let base_conv_config = BaseConversionConfig::configure(
-            meta,
-            base_info,
-            base_conv_lane,
-            flag,
-            state[0..5].try_into().unwrap(),
-        );
+        let absorb_config = AbsorbConfig::configure(meta, state, base_conv_config_b2_b9);
 
         let q_out_copy = meta.selector();
 
@@ -107,6 +112,7 @@ impl<F: Field> MixingConfig<F> {
             q_flag,
             q_out_copy,
             generic,
+            out_mixing,
         }
     }
 
@@ -197,7 +203,7 @@ impl<F: Field> MixingConfig<F> {
         in_state: &[AssignedCell<F, F>; 25],
         out_state: [F; 25],
         flag_bool: bool,
-        next_mixing: Option<[F; NEXT_INPUTS_LANES]>,
+        next_mixing: [AssignedCell<F, F>; NEXT_INPUTS_LANES],
     ) -> Result<[AssignedCell<F, F>; 25], Error> {
         // Enforce flag constraints and witness them.
         let (flag, negated_flag) = self.enforce_flag_consistency(layouter, flag_bool)?;
@@ -296,6 +302,7 @@ impl<F: Field> MixingConfig<F> {
 mod tests {
     use super::*;
     use crate::common::{State, ROUND_CONSTANTS};
+    use crate::permutation::tables::FromBinaryTableConfig;
     use halo2_proofs::circuit::Layouter;
     use halo2_proofs::pairing::bn256::Fr as Fp;
     use halo2_proofs::plonk::{ConstraintSystem, Error};
@@ -333,8 +340,6 @@ mod tests {
             }
 
             fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-                let table = FromBase9TableConfig::configure(meta);
-
                 let state: [Column<Advice>; 25] = (0..25)
                     .map(|_| {
                         let col = meta.advice_column();
@@ -344,13 +349,56 @@ mod tests {
                     .collect_vec()
                     .try_into()
                     .unwrap();
+
+                let next_inputs =
+                    [(); NEXT_INPUTS_LANES]
+                        .map(|_| meta.advice_column())
+                        .map(|col| {
+                            meta.enable_equality(col);
+                            col
+                        });
+
+                let flag = meta.advice_column();
+                meta.enable_equality(flag);
                 let fixed = meta.fixed_column();
                 let generic =
                     GenericConfig::configure(meta, state[0..3].try_into().unwrap(), fixed);
 
+                let table_b9_b13 = FromBase9TableConfig::configure(meta);
+                let table_b2_b9 = FromBinaryTableConfig::configure(meta);
+
+                let base_conv_lane = meta.advice_column();
+                meta.enable_equality(base_conv_lane);
+
+                let base_conv_config_b2_b9 = BaseConversionConfig::configure(
+                    meta,
+                    table_b2_b9.get_base_info(true),
+                    base_conv_lane,
+                    flag,
+                    state[0..5].try_into().unwrap(),
+                );
+
+                let base_conv_config_b9_b13 = BaseConversionConfig::configure(
+                    meta,
+                    table_b9_b13.get_base_info(false),
+                    base_conv_lane,
+                    flag,
+                    state[0..5].try_into().unwrap(),
+                );
+
                 MyConfig {
-                    mixing_conf: MixingConfig::configure(meta, &table, state, generic),
-                    table,
+                    mixing_conf: MixingConfig::configure(
+                        meta,
+                        state,
+                        base_conv_config_b9_b13,
+                        base_conv_config_b2_b9,
+                        flag,
+                        generic,
+                    ),
+                    state,
+                    next_inputs,
+                    table_b9_b13,
+                    table_b2_b9,
                 }
             }
 
@@ -416,7 +464,7 @@ mod tests {
                     &in_state,
                     self.out_state,
                     self.is_mixing,
-                    self.next_mixing,
+                    next_inputs,
                 )?;
 
                 Ok(())
@@ -517,45 +565,6 @@ mod tests {
                 out_state: out_non_mixing_state,
                 next_mixing,
                 is_mixing: true,
-                round_ctant: PERMUTATION - 1,
-            };
-
-            let prover = MockProver::<Fp>::run(
-                17,
-                &circuit,
-                vec![constants_b9.clone(), constants_b13.clone()],
-            )
-            .unwrap();
-
-            assert!(prover.verify().is_err());
-        }
-
-        // With flag set to `true`, we mix.
-        {
-            let circuit = MyCircuit::<Fp> {
-                in_state,
-                out_state: out_mixing_state,
-                next_mixing,
-                is_mixing: true,
-                round_ctant: PERMUTATION - 1,
-            };
-
-            let prover = MockProver::<Fp>::run(
-                17,
-                &circuit,
-                vec![constants_b9.clone(), constants_b13.clone()],
-            )
-            .unwrap();
-
-            assert_eq!(prover.verify(), Ok(()));
-
-            // With wrong input and/or output witnesses, the proof should fail
-            // to be verified.
-            let circuit = MyCircuit::<Fp> {
-                in_state,
-                out_state: in_state,
-                next_mixing,
-                is_mixing: false,
             };
 
             let prover = MockProver::<Fp>::run(17, &circuit, vec![]).unwrap();

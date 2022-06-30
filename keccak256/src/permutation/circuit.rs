@@ -29,8 +29,7 @@ pub struct KeccakFConfig<F: Field> {
     theta_config: ThetaConfig<F>,
     rho_config: RhoConfig<F>,
     xi_config: XiConfig<F>,
-    from_b9_table: FromBase9TableConfig<F>,
-    base_conversion_config: BaseConversionConfig<F>,
+    base_conv_config_b9: BaseConversionConfig<F>,
     mixing_config: MixingConfig<F>,
     state: [Column<Advice>; 25],
     q_out: Selector,
@@ -39,53 +38,35 @@ pub struct KeccakFConfig<F: Field> {
 
 impl<F: Field> KeccakFConfig<F> {
     // We assume state is received in base-9.
-    pub fn configure(meta: &mut ConstraintSystem<F>) -> Self {
-        let state: [Column<Advice>; 25] = (0..25)
-            .map(|_| {
-                let column = meta.advice_column();
-                meta.enable_equality(column);
-                column
-            })
-            .collect_vec()
-            .try_into()
-            .unwrap();
-
-        let fixed = meta.fixed_column();
-        let generic = GenericConfig::configure(meta, state[0..3].try_into().unwrap(), fixed);
-        let table_cols: [TableColumn; 3] = (0..3)
-            .map(|_| meta.lookup_table_column())
-            .collect_vec()
-            .try_into()
-            .unwrap();
-        let stackable =
-            StackableTable::configure(meta, state[0..3].try_into().unwrap(), table_cols);
-
+    pub fn configure(
+        meta: &mut ConstraintSystem<F>,
+        state: [Column<Advice>; 25],
+        base_conv_config_b9: BaseConversionConfig<F>,
+        base_conv_config_b2: BaseConversionConfig<F>,
+        base_conv_activator: Column<Advice>,
+        flag: Column<Advice>,
+        generic: GenericConfig<F>,
+        stackable: StackableTable<F>,
+    ) -> Self {
         // theta
         let theta_config = ThetaConfig::configure(meta.selector(), meta, state);
         // rho
+        let fixed = meta.fixed_column();
         let rho_config =
             RhoConfig::configure(meta, state, fixed, generic.clone(), stackable.clone());
         // xi
         let xi_config = XiConfig::configure(meta.selector(), meta, state);
 
-        // Allocate space for the activation flag of the base_conversion.
-        let base_conv_activator = meta.advice_column();
-        meta.enable_equality(base_conv_activator);
-        // Base conversion config.
-        let from_b9_table = FromBase9TableConfig::configure(meta);
-        let base_info = from_b9_table.get_base_info(false);
-        let base_conv_lane = meta.advice_column();
-        let base_conversion_config = BaseConversionConfig::configure(
-            meta,
-            base_info,
-            base_conv_lane,
-            base_conv_activator,
-            state[0..5].try_into().unwrap(),
-        );
-
         // Mixing will make sure that the flag is binary constrained and that
         // the out state matches the expected result.
-        let mixing_config = MixingConfig::configure(meta, &from_b9_table, state, generic.clone());
+        let mixing_config = MixingConfig::configure(
+            meta,
+            state,
+            base_conv_config_b9.clone(),
+            base_conv_config_b2,
+            flag,
+            generic.clone(),
+        );
 
         // Allocate the `out state correctness` gate selector
         let q_out = meta.selector();
@@ -109,9 +90,8 @@ impl<F: Field> KeccakFConfig<F> {
             theta_config,
             rho_config,
             xi_config,
-            from_b9_table,
-            base_conversion_config,
             mixing_config,
+            base_conv_config_b9,
             state,
             q_out,
             base_conv_activator,
@@ -120,8 +100,7 @@ impl<F: Field> KeccakFConfig<F> {
 
     pub fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
         self.stackable.load(layouter)?;
-        self.rho_config.load(layouter)?;
-        self.from_b9_table.load(layouter)
+        self.rho_config.load(layouter)
     }
 
     pub fn assign_permutation(
@@ -217,9 +196,7 @@ impl<F: Field> KeccakFConfig<F> {
             state_bigint_to_field(mix_res),
             flag,
             next_mixing,
-        )?;
-
-        self.constrain_out_state(layouter, &mix_res, out_state)
+        )
     }
 
     pub fn constrain_out_state(
@@ -292,7 +269,7 @@ mod tests {
     use std::convert::TryInto;
 
     #[test]
-    fn test_keccak_round() {
+    fn test_keccak_f_round() {
         #[derive(Default)]
         struct MyCircuit<F> {
             in_state: [F; 25],
@@ -344,11 +321,23 @@ mod tests {
                 let base_conv_activator = meta.advice_column();
                 meta.enable_equality(base_conv_activator);
 
+                let fixed = meta.fixed_column();
+                let generic =
+                    GenericConfig::configure(meta, state[0..3].try_into().unwrap(), fixed);
+                let table_cols: [TableColumn; 3] = (0..3)
+                    .map(|_| meta.lookup_table_column())
+                    .collect_vec()
+                    .try_into()
+                    .unwrap();
+                let stackable =
+                    StackableTable::configure(meta, state[0..3].try_into().unwrap(), table_cols);
+
                 let base_conv_config_b2_b9 = BaseConversionConfig::configure(
                     meta,
                     table_b2.get_base_info(true),
                     base_conv_lane,
                     flag,
+                    state[0..5].try_into().unwrap(),
                 );
 
                 let base_conv_config_b9_b13 = BaseConversionConfig::configure(
@@ -356,6 +345,7 @@ mod tests {
                     table_b9.get_base_info(false),
                     base_conv_lane,
                     flag,
+                    state[0..5].try_into().unwrap(),
                 );
 
                 let keccak_config = KeccakFConfig::configure(
@@ -365,6 +355,8 @@ mod tests {
                     base_conv_config_b2_b9,
                     base_conv_activator,
                     flag,
+                    generic,
+                    stackable,
                 );
 
                 MyConfig {

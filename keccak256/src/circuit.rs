@@ -153,13 +153,18 @@ pub struct KeccakConfig<F: Field> {
 
 impl<F: Field> KeccakConfig<F> {
     pub fn configure(meta: &mut ConstraintSystem<F>) -> Self {
-        let round_ctant_b9 = meta.advice_column();
-        let round_ctant_b13 = meta.advice_column();
-        let round_constants_b9 = meta.instance_column();
-        let round_constants_b13 = meta.instance_column();
+        let state = [(); 25].map(|_| meta.advice_column()).map(|col| {
+            meta.enable_equality(col);
+            col
+        });
 
-        meta.enable_equality(round_ctant_b9);
-        meta.enable_equality(round_ctant_b13);
+        // The first position always stores the latest acc_input.
+        let next_inputs = [(); NEXT_INPUTS_BYTES + 1]
+            .map(|_| meta.advice_column())
+            .map(|col| {
+                meta.enable_equality(col);
+                col
+            });
 
         let base_conv_lane = meta.advice_column();
         meta.enable_equality(base_conv_lane);
@@ -179,26 +184,15 @@ impl<F: Field> KeccakConfig<F> {
             table_b9.get_base_info(false),
             base_conv_lane,
             flag,
+            state[0..5].try_into().unwrap(),
         );
         let base_conv_b2_b9 = BaseConversionConfig::configure(
             meta,
             table_b2.get_base_info(true),
             base_conv_lane,
             flag,
+            state[0..5].try_into().unwrap(),
         );
-
-        let state = [(); 25].map(|_| meta.advice_column()).map(|col| {
-            meta.enable_equality(col);
-            col
-        });
-
-        // The first position always stores the latest acc_input.
-        let next_inputs = [(); NEXT_INPUTS_BYTES + 1]
-            .map(|_| meta.advice_column())
-            .map(|col| {
-                meta.enable_equality(col);
-                col
-            });
 
         let q_enable = meta.selector();
         let state_tag = meta.advice_column();

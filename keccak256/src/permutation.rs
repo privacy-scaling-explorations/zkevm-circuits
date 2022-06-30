@@ -1,10 +1,7 @@
 #![allow(clippy::type_complexity)]
 #![allow(clippy::too_many_arguments)]
 
-use crate::{
-    circuit::{StateTag, NEXT_INPUTS_BYTES, STATE_WORDS},
-    common::State,
-};
+use crate::common::State;
 use eth_types::Field;
 use halo2_proofs::{
     circuit::{layouter, AssignedCell, Layouter},
@@ -27,6 +24,7 @@ pub(crate) mod tables;
 pub(crate) mod theta;
 pub(crate) mod xi;
 
+/*
 use crate::circuit::KeccakConfig;
 
 #[repr(transparent)]
@@ -198,3 +196,5 @@ mod next_inputs {
         assert!(perm_inputs.0.last().unwrap().state_tag.is_finalize());
     }
 }
+
+ */
