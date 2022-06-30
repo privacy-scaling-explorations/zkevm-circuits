@@ -158,12 +158,14 @@ pub struct Transaction {
 
 impl Transaction {
     pub fn table_assignments<F: Field>(&self, randomness: F) -> Vec<[F; 4]> {
+        dbg!(self.nonce);
         [
             vec![
                 [
                     F::from(self.id as u64),
                     F::from(TxContextFieldTag::Nonce as u64),
                     F::zero(),
+                    // not RLC
                     F::from(self.nonce),
                 ],
                 [
@@ -824,9 +826,15 @@ impl Rw {
                     _ => value.to_scalar().unwrap(),
                 }
             }
-            Self::Account { value, .. }
-            | Self::AccountStorage { value, .. }
-            | Self::Stack { value, .. } => {
+            Self::Account {
+                value, field_tag, ..
+            } => match field_tag {
+                AccountFieldTag::CodeHash | AccountFieldTag::Balance => {
+                    RandomLinearCombination::random_linear_combine(value.to_le_bytes(), randomness)
+                }
+                AccountFieldTag::Nonce => value.to_scalar().unwrap(),
+            },
+            Self::AccountStorage { value, .. } | Self::Stack { value, .. } => {
                 RandomLinearCombination::random_linear_combine(value.to_le_bytes(), randomness)
             }
 
@@ -849,7 +857,20 @@ impl Rw {
 
     fn value_prev_assignment<F: Field>(&self, randomness: F) -> Option<F> {
         match self {
-            Self::Account { value_prev, .. } | Self::AccountStorage { value_prev, .. } => {
+            Self::Account {
+                value_prev,
+                field_tag,
+                ..
+            } => Some(match field_tag {
+                AccountFieldTag::CodeHash | AccountFieldTag::Balance => {
+                    RandomLinearCombination::random_linear_combine(
+                        value_prev.to_le_bytes(),
+                        randomness,
+                    )
+                }
+                AccountFieldTag::Nonce => value_prev.to_scalar().unwrap(),
+            }),
+            Self::AccountStorage { value_prev, .. } => {
                 Some(RandomLinearCombination::random_linear_combine(
                     value_prev.to_le_bytes(),
                     randomness,
