@@ -647,7 +647,7 @@ impl<F: Field> FromBinaryTableConfig<F> {
                     .multi_cartesian_product()
                     .enumerate()
                 {
-                    let input_b2 = f_from_radix_be::<F>(&b2_chunks, B9);
+                    let input_b2 = f_from_radix_be::<F>(&b2_chunks, B2);
                     let output_b9 = f_from_radix_be::<F>(&b2_chunks, B9);
                     let output_b13 = f_from_radix_be::<F>(&b2_chunks, B13);
 

@@ -138,7 +138,6 @@ impl<F: Field> KeccakFConfig<F> {
             .unwrap();
         let stackable = StackableTable::configure(meta, advices, stackable_cols);
         let base13to9_config = Base13toBase9TableConfig::configure(meta, advices, base13to9_cols);
-        // Base conversion config.
         let from_b9_table = FromBase9TableConfig::configure(meta, advices, from_base9_cols);
         let from_b2_table = FromBinaryTableConfig::configure(meta, advices, from_base2_cols);
 
@@ -191,8 +190,8 @@ impl<F: Field> KeccakFConfig<F> {
 
             state[0] = self.generic.add_fixed(
                 layouter,
-                state[0].clone(),
-                iota_constants.a4_times_round_constants_b9[round_idx],
+                &state[0],
+                &iota_constants.a4_times_round_constants_b9[round_idx],
             )?;
 
             // The resulting state is in Base-9 now. We now convert it to
@@ -200,15 +199,13 @@ impl<F: Field> KeccakFConfig<F> {
             // start of the loop.
             state = convert_from_b9_to_b13(layouter, &self.from_b9_table, &self.generic, state)?;
         }
-        let (f_pos, f_neg) = self.stackable.assign_boolean_flag(layouter, Some(flag))?;
-
+        let (f_mix, f_no_mix) = self.stackable.assign_boolean_flag(layouter, Some(flag))?;
         state[0] = self.generic.conditional_add_const(
             layouter,
-            state[0].clone(),
-            f_neg.clone(),
-            iota_constants.a4_times_round_constants_b9[PERMUTATION - 1],
+            &state[0],
+            &f_no_mix,
+            &iota_constants.a4_times_round_constants_b9[PERMUTATION - 1],
         )?;
-
         let next_input = assign_next_input(layouter, &self.advice, &next_mixing)?;
 
         // Convert to base 9 and multiply by A4
@@ -233,37 +230,34 @@ impl<F: Field> KeccakFConfig<F> {
                     )?;
                     let vs = (0..NUM_OF_BINARY_SLICES)
                         .map(|i| {
-                            biguint_to_f(
-                                &BigUint::from(B13)
-                                    .pow((NUM_OF_BINARY_CHUNKS_PER_SLICE * i) as u32),
-                            )
+                            biguint_to_f::<F>(
+                                &BigUint::from(B9).pow((NUM_OF_BINARY_CHUNKS_PER_SLICE * i) as u32),
+                            ) * F::from(A4)
                         })
                         .rev()
                         .collect_vec();
                     let output =
                         self.generic
                             .linear_combine_consts(layouter, base9s.clone(), vs, None)?;
-                    self.generic.mul_fixed(layouter, output, F::from(A4))
+                    Ok(output)
                 })
                 .collect::<Result<Vec<AssignedCell<F, F>>, Error>>()?;
             let next_input: [AssignedCell<F, F>; NEXT_INPUTS_LANES] =
                 next_input.try_into().unwrap();
             next_input
         };
+
         for (i, input) in next_input.iter().enumerate() {
-            state[i] = self.generic.conditional_add_advice(
-                layouter,
-                state[i].clone(),
-                f_pos.clone(),
-                input.clone(),
-            )?;
+            state[i] = self
+                .generic
+                .conditional_add_advice(layouter, &state[i], &f_mix, &input)?;
         }
         state = convert_from_b9_to_b13(layouter, &self.from_b9_table, &self.generic, state)?;
         state[0] = self.generic.conditional_add_const(
             layouter,
-            state[0].clone(),
-            f_pos.clone(),
-            iota_constants.round_constant_b13,
+            &state[0],
+            &f_mix,
+            &iota_constants.round_constant_b13,
         )?;
         Ok(state.try_into().unwrap())
     }

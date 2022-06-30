@@ -53,10 +53,10 @@ impl<F: Field> GenericConfig<F> {
     fn add_generic(
         &self,
         layouter: &mut impl Layouter<F>,
-        input: Option<AssignedCell<F, F>>,
-        left: Option<AssignedCell<F, F>>,
-        right: Option<AssignedCell<F, F>>,
-        value: Option<F>,
+        input: Option<&AssignedCell<F, F>>,
+        left: Option<&AssignedCell<F, F>>,
+        right: Option<&AssignedCell<F, F>>,
+        value: Option<&F>,
     ) -> Result<AssignedCell<F, F>, Error> {
         layouter.assign_region(
             || "add advice",
@@ -100,7 +100,7 @@ impl<F: Field> GenericConfig<F> {
                     })
                     .unwrap_or_else(|| {
                         value
-                            .map(|value| {
+                            .map(|&value| {
                                 region.assign_advice_from_constant(
                                     || "fixed value",
                                     self.right,
@@ -140,9 +140,9 @@ impl<F: Field> GenericConfig<F> {
     pub fn add_advice_mul_const(
         &self,
         layouter: &mut impl Layouter<F>,
-        input: AssignedCell<F, F>,
-        x: AssignedCell<F, F>,
-        v: F,
+        input: &AssignedCell<F, F>,
+        x: &AssignedCell<F, F>,
+        v: &F,
     ) -> Result<AssignedCell<F, F>, Error> {
         self.add_generic(layouter, Some(input), Some(x), None, Some(v))
     }
@@ -150,17 +150,17 @@ impl<F: Field> GenericConfig<F> {
     pub fn sub_advice(
         &self,
         layouter: &mut impl Layouter<F>,
-        input: AssignedCell<F, F>,
-        x: AssignedCell<F, F>,
+        input: &AssignedCell<F, F>,
+        x: &AssignedCell<F, F>,
     ) -> Result<AssignedCell<F, F>, Error> {
-        self.add_generic(layouter, Some(input), Some(x), None, Some(-F::one()))
+        self.add_generic(layouter, Some(input), Some(x), None, Some(&(-F::one())))
     }
     /// input += v
     pub fn add_fixed(
         &self,
         layouter: &mut impl Layouter<F>,
-        input: AssignedCell<F, F>,
-        value: F,
+        input: &AssignedCell<F, F>,
+        value: &F,
     ) -> Result<AssignedCell<F, F>, Error> {
         self.add_generic(layouter, Some(input), None, None, Some(value))
     }
@@ -168,8 +168,8 @@ impl<F: Field> GenericConfig<F> {
     pub fn mul_fixed(
         &self,
         layouter: &mut impl Layouter<F>,
-        input: AssignedCell<F, F>,
-        value: F,
+        input: &AssignedCell<F, F>,
+        value: &F,
     ) -> Result<AssignedCell<F, F>, Error> {
         self.add_generic(layouter, None, Some(input), None, Some(value))
     }
@@ -179,9 +179,9 @@ impl<F: Field> GenericConfig<F> {
     pub fn conditional_add_const(
         &self,
         layouter: &mut impl Layouter<F>,
-        input: AssignedCell<F, F>,
-        flag: AssignedCell<F, F>,
-        value: F,
+        input: &AssignedCell<F, F>,
+        flag: &AssignedCell<F, F>,
+        value: &F,
     ) -> Result<AssignedCell<F, F>, Error> {
         self.add_generic(layouter, Some(input), Some(flag), None, Some(value))
     }
@@ -191,9 +191,9 @@ impl<F: Field> GenericConfig<F> {
     pub fn conditional_add_advice(
         &self,
         layouter: &mut impl Layouter<F>,
-        input: AssignedCell<F, F>,
-        flag: AssignedCell<F, F>,
-        x: AssignedCell<F, F>,
+        input: &AssignedCell<F, F>,
+        flag: &AssignedCell<F, F>,
+        x: &AssignedCell<F, F>,
     ) -> Result<AssignedCell<F, F>, Error> {
         self.add_generic(layouter, Some(input), Some(flag), Some(x), None)
     }

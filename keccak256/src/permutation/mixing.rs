@@ -141,9 +141,9 @@ impl<F: Field> MixingConfig<F> {
             // next cell
             state[0] = self.generic.conditional_add_const(
                 layouter,
-                state[0].clone(),
-                negated_flag.clone(),
-                self.iota_constants.a4_times_round_constants_b9[PERMUTATION - 1],
+                &state[0],
+                &negated_flag,
+                &self.iota_constants.a4_times_round_constants_b9[PERMUTATION - 1],
             )?;
             state
         };
@@ -184,9 +184,9 @@ impl<F: Field> MixingConfig<F> {
             // next cell
             base_conv_cells[0] = self.generic.conditional_add_const(
                 layouter,
-                base_conv_cells[0].clone(),
-                flag,
-                self.iota_constants.round_constant_b13,
+                &base_conv_cells[0],
+                &flag,
+                &self.iota_constants.round_constant_b13,
             )?;
             base_conv_cells
         };
