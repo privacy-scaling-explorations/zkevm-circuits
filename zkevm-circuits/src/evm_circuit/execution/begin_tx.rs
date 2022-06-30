@@ -370,7 +370,10 @@ mod test {
 
     #[test]
     fn begin_tx_large_nonce() {
-        let large_nonce = Word::from(700);
+        // This test checks that the rw table assignment and evm circuit are consistent
+        // in not applying an RLC to account and tx nonces.
+        // https://github.com/privacy-scaling-explorations/zkevm-circuits/issues/592
+        let multibyte_nonce = Word::from(700);
 
         let to = MOCK_ACCOUNTS[0];
         let from = MOCK_ACCOUNTS[1];
@@ -382,18 +385,14 @@ mod test {
         let block: GethData = TestContext::<2, 1>::new(
             None,
             |accs| {
-                accs[0]
-                    .address(to)
-                    .balance(eth(1))
-                    // .nonce(Word::from(large_nonce))
-                    .code(code);
+                accs[0].address(to).balance(eth(1)).code(multibyte_nonce);
                 accs[1]
                     .address(from)
                     .balance(eth(1))
-                    .nonce(Word::from(large_nonce));
+                    .nonce(Word::from(multibyte_nonce));
             },
             |mut txs, _| {
-                txs[0].to(to).from(from).nonce(large_nonce);
+                txs[0].to(to).from(from).nonce(multibyte_nonce);
             },
             |block, _| block,
         )
