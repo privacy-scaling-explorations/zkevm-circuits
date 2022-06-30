@@ -1,7 +1,7 @@
 use crate::{
     arith_helpers::*,
     common::{NEXT_INPUTS_LANES, PERMUTATION},
-    gate_helpers::{biguint_to_f, f_to_biguint},
+    gate_helpers::biguint_to_f,
     permutation::{
         generic::GenericConfig,
         iota::IotaConstants,
@@ -52,17 +52,7 @@ fn assign_next_input<F: Field>(
                     || "next input words",
                     *next_input_col,
                     offset,
-                    || {
-                        Ok(input
-                            .map(|input| {
-                                let input = f_to_biguint(input);
-                                let input = convert_b2_to_b9(
-                                    *input.to_u64_digits().first().unwrap_or(&0u64),
-                                );
-                                biguint_to_f(&input)
-                            })
-                            .unwrap_or(F::zero()))
-                    },
+                    || Ok(input.unwrap_or_default()),
                 )?;
                 next_input_b9.push(cell);
             }
@@ -353,8 +343,7 @@ mod tests {
                         }
                         Ok(())
                     },
-                )?;
-                Ok(())
+                )
             }
         }
 
