@@ -1,23 +1,28 @@
 //! Evm circuit benchmarks
+
 use eth_types::Field;
 use halo2_proofs::{
-    circuit::{floor_planner::V1, AssignedCell, Layouter},
+    circuit::{AssignedCell, Layouter, SimpleFloorPlanner},
     plonk::{Circuit, ConstraintSystem, Error},
 };
-use keccak256::{circuit::KeccakConfig, common::NEXT_INPUTS_LANES, keccak_arith::KeccakFArith};
+use keccak256::{
+    common::NEXT_INPUTS_LANES, keccak_arith::KeccakFArith, permutation::circuit::KeccakFConfig,
+};
 
 #[derive(Default, Clone)]
-struct KeccakTestCircuit {
-    input: Vec<Vec<u8>>,
-    output: [u8; 32],
+struct KeccakRoundTestCircuit<F> {
+    in_state: [F; 25],
+    out_state: [F; 25],
+    next_mixing: Option<[F; NEXT_INPUTS_LANES]>,
+    is_mixing: bool,
 }
 
-impl<F: Field> Circuit<F> for KeccakTestCircuit {
-    type Config = KeccakConfig<F>;
-    type FloorPlanner = V1;
+impl<F: Field> Circuit<F> for KeccakRoundTestCircuit<F> {
+    type Config = KeccakFConfig<F>;
+    type FloorPlanner = SimpleFloorPlanner;
 
     fn without_witnesses(&self) -> Self {
-        self.clone()
+        Self::default()
     }
 
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
@@ -31,11 +36,30 @@ impl<F: Field> Circuit<F> for KeccakTestCircuit {
     ) -> Result<(), Error> {
         // Load the table
         config.load(&mut layouter)?;
-        let mut config = config.clone();
+        let offset: usize = 0;
 
-        for input in self.input.iter() {
-            config.assign_hash(&mut layouter, input.as_slice(), self.output)?;
-        }
+        let in_state = layouter.assign_region(
+            || "Keccak round witnes & flag assignment",
+            |mut region| {
+                // Witness `state`
+                let in_state: [AssignedCell<F, F>; 25] = {
+                    let mut state: Vec<AssignedCell<F, F>> = Vec::with_capacity(25);
+                    for (idx, val) in self.in_state.iter().enumerate() {
+                        let cell = region.assign_advice(
+                            || "witness input state",
+                            config.state[idx],
+                            offset,
+                            || Ok(*val),
+                        )?;
+                        state.push(cell)
+                    }
+                    state.try_into().unwrap()
+                };
+                Ok(in_state)
+            },
+        )?;
+
+        config.assign_permutation(&mut layouter, in_state, self.is_mixing, self.next_mixing)?;
         Ok(())
     }
 }
@@ -63,33 +87,41 @@ mod tests {
 
     #[test]
     fn bench_keccak_round() {
-        let input = vec![
-            vec![
-                65u8, 108, 105, 99, 101, 32, 119, 97, 115, 32, 98, 101, 103, 105, 110, 110, 105,
-                110, 103, 32, 116, 111, 32, 103, 101, 116, 32, 118, 101, 114, 121, 32, 116, 105,
-                114, 101, 100, 32, 111, 102, 32, 115, 105, 116, 116, 105, 110, 103, 32, 98, 121,
-                32, 104, 101, 114, 32, 115, 105, 115, 116, 101, 114, 32, 111, 110, 32, 116, 104,
-                101, 32, 98, 97, 110, 107, 44, 32, 97, 110, 100, 32, 111, 102, 32, 104, 97, 118,
-                105, 110, 103, 32, 110, 111, 116, 104, 105, 110, 103, 32, 116, 111, 32, 100, 111,
-                58, 32, 111, 110, 99, 101, 32, 111, 114, 32, 116, 119, 105, 99, 101, 32, 115, 104,
-                101, 32, 104, 97, 100, 32, 112, 101, 101, 112, 101, 100, 32, 105, 110, 116, 111,
-                32, 116, 104, 101, 32, 98, 111, 111, 107, 32, 104, 101, 114, 32, 115, 105, 115,
-                116, 101, 114, 32, 119, 97, 115, 32, 114, 101, 97, 100, 105, 110, 103, 44, 32, 98,
-                117, 116, 32, 105, 116, 32, 104, 97, 100, 32, 110, 111, 32, 112, 105, 99, 116, 117,
-                114, 101, 115, 32, 111, 114, 32, 99, 111, 110, 118, 101, 114, 115, 97, 116, 105,
-                111, 110, 115, 32, 105, 110, 32, 105, 116, 44, 32, 97, 110, 100, 32, 119, 104, 97,
-                116, 32, 105, 115, 32, 116, 104, 101, 32, 117, 115, 101, 32, 111, 102, 32, 97, 32,
-                98, 111, 111, 107, 44, 32, 116, 104, 111, 117, 103, 104, 116, 32, 65, 108, 105, 99,
-                101, 32, 119, 105, 116, 104, 111, 117, 116, 32, 112, 105, 99, 116, 117, 114, 101,
-                115, 32, 111, 114, 32, 99, 111, 110, 118, 101, 114, 115, 97, 116, 105, 111, 110,
-                115, 63,
-            ];
-            3000
+        let in_state: State = [
+            [1, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0],
         ];
-        let output = [
-            60u8, 227, 142, 8, 143, 135, 108, 85, 13, 254, 190, 58, 30, 106, 153, 194, 188, 6, 208,
-            49, 16, 102, 150, 120, 100, 130, 224, 177, 64, 98, 53, 252,
+
+        let next_input: State = [
+            [2, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0],
         ];
+
+        let mut in_state_biguint = StateBigInt::default();
+
+        // Generate in_state as `[Fr;25]`
+        let mut in_state_fp: [Fr; 25] = [Fr::zero(); 25];
+        for (x, y) in (0..5).cartesian_product(0..5) {
+            in_state_fp[5 * x + y] = biguint_to_f(&convert_b2_to_b13(in_state[x][y]));
+            in_state_biguint[(x, y)] = convert_b2_to_b13(in_state[x][y]);
+        }
+
+        // Compute out_state_mix
+        let mut out_state_mix = in_state_biguint.clone();
+        KeccakFArith::permute_and_absorb(&mut out_state_mix, Some(next_input));
+
+        // Compute out_state_non_mix
+        let mut out_state_non_mix = in_state_biguint.clone();
+        KeccakFArith::permute_and_absorb(&mut out_state_non_mix, None);
+
+        // Generate out_state as `[Fr;25]`
+        let out_state_non_mix: [Fr; 25] = state_bigint_to_field(out_state_non_mix);
 
         let constants_b13: Vec<Fr> = ROUND_CONSTANTS
             .iter()
@@ -102,7 +134,12 @@ mod tests {
             .collect();
 
         // Build the circuit
-        let circuit = KeccakTestCircuit { input, output };
+        let circuit = KeccakRoundTestCircuit::<Fr> {
+            in_state: in_state_fp,
+            out_state: out_state_non_mix,
+            next_mixing: None,
+            is_mixing: false,
+        };
 
         let degree: u32 = var("DEGREE")
             .expect("No DEGREE env var was provided")
@@ -127,7 +164,7 @@ mod tests {
         let mut transcript = Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
 
         // Bench proof generation time
-        let proof_message = format!("Keccak Proof generation with {} degree", degree);
+        let proof_message = format!("EVM Proof generation with {} rows", degree);
         let start2 = start_timer!(|| proof_message);
         create_proof(
             &general_params,
@@ -148,12 +185,12 @@ mod tests {
         let strategy = SingleVerifier::new(&verifier_params);
 
         // Bench verification time
-        let start3 = start_timer!(|| "Keccak Proof verification");
+        let start3 = start_timer!(|| "EVM Proof verification");
         verify_proof(
             &verifier_params,
             pk.get_vk(),
             strategy,
-            &[],
+            &[&[constants_b9.as_slice(), constants_b13.as_slice()]],
             &mut verifier_transcript,
         )
         .unwrap();

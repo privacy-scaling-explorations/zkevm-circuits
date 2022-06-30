@@ -81,19 +81,6 @@ impl StateTag {
     }
 }
 
-/*
-KeccakConfig
-1. Fill lookup rows from other circuits which hold a &mut to the Config (or similar)
-2. Once a hash is added it includes all the constraints that valiodate that the hash is correct.
-
-
-KeccakTable {
-
-}
-keccakt_table.add_hash(&[u8])
-keccak_table.lookup()
-*/
-
 #[derive(Debug, Clone)]
 pub struct AssignedPermInput<F: Field> {
     state_tag: AssignedCell<F, F>,
@@ -124,6 +111,7 @@ impl<F: Field> AssignedPermInput<F> {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct KeccakConfig<F: Field> {
     base_conv_b9_b13: BaseConversionConfig<F>,
     base_conv_b2_b9: BaseConversionConfig<F>,
@@ -201,13 +189,19 @@ impl<F: Field> KeccakConfig<F> {
             state[0..5].try_into().unwrap(),
         );
 
-        let q_enable = meta.selector();
+        let q_enable = meta.complex_selector();
         let state_tag = meta.advice_column();
+        meta.enable_equality(state_tag);
         let input_len = meta.advice_column();
+        meta.enable_equality(input_len);
         let input = meta.advice_column();
+        meta.enable_equality(input);
         let perm_count = meta.advice_column();
+        meta.enable_equality(perm_count);
         let acc_input = meta.advice_column();
+        meta.enable_equality(acc_input);
         let output_rlc = meta.advice_column();
+        meta.enable_equality(output_rlc);
         let range_check_136 = RangeCheckConfig::<F, 136>::configure(meta);
 
         let state_rlc_config = RlcConfig::configure(meta, state, randomness, output_rlc);
@@ -421,15 +415,23 @@ impl<F: Field> KeccakConfig<F> {
         }
     }
 
+    pub fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
+        self.keccak_f_config.load(layouter)?;
+        self.range_check_config.load(layouter)
+    }
+
     pub fn assign_hash(
         &mut self,
         layouter: &mut impl Layouter<F>,
         hash_data: &[u8],
         output: [u8; 32],
     ) -> Result<(), Error> {
+        //panic!("Start");
         // If this is the first hash, we need to add an `Start` state first.
         if self.last_state.is_none() {
+            //panic!("Assign start state");
             let (start_state_perm, init_state, _init_absorb) = self.assign_start_state(layouter)?;
+            //panic!("Start state assigned");
             self.last_state = Some(init_state);
             self.last_perm = Some(start_state_perm);
             self.latest_acc_randomness = Some(layouter.assign_region(
@@ -443,6 +445,7 @@ impl<F: Field> KeccakConfig<F> {
 
         // Fetch all the permutations we will need to assign.
         let perm_inputs = PermutationInputs::<F>::from_bytes(hash_data);
+        //panic!("We have the perm inputs!");
 
         // Init dummy randomness
         let randomness = layouter.assign_region(
@@ -466,11 +469,13 @@ impl<F: Field> KeccakConfig<F> {
             acc_len,
             randomness.clone(),
         )?;
+        println!("Assigned permutation first instance");
         // Store the actual latest state and permutation inside the config.
         self.last_state = Some(first_state_out);
         self.last_perm = Some(first_perm);
 
         for next_perm in perm_inputs.0.iter().skip(1) {
+            //panic!("inside perm");
             acc_len += perm_inputs.0.first().unwrap().og_len;
             let (perm, state) = self.assign_permutation(
                 layouter,
@@ -480,7 +485,7 @@ impl<F: Field> KeccakConfig<F> {
                 acc_len,
                 randomness.clone(),
             )?;
-
+            println!("Assigned permutation");
             // Store the actual latest state and permutation inside the config.
             self.last_state = Some(state);
             self.last_perm = Some(perm);
@@ -729,7 +734,7 @@ impl<F: Field> KeccakConfig<F> {
         )?;
 
         let (acc_input, last_randomness) = self
-            .absorb_inputs_rlc_config
+            .acc_input_rlc_config
             .assign_rlc_retunring_last_randomness(
                 layouter,
                 [prev_perm.acc_input.clone()]
@@ -744,7 +749,7 @@ impl<F: Field> KeccakConfig<F> {
         self.latest_acc_randomness = Some(last_randomness);
 
         let assigned_perm_input = layouter.assign_region(
-            || "Start tag",
+            || "Permutation assignation",
             |mut region| {
                 // Enable selector for the current state "row".
                 self.q_enable.enable(&mut region, 0)?;
@@ -866,12 +871,12 @@ pub(crate) fn compute_rlc_cells<F: Field, const N: usize>(
     witness: &[AssignedCell<F, F>; N],
     randomness: AssignedCell<F, F>,
 ) -> Result<F, Error> {
-    let og_randomness = randomness.value().ok_or(Error::Synthesis)?;
+    let og_randomness = randomness.value().cloned().unwrap_or_default();
     let mut randomness = og_randomness.clone();
     let witness = witness
         .iter()
-        .map(|w| -> Result<F, Error> { w.value().cloned().ok_or(Error::Synthesis) })
-        .collect::<Result<Vec<F>, Error>>()?;
+        .map(|w| w.value().cloned().unwrap_or_default())
+        .collect::<Vec<F>>();
     let mut rlc = witness[0].clone();
 
     // Compute rlc
@@ -895,4 +900,85 @@ pub(crate) fn compute_rlc_field<F: Field, const N: usize>(witness: &[F; N], rand
     }
 
     rlc
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use halo2_proofs::circuit::floor_planner::V1;
+    use halo2_proofs::circuit::Layouter;
+    use halo2_proofs::pairing::bn256::Fr as Fp;
+    use halo2_proofs::plonk::{ConstraintSystem, Error, Instance};
+    use halo2_proofs::{circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit};
+    use pretty_assertions::assert_eq;
+    use std::convert::TryInto;
+    #[derive(Default, Clone)]
+    struct KeccakTestCircuit {
+        input: Vec<Vec<u8>>,
+        output: [u8; 32],
+    }
+
+    impl<F: Field> Circuit<F> for KeccakTestCircuit {
+        type Config = KeccakConfig<F>;
+        type FloorPlanner = V1;
+
+        fn without_witnesses(&self) -> Self {
+            self.clone()
+        }
+
+        fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
+            Self::Config::configure(meta)
+        }
+
+        fn synthesize(
+            &self,
+            config: Self::Config,
+            mut layouter: impl Layouter<F>,
+        ) -> Result<(), Error> {
+            // Load the table
+            config.load(&mut layouter)?;
+            let mut config = config.clone();
+
+            for input in self.input.iter() {
+                config.assign_hash(&mut layouter, input.as_slice(), self.output)?;
+            }
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn get_keccak_info() {
+        let input = vec![
+            vec![
+                65u8, 108, 105, 99, 101, 32, 119, 97, 115, 32, 98, 101, 103, 105, 110, 110, 105,
+                110, 103, 32, 116, 111, 32, 103, 101, 116, 32, 118, 101, 114, 121, 32, 116, 105,
+                114, 101, 100, 32, 111, 102, 32, 115, 105, 116, 116, 105, 110, 103, 32, 98, 121,
+                32, 104, 101, 114, 32, 115, 105, 115, 116, 101, 114, 32, 111, 110, 32, 116, 104,
+                101, 32, 98, 97, 110, 107, 44, 32, 97, 110, 100, 32, 111, 102, 32, 104, 97, 118,
+                105, 110, 103, 32, 110, 111, 116, 104, 105, 110, 103, 32, 116, 111, 32, 100, 111,
+                58, 32, 111, 110, 99, 101, 32, 111, 114, 32, 116, 119, 105, 99, 101, 32, 115, 104,
+                101, 32, 104, 97, 100, 32, 112, 101, 101, 112, 101, 100, 32, 105, 110, 116, 111,
+                32, 116, 104, 101, 32, 98, 111, 111, 107, 32, 104, 101, 114, 32, 115, 105, 115,
+                116, 101, 114, 32, 119, 97, 115, 32, 114, 101, 97, 100, 105, 110, 103, 44, 32, 98,
+                117, 116, 32, 105, 116, 32, 104, 97, 100, 32, 110, 111, 32, 112, 105, 99, 116, 117,
+                114, 101, 115, 32, 111, 114, 32, 99, 111, 110, 118, 101, 114, 115, 97, 116, 105,
+                111, 110, 115, 32, 105, 110, 32, 105, 116, 44, 32, 97, 110, 100, 32, 119, 104, 97,
+                116, 32, 105, 115, 32, 116, 104, 101, 32, 117, 115, 101, 32, 111, 102, 32, 97, 32,
+                98, 111, 111, 107, 44, 32, 116, 104, 111, 117, 103, 104, 116, 32, 65, 108, 105, 99,
+                101, 32, 119, 105, 116, 104, 111, 117, 116, 32, 112, 105, 99, 116, 117, 114, 101,
+                115, 32, 111, 114, 32, 99, 111, 110, 118, 101, 114, 115, 97, 116, 105, 111, 110,
+                115, 63,
+            ];
+            1000
+        ];
+        let output = [
+            60u8, 227, 142, 8, 143, 135, 108, 85, 13, 254, 190, 58, 30, 106, 153, 194, 188, 6, 208,
+            49, 16, 102, 150, 120, 100, 130, 224, 177, 64, 98, 53, 252,
+        ];
+
+        // Build the circuit
+        let circuit = KeccakTestCircuit { input, output };
+        let prover = MockProver::<Fp>::run(17, &circuit, vec![]).unwrap();
+        assert!(prover.verify().is_err());
+    }
 }

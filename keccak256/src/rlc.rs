@@ -100,7 +100,7 @@ impl<F: Field, const N: usize> RlcConfig<F, N> {
                 // Assign RLC result
                 let rlc = region.assign_advice(|| "RLC result", self.rlc, 0, || Ok(rlc))?;
 
-                let mut last_randomness = randomness.value().copied().ok_or(Error::Synthesis)?;
+                let mut last_randomness = randomness.value().copied().unwrap_or_default();
                 for _ in 0..N {
                     last_randomness *= last_randomness;
                 }
