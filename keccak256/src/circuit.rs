@@ -6,15 +6,16 @@ use crate::{
     permutation::{
         base_conversion::BaseConversionConfig,
         circuit::KeccakFConfig,
+        generic::GenericConfig,
         mixing::MixingConfig,
-        tables::{FromBase9TableConfig, FromBinaryTableConfig, RangeCheckConfig},
+        tables::{FromBase9TableConfig, FromBinaryTableConfig, RangeCheckConfig, StackableTable},
         NextInput, PermutationInputs,
     },
 };
 use eth_types::Field;
 use gadgets::expression::*;
 use halo2_proofs::circuit::{layouter, Region};
-use halo2_proofs::plonk::Assignment;
+use halo2_proofs::plonk::{Assignment, TableColumn};
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Instance, Selector},
@@ -126,10 +127,6 @@ impl<F: Field> AssignedPermInput<F> {
 pub struct KeccakConfig<F: Field> {
     base_conv_b9_b13: BaseConversionConfig<F>,
     base_conv_b2_b9: BaseConversionConfig<F>,
-    round_ctant_b9: Column<Advice>,
-    round_ctant_b13: Column<Advice>,
-    round_constants_b9: Column<Instance>,
-    round_constants_b13: Column<Instance>,
     pub(crate) keccak_f_config: KeccakFConfig<F>,
     pub(crate) padding_config: PaddingConfig<F>,
     q_enable: Selector,
@@ -165,6 +162,16 @@ impl<F: Field> KeccakConfig<F> {
                 meta.enable_equality(col);
                 col
             });
+
+        let fixed = meta.fixed_column();
+        let generic = GenericConfig::configure(meta, state[0..3].try_into().unwrap(), fixed);
+        let table_cols: [TableColumn; 3] = (0..3)
+            .map(|_| meta.lookup_table_column())
+            .collect_vec()
+            .try_into()
+            .unwrap();
+        let stackable =
+            StackableTable::configure(meta, state[0..3].try_into().unwrap(), table_cols);
 
         let base_conv_lane = meta.advice_column();
         meta.enable_equality(base_conv_lane);
@@ -219,6 +226,8 @@ impl<F: Field> KeccakConfig<F> {
             base_conv_b2_b9.clone(),
             base_conv_lane,
             flag,
+            generic,
+            stackable,
         );
 
         // Lookup to activate the valid Finalize place check
@@ -390,10 +399,6 @@ impl<F: Field> KeccakConfig<F> {
         Self {
             base_conv_b9_b13,
             base_conv_b2_b9,
-            round_ctant_b9,
-            round_ctant_b13,
-            round_constants_b9,
-            round_constants_b13,
             keccak_f_config,
             padding_config,
             q_enable,
