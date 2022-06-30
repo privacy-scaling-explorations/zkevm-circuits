@@ -176,12 +176,25 @@ pub struct TxCircuitConfig<F: Field> {
     _marker: PhantomData<F>,
 }
 
+/// TxTable columns
+#[derive(Clone, Debug)]
+pub struct TxTable {
+    pub tx_id: Column<Advice>,
+    pub tag: Column<Advice>,
+    pub index: Column<Advice>,
+    pub value: Column<Advice>,
+}
+
 impl<F: Field> TxCircuitConfig<F> {
-    fn new(meta: &mut ConstraintSystem<F>) -> Self {
-        let tx_id = meta.advice_column();
-        let tag = meta.advice_column();
-        let index = meta.advice_column();
-        let value = meta.advice_column();
+    fn new(meta: &mut ConstraintSystem<F>, tx_table: TxTable) -> Self {
+        // let tx_id = meta.advice_column();
+        // let tag = meta.advice_column();
+        // let index = meta.advice_column();
+        // let value = meta.advice_column();
+        let tx_id = tx_table.tx_id;
+        let tag = tx_table.tag;
+        let index = tx_table.index;
+        let value = tx_table.value;
         meta.enable_equality(value);
 
         // This gate is used just to get the array of expressions from the power of
@@ -244,23 +257,12 @@ pub struct TxCircuit<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> 
     pub chain_id: u64,
 }
 
-impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
-    for TxCircuit<F, MAX_TXS, MAX_CALLDATA>
+impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
+    TxCircuit<F, MAX_TXS, MAX_CALLDATA>
 {
-    type Config = TxCircuitConfig<F>;
-    type FloorPlanner = SimpleFloorPlanner;
-
-    fn without_witnesses(&self) -> Self {
-        Self::default()
-    }
-
-    fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-        TxCircuitConfig::new(meta)
-    }
-
-    fn synthesize(
+    pub fn assign(
         &self,
-        config: Self::Config,
+        config: TxCircuitConfig<F>,
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
         assert!(self.txs.len() <= MAX_TXS);
@@ -388,6 +390,31 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
             },
         )?;
         Ok(())
+    }
+}
+
+impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
+    for TxCircuit<F, MAX_TXS, MAX_CALLDATA>
+{
+    type Config = TxCircuitConfig<F>;
+    type FloorPlanner = SimpleFloorPlanner;
+
+    fn without_witnesses(&self) -> Self {
+        Self::default()
+    }
+
+    fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
+        let tx_table = TxTable {
+            tx_id: meta.advice_column(),
+            tag: meta.advice_column(),
+            index: meta.advice_column(),
+            value: meta.advice_column(),
+        };
+        TxCircuitConfig::new(meta, tx_table)
+    }
+
+    fn synthesize(&self, config: Self::Config, layouter: impl Layouter<F>) -> Result<(), Error> {
+        self.assign(config, layouter)
     }
 }
 

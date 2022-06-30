@@ -139,14 +139,161 @@ impl<F: Field> EvmCircuit<F> {
     }
 }
 
+use crate::{
+    evm_circuit::witness::{BlockContext, Bytecode, RwMap, Transaction},
+    rw_table::RwTable,
+};
+
+pub fn load_txs<F: Field>(
+    tx_table: &[Column<Advice>; 4],
+    layouter: &mut impl Layouter<F>,
+    txs: &[Transaction],
+    randomness: F,
+) -> Result<(), Error> {
+    layouter.assign_region(
+        || "tx table",
+        |mut region| {
+            let mut offset = 0;
+            for column in tx_table {
+                region.assign_advice(
+                    || "tx table all-zero row",
+                    *column,
+                    offset,
+                    || Ok(F::zero()),
+                )?;
+            }
+            offset += 1;
+
+            for tx in txs.iter() {
+                for row in tx.table_assignments(randomness) {
+                    for (column, value) in tx_table.iter().zip_eq(row) {
+                        region.assign_advice(
+                            || format!("tx table row {}", offset),
+                            *column,
+                            offset,
+                            || Ok(value),
+                        )?;
+                    }
+                    offset += 1;
+                }
+            }
+            Ok(())
+        },
+    )
+}
+
+pub fn load_rws<F: Field>(
+    rw_table: &RwTable,
+    layouter: &mut impl Layouter<F>,
+    rws: &RwMap,
+    randomness: F,
+) -> Result<(), Error> {
+    layouter.assign_region(
+        || "rw table",
+        |mut region| {
+            let mut offset = 0;
+            rw_table.assign(&mut region, offset, &Default::default())?;
+            offset += 1;
+
+            let mut rows = rws
+                .0
+                .values()
+                .flat_map(|rws| rws.iter())
+                .collect::<Vec<_>>();
+
+            rows.sort_by_key(|a| a.rw_counter());
+            let mut expected_rw_counter = 1;
+            for rw in rows {
+                assert!(rw.rw_counter() == expected_rw_counter);
+                expected_rw_counter += 1;
+
+                rw_table.assign(&mut region, offset, &rw.table_assignment(randomness))?;
+                offset += 1;
+            }
+            Ok(())
+        },
+    )
+}
+
+pub fn load_bytecodes<F: Field>(
+    bytecode_table: &[Column<Advice>; 5],
+    layouter: &mut impl Layouter<F>,
+    bytecodes: &[Bytecode],
+    randomness: F,
+) -> Result<(), Error> {
+    layouter.assign_region(
+        || "bytecode table",
+        |mut region| {
+            let mut offset = 0;
+            for column in bytecode_table {
+                region.assign_advice(
+                    || "bytecode table all-zero row",
+                    *column,
+                    offset,
+                    || Ok(F::zero()),
+                )?;
+            }
+            offset += 1;
+
+            for bytecode in bytecodes.iter() {
+                for row in bytecode.table_assignments(randomness) {
+                    for (column, value) in bytecode_table.iter().zip_eq(row) {
+                        region.assign_advice(
+                            || format!("bytecode table row {}", offset),
+                            *column,
+                            offset,
+                            || Ok(value),
+                        )?;
+                    }
+                    offset += 1;
+                }
+            }
+            Ok(())
+        },
+    )
+}
+pub fn load_block<F: Field>(
+    block_table: &[Column<Advice>; 3],
+    layouter: &mut impl Layouter<F>,
+    block: &BlockContext,
+    randomness: F,
+) -> Result<(), Error> {
+    layouter.assign_region(
+        || "block table",
+        |mut region| {
+            let mut offset = 0;
+            for column in block_table {
+                region.assign_advice(
+                    || "block table all-zero row",
+                    *column,
+                    offset,
+                    || Ok(F::zero()),
+                )?;
+            }
+            offset += 1;
+
+            for row in block.table_assignments(randomness) {
+                for (column, value) in block_table.iter().zip_eq(row) {
+                    region.assign_advice(
+                        || format!("block table row {}", offset),
+                        *column,
+                        offset,
+                        || Ok(value),
+                    )?;
+                }
+                offset += 1;
+            }
+
+            Ok(())
+        },
+    )
+}
+
 #[cfg(any(feature = "test", test))]
 pub mod test {
+    use super::*;
     use crate::{
-        evm_circuit::{
-            table::FixedTableTag,
-            witness::{Block, BlockContext, Bytecode, RwMap, Transaction},
-            EvmCircuit,
-        },
+        evm_circuit::{table::FixedTableTag, witness::Block, EvmCircuit},
         rw_table::RwTable,
         util::Expr,
     };
@@ -157,7 +304,6 @@ pub mod test {
         plonk::{Advice, Circuit, Column, ConstraintSystem, Error},
         poly::Rotation,
     };
-    use itertools::Itertools;
     use rand::{
         distributions::uniform::{SampleRange, SampleUniform},
         random, thread_rng, Rng,
@@ -418,14 +564,39 @@ pub mod test {
                 .evm_circuit
                 .load_fixed_table(&mut layouter, self.fixed_table_tags.clone())?;
             config.evm_circuit.load_byte_table(&mut layouter)?;
-            config.load_txs(&mut layouter, &self.block.txs, self.block.randomness)?;
-            config.load_rws(&mut layouter, &self.block.rws, self.block.randomness)?;
-            config.load_bytecodes(
+            // config.load_txs(&mut layouter, &self.block.txs, self.block.randomness)?;
+            // config.load_rws(&mut layouter, &self.block.rws, self.block.randomness)?;
+            // config.load_bytecodes(
+            //     &mut layouter,
+            //     self.block.bytecodes.values(),
+            //     self.block.randomness,
+            // )?;
+            // config.load_block(&mut layouter, &self.block.context,
+            // self.block.randomness)?;
+            load_txs(
+                &config.tx_table,
                 &mut layouter,
-                self.block.bytecodes.values(),
+                &self.block.txs,
                 self.block.randomness,
             )?;
-            config.load_block(&mut layouter, &self.block.context, self.block.randomness)?;
+            load_rws(
+                &config.rw_table,
+                &mut layouter,
+                &self.block.rws,
+                self.block.randomness,
+            )?;
+            load_bytecodes(
+                &config.bytecode_table,
+                &mut layouter,
+                &self.block.bytecodes,
+                self.block.randomness,
+            )?;
+            load_block(
+                &config.block_table,
+                &mut layouter,
+                &self.block.context,
+                self.block.randomness,
+            )?;
             config
                 .evm_circuit
                 .assign_block_exact(&mut layouter, &self.block)
