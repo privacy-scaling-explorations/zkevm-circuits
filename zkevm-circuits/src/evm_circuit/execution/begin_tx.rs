@@ -355,10 +355,10 @@ mod test {
 
     #[test]
     fn begin_tx_gadget_simple() {
-        // Transfer 0.1 ether, successfully
+        // Transfer 1 ether, successfully
         test_ok(mock_tx(eth(1), gwei(2), vec![]), true);
 
-        // Transfer 0.1 ether, tx reverts
+        // Transfer 1 ether, tx reverts
         test_ok(mock_tx(eth(1), gwei(2), vec![]), false);
 
         // Transfer nothing with some calldata
@@ -366,6 +366,43 @@ mod test {
             mock_tx(eth(0), gwei(2), vec![1, 2, 3, 4, 0, 0, 0, 0]),
             false,
         );
+    }
+
+    #[test]
+    fn begin_tx_large_nonce() {
+        // This test checks that the rw table assignment and evm circuit are consistent
+        // in not applying an RLC to account and tx nonces.
+        // https://github.com/privacy-scaling-explorations/zkevm-circuits/issues/592
+        let multibyte_nonce = Word::from(700);
+
+        let to = MOCK_ACCOUNTS[0];
+        let from = MOCK_ACCOUNTS[1];
+
+        let code = bytecode! {
+            RETURN
+        };
+
+        let block: GethData = TestContext::<2, 1>::new(
+            None,
+            |accs| {
+                accs[0].address(to).balance(eth(1)).code(code);
+                accs[1].address(from).balance(eth(1)).nonce(multibyte_nonce);
+            },
+            |mut txs, _| {
+                txs[0].to(to).from(from).nonce(multibyte_nonce);
+            },
+            |block, _| block,
+        )
+        .unwrap()
+        .into();
+
+        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+        builder
+            .handle_block(&block.eth_block, &block.geth_traces)
+            .unwrap();
+        let block = block_convert(&builder.block, &builder.code_db);
+
+        assert_eq!(run_test_circuit_incomplete_fixed_table(block), Ok(()));
     }
 
     #[test]
