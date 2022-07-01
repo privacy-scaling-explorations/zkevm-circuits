@@ -17,13 +17,13 @@ use crate::tx_circuit::{sign_verify, TxCircuit, TxCircuitConfig, TxTable};
 use crate::util::Expr;
 use crate::{
     evm_circuit::{
-        table::{FixedTableTag, LookupTable},
-        witness::{Block, BlockContext, Bytecode, RwMap, Transaction as WitTransaction},
-        EvmCircuit, {load_block, load_bytecodes, load_rws, load_txs},
+        table::FixedTableTag,
+        witness::Block,
+        EvmCircuit, {load_block, load_bytecodes, load_rws},
     },
     rw_table::RwTable,
 };
-use eth_types::{geth_types::Transaction, Field};
+use eth_types::Field;
 use halo2_proofs::{
     arithmetic::CurveAffine,
     circuit::{Layouter, SimpleFloorPlanner},
@@ -133,12 +133,12 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
             .evm_circuit
             .load_fixed_table(&mut layouter, self.fixed_table_tags.clone())?;
         config.evm_circuit.load_byte_table(&mut layouter)?;
-        load_txs(
-            &config.tx_table,
-            &mut layouter,
-            &self.block.txs,
-            self.block.randomness,
-        )?;
+        // load_txs(
+        //     &config.tx_table,
+        //     &mut layouter,
+        //     &self.block.txs,
+        //     self.block.randomness,
+        // )?;
         load_rws(
             &config.rw_table,
             &mut layouter,
@@ -164,33 +164,62 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
         Ok(())
     }
 }
+use eth_types::{Address, U64};
+use ethers_core::{types::TransactionRequest, utils::keccak256};
+use ethers_signers::LocalWallet;
+use std::collections::HashMap;
+
+// Testing function
+pub fn sign_txs(
+    txs: &mut [eth_types::Transaction],
+    chain_id: u64,
+    wallets: &HashMap<Address, LocalWallet>,
+) {
+    for tx in txs.iter_mut() {
+        let wallet = wallets.get(&tx.from).unwrap();
+        let req = TransactionRequest::new()
+            .from(tx.from)
+            .to(tx.to.unwrap())
+            .nonce(tx.nonce)
+            .value(tx.value)
+            .data(tx.input.clone())
+            .gas(tx.gas)
+            .gas_price(tx.gas_price.unwrap());
+        let tx_rlp = req.rlp(chain_id);
+        let sighash = keccak256(tx_rlp.as_ref()).into();
+        let sig = wallet.sign_hash(sighash, true);
+        tx.v = U64::from(sig.v);
+        tx.r = sig.r;
+        tx.s = sig.s;
+    }
+}
 
 #[cfg(test)]
 mod super_circuit_tests {
     use super::*;
     use crate::{
         evm_circuit::witness::block_convert,
-        test_util::{run_test_circuits, BytecodeTestConfig},
+        // test_util::{run_test_circuits, BytecodeTestConfig},
         tx_circuit::sign_verify::POW_RAND_SIZE,
     };
     use bus_mapping::mock::BlockData;
-    use eth_types::{address, bytecode, geth_types::GethData, Word};
-    use ethers_core::{
-        types::{NameOrAddress, TransactionRequest},
-        utils::keccak256,
+    use eth_types::{
+        address, bytecode,
+        geth_types::{self, GethData},
+        Word,
     };
     use ethers_signers::{LocalWallet, Signer};
     use group::{Curve, Group};
     use halo2_proofs::dev::{MockProver, VerifyFailure};
     use mock::{TestContext, MOCK_CHAIN_ID};
-    use rand::{CryptoRng, Rng, SeedableRng};
+    use rand::SeedableRng;
     use rand_chacha::ChaCha20Rng;
     use secp256k1::Secp256k1Affine;
     use strum::IntoEnumIterator;
 
     struct Inputs<F: Field> {
         block: Block<F>,
-        txs: Vec<Transaction>,
+        txs: Vec<geth_types::Transaction>,
         aux_generator: Secp256k1Affine,
     }
 
@@ -268,8 +297,11 @@ mod super_circuit_tests {
         let addr_a = wallet_a.address();
         let addr_b = address!("0x000000000000000000000000000000000000BBBB");
 
+        let mut wallets = HashMap::new();
+        wallets.insert(wallet_a.address(), wallet_a.clone());
+
         // Create a custom tx setting Gas to
-        let block: GethData = TestContext::<2, 1>::new(
+        let mut block: GethData = TestContext::<2, 1>::new(
             None,
             |accs| {
                 accs[0]
@@ -289,36 +321,12 @@ mod super_circuit_tests {
         .unwrap()
         .into();
 
-        let txs: Vec<Transaction> = block
+        sign_txs(&mut block.eth_block.transactions, chain_id, &wallets);
+        let txs = block
             .eth_block
             .transactions
             .iter()
-            .map(|tx| {
-                let req = TransactionRequest::new()
-                    .from(tx.from)
-                    .to(tx.to.unwrap())
-                    .nonce(tx.nonce)
-                    .value(tx.value)
-                    .data(tx.input.clone())
-                    .gas(tx.gas)
-                    .gas_price(tx.gas_price.unwrap());
-                let tx_rlp = req.rlp(chain_id);
-                let sighash = keccak256(tx_rlp.as_ref()).into();
-                let sig = wallet_a.sign_hash(sighash, true);
-                Transaction {
-                    from: tx.from,
-                    to: tx.to,
-                    gas_limit: tx.gas,
-                    gas_price: tx.gas_price.unwrap(),
-                    value: tx.value,
-                    call_data: tx.input.clone(),
-                    nonce: tx.nonce,
-                    v: sig.v,
-                    r: sig.r,
-                    s: sig.s,
-                    ..Transaction::default()
-                }
-            })
+            .map(|tx| geth_types::Transaction::from_eth_tx(tx))
             .collect();
 
         let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
@@ -328,7 +336,6 @@ mod super_circuit_tests {
             .handle_block(&block.eth_block, &block.geth_traces)
             .expect("could not handle block tx");
         let block = block_convert(&builder.block, &builder.code_db);
-        let txs = Vec::new();
 
         let aux_generator =
             <Secp256k1Affine as CurveAffine>::CurveExt::random(&mut rng).to_affine();
