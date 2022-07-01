@@ -2,6 +2,7 @@
 
 // TODO disallow unused imports
 #![allow(unused_imports)]
+use std::io::Cursor;
 use std::marker::PhantomData;
 
 use eth_types::geth_types::BlockConstants;
@@ -12,8 +13,10 @@ use eth_types::{
 use eth_types::{Bytes, H256};
 use ethers_core::abi::ethereum_types::H160;
 use ethers_core::types::Block;
+use halo2_proofs::arithmetic::BaseExt;
 
-use crate::tx_circuit::TxFieldTag;
+use crate::tx_circuit::sign_verify::SignData;
+use crate::tx_circuit::{tx_to_sign_data, TxFieldTag};
 use crate::util::random_linear_combine_word as rlc;
 use crate::util::Expr;
 use halo2_proofs::{
@@ -23,19 +26,17 @@ use halo2_proofs::{
 };
 
 /// Fixed by the spec TODO Review
-const TX_LEN: usize = 8;
+const TX_LEN: usize = 9;
 const BLOCK_LEN: usize = 7 + 256;
 const EXTRA_LEN: usize = 3;
 
 /// Values of the block table (as in the spec)
 #[derive(Clone, Default, Debug)]
 pub struct BlockValues {
-    //First 6 fields correspond to geth_types::BlockConstants
-
     // hash: U256,
     // parent_hash: U256,
     // uncle_hash: U256,
-    coinbase: Address, // Check if this is an apropriate type
+    coinbase: Address,
     // root: U256,           // State Trie Root,
     // tx_hash: U256,        // Txs Trie Root,
     // receipt_hash: U256,   // Receipts Trie Root,
@@ -59,15 +60,12 @@ pub struct TxValues {
     nonce: Word,
     gas: Word, //gas limit
     gas_price: Word,
-    // gas_tip_cap: Word;
-    // gas_fee_cap: Word;
     from_addr: Address,
     to_addr: Address,
     is_create: u64,
     value: Word,
     call_data_len: u64,
-    /* TODO figure this one out
-     * tx_sign_hash: U256, */
+    tx_sign_hash: [u8; 32],
 }
 
 /// PublicData contains all the values that the PiCircuit recieves as input
@@ -114,8 +112,22 @@ impl PublicData {
 
     /// Returns struct with values for the tx table
     pub fn get_tx_table_values(&self) -> Vec<TxValues> {
+        let chain_id: u64 = self
+            .extra
+            .chain_id
+            .try_into()
+            .expect("Error converting chain_id to u64");
         let mut tx_vals = vec![];
         for tx in &self.txs {
+            let sign_data: SignData =
+                tx_to_sign_data(tx, chain_id).expect("Error computing tx_sign_hash");
+            let mut msg_hash_le = [0u8; 32];
+            sign_data
+                .msg_hash
+                .write(&mut Cursor::new(&mut msg_hash_le[..]))
+                .expect("cannot write bytes to array");
+            // let msg_hash_rlc = rlc(msg_hash_le, randomness);
+            // let msg_hash_rlc = if !padding { msg_hash_rlc } else { F::zero() };
             tx_vals.push(TxValues {
                 nonce: tx.nonce,
                 gas_price: tx.gas_price,
@@ -125,7 +137,7 @@ impl PublicData {
                 is_create: (tx.to.is_none() as u64),
                 value: tx.value,
                 call_data_len: (tx.call_data.0.len() as u64).into(),
-                // tx_sign_hash: tx.tx_sign_hash,
+                tx_sign_hash: msg_hash_le,
             });
         }
         tx_vals
@@ -439,91 +451,12 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
         config: Self::Config,
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
-        let txs = self.public_data.get_tx_table_values();
-        assert!(txs.len() < MAX_TXS);
-
         layouter.assign_region(
             || "",
             |mut region| {
                 let mut offset = 0;
-                let tx_default = TxValues::default();
-
-                // TODO add an empty row?
-                // Tx table
-                for i in 0..MAX_TXS {
-                    let tx = if i < txs.len() { &txs[i] } else { &tx_default };
-
-                    for (tag, value) in &[
-                        (
-                            TxFieldTag::Nonce,
-                            rlc(tx.nonce.to_le_bytes(), self.randomness),
-                        ),
-                        (
-                            TxFieldTag::Gas,
-                            rlc(tx.gas.to_le_bytes(), self.randomness),
-                        ),
-                        (
-                            TxFieldTag::GasPrice,
-                            rlc(tx.gas_price.to_le_bytes(), self.randomness),
-                        ),
-                        (
-                            TxFieldTag::CallerAddress,
-                            tx.from_addr.to_scalar().expect("tx.from too big"),
-                        ),
-                        (
-                            TxFieldTag::CalleeAddress,
-                            tx.to_addr.to_scalar().expect("tx.to too big"),
-                        ),
-                        (
-                            TxFieldTag::Value,
-                            rlc(tx.value.to_le_bytes(), self.randomness),
-                        ),
-                        (
-                            TxFieldTag::CallDataLength,
-                            F::from(tx.call_data_len),
-                        ),
-                        // TODO
-                        // (
-                        //     TxFieldTag::TxSignHash,
-                        //     // *msg_hash_rlc_value.unwrap_or(&F::zero()),
-                        // ),
-                    ] {
-                        config.assign_tx_row(&mut region, offset, i + 1, *tag, 0, *value)?;
-
-                        offset += 1;
-                    }
-                }
-                // Tx Table CallData
-                let mut calldata_count = 0;
-                for (i, tx) in self.public_data.txs.iter().enumerate() {
-                    for (index, byte) in tx.call_data.0.iter().enumerate() {
-                        assert!(calldata_count < MAX_CALLDATA);
-                        config.assign_tx_row(
-                            &mut region,
-                            offset,
-                            i + 1,
-                            TxFieldTag::CallData,
-                            index,
-                            F::from(*byte as u64),
-                        )?;
-                        offset += 1;
-                        calldata_count += 1;
-                    }
-                }
-                for _ in calldata_count..MAX_CALLDATA {
-                    config.assign_tx_row(
-                        &mut region,
-                        offset,
-                        0, // tx_id
-                        TxFieldTag::CallData,
-                        0,
-                        F::zero(),
-                    )?;
-                    offset += 1;
-                }
 
                 // Assign block table
-                offset = 0;
                 let block_values = self.public_data.get_block_table_values();
                 config.assign_block_table(&mut region, offset, block_values, self.randomness)?;
 
@@ -576,9 +509,83 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
                     },
                 )?;
 
+                let txs = self.public_data.get_tx_table_values();
+                assert!(txs.len() < MAX_TXS);
+                let tx_default = TxValues::default();
+
+                // // TODO Necessary Empty entry.?
+                // config.assign_row(&mut region, offset, 0, TxFieldTag::Null, 0, F::zero())?;
+                // offset += 1;
+                // Tx table
+                for i in 0..MAX_TXS {
+                    let tx = if i < txs.len() { &txs[i] } else { &tx_default };
+
+                    for (tag, value) in &[
+                        (
+                            TxFieldTag::Nonce,
+                            rlc(tx.nonce.to_le_bytes(), self.randomness),
+                        ),
+                        (TxFieldTag::Gas, rlc(tx.gas.to_le_bytes(), self.randomness)),
+                        (
+                            TxFieldTag::GasPrice,
+                            rlc(tx.gas_price.to_le_bytes(), self.randomness),
+                        ),
+                        (
+                            TxFieldTag::CallerAddress,
+                            tx.from_addr.to_scalar().expect("tx.from too big"),
+                        ),
+                        (
+                            TxFieldTag::CalleeAddress,
+                            tx.to_addr.to_scalar().expect("tx.to too big"),
+                        ),
+                        (TxFieldTag::IsCreate, F::from(tx.is_create)),
+                        (
+                            TxFieldTag::Value,
+                            rlc(tx.value.to_le_bytes(), self.randomness),
+                        ),
+                        (TxFieldTag::CallDataLength, F::from(tx.call_data_len)),
+                        (
+                            TxFieldTag::TxSignHash,
+                            rlc(tx.tx_sign_hash, self.randomness),
+                        ),
+                    ] {
+                        config.assign_tx_row(&mut region, offset, i + 1, *tag, 0, *value)?;
+
+                        offset += 1;
+                    }
+                }
+                // Tx Table CallData
+                let mut calldata_count = 0;
+                for (i, tx) in self.public_data.txs.iter().enumerate() {
+                    for (index, byte) in tx.call_data.0.iter().enumerate() {
+                        assert!(calldata_count < MAX_CALLDATA);
+                        config.assign_tx_row(
+                            &mut region,
+                            offset,
+                            i + 1,
+                            TxFieldTag::CallData,
+                            index,
+                            F::from(*byte as u64),
+                        )?;
+                        offset += 1;
+                        calldata_count += 1;
+                    }
+                }
+                for _ in calldata_count..MAX_CALLDATA {
+                    config.assign_tx_row(
+                        &mut region,
+                        offset,
+                        0, // tx_id
+                        TxFieldTag::CallData,
+                        0,
+                        F::zero(),
+                    )?;
+                    offset += 1;
+                }
+
                 let tx_table_len = TX_LEN * MAX_TXS + MAX_CALLDATA;
                 offset += 3 * tx_table_len;
-                config.q_end.enable(&mut region, offset);
+                config.q_end.enable(&mut region, offset)?;
 
                 // TODO PI stuff
                 Ok(())

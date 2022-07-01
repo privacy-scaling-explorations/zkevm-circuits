@@ -102,7 +102,8 @@ pub fn keccak_inputs(txs: &[Transaction], chain_id: u64) -> Result<Vec<Vec<u8>>,
     Ok(inputs)
 }
 
-fn tx_to_sign_data(tx: &Transaction, chain_id: u64) -> Result<SignData, Error> {
+/// Doc this
+pub(crate) fn tx_to_sign_data(tx: &Transaction, chain_id: u64) -> Result<SignData, Error> {
     let sig_r_le = tx.r.to_le_bytes();
     let sig_s_le = tx.s.to_le_bytes();
     let sig_r =
