@@ -46,7 +46,7 @@ pub const VERIF_HEIGHT: usize = 1;
 
 /// Auxiliary Gadget to verify a that a message hash is signed by the public
 /// key corresponding to an Ethereum Address.
-#[derive(Default, Debug)]
+#[derive(Clone, Default, Debug)]
 pub struct SignVerifyChip<F: FieldExt, const MAX_VERIF: usize> {
     /// Aux generator for EccChip
     pub aux_generator: Secp256k1Affine,

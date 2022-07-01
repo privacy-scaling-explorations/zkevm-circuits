@@ -13,8 +13,9 @@ use eth_types::{
 use ff::PrimeField;
 use group::GroupEncoding;
 use halo2_proofs::{
+    // arithmetic::CurveAffine,
     circuit::{AssignedCell, Layouter, Region, SimpleFloorPlanner},
-    plonk::{Advice, Circuit, Column, ConstraintSystem, Error},
+    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Expression},
     poly::Rotation,
 };
 use itertools::Itertools;
@@ -23,6 +24,7 @@ use libsecp256k1;
 use log::error;
 use num::Integer;
 use num_bigint::BigUint;
+// use rand_core::RngCore;
 use rlp::RlpStream;
 use secp256k1::Secp256k1Affine;
 use sha3::{Digest, Keccak256};
@@ -186,7 +188,11 @@ pub struct TxTable {
 }
 
 impl<F: Field> TxCircuitConfig<F> {
-    fn new(meta: &mut ConstraintSystem<F>, tx_table: TxTable) -> Self {
+    pub fn new(
+        meta: &mut ConstraintSystem<F>,
+        power_of_randomness: [Expression<F>; sign_verify::POW_RAND_SIZE],
+        tx_table: TxTable,
+    ) -> Self {
         // let tx_id = meta.advice_column();
         // let tag = meta.advice_column();
         // let index = meta.advice_column();
@@ -201,19 +207,20 @@ impl<F: Field> TxCircuitConfig<F> {
         // randomness instance column, so that later on we don't need to query
         // columns everywhere, and can pass the power of randomness array
         // expression everywhere.  The gate itself doesn't add any constraints.
-        let power_of_randomness = {
-            let columns = [(); sign_verify::POW_RAND_SIZE].map(|_| meta.instance_column());
-            let mut power_of_randomness = None;
+        // let power_of_randomness = {
+        //     let columns = [(); sign_verify::POW_RAND_SIZE].map(|_|
+        // meta.instance_column());     let mut power_of_randomness = None;
 
-            meta.create_gate("power of randomness", |meta| {
-                power_of_randomness =
-                    Some(columns.map(|column| meta.query_instance(column, Rotation::cur())));
+        //     meta.create_gate("power of randomness", |meta| {
+        //         power_of_randomness =
+        //             Some(columns.map(|column| meta.query_instance(column,
+        // Rotation::cur())));
 
-                [0.expr()]
-            });
+        //         [0.expr()]
+        //     });
 
-            power_of_randomness.unwrap()
-        };
+        //     power_of_randomness.unwrap()
+        // };
         let sign_verify = SignVerifyConfig::new(meta, power_of_randomness);
 
         Self {
@@ -245,7 +252,7 @@ impl<F: Field> TxCircuitConfig<F> {
 }
 
 /// Tx Circuit for verifying transaction signatures
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct TxCircuit<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> {
     /// SignVerify chip
     pub sign_verify: SignVerifyChip<F, MAX_TXS>,
@@ -260,6 +267,24 @@ pub struct TxCircuit<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> 
 impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
     TxCircuit<F, MAX_TXS, MAX_CALLDATA>
 {
+    pub fn new(
+        aux_generator: Secp256k1Affine,
+        randomness: F,
+        chain_id: u64,
+        txs: Vec<Transaction>,
+    ) -> Self {
+        TxCircuit::<F, MAX_TXS, MAX_CALLDATA> {
+            sign_verify: SignVerifyChip {
+                aux_generator,
+                window_size: 2,
+                _marker: PhantomData,
+            },
+            randomness,
+            txs,
+            chain_id,
+        }
+    }
+
     pub fn assign(
         &self,
         config: TxCircuitConfig<F>,
@@ -410,7 +435,26 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
             index: meta.advice_column(),
             value: meta.advice_column(),
         };
-        TxCircuitConfig::new(meta, tx_table)
+
+        // This gate is used just to get the array of expressions from the power of
+        // randomness instance column, so that later on we don't need to query
+        // columns everywhere, and can pass the power of randomness array
+        // expression everywhere.  The gate itself doesn't add any constraints.
+        let power_of_randomness = {
+            let columns = [(); sign_verify::POW_RAND_SIZE].map(|_| meta.instance_column());
+            let mut power_of_randomness = None;
+
+            meta.create_gate("", |meta| {
+                power_of_randomness =
+                    Some(columns.map(|column| meta.query_instance(column, Rotation::cur())));
+
+                [0.expr()]
+            });
+
+            power_of_randomness.unwrap()
+        };
+
+        TxCircuitConfig::new(meta, power_of_randomness, tx_table)
     }
 
     fn synthesize(&self, config: Self::Config, layouter: impl Layouter<F>) -> Result<(), Error> {
