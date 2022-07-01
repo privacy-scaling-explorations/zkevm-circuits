@@ -42,17 +42,26 @@ pub(crate) struct UnrolledBytecode<F: Field> {
 }
 
 #[derive(Clone, Debug)]
-pub struct Config<F> {
-    r: F,
-    minimum_rows: usize,
-    q_enable: Column<Fixed>,
-    q_first: Column<Fixed>,
-    q_last: Selector,
+pub struct BytecodeTable {
     hash: Column<Advice>,
     tag: Column<Advice>,
     index: Column<Advice>,
     is_code: Column<Advice>,
     value: Column<Advice>,
+}
+
+#[derive(Clone, Debug)]
+pub struct Config<F> {
+    r: F, // TODO: Replace by Expression<F>
+    minimum_rows: usize,
+    q_enable: Column<Fixed>,
+    q_first: Column<Fixed>,
+    q_last: Selector,
+    hash: Column<Advice>,    // *
+    tag: Column<Advice>,     // *
+    index: Column<Advice>,   // *
+    is_code: Column<Advice>, // *
+    value: Column<Advice>,   // *
     push_rindex: Column<Advice>,
     hash_rlc: Column<Advice>,
     hash_length: Column<Advice>,
@@ -68,15 +77,19 @@ pub struct Config<F> {
 }
 
 impl<F: Field> Config<F> {
-    pub(crate) fn configure(meta: &mut ConstraintSystem<F>, r: F) -> Self {
+    pub(crate) fn configure(
+        meta: &mut ConstraintSystem<F>,
+        r: F,
+        bytecode_table: BytecodeTable,
+    ) -> Self {
         let q_enable = meta.fixed_column();
         let q_first = meta.fixed_column();
         let q_last = meta.selector();
-        let hash = meta.advice_column();
-        let tag = meta.advice_column();
-        let index = meta.advice_column();
-        let is_code = meta.advice_column();
-        let value = meta.advice_column();
+        let hash = bytecode_table.hash;
+        let tag = bytecode_table.tag;
+        let index = bytecode_table.index;
+        let is_code = bytecode_table.is_code;
+        let value = bytecode_table.value;
         let push_rindex = meta.advice_column();
         let hash_rlc = meta.advice_column();
         let hash_length = meta.advice_column();
@@ -716,7 +729,14 @@ mod tests {
         }
 
         fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-            Config::configure(meta, MyCircuit::r())
+            let bytecode_table = BytecodeTable {
+                hash: meta.advice_column(),
+                tag: meta.advice_column(),
+                index: meta.advice_column(),
+                is_code: meta.advice_column(),
+                value: meta.advice_column(),
+            };
+            Config::configure(meta, MyCircuit::r(), bytecode_table)
         }
 
         fn synthesize(

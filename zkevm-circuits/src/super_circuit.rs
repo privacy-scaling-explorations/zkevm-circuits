@@ -14,6 +14,10 @@
 
 use crate::tx_circuit::{sign_verify, TxCircuit, TxCircuitConfig, TxTable};
 
+use crate::bytecode_circuit::bytecode_unroller::{
+    BytecodeTable, Config as BytecodeConfig, UnrolledBytecode,
+};
+
 use crate::util::Expr;
 use crate::{
     evm_circuit::{
@@ -40,13 +44,18 @@ pub struct SuperCircuitConfig<F: Field, const MAX_TXS: usize, const MAX_CALLDATA
     block_table: [Column<Advice>; 3],
     evm_circuit: EvmCircuit<F>,
     tx_circuit: TxCircuitConfig<F>,
+    bytecode_circuit: BytecodeConfig<F>,
 }
 
 #[derive(Default)]
 pub struct SuperCircuit<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> {
+    // EVM Circuit
     block: Block<F>,
     fixed_table_tags: Vec<FixedTableTag>,
+    // Tx Circuit
     tx_circuit: TxCircuit<F, MAX_TXS, MAX_CALLDATA>,
+    // Bytecode Circuit
+    bytecodes: Vec<UnrolledBytecode<F>>,
 }
 
 impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
@@ -119,6 +128,17 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
                     tag: tx_table[1],
                     index: tx_table[2],
                     value: tx_table[3],
+                },
+            ),
+            bytecode_circuit: BytecodeConfig::configure(
+                meta,
+                power_of_randomness[0],
+                BytecodeTable {
+                    hash: bytecode_table[0],
+                    tag: bytecode_table[1],
+                    index: bytecode_table[2],
+                    is_code: bytecode_table[3],
+                    value: bytecode_table[4],
                 },
             ),
         }
