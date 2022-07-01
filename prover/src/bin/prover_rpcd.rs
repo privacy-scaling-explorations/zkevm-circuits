@@ -1,14 +1,10 @@
 use env_logger::Env;
-use halo2_proofs::pairing::bn256::G1Affine;
-use halo2_proofs::poly::commitment::Params;
 use hyper::body::Buf;
 use hyper::body::HttpBody;
 use hyper::header::HeaderValue;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Method, Request, Response, Server, StatusCode};
 use std::env::var;
-use std::fs::File;
-use std::sync::Arc;
 
 use prover::shared_state::SharedState;
 use prover::structs::*;
@@ -150,25 +146,11 @@ async fn handle_method(
     match method {
         // enqueues a task for computating proof for any given block
         "proof" => {
-            let err_msg = "block number at params[0]";
-            let block_num = params.get(0).ok_or(err_msg)?.as_u64().ok_or(err_msg)?;
+            let options = params.get(0).ok_or("expected struct ProofRequestOptions")?;
+            let options: ProofRequestOptions =
+                serde_json::from_value(options.to_owned()).map_err(|e| e.to_string())?;
 
-            let err_msg = "rpc url at params[1]";
-            let rpc_url = params.get(1).ok_or(err_msg)?.as_str().ok_or(err_msg)?;
-
-            let err_msg = "bool retry_if_error at params[2]";
-            let retry_if_error = params.get(2).ok_or(err_msg)?.as_bool().ok_or(err_msg)?;
-
-            // optional
-            let options: ProofRequestOptions = match params.get(3) {
-                Some(val) => serde_json::from_value(val.to_owned()).map_err(|e| e.to_string())?,
-                None => ProofRequestOptions::default(),
-            };
-
-            match shared_state
-                .get_or_enqueue(&block_num, rpc_url, &retry_if_error, &options)
-                .await
-            {
+            match shared_state.get_or_enqueue(&options).await {
                 // No error
                 None => Ok(serde_json::Value::Null),
                 Some(result) => {
@@ -251,22 +233,9 @@ async fn main() {
             .build()
             .unwrap();
         let h2 = rt.spawn(async move {
-            // lazily load params
-            let params_path: String = var("PARAMS_PATH")
-                .expect("PARAMS_PATH env var")
-                .parse()
-                .expect("Cannot parse PARAMS_PATH env var");
-            // load polynomial commitment parameters
-            let params_fs = File::open(&params_path).expect("couldn't open params");
-            let params: Arc<Params<G1Affine>> = Arc::new(
-                Params::read::<_>(&mut std::io::BufReader::new(params_fs))
-                    .expect("Failed to read params"),
-            );
-            log::info!("params: initialized");
-
             let ctx = ctx.clone();
             loop {
-                ctx.duty_cycle(params.clone()).await;
+                ctx.duty_cycle().await;
                 tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
             }
         });

@@ -31,8 +31,20 @@ pub struct JsonRpcRequest<T: serde::Serialize> {
     pub params: T,
 }
 
-#[derive(Debug, Default, Clone, Copy, serde::Deserialize)]
+#[derive(Debug, Default, Clone, serde::Deserialize)]
 pub struct ProofRequestOptions {
-    /// Setups parameters on the fly
-    pub k: Option<u32>,
+    /// the block number
+    pub block: u64,
+    /// the rpc url
+    pub rpc: String,
+    /// retry proof computation if error
+    pub retry: bool,
+    /// parameter file to use
+    pub param: String,
+}
+
+impl PartialEq for ProofRequestOptions {
+    fn eq(&self, other: &Self) -> bool {
+        self.block == other.block && self.rpc == other.rpc && self.param == other.param
+    }
 }
