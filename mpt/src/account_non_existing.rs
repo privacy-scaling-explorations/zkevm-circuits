@@ -56,20 +56,22 @@ impl<F: FieldExt> AccountNonExistingChip<F> {
         // key rlc is in the first branch node
         let rot_into_first_branch_child = -(ACCOUNT_NON_EXISTING_IND - 1 + BRANCH_ROWS_NUM);
 
+        // TODO: zeros after key_len in non_existing_account row
+
         let add_wrong_leaf_constraints =
             |meta: &mut VirtualCells<F>,
             constraints: &mut Vec<(&str, Expression<F>)>,
             q_enable: Expression<F>,
             c_rlp1_cur: Expression<F>,
             c_rlp2_cur: Expression<F>,
-            is_leaf_in_first_level: Expression<F>,
+            correct_level: Expression<F>,
             is_wrong_leaf: Expression<F> | {
                 let sum = meta.query_advice(key_rlc, Rotation::cur());
                 let sum_prev = meta.query_advice(key_rlc_mult, Rotation::cur());
                 let diff_inv = meta.query_advice(acc_s, Rotation::cur());
 
-                let c_rlp1_prev = meta.query_advice(c_rlp1, Rotation::cur());
-                let c_rlp2_prev = meta.query_advice(c_rlp2, Rotation::cur());
+                let c_rlp1_prev = meta.query_advice(c_rlp1, Rotation::prev());
+                let c_rlp2_prev = meta.query_advice(c_rlp2, Rotation::prev());
 
                 let mut sum_check = Expression::Constant(F::zero());
                 let mut sum_prev_check = Expression::Constant(F::zero());
@@ -88,7 +90,7 @@ impl<F: FieldExt> AccountNonExistingChip<F> {
                 constraints.push((
                     "wrong leaf sum check",
                     q_enable.clone()
-                        * (one.clone() - is_leaf_in_first_level.clone())
+                        * correct_level.clone()
                         * is_wrong_leaf.clone()
                         * (sum.clone() - sum_check.clone()),
                 ));
@@ -96,7 +98,7 @@ impl<F: FieldExt> AccountNonExistingChip<F> {
                 constraints.push((
                     "wrong leaf sum_prev check",
                     q_enable.clone()
-                        * (one.clone() - is_leaf_in_first_level.clone())
+                        * correct_level.clone()
                         * is_wrong_leaf.clone()
                         * (sum_prev.clone() - sum_prev_check.clone()),
                 ));
@@ -104,7 +106,7 @@ impl<F: FieldExt> AccountNonExistingChip<F> {
                 constraints.push((
                     "Address of a leaf is different than address being inquired (corresponding to address_rlc)",
                     q_enable.clone()
-                        * (one.clone() - is_leaf_in_first_level.clone())
+                        * correct_level.clone()
                         * is_wrong_leaf.clone()
                         * (one.clone() - (sum - sum_prev) * diff_inv),
                 ));
@@ -190,7 +192,7 @@ impl<F: FieldExt> AccountNonExistingChip<F> {
                 ));
 
                 add_wrong_leaf_constraints(meta, &mut constraints, q_enable.clone(), c_rlp1_cur,
-                    c_rlp2_cur, is_leaf_in_first_level.clone(), is_wrong_leaf.clone());
+                    c_rlp2_cur, one.clone() - is_leaf_in_first_level.clone(), is_wrong_leaf.clone());
  
                 let is_nil_object = meta.query_advice(sel1, Rotation(rot_into_first_branch_child));
                 constraints.push((

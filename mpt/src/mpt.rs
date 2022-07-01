@@ -71,6 +71,8 @@ use crate::{
     nodes) down to the leaf.
 */
 
+// TODO: constraints for the length of key and address RLC to be 32 bytes long
+
 #[derive(Clone, Debug)]
 pub struct MPTConfig<F> {
     q_enable: Column<Fixed>,
