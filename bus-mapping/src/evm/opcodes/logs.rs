@@ -133,18 +133,18 @@ fn gen_copy_steps(
     let mut copy_steps = Vec::with_capacity(2 * cap);
     for (idx, _) in mem_read_value.iter().enumerate().take(cap) {
         let addr = src_addr + idx as u64;
-        let (value, is_pad, rwc) = if addr < src_addr_end {
+        let rwc = state.block_ctx.rwc;
+        let (value, is_pad) = if addr < src_addr_end {
             let byte = mem_read_value[idx];
             state.memory_read(exec_step, (addr as usize).into(), byte)?;
-            (byte, false, Some(state.block_ctx.rwc))
+            (byte, false)
         } else {
-            (0, true, None)
+            (0, true)
         };
 
         // Read
         copy_steps.push(CopyStep {
             addr,
-            addr_end: Some(src_addr_end),
             tag: CopyDataType::Memory,
             rw: RW::READ,
             value,
@@ -156,6 +156,16 @@ fn gen_copy_steps(
 
         // Write
         if state.call()?.is_persistent {
+            copy_steps.push(CopyStep {
+                addr: (data_start_index + idx) as u64,
+                tag: CopyDataType::TxLog,
+                rw: RW::WRITE,
+                value,
+                is_code: None,
+                is_pad: false,
+                rwc: state.block_ctx.rwc,
+                rwc_inc_left: 0,
+            });
             state.tx_log_write(
                 exec_step,
                 state.tx_ctx.id(),
@@ -164,17 +174,6 @@ fn gen_copy_steps(
                 data_start_index + idx,
                 Word::from(value),
             )?;
-            copy_steps.push(CopyStep {
-                addr: (data_start_index + idx) as u64,
-                addr_end: None,
-                tag: CopyDataType::TxLog,
-                rw: RW::WRITE,
-                value,
-                is_code: None,
-                is_pad: false,
-                rwc: Some(state.block_ctx.rwc),
-                rwc_inc_left: 0,
-            });
         }
     }
 
@@ -193,7 +192,6 @@ fn gen_copy_event(
 
     let (src_addr, src_addr_end) = (memory_start, memory_start + msize as u64);
 
-    let rwc_start = state.block_ctx.rwc.0;
     let mut copied = 0;
     let mut steps = vec![];
     while copied < msize {
@@ -210,13 +208,9 @@ fn gen_copy_event(
         copied += MAX_COPY_BYTES;
     }
 
-    let mut rwc_inc = state.block_ctx.rwc.0 - rwc_start;
     if steps.len() >= 2 {
         for cs in steps.iter_mut() {
-            cs.rwc_inc_left = rwc_inc as u64;
-            if cs.rwc.is_some() {
-                rwc_inc -= 1;
-            }
+            cs.rwc_inc_left = state.block_ctx.rwc.0 as u64 - cs.rwc.0 as u64;
         }
     }
 
@@ -492,11 +486,11 @@ mod log_tests {
         assert_eq!(copy_events[0].length as usize, msize);
         assert_eq!(copy_events[0].log_id, Some(step.log_id as u64 + 1));
 
-        let mut rwc_start = step.rwc.0 + // start of rwc
+        let mut rwc = RWCounter(step.rwc.0 + // start of rwc
             6 + // 2 stack reads + 4 call context reads
             1 + // TxLogField::Address write
             topic_count + // stack read for topics
-            topic_count; // TxLogField::Topic write
+            topic_count); // TxLogField::Topic write
         let mut rwc_inc = copy_events[0].steps.first().unwrap().rwc_inc_left;
         for (idx, copy_rw_pair) in copy_events[0].steps.chunks(2).enumerate() {
             assert_eq!(copy_rw_pair.len(), 2);
@@ -510,17 +504,15 @@ mod log_tests {
                 read_step,
                 CopyStep {
                     addr: (mstart + idx) as u64,
-                    addr_end: Some(msize as u64),
                     rw: RW::READ,
                     tag: CopyDataType::Memory,
                     value,
                     is_code: None,
                     is_pad,
                     rwc: if !is_pad {
-                        rwc_start += 1;
-                        Some(RWCounter(rwc_start))
+                        rwc.inc_pre()
                     } else {
-                        None
+                        rwc
                     },
                     rwc_inc_left: rwc_inc,
                 }
@@ -534,16 +526,12 @@ mod log_tests {
                 write_step,
                 CopyStep {
                     addr: idx as u64,
-                    addr_end: None,
                     rw: RW::WRITE,
                     tag: CopyDataType::TxLog,
                     value,
                     is_code: None,
                     is_pad: false,
-                    rwc: {
-                        rwc_start += 1;
-                        Some(RWCounter(rwc_start))
-                    },
+                    rwc: rwc.inc_pre(),
                     rwc_inc_left: rwc_inc,
                 }
             );

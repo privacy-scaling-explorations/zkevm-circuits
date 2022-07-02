@@ -155,8 +155,6 @@ pub enum CopyDataType {
 pub struct CopyStep {
     /// Address (source/destination) for the copy step.
     pub addr: u64,
-    /// Address (source) at which the copy event ends.
-    pub addr_end: Option<u64>,
     /// Represents the source/destination's type.
     pub tag: CopyDataType,
     /// Whether this step is a read or write step.
@@ -168,8 +166,8 @@ pub struct CopyStep {
     pub is_code: Option<bool>,
     /// Represents whether or not the copy step is a padding row.
     pub is_pad: bool,
-    /// Represents the RW counter associated with this copy step.
-    pub rwc: Option<RWCounter>,
+    /// Represents the current RW counter at this copy step.
+    pub rwc: RWCounter,
     /// A decrementing value representing the RW counters left in the copy event
     /// including the current step's RW counter.
     pub rwc_inc_left: u64,
@@ -182,20 +180,6 @@ pub enum NumberOrHash {
     Number(usize),
     /// Variant to indicate a 256-bits hash value.
     Hash(H256),
-}
-
-impl NumberOrHash {
-    /// Underlying big-endian bytes of the number of hash.
-    pub fn bytes(&self) -> [u8; 32] {
-        match self {
-            Self::Number(n) => {
-                let mut out = [0u8; 32];
-                out.copy_from_slice(&n.to_be_bytes());
-                out
-            }
-            Self::Hash(h) => h.to_fixed_bytes(),
-        }
-    }
 }
 
 /// Defines a copy event associated with EVM opcodes such as CALLDATACOPY,

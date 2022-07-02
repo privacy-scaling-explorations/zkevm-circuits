@@ -127,7 +127,6 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
                 length.expr(),
                 cb.curr.state.rw_counter.expr() + cb.rw_counter_offset().expr(),
                 copy_rwc_inc.expr(),
-                0.expr(), // log_id
             );
         });
         cb.condition(not::expr(memory_address.has_length()), |cb| {

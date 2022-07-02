@@ -1084,12 +1084,11 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         dst_id: Expression<F>,
         dst_tag: Expression<F>,
         src_addr: Expression<F>,
-        src_addr_boundary: Expression<F>,
+        src_addr_end: Expression<F>,
         dst_addr: Expression<F>,
         length: Expression<F>,
         rw_counter: Expression<F>,
         rwc_inc: Expression<F>,
-        log_id: Expression<F>,
     ) {
         self.add_lookup(
             "copy lookup",
@@ -1101,12 +1100,11 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
                     dst_id,
                     dst_tag,
                     src_addr,
-                    src_addr_boundary,
+                    src_addr_end,
                     dst_addr,
                     length,
                     rw_counter,
                     rwc_inc,
-                    log_id,
                 ],
             },
         );

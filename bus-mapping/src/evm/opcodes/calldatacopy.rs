@@ -92,7 +92,8 @@ fn gen_copy_steps(
     let rwc_start = state.block_ctx.rwc.0;
     for idx in 0..bytes_left {
         let addr = src_addr + idx;
-        let (value, is_pad, rwc) = if addr < src_addr_end {
+        let rwc = state.block_ctx.rwc;
+        let (value, is_pad) = if addr < src_addr_end {
             let byte =
                 state.call_ctx()?.call_data[(addr - state.call()?.call_data_offset) as usize];
             if !is_root {
@@ -101,12 +102,12 @@ fn gen_copy_steps(
                     RW::READ,
                     MemoryOp::new(state.call()?.caller_id, addr.into(), byte),
                 );
-                (byte, false, Some(state.block_ctx.rwc))
+                (byte, false)
             } else {
-                (byte, false, None)
+                (byte, false)
             }
         } else {
-            (0, true, None)
+            (0, true)
         };
         let tag = if is_root {
             CopyDataType::TxCalldata
@@ -116,7 +117,6 @@ fn gen_copy_steps(
         // Read
         copy_steps.push(CopyStep {
             addr,
-            addr_end: Some(src_addr_end),
             tag,
             rw: RW::READ,
             value,
@@ -126,26 +126,21 @@ fn gen_copy_steps(
             rwc_inc_left: 0,
         });
         // Write
-        state.memory_write(exec_step, (dst_addr + idx).into(), value)?;
         copy_steps.push(CopyStep {
             addr: dst_addr + idx,
-            addr_end: None,
             tag: CopyDataType::Memory,
             rw: RW::WRITE,
             value,
             is_code: None,
             is_pad: false,
-            rwc: Some(state.block_ctx.rwc),
+            rwc: state.block_ctx.rwc,
             rwc_inc_left: 0,
         });
+        state.memory_write(exec_step, (dst_addr + idx).into(), value)?;
     }
-    let mut rwc_inc = state.block_ctx.rwc.0 - rwc_start;
     if copy_steps.len() >= 2 {
         for cs in copy_steps.iter_mut() {
-            cs.rwc_inc_left = rwc_inc as u64;
-            if cs.rwc.is_some() {
-                rwc_inc -= 1;
-            }
+            cs.rwc_inc_left = state.block_ctx.rwc.0 as u64 - cs.rwc.0 as u64;
         }
     }
     Ok(copy_steps)
@@ -399,7 +394,7 @@ mod calldatacopy_tests {
         );
         assert_eq!(copy_events[0].dst_addr as usize, dst_offset);
 
-        let mut rwc_start = step.rwc.0 + 6;
+        let mut rwc = RWCounter(step.rwc.0 + 6);
         let mut rwc_inc = copy_events[0].steps.first().unwrap().rwc_inc_left;
         for (idx, copy_rw_pair) in copy_events[0].steps.chunks(2).enumerate() {
             assert_eq!(copy_rw_pair.len(), 2);
@@ -413,17 +408,15 @@ mod calldatacopy_tests {
                 read_step,
                 CopyStep {
                     addr: (offset + call_data_offset + idx) as u64,
-                    addr_end: Some((offset + call_data_offset + call_data_length) as u64),
                     tag: CopyDataType::Memory,
                     rw: RW::READ,
                     is_code: None,
                     value,
                     is_pad,
                     rwc: if !is_pad {
-                        rwc_start += 1;
-                        Some(RWCounter(rwc_start))
+                        rwc.inc_pre()
                     } else {
-                        None
+                        rwc
                     },
                     rwc_inc_left: rwc_inc,
                 }
@@ -437,16 +430,12 @@ mod calldatacopy_tests {
                 write_step,
                 CopyStep {
                     addr: (dst_offset + idx) as u64,
-                    addr_end: None,
                     tag: CopyDataType::Memory,
                     rw: RW::WRITE,
                     is_code: None,
                     value,
                     is_pad: false,
-                    rwc: {
-                        rwc_start += 1;
-                        Some(RWCounter(rwc_start))
-                    },
+                    rwc: rwc.inc_pre(),
                     rwc_inc_left: rwc_inc,
                 }
             );
@@ -576,7 +565,7 @@ mod calldatacopy_tests {
         assert_eq!(copy_events.len(), 1);
         assert_eq!(copy_events[0].steps.len(), 2 * size);
 
-        let mut rwc_start = step.rwc.0 + 5;
+        let mut rwc = RWCounter(step.rwc.0 + 5);
         for (idx, copy_rw_pair) in copy_events[0].steps.chunks(2).enumerate() {
             assert_eq!(copy_rw_pair.len(), 2);
             let (value, is_pad) = calldata
@@ -589,13 +578,12 @@ mod calldatacopy_tests {
                 read_step,
                 CopyStep {
                     addr: (offset + idx) as u64,
-                    addr_end: Some(calldata_len as u64),
                     tag: CopyDataType::TxCalldata,
                     rw: RW::READ,
                     value,
                     is_code: None,
                     is_pad,
-                    rwc: None,
+                    rwc: rwc,
                     rwc_inc_left: (size - idx) as u64,
                 }
             );
@@ -605,16 +593,12 @@ mod calldatacopy_tests {
                 write_step,
                 CopyStep {
                     addr: (dst_offset + idx) as u64,
-                    addr_end: None,
                     tag: CopyDataType::Memory,
                     rw: RW::WRITE,
                     value,
                     is_code: None,
                     is_pad: false,
-                    rwc: {
-                        rwc_start += 1;
-                        Some(RWCounter(rwc_start))
-                    },
+                    rwc: rwc.inc_pre(),
                     rwc_inc_left: (size - idx) as u64,
                 }
             );

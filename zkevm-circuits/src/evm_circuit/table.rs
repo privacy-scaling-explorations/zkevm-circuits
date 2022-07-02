@@ -328,7 +328,7 @@ pub(crate) enum Lookup<F> {
     /// Lookup to copy table.
     CopyTable {
         /// Values corresponding to the copy table expressions.
-        values: [Expression<F>; 12],
+        values: [Expression<F>; 11],
     },
     /// Conditional lookup enabled by the first element.
     Conditional(Expression<F>, Box<Lookup<F>>),

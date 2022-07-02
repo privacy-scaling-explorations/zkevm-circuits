@@ -127,6 +127,7 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
         );
 
         let copy_rwc_inc = cb.query_cell();
+        let dst_addr = (1u64 << 32).expr() * TxLogFieldTag::Data.expr() + (1u64 << 48).expr() * (cb.curr.state.log_id.expr() + 1.expr());
         cb.condition(memory_address.has_length(), |cb| {
             cb.copy_table_lookup(
                 cb.curr.state.call_id.expr(),
@@ -135,11 +136,10 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
                 CopyDataType::TxLog.expr(),
                 mstart.expr(),
                 mstart.expr() + msize.expr(),
-                0.expr(),
+                dst_addr,
                 msize.expr(),
                 cb.curr.state.rw_counter.expr() + cb.rw_counter_offset().expr(),
                 copy_rwc_inc.expr(),
-                cb.curr.state.log_id.expr() + 1.expr(),
             );
         });
         cb.condition(not::expr(memory_address.has_length()), |cb| {

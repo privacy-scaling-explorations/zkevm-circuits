@@ -73,28 +73,26 @@ fn gen_copy_steps(
         // Read
         steps.push(CopyStep {
             addr,
-            addr_end: Some(src_addr_end),
             tag: CopyDataType::Bytecode,
             rw: RW::READ,
             value,
             is_code,
             is_pad,
-            rwc: None,
+            rwc: state.block_ctx.rwc,
             rwc_inc_left: bytes_left - idx,
         });
         // Write
-        state.memory_write(exec_step, (dst_addr + idx).into(), value)?;
         steps.push(CopyStep {
             addr: dst_addr + idx,
-            addr_end: None,
             tag: CopyDataType::Memory,
             rw: RW::WRITE,
             value,
             is_code: None,
             is_pad: false,
-            rwc: Some(state.block_ctx.rwc),
+            rwc: state.block_ctx.rwc,
             rwc_inc_left: bytes_left - idx,
-        })
+        });
+        state.memory_write(exec_step, (dst_addr + idx).into(), value)?;
     }
     Ok(steps)
 }
@@ -259,7 +257,7 @@ mod codecopy_tests {
         assert!(copy_events[0].log_id.is_none());
         assert_eq!(copy_events[0].length as usize, size);
 
-        let mut rwc_start = step.rwc.0 + 3;
+        let mut rwc = RWCounter(step.rwc.0 + 3);
         for (idx, copy_rw_pair) in copy_events[0].steps.chunks(2).enumerate() {
             assert_eq!(copy_rw_pair.len(), 2);
             let (value, is_code, is_pad) = code
@@ -271,13 +269,12 @@ mod codecopy_tests {
                 read_step,
                 CopyStep {
                     addr: (code_offset + idx) as u64,
-                    addr_end: Some(code.code().len() as u64),
                     tag: CopyDataType::Bytecode,
                     rw: RW::READ,
                     value,
                     is_code,
                     is_pad,
-                    rwc: None,
+                    rwc: rwc,
                     rwc_inc_left: (size - idx) as u64,
                 }
             );
@@ -287,16 +284,12 @@ mod codecopy_tests {
                 write_step,
                 CopyStep {
                     addr: (dst_offset + idx) as u64,
-                    addr_end: None,
                     tag: CopyDataType::Memory,
                     rw: RW::WRITE,
                     value,
                     is_code: None,
                     is_pad: false,
-                    rwc: {
-                        rwc_start += 1;
-                        Some(RWCounter(rwc_start))
-                    },
+                    rwc: rwc.inc_pre(),
                     rwc_inc_left: (size - idx) as u64,
                 }
             );
