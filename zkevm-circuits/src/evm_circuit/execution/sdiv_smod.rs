@@ -279,6 +279,11 @@ mod test {
         test_ok(OpcodeId::SDIV, 0xABC.into(), 0xFFFFFF.into());
         test_ok(OpcodeId::SDIV, 0xFFFFFF.into(), 0xFFFFFFF.into());
         test_ok(OpcodeId::SDIV, 0xABC.into(), 0.into());
+        // (1 << 255) + (7 << 128)
+        let mut x = [0u8; 32];
+        x[31] = 128u8;
+        x[16] = 7u8;
+        test_ok(OpcodeId::SDIV, Word::from_big_endian(&x), 0x1234.into());
         test_ok(
             OpcodeId::SDIV,
             Word::from_big_endian(&[255u8; 32]),
@@ -289,6 +294,7 @@ mod test {
             0xABCDEF.into(),
             Word::from_big_endian(&[255u8; 32]),
         );
+        // 1 << 255
         let mut x = [0u8; 32];
         x[31] = 128u8;
         test_ok(
@@ -311,6 +317,11 @@ mod test {
         test_ok(OpcodeId::SMOD, 0xABC.into(), 0xFFFFFF.into());
         test_ok(OpcodeId::SMOD, 0xFFFFFF.into(), 0xFFFFFFF.into());
         test_ok(OpcodeId::SMOD, 0xABC.into(), 0.into());
+        // (1 << 255) + (7 << 128)
+        let mut x = [0u8; 32];
+        x[31] = 128u8;
+        x[16] = 7u8;
+        test_ok(OpcodeId::SMOD, Word::from_big_endian(&x), 0x1234.into());
         test_ok(
             OpcodeId::SMOD,
             Word::from_big_endian(&[255u8; 32]),
