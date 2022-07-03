@@ -3,10 +3,12 @@ use crate::{
         execution::ExecutionGadget,
         step::ExecutionState,
         util::{
-            self,
             common_gadget::SameContextGadget,
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
-            math_gadget::{AbsWordGadget, IsZeroGadget, LtGadget, LtWordGadget, MulAddWordsGadget},
+            math_gadget::{
+                generate_lagrange_base_polynomial, AbsWordGadget, IsZeroGadget, LtGadget,
+                LtWordGadget, MulAddWordsGadget,
+            },
             select, sum, CachedRegion,
         },
         witness::{Block, Call, ExecStep, Transaction},
@@ -20,21 +22,16 @@ use halo2_proofs::plonk::Error;
 #[derive(Clone, Debug)]
 pub(crate) struct SignedDivModGadget<F> {
     same_context: SameContextGadget<F>,
-    quotient: util::Word<F>,
-    divisor: util::Word<F>,
-    remainder: util::Word<F>,
-    dividend: util::Word<F>,
-    quotient_abs: util::Word<F>,
-    divisor_abs: util::Word<F>,
-    remainder_abs: util::Word<F>,
-    dividend_abs: util::Word<F>,
+    quotient_abs_word: AbsWordGadget<F>,
+    divisor_abs_word: AbsWordGadget<F>,
+    remainder_abs_word: AbsWordGadget<F>,
+    dividend_abs_word: AbsWordGadget<F>,
     mul_add_words: MulAddWordsGadget<F>,
     remainder_abs_lt_divisor_abs: LtWordGadget<F>,
     dividend_is_signed_overflow: LtGadget<F, 1>,
     quotient_is_zero: IsZeroGadget<F>,
     divisor_is_zero: IsZeroGadget<F>,
     remainder_is_zero: IsZeroGadget<F>,
-    abs_words: [AbsWordGadget<F>; 4],
 }
 
 impl<F: Field> ExecutionGadget<F> for SignedDivModGadget<F> {
@@ -44,44 +41,45 @@ impl<F: Field> ExecutionGadget<F> for SignedDivModGadget<F> {
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
-        let is_sdiv = (OpcodeId::SMOD.expr() - opcode.expr()) * F::from(2).invert().unwrap();
+        let is_sdiv = generate_lagrange_base_polynomial(
+            opcode.expr(),
+            OpcodeId::SDIV.as_u8() as usize,
+            [OpcodeId::SDIV, OpcodeId::SMOD]
+                .into_iter()
+                .map(|op_id| op_id.as_u8() as usize),
+        );
 
-        let quotient = cb.query_word();
-        let divisor = cb.query_word();
-        let remainder = cb.query_word();
-        let dividend = cb.query_word();
-        let quotient_abs = cb.query_word();
-        let divisor_abs = cb.query_word();
-        let remainder_abs = cb.query_word();
-        let dividend_abs = cb.query_word();
-        let quotient_is_zero = IsZeroGadget::construct(cb, sum::expr(&quotient_abs.cells));
-        let divisor_is_zero = IsZeroGadget::construct(cb, sum::expr(&divisor_abs.cells));
-        let remainder_is_zero = IsZeroGadget::construct(cb, sum::expr(&remainder_abs.cells));
+        let quotient_abs_word = AbsWordGadget::construct(cb);
+        let divisor_abs_word = AbsWordGadget::construct(cb);
+        let remainder_abs_word = AbsWordGadget::construct(cb);
+        let dividend_abs_word = AbsWordGadget::construct(cb);
+        let quotient_is_zero = IsZeroGadget::construct(cb, sum::expr(&quotient_abs_word.x().cells));
+        let divisor_is_zero = IsZeroGadget::construct(cb, sum::expr(&divisor_abs_word.x().cells));
+        let remainder_is_zero =
+            IsZeroGadget::construct(cb, sum::expr(&remainder_abs_word.x().cells));
 
-        let abs_words = [
-            AbsWordGadget::construct(cb, &quotient_abs),
-            AbsWordGadget::construct(cb, &divisor_abs),
-            AbsWordGadget::construct(cb, &remainder_abs),
-            AbsWordGadget::construct(cb, &dividend_abs),
-        ];
-
-        cb.stack_pop(abs_words[3].x.expr());
-        cb.stack_pop(abs_words[1].x.expr());
+        cb.stack_pop(dividend_abs_word.x().expr());
+        cb.stack_pop(divisor_abs_word.x().expr());
         cb.stack_push(select::expr(
             is_sdiv,
-            abs_words[0].x.expr() * (1.expr() - divisor_is_zero.expr()),
-            abs_words[2].x.expr() * (1.expr() - divisor_is_zero.expr()),
+            quotient_abs_word.x().expr() * (1.expr() - divisor_is_zero.expr()),
+            remainder_abs_word.x().expr() * (1.expr() - divisor_is_zero.expr()),
         ));
 
         // Constrain `|quotient| * |divisor| + |remainder| = |dividend|`.
         let mul_add_words = MulAddWordsGadget::construct(
             cb,
-            [&quotient_abs, &divisor_abs, &remainder_abs, &dividend_abs],
+            [
+                quotient_abs_word.x_abs(),
+                divisor_abs_word.x_abs(),
+                remainder_abs_word.x_abs(),
+                dividend_abs_word.x_abs(),
+            ],
         );
         cb.add_constraint("overflow == 0", mul_add_words.overflow());
 
         let remainder_abs_lt_divisor_abs =
-            LtWordGadget::construct(cb, &remainder_abs, &divisor_abs);
+            LtWordGadget::construct(cb, remainder_abs_word.x_abs(), divisor_abs_word.x_abs());
         cb.add_constraint(
             "abs(remainder) < abs(divisor) when divisor != 0",
             (1.expr() - remainder_abs_lt_divisor_abs.expr()) * (1.expr() - divisor_is_zero.expr()),
@@ -92,19 +90,19 @@ impl<F: Field> ExecutionGadget<F> for SignedDivModGadget<F> {
             * (1.expr() - divisor_is_zero.expr())
             * (1.expr() - remainder_is_zero.expr()),
             |cb| cb.add_constraint(
-                "sign(dividend) == sign(remainder) when quotient != 0, divisor != 0 and remainder != 0",
-                abs_words[3].sign_check.expr() - abs_words[2].sign_check.expr(),
+                "sign(dividend) == sign(remainder) when quotient, divisor and remainder are all non-zero",
+                dividend_abs_word.is_neg().expr() - remainder_abs_word.is_neg().expr(),
             )
         );
 
         // For a special `SDIV` case, when input `dividend = -(1 << 255)` and
         // `divisor = -1`, the quotient result should be `1 << 255`. But a
         // `signed` word could only express `signed` value from `-(1 << 255)` to
-        // `(1 << 255) - 1`. So below constraint
+        // `(1 << 255) - 1`. So constraint
         // `sign(dividend) == sign(divisor) ^ sign(quotient)` cannot be applied
         // for this case.
         let dividend_is_signed_overflow =
-            LtGadget::construct(cb, 127.expr(), dividend_abs.cells[31].expr());
+            LtGadget::construct(cb, 127.expr(), dividend_abs_word.x_abs().cells[31].expr());
 
         // Constrain sign(dividend) == sign(divisor) ^ sign(quotient) when both
         // quotient and divisor are non-zero and dividend is not signed overflow.
@@ -115,11 +113,11 @@ impl<F: Field> ExecutionGadget<F> for SignedDivModGadget<F> {
             |cb| {
                 cb.add_constraint(
                     "sign(dividend) == sign(divisor) ^ sign(quotient)",
-                    1.expr() - abs_words[0].sign_check.expr() - abs_words[1].sign_check.expr()
-                        + abs_words[3].sign_check.expr()
+                    quotient_abs_word.is_neg().expr() + divisor_abs_word.is_neg().expr()
+                        - dividend_abs_word.is_neg().expr()
                         - 2.expr()
-                            * (1.expr() - abs_words[0].sign_check.expr())
-                            * (1.expr() - abs_words[1].sign_check.expr()),
+                            * quotient_abs_word.is_neg().expr()
+                            * divisor_abs_word.is_neg().expr(),
                 )
             },
         );
@@ -135,21 +133,16 @@ impl<F: Field> ExecutionGadget<F> for SignedDivModGadget<F> {
 
         Self {
             same_context,
-            quotient,
-            divisor,
-            remainder,
-            dividend,
-            quotient_abs,
-            divisor_abs,
-            remainder_abs,
-            dividend_abs,
+            quotient_abs_word,
+            divisor_abs_word,
+            remainder_abs_word,
+            dividend_abs_word,
             mul_add_words,
             remainder_abs_lt_divisor_abs,
             dividend_is_signed_overflow,
             quotient_is_zero,
             divisor_is_zero,
             remainder_is_zero,
-            abs_words,
         }
     }
 
@@ -199,22 +192,14 @@ impl<F: Field> ExecutionGadget<F> for SignedDivModGadget<F> {
         let divisor_abs = get_abs(divisor);
         let remainder_abs = get_abs(remainder);
         let dividend_abs = get_abs(dividend);
-        self.quotient
-            .assign(region, offset, Some(quotient.to_le_bytes()))?;
-        self.divisor
-            .assign(region, offset, Some(quotient.to_le_bytes()))?;
-        self.remainder
-            .assign(region, offset, Some(remainder.to_le_bytes()))?;
-        self.dividend
-            .assign(region, offset, Some(dividend.to_le_bytes()))?;
-        self.quotient_abs
-            .assign(region, offset, Some(quotient_abs.to_le_bytes()))?;
-        self.divisor_abs
-            .assign(region, offset, Some(divisor_abs.to_le_bytes()))?;
-        self.remainder_abs
-            .assign(region, offset, Some(remainder_abs.to_le_bytes()))?;
-        self.dividend_abs
-            .assign(region, offset, Some(dividend_abs.to_le_bytes()))?;
+        self.quotient_abs_word
+            .assign(region, offset, quotient, quotient_abs)?;
+        self.divisor_abs_word
+            .assign(region, offset, divisor, divisor_abs)?;
+        self.remainder_abs_word
+            .assign(region, offset, remainder, remainder_abs)?;
+        self.dividend_abs_word
+            .assign(region, offset, dividend, dividend_abs)?;
         self.mul_add_words.assign(
             region,
             offset,
@@ -228,19 +213,16 @@ impl<F: Field> ExecutionGadget<F> for SignedDivModGadget<F> {
             127.into(),
             u64::from(dividend_abs.to_le_bytes()[31]).into(),
         )?;
-        let quotient_sum = (0..32).fold(0, |acc, idx| acc + quotient_abs.byte(idx) as u64);
-        let divisor_sum = (0..32).fold(0, |acc, idx| acc + divisor_abs.byte(idx) as u64);
-        let remainder_sum = (0..32).fold(0, |acc, idx| acc + remainder_abs.byte(idx) as u64);
+        let quotient_sum = (0..32).fold(0, |acc, idx| acc + quotient.byte(idx) as u64);
+        let divisor_sum = (0..32).fold(0, |acc, idx| acc + divisor.byte(idx) as u64);
+        let remainder_sum = (0..32).fold(0, |acc, idx| acc + remainder.byte(idx) as u64);
         self.quotient_is_zero
             .assign(region, offset, F::from(quotient_sum))?;
         self.divisor_is_zero
             .assign(region, offset, F::from(divisor_sum))?;
         self.remainder_is_zero
             .assign(region, offset, F::from(remainder_sum))?;
-        self.abs_words[0].assign(region, offset, quotient)?;
-        self.abs_words[1].assign(region, offset, divisor)?;
-        self.abs_words[2].assign(region, offset, remainder)?;
-        self.abs_words[3].assign(region, offset, dividend)
+        Ok(())
     }
 }
 
