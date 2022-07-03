@@ -89,7 +89,6 @@ fn gen_copy_steps(
     is_root: bool,
 ) -> Result<Vec<CopyStep>, Error> {
     let mut copy_steps = Vec::with_capacity(2 * bytes_left as usize);
-    let rwc_start = state.block_ctx.rwc.0;
     for idx in 0..bytes_left {
         let addr = src_addr + idx;
         let rwc = state.block_ctx.rwc;
@@ -413,11 +412,7 @@ mod calldatacopy_tests {
                     is_code: None,
                     value,
                     is_pad,
-                    rwc: if !is_pad {
-                        rwc.inc_pre()
-                    } else {
-                        rwc
-                    },
+                    rwc: if !is_pad { rwc.inc_pre() } else { rwc },
                     rwc_inc_left: rwc_inc,
                 }
             );

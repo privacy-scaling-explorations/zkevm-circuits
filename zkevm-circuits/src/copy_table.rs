@@ -1,5 +1,5 @@
 #![allow(missing_docs)]
-use bus_mapping::{circuit_input_builder::{CopyDataType, NumberOrHash}, operation::RW};
+use bus_mapping::circuit_input_builder::{CopyDataType, NumberOrHash};
 use gadgets::{
     is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction},
     less_than::{LtChip, LtConfig, LtInstruction},
@@ -180,28 +180,26 @@ impl<F: FieldExt> CopyTableConfig<F> {
                 ]),
             );
 
-            let not_last_two_rows = 1.expr() - meta.query_advice(is_last, Rotation::cur())
+            let not_last_two_rows = 1.expr()
+                - meta.query_advice(is_last, Rotation::cur())
                 - meta.query_advice(is_last, Rotation::next());
-            cb.condition(
-                not_last_two_rows,
-                |cb| {
-                    cb.require_equal(
-                        "rows[0].id == rows[2].id",
-                        meta.query_advice(id, Rotation::cur()),
-                        meta.query_advice(id, Rotation(2)),
-                    );
-                    cb.require_equal(
-                        "rows[0].tag == rows[2].tag",
-                        meta.query_advice(tag, Rotation::cur()),
-                        meta.query_advice(tag, Rotation(2)),
-                    );
-                    cb.require_equal(
-                        "rows[0].addr + 1 == rows[2].addr",
-                        meta.query_advice(addr, Rotation::cur()) + 1.expr(),
-                        meta.query_advice(addr, Rotation(2)),
-                    );
-                },
-            );
+            cb.condition(not_last_two_rows, |cb| {
+                cb.require_equal(
+                    "rows[0].id == rows[2].id",
+                    meta.query_advice(id, Rotation::cur()),
+                    meta.query_advice(id, Rotation(2)),
+                );
+                cb.require_equal(
+                    "rows[0].tag == rows[2].tag",
+                    meta.query_advice(tag, Rotation::cur()),
+                    meta.query_advice(tag, Rotation(2)),
+                );
+                cb.require_equal(
+                    "rows[0].addr + 1 == rows[2].addr",
+                    meta.query_advice(addr, Rotation::cur()) + 1.expr(),
+                    meta.query_advice(addr, Rotation(2)),
+                );
+            });
 
             let rw_diff = and::expr([
                 is_memory.expr() + is_tx_log.expr(),
@@ -257,7 +255,7 @@ impl<F: FieldExt> CopyTableConfig<F> {
                         meta.query_advice(bytes_left, Rotation::cur()),
                         meta.query_advice(bytes_left, Rotation(2)) + 1.expr(),
                     );
-                }
+                },
             );
 
             cb.require_equal(
@@ -286,8 +284,9 @@ impl<F: FieldExt> CopyTableConfig<F> {
         });
 
         meta.lookup_any("Memory lookup", |meta| {
-            let cond = meta.query_selector(q_enable) * is_memory.expr() *
-                (1.expr() - meta.query_advice(is_pad, Rotation::cur()));
+            let cond = meta.query_selector(q_enable)
+                * is_memory.expr()
+                * (1.expr() - meta.query_advice(is_pad, Rotation::cur()));
             vec![
                 meta.query_advice(rw_counter, Rotation::cur()),
                 1.expr() - meta.query_selector(q_step),
@@ -329,7 +328,9 @@ impl<F: FieldExt> CopyTableConfig<F> {
         });
 
         meta.lookup_any("Bytecode lookup", |meta| {
-            let cond = meta.query_selector(q_enable) * is_bytecode.expr() * (1.expr() - meta.query_advice(is_pad, Rotation::cur()));
+            let cond = meta.query_selector(q_enable)
+                * is_bytecode.expr()
+                * (1.expr() - meta.query_advice(is_pad, Rotation::cur()));
             vec![
                 meta.query_advice(id, Rotation::cur()),
                 BytecodeFieldTag::Byte.expr(),
@@ -344,8 +345,9 @@ impl<F: FieldExt> CopyTableConfig<F> {
         });
 
         meta.lookup_any("Tx calldata lookup", |meta| {
-            let cond =
-            meta.query_selector(q_enable) * is_tx_calldata.expr() * (1.expr() - meta.query_advice(is_pad, Rotation::cur()));
+            let cond = meta.query_selector(q_enable)
+                * is_tx_calldata.expr()
+                * (1.expr() - meta.query_advice(is_pad, Rotation::cur()));
             vec![
                 meta.query_advice(id, Rotation::cur()),
                 TxContextFieldTag::CallData.expr(),

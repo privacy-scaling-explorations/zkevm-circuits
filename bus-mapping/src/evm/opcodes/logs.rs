@@ -486,11 +486,13 @@ mod log_tests {
         assert_eq!(copy_events[0].length as usize, msize);
         assert_eq!(copy_events[0].log_id, Some(step.log_id as u64 + 1));
 
-        let mut rwc = RWCounter(step.rwc.0 + // start of rwc
+        let mut rwc = RWCounter(
+            step.rwc.0 + // start of rwc
             6 + // 2 stack reads + 4 call context reads
             1 + // TxLogField::Address write
             topic_count + // stack read for topics
-            topic_count); // TxLogField::Topic write
+            topic_count,
+        ); // TxLogField::Topic write
         let mut rwc_inc = copy_events[0].steps.first().unwrap().rwc_inc_left;
         for (idx, copy_rw_pair) in copy_events[0].steps.chunks(2).enumerate() {
             assert_eq!(copy_rw_pair.len(), 2);
@@ -509,11 +511,7 @@ mod log_tests {
                     value,
                     is_code: None,
                     is_pad,
-                    rwc: if !is_pad {
-                        rwc.inc_pre()
-                    } else {
-                        rwc
-                    },
+                    rwc: if !is_pad { rwc.inc_pre() } else { rwc },
                     rwc_inc_left: rwc_inc,
                 }
             );
