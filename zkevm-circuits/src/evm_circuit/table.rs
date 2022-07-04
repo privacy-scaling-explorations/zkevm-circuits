@@ -223,12 +223,12 @@ pub enum CallContextFieldTag {
 
     IsRoot,
     IsCreate,
-    CodeSource,
+    CodeHash,
     ProgramCounter,
     StackPointer,
     GasLeft,
     MemorySize,
-    StateWriteCounter,
+    ReversibleWriteCounter,
 }
 
 impl_expr!(FixedTableTag);

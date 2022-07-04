@@ -63,6 +63,7 @@ mod origin;
 mod pc;
 mod pop;
 mod push;
+mod r#return;
 mod selfbalance;
 mod shr;
 mod signed_comparator;
@@ -113,6 +114,7 @@ use origin::OriginGadget;
 use pc::PcGadget;
 use pop::PopGadget;
 use push::PushGadget;
+use r#return::ReturnGadget;
 use selfbalance::SelfbalanceGadget;
 use shr::ShrGadget;
 use signed_comparator::SignedComparatorGadget;
@@ -192,6 +194,7 @@ pub(crate) struct ExecutionConfig<F> {
     pc_gadget: PcGadget<F>,
     pop_gadget: PopGadget<F>,
     push_gadget: PushGadget<F>,
+    return_gadget: ReturnGadget<F>,
     selfbalance_gadget: SelfbalanceGadget<F>,
     shr_gadget: ShrGadget<F>,
     sha3_gadget: DummyGadget<F, 2, 1, { ExecutionState::SHA3 }>,
@@ -276,7 +279,7 @@ impl<F: Field> ExecutionConfig<F> {
             iter::once(sum_to_one)
                 .chain(bool_checks)
                 .map(move |(name, poly)| (name, q_usable.clone() * q_step.clone() * poly))
-            // TODO: Enable these after test of CALLDATACOPY is complete.
+            // TODO: Enable these after incomplete trace is no longer necessary.
             // .chain(first_step_check)
             // .chain(last_step_check)
         });
@@ -387,6 +390,7 @@ impl<F: Field> ExecutionConfig<F> {
             pc_gadget: configure_gadget!(),
             pop_gadget: configure_gadget!(),
             push_gadget: configure_gadget!(),
+            return_gadget: configure_gadget!(),
             selfbalance_gadget: configure_gadget!(),
             sha3_gadget: configure_gadget!(),
             shr_gadget: configure_gadget!(),
@@ -401,7 +405,6 @@ impl<F: Field> ExecutionConfig<F> {
             block_ctx_u256_gadget: configure_gadget!(),
             // error gadgets
             error_oog_static_memory_gadget: configure_gadget!(),
-
             // step and presets
             step: step_curr,
             height_map,
@@ -664,7 +667,9 @@ impl<F: Field> ExecutionConfig<F> {
                         call,
                         step,
                         height,
-                        steps.peek(),
+                        steps.peek().map(|&(transaction, step)| {
+                            (transaction, &transaction.calls[step.call_index], step)
+                        }),
                         power_of_randomness,
                     )?;
 
@@ -734,7 +739,7 @@ impl<F: Field> ExecutionConfig<F> {
         call: &Call,
         step: &ExecStep,
         height: usize,
-        next: Option<&(&Transaction, &ExecStep)>,
+        next: Option<(&Transaction, &Call, &ExecStep)>,
         power_of_randomness: [F; 31],
     ) -> Result<(), Error> {
         // Make the region large enough for the current step and the next step.
@@ -753,13 +758,13 @@ impl<F: Field> ExecutionConfig<F> {
         // These may be used in stored expressions and
         // so their witness values need to be known to be able
         // to correctly calculate the intermediate value.
-        if let Some((transaction_next, step_next)) = next {
+        if let Some((transaction_next, call_next, step_next)) = next {
             self.assign_exec_step_int(
                 region,
                 offset + height,
                 block,
                 transaction_next,
-                call,
+                call_next,
                 step_next,
             )?;
         }
@@ -827,6 +832,7 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::PC => assign_exec_step!(self.pc_gadget),
             ExecutionState::POP => assign_exec_step!(self.pop_gadget),
             ExecutionState::PUSH => assign_exec_step!(self.push_gadget),
+            ExecutionState::RETURN => assign_exec_step!(self.return_gadget),
             ExecutionState::SCMP => assign_exec_step!(self.signed_comparator_gadget),
             ExecutionState::BLOCKCTXU64 => assign_exec_step!(self.block_ctx_u64_gadget),
             ExecutionState::BLOCKCTXU160 => assign_exec_step!(self.block_ctx_u160_gadget),

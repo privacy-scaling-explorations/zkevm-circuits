@@ -34,6 +34,7 @@ mod mload;
 mod mstore;
 mod number;
 mod origin;
+mod r#return;
 mod selfbalance;
 mod sload;
 mod sstore;
@@ -56,6 +57,7 @@ use logs::Log;
 use mload::Mload;
 use mstore::Mstore;
 use origin::Origin;
+use r#return::Return;
 use selfbalance::Selfbalance;
 use sload::Sload;
 use sstore::Sstore;
@@ -200,13 +202,15 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         // OpcodeId::CREATE => {},
         OpcodeId::CALL => Call::gen_associated_ops,
         // OpcodeId::CALLCODE => {},
-        // TODO: Handle RETURN by its own gen_associated_ops.
-        OpcodeId::RETURN => Stop::gen_associated_ops,
+        // OpcodeId::RETURN => {},
         // OpcodeId::DELEGATECALL => {},
         // OpcodeId::CREATE2 => {},
         // OpcodeId::STATICCALL => {},
-        // TODO: Handle REVERT by its own gen_associated_ops.
-        OpcodeId::REVERT => Stop::gen_associated_ops,
+        // OpcodeId::REVERT => {},
+        OpcodeId::REVERT | OpcodeId::RETURN => {
+            warn!("Using dummy gen_associated_ops for opcode {:?}", opcode_id);
+            Return::gen_associated_ops
+        }
         OpcodeId::SELFDESTRUCT => {
             warn!("Using dummy gen_selfdestruct_ops for opcode SELFDESTRUCT");
             dummy_gen_selfdestruct_ops
@@ -375,7 +379,7 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
                 (CallContextField::LastCalleeReturnDataLength, 0.into()),
                 (CallContextField::IsRoot, 1.into()),
                 (CallContextField::IsCreate, 0.into()),
-                (CallContextField::CodeSource, code_hash.to_word()),
+                (CallContextField::CodeHash, code_hash.to_word()),
             ] {
                 state.push_op(
                     &mut exec_step,
