@@ -1202,6 +1202,14 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                 if op.is_log() {
                     return ExecutionState::LOG;
                 }
+
+                macro_rules! dummy {
+                    ($name:expr) => {{
+                        log::warn!("$name is implemented with DummyGadget");
+                        $name
+                    }};
+                }
+
                 match op {
                     OpcodeId::ADD | OpcodeId::SUB => ExecutionState::ADD_SUB,
                     OpcodeId::ADDMOD => ExecutionState::ADDMOD,
@@ -1237,7 +1245,6 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::DIFFICULTY | OpcodeId::BASEFEE => ExecutionState::BLOCKCTXU256,
                     OpcodeId::GAS => ExecutionState::GAS,
                     OpcodeId::SELFBALANCE => ExecutionState::SELFBALANCE,
-                    OpcodeId::SHA3 => ExecutionState::SHA3,
                     OpcodeId::SHR => ExecutionState::SHR,
                     OpcodeId::SLOAD => ExecutionState::SLOAD,
                     OpcodeId::SSTORE => ExecutionState::SSTORE,
@@ -1252,24 +1259,25 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::CODESIZE => ExecutionState::CODESIZE,
                     OpcodeId::RETURN | OpcodeId::REVERT => ExecutionState::RETURN,
                     // dummy ops
-                    OpcodeId::ADDRESS => ExecutionState::ADDRESS,
-                    OpcodeId::BALANCE => ExecutionState::BALANCE,
-                    OpcodeId::BLOCKHASH => ExecutionState::BLOCKHASH,
-                    OpcodeId::SDIV => ExecutionState::SDIV,
-                    OpcodeId::SMOD => ExecutionState::SMOD,
-                    OpcodeId::EXP => ExecutionState::EXP,
-                    OpcodeId::SHL => ExecutionState::SHL,
-                    OpcodeId::SAR => ExecutionState::SAR,
-                    OpcodeId::EXTCODESIZE => ExecutionState::EXTCODESIZE,
-                    OpcodeId::EXTCODECOPY => ExecutionState::EXTCODECOPY,
-                    OpcodeId::RETURNDATASIZE => ExecutionState::RETURNDATASIZE,
-                    OpcodeId::RETURNDATACOPY => ExecutionState::RETURNDATACOPY,
-                    OpcodeId::CREATE => ExecutionState::CREATE,
-                    OpcodeId::CALLCODE => ExecutionState::CALLCODE,
-                    OpcodeId::DELEGATECALL => ExecutionState::DELEGATECALL,
-                    OpcodeId::CREATE2 => ExecutionState::CREATE2,
-                    OpcodeId::STATICCALL => ExecutionState::STATICCALL,
-                    OpcodeId::SELFDESTRUCT => ExecutionState::SELFDESTRUCT,
+                    OpcodeId::SHA3 => dummy!(ExecutionState::SHA3),
+                    OpcodeId::ADDRESS => dummy!(ExecutionState::ADDRESS),
+                    OpcodeId::BALANCE => dummy!(ExecutionState::BALANCE),
+                    OpcodeId::BLOCKHASH => dummy!(ExecutionState::BLOCKHASH),
+                    OpcodeId::SDIV => dummy!(ExecutionState::SDIV),
+                    OpcodeId::SMOD => dummy!(ExecutionState::SMOD),
+                    OpcodeId::EXP => dummy!(ExecutionState::EXP),
+                    OpcodeId::SHL => dummy!(ExecutionState::SHL),
+                    OpcodeId::SAR => dummy!(ExecutionState::SAR),
+                    OpcodeId::EXTCODESIZE => dummy!(ExecutionState::EXTCODESIZE),
+                    OpcodeId::EXTCODECOPY => dummy!(ExecutionState::EXTCODECOPY),
+                    OpcodeId::RETURNDATASIZE => dummy!(ExecutionState::RETURNDATASIZE),
+                    OpcodeId::RETURNDATACOPY => dummy!(ExecutionState::RETURNDATACOPY),
+                    OpcodeId::CREATE => dummy!(ExecutionState::CREATE),
+                    OpcodeId::CALLCODE => dummy!(ExecutionState::CALLCODE),
+                    OpcodeId::DELEGATECALL => dummy!(ExecutionState::DELEGATECALL),
+                    OpcodeId::CREATE2 => dummy!(ExecutionState::CREATE2),
+                    OpcodeId::STATICCALL => dummy!(ExecutionState::STATICCALL),
+                    OpcodeId::SELFDESTRUCT => dummy!(ExecutionState::SELFDESTRUCT),
                     _ => unimplemented!("unimplemented opcode {:?}", op),
                 }
             }
