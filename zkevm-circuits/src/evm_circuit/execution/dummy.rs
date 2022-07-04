@@ -54,6 +54,14 @@ impl<F: Field, const N_POP: usize, const N_PUSH: usize, const S: ExecutionState>
         _: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
+        // this happens if some opcodes are in the
+        // process of being implemented but are still
+        // using DummyGadget.
+        // See `bus-mapping/src/evm/opcodes.rs`
+        if step.rw_indices.len() != N_POP + N_PUSH {
+            return Ok(());
+        }
+
         for i in 0..N_POP {
             let value = block.rws[step.rw_indices[i]].stack_value();
             self.pops[i].assign(region, offset, Some(value.to_le_bytes()))?;
