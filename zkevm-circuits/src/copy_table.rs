@@ -400,7 +400,7 @@ impl<F: Field> CopyTableConfig<F> {
             || "assign copy table",
             |mut region| {
                 let mut offset = 0;
-                for copy_event in block.copy_events.iter() {
+                for copy_event in block.copy_events.values() {
                     for (step_count, copy_step) in copy_event.steps.iter().enumerate() {
                         self.q_enable.enable(&mut region, offset)?;
                         // enable q_step on the Read step

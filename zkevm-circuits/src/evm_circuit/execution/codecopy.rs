@@ -183,7 +183,10 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
         self.memory_copier_gas
             .assign(region, offset, size.as_u64(), memory_expansion_cost)?;
 
-        let copy_rwc_inc = block.copy_events[0]
+        let copy_rwc_inc = block
+            .copy_events
+            .get(&(step.program_counter as usize))
+            .unwrap()
             .steps
             .first()
             .map_or(F::zero(), |cs| F::from(cs.rwc_inc_left));
