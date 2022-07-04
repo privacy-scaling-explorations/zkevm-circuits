@@ -1,11 +1,11 @@
 #![allow(missing_docs)]
 use bus_mapping::circuit_input_builder::{CopyDataType, NumberOrHash};
+use eth_types::{Field, ToAddress, ToScalar, U256};
 use gadgets::{
     is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction},
     less_than::{LtChip, LtConfig, LtInstruction},
 };
 use halo2_proofs::{
-    arithmetic::FieldExt,
     circuit::Layouter,
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector, VirtualCells},
     poly::Rotation,
@@ -13,14 +13,14 @@ use halo2_proofs::{
 
 use crate::{
     evm_circuit::{
-        table::{BytecodeFieldTag, LookupTable, RwTableTag, TxContextFieldTag},
+        table::{BytecodeFieldTag, LookupTable, RwTableTag, TxContextFieldTag, TxLogFieldTag},
         util::{and, constraint_builder::BaseConstraintBuilder, not, RandomLinearCombination},
         witness::Block,
     },
     util::{self, Expr},
 };
 
-impl<F: FieldExt> util::Expr<F> for CopyDataType {
+impl<F: Field> util::Expr<F> for CopyDataType {
     fn expr(&self) -> Expression<F> {
         Expression::Constant(F::from(*self as u64))
     }
@@ -77,7 +77,7 @@ pub struct CopyTableConfig<F> {
     pub addr_lt_addr_end: LtConfig<F, 8>,
 }
 
-impl<F: FieldExt> LookupTable<F> for CopyTableConfig<F> {
+impl<F: Field> LookupTable<F> for CopyTableConfig<F> {
     fn table_exprs(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>> {
         vec![
             meta.query_advice(self.is_first, Rotation::cur()),
@@ -95,7 +95,7 @@ impl<F: FieldExt> LookupTable<F> for CopyTableConfig<F> {
     }
 }
 
-impl<F: FieldExt> CopyTableConfig<F> {
+impl<F: Field> CopyTableConfig<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         tx_table: &dyn LookupTable<F>,
@@ -476,7 +476,16 @@ impl<F: FieldExt> CopyTableConfig<F> {
                             || format!("assign addr {}", offset),
                             self.addr,
                             offset,
-                            || Ok(F::from(copy_step.addr)),
+                            || Ok(match copy_step.tag {
+                                CopyDataType::TxLog => {
+                                    let addr = (U256::from(copy_step.addr)
+                                        + (U256::from(TxLogFieldTag::Data as u64) << 32)
+                                        + (U256::from(copy_event.log_id.unwrap()) << 48))
+                                        .to_address();
+                                    addr.to_scalar().unwrap()
+                                },
+                                _ => F::from(copy_step.addr),
+                            }),
                         )?;
                         // value
                         region.assign_advice(

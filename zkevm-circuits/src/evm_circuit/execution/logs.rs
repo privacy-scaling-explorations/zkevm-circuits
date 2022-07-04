@@ -157,7 +157,7 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
         // State transition
 
         let step_state_transition = StepStateTransition {
-            rw_counter: Delta(cb.rw_counter_offset()),
+            rw_counter: Delta(cb.rw_counter_offset() + copy_rwc_inc.expr()),
             program_counter: Delta(1.expr()),
             stack_pointer: Delta(2.expr() + topic_count),
             memory_word_size: To(memory_expansion.next_memory_word_size()),
