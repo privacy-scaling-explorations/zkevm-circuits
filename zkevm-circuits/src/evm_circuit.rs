@@ -164,9 +164,12 @@ pub fn load_txs<F: Field>(
             }
             offset += 1;
 
+            // println!("DBG load_txs");
             for tx in txs.iter() {
                 for row in tx.table_assignments(randomness) {
+                    // print!("{:02} ", offset);
                     for (column, value) in tx_table.iter().zip_eq(row) {
+                        // print!("{:?} ", value);
                         region.assign_advice(
                             || format!("tx table row {}", offset),
                             *column,
@@ -175,6 +178,7 @@ pub fn load_txs<F: Field>(
                         )?;
                     }
                     offset += 1;
+                    // println!("");
                 }
             }
             Ok(())

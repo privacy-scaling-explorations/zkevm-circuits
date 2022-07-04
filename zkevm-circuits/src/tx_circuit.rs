@@ -4,8 +4,11 @@
 // - *_be: Big-Endian bytes
 // - *_le: Little-Endian bytes
 
+#![allow(missing_docs)]
+
 pub mod sign_verify;
 
+use crate::impl_expr;
 use crate::util::{random_linear_combine_word as rlc, Expr};
 use eth_types::{
     geth_types::Transaction, Address, Field, ToBigEndian, ToLittleEndian, ToScalar, Word,
@@ -160,12 +163,16 @@ pub enum TxFieldTag {
     Value,
     /// CallDataLength
     CallDataLength,
+    /// Gas cost for transaction call data (4 for byte == 0, 16 otherwise)
+    CallDataGasCost,
     /// TxSignHash: Hash of the transaction without the signature, used for
     /// signing.
     TxSignHash,
     /// CallData
     CallData,
 }
+
+impl_expr!(TxFieldTag);
 
 /// Config for TxCircuit
 #[derive(Clone, Debug)]
@@ -327,15 +334,13 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
                     let address_cell = assigned_sig_verif.address.cell();
                     let msg_hash_rlc_cell = assigned_sig_verif.msg_hash_rlc.cell();
                     let msg_hash_rlc_value = assigned_sig_verif.msg_hash_rlc.value();
+                    // println!("DBG tx_circuit.assign");
                     for (tag, value) in &[
                         (
                             TxFieldTag::Nonce,
                             rlc(tx.nonce.to_le_bytes(), self.randomness),
                         ),
-                        (
-                            TxFieldTag::Gas,
-                            rlc(tx.gas_limit.to_le_bytes(), self.randomness),
-                        ),
+                        (TxFieldTag::Gas, F::from(tx.gas_limit.as_u64())),
                         (
                             TxFieldTag::GasPrice,
                             rlc(tx.gas_price.to_le_bytes(), self.randomness),
@@ -361,12 +366,29 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
                             F::from(tx.call_data.0.len() as u64),
                         ),
                         (
+                            TxFieldTag::CallDataGasCost,
+                            F::from(
+                                tx.call_data
+                                    .0
+                                    .iter()
+                                    .fold(0, |acc, byte| acc + if *byte == 0 { 4 } else { 16 }),
+                            ),
+                        ),
+                        (
                             TxFieldTag::TxSignHash,
                             *msg_hash_rlc_value.unwrap_or(&F::zero()),
                         ),
                     ] {
                         let assigned_cell =
                             config.assign_row(&mut region, offset, i + 1, *tag, 0, *value)?;
+                        // println!(
+                        //     "{:02} {:?} {:?} {:?} {:?}",
+                        //     offset,
+                        //     i + 1,
+                        //     *tag as u64,
+                        //     0,
+                        //     *value
+                        // );
                         offset += 1;
 
                         // Ref. spec 0. Copy constraints using fixed offsets between the tx rows and

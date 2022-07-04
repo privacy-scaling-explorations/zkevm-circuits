@@ -1,4 +1,6 @@
-use crate::{evm_circuit::step::ExecutionState, impl_expr};
+use crate::evm_circuit::step::ExecutionState;
+use crate::impl_expr;
+pub use crate::tx_circuit::TxFieldTag as TxContextFieldTag;
 use halo2_proofs::{
     arithmetic::FieldExt,
     plonk::{Advice, Column, Expression, Fixed, VirtualCells},
@@ -115,19 +117,19 @@ impl FixedTableTag {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
-pub enum TxContextFieldTag {
-    Nonce = 1,
-    Gas,
-    GasPrice,
-    CallerAddress,
-    CalleeAddress,
-    IsCreate,
-    Value,
-    CallDataLength,
-    CallDataGasCost,
-    CallData,
-}
+// #[derive(Clone, Copy, Debug)]
+// pub enum TxContextFieldTag {
+//     Nonce = 1,
+//     Gas,
+//     GasPrice,
+//     CallerAddress,
+//     CalleeAddress,
+//     IsCreate,
+//     Value,
+//     CallDataLength,
+//     CallDataGasCost,
+//     CallData,
+// }
 
 // Keep the sequence consistent with OpcodeId for scalar
 #[derive(Clone, Copy, Debug)]
@@ -238,7 +240,7 @@ pub enum CallContextFieldTag {
 }
 
 impl_expr!(FixedTableTag);
-impl_expr!(TxContextFieldTag);
+// impl_expr!(TxContextFieldTag);
 impl_expr!(RwTableTag);
 impl_expr!(AccountFieldTag);
 impl_expr!(BytecodeFieldTag);

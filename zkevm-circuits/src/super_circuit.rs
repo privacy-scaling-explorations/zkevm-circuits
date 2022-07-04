@@ -23,7 +23,7 @@ use crate::{
     evm_circuit::{
         table::FixedTableTag,
         witness::Block,
-        EvmCircuit, {load_block, load_bytecodes, load_rws},
+        EvmCircuit, {load_block, load_bytecodes, load_rws, load_txs},
     },
     rw_table::RwTable,
 };
@@ -44,7 +44,7 @@ pub struct SuperCircuitConfig<F: Field, const MAX_TXS: usize, const MAX_CALLDATA
     block_table: [Column<Advice>; 3],
     evm_circuit: EvmCircuit<F>,
     tx_circuit: TxCircuitConfig<F>,
-    bytecode_circuit: BytecodeConfig<F>,
+    // bytecode_circuit: BytecodeConfig<F>, // TODO
 }
 
 #[derive(Default)]
@@ -54,8 +54,8 @@ pub struct SuperCircuit<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usiz
     fixed_table_tags: Vec<FixedTableTag>,
     // Tx Circuit
     tx_circuit: TxCircuit<F, MAX_TXS, MAX_CALLDATA>,
-    // Bytecode Circuit
-    bytecodes: Vec<UnrolledBytecode<F>>,
+    /* Bytecode Circuit
+     * bytecodes: Vec<UnrolledBytecode<F>>, // TODO */
 }
 
 impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
@@ -130,6 +130,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
                     value: tx_table[3],
                 },
             ),
+            /*
             bytecode_circuit: BytecodeConfig::configure(
                 meta,
                 power_of_randomness[0],
@@ -141,6 +142,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
                     value: bytecode_table[4],
                 },
             ),
+            */
         }
     }
 
@@ -153,12 +155,12 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
             .evm_circuit
             .load_fixed_table(&mut layouter, self.fixed_table_tags.clone())?;
         config.evm_circuit.load_byte_table(&mut layouter)?;
-        // load_txs(
-        //     &config.tx_table,
-        //     &mut layouter,
-        //     &self.block.txs,
-        //     self.block.randomness,
-        // )?;
+        load_txs(
+            &config.tx_table,
+            &mut layouter,
+            &self.block.txs,
+            self.block.randomness,
+        )?;
         load_rws(
             &config.rw_table,
             &mut layouter,
@@ -184,38 +186,42 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
         Ok(())
     }
 }
-use eth_types::{Address, U64};
-use ethers_core::{types::TransactionRequest, utils::keccak256};
-use ethers_signers::LocalWallet;
-use std::collections::HashMap;
 
-// Testing function
-pub fn sign_txs(
-    txs: &mut [eth_types::Transaction],
-    chain_id: u64,
-    wallets: &HashMap<Address, LocalWallet>,
-) {
-    for tx in txs.iter_mut() {
-        let wallet = wallets.get(&tx.from).unwrap();
-        let req = TransactionRequest::new()
-            .from(tx.from)
-            .to(tx.to.unwrap())
-            .nonce(tx.nonce)
-            .value(tx.value)
-            .data(tx.input.clone())
-            .gas(tx.gas)
-            .gas_price(tx.gas_price.unwrap());
-        let tx_rlp = req.rlp(chain_id);
-        let sighash = keccak256(tx_rlp.as_ref()).into();
-        let sig = wallet.sign_hash(sighash, true);
-        tx.v = U64::from(sig.v);
-        tx.r = sig.r;
-        tx.s = sig.s;
+#[cfg(test)]
+pub mod test {
+    use eth_types::{Address, U64};
+    use ethers_core::{types::TransactionRequest, utils::keccak256};
+    use ethers_signers::LocalWallet;
+    use std::collections::HashMap;
+    // Testing function
+    pub fn sign_txs(
+        txs: &mut [eth_types::Transaction],
+        chain_id: u64,
+        wallets: &HashMap<Address, LocalWallet>,
+    ) {
+        for tx in txs.iter_mut() {
+            let wallet = wallets.get(&tx.from).unwrap();
+            let req = TransactionRequest::new()
+                .from(tx.from)
+                .to(tx.to.unwrap())
+                .nonce(tx.nonce)
+                .value(tx.value)
+                .data(tx.input.clone())
+                .gas(tx.gas)
+                .gas_price(tx.gas_price.unwrap());
+            let tx_rlp = req.rlp(chain_id);
+            let sighash = keccak256(tx_rlp.as_ref()).into();
+            let sig = wallet.sign_hash(sighash, true);
+            tx.v = U64::from(sig.v);
+            tx.r = sig.r;
+            tx.s = sig.s;
+        }
     }
 }
 
 #[cfg(test)]
 mod super_circuit_tests {
+    use super::test::*;
     use super::*;
     use crate::{
         evm_circuit::witness::block_convert,
@@ -230,11 +236,12 @@ mod super_circuit_tests {
     };
     use ethers_signers::{LocalWallet, Signer};
     use group::{Curve, Group};
-    use halo2_proofs::dev::{MockProver, VerifyFailure};
+    use halo2_proofs::dev::{MockProver, VerifyConfig, VerifyFailure};
     use mock::{TestContext, MOCK_CHAIN_ID};
     use rand::SeedableRng;
     use rand_chacha::ChaCha20Rng;
     use secp256k1::Secp256k1Affine;
+    use std::collections::HashMap;
     use strum::IntoEnumIterator;
 
     struct Inputs<F: Field> {
@@ -289,7 +296,12 @@ mod super_circuit_tests {
             tx_circuit,
         };
         let prover = MockProver::<F>::run(k, &circuit, instance).unwrap();
-        prover.verify()
+        prover.verify_par(VerifyConfig {
+            selectors: true,
+            gates: true,
+            lookups: true,
+            perms: true,
+        })
     }
 
     fn run_test_circuit_complete_fixed_table<F: Field>(
@@ -365,6 +377,11 @@ mod super_circuit_tests {
             aux_generator,
         };
 
-        assert_eq!(run_test_circuit_complete_fixed_table(inputs), Ok(()));
+        let res = run_test_circuit_complete_fixed_table(inputs);
+        if let Err(err) = res {
+            eprintln!("Verification failures:");
+            eprintln!("{:#?}", err);
+            panic!("Failed verification");
+        }
     }
 }
