@@ -227,12 +227,21 @@ impl<F: Field, const N_ROWS: usize> Circuit<F> for StateCircuit<F, N_ROWS> {
                     )?;
 
                     if let Some(prev_row) = prev_row {
-                        config.lexicographic_ordering.assign(
+                        let is_first_access = config.lexicographic_ordering.assign(
                             &mut region,
                             offset,
                             &row,
                             &prev_row,
                         )?;
+
+                        if !(is_first_access || row.is_write()) {
+                            assert_eq!(
+                                row.value_assignment(self.randomness),
+                                prev_row.value_assignment(self.randomness),
+                                "{:?}",
+                                [prev_row, row]
+                            )
+                        }
                     }
                 }
 
