@@ -180,7 +180,7 @@ impl Opcode for Call {
                     ),
                     (CallContextField::MemorySize, next_memory_word_size.into()),
                     (
-                        CallContextField::StateWriteCounter,
+                        CallContextField::ReversibleWriteCounter,
                         (exec_step.reversible_write_counter + 1).into(),
                     ),
                 ] {
@@ -220,7 +220,7 @@ impl Opcode for Call {
                     (CallContextField::LastCalleeReturnDataLength, 0.into()),
                     (CallContextField::IsRoot, 0.into()),
                     (CallContextField::IsCreate, 0.into()),
-                    (CallContextField::CodeSource, call.code_hash.to_word()),
+                    (CallContextField::CodeHash, call.code_hash.to_word()),
                 ] {
                     state.call_context_read(&mut exec_step, call.call_id, field, value);
                 }
