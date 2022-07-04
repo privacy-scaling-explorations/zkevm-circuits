@@ -131,10 +131,10 @@ where
 
     pub fn configure<const QUICK_CHECK: bool>(
         meta: &mut ConstraintSystem<F>,
-        value: Column<Advice>,
         selector: Column<Fixed>,
         lookup: lookups::Config<QUICK_CHECK>,
     ) -> Config<T, N> {
+        let value = meta.advice_column();
         let limbs = [0; N].map(|_| meta.advice_column());
 
         for &limb in &limbs {
@@ -142,7 +142,6 @@ where
                 meta.query_advice(limb, Rotation::cur())
             });
         }
-
         meta.create_gate("mpi value matches claimed limbs", |meta| {
             let selector = meta.query_fixed(selector, Rotation::cur());
             let value = meta.query_advice(value, Rotation::cur());

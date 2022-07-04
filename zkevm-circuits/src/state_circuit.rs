@@ -13,17 +13,18 @@ use crate::{
         param::N_BYTES_WORD,
         table::RwTableTag,
         util::RandomLinearCombination,
-        witness::{Rw, RwMap, RwRow},
+        witness::{Rw, RwMap},
     },
-    rw_table::RwTable,
 };
 use binary_number::{Chip as BinaryNumberChip, Config as BinaryNumberConfig};
 use constraint_builder::{ConstraintBuilder, Queries};
 use eth_types::{Address, Field, ToLittleEndian};
 use gadgets::is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction};
 use halo2_proofs::{
-    circuit::{Layouter, Region, SimpleFloorPlanner},
-    plonk::{Circuit, Column, ConstraintSystem, Error, Expression, Fixed, Instance, VirtualCells},
+    circuit::{Layouter, SimpleFloorPlanner},
+    plonk::{
+        Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, Instance, VirtualCells,
+    },
     poly::Rotation,
 };
 use lexicographic_ordering::{
@@ -43,17 +44,18 @@ const N_LIMBS_ID: usize = 2;
 /// Config for StateCircuit
 #[derive(Clone)]
 pub struct StateConfig<F, const QUICK_CHECK: bool> {
-    // Figure out why you get errors when this is Selector.
+    selector: Column<Fixed>, // Figure out why you get errors when this is Selector.
     // https://github.com/privacy-scaling-explorations/zkevm-circuits/issues/407
-    selector: Column<Fixed>,
-    rw_table: RwTable,
-    tag_bits: BinaryNumberConfig<RwTableTag, 4>,
-    rw_counter_mpi: MpiConfig<u32, N_LIMBS_RW_COUNTER>,
-    id_mpi: MpiConfig<u32, N_LIMBS_ID>,
-    address_mpi: MpiConfig<Address, N_LIMBS_ACCOUNT_ADDRESS>,
-    storage_key_rlc: RlcConfig<N_BYTES_WORD>,
+    rw_counter: MpiConfig<u32, N_LIMBS_RW_COUNTER>,
+    is_write: Column<Advice>,
+    tag: BinaryNumberConfig<RwTableTag, 4>,
+    id: MpiConfig<u32, N_LIMBS_ID>,
     is_id_unchanged: IsZeroConfig<F>,
+    address: MpiConfig<Address, N_LIMBS_ACCOUNT_ADDRESS>,
+    field_tag: Column<Advice>,
+    storage_key: RlcConfig<N_BYTES_WORD>,
     is_storage_key_unchanged: IsZeroConfig<F>,
+    value: Column<Advice>,
     lookups: LookupsConfig<QUICK_CHECK>,
     power_of_randomness: [Column<Instance>; N_BYTES_WORD - 1],
     lexicographic_ordering: LexicographicOrderingConfig<F>,
@@ -74,7 +76,7 @@ pub type StateCircuitLight<F, const N_ROWS: usize> = StateCircuitBase<F, true, N
 #[derive(Default)]
 pub struct StateCircuitBase<F, const QUICK_CHECK: bool, const N_ROWS: usize> {
     pub(crate) randomness: F,
-    pub(crate) rows: Vec<RwRow<F>>,
+    pub(crate) rows: Vec<Rw>,
     #[cfg(test)]
     overrides: HashMap<(test::AdviceColumn, isize), F>,
 }
@@ -107,64 +109,6 @@ impl<F: Field, const QUICK_CHECK: bool, const N_ROWS: usize>
             .map(|exp| vec![self.randomness.pow(&[exp, 0, 0, 0]); N_ROWS])
             .collect()
     }
-    #[allow(clippy::too_many_arguments)]
-    fn assign_row(
-        &self,
-        config: &StateConfig<F, QUICK_CHECK>,
-        region: &mut Region<F>,
-        tag_chip: &binary_number::Chip<F, RwTableTag, 4_usize>,
-        is_storage_key_unchanged: &IsZeroChip<F>,
-        is_id_unchanged: &IsZeroChip<F>,
-        lexicographic_ordering_chip: &LexicographicOrderingChip<F>,
-        offset: usize,
-        row: RwRow<F>,
-        prev_row: Option<RwRow<F>>,
-    ) -> Result<(), Error> {
-        region.assign_fixed(|| "selector", config.selector, offset, || Ok(F::one()))?;
-
-        config
-        tag_chip.assign(region, offset, &row.tag)?;
-            .rw_counter_mpi
-            .assign(region, offset, row.rw_counter as u32)?;
-        config.id_mpi.assign(region, offset, row.id as u32)?;
-        config.address_mpi.assign(region, offset, row.address)?;
-        config
-            .storage_key_rlc
-            .assign(region, offset, self.randomness, row.storage_key)?;
-
-        if offset != 0 {
-            lexicographic_ordering_chip.assign(region, offset, &row, &prev_row.unwrap())?;
-
-            // assign storage key diff
-            let cur_storage_key = RandomLinearCombination::random_linear_combine(
-                row.storage_key.to_le_bytes(),
-                self.randomness,
-            );
-            let prev_storage_key = RandomLinearCombination::random_linear_combine(
-                prev_row.unwrap_or_default().storage_key.to_le_bytes(),
-                self.randomness,
-            );
-            is_storage_key_unchanged.assign(
-                region,
-                offset,
-                Some(cur_storage_key - prev_storage_key),
-            )?;
-
-            // assign id diff
-            let id_change =
-                F::from(row.id as u64) - F::from(prev_row.unwrap_or_default().id as u64);
-            is_id_unchanged.assign(region, offset, Some(id_change))?;
-            let _storage_key_change = RandomLinearCombination::random_linear_combine(
-                row.storage_key.to_le_bytes(),
-                self.randomness,
-            ) - RandomLinearCombination::random_linear_combine(
-                prev_row.unwrap_or_default().storage_key.to_le_bytes(),
-                self.randomness,
-            );
-        }
-
-        Ok(())
-    }
 }
 
 impl<F: Field, const QUICK_CHECK: bool, const N_ROWS: usize> Circuit<F>
@@ -184,30 +128,24 @@ where
         let lookups = LookupsChip::configure(meta);
         let power_of_randomness = [0; N_BYTES_WORD - 1].map(|_| meta.instance_column());
 
-        let rw_table = RwTable::construct(meta);
-        let is_storage_key_unchanged_column = meta.advice_column();
-        let is_id_unchanged_column = meta.advice_column();
-        let id_mpi = MpiChip::configure(meta, rw_table.id, selector, lookups);
-        let address_mpi = MpiChip::configure(meta, rw_table.address, selector, lookups);
-        let storage_key_rlc = RlcChip::configure(
-            meta,
-            selector,
-            rw_table.storage_key,
-            lookups,
-            power_of_randomness,
-        );
-        let rw_counter_mpi = MpiChip::configure(meta, rw_table.rw_counter, selector, lookups);
+        let [is_write, field_tag, value, is_id_unchanged_column, is_storage_key_unchanged_column] =
+            [0; 5].map(|_| meta.advice_column());
 
-        let tag_bits = BinaryNumberChip::configure(meta, selector);
+        let tag = BinaryNumberChip::configure(meta, selector);
+
+        let id = MpiChip::configure(meta, selector, lookups);
+        let address = MpiChip::configure(meta, selector, lookups);
+        let storage_key = RlcChip::configure(meta, selector, lookups, power_of_randomness);
+        let rw_counter = MpiChip::configure(meta, selector, lookups);
 
         let lexicographic_ordering = LexicographicOrderingChip::configure(
             meta,
-            tag_bits,
-            rw_table.field_tag,
-            id_mpi.limbs,
-            address_mpi.limbs,
-            storage_key_rlc.bytes,
-            rw_counter_mpi.limbs,
+            tag,
+            field_tag,
+            id.limbs,
+            address.limbs,
+            storage_key.bytes,
+            rw_counter.limbs,
             lookups,
         );
 
@@ -215,8 +153,8 @@ where
             meta,
             |meta| meta.query_fixed(lexicographic_ordering.selector, Rotation::cur()),
             |meta| {
-                meta.query_advice(rw_table.id, Rotation::cur())
-                    - meta.query_advice(rw_table.id, Rotation::prev())
+                meta.query_advice(id.value, Rotation::cur())
+                    - meta.query_advice(id.value, Rotation::prev())
             },
             is_id_unchanged_column,
         );
@@ -224,22 +162,24 @@ where
             meta,
             |meta| meta.query_fixed(lexicographic_ordering.selector, Rotation::cur()),
             |meta| {
-                meta.query_advice(rw_table.storage_key, Rotation::cur())
-                    - meta.query_advice(rw_table.storage_key, Rotation::prev())
+                meta.query_advice(storage_key.encoded, Rotation::cur())
+                    - meta.query_advice(storage_key.encoded, Rotation::prev())
             },
             is_storage_key_unchanged_column,
         );
 
         let config = Self::Config {
             selector,
-            rw_table,
-            lexicographic_ordering,
-            address_mpi,
-            tag_bits,
-            id_mpi,
-            rw_counter_mpi,
-            storage_key_rlc,
+            rw_counter,
+            is_write,
+            tag,
+            id,
             is_id_unchanged,
+            address,
+            field_tag,
+            storage_key,
+            value,
+            lexicographic_ordering,
             is_storage_key_unchanged,
             lookups,
             power_of_randomness,
@@ -271,34 +211,79 @@ where
         let lexicographic_ordering_chip =
             LexicographicOrderingChip::construct(config.lexicographic_ordering.clone());
 
-        let tag_chip = BinaryNumberChip::construct(config.tag_bits);
+        let tag_chip = BinaryNumberChip::construct(config.tag);
 
         layouter.assign_region(
             || "rw table",
             |mut region| {
-                config
-                    .rw_table
-                    .assign(&mut region, self.randomness, &self.rows)?;
                 let padding_length = N_ROWS - self.rows.len();
-                let padding = (1..=padding_length)
-                    .map(|rw_counter| (Rw::Start { rw_counter }).table_assignment(self.randomness));
+                let padding = (1..=padding_length).map(|rw_counter| Rw::Start { rw_counter });
 
                 let rows = padding.chain(self.rows.iter().cloned());
                 let prev_rows = once(None).chain(rows.clone().map(Some));
 
                 for (offset, (row, prev_row)) in rows.zip(prev_rows).enumerate() {
                     log::trace!("state citcuit assign offset:{} row:{:#?}", offset, row);
-                    self.assign_row(
-                        &config,
-                        &mut region,
-                        &tag_chip,
-                        &is_storage_key_unchanged,
-                        &is_id_unchanged,
-                        &lexicographic_ordering_chip,
+                    region.assign_fixed(|| "selector", config.selector, offset, || Ok(F::one()))?;
+                    config
+                        .rw_counter
+                        .assign(&mut region, offset, row.rw_counter() as u32)?;
+                    region.assign_advice(
+                        || "is_write",
+                        config.is_write,
                         offset,
-                        row,
-                        prev_row,
+                        || Ok(if row.is_write() { F::one() } else { F::zero() }),
                     )?;
+                    tag_chip.assign(&mut region, offset, &row.tag())?;
+                    if let Some(id) = row.id() {
+                        config.id.assign(&mut region, offset, id as u32)?;
+                    }
+                    if let Some(address) = row.address() {
+                        config.address.assign(&mut region, offset, address)?;
+                    }
+                    if let Some(field_tag) = row.field_tag() {
+                        region.assign_advice(
+                            || "field_tag",
+                            config.field_tag,
+                            offset,
+                            || Ok(F::from(field_tag as u64)),
+                        )?;
+                    }
+                    if let Some(storage_key) = row.storage_key() {
+                        config.storage_key.assign(
+                            &mut region,
+                            offset,
+                            self.randomness,
+                            storage_key,
+                        )?;
+                    }
+                    region.assign_advice(
+                        || "value",
+                        config.value,
+                        offset,
+                        || Ok(row.value_assignment(self.randomness)),
+                    )?;
+
+                    if let Some(prev_row) = prev_row {
+                        lexicographic_ordering_chip.assign(&mut region, offset, &row, &prev_row)?;
+
+                        let id_change = F::from(row.id().unwrap_or_default() as u64)
+                            - F::from(prev_row.id().unwrap_or_default() as u64);
+                        is_id_unchanged.assign(&mut region, offset, Some(id_change))?;
+
+                        let storage_key_change = RandomLinearCombination::random_linear_combine(
+                            row.storage_key().unwrap_or_default().to_le_bytes(),
+                            self.randomness,
+                        ) - RandomLinearCombination::random_linear_combine(
+                            prev_row.storage_key().unwrap_or_default().to_le_bytes(),
+                            self.randomness,
+                        );
+                        is_storage_key_unchanged.assign(
+                            &mut region,
+                            offset,
+                            Some(storage_key_change),
+                        )?;
+                    }
                 }
 
                 #[cfg(test)]
@@ -322,25 +307,24 @@ fn queries<F: Field, const QUICK_CHECK: bool>(
 ) -> Queries<F> {
     Queries {
         selector: meta.query_fixed(c.selector, Rotation::cur()),
-        rw_counter: MpiQueries::new(meta, c.rw_counter_mpi),
-        is_write: meta.query_advice(c.rw_table.is_write, Rotation::cur()),
         lexicographic_ordering_selector: meta
             .query_fixed(c.lexicographic_ordering.selector, Rotation::cur()),
-        aux2: meta.query_advice(c.rw_table.aux2, Rotation::cur()),
-        tag: c.tag_bits.value(Rotation::cur())(meta),
+        rw_counter: MpiQueries::new(meta, c.rw_counter),
+        is_write: meta.query_advice(c.is_write, Rotation::cur()),
+        tag: c.tag.value(Rotation::cur())(meta),
         tag_bits: c
-            .tag_bits
+            .tag
             .bits
             .map(|bit| meta.query_advice(bit, Rotation::cur())),
-        //prev_tag: meta.query_advice(c.rw_table.tag, Rotation::prev()),
-        id: MpiQueries::new(meta, c.id_mpi),
+        //aux2: meta.query_advice(c.rw_table.aux2, Rotation::cur()),
+        id: MpiQueries::new(meta, c.id),
         is_id_unchanged: c.is_id_unchanged.is_zero_expression.clone(),
-        address: MpiQueries::new(meta, c.address_mpi),
-        field_tag: meta.query_advice(c.rw_table.field_tag, Rotation::cur()),
-        storage_key: RlcQueries::new(meta, c.storage_key_rlc),
-        value: meta.query_advice(c.rw_table.value, Rotation::cur()),
-        value_at_prev_rotation: meta.query_advice(c.rw_table.value, Rotation::prev()),
-        value_prev: meta.query_advice(c.rw_table.value_prev, Rotation::cur()),
+        address: MpiQueries::new(meta, c.address),
+        field_tag: meta.query_advice(c.field_tag, Rotation::cur()),
+        storage_key: RlcQueries::new(meta, c.storage_key),
+        value: meta.query_advice(c.value, Rotation::cur()),
+        //value_at_prev_rotation: meta.query_advice(c.rw_table.value, Rotation::prev()),
+        //value_prev: meta.query_advice(c.rw_table.value_prev, Rotation::cur()),
         lookups: LookupsQueries::new(meta, c.lookups),
         power_of_randomness: c
             .power_of_randomness
@@ -351,6 +335,6 @@ fn queries<F: Field, const QUICK_CHECK: bool>(
             .upper_limb_difference_is_zero
             .is_zero_expression
             .clone(),
-        rw_rlc: meta.query_advice(c.rw_table.rlc, Rotation::cur()),
+        //rw_rlc: meta.query_advice(c.rw_table.rlc, Rotation::cur()),
     }
 }

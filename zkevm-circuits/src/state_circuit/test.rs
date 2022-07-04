@@ -49,22 +49,22 @@ impl AdviceColumn {
         config: &StateConfig<F, QUICK_CHECK>,
     ) -> Column<Advice> {
         match self {
-            Self::IsWrite => config.rw_table.is_write,
-            Self::Address => config.rw_table.address,
-            Self::AddressLimb0 => config.address_mpi.limbs[0],
-            Self::AddressLimb1 => config.address_mpi.limbs[1],
-            Self::StorageKey => config.rw_table.storage_key,
-            Self::StorageKeyByte0 => config.storage_key_rlc.bytes[0],
-            Self::StorageKeyByte1 => config.storage_key_rlc.bytes[1],
+            Self::IsWrite => config.is_write,
+            Self::Address => config.address.value,
+            Self::AddressLimb0 => config.address.limbs[0],
+            Self::AddressLimb1 => config.address.limbs[1],
+            Self::StorageKey => config.storage_key.encoded,
+            Self::StorageKeyByte0 => config.storage_key.bytes[0],
+            Self::StorageKeyByte1 => config.storage_key.bytes[1],
             Self::StorageKeyChangeInverse => config.is_storage_key_unchanged.value_inv,
-            Self::Value => config.rw_table.value,
-            Self::RwCounter => config.rw_table.rw_counter,
-            Self::RwCounterLimb0 => config.rw_counter_mpi.limbs[0],
-            Self::RwCounterLimb1 => config.rw_counter_mpi.limbs[1],
-            Self::TagBit0 => config.tag_bits.bits[0],
-            Self::TagBit1 => config.tag_bits.bits[1],
-            Self::TagBit2 => config.tag_bits.bits[2],
-            Self::TagBit3 => config.tag_bits.bits[3],
+            Self::Value => config.value,
+            Self::RwCounter => config.rw_counter.value,
+            Self::RwCounterLimb0 => config.rw_counter.limbs[0],
+            Self::RwCounterLimb1 => config.rw_counter.limbs[1],
+            Self::TagBit0 => config.tag.bits[0],
+            Self::TagBit1 => config.tag.bits[1],
+            Self::TagBit2 => config.tag.bits[2],
+            Self::TagBit3 => config.tag.bits[3],
         }
     }
 }
@@ -796,10 +796,6 @@ fn invalid_tags() {
 
 fn prover(rows: Vec<Rw>, overrides: HashMap<(AdviceColumn, isize), Fr>) -> MockProver<Fr> {
     let randomness = Fr::rand();
-    let rows = rows
-        .iter()
-        .map(|r| r.table_assignment(randomness))
-        .collect();
 
     let circuit = StateCircuit::<Fr, N_ROWS> {
         randomness,

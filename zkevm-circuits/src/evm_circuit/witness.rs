@@ -446,7 +446,7 @@ impl RwMap {
         }
     }
 
-    pub fn table_assignments<F>(&self, randomness: F) -> Vec<RwRow<F>>
+    pub fn table_assignments<F>(&self, _randomness: F) -> Vec<Rw>
     where
         F: Field,
     {
@@ -462,10 +462,7 @@ impl RwMap {
                 row.rw_counter(),
             )
         });
-
-        rows.into_iter()
-            .map(|r| r.table_assignment(randomness))
-            .collect()
+        rows
     }
 }
 
@@ -586,7 +583,7 @@ impl<F: Field> RwRow<F> {
         let values = [
             F::from(self.rw_counter),
             F::from(self.is_write),
-            (F::from(self.tag)),
+            (F::from(self.tag as u64)),
             (F::from(self.id)),
             (self.address.to_scalar().unwrap()),
             (F::from(self.field_tag)),

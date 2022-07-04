@@ -4,11 +4,11 @@ use super::{
     random_linear_combination::Queries as RlcQueries, N_LIMBS_ACCOUNT_ADDRESS, N_LIMBS_ID,
     N_LIMBS_RW_COUNTER,
 };
-use crate::evm_circuit::util::rlc;
+
 use crate::evm_circuit::{
     param::N_BYTES_WORD,
     table::{AccountFieldTag, RwTableTag},
-    util::{not, or, select},
+    util::{not, or},
 };
 use crate::util::Expr;
 use eth_types::Field;
@@ -22,7 +22,7 @@ pub struct Queries<F: Field> {
     pub rw_counter: MpiQueries<F, N_LIMBS_RW_COUNTER>,
     pub is_write: Expression<F>,
     pub tag: Expression<F>,
-    pub aux2: Expression<F>,
+    //pub aux2: Expression<F>,
     pub tag_bits: [Expression<F>; 4],
     pub id: MpiQueries<F, N_LIMBS_ID>,
     pub is_id_unchanged: Expression<F>,
@@ -30,13 +30,13 @@ pub struct Queries<F: Field> {
     pub field_tag: Expression<F>,
     pub storage_key: RlcQueries<F, N_BYTES_WORD>,
     pub value: Expression<F>,
-    pub value_at_prev_rotation: Expression<F>,
-    pub value_prev: Expression<F>,
+    //pub value_at_prev_rotation: Expression<F>,
+    //pub value_prev: Expression<F>,
     pub lookups: LookupsQueries<F>,
     pub power_of_randomness: [Expression<F>; N_BYTES_WORD - 1],
     pub is_storage_key_unchanged: Expression<F>,
     pub lexicographic_ordering_upper_limb_difference_is_zero: Expression<F>,
-    pub rw_rlc: Expression<F>,
+    //pub rw_rlc: Expression<F>,
 }
 
 type Constraint<F> = (&'static str, Expression<F>);
@@ -108,6 +108,7 @@ impl<F: Field> ConstraintBuilder<F> {
         // tag value in RwTableTag range is enforced in BinaryNumberChip
         self.require_boolean("is_write is boolean", q.is_write());
 
+        /*
         // Only reversible rws have `value_prev`.
         // There is no need to constain MemoryRw and StackRw since the 'read
         // consistency' part of the constaints are enough for them to behave
@@ -172,6 +173,7 @@ impl<F: Field> ConstraintBuilder<F> {
                 &q.power_of_randomness,
             )
         })
+        */
     }
 
     fn build_start_constraints(&mut self, q: &Queries<F>) {
@@ -220,10 +222,10 @@ impl<F: Field> ConstraintBuilder<F> {
                 q.address_change(),
             )
         });
-        self.require_zero(
-            "prev_value is 0 when keys changed",
-            q.first_access() * q.value_prev.clone(),
-        );
+        //self.require_zero(
+        //   "prev_value is 0 when keys changed",
+        //    q.first_access() * q.value_prev.clone(),
+        //);
     }
 
     fn build_account_storage_constraints(&mut self, q: &Queries<F>) {
@@ -239,8 +241,6 @@ impl<F: Field> ConstraintBuilder<F> {
         //     cb.require_zero("first access is a write", q.is_write());
         //     // cb.require_zero("first access rw_counter is 0",
         // q.rw_counter.value.clone()); })
-
-        // TODO: value_prev == committed_value when keys changed
     }
     fn build_tx_access_list_account_constraints(&mut self, q: &Queries<F>) {
         self.require_zero("field_tag is 0 for TxAccessListAccount", q.field_tag());
@@ -248,10 +248,10 @@ impl<F: Field> ConstraintBuilder<F> {
             "storage_key is 0 for TxAccessListAccount",
             q.storage_key.encoded.clone(),
         );
-        self.require_zero(
-            "prev_value is 0 when keys changed",
-            q.first_access() * q.value_prev.clone(),
-        );
+        //self.require_zero(
+        //    "prev_value is 0 when keys changed",
+        //    q.first_access() * q.value_prev.clone(),
+        //);
         // TODO: Missing constraints
     }
 
@@ -260,10 +260,10 @@ impl<F: Field> ConstraintBuilder<F> {
             "field_tag is 0 for TxAccessListAccountStorage",
             q.field_tag(),
         );
-        self.require_zero(
-            "prev_value is 0 when keys changed",
-            q.first_access() * q.value_prev.clone(),
-        );
+        //self.require_zero(
+        //    "prev_value is 0 when keys changed",
+        //    q.first_access() * q.value_prev.clone(),
+        //);
         // TODO: Missing constraints
     }
 
@@ -274,10 +274,10 @@ impl<F: Field> ConstraintBuilder<F> {
             "storage_key is 0 for TxRefund",
             q.storage_key.encoded.clone(),
         );
-        self.require_zero(
-            "prev_value is 0 when keys changed",
-            q.first_access() * q.value_prev.clone(),
-        );
+        //self.require_zero(
+        //    "prev_value is 0 when keys changed",
+        //    q.first_access() * q.value_prev.clone(),
+        //);
         // TODO: Missing constraints
     }
 
@@ -393,15 +393,6 @@ impl<F: Field> Queries<F> {
 
     fn tag_matches(&self, tag: RwTableTag) -> Expression<F> {
         BinaryNumberConfig::<RwTableTag, 4>::value_equals_expr(tag, self.tag_bits.clone())
-    }
-    fn multi_tag_match(&self, target_tags: Vec<RwTableTag>) -> Expression<F> {
-        let mut numerator = 1u64.expr();
-        for unmatched_tag in RwTableTag::iter() {
-            if !target_tags.contains(&unmatched_tag) {
-                numerator = numerator * (self.tag.expr() - unmatched_tag.expr());
-            }
-        }
-        numerator
     }
 
     fn first_access(&self) -> Expression<F> {

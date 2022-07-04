@@ -3,7 +3,11 @@ use super::{
     N_LIMBS_RW_COUNTER,
 };
 use crate::{
-    evm_circuit::{param::N_BYTES_WORD, table::RwTableTag, witness::RwRow},
+    evm_circuit::{
+        param::N_BYTES_WORD,
+        table::RwTableTag,
+        witness::{Rw},
+    },
     util::Expr,
 };
 use eth_types::{Field, ToBigEndian};
@@ -213,8 +217,8 @@ impl<F: Field> Chip<F> {
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
-        cur: &RwRow<F>,
-        prev: &RwRow<F>,
+        cur: &Rw,
+        prev: &Rw,
     ) -> Result<(), Error> {
         region.assign_fixed(
             || "upper_limb_difference",
@@ -322,19 +326,19 @@ impl<F: Field> Queries<F> {
     }
 }
 
-fn rw_to_be_limbs<F: Field>(row: &RwRow<F>) -> Vec<u16> {
-    let mut id = row.id as u32;
+fn rw_to_be_limbs(row: &Rw) -> Vec<u16> {
+    let mut id = row.id().unwrap_or_default() as u32;
     assert_eq!(id.to_be_bytes().len(), 4);
     // The max value of `id` is 2^23 - 1, so the 9 most significant bits should be
     // 0. We use these 9 bits to hold value of `tag` and `field_tag`.
     assert!(id < (1 << 23));
-    id += (((row.tag as u32) << 5) + (row.field_tag as u32)) << 23;
+    id += (((row.tag() as u32) << 5) + (row.field_tag().unwrap_or_default() as u32)) << 23;
 
     let mut be_bytes = vec![];
     be_bytes.extend_from_slice(&id.to_be_bytes());
-    be_bytes.extend_from_slice(&(row.address.0));
-    be_bytes.extend_from_slice(&(row.storage_key.to_be_bytes()));
-    be_bytes.extend_from_slice(&((row.rw_counter as u32).to_be_bytes()));
+    be_bytes.extend_from_slice(&(row.address().unwrap_or_default().0));
+    be_bytes.extend_from_slice(&(row.storage_key().unwrap_or_default().to_be_bytes()));
+    be_bytes.extend_from_slice(&((row.rw_counter() as u32).to_be_bytes()));
 
     be_bytes
         .iter()

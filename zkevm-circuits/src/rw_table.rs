@@ -38,7 +38,9 @@ impl RwTableRlc {
         randomness_next_phase: F,
     ) -> Result<(), Error> {
         for (offset, row) in rw_map.table_assignments(randomness).iter().enumerate() {
-            let value = row.rlc(randomness, randomness_next_phase);
+            let value = row
+                .table_assignment(randomness)
+                .rlc(randomness, randomness_next_phase);
             region.assign_advice(
                 || "assign rw row on rw table",
                 self.rlc,
