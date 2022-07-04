@@ -295,7 +295,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
     pub fn assign(
         &self,
         config: TxCircuitConfig<F>,
-        mut layouter: impl Layouter<F>,
+        layouter: &mut impl Layouter<F>,
     ) -> Result<(), Error> {
         assert!(self.txs.len() <= MAX_TXS);
         let sign_datas: Vec<SignData> = self
@@ -308,12 +308,9 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
                 })
             })
             .try_collect()?;
-        let assigned_sig_verifs = self.sign_verify.assign(
-            &config.sign_verify,
-            &mut layouter,
-            self.randomness,
-            &sign_datas,
-        )?;
+        let assigned_sig_verifs =
+            self.sign_verify
+                .assign(&config.sign_verify, layouter, self.randomness, &sign_datas)?;
 
         layouter.assign_region(
             || "tx table",
@@ -479,8 +476,12 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
         TxCircuitConfig::new(meta, power_of_randomness, tx_table)
     }
 
-    fn synthesize(&self, config: Self::Config, layouter: impl Layouter<F>) -> Result<(), Error> {
-        self.assign(config, layouter)
+    fn synthesize(
+        &self,
+        config: Self::Config,
+        mut layouter: impl Layouter<F>,
+    ) -> Result<(), Error> {
+        self.assign(config, &mut layouter)
     }
 }
 

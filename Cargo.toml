@@ -20,11 +20,11 @@ members = [
 # is resolved: https://github.com/bitvecto-rs/bitvec/pull/141
 bitvec = { git = "https://github.com/ed255/bitvec.git", rev = "5cfc5fa8496c66872d21905e677120fc3e79693c" }
 # halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2.git", tag = "v2022_06_03" }
-halo2_proofs = { path = "/home/dev/git/zkevm/halo2/halo2_proofs" }
+halo2_proofs = { path = "../halo2/halo2_proofs" }
 
 [patch."https://github.com/privacy-scaling-explorations/halo2"]
 # halo2_proofs = { git = "https://github.com/han0110/halo2", branch = "feature/abstraction-experiment", package = "halo2_proofs" }
-halo2_proofs = { path = "/home/dev/git/zkevm/halo2/halo2_proofs" }
+halo2_proofs = { path = "../halo2/halo2_proofs" }
 
 # Definition of benchmarks profile to use.
 [profile.bench]
@@ -43,5 +43,5 @@ debug = false
 debug-assertions = true
 overflow-checks = true
 rpath = false
-lto = "thin"
-incremental = false
+# lto = "thin"
+# incremental = false

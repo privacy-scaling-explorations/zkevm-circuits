@@ -144,6 +144,12 @@ use crate::{
     rw_table::RwTable,
 };
 
+// TODO: Define a table type for each table, kept in an upper level crate.
+
+// TODO: Move these load functions to each specific circuit, and import them
+// into the EVM circuit.  These functions look really clean, so maybe we can
+// replace the specific circuit loader by these?
+
 pub fn load_txs<F: Field>(
     tx_table: &[Column<Advice>; 4],
     layouter: &mut impl Layouter<F>,

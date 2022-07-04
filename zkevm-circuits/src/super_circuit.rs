@@ -15,7 +15,7 @@
 use crate::tx_circuit::{sign_verify, TxCircuit, TxCircuitConfig, TxTable};
 
 use crate::bytecode_circuit::bytecode_unroller::{
-    BytecodeTable, Config as BytecodeConfig, UnrolledBytecode,
+    unroll, BytecodeTable, Config as BytecodeConfig, UnrolledBytecode,
 };
 
 use crate::util::Expr;
@@ -44,7 +44,7 @@ pub struct SuperCircuitConfig<F: Field, const MAX_TXS: usize, const MAX_CALLDATA
     block_table: [Column<Advice>; 3],
     evm_circuit: EvmCircuit<F>,
     tx_circuit: TxCircuitConfig<F>,
-    // bytecode_circuit: BytecodeConfig<F>, // TODO
+    bytecode_circuit: BytecodeConfig<F>,
 }
 
 #[derive(Default)]
@@ -54,8 +54,9 @@ pub struct SuperCircuit<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usiz
     fixed_table_tags: Vec<FixedTableTag>,
     // Tx Circuit
     tx_circuit: TxCircuit<F, MAX_TXS, MAX_CALLDATA>,
-    /* Bytecode Circuit
-     * bytecodes: Vec<UnrolledBytecode<F>>, // TODO */
+    // Bytecode Circuit
+    // bytecodes: Vec<UnrolledBytecode<F>>,
+    bytecode_size: usize,
 }
 
 impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
@@ -122,7 +123,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
             ),
             tx_circuit: TxCircuitConfig::new(
                 meta,
-                power_of_randomness,
+                power_of_randomness.clone(),
                 TxTable {
                     tx_id: tx_table[0],
                     tag: tx_table[1],
@@ -130,10 +131,9 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
                     value: tx_table[3],
                 },
             ),
-            /*
             bytecode_circuit: BytecodeConfig::configure(
                 meta,
-                power_of_randomness[0],
+                power_of_randomness[0].clone(),
                 BytecodeTable {
                     hash: bytecode_table[0],
                     tag: bytecode_table[1],
@@ -142,7 +142,6 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
                     value: bytecode_table[4],
                 },
             ),
-            */
         }
     }
 
@@ -151,28 +150,29 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
         config: Self::Config,
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
+        // --- EVM Circuit ---
         config
             .evm_circuit
             .load_fixed_table(&mut layouter, self.fixed_table_tags.clone())?;
         config.evm_circuit.load_byte_table(&mut layouter)?;
-        load_txs(
-            &config.tx_table,
-            &mut layouter,
-            &self.block.txs,
-            self.block.randomness,
-        )?;
+        // load_txs(
+        //     &config.tx_table,
+        //     &mut layouter,
+        //     &self.block.txs,
+        //     self.block.randomness,
+        // )?;
         load_rws(
             &config.rw_table,
             &mut layouter,
             &self.block.rws,
             self.block.randomness,
         )?;
-        load_bytecodes(
-            &config.bytecode_table,
-            &mut layouter,
-            &self.block.bytecodes,
-            self.block.randomness,
-        )?;
+        // load_bytecodes(
+        //     &config.bytecode_table,
+        //     &mut layouter,
+        //     &self.block.bytecodes,
+        //     self.block.randomness,
+        // )?;
         load_block(
             &config.block_table,
             &mut layouter,
@@ -182,7 +182,24 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
         config
             .evm_circuit
             .assign_block_exact(&mut layouter, &self.block)?;
-        self.tx_circuit.synthesize(config.tx_circuit, layouter)?;
+        // --- Tx Circuit ---
+        self.tx_circuit.assign(config.tx_circuit, &mut layouter)?;
+        // -- Bytecode Circuit ---
+        let bytecodes: Vec<UnrolledBytecode<F>> = self
+            .block
+            .bytecodes
+            .iter()
+            .map(|b| unroll(b.bytes.clone(), self.block.randomness))
+            .collect();
+        config
+            .bytecode_circuit
+            .load(&mut layouter, &bytecodes, self.block.randomness)?;
+        config.bytecode_circuit.assign(
+            &mut layouter,
+            self.bytecode_size,
+            &bytecodes,
+            self.block.randomness,
+        )?;
         Ok(())
     }
 }
@@ -294,6 +311,8 @@ mod super_circuit_tests {
             block,
             fixed_table_tags,
             tx_circuit,
+            // bytecodes,
+            bytecode_size: 2usize.pow(k),
         };
         let prover = MockProver::<F>::run(k, &circuit, instance).unwrap();
         prover.verify_par(VerifyConfig {
