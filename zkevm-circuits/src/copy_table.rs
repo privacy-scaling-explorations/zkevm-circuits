@@ -448,10 +448,20 @@ impl<F: FieldExt> CopyTableConfig<F> {
                             offset,
                             || Ok(match id {
                                     NumberOrHash::Number(n) => F::from(*n as u64),
-                                    NumberOrHash::Hash(h) => RandomLinearCombination::random_linear_combine(
-                                        h.to_fixed_bytes(),
-                                        block.randomness,
-                                    ),
+                                    NumberOrHash::Hash(h) => {
+                                        // since code hash in the bytecode table is represented in
+                                        // the little-endian form, we reverse the big-endian bytes
+                                        // of H256.
+                                        let le_bytes = {
+                                            let mut b = h.to_fixed_bytes();
+                                            b.reverse();
+                                            b
+                                        };
+                                        RandomLinearCombination::random_linear_combine(
+                                            le_bytes,
+                                            block.randomness,
+                                        )
+                                    },
                                 }),
                         )?;
                         // tag

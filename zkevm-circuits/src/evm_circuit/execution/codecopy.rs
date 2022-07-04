@@ -108,7 +108,7 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
 
         // Expected state transition.
         let step_state_transition = StepStateTransition {
-            rw_counter: Transition::Delta(cb.rw_counter_offset()),
+            rw_counter: Transition::Delta(cb.rw_counter_offset() + copy_rwc_inc.expr()),
             program_counter: Transition::Delta(1.expr()),
             stack_pointer: Transition::Delta(3.expr()),
             memory_word_size: Transition::To(memory_expansion.next_memory_word_size()),
@@ -205,7 +205,7 @@ mod tests {
         let mut code = bytecode! {};
         if large {
             for _ in 0..128 {
-                code.push(1, Word::from(0));
+                code.push(1, Word::from(123));
             }
         }
         let tail = bytecode! {
@@ -235,6 +235,6 @@ mod tests {
 
     #[test]
     fn codecopy_gadget_large() {
-        test_ok(0x00, 0x00, 0x40, true);
+        test_ok(0x00, 0x00, 0x02, true);
     }
 }
