@@ -1526,13 +1526,7 @@ impl<F: Field> AbsWordGadget<F> {
         );
         cb.add_constraint(
             "carry_hi == 1 when x < 0",
-            is_neg.expr()
-                * (1.expr()
-                    - add_words
-                        .carry()
-                        .as_ref()
-                        .map(|c| c.expr())
-                        .unwrap_or_else(|| 0.expr())),
+            is_neg.expr() * (1.expr() - add_words.carry().as_ref().unwrap().expr()),
         );
 
         Self {
