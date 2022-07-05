@@ -76,7 +76,15 @@ impl<'a> CircuitInputStateRef<'a> {
             .expect("steps should have at least one BeginTx step");
         ExecStep {
             exec_state: ExecState::EndTx,
-            gas_left: Gas(prev_step.gas_left.0 - prev_step.gas_cost.0),
+            gas_left: if prev_step.error.is_none() {
+                // no error
+                Gas(prev_step.gas_left.0 - prev_step.gas_cost.0)
+            }else{
+                // if error happend, consume all gas
+                Gas(0u64)
+                //prev_step.gas_left
+            },
+            
             rwc: self.block_ctx.rwc,
             // For tx without code execution
             reversible_write_counter: if let Some(call_ctx) = self.tx_ctx.calls().last() {
