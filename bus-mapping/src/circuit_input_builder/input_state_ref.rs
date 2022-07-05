@@ -370,6 +370,13 @@ impl<'a> CircuitInputStateRef<'a> {
             .ok_or(Error::CodeNotFound(code_hash))
     }
 
+    /// Reference to the caller's Call
+    pub fn caller(&self) -> Result<&Call, Error> {
+        self.tx_ctx
+            .caller_index()
+            .map(|caller_idx| &self.tx.calls()[caller_idx])
+    }
+
     /// Reference to the current Call
     pub fn call(&self) -> Result<&Call, Error> {
         self.tx_ctx
@@ -382,6 +389,11 @@ impl<'a> CircuitInputStateRef<'a> {
         self.tx_ctx
             .call_index()
             .map(|call_idx| &mut self.tx.calls_mut()[call_idx])
+    }
+
+    /// Reference to the current CallContext
+    pub fn caller_ctx(&self) -> Result<&CallContext, Error> {
+        self.tx_ctx.caller_ctx()
     }
 
     /// Reference to the current CallContext

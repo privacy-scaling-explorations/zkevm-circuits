@@ -187,8 +187,7 @@ impl<F: Field> ExecutionGadget<F> for CopyCodeToMemoryGadget<F> {
 
         let code = block
             .bytecodes
-            .iter()
-            .find(|b| b.hash == code_hash)
+            .get(&code_hash)
             .unwrap_or_else(|| panic!("could not find bytecode with hash={:?}", code_hash));
         // Assign to the appropriate cells.
         self.src_addr
@@ -265,7 +264,7 @@ pub(crate) mod test {
         step::ExecutionState,
         table::RwTableTag,
         test::run_test_circuit_incomplete_fixed_table,
-        witness::{Block, Bytecode, Call, CodeSource, ExecStep, Rw, RwMap, Transaction},
+        witness::{Block, Bytecode, Call, ExecStep, Rw, RwMap, Transaction},
     };
 
     #[allow(clippy::too_many_arguments)]
@@ -393,7 +392,7 @@ pub(crate) mod test {
         };
 
         let code = Bytecode::new(code.to_vec());
-        let dummy_code = Bytecode::new(vec![OpcodeId::STOP.as_u8()]);
+        let dummy_code = Bytecode::new(vec![OpcodeId::RETURN.as_u8()]);
 
         let program_counter = 0;
         let stack_pointer = 1024;
@@ -412,12 +411,12 @@ pub(crate) mod test {
         );
 
         steps.push(ExecStep {
-            execution_state: ExecutionState::STOP,
+            execution_state: ExecutionState::RETURN,
             rw_counter,
             program_counter,
             stack_pointer,
             memory_size,
-            opcode: Some(OpcodeId::STOP),
+            opcode: Some(OpcodeId::RETURN),
             ..Default::default()
         });
 
@@ -429,14 +428,14 @@ pub(crate) mod test {
                     id: call_id,
                     is_root: true,
                     is_create: false,
-                    code_source: CodeSource::Account(dummy_code.hash),
+                    code_hash: dummy_code.hash,
                     ..Default::default()
                 }],
                 steps,
                 ..Default::default()
             }],
             rws,
-            bytecodes: vec![dummy_code, code],
+            bytecodes: HashMap::from_iter([(dummy_code.hash, dummy_code), (code.hash, code)]),
             ..Default::default()
         };
         assert_eq!(run_test_circuit_incomplete_fixed_table(block), Ok(()));

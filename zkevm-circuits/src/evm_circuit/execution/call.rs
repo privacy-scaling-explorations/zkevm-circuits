@@ -255,7 +255,7 @@ impl<F: Field> ExecutionGadget<F> for CallGadget<F> {
                     memory_expansion.next_memory_word_size(),
                 ),
                 (
-                    CallContextFieldTag::StateWriteCounter,
+                    CallContextFieldTag::ReversibleWriteCounter,
                     cb.curr.state.reversible_write_counter.expr() + 1.expr(),
                 ),
             ] {
@@ -281,7 +281,7 @@ impl<F: Field> ExecutionGadget<F> for CallGadget<F> {
                 (CallContextFieldTag::LastCalleeReturnDataLength, 0.expr()),
                 (CallContextFieldTag::IsRoot, 0.expr()),
                 (CallContextFieldTag::IsCreate, 0.expr()),
-                (CallContextFieldTag::CodeSource, callee_code_hash.expr()),
+                (CallContextFieldTag::CodeHash, callee_code_hash.expr()),
             ] {
                 cb.call_context_lookup(false.expr(), Some(callee_call_id.expr()), field_tag, value);
             }
