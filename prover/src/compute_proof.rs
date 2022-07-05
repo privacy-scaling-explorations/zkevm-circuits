@@ -9,7 +9,10 @@ use halo2_proofs::{
 };
 use rand::SeedableRng;
 use rand_xorshift::XorShiftRng;
+
 use std::str::FromStr;
+use std::time::Instant;
+
 use strum::IntoEnumIterator;
 use zkevm_circuits::evm_circuit::{
     table::FixedTableTag, test::TestCircuit, witness::block_convert,
@@ -27,6 +30,7 @@ pub async fn compute_proof(
     rpc_url: &str,
 ) -> Result<Proofs, Box<dyn std::error::Error>> {
     // request & build the inputs for the circuits
+    let time_started = Instant::now();
     let url = Http::from_str(rpc_url)?;
     let geth_client = GethClient::new(url);
     let builder = BuilderClient::new(geth_client).await?;
@@ -83,6 +87,7 @@ pub async fn compute_proof(
     let ret = Proofs {
         evm_proof: evm_proof.into(),
         state_proof: state_proof.into(),
+        duration: Instant::now().duration_since(time_started).as_millis() as u64,
     };
 
     Ok(ret)
