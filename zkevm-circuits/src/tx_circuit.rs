@@ -85,7 +85,6 @@ fn ct_option_ok_or<T, E>(v: CtOption<T>, err: E) -> Result<T, E> {
     Option::<T>::from(v).ok_or(err)
 }
 
-/// Doc this
 pub(crate) fn tx_to_sign_data(tx: &Transaction, chain_id: u64) -> Result<SignData, Error> {
     let sig_r_le = tx.r.to_le_bytes();
     let sig_s_le = tx.s.to_le_bytes();
