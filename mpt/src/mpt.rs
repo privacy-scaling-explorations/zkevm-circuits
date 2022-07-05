@@ -695,12 +695,12 @@ impl<F: FieldExt> MPTConfig<F> {
             c_mod_node_hash_rlc,
             acc_s,
             acc_mult_s,
+            acc_c, // used for not_hashed
             key_rlc,
             key_rlc_mult,
             sel1,
             sel2,
             s_advices[IS_BRANCH_S_PLACEHOLDER_POS - LAYOUT_OFFSET],
-            modified_node,
             is_account_leaf_in_added_branch,
             r_table.clone(),
             fixed_table.clone(),
@@ -730,12 +730,12 @@ impl<F: FieldExt> MPTConfig<F> {
             c_mod_node_hash_rlc,
             acc_s,
             acc_mult_s,
+            acc_c, // used for not_hashed
             key_rlc,
             key_rlc_mult,
             sel1,
             sel2,
             s_advices[IS_BRANCH_C_PLACEHOLDER_POS - LAYOUT_OFFSET],
-            modified_node,
             is_account_leaf_in_added_branch,
             r_table.clone(),
             fixed_table.clone(),
@@ -1934,19 +1934,23 @@ impl<F: FieldExt> MPTConfig<F> {
                                     // extension node key.
                                     // witness[offset + 16]
                                     let ext_row = &witness[ind + 16];
+                                    let mut key_len_pos = 1;
+                                    if ext_row[0] == 248 {
+                                        key_len_pos = 2;
+                                    }
 
                                     if pv.key_rlc_sel {
                                         // Note: it can't be is_even = 1 && is_short = 1.
                                         if pv.is_even && pv.is_long {
                                             // extension node part:
-                                            let key_len = ext_row[1] as usize - 128 - 1; // -1 because the first byte is 0 (is_even)
+                                            let key_len = ext_row[key_len_pos] as usize - 128 - 1; // -1 because the first byte is 0 (is_even)
                                             compute_acc_and_mult(
                                                 ext_row,
                                                 &mut pv.extension_node_rlc,
                                                 &mut pv.key_rlc_mult,
-                                                3, /* first two positions are RLPs, third
-                                                    * position is 0 (because is_even), we start
-                                                    * with fourth */
+                                                key_len_pos + 2, /* first position behind key_len_pos
+                                                    * is 0 (because is_even), we start
+                                                    * with the next one */
                                                 key_len,
                                             );
                                             pv.mult_diff = F::one();
@@ -1963,21 +1967,21 @@ impl<F: FieldExt> MPTConfig<F> {
                                         } else if pv.is_odd && pv.is_long {
                                             // extension node part:
                                             pv.extension_node_rlc +=
-                                                F::from((ext_row[2] - 16) as u64)
+                                                F::from((ext_row[key_len_pos + 1] - 16) as u64)
                                                     * F::from(16)
                                                     * pv.key_rlc_mult;
 
                                             let ext_row_c = &witness[ind + 17];
-                                            let key_len = ext_row[1] as usize - 128;
+                                            let key_len = ext_row[key_len_pos] as usize - 128;
 
                                             pv.mult_diff = F::one();
                                             for k in 0..key_len-1 {
                                                 let second_nibble = ext_row_c[S_START + k];
                                                 let first_nibble =
-                                                    (ext_row[3 + k] - second_nibble) / 16;
+                                                    (ext_row[key_len_pos + 2 + k] - second_nibble) / 16;
                                                 assert_eq!(
                                                     first_nibble * 16 + second_nibble,
-                                                    ext_row[3 + k],
+                                                    ext_row[key_len_pos + 2 + k],
                                                 );
                                                 pv.extension_node_rlc +=
                                                     F::from(first_nibble as u64) * pv.key_rlc_mult;
@@ -2012,16 +2016,16 @@ impl<F: FieldExt> MPTConfig<F> {
                                         if pv.is_even && pv.is_long {
                                             // extension node part:
                                             let ext_row_c = &witness[ind + 17];
-                                            let key_len = ext_row[1] as usize - 128 - 1; // -1 because the first byte is 0 (is_even)
+                                            let key_len = ext_row[key_len_pos] as usize - 128 - 1; // -1 because the first byte is 0 (is_even)
 
                                             pv.mult_diff = F::one();
                                             for k in 0..key_len {
                                                 let second_nibble = ext_row_c[S_START + k];
                                                 let first_nibble =
-                                                    (ext_row[3 + k] - second_nibble) / 16;
+                                                    (ext_row[key_len_pos + 2 + k] - second_nibble) / 16;
                                                 assert_eq!(
                                                     first_nibble * 16 + second_nibble,
-                                                    ext_row[3 + k],
+                                                    ext_row[key_len_pos + 2 + k],
                                                 );
                                                 pv.extension_node_rlc +=
                                                     F::from(first_nibble as u64) * pv.key_rlc_mult;
@@ -2042,18 +2046,18 @@ impl<F: FieldExt> MPTConfig<F> {
                                             pv.key_rlc_sel = !pv.key_rlc_sel;
                                         } else if pv.is_odd && pv.is_long {
                                             pv.extension_node_rlc +=
-                                                F::from((ext_row[2] - 16) as u64) * pv.key_rlc_mult;
+                                                F::from((ext_row[key_len_pos + 1] - 16) as u64) * pv.key_rlc_mult;
 
                                             pv.key_rlc_mult *= self.acc_r;
 
-                                            let key_len = ext_row[1] as usize - 128;
+                                            let key_len = ext_row[key_len_pos] as usize - 128;
 
                                             compute_acc_and_mult(
                                                 ext_row,
                                                 &mut pv.extension_node_rlc,
                                                 &mut pv.key_rlc_mult,
-                                                3, /* first two positions are RLPs, third
-                                                    * position is single nibble which is taken into
+                                                key_len_pos + 2, /* the first position after key_len_pos
+                                                    * is single nibble which is taken into
                                                     * account above, we start
                                                     * with fourth */
                                                 key_len - 1, // one byte is occupied by single nibble
@@ -2396,8 +2400,33 @@ impl<F: FieldExt> MPTConfig<F> {
 
                             // Storage leaf key
                             if row[row.len() - 1] == 2 || row[row.len() - 1] == 3 {
+                                /*
+                                getProof storage leaf examples:
+                                 [226,160,59,138,106,70,105,186,37,13,38,205,122,69,158,202,157,33,95,131,7,227,58,235,229,3,121,188,90,54,23,236,52,68,1]
+                                 [248,67,160,59,138,106,70,105,186,37,13,38,205,122,69,158,202,157,33,95,131,7,227,58,235,229,3,121,188,90,54,23,236,52,68,161,160,187,239,170,18,88,1,56,188,38,60,149,117,120,38,223,78,36,235,129,201,170,170,170,170,170,17
+
+                                 long value in the last level:
+                                 [227,32,161,160,187,239,170,18,88,1,56,188,38,60,149,117,120,38,223,78,36,235,129,201,170,170,170,170,170,170,170,170,170,170,170,170]
+                                 32 at position 1 means there is no key nibbles (last level)
+
+                                 [194,32,1]
+                                 [196,130,32,0,1]
+                                */
+
                                 // Info whether leaf rlp is long or short.
+                                // Long means the key length is at position 2.
+                                // Short means the key length is at position 1.
                                 assign_long_short(&mut region, witness[ind][0] == 248);
+
+                                if row[0] < 223 { // needs to be shorter than 32 bytes
+                                    // not_hashed
+                                    region.assign_advice(
+                                        || "assign not_hashed".to_string(),
+                                        self.acc_c,
+                                        offset,
+                                        || Ok(F::one()),
+                                    )?;
+                                }
 
                                 pv.acc_s = F::zero();
                                 pv.acc_mult_s = F::one();
@@ -2486,6 +2515,9 @@ impl<F: FieldExt> MPTConfig<F> {
                                         is_long = true;
                                     }
                                 }
+                                // Short means there is only one byte for value (no RLP specific bytes).
+                                // Long means there is more than one byte for value which brings two
+                                // RLP specific bytes, like: 161 160 ... for 32-long value.
                                 assign_long_short(&mut region, is_long);
 
                                 // Leaf RLC
@@ -2918,6 +2950,11 @@ impl<F: FieldExt> MPTConfig<F> {
                                 )?;
                             } else if row[row.len() - 1] == 16 {
                                 if pv.is_extension_node {
+                                  	// [228,130,0,149,160,114,253,150,133,18,192,156,19,241,162,51,210,24,1,151,16,48,7,177,42,60,49,34,230,254,242,79,132,165,90,75,249]
+                                  	// [226,16,160,172,105,12...
+                                   	// [247,160,16,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,213,128,194,32,1,128,194,32,1,128,128,128,128,128,128,128,128,128,128,128,128,128]
+                                   	// [248,58,159,16,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,217,128,196,130,32,0,1,128,196,130,32,0,1,128,128,128,128,128,128,128,128,128,128,128,128,128]
+
                                     // Intermediate RLC value and mult (after key)
                                     // to know which mult we need to use in c_advices.
                                     pv.acc_s = F::zero();
@@ -2926,8 +2963,10 @@ impl<F: FieldExt> MPTConfig<F> {
                                     if row[0] == 226 {
                                         // key length is 1
                                         len = 2 // [226, key]
-                                    } else {
+                                    } else if row[0] < 248 {
                                         len = (row[1] - 128) as usize + 2;
+                                    } else {
+                                        len = (row[2] - 128) as usize + 3;
                                     }
                                     compute_acc_and_mult(
                                         row,
