@@ -140,7 +140,11 @@ impl SharedState {
         let task_result: Result<Proofs, String> = match task_result {
             Err(err) => match err.is_panic() {
                 true => {
-                    if let Some(msg) = err.into_panic().downcast_ref::<String>() {
+                    let panic = err.into_panic();
+
+                    if let Some(msg) = panic.downcast_ref::<&str>() {
+                        Err(msg.to_string())
+                    } else if let Some(msg) = panic.downcast_ref::<String>() {
                         Err(msg.to_string())
                     } else {
                         Err("unknown panic".to_string())
