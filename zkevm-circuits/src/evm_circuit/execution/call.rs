@@ -91,7 +91,7 @@ impl<F: Field> ExecutionGadget<F> for CallGadget<F> {
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
         let mut reversion_info = cb.reversion_info(None);
         let [caller_address, is_static, depth] = [
-            CallContextFieldTag::CallerAddress,
+            CallContextFieldTag::CalleeAddress,
             CallContextFieldTag::IsStatic,
             CallContextFieldTag::Depth,
         ]
