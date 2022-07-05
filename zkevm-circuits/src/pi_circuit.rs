@@ -2,6 +2,7 @@
 
 // TODO disallow unused imports
 #![allow(unused_imports)]
+use std::i8::MAX;
 use std::io::Cursor;
 use std::marker::PhantomData;
 
@@ -33,23 +34,12 @@ const EXTRA_LEN: usize = 3;
 /// Values of the block table (as in the spec)
 #[derive(Clone, Default, Debug)]
 pub struct BlockValues {
-    // hash: U256,
-    // parent_hash: U256,
-    // uncle_hash: U256,
     coinbase: Address,
-    // root: U256,           // State Trie Root,
-    // tx_hash: U256,        // Txs Trie Root,
-    // receipt_hash: U256,   // Receipts Trie Root,
-    // bloom: Option<Bloom>, // 256 bytes,
     gas_limit: Word,
     number: u64,
     timestamp: Word,
     difficulty: Word,
     base_fee: Word, // NOTE: BaseFee was added by EIP-1559 and is ignored in legacy headers.
-    // gas_used: U64,
-    // extra: Vec<u8>, // NOTE: We assume this is always an empty byte array,
-    // mix_digest: U256,
-    // nonce: U64,
     chain_id: Word,
     history_hashes: Vec<U256>,
 }
@@ -66,6 +56,14 @@ pub struct TxValues {
     value: Word,
     call_data_len: u64,
     tx_sign_hash: [u8; 32],
+}
+
+/// Extra values (not contained in block or tx tables)
+#[derive(Default, Debug, Clone)]
+pub struct ExtraValues {
+    block_hash: H256,
+    block_root: H256,
+    parent_block_hash: H256,
 }
 
 /// PublicData contains all the values that the PiCircuit recieves as input
@@ -98,6 +96,8 @@ impl Default for PublicData {
 impl PublicData {
     /// Returns struct with values for the block table
     pub fn get_block_table_values(&self) -> BlockValues {
+        let mut history_hashes = self.extra.history_hashes.clone();
+        history_hashes.extend(vec![U256::zero(); 256 - history_hashes.len()]);
         BlockValues {
             coinbase: self.block_constants.coinbase,
             gas_limit: self.block_constants.gas_limit,
@@ -106,7 +106,7 @@ impl PublicData {
             difficulty: self.block_constants.difficulty,
             base_fee: self.block_constants.base_fee,
             chain_id: self.extra.chain_id,
-            history_hashes: self.extra.history_hashes.clone(),
+            history_hashes,
         }
     }
 
@@ -141,6 +141,15 @@ impl PublicData {
             });
         }
         tx_vals
+    }
+
+    /// Returns struct with values for the block table
+    pub fn get_extra_values(&self) -> ExtraValues {
+        ExtraValues {
+            block_hash: self.extra.eth_block.hash.unwrap_or_else(H256::zero),
+            block_root: self.extra.eth_block.state_root,
+            parent_block_hash: self.extra.eth_block.parent_hash,
+        }
     }
 }
 
@@ -185,12 +194,12 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
         let raw_public_inputs = meta.advice_column();
         let rpi_rlc_acc = meta.advice_column();
         let rand_rpi = meta.advice_column();
-        let q_end = meta.selector();
+        let q_end = meta.complex_selector();
 
         // TODO enable equalities
-        meta.enable_equality(raw_public_inputs);
-        meta.enable_equality(rpi_rlc_acc);
-        meta.enable_equality(rand_rpi);
+        // meta.enable_equality(raw_public_inputs);
+        // meta.enable_equality(rpi_rlc_acc);
+        // meta.enable_equality(rand_rpi);
 
         // TODO declare instances -> pi
 
@@ -220,8 +229,8 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
         let offset = BLOCK_LEN + EXTRA_LEN;
         let tx_table_len = MAX_TXS * TX_LEN + MAX_CALLDATA;
 
-        //  0.3 Tx table -> {tx_id, index, value} column match with raw_public_inputs at
-        // expected offset
+        //  0.3 Tx table -> {tx_id, index, value} column match with raw_public_inputs
+        // at expected offset
         meta.create_gate("", |meta| {
             // row.q_tx_table * row.tx_table.tx_id
             // == row.q_tx_table * row_offset_tx_table_tx_id.raw_public_inputs
@@ -279,7 +288,14 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
         }
     }
 
-    /// Assigns a tx_table row and its copy in the raw_public_inputs column
+    /// Return the number of rows in the circuit
+    #[inline]
+    fn circuit_len() -> usize {
+        BLOCK_LEN + EXTRA_LEN + 3 * (TX_LEN * MAX_TXS + MAX_CALLDATA)
+    }
+
+    /// Assigns a tx_table row and stores the values in a vec for the
+    /// raw_public_inputs column
     fn assign_tx_row(
         &self,
         region: &mut Region<'_, F>,
@@ -288,6 +304,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
         tag: TxFieldTag,
         index: usize,
         tx_value: F,
+        raw_pi_vals: &mut Vec<F>,
     ) -> Result<(), Error> {
         let tx_id = F::from(tx_id as u64);
         let tag = F::from(tag as u64);
@@ -295,13 +312,14 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
         let tx_value = tx_value;
 
         self.q_tx_table.enable(region, offset)?;
-        // tx_table assign
+
+        // Assign vals to Tx_table
         region.assign_advice(|| "tx_id", self.tx_id, offset, || Ok(tx_id))?;
         region.assign_fixed(|| "tag", self.tag, offset, || Ok(tag))?;
         region.assign_advice(|| "index", self.index, offset, || Ok(index))?;
         region.assign_advice(|| "tx_value", self.tx_value, offset, || Ok(tx_value))?;
 
-        // raw_public_inputs assign
+        // Assign vals to raw_public_inputs column
         let tx_table_len = TX_LEN * MAX_TXS + MAX_CALLDATA;
 
         let id_offset = BLOCK_LEN + EXTRA_LEN;
@@ -329,90 +347,215 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
             || Ok(tx_value),
         )?;
 
+        // Add copy to vec
+        raw_pi_vals[id_offset] = tx_id;
+        raw_pi_vals[index_offset] = index;
+        raw_pi_vals[value_offset] = tx_value;
+
         Ok(())
     }
 
-    /// Assigns the values for block table and ints copy in the
-    /// raw_public_inputs column
+    /// Assigns the values for block table in the block_table column
+    /// and in the raw_public_inputs column. A copy is also stored in
+    /// a vector for computing RLC(raw_public_inputs)
     fn assign_block_table(
         &self,
         region: &mut Region<'_, F>,
-        mut offset: usize,
         block_values: BlockValues,
         randomness: F,
+        raw_pi_vals: &mut Vec<F>,
     ) -> Result<(), Error> {
+        let mut offset = 0;
         for i in 0..BLOCK_LEN {
             self.q_block_table.enable(region, offset + i)?;
         }
 
+        // coinbase
         let mut coinbase_bytes = [0u8; 32];
         coinbase_bytes[12..].clone_from_slice(block_values.coinbase.as_bytes());
+        let coinbase = rlc(coinbase_bytes, randomness);
+        region.assign_advice(|| "coinbase", self.block_value, offset, || Ok(coinbase))?;
         region.assign_advice(
             || "coinbase",
-            self.block_value,
+            self.raw_public_inputs,
             offset,
-            || Ok(rlc(coinbase_bytes, randomness)),
+            || Ok(coinbase),
         )?;
+        raw_pi_vals[offset] = coinbase;
         offset += 1;
 
+        // gas_limit
+        let gas_limit = rlc(block_values.gas_limit.to_le_bytes(), randomness);
+        region.assign_advice(|| "gas_limit", self.block_value, offset, || Ok(gas_limit))?;
         region.assign_advice(
             || "gas_limit",
-            self.block_value,
+            self.raw_public_inputs,
             offset,
-            || Ok(rlc(block_values.gas_limit.to_le_bytes(), randomness)),
+            || Ok(gas_limit),
         )?;
+        raw_pi_vals[offset] = gas_limit;
         offset += 1;
 
-        region.assign_advice(
-            || "number",
-            self.block_value,
-            offset,
-            || Ok(F::from(block_values.number)),
-        )?;
+        // number
+        let number = F::from(block_values.number);
+        region.assign_advice(|| "number", self.block_value, offset, || Ok(number))?;
+        region.assign_advice(|| "number", self.raw_public_inputs, offset, || Ok(number))?;
+        raw_pi_vals[offset] = number;
         offset += 1;
 
+        // timestamp
+        let timestamp = rlc(block_values.timestamp.to_le_bytes(), randomness);
+        region.assign_advice(|| "timestamp", self.block_value, offset, || Ok(timestamp))?;
         region.assign_advice(
             || "timestamp",
-            self.block_value,
+            self.raw_public_inputs,
             offset,
-            || Ok(rlc(block_values.timestamp.to_le_bytes(), randomness)),
+            || Ok(timestamp),
         )?;
+        raw_pi_vals[offset] = timestamp;
         offset += 1;
 
+        // difficulty
+        let difficulty = rlc(block_values.difficulty.to_le_bytes(), randomness);
+        region.assign_advice(|| "difficulty", self.block_value, offset, || Ok(difficulty))?;
         region.assign_advice(
             || "difficulty",
-            self.block_value,
+            self.raw_public_inputs,
             offset,
-            || Ok(rlc(block_values.difficulty.to_le_bytes(), randomness)),
+            || Ok(difficulty),
         )?;
+        raw_pi_vals[offset] = difficulty;
         offset += 1;
 
+        // base_fee
+        let base_fee = rlc(block_values.base_fee.to_le_bytes(), randomness);
+        region.assign_advice(|| "base_fee", self.block_value, offset, || Ok(base_fee))?;
         region.assign_advice(
             || "base_fee",
-            self.block_value,
+            self.raw_public_inputs,
             offset,
-            || Ok(rlc(block_values.base_fee.to_le_bytes(), randomness)),
+            || Ok(base_fee),
         )?;
+        raw_pi_vals[offset] = base_fee;
         offset += 1;
 
+        // chain_id
+        let chain_id = rlc(block_values.chain_id.to_le_bytes(), randomness);
+        region.assign_advice(|| "chain_id", self.block_value, offset, || Ok(chain_id))?;
         region.assign_advice(
             || "chain_id",
-            self.block_value,
+            self.raw_public_inputs,
             offset,
-            || Ok(rlc(block_values.chain_id.to_le_bytes(), randomness)),
+            || Ok(chain_id),
         )?;
+        raw_pi_vals[offset] = chain_id;
         offset += 1;
 
         for prev_hash in block_values.history_hashes {
+            let prev_hash = rlc(prev_hash.to_le_bytes(), randomness);
+            region.assign_advice(|| "prev_hash", self.block_value, offset, || Ok(prev_hash))?;
             region.assign_advice(
                 || "prev_hash",
-                self.block_value,
+                self.raw_public_inputs,
                 offset,
-                || Ok(rlc(prev_hash.to_le_bytes(), randomness)),
+                || Ok(prev_hash),
             )?;
+            raw_pi_vals[offset] = prev_hash;
             offset += 1;
         }
 
+        // padding
+        while offset < PiCircuitConfig::<F, MAX_TXS, MAX_CALLDATA>::circuit_len() {
+            region.assign_advice(|| "padding", self.block_value, offset, || Ok(F::zero()))?;
+            offset += 1
+        }
+
+        Ok(())
+    }
+
+    /// Assigns the extra fields (not in block or tx tables):
+    ///   - block hash
+    ///   - block root
+    ///   - parent block hash
+    /// to the raw_public_inputs column and stores a copy in a
+    /// vector for computing RLC(raw_public_inputs).
+    fn assign_extra_fields(
+        &self,
+        region: &mut Region<'_, F>,
+        extra: ExtraValues,
+        randomness: F,
+        raw_pi_vals: &mut Vec<F>,
+    ) -> Result<(), Error> {
+        let mut offset = BLOCK_LEN;
+        // block hash
+        let block_hash = rlc(extra.block_hash.to_fixed_bytes(), randomness);
+        region.assign_advice(
+            || "block.hash",
+            self.raw_public_inputs,
+            offset,
+            || Ok(block_hash),
+        )?;
+        raw_pi_vals[offset] = block_hash;
+        offset += 1;
+
+        // block root
+        let block_root = rlc(extra.block_root.to_fixed_bytes(), randomness);
+        region.assign_advice(
+            || "block.root",
+            self.raw_public_inputs,
+            offset,
+            || Ok(block_root),
+        )?;
+        raw_pi_vals[offset] = block_root;
+        offset += 1;
+
+        // parent block hash
+        let parent_block_hash = rlc(extra.parent_block_hash.to_fixed_bytes(), randomness);
+        region.assign_advice(
+            || "parent_block.hash",
+            self.raw_public_inputs,
+            offset,
+            || Ok(parent_block_hash),
+        )?;
+        raw_pi_vals[offset] = parent_block_hash;
+        Ok(())
+    }
+
+    /// Assign `rpi_rlc_acc` and `rand_rpi` columns
+    fn assign_pi_rlc(
+        &self,
+        region: &mut Region<'_, F>,
+        rand_rpi: F,
+        raw_pi_vals: Vec<F>,
+    ) -> Result<(), Error> {
+        // TODO account for extra empty tx row if needed
+        let circuit_len = PiCircuitConfig::<F, MAX_TXS, MAX_CALLDATA>::circuit_len();
+        assert_eq!(circuit_len, raw_pi_vals.len());
+
+        // Last row
+        let offset = circuit_len - 1;
+        let mut rpi_rlc_acc = raw_pi_vals[offset];
+        region.assign_advice(
+            || "rpi_rlc_acc",
+            self.rpi_rlc_acc,
+            offset,
+            || Ok(rpi_rlc_acc),
+        )?;
+        region.assign_advice(|| "rand_rpi", self.rand_rpi, offset, || Ok(rand_rpi))?;
+        self.q_end.enable(region, offset)?;
+
+        // Rest of the rows
+        for offset in (0..circuit_len).rev().skip(1) {
+            rpi_rlc_acc *= rand_rpi;
+            rpi_rlc_acc += raw_pi_vals[offset];
+            region.assign_advice(
+                || "rpi_rlc_acc",
+                self.rpi_rlc_acc,
+                offset,
+                || Ok(rpi_rlc_acc),
+            )?;
+            region.assign_advice(|| "rand_rpi", self.rand_rpi, offset, || Ok(rand_rpi))?;
+        }
         Ok(())
     }
 }
@@ -420,7 +563,6 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
 /// TODO doc
 #[derive(Default)]
 pub struct PiCircuit<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> {
-    // no chips
     /// Randomness for RLC encdoing
     pub randomness: F,
 
@@ -445,7 +587,6 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
         PiCircuitConfig::new(meta)
     }
 
-    // synthesize
     fn synthesize(
         &self,
         config: Self::Config,
@@ -454,69 +595,33 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
         layouter.assign_region(
             || "",
             |mut region| {
-                let mut offset = 0;
+                let circuit_len = BLOCK_LEN + EXTRA_LEN + 3 * (TX_LEN * MAX_TXS + MAX_CALLDATA);
+                let mut raw_pi_vals = vec![F::zero(); circuit_len];
 
                 // Assign block table
                 let block_values = self.public_data.get_block_table_values();
-                config.assign_block_table(&mut region, offset, block_values, self.randomness)?;
-
-                // Assign extra fields in raw_inputs
-                offset += BLOCK_LEN;
-                region.assign_advice(
-                    || "block.hash",
-                    config.raw_public_inputs,
-                    offset,
-                    || {
-                        Ok(rlc(
-                            self.public_data
-                                .extra
-                                .eth_block
-                                .hash
-                                .unwrap() // TODO review
-                                .to_fixed_bytes(),
-                            self.randomness,
-                        ))
-                    },
-                )?;
-                offset += 1;
-
-                region.assign_advice(
-                    || "block.root",
-                    config.raw_public_inputs,
-                    offset,
-                    || {
-                        Ok(rlc(
-                            self.public_data.extra.eth_block.state_root.to_fixed_bytes(),
-                            self.randomness,
-                        ))
-                    },
-                )?;
-                offset += 1;
-
-                region.assign_advice(
-                    || "block.hash",
-                    config.raw_public_inputs,
-                    offset,
-                    || {
-                        Ok(rlc(
-                            self.public_data
-                                .extra
-                                .eth_block
-                                .parent_hash
-                                .to_fixed_bytes(),
-                            self.randomness,
-                        ))
-                    },
+                config.assign_block_table(
+                    &mut region,
+                    block_values,
+                    self.randomness,
+                    &mut raw_pi_vals,
                 )?;
 
+                // Assign extra fields
+                let extra_vals = self.public_data.get_extra_values();
+                config.assign_extra_fields(
+                    &mut region,
+                    extra_vals,
+                    self.randomness,
+                    &mut raw_pi_vals,
+                )?;
+
+                let mut offset = 0;
+                // Assign Tx table
                 let txs = self.public_data.get_tx_table_values();
                 assert!(txs.len() < MAX_TXS);
                 let tx_default = TxValues::default();
 
-                // // TODO Necessary Empty entry.?
-                // config.assign_row(&mut region, offset, 0, TxFieldTag::Null, 0, F::zero())?;
-                // offset += 1;
-                // Tx table
                 for i in 0..MAX_TXS {
                     let tx = if i < txs.len() { &txs[i] } else { &tx_default };
 
@@ -549,8 +654,15 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
                             rlc(tx.tx_sign_hash, self.randomness),
                         ),
                     ] {
-                        config.assign_tx_row(&mut region, offset, i + 1, *tag, 0, *value)?;
-
+                        config.assign_tx_row(
+                            &mut region,
+                            offset,
+                            i + 1,
+                            *tag,
+                            0,
+                            *value,
+                            &mut raw_pi_vals,
+                        )?;
                         offset += 1;
                     }
                 }
@@ -566,6 +678,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
                             TxFieldTag::CallData,
                             index,
                             F::from(*byte as u64),
+                            &mut raw_pi_vals,
                         )?;
                         offset += 1;
                         calldata_count += 1;
@@ -579,15 +692,30 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
                         TxFieldTag::CallData,
                         0,
                         F::zero(),
+                        &mut raw_pi_vals,
                     )?;
                     offset += 1;
                 }
 
-                let tx_table_len = TX_LEN * MAX_TXS + MAX_CALLDATA;
-                offset += 3 * tx_table_len;
-                config.q_end.enable(&mut region, offset)?;
+                // Tx columns padding
+                while offset < PiCircuitConfig::<F, MAX_TXS, MAX_CALLDATA>::circuit_len() {
+                    region.assign_advice(|| "padding", config.tx_id, offset, || Ok(F::zero()))?;
+                    region.assign_fixed(|| "padding", config.tag, offset, || Ok(F::zero()))?;
+                    region.assign_advice(|| "padding", config.index, offset, || Ok(F::zero()))?;
+                    region.assign_advice(
+                        || "padding",
+                        config.tx_value,
+                        offset,
+                        || Ok(F::zero()),
+                    )?;
+                    offset += 1
+                }
+
+                // rpi_rlc and rand_rpi cols
+                config.assign_pi_rlc(&mut region, self.rand_rpi, raw_pi_vals)?;
 
                 // TODO PI stuff
+
                 Ok(())
             },
         )?;
@@ -595,77 +723,57 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
     }
 }
 
-// /// Block header
-// #[derive(Clone, Default)]
-// pub struct Block {
-//     hash: U256,
-//     parent_hash: U256,
-//     uncle_hash: U256,
-//     coinbase: H160,       // Check if this is an apropriate type
-//     root: U256,           // State Trie Root,
-//     tx_hash: U256,        // Txs Trie Root,
-//     receipt_hash: U256,   // Receipts Trie Root,
-//     bloom: Option<Bloom>, // 256 bytes,
-//     difficulty: U256,
-//     number: U64,
-//     gas_limit: U64,
-//     gas_used: U64,
-//     time: U64,
-//     extra: Vec<u8>, // NOTE: We assume this is always an empty byte array,
-//     mix_digest: U256,
-//     nonce: U64,
-//     base_fee: U256, // NOTE: BaseFee was added by EIP-1559 and is ignored in
-// legacy headers.; }
-
-// #[derive(Clone, Default)]
-// pub struct Transaction {
-//     nonce: U64,
-//     gas_price: U256,
-//     gas: U64,
-//     from_addr: H160,
-//     to_addr: H160,
-//     value: U256,
-//     data: Vec<u8>,
-//     tx_sign_hash: U256,
-// }
-
 #[cfg(test)]
 mod pi_circuit_test {
-    use halo2_proofs::dev::MockProver;
+    use halo2_proofs::{
+        dev::{MockProver, VerifyFailure},
+        pairing::bn256::Fr,
+    };
+    use rand::SeedableRng;
+    use rand_chacha::ChaCha20Rng;
 
     use super::*;
 
-    // fn rand_tx() -> Transaction {
-    //     let nonce =
-    // }
+    fn run<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>(
+        k: u32,
+        public_data: PublicData,
+        rand_rpi: F,
+    ) -> Result<(), Vec<VerifyFailure>> {
+        let mut rng = ChaCha20Rng::seed_from_u64(2);
+        // let aux_generator =
+        //     <Secp256k1Affine as CurveAffine>::CurveExt::random(&mut rng).to_affine();
 
-    fn test_basic() {
-        let MAX_TXS = 2;
-        let MAX_CALL_DATA_BYTES = 8;
-
-        // public_data = rand_public_data(MAX_TXS-1, MAX_CALL_DATA_BYTES)
-        // verify(public_data, MAX_TXS, MAX_CALLDATA_BYTES, rand_rpi)
-    }
-
-    fn verify<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>(k: u32, success: bool) {
+        let randomness = F::random(&mut rng);
+        // let mut instance: Vec<Vec<F>> = (1..POW_RAND_SIZE + 1)
+        //     .map(|exp| vec![randomness.pow(&[exp as u64, 0, 0, 0]); txs.len() *
+        // VERIF_HEIGHT])     .collect();
+        // // SignVerifyChip -> ECDSAChip -> MainGate instance column
+        // instance.push(vec![]);
         let circuit = PiCircuit::<F, MAX_TXS, MAX_CALLDATA> {
-            // size: 2usize.pow(k),
-            rand_rpi: F::zero(),
-            txs: vec![],
+            randomness,
+            rand_rpi,
+            public_data,
         };
 
-        let prover = MockProver::<F>::run(k, &circuit, vec![]).unwrap();
-        let err = prover.verify();
-        let print_failures = true;
-        if err.is_err() && print_failures {
-            for e in err.err().iter() {
-                for s in e.iter() {
-                    println!("{}", s);
-                }
-            }
-        }
-        let err = prover.verify();
-        assert_eq!(err.is_ok(), success);
+        let instance = Vec::<Vec<F>>::new();
+        let prover = match MockProver::run(k, &circuit, instance) {
+            Ok(prover) => prover,
+            Err(e) => panic!("{:#?}", e),
+        };
+        prover.verify()
     }
-    // TODO Some aux fn to generate random blocks and tx
+
+    #[test]
+    fn test_default_pi() {
+        const MAX_TXS: usize = 2;
+        const MAX_CALLDATA: usize = 8;
+        let public_data = PublicData::default();
+
+        let rand_rpi = Fr::rand();
+        let k = 13;
+        assert_eq!(
+            run::<Fr, MAX_TXS, MAX_CALLDATA>(k, public_data, rand_rpi),
+            Ok(())
+        );
+    }
 }
