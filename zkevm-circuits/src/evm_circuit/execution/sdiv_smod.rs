@@ -5,10 +5,7 @@ use crate::{
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
-            math_gadget::{
-                generate_lagrange_base_polynomial, AbsWordGadget, IsZeroGadget, LtGadget,
-                LtWordGadget, MulAddWordsGadget,
-            },
+            math_gadget::{AbsWordGadget, IsZeroGadget, LtGadget, LtWordGadget, MulAddWordsGadget},
             select, sum, CachedRegion,
         },
         witness::{Block, Call, ExecStep, Transaction},
@@ -41,13 +38,7 @@ impl<F: Field> ExecutionGadget<F> for SignedDivModGadget<F> {
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
-        let is_sdiv = generate_lagrange_base_polynomial(
-            opcode.expr(),
-            OpcodeId::SDIV.as_u8() as usize,
-            [OpcodeId::SDIV, OpcodeId::SMOD]
-                .into_iter()
-                .map(|op_id| op_id.as_u8() as usize),
-        );
+        let is_sdiv = (OpcodeId::SMOD.expr() - opcode.expr()) * F::from(2).invert().unwrap();
 
         let quotient_abs_word = AbsWordGadget::construct(cb);
         let divisor_abs_word = AbsWordGadget::construct(cb);
