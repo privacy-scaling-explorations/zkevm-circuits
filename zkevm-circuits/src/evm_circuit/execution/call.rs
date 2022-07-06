@@ -35,7 +35,7 @@ pub(crate) struct CallGadget<F> {
     opcode: Cell<F>,
     tx_id: Cell<F>,
     reversion_info: ReversionInfo<F>,
-    caller_address: Cell<F>,
+    current_address: Cell<F>,
     is_static: Cell<F>,
     depth: Cell<F>,
     gas: Word<F>,
@@ -90,8 +90,8 @@ impl<F: Field> ExecutionGadget<F> for CallGadget<F> {
 
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
         let mut reversion_info = cb.reversion_info(None);
-        let [caller_address, is_static, depth] = [
-            CallContextFieldTag::CallerAddress,
+        let [current_address, is_static, depth] = [
+            CallContextFieldTag::CalleeAddress,
             CallContextFieldTag::IsStatic,
             CallContextFieldTag::Depth,
         ]
@@ -159,7 +159,7 @@ impl<F: Field> ExecutionGadget<F> for CallGadget<F> {
         });
         let transfer = TransferGadget::construct(
             cb,
-            caller_address.expr(),
+            current_address.expr(),
             callee_address.clone(),
             value.clone(),
             &mut callee_reversion_info,
@@ -267,7 +267,7 @@ impl<F: Field> ExecutionGadget<F> for CallGadget<F> {
                 (CallContextFieldTag::CallerId, cb.curr.state.call_id.expr()),
                 (CallContextFieldTag::TxId, tx_id.expr()),
                 (CallContextFieldTag::Depth, depth.expr() + 1.expr()),
-                (CallContextFieldTag::CallerAddress, caller_address.expr()),
+                (CallContextFieldTag::CallerAddress, current_address.expr()),
                 (CallContextFieldTag::CalleeAddress, callee_address),
                 (CallContextFieldTag::CallDataOffset, cd_address.offset()),
                 (CallContextFieldTag::CallDataLength, cd_address.length()),
@@ -305,7 +305,7 @@ impl<F: Field> ExecutionGadget<F> for CallGadget<F> {
             opcode,
             tx_id,
             reversion_info,
-            caller_address,
+            current_address,
             is_static,
             depth,
             gas: gas_word,
@@ -339,7 +339,7 @@ impl<F: Field> ExecutionGadget<F> for CallGadget<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        let [tx_id, caller_address, is_static, depth, callee_rw_counter_end_of_reversion, callee_is_persistent] =
+        let [tx_id, current_address, is_static, depth, callee_rw_counter_end_of_reversion, callee_is_persistent] =
             [
                 step.rw_indices[0],
                 step.rw_indices[3],
@@ -383,8 +383,8 @@ impl<F: Field> ExecutionGadget<F> for CallGadget<F> {
             call.rw_counter_end_of_reversion,
             call.is_persistent,
         )?;
-        self.caller_address
-            .assign(region, offset, caller_address.to_scalar())?;
+        self.current_address
+            .assign(region, offset, current_address.to_scalar())?;
         self.is_static
             .assign(region, offset, Some(F::from(is_static.low_u64())))?;
         self.depth

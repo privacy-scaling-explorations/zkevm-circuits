@@ -42,7 +42,7 @@ impl Opcode for Call {
                 (current_call.is_persistent as u64).into(),
             ),
             (
-                CallContextField::CallerAddress,
+                CallContextField::CalleeAddress,
                 current_call.address.to_word(),
             ),
             (
