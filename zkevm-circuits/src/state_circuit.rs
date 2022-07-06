@@ -44,8 +44,7 @@ pub struct StateConfig {
     sort_keys: SortKeysConfig,
     is_write: Column<Advice>,
     value: Column<Advice>,
-    prev_value: Column<Advice>,
-    committed_value: Column<Advice>,
+    initial_value: Column<Advice>,
     lexicographic_ordering: LexicographicOrderingConfig,
     lookups: LookupsConfig,
     power_of_randomness: [Column<Instance>; N_BYTES_WORD - 1],
@@ -116,8 +115,7 @@ impl<F: Field, const N_ROWS: usize> Circuit<F> for StateCircuit<F, N_ROWS> {
         let lookups = LookupsChip::configure(meta);
         let power_of_randomness = [0; N_BYTES_WORD - 1].map(|_| meta.instance_column());
 
-        let [is_write, field_tag, value, prev_value, committed_value] =
-            [0; 5].map(|_| meta.advice_column());
+        let [is_write, field_tag, value, initial_value] = [0; 4].map(|_| meta.advice_column());
 
         let tag = BinaryNumberChip::configure(meta, selector);
 
@@ -147,8 +145,7 @@ impl<F: Field, const N_ROWS: usize> Circuit<F> for StateCircuit<F, N_ROWS> {
             sort_keys,
             is_write,
             value,
-            prev_value,
-            committed_value,
+            initial_value,
             lexicographic_ordering,
             lookups,
             power_of_randomness,
@@ -184,6 +181,8 @@ impl<F: Field, const N_ROWS: usize> Circuit<F> for StateCircuit<F, N_ROWS> {
 
                 let rows = padding.chain(self.rows.iter().cloned());
                 let prev_rows = once(None).chain(rows.clone().map(Some));
+
+                let mut initial_value = F::zero();
 
                 for (offset, (row, prev_row)) in rows.zip(prev_rows).enumerate() {
                     region.assign_fixed(|| "selector", config.selector, offset, || Ok(F::one()))?;
@@ -230,16 +229,6 @@ impl<F: Field, const N_ROWS: usize> Circuit<F> for StateCircuit<F, N_ROWS> {
                         offset,
                         || Ok(row.value_assignment(self.randomness)),
                     )?;
-                    region.assign_advice(
-                        || "committed_value",
-                        config.committed_value,
-                        offset,
-                        || {
-                            Ok(row
-                                .committed_value_assignment(self.randomness)
-                                .unwrap_or_default())
-                        },
-                    )?;
 
                     if let Some(prev_row) = prev_row {
                         let is_first_access = config.lexicographic_ordering.assign(
@@ -248,19 +237,27 @@ impl<F: Field, const N_ROWS: usize> Circuit<F> for StateCircuit<F, N_ROWS> {
                             &row,
                             &prev_row,
                         )?;
-
-                        let prev_value = if is_first_access {
-                            row.initial_value_assignment(self.randomness)
-                        } else {
-                            prev_row.value_assignment(self.randomness)
-                        };
-                        region.assign_advice(
-                            || "prev_value",
-                            config.prev_value,
-                            offset,
-                            || Ok(prev_value),
-                        )?;
+                        if is_first_access {
+                            initial_value = if matches!(
+                                row.tag(),
+                                RwTableTag::Account
+                                    | RwTableTag::AccountStorage
+                                    | RwTableTag::CallContext
+                                    | RwTableTag::TxReceipt
+                            ) {
+                                row.value_assignment(self.randomness)
+                            } else {
+                                F::zero()
+                            };
+                        }
                     }
+
+                    region.assign_advice(
+                        || "initial_value",
+                        config.initial_value,
+                        offset,
+                        || Ok(initial_value),
+                    )?;
                 }
 
                 #[cfg(test)]
@@ -310,9 +307,8 @@ fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: &StateConfig) -> Queries
         storage_key: RlcQueries::new(meta, c.sort_keys.storage_key),
         value: meta.query_advice(c.value, Rotation::cur()),
         value_prev: meta.query_advice(c.value, Rotation::prev()),
-        prev_value: meta.query_advice(c.prev_value, Rotation::cur()),
-        committed_value: meta.query_advice(c.committed_value, Rotation::cur()),
-        committed_value_prev: meta.query_advice(c.committed_value, Rotation::prev()),
+        initial_value: meta.query_advice(c.initial_value, Rotation::cur()),
+        initial_value_prev: meta.query_advice(c.initial_value, Rotation::prev()),
         lookups: LookupsQueries::new(meta, c.lookups),
         power_of_randomness: c
             .power_of_randomness

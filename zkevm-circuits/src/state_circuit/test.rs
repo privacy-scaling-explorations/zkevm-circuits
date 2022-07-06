@@ -1,6 +1,6 @@
 use super::{StateCircuit, StateConfig};
 use crate::evm_circuit::{
-    table::{AccountFieldTag, CallContextFieldTag, RwTableTag, TxLogFieldTag},
+    table::{AccountFieldTag, CallContextFieldTag, RwTableTag, TxLogFieldTag, TxReceiptFieldTag},
     witness::{Rw, RwMap},
 };
 use crate::state_circuit::binary_number::AsBits;
@@ -46,6 +46,7 @@ pub enum AdviceColumn {
     LimbIndexBit2,
     LimbIndexBit3,
     LimbIndexBit4, // least significant bit
+    InitialValue,
 }
 
 impl AdviceColumn {
@@ -71,6 +72,7 @@ impl AdviceColumn {
             Self::LimbIndexBit2 => config.lexicographic_ordering.first_different_limb.bits[2],
             Self::LimbIndexBit3 => config.lexicographic_ordering.first_different_limb.bits[3],
             Self::LimbIndexBit4 => config.lexicographic_ordering.first_different_limb.bits[4],
+            Self::InitialValue => config.initial_value,
         }
     }
 }
@@ -405,7 +407,7 @@ fn tx_log_bad() {
         log_id: 1,
         field_tag: TxLogFieldTag::Address,
         index: 0usize,
-        value: U256::one(),
+        value: U256::zero(),
     }];
 
     assert_error_matches(verify(rows), "is_write is always true for TxLog");
@@ -497,7 +499,7 @@ fn is_write_nonbinary() {
         is_write: false,
         call_id: 0,
         field_tag: CallContextFieldTag::TxId,
-        value: U256::one(),
+        value: U256::zero(),
     }];
     let overrides = HashMap::from([((AdviceColumn::IsWrite, 0), Fr::from(4))]);
 
@@ -653,14 +655,14 @@ fn nonlexicographic_order_rw_counter() {
         is_write: false,
         call_id: 1,
         field_tag: CallContextFieldTag::IsSuccess,
-        value: U256::one(),
+        value: U256::zero(),
     };
     let second = Rw::CallContext {
         rw_counter: 2,
         is_write: false,
         call_id: 1,
         field_tag: CallContextFieldTag::IsSuccess,
-        value: U256::one(),
+        value: U256::zero(),
     };
 
     assert_eq!(verify(vec![first, second]), Ok(()));
@@ -762,16 +764,24 @@ fn invalid_memory_address() {
 }
 
 #[test]
-fn first_memory_read_nonzero() {
+fn bad_initial_memory_value() {
     let rows = vec![Rw::Memory {
         rw_counter: 1,
         is_write: false,
         call_id: 1,
         memory_address: 10,
-        byte: 200,
+        byte: 0,
     }];
 
-    assert_error_matches(verify(rows), "read from a fresh key is 0");
+    let overrides = HashMap::from([
+        ((AdviceColumn::IsWrite, 0), Fr::from(1)),
+        ((AdviceColumn::Value, 0), Fr::from(200)),
+        ((AdviceColumn::InitialValue, 0), Fr::from(200)),
+    ]);
+
+    let result = verify_with_overrides(rows, overrides);
+
+    assert_error_matches(result, "initial Memory value is 0");
 }
 
 #[test]
@@ -797,7 +807,7 @@ fn stack_read_before_write() {
         is_write: false,
         call_id: 3,
         stack_pointer: 200,
-        value: U256::from(10),
+        value: U256::zero(),
     }];
 
     assert_error_matches(verify(rows), "first access to new stack address is a write");
@@ -863,6 +873,103 @@ fn invalid_tags() {
 
         assert_error_matches(result, "binary number value in range");
     }
+}
+
+#[test]
+fn bad_initial_stack_value() {
+    let rows = vec![Rw::Stack {
+        rw_counter: 1,
+        is_write: true,
+        call_id: 1,
+        stack_pointer: 10,
+        value: Word::from(10),
+    }];
+
+    let overrides = HashMap::from([((AdviceColumn::InitialValue, 0), Fr::from(10))]);
+
+    assert_error_matches(
+        verify_with_overrides(rows, overrides),
+        "initial Stack value is 0",
+    );
+}
+
+#[test]
+fn bad_initial_tx_access_list_account_value() {
+    let rows = vec![Rw::TxAccessListAccount {
+        rw_counter: 1,
+        is_write: true,
+        tx_id: 1,
+        account_address: address!("0x0000000000000000000000000000000004356002"),
+        is_warm: true,
+        is_warm_prev: true,
+    }];
+
+    let overrides = HashMap::from([((AdviceColumn::InitialValue, 0), Fr::from(1))]);
+
+    assert_error_matches(
+        verify_with_overrides(rows, overrides),
+        "initial TxAccessListAccount value is false",
+    );
+}
+
+#[test]
+fn bad_initial_tx_refund_value() {
+    let rows = vec![Rw::TxRefund {
+        rw_counter: 1,
+        is_write: false,
+        tx_id: 1,
+        value: 0,
+        value_prev: 0,
+    }];
+
+    let overrides = HashMap::from([
+        ((AdviceColumn::IsWrite, 0), Fr::from(1)),
+        ((AdviceColumn::Value, 0), Fr::from(10)),
+        ((AdviceColumn::InitialValue, 0), Fr::from(10)),
+    ]);
+
+    assert_error_matches(
+        verify_with_overrides(rows, overrides),
+        "initial TxRefund value is 0",
+    );
+}
+
+#[test]
+#[ignore = ""]
+fn bad_initial_tx_log_value() {
+    let rows = vec![Rw::TxLog {
+        rw_counter: 1,
+        is_write: false,
+        tx_id: 800,
+        log_id: 4,
+        field_tag: TxLogFieldTag::Topic,
+        index: 2,
+        value: U256::from(300),
+    }];
+
+    assert_error_matches(verify(rows), "initial TxLog value is 0");
+}
+
+#[test]
+#[ignore = ""]
+fn bad_initial_tx_receipt_value() {
+    let rows = vec![Rw::TxReceipt {
+        rw_counter: 1,
+        is_write: false,
+        tx_id: 3421,
+        field_tag: TxReceiptFieldTag::CumulativeGasUsed,
+        value: 0,
+    }];
+
+    let overrides = HashMap::from([
+        ((AdviceColumn::Value, 0), Fr::from(1900)),
+        ((AdviceColumn::InitialValue, 0), Fr::from(1900)),
+    ]);
+
+    assert_error_matches(
+        verify_with_overrides(rows, overrides),
+        "initial TxReceipt value is 0",
+    );
 }
 
 fn prover(rows: Vec<Rw>, overrides: HashMap<(AdviceColumn, isize), Fr>) -> MockProver<Fr> {
