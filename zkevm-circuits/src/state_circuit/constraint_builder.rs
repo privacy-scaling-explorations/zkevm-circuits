@@ -6,7 +6,7 @@ use super::{
 };
 use crate::evm_circuit::{
     param::N_BYTES_WORD,
-    table::{AccountFieldTag, CallContextFieldTag, RwTableTag},
+    table::{AccountFieldTag, RwTableTag},
     util::not,
 };
 use crate::util::Expr;
