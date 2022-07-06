@@ -31,9 +31,12 @@ impl<F: FieldExt> BranchParallelChip<F> {
         is_modified: Column<Advice>,
         is_at_drifted_pos: Column<Advice>,
         sel: Column<Advice>,
+        is_node_hashed: Column<Advice>,
         acc_r: F,
     ) -> BranchParallelConfig {
         let config = BranchParallelConfig {};
+            
+        let one = Expression::Constant(F::from(1_u64));
 
         // Empty nodes have 0 at *_rlp2, have 128 at *_advices[0] and 0 everywhere else:
         // [0, 0, 128, 0, ..., 0]
@@ -52,11 +55,14 @@ impl<F: FieldExt> BranchParallelChip<F> {
             let c128 = Expression::Constant(F::from(128_u64));
             let c160 = Expression::Constant(F::from(160_u64));
 
+            let is_node_hashed = meta.query_advice(is_node_hashed, Rotation::cur());
+
             // In empty nodes: rlp2 = 0. In non-empty nodes: rlp2 = 160.
             constraints.push((
                 "*_rlp2 = 0 or *_rlp2 = 160",
                 q_enable.clone()
                     * is_branch_child_cur.clone()
+                    * (one.clone() - is_node_hashed.clone())
                     * rlp2.clone()
                     * (rlp2.clone() - c160.clone()),
             ));
@@ -70,6 +76,7 @@ impl<F: FieldExt> BranchParallelChip<F> {
                 "*_advices[0] = 128 in empty",
                 q_enable.clone()
                     * is_branch_child_cur.clone()
+                    * (one.clone() - is_node_hashed.clone())
                     * (rlp2.clone() - c160.clone())
                     * (advice0 - c128.clone()), /* If *_rlp2 = 0, then s_advices[0] can be any
                                                  * value (0-255). */
@@ -81,6 +88,7 @@ impl<F: FieldExt> BranchParallelChip<F> {
                     "*_advices[i] = 0 for i > 0 in empty",
                     q_enable.clone()
                         * is_branch_child_cur.clone()
+                        * (one.clone() - is_node_hashed.clone())
                         * (rlp2.clone() - c160.clone())
                         * s,
                 ));

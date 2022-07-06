@@ -44,6 +44,8 @@ impl<F: FieldExt> BranchChip<F> {
         drifted_pos: Column<Advice>, /* needed when leaf is turned into branch - first nibble of
                                       * the key stored in a leaf (because the existing leaf will
                                       * jump to this position in added branch) */
+        is_node_hashed_s: Column<Advice>,
+        is_node_hashed_c: Column<Advice>,
         fixed_table: [Column<Fixed>; 3],
     ) -> BranchConfig {
         let config = BranchConfig {};
@@ -159,15 +161,34 @@ impl<F: FieldExt> BranchChip<F> {
             let mut constraints = vec![];
 
             let is_branch_init_prev = meta.query_advice(is_branch_init, Rotation::prev());
-            let two_rlp_bytes_s = meta.query_advice(s_rlp1, Rotation::prev());
-            let three_rlp_bytes_s = meta.query_advice(s_rlp2, Rotation::prev());
-            let two_rlp_bytes_c = meta.query_advice(c_rlp1, Rotation::prev());
-            let three_rlp_bytes_c = meta.query_advice(c_rlp2, Rotation::prev());
+            /*
+            rlp1, rlp2: 1, 1 means 1 RLP byte
+            rlp1, rlp2: 1, 0 means 2 RLP bytes
+            rlp1, rlp2: 0, 1 means 3 RLP bytes
+            */
 
+            let s1 = meta.query_advice(s_rlp1, Rotation::prev());
+            let s2 = meta.query_advice(s_rlp2, Rotation::prev());
+            let c1 = meta.query_advice(s_advices[0], Rotation::prev());
+            let c2 = meta.query_advice(s_advices[1], Rotation::prev());
+
+            let one_rlp_byte_s = s1.clone() * s2.clone();
+            let two_rlp_bytes_s = s1.clone() * (one.clone() - s2.clone());
+            let three_rlp_bytes_s = (one.clone() - s1.clone()) * s2.clone();
+
+            let one_rlp_byte_c = c1.clone() * c2.clone();
+            let two_rlp_bytes_c = c1.clone() * (one.clone() - c2.clone());
+            let three_rlp_bytes_c = (one.clone() - c1.clone()) * c2.clone();
+
+            let rlp_byte0_s =
+                meta.query_advice(s_advices[BRANCH_0_S_START - RLP_NUM], Rotation::prev());
             let rlp_byte1_s =
                 meta.query_advice(s_advices[BRANCH_0_S_START - RLP_NUM + 1], Rotation::prev());
             let rlp_byte2_s =
                 meta.query_advice(s_advices[BRANCH_0_S_START - RLP_NUM + 2], Rotation::prev());
+
+            let rlp_byte0_c =
+                meta.query_advice(s_advices[BRANCH_0_C_START - RLP_NUM], Rotation::prev());
             let rlp_byte1_c =
                 meta.query_advice(s_advices[BRANCH_0_C_START - RLP_NUM + 1], Rotation::prev());
             let rlp_byte2_c =
@@ -175,6 +196,7 @@ impl<F: FieldExt> BranchChip<F> {
 
             let one = Expression::Constant(F::one());
             let c32 = Expression::Constant(F::from(32_u64));
+            let c192 = Expression::Constant(F::from(192_u64));
             let c256 = Expression::Constant(F::from(256_u64));
             let c160_inv = Expression::Constant(F::from(160_u64).invert().unwrap());
 
@@ -188,36 +210,71 @@ impl<F: FieldExt> BranchChip<F> {
             // s_rlp2 * c160_inv * c32 + 1 = 1
             // If non-empty, then s_rlp2 = 160:
             // s_rlp2 * c160_inv * c32 + 1 = 33
-            let s_bytes = s_rlp2_cur * c160_inv.clone() * c32.clone() + one.clone();
-            let c_bytes = c_rlp2_cur * c160_inv * c32 + one.clone();
 
-            // Short:
+            let is_node_hashed_s = meta.query_advice(is_node_hashed_s, Rotation::cur());
+            let is_node_hashed_c = meta.query_advice(is_node_hashed_c, Rotation::cur());
+
+            // The following value can be either 1 or 33 (if hashed node),
+            // depending on whether it's empty or non-empty row.
+            let mut bytes_num_in_row_s = s_rlp2_cur.clone() * c160_inv.clone() * c32.clone() + one.clone();
+            let mut bytes_num_in_row_c = c_rlp2_cur.clone() * c160_inv * c32 + one.clone();
+
+            bytes_num_in_row_s = is_node_hashed_s.clone() * (s_rlp2_cur.clone() - c192.clone() + one.clone())
+                + (one.clone() - is_node_hashed_s.clone()) * bytes_num_in_row_s.clone();
+            bytes_num_in_row_c = is_node_hashed_c.clone() * (c_rlp2_cur.clone() - c192.clone() + one.clone())
+                + (one.clone() - is_node_hashed_c.clone()) * bytes_num_in_row_c.clone();
+
+            // One RLP byte:
+            // [1,1,1,1,217,0,0,217,0,0,1,...
+            // Two RLP bytes:
             // [1,0,1,0,248,81,0,248,81,0,3,0,0,0,...
-            // Long:
+            // Three RLP bytes:
             // [0,1,0,1,249,2,17,249,2,17,7,0,0,0,...
 
+            // Note: s_rlp1 stores the number of the remaining bytes in the branch. If there
+            // are 81 bytes in the branch, and the first branch children contains 33 bytes,
+            // then s_rlp1 in this row will have s_rlp1 = 81 - 33.
+
             // is_branch_child with node_index = 0
+            // rlp_byte1_s stores the number of bytes in the branch (81 in the example with two RLP bytes)
+
+            constraints.push((
+                "first branch children one RLP meta byte S",
+                q_not_first.clone()
+                    * is_branch_init_prev.clone()
+                    * one_rlp_byte_s
+                    * (rlp_byte0_s.clone() - c192.clone() - bytes_num_in_row_s.clone() - s_rlp1_cur.clone()),
+            ));
+            constraints.push((
+                "first branch children one RLP meta byte C",
+                q_not_first.clone()
+                    * is_branch_init_prev.clone()
+                    * one_rlp_byte_c
+                    * (rlp_byte0_c.clone() - c192.clone() - bytes_num_in_row_c.clone() - c_rlp1_cur.clone()),
+            ));
+
             constraints.push((
                 "first branch children two RLP meta bytes S",
                 q_not_first.clone()
                     * is_branch_init_prev.clone()
                     * two_rlp_bytes_s
-                    * (rlp_byte1_s.clone() - s_bytes.clone() - s_rlp1_cur.clone()),
+                    * (rlp_byte1_s.clone() - bytes_num_in_row_s.clone() - s_rlp1_cur.clone()),
             ));
             constraints.push((
                 "first branch children two RLP meta bytes C",
                 q_not_first.clone()
                     * is_branch_init_prev.clone()
                     * two_rlp_bytes_c
-                    * (rlp_byte1_c.clone() - c_bytes.clone() - c_rlp1_cur.clone()),
+                    * (rlp_byte1_c.clone() - bytes_num_in_row_c.clone() - c_rlp1_cur.clone()),
             ));
+
             constraints.push((
                 "first branch children three RLP meta bytes S",
                 q_not_first.clone()
                     * is_branch_init_prev.clone()
                     * three_rlp_bytes_s
                     * (rlp_byte1_s * c256.clone() + rlp_byte2_s
-                        - s_bytes.clone()
+                        - bytes_num_in_row_s.clone()
                         - s_rlp1_cur.clone()),
             ));
             constraints.push((
@@ -225,7 +282,7 @@ impl<F: FieldExt> BranchChip<F> {
                 q_not_first.clone()
                     * is_branch_init_prev.clone()
                     * three_rlp_bytes_c
-                    * (rlp_byte1_c * c256 + rlp_byte2_c - c_bytes.clone() - c_rlp1_cur.clone()),
+                    * (rlp_byte1_c * c256 + rlp_byte2_c - bytes_num_in_row_c.clone() - c_rlp1_cur.clone()),
             ));
 
             // is_branch_child with node_index > 0
@@ -237,14 +294,14 @@ impl<F: FieldExt> BranchChip<F> {
                 q_not_first.clone()
                     * is_branch_child_cur.clone()
                     * (one.clone() - is_branch_init_prev.clone())
-                    * (s_rlp1_prev - s_bytes.clone() - s_rlp1_cur.clone()),
+                    * (s_rlp1_prev - bytes_num_in_row_s.clone() - s_rlp1_cur.clone()),
             ));
             constraints.push((
                 "branch children (node_index > 0) C",
                 q_not_first.clone()
                     * is_branch_child_cur.clone()
                     * (one.clone() - is_branch_init_prev.clone())
-                    * (c_rlp1_prev - c_bytes.clone() - c_rlp1_cur.clone()),
+                    * (c_rlp1_prev - bytes_num_in_row_c.clone() - c_rlp1_cur.clone()),
             ));
 
             // In final branch child s_rlp1 and c_rlp1 need to be 1 (because RLP length

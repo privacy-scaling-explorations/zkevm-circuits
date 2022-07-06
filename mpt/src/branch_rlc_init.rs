@@ -33,6 +33,7 @@ impl<F: FieldExt> BranchRLCInitChip<F> {
         acc_r: F,
     ) -> BranchRLCInitConfig {
         let config = BranchRLCInitConfig {};
+        let one = Expression::Constant(F::one());
 
         // TODO: constraints for branch init (also byte range lookups)
 
@@ -55,36 +56,34 @@ impl<F: FieldExt> BranchRLCInitChip<F> {
             let branch_mult_s_cur = meta.query_advice(acc_mult_s, Rotation::cur());
             let branch_mult_c_cur = meta.query_advice(acc_mult_c, Rotation::cur());
 
-            let two_rlp_bytes_s = meta.query_advice(s_rlp1, Rotation::cur());
-            let three_rlp_bytes_s = meta.query_advice(s_rlp2, Rotation::cur());
+            let s1 = meta.query_advice(s_rlp1, Rotation::cur());
+            let s2 = meta.query_advice(s_rlp2, Rotation::cur());
+            let c1 = meta.query_advice(s_advices[0], Rotation::cur());
+            let c2 = meta.query_advice(s_advices[1], Rotation::cur());
 
-            let two_rlp_bytes_c = meta.query_advice(s_advices[0], Rotation::cur());
-            let three_rlp_bytes_c = meta.query_advice(s_advices[1], Rotation::cur());
+            let one_rlp_byte_s = s1.clone() * s2.clone();
+            let two_rlp_bytes_s = s1.clone() * (one.clone() - s2.clone());
+            let three_rlp_bytes_s = (one.clone() - s1.clone()) * s2.clone();
 
-            let one = Expression::Constant(F::one());
+            let one_rlp_byte_c = c1.clone() * c2.clone();
+            let two_rlp_bytes_c = c1.clone() * (one.clone() - c2.clone());
+            let three_rlp_bytes_c = (one.clone() - c1.clone()) * c2.clone();
+
             constraints.push((
                 "branch init two_rlp_bytes_s boolean",
-                q_enable.clone() * two_rlp_bytes_s.clone() * (one.clone() - two_rlp_bytes_s.clone()),
+                q_enable.clone() * s1.clone() * (one.clone() - s1.clone()),
             ));
             constraints.push((
                 "branch init two_rlp_bytes_c boolean",
-                q_enable.clone() * two_rlp_bytes_c.clone() * (one.clone() - two_rlp_bytes_c.clone()),
+                q_enable.clone() * c1.clone() * (one.clone() - c1.clone()),
             ));
             constraints.push((
                 "branch init three_rlp_bytes_s boolean",
-                q_enable.clone() * three_rlp_bytes_s.clone() * (one.clone() - three_rlp_bytes_s.clone()),
+                q_enable.clone() * s2.clone() * (one.clone() - s2.clone()),
             ));
             constraints.push((
                 "branch init three_rlp_bytes_c boolean",
-                q_enable.clone() * three_rlp_bytes_c.clone() * (one.clone() - three_rlp_bytes_c.clone()),
-            ));
-            constraints.push((
-                "branch init two_rlp_bytes_s + three_rlp_bytes_s = 1",
-                q_enable.clone() * (one.clone() - two_rlp_bytes_s.clone() - three_rlp_bytes_s.clone()),
-            ));
-            constraints.push((
-                "branch init two_rlp_bytes_c + three_rlp_bytes_c = 1",
-                q_enable.clone() * (one.clone() - two_rlp_bytes_c.clone() - three_rlp_bytes_c.clone()),
+                q_enable.clone() * c2.clone() * (one.clone() - c2.clone()),
             ));
 
             let s_rlp1 = meta.query_advice(s_advices[2], Rotation::cur());
@@ -95,27 +94,45 @@ impl<F: FieldExt> BranchRLCInitChip<F> {
             let c_rlp2 = meta.query_advice(s_advices[6], Rotation::cur());
             let c_rlp3 = meta.query_advice(s_advices[7], Rotation::cur());
 
+            let mult_one = Expression::Constant(acc_r);
+            constraints.push((
+                "branch accumulator S row 0 (1)",
+                q_enable.clone() * one_rlp_byte_s.clone() * (s_rlp1.clone() - branch_acc_s_cur.clone()),
+            ));
+            constraints.push((
+                "branch mult S row 0 (1)",
+                q_enable.clone() * one_rlp_byte_s * (mult_one.clone() - branch_mult_s_cur.clone()),
+            ));
+            constraints.push((
+                "branch accumulator C row 0 (1)",
+                q_enable.clone() * one_rlp_byte_c.clone() * (c_rlp1.clone() - branch_acc_c_cur.clone()),
+            ));
+            constraints.push((
+                "branch mult C row 0 (1)",
+                q_enable.clone() * one_rlp_byte_c * (mult_one.clone() - branch_mult_s_cur.clone()),
+            ));
+
             let acc_s_two = s_rlp1.clone() + s_rlp2.clone() * acc_r;
             constraints.push((
-                "branch accumulator S row 0",
+                "branch accumulator S row 0 (2)",
                 q_enable.clone() * two_rlp_bytes_s.clone() * (acc_s_two - branch_acc_s_cur.clone()),
             ));
 
             let mult_s_two = Expression::Constant(acc_r * acc_r);
             constraints.push((
-                "branch mult S row 0",
+                "branch mult S row 0 (2)",
                 q_enable.clone() * two_rlp_bytes_s * (mult_s_two - branch_mult_s_cur.clone()),
             ));
 
             let acc_c_two = c_rlp1.clone() + c_rlp2.clone() * acc_r;
             constraints.push((
-                "branch accumulator C row 0",
+                "branch accumulator C row 0 (2)",
                 q_enable.clone() * two_rlp_bytes_c.clone() * (acc_c_two - branch_acc_c_cur.clone()),
             ));
 
             let mult_c_two = Expression::Constant(acc_r * acc_r);
             constraints.push((
-                "branch mult C row 0",
+                "branch mult C row 0 (2)",
                 q_enable.clone() * two_rlp_bytes_c * (mult_c_two - branch_mult_c_cur.clone()),
             ));
 

@@ -134,6 +134,8 @@ pub struct MPTConfig<F> {
     // nonce balance row: offset - 1)
     sel1: Column<Advice>,
     sel2: Column<Advice>,
+    is_node_hashed_s: Column<Advice>,
+    is_node_hashed_c: Column<Advice>,
     r_table: Vec<Expression<F>>,
     // key_rlc & key_rlc_mult used for account address, for storage key,
     // and for mult_diff_nonce/mult_diff_balance in account_leaf_nonce_balance
@@ -327,6 +329,9 @@ impl<F: FieldExt> MPTConfig<F> {
         let sel1 = meta.advice_column();
         let sel2 = meta.advice_column();
 
+        let is_node_hashed_s = meta.advice_column();
+        let is_node_hashed_c = meta.advice_column();
+
         // NOTE: acc_mult_s and acc_mult_c wouldn't be needed if we would have
         // big endian instead of little endian. However, then it would be much more
         // difficult to handle the accumulator when we iterate over the row.
@@ -428,6 +433,8 @@ impl<F: FieldExt> MPTConfig<F> {
             modified_node,
             is_at_drifted_pos,
             drifted_pos,
+            is_node_hashed_s,
+            is_node_hashed_c,
             fixed_table.clone(),
         );
 
@@ -458,6 +465,7 @@ impl<F: FieldExt> MPTConfig<F> {
             is_modified,
             is_at_drifted_pos,
             sel1,
+            is_node_hashed_s,
             acc_r,
         );
 
@@ -473,6 +481,7 @@ impl<F: FieldExt> MPTConfig<F> {
             is_modified,
             is_at_drifted_pos,
             sel2,
+            is_node_hashed_c,
             acc_r,
         );
 
@@ -654,6 +663,7 @@ impl<F: FieldExt> MPTConfig<F> {
             s_advices,
             acc_s,
             acc_mult_s,
+            is_node_hashed_s,
             r_table.clone(),
         );
 
@@ -669,6 +679,7 @@ impl<F: FieldExt> MPTConfig<F> {
             c_advices,
             acc_c,
             acc_mult_c,
+            is_node_hashed_c,
             r_table.clone(),
         );
 
@@ -1113,6 +1124,8 @@ impl<F: FieldExt> MPTConfig<F> {
             acc_r,
             sel1,
             sel2,
+            is_node_hashed_s,
+            is_node_hashed_c,
             r_table,
             key_rlc,
             key_rlc_mult,
@@ -1537,6 +1550,19 @@ impl<F: FieldExt> MPTConfig<F> {
             || Ok(F::from(c_rlp1 as u64)),
         )?;
 
+        region.assign_advice(
+            || "is_node_hashed_s",
+            self.is_node_hashed_s,
+            offset,
+            || Ok(F::from((row[S_RLP_START + 1] > 192) as u64)),
+        )?;
+        region.assign_advice(
+            || "is_node_hashed_c",
+            self.is_node_hashed_c,
+            offset,
+            || Ok(F::from((row[C_RLP_START + 1] > 192) as u64)),
+        )?;
+
         Ok(())
     }
 
@@ -1838,34 +1864,46 @@ impl<F: FieldExt> MPTConfig<F> {
                             // Branch (length 340) with three bytes of RLP meta data
                             // [249,1,81,128,16,...
 
-                            pv.acc_s = F::from(row[BRANCH_0_S_START] as u64)
-                                + F::from(row[BRANCH_0_S_START + 1] as u64) * self.acc_r;
-                            pv.acc_mult_s = self.acc_r * self.acc_r;
+                            pv.acc_s = F::from(row[BRANCH_0_S_START] as u64);
+                            pv.acc_mult_s = self.acc_r;
 
                             if row[BRANCH_0_S_START] == 249 {
+                                pv.acc_s += F::from(row[BRANCH_0_S_START + 1] as u64) * pv.acc_mult_s; 
+                                pv.acc_mult_s *= self.acc_r;
                                 pv.acc_s +=
                                     F::from(row[BRANCH_0_S_START + 2] as u64) * pv.acc_mult_s;
                                 pv.acc_mult_s *= self.acc_r;
 
                                 pv.rlp_len_rem_s = row[BRANCH_0_S_START + 1] as i32 * 256
                                     + row[BRANCH_0_S_START + 2] as i32;
-                            } else {
+                            } else if row[BRANCH_0_S_START] == 248 {
+                                pv.acc_s += F::from(row[BRANCH_0_S_START + 1] as u64) * pv.acc_mult_s; 
+                                pv.acc_mult_s *= self.acc_r;
+
                                 pv.rlp_len_rem_s = row[BRANCH_0_S_START + 1] as i32;
+                            } else {
+                                pv.rlp_len_rem_s = row[BRANCH_0_S_START] as i32 - 192;
                             }
 
-                            pv.acc_c = F::from(row[BRANCH_0_C_START] as u64)
-                                + F::from(row[BRANCH_0_C_START + 1] as u64) * self.acc_r;
-                            pv.acc_mult_c = self.acc_r * self.acc_r;
+                            pv.acc_c = F::from(row[BRANCH_0_C_START] as u64);
+                            pv.acc_mult_c = self.acc_r;
 
                             if row[BRANCH_0_C_START] == 249 {
+                                pv.acc_c += F::from(row[BRANCH_0_C_START + 1] as u64) * pv.acc_mult_c;
+                                pv.acc_mult_c *= self.acc_r;
                                 pv.acc_c +=
                                     F::from(row[BRANCH_0_C_START + 2] as u64) * pv.acc_mult_c;
                                 pv.acc_mult_c *= self.acc_r;
 
                                 pv.rlp_len_rem_c = row[BRANCH_0_C_START + 1] as i32 * 256
                                     + row[BRANCH_0_C_START + 2] as i32;
-                            } else {
+                            } else if row[BRANCH_0_C_START] == 248 {
+                                pv.acc_c += F::from(row[BRANCH_0_C_START + 1] as u64) * pv.acc_mult_c;
+                                pv.acc_mult_c *= self.acc_r;
+
                                 pv.rlp_len_rem_c = row[BRANCH_0_C_START + 1] as i32;
+                            } else {
+                                pv.rlp_len_rem_c = row[BRANCH_0_C_START] as i32 - 192;
                             }
 
                             self.assign_acc(
@@ -1909,12 +1947,16 @@ impl<F: FieldExt> MPTConfig<F> {
 
                             if row[S_RLP_START + 1] == 160 {
                                 pv.rlp_len_rem_s -= 33;
-                            } else {
+                            } else if row[S_RLP_START + 1] > 192 {
+                                pv.rlp_len_rem_s -= row[S_RLP_START + 1] as i32 - 192 + 1;
+                            } else if row[S_RLP_START + 1] == 0 {
                                 pv.rlp_len_rem_s -= 1;
                             }
                             if row[C_RLP_START + 1] == 160 {
                                 pv.rlp_len_rem_c -= 33;
-                            } else {
+                            } else if row[C_RLP_START + 1] > 192 {
+                                pv.rlp_len_rem_c -= row[C_RLP_START + 1] as i32 - 192 + 1;
+                            } else if row[C_RLP_START + 1] == 0 {
                                 pv.rlp_len_rem_c -= 1;
                             }
 

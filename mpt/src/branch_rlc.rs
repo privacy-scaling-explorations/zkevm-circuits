@@ -26,6 +26,7 @@ impl<F: FieldExt> BranchRLCChip<F> {
         advices: [Column<Advice>; HASH_WIDTH],
         branch_acc: Column<Advice>,
         branch_mult: Column<Advice>,
+        is_node_hashed: Column<Advice>,
         r_table: Vec<Expression<F>>,
     ) -> BranchRLCConfig {
         let config = BranchRLCConfig {};
@@ -40,6 +41,9 @@ impl<F: FieldExt> BranchRLCChip<F> {
             let branch_mult_prev = meta.query_advice(branch_mult, Rotation::prev());
             let branch_mult_cur = meta.query_advice(branch_mult, Rotation::cur());
 
+            let is_node_hashed = meta.query_advice(is_node_hashed, Rotation::cur());
+
+            let one = Expression::Constant(F::one());
             let c128 = Expression::Constant(F::from(128_u64));
             let c160 = Expression::Constant(F::from(160_u64));
 
@@ -48,6 +52,7 @@ impl<F: FieldExt> BranchRLCChip<F> {
             constraints.push((
                 "branch acc empty",
                 q_enable.clone()
+                    * (one.clone() - is_node_hashed.clone())
                     * (c160.clone() - rlp2.clone())
                     * (branch_acc_cur.clone()
                         - branch_acc_prev.clone()
@@ -56,6 +61,7 @@ impl<F: FieldExt> BranchRLCChip<F> {
             constraints.push((
                 "branch acc mult empty",
                 q_enable.clone()
+                    * (one.clone() - is_node_hashed.clone())
                     * (c160.clone() - rlp2.clone())
                     * (branch_mult_cur.clone() - branch_mult_prev.clone() * r_table[0].clone()),
             ));
@@ -68,15 +74,22 @@ impl<F: FieldExt> BranchRLCChip<F> {
             }
             constraints.push((
                 "branch acc non-empty",
-                q_enable.clone() * rlp2.clone() * (branch_acc_cur - branch_acc_prev - expr),
+                q_enable.clone()
+                    * (one.clone() - is_node_hashed.clone())
+                    * rlp2.clone()
+                    * (branch_acc_cur - branch_acc_prev - expr),
             ));
             constraints.push((
                 "branch acc mult non-empty",
                 q_enable
+                    * (one.clone() - is_node_hashed.clone())
                     * rlp2
                     * (branch_mult_cur
                         - branch_mult_prev * r_table[R_TABLE_LEN - 1].clone() * r_table[0].clone()),
             ));
+
+            // TODO: is_node_hashed, the length is not fixed for this case,
+            // key_len_lookup, mult_diff_lookup need to be used
 
             constraints
         });
