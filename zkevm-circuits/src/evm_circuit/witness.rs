@@ -1264,8 +1264,6 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::ADDRESS => dummy!(ExecutionState::ADDRESS),
                     OpcodeId::BALANCE => dummy!(ExecutionState::BALANCE),
                     OpcodeId::BLOCKHASH => dummy!(ExecutionState::BLOCKHASH),
-                    OpcodeId::SDIV => dummy!(ExecutionState::SDIV),
-                    OpcodeId::SMOD => dummy!(ExecutionState::SMOD),
                     OpcodeId::EXP => dummy!(ExecutionState::EXP),
                     OpcodeId::SHL => dummy!(ExecutionState::SHL),
                     OpcodeId::SAR => dummy!(ExecutionState::SAR),
