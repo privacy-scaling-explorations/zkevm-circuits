@@ -137,11 +137,11 @@ fn gen_copy_steps(
         });
         state.memory_write(exec_step, (dst_addr + idx).into(), value)?;
     }
-    if copy_steps.len() >= 2 {
-        for cs in copy_steps.iter_mut() {
-            cs.rwc_inc_left = state.block_ctx.rwc.0 as u64 - cs.rwc.0 as u64;
-        }
+
+    for cs in copy_steps.iter_mut() {
+        cs.rwc_inc_left = state.block_ctx.rwc.0 as u64 - cs.rwc.0 as u64;
     }
+
     Ok(copy_steps)
 }
 
@@ -580,7 +580,7 @@ mod calldatacopy_tests {
                     value,
                     is_code: None,
                     is_pad,
-                    rwc: rwc,
+                    rwc,
                     rwc_inc_left: (size - idx) as u64,
                 }
             );

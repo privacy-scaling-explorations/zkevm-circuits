@@ -129,7 +129,8 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
         let copy_rwc_inc = cb.query_cell();
         let dst_addr = (1u64 << 32).expr() * TxLogFieldTag::Data.expr()
             + (1u64 << 48).expr() * (cb.curr.state.log_id.expr() + 1.expr());
-        cb.condition(memory_address.has_length(), |cb| {
+        let cond = memory_address.has_length() * is_persistent.expr();
+        cb.condition(cond.clone(), |cb| {
             cb.copy_table_lookup(
                 cb.curr.state.call_id.expr(),
                 CopyDataType::Memory.expr(),
@@ -143,9 +144,9 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
                 copy_rwc_inc.expr(),
             );
         });
-        cb.condition(not::expr(memory_address.has_length()), |cb| {
+        cb.condition(not::expr(cond), |cb| {
             cb.require_zero(
-                "if no bytes to copy, copy table rwc inc == 0",
+                "if length is 0 or tx is not persistent, copy table rwc inc == 0",
                 copy_rwc_inc.expr(),
             );
         });
@@ -264,7 +265,7 @@ mod test {
 
     //TODO：add is_persistent = false cases
     #[test]
-    fn log_tests() {
+    fn log_gadget_simple() {
         // zero topic: log0
         test_log_ok(&[]);
         // one topic: log1
@@ -283,7 +284,7 @@ mod test {
     }
 
     #[test]
-    fn multi_log_tests() {
+    fn log_gadget_multi_logs() {
         // zero topic: log0
         test_multi_log_ok(&[]);
         // one topic: log1

@@ -276,7 +276,7 @@ mod codecopy_tests {
                     value,
                     is_code,
                     is_pad,
-                    rwc: rwc,
+                    rwc,
                     rwc_inc_left: (size - idx) as u64,
                 }
             );

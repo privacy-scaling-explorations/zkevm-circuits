@@ -43,18 +43,12 @@ impl<'a> CircuitInputStateRef<'a> {
     pub fn new_step(&self, geth_step: &GethExecStep) -> Result<ExecStep, Error> {
         let call_ctx = self.tx_ctx.call_ctx()?;
 
-        let pre_log_id = if self.tx.is_steps_empty() {
-            0
-        } else {
-            self.tx.last_step().log_id
-        };
-
         Ok(ExecStep::new(
             geth_step,
             call_ctx.index,
             self.block_ctx.rwc,
             call_ctx.reversible_write_counter,
-            pre_log_id,
+            self.tx_ctx.log_id,
         ))
     }
 
@@ -85,7 +79,7 @@ impl<'a> CircuitInputStateRef<'a> {
             } else {
                 0
             },
-            log_id: prev_step.log_id,
+            log_id: self.tx_ctx.log_id,
             ..Default::default()
         }
     }

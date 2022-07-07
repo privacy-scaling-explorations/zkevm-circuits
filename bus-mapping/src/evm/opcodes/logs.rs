@@ -20,10 +20,11 @@ impl Opcode for Log {
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];
         let mut exec_step = gen_log_step(state, geth_step)?;
-        let mut next_exec_step = state.new_step(&geth_steps[1])?;
-        next_exec_step.log_id += 1;
-        let copy_event = gen_copy_event(state, geth_step, &mut exec_step)?;
-        state.push_copy(copy_event);
+        if state.call()?.is_persistent {
+            let copy_event = gen_copy_event(state, geth_step, &mut exec_step)?;
+            state.push_copy(copy_event);
+            state.tx_ctx.log_id += 1;
+        }
         Ok(vec![exec_step])
     }
 }
@@ -77,12 +78,11 @@ fn gen_log_step(
         Word::from(state.call()?.is_persistent as u8),
     );
 
-    let log_id = exec_step.log_id + 1;
     if state.call()?.is_persistent {
         state.tx_log_write(
             &mut exec_step,
             state.tx_ctx.id(),
-            log_id,
+            state.tx_ctx.log_id + 1,
             TxLogField::Address,
             0,
             state.call()?.address.to_word(),
@@ -108,7 +108,7 @@ fn gen_log_step(
             state.tx_log_write(
                 &mut exec_step,
                 state.tx_ctx.id(),
-                log_id,
+                state.tx_ctx.log_id + 1,
                 TxLogField::Topic,
                 i,
                 topic,
@@ -157,26 +157,24 @@ fn gen_copy_steps(
         });
 
         // Write
-        if state.call()?.is_persistent {
-            copy_steps.push(CopyStep {
-                addr: (data_start_index + idx) as u64,
-                tag: CopyDataType::TxLog,
-                rw: RW::WRITE,
-                value,
-                is_code: None,
-                is_pad: false,
-                rwc: state.block_ctx.rwc,
-                rwc_inc_left: 0,
-            });
-            state.tx_log_write(
-                exec_step,
-                state.tx_ctx.id(),
-                exec_step.log_id + 1,
-                TxLogField::Data,
-                data_start_index + idx,
-                Word::from(value),
-            )?;
-        }
+        copy_steps.push(CopyStep {
+            addr: (data_start_index + idx) as u64,
+            tag: CopyDataType::TxLog,
+            rw: RW::WRITE,
+            value,
+            is_code: None,
+            is_pad: false,
+            rwc: state.block_ctx.rwc,
+            rwc_inc_left: 0,
+        });
+        state.tx_log_write(
+            exec_step,
+            state.tx_ctx.id(),
+            state.tx_ctx.log_id + 1,
+            TxLogField::Data,
+            data_start_index + idx,
+            Word::from(value),
+        )?;
     }
 
     Ok(copy_steps)
@@ -187,6 +185,7 @@ fn gen_copy_event(
     geth_step: &GethExecStep,
     exec_step: &mut ExecStep,
 ) -> Result<CopyEvent, Error> {
+    assert!(state.call()?.is_persistent, "Error: Call is not persistent");
     let memory_start = geth_step.stack.nth_last(0)?.as_u64();
     let msize = geth_step.stack.nth_last(1)?.as_usize();
 
@@ -208,10 +207,8 @@ fn gen_copy_event(
         copied += MAX_COPY_BYTES;
     }
 
-    if steps.len() >= 2 {
-        for cs in steps.iter_mut() {
-            cs.rwc_inc_left = state.block_ctx.rwc.0 as u64 - cs.rwc.0 as u64;
-        }
+    for cs in steps.iter_mut() {
+        cs.rwc_inc_left = state.block_ctx.rwc.0 as u64 - cs.rwc.0 as u64;
     }
 
     Ok(CopyEvent {
@@ -222,7 +219,7 @@ fn gen_copy_event(
         dst_type: CopyDataType::TxLog,
         dst_id: NumberOrHash::Number(state.tx_ctx.id()),
         dst_addr: 0,
-        log_id: Some(exec_step.log_id as u64 + 1),
+        log_id: Some(state.tx_ctx.log_id as u64 + 1),
         length: msize as u64,
         steps,
         tx_id: state.tx_ctx.id(),

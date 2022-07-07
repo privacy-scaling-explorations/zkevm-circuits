@@ -1,12 +1,12 @@
 #![allow(missing_docs)]
-use bus_mapping::circuit_input_builder::{CopyDataType, NumberOrHash};
+use bus_mapping::circuit_input_builder::{CopyDataType, CopyEvent, CopyStep, NumberOrHash};
 use eth_types::{Field, ToAddress, ToScalar, U256};
 use gadgets::{
     is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction},
     less_than::{LtChip, LtConfig, LtInstruction},
 };
 use halo2_proofs::{
-    circuit::Layouter,
+    circuit::{Layouter, Region},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector, VirtualCells},
     poly::Rotation,
 };
@@ -29,6 +29,7 @@ impl<F: Field> util::Expr<F> for CopyDataType {
 /// The rw table shared between evm circuit and state circuit
 #[derive(Clone, Debug)]
 pub struct CopyTableConfig<F> {
+    /// Selector to enable a row.
     pub q_enable: Selector,
     /// Whether this row denotes a step. A read row is a step and a write row is
     /// not.
@@ -401,288 +402,327 @@ impl<F: Field> CopyTableConfig<F> {
             |mut region| {
                 let mut offset = 0;
                 for copy_event in block.copy_events.values() {
-                    for (step_count, copy_step) in copy_event.steps.iter().enumerate() {
-                        self.q_enable.enable(&mut region, offset)?;
-                        // enable q_step on the Read step
-                        if copy_step.rw.is_read() {
-                            self.q_step.enable(&mut region, offset)?;
-                        }
-
-                        let id = if copy_step.rw.is_read() {
-                            &copy_event.src_id
-                        } else {
-                            &copy_event.dst_id
-                        };
-
-                        let q_step = copy_step.rw.is_read() as u64;
-                        let is_first = (step_count == 0) as u64;
-                        let is_last = (step_count == copy_event.steps.len() - 1) as u64;
-                        let bytes_left = copy_event.length - step_count as u64 / 2;
-                        println!("[{step_count}] {q_step} {is_first} {is_last} {:?} id:{:?} bytes_left:{bytes_left}",
-                            copy_step, id);
-
-                        // is_first
-                        region.assign_advice(
-                            || format!("assign is_first {}", offset),
-                            self.is_first,
-                            offset,
-                            || Ok(if step_count == 0 { F::one() } else { F::zero() }),
-                        )?;
-                        // is_last
-                        region.assign_advice(
-                            || format!("assign is_last {}", offset),
-                            self.is_last,
-                            offset,
-                            || {
-                                Ok(if step_count == copy_event.steps.len() - 1 {
-                                    F::one()
-                                } else {
-                                    F::zero()
-                                })
-                            },
-                        )?;
-                        // id
-                        region.assign_advice(
-                            || format!("assign id {}", offset),
-                            self.id,
-                            offset,
-                            || Ok(match id {
-                                    NumberOrHash::Number(n) => F::from(*n as u64),
-                                    NumberOrHash::Hash(h) => {
-                                        // since code hash in the bytecode table is represented in
-                                        // the little-endian form, we reverse the big-endian bytes
-                                        // of H256.
-                                        let le_bytes = {
-                                            let mut b = h.to_fixed_bytes();
-                                            b.reverse();
-                                            b
-                                        };
-                                        RandomLinearCombination::random_linear_combine(
-                                            le_bytes,
-                                            block.randomness,
-                                        )
-                                    },
-                                }),
-                        )?;
-                        // tag
-                        region.assign_advice(
-                            || format!("assign tag {}", offset),
-                            self.tag,
-                            offset,
-                            || Ok(F::from(copy_step.tag as u64)),
-                        )?;
-                        // addr
-                        region.assign_advice(
-                            || format!("assign addr {}", offset),
-                            self.addr,
-                            offset,
-                            || Ok(match copy_step.tag {
-                                CopyDataType::TxLog => {
-                                    let addr = (U256::from(copy_step.addr)
-                                        + (U256::from(TxLogFieldTag::Data as u64) << 32)
-                                        + (U256::from(copy_event.log_id.unwrap()) << 48))
-                                        .to_address();
-                                    addr.to_scalar().unwrap()
-                                },
-                                _ => F::from(copy_step.addr),
-                            }),
-                        )?;
-                        // value
-                        region.assign_advice(
-                            || format!("assign value {}", offset),
-                            self.value,
-                            offset,
-                            || Ok(F::from(copy_step.value as u64)),
-                        )?;
-                        // is_code
-                        region.assign_advice(
-                            || format!("assign is_code {}", offset),
-                            self.is_code,
-                            offset,
-                            || Ok(copy_step.is_code.map_or(F::zero(), |v| F::from(v))),
-                        )?;
-                        // is_pad
-                        region.assign_advice(
-                            || format!("assign is_pad {}", offset),
-                            self.is_pad,
-                            offset,
-                            || Ok(F::from(copy_step.is_pad)),
-                        )?;
-                        // rw_counter
-                        region.assign_advice(
-                            || format!("assign rw_counter {}", offset),
-                            self.rw_counter,
-                            offset,
-                            || Ok(F::from(copy_step.rwc.0 as u64)),
-                        )?;
-                        // rwc_inc_left
-                        region.assign_advice(
-                            || format!("assign rwc_inc_left {}", offset),
-                            self.rwc_inc_left,
-                            offset,
-                            || Ok(F::from(copy_step.rwc_inc_left)),
-                        )?;
-                        // assignment for read steps
-                        if copy_step.rw.is_read() {
-                            // src_addr_end
-                            region.assign_advice(
-                                || format!("assign src_addr_end {}", offset),
-                                self.src_addr_end,
-                                offset,
-                                || Ok(F::from(copy_event.src_addr_end)),
-                            )?;
-                            // bytes_left
-                            region.assign_advice(
-                                || format!("assign bytes_left {}", offset),
-                                self.bytes_left,
-                                offset,
-                                || Ok(F::from(bytes_left)),
-                            )?;
-                            // lt chip
-                            lt_chip.assign(
-                                &mut region,
-                                offset,
-                                F::from(copy_step.addr),
-                                F::from(copy_event.src_addr_end),
-                            )?;
-                        }
-                        // is zero chips
-                        is_bytecode_chip.assign(
+                    for (step_idx, copy_step) in copy_event.steps.iter().enumerate() {
+                        self.assign_step(
                             &mut region,
                             offset,
-                            Some(F::from(copy_step.tag as u64) - F::from(CopyDataType::Bytecode as u64)),
+                            block.randomness,
+                            copy_event,
+                            step_idx,
+                            copy_step,
+                            &is_bytecode_chip,
+                            &is_memory_chip,
+                            &is_tx_calldata_chip,
+                            &is_tx_log_chip,
+                            &lt_chip,
                         )?;
-                        is_memory_chip.assign(
-                            &mut region,
-                            offset,
-                            Some(F::from(copy_step.tag as u64) - F::from(CopyDataType::Memory as u64)),
-                        )?;
-                        is_tx_calldata_chip.assign(
-                            &mut region,
-                            offset,
-                            Some(F::from(copy_step.tag as u64) - F::from(CopyDataType::TxCalldata as u64)),
-                        )?;
-                        is_tx_log_chip.assign(
-                            &mut region,
-                            offset,
-                            Some(F::from(copy_step.tag as u64) - F::from(CopyDataType::TxLog as u64)),
-                        )?;
-
                         offset += 1;
                     }
                 }
                 // pad two rows in the end to satisfy Halo2 cell assignment check
                 for _ in 0..2 {
-                    println!("{offset}");
-                    // is_first
-                    region.assign_advice(
-                        || format!("assign is_first {}", offset),
-                        self.is_first,
-                        offset,
-                        || Ok(F::zero()),
-                    )?;
-                    // is_last
-                    region.assign_advice(
-                        || format!("assign is_last {}", offset),
-                        self.is_last,
-                        offset,
-                        || Ok(F::zero()),
-                    )?;
-                    // id
-                    region.assign_advice(
-                        || format!("assign id {}", offset),
-                        self.id,
-                        offset,
-                        || Ok(F::zero()),
-                    )?;
-                    // tag
-                    region.assign_advice(
-                        || format!("assign tag {}", offset),
-                        self.tag,
-                        offset,
-                        || Ok(F::zero()),
-                    )?;
-                    // addr
-                    region.assign_advice(
-                        || format!("assign addr {}", offset),
-                        self.addr,
-                        offset,
-                        || Ok(F::zero()),
-                    )?;
-                    // src_addr_end
-                    region.assign_advice(
-                        || format!("assign src_addr_end {}", offset),
-                        self.src_addr_end,
-                        offset,
-                        || Ok(F::zero()),
-                    )?;
-                    // bytes_left
-                    region.assign_advice(
-                        || format!("assign bytes_left {}", offset),
-                        self.bytes_left,
-                        offset,
-                        || Ok(F::zero()),
-                    )?;
-                    // value
-                    region.assign_advice(
-                        || format!("assign value {}", offset),
-                        self.value,
-                        offset,
-                        || Ok(F::zero()),
-                    )?;
-                    // is_code
-                    region.assign_advice(
-                        || format!("assign is_code {}", offset),
-                        self.is_code,
-                        offset,
-                        || Ok(F::zero()),
-                    )?;
-                    // is_pad
-                    region.assign_advice(
-                        || format!("assign is_pad {}", offset),
-                        self.is_pad,
-                        offset,
-                        || Ok(F::zero()),
-                    )?;
-                    // rw_counter
-                    region.assign_advice(
-                        || format!("assign rw_counter {}", offset),
-                        self.rw_counter,
-                        offset,
-                        || Ok(F::zero()),
-                    )?;
-                    // rwc_inc_left
-                    region.assign_advice(
-                        || format!("assign rwc_inc_left {}", offset),
-                        self.rwc_inc_left,
-                        offset,
-                        || Ok(F::zero()),
-                    )?;
-                     // is zero chips
-                     is_bytecode_chip.assign(
+                    self.assign_padding_row(
                         &mut region,
                         offset,
-                        Some(F::one()),
-                    )?;
-                    is_memory_chip.assign(
-                        &mut region,
-                        offset,
-                        Some(F::one()),
-                    )?;
-                    is_tx_calldata_chip.assign(
-                        &mut region,
-                        offset,
-                        Some(F::one()),
-                    )?;
-                    is_tx_log_chip.assign(
-                        &mut region,
-                        offset,
-                        Some(F::one()),
+                        &is_bytecode_chip,
+                        &is_memory_chip,
+                        &is_tx_calldata_chip,
+                        &is_tx_log_chip,
                     )?;
                     offset += 1;
                 }
                 Ok(())
             },
         )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn assign_step(
+        &self,
+        region: &mut Region<F>,
+        offset: usize,
+        randomness: F,
+        copy_event: &CopyEvent,
+        step_idx: usize,
+        copy_step: &CopyStep,
+        is_bytecode_chip: &IsZeroChip<F>,
+        is_memory_chip: &IsZeroChip<F>,
+        is_tx_calldata_chip: &IsZeroChip<F>,
+        is_tx_log_chip: &IsZeroChip<F>,
+        lt_chip: &LtChip<F, 8>,
+    ) -> Result<(), Error> {
+        self.q_enable.enable(region, offset)?;
+        // enable q_step on the Read step
+        if copy_step.rw.is_read() {
+            self.q_step.enable(region, offset)?;
+        }
+
+        let id = if copy_step.rw.is_read() {
+            &copy_event.src_id
+        } else {
+            &copy_event.dst_id
+        };
+        let bytes_left = copy_event.length - step_idx as u64 / 2;
+
+        // println!(
+        //     "[{offset}] {} {} {} {:?} id:{:?} bytes_left:{bytes_left}",
+        //     copy_step,
+        //     copy_step.rw.is_read() as u64,
+        //     (step_idx == 0) as u64,
+        //     (step_idx == copy_event.steps.len() - 1) as u64,
+        //     id,
+        // );
+
+        // is_first
+        region.assign_advice(
+            || format!("assign is_first {}", offset),
+            self.is_first,
+            offset,
+            || Ok(if step_idx == 0 { F::one() } else { F::zero() }),
+        )?;
+        // is_last
+        region.assign_advice(
+            || format!("assign is_last {}", offset),
+            self.is_last,
+            offset,
+            || {
+                Ok(if step_idx == copy_event.steps.len() - 1 {
+                    F::one()
+                } else {
+                    F::zero()
+                })
+            },
+        )?;
+        // id
+        region.assign_advice(
+            || format!("assign id {}", offset),
+            self.id,
+            offset,
+            || {
+                Ok(match id {
+                    NumberOrHash::Number(n) => F::from(*n as u64),
+                    NumberOrHash::Hash(h) => {
+                        // since code hash in the bytecode table is represented in
+                        // the little-endian form, we reverse the big-endian bytes
+                        // of H256.
+                        let le_bytes = {
+                            let mut b = h.to_fixed_bytes();
+                            b.reverse();
+                            b
+                        };
+                        RandomLinearCombination::random_linear_combine(le_bytes, randomness)
+                    }
+                })
+            },
+        )?;
+        // tag
+        region.assign_advice(
+            || format!("assign tag {}", offset),
+            self.tag,
+            offset,
+            || Ok(F::from(copy_step.tag as u64)),
+        )?;
+        // addr
+        region.assign_advice(
+            || format!("assign addr {}", offset),
+            self.addr,
+            offset,
+            || {
+                Ok(match copy_step.tag {
+                    CopyDataType::TxLog => {
+                        let addr = (U256::from(copy_step.addr)
+                            + (U256::from(TxLogFieldTag::Data as u64) << 32)
+                            + (U256::from(copy_event.log_id.unwrap()) << 48))
+                            .to_address();
+                        println!("TxLog addr = {addr:?}");
+                        addr.to_scalar().unwrap()
+                    }
+                    _ => F::from(copy_step.addr),
+                })
+            },
+        )?;
+        // value
+        region.assign_advice(
+            || format!("assign value {}", offset),
+            self.value,
+            offset,
+            || Ok(F::from(copy_step.value as u64)),
+        )?;
+        // is_code
+        region.assign_advice(
+            || format!("assign is_code {}", offset),
+            self.is_code,
+            offset,
+            || Ok(copy_step.is_code.map_or(F::zero(), |v| F::from(v))),
+        )?;
+        // is_pad
+        region.assign_advice(
+            || format!("assign is_pad {}", offset),
+            self.is_pad,
+            offset,
+            || Ok(F::from(copy_step.is_pad)),
+        )?;
+        // rw_counter
+        region.assign_advice(
+            || format!("assign rw_counter {}", offset),
+            self.rw_counter,
+            offset,
+            || Ok(F::from(copy_step.rwc.0 as u64)),
+        )?;
+        // rwc_inc_left
+        region.assign_advice(
+            || format!("assign rwc_inc_left {}", offset),
+            self.rwc_inc_left,
+            offset,
+            || Ok(F::from(copy_step.rwc_inc_left)),
+        )?;
+        // assignment for read steps
+        if copy_step.rw.is_read() {
+            // src_addr_end
+            region.assign_advice(
+                || format!("assign src_addr_end {}", offset),
+                self.src_addr_end,
+                offset,
+                || Ok(F::from(copy_event.src_addr_end)),
+            )?;
+            // bytes_left
+            region.assign_advice(
+                || format!("assign bytes_left {}", offset),
+                self.bytes_left,
+                offset,
+                || Ok(F::from(bytes_left)),
+            )?;
+            // lt chip
+            lt_chip.assign(
+                region,
+                offset,
+                F::from(copy_step.addr),
+                F::from(copy_event.src_addr_end),
+            )?;
+        }
+        // is zero chips
+        is_bytecode_chip.assign(
+            region,
+            offset,
+            Some(F::from(copy_step.tag as u64) - F::from(CopyDataType::Bytecode as u64)),
+        )?;
+        is_memory_chip.assign(
+            region,
+            offset,
+            Some(F::from(copy_step.tag as u64) - F::from(CopyDataType::Memory as u64)),
+        )?;
+        is_tx_calldata_chip.assign(
+            region,
+            offset,
+            Some(F::from(copy_step.tag as u64) - F::from(CopyDataType::TxCalldata as u64)),
+        )?;
+        is_tx_log_chip.assign(
+            region,
+            offset,
+            Some(F::from(copy_step.tag as u64) - F::from(CopyDataType::TxLog as u64)),
+        )?;
+        Ok(())
+    }
+
+    fn assign_padding_row(
+        &self,
+        region: &mut Region<F>,
+        offset: usize,
+        is_bytecode_chip: &IsZeroChip<F>,
+        is_memory_chip: &IsZeroChip<F>,
+        is_tx_calldata_chip: &IsZeroChip<F>,
+        is_tx_log_chip: &IsZeroChip<F>,
+    ) -> Result<(), Error> {
+        println!("[{offset}] padding row");
+        // is_first
+        region.assign_advice(
+            || format!("assign is_first {}", offset),
+            self.is_first,
+            offset,
+            || Ok(F::zero()),
+        )?;
+        // is_last
+        region.assign_advice(
+            || format!("assign is_last {}", offset),
+            self.is_last,
+            offset,
+            || Ok(F::zero()),
+        )?;
+        // id
+        region.assign_advice(
+            || format!("assign id {}", offset),
+            self.id,
+            offset,
+            || Ok(F::zero()),
+        )?;
+        // tag
+        region.assign_advice(
+            || format!("assign tag {}", offset),
+            self.tag,
+            offset,
+            || Ok(F::zero()),
+        )?;
+        // addr
+        region.assign_advice(
+            || format!("assign addr {}", offset),
+            self.addr,
+            offset,
+            || Ok(F::zero()),
+        )?;
+        // src_addr_end
+        region.assign_advice(
+            || format!("assign src_addr_end {}", offset),
+            self.src_addr_end,
+            offset,
+            || Ok(F::zero()),
+        )?;
+        // bytes_left
+        region.assign_advice(
+            || format!("assign bytes_left {}", offset),
+            self.bytes_left,
+            offset,
+            || Ok(F::zero()),
+        )?;
+        // value
+        region.assign_advice(
+            || format!("assign value {}", offset),
+            self.value,
+            offset,
+            || Ok(F::zero()),
+        )?;
+        // is_code
+        region.assign_advice(
+            || format!("assign is_code {}", offset),
+            self.is_code,
+            offset,
+            || Ok(F::zero()),
+        )?;
+        // is_pad
+        region.assign_advice(
+            || format!("assign is_pad {}", offset),
+            self.is_pad,
+            offset,
+            || Ok(F::zero()),
+        )?;
+        // rw_counter
+        region.assign_advice(
+            || format!("assign rw_counter {}", offset),
+            self.rw_counter,
+            offset,
+            || Ok(F::zero()),
+        )?;
+        // rwc_inc_left
+        region.assign_advice(
+            || format!("assign rwc_inc_left {}", offset),
+            self.rwc_inc_left,
+            offset,
+            || Ok(F::zero()),
+        )?;
+        // is zero chips
+        is_bytecode_chip.assign(region, offset, Some(F::one()))?;
+        is_memory_chip.assign(region, offset, Some(F::one()))?;
+        is_tx_calldata_chip.assign(region, offset, Some(F::one()))?;
+        is_tx_log_chip.assign(region, offset, Some(F::one()))?;
+        Ok(())
     }
 }

@@ -277,13 +277,13 @@ mod test {
         call_data_length: usize,
         dst_offset: usize,
         offset: usize,
-        copy_size: usize,
+        length: usize,
     ) {
         let (addr_a, addr_b) = (mock::MOCK_ACCOUNTS[0], mock::MOCK_ACCOUNTS[1]);
 
         // code B gets called by code A, so the call is an internal call.
         let code_b = bytecode! {
-            PUSH32(copy_size)  // size
+            PUSH32(length)  // size
             PUSH32(offset)     // offset
             PUSH32(dst_offset) // dst_offset
             CALLDATACOPY
@@ -330,25 +330,25 @@ mod test {
 
     #[test]
     fn calldatacopy_gadget_simple() {
-        test_ok_root(0x40, 0x40, 0x00, 0x0A);
-        test_ok_internal(0x40, 0x40, 0xA0, 0x10, 0x0A);
+        test_ok_root(0x40, 0x40, 0x00, 10);
+        test_ok_internal(0x40, 0x40, 0xA0, 0x10, 10);
     }
 
     #[test]
-    fn calldatacopy_gadget_multi_step() {
-        test_ok_root(0x80, 0x40, 0x10, 0x5A);
-        test_ok_internal(0x30, 0x70, 0x20, 0x10, 0x5A);
+    fn calldatacopy_gadget_large() {
+        test_ok_root(0x80, 0x40, 0x10, 90);
+        test_ok_internal(0x30, 0x70, 0x20, 0x10, 90);
     }
 
     #[test]
     fn calldatacopy_gadget_out_of_bound() {
-        test_ok_root(0x40, 0x40, 0x20, 0x28);
-        test_ok_internal(0x40, 0x20, 0xA0, 0x28, 0x0A);
+        test_ok_root(0x40, 0x40, 0x20, 40);
+        test_ok_internal(0x40, 0x20, 0xA0, 0x28, 10);
     }
 
     #[test]
     fn calldatacopy_gadget_zero_length() {
-        test_ok_root(0x40, 0x40, 0x00, 0x00);
-        test_ok_internal(0x40, 0x40, 0xA0, 0x10, 0x00);
+        test_ok_root(0x40, 0x40, 0x00, 0);
+        test_ok_internal(0x40, 0x40, 0xA0, 0x10, 0);
     }
 }
