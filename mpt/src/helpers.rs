@@ -104,6 +104,7 @@ pub fn key_len_lookup<F: FieldExt>(
     ind: usize,
     key_len_col: Column<Advice>,
     column: Column<Advice>,
+    len_offset: usize,
     fixed_table: [Column<Fixed>; 3],
 ) {
     meta.lookup_any("key_len_lookup", |meta| {
@@ -111,8 +112,8 @@ pub fn key_len_lookup<F: FieldExt>(
         let q_enable = q_enable(meta);
 
         let s = meta.query_advice(column, Rotation::cur());
-        let c128 = Expression::Constant(F::from(128));
-        let key_len = meta.query_advice(key_len_col, Rotation::cur()) - c128;
+        let offset = Expression::Constant(F::from(len_offset as u64));
+        let key_len = meta.query_advice(key_len_col, Rotation::cur()) - offset;
         let key_len_rem = key_len - Expression::Constant(F::from(ind as u64));
         constraints.push((
             Expression::Constant(F::from(FixedTableTag::RangeKeyLen256 as u64)),
@@ -133,15 +134,16 @@ pub fn mult_diff_lookup<F: FieldExt>(
     addition: usize,
     key_len_col: Column<Advice>,
     mult_diff_col: Column<Advice>,
+    key_len_offset: usize,
     fixed_table: [Column<Fixed>; 3],
 ) {
     meta.lookup_any("mult_diff_lookup", |meta| {
         let q_enable = q_enable(meta);
         let mut constraints = vec![];
 
-        let c128 = Expression::Constant(F::from(128));
-        let key_len = meta.query_advice(key_len_col, Rotation::cur()) - c128;
-        let mult_diff_nonce = meta.query_advice(mult_diff_col, Rotation::cur());
+        let offset = Expression::Constant(F::from(key_len_offset as u64));
+        let key_len = meta.query_advice(key_len_col, Rotation::cur()) - offset;
+        let mult_diff = meta.query_advice(mult_diff_col, Rotation::cur());
         let add_expr = Expression::Constant(F::from(addition as u64));
 
         constraints.push((
@@ -153,7 +155,7 @@ pub fn mult_diff_lookup<F: FieldExt>(
             meta.query_fixed(fixed_table[1], Rotation::cur()),
         ));
         constraints.push((
-            q_enable.clone() * mult_diff_nonce,
+            q_enable.clone() * mult_diff,
             meta.query_fixed(fixed_table[2], Rotation::cur()),
         ));
 

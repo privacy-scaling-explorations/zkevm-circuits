@@ -136,6 +136,8 @@ pub struct MPTConfig<F> {
     sel2: Column<Advice>,
     is_node_hashed_s: Column<Advice>,
     is_node_hashed_c: Column<Advice>,
+    node_mult_diff_s: Column<Advice>,
+    node_mult_diff_c: Column<Advice>,
     r_table: Vec<Expression<F>>,
     // key_rlc & key_rlc_mult used for account address, for storage key,
     // and for mult_diff_nonce/mult_diff_balance in account_leaf_nonce_balance
@@ -331,6 +333,9 @@ impl<F: FieldExt> MPTConfig<F> {
 
         let is_node_hashed_s = meta.advice_column();
         let is_node_hashed_c = meta.advice_column();
+
+        let node_mult_diff_s = meta.advice_column();
+        let node_mult_diff_c = meta.advice_column();
 
         // NOTE: acc_mult_s and acc_mult_c wouldn't be needed if we would have
         // big endian instead of little endian. However, then it would be much more
@@ -664,7 +669,9 @@ impl<F: FieldExt> MPTConfig<F> {
             acc_s,
             acc_mult_s,
             is_node_hashed_s,
+            node_mult_diff_s,
             r_table.clone(),
+            fixed_table,
         );
 
         BranchRLCChip::<F>::configure(
@@ -680,7 +687,9 @@ impl<F: FieldExt> MPTConfig<F> {
             acc_c,
             acc_mult_c,
             is_node_hashed_c,
+            node_mult_diff_c,
             r_table.clone(),
+            fixed_table,
         );
 
         LeafKeyChip::<F>::configure(
@@ -1126,6 +1135,8 @@ impl<F: FieldExt> MPTConfig<F> {
             sel2,
             is_node_hashed_s,
             is_node_hashed_c,
+            node_mult_diff_s,
+            node_mult_diff_c,
             r_table,
             key_rlc,
             key_rlc_mult,
@@ -1945,20 +1956,44 @@ impl<F: FieldExt> MPTConfig<F> {
                                 || Ok(F::one()),
                             )?;
 
+                            let mut node_mult_diff_s = F::one();
+                            let mut node_mult_diff_c = F::one();
+                            
                             if row[S_RLP_START + 1] == 160 {
                                 pv.rlp_len_rem_s -= 33;
                             } else if row[S_RLP_START + 1] > 192 {
-                                pv.rlp_len_rem_s -= row[S_RLP_START + 1] as i32 - 192 + 1;
+                                let len = row[S_RLP_START + 1] as i32 - 192;
+                                pv.rlp_len_rem_s -= len + 1;
+                                for _ in 0..len {
+                                    node_mult_diff_s *= self.acc_r;
+                                }
                             } else if row[S_RLP_START + 1] == 0 {
                                 pv.rlp_len_rem_s -= 1;
                             }
                             if row[C_RLP_START + 1] == 160 {
                                 pv.rlp_len_rem_c -= 33;
                             } else if row[C_RLP_START + 1] > 192 {
-                                pv.rlp_len_rem_c -= row[C_RLP_START + 1] as i32 - 192 + 1;
+                                let len = row[C_RLP_START + 1] as i32 - 192;
+                                pv.rlp_len_rem_c -= len + 1;
+                                for _ in 0..len {
+                                    node_mult_diff_c *= self.acc_r;
+                                }
                             } else if row[C_RLP_START + 1] == 0 {
                                 pv.rlp_len_rem_c -= 1;
                             }
+
+                            region.assign_advice(
+                                || "node_mult_diff_s".to_string(),
+                                self.node_mult_diff_s,
+                                offset,
+                                || Ok(node_mult_diff_s),
+                            )?;
+                            region.assign_advice(
+                                || "node_mult_diff_c".to_string(),
+                                self.node_mult_diff_c,
+                                offset,
+                                || Ok(node_mult_diff_c),
+                            )?;
 
                             if pv.node_index == 0 {
                                 // If it's not extension node, rlc and rlc_mult in extension row
@@ -2227,10 +2262,19 @@ impl<F: FieldExt> MPTConfig<F> {
                                     if row[rlp_start + 1] == 0 {
                                         *branch_acc += c128 * *branch_mult;
                                         *branch_mult *= self.acc_r;
-                                    } else {
+                                    } else if row[rlp_start + 1] == 160 {
                                         *branch_acc += c160 * *branch_mult;
                                         *branch_mult *= self.acc_r;
                                         for i in 0..HASH_WIDTH {
+                                            *branch_acc +=
+                                                F::from(row[start + i] as u64) * *branch_mult;
+                                            *branch_mult *= self.acc_r;
+                                        }
+                                    } else {
+                                        *branch_acc += F::from(row[rlp_start + 1] as u64) * *branch_mult;
+                                        *branch_mult *= self.acc_r;
+                                        let len = row[rlp_start + 1] as usize - 192;
+                                        for i in 0..len {
                                             *branch_acc +=
                                                 F::from(row[start + i] as u64) * *branch_mult;
                                             *branch_mult *= self.acc_r;

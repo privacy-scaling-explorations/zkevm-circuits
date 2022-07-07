@@ -460,6 +460,7 @@ impl<F: FieldExt> LeafValueChip<F> {
                 ind + 1,
                 s_rlp2,
                 s_advices[ind],
+                128,
                 fixed_table,
             )
         }

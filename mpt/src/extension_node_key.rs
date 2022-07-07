@@ -718,6 +718,7 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
                 ind + 1,
                 s_rlp2,
                 s_advices[ind],
+                128,
                 fixed_table,
             )
         }
@@ -729,10 +730,11 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
                 ind,
                 s_advices[0],
                 s_advices[ind],
+                128,
                 fixed_table,
             )
         }
-        key_len_lookup(meta, sel_long, 32, s_advices[0], c_rlp1, fixed_table);
+        key_len_lookup(meta, sel_long, 32, s_advices[0], c_rlp1, 128, fixed_table);
         */ 
 
         let sel_s = |meta: &mut VirtualCells<F>| {

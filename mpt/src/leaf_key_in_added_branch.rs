@@ -171,6 +171,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
                 ind + 1,
                 s_rlp2,
                 s_advices[ind],
+                128,
                 fixed_table,
             )
         }
@@ -182,16 +183,17 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
                 ind,
                 s_advices[0],
                 s_advices[ind],
+                128,
                 fixed_table,
             )
         }
-        key_len_lookup(meta, sel_long, 32, s_advices[0], c_rlp1, fixed_table);
+        key_len_lookup(meta, sel_long, 32, s_advices[0], c_rlp1, 128, fixed_table);
         */
 
         // acc_mult corresponds to key length (short):
-        mult_diff_lookup(meta, sel_short, 2, s_rlp2, acc_mult_s, fixed_table);
+        mult_diff_lookup(meta, sel_short, 2, s_rlp2, acc_mult_s, 128, fixed_table);
         // acc_mult corresponds to key length (long):
-        mult_diff_lookup(meta, sel_long, 3, s_advices[0], acc_mult_s, fixed_table);
+        mult_diff_lookup(meta, sel_long, 3, s_advices[0], acc_mult_s, 128, fixed_table);
 
         /*
         Leaf key S

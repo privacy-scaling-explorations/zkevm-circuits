@@ -56,6 +56,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
     ) -> AccountLeafNonceBalanceConfig {
         let config = AccountLeafNonceBalanceConfig {};
         let one = Expression::Constant(F::one());
+        let c128 = Expression::Constant(F::from(128));
 
         meta.create_gate("account leaf nonce balance", |meta| {
             let q_enable = q_enable(meta);
@@ -82,7 +83,6 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
                 rot = -(ACCOUNT_LEAF_NONCE_BALANCE_C_IND - ACCOUNT_LEAF_KEY_C_IND);
                 rot_into_non_existing = -(ACCOUNT_LEAF_NONCE_BALANCE_C_IND - ACCOUNT_NON_EXISTING_IND);
             }
-            let c128 = Expression::Constant(F::from(128));
             let c248 = Expression::Constant(F::from(248));
 
             let acc_prev = meta.query_advice(acc_s, Rotation(rot));
@@ -368,6 +368,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
                 * info */
             s_advices[0],
             mult_diff_nonce,
+            128,
             fixed_table,
         );
 
@@ -380,6 +381,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
                 ind,
                 s_advices[0],
                 s_advices[ind],
+                128,
                 fixed_table,
             )
         }
@@ -409,6 +411,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
             1, // 1 for byte with length info
             c_advices[0],
             mult_diff_balance,
+            128,
             fixed_table,
         );
 
@@ -421,6 +424,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
                 ind,
                 c_advices[0],
                 c_advices[ind],
+                128,
                 fixed_table,
             )
         }

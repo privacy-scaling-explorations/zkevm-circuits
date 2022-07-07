@@ -133,10 +133,11 @@ impl<F: FieldExt> LeafKeyChip<F> {
                 ind + 1,
                 s_rlp2,
                 s_advices[ind],
+                128,
                 fixed_table,
             )
         }
-        key_len_lookup(meta, sel_short, 32, s_advices[0], c_rlp1, fixed_table);
+        key_len_lookup(meta, sel_short, 32, s_advices[0], c_rlp1, 128, fixed_table);
 
         for ind in 1..HASH_WIDTH {
             key_len_lookup(
@@ -145,17 +146,18 @@ impl<F: FieldExt> LeafKeyChip<F> {
                 ind,
                 s_advices[0],
                 s_advices[ind],
+                128,
                 fixed_table,
             )
         }
-        key_len_lookup(meta, sel_long, 32, s_advices[0], c_rlp1, fixed_table);
-        key_len_lookup(meta, sel_long, 33, s_advices[0], c_rlp2, fixed_table);
+        key_len_lookup(meta, sel_long, 32, s_advices[0], c_rlp1, 128, fixed_table);
+        key_len_lookup(meta, sel_long, 33, s_advices[0], c_rlp2, 128, fixed_table);
         */
 
         // acc_mult corresponds to key length (short):
-        mult_diff_lookup(meta, sel_short, 2, s_rlp2, acc_mult, fixed_table);
+        mult_diff_lookup(meta, sel_short, 2, s_rlp2, acc_mult, 128, fixed_table);
         // acc_mult corresponds to key length (long):
-        mult_diff_lookup(meta, sel_long, 3, s_advices[0], acc_mult, fixed_table);
+        mult_diff_lookup(meta, sel_long, 3, s_advices[0], acc_mult, 128, fixed_table);
 
         // Checking the key - accumulated RLC is taken (computed using the path through
         // branches) and key bytes are added to the RLC. The external circuit
