@@ -322,7 +322,7 @@ fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: &StateConfig) -> Queries
             - meta.query_advice(first_different_limb.bits[2], Rotation::cur())
             - meta.query_advice(first_different_limb.bits[3], Rotation::cur()),
         // 1 if first_different_limb is in the rw counter, 0 otherwise (i.e. any of the 4 most
-        // significant bits at 0)
+        // significant bits are 0)
         not_first_access: meta.query_advice(first_different_limb.bits[0], Rotation::cur())
             * meta.query_advice(first_different_limb.bits[1], Rotation::cur())
             * meta.query_advice(first_different_limb.bits[2], Rotation::cur())
