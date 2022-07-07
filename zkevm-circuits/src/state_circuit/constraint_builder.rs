@@ -263,6 +263,7 @@ impl<F: Field> ConstraintBuilder<F> {
             q.is_write.clone(),
             1.expr(),
         );
+        self.require_zero("initial TxLog value is 0", q.initial_value());
 
         // Comment out the following field_tag-related constraints as it is
         // duplicated between state circuit and evm circuit. For more information, please refer to https://github.com/privacy-scaling-explorations/zkevm-specs/issues/221

@@ -677,7 +677,7 @@ fn lexicographic_ordering_previous_limb_differences_nonzero() {
             is_write: true,
             tx_id: 23,
             value: 20,
-            value_prev: 40,
+            value_prev: 0,
         },
         Rw::Account {
             rw_counter: 2,
@@ -901,7 +901,7 @@ fn bad_initial_tx_access_list_account_value() {
         tx_id: 1,
         account_address: address!("0x0000000000000000000000000000000004356002"),
         is_warm: true,
-        is_warm_prev: true,
+        is_warm_prev: false,
     }];
 
     let overrides = HashMap::from([((AdviceColumn::InitialValue, 0), Fr::from(1))]);
@@ -935,11 +935,10 @@ fn bad_initial_tx_refund_value() {
 }
 
 #[test]
-#[ignore = ""]
 fn bad_initial_tx_log_value() {
     let rows = vec![Rw::TxLog {
         rw_counter: 1,
-        is_write: false,
+        is_write: true,
         tx_id: 800,
         log_id: 4,
         field_tag: TxLogFieldTag::Topic,
@@ -947,7 +946,12 @@ fn bad_initial_tx_log_value() {
         value: U256::from(300),
     }];
 
-    assert_error_matches(verify(rows), "initial TxLog value is 0");
+    let overrides = HashMap::from([((AdviceColumn::InitialValue, 0), Fr::from(10))]);
+
+    assert_error_matches(
+        verify_with_overrides(rows, overrides),
+        "initial TxLog value is 0",
+    );
 }
 
 #[test]

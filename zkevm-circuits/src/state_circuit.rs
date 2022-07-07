@@ -237,17 +237,19 @@ impl<F: Field, const N_ROWS: usize> Circuit<F> for StateCircuit<F, N_ROWS> {
                             &row,
                             &prev_row,
                         )?;
+
+                        // TODO: Get initial_values from MPT updates instead.
                         if is_first_access {
+                            // TODO: Set initial values for Rw::CallContext and Rw::TxReceipt to be
+                            // 0 instead of special casing them.
                             initial_value = if matches!(
                                 row.tag(),
-                                RwTableTag::Account
-                                    | RwTableTag::AccountStorage
-                                    | RwTableTag::CallContext
-                                    | RwTableTag::TxReceipt
+                                RwTableTag::CallContext | RwTableTag::TxReceipt
                             ) {
                                 row.value_assignment(self.randomness)
                             } else {
-                                F::zero()
+                                row.value_prev_assignment(self.randomness)
+                                    .unwrap_or_default()
                             };
                         }
                     }
