@@ -6,6 +6,7 @@ use std::i8::MAX;
 use std::io::Cursor;
 use std::marker::PhantomData;
 
+use digest::generic_array::typenum::private::IsEqualPrivate;
 use eth_types::geth_types::BlockConstants;
 use eth_types::{geth_types::GethData, U256, U64};
 use eth_types::{
@@ -15,6 +16,7 @@ use eth_types::{Bytes, H256};
 use ethers_core::abi::ethereum_types::H160;
 use ethers_core::types::Block;
 use halo2_proofs::arithmetic::BaseExt;
+use halo2_proofs::plonk::Instance;
 
 use crate::tx_circuit::sign_verify::SignData;
 use crate::tx_circuit::{tx_to_sign_data, TxFieldTag};
@@ -168,8 +170,10 @@ pub struct PiCircuitConfig<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: u
     raw_public_inputs: Column<Advice>,
     rpi_rlc_acc: Column<Advice>,
     rand_rpi: Column<Advice>,
+    q_not_end: Selector,
     q_end: Selector,
 
+    pi: Column<Instance>, // p, rand_pi, chain_ID, state_root, preve_state_root
     _marker: PhantomData<F>,
     /*TODO add PI col
      * should contain: p, rand_rpi + extra fields: chaindID, block.root, block.hash,
@@ -194,32 +198,45 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
         let raw_public_inputs = meta.advice_column();
         let rpi_rlc_acc = meta.advice_column();
         let rand_rpi = meta.advice_column();
-        let q_end = meta.complex_selector();
+        let q_not_end = meta.selector();
+        let q_end = meta.selector();
+
+        let pi = meta.instance_column();
 
         // TODO enable equalities
-        // meta.enable_equality(raw_public_inputs);
-        // meta.enable_equality(rpi_rlc_acc);
-        // meta.enable_equality(rand_rpi);
-
-        // TODO declare instances -> pi
+        meta.enable_equality(raw_public_inputs);
+        meta.enable_equality(rpi_rlc_acc);
+        meta.enable_equality(rand_rpi);
 
         // 0.0 rpi_rlc_acc[0] == RLC(raw_public_inputs, rand_rpi)
-        meta.create_gate("rpi_rlc_acc = RLC(raw_public_inputs, rand_rpi)", |meta| {
-            // row.rpi_rlc_acc == q_not_end * row_next.rpi_rlc_acc * row.rand_rpi +
-            // row.raw_public_inputs
-            let q_not_end = 1u64.expr() - meta.query_selector(q_end);
-            let cur_rpi_rlc_acc = meta.query_advice(rpi_rlc_acc, Rotation::cur());
-            let next_rpi_rlc_acc = meta.query_advice(rpi_rlc_acc, Rotation::next());
-            let rand_rpi = meta.query_advice(rand_rpi, Rotation::cur());
-            let raw_public_inputs = meta.query_advice(raw_public_inputs, Rotation::cur());
+        meta.create_gate(
+            "rpi_rlc_acc[i] = rand_rpi * rpi_rlc_acc[i+1] + raw_public_inputs[i] ",
+            |meta| {
+                // row.rpi_rlc_acc == q_not_end * row_next.rpi_rlc_acc * row.rand_rpi +
+                // row.raw_public_inputs
+                let q_not_end = meta.query_selector(q_not_end);
+                let cur_rpi_rlc_acc = meta.query_advice(rpi_rlc_acc, Rotation::cur());
+                let next_rpi_rlc_acc = meta.query_advice(rpi_rlc_acc, Rotation::next());
+                let rand_rpi = meta.query_advice(rand_rpi, Rotation::cur());
+                let raw_public_inputs = meta.query_advice(raw_public_inputs, Rotation::cur());
 
-            vec![q_not_end * next_rpi_rlc_acc * rand_rpi + raw_public_inputs - cur_rpi_rlc_acc]
+                // TODO Constraint last row to rpi_rlc_acc = raw_public_inputs
+                vec![
+                    q_not_end * (next_rpi_rlc_acc * rand_rpi + raw_public_inputs - cur_rpi_rlc_acc),
+                ]
+            },
+        );
+        meta.create_gate("rpi_rlc_acc[last] = raw_public_inputs[last]", |meta| {
+            let q_end = meta.query_selector(q_end);
+            let raw_public_inputs = meta.query_advice(raw_public_inputs, Rotation::cur());
+            let rpi_rlc_acc = meta.query_advice(rpi_rlc_acc, Rotation::cur());
+            vec![q_end * (raw_public_inputs - rpi_rlc_acc)]
         });
 
         // 0.1 rand_rpi[i] == rand_rpi[j]
         meta.create_gate("rand_pi = rand_rpi.next", |meta| {
             // q_not_end * row.rand_rpi == q_not_end * row_next.rand_rpi
-            let q_not_end = 1u64.expr() - meta.query_selector(q_end);
+            let q_not_end = meta.query_selector(q_not_end);
             let cur_rand_rpi = meta.query_advice(rand_rpi, Rotation::cur());
             let next_rand_rpi = meta.query_advice(rand_rpi, Rotation::next());
 
@@ -283,7 +300,9 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
             raw_public_inputs,
             rpi_rlc_acc,
             rand_rpi,
+            q_not_end,
             q_end,
+            pi,
             _marker: PhantomData,
         }
     }
@@ -348,9 +367,9 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
         )?;
 
         // Add copy to vec
-        raw_pi_vals[id_offset] = tx_id;
-        raw_pi_vals[index_offset] = index;
-        raw_pi_vals[value_offset] = tx_value;
+        raw_pi_vals[offset + id_offset] = tx_id;
+        raw_pi_vals[offset + index_offset] = index;
+        raw_pi_vals[offset + value_offset] = tx_value;
 
         Ok(())
     }
@@ -465,10 +484,10 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
         }
 
         // padding
-        while offset < PiCircuitConfig::<F, MAX_TXS, MAX_CALLDATA>::circuit_len() {
-            region.assign_advice(|| "padding", self.block_value, offset, || Ok(F::zero()))?;
-            offset += 1
-        }
+        // while offset < PiCircuitConfig::<F, MAX_TXS, MAX_CALLDATA>::circuit_len() {
+        //     region.assign_advice(|| "padding", self.block_value, offset, ||
+        // Ok(F::zero()))?;     offset += 1
+        // }
 
         Ok(())
     }
@@ -544,8 +563,8 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
         region.assign_advice(|| "rand_rpi", self.rand_rpi, offset, || Ok(rand_rpi))?;
         self.q_end.enable(region, offset)?;
 
-        // Rest of the rows
-        for offset in (0..circuit_len).rev().skip(1) {
+        // Next rows
+        for offset in (1..circuit_len).rev().skip(1) {
             rpi_rlc_acc *= rand_rpi;
             rpi_rlc_acc += raw_pi_vals[offset];
             region.assign_advice(
@@ -555,7 +574,16 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
                 || Ok(rpi_rlc_acc),
             )?;
             region.assign_advice(|| "rand_rpi", self.rand_rpi, offset, || Ok(rand_rpi))?;
+            self.q_not_end.enable(region, offset)?;
         }
+
+        // First row
+        rpi_rlc_acc *= rand_rpi;
+        rpi_rlc_acc += raw_pi_vals[offset];
+        let _p = region.assign_advice(|| "rpi_rlc_acc", self.rpi_rlc_acc, 0, || Ok(rpi_rlc_acc))?;
+        let _rpi = region.assign_advice(|| "rand_rpi", self.rand_rpi, 0, || Ok(rand_rpi))?;
+        self.q_not_end.enable(region, 0)?;
+        // region.constrain_equal(p.cell(), rpi.cell())
         Ok(())
     }
 }
@@ -737,26 +765,43 @@ mod pi_circuit_test {
     fn run<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>(
         k: u32,
         public_data: PublicData,
-        rand_rpi: F,
     ) -> Result<(), Vec<VerifyFailure>> {
         let mut rng = ChaCha20Rng::seed_from_u64(2);
-        // let aux_generator =
-        //     <Secp256k1Affine as CurveAffine>::CurveExt::random(&mut rng).to_affine();
-
         let randomness = F::random(&mut rng);
-        // let mut instance: Vec<Vec<F>> = (1..POW_RAND_SIZE + 1)
-        //     .map(|exp| vec![randomness.pow(&[exp as u64, 0, 0, 0]); txs.len() *
-        // VERIF_HEIGHT])     .collect();
-        // // SignVerifyChip -> ECDSAChip -> MainGate instance column
-        // instance.push(vec![]);
+
+        // TODO Should be computed from the public_data
+        let rand_rpi = F::rand();
+        let p = F::zero();
+
+        let block_hash = public_data
+            .extra
+            .eth_block
+            .hash
+            .unwrap_or_else(H256::zero)
+            .to_fixed_bytes();
+
+        let public_inputs = vec![
+            p,
+            rand_rpi,
+            rlc(block_hash, randomness),
+            rlc(
+                public_data.extra.eth_block.state_root.to_fixed_bytes(),
+                randomness,
+            ),
+            rlc(
+                public_data.extra.eth_block.parent_hash.to_fixed_bytes(),
+                randomness,
+            ),
+        ];
+
         let circuit = PiCircuit::<F, MAX_TXS, MAX_CALLDATA> {
             randomness,
             rand_rpi,
             public_data,
         };
 
-        let instance = Vec::<Vec<F>>::new();
-        let prover = match MockProver::run(k, &circuit, instance) {
+        // let instance = Vec::<Vec<F>>::new();
+        let prover = match MockProver::run(k, &circuit, vec![public_inputs]) {
             Ok(prover) => prover,
             Err(e) => panic!("{:#?}", e),
         };
@@ -769,11 +814,7 @@ mod pi_circuit_test {
         const MAX_CALLDATA: usize = 8;
         let public_data = PublicData::default();
 
-        let rand_rpi = Fr::rand();
         let k = 13;
-        assert_eq!(
-            run::<Fr, MAX_TXS, MAX_CALLDATA>(k, public_data, rand_rpi),
-            Ok(())
-        );
+        assert_eq!(run::<Fr, MAX_TXS, MAX_CALLDATA>(k, public_data), Ok(()));
     }
 }
