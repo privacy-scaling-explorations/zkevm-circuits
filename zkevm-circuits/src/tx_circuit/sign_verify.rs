@@ -889,7 +889,7 @@ mod sign_verify_tests {
             Ok(prover) => prover,
             Err(e) => panic!("{:#?}", e),
         };
-        assert_eq!(prover.verify(), Ok(()));
+        assert_eq!(prover.verify_par(), Ok(()));
     }
 
     // Generate a test key pair

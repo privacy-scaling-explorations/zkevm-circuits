@@ -207,7 +207,7 @@ mod test {
                     vec![],
                 )
                 .unwrap();
-                assert_eq!(prover.verify(), result);
+                assert_eq!(prover.verify_par(), result);
             }
         };
     }

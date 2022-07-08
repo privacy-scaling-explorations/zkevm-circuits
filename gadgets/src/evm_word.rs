@@ -256,7 +256,7 @@ mod tests {
             // Test without public inputs
             let prover = MockProver::<Fp>::run(9, &circuit, vec![vec![]]).unwrap();
             assert_eq!(
-                prover.verify(),
+                prover.verify_par(),
                 Err(vec![VerifyFailure::Lookup {
                     name: "Encoded word / Pub inputs",
                     lookup_index: 32,
@@ -273,7 +273,7 @@ mod tests {
             // Calculate word commitment and use it as public input.
             let encoded: Fp = encode(word.to_repr().iter().rev().cloned(), r());
             let prover = MockProver::<Fp>::run(9, &circuit, vec![vec![encoded]]).unwrap();
-            assert_eq!(prover.verify(), Ok(()))
+            assert_eq!(prover.verify_par(), Ok(()))
         }
     }
 }

@@ -475,7 +475,7 @@ mod tx_circuit_tests {
             Ok(prover) => prover,
             Err(e) => panic!("{:#?}", e),
         };
-        prover.verify()
+        prover.verify_par()
     }
 
     fn rand_tx<R: Rng + CryptoRng>(mut rng: R, chain_id: u64) -> Transaction {

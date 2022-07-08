@@ -59,7 +59,9 @@ async fn test_state_circuit_block(block_num: u64) {
 
     use halo2_proofs::halo2curves::bn256::Fr as Fp;
     let prover = MockProver::<Fp>::run(DEGREE as u32, &circuit, power_of_randomness).unwrap();
-    prover.verify().expect("state_circuit verification failed");
+    prover
+        .verify_par()
+        .expect("state_circuit verification failed");
 }
 
 macro_rules! declare_tests {

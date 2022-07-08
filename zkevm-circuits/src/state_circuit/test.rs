@@ -98,7 +98,7 @@ fn test_state_circuit_ok(
     let power_of_randomness = circuit.instance();
 
     let prover = MockProver::<Fr>::run(19, &circuit, power_of_randomness).unwrap();
-    let verify_result = prover.verify();
+    let verify_result = prover.verify_par();
     assert_eq!(verify_result, Ok(()));
 }
 
@@ -131,14 +131,8 @@ fn verifying_key_independent_of_rw_length() {
     // halo2::plonk::VerifyingKey doesn't derive Eq, so we check for equality using
     // its debug string.
     assert_eq!(
-        format!(
-            "{:?}",
-            keygen_vk::<Scheme, _>(&params, &no_rows).unwrap()
-        ),
-        format!(
-            "{:?}",
-            keygen_vk::<Scheme, _>(&params, &one_row).unwrap()
-        )
+        format!("{:?}", keygen_vk::<Scheme, _>(&params, &no_rows).unwrap()),
+        format!("{:?}", keygen_vk::<Scheme, _>(&params, &one_row).unwrap())
     );
 }
 
@@ -755,7 +749,7 @@ fn invalid_start_rw_counter() {
 #[test]
 fn all_padding() {
     assert_eq!(
-        prover(vec![], HashMap::new()).verify_at_rows(0..100, 0..100),
+        prover(vec![], HashMap::new()).verify_at_rows_par(0..100, 0..100),
         Ok(())
     );
 }
@@ -771,7 +765,8 @@ fn skipped_start_rw_counter() {
         ((AdviceColumn::RwCounterLimb0, -1), Fr::one()),
     ]);
 
-    let result = prover(vec![], overrides).verify_at_rows(N_ROWS - 1..N_ROWS, N_ROWS - 1..N_ROWS);
+    let result =
+        prover(vec![], overrides).verify_at_rows_par(N_ROWS - 1..N_ROWS, N_ROWS - 1..N_ROWS);
     assert_error_matches(result, "rw_counter increases by 1 for every non-first row");
 }
 
@@ -886,7 +881,7 @@ fn invalid_tags() {
             ((AdviceColumn::TagBit3, first_row_offset), bits[3]),
         ]);
 
-        let result = prover(vec![], overrides).verify_at_rows(0..1, 0..1);
+        let result = prover(vec![], overrides).verify_at_rows_par(0..1, 0..1);
 
         assert_error_matches(result, "binary number value in range");
     }
@@ -907,7 +902,7 @@ fn prover(rows: Vec<Rw>, overrides: HashMap<(AdviceColumn, isize), Fr>) -> MockP
 fn verify(rows: Vec<Rw>) -> Result<(), Vec<VerifyFailure>> {
     let used_rows = rows.len();
     prover(rows, HashMap::new())
-        .verify_at_rows(N_ROWS - used_rows..N_ROWS, N_ROWS - used_rows..N_ROWS)
+        .verify_at_rows_par(N_ROWS - used_rows..N_ROWS, N_ROWS - used_rows..N_ROWS)
 }
 
 fn verify_with_overrides(
@@ -918,7 +913,7 @@ fn verify_with_overrides(
     assert_eq!(verify(rows.clone()), Ok(()));
 
     let n_active_rows = rows.len();
-    prover(rows, overrides).verify_at_rows(
+    prover(rows, overrides).verify_at_rows_par(
         N_ROWS - n_active_rows..N_ROWS,
         N_ROWS - n_active_rows..N_ROWS,
     )

@@ -329,7 +329,7 @@ macro_rules! test_state_circuit {
         };
 
         let prover = MockProver::<Fr>::run(7, &circuit, vec![]).unwrap();
-        assert_eq!(prover.verify(), Ok(()));
+        assert_eq!(prover.verify_par(), Ok(()));
     }};
 }
 

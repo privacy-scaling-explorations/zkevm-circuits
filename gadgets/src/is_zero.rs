@@ -158,7 +158,7 @@ mod test {
                 _marker: PhantomData,
             };
             let prover = MockProver::<Fp>::run(k, &circuit, vec![]).unwrap();
-            assert_eq!(prover.verify(), $result);
+            assert_eq!(prover.verify_par(), $result);
         }};
     }
 
@@ -175,7 +175,7 @@ mod test {
                 _marker: PhantomData,
             };
             let prover = MockProver::<Fp>::run(k, &circuit, vec![]).unwrap();
-            assert!(prover.verify().is_err());
+            assert!(prover.verify_par().is_err());
         }};
     }
 
@@ -420,7 +420,7 @@ mod test {
                             chip.assign(
                                 &mut region,
                                 idx + 1,
-                                value.map(|(lhs, rhs)| F::from(lhs - rhs)),
+                                value.map(|(lhs, rhs)| F::from(lhs) - F::from(rhs)),
                             )?;
                         }
 

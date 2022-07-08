@@ -738,7 +738,7 @@ mod tests {
         };
 
         let prover = MockProver::<F>::run(k, &circuit, vec![]).unwrap();
-        let err = prover.verify();
+        let err = prover.verify_par();
         let print_failures = true;
         if err.is_err() && print_failures {
             for e in err.err().iter() {
@@ -747,7 +747,7 @@ mod tests {
                 }
             }
         }
-        let err = prover.verify();
+        let err = prover.verify_par();
         assert_eq!(err.is_ok(), success);
     }
 
