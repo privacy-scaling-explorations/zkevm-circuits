@@ -12,7 +12,7 @@ use crate::{
         HASH_WIDTH, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, IS_BRANCH_C_PLACEHOLDER_POS,
         IS_BRANCH_S_PLACEHOLDER_POS, IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS,
         IS_EXT_LONG_ODD_C16_POS, IS_EXT_LONG_ODD_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS,
-        KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH, LAYOUT_OFFSET,
+        KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH, LAYOUT_OFFSET, IS_S_EXT_LONGER_THAN_55_POS, IS_C_EXT_LONGER_THAN_55_POS, IS_S_BRANCH_IN_EXT_HASHED_POS, IS_C_BRANCH_IN_EXT_HASHED_POS,
     },
 };
 
@@ -171,6 +171,26 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
                 s_advices[IS_EXT_LONG_ODD_C1_POS - LAYOUT_OFFSET],
                 Rotation(rot_into_branch_init),
             );
+            let mut is_ext_longer_than_55 = meta.query_advice(
+                s_advices[IS_S_EXT_LONGER_THAN_55_POS - LAYOUT_OFFSET],
+                Rotation(rot_into_branch_init),
+            );
+            if !is_s {
+                is_ext_longer_than_55 = meta.query_advice(
+                    s_advices[IS_C_EXT_LONGER_THAN_55_POS - LAYOUT_OFFSET],
+                    Rotation(rot_into_branch_init),
+                );
+            }
+            let mut is_branch_in_ext_hashed = meta.query_advice(
+                s_advices[IS_S_BRANCH_IN_EXT_HASHED_POS - LAYOUT_OFFSET],
+                Rotation(rot_into_branch_init),
+            );
+            if !is_s {
+                is_branch_in_ext_hashed = meta.query_advice(
+                    s_advices[IS_C_BRANCH_IN_EXT_HASHED_POS - LAYOUT_OFFSET],
+                    Rotation(rot_into_branch_init),
+                );
+            }
 
             let is_branch_init_prev = meta.query_advice(is_branch_init, Rotation::prev());
 
@@ -290,13 +310,17 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
                 let s_rlp1 = meta.query_advice(s_rlp1, Rotation::cur());
                 let s_advices0 = meta.query_advice(s_advices[0], Rotation::cur());
 
+                let is_one_nibble = is_ext_short_c16.clone() + is_ext_short_c1.clone();
+                let is_even_nibbles = is_ext_long_even_c16.clone() + is_ext_long_even_c1.clone();
+                let is_long_odd_nibbles = is_ext_long_odd_c16.clone()+ is_ext_long_odd_c1.clone();
+
                 // This prevents setting to short when it's not short (s_rlp1 > 226 in that
                 // case):
                 constraints.push((
                     "short implies s_rlp1 = 226",
                     q_not_first.clone()
                         * q_enable.clone()
-                        * (is_ext_short_c16.clone() + is_ext_short_c1.clone())
+                        * is_one_nibble.clone()
                         * (s_rlp1.clone() - c226),
                 ));
 
@@ -306,7 +330,7 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
                     "long & even implies s_advices0 = 0",
                     q_not_first.clone()
                         * q_enable.clone()
-                        * (is_ext_long_even_c16.clone() + is_ext_long_even_c1.clone())
+                        * is_even_nibbles.clone()
                         * s_advices0,
                 ));
 
@@ -317,7 +341,8 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
                     "short RLP",
                     q_not_first.clone()
                         * q_enable.clone()
-                        * (is_ext_short_c16.clone() + is_ext_short_c1.clone())
+                        * (one.clone() - is_ext_longer_than_55.clone())
+                        * is_one_nibble.clone()
                         * (s_rlp1.clone() - c192.clone() - c33.clone() - one.clone()),
                 ));
 
@@ -327,12 +352,53 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
                     "long RLP",
                     q_not_first.clone()
                         * q_enable.clone()
-                        * (is_ext_long_even_c16.clone()
-                        + is_ext_long_even_c1.clone()
-                        + is_ext_long_odd_c16.clone()
-                        + is_ext_long_odd_c1.clone())
+                        * (one.clone() - is_ext_longer_than_55.clone())
+                        * (is_even_nibbles.clone()
+                        + is_long_odd_nibbles.clone())
                         * (s_rlp1 - c192.clone() - (s_rlp2 - c128.clone()) - one.clone() - c33.clone()),
                 ));
+
+                /* 
+                TODO:
+                - is_ext_longer_than_55 (if longer than additional byte at position 1)
+                - 0 after len in c_advices (for s_advices it's in extension_node_key)
+                - flag for whether c_advices contain list (c_rlp2 > 192) or string (c_rlp2 = 160) - this
+                  is the same as saying whether the branch is not hashed or it is (see is_branch_in_ext_hashed)
+                */
+
+                // [228,130,0,149,160,114,253,150,133,18,192,156,19,241,162,51,210,24,1,151,16,48,7,177,42,60,49,34,230,254,242,79,132,165,90,75,249]
+                // Note that the first element (228 in this case) can go much higher - for example, if there
+                // are 40 nibbles, this would take 20 bytes which would make the first element 248.
+
+                // If only one byte in key:
+                // [226,16,160,172,105,12...
+
+                // Extension node with non-hashed branch:
+                // List contains up to 55 bytes (192 + 55)
+                // [247,160,16,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,213,128,194,32,1,128,194,32,1,128,128,128,128,128,128,128,128,128,128,128,128,128]
+
+                // List contains more than 55 bytes
+                // [248,58,159,16,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,217,128,196,130,32,0,1,128,196,130,32,0,1,128,128,128,128,128,128,128,128,128,128,128,128,128]
+
+                // Note that the extension node can be much shorter than the one above - in case when
+                // there are less nibbles, so we cannot say that 226 appears as the first byte only
+                // when there are hashed nodes in the branch and there is only one nibble.
+                // Branch with two non-hashed nodes (that's the shortest possible branch):
+                // [217,128,196,130,32,0,1,128,196,130,32,0,1,128,128,128,128,128,128,128,128,128,128,128,128,128]
+                // Note: branch contains at least 26 bytes. 192 + 26 = 218
+
+                /*
+                If proofEl[0] <= 247 (length at most 55, so proofEl[1] doesn't specify the length of the whole
+                    remaining stream, only of the next substream)
+                If proofEl[1] <= 128:
+                    There is only 1 byte for nibbles (keyLen = 1) and this is proofEl[1].
+                Else:
+                    Nibbles are stored in more than 1 byte, proofEl[1] specifies the length of bytes.
+                Else:
+                proofEl[1] contains the length of the remaining stream.
+                proofEl[2] specifies the length of the bytes (for storing nibbles).
+                Note that we can't have only one nibble in this case.
+                */
             }
 
             constraints

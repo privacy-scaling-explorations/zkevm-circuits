@@ -32,6 +32,13 @@ pub const IS_EXT_LONG_ODD_C1_POS: usize = 26;
 // Note that C16/C1 in extension node refer to the multiplier to be used with branch modified_node,
 // not with the extension node first nibble.
 
+// short/long above means having one or more than one nibbles, this means whether
+// the whole node (not only nibbles) has more than 55 bytes
+pub const IS_S_EXT_LONGER_THAN_55_POS: usize = 27;
+pub const IS_C_EXT_LONGER_THAN_55_POS: usize = 28;
+pub const IS_S_BRANCH_IN_EXT_HASHED_POS: usize = 29;
+pub const IS_C_BRANCH_IN_EXT_HASHED_POS: usize = 30;
+
 pub const NOT_FIRST_LEVEL_POS: usize = 2;
 pub const IS_STORAGE_MOD_POS: usize = 3;
 pub const IS_NONCE_MOD_POS: usize = 4;
