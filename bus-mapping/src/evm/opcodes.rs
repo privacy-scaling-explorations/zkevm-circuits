@@ -34,6 +34,7 @@ mod mload;
 mod mstore;
 mod number;
 mod origin;
+mod r#return;
 mod selfbalance;
 mod sload;
 mod sstore;
@@ -56,6 +57,7 @@ use logs::Log;
 use mload::Mload;
 use mstore::Mstore;
 use origin::Origin;
+use r#return::Return;
 use selfbalance::Selfbalance;
 use sload::Sload;
 use sstore::Sstore;
@@ -123,8 +125,8 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         OpcodeId::SHR => StackOnlyOpcode::<2, 1>::gen_associated_ops,
         OpcodeId::SAR => StackOnlyOpcode::<2, 1>::gen_associated_ops,
         OpcodeId::SHA3 => StackOnlyOpcode::<2, 1>::gen_associated_ops,
-        // OpcodeId::ADDRESS => {},
-        // OpcodeId::BALANCE => {},
+        OpcodeId::ADDRESS => StackOnlyOpcode::<0, 1>::gen_associated_ops,
+        OpcodeId::BALANCE => StackOnlyOpcode::<1, 1>::gen_associated_ops,
         OpcodeId::ORIGIN => Origin::gen_associated_ops,
         OpcodeId::CALLER => Caller::gen_associated_ops,
         OpcodeId::CALLVALUE => Callvalue::gen_associated_ops,
@@ -134,12 +136,12 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         OpcodeId::GASPRICE => GasPrice::gen_associated_ops,
         OpcodeId::CODECOPY => Codecopy::gen_associated_ops,
         OpcodeId::CODESIZE => Codesize::gen_associated_ops,
-        // OpcodeId::EXTCODESIZE => {},
-        // OpcodeId::EXTCODECOPY => {},
-        // OpcodeId::RETURNDATASIZE => {},
-        // OpcodeId::RETURNDATACOPY => {},
+        OpcodeId::EXTCODESIZE => StackOnlyOpcode::<1, 1>::gen_associated_ops,
+        OpcodeId::EXTCODECOPY => StackOnlyOpcode::<4, 0>::gen_associated_ops,
+        OpcodeId::RETURNDATASIZE => StackOnlyOpcode::<0, 1>::gen_associated_ops,
+        OpcodeId::RETURNDATACOPY => StackOnlyOpcode::<3, 0>::gen_associated_ops,
         OpcodeId::EXTCODEHASH => Extcodehash::gen_associated_ops,
-        // OpcodeId::BLOCKHASH => {},
+        OpcodeId::BLOCKHASH => StackOnlyOpcode::<1, 1>::gen_associated_ops,
         OpcodeId::COINBASE => StackOnlyOpcode::<0, 1>::gen_associated_ops,
         OpcodeId::TIMESTAMP => StackOnlyOpcode::<0, 1>::gen_associated_ops,
         OpcodeId::NUMBER => StackOnlyOpcode::<0, 1>::gen_associated_ops,
@@ -200,13 +202,15 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         // OpcodeId::CREATE => {},
         OpcodeId::CALL => Call::gen_associated_ops,
         // OpcodeId::CALLCODE => {},
-        // TODO: Handle RETURN by its own gen_associated_ops.
-        OpcodeId::RETURN => Stop::gen_associated_ops,
+        // OpcodeId::RETURN => {},
         // OpcodeId::DELEGATECALL => {},
         // OpcodeId::CREATE2 => {},
         // OpcodeId::STATICCALL => {},
-        // TODO: Handle REVERT by its own gen_associated_ops.
-        OpcodeId::REVERT => Stop::gen_associated_ops,
+        // OpcodeId::REVERT => {},
+        OpcodeId::REVERT | OpcodeId::RETURN => {
+            warn!("Using dummy gen_associated_ops for opcode {:?}", opcode_id);
+            Return::gen_associated_ops
+        }
         OpcodeId::SELFDESTRUCT => {
             warn!("Using dummy gen_selfdestruct_ops for opcode SELFDESTRUCT");
             dummy_gen_selfdestruct_ops
@@ -375,7 +379,7 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
                 (CallContextField::LastCalleeReturnDataLength, 0.into()),
                 (CallContextField::IsRoot, 1.into()),
                 (CallContextField::IsCreate, 0.into()),
-                (CallContextField::CodeSource, code_hash.to_word()),
+                (CallContextField::CodeHash, code_hash.to_word()),
             ] {
                 state.push_op(
                     &mut exec_step,

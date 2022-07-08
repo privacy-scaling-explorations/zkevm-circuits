@@ -697,8 +697,8 @@ pub enum CallContextField {
     IsRoot,
     /// IsCreate
     IsCreate,
-    /// CodeSource
-    CodeSource,
+    /// CodeHash
+    CodeHash,
     /// ProgramCounter
     ProgramCounter,
     /// StackPointer
@@ -707,8 +707,8 @@ pub enum CallContextField {
     GasLeft,
     /// MemorySize
     MemorySize,
-    /// StateWriteCounter
-    StateWriteCounter,
+    /// ReversibleWriteCounter
+    ReversibleWriteCounter,
 }
 
 /// Represents an CallContext read/write operation.

@@ -15,8 +15,8 @@ use bus_mapping::{
     operation::{self, AccountField, CallContextField, TxLogField, TxReceiptField},
 };
 
-use eth_types::evm_types::OpcodeId;
-use eth_types::{Address, Field, ToLittleEndian, ToScalar, ToWord, Word};
+use eth_types::{evm_types::OpcodeId, ToWord};
+use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word};
 use eth_types::{ToAddress, U256};
 use halo2_proofs::arithmetic::{BaseExt, FieldExt};
 use halo2_proofs::pairing::bn256::Fr;
@@ -33,7 +33,7 @@ pub struct Block<F> {
     /// Read write events in the RwTable
     pub rws: RwMap,
     /// Bytecode used in the block
-    pub bytecodes: Vec<Bytecode>,
+    pub bytecodes: HashMap<Word, Bytecode>,
     /// The block context
     pub context: BlockContext,
 }
@@ -238,17 +238,6 @@ impl Transaction {
     }
 }
 
-#[derive(Debug, Clone)]
-pub enum CodeSource {
-    Account(Word),
-}
-
-impl Default for CodeSource {
-    fn default() -> Self {
-        Self::Account(0.into())
-    }
-}
-
 #[derive(Debug, Default, Clone)]
 pub struct Call {
     /// The unique identifier of call in the whole proof, using the
@@ -259,7 +248,7 @@ pub struct Call {
     /// Indicate if the call is a create call
     pub is_create: bool,
     /// The identifier of current executed bytecode
-    pub code_source: CodeSource,
+    pub code_hash: Word,
     /// The `rw_counter` at the end of reversion of a call if it has
     /// `is_persistent == false`
     pub rw_counter_end_of_reversion: usize,
@@ -762,8 +751,19 @@ impl Rw {
             Self::Stack { stack_pointer, .. } => {
                 Some(U256::from(*stack_pointer as u64).to_address())
             }
-            Self::TxLog { log_id, index, .. } => {
-                Some((U256::from(*index as u64) + (U256::from(*log_id) << 8)).to_address())
+            Self::TxLog {
+                log_id,
+                field_tag,
+                index,
+                ..
+            } => {
+                // make field_tag fit into one limb (16 bits)
+                Some(
+                    (U256::from(*index as u64)
+                        + (U256::from(*field_tag as u64) << 32)
+                        + (U256::from(*log_id) << 48))
+                        .to_address(),
+                )
             }
             Self::Start { .. }
             | Self::CallContext { .. }
@@ -776,7 +776,6 @@ impl Rw {
         match self {
             Self::Account { field_tag, .. } => Some(*field_tag as u64),
             Self::CallContext { field_tag, .. } => Some(*field_tag as u64),
-            Self::TxLog { field_tag, .. } => Some(*field_tag as u64),
             Self::TxReceipt { field_tag, .. } => Some(*field_tag as u64),
             Self::Start { .. }
             | Self::Memory { .. }
@@ -785,6 +784,7 @@ impl Rw {
             | Self::TxAccessListAccount { .. }
             | Self::TxAccessListAccountStorage { .. }
             | Self::TxRefund { .. }
+            | Self::TxLog { .. }
             | Self::AccountDestructed { .. } => None,
         }
     }
@@ -815,7 +815,7 @@ impl Rw {
                 match field_tag {
                     // Only these two tags have values that may not fit into a scalar, so we need to
                     // RLC.
-                    CallContextFieldTag::CodeSource | CallContextFieldTag::Value => {
+                    CallContextFieldTag::CodeHash | CallContextFieldTag::Value => {
                         RandomLinearCombination::random_linear_combine(
                             value.to_le_bytes(),
                             randomness,
@@ -824,9 +824,15 @@ impl Rw {
                     _ => value.to_scalar().unwrap(),
                 }
             }
-            Self::Account { value, .. }
-            | Self::AccountStorage { value, .. }
-            | Self::Stack { value, .. } => {
+            Self::Account {
+                value, field_tag, ..
+            } => match field_tag {
+                AccountFieldTag::CodeHash | AccountFieldTag::Balance => {
+                    RandomLinearCombination::random_linear_combine(value.to_le_bytes(), randomness)
+                }
+                AccountFieldTag::Nonce => value.to_scalar().unwrap(),
+            },
+            Self::AccountStorage { value, .. } | Self::Stack { value, .. } => {
                 RandomLinearCombination::random_linear_combine(value.to_le_bytes(), randomness)
             }
 
@@ -849,7 +855,20 @@ impl Rw {
 
     fn value_prev_assignment<F: Field>(&self, randomness: F) -> Option<F> {
         match self {
-            Self::Account { value_prev, .. } | Self::AccountStorage { value_prev, .. } => {
+            Self::Account {
+                value_prev,
+                field_tag,
+                ..
+            } => Some(match field_tag {
+                AccountFieldTag::CodeHash | AccountFieldTag::Balance => {
+                    RandomLinearCombination::random_linear_combine(
+                        value_prev.to_le_bytes(),
+                        randomness,
+                    )
+                }
+                AccountFieldTag::Nonce => value_prev.to_scalar().unwrap(),
+            }),
+            Self::AccountStorage { value_prev, .. } => {
                 Some(RandomLinearCombination::random_linear_combine(
                     value_prev.to_le_bytes(),
                     randomness,
@@ -1035,13 +1054,13 @@ impl From<&operation::OperationContainer> for RwMap {
                         }
                         CallContextField::IsRoot => CallContextFieldTag::IsRoot,
                         CallContextField::IsCreate => CallContextFieldTag::IsCreate,
-                        CallContextField::CodeSource => CallContextFieldTag::CodeSource,
+                        CallContextField::CodeHash => CallContextFieldTag::CodeHash,
                         CallContextField::ProgramCounter => CallContextFieldTag::ProgramCounter,
                         CallContextField::StackPointer => CallContextFieldTag::StackPointer,
                         CallContextField::GasLeft => CallContextFieldTag::GasLeft,
                         CallContextField::MemorySize => CallContextFieldTag::MemorySize,
-                        CallContextField::StateWriteCounter => {
-                            CallContextFieldTag::StateWriteCounter
+                        CallContextField::ReversibleWriteCounter => {
+                            CallContextFieldTag::ReversibleWriteCounter
                         }
                     },
                     value: op.op().value,
@@ -1183,6 +1202,14 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                 if op.is_log() {
                     return ExecutionState::LOG;
                 }
+
+                macro_rules! dummy {
+                    ($name:expr) => {{
+                        log::warn!("$name is implemented with DummyGadget");
+                        $name
+                    }};
+                }
+
                 match op {
                     OpcodeId::ADD | OpcodeId::SUB => ExecutionState::ADD_SUB,
                     OpcodeId::ADDMOD => ExecutionState::ADDMOD,
@@ -1191,11 +1218,11 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::EQ | OpcodeId::LT | OpcodeId::GT => ExecutionState::CMP,
                     OpcodeId::SLT | OpcodeId::SGT => ExecutionState::SCMP,
                     OpcodeId::SIGNEXTEND => ExecutionState::SIGNEXTEND,
-                    // TODO: Convert REVERT and RETURN to their own ExecutionState.
-                    OpcodeId::STOP | OpcodeId::RETURN | OpcodeId::REVERT => ExecutionState::STOP,
+                    OpcodeId::STOP => ExecutionState::STOP,
                     OpcodeId::AND => ExecutionState::BITWISE,
                     OpcodeId::XOR => ExecutionState::BITWISE,
                     OpcodeId::OR => ExecutionState::BITWISE,
+                    OpcodeId::NOT => ExecutionState::NOT,
                     OpcodeId::POP => ExecutionState::POP,
                     OpcodeId::PUSH32 => ExecutionState::PUSH,
                     OpcodeId::BYTE => ExecutionState::BYTE,
@@ -1218,7 +1245,6 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::DIFFICULTY | OpcodeId::BASEFEE => ExecutionState::BLOCKCTXU256,
                     OpcodeId::GAS => ExecutionState::GAS,
                     OpcodeId::SELFBALANCE => ExecutionState::SELFBALANCE,
-                    OpcodeId::SHA3 => ExecutionState::SHA3,
                     OpcodeId::SHR => ExecutionState::SHR,
                     OpcodeId::SLOAD => ExecutionState::SLOAD,
                     OpcodeId::SSTORE => ExecutionState::SSTORE,
@@ -1231,6 +1257,27 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::CODECOPY => ExecutionState::CODECOPY,
                     OpcodeId::CALLDATALOAD => ExecutionState::CALLDATALOAD,
                     OpcodeId::CODESIZE => ExecutionState::CODESIZE,
+                    OpcodeId::RETURN | OpcodeId::REVERT => ExecutionState::RETURN,
+                    // dummy ops
+                    OpcodeId::SHA3 => dummy!(ExecutionState::SHA3),
+                    OpcodeId::ADDRESS => dummy!(ExecutionState::ADDRESS),
+                    OpcodeId::BALANCE => dummy!(ExecutionState::BALANCE),
+                    OpcodeId::BLOCKHASH => dummy!(ExecutionState::BLOCKHASH),
+                    OpcodeId::SDIV => dummy!(ExecutionState::SDIV),
+                    OpcodeId::SMOD => dummy!(ExecutionState::SMOD),
+                    OpcodeId::EXP => dummy!(ExecutionState::EXP),
+                    OpcodeId::SHL => dummy!(ExecutionState::SHL),
+                    OpcodeId::SAR => dummy!(ExecutionState::SAR),
+                    OpcodeId::EXTCODESIZE => dummy!(ExecutionState::EXTCODESIZE),
+                    OpcodeId::EXTCODECOPY => dummy!(ExecutionState::EXTCODECOPY),
+                    OpcodeId::RETURNDATASIZE => dummy!(ExecutionState::RETURNDATASIZE),
+                    OpcodeId::RETURNDATACOPY => dummy!(ExecutionState::RETURNDATACOPY),
+                    OpcodeId::CREATE => dummy!(ExecutionState::CREATE),
+                    OpcodeId::CALLCODE => dummy!(ExecutionState::CALLCODE),
+                    OpcodeId::DELEGATECALL => dummy!(ExecutionState::DELEGATECALL),
+                    OpcodeId::CREATE2 => dummy!(ExecutionState::CREATE2),
+                    OpcodeId::STATICCALL => dummy!(ExecutionState::STATICCALL),
+                    OpcodeId::SELFDESTRUCT => dummy!(ExecutionState::SELFDESTRUCT),
                     _ => unimplemented!("unimplemented opcode {:?}", op),
                 }
             }
@@ -1314,15 +1361,7 @@ fn tx_convert(tx: &circuit_input_builder::Transaction, id: usize, is_last_tx: bo
                 id: call.call_id,
                 is_root: call.is_root,
                 is_create: call.is_create(),
-                code_source: match call.code_source {
-                    circuit_input_builder::CodeSource::Address(_) => {
-                        CodeSource::Account(call.code_hash.to_word())
-                    }
-                    circuit_input_builder::CodeSource::Memory => {
-                        CodeSource::Account(call.code_hash.to_word())
-                    }
-                    _ => unimplemented!("unimplemented code source {:#?}", call.code_source),
-                },
+                code_hash: call.code_hash.to_word(),
                 rw_counter_end_of_reversion: call.rw_counter_end_of_reversion,
                 caller_id: call.caller_id,
                 depth: call.depth,
@@ -1383,7 +1422,10 @@ pub fn block_convert(
                     .map(|call| call.code_hash)
                     .unique()
                     .into_iter()
-                    .map(|code_hash| Bytecode::new(code_db.0.get(&code_hash).unwrap().to_vec()))
+                    .map(|code_hash| {
+                        let bytecode = Bytecode::new(code_db.0.get(&code_hash).unwrap().to_vec());
+                        (bytecode.hash, bytecode)
+                    })
             })
             .collect(),
     }

@@ -186,7 +186,7 @@ pub enum BytecodeFieldTag {
     Padding,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, EnumIter)]
 pub enum TxLogFieldTag {
     Address = 1,
     Topic,
@@ -223,12 +223,12 @@ pub enum CallContextFieldTag {
 
     IsRoot,
     IsCreate,
-    CodeSource,
+    CodeHash,
     ProgramCounter,
     StackPointer,
     GasLeft,
     MemorySize,
-    StateWriteCounter,
+    ReversibleWriteCounter,
 }
 
 impl_expr!(FixedTableTag);

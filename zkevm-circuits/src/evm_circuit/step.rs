@@ -3,7 +3,7 @@ use crate::{
     evm_circuit::{
         param::{MAX_STEP_HEIGHT, STEP_WIDTH},
         util::{Cell, RandomLinearCombination},
-        witness::{Block, Call, CodeSource, ExecStep, Transaction},
+        witness::{Block, Call, ExecStep, Transaction},
     },
     util::Expr,
 };
@@ -138,14 +138,14 @@ impl ExecutionState {
         Self::iter().count()
     }
 
-    pub(crate) fn halts(&self) -> bool {
+    pub(crate) fn halts_in_success(&self) -> bool {
+        matches!(self, Self::STOP | Self::RETURN | Self::SELFDESTRUCT)
+    }
+
+    pub(crate) fn halts_in_exception(&self) -> bool {
         matches!(
             self,
-            Self::STOP
-                | Self::RETURN
-                | Self::REVERT
-                | Self::SELFDESTRUCT
-                | Self::ErrorInvalidOpcode
+            Self::ErrorInvalidOpcode
                 | Self::ErrorStackOverflow
                 | Self::ErrorStackUnderflow
                 | Self::ErrorWriteProtection
@@ -175,6 +175,10 @@ impl ExecutionState {
                 | Self::ErrorOutOfGasSTATICCALL
                 | Self::ErrorOutOfGasSELFDESTRUCT
         )
+    }
+
+    pub(crate) fn halts(&self) -> bool {
+        self.halts_in_success() || self.halts_in_exception() || matches!(self, Self::REVERT)
     }
 
     pub(crate) fn responsible_opcodes(&self) -> Vec<OpcodeId> {
@@ -442,18 +446,14 @@ impl<F: FieldExt> Step<F> {
         self.state
             .is_create
             .assign(region, offset, Some(F::from(call.is_create as u64)))?;
-        match call.code_source {
-            CodeSource::Account(code_hash) => {
-                self.state.code_hash.assign(
-                    region,
-                    offset,
-                    Some(RandomLinearCombination::random_linear_combine(
-                        code_hash.to_le_bytes(),
-                        block.randomness,
-                    )),
-                )?;
-            }
-        }
+        self.state.code_hash.assign(
+            region,
+            offset,
+            Some(RandomLinearCombination::random_linear_combine(
+                call.code_hash.to_le_bytes(),
+                block.randomness,
+            )),
+        )?;
         self.state.program_counter.assign(
             region,
             offset,

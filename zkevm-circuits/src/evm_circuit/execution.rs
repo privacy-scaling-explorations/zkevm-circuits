@@ -58,10 +58,12 @@ mod memory_copy;
 mod msize;
 mod mul_div_mod;
 mod mulmod;
+mod not;
 mod origin;
 mod pc;
 mod pop;
 mod push;
+mod r#return;
 mod selfbalance;
 mod shr;
 mod signed_comparator;
@@ -107,10 +109,12 @@ use memory_copy::CopyToMemoryGadget;
 use msize::MsizeGadget;
 use mul_div_mod::MulDivModGadget;
 use mulmod::MulModGadget;
+use not::NotGadget;
 use origin::OriginGadget;
 use pc::PcGadget;
 use pop::PopGadget;
 use push::PushGadget;
+use r#return::ReturnGadget;
 use selfbalance::SelfbalanceGadget;
 use shr::ShrGadget;
 use signed_comparator::SignedComparatorGadget;
@@ -185,13 +189,33 @@ pub(crate) struct ExecutionConfig<F> {
     msize_gadget: MsizeGadget<F>,
     mul_div_mod_gadget: MulDivModGadget<F>,
     mulmod_gadget: MulModGadget<F>,
+    not_gadget: NotGadget<F>,
     origin_gadget: OriginGadget<F>,
     pc_gadget: PcGadget<F>,
     pop_gadget: PopGadget<F>,
     push_gadget: PushGadget<F>,
+    return_gadget: ReturnGadget<F>,
     selfbalance_gadget: SelfbalanceGadget<F>,
     shr_gadget: ShrGadget<F>,
     sha3_gadget: DummyGadget<F, 2, 1, { ExecutionState::SHA3 }>,
+    address_gadget: DummyGadget<F, 0, 1, { ExecutionState::ADDRESS }>,
+    balance_gadget: DummyGadget<F, 1, 1, { ExecutionState::BALANCE }>,
+    blockhash_gadget: DummyGadget<F, 1, 1, { ExecutionState::BLOCKHASH }>,
+    sdiv_gadget: DummyGadget<F, 2, 1, { ExecutionState::SDIV }>,
+    smod_gadget: DummyGadget<F, 2, 1, { ExecutionState::SMOD }>,
+    exp_gadget: DummyGadget<F, 2, 1, { ExecutionState::EXP }>,
+    shl_gadget: DummyGadget<F, 2, 1, { ExecutionState::SHL }>,
+    sar_gadget: DummyGadget<F, 2, 1, { ExecutionState::SAR }>,
+    extcodesize_gadget: DummyGadget<F, 1, 1, { ExecutionState::EXTCODESIZE }>,
+    extcodecopy_gadget: DummyGadget<F, 4, 0, { ExecutionState::EXTCODECOPY }>,
+    returndatasize_gadget: DummyGadget<F, 0, 1, { ExecutionState::RETURNDATASIZE }>,
+    returndatacopy_gadget: DummyGadget<F, 3, 0, { ExecutionState::RETURNDATACOPY }>,
+    create_gadget: DummyGadget<F, 3, 1, { ExecutionState::CREATE }>,
+    callcode_gadget: DummyGadget<F, 7, 1, { ExecutionState::CALLCODE }>,
+    delegatecall_gadget: DummyGadget<F, 6, 1, { ExecutionState::DELEGATECALL }>,
+    create2_gadget: DummyGadget<F, 4, 1, { ExecutionState::CREATE2 }>,
+    staticcall_gadget: DummyGadget<F, 6, 1, { ExecutionState::STATICCALL }>,
+    selfdestruct_gadget: DummyGadget<F, 1, 0, { ExecutionState::SELFDESTRUCT }>,
     signed_comparator_gadget: SignedComparatorGadget<F>,
     signextend_gadget: SignextendGadget<F>,
     sload_gadget: SloadGadget<F>,
@@ -273,7 +297,7 @@ impl<F: Field> ExecutionConfig<F> {
             iter::once(sum_to_one)
                 .chain(bool_checks)
                 .map(move |(name, poly)| (name, q_usable.clone() * q_step.clone() * poly))
-            // TODO: Enable these after test of CALLDATACOPY is complete.
+            // TODO: Enable these after incomplete trace is no longer necessary.
             // .chain(first_step_check)
             // .chain(last_step_check)
         });
@@ -379,12 +403,32 @@ impl<F: Field> ExecutionConfig<F> {
             msize_gadget: configure_gadget!(),
             mul_div_mod_gadget: configure_gadget!(),
             mulmod_gadget: configure_gadget!(),
+            not_gadget: configure_gadget!(),
             origin_gadget: configure_gadget!(),
             pc_gadget: configure_gadget!(),
             pop_gadget: configure_gadget!(),
             push_gadget: configure_gadget!(),
+            return_gadget: configure_gadget!(),
             selfbalance_gadget: configure_gadget!(),
             sha3_gadget: configure_gadget!(),
+            address_gadget: configure_gadget!(),
+            balance_gadget: configure_gadget!(),
+            blockhash_gadget: configure_gadget!(),
+            sdiv_gadget: configure_gadget!(),
+            smod_gadget: configure_gadget!(),
+            exp_gadget: configure_gadget!(),
+            shl_gadget: configure_gadget!(),
+            sar_gadget: configure_gadget!(),
+            extcodesize_gadget: configure_gadget!(),
+            extcodecopy_gadget: configure_gadget!(),
+            returndatasize_gadget: configure_gadget!(),
+            returndatacopy_gadget: configure_gadget!(),
+            create_gadget: configure_gadget!(),
+            callcode_gadget: configure_gadget!(),
+            delegatecall_gadget: configure_gadget!(),
+            create2_gadget: configure_gadget!(),
+            staticcall_gadget: configure_gadget!(),
+            selfdestruct_gadget: configure_gadget!(),
             shr_gadget: configure_gadget!(),
             signed_comparator_gadget: configure_gadget!(),
             signextend_gadget: configure_gadget!(),
@@ -397,7 +441,6 @@ impl<F: Field> ExecutionConfig<F> {
             block_ctx_u256_gadget: configure_gadget!(),
             // error gadgets
             error_oog_static_memory_gadget: configure_gadget!(),
-
             // step and presets
             step: step_curr,
             height_map,
@@ -660,7 +703,9 @@ impl<F: Field> ExecutionConfig<F> {
                         call,
                         step,
                         height,
-                        steps.peek(),
+                        steps.peek().map(|&(transaction, step)| {
+                            (transaction, &transaction.calls[step.call_index], step)
+                        }),
                         power_of_randomness,
                     )?;
 
@@ -730,7 +775,7 @@ impl<F: Field> ExecutionConfig<F> {
         call: &Call,
         step: &ExecStep,
         height: usize,
-        next: Option<&(&Transaction, &ExecStep)>,
+        next: Option<(&Transaction, &Call, &ExecStep)>,
         power_of_randomness: [F; 31],
     ) -> Result<(), Error> {
         // Make the region large enough for the current step and the next step.
@@ -749,13 +794,13 @@ impl<F: Field> ExecutionConfig<F> {
         // These may be used in stored expressions and
         // so their witness values need to be known to be able
         // to correctly calculate the intermediate value.
-        if let Some((transaction_next, step_next)) = next {
+        if let Some((transaction_next, call_next, step_next)) = next {
             self.assign_exec_step_int(
                 region,
                 offset + height,
                 block,
                 transaction_next,
-                call,
+                call_next,
                 step_next,
             )?;
         }
@@ -818,16 +863,38 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::MSIZE => assign_exec_step!(self.msize_gadget),
             ExecutionState::MUL_DIV_MOD => assign_exec_step!(self.mul_div_mod_gadget),
             ExecutionState::MULMOD => assign_exec_step!(self.mulmod_gadget),
+            ExecutionState::NOT => assign_exec_step!(self.not_gadget),
             ExecutionState::ORIGIN => assign_exec_step!(self.origin_gadget),
             ExecutionState::PC => assign_exec_step!(self.pc_gadget),
             ExecutionState::POP => assign_exec_step!(self.pop_gadget),
             ExecutionState::PUSH => assign_exec_step!(self.push_gadget),
+            ExecutionState::RETURN => assign_exec_step!(self.return_gadget),
             ExecutionState::SCMP => assign_exec_step!(self.signed_comparator_gadget),
             ExecutionState::BLOCKCTXU64 => assign_exec_step!(self.block_ctx_u64_gadget),
             ExecutionState::BLOCKCTXU160 => assign_exec_step!(self.block_ctx_u160_gadget),
             ExecutionState::BLOCKCTXU256 => assign_exec_step!(self.block_ctx_u256_gadget),
             ExecutionState::SELFBALANCE => assign_exec_step!(self.selfbalance_gadget),
+            // dummy gadgets
             ExecutionState::SHA3 => assign_exec_step!(self.sha3_gadget),
+            ExecutionState::ADDRESS => assign_exec_step!(self.address_gadget),
+            ExecutionState::BALANCE => assign_exec_step!(self.balance_gadget),
+            ExecutionState::BLOCKHASH => assign_exec_step!(self.blockhash_gadget),
+            ExecutionState::SDIV => assign_exec_step!(self.sdiv_gadget),
+            ExecutionState::SMOD => assign_exec_step!(self.smod_gadget),
+            ExecutionState::EXP => assign_exec_step!(self.exp_gadget),
+            ExecutionState::SHL => assign_exec_step!(self.shl_gadget),
+            ExecutionState::SAR => assign_exec_step!(self.sar_gadget),
+            ExecutionState::EXTCODESIZE => assign_exec_step!(self.extcodesize_gadget),
+            ExecutionState::EXTCODECOPY => assign_exec_step!(self.extcodecopy_gadget),
+            ExecutionState::RETURNDATASIZE => assign_exec_step!(self.returndatasize_gadget),
+            ExecutionState::RETURNDATACOPY => assign_exec_step!(self.returndatacopy_gadget),
+            ExecutionState::CREATE => assign_exec_step!(self.create_gadget),
+            ExecutionState::CALLCODE => assign_exec_step!(self.callcode_gadget),
+            ExecutionState::DELEGATECALL => assign_exec_step!(self.delegatecall_gadget),
+            ExecutionState::CREATE2 => assign_exec_step!(self.create2_gadget),
+            ExecutionState::STATICCALL => assign_exec_step!(self.staticcall_gadget),
+            ExecutionState::SELFDESTRUCT => assign_exec_step!(self.selfdestruct_gadget),
+            // end of dummy gadgets
             ExecutionState::SHR => assign_exec_step!(self.shr_gadget),
             ExecutionState::SIGNEXTEND => assign_exec_step!(self.signextend_gadget),
             ExecutionState::SLOAD => assign_exec_step!(self.sload_gadget),
@@ -838,7 +905,7 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::ErrorOutOfGasStaticMemoryExpansion => {
                 assign_exec_step!(self.error_oog_static_memory_gadget)
             }
-            _ => unimplemented!(),
+            _ => unimplemented!("unimplemented ExecutionState: {:?}", step.execution_state),
         }
 
         // Fill in the witness values for stored expressions
