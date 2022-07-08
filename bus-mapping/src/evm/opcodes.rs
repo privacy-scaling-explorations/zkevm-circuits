@@ -3,8 +3,8 @@ use crate::{
     circuit_input_builder::{CircuitInputStateRef, ExecStep},
     evm::OpcodeId,
     operation::{
-        AccountField, AccountOp, CallContextField, CallContextOp, TxAccessListAccountOp,
-        TxReceiptField, TxReceiptOp, TxRefundOp, RW,
+        AccountField, AccountOp, CallContextField, TxAccessListAccountOp, TxReceiptField,
+        TxRefundOp, RW,
     },
     Error,
 };
@@ -256,44 +256,30 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
             (call.is_persistent as usize).into(),
         ),
     ] {
-        state.push_op(
-            &mut exec_step,
-            RW::READ,
-            CallContextOp {
-                call_id: call.call_id,
-                field,
-                value,
-            },
-        );
+        state.call_context_read(&mut exec_step, call.call_id, field, value);
     }
 
     // Increase caller's nonce
     let caller_address = call.caller_address;
     let nonce_prev = state.sdb.increase_nonce(&caller_address);
-    state.push_op(
+    state.account_write(
         &mut exec_step,
-        RW::WRITE,
-        AccountOp {
-            address: caller_address,
-            field: AccountField::Nonce,
-            value: (nonce_prev + 1).into(),
-            value_prev: nonce_prev.into(),
-        },
-    );
+        caller_address,
+        AccountField::Nonce,
+        (nonce_prev + 1).into(),
+        nonce_prev.into(),
+    )?;
 
     // Add caller and callee into access list
     for address in [call.caller_address, call.address] {
         state.sdb.add_account_to_access_list(address);
-        state.push_op(
+        state.tx_accesslist_account_write(
             &mut exec_step,
-            RW::WRITE,
-            TxAccessListAccountOp {
-                tx_id: state.tx_ctx.id(),
-                address,
-                is_warm: true,
-                is_warm_prev: false,
-            },
-        );
+            state.tx_ctx.id(),
+            address,
+            true,
+            false,
+        )?;
     }
 
     // Calculate intrinsic gas cost
@@ -339,16 +325,13 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
             Ok(exec_step)
         }
         (_, _, is_empty_code_hash) => {
-            state.push_op(
+            state.account_read(
                 &mut exec_step,
-                RW::READ,
-                AccountOp {
-                    address: call.address,
-                    field: AccountField::CodeHash,
-                    value: code_hash.to_word(),
-                    value_prev: code_hash.to_word(),
-                },
-            );
+                call.address,
+                AccountField::CodeHash,
+                code_hash.to_word(),
+                code_hash.to_word(),
+            )?;
 
             // 3. Call to account with empty code.
             if is_empty_code_hash {
@@ -381,15 +364,7 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
                 (CallContextField::IsCreate, 0.into()),
                 (CallContextField::CodeHash, code_hash.to_word()),
             ] {
-                state.push_op(
-                    &mut exec_step,
-                    RW::READ,
-                    CallContextOp {
-                        call_id: call.call_id,
-                        field,
-                        value,
-                    },
-                );
+                state.call_context_read(&mut exec_step, call.call_id, field, value);
             }
 
             Ok(exec_step)
@@ -404,23 +379,17 @@ pub fn gen_end_tx_ops(
     let mut exec_step = state.new_end_tx_step();
     let call = state.tx.calls()[0].clone();
 
-    state.push_op(
+    state.call_context_read(
         &mut exec_step,
-        RW::READ,
-        CallContextOp {
-            call_id: call.call_id,
-            field: CallContextField::TxId,
-            value: state.tx_ctx.id().into(),
-        },
+        call.call_id,
+        CallContextField::TxId,
+        state.tx_ctx.id().into(),
     );
-    state.push_op(
+    state.call_context_read(
         &mut exec_step,
-        RW::READ,
-        CallContextOp {
-            call_id: call.call_id,
-            field: CallContextField::IsPersistent,
-            value: Word::from(call.is_persistent as u8),
-        },
+        call.call_id,
+        CallContextField::IsPersistent,
+        Word::from(call.is_persistent as u8),
     );
 
     let refund = state.sdb.refund();
@@ -443,16 +412,14 @@ pub fn gen_end_tx_ops(
     let caller_balance_prev = caller_account.balance;
     let caller_balance =
         caller_account.balance + state.tx.gas_price * (exec_step.gas_left.0 + effective_refund);
-    state.push_op(
+
+    state.account_write(
         &mut exec_step,
-        RW::WRITE,
-        AccountOp {
-            address: call.caller_address,
-            field: AccountField::Balance,
-            value: caller_balance,
-            value_prev: caller_balance_prev,
-        },
-    );
+        call.caller_address,
+        AccountField::Balance,
+        caller_balance,
+        caller_balance_prev,
+    )?;
 
     let effective_tip = state.tx.gas_price - state.block.base_fee;
     let (found, coinbase_account) = state.sdb.get_account_mut(&state.block.coinbase);
@@ -462,76 +429,58 @@ pub fn gen_end_tx_ops(
     let coinbase_balance_prev = coinbase_account.balance;
     let coinbase_balance =
         coinbase_account.balance + effective_tip * (state.tx.gas - exec_step.gas_left.0);
-    state.push_op(
+    state.account_write(
         &mut exec_step,
-        RW::WRITE,
-        AccountOp {
-            address: state.block.coinbase,
-            field: AccountField::Balance,
-            value: coinbase_balance,
-            value_prev: coinbase_balance_prev,
-        },
-    );
+        state.block.coinbase,
+        AccountField::Balance,
+        coinbase_balance,
+        coinbase_balance_prev,
+    )?;
 
     // handle tx receipt tag
-    state.push_op(
+    state.tx_receipt_read(
         &mut exec_step,
-        RW::READ,
-        TxReceiptOp {
-            tx_id: state.tx_ctx.id(),
-            field: TxReceiptField::PostStateOrStatus,
-            value: call.is_persistent as u64,
-        },
-    );
+        state.tx_ctx.id(),
+        TxReceiptField::PostStateOrStatus,
+        call.is_persistent as u64,
+    )?;
 
     let log_id = exec_step.log_id;
-    state.push_op(
+    state.tx_receipt_read(
         &mut exec_step,
-        RW::READ,
-        TxReceiptOp {
-            tx_id: state.tx_ctx.id(),
-            field: TxReceiptField::LogLength,
-            value: log_id as u64,
-        },
-    );
+        state.tx_ctx.id(),
+        TxReceiptField::LogLength,
+        log_id as u64,
+    )?;
 
     let gas_used = state.tx.gas - exec_step.gas_left.0;
     let mut current_cumulative_gas_used: u64 = 0;
     if state.tx_ctx.id() > 1 {
         current_cumulative_gas_used = *cumulative_gas_used.get(&(state.tx_ctx.id() - 1)).unwrap();
         // query pre tx cumulative gas
-        state.push_op(
+        state.tx_receipt_read(
             &mut exec_step,
-            RW::READ,
-            TxReceiptOp {
-                tx_id: state.tx_ctx.id() - 1,
-                field: TxReceiptField::CumulativeGasUsed,
-                value: current_cumulative_gas_used,
-            },
-        );
+            state.tx_ctx.id() - 1,
+            TxReceiptField::CumulativeGasUsed,
+            current_cumulative_gas_used,
+        )?;
     }
 
-    state.push_op(
+    state.tx_receipt_read(
         &mut exec_step,
-        RW::READ,
-        TxReceiptOp {
-            tx_id: state.tx_ctx.id(),
-            field: TxReceiptField::CumulativeGasUsed,
-            value: current_cumulative_gas_used + gas_used,
-        },
-    );
+        state.tx_ctx.id(),
+        TxReceiptField::CumulativeGasUsed,
+        current_cumulative_gas_used + gas_used,
+    )?;
 
     cumulative_gas_used.insert(state.tx_ctx.id(), current_cumulative_gas_used + gas_used);
 
     if !state.tx_ctx.is_last_tx() {
-        state.push_op(
+        state.call_context_read(
             &mut exec_step,
-            RW::READ,
-            CallContextOp {
-                call_id: state.block_ctx.rwc.0 + 1,
-                field: CallContextField::TxId,
-                value: (state.tx_ctx.id() + 1).into(),
-            },
+            state.block_ctx.rwc.0 + 1,
+            CallContextField::TxId,
+            (state.tx_ctx.id() + 1).into(),
         );
     }
 
