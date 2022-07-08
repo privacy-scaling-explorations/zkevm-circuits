@@ -10,8 +10,7 @@ pub mod bench_params;
 
 #[cfg(test)]
 #[cfg(feature = "benches")]
-pub mod keccak_permutation;
-
+// pub mod keccak_permutation;
 #[cfg(test)]
 #[cfg(feature = "benches")]
 pub mod tx_circuit;

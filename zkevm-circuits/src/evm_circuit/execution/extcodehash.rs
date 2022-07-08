@@ -15,11 +15,10 @@ use crate::{
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    util::Expr,
+    util::{Expr, EMPTY_HASH_LE},
 };
 use eth_types::{evm_types::GasCost, Field, ToAddress, ToScalar, U256};
 use halo2_proofs::plonk::Error;
-use keccak256::EMPTY_HASH_LE;
 
 #[derive(Clone, Debug)]
 pub(crate) struct ExtcodehashGadget<F> {
@@ -75,7 +74,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
         );
 
         let empty_code_hash_rlc = Word::random_linear_combine_expr(
-            (*EMPTY_HASH_LE).map(|byte| byte.expr()),
+            EMPTY_HASH_LE.map(|byte| byte.expr()),
             cb.power_of_randomness(),
         );
         // Note that balance is RLC encoded, but RLC(x) = 0 iff x = 0, so we don't need
@@ -164,7 +163,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
         self.balance.assign(region, offset, Some(balance))?;
         self.code_hash.assign(region, offset, Some(code_hash))?;
 
-        let empty_code_hash_rlc = Word::random_linear_combine(*EMPTY_HASH_LE, block.randomness);
+        let empty_code_hash_rlc = Word::random_linear_combine(EMPTY_HASH_LE, block.randomness);
         self.is_empty.assign(
             region,
             offset,

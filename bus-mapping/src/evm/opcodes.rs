@@ -13,7 +13,7 @@ use eth_types::{
     evm_types::{GasCost, MAX_REFUND_QUOTIENT_OF_GAS_USED},
     GethExecStep, ToAddress, ToWord, Word,
 };
-use keccak256::EMPTY_HASH;
+// use keccak256::EMPTY_HASH;
 use log::warn;
 use std::collections::HashMap;
 
@@ -64,6 +64,11 @@ use sstore::Sstore;
 use stackonlyop::StackOnlyOpcode;
 use stop::Stop;
 use swap::Swap;
+
+pub const EMPTY_HASH: [u8; 32] = [
+    0xc5, 0xd2, 0x46, 0x01, 0x86, 0xf7, 0x23, 0x3c, 0x92, 0x7e, 0x7d, 0xb2, 0xdc, 0xc7, 0x03, 0xc0,
+    0xe5, 0x00, 0xb6, 0x53, 0xca, 0x82, 0x27, 0x3b, 0x7b, 0xfa, 0xd8, 0x04, 0x5d, 0x85, 0xa4, 0x70,
+];
 
 /// Generic opcode trait which defines the logic of the
 /// [`Operation`](crate::operation::Operation) that should be generated for one
@@ -312,7 +317,7 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
     match (
         call.is_create(),
         state.is_precompiled(&call.address),
-        code_hash.to_fixed_bytes() == *EMPTY_HASH,
+        code_hash.to_fixed_bytes() == EMPTY_HASH,
     ) {
         // 1. Creation transaction.
         (true, _, _) => {
@@ -516,7 +521,7 @@ fn dummy_gen_call_ops(
 
     match (
         state.is_precompiled(&call.address),
-        callee_code_hash.to_fixed_bytes() == *EMPTY_HASH,
+        callee_code_hash.to_fixed_bytes() == EMPTY_HASH,
     ) {
         // 1. Call to precompiled.
         (true, _) => Ok(vec![exec_step]),
@@ -589,7 +594,7 @@ fn dummy_gen_create_ops(
         call.value,
     )?;
 
-    if call.code_hash.to_fixed_bytes() == *EMPTY_HASH {
+    if call.code_hash.to_fixed_bytes() == EMPTY_HASH {
         // 1. Create with empty initcode.
         state.handle_return(geth_step)?;
         Ok(vec![exec_step])

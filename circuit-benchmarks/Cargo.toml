@@ -11,7 +11,7 @@ ff = "0.11"
 halo2_proofs = "0.2.0"
 ark-std = { version = "0.3", features = ["print-trace"] }
 zkevm-circuits = { path = "../zkevm-circuits" }
-keccak256 = { path = "../keccak256" }
+# keccak256 = { path = "../keccak256" }
 bus-mapping = { path = "../bus-mapping" }
 rand_xorshift = "0.3"
 rand = "0.8"
