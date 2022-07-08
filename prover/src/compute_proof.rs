@@ -2,10 +2,13 @@ use bus_mapping::circuit_input_builder::BuilderClient;
 use bus_mapping::rpc::GethClient;
 use ethers_providers::Http;
 use halo2_proofs::{
-    pairing::bn256::{Fr, G1Affine},
+    halo2curves::bn256::{Bn256, Fr},
     plonk::*,
-    poly::commitment::Params,
-    transcript::{Blake2bWrite, Challenge255},
+    poly::kzg::{
+        commitment::{KZGCommitmentScheme, ParamsKZG},
+        multiopen::ProverSHPLONK,
+    },
+    transcript::{Blake2bWrite, Challenge255, TranscriptWriterBuffer},
 };
 use rand::SeedableRng;
 use rand_xorshift::XorShiftRng;
@@ -18,11 +21,13 @@ use zkevm_circuits::state_circuit::StateCircuit;
 
 use crate::structs::Proofs;
 
+type Scheme = KZGCommitmentScheme<Bn256>;
+
 /// Gathers debug trace(s) from `rpc_url` for block `block_num` with `params`
 /// created via the `gen_params` tool.
 /// Expects a go-ethereum node with debug & archive capabilities on `rpc_url`.
 pub async fn compute_proof(
-    params: &Params<G1Affine>,
+    params: &ParamsKZG<Bn256>,
     block_num: &u64,
     rpc_url: &str,
 ) -> Result<Proofs, Box<dyn std::error::Error>> {
@@ -44,8 +49,8 @@ pub async fn compute_proof(
         // related
         // https://github.com/zcash/halo2/issues/443
         // https://github.com/zcash/halo2/issues/449
-        let vk = keygen_vk(params, &circuit)?;
-        let pk = keygen_pk(params, vk, &circuit)?;
+        let vk = keygen_vk::<Scheme, _>(params, &circuit)?;
+        let pk = keygen_pk::<Scheme, _>(params, vk, &circuit)?;
 
         // Create randomness
         let rng = XorShiftRng::from_seed([
@@ -55,7 +60,14 @@ pub async fn compute_proof(
 
         // create a proof
         let mut transcript = Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
-        create_proof(params, &pk, &[circuit], &[], rng, &mut transcript)?;
+        create_proof::<Scheme, ProverSHPLONK<_>, _, _, _, _>(
+            params,
+            &pk,
+            &[circuit],
+            &[],
+            rng,
+            &mut transcript,
+        )?;
         evm_proof = transcript.finalize();
     }
 
@@ -65,8 +77,8 @@ pub async fn compute_proof(
         let circuit = StateCircuit::<Fr, N_ROWS>::new(block.randomness, block.rws);
 
         // TODO: same quest like in the first scope
-        let vk = keygen_vk(params, &circuit)?;
-        let pk = keygen_pk(params, vk, &circuit)?;
+        let vk = keygen_vk::<Scheme, _>(params, &circuit)?;
+        let pk = keygen_pk::<Scheme, _>(params, vk, &circuit)?;
 
         // Create randomness
         let rng = XorShiftRng::from_seed([
@@ -76,7 +88,16 @@ pub async fn compute_proof(
 
         // create a proof
         let mut transcript = Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
-        create_proof(params, &pk, &[circuit], &[], rng, &mut transcript)?;
+        let instance = circuit.instance();
+        let instance = instance.iter().map(|v| v.as_slice()).collect::<Vec<_>>();
+        create_proof::<Scheme, ProverSHPLONK<_>, _, _, _, _>(
+            params,
+            &pk,
+            &[circuit],
+            &[instance.as_slice()],
+            rng,
+            &mut transcript,
+        )?;
         state_proof = transcript.finalize();
     }
 

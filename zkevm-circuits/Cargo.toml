@@ -8,8 +8,7 @@ license = "MIT OR Apache-2.0"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-ff = "0.11"
-halo2_proofs = { version = "0.1.0-beta.1" }
+halo2_proofs = "0.2.0"
 bigint = "4"
 num = "0.4"
 sha3 = "0.10"
@@ -27,15 +26,13 @@ rand_xorshift = "0.3"
 rand = "0.8"
 itertools = "0.10.3"
 lazy_static = "1.4"
-keccak256 = { path = "../keccak256"}
+keccak256 = { path = "../keccak256" }
 log = "0.4"
 env_logger = "0.9"
-ecdsa = { git = "https://github.com/privacy-scaling-explorations/halo2wrong", tag = "v2022_06_03", features = ["kzg"] }
-secp256k1 = { git = "https://github.com/privacy-scaling-explorations/halo2wrong", tag = "v2022_06_03", features = ["kzg"] }
-ecc =       { git = "https://github.com/privacy-scaling-explorations/halo2wrong", tag = "v2022_06_03", features = ["kzg"] }
-maingate =  { git = "https://github.com/privacy-scaling-explorations/halo2wrong", tag = "v2022_06_03", features = ["kzg"] }
-integer =   { git = "https://github.com/privacy-scaling-explorations/halo2wrong", tag = "v2022_06_03", features = ["kzg"] }
-group = "0.11"
+ecdsa = { git = "https://github.com/han0110/halo2wrong", branch = "refactor/faster-testing" }
+ecc = { git = "https://github.com/han0110/halo2wrong", branch = "refactor/faster-testing" }
+maingate = { git = "https://github.com/han0110/halo2wrong", branch = "refactor/faster-testing" }
+integer = { git = "https://github.com/han0110/halo2wrong", branch = "refactor/faster-testing" }
 libsecp256k1 = "0.7"
 rlp = "0.5"
 num-bigint = { version = "0.4" }

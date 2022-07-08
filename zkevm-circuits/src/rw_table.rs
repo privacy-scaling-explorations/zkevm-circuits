@@ -1,7 +1,7 @@
 #![allow(missing_docs)]
 use halo2_proofs::{
     arithmetic::FieldExt,
-    circuit::Region,
+    circuit::{Region, Value},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, VirtualCells},
     poly::Rotation,
 };
@@ -76,7 +76,12 @@ impl RwTable {
             (self.aux1, row.aux1),
             (self.aux2, row.aux2),
         ] {
-            region.assign_advice(|| "assign rw row on rw table", column, offset, || Ok(value))?;
+            region.assign_advice(
+                || "assign rw row on rw table",
+                column,
+                offset,
+                || Value::known(value),
+            )?;
         }
         Ok(())
     }

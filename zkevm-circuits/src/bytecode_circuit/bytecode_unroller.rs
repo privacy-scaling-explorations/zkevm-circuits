@@ -15,11 +15,11 @@ use gadgets::{
     is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction},
 };
 use halo2_proofs::{
-    circuit::{Layouter, Region},
+    circuit::{Layouter, Region, Value},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, Selector, VirtualCells},
     poly::Rotation,
 };
-use keccak256::plain::Keccak;
+use sha3::{Digest, Keccak256};
 use std::{convert::TryInto, vec};
 
 use super::param::{KECCAK_WIDTH, PUSH_TABLE_WIDTH};
@@ -513,7 +513,7 @@ impl<F: Field> Config<F> {
             || format!("assign q_enable {}", offset),
             self.q_enable,
             offset,
-            || Ok(F::from(enable as u64)),
+            || Value::known(F::from(enable as u64)),
         )?;
 
         // q_first
@@ -521,7 +521,7 @@ impl<F: Field> Config<F> {
             || format!("assign q_first {}", offset),
             self.q_first,
             offset,
-            || Ok(F::from((offset == 0) as u64)),
+            || Value::known(F::from((offset == 0) as u64)),
         )?;
 
         // q_last
@@ -547,15 +547,15 @@ impl<F: Field> Config<F> {
                 || format!("assign {} {}", name, offset),
                 *column,
                 offset,
-                || Ok(*value),
+                || Value::known(*value),
             )?;
         }
 
         // push_rindex_is_zero_chip
-        push_rindex_is_zero_chip.assign(region, offset, Some(push_rindex_prev))?;
+        push_rindex_is_zero_chip.assign(region, offset, Value::known(push_rindex_prev))?;
 
         // length_is_zero chip
-        length_is_zero_chip.assign(region, offset, Some(hash_length))?;
+        length_is_zero_chip.assign(region, offset, Value::known(hash_length))?;
 
         Ok(())
     }
@@ -582,7 +582,7 @@ impl<F: Field> Config<F> {
                             || format!("Push table assign {} {}", name, byte),
                             *column,
                             byte,
-                            || Ok(F::from(*value)),
+                            || Value::known(F::from(*value)),
                         )?;
                     }
                 }
@@ -607,7 +607,7 @@ impl<F: Field> Config<F> {
                             || format!("Keccak table assign {} {}", name, offset),
                             *column,
                             offset,
-                            || Ok(*value),
+                            || Value::known(*value),
                         )?;
                     }
                 }
@@ -662,9 +662,10 @@ fn get_push_size(byte: u8) -> u64 {
 }
 
 fn keccak<F: Field>(msg: &[u8], r: F) -> F {
-    let mut keccak = Keccak::default();
-    keccak.update(msg);
-    RandomLinearCombination::<F, 32>::random_linear_combine(keccak.digest().try_into().unwrap(), r)
+    RandomLinearCombination::<F, 32>::random_linear_combine(
+        Keccak256::digest(msg).try_into().unwrap(),
+        r,
+    )
 }
 
 fn into_words(message: &[u8]) -> Vec<u64> {
@@ -691,7 +692,7 @@ mod tests {
     use halo2_proofs::{
         circuit::{Layouter, SimpleFloorPlanner},
         dev::MockProver,
-        pairing::bn256::Fr,
+        halo2curves::bn256::Fr,
         plonk::{Circuit, ConstraintSystem, Error},
     };
 

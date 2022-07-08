@@ -240,8 +240,9 @@ pub mod test {
         constants::MAX_COPY_BYTES,
     };
     use eth_types::{evm_types::OpcodeId, Word};
-    use halo2_proofs::arithmetic::BaseExt;
-    use halo2_proofs::pairing::bn256::Fr;
+    use halo2_proofs::arithmetic::Field;
+    use halo2_proofs::halo2curves::bn256::Fr;
+    use rand::rngs::OsRng;
     use std::collections::HashMap;
     use std::convert::TryInto;
 
@@ -383,7 +384,7 @@ pub mod test {
     }
 
     fn test_ok_copy_to_log(src_addr: u64, src_addr_end: u64, length: usize, is_persistent: bool) {
-        let randomness = Fr::rand();
+        let randomness = Fr::random(OsRng);
         let bytecode = Bytecode::new(vec![OpcodeId::RETURN.as_u8()]);
         let call_id = 1;
         let mut rws = RwMap(Default::default());

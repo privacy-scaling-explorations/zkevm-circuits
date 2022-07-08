@@ -12,15 +12,21 @@ use eth_types::{
     evm_types::{MemoryAddress, StackAddress},
     Address, ToAddress, Word, U256,
 };
-use halo2_proofs::poly::commitment::Params;
+use halo2_proofs::poly::{
+    commitment::ParamsProver,
+    kzg::commitment::{KZGCommitmentScheme, ParamsKZG},
+};
 use halo2_proofs::{
-    arithmetic::BaseExt,
+    arithmetic::Field,
     dev::{MockProver, VerifyFailure},
-    pairing::bn256::{Bn256, Fr, G1Affine},
+    halo2curves::bn256::{Bn256, Fr},
     plonk::{keygen_vk, Advice, Circuit, Column, ConstraintSystem},
 };
+use rand::rngs::OsRng;
 use std::collections::{BTreeSet, HashMap};
 use strum::IntoEnumIterator;
+
+type Scheme = KZGCommitmentScheme<Bn256>;
 
 const N_ROWS: usize = 1 << 16;
 
@@ -87,7 +93,7 @@ fn test_state_circuit_ok(
         ..Default::default()
     });
 
-    let randomness = Fr::rand();
+    let randomness = Fr::random(OsRng);
     let circuit = StateCircuit::<Fr, N_ROWS>::new(randomness, rw_map);
     let power_of_randomness = circuit.instance();
 
@@ -105,9 +111,9 @@ fn degree() {
 
 #[test]
 fn verifying_key_independent_of_rw_length() {
-    let randomness = Fr::rand();
+    let randomness = Fr::random(OsRng);
     let degree = 17;
-    let params = Params::<G1Affine>::unsafe_setup::<Bn256>(degree);
+    let params = ParamsKZG::<Bn256>::new(degree);
 
     let no_rows = StateCircuit::<Fr, N_ROWS>::new(randomness, RwMap::default());
     let one_row = StateCircuit::<Fr, N_ROWS>::new(
@@ -125,8 +131,14 @@ fn verifying_key_independent_of_rw_length() {
     // halo2::plonk::VerifyingKey doesn't derive Eq, so we check for equality using
     // its debug string.
     assert_eq!(
-        format!("{:?}", keygen_vk(&params, &no_rows).unwrap()),
-        format!("{:?}", keygen_vk(&params, &one_row).unwrap())
+        format!(
+            "{:?}",
+            keygen_vk::<Scheme, _>(&params, &no_rows).unwrap()
+        ),
+        format!(
+            "{:?}",
+            keygen_vk::<Scheme, _>(&params, &one_row).unwrap()
+        )
     );
 }
 
@@ -881,7 +893,7 @@ fn invalid_tags() {
 }
 
 fn prover(rows: Vec<Rw>, overrides: HashMap<(AdviceColumn, isize), Fr>) -> MockProver<Fr> {
-    let randomness = Fr::rand();
+    let randomness = Fr::random(OsRng);
     let circuit = StateCircuit::<Fr, N_ROWS> {
         randomness,
         rows,

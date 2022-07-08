@@ -2,9 +2,10 @@ use std::marker::PhantomData;
 
 use criterion::{criterion_group, criterion_main, Criterion};
 use halo2_proofs::{
-    circuit::{Layouter, Region, SimpleFloorPlanner},
+    arithmetic::FieldExt,
+    circuit::{self, Layouter, Region, SimpleFloorPlanner},
     dev::MockProver,
-    pairing::{arithmetic::FieldExt, bn256::Fr},
+    halo2curves::bn256::Fr,
     plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed},
     poly::Rotation,
 };
@@ -120,7 +121,7 @@ impl<F: FieldExt, const LOOKUP: bool> Config<F, LOOKUP> {
                         || "binary table",
                         self.binary_table,
                         idx,
-                        || Ok(F::from(idx as u64)),
+                        || circuit::Value::known(F::from(idx as u64)),
                     )?;
                 }
                 Ok(())
@@ -144,7 +145,7 @@ impl<F: FieldExt, const LOOKUP: bool> Config<F, LOOKUP> {
                             || "Memory selector",
                             self.q_target,
                             offset,
-                            || Ok(F::one()),
+                            || circuit::Value::known(F::one()),
                         )?;
 
                         // Increase offset by 1 after initialising.
@@ -157,7 +158,7 @@ impl<F: FieldExt, const LOOKUP: bool> Config<F, LOOKUP> {
                                 || "Memory selector",
                                 self.q_target,
                                 offset,
-                                || Ok(F::one()),
+                                || circuit::Value::known(F::one()),
                             )?;
                             offset += 1;
                         }
@@ -177,21 +178,36 @@ impl<F: FieldExt, const LOOKUP: bool> Config<F, LOOKUP> {
         address: MemoryAddress<F>,
     ) -> Result<(), Error> {
         // Assign `address`
-        region.assign_advice(|| "init address", self.address, offset, || Ok(address.0))?;
+        region.assign_advice(
+            || "init address",
+            self.address,
+            offset,
+            || circuit::Value::known(address.0),
+        )?;
 
         // Assign `global_counter`
         region.assign_advice(
             || "init global counter",
             self.global_counter,
             offset,
-            || Ok(F::zero()),
+            || circuit::Value::known(F::zero()),
         )?;
 
         // Assign `value`
-        region.assign_advice(|| "init value", self.value, offset, || Ok(F::zero()))?;
+        region.assign_advice(
+            || "init value",
+            self.value,
+            offset,
+            || circuit::Value::known(F::zero()),
+        )?;
 
         // Assign memory_flag
-        region.assign_advice(|| "init memory", self.flag, offset, || Ok(F::one()))?;
+        region.assign_advice(
+            || "init memory",
+            self.flag,
+            offset,
+            || circuit::Value::known(F::one()),
+        )?;
 
         Ok(())
     }
@@ -205,7 +221,12 @@ impl<F: FieldExt, const LOOKUP: bool> Config<F, LOOKUP> {
         read_write: &Option<ReadWrite<F>>,
     ) {
         region
-            .assign_advice(|| "address", self.address, offset, || Ok(address.0))
+            .assign_advice(
+                || "address",
+                self.address,
+                offset,
+                || circuit::Value::known(address.0),
+            )
             .ok();
 
         let value = read_write
@@ -218,7 +239,11 @@ impl<F: FieldExt, const LOOKUP: bool> Config<F, LOOKUP> {
                 || "global counter",
                 self.global_counter,
                 offset,
-                || field_elem.ok_or(Error::Synthesis),
+                || {
+                    field_elem
+                        .map(circuit::Value::known)
+                        .unwrap_or_else(circuit::Value::unknown)
+                },
             )
             .ok();
 
@@ -229,7 +254,11 @@ impl<F: FieldExt, const LOOKUP: bool> Config<F, LOOKUP> {
                 || "value",
                 self.value,
                 offset,
-                || value.ok_or(Error::Synthesis),
+                || {
+                    value
+                        .map(circuit::Value::known)
+                        .unwrap_or_else(circuit::Value::unknown)
+                },
             )
             .ok();
 
@@ -240,7 +269,11 @@ impl<F: FieldExt, const LOOKUP: bool> Config<F, LOOKUP> {
                 || "flag",
                 self.flag,
                 offset,
-                || field_elem.ok_or(Error::Synthesis),
+                || {
+                    field_elem
+                        .map(circuit::Value::known)
+                        .unwrap_or_else(circuit::Value::unknown)
+                },
             )
             .ok();
     }

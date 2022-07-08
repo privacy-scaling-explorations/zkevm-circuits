@@ -1,7 +1,6 @@
 //! The EVM circuit implementation.
 
 #![allow(missing_docs)]
-use halo2_proofs::{circuit::Layouter, plonk::*};
 
 mod execution;
 pub mod param;
@@ -13,6 +12,10 @@ pub mod witness;
 
 use eth_types::Field;
 use execution::ExecutionConfig;
+use halo2_proofs::{
+    circuit::{Layouter, Value},
+    plonk::*,
+};
 use itertools::Itertools;
 use table::{FixedTableTag, LookupTable};
 use witness::Block;
@@ -70,7 +73,7 @@ impl<F: Field> EvmCircuit<F> {
                     .enumerate()
                 {
                     for (column, value) in self.fixed_table.iter().zip_eq(row) {
-                        region.assign_fixed(|| "", *column, offset, || Ok(value))?;
+                        region.assign_fixed(|| "", *column, offset, || Value::known(value))?;
                     }
                 }
 
@@ -89,7 +92,7 @@ impl<F: Field> EvmCircuit<F> {
                         || "",
                         self.byte_table[0],
                         offset,
-                        || Ok(F::from(offset as u64)),
+                        || Value::known(F::from(offset as u64)),
                     )?;
                 }
 
@@ -152,7 +155,7 @@ pub mod test {
     };
     use eth_types::{Field, Word};
     use halo2_proofs::{
-        circuit::{Layouter, SimpleFloorPlanner},
+        circuit::{Layouter, SimpleFloorPlanner, Value},
         dev::{MockProver, VerifyFailure},
         plonk::{Advice, Circuit, Column, ConstraintSystem, Error},
         poly::Rotation,
@@ -209,7 +212,7 @@ pub mod test {
                             || "tx table all-zero row",
                             column,
                             offset,
-                            || Ok(F::zero()),
+                            || Value::known(F::zero()),
                         )?;
                     }
                     offset += 1;
@@ -221,7 +224,7 @@ pub mod test {
                                     || format!("tx table row {}", offset),
                                     *column,
                                     offset,
-                                    || Ok(value),
+                                    || Value::known(value),
                                 )?;
                             }
                             offset += 1;
@@ -285,7 +288,7 @@ pub mod test {
                             || "bytecode table all-zero row",
                             column,
                             offset,
-                            || Ok(F::zero()),
+                            || Value::known(F::zero()),
                         )?;
                     }
                     offset += 1;
@@ -297,7 +300,7 @@ pub mod test {
                                     || format!("bytecode table row {}", offset),
                                     *column,
                                     offset,
-                                    || Ok(value),
+                                    || Value::known(value),
                                 )?;
                             }
                             offset += 1;
@@ -323,7 +326,7 @@ pub mod test {
                             || "block table all-zero row",
                             column,
                             offset,
-                            || Ok(F::zero()),
+                            || Value::known(F::zero()),
                         )?;
                     }
                     offset += 1;
@@ -334,7 +337,7 @@ pub mod test {
                                 || format!("block table row {}", offset),
                                 *column,
                                 offset,
-                                || Ok(value),
+                                || Value::known(value),
                             )?;
                         }
                         offset += 1;

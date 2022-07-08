@@ -3,7 +3,7 @@ use super::N_LIMBS_RW_COUNTER;
 use crate::util::Expr;
 use eth_types::{Address, Field, ToScalar};
 use halo2_proofs::{
-    circuit::{AssignedCell, Layouter, Region},
+    circuit::{AssignedCell, Layouter, Region, Value},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
@@ -77,14 +77,14 @@ impl Config<Address, N_LIMBS_ACCOUNT_ADDRESS> {
                 || format!("limb[{}] in address mpi", i),
                 self.limbs[i],
                 offset,
-                || Ok(F::from(limb as u64)),
+                || Value::known(F::from(limb as u64)),
             )?;
         }
         region.assign_advice(
             || "value in u32 mpi",
             self.value,
             offset,
-            || Ok(value.to_scalar().unwrap()), // do this better
+            || Value::known(value.to_scalar().unwrap()), // do this better
         )
     }
 }
@@ -101,14 +101,14 @@ impl Config<u32, N_LIMBS_RW_COUNTER> {
                 || format!("limb[{}] in u32 mpi", i),
                 self.limbs[i],
                 offset,
-                || Ok(F::from(limb as u64)),
+                || Value::known(F::from(limb as u64)),
             )?;
         }
         region.assign_advice(
             || "value in u32 mpi",
             self.value,
             offset,
-            || Ok(F::from(value as u64)),
+            || Value::known(F::from(value as u64)),
         )
     }
 }

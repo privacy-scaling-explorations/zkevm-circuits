@@ -18,7 +18,7 @@ use binary_number::{Chip as BinaryNumberChip, Config as BinaryNumberConfig};
 use constraint_builder::{ConstraintBuilder, Queries};
 use eth_types::{Address, Field};
 use halo2_proofs::{
-    circuit::{Layouter, SimpleFloorPlanner},
+    circuit::{Layouter, SimpleFloorPlanner, Value},
     plonk::{
         Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, Instance, VirtualCells,
     },
@@ -181,7 +181,12 @@ impl<F: Field, const N_ROWS: usize> Circuit<F> for StateCircuit<F, N_ROWS> {
                 let prev_rows = once(None).chain(rows.clone().map(Some));
 
                 for (offset, (row, prev_row)) in rows.zip(prev_rows).enumerate() {
-                    region.assign_fixed(|| "selector", config.selector, offset, || Ok(F::one()))?;
+                    region.assign_fixed(
+                        || "selector",
+                        config.selector,
+                        offset,
+                        || Value::known(F::one()),
+                    )?;
                     config.sort_keys.rw_counter.assign(
                         &mut region,
                         offset,
@@ -191,7 +196,7 @@ impl<F: Field, const N_ROWS: usize> Circuit<F> for StateCircuit<F, N_ROWS> {
                         || "is_write",
                         config.is_write,
                         offset,
-                        || Ok(if row.is_write() { F::one() } else { F::zero() }),
+                        || Value::known(if row.is_write() { F::one() } else { F::zero() }),
                     )?;
                     tag_chip.assign(&mut region, offset, &row.tag())?;
                     if let Some(id) = row.id() {
@@ -208,7 +213,7 @@ impl<F: Field, const N_ROWS: usize> Circuit<F> for StateCircuit<F, N_ROWS> {
                             || "field_tag",
                             config.sort_keys.field_tag,
                             offset,
-                            || Ok(F::from(field_tag as u64)),
+                            || Value::known(F::from(field_tag as u64)),
                         )?;
                     }
                     if let Some(storage_key) = row.storage_key() {
@@ -223,7 +228,7 @@ impl<F: Field, const N_ROWS: usize> Circuit<F> for StateCircuit<F, N_ROWS> {
                         || "value",
                         config.value,
                         offset,
-                        || Ok(row.value_assignment(self.randomness)),
+                        || Value::known(row.value_assignment(self.randomness)),
                     )?;
 
                     if let Some(prev_row) = prev_row {
@@ -242,7 +247,12 @@ impl<F: Field, const N_ROWS: usize> Circuit<F> for StateCircuit<F, N_ROWS> {
                     let offset =
                         usize::try_from(isize::try_from(padding_length).unwrap() + *row_offset)
                             .unwrap();
-                    region.assign_advice(|| "override", advice_column, offset, || Ok(f))?;
+                    region.assign_advice(
+                        || "override",
+                        advice_column,
+                        offset,
+                        || Value::known(f),
+                    )?;
                 }
 
                 Ok(())

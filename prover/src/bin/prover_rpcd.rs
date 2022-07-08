@@ -1,6 +1,6 @@
 use env_logger::Env;
-use halo2_proofs::pairing::bn256::G1Affine;
-use halo2_proofs::poly::commitment::Params;
+use halo2_proofs::halo2curves::bn256::Bn256;
+use halo2_proofs::poly::{commitment::Params, kzg::commitment::ParamsKZG};
 use hyper::body::Buf;
 use hyper::body::HttpBody;
 use hyper::header::HeaderValue;
@@ -253,8 +253,8 @@ async fn main() {
                 .expect("Cannot parse PARAMS_PATH env var");
             // load polynomial commitment parameters
             let params_fs = File::open(&params_path).expect("couldn't open params");
-            let params: Arc<Params<G1Affine>> = Arc::new(
-                Params::read::<_>(&mut std::io::BufReader::new(params_fs))
+            let params = Arc::new(
+                ParamsKZG::<Bn256>::read::<_>(&mut std::io::BufReader::new(params_fs))
                     .expect("Failed to read params"),
             );
             log::info!("params: initialized");

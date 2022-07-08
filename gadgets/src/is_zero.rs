@@ -5,8 +5,8 @@
 //!  `1/x` otherwise
 
 use halo2_proofs::{
-    circuit::{Chip, Region},
-    pairing::arithmetic::FieldExt,
+    arithmetic::FieldExt,
+    circuit::{Chip, Region, Value},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, VirtualCells},
     poly::Rotation,
 };
@@ -21,7 +21,7 @@ pub trait IsZeroInstruction<F: FieldExt> {
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
-        value: Option<F>,
+        value: Value<F>,
     ) -> Result<(), Error>;
 }
 
@@ -103,7 +103,7 @@ impl<F: FieldExt> IsZeroInstruction<F> for IsZeroChip<F> {
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
-        value: Option<F>,
+        value: Value<F>,
     ) -> Result<(), Error> {
         let config = self.config();
 
@@ -112,7 +112,7 @@ impl<F: FieldExt> IsZeroInstruction<F> for IsZeroChip<F> {
             || "witness inverse of value",
             config.value_inv,
             offset,
-            || value_invert.ok_or(Error::Synthesis),
+            || value_invert,
         )?;
 
         Ok(())
@@ -137,9 +137,9 @@ mod test {
     use super::{IsZeroChip, IsZeroConfig, IsZeroInstruction};
     use halo2_proofs::{
         arithmetic::FieldExt,
-        circuit::{Layouter, SimpleFloorPlanner},
+        circuit::{Layouter, SimpleFloorPlanner, Value},
         dev::MockProver,
-        pairing::bn256::Fr as Fp,
+        halo2curves::bn256::Fr as Fp,
         plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Selector},
         poly::Rotation,
     };
@@ -153,8 +153,8 @@ mod test {
             // correct k (without the extra + 2).
             let k = usize::BITS - $values.len().leading_zeros() + 2;
             let circuit = TestCircuit::<Fp> {
-                values: Some($values),
-                checks: Some($checks),
+                values: $values.into_iter().map(Value::known).collect(),
+                checks: $checks.into_iter().map(Value::known).collect(),
                 _marker: PhantomData,
             };
             let prover = MockProver::<Fp>::run(k, &circuit, vec![]).unwrap();
@@ -170,8 +170,8 @@ mod test {
             // correct k (without the extra + 2).
             let k = usize::BITS - $values.len().leading_zeros() + 2;
             let circuit = TestCircuit::<Fp> {
-                values: Some($values),
-                checks: Some($checks),
+                values: $values.into_iter().map(Value::known).collect(),
+                checks: $checks.into_iter().map(Value::known).collect(),
                 _marker: PhantomData,
             };
             let prover = MockProver::<Fp>::run(k, &circuit, vec![]).unwrap();
@@ -191,9 +191,9 @@ mod test {
 
         #[derive(Default)]
         struct TestCircuit<F: FieldExt> {
-            values: Option<Vec<u64>>,
+            values: Vec<Value<u64>>,
             // checks[i] = is_zero(values[i + 1] - values[i])
-            checks: Option<Vec<bool>>,
+            checks: Vec<Value<bool>>,
             _marker: PhantomData<F>,
         }
 
@@ -202,7 +202,11 @@ mod test {
             type FloorPlanner = SimpleFloorPlanner;
 
             fn without_witnesses(&self) -> Self {
-                Self::default()
+                Self {
+                    values: vec![Value::unknown(); self.values.len()],
+                    checks: vec![Value::unknown(); self.checks.len()],
+                    ..Default::default()
+                }
             }
 
             fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
@@ -248,13 +252,7 @@ mod test {
             ) -> Result<(), Error> {
                 let chip = IsZeroChip::construct(config.is_zero.clone());
 
-                let values: Vec<_> = self
-                    .values
-                    .as_ref()
-                    .map(|values| values.iter().map(|value| F::from(*value)).collect())
-                    .ok_or(Error::Synthesis)?;
-                let checks = self.checks.as_ref().ok_or(Error::Synthesis)?;
-                let (first_value, values) = values.split_at(1);
+                let (first_value, values) = self.values.split_at(1);
                 let first_value = first_value[0];
 
                 layouter.assign_region(
@@ -264,26 +262,34 @@ mod test {
                             || "first row value",
                             config.value,
                             0,
-                            || Ok(first_value),
+                            || first_value.map(F::from),
                         )?;
 
                         let mut value_prev = first_value;
-                        for (idx, (value, check)) in values.iter().zip(checks).enumerate() {
+                        for (idx, (value, check)) in
+                            values.iter().zip(self.checks.iter()).enumerate()
+                        {
                             region.assign_advice(
                                 || "check",
                                 config.check,
                                 idx + 1,
-                                || Ok(F::from(*check as u64)),
+                                || check.map(|check| F::from(check as u64)),
                             )?;
                             region.assign_advice(
                                 || "value",
                                 config.value,
                                 idx + 1,
-                                || Ok(*value),
+                                || value.map(F::from),
                             )?;
 
                             config.q_enable.enable(&mut region, idx + 1)?;
-                            chip.assign(&mut region, idx + 1, Some(*value - value_prev))?;
+                            chip.assign(
+                                &mut region,
+                                idx + 1,
+                                value
+                                    .zip(value_prev)
+                                    .map(|(value, value_prev)| F::from(value - value_prev)),
+                            )?;
 
                             value_prev = *value;
                         }
@@ -323,9 +329,9 @@ mod test {
 
         #[derive(Default)]
         struct TestCircuit<F: FieldExt> {
-            values: Option<Vec<(u64, u64)>>,
+            values: Vec<Value<(u64, u64)>>,
             // checks[i] = is_zero(values[i].0 - values[i].1)
-            checks: Option<Vec<bool>>,
+            checks: Vec<Value<bool>>,
             _marker: PhantomData<F>,
         }
 
@@ -334,7 +340,11 @@ mod test {
             type FloorPlanner = SimpleFloorPlanner;
 
             fn without_witnesses(&self) -> Self {
-                Self::default()
+                Self {
+                    values: vec![Value::unknown(); self.values.len()],
+                    checks: vec![Value::unknown(); self.checks.len()],
+                    ..Default::default()
+                }
             }
 
             fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
@@ -381,45 +391,37 @@ mod test {
             ) -> Result<(), Error> {
                 let chip = IsZeroChip::construct(config.is_zero.clone());
 
-                let values: Vec<_> = self
-                    .values
-                    .as_ref()
-                    .map(|values| {
-                        values
-                            .iter()
-                            .map(|(value_a, value_b)| (F::from(*value_a), F::from(*value_b)))
-                            .collect()
-                    })
-                    .ok_or(Error::Synthesis)?;
-                let checks = self.checks.as_ref().ok_or(Error::Synthesis)?;
-
                 layouter.assign_region(
                     || "witness",
                     |mut region| {
-                        for (idx, ((value_a, value_b), check)) in
-                            values.iter().zip(checks).enumerate()
+                        for (idx, (value, check)) in
+                            self.values.iter().zip(self.checks.iter()).enumerate()
                         {
                             region.assign_advice(
                                 || "check",
                                 config.check,
                                 idx + 1,
-                                || Ok(F::from(*check as u64)),
+                                || check.map(|check| F::from(check as u64)),
                             )?;
                             region.assign_advice(
                                 || "value_a",
                                 config.value_a,
                                 idx + 1,
-                                || Ok(*value_a),
+                                || value.map(|(lhs, _)| F::from(lhs)),
                             )?;
                             region.assign_advice(
                                 || "value_b",
                                 config.value_b,
                                 idx + 1,
-                                || Ok(*value_b),
+                                || value.map(|(_, rhs)| F::from(rhs)),
                             )?;
 
                             config.q_enable.enable(&mut region, idx + 1)?;
-                            chip.assign(&mut region, idx + 1, Some(*value_a - *value_b))?;
+                            chip.assign(
+                                &mut region,
+                                idx + 1,
+                                value.map(|(lhs, rhs)| F::from(lhs - rhs)),
+                            )?;
                         }
 
                         Ok(())

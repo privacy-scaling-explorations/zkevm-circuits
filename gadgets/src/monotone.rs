@@ -2,9 +2,9 @@
 //! Monotone gadget helps to check if an advice column is monotonically
 //! increasing within a range. With strict enabled, it disallows equality of two
 //! cell.
-use halo2_proofs::pairing::arithmetic::FieldExt;
+use halo2_proofs::arithmetic::FieldExt;
 use halo2_proofs::{
-    circuit::{Chip, Layouter},
+    circuit::{Chip, Layouter, Value},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
@@ -73,7 +73,7 @@ impl<F: FieldExt, const RANGE: usize, const INCR: bool, const STRICT: bool>
                         || "range_table_value",
                         self.config.range_table,
                         idx,
-                        || Ok(F::from(idx as u64)),
+                        || Value::known(F::from(idx as u64)),
                     )?;
                 }
 
@@ -110,12 +110,12 @@ mod test {
     use super::{MonotoneChip, MonotoneConfig};
     use halo2_proofs::{
         arithmetic::FieldExt,
-        circuit::{Layouter, SimpleFloorPlanner},
+        circuit::{Layouter, SimpleFloorPlanner, Value},
         dev::{
             FailureLocation, MockProver,
             VerifyFailure::{self, Lookup},
         },
-        pairing::bn256::Fr as Fp,
+        halo2curves::bn256::Fr as Fp,
         plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Selector},
     };
     use std::marker::PhantomData;
@@ -129,7 +129,7 @@ mod test {
 
     #[derive(Default)]
     struct TestCircuit<F: FieldExt, const RANGE: usize, const INCR: bool, const STRICT: bool> {
-        values: Option<Vec<u64>>,
+        values: Vec<Value<u64>>,
         _marker: PhantomData<F>,
     }
 
@@ -140,7 +140,10 @@ mod test {
         type FloorPlanner = SimpleFloorPlanner;
 
         fn without_witnesses(&self) -> Self {
-            Self::default()
+            Self {
+                values: vec![Value::unknown(); self.values.len()],
+                ..Default::default()
+            }
         }
 
         fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
@@ -170,17 +173,16 @@ mod test {
 
             monotone_chip.load(&mut layouter)?;
 
-            let values: Vec<_> = self
-                .values
-                .as_ref()
-                .map(|values| values.iter().map(|value| F::from(*value)).collect())
-                .ok_or(Error::Synthesis)?;
-
             layouter.assign_region(
                 || "witness",
                 |mut region| {
-                    for (idx, value) in values.iter().enumerate() {
-                        region.assign_advice(|| "value", config.value, idx, || Ok(*value))?;
+                    for (idx, value) in self.values.iter().enumerate() {
+                        region.assign_advice(
+                            || "value",
+                            config.value,
+                            idx,
+                            || value.map(F::from),
+                        )?;
                         if idx > 0 {
                             config.q_enable.enable(&mut region, idx)?;
                         }
@@ -196,7 +198,7 @@ mod test {
         ($range:expr, $incr:expr, $strict:expr) => {
             fn try_test_circuit(values: Vec<u64>, result: Result<(), Vec<VerifyFailure>>) {
                 let circuit = TestCircuit::<Fp, $range, $incr, $strict> {
-                    values: Some(values),
+                    values: values.into_iter().map(Value::known).collect(),
                     _marker: PhantomData,
                 };
                 let prover = MockProver::<Fp>::run(

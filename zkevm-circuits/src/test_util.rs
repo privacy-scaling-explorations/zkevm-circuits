@@ -5,7 +5,7 @@ use crate::{
 use bus_mapping::mock::BlockData;
 use eth_types::geth_types::GethData;
 use halo2_proofs::dev::{MockProver, VerifyFailure};
-use halo2_proofs::pairing::bn256::Fr;
+use halo2_proofs::halo2curves::bn256::Fr;
 use mock::TestContext;
 use strum::IntoEnumIterator;
 

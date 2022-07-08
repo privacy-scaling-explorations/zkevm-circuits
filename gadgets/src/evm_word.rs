@@ -6,11 +6,10 @@
 //! In the zkevm circuit, this `encode(word)` expression will not be directly
 //! looked up. Instead, it will be folded into the bus mapping lookup.
 
-use crate::Variable;
 use digest::{FixedOutput, Input};
 use eth_types::Field;
 use halo2_proofs::{
-    circuit::Region,
+    circuit::{AssignedCell, Region, Value},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, Selector},
     poly::Rotation,
 };
@@ -41,7 +40,7 @@ pub fn encode<F: Field>(vals: impl Iterator<Item = u8>, r: F) -> F {
 }
 
 /// A 256-bit word represented in the circuit as 32 bytes.
-pub struct Word<F: Field>([Variable<u8, F>; 32]);
+pub struct Word<F: Field>([AssignedCell<F, F>; 32]);
 
 #[allow(dead_code)]
 /// Configuration structure used to constraint. generate and assign an EVM Word
@@ -117,7 +116,7 @@ impl<F: Field> WordConfig<F> {
                         || format!("load {}", byte),
                         self.byte_lookup,
                         byte.into(),
-                        || Ok(F::from(byte as u64)),
+                        || Value::known(F::from(byte as u64)),
                     )?;
                 }
 
@@ -131,9 +130,9 @@ impl<F: Field> WordConfig<F> {
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
-        word: [Option<u8>; 32],
+        word: [Value<u8>; 32],
     ) -> Result<Word<F>, Error> {
-        let mut bytes: Vec<Variable<u8, F>> = Vec::with_capacity(32);
+        let mut bytes: Vec<AssignedCell<F, F>> = Vec::with_capacity(32);
 
         for (idx, (byte, column)) in word.iter().zip(self.bytes.iter()).enumerate() {
             // TODO: We will likely enable this selector outside of the helper.
@@ -144,10 +143,10 @@ impl<F: Field> WordConfig<F> {
                 || format!("assign byte {}", idx),
                 *column,
                 offset,
-                || byte_field_elem.ok_or(Error::Synthesis),
+                || byte_field_elem,
             )?;
 
-            bytes.push(Variable::new(cell, *byte));
+            bytes.push(cell);
         }
 
         Ok(Word(bytes.try_into().unwrap()))
@@ -159,10 +158,10 @@ mod tests {
     use super::*;
     use halo2_proofs::{
         arithmetic::Field as Halo2Field,
-        circuit::SimpleFloorPlanner,
+        circuit::{SimpleFloorPlanner, Value},
         dev::{FailureLocation, MockProver, VerifyFailure},
-        pairing::bn256::Fr as Fp,
-        pairing::group::ff::PrimeField,
+        halo2curves::bn256::Fr as Fp,
+        halo2curves::group::ff::PrimeField,
         plonk::{Circuit, Instance},
     };
     use rand::SeedableRng;
@@ -173,7 +172,7 @@ mod tests {
     fn evm_word() {
         #[derive(Default)]
         struct MyCircuit<F: Field> {
-            word: [Option<u8>; 32],
+            word: [Value<u8>; 32],
             _marker: PhantomData<F>,
         }
 
@@ -247,7 +246,7 @@ mod tests {
                 word: word
                     .to_repr()
                     .iter()
-                    .map(|b| Some(*b))
+                    .map(|b| Value::known(*b))
                     .collect::<Vec<_>>()
                     .try_into()
                     .unwrap(),

@@ -2,6 +2,7 @@
 
 use bus_mapping::circuit_input_builder::BuilderClient;
 use bus_mapping::operation::OperationContainer;
+use ethers::prelude::rand::rngs::OsRng;
 use halo2_proofs::dev::MockProver;
 use integration_tests::{get_client, log_init, GenDataOutput};
 use lazy_static::lazy_static;
@@ -27,8 +28,8 @@ async fn test_evm_circuit_block(block_num: u64) {
 }
 
 async fn test_state_circuit_block(block_num: u64) {
-    use halo2_proofs::arithmetic::BaseExt;
-    use halo2_proofs::pairing::bn256::Fr;
+    use halo2_proofs::arithmetic::Field;
+    use halo2_proofs::halo2curves::bn256::Fr;
 
     log::info!("test state circuit, block number: {}", block_num);
     let cli = get_client();
@@ -52,11 +53,11 @@ async fn test_state_circuit_block(block_num: u64) {
         ..Default::default()
     });
 
-    let randomness = Fr::rand();
+    let randomness = Fr::random(OsRng);
     let circuit = StateCircuit::<Fr, { 1 << 16 }>::new(randomness, rw_map);
     let power_of_randomness = circuit.instance();
 
-    use halo2_proofs::pairing::bn256::Fr as Fp;
+    use halo2_proofs::halo2curves::bn256::Fr as Fp;
     let prover = MockProver::<Fp>::run(DEGREE as u32, &circuit, power_of_randomness).unwrap();
     prover.verify().expect("state_circuit verification failed");
 }

@@ -10,10 +10,13 @@ use crate::util::{random_linear_combine_word as rlc, Expr};
 use eth_types::{
     geth_types::Transaction, Address, Field, ToBigEndian, ToLittleEndian, ToScalar, Word,
 };
-use ff::PrimeField;
-use group::GroupEncoding;
 use halo2_proofs::{
-    circuit::{AssignedCell, Layouter, Region, SimpleFloorPlanner},
+    arithmetic::CurveAffine,
+    circuit::{AssignedCell, Layouter, Region, SimpleFloorPlanner, Value},
+    halo2curves::{
+        group::ff::PrimeField,
+        secp256k1::{self, Secp256k1Affine},
+    },
     plonk::{Advice, Circuit, Column, ConstraintSystem, Error},
     poly::Rotation,
 };
@@ -24,7 +27,6 @@ use log::error;
 use num::Integer;
 use num_bigint::BigUint;
 use rlp::RlpStream;
-use secp256k1::Secp256k1Affine;
 use sha3::{Digest, Keccak256};
 use sign_verify::{pk_bytes_swap_endianness, SignData, SignVerifyChip, SignVerifyConfig};
 pub use sign_verify::{POW_RAND_SIZE, VERIF_HEIGHT};
@@ -65,9 +67,16 @@ fn recover_pk(v: u8, r: &Word, s: &Word, msg_hash: &[u8; 32]) -> Result<Secp256k
     })?;
     let pk_be = pk.serialize();
     let pk_le = pk_bytes_swap_endianness(&pk_be[1..]);
-    let mut pk_bytes = secp256k1::Serialized::default();
-    pk_bytes.as_mut().copy_from_slice(&pk_le[..]);
-    let pk = Secp256k1Affine::from_bytes(&pk_bytes);
+    let pk = Secp256k1Affine::from_xy(
+        ct_option_ok_or(
+            secp256k1::Fp::from_bytes(pk_le[..32].try_into().unwrap()),
+            Error::Synthesis,
+        )?,
+        ct_option_ok_or(
+            secp256k1::Fp::from_bytes(pk_le[32..].try_into().unwrap()),
+            Error::Synthesis,
+        )?,
+    );
     ct_option_ok_or(pk, Error::Synthesis).map_err(|e| {
         error!("Invalid public key little endian bytes");
         e
@@ -222,12 +231,27 @@ impl<F: Field> TxCircuitConfig<F> {
         tx_id: usize,
         tag: TxFieldTag,
         index: usize,
-        value: F,
+        value: Value<F>,
     ) -> Result<AssignedCell<F, F>, Error> {
-        region.assign_advice(|| "tx_id", self.tx_id, offset, || Ok(F::from(tx_id as u64)))?;
-        region.assign_advice(|| "tag", self.tag, offset, || Ok(F::from(tag as u64)))?;
-        region.assign_advice(|| "index", self.index, offset, || Ok(F::from(index as u64)))?;
-        region.assign_advice(|| "value", self.value, offset, || Ok(value))
+        region.assign_advice(
+            || "tx_id",
+            self.tx_id,
+            offset,
+            || Value::known(F::from(tx_id as u64)),
+        )?;
+        region.assign_advice(
+            || "tag",
+            self.tag,
+            offset,
+            || Value::known(F::from(tag as u64)),
+        )?;
+        region.assign_advice(
+            || "index",
+            self.index,
+            offset,
+            || Value::known(F::from(index as u64)),
+        )?;
+        region.assign_advice(|| "value", self.value, offset, || value)
     }
 }
 
@@ -286,7 +310,14 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
             |mut region| {
                 let mut offset = 0;
                 // Empty entry
-                config.assign_row(&mut region, offset, 0, TxFieldTag::Null, 0, F::zero())?;
+                config.assign_row(
+                    &mut region,
+                    offset,
+                    0,
+                    TxFieldTag::Null,
+                    0,
+                    Value::known(F::zero()),
+                )?;
                 offset += 1;
                 // Assign al Tx fields except for call data
                 let tx_default = Transaction::default();
@@ -299,47 +330,49 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
                     };
                     let address_cell = assigned_sig_verif.address.cell();
                     let msg_hash_rlc_cell = assigned_sig_verif.msg_hash_rlc.cell();
-                    let msg_hash_rlc_value = assigned_sig_verif.msg_hash_rlc.value();
-                    for (tag, value) in &[
+                    let msg_hash_rlc_value = assigned_sig_verif.msg_hash_rlc.value().copied();
+                    for (tag, value) in [
                         (
                             TxFieldTag::Nonce,
-                            rlc(tx.nonce.to_le_bytes(), self.randomness),
+                            Value::known(rlc(tx.nonce.to_le_bytes(), self.randomness)),
                         ),
                         (
                             TxFieldTag::Gas,
-                            rlc(tx.gas_limit.to_le_bytes(), self.randomness),
+                            Value::known(rlc(tx.gas_limit.to_le_bytes(), self.randomness)),
                         ),
                         (
                             TxFieldTag::GasPrice,
-                            rlc(tx.gas_price.to_le_bytes(), self.randomness),
+                            Value::known(rlc(tx.gas_price.to_le_bytes(), self.randomness)),
                         ),
                         (
                             TxFieldTag::CallerAddress,
-                            tx.from.to_scalar().expect("tx.from too big"),
+                            Value::known(tx.from.to_scalar().expect("tx.from too big")),
                         ),
                         (
                             TxFieldTag::CalleeAddress,
-                            tx.to
-                                .unwrap_or_else(Address::zero)
-                                .to_scalar()
-                                .expect("tx.to too big"),
+                            Value::known(
+                                tx.to
+                                    .unwrap_or_else(Address::zero)
+                                    .to_scalar()
+                                    .expect("tx.to too big"),
+                            ),
                         ),
-                        (TxFieldTag::IsCreate, F::from(tx.to.is_none() as u64)),
+                        (
+                            TxFieldTag::IsCreate,
+                            Value::known(F::from(tx.to.is_none() as u64)),
+                        ),
                         (
                             TxFieldTag::Value,
-                            rlc(tx.value.to_le_bytes(), self.randomness),
+                            Value::known(rlc(tx.value.to_le_bytes(), self.randomness)),
                         ),
                         (
                             TxFieldTag::CallDataLength,
-                            F::from(tx.call_data.0.len() as u64),
+                            Value::known(F::from(tx.call_data.0.len() as u64)),
                         ),
-                        (
-                            TxFieldTag::TxSignHash,
-                            *msg_hash_rlc_value.unwrap_or(&F::zero()),
-                        ),
+                        (TxFieldTag::TxSignHash, msg_hash_rlc_value),
                     ] {
                         let assigned_cell =
-                            config.assign_row(&mut region, offset, i + 1, *tag, 0, *value)?;
+                            config.assign_row(&mut region, offset, i + 1, tag, 0, value)?;
                         offset += 1;
 
                         // Ref. spec 0. Copy constraints using fixed offsets between the tx rows and
@@ -367,7 +400,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
                             i + 1, // tx_id
                             TxFieldTag::CallData,
                             index,
-                            F::from(*byte as u64),
+                            Value::known(F::from(*byte as u64)),
                         )?;
                         offset += 1;
                         calldata_count += 1;
@@ -380,7 +413,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
                         0, // tx_id
                         TxFieldTag::CallData,
                         0,
-                        F::zero(),
+                        Value::known(F::zero()),
                     )?;
                     offset += 1;
                 }
@@ -400,11 +433,13 @@ mod tx_circuit_tests {
         utils::keccak256,
     };
     use ethers_signers::{LocalWallet, Signer};
-    use group::{Curve, Group};
     use halo2_proofs::{
         arithmetic::CurveAffine,
         dev::{MockProver, VerifyFailure},
-        pairing::bn256::Fr,
+        halo2curves::{
+            bn256::Fr,
+            group::{Curve, Group},
+        },
     };
     use pretty_assertions::assert_eq;
     use rand::{CryptoRng, Rng, SeedableRng};
