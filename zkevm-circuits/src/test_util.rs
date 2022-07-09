@@ -5,7 +5,7 @@ use crate::{
 use bus_mapping::mock::BlockData;
 use eth_types::geth_types::GethData;
 use halo2_proofs::dev::{MockProver, VerifyFailure};
-use halo2_proofs::pairing::bn256::Fr;
+use halo2_proofs::halo2curves::bn256::Fr;
 use mock::TestContext;
 use strum::IntoEnumIterator;
 
@@ -94,7 +94,7 @@ pub fn test_circuits_using_witness_block(
         let state_circuit = StateCircuit::<Fr, N_ROWS>::new(block.randomness, block.rws);
         let power_of_randomness = state_circuit.instance();
         let prover = MockProver::<Fr>::run(18, &state_circuit, power_of_randomness).unwrap();
-        prover.verify_at_rows(0..state_circuit.rows.len(), 0..state_circuit.rows.len())?
+        prover.verify_at_rows_par(0..state_circuit.rows.len(), 0..state_circuit.rows.len())?
     }
 
     Ok(())

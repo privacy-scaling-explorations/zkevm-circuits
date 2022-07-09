@@ -8,7 +8,7 @@ use crate::{
 use eth_types::U256;
 use halo2_proofs::{
     arithmetic::FieldExt,
-    circuit::{AssignedCell, Region},
+    circuit::{AssignedCell, Region, Value},
     plonk::{Advice, Assigned, Column, ConstraintSystem, Error, Expression, VirtualCells},
     poly::Rotation,
 };
@@ -52,7 +52,7 @@ impl<F: FieldExt> Cell<F> {
             },
             self.column,
             offset + self.rotation,
-            || value.ok_or(Error::Synthesis),
+            || value.map(Value::known).unwrap_or_else(Value::unknown),
         )
     }
 }
@@ -105,7 +105,7 @@ impl<'r, 'b, F: FieldExt> CachedRegion<'r, 'b, F> {
         to: V,
     ) -> Result<AssignedCell<VR, F>, Error>
     where
-        V: FnMut() -> Result<VR, Error> + 'v,
+        V: FnMut() -> Value<VR> + 'v,
         for<'vr> Assigned<F>: From<&'vr VR>,
         A: Fn() -> AR,
         AR: Into<String>,
@@ -114,11 +114,14 @@ impl<'r, 'b, F: FieldExt> CachedRegion<'r, 'b, F> {
         let res = self.region.assign_advice(annotation, column, offset, to);
         // Cache the value
         if let Result::Ok(cell) = &res {
-            let call_value = cell.value_field();
-            if let Some(value) = call_value {
+            // TODO: Workaround to get opaque value inside `Value`, if `CachedRegion` is
+            // full of advice columns, we should reconsider having `to` as `F` directly.
+            // Note that if we do so, while layout measurement we need to mark the region to
+            // have the dimension we desire, to make sure it measures to the same layout.
+            cell.value_field().map(|value| {
                 self.advice[column.index() - self.width_start][offset - self.height_start] =
                     value.evaluate();
-            }
+            });
         }
         res
     }

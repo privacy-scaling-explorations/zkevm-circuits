@@ -7,7 +7,7 @@ license = "MIT OR Apache-2.0"
 
 [dependencies]
 eth-types = { path = "../eth-types" }
-keccak256 = { path = "../keccak256" }
+# keccak256 = { path = "../keccak256" }
 ethers-core = "0.6"
 ethers-providers = "0.6"
 itertools = "0.10"

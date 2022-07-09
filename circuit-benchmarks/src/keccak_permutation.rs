@@ -76,7 +76,7 @@ mod tests {
     use ark_std::{end_timer, start_timer};
     use halo2_proofs::plonk::{create_proof, keygen_pk, keygen_vk, verify_proof, SingleVerifier};
     use halo2_proofs::{
-        pairing::bn256::{Bn256, Fr, G1Affine},
+        halo2curves::bn256::{Bn256, Fr, G1Affine},
         poly::commitment::{Params, ParamsVerifier},
         transcript::{Blake2bRead, Blake2bWrite, Challenge255},
     };

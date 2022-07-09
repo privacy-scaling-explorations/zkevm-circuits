@@ -1,5 +1,8 @@
-use halo2_proofs::pairing::bn256::{Bn256, G1Affine};
-use halo2_proofs::poly::commitment::Params;
+use halo2_proofs::halo2curves::bn256::Bn256;
+use halo2_proofs::poly::{
+    commitment::{Params, ParamsProver},
+    kzg::commitment::ParamsKZG,
+};
 use std::env;
 use std::fs::File;
 use std::io::Write;
@@ -18,7 +21,7 @@ fn main() {
 
     println!("Generating params with degree: {}", degree);
 
-    let general_params: Params<G1Affine> = Params::<G1Affine>::unsafe_setup::<Bn256>(degree);
+    let general_params = ParamsKZG::<Bn256>::new(degree);
     let mut buf = Vec::new();
     general_params
         .write(&mut buf)

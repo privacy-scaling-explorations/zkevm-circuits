@@ -257,8 +257,9 @@ pub(crate) mod test {
         evm::OpcodeId,
     };
     use eth_types::{bytecode, Word};
-    use halo2_proofs::arithmetic::BaseExt;
-    use halo2_proofs::pairing::bn256::Fr;
+    use halo2_proofs::arithmetic::Field;
+    use halo2_proofs::halo2curves::bn256::Fr;
+    use rand::rngs::OsRng;
 
     use crate::evm_circuit::{
         step::ExecutionState,
@@ -370,7 +371,7 @@ pub(crate) mod test {
     }
 
     fn test_ok(src_addr: u64, dst_addr: u64, length: usize) {
-        let randomness = Fr::rand();
+        let randomness = Fr::random(OsRng);
         let call_id = 1;
         let mut rws = RwMap::default();
         let mut rw_counter = 1;

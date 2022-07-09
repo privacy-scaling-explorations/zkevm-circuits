@@ -52,17 +52,27 @@ impl<F: Field> Circuit<F> for TestCircuit<F> {
 #[cfg(test)]
 mod evm_circ_benches {
     use super::*;
-    use crate::bench_params::DEGREE;
     use ark_std::{end_timer, start_timer};
-    use halo2_proofs::plonk::{create_proof, keygen_pk, keygen_vk, verify_proof, SingleVerifier};
     use halo2_proofs::{
-        pairing::bn256::{Bn256, Fr, G1Affine},
-        poly::commitment::{Params, ParamsVerifier},
-        transcript::{Blake2bRead, Blake2bWrite, Challenge255},
+        halo2curves::bn256::{Bn256, Fr, G1Affine},
+        plonk::{create_proof, keygen_pk, keygen_vk, verify_proof},
+        poly::{
+            commitment::ParamsProver,
+            kzg::{
+                commitment::{KZGCommitmentScheme, ParamsKZG},
+                multiopen::{ProverSHPLONK, VerifierSHPLONK},
+                strategy::SingleStrategy,
+            },
+        },
+        transcript::{
+            Blake2bRead, Blake2bWrite, Challenge255, TranscriptReadBuffer, TranscriptWriterBuffer,
+        },
     };
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
     use std::env::var;
+
+    type Scheme = KZGCommitmentScheme<Bn256>;
 
     #[cfg_attr(not(feature = "benches"), ignore)]
     #[test]
@@ -81,19 +91,19 @@ mod evm_circ_benches {
         // Bench setup generation
         let setup_message = format!("Setup generation with degree = {}", degree);
         let start1 = start_timer!(|| setup_message);
-        let general_params: Params<G1Affine> = Params::<G1Affine>::unsafe_setup::<Bn256>(degree);
+        let general_params = ParamsKZG::<Bn256>::new(degree);
         end_timer!(start1);
 
-        let vk = keygen_vk(&general_params, &circuit).unwrap();
-        let pk = keygen_pk(&general_params, vk, &circuit).unwrap();
+        let vk = keygen_vk::<Scheme, _>(&general_params, &circuit).unwrap();
+        let pk = keygen_pk::<Scheme, _>(&general_params, vk, &circuit).unwrap();
 
         // Prove
-        let mut transcript = Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
+        let mut transcript = Blake2bWrite::<_, G1Affine, Challenge255<_>>::init(vec![]);
 
         // Bench proof generation time
         let proof_message = format!("EVM Proof generation with {} degree", degree);
         let start2 = start_timer!(|| proof_message);
-        create_proof(
+        create_proof::<Scheme, ProverSHPLONK<_>, _, _, _, _>(
             &general_params,
             &pk,
             &[circuit],
@@ -106,14 +116,14 @@ mod evm_circ_benches {
         end_timer!(start2);
 
         // Verify
-        let verifier_params: ParamsVerifier<Bn256> = general_params.verifier(DEGREE * 2).unwrap();
+        let verifier_params = general_params.verifier_params();
         let mut verifier_transcript = Blake2bRead::<_, _, Challenge255<_>>::init(&proof[..]);
-        let strategy = SingleVerifier::new(&verifier_params);
+        let strategy = SingleStrategy::new(verifier_params);
 
         // Bench verification time
         let start3 = start_timer!(|| "EVM Proof verification");
-        verify_proof(
-            &verifier_params,
+        verify_proof::<Scheme, _, _, VerifierSHPLONK<_>, _>(
+            verifier_params,
             pk.get_vk(),
             strategy,
             &[&[]],

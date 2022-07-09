@@ -6,22 +6,35 @@ mod tests {
     use ark_std::{end_timer, start_timer};
     use env_logger::Env;
     use eth_types::{address, geth_types::Transaction, word, Bytes};
-    use group::{Curve, Group};
-    use halo2_proofs::arithmetic::{BaseExt, CurveAffine, Field};
-    use halo2_proofs::plonk::{create_proof, keygen_pk, keygen_vk, verify_proof, SingleVerifier};
     use halo2_proofs::{
-        pairing::bn256::{Bn256, Fr, G1Affine},
-        poly::commitment::{Params, ParamsVerifier},
-        transcript::{Blake2bRead, Blake2bWrite, Challenge255},
+        arithmetic::{CurveAffine, Field, FieldExt},
+        halo2curves::{
+            bn256::{Bn256, Fr},
+            group::{Curve, Group},
+            secp256k1::Secp256k1Affine,
+        },
+        plonk::{create_proof, keygen_pk, keygen_vk, verify_proof},
+        poly::{
+            commitment::ParamsProver,
+            kzg::{
+                commitment::{KZGCommitmentScheme, ParamsKZG},
+                multiopen::{ProverSHPLONK, VerifierSHPLONK},
+                strategy::SingleStrategy,
+            },
+        },
+        transcript::{
+            Blake2bRead, Blake2bWrite, Challenge255, TranscriptReadBuffer, TranscriptWriterBuffer,
+        },
     };
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
-    use secp256k1::Secp256k1Affine;
     use std::marker::PhantomData;
     use zkevm_circuits::tx_circuit::{
         sign_verify::{SignVerifyChip, POW_RAND_SIZE, VERIF_HEIGHT},
         TxCircuit,
     };
+
+    type Scheme = KZGCommitmentScheme<Bn256>;
 
     #[cfg_attr(not(feature = "benches"), ignore)]
     #[test]
@@ -82,15 +95,15 @@ mod tests {
             DEGREE, MAX_TXS
         );
         let start1 = start_timer!(|| setup_message);
-        let general_params: Params<G1Affine> =
-            Params::<G1Affine>::unsafe_setup::<Bn256>(DEGREE.try_into().unwrap());
-        let verifier_params: ParamsVerifier<Bn256> =
-            general_params.verifier(MAX_TXS * VERIF_HEIGHT).unwrap();
+        let general_params = ParamsKZG::<Bn256>::new(DEGREE.try_into().unwrap());
+        let verifier_params = general_params.verifier_params();
         end_timer!(start1);
 
         // Initialize the proving key
-        let vk = keygen_vk(&general_params, &circuit).expect("keygen_vk should not fail");
-        let pk = keygen_pk(&general_params, vk, &circuit).expect("keygen_pk should not fail");
+        let vk =
+            keygen_vk::<Scheme, _>(&general_params, &circuit).expect("keygen_vk should not fail");
+        let pk = keygen_pk::<Scheme, _>(&general_params, vk, &circuit)
+            .expect("keygen_pk should not fail");
         // Create a proof
         let mut transcript = Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
 
@@ -98,7 +111,7 @@ mod tests {
         let proof_message = format!("Tx Proof generation with {} degree", DEGREE);
         let start2 = start_timer!(|| proof_message);
         let instance_slices: Vec<&[Fr]> = instance.iter().map(|v| &v[..]).collect();
-        create_proof(
+        create_proof::<Scheme, ProverSHPLONK<_>, _, _, _, _>(
             &general_params,
             &pk,
             &[circuit],
@@ -113,10 +126,10 @@ mod tests {
         // Bench verification time
         let start3 = start_timer!(|| "Tx Proof verification");
         let mut verifier_transcript = Blake2bRead::<_, _, Challenge255<_>>::init(&proof[..]);
-        let strategy = SingleVerifier::new(&verifier_params);
+        let strategy = SingleStrategy::new(verifier_params);
 
-        verify_proof(
-            &verifier_params,
+        verify_proof::<Scheme, _, _, VerifierSHPLONK<_>, _>(
+            verifier_params,
             pk.get_vk(),
             strategy,
             &[&instance_slices[..]],

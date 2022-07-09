@@ -14,20 +14,3 @@
 pub mod evm_word;
 pub mod is_zero;
 pub mod monotone;
-
-use eth_types::Field;
-use halo2_proofs::circuit::AssignedCell;
-
-#[allow(dead_code)]
-/// An assigned cell in the circuit.
-#[derive(Clone, Debug)]
-pub struct Variable<T, F: Field> {
-    assig_cell: AssignedCell<F, F>,
-    value: Option<T>,
-}
-
-impl<T, F: Field> Variable<T, F> {
-    pub(crate) fn new(assig_cell: AssignedCell<F, F>, value: Option<T>) -> Self {
-        Self { assig_cell, value }
-    }
-}

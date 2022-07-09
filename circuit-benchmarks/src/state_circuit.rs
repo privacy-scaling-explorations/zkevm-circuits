@@ -4,15 +4,26 @@
 mod tests {
     use crate::bench_params::DEGREE;
     use ark_std::{end_timer, start_timer};
-    use halo2_proofs::plonk::{create_proof, keygen_pk, keygen_vk, verify_proof, SingleVerifier};
     use halo2_proofs::{
-        pairing::bn256::{Bn256, Fr, G1Affine},
-        poly::commitment::{Params, ParamsVerifier},
-        transcript::{Blake2bRead, Blake2bWrite, Challenge255},
+        halo2curves::bn256::{Bn256, Fr},
+        plonk::{create_proof, keygen_pk, keygen_vk, verify_proof},
+        poly::{
+            commitment::ParamsProver,
+            kzg::{
+                commitment::{KZGCommitmentScheme, ParamsKZG},
+                multiopen::{ProverSHPLONK, VerifierSHPLONK},
+                strategy::SingleStrategy,
+            },
+        },
+        transcript::{
+            Blake2bRead, Blake2bWrite, Challenge255, TranscriptReadBuffer, TranscriptWriterBuffer,
+        },
     };
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
     use zkevm_circuits::state_circuit::StateCircuit;
+
+    type Scheme = KZGCommitmentScheme<Bn256>;
 
     #[cfg_attr(not(feature = "benches"), ignore)]
     #[test]
@@ -28,21 +39,22 @@ mod tests {
         // Bench setup generation
         let setup_message = format!("Setup generation with degree = {}", DEGREE);
         let start1 = start_timer!(|| setup_message);
-        let general_params: Params<G1Affine> =
-            Params::<G1Affine>::unsafe_setup::<Bn256>(DEGREE.try_into().unwrap());
-        let verifier_params: ParamsVerifier<Bn256> = general_params.verifier(DEGREE * 2).unwrap();
+        let general_params = ParamsKZG::<Bn256>::new(DEGREE.try_into().unwrap());
+        let verifier_params = general_params.verifier_params();
         end_timer!(start1);
 
         // Initialize the proving key
-        let vk = keygen_vk(&general_params, &empty_circuit).expect("keygen_vk should not fail");
-        let pk = keygen_pk(&general_params, vk, &empty_circuit).expect("keygen_pk should not fail");
+        let vk = keygen_vk::<Scheme, _>(&general_params, &empty_circuit)
+            .expect("keygen_vk should not fail");
+        let pk = keygen_pk::<Scheme, _>(&general_params, vk, &empty_circuit)
+            .expect("keygen_pk should not fail");
         // Create a proof
         let mut transcript = Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
 
         // Bench proof generation time
         let proof_message = format!("State Proof generation with {} degree", DEGREE);
         let start2 = start_timer!(|| proof_message);
-        create_proof(
+        create_proof::<Scheme, ProverSHPLONK<_>, _, _, _, _>(
             &general_params,
             &pk,
             &[empty_circuit],
@@ -57,10 +69,10 @@ mod tests {
         // Bench verification time
         let start3 = start_timer!(|| "State Proof verification");
         let mut verifier_transcript = Blake2bRead::<_, _, Challenge255<_>>::init(&proof[..]);
-        let strategy = SingleVerifier::new(&verifier_params);
+        let strategy = SingleStrategy::new(verifier_params);
 
-        verify_proof(
-            &verifier_params,
+        verify_proof::<Scheme, _, _, VerifierSHPLONK<_>, _>(
+            verifier_params,
             pk.get_vk(),
             strategy,
             &[&[]],

@@ -1,7 +1,7 @@
 use crate::evm_circuit::util::rlc;
 use eth_types::{Field, ToLittleEndian, U256};
 use halo2_proofs::{
-    circuit::{AssignedCell, Layouter, Region},
+    circuit::{AssignedCell, Layouter, Region, Value},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, Instance, VirtualCells},
     poly::Rotation,
 };
@@ -45,14 +45,14 @@ impl<const N: usize> Config<N> {
                 || format!("byte[{}] in rlc", i),
                 self.bytes[i],
                 offset,
-                || Ok(F::from(byte as u64)),
+                || Value::known(F::from(byte as u64)),
             )?;
         }
         region.assign_advice(
             || "encoded value in rlc",
             self.encoded,
             offset,
-            || Ok(rlc::value(&bytes, randomness)),
+            || Value::known(rlc::value(&bytes, randomness)),
         )
     }
 }

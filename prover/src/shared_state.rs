@@ -1,5 +1,5 @@
-use halo2_proofs::pairing::bn256::G1Affine;
-use halo2_proofs::poly::commitment::Params;
+use halo2_proofs::halo2curves::bn256::Bn256;
+use halo2_proofs::poly::kzg::commitment::ParamsKZG;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -85,7 +85,7 @@ impl SharedState {
     /// - records if a task completed
     /// - starting a new task
     /// Blocks until completion but releases the lock of `self.rw` in between.
-    pub async fn duty_cycle(&self, params: Arc<Params<G1Affine>>) {
+    pub async fn duty_cycle(&self, params: Arc<ParamsKZG<Bn256>>) {
         let mut rw = self.rw.lock().await;
 
         if rw.pending_tasks > 0 {
