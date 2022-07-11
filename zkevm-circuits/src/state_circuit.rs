@@ -31,6 +31,8 @@ use random_linear_combination::{Chip as RlcChip, Config as RlcConfig, Queries as
 use std::collections::HashMap;
 use std::iter::once;
 
+pub use binary_number::{AsBits, Chip as BinaryNumberChip, Config as BinaryNumberConfig};
+
 const N_LIMBS_RW_COUNTER: usize = 2;
 const N_LIMBS_ACCOUNT_ADDRESS: usize = 10;
 const N_LIMBS_ID: usize = 2;

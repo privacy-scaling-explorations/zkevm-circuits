@@ -1,22 +1,20 @@
 #![allow(missing_docs)]
 use bus_mapping::circuit_input_builder::{CopyDataType, CopyEvent, CopyStep, NumberOrHash};
 use eth_types::{Field, ToAddress, ToScalar, U256};
-use gadgets::{
-    is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction},
-    less_than::{LtChip, LtConfig, LtInstruction},
-};
+use gadgets::less_than::{LtChip, LtConfig, LtInstruction};
 use halo2_proofs::{
     circuit::{Layouter, Region},
-    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector, VirtualCells},
+    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, Selector, VirtualCells},
     poly::Rotation,
 };
 
 use crate::{
     evm_circuit::{
         table::{BytecodeFieldTag, LookupTable, RwTableTag, TxContextFieldTag, TxLogFieldTag},
-        util::{and, constraint_builder::BaseConstraintBuilder, not, RandomLinearCombination},
+        util::{and, constraint_builder::BaseConstraintBuilder, not, or, RandomLinearCombination},
         witness::Block,
     },
+    state_circuit::{AsBits, BinaryNumberChip, BinaryNumberConfig},
     util::{self, Expr},
 };
 
@@ -26,11 +24,23 @@ impl<F: Field> util::Expr<F> for CopyDataType {
     }
 }
 
+impl AsBits<3> for CopyDataType {
+    fn as_bits(&self) -> [bool; 3] {
+        let mut bits = [false; 3];
+        let mut x = *self as u8;
+        for i in 0..3 {
+            bits[2 - i] = x % 2 == 1;
+            x /= 2;
+        }
+        bits
+    }
+}
+
 /// The rw table shared between evm circuit and state circuit
 #[derive(Clone, Debug)]
 pub struct CopyTableConfig<F> {
-    /// Selector to enable a row.
-    pub q_enable: Selector,
+    /// Whether the row is enabled or not.
+    pub q_enable: Column<Fixed>,
     /// Whether this row denotes a step. A read row is a step and a write row is
     /// not.
     pub q_step: Selector,
@@ -44,8 +54,6 @@ pub struct CopyTableConfig<F> {
     /// 2. RLC encoding of bytecode hash for CopyDataType::Bytecode
     /// 3. Transaction ID for CopyDataType::TxCalldata, CopyDataType::TxLog
     pub id: Column<Advice>,
-    /// The tag of the row, denoting the copy data type.
-    pub tag: Column<Advice>,
     /// The source/destination address for this copy step.
     pub addr: Column<Advice>,
     /// The end of the source buffer for the copy event.
@@ -63,15 +71,10 @@ pub struct CopyTableConfig<F> {
     pub rw_counter: Column<Advice>,
     /// Decrementing counter denoting reverse read-write counter.
     pub rwc_inc_left: Column<Advice>,
-
-    /// IsZeroConfig for checking if the row is tagged CopyDataType::Bytecode.
-    pub is_bytecode: IsZeroConfig<F>,
-    /// IsZeroConfig for checking if the row is tagged CopyDataType::Memory.
-    pub is_memory: IsZeroConfig<F>,
-    /// IsZeroConfig for checking if the row is tagged CopyDataType::TxCalldata.
-    pub is_tx_calldata: IsZeroConfig<F>,
-    /// IsZeroConfig for checking if the row is tagged CopyDataType::TxLog.
-    pub is_tx_log: IsZeroConfig<F>,
+    /// Binary chip to constrain the copy table conditionally depending on the
+    /// current row's tag, whether it is Bytecode, Memory, TxCalldata or
+    /// TxLog.
+    pub tag: BinaryNumberConfig<CopyDataType, 3>,
     /// Lt chip to check: src_addr < src_addr_end.
     /// Since `src_addr` and `src_addr_end` are u64, 8 bytes are sufficient for
     /// the Lt chip.
@@ -83,9 +86,9 @@ impl<F: Field> LookupTable<F> for CopyTableConfig<F> {
         vec![
             meta.query_advice(self.is_first, Rotation::cur()),
             meta.query_advice(self.id, Rotation::cur()), // src_id
-            meta.query_advice(self.tag, Rotation::cur()), // src_tag
+            self.tag.value(Rotation::cur())(meta),       // src_tag
             meta.query_advice(self.id, Rotation::next()), // dst_id
-            meta.query_advice(self.tag, Rotation::next()), // dst_tag
+            self.tag.value(Rotation::next())(meta),      // dst_tag
             meta.query_advice(self.addr, Rotation::cur()), // src_addr
             meta.query_advice(self.src_addr_end, Rotation::cur()), // src_addr_end
             meta.query_advice(self.addr, Rotation::next()), // dst_addr
@@ -103,12 +106,11 @@ impl<F: Field> CopyTableConfig<F> {
         rw_table: &dyn LookupTable<F>,
         bytecode_table: &dyn LookupTable<F>,
     ) -> Self {
-        let q_enable = meta.complex_selector();
+        let q_enable = meta.fixed_column();
         let q_step = meta.complex_selector();
         let is_first = meta.advice_column();
         let is_last = meta.advice_column();
         let id = meta.advice_column();
-        let tag = meta.advice_column();
         let addr = meta.advice_column();
         let src_addr_end = meta.advice_column();
         let bytes_left = meta.advice_column();
@@ -118,35 +120,7 @@ impl<F: Field> CopyTableConfig<F> {
         let rw_counter = meta.advice_column();
         let rwc_inc_left = meta.advice_column();
 
-        let is_bytecode_inv = meta.advice_column();
-        let is_memory_inv = meta.advice_column();
-        let is_tx_calldata_inv = meta.advice_column();
-        let is_tx_log_inv = meta.advice_column();
-
-        let is_bytecode = IsZeroChip::configure(
-            meta,
-            |meta| meta.query_selector(q_enable),
-            |meta| meta.query_advice(tag, Rotation::cur()) - CopyDataType::Bytecode.expr(),
-            is_bytecode_inv,
-        );
-        let is_memory = IsZeroChip::configure(
-            meta,
-            |meta| meta.query_selector(q_enable),
-            |meta| meta.query_advice(tag, Rotation::cur()) - CopyDataType::Memory.expr(),
-            is_memory_inv,
-        );
-        let is_tx_calldata = IsZeroChip::configure(
-            meta,
-            |meta| meta.query_selector(q_enable),
-            |meta| meta.query_advice(tag, Rotation::cur()) - CopyDataType::TxCalldata.expr(),
-            is_tx_calldata_inv,
-        );
-        let is_tx_log = IsZeroChip::configure(
-            meta,
-            |meta| meta.query_selector(q_enable),
-            |meta| meta.query_advice(tag, Rotation::cur()) - CopyDataType::TxLog.expr(),
-            is_tx_log_inv,
-        );
+        let tag = BinaryNumberChip::configure(meta, q_enable);
 
         let addr_lt_addr_end = LtChip::configure(
             meta,
@@ -192,8 +166,8 @@ impl<F: Field> CopyTableConfig<F> {
                 );
                 cb.require_equal(
                     "rows[0].tag == rows[2].tag",
-                    meta.query_advice(tag, Rotation::cur()),
-                    meta.query_advice(tag, Rotation(2)),
+                    tag.value(Rotation::cur())(meta),
+                    tag.value(Rotation(2))(meta),
                 );
                 cb.require_equal(
                     "rows[0].addr + 1 == rows[2].addr",
@@ -203,7 +177,10 @@ impl<F: Field> CopyTableConfig<F> {
             });
 
             let rw_diff = and::expr([
-                is_memory.expr() + is_tx_log.expr(),
+                or::expr([
+                    tag.value_equals(CopyDataType::Memory, Rotation::cur())(meta),
+                    tag.value_equals(CopyDataType::TxLog, Rotation::cur())(meta),
+                ]),
                 not::expr(meta.query_advice(is_pad, Rotation::cur())),
             ]);
             cb.condition(
@@ -229,7 +206,7 @@ impl<F: Field> CopyTableConfig<F> {
                 );
             });
 
-            cb.gate(meta.query_selector(q_enable))
+            cb.gate(meta.query_fixed(q_enable, Rotation::cur()))
         });
 
         meta.create_gate("verify step", |meta| {
@@ -285,8 +262,8 @@ impl<F: Field> CopyTableConfig<F> {
         });
 
         meta.lookup_any("Memory lookup", |meta| {
-            let cond = meta.query_selector(q_enable)
-                * is_memory.expr()
+            let cond = meta.query_fixed(q_enable, Rotation::cur())
+                * tag.value_equals(CopyDataType::Memory, Rotation::cur())(meta)
                 * (1.expr() - meta.query_advice(is_pad, Rotation::cur()));
             vec![
                 meta.query_advice(rw_counter, Rotation::cur()),
@@ -308,7 +285,8 @@ impl<F: Field> CopyTableConfig<F> {
         });
 
         meta.lookup_any("TxLog lookup", |meta| {
-            let cond = meta.query_selector(q_enable) * is_tx_log.expr();
+            let cond = meta.query_fixed(q_enable, Rotation::cur())
+                * tag.value_equals(CopyDataType::TxLog, Rotation::cur())(meta);
             vec![
                 meta.query_advice(rw_counter, Rotation::cur()),
                 1.expr(),
@@ -329,8 +307,8 @@ impl<F: Field> CopyTableConfig<F> {
         });
 
         meta.lookup_any("Bytecode lookup", |meta| {
-            let cond = meta.query_selector(q_enable)
-                * is_bytecode.expr()
+            let cond = meta.query_fixed(q_enable, Rotation::cur())
+                * tag.value_equals(CopyDataType::Bytecode, Rotation::cur())(meta)
                 * (1.expr() - meta.query_advice(is_pad, Rotation::cur()));
             vec![
                 meta.query_advice(id, Rotation::cur()),
@@ -346,8 +324,8 @@ impl<F: Field> CopyTableConfig<F> {
         });
 
         meta.lookup_any("Tx calldata lookup", |meta| {
-            let cond = meta.query_selector(q_enable)
-                * is_tx_calldata.expr()
+            let cond = meta.query_fixed(q_enable, Rotation::cur())
+                * tag.value_equals(CopyDataType::TxCalldata, Rotation::cur())(meta)
                 * (1.expr() - meta.query_advice(is_pad, Rotation::cur()));
             vec![
                 meta.query_advice(id, Rotation::cur()),
@@ -367,7 +345,6 @@ impl<F: Field> CopyTableConfig<F> {
             is_first,
             is_last,
             id,
-            tag,
             addr,
             src_addr_end,
             bytes_left,
@@ -376,12 +353,7 @@ impl<F: Field> CopyTableConfig<F> {
             is_pad,
             rw_counter,
             rwc_inc_left,
-
-            is_memory,
-            is_bytecode,
-            is_tx_calldata,
-            is_tx_log,
-
+            tag,
             addr_lt_addr_end,
         }
     }
@@ -391,10 +363,7 @@ impl<F: Field> CopyTableConfig<F> {
         layouter: &mut impl Layouter<F>,
         block: &Block<F>,
     ) -> Result<(), Error> {
-        let is_bytecode_chip = IsZeroChip::construct(self.is_bytecode.clone());
-        let is_memory_chip = IsZeroChip::construct(self.is_memory.clone());
-        let is_tx_calldata_chip = IsZeroChip::construct(self.is_tx_calldata.clone());
-        let is_tx_log_chip = IsZeroChip::construct(self.is_tx_log.clone());
+        let tag_chip = BinaryNumberChip::construct(self.tag);
         let lt_chip = LtChip::construct(self.addr_lt_addr_end.clone());
 
         layouter.assign_region(
@@ -410,10 +379,7 @@ impl<F: Field> CopyTableConfig<F> {
                             copy_event,
                             step_idx,
                             copy_step,
-                            &is_bytecode_chip,
-                            &is_memory_chip,
-                            &is_tx_calldata_chip,
-                            &is_tx_log_chip,
+                            &tag_chip,
                             &lt_chip,
                         )?;
                         offset += 1;
@@ -421,14 +387,7 @@ impl<F: Field> CopyTableConfig<F> {
                 }
                 // pad two rows in the end to satisfy Halo2 cell assignment check
                 for _ in 0..2 {
-                    self.assign_padding_row(
-                        &mut region,
-                        offset,
-                        &is_bytecode_chip,
-                        &is_memory_chip,
-                        &is_tx_calldata_chip,
-                        &is_tx_log_chip,
-                    )?;
+                    self.assign_padding_row(&mut region, offset, &tag_chip)?;
                     offset += 1;
                 }
                 Ok(())
@@ -445,13 +404,11 @@ impl<F: Field> CopyTableConfig<F> {
         copy_event: &CopyEvent,
         step_idx: usize,
         copy_step: &CopyStep,
-        is_bytecode_chip: &IsZeroChip<F>,
-        is_memory_chip: &IsZeroChip<F>,
-        is_tx_calldata_chip: &IsZeroChip<F>,
-        is_tx_log_chip: &IsZeroChip<F>,
+        tag_chip: &BinaryNumberChip<F, CopyDataType, 3>,
         lt_chip: &LtChip<F, 8>,
     ) -> Result<(), Error> {
-        self.q_enable.enable(region, offset)?;
+        // q_enable
+        region.assign_fixed(|| "q_enable", self.q_enable, offset, || Ok(F::one()))?;
         // enable q_step on the Read step
         if copy_step.rw.is_read() {
             self.q_step.enable(region, offset)?;
@@ -463,15 +420,6 @@ impl<F: Field> CopyTableConfig<F> {
             &copy_event.dst_id
         };
         let bytes_left = copy_event.length - step_idx as u64 / 2;
-
-        // println!(
-        //     "[{offset}] {} {} {} {:?} id:{:?} bytes_left:{bytes_left}",
-        //     copy_step,
-        //     copy_step.rw.is_read() as u64,
-        //     (step_idx == 0) as u64,
-        //     (step_idx == copy_event.steps.len() - 1) as u64,
-        //     id,
-        // );
 
         // is_first
         region.assign_advice(
@@ -514,13 +462,6 @@ impl<F: Field> CopyTableConfig<F> {
                     }
                 })
             },
-        )?;
-        // tag
-        region.assign_advice(
-            || format!("assign tag {}", offset),
-            self.tag,
-            offset,
-            || Ok(F::from(copy_step.tag as u64)),
         )?;
         // addr
         region.assign_advice(
@@ -576,6 +517,8 @@ impl<F: Field> CopyTableConfig<F> {
             offset,
             || Ok(F::from(copy_step.rwc_inc_left)),
         )?;
+        // tag binary number chip
+        tag_chip.assign(region, offset, &copy_step.tag)?;
         // assignment for read steps
         if copy_step.rw.is_read() {
             // src_addr_end
@@ -600,27 +543,6 @@ impl<F: Field> CopyTableConfig<F> {
                 F::from(copy_event.src_addr_end),
             )?;
         }
-        // is zero chips
-        is_bytecode_chip.assign(
-            region,
-            offset,
-            Some(F::from(copy_step.tag as u64) - F::from(CopyDataType::Bytecode as u64)),
-        )?;
-        is_memory_chip.assign(
-            region,
-            offset,
-            Some(F::from(copy_step.tag as u64) - F::from(CopyDataType::Memory as u64)),
-        )?;
-        is_tx_calldata_chip.assign(
-            region,
-            offset,
-            Some(F::from(copy_step.tag as u64) - F::from(CopyDataType::TxCalldata as u64)),
-        )?;
-        is_tx_log_chip.assign(
-            region,
-            offset,
-            Some(F::from(copy_step.tag as u64) - F::from(CopyDataType::TxLog as u64)),
-        )?;
         Ok(())
     }
 
@@ -628,12 +550,10 @@ impl<F: Field> CopyTableConfig<F> {
         &self,
         region: &mut Region<F>,
         offset: usize,
-        is_bytecode_chip: &IsZeroChip<F>,
-        is_memory_chip: &IsZeroChip<F>,
-        is_tx_calldata_chip: &IsZeroChip<F>,
-        is_tx_log_chip: &IsZeroChip<F>,
+        tag_chip: &BinaryNumberChip<F, CopyDataType, 3>,
     ) -> Result<(), Error> {
-        println!("[{offset}] padding row");
+        // q_enable
+        region.assign_fixed(|| "q_enable", self.q_enable, offset, || Ok(F::zero()))?;
         // is_first
         region.assign_advice(
             || format!("assign is_first {}", offset),
@@ -652,13 +572,6 @@ impl<F: Field> CopyTableConfig<F> {
         region.assign_advice(
             || format!("assign id {}", offset),
             self.id,
-            offset,
-            || Ok(F::zero()),
-        )?;
-        // tag
-        region.assign_advice(
-            || format!("assign tag {}", offset),
-            self.tag,
             offset,
             || Ok(F::zero()),
         )?;
@@ -718,11 +631,8 @@ impl<F: Field> CopyTableConfig<F> {
             offset,
             || Ok(F::zero()),
         )?;
-        // is zero chips
-        is_bytecode_chip.assign(region, offset, Some(F::one()))?;
-        is_memory_chip.assign(region, offset, Some(F::one()))?;
-        is_tx_calldata_chip.assign(region, offset, Some(F::one()))?;
-        is_tx_log_chip.assign(region, offset, Some(F::one()))?;
+        // tag
+        tag_chip.assign(region, offset, &CopyDataType::default())?;
         Ok(())
     }
 }

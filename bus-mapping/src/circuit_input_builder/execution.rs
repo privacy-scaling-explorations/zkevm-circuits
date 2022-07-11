@@ -5,6 +5,7 @@ use eth_types::{
     evm_types::{Gas, GasCost, OpcodeId, ProgramCounter},
     GethExecStep, H256,
 };
+use strum_macros::EnumIter;
 
 /// An execution step of the EVM.
 #[derive(Clone, Debug)]
@@ -137,7 +138,7 @@ impl ExecState {
 }
 
 /// Defines the various source/destination types for a copy event.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, EnumIter)]
 pub enum CopyDataType {
     /// When the source for the copy event is the bytecode table.
     Bytecode = 1,
@@ -147,6 +148,12 @@ pub enum CopyDataType {
     TxCalldata,
     /// When the destination for the copy event is tx's log.
     TxLog,
+}
+
+impl Default for CopyDataType {
+    fn default() -> Self {
+        Self::Memory
+    }
 }
 
 /// Defines a single copy step in a copy event. This type is unified over the
