@@ -82,8 +82,10 @@ impl<F: FieldExt> IsZeroChip<F> {
 
             is_zero_expression = 1.expr() - value.clone() * value_inv;
 
-            // This checks `value_inv ≡ value.invert()` when `value` is not
-            // zero: value ⋅ (1 - value ⋅ value_inv)
+            // We wish to satisfy the below constrain for the following cases:
+            //
+            // 1. value == 0
+            // 2. if value != 0, require is_zero_expression == 0 => value_inv == value.invert()
             [q_enable * value * is_zero_expression.clone()]
         });
 
