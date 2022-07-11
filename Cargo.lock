@@ -1712,6 +1712,7 @@ dependencies = [
 name = "gadgets"
 version = "0.1.0"
 dependencies = [
+ "array-init",
  "digest 0.7.6",
  "eth-types",
  "halo2_proofs 0.1.0-beta.1",
