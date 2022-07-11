@@ -172,6 +172,12 @@ impl RwTableTag {
     }
 }
 
+impl From<RwTableTag> for usize {
+    fn from(t: RwTableTag) -> Self {
+        t as usize
+    }
+}
+
 #[derive(Clone, Copy, Debug, EnumIter)]
 pub enum AccountFieldTag {
     Nonce = 1,

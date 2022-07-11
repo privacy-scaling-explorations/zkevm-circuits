@@ -1,10 +1,5 @@
-use crate::{
-    evm_circuit::{
-        table::RwTableTag,
-        util::{and, not},
-    },
-    util::Expr,
-};
+#![allow(missing_docs)]
+use crate::util::{and, not, Expr};
 use eth_types::Field;
 use halo2_proofs::{
     circuit::Region,
@@ -20,22 +15,13 @@ pub trait AsBits<const N: usize> {
     fn as_bits(&self) -> [bool; N];
 }
 
-impl AsBits<4> for RwTableTag {
-    fn as_bits(&self) -> [bool; 4] {
-        let mut bits = [false; 4];
-        let mut x = *self as u8;
-        for i in 0..4 {
-            bits[3 - i] = x % 2 == 1;
-            x /= 2;
-        }
-        bits
-    }
-}
-
-impl<const N: usize> AsBits<N> for usize {
+impl<T, const N: usize> AsBits<N> for T
+where
+    T: Copy + Into<usize>,
+{
     fn as_bits(&self) -> [bool; N] {
         let mut bits = [false; N];
-        let mut x = *self as u64;
+        let mut x: usize = (*self).into();
         for i in 0..N {
             bits[N - 1 - i] = x % 2 == 1;
             x /= 2;
@@ -45,13 +31,13 @@ impl<const N: usize> AsBits<N> for usize {
 }
 
 #[derive(Clone, Copy)]
-pub struct Config<T, const N: usize> {
+pub struct BinaryNumberConfig<T, const N: usize> {
     // Must be constrained to be binary for correctness.
     pub bits: [Column<Advice>; N],
     _marker: PhantomData<T>,
 }
 
-impl<T, const N: usize> Config<T, N>
+impl<T, const N: usize> BinaryNumberConfig<T, N>
 where
     T: AsBits<N>,
 {
@@ -102,23 +88,26 @@ where
 //    T.
 //  - creating expressions (via the Config) that evaluate to 1 when the bits
 //    match a specific value and 0 otherwise.
-pub struct Chip<F: Field, T, const N: usize> {
-    config: Config<T, N>,
+pub struct BinaryNumberChip<F: Field, T, const N: usize> {
+    config: BinaryNumberConfig<T, N>,
     _marker: PhantomData<F>,
 }
 
-impl<F: Field, T: IntoEnumIterator, const N: usize> Chip<F, T, N>
+impl<F: Field, T: IntoEnumIterator, const N: usize> BinaryNumberChip<F, T, N>
 where
     T: AsBits<N>,
 {
-    pub fn construct(config: Config<T, N>) -> Self {
+    pub fn construct(config: BinaryNumberConfig<T, N>) -> Self {
         Self {
             config,
             _marker: PhantomData,
         }
     }
 
-    pub fn configure(meta: &mut ConstraintSystem<F>, selector: Column<Fixed>) -> Config<T, N> {
+    pub fn configure(
+        meta: &mut ConstraintSystem<F>,
+        selector: Column<Fixed>,
+    ) -> BinaryNumberConfig<T, N> {
         let bits = [0; N].map(|_| meta.advice_column());
         bits.map(|bit| {
             meta.create_gate("bit column is 0 or 1", |meta| {
@@ -128,7 +117,7 @@ where
             })
         });
 
-        let config = Config {
+        let config = BinaryNumberConfig {
             bits,
             _marker: PhantomData,
         };

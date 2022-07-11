@@ -1,6 +1,5 @@
 use super::{
-    binary_number::Config as BinaryNumberConfig, lookups::Queries as LookupsQueries,
-    multiple_precision_integer::Queries as MpiQueries,
+    lookups::Queries as LookupsQueries, multiple_precision_integer::Queries as MpiQueries,
     random_linear_combination::Queries as RlcQueries, N_LIMBS_ACCOUNT_ADDRESS, N_LIMBS_ID,
     N_LIMBS_RW_COUNTER,
 };
@@ -11,6 +10,7 @@ use crate::evm_circuit::{
 };
 use crate::util::Expr;
 use eth_types::Field;
+use gadgets::binary_number::BinaryNumberConfig;
 use halo2_proofs::plonk::Expression;
 use strum::IntoEnumIterator;
 

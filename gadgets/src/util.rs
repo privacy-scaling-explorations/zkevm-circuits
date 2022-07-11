@@ -1,6 +1,104 @@
+#![allow(missing_docs)]
 //! Utility traits, functions used in the crate.
 use eth_types::evm_types::{GasCost, OpcodeId};
 use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
+
+/// Returns the sum of the passed in cells
+pub mod sum {
+    use crate::util::Expr;
+    use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
+
+    pub fn expr<F: FieldExt, E: Expr<F>, I: IntoIterator<Item = E>>(inputs: I) -> Expression<F> {
+        inputs
+            .into_iter()
+            .fold(0.expr(), |acc, input| acc + input.expr())
+    }
+
+    pub fn value<F: FieldExt>(values: &[u8]) -> F {
+        values
+            .iter()
+            .fold(F::zero(), |acc, value| acc + F::from(*value as u64))
+    }
+}
+
+/// Returns `1` when `expr[0] && expr[1] && ... == 1`, and returns `0`
+/// otherwise. Inputs need to be boolean
+pub mod and {
+    use crate::util::Expr;
+    use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
+
+    pub fn expr<F: FieldExt, E: Expr<F>, I: IntoIterator<Item = E>>(inputs: I) -> Expression<F> {
+        inputs
+            .into_iter()
+            .fold(1.expr(), |acc, input| acc * input.expr())
+    }
+
+    pub fn value<F: FieldExt>(inputs: Vec<F>) -> F {
+        inputs.iter().fold(F::one(), |acc, input| acc * input)
+    }
+}
+
+/// Returns `1` when `expr[0] || expr[1] || ... == 1`, and returns `0`
+/// otherwise. Inputs need to be boolean
+pub mod or {
+    use super::{and, not};
+    use crate::util::Expr;
+    use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
+
+    pub fn expr<F: FieldExt, E: Expr<F>, I: IntoIterator<Item = E>>(inputs: I) -> Expression<F> {
+        not::expr(and::expr(inputs.into_iter().map(not::expr)))
+    }
+
+    pub fn value<F: FieldExt>(inputs: Vec<F>) -> F {
+        not::value(and::value(inputs.into_iter().map(not::value).collect()))
+    }
+}
+
+/// Returns `1` when `b == 0`, and returns `0` otherwise.
+/// `b` needs to be boolean
+pub mod not {
+    use crate::util::Expr;
+    use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
+
+    pub fn expr<F: FieldExt, E: Expr<F>>(b: E) -> Expression<F> {
+        1.expr() - b.expr()
+    }
+
+    pub fn value<F: FieldExt>(b: F) -> F {
+        F::one() - b
+    }
+}
+
+/// Returns `when_true` when `selector == 1`, and returns `when_false` when
+/// `selector == 0`. `selector` needs to be boolean.
+pub mod select {
+    use crate::util::Expr;
+    use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
+
+    pub fn expr<F: FieldExt>(
+        selector: Expression<F>,
+        when_true: Expression<F>,
+        when_false: Expression<F>,
+    ) -> Expression<F> {
+        selector.clone() * when_true + (1.expr() - selector) * when_false
+    }
+
+    pub fn value<F: FieldExt>(selector: F, when_true: F, when_false: F) -> F {
+        selector * when_true + (F::one() - selector) * when_false
+    }
+
+    pub fn value_word<F: FieldExt>(
+        selector: F,
+        when_true: [u8; 32],
+        when_false: [u8; 32],
+    ) -> [u8; 32] {
+        if selector == F::one() {
+            when_true
+        } else {
+            when_false
+        }
+    }
+}
 
 /// Trait that implements functionality to get a constant expression from
 /// commonly used types.

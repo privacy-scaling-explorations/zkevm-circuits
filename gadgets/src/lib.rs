@@ -11,6 +11,7 @@
 #![deny(unsafe_code)]
 #![deny(clippy::debug_assert_with_mut_call)]
 
+pub mod binary_number;
 pub mod evm_word;
 pub mod is_zero;
 pub mod less_than;
