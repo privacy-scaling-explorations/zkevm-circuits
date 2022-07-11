@@ -184,7 +184,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
             .assign_block_exact(&mut layouter, &self.block)?;
         // --- Tx Circuit ---
         self.tx_circuit.assign(config.tx_circuit, &mut layouter)?;
-        // -- Bytecode Circuit ---
+        // --- Bytecode Circuit ---
         let bytecodes: Vec<UnrolledBytecode<F>> = self
             .block
             .bytecodes
@@ -288,13 +288,12 @@ mod super_circuit_tests {
                 .map(|tag| tag.build::<F>().count())
                 .sum::<usize>(),
         );
-        let k = k.max(log2_ceil(
-            64 + block
-                .bytecodes
-                .iter()
-                .map(|bytecode| bytecode.bytes.len())
-                .sum::<usize>(),
-        ));
+        let bytecodes_len = block
+            .bytecodes
+            .iter()
+            .map(|bytecode| bytecode.bytes.len())
+            .sum::<usize>();
+        let k = k.max(log2_ceil(64 + bytecodes_len));
         let k = k.max(log2_ceil(64 + num_rows_required_for_steps));
         let k = k + 1;
         log::debug!("evm circuit uses k = {}", k);
@@ -311,8 +310,8 @@ mod super_circuit_tests {
             block,
             fixed_table_tags,
             tx_circuit,
-            // bytecodes,
-            bytecode_size: 2usize.pow(k),
+            // bytecode_size: 2usize.pow(k),
+            bytecode_size: bytecodes_len + 64,
         };
         let prover = MockProver::<F>::run(k, &circuit, instance).unwrap();
         prover.verify_par(VerifyConfig {
