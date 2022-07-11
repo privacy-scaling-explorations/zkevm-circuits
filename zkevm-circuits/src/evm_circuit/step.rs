@@ -80,7 +80,7 @@ pub enum ExecutionState {
     PUSH, // PUSH1, PUSH2, ..., PUSH32
     DUP,  // DUP1, DUP2, ..., DUP16
     SWAP, // SWAP1, SWAP2, ..., SWAP16
-    LOG,  // LOG1, LOG2, ..., LOG5
+    LOG,  // LOG0, LOG1, ..., LOG4
     CREATE,
     CALL,
     CALLCODE,
