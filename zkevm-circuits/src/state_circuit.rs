@@ -44,6 +44,9 @@ pub struct StateConfig {
     sort_keys: SortKeysConfig,
     is_write: Column<Advice>,
     value: Column<Advice>,
+    initial_value: Column<Advice>, /* Assigned value at the start of the block. For Rw::Account
+                                    * and Rw::AccountStorage rows this is the committed value in
+                                    * the MPT, for others, it is 0. */
     lexicographic_ordering: LexicographicOrderingConfig,
     lookups: LookupsConfig,
     power_of_randomness: [Column<Instance>; N_BYTES_WORD - 1],
@@ -114,7 +117,7 @@ impl<F: Field, const N_ROWS: usize> Circuit<F> for StateCircuit<F, N_ROWS> {
         let lookups = LookupsChip::configure(meta);
         let power_of_randomness = [0; N_BYTES_WORD - 1].map(|_| meta.instance_column());
 
-        let [is_write, field_tag, value] = [0; 3].map(|_| meta.advice_column());
+        let [is_write, field_tag, value, initial_value] = [0; 4].map(|_| meta.advice_column());
 
         let tag = BinaryNumberChip::configure(meta, selector);
 
@@ -144,6 +147,7 @@ impl<F: Field, const N_ROWS: usize> Circuit<F> for StateCircuit<F, N_ROWS> {
             sort_keys,
             is_write,
             value,
+            initial_value,
             lexicographic_ordering,
             lookups,
             power_of_randomness,
@@ -179,6 +183,8 @@ impl<F: Field, const N_ROWS: usize> Circuit<F> for StateCircuit<F, N_ROWS> {
 
                 let rows = padding.chain(self.rows.iter().cloned());
                 let prev_rows = once(None).chain(rows.clone().map(Some));
+
+                let mut initial_value = F::zero();
 
                 for (offset, (row, prev_row)) in rows.zip(prev_rows).enumerate() {
                     region.assign_fixed(|| "selector", config.selector, offset, || Ok(F::one()))?;
@@ -227,13 +233,35 @@ impl<F: Field, const N_ROWS: usize> Circuit<F> for StateCircuit<F, N_ROWS> {
                     )?;
 
                     if let Some(prev_row) = prev_row {
-                        config.lexicographic_ordering.assign(
+                        let is_first_access = config.lexicographic_ordering.assign(
                             &mut region,
                             offset,
                             &row,
                             &prev_row,
                         )?;
+
+                        // TODO: Get initial_values from MPT updates instead.
+                        if is_first_access {
+                            // TODO: Set initial values for Rw::CallContext and Rw::TxReceipt to be
+                            // 0 instead of special casing them.
+                            initial_value = if matches!(
+                                row.tag(),
+                                RwTableTag::CallContext | RwTableTag::TxReceipt
+                            ) {
+                                row.value_assignment(self.randomness)
+                            } else {
+                                row.value_prev_assignment(self.randomness)
+                                    .unwrap_or_default()
+                            };
+                        }
                     }
+
+                    region.assign_advice(
+                        || "initial_value",
+                        config.initial_value,
+                        offset,
+                        || Ok(initial_value),
+                    )?;
                 }
 
                 #[cfg(test)]
@@ -252,13 +280,9 @@ impl<F: Field, const N_ROWS: usize> Circuit<F> for StateCircuit<F, N_ROWS> {
 }
 
 fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: &StateConfig) -> Queries<F> {
-    let final_bits_sum = meta.query_advice(
-        c.lexicographic_ordering.first_different_limb.bits[3],
-        Rotation::cur(),
-    ) + meta.query_advice(
-        c.lexicographic_ordering.first_different_limb.bits[4],
-        Rotation::cur(),
-    );
+    let first_different_limb = c.lexicographic_ordering.first_different_limb;
+    let final_bits_sum = meta.query_advice(first_different_limb.bits[3], Rotation::cur())
+        + meta.query_advice(first_different_limb.bits[4], Rotation::cur());
 
     Queries {
         selector: meta.query_fixed(c.selector, Rotation::cur()),
@@ -278,42 +302,32 @@ fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: &StateConfig) -> Queries
         // TODO: this can mask off just the top 3 bits if you want, since the 4th limb index is
         // Address9, which is always 0 for Rw::Stack rows.
         is_tag_and_id_unchanged: 4.expr()
-            * (meta.query_advice(
-                c.lexicographic_ordering.first_different_limb.bits[0],
-                Rotation::cur(),
-            ) + meta.query_advice(
-                c.lexicographic_ordering.first_different_limb.bits[1],
-                Rotation::cur(),
-            ) + meta.query_advice(
-                c.lexicographic_ordering.first_different_limb.bits[2],
-                Rotation::cur(),
-            ))
+            * (meta.query_advice(first_different_limb.bits[0], Rotation::cur())
+                + meta.query_advice(first_different_limb.bits[1], Rotation::cur())
+                + meta.query_advice(first_different_limb.bits[2], Rotation::cur()))
             + final_bits_sum.clone() * (1.expr() - final_bits_sum),
         address: MpiQueries::new(meta, c.sort_keys.address),
         field_tag: meta.query_advice(c.sort_keys.field_tag, Rotation::cur()),
         storage_key: RlcQueries::new(meta, c.sort_keys.storage_key),
         value: meta.query_advice(c.value, Rotation::cur()),
+        value_prev: meta.query_advice(c.value, Rotation::prev()),
+        initial_value: meta.query_advice(c.initial_value, Rotation::cur()),
+        initial_value_prev: meta.query_advice(c.initial_value, Rotation::prev()),
         lookups: LookupsQueries::new(meta, c.lookups),
         power_of_randomness: c
             .power_of_randomness
             .map(|c| meta.query_instance(c, Rotation::cur())),
         // this isn't binary! only 0 if most significant 4 bits are all 1.
         first_access: 4.expr()
-            - meta.query_advice(
-                c.lexicographic_ordering.first_different_limb.bits[0],
-                Rotation::cur(),
-            )
-            - meta.query_advice(
-                c.lexicographic_ordering.first_different_limb.bits[1],
-                Rotation::cur(),
-            )
-            - meta.query_advice(
-                c.lexicographic_ordering.first_different_limb.bits[2],
-                Rotation::cur(),
-            )
-            - meta.query_advice(
-                c.lexicographic_ordering.first_different_limb.bits[3],
-                Rotation::cur(),
-            ),
+            - meta.query_advice(first_different_limb.bits[0], Rotation::cur())
+            - meta.query_advice(first_different_limb.bits[1], Rotation::cur())
+            - meta.query_advice(first_different_limb.bits[2], Rotation::cur())
+            - meta.query_advice(first_different_limb.bits[3], Rotation::cur()),
+        // 1 if first_different_limb is in the rw counter, 0 otherwise (i.e. any of the 4 most
+        // significant bits are 0)
+        not_first_access: meta.query_advice(first_different_limb.bits[0], Rotation::cur())
+            * meta.query_advice(first_different_limb.bits[1], Rotation::cur())
+            * meta.query_advice(first_different_limb.bits[2], Rotation::cur())
+            * meta.query_advice(first_different_limb.bits[3], Rotation::cur()),
     }
 }
