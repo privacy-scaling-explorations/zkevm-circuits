@@ -201,7 +201,7 @@ impl<F: Field> ConstraintBuilder<F> {
             "field_tag is 0 for TxAccessListAccountStorage",
             q.field_tag(),
         );
-        self.require_boolean("", q.value());
+        self.require_boolean("TxAccessListAccountStorage value is boolean", q.value());
         self.require_zero(
             "initial TxAccessListAccountStorage value is false",
             q.initial_value(),
