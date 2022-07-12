@@ -225,12 +225,17 @@ pub fn load_rws<F: Field>(
     )
 }
 
+// use crate::util::TableShow;
+
 pub fn load_bytecodes<F: Field>(
     bytecode_table: &[Column<Advice>; 5],
     layouter: &mut impl Layouter<F>,
     bytecodes: &[Bytecode],
     randomness: F,
 ) -> Result<(), Error> {
+    println!("> load_bytecodes");
+    // let mut table = TableShow::<F>::new(vec!["codeHash", "tag", "index",
+    // "isCode", "value"]);
     layouter.assign_region(
         || "bytecode table",
         |mut region| {
@@ -247,6 +252,7 @@ pub fn load_bytecodes<F: Field>(
 
             for bytecode in bytecodes.iter() {
                 for row in bytecode.table_assignments(randomness) {
+                    let mut column_index = 0;
                     for (column, value) in bytecode_table.iter().zip_eq(row) {
                         region.assign_advice(
                             || format!("bytecode table row {}", offset),
@@ -254,10 +260,13 @@ pub fn load_bytecodes<F: Field>(
                             offset,
                             || Ok(value),
                         )?;
+                        // table.push(column_index, value);
+                        column_index += 1;
                     }
                     offset += 1;
                 }
             }
+            // table.print();
             Ok(())
         },
     )

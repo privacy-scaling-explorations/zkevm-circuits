@@ -9,7 +9,7 @@ use crate::{
     util::Expr,
 };
 use bus_mapping::evm::OpcodeId;
-use eth_types::Field;
+use eth_types::{Field, ToLittleEndian, Word};
 use gadgets::{
     evm_word::encode,
     is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction},
@@ -21,6 +21,8 @@ use halo2_proofs::{
 };
 use keccak256::plain::Keccak;
 use std::{convert::TryInto, vec};
+
+// use crate::util::TableShow;
 
 use super::param::{KECCAK_WIDTH, PUSH_TABLE_WIDTH};
 
@@ -425,6 +427,9 @@ impl<F: Field> Config<F> {
             |mut region| {
                 let mut offset = 0;
                 let mut push_rindex_prev = 0;
+                println!("> BytecodeConfig::assign");
+                // let mut table =
+                //     TableShow::<F>::new(vec!["codeHash", "tag", "index", "isCode", "value"]);
 
                 for bytecode in witness.iter() {
                     // Run over all the bytes
@@ -470,6 +475,11 @@ impl<F: Field> Config<F> {
                             )?;
                             push_rindex_prev = push_rindex;
                             offset += 1;
+                            // table.push(0, row.hash);
+                            // table.push(1, row.tag);
+                            // table.push(2, row.index);
+                            // table.push(3, row.is_code);
+                            // table.push(4, row.value);
                         }
                     }
                 }
@@ -497,7 +507,13 @@ impl<F: Field> Config<F> {
                         F::from(push_rindex_prev),
                     )?;
                     push_rindex_prev = 0;
+                    // table.push(0, F::zero());
+                    // table.push(1, F::from(BytecodeFieldTag::Padding as u64));
+                    // table.push(2, F::zero());
+                    // table.push(3, F::one());
+                    // table.push(4, F::zero());
                 }
+                // table.print();
                 Ok(())
             },
         )
@@ -577,6 +593,7 @@ impl<F: Field> Config<F> {
         Ok(())
     }
 
+    /// load tables
     pub(crate) fn load(
         &self,
         layouter: &mut impl Layouter<F>,
@@ -683,7 +700,7 @@ fn keccak<F: Field>(msg: &[u8], randomness: F) -> F {
     let mut keccak = Keccak::default();
     keccak.update(msg);
     RandomLinearCombination::<F, 32>::random_linear_combine(
-        keccak.digest().try_into().unwrap(),
+        Word::from_big_endian(keccak.digest().as_slice()).to_le_bytes(),
         randomness,
     )
 }
