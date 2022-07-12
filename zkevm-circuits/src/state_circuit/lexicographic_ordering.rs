@@ -194,6 +194,9 @@ impl Config {
         config
     }
 
+    // Returns true if the `cur` row is a first access to a group (at least one of
+    // tag, id, address, field_tag, or storage_key is different from the one in
+    // `prev`), and false otherwise.
     pub fn assign<F: Field>(
         &self,
         region: &mut Region<'_, F>,

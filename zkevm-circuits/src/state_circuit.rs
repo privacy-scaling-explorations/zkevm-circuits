@@ -44,7 +44,9 @@ pub struct StateConfig {
     sort_keys: SortKeysConfig,
     is_write: Column<Advice>,
     value: Column<Advice>,
-    initial_value: Column<Advice>,
+    initial_value: Column<Advice>, /* Assigned value at the start of the block. For Rw::Account
+                                    * and Rw::AccountStorage rows this is the committed value in
+                                    * the MPT, for others, it is 0. */
     lexicographic_ordering: LexicographicOrderingConfig,
     lookups: LookupsConfig,
     power_of_randomness: [Column<Instance>; N_BYTES_WORD - 1],

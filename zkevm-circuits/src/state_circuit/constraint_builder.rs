@@ -109,12 +109,16 @@ impl<F: Field> ConstraintBuilder<F> {
         // tag value in RwTableTag range is enforced in BinaryNumberChip
         self.require_boolean("is_write is boolean", q.is_write());
 
+        // When at least one of the keys (tag, id, address, field_tag, or storage_key)
+        // in the current row differs from the previous row.
         self.condition(q.first_access(), |cb| {
             cb.require_zero(
                 "first access reads don't change value",
                 q.is_read() * (q.value.clone() - q.initial_value()),
             );
         });
+
+        // When all the keys in the current row and previous row are equal.
         self.condition(q.not_first_access.clone(), |cb| {
             cb.require_zero(
                 "non-first access reads don't change value",
@@ -180,7 +184,7 @@ impl<F: Field> ConstraintBuilder<F> {
         // TODO: cold VS warm
         self.require_zero("field_tag is 0 for AccountStorage", q.field_tag());
 
-        // TODO: add mpt lookup for commited value and final value in an access
+        // TODO: add mpt lookup for committed value and final value in an access
         // group.
     }
     fn build_tx_access_list_account_constraints(&mut self, q: &Queries<F>) {
@@ -230,7 +234,7 @@ impl<F: Field> ConstraintBuilder<F> {
             set::<F, AccountFieldTag>(),
         );
 
-        // TODO: add mpt lookup for commited value and final value in an access
+        // TODO: add mpt lookup for committed value and final value in an access
         // group.
     }
 
