@@ -189,7 +189,7 @@ impl<F: Field> ConstraintBuilder<F> {
             "storage_key is 0 for TxAccessListAccount",
             q.storage_key.encoded.clone(),
         );
-        self.require_boolean("", q.value());
+        self.require_boolean("TxAccessListAccount value is boolean", q.value());
         self.require_zero(
             "initial TxAccessListAccount value is false",
             q.initial_value(),
