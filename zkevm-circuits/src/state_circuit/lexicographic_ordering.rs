@@ -1,10 +1,12 @@
 use super::{SortKeysConfig, N_LIMBS_ACCOUNT_ADDRESS, N_LIMBS_ID, N_LIMBS_RW_COUNTER};
 use crate::{
     evm_circuit::{param::N_BYTES_WORD, witness::Rw},
+    impl_expr,
     util::Expr,
 };
 use eth_types::{Field, ToBigEndian};
 use gadgets::binary_number::{AsBits, BinaryNumberChip, BinaryNumberConfig};
+use halo2_proofs::arithmetic::FieldExt;
 use halo2_proofs::{
     circuit::Region,
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, Instance, VirtualCells},
@@ -81,6 +83,8 @@ pub enum LimbIndex {
     RwCounter1,
     RwCounter0,
 }
+
+impl_expr!(LimbIndex);
 
 impl AsBits<5> for LimbIndex {
     fn as_bits(&self) -> [bool; 5] {
@@ -188,13 +192,16 @@ impl Config {
         config
     }
 
+    // Returns true if the `cur` row is a first access to a group (at least one of
+    // tag, id, address, field_tag, or storage_key is different from the one in
+    // `prev`), and false otherwise.
     pub fn assign<F: Field>(
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
         cur: &Rw,
         prev: &Rw,
-    ) -> Result<(), Error> {
+    ) -> Result<bool, Error> {
         region.assign_fixed(
             || "upper_limb_difference",
             self.selector,
@@ -231,7 +238,10 @@ impl Config {
             || Ok(limb_difference.invert().unwrap()),
         )?;
 
-        Ok(())
+        Ok(!matches!(
+            index,
+            LimbIndex::RwCounter0 | LimbIndex::RwCounter1
+        ))
     }
 }
 

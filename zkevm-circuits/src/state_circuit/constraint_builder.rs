@@ -28,9 +28,13 @@ pub struct Queries<F: Field> {
     pub field_tag: Expression<F>,
     pub storage_key: RlcQueries<F, N_BYTES_WORD>,
     pub value: Expression<F>,
+    pub value_prev: Expression<F>,
+    pub initial_value: Expression<F>,
+    pub initial_value_prev: Expression<F>,
     pub lookups: LookupsQueries<F>,
     pub power_of_randomness: [Expression<F>; N_BYTES_WORD - 1],
     pub first_access: Expression<F>,
+    pub not_first_access: Expression<F>,
 }
 
 type Constraint<F> = (&'static str, Expression<F>);
@@ -104,6 +108,27 @@ impl<F: Field> ConstraintBuilder<F> {
     fn build_general_constraints(&mut self, q: &Queries<F>) {
         // tag value in RwTableTag range is enforced in BinaryNumberChip
         self.require_boolean("is_write is boolean", q.is_write());
+
+        // When at least one of the keys (tag, id, address, field_tag, or storage_key)
+        // in the current row differs from the previous row.
+        self.condition(q.first_access(), |cb| {
+            cb.require_zero(
+                "first access reads don't change value",
+                q.is_read() * (q.value.clone() - q.initial_value()),
+            );
+        });
+
+        // When all the keys in the current row and previous row are equal.
+        self.condition(q.not_first_access.clone(), |cb| {
+            cb.require_zero(
+                "non-first access reads don't change value",
+                q.is_read() * (q.value.clone() - q.value_prev.clone()),
+            );
+            cb.require_zero(
+                "initial value doesn't change in an access group",
+                q.initial_value.clone() - q.initial_value_prev(),
+            );
+        });
     }
 
     fn build_start_constraints(&mut self, q: &Queries<F>) {
@@ -115,15 +140,13 @@ impl<F: Field> ConstraintBuilder<F> {
             "rw_counter increases by 1 for every non-first row",
             q.lexicographic_ordering_selector.clone() * (q.rw_counter_change() - 1.expr()),
         );
+        self.require_zero("Start value is 0", q.value());
+        self.require_zero("Start initial_value is 0", q.initial_value());
     }
 
     fn build_memory_constraints(&mut self, q: &Queries<F>) {
         self.require_zero("field_tag is 0 for Memory", q.field_tag());
         self.require_zero("storage_key is 0 for Memory", q.storage_key.encoded.clone());
-        self.require_zero(
-            "read from a fresh key is 0",
-            q.first_access() * q.is_read() * q.value(),
-        );
         // could do this more efficiently by just asserting address = limb0 + 2^16 *
         // limb1?
         for limb in &q.address.limbs[2..] {
@@ -133,6 +156,7 @@ impl<F: Field> ConstraintBuilder<F> {
             "memory value is a byte",
             (q.value.clone(), q.lookups.u8.clone()),
         );
+        self.require_zero("initial Memory value is 0", q.initial_value());
     }
 
     fn build_stack_constraints(&mut self, q: &Queries<F>) {
@@ -152,21 +176,16 @@ impl<F: Field> ConstraintBuilder<F> {
                 q.address_change(),
             )
         });
+
+        self.require_zero("initial Stack value is 0", q.initial_value.clone());
     }
 
     fn build_account_storage_constraints(&mut self, q: &Queries<F>) {
         // TODO: cold VS warm
-        // TODO: connection to MPT on first and last access for each (address, key)
-        // No longer true because we moved id from aux to here.
-        // self.require_zero("id is 0 for AccountStorage", q.id());
         self.require_zero("field_tag is 0 for AccountStorage", q.field_tag());
-        // for every first access, we add an AccountStorage write to setup the
-        // value from the previous block with rw_counter = 0
-        // needs some work...
-        // self.condition(q.first_access(), |cb| {
-        //     cb.require_zero("first access is a write", q.is_write());
-        //     // cb.require_zero("first access rw_counter is 0",
-        // q.rw_counter.value.clone()); })
+
+        // TODO: add mpt lookup for committed value and final value in an access
+        // group.
     }
     fn build_tx_access_list_account_constraints(&mut self, q: &Queries<F>) {
         self.require_zero("field_tag is 0 for TxAccessListAccount", q.field_tag());
@@ -174,7 +193,11 @@ impl<F: Field> ConstraintBuilder<F> {
             "storage_key is 0 for TxAccessListAccount",
             q.storage_key.encoded.clone(),
         );
-        // TODO: Missing constraints
+        self.require_boolean("TxAccessListAccount value is boolean", q.value());
+        self.require_zero(
+            "initial TxAccessListAccount value is false",
+            q.initial_value(),
+        );
     }
 
     fn build_tx_access_list_account_storage_constraints(&mut self, q: &Queries<F>) {
@@ -182,7 +205,11 @@ impl<F: Field> ConstraintBuilder<F> {
             "field_tag is 0 for TxAccessListAccountStorage",
             q.field_tag(),
         );
-        // TODO: Missing constraints
+        self.require_boolean("TxAccessListAccountStorage value is boolean", q.value());
+        self.require_zero(
+            "initial TxAccessListAccountStorage value is false",
+            q.initial_value(),
+        );
     }
 
     fn build_tx_refund_constraints(&mut self, q: &Queries<F>) {
@@ -192,7 +219,7 @@ impl<F: Field> ConstraintBuilder<F> {
             "storage_key is 0 for TxRefund",
             q.storage_key.encoded.clone(),
         );
-        // TODO: Missing constraints
+        self.require_zero("initial TxRefund value is 0", q.initial_value());
     }
 
     fn build_account_constraints(&mut self, q: &Queries<F>) {
@@ -206,12 +233,9 @@ impl<F: Field> ConstraintBuilder<F> {
             q.field_tag(),
             set::<F, AccountFieldTag>(),
         );
-        // // for every first access, we add an Account write to setup the value
-        // from the // previous block with rw_counter = 0
-        // self.condition(q.first_access(), |cb| {
-        //     // cb.require_zero("first access is a write", q.is_write());
-        //     cb.require_zero("first access rw_counter is 0",
-        // q.rw_counter.value.clone()); });
+
+        // TODO: add mpt lookup for committed value and final value in an access
+        // group.
     }
 
     fn build_account_destructed_constraints(&mut self, q: &Queries<F>) {
@@ -234,7 +258,7 @@ impl<F: Field> ConstraintBuilder<F> {
             "field_tag in CallContextFieldTag range",
             (q.field_tag(), q.lookups.call_context_field_tag.clone()),
         );
-        // TODO: Missing constraints
+        // TODO: explain why call context doesn't need an initial value.
     }
 
     fn build_tx_log_constraints(&mut self, q: &Queries<F>) {
@@ -243,6 +267,7 @@ impl<F: Field> ConstraintBuilder<F> {
             q.is_write.clone(),
             1.expr(),
         );
+        self.require_zero("initial TxLog value is 0", q.initial_value());
 
         // Comment out the following field_tag-related constraints as it is
         // duplicated between state circuit and evm circuit. For more information, please refer to https://github.com/privacy-scaling-explorations/zkevm-specs/issues/221
@@ -381,6 +406,18 @@ impl<F: Field> Queries<F> {
 
     fn value(&self) -> Expression<F> {
         self.value.clone()
+    }
+
+    fn value_prev(&self) -> Expression<F> {
+        self.value_prev.clone()
+    }
+
+    fn initial_value(&self) -> Expression<F> {
+        self.initial_value.clone()
+    }
+
+    fn initial_value_prev(&self) -> Expression<F> {
+        self.initial_value_prev.clone()
     }
 
     fn tag_matches(&self, tag: RwTableTag) -> Expression<F> {

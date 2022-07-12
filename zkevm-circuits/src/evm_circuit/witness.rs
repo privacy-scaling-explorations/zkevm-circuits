@@ -853,7 +853,7 @@ impl Rw {
         }
     }
 
-    fn value_prev_assignment<F: Field>(&self, randomness: F) -> Option<F> {
+    pub fn value_prev_assignment<F: Field>(&self, randomness: F) -> Option<F> {
         match self {
             Self::Account {
                 value_prev,
