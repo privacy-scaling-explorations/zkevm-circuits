@@ -21,7 +21,7 @@ use crate::bytecode_circuit::bytecode_unroller::{
 use crate::util::Expr;
 use crate::{
     evm_circuit::{
-        table::FixedTableTag,
+        table::{BlockTable, FixedTableTag, KeccakTable},
         witness::Block,
         EvmCircuit, {load_block, load_bytecodes, load_rws, load_txs},
     },
@@ -38,10 +38,12 @@ use halo2_proofs::{
 
 #[derive(Clone)]
 pub struct SuperCircuitConfig<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> {
-    tx_table: [Column<Advice>; 4],
+    // tx_table: [Column<Advice>; 4],
+    tx_table: TxTable,
     rw_table: RwTable,
-    bytecode_table: [Column<Advice>; 5],
-    block_table: [Column<Advice>; 3],
+    bytecode_table: BytecodeTable,
+    block_table: BlockTable,
+    keccak_table: KeccakTable,
     evm_circuit: EvmCircuit<F>,
     tx_circuit: TxCircuitConfig<F>,
     bytecode_circuit: BytecodeConfig<F>,
@@ -80,10 +82,11 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
     }
 
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-        let tx_table = [(); 4].map(|_| meta.advice_column());
+        let tx_table = TxTable::construct(meta);
         let rw_table = RwTable::construct(meta);
-        let bytecode_table = [(); 5].map(|_| meta.advice_column());
-        let block_table = [(); 3].map(|_| meta.advice_column());
+        let bytecode_table = BytecodeTable::construct(meta);
+        let block_table = BlockTable::construct(meta);
+        let keccak_table = KeccakTable::construct(meta);
 
         // This gate is used just to get the array of expressions from the power of
         // randomness instance column, so that later on we don't need to query
@@ -102,45 +105,37 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
 
             power_of_randomness.unwrap()
         };
+        let evm_circuit = EvmCircuit::configure(
+            meta,
+            power_of_randomness[..31]
+                .iter()
+                .cloned()
+                .collect::<Vec<Expression<F>>>()
+                .try_into()
+                .unwrap(),
+            &tx_table,
+            &rw_table,
+            &bytecode_table,
+            &block_table,
+        );
 
         Self::Config {
-            tx_table,
+            tx_table: tx_table.clone(),
             rw_table,
-            bytecode_table,
+            bytecode_table: bytecode_table.clone(),
             block_table,
-            evm_circuit: EvmCircuit::configure(
-                meta,
-                power_of_randomness[..31]
-                    .iter()
-                    .cloned()
-                    .collect::<Vec<Expression<F>>>()
-                    .try_into()
-                    .unwrap(),
-                &tx_table,
-                &rw_table,
-                &bytecode_table,
-                &block_table,
-            ),
+            keccak_table: keccak_table.clone(),
+            evm_circuit,
             tx_circuit: TxCircuitConfig::new(
                 meta,
                 power_of_randomness.clone(),
-                TxTable {
-                    tx_id: tx_table[0],
-                    tag: tx_table[1],
-                    index: tx_table[2],
-                    value: tx_table[3],
-                },
+                tx_table,
+                keccak_table,
             ),
             bytecode_circuit: BytecodeConfig::configure(
                 meta,
                 power_of_randomness[0].clone(),
-                BytecodeTable {
-                    hash: bytecode_table[0],
-                    tag: bytecode_table[1],
-                    index: bytecode_table[2],
-                    is_code: bytecode_table[3],
-                    value: bytecode_table[4],
-                },
+                bytecode_table,
             ),
         }
     }

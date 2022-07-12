@@ -1,27 +1,32 @@
 use crate::evm_circuit::step::ExecutionState;
 use crate::impl_expr;
 pub use crate::tx_circuit::TxFieldTag as TxContextFieldTag;
+use eth_types::Field;
 use halo2_proofs::{
-    arithmetic::FieldExt,
-    plonk::{Advice, Column, Expression, Fixed, VirtualCells},
+    plonk::{Advice, Column, ColumnType, ConstraintSystem, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
 use strum::IntoEnumIterator;
 use strum_macros::{EnumCount, EnumIter};
 
-pub trait LookupTable<F: FieldExt> {
+pub trait TableColumns<C: ColumnType> {
+    fn columns(&self) -> Vec<Column<C>>;
+}
+
+pub trait LookupTable<F: Field> {
     fn table_exprs(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>>;
 }
 
-impl<F: FieldExt, const W: usize> LookupTable<F> for [Column<Advice>; W] {
+impl<F: Field, T: TableColumns<Advice>> LookupTable<F> for T {
     fn table_exprs(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>> {
-        self.iter()
+        self.columns()
+            .iter()
             .map(|column| meta.query_advice(*column, Rotation::cur()))
             .collect()
     }
 }
 
-impl<F: FieldExt, const W: usize> LookupTable<F> for [Column<Fixed>; W] {
+impl<F: Field, const W: usize> LookupTable<F> for [Column<Fixed>; W] {
     fn table_exprs(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>> {
         self.iter()
             .map(|column| meta.query_fixed(*column, Rotation::cur()))
@@ -48,7 +53,7 @@ pub enum FixedTableTag {
 }
 
 impl FixedTableTag {
-    pub fn build<F: FieldExt>(&self) -> Box<dyn Iterator<Item = [F; 4]>> {
+    pub fn build<F: Field>(&self) -> Box<dyn Iterator<Item = [F; 4]>> {
         let tag = F::from(*self as u64);
         match self {
             Self::Zero => Box::new((0..1).map(move |_| [tag, F::zero(), F::zero(), F::zero()])),
@@ -330,7 +335,7 @@ pub(crate) enum Lookup<F> {
     Conditional(Expression<F>, Box<Lookup<F>>),
 }
 
-impl<F: FieldExt> Lookup<F> {
+impl<F: Field> Lookup<F> {
     pub(crate) fn conditional(self, condition: Expression<F>) -> Self {
         Self::Conditional(condition, self.into())
     }
@@ -405,5 +410,58 @@ impl<F: FieldExt> Lookup<F> {
             .map(|expr| expr.degree())
             .max()
             .unwrap()
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct BlockTable {
+    pub tag: Column<Advice>,
+    pub index: Column<Advice>,
+    pub value: Column<Advice>,
+}
+
+impl BlockTable {
+    pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
+        Self {
+            tag: meta.advice_column(),
+            index: meta.advice_column(),
+            value: meta.advice_column(),
+        }
+    }
+}
+
+impl TableColumns<Advice> for BlockTable {
+    fn columns(&self) -> Vec<Column<Advice>> {
+        vec![self.tag, self.index, self.value]
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct KeccakTable {
+    pub is_enabled: Column<Advice>,
+    pub input_rlc: Column<Advice>, // RLC of input bytes
+    pub input_len: Column<Advice>,
+    pub output_rlc: Column<Advice>, // RLC of hash of input bytes
+}
+
+impl KeccakTable {
+    pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
+        Self {
+            is_enabled: meta.advice_column(),
+            input_rlc: meta.advice_column(),
+            input_len: meta.advice_column(),
+            output_rlc: meta.advice_column(),
+        }
+    }
+}
+
+impl TableColumns<Advice> for KeccakTable {
+    fn columns(&self) -> Vec<Column<Advice>> {
+        vec![
+            self.is_enabled,
+            self.input_rlc,
+            self.input_len,
+            self.output_rlc,
+        ]
     }
 }

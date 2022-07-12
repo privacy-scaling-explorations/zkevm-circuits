@@ -11,10 +11,12 @@ pub(crate) mod util;
 pub mod table;
 pub mod witness;
 
+use crate::bytecode_circuit::bytecode_unroller::BytecodeTable;
+use crate::tx_circuit::TxTable;
 use eth_types::Field;
 use execution::ExecutionConfig;
 use itertools::Itertools;
-use table::{FixedTableTag, LookupTable};
+use table::{BlockTable, FixedTableTag, LookupTable, TableColumns};
 use witness::Block;
 
 /// EvmCircuit implements verification of execution trace of a block.
@@ -151,7 +153,7 @@ use crate::{
 // replace the specific circuit loader by these?
 
 pub fn load_txs<F: Field>(
-    tx_table: &[Column<Advice>; 4],
+    tx_table: &TxTable,
     layouter: &mut impl Layouter<F>,
     txs: &[Transaction],
     randomness: F,
@@ -160,10 +162,10 @@ pub fn load_txs<F: Field>(
         || "tx table",
         |mut region| {
             let mut offset = 0;
-            for column in tx_table {
+            for column in tx_table.columns() {
                 region.assign_advice(
                     || "tx table all-zero row",
-                    *column,
+                    column,
                     offset,
                     || Ok(F::zero()),
                 )?;
@@ -171,10 +173,11 @@ pub fn load_txs<F: Field>(
             offset += 1;
 
             // println!("DBG load_txs");
+            let tx_table_columns = tx_table.columns();
             for tx in txs.iter() {
                 for row in tx.table_assignments(randomness) {
                     // print!("{:02} ", offset);
-                    for (column, value) in tx_table.iter().zip_eq(row) {
+                    for (column, value) in tx_table_columns.iter().zip_eq(row) {
                         // print!("{:?} ", value);
                         region.assign_advice(
                             || format!("tx table row {}", offset),
@@ -228,7 +231,7 @@ pub fn load_rws<F: Field>(
 // use crate::util::TableShow;
 
 pub fn load_bytecodes<F: Field>(
-    bytecode_table: &[Column<Advice>; 5],
+    bytecode_table: &BytecodeTable,
     layouter: &mut impl Layouter<F>,
     bytecodes: &[Bytecode],
     randomness: F,
@@ -240,20 +243,21 @@ pub fn load_bytecodes<F: Field>(
         || "bytecode table",
         |mut region| {
             let mut offset = 0;
-            for column in bytecode_table {
+            for column in bytecode_table.columns() {
                 region.assign_advice(
                     || "bytecode table all-zero row",
-                    *column,
+                    column,
                     offset,
                     || Ok(F::zero()),
                 )?;
             }
             offset += 1;
 
+            let bytecode_table_columns = bytecode_table.columns();
             for bytecode in bytecodes.iter() {
                 for row in bytecode.table_assignments(randomness) {
                     let mut column_index = 0;
-                    for (column, value) in bytecode_table.iter().zip_eq(row) {
+                    for (column, value) in bytecode_table_columns.iter().zip_eq(row) {
                         region.assign_advice(
                             || format!("bytecode table row {}", offset),
                             *column,
@@ -272,7 +276,7 @@ pub fn load_bytecodes<F: Field>(
     )
 }
 pub fn load_block<F: Field>(
-    block_table: &[Column<Advice>; 3],
+    block_table: &BlockTable,
     layouter: &mut impl Layouter<F>,
     block: &BlockContext,
     randomness: F,
@@ -281,18 +285,19 @@ pub fn load_block<F: Field>(
         || "block table",
         |mut region| {
             let mut offset = 0;
-            for column in block_table {
+            for column in block_table.columns() {
                 region.assign_advice(
                     || "block table all-zero row",
-                    *column,
+                    column,
                     offset,
                     || Ok(F::zero()),
                 )?;
             }
             offset += 1;
 
+            let block_table_columns = block_table.columns();
             for row in block.table_assignments(randomness) {
-                for (column, value) in block_table.iter().zip_eq(row) {
+                for (column, value) in block_table_columns.iter().zip_eq(row) {
                     region.assign_advice(
                         || format!("block table row {}", offset),
                         *column,
@@ -351,10 +356,10 @@ pub mod test {
 
     #[derive(Clone)]
     pub struct TestCircuitConfig<F> {
-        tx_table: [Column<Advice>; 4],
+        tx_table: TxTable,
         rw_table: RwTable,
-        bytecode_table: [Column<Advice>; 5],
-        block_table: [Column<Advice>; 3],
+        bytecode_table: BytecodeTable,
+        block_table: BlockTable,
         evm_circuit: EvmCircuit<F>,
     }
 
@@ -535,10 +540,10 @@ pub mod test {
         }
 
         fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-            let tx_table = [(); 4].map(|_| meta.advice_column());
+            let tx_table = TxTable::construct(meta);
             let rw_table = RwTable::construct(meta);
-            let bytecode_table = [(); 5].map(|_| meta.advice_column());
-            let block_table = [(); 3].map(|_| meta.advice_column());
+            let bytecode_table = BytecodeTable::construct(meta);
+            let block_table = BlockTable::construct(meta);
 
             // This gate is used just to get the array of expressions from the power of
             // randomness instance column, so that later on we don't need to query
@@ -558,19 +563,21 @@ pub mod test {
                 power_of_randomness.unwrap()
             };
 
+            let evm_circuit = EvmCircuit::configure(
+                meta,
+                power_of_randomness,
+                &tx_table,
+                &rw_table,
+                &bytecode_table,
+                &block_table,
+            );
+
             Self::Config {
                 tx_table,
                 rw_table,
                 bytecode_table,
                 block_table,
-                evm_circuit: EvmCircuit::configure(
-                    meta,
-                    power_of_randomness,
-                    &tx_table,
-                    &rw_table,
-                    &bytecode_table,
-                    &block_table,
-                ),
+                evm_circuit,
             }
         }
 

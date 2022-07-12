@@ -8,6 +8,7 @@
 
 pub mod sign_verify;
 
+use crate::evm_circuit::table::{KeccakTable, TableColumns};
 use crate::impl_expr;
 use crate::util::{random_linear_combine_word as rlc, Expr};
 use eth_types::{
@@ -16,9 +17,8 @@ use eth_types::{
 use ff::PrimeField;
 use group::GroupEncoding;
 use halo2_proofs::{
-    // arithmetic::CurveAffine,
     circuit::{AssignedCell, Layouter, Region, SimpleFloorPlanner},
-    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Expression},
+    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Expression, VirtualCells},
     poly::Rotation,
 };
 use itertools::Itertools;
@@ -194,11 +194,29 @@ pub struct TxTable {
     pub value: Column<Advice>,
 }
 
+impl TxTable {
+    pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
+        Self {
+            tx_id: meta.advice_column(),
+            tag: meta.advice_column(),
+            index: meta.advice_column(),
+            value: meta.advice_column(),
+        }
+    }
+}
+
+impl TableColumns<Advice> for TxTable {
+    fn columns(&self) -> Vec<Column<Advice>> {
+        vec![self.tx_id, self.tag, self.index, self.value]
+    }
+}
+
 impl<F: Field> TxCircuitConfig<F> {
     pub fn new(
         meta: &mut ConstraintSystem<F>,
         power_of_randomness: [Expression<F>; sign_verify::POW_RAND_SIZE],
         tx_table: TxTable,
+        keccak_table: KeccakTable,
     ) -> Self {
         // let tx_id = meta.advice_column();
         // let tag = meta.advice_column();
@@ -228,7 +246,7 @@ impl<F: Field> TxCircuitConfig<F> {
 
         //     power_of_randomness.unwrap()
         // };
-        let sign_verify = SignVerifyConfig::new(meta, power_of_randomness);
+        let sign_verify = SignVerifyConfig::new(meta, power_of_randomness, keccak_table);
 
         Self {
             tx_id,
@@ -473,7 +491,8 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
             power_of_randomness.unwrap()
         };
 
-        TxCircuitConfig::new(meta, power_of_randomness, tx_table)
+        let keccak_table = KeccakTable::construct(meta);
+        TxCircuitConfig::new(meta, power_of_randomness, tx_table, keccak_table)
     }
 
     fn synthesize(

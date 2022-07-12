@@ -6,7 +6,7 @@ use halo2_proofs::{
     poly::Rotation,
 };
 
-use crate::evm_circuit::{table::LookupTable, witness::RwRow};
+use crate::evm_circuit::{table::TableColumns, witness::RwRow};
 
 /// The rw table shared between evm circuit and state circuit
 #[derive(Clone, Copy)]
@@ -24,20 +24,20 @@ pub struct RwTable {
     pub aux2: Column<Advice>,
 }
 
-impl<F: FieldExt> LookupTable<F> for RwTable {
-    fn table_exprs(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>> {
+impl TableColumns<Advice> for RwTable {
+    fn columns(&self) -> Vec<Column<Advice>> {
         vec![
-            meta.query_advice(self.rw_counter, Rotation::cur()),
-            meta.query_advice(self.is_write, Rotation::cur()),
-            meta.query_advice(self.tag, Rotation::cur()),
-            meta.query_advice(self.key1, Rotation::cur()),
-            meta.query_advice(self.key2, Rotation::cur()),
-            meta.query_advice(self.key3, Rotation::cur()),
-            meta.query_advice(self.key4, Rotation::cur()),
-            meta.query_advice(self.value, Rotation::cur()),
-            meta.query_advice(self.value_prev, Rotation::cur()),
-            meta.query_advice(self.aux1, Rotation::cur()),
-            meta.query_advice(self.aux2, Rotation::cur()),
+            self.rw_counter,
+            self.is_write,
+            self.tag,
+            self.key1,
+            self.key2,
+            self.key3,
+            self.key4,
+            self.value,
+            self.value_prev,
+            self.aux1,
+            self.aux2,
         ]
     }
 }

@@ -1,6 +1,6 @@
 use crate::{
     evm_circuit::{
-        table::BytecodeFieldTag,
+        table::{BytecodeFieldTag, TableColumns},
         util::{
             and, constraint_builder::BaseConstraintBuilder, not, or, select,
             RandomLinearCombination,
@@ -15,6 +15,7 @@ use gadgets::{
     is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction},
 };
 use halo2_proofs::{
+    arithmetic::FieldExt,
     circuit::{Layouter, Region},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, Selector, VirtualCells},
     poly::Rotation,
@@ -50,6 +51,24 @@ pub struct BytecodeTable {
     pub index: Column<Advice>,
     pub is_code: Column<Advice>,
     pub value: Column<Advice>,
+}
+
+impl BytecodeTable {
+    pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
+        Self {
+            hash: meta.advice_column(),
+            tag: meta.advice_column(),
+            index: meta.advice_column(),
+            is_code: meta.advice_column(),
+            value: meta.advice_column(),
+        }
+    }
+}
+
+impl TableColumns<Advice> for BytecodeTable {
+    fn columns(&self) -> Vec<Column<Advice>> {
+        vec![self.hash, self.tag, self.index, self.is_code, self.value]
+    }
 }
 
 #[derive(Clone, Debug)]
