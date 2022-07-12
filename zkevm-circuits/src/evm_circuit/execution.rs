@@ -452,10 +452,12 @@ impl<F: Field> ExecutionConfig<F> {
         config
     }
 
+    pub fn get_step_height_option(&self, execution_state: ExecutionState) -> Option<usize> {
+        self.height_map.get(&execution_state).copied()
+    }
+
     pub fn get_step_height(&self, execution_state: ExecutionState) -> usize {
-        *self
-            .height_map
-            .get(&execution_state)
+        self.get_step_height_option(execution_state)
             .unwrap_or_else(|| panic!("Execution state unknown: {:?}", execution_state))
     }
 
