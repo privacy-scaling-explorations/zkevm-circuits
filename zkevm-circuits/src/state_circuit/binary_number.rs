@@ -58,9 +58,10 @@ where
     pub fn value<F: Field>(
         &self,
         rotation: Rotation,
-    ) -> impl FnOnce(&mut VirtualCells<'_, F>) -> Expression<F> + '_ {
+    ) -> impl FnOnce(&mut VirtualCells<'_, F>) -> Expression<F> {
+        let bits = self.bits;
         move |meta: &mut VirtualCells<'_, F>| {
-            let bits = self.bits.map(|bit| meta.query_advice(bit, rotation));
+            let bits = bits.map(|bit| meta.query_advice(bit, rotation));
             bits.iter()
                 .fold(0.expr(), |result, bit| bit.clone() + result * 2.expr())
         }
@@ -75,8 +76,8 @@ where
         move |meta| Self::value_equals_expr(value, bits.map(|bit| meta.query_advice(bit, rotation)))
     }
 
-    // Returns an expression that evaluates to 1 if expressions are equal to value
-    // as bits. The returned expression is of degree N.
+    // Returns a binary expression that evaluates to 1 if expressions are equal to
+    // value as bits. The returned expression is of degree N.
     pub fn value_equals_expr<F: Field, S: AsBits<N>>(
         value: S,
         expressions: [Expression<F>; N], // must be binary.
