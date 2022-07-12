@@ -30,8 +30,7 @@ pub enum ExecutionState {
     STOP,
     ADD_SUB,     // ADD, SUB
     MUL_DIV_MOD, // MUL, DIV, MOD
-    SDIV,
-    SMOD,
+    SDIV_SMOD,   // SDIV, SMOD
     ADDMOD,
     MULMOD,
     EXP,
@@ -81,7 +80,7 @@ pub enum ExecutionState {
     PUSH, // PUSH1, PUSH2, ..., PUSH32
     DUP,  // DUP1, DUP2, ..., DUP16
     SWAP, // SWAP1, SWAP2, ..., SWAP16
-    LOG,  // LOG1, LOG2, ..., LOG5
+    LOG,  // LOG0, LOG1, ..., LOG4
     CREATE,
     CALL,
     CALLCODE,
@@ -186,8 +185,7 @@ impl ExecutionState {
             Self::STOP => vec![OpcodeId::STOP],
             Self::ADD_SUB => vec![OpcodeId::ADD, OpcodeId::SUB],
             Self::MUL_DIV_MOD => vec![OpcodeId::MUL, OpcodeId::DIV, OpcodeId::MOD],
-            Self::SDIV => vec![OpcodeId::SDIV],
-            Self::SMOD => vec![OpcodeId::SMOD],
+            Self::SDIV_SMOD => vec![OpcodeId::SDIV, OpcodeId::SMOD],
             Self::ADDMOD => vec![OpcodeId::ADDMOD],
             Self::MULMOD => vec![OpcodeId::MULMOD],
             Self::EXP => vec![OpcodeId::EXP],

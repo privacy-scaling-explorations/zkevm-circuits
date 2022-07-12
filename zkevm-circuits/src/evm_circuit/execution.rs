@@ -64,6 +64,7 @@ mod pc;
 mod pop;
 mod push;
 mod r#return;
+mod sdiv_smod;
 mod selfbalance;
 mod shr;
 mod signed_comparator;
@@ -115,6 +116,7 @@ use pc::PcGadget;
 use pop::PopGadget;
 use push::PushGadget;
 use r#return::ReturnGadget;
+use sdiv_smod::SignedDivModGadget;
 use selfbalance::SelfbalanceGadget;
 use shr::ShrGadget;
 use signed_comparator::SignedComparatorGadget;
@@ -195,14 +197,13 @@ pub(crate) struct ExecutionConfig<F> {
     pop_gadget: PopGadget<F>,
     push_gadget: PushGadget<F>,
     return_gadget: ReturnGadget<F>,
+    sdiv_smod_gadget: SignedDivModGadget<F>,
     selfbalance_gadget: SelfbalanceGadget<F>,
     shr_gadget: ShrGadget<F>,
     sha3_gadget: DummyGadget<F, 2, 1, { ExecutionState::SHA3 }>,
     address_gadget: DummyGadget<F, 0, 1, { ExecutionState::ADDRESS }>,
     balance_gadget: DummyGadget<F, 1, 1, { ExecutionState::BALANCE }>,
     blockhash_gadget: DummyGadget<F, 1, 1, { ExecutionState::BLOCKHASH }>,
-    sdiv_gadget: DummyGadget<F, 2, 1, { ExecutionState::SDIV }>,
-    smod_gadget: DummyGadget<F, 2, 1, { ExecutionState::SMOD }>,
     exp_gadget: DummyGadget<F, 2, 1, { ExecutionState::EXP }>,
     shl_gadget: DummyGadget<F, 2, 1, { ExecutionState::SHL }>,
     sar_gadget: DummyGadget<F, 2, 1, { ExecutionState::SAR }>,
@@ -409,13 +410,12 @@ impl<F: Field> ExecutionConfig<F> {
             pop_gadget: configure_gadget!(),
             push_gadget: configure_gadget!(),
             return_gadget: configure_gadget!(),
+            sdiv_smod_gadget: configure_gadget!(),
             selfbalance_gadget: configure_gadget!(),
             sha3_gadget: configure_gadget!(),
             address_gadget: configure_gadget!(),
             balance_gadget: configure_gadget!(),
             blockhash_gadget: configure_gadget!(),
-            sdiv_gadget: configure_gadget!(),
-            smod_gadget: configure_gadget!(),
             exp_gadget: configure_gadget!(),
             shl_gadget: configure_gadget!(),
             sar_gadget: configure_gadget!(),
@@ -870,6 +870,7 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::PUSH => assign_exec_step!(self.push_gadget),
             ExecutionState::RETURN => assign_exec_step!(self.return_gadget),
             ExecutionState::SCMP => assign_exec_step!(self.signed_comparator_gadget),
+            ExecutionState::SDIV_SMOD => assign_exec_step!(self.sdiv_smod_gadget),
             ExecutionState::BLOCKCTXU64 => assign_exec_step!(self.block_ctx_u64_gadget),
             ExecutionState::BLOCKCTXU160 => assign_exec_step!(self.block_ctx_u160_gadget),
             ExecutionState::BLOCKCTXU256 => assign_exec_step!(self.block_ctx_u256_gadget),
@@ -879,8 +880,6 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::ADDRESS => assign_exec_step!(self.address_gadget),
             ExecutionState::BALANCE => assign_exec_step!(self.balance_gadget),
             ExecutionState::BLOCKHASH => assign_exec_step!(self.blockhash_gadget),
-            ExecutionState::SDIV => assign_exec_step!(self.sdiv_gadget),
-            ExecutionState::SMOD => assign_exec_step!(self.smod_gadget),
             ExecutionState::EXP => assign_exec_step!(self.exp_gadget),
             ExecutionState::SHL => assign_exec_step!(self.shl_gadget),
             ExecutionState::SAR => assign_exec_step!(self.sar_gadget),
