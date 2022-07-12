@@ -143,7 +143,7 @@ impl<F: Field> CopyTableConfig<F> {
             cb.require_zero(
                 "is_first == 0 when q_step == 0",
                 and::expr([
-                    1.expr() - meta.query_selector(q_step),
+                    not::expr(meta.query_selector(q_step)),
                     meta.query_advice(is_first, Rotation::cur()),
                 ]),
             );
@@ -221,7 +221,7 @@ impl<F: Field> CopyTableConfig<F> {
             );
 
             cb.condition(
-                1.expr() - meta.query_advice(is_last, Rotation::next()),
+                not::expr(meta.query_advice(is_last, Rotation::next())),
                 |cb| {
                     cb.require_equal(
                         "rows[0].src_addr_end == rows[2].src_addr_end for non-last step",
@@ -264,10 +264,10 @@ impl<F: Field> CopyTableConfig<F> {
         meta.lookup_any("Memory lookup", |meta| {
             let cond = meta.query_fixed(q_enable, Rotation::cur())
                 * tag.value_equals(CopyDataType::Memory, Rotation::cur())(meta)
-                * (1.expr() - meta.query_advice(is_pad, Rotation::cur()));
+                * not::expr(meta.query_advice(is_pad, Rotation::cur()));
             vec![
                 meta.query_advice(rw_counter, Rotation::cur()),
-                1.expr() - meta.query_selector(q_step),
+                not::expr(meta.query_selector(q_step)),
                 RwTableTag::Memory.expr(),
                 meta.query_advice(id, Rotation::cur()), // call_id
                 meta.query_advice(addr, Rotation::cur()), // memory address
@@ -309,7 +309,7 @@ impl<F: Field> CopyTableConfig<F> {
         meta.lookup_any("Bytecode lookup", |meta| {
             let cond = meta.query_fixed(q_enable, Rotation::cur())
                 * tag.value_equals(CopyDataType::Bytecode, Rotation::cur())(meta)
-                * (1.expr() - meta.query_advice(is_pad, Rotation::cur()));
+                * not::expr(meta.query_advice(is_pad, Rotation::cur()));
             vec![
                 meta.query_advice(id, Rotation::cur()),
                 BytecodeFieldTag::Byte.expr(),
@@ -326,7 +326,7 @@ impl<F: Field> CopyTableConfig<F> {
         meta.lookup_any("Tx calldata lookup", |meta| {
             let cond = meta.query_fixed(q_enable, Rotation::cur())
                 * tag.value_equals(CopyDataType::TxCalldata, Rotation::cur())(meta)
-                * (1.expr() - meta.query_advice(is_pad, Rotation::cur()));
+                * not::expr(meta.query_advice(is_pad, Rotation::cur()));
             vec![
                 meta.query_advice(id, Rotation::cur()),
                 TxContextFieldTag::CallData.expr(),
