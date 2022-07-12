@@ -10,6 +10,8 @@ halo2_proofs = { version = "0.1.0-beta.1" }
 sha3 = "0.7.2"
 eth-types = { path = "../eth-types" }
 digest = "0.7.6"
+strum = "0.24"
+strum_macros = "0.24"
 
 [dev-dependencies]
 rand_xorshift = "0.3"

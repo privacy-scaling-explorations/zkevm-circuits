@@ -3,7 +3,6 @@ use crate::evm_circuit::{
     table::{AccountFieldTag, CallContextFieldTag, RwTableTag, TxLogFieldTag, TxReceiptFieldTag},
     witness::{Rw, RwMap},
 };
-use crate::state_circuit::binary_number::AsBits;
 use bus_mapping::operation::{
     MemoryOp, Operation, OperationContainer, RWCounter, StackOp, StorageOp, RW,
 };
@@ -12,6 +11,7 @@ use eth_types::{
     evm_types::{MemoryAddress, StackAddress},
     Address, ToAddress, Word, U256,
 };
+use gadgets::binary_number::AsBits;
 use halo2_proofs::poly::commitment::Params;
 use halo2_proofs::{
     arithmetic::BaseExt,

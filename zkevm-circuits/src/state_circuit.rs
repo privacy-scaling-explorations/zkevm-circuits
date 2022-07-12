@@ -1,5 +1,4 @@
 //! The state circuit implementation.
-mod binary_number;
 mod constraint_builder;
 mod lexicographic_ordering;
 mod lookups;
@@ -14,9 +13,9 @@ use crate::evm_circuit::{
     witness::{Rw, RwMap},
 };
 use crate::util::Expr;
-use binary_number::{Chip as BinaryNumberChip, Config as BinaryNumberConfig};
 use constraint_builder::{ConstraintBuilder, Queries};
 use eth_types::{Address, Field};
+use gadgets::binary_number::{BinaryNumberChip, BinaryNumberConfig};
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner},
     plonk::{

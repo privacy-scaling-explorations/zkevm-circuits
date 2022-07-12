@@ -1,13 +1,11 @@
-use super::{
-    binary_number::{AsBits, Chip as BinaryNumberChip, Config as BinaryNumberConfig},
-    SortKeysConfig, N_LIMBS_ACCOUNT_ADDRESS, N_LIMBS_ID, N_LIMBS_RW_COUNTER,
-};
+use super::{SortKeysConfig, N_LIMBS_ACCOUNT_ADDRESS, N_LIMBS_ID, N_LIMBS_RW_COUNTER};
 use crate::{
     evm_circuit::{param::N_BYTES_WORD, witness::Rw},
     impl_expr,
     util::Expr,
 };
 use eth_types::{Field, ToBigEndian};
+use gadgets::binary_number::{AsBits, BinaryNumberChip, BinaryNumberConfig};
 use halo2_proofs::arithmetic::FieldExt;
 use halo2_proofs::{
     circuit::Region,
@@ -332,8 +330,8 @@ fn rlc_limb_differences<F: Field>(
 
 #[cfg(test)]
 mod test {
-    use super::super::binary_number::{from_bits, AsBits};
     use super::LimbIndex;
+    use gadgets::binary_number::{from_bits, AsBits};
     use strum::IntoEnumIterator;
 
     #[test]
