@@ -1,6 +1,6 @@
 use crate::{
     evm_circuit::{
-        table::{BytecodeFieldTag, TableColumns},
+        table::{BytecodeFieldTag, KeccakTable, TableColumns},
         util::{
             and, constraint_builder::BaseConstraintBuilder, not, or, select,
             RandomLinearCombination,
@@ -94,7 +94,8 @@ pub struct Config<F> {
     length_inv: Column<Advice>,
     length_is_zero: IsZeroConfig<F>,
     push_table: [Column<Fixed>; PUSH_TABLE_WIDTH],
-    keccak_table: [Column<Advice>; KECCAK_WIDTH],
+    // keccak_table: [Column<Advice>; KECCAK_WIDTH],
+    keccak_table: KeccakTable,
 }
 
 impl<F: Field> Config<F> {
@@ -102,6 +103,7 @@ impl<F: Field> Config<F> {
         meta: &mut ConstraintSystem<F>,
         randomness: Expression<F>,
         bytecode_table: BytecodeTable,
+        keccak_table: KeccakTable,
     ) -> Self {
         let q_enable = meta.fixed_column();
         let q_first = meta.fixed_column();
@@ -120,7 +122,6 @@ impl<F: Field> Config<F> {
         let push_rindex_inv = meta.advice_column();
         let length_inv = meta.advice_column();
         let push_table = array_init::array_init(|_| meta.fixed_column());
-        let keccak_table = array_init::array_init(|_| meta.advice_column());
 
         // A byte is an opcode when `push_rindex == 0` on the previous row,
         // else it's push data.
@@ -393,10 +394,14 @@ impl<F: Field> Config<F> {
             ]);
             let lookup_columns = vec![hash_rlc, hash_length, hash];
             let mut constraints = vec![];
-            for i in 0..KECCAK_WIDTH {
+            constraints.push((
+                enable.clone(),
+                meta.query_advice(keccak_table.is_enabled, Rotation::cur()),
+            ));
+            for (i, column) in keccak_table.columns().iter().skip(1).enumerate() {
                 constraints.push((
                     enable.clone() * meta.query_advice(lookup_columns[i], Rotation::cur()),
-                    meta.query_advice(keccak_table[i], Rotation::cur()),
+                    meta.query_advice(*column, Rotation::cur()),
                 ))
             }
             constraints
@@ -653,9 +658,10 @@ impl<F: Field> Config<F> {
                     let rlc: F = linear_combine(bytecode.clone(), randomness);
                     let size = F::from(bytecode.len() as u64);
                     for (name, column, value) in &[
-                        ("rlc", self.keccak_table[0], rlc),
-                        ("size", self.keccak_table[1], size),
-                        ("hash", self.keccak_table[2], hash),
+                        ("is_enable", self.keccak_table.is_enabled, F::one()),
+                        ("input_rlc", self.keccak_table.input_rlc, rlc),
+                        ("input_len", self.keccak_table.input_len, size),
+                        ("output_rlc", self.keccak_table.output_rlc, hash),
                     ] {
                         region.assign_advice(
                             || format!("Keccak table assign {} {}", name, offset),
@@ -800,8 +806,9 @@ mod tests {
 
                 randomness.unwrap()
             };
+            let keccak_table = KeccakTable::construct(meta);
 
-            Config::configure(meta, randomness, bytecode_table)
+            Config::configure(meta, randomness, bytecode_table, keccak_table)
         }
 
         fn synthesize(

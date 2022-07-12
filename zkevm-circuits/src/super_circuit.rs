@@ -130,12 +130,13 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
                 meta,
                 power_of_randomness.clone(),
                 tx_table,
-                keccak_table,
+                keccak_table.clone(),
             ),
             bytecode_circuit: BytecodeConfig::configure(
                 meta,
                 power_of_randomness[0].clone(),
                 bytecode_table,
+                keccak_table,
             ),
         }
     }
