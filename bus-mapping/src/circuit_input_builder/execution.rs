@@ -5,6 +5,8 @@ use eth_types::{
     evm_types::{Gas, GasCost, OpcodeId, ProgramCounter},
     GethExecStep, H256,
 };
+use gadgets::impl_expr;
+use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
 use strum_macros::EnumIter;
 
 /// An execution step of the EVM.
@@ -150,11 +152,19 @@ pub enum CopyDataType {
     TxLog,
 }
 
+impl From<CopyDataType> for usize {
+    fn from(t: CopyDataType) -> Self {
+        t as usize
+    }
+}
+
 impl Default for CopyDataType {
     fn default() -> Self {
         Self::Memory
     }
 }
+
+impl_expr!(CopyDataType);
 
 /// Defines a single copy step in a copy event. This type is unified over the
 /// source/destination row in the copy table.

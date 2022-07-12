@@ -12,10 +12,12 @@ use crate::evm_circuit::{
     table::RwTableTag,
     witness::{Rw, RwMap},
 };
-use crate::util::Expr;
 use constraint_builder::{ConstraintBuilder, Queries};
 use eth_types::{Address, Field};
-use gadgets::binary_number::{BinaryNumberChip, BinaryNumberConfig};
+use gadgets::{
+    binary_number::{BinaryNumberChip, BinaryNumberConfig},
+    util::Expr,
+};
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner},
     plonk::{
@@ -30,8 +32,6 @@ use random_linear_combination::{Chip as RlcChip, Config as RlcConfig, Queries as
 #[cfg(test)]
 use std::collections::HashMap;
 use std::iter::once;
-
-pub use binary_number::{AsBits, Chip as BinaryNumberChip, Config as BinaryNumberConfig};
 
 const N_LIMBS_RW_COUNTER: usize = 2;
 const N_LIMBS_ACCOUNT_ADDRESS: usize = 10;

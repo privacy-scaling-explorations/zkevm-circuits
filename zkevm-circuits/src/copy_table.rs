@@ -1,40 +1,22 @@
 #![allow(missing_docs)]
 use bus_mapping::circuit_input_builder::{CopyDataType, CopyEvent, CopyStep, NumberOrHash};
 use eth_types::{Field, ToAddress, ToScalar, U256};
-use gadgets::less_than::{LtChip, LtConfig, LtInstruction};
+use gadgets::{
+    binary_number::{BinaryNumberChip, BinaryNumberConfig},
+    less_than::{LtChip, LtConfig, LtInstruction},
+    util::{and, not, or, Expr},
+};
 use halo2_proofs::{
     circuit::{Layouter, Region},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, Selector, VirtualCells},
     poly::Rotation,
 };
 
-use crate::{
-    evm_circuit::{
-        table::{BytecodeFieldTag, LookupTable, RwTableTag, TxContextFieldTag, TxLogFieldTag},
-        util::{and, constraint_builder::BaseConstraintBuilder, not, or, RandomLinearCombination},
-        witness::Block,
-    },
-    state_circuit::{AsBits, BinaryNumberChip, BinaryNumberConfig},
-    util::{self, Expr},
+use crate::evm_circuit::{
+    table::{BytecodeFieldTag, LookupTable, RwTableTag, TxContextFieldTag, TxLogFieldTag},
+    util::{constraint_builder::BaseConstraintBuilder, RandomLinearCombination},
+    witness::Block,
 };
-
-impl<F: Field> util::Expr<F> for CopyDataType {
-    fn expr(&self) -> Expression<F> {
-        Expression::Constant(F::from(*self as u64))
-    }
-}
-
-impl AsBits<3> for CopyDataType {
-    fn as_bits(&self) -> [bool; 3] {
-        let mut bits = [false; 3];
-        let mut x = *self as u8;
-        for i in 0..3 {
-            bits[2 - i] = x % 2 == 1;
-            x /= 2;
-        }
-        bits
-    }
-}
 
 /// The rw table shared between evm circuit and state circuit
 #[derive(Clone, Debug)]

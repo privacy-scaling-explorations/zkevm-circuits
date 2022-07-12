@@ -364,6 +364,8 @@ dependencies = [
  "eth-types",
  "ethers-core",
  "ethers-providers",
+ "gadgets",
+ "halo2_proofs 0.1.0-beta.1",
  "hex",
  "itertools",
  "keccak256",
