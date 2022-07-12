@@ -20,7 +20,7 @@ use halo2_proofs::{
     poly::Rotation,
 };
 
-/// Fixed by the spec TODO Review
+/// Fixed by the spec
 const TX_LEN: usize = 9;
 const BLOCK_LEN: usize = 7 + 256;
 const EXTRA_LEN: usize = 2;
@@ -63,10 +63,14 @@ pub struct ExtraValues {
 /// PublicData contains all the values that the PiCircuit recieves as input
 #[derive(Debug, Clone)]
 pub struct PublicData {
-    txs: Vec<Transaction>,
-    extra: GethData,                 //contains Block + extra fields {}
-    block_constants: BlockConstants, // may not be necessary
-    block_prev_root: Word,
+    /// List of tranactions
+    pub txs: Vec<Transaction>,
+    /// Information of Ethereum block
+    pub extra: GethData,
+    /// Constants related to Ethereum block
+    pub block_constants: BlockConstants,
+    /// Previous block root
+    pub block_prev_root: Word,
 }
 
 impl Default for PublicData {
@@ -207,7 +211,6 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
                 let rand_rpi = meta.query_advice(rand_rpi, Rotation::cur());
                 let raw_public_inputs = meta.query_advice(raw_public_inputs, Rotation::cur());
 
-                // TODO Constraint last row to rpi_rlc_acc = raw_public_inputs
                 vec![
                     q_not_end * (next_rpi_rlc_acc * rand_rpi + raw_public_inputs - cur_rpi_rlc_acc),
                 ]
@@ -730,14 +733,150 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
 
 #[cfg(test)]
 mod pi_circuit_test {
+    use super::*;
+
+    use ethers_core::{
+        types::{NameOrAddress, TransactionRequest},
+        utils::keccak256,
+    };
+    use ethers_signers::{LocalWallet, Signer};
     use halo2_proofs::{
         dev::{MockProver, VerifyFailure},
         pairing::bn256::Fr,
     };
-    use rand::SeedableRng;
+    use pretty_assertions::assert_eq;
+    use rand::{CryptoRng, Rng, SeedableRng};
     use rand_chacha::ChaCha20Rng;
 
-    use super::*;
+    // Copied from tx_circuit
+    fn rand_tx<R: Rng + CryptoRng>(mut rng: R, chain_id: u64) -> Transaction {
+        let wallet0 = LocalWallet::new(&mut rng).with_chain_id(chain_id);
+        let wallet1 = LocalWallet::new(&mut rng).with_chain_id(chain_id);
+        let from = wallet0.address();
+        let to = wallet1.address();
+        let data = b"hello";
+        let tx = TransactionRequest::new()
+            .from(from)
+            .to(to)
+            .nonce(3)
+            .value(1000)
+            .data(data)
+            .gas(500_000)
+            .gas_price(1234);
+        let tx_rlp = tx.rlp(chain_id);
+        let sighash = keccak256(tx_rlp.as_ref()).into();
+        let sig = wallet0.sign_hash(sighash, true);
+        let to = tx.to.map(|to| match to {
+            NameOrAddress::Address(a) => a,
+            _ => unreachable!(),
+        });
+        Transaction {
+            from: tx.from.unwrap(),
+            to,
+            gas_limit: tx.gas.unwrap(),
+            gas_price: tx.gas_price.unwrap(),
+            value: tx.value.unwrap(),
+            call_data: tx.data.unwrap(),
+            nonce: tx.nonce.unwrap(),
+            v: sig.v,
+            r: sig.r,
+            s: sig.s,
+            ..Transaction::default()
+        }
+    }
+
+    fn raw_public_inputs_col<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>(
+        public_data: &PublicData,
+        randomness: F, // For RLC encoding
+    ) -> Vec<F> {
+        let block = public_data.get_block_table_values();
+        let extra = public_data.get_extra_values();
+        let txs = public_data.get_tx_table_values();
+
+        let mut result =
+            vec![F::zero(); BLOCK_LEN + EXTRA_LEN + 3 * (TX_LEN * MAX_TXS + MAX_CALLDATA)];
+
+        //  Insert Block Values
+        // coinbase
+        let mut coinbase_bytes = [0u8; 32];
+        coinbase_bytes[12..].clone_from_slice(block.coinbase.as_bytes());
+        result.push(rlc(coinbase_bytes, randomness));
+        // gas_limit
+        result.push(rlc(block.gas_limit.to_le_bytes(), randomness));
+        // number
+        result.push(F::from(block.number));
+        // timestamp
+        result.push(rlc(block.timestamp.to_le_bytes(), randomness));
+        // difficulty
+        result.push(rlc(block.difficulty.to_le_bytes(), randomness));
+        // base_fee
+        result.push(rlc(block.base_fee.to_le_bytes(), randomness));
+        // chain_id
+        result.push(rlc(block.chain_id.to_le_bytes(), randomness));
+        // Previous block hashes
+        for prev_hash in block.history_hashes {
+            result.push(rlc(prev_hash.to_le_bytes(), randomness));
+        }
+
+        // Insert Extra Values
+        // block Root
+        result.push(rlc(extra.state_root.to_fixed_bytes(), randomness));
+        // parent block hash
+        result.push(rlc(extra.parent_block_hash.to_fixed_bytes(), randomness));
+
+        // Insert Tx table
+        let mut offset = 0;
+        assert!(txs.len() < MAX_TXS);
+        let tx_default = TxValues::default();
+
+        let tx_table_len = TX_LEN * MAX_TXS + MAX_CALLDATA;
+
+        let id_offset = BLOCK_LEN + EXTRA_LEN;
+        let index_offset = id_offset + tx_table_len;
+        let value_offset = index_offset + tx_table_len;
+
+        for i in 0..MAX_TXS {
+            let tx = if i < txs.len() { &txs[i] } else { &tx_default };
+
+            for val in &[
+                rlc(tx.nonce.to_le_bytes(), randomness),
+                rlc(tx.gas.to_le_bytes(), randomness),
+                rlc(tx.gas_price.to_le_bytes(), randomness),
+                tx.from_addr.to_scalar().expect("tx.from too big"),
+                tx.to_addr.to_scalar().expect("tx.to too big"),
+                F::from(tx.is_create),
+                rlc(tx.value.to_le_bytes(), randomness),
+                F::from(tx.call_data_len),
+                rlc(tx.tx_sign_hash, randomness),
+            ] {
+                result[id_offset + offset] = F::from((i + 1) as u64);
+                result[index_offset + offset] = F::zero();
+                result[value_offset + offset] = *val;
+
+                offset += 1;
+            }
+        }
+        // Tx Table CallData
+        let mut calldata_count = 0;
+        for (i, tx) in public_data.txs.iter().enumerate() {
+            for (index, byte) in tx.call_data.0.iter().enumerate() {
+                assert!(calldata_count < MAX_CALLDATA);
+                result[id_offset + offset] = F::from((i + 1) as u64);
+                result[index_offset + offset] = F::from(index as u64);
+                result[value_offset + offset] = F::from(*byte as u64);
+                offset += 1;
+                calldata_count += 1;
+            }
+        }
+        for _ in calldata_count..MAX_CALLDATA {
+            result[id_offset + offset] = F::zero();
+            result[index_offset + offset] = F::zero();
+            result[value_offset + offset] = F::zero();
+            offset += 1;
+        }
+
+        result
+    }
 
     fn run<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>(
         k: u32,
@@ -747,21 +886,27 @@ mod pi_circuit_test {
         let randomness = F::random(&mut rng);
 
         // TODO Should be computed from the public_data
+        // a random value is generated for testing
         // In this example all are set to zero
         let rand_rpi = F::zero();
-        let rlc_rpi = F::zero();
 
-        let block_hash = public_data
-            .extra
-            .eth_block
-            .hash
-            .unwrap_or_else(H256::zero)
-            .to_fixed_bytes();
+        // Computation of raw_pulic_inputs
+        let rlc_rpi = raw_public_inputs_col::<F, MAX_TXS, MAX_CALLDATA>(&public_data, randomness)
+            .iter()
+            .rev()
+            .fold(F::zero(), |acc, val| acc * rand_rpi + val);
+
+        // let block_hash = public_data
+        //     .extra
+        //     .eth_block
+        //     .hash
+        //     .unwrap_or_else(H256::zero)
+        //     .to_fixed_bytes();
 
         let public_inputs = vec![
             rand_rpi,
             rlc_rpi,
-            rlc(block_hash, randomness),
+            rlc(public_data.extra.chain_id.to_le_bytes(), randomness),
             rlc(
                 public_data.extra.eth_block.state_root.to_fixed_bytes(),
                 randomness,
@@ -778,7 +923,6 @@ mod pi_circuit_test {
             public_data,
         };
 
-        // let instance = Vec::<Vec<F>>::new();
         let prover = match MockProver::run(k, &circuit, vec![public_inputs]) {
             Ok(prover) => prover,
             Err(e) => panic!("{:#?}", e),
@@ -791,6 +935,26 @@ mod pi_circuit_test {
         const MAX_TXS: usize = 2;
         const MAX_CALLDATA: usize = 8;
         let public_data = PublicData::default();
+
+        let k = 13;
+        assert_eq!(run::<Fr, MAX_TXS, MAX_CALLDATA>(k, public_data), Ok(()));
+    }
+
+    #[test]
+    fn test_simple_pi() {
+        const MAX_TXS: usize = 4;
+        const MAX_CALLDATA: usize = 20;
+
+        let mut rng = ChaCha20Rng::seed_from_u64(2);
+
+        let mut public_data = PublicData::default();
+        let chain_id = 1337u64;
+        public_data.extra.chain_id = Word::from(chain_id);
+
+        let n_tx = 2;
+        for _ in 0..n_tx {
+            public_data.txs.push(rand_tx(&mut rng, chain_id));
+        }
 
         let k = 13;
         assert_eq!(run::<Fr, MAX_TXS, MAX_CALLDATA>(k, public_data), Ok(()));
