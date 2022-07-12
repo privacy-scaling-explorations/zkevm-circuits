@@ -2,7 +2,6 @@
 
 use std::array;
 
-use array_init::array_init;
 use eth_types::Field;
 use halo2_proofs::{
     arithmetic::FieldExt,
@@ -34,6 +33,7 @@ pub struct LtConfig<F, const N_BYTES: usize> {
     /// Denotes the lt outcome. If lhs < rhs then lt == 1, otherwise lt == 0.
     pub lt: Column<Advice>,
     /// Denotes the bytes representation of the difference between lhs and rhs.
+    /// Note that the range of each byte is not checked by this config.
     pub diff: [Column<Advice>; N_BYTES],
     /// Denotes the range within which both lhs and rhs lie.
     pub range: F,
@@ -61,7 +61,7 @@ impl<F: Field, const N_BYTES: usize> LtChip<F, N_BYTES> {
         rhs: impl FnOnce(&mut VirtualCells<F>) -> Expression<F>,
     ) -> LtConfig<F, N_BYTES> {
         let lt = meta.advice_column();
-        let diff = array_init(|_| meta.advice_column());
+        let diff = [(); N_BYTES].map(|_| meta.advice_column());
         let range = pow_of_two(N_BYTES * 8);
 
         meta.create_gate("lt gate", |meta| {

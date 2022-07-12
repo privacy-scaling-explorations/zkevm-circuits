@@ -1,4 +1,7 @@
-#![allow(missing_docs)]
+//! The binary number chip implements functionality to represent any given value
+//! in binary bits, which can be compared against a value or expression for
+//! equality.
+
 use crate::util::{and, not, Expr};
 use eth_types::Field;
 use halo2_proofs::{
@@ -10,8 +13,10 @@ use std::collections::BTreeSet;
 use std::marker::PhantomData;
 use strum::IntoEnumIterator;
 
+/// Helper trait that implements functionality to represent a generic type as
+/// array of N-bits.
 pub trait AsBits<const N: usize> {
-    // Return the bits of self, starting from the most significant.
+    /// Return the bits of self, starting from the most significant.
     fn as_bits(&self) -> [bool; N];
 }
 
@@ -30,9 +35,10 @@ where
     }
 }
 
+/// Config for the binary number chip.
 #[derive(Clone, Copy)]
 pub struct BinaryNumberConfig<T, const N: usize> {
-    // Must be constrained to be binary for correctness.
+    /// Must be constrained to be binary for correctness.
     pub bits: [Column<Advice>; N],
     _marker: PhantomData<T>,
 }
@@ -41,6 +47,7 @@ impl<T, const N: usize> BinaryNumberConfig<T, N>
 where
     T: AsBits<N>,
 {
+    /// Returns the expression value of the bits at the given rotation.
     pub fn value<F: Field>(
         &self,
         rotation: Rotation,
@@ -53,6 +60,9 @@ where
         }
     }
 
+    /// Returns a function that can evaluate to a binary expression, that
+    /// evaluates to 1 if value is equal to value as bits. The returned
+    /// expression is of degree N.
     pub fn value_equals<F: Field, S: AsBits<N>>(
         &self,
         value: S,
@@ -62,8 +72,8 @@ where
         move |meta| Self::value_equals_expr(value, bits.map(|bit| meta.query_advice(bit, rotation)))
     }
 
-    // Returns a binary expression that evaluates to 1 if expressions are equal to
-    // value as bits. The returned expression is of degree N.
+    /// Returns a binary expression that evaluates to 1 if expressions are equal
+    /// to value as bits. The returned expression is of degree N.
     pub fn value_equals_expr<F: Field, S: AsBits<N>>(
         value: S,
         expressions: [Expression<F>; N], // must be binary.
@@ -84,11 +94,12 @@ where
     }
 }
 
-// This chip helps working with binary encoding of integers of length N bits by:
-//  - enforcing that the binary representation is in the valid range defined by
-//    T.
-//  - creating expressions (via the Config) that evaluate to 1 when the bits
-//    match a specific value and 0 otherwise.
+/// This chip helps working with binary encoding of integers of length N bits
+/// by:
+///  - enforcing that the binary representation is in the valid range defined by
+///    T.
+///  - creating expressions (via the Config) that evaluate to 1 when the bits
+///    match a specific value and 0 otherwise.
 pub struct BinaryNumberChip<F: Field, T, const N: usize> {
     config: BinaryNumberConfig<T, N>,
     _marker: PhantomData<F>,
@@ -98,6 +109,7 @@ impl<F: Field, T: IntoEnumIterator, const N: usize> BinaryNumberChip<F, T, N>
 where
     T: AsBits<N>,
 {
+    /// Construct the binary number chip given a config.
     pub fn construct(config: BinaryNumberConfig<T, N>) -> Self {
         Self {
             config,
@@ -105,6 +117,7 @@ where
         }
     }
 
+    /// Configure constraints for the binary number chip.
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         selector: Column<Fixed>,
@@ -141,6 +154,8 @@ where
         config
     }
 
+    /// Assign a value to the binary number chip. A generic type that implements
+    /// the AsBits trait can be provided for assignment.
     pub fn assign(
         &self,
         region: &mut Region<'_, F>,
@@ -159,6 +174,7 @@ where
     }
 }
 
+/// Helper function to get a decimal representation given the bits.
 pub fn from_bits(bits: &[bool]) -> usize {
     bits.iter()
         .fold(0, |result, &bit| bit as usize + 2 * result)

@@ -1,4 +1,4 @@
-use crate::{evm_circuit::step::ExecutionState, impl_expr, util::Expr};
+use crate::{evm_circuit::step::ExecutionState, impl_expr};
 use halo2_proofs::{
     arithmetic::FieldExt,
     plonk::{Advice, Column, Expression, Fixed, VirtualCells},
