@@ -17,14 +17,14 @@ use itertools::Itertools;
 use table::{FixedTableTag, LookupTable};
 use witness::Block;
 
-use crate::copy_table::CopyTableConfig;
+use crate::copy_circuit::CopyCircuit;
 
 /// EvmCircuit implements verification of execution trace of a block.
 #[derive(Clone, Debug)]
 pub struct EvmCircuit<F> {
     fixed_table: [Column<Fixed>; 4],
     byte_table: [Column<Fixed>; 1],
-    copy_table: Box<CopyTableConfig<F>>,
+    copy_table: Box<CopyCircuit<F>>,
     execution: Box<ExecutionConfig<F>>,
 }
 
@@ -40,7 +40,7 @@ impl<F: Field> EvmCircuit<F> {
     ) -> Self {
         let fixed_table = [(); 4].map(|_| meta.fixed_column());
         let byte_table = [(); 1].map(|_| meta.fixed_column());
-        let copy_table = CopyTableConfig::configure(meta, tx_table, rw_table, bytecode_table);
+        let copy_table = CopyCircuit::configure(meta, tx_table, rw_table, bytecode_table);
         let execution = Box::new(ExecutionConfig::configure(
             meta,
             power_of_randomness,

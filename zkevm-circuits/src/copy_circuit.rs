@@ -1,4 +1,7 @@
-#![allow(missing_docs)]
+//! The Copy circuit implements constraints and lookups for read-write steps for
+//! copied bytes while execution opcodes such as CALLDATACOPY, CODECOPY, LOGS,
+//! etc.
+
 use bus_mapping::circuit_input_builder::{CopyDataType, CopyEvent, CopyStep, NumberOrHash};
 use eth_types::{Field, ToAddress, ToScalar, U256};
 use gadgets::{
@@ -20,7 +23,7 @@ use crate::evm_circuit::{
 
 /// The rw table shared between evm circuit and state circuit
 #[derive(Clone, Debug)]
-pub struct CopyTableConfig<F> {
+pub struct CopyCircuit<F> {
     /// Whether the row is enabled or not.
     pub q_enable: Column<Fixed>,
     /// Whether this row denotes a step. A read row is a step and a write row is
@@ -63,7 +66,7 @@ pub struct CopyTableConfig<F> {
     pub addr_lt_addr_end: LtConfig<F, 8>,
 }
 
-impl<F: Field> LookupTable<F> for CopyTableConfig<F> {
+impl<F: Field> LookupTable<F> for CopyCircuit<F> {
     fn table_exprs(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>> {
         vec![
             meta.query_advice(self.is_first, Rotation::cur()),
@@ -81,7 +84,9 @@ impl<F: Field> LookupTable<F> for CopyTableConfig<F> {
     }
 }
 
-impl<F: Field> CopyTableConfig<F> {
+impl<F: Field> CopyCircuit<F> {
+    /// Configure the Copy Circuit constraining read-write steps and doing
+    /// appropriate lookups to the Tx Table, RW Table and Bytecode Table.
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         tx_table: &dyn LookupTable<F>,
@@ -340,6 +345,7 @@ impl<F: Field> CopyTableConfig<F> {
         }
     }
 
+    /// Assign a witness block to the Copy Circuit.
     pub fn assign_block(
         &self,
         layouter: &mut impl Layouter<F>,
