@@ -121,7 +121,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
                 src_tag,
                 cb.curr.state.call_id.expr(),
                 CopyDataType::Memory.expr(),
-                data_offset.expr() + call_data_offset.expr(),
+                call_data_offset.expr() + data_offset.expr(),
                 call_data_offset.expr() + call_data_length.expr(),
                 memory_offset.expr(),
                 length.expr(),
