@@ -110,7 +110,7 @@ fn gen_copy_event(
         .code(code_hash)?
         .try_into()
         .map_err(eth_types::Error::BytecodeError)?;
-    let src_addr_end = bytecode.code().len() as u64;
+    let src_addr_end = bytecode.to_vec().len() as u64;
 
     let mut exec_step = state.new_step(geth_step)?;
     let copy_steps = gen_copy_steps(
@@ -229,8 +229,8 @@ mod codecopy_tests {
                         MemoryOp::new(
                             1,
                             MemoryAddress::from(dst_offset + idx),
-                            if code_offset + idx < code.code().len() {
-                                code.code()[code_offset + idx]
+                            if code_offset + idx < code.to_vec().len() {
+                                code.to_vec()[code_offset + idx]
                             } else {
                                 0
                             },
@@ -245,10 +245,10 @@ mod codecopy_tests {
         assert_eq!(copy_events[0].steps.len(), 2 * size);
         assert_eq!(
             copy_events[0].src_id,
-            NumberOrHash::Hash(H256(keccak256(&code.code())))
+            NumberOrHash::Hash(H256(keccak256(&code.to_vec())))
         );
         assert_eq!(copy_events[0].src_addr as usize, code_offset);
-        assert_eq!(copy_events[0].src_addr_end as usize, code.code().len());
+        assert_eq!(copy_events[0].src_addr_end as usize, code.to_vec().len());
         assert_eq!(copy_events[0].src_type, CopyDataType::Bytecode);
         assert_eq!(
             copy_events[0].dst_id,

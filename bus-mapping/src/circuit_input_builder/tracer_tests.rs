@@ -295,9 +295,9 @@ fn tracer_err_address_collision() {
 
     let mut code_b = Bytecode::default();
     // pad code_creator to multiple of 32 bytes
-    let len = code_creator.code().len();
+    let len = code_creator.to_vec().len();
     let code_creator: Vec<u8> = code_creator
-        .code()
+        .to_vec()
         .iter()
         .cloned()
         .chain(0u8..((32 - len % 32) as u8))
@@ -438,9 +438,9 @@ fn tracer_err_code_store_out_of_gas() {
 
     let mut code_b = Bytecode::default();
     // pad code_creator to multiple of 32 bytes
-    let len = code_creator.code().len();
+    let len = code_creator.to_vec().len();
     let code_creator: Vec<u8> = code_creator
-        .code()
+        .to_vec()
         .iter()
         .cloned()
         .chain(0..(32 - len % 32) as u8)
@@ -544,9 +544,9 @@ fn tracer_err_invalid_code() {
 
     let mut code_b = Bytecode::default();
     // pad code_creator to multiple of 32 bytes
-    let len = code_creator.code().len();
+    let len = code_creator.to_vec().len();
     let code_creator: Vec<u8> = code_creator
-        .code()
+        .to_vec()
         .iter()
         .cloned()
         .chain(0u8..((32 - len % 32) as u8))
@@ -648,9 +648,9 @@ fn tracer_err_max_code_size_exceeded() {
 
     let mut code_b = Bytecode::default();
     // pad code_creator to multiple of 32 bytes
-    let len = code_creator.code().len();
+    let len = code_creator.to_vec().len();
     let code_creator: Vec<u8> = code_creator
-        .code()
+        .to_vec()
         .iter()
         .cloned()
         .chain(0u8..((32 - len % 32) as u8))
@@ -742,9 +742,9 @@ fn tracer_create_stop() {
 
     let mut code_b = Bytecode::default();
     // pad code_creator to multiple of 32 bytes
-    let len = code_creator.code().len();
+    let len = code_creator.to_vec().len();
     let code_creator: Vec<u8> = code_creator
-        .code()
+        .to_vec()
         .iter()
         .cloned()
         .chain(0u8..((32 - len % 32) as u8))
@@ -1450,9 +1450,9 @@ fn create2_address() {
 
     let mut code_b = Bytecode::default();
     // pad code_creator to multiple of 32 bytes
-    let len = code_creator.code().len();
+    let len = code_creator.to_vec().len();
     let code_creator: Vec<u8> = code_creator
-        .code()
+        .to_vec()
         .iter()
         .cloned()
         .chain(0u8..((32 - len % 32) as u8))
@@ -1551,9 +1551,9 @@ fn create_address() {
 
     let mut code_b = Bytecode::default();
     // pad code_creator to multiple of 32 bytes
-    let len = code_creator.code().len();
+    let len = code_creator.to_vec().len();
     let code_creator: Vec<u8> = code_creator
-        .code()
+        .to_vec()
         .iter()
         .cloned()
         .chain(0u8..((32 - len % 32) as u8))
@@ -1877,9 +1877,9 @@ fn test_gen_access_trace_create_push_call_stack() {
 
     let mut code_b = Bytecode::default();
     // pad code_creator to multiple of 32 bytes
-    let len = code_creator.code().len();
+    let len = code_creator.to_vec().len();
     let code_creator: Vec<u8> = code_creator
-        .code()
+        .to_vec()
         .iter()
         .cloned()
         .chain(0u8..((32 - len % 32) as u8))
