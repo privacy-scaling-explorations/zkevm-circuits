@@ -242,7 +242,7 @@ impl<F: Field, const N_ROWS: usize> Circuit<F> for StateCircuit<F, N_ROWS> {
                         // TODO: Get initial_values from MPT updates instead.
                         if is_first_access {
                             // TODO: Set initial values for Rw::CallContext to be 0 instead of
-                            // special casing them.
+                            // special casing it.
                             initial_value = if matches!(row.tag(), RwTableTag::CallContext) {
                                 row.value_assignment(self.randomness)
                             } else {
