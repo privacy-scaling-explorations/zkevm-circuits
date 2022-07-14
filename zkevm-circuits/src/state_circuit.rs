@@ -323,8 +323,8 @@ impl<F: Field, const N_ROWS: usize> Circuit<F> for StateCircuit<F, N_ROWS> {
                             &prev_row,
                         )?;
 
-                        // For first access to a group, we possibly need to update the initial value for
-                        // RwTableTag::CallContext and RwTableTag::TxReceipt rows and update the
+                        // For first access to a group, we possibly need to update the initial value
+                        // for RwTableTag::CallContext and RwTableTag::TxReceipt rows and update the
                         // state root.
                         if is_first_access {
                             if matches!(row.tag(), RwTableTag::CallContext | RwTableTag::TxReceipt)
