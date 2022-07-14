@@ -13,10 +13,18 @@ pub mod witness;
 
 use crate::bytecode_circuit::bytecode_unroller::BytecodeTable;
 use crate::tx_circuit::TxTable;
-use eth_types::Field;
+use crate::{
+    evm_circuit::{
+        util::{rlc, RandomLinearCombination},
+        witness::{BlockContext, Bytecode, RwMap, Transaction},
+    },
+    rw_table::RwTable,
+};
+use eth_types::{Field, ToLittleEndian, Word};
 use execution::ExecutionConfig;
 use itertools::Itertools;
-use table::{BlockTable, FixedTableTag, LookupTable, TableColumns};
+use keccak256::plain::Keccak;
+use table::{BlockTable, FixedTableTag, KeccakTable, LookupTable, TableColumns};
 use witness::Block;
 
 /// EvmCircuit implements verification of execution trace of a block.
@@ -141,17 +149,7 @@ impl<F: Field> EvmCircuit<F> {
     }
 }
 
-use crate::{
-    evm_circuit::witness::{BlockContext, Bytecode, RwMap, Transaction},
-    rw_table::RwTable,
-};
-
-// TODO: Define a table type for each table, kept in an upper level crate.
-
-// TODO: Move these load functions to each specific circuit, and import them
-// into the EVM circuit.  These functions look really clean, so maybe we can
-// replace the specific circuit loader by these?
-
+// TODO: Move to src/tables.rs
 pub fn load_txs<F: Field>(
     tx_table: &TxTable,
     layouter: &mut impl Layouter<F>,
@@ -195,6 +193,7 @@ pub fn load_txs<F: Field>(
     )
 }
 
+// TODO: Move to src/tables.rs
 pub fn load_rws<F: Field>(
     rw_table: &RwTable,
     layouter: &mut impl Layouter<F>,
@@ -228,15 +227,16 @@ pub fn load_rws<F: Field>(
     )
 }
 
-// use crate::util::TableShow;
+use crate::util::TableShow;
 
+// TODO: Move to src/tables.rs
 pub fn load_bytecodes<F: Field>(
     bytecode_table: &BytecodeTable,
     layouter: &mut impl Layouter<F>,
     bytecodes: &[Bytecode],
     randomness: F,
 ) -> Result<(), Error> {
-    println!("> load_bytecodes");
+    // println!("> load_bytecodes");
     // let mut table = TableShow::<F>::new(vec!["codeHash", "tag", "index",
     // "isCode", "value"]);
     layouter.assign_region(
@@ -275,6 +275,8 @@ pub fn load_bytecodes<F: Field>(
         },
     )
 }
+
+// TODO: Move to src/tables.rs
 pub fn load_block<F: Field>(
     block_table: &BlockTable,
     layouter: &mut impl Layouter<F>,
@@ -308,6 +310,66 @@ pub fn load_block<F: Field>(
                 offset += 1;
             }
 
+            Ok(())
+        },
+    )
+}
+
+pub fn keccak_table_assignments<F: Field>(input: &[u8], randomness: F) -> Vec<[F; 4]> {
+    let input_rlc: F = rlc::value(input, randomness);
+    let input_len = F::from(input.len() as u64);
+    let mut keccak = Keccak::default();
+    keccak.update(input);
+    let output = keccak.digest();
+    let output_rlc = RandomLinearCombination::<F, 32>::random_linear_combine(
+        Word::from_big_endian(output.as_slice()).to_le_bytes(),
+        randomness,
+    );
+
+    vec![[F::one(), input_rlc, input_len, output_rlc]]
+}
+
+pub fn load_keccaks<F: Field>(
+    keccak_table: &KeccakTable,
+    layouter: &mut impl Layouter<F>,
+    inputs: &[Vec<u8>],
+    randomness: F,
+) -> Result<(), Error> {
+    println!("> super_circuit.load_keccaks");
+    let mut table = TableShow::<F>::new(vec!["is_enabled", "input_rlc", "input_len", "output_rlc"]);
+    layouter.assign_region(
+        || "keccak table",
+        |mut region| {
+            let mut offset = 0;
+            for column in keccak_table.columns() {
+                region.assign_advice(
+                    || "keccak table all-zero row",
+                    column,
+                    offset,
+                    || Ok(F::zero()),
+                )?;
+            }
+            offset += 1;
+
+            let keccak_table_columns = keccak_table.columns();
+            for input in inputs.iter() {
+                println!("+ {:?}", input);
+                for row in keccak_table_assignments(input, randomness) {
+                    let mut column_index = 0;
+                    for (column, value) in keccak_table_columns.iter().zip_eq(row) {
+                        region.assign_advice(
+                            || format!("keccak table row {}", offset),
+                            *column,
+                            offset,
+                            || Ok(value),
+                        )?;
+                        table.push(column_index, value);
+                        column_index += 1;
+                    }
+                    offset += 1;
+                }
+            }
+            table.print();
             Ok(())
         },
     )

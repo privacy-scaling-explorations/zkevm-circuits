@@ -12,7 +12,7 @@
 #![allow(missing_docs)]
 // use halo2_proofs::plonk::*;
 
-use crate::tx_circuit::{sign_verify, TxCircuit, TxCircuitConfig, TxTable};
+use crate::tx_circuit::{self, sign_verify, TxCircuit, TxCircuitConfig, TxTable};
 
 use crate::bytecode_circuit::bytecode_unroller::{
     unroll, BytecodeTable, Config as BytecodeConfig, UnrolledBytecode,
@@ -21,13 +21,15 @@ use crate::bytecode_circuit::bytecode_unroller::{
 use crate::util::Expr;
 use crate::{
     evm_circuit::{
-        table::{BlockTable, FixedTableTag, KeccakTable},
+        table::{BlockTable, FixedTableTag, KeccakTable, TableColumns},
+        util::{rlc, RandomLinearCombination},
         witness::Block,
-        EvmCircuit, {load_block, load_bytecodes, load_rws, load_txs},
+        EvmCircuit, {load_block, load_bytecodes, load_keccaks, load_rws, load_txs},
     },
     rw_table::RwTable,
 };
-use eth_types::Field;
+use eth_types::{Field, ToLittleEndian, Word};
+use gadgets::evm_word::encode;
 use halo2_proofs::{
     arithmetic::CurveAffine,
     circuit::{Layouter, SimpleFloorPlanner},
@@ -35,6 +37,8 @@ use halo2_proofs::{
     plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Expression},
     poly::Rotation,
 };
+use itertools::Itertools;
+use keccak256::plain::Keccak;
 
 #[derive(Clone)]
 pub struct SuperCircuitConfig<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> {
@@ -179,7 +183,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
             .evm_circuit
             .assign_block_exact(&mut layouter, &self.block)?;
         // --- Tx Circuit ---
-        self.tx_circuit.assign(config.tx_circuit, &mut layouter)?;
+        self.tx_circuit.assign(&config.tx_circuit, &mut layouter)?;
         // --- Bytecode Circuit ---
         let bytecodes: Vec<UnrolledBytecode<F>> = self
             .block
@@ -194,6 +198,24 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
             &mut layouter,
             self.bytecode_size,
             &bytecodes,
+            self.block.randomness,
+        )?;
+        // --- Keccak Table ---
+        let mut keccak_inputs = Vec::new();
+        // Lookups from TxCircuit
+        keccak_inputs.extend_from_slice(&tx_circuit::keccak_inputs(
+            &self.tx_circuit.txs,
+            self.block.context.chain_id.as_u64(),
+        )?);
+        // Lookups from BytecodeCircuit
+        for bytecode in &self.block.bytecodes {
+            keccak_inputs.push(bytecode.bytes.clone());
+        }
+        // Load Keccak Table
+        load_keccaks(
+            &config.keccak_table,
+            &mut layouter,
+            &keccak_inputs,
             self.block.randomness,
         )?;
         Ok(())
@@ -313,10 +335,10 @@ mod super_circuit_tests {
         };
         let prover = MockProver::<F>::run(k, &circuit, instance).unwrap();
         prover.verify_par(VerifyConfig {
-            selectors: true,
-            gates: true,
+            selectors: false,
+            gates: false,
             lookups: true,
-            perms: true,
+            perms: false,
         })
     }
 

@@ -6,6 +6,7 @@
 
 use crate::{
     evm_circuit::{
+        load_keccaks,
         table::KeccakTable,
         util::{not, RandomLinearCombination, Word},
     },
@@ -13,7 +14,7 @@ use crate::{
 };
 use ecc::{EccConfig, GeneralEccChip};
 use ecdsa::ecdsa::{AssignedEcdsaSig, AssignedPublicKey, EcdsaChip};
-use eth_types::Field;
+use eth_types::{self, Field, ToLittleEndian};
 use gadgets::is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction};
 use group::{ff::Field as GroupField, prime::PrimeCurveAffine, Curve};
 use halo2_proofs::{
@@ -72,6 +73,36 @@ pub(crate) fn pk_bytes_swap_endianness<T: Clone>(pk: &[T]) -> [T; 64] {
     pk_swap[..32].reverse();
     pk_swap[32..].reverse();
     pk_swap
+}
+
+pub(crate) fn pk_bytes_le(pk: &Secp256k1Affine) -> [u8; 64] {
+    let pk_coord = Option::<Coordinates<_>>::from(pk.coordinates()).expect("point is the identity");
+    let mut pk_le = [0u8; 64];
+    pk_coord
+        .x()
+        .write(&mut Cursor::new(&mut pk_le[..32]))
+        .expect("cannot write bytes to array");
+    pk_coord
+        .y()
+        .write(&mut Cursor::new(&mut pk_le[32..]))
+        .expect("cannot write bytes to array");
+    pk_le
+}
+
+// CHANGELOG: Add function to obtain all the keccak inputs required by the
+// SignVerifyChip
+pub(crate) fn keccak_inputs(sigs: &[SignData]) -> Vec<Vec<u8>> {
+    let mut inputs = Vec::new();
+    for sig in sigs {
+        let pk_le = pk_bytes_le(&sig.pk);
+        let pk_be = pk_bytes_swap_endianness(&pk_le);
+        inputs.push(pk_be.to_vec());
+    }
+    // Padding signature
+    let pk_le = pk_bytes_le(&SignData::default().pk);
+    let pk_be = pk_bytes_swap_endianness(&pk_le);
+    inputs.push(pk_be.to_vec());
+    inputs
 }
 
 /// Return an expression that builds an integer element in the field from the
@@ -198,9 +229,15 @@ impl<F: Field> SignVerifyConfig<F> {
 
             // Column 3: output_rlc (pk_hash_rlc)
             let keccak_output_rlc = meta.query_advice(keccak_table.output_rlc, Rotation::cur());
-            let pk_hash = pk_hash.map(|c| meta.query_advice(c, Rotation::cur()));
-            let pk_hash_rlc =
-                RandomLinearCombination::random_linear_combine_expr(pk_hash, &power_of_randomness);
+            let mut pk_hash_rev = pk_hash.map(|c| meta.query_advice(c, Rotation::cur()));
+            // CHANGELOG: Reverse the pk_hash used in the lookup so that the RLC is
+            // calculated as if it was a hash in an Ethereum Word.
+            pk_hash_rev.reverse(); // Ethereum decodes pk_hash into a Word as big endian, but
+                                   // `random_linear_combine_expr` expects LSB first.
+            let pk_hash_rlc = RandomLinearCombination::random_linear_combine_expr(
+                pk_hash_rev,
+                &power_of_randomness,
+            );
             table_map.push((selector * pk_hash_rlc, keccak_output_rlc));
 
             table_map
@@ -263,6 +300,8 @@ pub(crate) struct KeccakAux {
     output: [u8; 32],
 }
 
+use crate::util::TableShow;
+
 impl<F: Field> SignVerifyConfig<F> {
     pub(crate) fn load_range(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
         let bit_len_lookup = BIT_LEN_LIMB / NUMBER_OF_LOOKUP_LIMBS;
@@ -317,11 +356,18 @@ impl<F: Field> SignVerifyConfig<F> {
                 self.keccak_assign_row(&mut region, offset, F::zero(), F::zero(), 0, F::zero())?;
                 offset += 1;
 
+                println!("> sign_verify.load_keccak");
+                let mut table =
+                    TableShow::<F>::new(vec!["is_enabled", "input_rlc", "input_len", "output_rlc"]);
+
                 for aux in &auxs {
                     let KeccakAux { input, output } = aux;
                     let input_rlc =
                         RandomLinearCombination::random_linear_combine(*input, randomness);
-                    let output_rlc = Word::random_linear_combine(*output, randomness);
+                    let output_rlc = Word::random_linear_combine(
+                        eth_types::Word::from_big_endian(output.as_slice()).to_le_bytes(),
+                        randomness,
+                    );
                     self.keccak_assign_row(
                         &mut region,
                         offset,
@@ -331,7 +377,12 @@ impl<F: Field> SignVerifyConfig<F> {
                         output_rlc,
                     )?;
                     offset += 1;
+                    table.push(0, F::one());
+                    table.push(1, input_rlc);
+                    table.push(2, F::from(input.len() as u64));
+                    table.push(3, output_rlc);
                 }
+                table.print();
                 Ok(())
             },
         )?;
@@ -553,19 +604,8 @@ impl<F: Field, const MAX_VERIF: usize> SignVerifyChip<F, MAX_VERIF> {
         )?;
 
         // Assign pk
-        let pk_coord =
-            Option::<Coordinates<_>>::from(pk.coordinates()).expect("point is the identity");
-        let mut pk_x_le = [0u8; 32];
-        let mut pk_y_le = [0u8; 32];
-        pk_coord
-            .x()
-            .write(&mut Cursor::new(&mut pk_x_le[..]))
-            .expect("cannot write bytes to array");
-        pk_coord
-            .y()
-            .write(&mut Cursor::new(&mut pk_y_le[..]))
-            .expect("cannot write bytes to array");
-        for (i, byte) in pk_x_le.iter().enumerate() {
+        let pk_le = pk_bytes_le(&pk);
+        for (i, byte) in pk_le[..32].iter().enumerate() {
             region.assign_advice(
                 || format!("pk x byte {}", i),
                 config.pk[0][i],
@@ -573,7 +613,7 @@ impl<F: Field, const MAX_VERIF: usize> SignVerifyChip<F, MAX_VERIF> {
                 || Ok(F::from(*byte as u64)),
             )?;
         }
-        for (i, byte) in pk_y_le.iter().enumerate() {
+        for (i, byte) in pk_le[32..].iter().enumerate() {
             region.assign_advice(
                 || format!("pk y byte {}", i),
                 config.pk[1][i],
@@ -582,9 +622,6 @@ impl<F: Field, const MAX_VERIF: usize> SignVerifyChip<F, MAX_VERIF> {
             )?;
         }
 
-        let mut pk_le = [0u8; 64];
-        pk_le[..32].copy_from_slice(&pk_x_le);
-        pk_le[32..].copy_from_slice(&pk_y_le);
         let pk_be = pk_bytes_swap_endianness(&pk_le);
         let mut keccak = Keccak::default();
         keccak.update(&pk_be);
@@ -721,7 +758,7 @@ impl<F: Field, const MAX_VERIF: usize> SignVerifyChip<F, MAX_VERIF> {
             },
         )?;
 
-        config.load_keccak(layouter, keccak_auxs, randomness)?;
+        // config.load_keccak(layouter, keccak_auxs, randomness)?;
         config.load_range(layouter)?;
 
         Ok(assigned_sig_verifs)
@@ -867,6 +904,12 @@ mod sign_verify_tests {
                 self.randomness,
                 &self.signatures,
             )?;
+            load_keccaks(
+                &config.sign_verify.keccak_table,
+                &mut layouter,
+                &keccak_inputs(&self.signatures),
+                self.randomness,
+            );
             Ok(())
         }
     }

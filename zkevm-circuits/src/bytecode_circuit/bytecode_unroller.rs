@@ -2,7 +2,7 @@ use crate::{
     evm_circuit::{
         table::{BytecodeFieldTag, KeccakTable, TableColumns},
         util::{
-            and, constraint_builder::BaseConstraintBuilder, not, or, select,
+            and, constraint_builder::BaseConstraintBuilder, not, or, rlc, select,
             RandomLinearCombination,
         },
     },
@@ -30,7 +30,7 @@ use super::param::{KECCAK_WIDTH, PUSH_TABLE_WIDTH};
 /// Public data for the bytecode
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct BytecodeRow<F: Field> {
-    hash: F,
+    code_hash: F,
     tag: F,
     index: F,
     is_code: F,
@@ -44,9 +44,11 @@ pub struct UnrolledBytecode<F: Field> {
     rows: Vec<BytecodeRow<F>>,
 }
 
+// CHANGELOG: Added BytecodeTable to help reusing the table config with other
+// circuits
 #[derive(Clone, Debug)]
 pub struct BytecodeTable {
-    pub hash: Column<Advice>,
+    pub code_hash: Column<Advice>, // CHANGELOG: Renamed from hash
     pub tag: Column<Advice>,
     pub index: Column<Advice>,
     pub is_code: Column<Advice>,
@@ -56,7 +58,7 @@ pub struct BytecodeTable {
 impl BytecodeTable {
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
         Self {
-            hash: meta.advice_column(),
+            code_hash: meta.advice_column(),
             tag: meta.advice_column(),
             index: meta.advice_column(),
             is_code: meta.advice_column(),
@@ -67,7 +69,13 @@ impl BytecodeTable {
 
 impl TableColumns<Advice> for BytecodeTable {
     fn columns(&self) -> Vec<Column<Advice>> {
-        vec![self.hash, self.tag, self.index, self.is_code, self.value]
+        vec![
+            self.code_hash,
+            self.tag,
+            self.index,
+            self.is_code,
+            self.value,
+        ]
     }
 }
 
@@ -78,14 +86,10 @@ pub struct Config<F> {
     q_enable: Column<Fixed>,
     q_first: Column<Fixed>,
     q_last: Selector,
-    hash: Column<Advice>,    // *
-    tag: Column<Advice>,     // *
-    index: Column<Advice>,   // *
-    is_code: Column<Advice>, // *
-    value: Column<Advice>,   // *
+    bytecode_table: BytecodeTable,
     push_rindex: Column<Advice>,
-    hash_rlc: Column<Advice>,
-    hash_length: Column<Advice>,
+    hash_input_rlc: Column<Advice>,
+    code_length: Column<Advice>, // CHANGELOG: Renamed from hash_length
     byte_push_size: Column<Advice>,
     is_final: Column<Advice>,
     padding: Column<Advice>,
@@ -94,9 +98,10 @@ pub struct Config<F> {
     length_inv: Column<Advice>,
     length_is_zero: IsZeroConfig<F>,
     push_table: [Column<Fixed>; PUSH_TABLE_WIDTH],
-    // keccak_table: [Column<Advice>; KECCAK_WIDTH],
     keccak_table: KeccakTable,
 }
+
+use crate::util::TableShow;
 
 impl<F: Field> Config<F> {
     pub(crate) fn configure(
@@ -108,14 +113,14 @@ impl<F: Field> Config<F> {
         let q_enable = meta.fixed_column();
         let q_first = meta.fixed_column();
         let q_last = meta.selector();
-        let hash = bytecode_table.hash;
-        let tag = bytecode_table.tag;
-        let index = bytecode_table.index;
-        let is_code = bytecode_table.is_code;
+        // let code_hash = bytecode_table.code_hash;
+        // let tag = bytecode_table.tag;
+        // let index = bytecode_table.index;
+        // let is_code = bytecode_table.is_code;
         let value = bytecode_table.value;
         let push_rindex = meta.advice_column();
-        let hash_rlc = meta.advice_column();
-        let hash_length = meta.advice_column();
+        let hash_input_rlc = meta.advice_column();
+        let code_length = meta.advice_column();
         let byte_push_size = meta.advice_column();
         let is_final = meta.advice_column();
         let padding = meta.advice_column();
@@ -141,7 +146,7 @@ impl<F: Field> Config<F> {
         let is_row_tag_length = |meta: &mut VirtualCells<F>| {
             and::expr(vec![
                 not::expr(meta.query_advice(padding, Rotation::cur())),
-                not::expr(meta.query_advice(tag, Rotation::cur())),
+                not::expr(meta.query_advice(bytecode_table.tag, Rotation::cur())),
             ])
         };
 
@@ -149,7 +154,7 @@ impl<F: Field> Config<F> {
         let is_row_tag_byte = |meta: &mut VirtualCells<F>| {
             and::expr(vec![
                 not::expr(meta.query_advice(padding, Rotation::cur())),
-                meta.query_advice(tag, Rotation::cur()),
+                meta.query_advice(bytecode_table.tag, Rotation::cur()),
             ])
         };
 
@@ -179,22 +184,22 @@ impl<F: Field> Config<F> {
                 and::expr(vec![
                     not::expr(meta.query_fixed(q_first, Rotation::cur())),
                     not::expr(meta.query_advice(padding, Rotation::prev())),
-                    not::expr(meta.query_advice(tag, Rotation::prev())),
+                    not::expr(meta.query_advice(bytecode_table.tag, Rotation::prev())),
                 ])
             };
 
             cb.require_equal(
                 "if prev_row.tag == Length: index == 0 else index == index + 1",
-                meta.query_advice(index, Rotation::cur()),
+                meta.query_advice(bytecode_table.index, Rotation::cur()),
                 select::expr(
                     is_prev_row_tag_length(meta),
                     0.expr(),
-                    meta.query_advice(index, Rotation::prev()) + 1.expr(),
+                    meta.query_advice(bytecode_table.index, Rotation::prev()) + 1.expr(),
                 ),
             );
             cb.require_equal(
                 "is_code := push_rindex_prev == 0",
-                meta.query_advice(is_code, Rotation::cur()),
+                meta.query_advice(bytecode_table.is_code, Rotation::cur()),
                 select::expr(
                     is_prev_row_tag_length(meta),
                     1.expr(),
@@ -202,20 +207,20 @@ impl<F: Field> Config<F> {
                 ),
             );
             cb.require_equal(
-                "hash_rlc := hash_rlc_prev * randomness + byte",
-                meta.query_advice(hash_rlc, Rotation::cur()),
-                meta.query_advice(hash_rlc, Rotation::prev()) * randomness.clone()
+                "hash_input_rlc := hash_input_rlc_prev * randomness + byte",
+                meta.query_advice(hash_input_rlc, Rotation::cur()),
+                meta.query_advice(hash_input_rlc, Rotation::prev()) * randomness.clone()
                     + meta.query_advice(value, Rotation::cur()),
             );
             cb.require_equal(
-                "hash needs to remain the same",
-                meta.query_advice(hash, Rotation::cur()),
-                meta.query_advice(hash, Rotation::prev()),
+                "code_hash needs to remain the same",
+                meta.query_advice(bytecode_table.code_hash, Rotation::cur()),
+                meta.query_advice(bytecode_table.code_hash, Rotation::prev()),
             );
             cb.require_equal(
-                "hash_length needs to remain the same",
-                meta.query_advice(hash_length, Rotation::cur()),
-                meta.query_advice(hash_length, Rotation::prev()),
+                "code_length needs to remain the same",
+                meta.query_advice(code_length, Rotation::cur()),
+                meta.query_advice(code_length, Rotation::prev()),
             );
             cb.require_equal(
                 "padding needs to remain the same",
@@ -235,7 +240,7 @@ impl<F: Field> Config<F> {
             let mut cb = BaseConstraintBuilder::default();
             cb.require_equal(
                 "next_row.tag == (tag.Length or tag.Padding) if length == 0 else tag.Byte",
-                meta.query_advice(tag, Rotation::next()),
+                meta.query_advice(bytecode_table.tag, Rotation::next()),
                 select::expr(
                     length_is_zero.clone().is_zero_expression,
                     select::expr(
@@ -247,16 +252,16 @@ impl<F: Field> Config<F> {
                 ),
             );
             cb.require_equal(
-                "if row.tag == tag.Length: value == row.hash_length",
+                "if row.tag == tag.Length: value == row.code_length",
                 meta.query_advice(value, Rotation::cur()),
-                meta.query_advice(hash_length, Rotation::cur()),
+                meta.query_advice(code_length, Rotation::cur()),
             );
             // FIXME: Since randomness is only known at synthesis time, the RLC of empty
-            // hash is not constant.  Consider doing a lookup to the empty hash
+            // code_hash is not constant.  Consider doing a lookup to the empty code_hash
             // value? cb.condition(length_is_zero.clone().is_zero_expression,
             // |cb| {     cb.require_equal(
-            //         "if length == 0: hash == RLC(EMPTY_HASH, randomness)",
-            //         meta.query_advice(hash, Rotation::cur()),
+            //         "if length == 0: code_hash == RLC(EMPTY_HASH, randomness)",
+            //         meta.query_advice(bytecode_table.code_hash, Rotation::cur()),
             //         Expression::Constant(keccak(&[], randomness)),
             //     );
             // });
@@ -292,9 +297,9 @@ impl<F: Field> Config<F> {
             let mut cb = BaseConstraintBuilder::default();
             cb.condition(1.expr() - length_is_zero.clone().is_zero_expression, |cb| {
                 cb.require_equal(
-                    "index + 1 needs to equal hash_length",
-                    meta.query_advice(index, Rotation::cur()) + 1.expr(),
-                    meta.query_advice(hash_length, Rotation::cur()),
+                    "index + 1 needs to equal code_length",
+                    meta.query_advice(bytecode_table.index, Rotation::cur()) + 1.expr(),
+                    meta.query_advice(code_length, Rotation::cur()),
                 );
             });
             // Conditions:
@@ -323,7 +328,7 @@ impl<F: Field> Config<F> {
                     "push_rindex := is_code ? byte_push_size : push_rindex_prev - 1",
                     meta.query_advice(push_rindex, Rotation::cur()),
                     select::expr(
-                        meta.query_advice(is_code, Rotation::cur()),
+                        meta.query_advice(bytecode_table.is_code, Rotation::cur()),
                         meta.query_advice(byte_push_size, Rotation::cur()),
                         meta.query_advice(push_rindex, Rotation::prev()) - 1.expr(),
                     ),
@@ -348,7 +353,7 @@ impl<F: Field> Config<F> {
             ]))
         });
 
-        // The hash is checked on the latest row because only then have
+        // The code_hash is checked on the latest row because only then have
         // we accumulated all the bytes. We also have to go through the bytes
         // in a forward manner because that's the only way we can know which
         // bytes are op codes and which are push data.
@@ -392,8 +397,9 @@ impl<F: Field> Config<F> {
                 meta.query_advice(is_final, Rotation::cur()),
                 not::expr(meta.query_advice(padding, Rotation::cur())),
             ]);
-            let lookup_columns = vec![hash_rlc, hash_length, hash];
+            let lookup_columns = vec![hash_input_rlc, code_length, bytecode_table.code_hash];
             let mut constraints = vec![];
+            // CHANGELOG: Add is_enabled expression to the keccak lookup
             constraints.push((
                 enable.clone(),
                 meta.query_advice(keccak_table.is_enabled, Rotation::cur()),
@@ -413,14 +419,10 @@ impl<F: Field> Config<F> {
             q_enable,
             q_first,
             q_last,
-            hash,
-            tag,
-            index,
-            is_code,
-            value,
+            bytecode_table,
             push_rindex,
-            hash_rlc,
-            hash_length,
+            hash_input_rlc,
+            code_length,
             byte_push_size,
             is_final,
             padding,
@@ -459,8 +461,8 @@ impl<F: Field> Config<F> {
                     // Run over all the bytes
                     let mut push_rindex = 0;
                     let mut byte_push_size = 0;
-                    let mut hash_rlc = F::zero();
-                    let hash_length = F::from(bytecode.bytes.len() as u64);
+                    let mut hash_input_rlc = F::zero();
+                    let code_length = F::from(bytecode.bytes.len() as u64);
                     for (idx, row) in bytecode.rows.iter().enumerate() {
                         // Track which byte is an opcode and which is push
                         // data
@@ -472,7 +474,7 @@ impl<F: Field> Config<F> {
                             } else {
                                 push_rindex - 1
                             };
-                            hash_rlc = hash_rlc * randomness + row.value;
+                            hash_input_rlc = hash_input_rlc * randomness + row.value;
                         }
 
                         // Set the data for this row
@@ -484,14 +486,14 @@ impl<F: Field> Config<F> {
                                 offset,
                                 true,
                                 offset == last_row_offset,
-                                row.hash,
+                                row.code_hash,
                                 row.tag,
                                 row.index,
                                 row.is_code,
                                 row.value,
                                 push_rindex,
-                                hash_rlc,
-                                hash_length,
+                                hash_input_rlc,
+                                code_length,
                                 F::from(byte_push_size as u64),
                                 idx == bytecode.bytes.len(),
                                 false,
@@ -499,7 +501,7 @@ impl<F: Field> Config<F> {
                             )?;
                             push_rindex_prev = push_rindex;
                             offset += 1;
-                            // table.push(0, row.hash);
+                            // table.push(0, row.code_hash);
                             // table.push(1, row.tag);
                             // table.push(2, row.index);
                             // table.push(3, row.is_code);
@@ -552,14 +554,14 @@ impl<F: Field> Config<F> {
         offset: usize,
         enable: bool,
         last: bool,
-        hash: F,
+        code_hash: F,
         tag: F,
         index: F,
         is_code: F,
         value: F,
         push_rindex: u64,
-        hash_rlc: F,
-        hash_length: F,
+        hash_input_rlc: F,
+        code_length: F,
         byte_push_size: F,
         is_final: bool,
         padding: bool,
@@ -588,14 +590,14 @@ impl<F: Field> Config<F> {
 
         // Advices
         for (name, column, value) in &[
-            ("hash", self.hash, hash),
-            ("tag", self.tag, tag),
-            ("index", self.index, index),
-            ("is_code", self.is_code, is_code),
-            ("value", self.value, value),
+            ("code_hash", self.bytecode_table.code_hash, code_hash),
+            ("tag", self.bytecode_table.tag, tag),
+            ("index", self.bytecode_table.index, index),
+            ("is_code", self.bytecode_table.is_code, is_code),
+            ("value", self.bytecode_table.value, value),
             ("push_rindex", self.push_rindex, F::from(push_rindex)),
-            ("hash_rlc", self.hash_rlc, hash_rlc),
-            ("hash_length", self.hash_length, hash_length),
+            ("hash_input_rlc", self.hash_input_rlc, hash_input_rlc),
+            ("code_length", self.code_length, code_length),
             ("byte_push_size", self.byte_push_size, byte_push_size),
             ("is_final", self.is_final, F::from(is_final as u64)),
             ("padding", self.padding, F::from(padding as u64)),
@@ -612,9 +614,53 @@ impl<F: Field> Config<F> {
         push_rindex_is_zero_chip.assign(region, offset, Some(push_rindex_prev))?;
 
         // length_is_zero chip
-        length_is_zero_chip.assign(region, offset, Some(hash_length))?;
+        length_is_zero_chip.assign(region, offset, Some(code_length))?;
 
         Ok(())
+    }
+
+    // CHANGELOG: Moved to a new function to allow not calling it when integrating
+    // circuits together.
+    pub(crate) fn load_keccaks(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        bytecodes: &[UnrolledBytecode<F>],
+        randomness: F,
+    ) -> Result<(), Error> {
+        println!("> bytecode_circuit.load_keccaks");
+        let mut table =
+            TableShow::<F>::new(vec!["is_enabled", "input_rlc", "input_len", "output_rlc"]);
+        layouter.assign_region(
+            || "keccak table",
+            |mut region| {
+                for (offset, bytecode) in bytecodes.iter().map(|v| v.bytes.clone()).enumerate() {
+                    let code_hash: F = keccak(&bytecode[..], randomness);
+                    println!("+ {:?}", bytecode);
+                    // CHANGELOG: Fixed rlc of input in the correct order.
+                    let input_rlc: F = rlc::value(&bytecode, randomness);
+                    let size = F::from(bytecode.len() as u64);
+                    for (name, column, value) in &[
+                        ("is_enable", self.keccak_table.is_enabled, F::one()),
+                        ("input_rlc", self.keccak_table.input_rlc, input_rlc),
+                        ("input_len", self.keccak_table.input_len, size),
+                        ("output_rlc", self.keccak_table.output_rlc, code_hash),
+                    ] {
+                        region.assign_advice(
+                            || format!("Keccak table assign {} {}", name, offset),
+                            *column,
+                            offset,
+                            || Ok(*value),
+                        )?;
+                    }
+                    table.push(0, F::one());
+                    table.push(1, input_rlc);
+                    table.push(2, size);
+                    table.push(3, code_hash);
+                }
+                table.print();
+                Ok(())
+            },
+        )
     }
 
     /// load tables
@@ -648,40 +694,17 @@ impl<F: Field> Config<F> {
                 Ok(())
             },
         )?;
+        // TODO: Remove this
+        self.load_keccaks(layouter, bytecodes, randomness)?;
 
-        // keccak table
-        layouter.assign_region(
-            || "keccak table",
-            |mut region| {
-                for (offset, bytecode) in bytecodes.iter().map(|v| v.bytes.clone()).enumerate() {
-                    let hash: F = keccak(&bytecode[..], randomness);
-                    let rlc: F = linear_combine(bytecode.clone(), randomness);
-                    let size = F::from(bytecode.len() as u64);
-                    for (name, column, value) in &[
-                        ("is_enable", self.keccak_table.is_enabled, F::one()),
-                        ("input_rlc", self.keccak_table.input_rlc, rlc),
-                        ("input_len", self.keccak_table.input_len, size),
-                        ("output_rlc", self.keccak_table.output_rlc, hash),
-                    ] {
-                        region.assign_advice(
-                            || format!("Keccak table assign {} {}", name, offset),
-                            *column,
-                            offset,
-                            || Ok(*value),
-                        )?;
-                    }
-                }
-                Ok(())
-            },
-        )?;
         Ok(())
     }
 }
 
 pub fn unroll<F: Field>(bytes: Vec<u8>, randomness: F) -> UnrolledBytecode<F> {
-    let hash = keccak(&bytes[..], randomness);
+    let code_hash = keccak(&bytes[..], randomness);
     let mut rows = vec![BytecodeRow::<F> {
-        hash,
+        code_hash,
         tag: F::from(BytecodeFieldTag::Length as u64),
         index: F::zero(),
         is_code: F::zero(),
@@ -699,7 +722,7 @@ pub fn unroll<F: Field>(bytes: Vec<u8>, randomness: F) -> UnrolledBytecode<F> {
         };
 
         rows.push(BytecodeRow::<F> {
-            hash,
+            code_hash,
             tag: F::from(BytecodeFieldTag::Byte as u64),
             index: F::from(index as u64),
             is_code: F::from(is_code as u64),
@@ -724,6 +747,7 @@ fn get_push_size(byte: u8) -> u64 {
 fn keccak<F: Field>(msg: &[u8], randomness: F) -> F {
     let mut keccak = Keccak::default();
     keccak.update(msg);
+    // CHANGELOG: Fixed endianness
     RandomLinearCombination::<F, 32>::random_linear_combine(
         Word::from_big_endian(keccak.digest().as_slice()).to_le_bytes(),
         randomness,
@@ -784,7 +808,7 @@ mod tests {
 
         fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
             let bytecode_table = BytecodeTable {
-                hash: meta.advice_column(),
+                code_hash: meta.advice_column(),
                 tag: meta.advice_column(),
                 index: meta.advice_column(),
                 is_code: meta.advice_column(),
@@ -817,6 +841,7 @@ mod tests {
             mut layouter: impl Layouter<F>,
         ) -> Result<(), Error> {
             config.load(&mut layouter, &self.bytecodes, self.randomness)?;
+            config.load_keccaks(&mut layouter, &self.bytecodes, self.randomness)?;
             config.assign(&mut layouter, self.size, &self.bytecodes, self.randomness)?;
             Ok(())
         }
@@ -855,7 +880,7 @@ mod tests {
             if !is_push(byte) {
                 bytecode.write(byte);
                 rows.push(BytecodeRow {
-                    hash: Fr::zero(),
+                    code_hash: Fr::zero(),
                     tag: Fr::from(BytecodeFieldTag::Byte as u64),
                     index: Fr::from(rows.len() as u64),
                     is_code: Fr::from(true as u64),
@@ -868,7 +893,7 @@ mod tests {
             let data_byte = OpcodeId::PUSH32.as_u8();
             bytecode.push(n, Word::from_little_endian(&vec![data_byte; n][..]));
             rows.push(BytecodeRow {
-                hash: Fr::zero(),
+                code_hash: Fr::zero(),
                 tag: Fr::from(BytecodeFieldTag::Byte as u64),
                 index: Fr::from(rows.len() as u64),
                 is_code: Fr::from(true as u64),
@@ -876,7 +901,7 @@ mod tests {
             });
             for _ in 0..n {
                 rows.push(BytecodeRow {
-                    hash: Fr::zero(),
+                    code_hash: Fr::zero(),
                     tag: Fr::from(BytecodeFieldTag::Byte as u64),
                     index: Fr::from(rows.len() as u64),
                     is_code: Fr::from(false as u64),
@@ -884,15 +909,15 @@ mod tests {
                 });
             }
         }
-        // Set the hash of the complete bytecode in the rows
-        let hash = keccak(&bytecode.to_vec()[..], randomness);
+        // Set the code_hash of the complete bytecode in the rows
+        let code_hash = keccak(&bytecode.to_vec()[..], randomness);
         for row in rows.iter_mut() {
-            row.hash = hash;
+            row.code_hash = code_hash;
         }
         rows.insert(
             0,
             BytecodeRow {
-                hash,
+                code_hash,
                 tag: Fr::from(BytecodeFieldTag::Length as u64),
                 index: Fr::zero(),
                 is_code: Fr::zero(),
@@ -991,7 +1016,7 @@ mod tests {
         );
     }
 
-    /// Test invalid hash data
+    /// Test invalid code_hash data
     #[test]
     fn bytecode_invalid_hash_data() {
         let k = 9;
@@ -999,23 +1024,23 @@ mod tests {
         let bytecode = vec![8u8, 2, 3, 8, 9, 7, 128];
         let unrolled = unroll(bytecode, randomness);
         verify::<Fr>(k, vec![unrolled.clone()], randomness, true);
-        // Change the hash on the first position
+        // Change the code_hash on the first position
         {
             let mut invalid = unrolled.clone();
-            invalid.rows[0].hash += Fr::from(1u64);
+            invalid.rows[0].code_hash += Fr::from(1u64);
             verify::<Fr>(k, vec![invalid], randomness, false);
         }
-        // Change the hash on another position
+        // Change the code_hash on another position
         {
             let mut invalid = unrolled.clone();
-            invalid.rows[4].hash += Fr::from(1u64);
+            invalid.rows[4].code_hash += Fr::from(1u64);
             verify::<Fr>(k, vec![invalid], randomness, false);
         }
-        // Change all the hashes so it doesn't match the keccak lookup hash
+        // Change all the hashes so it doesn't match the keccak lookup code_hash
         {
             let mut invalid = unrolled;
             for row in invalid.rows.iter_mut() {
-                row.hash = Fr::one();
+                row.code_hash = Fr::one();
             }
             verify::<Fr>(k, vec![invalid], randomness, false);
         }

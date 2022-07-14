@@ -8,7 +8,10 @@
 
 pub mod sign_verify;
 
-use crate::evm_circuit::table::{KeccakTable, TableColumns};
+use crate::evm_circuit::{
+    load_keccaks,
+    table::{KeccakTable, TableColumns},
+};
 use crate::impl_expr;
 use crate::util::{random_linear_combine_word as rlc, Expr};
 use eth_types::{
@@ -88,6 +91,20 @@ fn biguint_to_32bytes_le(v: BigUint) -> [u8; 32] {
 
 fn ct_option_ok_or<T, E>(v: CtOption<T>, err: E) -> Result<T, E> {
     Option::<T>::from(v).ok_or(err)
+}
+
+pub fn keccak_inputs(txs: &[Transaction], chain_id: u64) -> Result<Vec<Vec<u8>>, Error> {
+    let mut inputs = Vec::new();
+    let sign_datas: Vec<SignData> = txs
+        .iter()
+        .map(|tx| tx_to_sign_data(tx, chain_id))
+        .try_collect()?;
+    // Keccak inputs from SignVerify Chip
+    let sign_verify_inputs = sign_verify::keccak_inputs(&sign_datas);
+    inputs.extend_from_slice(&sign_verify_inputs);
+    // NOTE: We don't verify the Tx Hash in the circuit yet, so we don't have more
+    // hash inputs.
+    Ok(inputs)
 }
 
 fn tx_to_sign_data(tx: &Transaction, chain_id: u64) -> Result<SignData, Error> {
@@ -182,6 +199,7 @@ pub struct TxCircuitConfig<F: Field> {
     index: Column<Advice>,
     value: Column<Advice>,
     sign_verify: SignVerifyConfig<F>,
+    keccak_table: KeccakTable,
     _marker: PhantomData<F>,
 }
 
@@ -246,7 +264,7 @@ impl<F: Field> TxCircuitConfig<F> {
 
         //     power_of_randomness.unwrap()
         // };
-        let sign_verify = SignVerifyConfig::new(meta, power_of_randomness, keccak_table);
+        let sign_verify = SignVerifyConfig::new(meta, power_of_randomness, keccak_table.clone());
 
         Self {
             tx_id,
@@ -254,6 +272,7 @@ impl<F: Field> TxCircuitConfig<F> {
             index,
             value,
             sign_verify,
+            keccak_table,
             _marker: PhantomData,
         }
     }
@@ -312,7 +331,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
 
     pub fn assign(
         &self,
-        config: TxCircuitConfig<F>,
+        config: &TxCircuitConfig<F>,
         layouter: &mut impl Layouter<F>,
     ) -> Result<(), Error> {
         assert!(self.txs.len() <= MAX_TXS);
@@ -500,7 +519,13 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
         config: Self::Config,
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
-        self.assign(config, &mut layouter)
+        self.assign(&config, &mut layouter)?;
+        load_keccaks(
+            &config.keccak_table,
+            &mut layouter,
+            &keccak_inputs(&self.txs, self.chain_id)?,
+            self.randomness,
+        )
     }
 }
 

@@ -413,6 +413,7 @@ impl<F: Field> Lookup<F> {
     }
 }
 
+// TODO: Move to src/tables.rs
 #[derive(Clone, Debug)]
 pub struct BlockTable {
     pub tag: Column<Advice>,
@@ -436,6 +437,7 @@ impl TableColumns<Advice> for BlockTable {
     }
 }
 
+// TODO: Move to src/tables.rs
 #[derive(Clone, Debug)]
 pub struct KeccakTable {
     pub is_enabled: Column<Advice>,
