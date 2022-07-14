@@ -247,7 +247,7 @@ mod test {
                 config: Self::Config,
                 mut layouter: impl Layouter<F>,
             ) -> Result<(), Error> {
-                let chip = LtChip::construct(config.lt.clone());
+                let chip = LtChip::construct(config.lt);
 
                 let values: Vec<_> = self
                     .values
@@ -366,7 +366,7 @@ mod test {
                 config: Self::Config,
                 mut layouter: impl Layouter<F>,
             ) -> Result<(), Error> {
-                let chip = LtChip::construct(config.lt.clone());
+                let chip = LtChip::construct(config.lt);
 
                 let values: Vec<_> = self
                     .values

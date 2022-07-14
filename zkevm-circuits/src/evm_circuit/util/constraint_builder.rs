@@ -1093,19 +1093,17 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         self.add_lookup(
             "copy lookup",
             Lookup::CopyTable {
-                values: [
-                    1.expr(), // is_first
-                    src_id,
-                    src_tag,
-                    dst_id,
-                    dst_tag,
-                    src_addr,
-                    src_addr_end,
-                    dst_addr,
-                    length,
-                    rw_counter,
-                    rwc_inc,
-                ],
+                is_first: 1.expr(), // is_first
+                src_id,
+                src_tag,
+                dst_id,
+                dst_tag,
+                src_addr,
+                src_addr_end,
+                dst_addr,
+                length,
+                rw_counter,
+                rwc_inc,
             },
         );
     }
