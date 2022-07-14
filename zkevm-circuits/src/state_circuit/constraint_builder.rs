@@ -133,13 +133,6 @@ impl<F: Field> ConstraintBuilder<F> {
             );
         });
 
-        self.require_zero(
-            "state root change is binary",
-            q.lexicographic_ordering_selector.clone()
-                * (q.state_root() - q.state_root_prev())
-                * (1.expr() - q.state_root() + q.state_root_prev()),
-        );
-
         self.add_lookup(
             "if state_root changes, mpt_update exists in mpt circuit",
             (
