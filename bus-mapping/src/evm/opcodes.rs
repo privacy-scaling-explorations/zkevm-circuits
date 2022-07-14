@@ -374,6 +374,7 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
 
 pub fn gen_end_tx_ops(
     state: &mut CircuitInputStateRef,
+    // todo: make this a vector.
     cumulative_gas_used: &mut HashMap<usize, u64>,
 ) -> Result<ExecStep, Error> {
     let mut exec_step = state.new_end_tx_step();
@@ -438,7 +439,7 @@ pub fn gen_end_tx_ops(
     )?;
 
     // handle tx receipt tag
-    state.tx_receipt_read(
+    state.tx_receipt_write(
         &mut exec_step,
         state.tx_ctx.id(),
         TxReceiptField::PostStateOrStatus,
@@ -446,7 +447,7 @@ pub fn gen_end_tx_ops(
     )?;
 
     let log_id = exec_step.log_id;
-    state.tx_receipt_read(
+    state.tx_receipt_write(
         &mut exec_step,
         state.tx_ctx.id(),
         TxReceiptField::LogLength,
@@ -458,7 +459,7 @@ pub fn gen_end_tx_ops(
     if state.tx_ctx.id() > 1 {
         current_cumulative_gas_used = *cumulative_gas_used.get(&(state.tx_ctx.id() - 1)).unwrap();
         // query pre tx cumulative gas
-        state.tx_receipt_read(
+        state.tx_receipt_write(
             &mut exec_step,
             state.tx_ctx.id() - 1,
             TxReceiptField::CumulativeGasUsed,
@@ -466,7 +467,7 @@ pub fn gen_end_tx_ops(
         )?;
     }
 
-    state.tx_receipt_read(
+    state.tx_receipt_write(
         &mut exec_step,
         state.tx_ctx.id(),
         TxReceiptField::CumulativeGasUsed,
