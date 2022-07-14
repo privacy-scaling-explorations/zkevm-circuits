@@ -3,6 +3,7 @@
 pub(crate) mod absorb;
 pub(crate) mod base_conversion;
 pub mod circuit;
+pub(crate) mod generic;
 pub(crate) mod iota;
 pub(crate) mod mixing;
 pub(crate) mod pi;

@@ -3,6 +3,7 @@ name = "bus-mapping"
 version = "0.1.0"
 edition = "2021"
 authors = ["CPerezz <c.perezbaro@gmail.com>"]
+license = "MIT OR Apache-2.0"
 
 [dependencies]
 eth-types = { path = "../eth-types" }

@@ -12,7 +12,7 @@ use crate::{
             from_bytes,
             math_gadget::IsEqualGadget,
             memory_gadget::MemoryExpansionGadget,
-            select, CachedRegion, MemoryAddress, Word,
+            not, CachedRegion, MemoryAddress, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -50,9 +50,9 @@ impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
         // Check if this is an MSTORE8
         let is_mstore8 = IsEqualGadget::construct(cb, opcode.expr(), OpcodeId::MSTORE8.expr());
         // This is an MSTORE/MSTORE8
-        let is_store = 1.expr() - is_mload.expr();
+        let is_store = not::expr(is_mload.expr());
         // This in an MSTORE/MLOAD
-        let is_not_mstore8 = 1.expr() - is_mstore8.expr();
+        let is_not_mstore8 = not::expr(is_mstore8.expr());
 
         // Calculate the next memory size and the gas cost for this memory
         // access
@@ -73,38 +73,25 @@ impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
             value.expr(),
         );
 
-        /* Memory operations */
-        // Read/Write the value from memory at the specified address
-        // We always read/write 32 bytes, but for MSTORE8 this will be
-        // 32 lookups for the same LSB byte (at the same gc).
-        for idx in 0..32 {
-            // For MSTORE8 we write the LSB of value 32x times to the same
-            // address For MLOAD and MSTORE we read/write all the
-            // bytes of value at an increasing address value.
-            let byte = if idx == 31 {
-                value.cells[0].expr()
-            } else {
-                select::expr(
-                    is_mstore8.expr(),
-                    value.cells[0].expr(),
-                    value.cells[31 - idx].expr(),
-                )
-            };
-
-            // We only increase the offset for MLOAD and MSTORE so that for
-            // MSTORE8 `gc` and `address` remain the same.
-            let offset = if idx == 0 {
-                0.expr()
-            } else {
-                is_not_mstore8.clone() * idx.expr()
-            };
-            cb.memory_lookup_with_counter(
-                cb.curr.state.rw_counter.expr() + cb.rw_counter_offset().expr() + offset.clone(),
+        cb.condition(is_mstore8.expr(), |cb| {
+            cb.memory_lookup(
                 is_store.clone(),
-                from_bytes::expr(&address.cells) + offset,
-                byte,
+                from_bytes::expr(&address.cells),
+                value.cells[0].expr(),
+                None,
             );
-        }
+        });
+
+        cb.condition(is_not_mstore8, |cb| {
+            for idx in 0..32 {
+                cb.memory_lookup(
+                    is_store.clone(),
+                    from_bytes::expr(&address.cells) + idx.expr(),
+                    value.cells[31 - idx].expr(),
+                    None,
+                );
+            }
+        });
 
         // State transition
         // - `rw_counter` needs to be increased by 34 when is_not_mstore8, otherwise to

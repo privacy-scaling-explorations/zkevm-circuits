@@ -18,8 +18,8 @@ impl Opcode for Codesize {
         let geth_step = &geth_steps[0];
         let mut exec_step = state.new_step(geth_step)?;
 
-        let code_source = state.call()?.code_hash;
-        let code = state.code(code_source)?;
+        let code_hash = state.call()?.code_hash;
+        let code = state.code(code_hash)?;
         let codesize = code.len();
 
         debug_assert_eq!(codesize, geth_steps[1].stack.last()?.as_usize());

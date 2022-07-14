@@ -1014,36 +1014,11 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         );
     }
 
-    pub(crate) fn memory_lookup_with_counter(
-        &mut self,
-        rw_counter: Expression<F>,
-        is_write: Expression<F>,
-        memory_address: Expression<F>,
-        byte: Expression<F>,
-    ) {
-        self.rw_lookup_with_counter(
-            "Memory lookup",
-            rw_counter,
-            is_write,
-            RwTableTag::Memory,
-            [
-                self.curr.state.call_id.expr(),
-                memory_address,
-                0.expr(),
-                0.expr(),
-                byte,
-                0.expr(),
-                0.expr(),
-                0.expr(),
-            ],
-        );
-    }
-
     pub(crate) fn tx_log_lookup(
         &mut self,
         tx_id: Expression<F>,
         log_id: Expression<F>,
-        tag: TxLogFieldTag,
+        field_tag: TxLogFieldTag,
         index: Expression<F>,
         value: Expression<F>,
     ) {
@@ -1053,8 +1028,8 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             RwTableTag::TxLog,
             [
                 tx_id,
-                index + (1u64 << 8).expr() * log_id,
-                tag.expr(),
+                index + (1u64 << 32).expr() * field_tag.expr() + (1u64 << 48).expr() * log_id,
+                0.expr(),
                 0.expr(),
                 value,
                 0.expr(),

@@ -12,8 +12,9 @@ use crate::{
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
+            from_bytes,
             memory_gadget::BufferReaderGadget,
-            CachedRegion, Cell, MemoryAddress, RandomLinearCombination,
+            not, CachedRegion, Cell, MemoryAddress, RandomLinearCombination,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -64,7 +65,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
         let call_data_length = cb.query_cell();
         let call_data_offset = cb.query_cell();
 
-        let src_addr = offset.expr() + call_data_offset.expr();
+        let src_addr = from_bytes::expr(&offset.cells) + call_data_offset.expr();
         let src_addr_end = call_data_length.expr() + call_data_offset.expr();
 
         cb.condition(cb.curr.state.is_root.expr(), |cb| {
@@ -81,7 +82,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
                 0.expr(),
             );
         });
-        cb.condition(1.expr() - cb.curr.state.is_root.expr(), |cb| {
+        cb.condition(not::expr(cb.curr.state.is_root.expr()), |cb| {
             cb.call_context_lookup(
                 false.expr(),
                 None,
@@ -222,7 +223,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
                 }
             } else {
                 // fetch from memory
-                if src_addr + i < call.call_data_length as usize {
+                if src_addr + i < (call.call_data_offset + call.call_data_length) as usize {
                     *byte = block.rws[step.rw_indices[OFFSET_RW_MEMORY_INDICES + i]].memory_value();
                 }
             }
@@ -282,8 +283,8 @@ mod test {
             // call addr_b
             PUSH1(0x00) // retLength
             PUSH1(0x00) // retOffset
-            PUSH1(call_data_length) // argsLength
-            PUSH1(call_data_offset) // argsOffset
+            PUSH32(call_data_length) // argsLength
+            PUSH32(call_data_offset) // argsOffset
             PUSH1(0x00) // value
             PUSH32(addr_b.to_word()) // addr
             PUSH32(0x1_0000) // gas
@@ -315,6 +316,7 @@ mod test {
         test_root_ok(0x00);
         test_root_ok(0x08);
         test_root_ok(0x10);
+        test_root_ok(0x2010);
     }
 
     #[test]
@@ -322,5 +324,6 @@ mod test {
         test_internal_ok(0x20, 0x00, 0x00);
         test_internal_ok(0x20, 0x10, 0x10);
         test_internal_ok(0x40, 0x20, 0x08);
+        test_internal_ok(0x1010, 0xff, 0x10);
     }
 }

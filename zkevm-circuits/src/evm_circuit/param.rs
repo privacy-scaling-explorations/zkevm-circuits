@@ -3,7 +3,7 @@ use super::table::Table;
 // Step dimension
 pub(crate) const STEP_WIDTH: usize = 128;
 /// Step height
-pub const MAX_STEP_HEIGHT: usize = 16;
+pub const MAX_STEP_HEIGHT: usize = 21;
 pub(crate) const N_CELLS_STEP_STATE: usize = 11;
 
 /// Lookups done per row.

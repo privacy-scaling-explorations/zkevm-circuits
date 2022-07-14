@@ -3,7 +3,7 @@ use crate::{
     evm_circuit::{
         param::{MAX_STEP_HEIGHT, STEP_WIDTH},
         util::{Cell, RandomLinearCombination},
-        witness::{Block, Call, CodeSource, ExecStep, Transaction},
+        witness::{Block, Call, ExecStep, Transaction},
     },
     util::Expr,
 };
@@ -30,8 +30,7 @@ pub enum ExecutionState {
     STOP,
     ADD_SUB,     // ADD, SUB
     MUL_DIV_MOD, // MUL, DIV, MOD
-    SDIV,
-    SMOD,
+    SDIV_SMOD,   // SDIV, SMOD
     ADDMOD,
     MULMOD,
     EXP,
@@ -81,7 +80,7 @@ pub enum ExecutionState {
     PUSH, // PUSH1, PUSH2, ..., PUSH32
     DUP,  // DUP1, DUP2, ..., DUP16
     SWAP, // SWAP1, SWAP2, ..., SWAP16
-    LOG,  // LOG1, LOG2, ..., LOG5
+    LOG,  // LOG0, LOG1, ..., LOG4
     CREATE,
     CALL,
     CALLCODE,
@@ -138,14 +137,14 @@ impl ExecutionState {
         Self::iter().count()
     }
 
-    pub(crate) fn halts(&self) -> bool {
+    pub(crate) fn halts_in_success(&self) -> bool {
+        matches!(self, Self::STOP | Self::RETURN | Self::SELFDESTRUCT)
+    }
+
+    pub(crate) fn halts_in_exception(&self) -> bool {
         matches!(
             self,
-            Self::STOP
-                | Self::RETURN
-                | Self::REVERT
-                | Self::SELFDESTRUCT
-                | Self::ErrorInvalidOpcode
+            Self::ErrorInvalidOpcode
                 | Self::ErrorStackOverflow
                 | Self::ErrorStackUnderflow
                 | Self::ErrorWriteProtection
@@ -177,13 +176,16 @@ impl ExecutionState {
         )
     }
 
+    pub(crate) fn halts(&self) -> bool {
+        self.halts_in_success() || self.halts_in_exception() || matches!(self, Self::REVERT)
+    }
+
     pub(crate) fn responsible_opcodes(&self) -> Vec<OpcodeId> {
         match self {
             Self::STOP => vec![OpcodeId::STOP],
             Self::ADD_SUB => vec![OpcodeId::ADD, OpcodeId::SUB],
             Self::MUL_DIV_MOD => vec![OpcodeId::MUL, OpcodeId::DIV, OpcodeId::MOD],
-            Self::SDIV => vec![OpcodeId::SDIV],
-            Self::SMOD => vec![OpcodeId::SMOD],
+            Self::SDIV_SMOD => vec![OpcodeId::SDIV, OpcodeId::SMOD],
             Self::ADDMOD => vec![OpcodeId::ADDMOD],
             Self::MULMOD => vec![OpcodeId::MULMOD],
             Self::EXP => vec![OpcodeId::EXP],
@@ -442,18 +444,14 @@ impl<F: FieldExt> Step<F> {
         self.state
             .is_create
             .assign(region, offset, Some(F::from(call.is_create as u64)))?;
-        match call.code_source {
-            CodeSource::Account(code_hash) => {
-                self.state.code_hash.assign(
-                    region,
-                    offset,
-                    Some(RandomLinearCombination::random_linear_combine(
-                        code_hash.to_le_bytes(),
-                        block.randomness,
-                    )),
-                )?;
-            }
-        }
+        self.state.code_hash.assign(
+            region,
+            offset,
+            Some(RandomLinearCombination::random_linear_combine(
+                call.code_hash.to_le_bytes(),
+                block.randomness,
+            )),
+        )?;
         self.state.program_counter.assign(
             region,
             offset,
