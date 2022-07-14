@@ -28,7 +28,7 @@ pub trait LtInstruction<F: FieldExt> {
 }
 
 /// Config for the Lt chip.
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct LtConfig<F, const N_BYTES: usize> {
     /// Denotes the lt outcome. If lhs < rhs then lt == 1, otherwise lt == 0.
     pub lt: Column<Advice>,

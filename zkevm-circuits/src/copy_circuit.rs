@@ -22,7 +22,7 @@ use crate::evm_circuit::{
 };
 
 /// The rw table shared between evm circuit and state circuit
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct CopyCircuit<F> {
     /// Whether the row is enabled or not.
     pub q_enable: Column<Fixed>,
@@ -352,7 +352,7 @@ impl<F: Field> CopyCircuit<F> {
         block: &Block<F>,
     ) -> Result<(), Error> {
         let tag_chip = BinaryNumberChip::construct(self.tag);
-        let lt_chip = LtChip::construct(self.addr_lt_addr_end.clone());
+        let lt_chip = LtChip::construct(self.addr_lt_addr_end);
 
         layouter.assign_region(
             || "assign copy table",
