@@ -1,8 +1,6 @@
 use super::{MptKey, MptValue};
 use crate::evm_circuit::table::CallContextFieldTag;
-use crate::util::Expr;
 use eth_types::Field;
-use eth_types::ToScalar;
 use halo2_proofs::{
     circuit::Layouter,
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
