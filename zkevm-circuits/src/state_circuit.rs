@@ -248,8 +248,6 @@ impl<F: Field, const N_ROWS: usize> Circuit<F> for StateCircuit<F, N_ROWS> {
 
         let tag_chip = BinaryNumberChip::construct(config.sort_keys.tag);
 
-        // TODO: move this inside as well.
-        let mut initial_value = F::zero();
         layouter.assign_region(
             || "rw table",
             |mut region| {
@@ -259,6 +257,7 @@ impl<F: Field, const N_ROWS: usize> Circuit<F> for StateCircuit<F, N_ROWS> {
                 let rows = padding.chain(self.rows.iter().cloned());
                 let prev_rows = once(None).chain(rows.clone().map(Some));
 
+                let mut initial_value = F::zero();
                 let mut state_root = F::zero();
 
                 for (offset, (row, prev_row)) in rows.zip(prev_rows).enumerate() {
@@ -308,8 +307,8 @@ impl<F: Field, const N_ROWS: usize> Circuit<F> for StateCircuit<F, N_ROWS> {
                     )?;
 
                     // TODO: Remove special case for initial values for Rw::CallContext and
-                    // Rw::TxReceipt, which can only be determined by the value for first access
-                    // row.
+                    // Rw::TxReceipt, which can only be determined by the value for the first
+                    // access row.
                     if !matches!(row.tag(), RwTableTag::CallContext | RwTableTag::TxReceipt) {
                         initial_value = mpt_key(&row)
                             .map(|key| self.updates.get(&key).unwrap().old_value)
@@ -324,14 +323,15 @@ impl<F: Field, const N_ROWS: usize> Circuit<F> for StateCircuit<F, N_ROWS> {
                             &prev_row,
                         )?;
 
-                        if is_first_access
-                            && matches!(row.tag(), RwTableTag::CallContext | RwTableTag::TxReceipt)
-                        {
-                            initial_value = row.value_assignment(self.randomness);
-                        }
-
-                        // Update state root for pr
+                        // For first access to a group, we possibly need to update the initial value for
+                        // RwTableTag::CallContext and RwTableTag::TxReceipt rows and update the
+                        // state root.
                         if is_first_access {
+                            if matches!(row.tag(), RwTableTag::CallContext | RwTableTag::TxReceipt)
+                            {
+                                initial_value = row.value_assignment(self.randomness);
+                            }
+
                             if let Some(update) =
                                 mpt_key(&prev_row).map(|key| self.updates.get(&key).unwrap())
                             {
