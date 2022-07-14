@@ -463,7 +463,6 @@ impl<F: Field> CopyCircuit<F> {
                             + (U256::from(TxLogFieldTag::Data as u64) << 32)
                             + (U256::from(copy_event.log_id.unwrap()) << 48))
                             .to_address();
-                        println!("TxLog addr = {addr:?}");
                         addr.to_scalar().unwrap()
                     }
                     _ => F::from(copy_step.addr),

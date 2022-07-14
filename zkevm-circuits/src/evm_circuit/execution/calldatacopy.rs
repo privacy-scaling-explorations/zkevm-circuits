@@ -18,8 +18,8 @@ use crate::{
     util::Expr,
 };
 use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId};
-use eth_types::Field;
 use eth_types::ToLittleEndian;
+use eth_types::{Field, Word};
 use halo2_proofs::plonk::Error;
 
 use std::convert::TryInto;
@@ -204,9 +204,12 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
         self.call_data_offset
             .assign(region, offset, Some(F::from(call_data_offset as u64)))?;
 
+        let key = Word::from(tx.id)
+            + (Word::from(call.id) << 32)
+            + (Word::from(step.program_counter) << 48);
         let copy_rwc_inc = block
             .copy_events
-            .get(&(step.program_counter as usize))
+            .get(&key)
             .unwrap()
             .steps
             .first()
