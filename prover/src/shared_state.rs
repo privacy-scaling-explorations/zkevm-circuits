@@ -114,16 +114,16 @@ impl SharedState {
         // This could be avoided by spawning a subprocess for the proof computation
         // instead.
 
-        let _pending_task = pending_task.clone();
-        let _self = self.clone();
+        let pending_task_copy = pending_task.clone();
+        let self_copy = self.clone();
         let task_result: Result<Result<Proofs, String>, tokio::task::JoinError> =
             tokio::spawn(async move {
                 // lazily load the file and cache it
-                let param = _self.load_param(&_pending_task.options.param).await;
+                let param = self_copy.load_param(&pending_task_copy.options.param).await;
                 let res = compute_proof(
                     param.as_ref(),
-                    &_pending_task.options.block,
-                    &_pending_task.options.rpc,
+                    &pending_task_copy.options.block,
+                    &pending_task_copy.options.rpc,
                 )
                 .await;
 
