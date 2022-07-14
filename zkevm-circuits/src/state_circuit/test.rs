@@ -1,4 +1,4 @@
-use super::{StateCircuit, StateConfig};
+use super::{fake_mpt_updates, StateCircuit, StateConfig};
 use crate::evm_circuit::{
     table::{AccountFieldTag, CallContextFieldTag, RwTableTag, TxLogFieldTag, TxReceiptFieldTag},
     witness::{Rw, RwMap},
@@ -415,13 +415,13 @@ fn tx_log_bad() {
 
 #[test]
 fn address_limb_mismatch() {
-    let rows = vec![Rw::Account {
+    let rows = vec![Rw::TxAccessListAccount {
         rw_counter: 1,
         is_write: false,
+        tx_id: 40,
         account_address: address!("0x000000000000000000000000000000000cafe002"),
-        field_tag: AccountFieldTag::CodeHash,
-        value: U256::zero(),
-        value_prev: U256::zero(),
+        is_warm: false,
+        is_warm_prev: false,
     }];
     let overrides = HashMap::from([((AdviceColumn::Address, 0), Fr::from(10))]);
 
@@ -978,9 +978,11 @@ fn bad_initial_tx_receipt_value() {
 
 fn prover(rows: Vec<Rw>, overrides: HashMap<(AdviceColumn, isize), Fr>) -> MockProver<Fr> {
     let randomness = Fr::rand();
+    let updates = fake_mpt_updates(&rows, randomness);
     let circuit = StateCircuit::<Fr, N_ROWS> {
         randomness,
         rows,
+        updates,
         overrides,
     };
     let power_of_randomness = circuit.instance();

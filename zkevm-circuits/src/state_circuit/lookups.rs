@@ -1,10 +1,14 @@
+use super::{MptKey, MptValue};
 use crate::evm_circuit::table::CallContextFieldTag;
+use crate::util::Expr;
 use eth_types::Field;
+use eth_types::ToScalar;
 use halo2_proofs::{
     circuit::Layouter,
-    plonk::{Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
+    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
+use std::collections::HashMap;
 use std::marker::PhantomData;
 use strum::IntoEnumIterator;
 
@@ -16,6 +20,7 @@ pub struct Config {
     pub u10: Column<Fixed>,
     pub u16: Column<Fixed>,
     pub call_context_field_tag: Column<Fixed>,
+    pub mpt_update: Column<Advice>,
 }
 
 #[derive(Clone)]
@@ -24,6 +29,7 @@ pub struct Queries<F> {
     pub u10: Expression<F>,
     pub u16: Expression<F>,
     pub call_context_field_tag: Expression<F>,
+    pub mpt_update: Expression<F>,
 }
 
 impl<F: Field> Queries<F> {
@@ -33,6 +39,7 @@ impl<F: Field> Queries<F> {
             u10: meta.query_fixed(c.u10, Rotation::cur()),
             u16: meta.query_fixed(c.u16, Rotation::cur()),
             call_context_field_tag: meta.query_fixed(c.call_context_field_tag, Rotation::cur()),
+            mpt_update: meta.query_advice(c.mpt_update, Rotation::cur()),
         }
     }
 }
@@ -56,10 +63,16 @@ impl<F: Field> Chip<F> {
             u10: meta.fixed_column(),
             u16: meta.fixed_column(),
             call_context_field_tag: meta.fixed_column(),
+            mpt_update: meta.advice_column(),
         }
     }
 
-    pub fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
+    pub(super) fn load(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        updates: &HashMap<MptKey, MptValue<F>>,
+        randomness: F,
+    ) -> Result<(), Error> {
         for (column, exponent) in [
             (self.config.u8, 8),
             (self.config.u10, 10),
@@ -99,6 +112,45 @@ impl<F: Field> Chip<F> {
                 Ok(())
             },
         )?;
+
+        layouter.assign_region(
+            || "assign call_context_field_tags fixed column",
+            |mut region| {
+                region.assign_advice(
+                    || "mpt update lookup",
+                    self.config.mpt_update,
+                    0,
+                    || Ok(F::zero()),
+                )?;
+                for (offset, (key, value)) in updates.iter().enumerate() {
+                    region.assign_advice(
+                        || "mpt update lookup",
+                        self.config.mpt_update,
+                        offset + 1,
+                        || Ok(mpt_update_assignment(key, value, randomness)),
+                    )?;
+                }
+                Ok(())
+            },
+        )?;
+
         Ok(())
     }
+}
+
+fn mpt_update_assignment<F: Field>(key: &MptKey, value: &MptValue<F>, randomness: F) -> F {
+    let rlc = [
+        key.address(),
+        key.storage_key(randomness),
+        key.field_tag(),
+        value.new_root,
+        value.old_root,
+        value.new_value,
+        value.old_value,
+    ]
+    .iter()
+    .rev()
+    .fold(F::zero(), |result, a| randomness * result + a);
+
+    rlc * (value.new_root - value.old_root)
 }

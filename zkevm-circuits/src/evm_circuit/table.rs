@@ -178,7 +178,7 @@ impl From<RwTableTag> for usize {
     }
 }
 
-#[derive(Clone, Copy, Debug, EnumIter)]
+#[derive(Clone, Copy, Debug, EnumIter, Eq, PartialEq, Hash)]
 pub enum AccountFieldTag {
     Nonce = 1,
     Balance,

@@ -31,6 +31,9 @@ pub struct Queries<F: Field> {
     pub value_prev: Expression<F>,
     pub initial_value: Expression<F>,
     pub initial_value_prev: Expression<F>,
+    pub state_root: Expression<F>,
+    pub state_root_prev: Expression<F>,
+    pub state_root_next: Expression<F>,
     pub lookups: LookupsQueries<F>,
     pub power_of_randomness: [Expression<F>; N_BYTES_WORD - 1],
     pub first_access: Expression<F>,
@@ -129,6 +132,23 @@ impl<F: Field> ConstraintBuilder<F> {
                 q.initial_value.clone() - q.initial_value_prev(),
             );
         });
+
+        self.require_zero(
+            "state root change is binary",
+            q.lexicographic_ordering_selector.clone()
+                * (q.state_root() - q.state_root_prev())
+                * (1.expr() - q.state_root() + q.state_root_prev()),
+        );
+
+        self.add_lookup(
+            "if state_root changes, mpt_update exists in mpt circuit",
+            (
+                q.lexicographic_ordering_selector.clone()
+                    * (q.state_root() - q.state_root_prev())
+                    * q.mpt_lookup(),
+                q.lookups.mpt_update.clone(),
+            ),
+        );
     }
 
     fn build_start_constraints(&mut self, q: &Queries<F>) {
@@ -450,6 +470,37 @@ impl<F: Field> Queries<F> {
 
     fn tx_log_id_prev(&self) -> Expression<F> {
         from_digits(&self.address.limbs_prev[3..5], (1u64 << 16).expr())
+    }
+
+    fn state_root(&self) -> Expression<F> {
+        self.state_root.clone()
+    }
+
+    fn state_root_prev(&self) -> Expression<F> {
+        self.state_root_prev.clone()
+    }
+
+    fn state_root_next(&self) -> Expression<F> {
+        self.state_root_next.clone()
+    }
+
+    fn mpt_lookup(&self) -> Expression<F> {
+        // TODO: some of these values are already RLC'ed. We probably want to do
+        // the lookup on the raw values?
+        [
+            self.storage_key.encoded.clone(),
+            self.field_tag(),
+            self.state_root(),
+            self.state_root_prev(),
+            self.value(),
+            self.initial_value(),
+        ]
+        // [4.expr()]
+        .iter()
+        .zip(&self.power_of_randomness)
+        .fold(self.address.value.clone(), |result, (a, b)| {
+            result + a.clone() * b.clone()
+        })
     }
 }
 
