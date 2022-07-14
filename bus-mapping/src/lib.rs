@@ -226,7 +226,6 @@
 
 extern crate alloc;
 pub mod circuit_input_builder;
-pub mod constants;
 pub mod error;
 pub mod evm;
 pub mod exec_trace;

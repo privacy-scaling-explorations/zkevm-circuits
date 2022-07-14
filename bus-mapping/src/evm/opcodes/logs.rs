@@ -1,14 +1,11 @@
 use super::Opcode;
+use crate::circuit_input_builder::{CircuitInputStateRef, ExecState, ExecStep};
 use crate::circuit_input_builder::{CopyDataType, CopyEvent, CopyStep, NumberOrHash};
 use crate::operation::{CallContextField, TxLogField, RW};
 use crate::Error;
-use crate::{
-    circuit_input_builder::{CircuitInputStateRef, ExecState, ExecStep},
-    constants::MAX_COPY_BYTES,
-};
-use eth_types::evm_types::{MemoryAddress, OpcodeId};
+use eth_types::evm_types::OpcodeId;
 use eth_types::Word;
-use eth_types::{GethExecStep, ToBigEndian, ToWord};
+use eth_types::{GethExecStep, ToWord};
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Log;
@@ -129,17 +126,19 @@ fn gen_copy_steps(
     data_start_index: usize,
 ) -> Result<Vec<CopyStep>, Error> {
     // Get memory data
-    let memory_address: MemoryAddress = Word::from(src_addr).try_into()?;
-    let mem_read_value = geth_step.memory.read_word(memory_address).to_be_bytes();
-    let cap = std::cmp::min(bytes_left, MAX_COPY_BYTES);
-    let mut copy_steps = Vec::with_capacity(2 * cap);
-    for (idx, _) in mem_read_value.iter().enumerate().take(cap) {
+    let mem = geth_step.memory.0.as_slice();
+    let mut copy_steps = Vec::with_capacity(2 * bytes_left);
+    for (idx, byte) in mem
+        .iter()
+        .enumerate()
+        .skip(src_addr as usize)
+        .take(bytes_left)
+    {
         let addr = src_addr + idx as u64;
         let rwc = state.block_ctx.rwc;
         let (value, is_pad) = if addr < src_addr_end {
-            let byte = mem_read_value[idx];
-            state.memory_read(exec_step, (addr as usize).into(), byte)?;
-            (byte, false)
+            state.memory_read(exec_step, (addr as usize).into(), *byte)?;
+            (*byte, false)
         } else {
             (0, true)
         };
@@ -191,21 +190,15 @@ fn gen_copy_event(
 
     let (src_addr, src_addr_end) = (memory_start, memory_start + msize as u64);
 
-    let mut copied = 0;
-    let mut steps = vec![];
-    while copied < msize {
-        let int_copy_steps = gen_copy_steps(
-            state,
-            geth_step,
-            exec_step,
-            src_addr + copied as u64,
-            src_addr_end,
-            msize - copied,
-            copied,
-        )?;
-        steps.extend(int_copy_steps);
-        copied += MAX_COPY_BYTES;
-    }
+    let mut steps = gen_copy_steps(
+        state,
+        geth_step,
+        exec_step,
+        src_addr,
+        src_addr_end,
+        msize,
+        0,
+    )?;
 
     for cs in steps.iter_mut() {
         cs.rwc_inc_left = state.block_ctx.rwc.0 as u64 - cs.rwc.0 as u64;
