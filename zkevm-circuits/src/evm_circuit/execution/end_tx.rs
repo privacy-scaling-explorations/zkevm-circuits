@@ -128,7 +128,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
 
         cb.condition(1.expr() - is_first_tx.expr(), |cb| {
             cb.tx_receipt_lookup(
-                1.expr(),
+                0.expr(),
                 tx_id.expr() - 1.expr(),
                 TxReceiptFieldTag::CumulativeGasUsed,
                 current_cumulative_gas_used.expr(),

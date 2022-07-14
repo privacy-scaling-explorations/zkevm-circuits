@@ -459,7 +459,7 @@ pub fn gen_end_tx_ops(
     if state.tx_ctx.id() > 1 {
         current_cumulative_gas_used = *cumulative_gas_used.get(&(state.tx_ctx.id() - 1)).unwrap();
         // query pre tx cumulative gas
-        state.tx_receipt_write(
+        state.tx_receipt_read(
             &mut exec_step,
             state.tx_ctx.id() - 1,
             TxReceiptField::CumulativeGasUsed,
