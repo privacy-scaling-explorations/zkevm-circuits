@@ -102,11 +102,13 @@ pub struct Conversion {
     pub overflow_detector: OverflowDetector,
 }
 
+#[derive(Debug, Clone)]
 pub struct Special {
     pub input: BigUint,
     pub output_acc_pre: BigUint,
     pub output_acc_post: BigUint,
     pub output_coef: u8,
+    pub output_pob: BigUint,
 }
 
 const RHO_LANE_SIZE: usize = 65;
@@ -217,13 +219,14 @@ impl RhoLane {
             let input = input_acc;
             let output_acc_pre = output_acc;
             let output_coef = convert_b13_coef(self.special_high + self.special_low);
-            let output_acc_post =
-                &output_acc_pre + output_coef * BigUint::from(B9 as u64).pow(self.rotation);
+            let output_pob = BigUint::from(B9 as u64).pow(self.rotation);
+            let output_acc_post = &output_acc_pre + output_coef * output_pob.clone();
             Special {
                 input,
                 output_acc_pre,
                 output_acc_post,
                 output_coef,
+                output_pob,
             }
         };
         (conversions, special)
