@@ -1,21 +1,25 @@
 use halo2_proofs::pairing::bn256::G1Affine;
 use halo2_proofs::poly::commitment::Params;
+
+use std::collections::HashMap;
+use std::fs::File;
 use std::sync::Arc;
+
 use tokio::sync::Mutex;
 
 use crate::compute_proof::compute_proof;
-use crate::structs::Proofs;
+use crate::structs::{ProofRequestOptions, Proofs};
 
 #[derive(Debug, Clone)]
 pub struct ProofRequest {
-    pub block_num: u64,
-    pub rpc_url: String,
+    pub options: ProofRequestOptions,
     pub result: Option<Result<Proofs, String>>,
 }
 
 pub struct RwState {
     pub tasks: Vec<ProofRequest>,
     pub pending_tasks: u32,
+    pub params_cache: HashMap<String, Arc<Params<G1Affine>>>,
 }
 
 #[derive(Clone)]
@@ -29,6 +33,7 @@ impl SharedState {
             rw: Arc::new(Mutex::new(RwState {
                 tasks: Vec::new(),
                 pending_tasks: 0,
+                params_cache: HashMap::new(),
             })),
         }
     }
@@ -39,42 +44,36 @@ impl SharedState {
     /// before.
     pub async fn get_or_enqueue(
         &self,
-        block_num: &u64,
-        rpc_url: &str,
-        retry_if_error: &bool,
+        options: &ProofRequestOptions,
     ) -> Option<Result<Proofs, String>> {
         let mut rw = self.rw.lock().await;
 
         // task already pending or completed?
-        let task = rw
-            .tasks
-            .iter_mut()
-            .find(|e| e.block_num == *block_num && e.rpc_url == *rpc_url);
+        let task = rw.tasks.iter_mut().find(|e| e.options == *options);
 
         if task.is_some() {
             let mut task = task.unwrap();
 
             if task.result.is_some() {
-                if *retry_if_error && task.result.as_ref().unwrap().is_err() {
-                    log::info!("retrying: {:#?}", task);
+                if options.retry && task.result.as_ref().unwrap().is_err() {
+                    log::debug!("retrying: {:#?}", task);
                     // will be a candidate in `duty_cycle` again
                     task.result = None;
                 } else {
-                    log::info!("completed: {:#?}", task);
+                    log::debug!("completed: {:#?}", task);
                     return task.result.clone();
                 }
             } else {
-                log::info!("pending: {:#?}", task);
+                log::debug!("pending: {:#?}", task);
                 return None;
             }
         } else {
             // enqueue the task
             let task = ProofRequest {
-                block_num: *block_num,
-                rpc_url: rpc_url.to_string(),
+                options: options.clone(),
                 result: None,
             };
-            log::info!("enqueue: {:#?}", task);
+            log::debug!("enqueue: {:#?}", task);
             rw.tasks.push(task);
         }
 
@@ -85,7 +84,7 @@ impl SharedState {
     /// - records if a task completed
     /// - starting a new task
     /// Blocks until completion but releases the lock of `self.rw` in between.
-    pub async fn duty_cycle(&self, params: Arc<Params<G1Affine>>) {
+    pub async fn duty_cycle(&self) {
         let mut rw = self.rw.lock().await;
 
         if rw.pending_tasks > 0 {
@@ -103,7 +102,7 @@ impl SharedState {
 
         // needs to be cloned because of long running tasks and
         // the possibility that the task gets removed in the meantime
-        let pending_task = pending_task.unwrap().clone();
+        let mut pending_task = pending_task.unwrap().clone();
         {
             rw.pending_tasks += 1;
             log::info!("compute_proof: {:#?}", pending_task);
@@ -115,13 +114,16 @@ impl SharedState {
         // This could be avoided by spawning a subprocess for the proof computation
         // instead.
 
-        let _pending_task = pending_task.clone();
+        let pending_task_copy = pending_task.clone();
+        let self_copy = self.clone();
         let task_result: Result<Result<Proofs, String>, tokio::task::JoinError> =
             tokio::spawn(async move {
+                // lazily load the file and cache it
+                let param = self_copy.load_param(&pending_task_copy.options.param).await;
                 let res = compute_proof(
-                    params.as_ref(),
-                    &_pending_task.block_num,
-                    &_pending_task.rpc_url,
+                    param.as_ref(),
+                    &pending_task_copy.options.block,
+                    &pending_task_copy.options.rpc,
                 )
                 .await;
 
@@ -136,7 +138,20 @@ impl SharedState {
 
         // convert the JoinError to string - if applicable
         let task_result: Result<Proofs, String> = match task_result {
-            Err(err) => Err(err.to_string()),
+            Err(err) => match err.is_panic() {
+                true => {
+                    let panic = err.into_panic();
+
+                    if let Some(msg) = panic.downcast_ref::<&str>() {
+                        Err(msg.to_string())
+                    } else if let Some(msg) = panic.downcast_ref::<String>() {
+                        Err(msg.to_string())
+                    } else {
+                        Err("unknown panic".to_string())
+                    }
+                }
+                false => Err(err.to_string()),
+            },
             Ok(val) => val,
         };
 
@@ -147,21 +162,43 @@ impl SharedState {
             let mut rw = self.rw.lock().await;
             rw.pending_tasks -= 1;
 
-            let task = rw.tasks.iter_mut().find(|e| {
-                e.block_num == pending_task.block_num && e.rpc_url == pending_task.rpc_url
-            });
+            let task = rw
+                .tasks
+                .iter_mut()
+                .find(|e| e.options == pending_task.options);
             if let Some(task) = task {
                 // found our task, update result
                 task.result = Some(task_result);
             } else {
                 // task was already removed in the meantime, insert it again
-                rw.tasks.push(ProofRequest {
-                    block_num: pending_task.block_num,
-                    rpc_url: pending_task.rpc_url,
-                    result: Some(task_result),
-                });
+                pending_task.result = Some(task_result);
+                rw.tasks.push(pending_task);
             }
         }
+    }
+
+    async fn load_param(&self, params_path: &str) -> Arc<Params<G1Affine>> {
+        let mut rw = self.rw.lock().await;
+
+        if !rw.params_cache.contains_key(params_path) {
+            // drop, potentially long running
+            drop(rw);
+
+            // load polynomial commitment parameters
+            let params_fs = File::open(params_path).expect("couldn't open params");
+            let params: Arc<Params<G1Affine>> = Arc::new(
+                Params::read::<_>(&mut std::io::BufReader::new(params_fs))
+                    .expect("Failed to read params"),
+            );
+
+            // acquire lock and update
+            rw = self.rw.lock().await;
+            rw.params_cache.insert(params_path.to_string(), params);
+
+            log::info!("params: initialized {}", params_path);
+        }
+
+        rw.params_cache.get(params_path).unwrap().clone()
     }
 }
 
