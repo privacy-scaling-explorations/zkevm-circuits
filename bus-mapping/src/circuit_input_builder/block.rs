@@ -18,6 +18,8 @@ pub struct BlockContext {
     /// in Block.txs and call_index is the index used in Transaction.
     /// calls).
     pub(crate) call_map: HashMap<usize, (usize, usize)>,
+    /// Total gas used by previous transactions in this block.
+    pub(crate) cumulative_gas_used: u64,
 }
 
 impl Default for BlockContext {
@@ -32,6 +34,7 @@ impl BlockContext {
         Self {
             rwc: RWCounter::new(),
             call_map: HashMap::new(),
+            cumulative_gas_used: 0,
         }
     }
 }
