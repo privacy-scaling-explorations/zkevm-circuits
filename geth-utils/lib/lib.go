@@ -27,6 +27,10 @@ func CreateTrace(configStr *C.char) *C.char {
 	}
 
 	bytes, err := json.MarshalIndent(executionResults, "", "  ")
+	if len(bytes) > 10000000 {
+		return C.CString(fmt.Sprintf("Failed to process trace, err: bigger than 10MB (%v)",len(bytes)))
+	}
+
 	if err != nil {
 		return C.CString(fmt.Sprintf("Failed to marshal []ExecutionResult, err: %v", err))
 	}

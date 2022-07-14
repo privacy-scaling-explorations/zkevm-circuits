@@ -139,7 +139,6 @@ impl<F: Field> EvmCircuit<F> {
     }
 }
 
-#[cfg(any(feature = "test", test))]
 pub mod test {
     use crate::{
         evm_circuit::{
@@ -426,9 +425,7 @@ pub mod test {
                 self.block.randomness,
             )?;
             config.load_block(&mut layouter, &self.block.context, self.block.randomness)?;
-            config
-                .evm_circuit
-                .assign_block_exact(&mut layouter, &self.block)
+            config.evm_circuit.assign_block(&mut layouter, &self.block)
         }
     }
 

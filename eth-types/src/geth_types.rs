@@ -4,10 +4,12 @@ use crate::{
     AccessList, Address, Block, Bytes, Error, GethExecTrace, Hash, ToBigEndian, Word, U64,
 };
 use serde::{Serialize, Serializer};
+use serde_with::serde_as;
 use std::collections::HashMap;
 
 /// Definition of all of the data related to an account.
-#[derive(Debug, Default, Clone, Serialize)]
+#[serde_as]
+#[derive(PartialEq, Eq, Debug, Default, Clone, Serialize)]
 pub struct Account {
     /// Address
     pub address: Address,
