@@ -56,15 +56,15 @@ impl SharedState {
 
             if task.result.is_some() {
                 if options.retry && task.result.as_ref().unwrap().is_err() {
-                    log::info!("retrying: {:#?}", task);
+                    log::debug!("retrying: {:#?}", task);
                     // will be a candidate in `duty_cycle` again
                     task.result = None;
                 } else {
-                    log::info!("completed: {:#?}", task);
+                    log::debug!("completed: {:#?}", task);
                     return task.result.clone();
                 }
             } else {
-                log::info!("pending: {:#?}", task);
+                log::debug!("pending: {:#?}", task);
                 return None;
             }
         } else {
@@ -73,7 +73,7 @@ impl SharedState {
                 options: options.clone(),
                 result: None,
             };
-            log::info!("enqueue: {:#?}", task);
+            log::debug!("enqueue: {:#?}", task);
             rw.tasks.push(task);
         }
 
