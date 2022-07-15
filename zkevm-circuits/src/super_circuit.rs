@@ -230,7 +230,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
             .block
             .bytecodes
             .iter()
-            .map(|b| unroll(b.bytes.clone(), self.block.randomness))
+            .map(|(_, b)| unroll(b.bytes.clone(), self.block.randomness))
             .collect();
         config
             .bytecode_circuit
@@ -249,7 +249,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
             self.block.context.chain_id.as_u64(),
         )?);
         // Lookups from BytecodeCircuit
-        for bytecode in &self.block.bytecodes {
+        for (_, bytecode) in &self.block.bytecodes {
             keccak_inputs.push(bytecode.bytes.clone());
         }
         // Load Keccak Table
@@ -352,7 +352,7 @@ mod super_circuit_tests {
         let bytecodes_len = block
             .bytecodes
             .iter()
-            .map(|bytecode| bytecode.bytes.len())
+            .map(|(_, bytecode)| bytecode.bytes.len())
             .sum::<usize>();
         let k = k.max(log2_ceil(64 + bytecodes_len));
         let k = k.max(log2_ceil(64 + num_rows_required_for_steps));

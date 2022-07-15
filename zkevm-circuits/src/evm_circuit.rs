@@ -441,7 +441,7 @@ pub mod test {
                 || "tx table",
                 |mut region| {
                     let mut offset = 0;
-                    for column in self.tx_table {
+                    for column in self.tx_table.columns() {
                         region.assign_advice(
                             || "tx table all-zero row",
                             column,
@@ -453,7 +453,7 @@ pub mod test {
 
                     for tx in txs.iter() {
                         for row in tx.table_assignments(randomness) {
-                            for (column, value) in self.tx_table.iter().zip_eq(row) {
+                            for (column, value) in self.tx_table.columns().iter().zip_eq(row) {
                                 region.assign_advice(
                                     || format!("tx table row {}", offset),
                                     *column,
@@ -517,7 +517,7 @@ pub mod test {
                 || "bytecode table",
                 |mut region| {
                     let mut offset = 0;
-                    for column in self.bytecode_table {
+                    for column in self.bytecode_table.columns() {
                         region.assign_advice(
                             || "bytecode table all-zero row",
                             column,
@@ -529,7 +529,8 @@ pub mod test {
 
                     for bytecode in bytecodes.clone() {
                         for row in bytecode.table_assignments(randomness) {
-                            for (column, value) in self.bytecode_table.iter().zip_eq(row) {
+                            for (column, value) in self.bytecode_table.columns().iter().zip_eq(row)
+                            {
                                 region.assign_advice(
                                     || format!("bytecode table row {}", offset),
                                     *column,
@@ -555,7 +556,7 @@ pub mod test {
                 || "block table",
                 |mut region| {
                     let mut offset = 0;
-                    for column in self.block_table {
+                    for column in self.block_table.columns() {
                         region.assign_advice(
                             || "block table all-zero row",
                             column,
@@ -566,7 +567,7 @@ pub mod test {
                     offset += 1;
 
                     for row in block.table_assignments(randomness) {
-                        for (column, value) in self.block_table.iter().zip_eq(row) {
+                        for (column, value) in self.block_table.columns().iter().zip_eq(row) {
                             region.assign_advice(
                                 || format!("block table row {}", offset),
                                 *column,
@@ -681,7 +682,12 @@ pub mod test {
             load_bytecodes(
                 &config.bytecode_table,
                 &mut layouter,
-                &self.block.bytecodes,
+                &self
+                    .block
+                    .bytecodes
+                    .iter()
+                    .map(|(_, b)| b.clone())
+                    .collect::<Vec<Bytecode>>(),
                 self.block.randomness,
             )?;
             load_block(
