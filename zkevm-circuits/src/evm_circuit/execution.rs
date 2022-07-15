@@ -60,6 +60,7 @@ mod mul_div_mod;
 mod mulmod;
 mod not;
 mod origin;
+mod error_oog_constant;
 mod pc;
 mod pop;
 mod push;
@@ -111,6 +112,7 @@ use msize::MsizeGadget;
 use mul_div_mod::MulDivModGadget;
 use mulmod::MulModGadget;
 use not::NotGadget;
+use error_oog_constant::ErrorOOGConstantGadget;
 use origin::OriginGadget;
 use pc::PcGadget;
 use pop::PopGadget;
@@ -227,6 +229,7 @@ pub(crate) struct ExecutionConfig<F> {
     block_ctx_u160_gadget: BlockCtxU160Gadget<F>,
     block_ctx_u256_gadget: BlockCtxU256Gadget<F>,
     // error gadgets
+    error_oog_constant: ErrorOOGConstantGadget<F>,
     error_oog_static_memory_gadget: ErrorOOGStaticMemoryGadget<F>,
 }
 
@@ -441,6 +444,7 @@ impl<F: Field> ExecutionConfig<F> {
             block_ctx_u256_gadget: configure_gadget!(),
             // error gadgets
             error_oog_static_memory_gadget: configure_gadget!(),
+            error_oog_constant: configure_gadget!(),
             // step and presets
             step: step_curr,
             height_map,
@@ -901,6 +905,9 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::STOP => assign_exec_step!(self.stop_gadget),
             ExecutionState::SWAP => assign_exec_step!(self.swap_gadget),
             // errors
+            ExecutionState::ErrorOutOfGasConstant => {
+                assign_exec_step!(self.error_oog_constant)
+            }
             ExecutionState::ErrorOutOfGasStaticMemoryExpansion => {
                 assign_exec_step!(self.error_oog_static_memory_gadget)
             }
