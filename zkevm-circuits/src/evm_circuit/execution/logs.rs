@@ -20,8 +20,8 @@ use crate::{
 };
 use array_init::array_init;
 use bus_mapping::circuit_input_builder::CopyDataType;
+use eth_types::Field;
 use eth_types::{evm_types::GasCost, evm_types::OpcodeId, ToLittleEndian, ToScalar};
-use eth_types::{Field, U256};
 use halo2_proofs::plonk::Error;
 
 #[derive(Clone, Debug)]
@@ -242,9 +242,7 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
         self.tx_id
             .assign(region, offset, Some(F::from(tx.id as u64)))?;
 
-        let key = U256::from(tx.id)
-            + (U256::from(call.id) << 32)
-            + (U256::from(step.program_counter) << 48);
+        let key = (tx.id, call.id, step.program_counter as usize);
         let copy_rwc_inc = block
             .copy_events
             .get(&key)

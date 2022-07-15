@@ -1,7 +1,7 @@
 use std::convert::TryInto;
 
 use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId};
-use eth_types::{Field, ToLittleEndian, Word};
+use eth_types::{Field, ToLittleEndian};
 use halo2_proofs::plonk::Error;
 
 use crate::{
@@ -183,9 +183,7 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
         self.memory_copier_gas
             .assign(region, offset, size.as_u64(), memory_expansion_cost)?;
 
-        let key = Word::from(tx.id)
-            + (Word::from(call.id) << 32)
-            + (Word::from(step.program_counter) << 48);
+        let key = (tx.id, call.id, step.program_counter as usize);
         let copy_rwc_inc = block
             .copy_events
             .get(&key)

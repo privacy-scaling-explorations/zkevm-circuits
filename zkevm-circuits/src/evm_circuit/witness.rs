@@ -38,7 +38,7 @@ pub struct Block<F> {
     pub context: BlockContext,
     /// Copy events for the EVM circuit's Copy Table, a mapping from (tx_id ||
     /// call_id || pc) to the corresponding copy event.
-    pub copy_events: HashMap<Word, CopyEvent>,
+    pub copy_events: HashMap<(usize, usize, usize), CopyEvent>,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -1428,10 +1428,10 @@ pub fn block_convert(
             .copy_events
             .iter()
             .map(|copy_event| {
-                let key = Word::from(copy_event.tx_id)
-                    + (Word::from(copy_event.call_id) << 32)
-                    + (Word::from(copy_event.pc.0) << 48);
-                (key, copy_event.clone())
+                (
+                    (copy_event.tx_id, copy_event.call_id, copy_event.pc.0),
+                    copy_event.clone(),
+                )
             })
             .collect(),
     }
