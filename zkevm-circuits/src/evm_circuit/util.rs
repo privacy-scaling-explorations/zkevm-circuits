@@ -278,6 +278,7 @@ impl<F: FieldExt> CellManager<F> {
             .unwrap()
     }
 
+    /// Returns a map of CellType -> (width, height, num_cells)
     pub(crate) fn get_stats(&self) -> BTreeMap<CellType, (usize, usize, usize)> {
         let mut data = BTreeMap::new();
         for column in self.columns.iter() {
