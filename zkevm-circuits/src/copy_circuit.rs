@@ -161,6 +161,11 @@ impl<F: Field> CopyCircuit<F> {
                     meta.query_advice(addr, Rotation::cur()) + 1.expr(),
                     meta.query_advice(addr, Rotation(2)),
                 );
+                cb.require_equal(
+                    "rows[0].src_addr_end == rows[2].src_addr_end for non-last step",
+                    meta.query_advice(src_addr_end, Rotation::cur()),
+                    meta.query_advice(src_addr_end, Rotation(2)),
+                );
             });
 
             let rw_diff = and::expr([
@@ -206,15 +211,9 @@ impl<F: Field> CopyCircuit<F> {
                     1.expr() - meta.query_advice(bytes_left, Rotation::cur()),
                 ]),
             );
-
             cb.condition(
                 not::expr(meta.query_advice(is_last, Rotation::next())),
                 |cb| {
-                    cb.require_equal(
-                        "rows[0].src_addr_end == rows[2].src_addr_end for non-last step",
-                        meta.query_advice(src_addr_end, Rotation::cur()),
-                        meta.query_advice(src_addr_end, Rotation(2)),
-                    );
                     cb.require_equal(
                         "bytes_left == bytes_left_next + 1 for non-last step",
                         meta.query_advice(bytes_left, Rotation::cur()),
@@ -222,7 +221,6 @@ impl<F: Field> CopyCircuit<F> {
                     );
                 },
             );
-
             cb.require_equal(
                 "write value == read value",
                 meta.query_advice(value, Rotation::cur()),
