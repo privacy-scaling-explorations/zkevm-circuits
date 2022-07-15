@@ -623,3 +623,324 @@ impl<F: Field> CopyCircuit<F> {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use bus_mapping::{
+        circuit_input_builder::{CircuitInputBuilder, CopyDataType},
+        mock::BlockData,
+    };
+    use eth_types::{bytecode, geth_types::GethData, Field, Word};
+    use halo2_proofs::{
+        circuit::{Layouter, SimpleFloorPlanner},
+        dev::{MockProver, VerifyFailure},
+        plonk::{Advice, Circuit, Column, ConstraintSystem, Error},
+    };
+    use itertools::Itertools;
+    use mock::TestContext;
+    use rand::{prelude::SliceRandom, Rng};
+
+    use crate::{
+        evm_circuit::witness::{block_convert, Block, Bytecode, RwMap, Transaction},
+        rw_table::RwTable,
+    };
+
+    use super::CopyCircuit;
+
+    #[derive(Clone)]
+    struct MyConfig<F> {
+        tx_table: [Column<Advice>; 4],
+        rw_table: RwTable,
+        bytecode_table: [Column<Advice>; 5],
+        copy_table: CopyCircuit<F>,
+    }
+
+    impl<F: Field> MyConfig<F> {
+        fn load_txs(
+            &self,
+            layouter: &mut impl Layouter<F>,
+            txs: &[Transaction],
+            randomness: F,
+        ) -> Result<(), Error> {
+            layouter.assign_region(
+                || "tx table",
+                |mut region| {
+                    let mut offset = 0;
+                    for column in self.tx_table {
+                        region.assign_advice(
+                            || "tx table all-zero row",
+                            column,
+                            offset,
+                            || Ok(F::zero()),
+                        )?;
+                    }
+                    offset += 1;
+
+                    for tx in txs.iter() {
+                        for row in tx.table_assignments(randomness) {
+                            for (column, value) in self.tx_table.iter().zip_eq(row) {
+                                region.assign_advice(
+                                    || format!("tx table row {}", offset),
+                                    *column,
+                                    offset,
+                                    || Ok(value),
+                                )?;
+                            }
+                            offset += 1;
+                        }
+                    }
+                    Ok(())
+                },
+            )
+        }
+
+        fn load_rws(
+            &self,
+            layouter: &mut impl Layouter<F>,
+            rws: &RwMap,
+            randomness: F,
+        ) -> Result<(), Error> {
+            layouter.assign_region(
+                || "rw table",
+                |mut region| {
+                    let mut offset = 0;
+                    self.rw_table
+                        .assign(&mut region, offset, &Default::default())?;
+                    offset += 1;
+
+                    let mut rows = rws
+                        .0
+                        .values()
+                        .flat_map(|rws| rws.iter())
+                        .collect::<Vec<_>>();
+
+                    rows.sort_by_key(|a| a.rw_counter());
+                    let mut expected_rw_counter = 1;
+                    for rw in rows {
+                        assert!(rw.rw_counter() == expected_rw_counter);
+                        expected_rw_counter += 1;
+
+                        self.rw_table.assign(
+                            &mut region,
+                            offset,
+                            &rw.table_assignment(randomness),
+                        )?;
+                        offset += 1;
+                    }
+                    Ok(())
+                },
+            )
+        }
+
+        fn load_bytecodes<'a>(
+            &self,
+            layouter: &mut impl Layouter<F>,
+            bytecodes: impl IntoIterator<Item = &'a Bytecode> + Clone,
+            randomness: F,
+        ) -> Result<(), Error> {
+            layouter.assign_region(
+                || "bytecode table",
+                |mut region| {
+                    let mut offset = 0;
+                    for column in self.bytecode_table {
+                        region.assign_advice(
+                            || "bytecode table all-zero row",
+                            column,
+                            offset,
+                            || Ok(F::zero()),
+                        )?;
+                    }
+                    offset += 1;
+
+                    for bytecode in bytecodes.clone() {
+                        for row in bytecode.table_assignments(randomness) {
+                            for (column, value) in self.bytecode_table.iter().zip_eq(row) {
+                                region.assign_advice(
+                                    || format!("bytecode table row {}", offset),
+                                    *column,
+                                    offset,
+                                    || Ok(value),
+                                )?;
+                            }
+                            offset += 1;
+                        }
+                    }
+                    Ok(())
+                },
+            )
+        }
+    }
+
+    #[derive(Default)]
+    struct MyCircuit<F> {
+        block: Block<F>,
+    }
+
+    impl<F> MyCircuit<F> {
+        pub fn new(block: Block<F>) -> Self {
+            Self { block }
+        }
+    }
+
+    impl<F: Field> Circuit<F> for MyCircuit<F> {
+        type Config = MyConfig<F>;
+        type FloorPlanner = SimpleFloorPlanner;
+
+        fn without_witnesses(&self) -> Self {
+            Self::default()
+        }
+
+        fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
+            let tx_table = [(); 4].map(|_| meta.advice_column());
+            let rw_table = RwTable::construct(meta);
+            let bytecode_table = [(); 5].map(|_| meta.advice_column());
+            let copy_table = CopyCircuit::configure(meta, &tx_table, &rw_table, &bytecode_table);
+
+            MyConfig {
+                tx_table,
+                rw_table,
+                bytecode_table,
+                copy_table,
+            }
+        }
+
+        fn synthesize(
+            &self,
+            config: Self::Config,
+            mut layouter: impl Layouter<F>,
+        ) -> Result<(), halo2_proofs::plonk::Error> {
+            config.load_txs(&mut layouter, &self.block.txs, self.block.randomness)?;
+            config.load_rws(&mut layouter, &self.block.rws, self.block.randomness)?;
+            config.load_bytecodes(
+                &mut layouter,
+                self.block.bytecodes.values(),
+                self.block.randomness,
+            )?;
+            config.copy_table.assign_block(&mut layouter, &self.block)
+        }
+    }
+
+    fn run_circuit<F: Field>(k: u32, block: Block<F>) -> Result<(), Vec<VerifyFailure>> {
+        let circuit = MyCircuit::<F>::new(block);
+        let prover = MockProver::<F>::run(k, &circuit, vec![]).unwrap();
+        prover.verify()
+    }
+
+    fn gen_calldatacopy_data() -> CircuitInputBuilder {
+        let code = bytecode! {
+            PUSH32(Word::from(0x20))
+            PUSH32(Word::from(0x00))
+            PUSH32(Word::from(0x00))
+            CALLDATACOPY
+            STOP
+        };
+        let test_ctx = TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap();
+        let block: GethData = test_ctx.into();
+        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+        builder
+            .handle_block(&block.eth_block, &block.geth_traces)
+            .unwrap();
+        builder
+    }
+
+    fn gen_codecopy_data() -> CircuitInputBuilder {
+        let code = bytecode! {
+            PUSH32(Word::from(0x20))
+            PUSH32(Word::from(0x00))
+            PUSH32(Word::from(0x00))
+            CODECOPY
+            STOP
+        };
+        let test_ctx = TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap();
+        let block: GethData = test_ctx.into();
+        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+        builder
+            .handle_block(&block.eth_block, &block.geth_traces)
+            .unwrap();
+        builder
+    }
+
+    #[test]
+    fn copy_circuit_valid_calldatacopy() {
+        let builder = gen_calldatacopy_data();
+        let block = block_convert(&builder.block, &builder.code_db);
+        assert!(run_circuit(10, block).is_ok());
+    }
+
+    #[test]
+    fn copy_circuit_valid_codecopy() {
+        let builder = gen_codecopy_data();
+        let block = block_convert(&builder.block, &builder.code_db);
+        assert!(run_circuit(10, block).is_ok());
+    }
+
+    fn perturb_bytecode(block: &mut bus_mapping::circuit_input_builder::Block) {
+        debug_assert!(!block.copy_events.is_empty());
+        debug_assert!(!block.copy_events[0].steps.is_empty());
+
+        let mut rng = rand::thread_rng();
+        let idxs = block.copy_events[0]
+            .steps
+            .iter()
+            .enumerate()
+            .filter(|(_i, step)| step.tag == CopyDataType::Bytecode)
+            .map(|(i, _step)| i)
+            .collect::<Vec<usize>>();
+        let rand_idx = idxs.choose(&mut rng).unwrap();
+        block.copy_events[0].steps[*rand_idx].value = rng.gen();
+    }
+
+    fn perturb_memory(block: &mut bus_mapping::circuit_input_builder::Block) {
+        debug_assert!(!block.copy_events.is_empty());
+        debug_assert!(!block.copy_events[0].steps.is_empty());
+
+        let mut rng = rand::thread_rng();
+        let idxs = block.copy_events[0]
+            .steps
+            .iter()
+            .enumerate()
+            .filter(|(_i, step)| step.tag == CopyDataType::Memory)
+            .map(|(i, _step)| i)
+            .collect::<Vec<usize>>();
+        let rand_idx = idxs.choose(&mut rng).unwrap();
+        block.copy_events[0].steps[*rand_idx].value = rng.gen();
+    }
+
+    fn perturb_txcalldata(block: &mut bus_mapping::circuit_input_builder::Block) {
+        debug_assert!(!block.copy_events.is_empty());
+        debug_assert!(!block.copy_events[0].steps.is_empty());
+
+        let mut rng = rand::thread_rng();
+        let idxs = block.copy_events[0]
+            .steps
+            .iter()
+            .enumerate()
+            .filter(|(_i, step)| step.tag == CopyDataType::TxCalldata)
+            .map(|(i, _step)| i)
+            .collect::<Vec<usize>>();
+        let rand_idx = idxs.choose(&mut rng).unwrap();
+        block.copy_events[0].steps[*rand_idx].value = rng.gen();
+    }
+
+    #[test]
+    fn copy_circuit_invalid_calldatacopy() {
+        let mut builder = gen_calldatacopy_data();
+        match rand::thread_rng().gen_bool(0.5) {
+            true => perturb_memory(&mut builder.block),
+            false => perturb_txcalldata(&mut builder.block),
+        }
+        let block = block_convert(&builder.block, &builder.code_db);
+        assert!(run_circuit(10, block).is_err());
+    }
+
+    #[test]
+    fn copy_circuit_invalid_codecopy() {
+        let mut builder = gen_codecopy_data();
+        match rand::thread_rng().gen_bool(0.5) {
+            true => perturb_memory(&mut builder.block),
+            false => perturb_bytecode(&mut builder.block),
+        }
+        let block = block_convert(&builder.block, &builder.code_db);
+        assert!(run_circuit(10, block).is_err());
+    }
+}
