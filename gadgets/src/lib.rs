@@ -13,6 +13,7 @@
 
 pub mod binary_number;
 pub mod evm_word;
+pub mod expression;
 pub mod is_zero;
 pub mod less_than;
 pub mod monotone;
