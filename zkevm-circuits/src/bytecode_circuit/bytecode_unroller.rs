@@ -635,9 +635,8 @@ impl<F: Field> Config<F> {
             |mut region| {
                 for (offset, bytecode) in bytecodes.iter().map(|v| v.bytes.clone()).enumerate() {
                     let code_hash: F = keccak(&bytecode[..], randomness);
-                    println!("+ {:?}", bytecode);
-                    // CHANGELOG: Fixed rlc of input in the correct order.
-                    let input_rlc: F = rlc::value(&bytecode, randomness);
+                    // println!("+ {:?}", bytecode);
+                    let input_rlc: F = rlc::value_from_iter(bytecode.iter().rev(), randomness);
                     let size = F::from(bytecode.len() as u64);
                     for (name, column, value) in &[
                         ("is_enable", self.keccak_table.is_enabled, F::one()),
@@ -695,7 +694,7 @@ impl<F: Field> Config<F> {
             },
         )?;
         // TODO: Remove this
-        self.load_keccaks(layouter, bytecodes, randomness)?;
+        // self.load_keccaks(layouter, bytecodes, randomness)?;
 
         Ok(())
     }

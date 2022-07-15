@@ -316,7 +316,8 @@ pub fn load_block<F: Field>(
 }
 
 pub fn keccak_table_assignments<F: Field>(input: &[u8], randomness: F) -> Vec<[F; 4]> {
-    let input_rlc: F = rlc::value(input, randomness);
+    // CHANGELOG: Using `RLC(reversed(input))`
+    let input_rlc: F = rlc::value_from_iter(input.iter().rev(), randomness);
     let input_len = F::from(input.len() as u64);
     let mut keccak = Keccak::default();
     keccak.update(input);
@@ -329,6 +330,10 @@ pub fn keccak_table_assignments<F: Field>(input: &[u8], randomness: F) -> Vec<[F
     vec![[F::one(), input_rlc, input_len, output_rlc]]
 }
 
+// NOTE: For now, the input_rlc of the keccak is defined as
+// `RLC(reversed(input))` for convenience of the circuits that do the lookups.
+// This allows calculating the `input_rlc` after all the inputs bytes have been
+// layed out via the pattern `acc[i] = acc[i-1] * r + value[i]`.
 pub fn load_keccaks<F: Field>(
     keccak_table: &KeccakTable,
     layouter: &mut impl Layouter<F>,

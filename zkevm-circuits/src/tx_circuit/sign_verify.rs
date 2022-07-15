@@ -218,7 +218,8 @@ impl<F: Field> SignVerifyConfig<F> {
                 .collect::<Vec<Expression<F>>>()
                 .try_into()
                 .expect("vector to array of size 64");
-            let pk_be = pk_bytes_swap_endianness(&pk_le);
+            let mut pk_be = pk_bytes_swap_endianness(&pk_le);
+            pk_be.reverse();
             let pk_rlc =
                 RandomLinearCombination::random_linear_combine_expr(pk_be, &power_of_randomness);
             table_map.push((selector.clone() * pk_rlc, keccak_input_rlc));

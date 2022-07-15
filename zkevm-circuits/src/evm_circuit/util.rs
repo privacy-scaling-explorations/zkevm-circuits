@@ -412,6 +412,14 @@ pub(crate) mod rlc {
             acc * randomness + F::from(*value as u64)
         })
     }
+    pub(crate) fn value_from_iter<'a, F: FieldExt, I>(values: I, randomness: F) -> F
+    where
+        I: Iterator<Item = &'a u8> + std::iter::DoubleEndedIterator,
+    {
+        values.rev().fold(F::zero(), |acc, value| {
+            acc * randomness + F::from(*value as u64)
+        })
+    }
 }
 
 /// Returns 2**by as FieldExt

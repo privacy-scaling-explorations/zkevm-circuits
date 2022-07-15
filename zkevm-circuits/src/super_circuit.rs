@@ -40,9 +40,50 @@ use halo2_proofs::{
 use itertools::Itertools;
 use keccak256::plain::Keccak;
 
+// The SuperCircuit contains the following circuits:
+//
+// - [x] EVM Circuit
+// - [ ] State Circuit
+// - [x] Tx Circuit
+// - [x] Bytecode Circuit
+// - [ ] Copy Circuit
+// - [ ] Keccak Circuit
+// - [ ] MPT Circuit
+// - [ ] PublicInputs Circuit
+//
+// And the following shared tables, with the circuits that use them:
+//
+// - [ ] Copy Table
+//   - [ ] Copy Circuit
+//   - [ ] EVM Circuit
+// - [ ] Rw Table
+//   - [ ] State Circuit
+//   - [ ] EVM Circuit
+//   - [ ] Copy Circuit
+// - [x] Tx Table
+//   - [x] Tx Circuit
+//   - [x] EVM Circuit
+//   - [ ] Copy Circuit
+//   - [ ] PublicInputs Circuit
+// - [x] Bytecode Table
+//   - [x] Bytecode Circuit
+//   - [x] EVM Circuit
+//   - [ ] Copy Circuit
+// - [ ] Block Table
+//   - [ ] EVM Circuit
+//   - [ ] PublicInputs Circuit
+// - [ ] MPT Table
+//   - [ ] MPT Circuit
+//   - [ ] State Circuit
+// - [x] Keccak Table
+//   - [ ] Keccak Circuit
+//   - [ ] EVM Circuit
+//   - [x] Bytecode Circuit
+//   - [x] Tx Circuit
+//   - [ ] MPT Circuit
+
 #[derive(Clone)]
 pub struct SuperCircuitConfig<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> {
-    // tx_table: [Column<Advice>; 4],
     tx_table: TxTable,
     rw_table: RwTable,
     bytecode_table: BytecodeTable,
