@@ -230,10 +230,10 @@ pub fn load_rws<F: Field>(
 use crate::util::TableShow;
 
 // TODO: Move to src/tables.rs
-pub fn load_bytecodes<F: Field>(
+pub fn load_bytecodes<'a, F: Field>(
     bytecode_table: &BytecodeTable,
     layouter: &mut impl Layouter<F>,
-    bytecodes: &[Bytecode],
+    bytecodes: impl IntoIterator<Item = &'a Bytecode> + Clone,
     randomness: F,
 ) -> Result<(), Error> {
     // println!("> load_bytecodes");
@@ -254,9 +254,9 @@ pub fn load_bytecodes<F: Field>(
             offset += 1;
 
             let bytecode_table_columns = bytecode_table.columns();
-            for bytecode in bytecodes.iter() {
+            for bytecode in bytecodes.clone() {
                 for row in bytecode.table_assignments(randomness) {
-                    let mut column_index = 0;
+                    // let mut column_index = 0;
                     for (column, value) in bytecode_table_columns.iter().zip_eq(row) {
                         region.assign_advice(
                             || format!("bytecode table row {}", offset),
@@ -265,7 +265,7 @@ pub fn load_bytecodes<F: Field>(
                             || Ok(value),
                         )?;
                         // table.push(column_index, value);
-                        column_index += 1;
+                        // column_index += 1;
                     }
                     offset += 1;
                 }
@@ -317,7 +317,7 @@ pub fn load_block<F: Field>(
 
 pub fn keccak_table_assignments<F: Field>(input: &[u8], randomness: F) -> Vec<[F; 4]> {
     // CHANGELOG: Using `RLC(reversed(input))`
-    let input_rlc: F = rlc::value_from_iter(input.iter().rev(), randomness);
+    let input_rlc: F = rlc::value(input.iter().rev(), randomness);
     let input_len = F::from(input.len() as u64);
     let mut keccak = Keccak::default();
     keccak.update(input);
@@ -334,14 +334,15 @@ pub fn keccak_table_assignments<F: Field>(input: &[u8], randomness: F) -> Vec<[F
 // `RLC(reversed(input))` for convenience of the circuits that do the lookups.
 // This allows calculating the `input_rlc` after all the inputs bytes have been
 // layed out via the pattern `acc[i] = acc[i-1] * r + value[i]`.
-pub fn load_keccaks<F: Field>(
+pub fn load_keccaks<'a, F: Field>(
     keccak_table: &KeccakTable,
     layouter: &mut impl Layouter<F>,
-    inputs: &[Vec<u8>],
+    inputs: impl IntoIterator<Item = &'a [u8]> + Clone,
     randomness: F,
 ) -> Result<(), Error> {
-    println!("> super_circuit.load_keccaks");
-    let mut table = TableShow::<F>::new(vec!["is_enabled", "input_rlc", "input_len", "output_rlc"]);
+    // println!("> super_circuit.load_keccaks");
+    // let mut table = TableShow::<F>::new(vec!["is_enabled", "input_rlc",
+    // "input_len", "output_rlc"]);
     layouter.assign_region(
         || "keccak table",
         |mut region| {
@@ -357,10 +358,10 @@ pub fn load_keccaks<F: Field>(
             offset += 1;
 
             let keccak_table_columns = keccak_table.columns();
-            for input in inputs.iter() {
-                println!("+ {:?}", input);
+            for input in inputs.clone() {
+                // println!("+ {:?}", input);
                 for row in keccak_table_assignments(input, randomness) {
-                    let mut column_index = 0;
+                    // let mut column_index = 0;
                     for (column, value) in keccak_table_columns.iter().zip_eq(row) {
                         region.assign_advice(
                             || format!("keccak table row {}", offset),
@@ -368,13 +369,13 @@ pub fn load_keccaks<F: Field>(
                             offset,
                             || Ok(value),
                         )?;
-                        table.push(column_index, value);
-                        column_index += 1;
+                        // table.push(column_index, value);
+                        // column_index += 1;
                     }
                     offset += 1;
                 }
             }
-            table.print();
+            // table.print();
             Ok(())
         },
     )
@@ -392,7 +393,7 @@ pub mod test {
     use halo2_proofs::{
         circuit::{Layouter, SimpleFloorPlanner},
         dev::{MockProver, VerifyFailure},
-        plonk::{Advice, Circuit, Column, ConstraintSystem, Error},
+        plonk::{Circuit, ConstraintSystem, Error},
         poly::Rotation,
     };
     use rand::{
@@ -428,160 +429,6 @@ pub mod test {
         bytecode_table: BytecodeTable,
         block_table: BlockTable,
         evm_circuit: EvmCircuit<F>,
-    }
-
-    impl<F: Field> TestCircuitConfig<F> {
-        fn load_txs(
-            &self,
-            layouter: &mut impl Layouter<F>,
-            txs: &[Transaction],
-            randomness: F,
-        ) -> Result<(), Error> {
-            layouter.assign_region(
-                || "tx table",
-                |mut region| {
-                    let mut offset = 0;
-                    for column in self.tx_table.columns() {
-                        region.assign_advice(
-                            || "tx table all-zero row",
-                            column,
-                            offset,
-                            || Ok(F::zero()),
-                        )?;
-                    }
-                    offset += 1;
-
-                    for tx in txs.iter() {
-                        for row in tx.table_assignments(randomness) {
-                            for (column, value) in self.tx_table.columns().iter().zip_eq(row) {
-                                region.assign_advice(
-                                    || format!("tx table row {}", offset),
-                                    *column,
-                                    offset,
-                                    || Ok(value),
-                                )?;
-                            }
-                            offset += 1;
-                        }
-                    }
-                    Ok(())
-                },
-            )
-        }
-
-        fn load_rws(
-            &self,
-            layouter: &mut impl Layouter<F>,
-            rws: &RwMap,
-            randomness: F,
-        ) -> Result<(), Error> {
-            layouter.assign_region(
-                || "rw table",
-                |mut region| {
-                    let mut offset = 0;
-                    self.rw_table
-                        .assign(&mut region, offset, &Default::default())?;
-                    offset += 1;
-
-                    let mut rows = rws
-                        .0
-                        .values()
-                        .flat_map(|rws| rws.iter())
-                        .collect::<Vec<_>>();
-
-                    rows.sort_by_key(|a| a.rw_counter());
-                    let mut expected_rw_counter = 1;
-                    for rw in rows {
-                        assert!(rw.rw_counter() == expected_rw_counter);
-                        expected_rw_counter += 1;
-
-                        self.rw_table.assign(
-                            &mut region,
-                            offset,
-                            &rw.table_assignment(randomness),
-                        )?;
-                        offset += 1;
-                    }
-                    Ok(())
-                },
-            )
-        }
-
-        fn load_bytecodes<'a>(
-            &self,
-            layouter: &mut impl Layouter<F>,
-            bytecodes: impl IntoIterator<Item = &'a Bytecode> + Clone,
-            randomness: F,
-        ) -> Result<(), Error> {
-            layouter.assign_region(
-                || "bytecode table",
-                |mut region| {
-                    let mut offset = 0;
-                    for column in self.bytecode_table.columns() {
-                        region.assign_advice(
-                            || "bytecode table all-zero row",
-                            column,
-                            offset,
-                            || Ok(F::zero()),
-                        )?;
-                    }
-                    offset += 1;
-
-                    for bytecode in bytecodes.clone() {
-                        for row in bytecode.table_assignments(randomness) {
-                            for (column, value) in self.bytecode_table.columns().iter().zip_eq(row)
-                            {
-                                region.assign_advice(
-                                    || format!("bytecode table row {}", offset),
-                                    *column,
-                                    offset,
-                                    || Ok(value),
-                                )?;
-                            }
-                            offset += 1;
-                        }
-                    }
-                    Ok(())
-                },
-            )
-        }
-
-        fn load_block(
-            &self,
-            layouter: &mut impl Layouter<F>,
-            block: &BlockContext,
-            randomness: F,
-        ) -> Result<(), Error> {
-            layouter.assign_region(
-                || "block table",
-                |mut region| {
-                    let mut offset = 0;
-                    for column in self.block_table.columns() {
-                        region.assign_advice(
-                            || "block table all-zero row",
-                            column,
-                            offset,
-                            || Ok(F::zero()),
-                        )?;
-                    }
-                    offset += 1;
-
-                    for row in block.table_assignments(randomness) {
-                        for (column, value) in self.block_table.columns().iter().zip_eq(row) {
-                            region.assign_advice(
-                                || format!("block table row {}", offset),
-                                *column,
-                                offset,
-                                || Ok(value),
-                            )?;
-                        }
-                        offset += 1;
-                    }
-
-                    Ok(())
-                },
-            )
-        }
     }
 
     #[derive(Default)]
@@ -658,15 +505,6 @@ pub mod test {
                 .evm_circuit
                 .load_fixed_table(&mut layouter, self.fixed_table_tags.clone())?;
             config.evm_circuit.load_byte_table(&mut layouter)?;
-            // config.load_txs(&mut layouter, &self.block.txs, self.block.randomness)?;
-            // config.load_rws(&mut layouter, &self.block.rws, self.block.randomness)?;
-            // config.load_bytecodes(
-            //     &mut layouter,
-            //     self.block.bytecodes.values(),
-            //     self.block.randomness,
-            // )?;
-            // config.load_block(&mut layouter, &self.block.context,
-            // self.block.randomness)?;
             load_txs(
                 &config.tx_table,
                 &mut layouter,
@@ -682,12 +520,7 @@ pub mod test {
             load_bytecodes(
                 &config.bytecode_table,
                 &mut layouter,
-                &self
-                    .block
-                    .bytecodes
-                    .iter()
-                    .map(|(_, b)| b.clone())
-                    .collect::<Vec<Bytecode>>(),
+                self.block.bytecodes.iter().map(|(_, b)| b),
                 self.block.randomness,
             )?;
             load_block(

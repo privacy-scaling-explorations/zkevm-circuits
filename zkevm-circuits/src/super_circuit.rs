@@ -21,24 +21,19 @@ use crate::bytecode_circuit::bytecode_unroller::{
 use crate::util::Expr;
 use crate::{
     evm_circuit::{
-        table::{BlockTable, FixedTableTag, KeccakTable, TableColumns},
-        util::{rlc, RandomLinearCombination},
+        table::{BlockTable, FixedTableTag, KeccakTable},
         witness::Block,
-        EvmCircuit, {load_block, load_bytecodes, load_keccaks, load_rws, load_txs},
+        EvmCircuit, {load_block, load_keccaks, load_rws},
     },
     rw_table::RwTable,
 };
-use eth_types::{Field, ToLittleEndian, Word};
-use gadgets::evm_word::encode;
+use eth_types::Field;
 use halo2_proofs::{
     arithmetic::CurveAffine,
     circuit::{Layouter, SimpleFloorPlanner},
-    // dev::{MockProver, VerifyFailure},
-    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Expression},
+    plonk::{Circuit, ConstraintSystem, Error, Expression},
     poly::Rotation,
 };
-use itertools::Itertools;
-use keccak256::plain::Keccak;
 
 // The SuperCircuit contains the following circuits:
 //
@@ -232,9 +227,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
             .iter()
             .map(|(_, b)| unroll(b.bytes.clone(), self.block.randomness))
             .collect();
-        config
-            .bytecode_circuit
-            .load(&mut layouter, &bytecodes, self.block.randomness)?;
+        config.bytecode_circuit.load(&mut layouter)?;
         config.bytecode_circuit.assign(
             &mut layouter,
             self.bytecode_size,
@@ -256,7 +249,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
         load_keccaks(
             &config.keccak_table,
             &mut layouter,
-            &keccak_inputs,
+            keccak_inputs.iter().map(|b| b.as_slice()),
             self.block.randomness,
         )?;
         Ok(())

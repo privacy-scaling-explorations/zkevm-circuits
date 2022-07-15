@@ -21,7 +21,7 @@ use ff::PrimeField;
 use group::GroupEncoding;
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter, Region, SimpleFloorPlanner},
-    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Expression, VirtualCells},
+    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Expression},
     poly::Rotation,
 };
 use itertools::Itertools;
@@ -523,7 +523,9 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
         load_keccaks(
             &config.keccak_table,
             &mut layouter,
-            &keccak_inputs(&self.txs, self.chain_id)?,
+            keccak_inputs(&self.txs, self.chain_id)?
+                .iter()
+                .map(|b| b.as_slice()),
             self.randomness,
         )
     }

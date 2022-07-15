@@ -2,8 +2,7 @@
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::Region,
-    plonk::{Advice, Column, ConstraintSystem, Error, Expression, VirtualCells},
-    poly::Rotation,
+    plonk::{Advice, Column, ConstraintSystem, Error},
 };
 
 use crate::evm_circuit::{table::TableColumns, witness::RwRow};

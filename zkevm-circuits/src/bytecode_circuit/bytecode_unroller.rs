@@ -1,5 +1,6 @@
 use crate::{
     evm_circuit::{
+        load_keccaks,
         table::{BytecodeFieldTag, KeccakTable, TableColumns},
         util::{
             and, constraint_builder::BaseConstraintBuilder, not, or, rlc, select,
@@ -15,17 +16,16 @@ use gadgets::{
     is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction},
 };
 use halo2_proofs::{
-    arithmetic::FieldExt,
     circuit::{Layouter, Region},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, Selector, VirtualCells},
     poly::Rotation,
 };
 use keccak256::plain::Keccak;
-use std::{convert::TryInto, vec};
+use std::vec;
 
 // use crate::util::TableShow;
 
-use super::param::{KECCAK_WIDTH, PUSH_TABLE_WIDTH};
+use super::param::PUSH_TABLE_WIDTH;
 
 /// Public data for the bytecode
 #[derive(Clone, Debug, PartialEq)]
@@ -113,10 +113,6 @@ impl<F: Field> Config<F> {
         let q_enable = meta.fixed_column();
         let q_first = meta.fixed_column();
         let q_last = meta.selector();
-        // let code_hash = bytecode_table.code_hash;
-        // let tag = bytecode_table.tag;
-        // let index = bytecode_table.index;
-        // let is_code = bytecode_table.is_code;
         let value = bytecode_table.value;
         let push_rindex = meta.advice_column();
         let hash_input_rlc = meta.advice_column();
@@ -453,7 +449,7 @@ impl<F: Field> Config<F> {
             |mut region| {
                 let mut offset = 0;
                 let mut push_rindex_prev = 0;
-                println!("> BytecodeConfig::assign");
+                // println!("> BytecodeConfig::assign");
                 // let mut table =
                 //     TableShow::<F>::new(vec!["codeHash", "tag", "index", "isCode", "value"]);
 
@@ -621,54 +617,49 @@ impl<F: Field> Config<F> {
 
     // CHANGELOG: Moved to a new function to allow not calling it when integrating
     // circuits together.
-    pub(crate) fn load_keccaks(
-        &self,
-        layouter: &mut impl Layouter<F>,
-        bytecodes: &[UnrolledBytecode<F>],
-        randomness: F,
-    ) -> Result<(), Error> {
-        println!("> bytecode_circuit.load_keccaks");
-        let mut table =
-            TableShow::<F>::new(vec!["is_enabled", "input_rlc", "input_len", "output_rlc"]);
-        layouter.assign_region(
-            || "keccak table",
-            |mut region| {
-                for (offset, bytecode) in bytecodes.iter().map(|v| v.bytes.clone()).enumerate() {
-                    let code_hash: F = keccak(&bytecode[..], randomness);
-                    // println!("+ {:?}", bytecode);
-                    let input_rlc: F = rlc::value_from_iter(bytecode.iter().rev(), randomness);
-                    let size = F::from(bytecode.len() as u64);
-                    for (name, column, value) in &[
-                        ("is_enable", self.keccak_table.is_enabled, F::one()),
-                        ("input_rlc", self.keccak_table.input_rlc, input_rlc),
-                        ("input_len", self.keccak_table.input_len, size),
-                        ("output_rlc", self.keccak_table.output_rlc, code_hash),
-                    ] {
-                        region.assign_advice(
-                            || format!("Keccak table assign {} {}", name, offset),
-                            *column,
-                            offset,
-                            || Ok(*value),
-                        )?;
-                    }
-                    table.push(0, F::one());
-                    table.push(1, input_rlc);
-                    table.push(2, size);
-                    table.push(3, code_hash);
-                }
-                table.print();
-                Ok(())
-            },
-        )
-    }
+    // pub(crate) fn load_keccaks(
+    //     &self,
+    //     layouter: &mut impl Layouter<F>,
+    //     bytecodes: &[UnrolledBytecode<F>],
+    //     randomness: F,
+    // ) -> Result<(), Error> {
+    //     println!("> bytecode_circuit.load_keccaks");
+    //     let mut table =
+    //         TableShow::<F>::new(vec!["is_enabled", "input_rlc", "input_len",
+    // "output_rlc"]);     layouter.assign_region(
+    //         || "keccak table",
+    //         |mut region| {
+    //             for (offset, bytecode) in bytecodes.iter().map(|v|
+    // v.bytes.clone()).enumerate() {                 let code_hash: F =
+    // keccak(&bytecode[..], randomness);                 // println!("+ {:?}",
+    // bytecode);                 let input_rlc: F =
+    // rlc::value(bytecode.iter().rev(), randomness);                 let size =
+    // F::from(bytecode.len() as u64);                 for (name, column, value)
+    // in &[                     ("is_enable", self.keccak_table.is_enabled,
+    // F::one()),                     ("input_rlc", self.keccak_table.input_rlc,
+    // input_rlc),                     ("input_len",
+    // self.keccak_table.input_len, size),                     ("output_rlc",
+    // self.keccak_table.output_rlc, code_hash),                 ] {
+    //                     region.assign_advice(
+    //                         || format!("Keccak table assign {} {}", name,
+    // offset),                         *column,
+    //                         offset,
+    //                         || Ok(*value),
+    //                     )?;
+    //                 }
+    //                 table.push(0, F::one());
+    //                 table.push(1, input_rlc);
+    //                 table.push(2, size);
+    //                 table.push(3, code_hash);
+    //             }
+    //             table.print();
+    //             Ok(())
+    //         },
+    //     )
+    // }
 
-    /// load tables
-    pub(crate) fn load(
-        &self,
-        layouter: &mut impl Layouter<F>,
-        bytecodes: &[UnrolledBytecode<F>],
-        randomness: F,
-    ) -> Result<(), Error> {
+    /// load fixed tables
+    pub(crate) fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
         // push table: BYTE -> NUM_PUSHED:
         // [0, OpcodeId::PUSH1[ -> 0
         // [OpcodeId::PUSH1, OpcodeId::PUSH32] -> [1..32]
@@ -693,8 +684,6 @@ impl<F: Field> Config<F> {
                 Ok(())
             },
         )?;
-        // TODO: Remove this
-        // self.load_keccaks(layouter, bytecodes, randomness)?;
 
         Ok(())
     }
@@ -766,10 +755,6 @@ fn into_words(message: &[u8]) -> Vec<u64> {
     words
 }
 
-fn linear_combine<F: Field>(bytes: Vec<u8>, randomness: F) -> F {
-    encode(bytes.into_iter(), randomness)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -788,11 +773,6 @@ mod tests {
         randomness: F,
     }
 
-    // impl<F: Field> MyCircuit<F> {
-    //     fn randomness() -> F {
-    //         F::from(123456)
-    //     }
-    // }
     fn get_randomness<F: Field>() -> F {
         F::from(123456)
     }
@@ -839,8 +819,13 @@ mod tests {
             config: Self::Config,
             mut layouter: impl Layouter<F>,
         ) -> Result<(), Error> {
-            config.load(&mut layouter, &self.bytecodes, self.randomness)?;
-            config.load_keccaks(&mut layouter, &self.bytecodes, self.randomness)?;
+            config.load(&mut layouter)?;
+            load_keccaks(
+                &config.keccak_table,
+                &mut layouter,
+                self.bytecodes.iter().map(|b| b.bytes.as_slice()),
+                self.randomness,
+            )?;
             config.assign(&mut layouter, self.size, &self.bytecodes, self.randomness)?;
             Ok(())
         }
@@ -853,7 +838,8 @@ mod tests {
             randomness,
         };
 
-        let prover = MockProver::<F>::run(k, &circuit, vec![]).unwrap();
+        let instance = vec![vec![randomness; (1 << k) - 7 + 1]];
+        let prover = MockProver::<F>::run(k, &circuit, instance).unwrap();
         let err = prover.verify();
         let print_failures = true;
         if err.is_err() && print_failures {

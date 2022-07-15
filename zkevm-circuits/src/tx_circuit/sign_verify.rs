@@ -908,9 +908,9 @@ mod sign_verify_tests {
             load_keccaks(
                 &config.sign_verify.keccak_table,
                 &mut layouter,
-                &keccak_inputs(&self.signatures),
+                keccak_inputs(&self.signatures).iter().map(|b| b.as_slice()),
                 self.randomness,
-            );
+            )?;
             Ok(())
         }
     }
