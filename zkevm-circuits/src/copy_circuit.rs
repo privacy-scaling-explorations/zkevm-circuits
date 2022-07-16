@@ -627,6 +627,7 @@ mod tests {
     use bus_mapping::{
         circuit_input_builder::{CircuitInputBuilder, CopyDataType},
         mock::BlockData,
+        operation::RWCounter,
     };
     use eth_types::{bytecode, geth_types::GethData, Field, Word};
     use halo2_proofs::{
@@ -872,7 +873,7 @@ mod tests {
         assert!(run_circuit(10, block).is_ok());
     }
 
-    fn perturb_bytecode(block: &mut bus_mapping::circuit_input_builder::Block) {
+    fn perturb_tag(block: &mut bus_mapping::circuit_input_builder::Block, tag: CopyDataType) {
         debug_assert!(!block.copy_events.is_empty());
         debug_assert!(!block.copy_events[0].steps.is_empty());
 
@@ -881,51 +882,24 @@ mod tests {
             .steps
             .iter()
             .enumerate()
-            .filter(|(_i, step)| step.tag == CopyDataType::Bytecode)
+            .filter(|(_i, step)| step.tag == tag)
             .map(|(i, _step)| i)
             .collect::<Vec<usize>>();
         let rand_idx = idxs.choose(&mut rng).unwrap();
-        block.copy_events[0].steps[*rand_idx].value = rng.gen();
-    }
-
-    fn perturb_memory(block: &mut bus_mapping::circuit_input_builder::Block) {
-        debug_assert!(!block.copy_events.is_empty());
-        debug_assert!(!block.copy_events[0].steps.is_empty());
-
-        let mut rng = rand::thread_rng();
-        let idxs = block.copy_events[0]
-            .steps
-            .iter()
-            .enumerate()
-            .filter(|(_i, step)| step.tag == CopyDataType::Memory)
-            .map(|(i, _step)| i)
-            .collect::<Vec<usize>>();
-        let rand_idx = idxs.choose(&mut rng).unwrap();
-        block.copy_events[0].steps[*rand_idx].value = rng.gen();
-    }
-
-    fn perturb_txcalldata(block: &mut bus_mapping::circuit_input_builder::Block) {
-        debug_assert!(!block.copy_events.is_empty());
-        debug_assert!(!block.copy_events[0].steps.is_empty());
-
-        let mut rng = rand::thread_rng();
-        let idxs = block.copy_events[0]
-            .steps
-            .iter()
-            .enumerate()
-            .filter(|(_i, step)| step.tag == CopyDataType::TxCalldata)
-            .map(|(i, _step)| i)
-            .collect::<Vec<usize>>();
-        let rand_idx = idxs.choose(&mut rng).unwrap();
-        block.copy_events[0].steps[*rand_idx].value = rng.gen();
+        match rng.gen::<f32>() {
+            f if f < 0.25 => block.copy_events[0].steps[*rand_idx].addr = rng.gen(),
+            f if f < 0.5 => block.copy_events[0].steps[*rand_idx].value = rng.gen(),
+            f if f < 0.75 => block.copy_events[0].steps[*rand_idx].rwc = RWCounter(rng.gen()),
+            _ => block.copy_events[0].steps[*rand_idx].rwc_inc_left = rng.gen(),
+        }
     }
 
     #[test]
     fn copy_circuit_invalid_calldatacopy() {
         let mut builder = gen_calldatacopy_data();
         match rand::thread_rng().gen_bool(0.5) {
-            true => perturb_memory(&mut builder.block),
-            false => perturb_txcalldata(&mut builder.block),
+            true => perturb_tag(&mut builder.block, CopyDataType::Memory),
+            false => perturb_tag(&mut builder.block, CopyDataType::TxCalldata),
         }
         let block = block_convert(&builder.block, &builder.code_db);
         assert!(run_circuit(10, block).is_err());
@@ -935,8 +909,8 @@ mod tests {
     fn copy_circuit_invalid_codecopy() {
         let mut builder = gen_codecopy_data();
         match rand::thread_rng().gen_bool(0.5) {
-            true => perturb_memory(&mut builder.block),
-            false => perturb_bytecode(&mut builder.block),
+            true => perturb_tag(&mut builder.block, CopyDataType::Memory),
+            false => perturb_tag(&mut builder.block, CopyDataType::Bytecode),
         }
         let block = block_convert(&builder.block, &builder.code_db);
         assert!(run_circuit(10, block).is_err());
