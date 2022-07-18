@@ -227,7 +227,7 @@ pub fn load_rws<F: Field>(
     )
 }
 
-use crate::util::TableShow;
+// use crate::util::TableShow;
 
 // TODO: Move to src/tables.rs
 pub fn load_bytecodes<'a, F: Field>(
@@ -387,14 +387,13 @@ pub mod test {
     use crate::{
         evm_circuit::{table::FixedTableTag, witness::Block, EvmCircuit},
         rw_table::RwTable,
-        util::Expr,
+        util::power_of_randomness_from_instance,
     };
     use eth_types::{Field, Word};
     use halo2_proofs::{
         circuit::{Layouter, SimpleFloorPlanner},
         dev::{MockProver, VerifyFailure},
         plonk::{Circuit, ConstraintSystem, Error},
-        poly::Rotation,
     };
     use rand::{
         distributions::uniform::{SampleRange, SampleUniform},
@@ -460,24 +459,7 @@ pub mod test {
             let bytecode_table = BytecodeTable::construct(meta);
             let block_table = BlockTable::construct(meta);
 
-            // This gate is used just to get the array of expressions from the power of
-            // randomness instance column, so that later on we don't need to query
-            // columns everywhere, and can pass the power of randomness array
-            // expression everywhere.  The gate itself doesn't add any constraints.
-            let power_of_randomness = {
-                let columns = [(); 31].map(|_| meta.instance_column());
-                let mut power_of_randomness = None;
-
-                meta.create_gate("", |meta| {
-                    power_of_randomness =
-                        Some(columns.map(|column| meta.query_instance(column, Rotation::cur())));
-
-                    [0.expr()]
-                });
-
-                power_of_randomness.unwrap()
-            };
-
+            let power_of_randomness = power_of_randomness_from_instance(meta);
             let evm_circuit = EvmCircuit::configure(
                 meta,
                 power_of_randomness,

@@ -836,6 +836,7 @@ fn pub_key_hash_to_address<F: Field>(pk_hash: &[u8]) -> F {
 #[cfg(test)]
 mod sign_verify_tests {
     use super::*;
+    use crate::util::power_of_randomness_from_instance;
     use group::Group;
     use halo2_proofs::{
         circuit::SimpleFloorPlanner, dev::MockProver, pairing::bn256::Fr, plonk::Circuit,
@@ -851,23 +852,7 @@ mod sign_verify_tests {
 
     impl<F: Field> TestCircuitSignVerifyConfig<F> {
         pub(crate) fn new(meta: &mut ConstraintSystem<F>) -> Self {
-            // This gate is used just to get the array of expressions from the power of
-            // randomness instance column, so that later on we don't need to query
-            // columns everywhere, and can pass the power of randomness array
-            // expression everywhere.  The gate itself doesn't add any constraints.
-            let power_of_randomness = {
-                let columns = [(); POW_RAND_SIZE].map(|_| meta.instance_column());
-                let mut power_of_randomness = None;
-
-                meta.create_gate("power of randomness", |meta| {
-                    power_of_randomness =
-                        Some(columns.map(|column| meta.query_instance(column, Rotation::cur())));
-
-                    [0.expr()]
-                });
-
-                power_of_randomness.unwrap()
-            };
+            let power_of_randomness = power_of_randomness_from_instance(meta);
             let keccak_table = KeccakTable::construct(meta);
 
             let sign_verify = SignVerifyConfig::new(meta, power_of_randomness, keccak_table);

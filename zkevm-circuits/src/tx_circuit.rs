@@ -13,7 +13,7 @@ use crate::evm_circuit::{
     table::{KeccakTable, TableColumns},
 };
 use crate::impl_expr;
-use crate::util::{random_linear_combine_word as rlc, Expr};
+use crate::util::{power_of_randomness_from_instance, random_linear_combine_word as rlc};
 use eth_types::{
     geth_types::Transaction, Address, Field, ToBigEndian, ToLittleEndian, ToScalar, Word,
 };
@@ -22,7 +22,6 @@ use group::GroupEncoding;
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter, Region, SimpleFloorPlanner},
     plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Expression},
-    poly::Rotation,
 };
 use itertools::Itertools;
 use lazy_static::lazy_static;
@@ -236,34 +235,12 @@ impl<F: Field> TxCircuitConfig<F> {
         tx_table: TxTable,
         keccak_table: KeccakTable,
     ) -> Self {
-        // let tx_id = meta.advice_column();
-        // let tag = meta.advice_column();
-        // let index = meta.advice_column();
-        // let value = meta.advice_column();
         let tx_id = tx_table.tx_id;
         let tag = tx_table.tag;
         let index = tx_table.index;
         let value = tx_table.value;
         meta.enable_equality(value);
 
-        // This gate is used just to get the array of expressions from the power of
-        // randomness instance column, so that later on we don't need to query
-        // columns everywhere, and can pass the power of randomness array
-        // expression everywhere.  The gate itself doesn't add any constraints.
-        // let power_of_randomness = {
-        //     let columns = [(); sign_verify::POW_RAND_SIZE].map(|_|
-        // meta.instance_column());     let mut power_of_randomness = None;
-
-        //     meta.create_gate("power of randomness", |meta| {
-        //         power_of_randomness =
-        //             Some(columns.map(|column| meta.query_instance(column,
-        // Rotation::cur())));
-
-        //         [0.expr()]
-        //     });
-
-        //     power_of_randomness.unwrap()
-        // };
         let sign_verify = SignVerifyConfig::new(meta, power_of_randomness, keccak_table.clone());
 
         Self {
@@ -492,24 +469,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
             value: meta.advice_column(),
         };
 
-        // This gate is used just to get the array of expressions from the power of
-        // randomness instance column, so that later on we don't need to query
-        // columns everywhere, and can pass the power of randomness array
-        // expression everywhere.  The gate itself doesn't add any constraints.
-        let power_of_randomness = {
-            let columns = [(); sign_verify::POW_RAND_SIZE].map(|_| meta.instance_column());
-            let mut power_of_randomness = None;
-
-            meta.create_gate("", |meta| {
-                power_of_randomness =
-                    Some(columns.map(|column| meta.query_instance(column, Rotation::cur())));
-
-                [0.expr()]
-            });
-
-            power_of_randomness.unwrap()
-        };
-
+        let power_of_randomness = power_of_randomness_from_instance(meta);
         let keccak_table = KeccakTable::construct(meta);
         TxCircuitConfig::new(meta, power_of_randomness, tx_table, keccak_table)
     }

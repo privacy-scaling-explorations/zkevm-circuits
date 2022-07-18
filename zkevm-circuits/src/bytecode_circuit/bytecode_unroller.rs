@@ -3,7 +3,7 @@ use crate::{
         load_keccaks,
         table::{BytecodeFieldTag, KeccakTable, TableColumns},
         util::{
-            and, constraint_builder::BaseConstraintBuilder, not, or, rlc, select,
+            and, constraint_builder::BaseConstraintBuilder, not, or, select,
             RandomLinearCombination,
         },
     },
@@ -11,10 +11,7 @@ use crate::{
 };
 use bus_mapping::evm::OpcodeId;
 use eth_types::{Field, ToLittleEndian, Word};
-use gadgets::{
-    evm_word::encode,
-    is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction},
-};
+use gadgets::is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction};
 use halo2_proofs::{
     circuit::{Layouter, Region},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, Selector, VirtualCells},
@@ -101,7 +98,7 @@ pub struct Config<F> {
     keccak_table: KeccakTable,
 }
 
-use crate::util::TableShow;
+// use crate::util::TableShow;
 
 impl<F: Field> Config<F> {
     pub(crate) fn configure(
@@ -758,6 +755,7 @@ fn into_words(message: &[u8]) -> Vec<u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::util::power_of_randomness_from_instance;
     use eth_types::{Bytecode, Word};
     use halo2_proofs::{
         circuit::{Layouter, SimpleFloorPlanner},
@@ -794,24 +792,10 @@ mod tests {
                 value: meta.advice_column(),
             };
 
-            // This gate is used just to get the array of expressions from the power of
-            // randomness instance column, so that later on we don't need to query
-            // columns everywhere, and can pass the power of randomness array
-            // expression everywhere.  The gate itself doesn't add any constraints.
-            let randomness = {
-                let column = meta.instance_column();
-                let mut randomness = None;
-
-                meta.create_gate("", |meta| {
-                    randomness = Some(meta.query_instance(column, Rotation::cur()));
-                    [0.expr()]
-                });
-
-                randomness.unwrap()
-            };
+            let randomness = power_of_randomness_from_instance::<_, 1>(meta);
             let keccak_table = KeccakTable::construct(meta);
 
-            Config::configure(meta, randomness, bytecode_table, keccak_table)
+            Config::configure(meta, randomness[0].clone(), bytecode_table, keccak_table)
         }
 
         fn synthesize(

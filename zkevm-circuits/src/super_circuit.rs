@@ -12,13 +12,13 @@
 #![allow(missing_docs)]
 // use halo2_proofs::plonk::*;
 
-use crate::tx_circuit::{self, sign_verify, TxCircuit, TxCircuitConfig, TxTable};
+use crate::tx_circuit::{self, TxCircuit, TxCircuitConfig, TxTable};
 
 use crate::bytecode_circuit::bytecode_unroller::{
     unroll, BytecodeTable, Config as BytecodeConfig, UnrolledBytecode,
 };
 
-use crate::util::Expr;
+use crate::util::power_of_randomness_from_instance;
 use crate::{
     evm_circuit::{
         table::{BlockTable, FixedTableTag, KeccakTable},
@@ -29,10 +29,8 @@ use crate::{
 };
 use eth_types::Field;
 use halo2_proofs::{
-    arithmetic::CurveAffine,
     circuit::{Layouter, SimpleFloorPlanner},
     plonk::{Circuit, ConstraintSystem, Error, Expression},
-    poly::Rotation,
 };
 
 // The SuperCircuit contains the following circuits:
@@ -128,23 +126,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
         let block_table = BlockTable::construct(meta);
         let keccak_table = KeccakTable::construct(meta);
 
-        // This gate is used just to get the array of expressions from the power of
-        // randomness instance column, so that later on we don't need to query
-        // columns everywhere, and can pass the power of randomness array
-        // expression everywhere.  The gate itself doesn't add any constraints.
-        let power_of_randomness = {
-            let columns = [(); sign_verify::POW_RAND_SIZE].map(|_| meta.instance_column());
-            let mut power_of_randomness = None;
-
-            meta.create_gate("", |meta| {
-                power_of_randomness =
-                    Some(columns.map(|column| meta.query_instance(column, Rotation::cur())));
-
-                [0.expr()]
-            });
-
-            power_of_randomness.unwrap()
-        };
+        let power_of_randomness = power_of_randomness_from_instance(meta);
         let evm_circuit = EvmCircuit::configure(
             meta,
             power_of_randomness[..31]
@@ -292,11 +274,7 @@ pub mod test {
 mod super_circuit_tests {
     use super::test::*;
     use super::*;
-    use crate::{
-        evm_circuit::witness::block_convert,
-        // test_util::{run_test_circuits, BytecodeTestConfig},
-        tx_circuit::sign_verify::POW_RAND_SIZE,
-    };
+    use crate::{evm_circuit::witness::block_convert, tx_circuit::sign_verify::POW_RAND_SIZE};
     use bus_mapping::mock::BlockData;
     use eth_types::{
         address, bytecode,
@@ -305,7 +283,7 @@ mod super_circuit_tests {
     };
     use ethers_signers::{LocalWallet, Signer};
     use group::{Curve, Group};
-    use halo2_proofs::arithmetic::Field as Halo2Field;
+    use halo2_proofs::arithmetic::{CurveAffine, Field as Halo2Field};
     use halo2_proofs::dev::{MockProver, VerifyConfig, VerifyFailure};
     use halo2_proofs::pairing::bn256::Fr;
     use mock::{TestContext, MOCK_CHAIN_ID};
