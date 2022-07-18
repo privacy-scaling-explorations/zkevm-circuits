@@ -5,10 +5,8 @@
 // - *_le: Little-Endian bytes
 
 use crate::{
-    evm_circuit::{
-        util::{not, RandomLinearCombination, Word},
-    },
-        table::{load_keccaks, KeccakTable},
+    evm_circuit::util::{not, RandomLinearCombination, Word},
+    table::{load_keccaks, KeccakTable},
     util::Expr,
 };
 use ecc::{EccConfig, GeneralEccChip};

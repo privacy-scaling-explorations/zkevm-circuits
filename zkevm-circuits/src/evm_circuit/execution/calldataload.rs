@@ -5,7 +5,6 @@ use eth_types::{Field, ToLittleEndian};
 use halo2_proofs::plonk::{Error, Expression};
 
 use crate::{
-        table::{CallContextFieldTag, TxContextFieldTag},
     evm_circuit::{
         param::{N_BYTES_MEMORY_ADDRESS, N_BYTES_WORD},
         step::ExecutionState,
@@ -18,6 +17,7 @@ use crate::{
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
+    table::{CallContextFieldTag, TxContextFieldTag},
     util::Expr,
 };
 

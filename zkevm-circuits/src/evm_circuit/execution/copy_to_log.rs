@@ -11,7 +11,7 @@ use crate::{
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-        table::TxLogFieldTag,
+    table::TxLogFieldTag,
     util::Expr,
 };
 use bus_mapping::{circuit_input_builder::CopyDetails, constants::MAX_COPY_BYTES};
@@ -229,13 +229,14 @@ impl<F: Field> ExecutionGadget<F> for CopyToLogGadget<F> {
 
 #[cfg(test)]
 pub mod test {
-    use crate::{evm_circuit::{
-        step::ExecutionState,
-        test::{rand_bytes, run_test_circuit_incomplete_fixed_table},
-        witness::{Block, Bytecode, Call, ExecStep, Rw, RwMap, Transaction},
-    },
+    use crate::{
+        evm_circuit::{
+            step::ExecutionState,
+            test::{rand_bytes, run_test_circuit_incomplete_fixed_table},
+            witness::{Block, Bytecode, Call, ExecStep, Rw, RwMap, Transaction},
+        },
         table::{RwTableTag, TxLogFieldTag},
-};
+    };
     use bus_mapping::{
         circuit_input_builder::{CopyDetails, StepAuxiliaryData},
         constants::MAX_COPY_BYTES,

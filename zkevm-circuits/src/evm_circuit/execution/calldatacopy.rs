@@ -15,7 +15,7 @@ use crate::{
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-        table::CallContextFieldTag,
+    table::CallContextFieldTag,
     util::Expr,
 };
 use bus_mapping::evm::OpcodeId;

@@ -1,5 +1,4 @@
 use crate::{
-        table::CallContextFieldTag,
     evm_circuit::{
         execution::ExecutionGadget,
         step::ExecutionState,
@@ -12,6 +11,7 @@ use crate::{
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
+    table::CallContextFieldTag,
     util::Expr,
 };
 use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar};

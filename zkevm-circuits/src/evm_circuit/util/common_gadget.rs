@@ -1,9 +1,8 @@
 use super::CachedRegion;
 use crate::{
-        table::{AccountFieldTag, CallContextFieldTag, },
     evm_circuit::{
         param::N_BYTES_GAS,
-        table::{ FixedTableTag, Lookup},
+        table::{FixedTableTag, Lookup},
         util::{
             constraint_builder::{
                 ConstraintBuilder, ReversionInfo, StepStateTransition,
@@ -14,6 +13,7 @@ use crate::{
         },
         witness::{Block, Call, ExecStep},
     },
+    table::{AccountFieldTag, CallContextFieldTag},
     util::Expr,
 };
 use eth_types::{Field, ToLittleEndian, ToScalar, U256};

@@ -2,16 +2,13 @@ use crate::{
     evm_circuit::{
         param::STACK_CAPACITY,
         step::{ExecutionState, Step},
-        table::{
-             FixedTableTag, Lookup,
-            Table, 
-        },
+        table::{FixedTableTag, Lookup, Table},
         util::{Cell, RandomLinearCombination, Word},
     },
-        table::{
-            AccountFieldTag, BytecodeFieldTag, CallContextFieldTag,
-            RwTableTag, TxContextFieldTag, TxLogFieldTag, TxReceiptFieldTag,
-        },
+    table::{
+        AccountFieldTag, BytecodeFieldTag, CallContextFieldTag, RwTableTag, TxContextFieldTag,
+        TxLogFieldTag, TxReceiptFieldTag,
+    },
     util::Expr,
 };
 use eth_types::Field;

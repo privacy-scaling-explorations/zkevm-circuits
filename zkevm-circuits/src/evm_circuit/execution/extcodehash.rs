@@ -1,5 +1,4 @@
 use crate::{
-        table::{AccountFieldTag, CallContextFieldTag},
     evm_circuit::{
         execution::ExecutionGadget,
         param::N_BYTES_ACCOUNT_ADDRESS,
@@ -15,6 +14,7 @@ use crate::{
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
+    table::{AccountFieldTag, CallContextFieldTag},
     util::Expr,
 };
 use eth_types::{evm_types::GasCost, Field, ToAddress, ToScalar, U256};

@@ -1,5 +1,4 @@
 use crate::{
-        table::CallContextFieldTag,
     evm_circuit::{
         execution::ExecutionGadget,
         param::N_BYTES_CALLDATASIZE,
@@ -11,6 +10,7 @@ use crate::{
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
+    table::CallContextFieldTag,
     util::Expr,
 };
 use bus_mapping::evm::OpcodeId;

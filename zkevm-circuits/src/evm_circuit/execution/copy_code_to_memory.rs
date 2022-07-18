@@ -262,12 +262,12 @@ pub(crate) mod test {
 
     use crate::{
         evm_circuit::{
-        step::ExecutionState,
-        test::run_test_circuit_incomplete_fixed_table,
-        witness::{Block, Bytecode, Call, ExecStep, Rw, RwMap, Transaction},
-    },
+            step::ExecutionState,
+            test::run_test_circuit_incomplete_fixed_table,
+            witness::{Block, Bytecode, Call, ExecStep, Rw, RwMap, Transaction},
+        },
         table::RwTableTag,
-};
+    };
 
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn make_copy_code_step(

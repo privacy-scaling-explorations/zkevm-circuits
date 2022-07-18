@@ -1,5 +1,4 @@
 use crate::{
-        table::TxContextFieldTag,
     evm_circuit::{
         execution::ExecutionGadget,
         param::{N_BYTES_MEMORY_ADDRESS, N_BYTES_MEMORY_WORD_SIZE},
@@ -12,6 +11,7 @@ use crate::{
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
+    table::TxContextFieldTag,
     util::Expr,
 };
 use bus_mapping::{circuit_input_builder::CopyDetails, constants::MAX_COPY_BYTES};
@@ -235,14 +235,15 @@ impl<F: Field> ExecutionGadget<F> for CopyToMemoryGadget<F> {
 
 #[cfg(test)]
 pub mod test {
-    use crate::{evm_circuit::{
-        execution::memory_copy::MAX_COPY_BYTES,
-        step::ExecutionState,
-        test::{rand_bytes, run_test_circuit_incomplete_fixed_table},
-        witness::{Block, Bytecode, Call, ExecStep, Rw, RwMap, Transaction},
-    },
-    table::RwTableTag,
-};
+    use crate::{
+        evm_circuit::{
+            execution::memory_copy::MAX_COPY_BYTES,
+            step::ExecutionState,
+            test::{rand_bytes, run_test_circuit_incomplete_fixed_table},
+            witness::{Block, Bytecode, Call, ExecStep, Rw, RwMap, Transaction},
+        },
+        table::RwTableTag,
+    };
     use bus_mapping::circuit_input_builder::{CopyDetails, StepAuxiliaryData};
     use eth_types::evm_types::OpcodeId;
     use halo2_proofs::arithmetic::BaseExt;

@@ -1,9 +1,10 @@
 #![allow(missing_docs)]
-use crate::{evm_circuit::{
-    param::{N_BYTES_WORD, STACK_CAPACITY},
-    step::ExecutionState,
-    util::RandomLinearCombination,
-},
+use crate::{
+    evm_circuit::{
+        param::{N_BYTES_WORD, STACK_CAPACITY},
+        step::ExecutionState,
+        util::RandomLinearCombination,
+    },
     table::{
         AccountFieldTag, BlockContextFieldTag, BytecodeFieldTag, CallContextFieldTag, RwTableTag,
         TxContextFieldTag, TxLogFieldTag, TxReceiptFieldTag,

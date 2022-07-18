@@ -1,11 +1,10 @@
 //! Table definitions used cross-circuits
 
-use crate::evm_circuit::{witness::RwRow};
+use crate::evm_circuit::witness::RwRow;
 use crate::evm_circuit::{
     util::{rlc, RandomLinearCombination},
     witness::{BlockContext, Bytecode, RwMap, Transaction},
 };
-use itertools::Itertools;
 use crate::impl_expr;
 use eth_types::{Field, ToLittleEndian, Word};
 use halo2_proofs::{
@@ -14,6 +13,7 @@ use halo2_proofs::{
     plonk::{Advice, Column, ConstraintSystem, Error},
 };
 use halo2_proofs::{circuit::Layouter, plonk::*};
+use itertools::Itertools;
 use keccak256::plain::Keccak;
 use strum_macros::{EnumCount, EnumIter};
 
@@ -54,7 +54,7 @@ pub enum TxFieldTag {
     CallData,
 }
 impl_expr!(TxFieldTag);
-pub type TxContextFieldTag = TxFieldTag; 
+pub type TxContextFieldTag = TxFieldTag;
 
 /// TxTable columns
 #[derive(Clone, Debug)]

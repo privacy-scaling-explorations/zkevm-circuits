@@ -1,5 +1,4 @@
 use crate::{
-        table::{CallContextFieldTag, RwTableTag, TxLogFieldTag},
     evm_circuit::{
         execution::ExecutionGadget,
         param::N_BYTES_MEMORY_WORD_SIZE,
@@ -16,6 +15,7 @@ use crate::{
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
+    table::{CallContextFieldTag, RwTableTag, TxLogFieldTag},
     util::Expr,
 };
 use array_init::array_init;

@@ -1,5 +1,4 @@
 use crate::{
-        table::BlockContextFieldTag,
     evm_circuit::{
         execution::ExecutionGadget,
         step::ExecutionState,
@@ -10,6 +9,7 @@ use crate::{
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
+    table::BlockContextFieldTag,
     util::Expr,
 };
 use bus_mapping::evm::OpcodeId;

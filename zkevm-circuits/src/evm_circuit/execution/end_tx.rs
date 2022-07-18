@@ -1,8 +1,4 @@
 use crate::{
-        table::{
-            BlockContextFieldTag, CallContextFieldTag, RwTableTag, TxContextFieldTag,
-            TxReceiptFieldTag,
-        },
     evm_circuit::{
         execution::ExecutionGadget,
         param::N_BYTES_GAS,
@@ -17,6 +13,9 @@ use crate::{
             CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
+    },
+    table::{
+        BlockContextFieldTag, CallContextFieldTag, RwTableTag, TxContextFieldTag, TxReceiptFieldTag,
     },
     util::Expr,
 };
