@@ -35,10 +35,10 @@ impl<F: Field> EvmCircuit<F> {
         rw_table: &dyn LookupTable<F>,
         bytecode_table: &dyn LookupTable<F>,
         block_table: &dyn LookupTable<F>,
+        copy_table: &dyn LookupTable<F>,
     ) -> Self {
         let fixed_table = [(); 4].map(|_| meta.fixed_column());
         let byte_table = [(); 1].map(|_| meta.fixed_column());
-
         let execution = Box::new(ExecutionConfig::configure(
             meta,
             power_of_randomness,
@@ -48,6 +48,7 @@ impl<F: Field> EvmCircuit<F> {
             rw_table,
             bytecode_table,
             block_table,
+            copy_table,
         ));
 
         Self {
@@ -105,7 +106,8 @@ impl<F: Field> EvmCircuit<F> {
         layouter: &mut impl Layouter<F>,
         block: &Block<F>,
     ) -> Result<(), Error> {
-        self.execution.assign_block(layouter, block, false)
+        self.execution.assign_block(layouter, block, false)?;
+        Ok(())
     }
 
     /// Assign exact steps in block without padding for unit test purpose
@@ -115,7 +117,8 @@ impl<F: Field> EvmCircuit<F> {
         layouter: &mut impl Layouter<F>,
         block: &Block<F>,
     ) -> Result<(), Error> {
-        self.execution.assign_block(layouter, block, true)
+        self.execution.assign_block(layouter, block, true)?;
+        Ok(())
     }
 
     /// Calculate which rows are "actually" used in the circuit
@@ -144,9 +147,15 @@ impl<F: Field> EvmCircuit<F> {
 pub mod test {
     use super::*;
     use crate::{
+        copy_circuit::CopyCircuit,
         evm_circuit::{table::FixedTableTag, witness::Block, EvmCircuit},
+        evm_circuit::{
+            table::FixedTableTag,
+            witness::{Block, BlockContext, Bytecode, RwMap, Transaction},
+            EvmCircuit,
+        },
         table::{load_block, load_bytecodes, load_rws, load_txs, BlockTable, RwTable},
-        util::power_of_randomness_from_instance,
+        util::{power_of_randomness_from_instance, Expr},
     };
     use eth_types::{Field, Word};
     use halo2_proofs::{
@@ -186,6 +195,7 @@ pub mod test {
         rw_table: RwTable,
         bytecode_table: BytecodeTable,
         block_table: BlockTable,
+        copy_table: CopyCircuit<F>,
         evm_circuit: EvmCircuit<F>,
     }
 
@@ -217,6 +227,7 @@ pub mod test {
             let rw_table = RwTable::construct(meta);
             let bytecode_table = BytecodeTable::construct(meta);
             let block_table = BlockTable::construct(meta);
+            let copy_table = CopyCircuit::configure(meta, &tx_table, &rw_table, &bytecode_table);
 
             let power_of_randomness = power_of_randomness_from_instance(meta);
             let evm_circuit = EvmCircuit::configure(
@@ -233,7 +244,16 @@ pub mod test {
                 rw_table,
                 bytecode_table,
                 block_table,
-                evm_circuit,
+                copy_table,
+                evm_circuit: EvmCircuit::configure(
+                    meta,
+                    power_of_randomness,
+                    &tx_table,
+                    &rw_table,
+                    &bytecode_table,
+                    &block_table,
+                    &copy_table,
+                ),
             }
         }
 
@@ -270,6 +290,7 @@ pub mod test {
                 &self.block.context,
                 self.block.randomness,
             )?;
+            config.copy_table.assign_block(&mut layouter, &self.block)?;
             config
                 .evm_circuit
                 .assign_block_exact(&mut layouter, &self.block)

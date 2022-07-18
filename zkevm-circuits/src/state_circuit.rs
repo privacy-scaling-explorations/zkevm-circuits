@@ -17,7 +17,10 @@ use crate::{
 };
 use constraint_builder::{ConstraintBuilder, Queries};
 use eth_types::{Address, Field};
-use gadgets::binary_number::{BinaryNumberChip, BinaryNumberConfig};
+use gadgets::{
+    binary_number::{BinaryNumberChip, BinaryNumberConfig},
+    util::Expr,
+};
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner},
     plonk::{

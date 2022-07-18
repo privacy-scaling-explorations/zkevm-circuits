@@ -12,7 +12,7 @@ use crate::{
 };
 
 use bus_mapping::{
-    circuit_input_builder::{self, StepAuxiliaryData},
+    circuit_input_builder::{self, CopyEvent},
     error::{ExecError, OogError},
     operation::{self, AccountField, CallContextField, TxLogField, TxReceiptField},
 };
@@ -38,6 +38,9 @@ pub struct Block<F> {
     pub bytecodes: HashMap<Word, Bytecode>,
     /// The block context
     pub context: BlockContext,
+    /// Copy events for the EVM circuit's Copy Table, a mapping from (tx_id ||
+    /// call_id || pc) to the corresponding copy event.
+    pub copy_events: HashMap<(usize, usize, usize), CopyEvent>,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -306,8 +309,6 @@ pub struct ExecStep {
     pub log_id: usize,
     /// The opcode corresponds to the step
     pub opcode: Option<OpcodeId>,
-    /// Step auxiliary data
-    pub aux_data: Option<StepAuxiliaryData>,
 }
 
 impl ExecStep {
@@ -1287,9 +1288,6 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
             }
             circuit_input_builder::ExecState::BeginTx => ExecutionState::BeginTx,
             circuit_input_builder::ExecState::EndTx => ExecutionState::EndTx,
-            circuit_input_builder::ExecState::CopyToMemory => ExecutionState::CopyToMemory,
-            circuit_input_builder::ExecState::CopyToLog => ExecutionState::CopyToLog,
-            circuit_input_builder::ExecState::CopyCodeToMemory => ExecutionState::CopyCodeToMemory,
         }
     }
 }
@@ -1338,7 +1336,6 @@ fn step_convert(step: &circuit_input_builder::ExecStep) -> ExecStep {
         memory_size: step.memory_size as u64,
         reversible_write_counter: step.reversible_write_counter,
         log_id: step.log_id,
-        aux_data: step.aux_data.map(Into::into),
     }
 }
 
@@ -1430,6 +1427,16 @@ pub fn block_convert(
                         let bytecode = Bytecode::new(code_db.0.get(&code_hash).unwrap().to_vec());
                         (bytecode.hash, bytecode)
                     })
+            })
+            .collect(),
+        copy_events: block
+            .copy_events
+            .iter()
+            .map(|copy_event| {
+                (
+                    (copy_event.tx_id, copy_event.call_id, copy_event.pc.0),
+                    copy_event.clone(),
+                )
             })
             .collect(),
     }

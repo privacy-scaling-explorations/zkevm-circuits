@@ -364,6 +364,8 @@ dependencies = [
  "eth-types",
  "ethers-core",
  "ethers-providers",
+ "gadgets",
+ "halo2_proofs 0.1.0-beta.1",
  "hex",
  "itertools",
  "keccak256",
@@ -374,6 +376,8 @@ dependencies = [
  "rand",
  "serde",
  "serde_json",
+ "strum",
+ "strum_macros",
  "tokio",
  "url",
 ]
@@ -1712,8 +1716,10 @@ dependencies = [
 name = "gadgets"
 version = "0.1.0"
 dependencies = [
+ "array-init",
  "digest 0.7.6",
  "eth-types",
+ "ff 0.11.1",
  "halo2_proofs 0.1.0-beta.1",
  "rand",
  "rand_xorshift",

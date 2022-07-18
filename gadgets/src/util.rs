@@ -190,7 +190,7 @@ pub fn expr_from_bytes<F: FieldExt, E: Expr<F>>(bytes: &[E]) -> Expression<F> {
     value
 }
 
-/// Returns 2**by as Field
+/// Returns 2**by as FieldExt
 pub fn pow_of_two<F: FieldExt>(by: usize) -> F {
     F::from(2).pow(&[by as u64, 0, 0, 0])
 }
