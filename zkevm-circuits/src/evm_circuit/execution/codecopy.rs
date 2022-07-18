@@ -11,6 +11,7 @@ use crate::{
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition},
+            from_bytes,
             memory_gadget::{MemoryAddressGadget, MemoryCopierGasGadget, MemoryExpansionGadget},
             not, CachedRegion, Cell, MemoryAddress,
         },
@@ -61,8 +62,7 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
         cb.stack_pop(size.expr());
 
         // Construct memory address in the destionation (memory) to which we copy code.
-        let dst_memory_addr =
-            MemoryAddressGadget::construct(cb, dst_memory_offset.clone(), size.clone());
+        let dst_memory_addr = MemoryAddressGadget::construct(cb, dst_memory_offset, size);
 
         // Fetch the hash of bytecode running in current environment.
         let code_hash = cb.curr.state.code_hash.clone();
@@ -91,10 +91,10 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
                 CopyDataType::Bytecode.expr(),
                 cb.curr.state.call_id.expr(),
                 CopyDataType::Memory.expr(),
-                code_offset.expr(),
+                from_bytes::expr(&code_offset.cells),
                 code_size.expr(),
-                dst_memory_offset.expr(),
-                size.expr(),
+                dst_memory_addr.offset(),
+                dst_memory_addr.length(),
                 cb.curr.state.rw_counter.expr() + cb.rw_counter_offset().expr(),
                 copy_rwc_inc.expr(),
             );
@@ -208,7 +208,7 @@ mod tests {
     fn test_ok(memory_offset: usize, code_offset: usize, size: usize, large: bool) {
         let mut code = bytecode! {};
         if large {
-            for _ in 0..128 {
+            for _ in 0..0x101 {
                 code.push(1, Word::from(123));
             }
         }
@@ -231,7 +231,7 @@ mod tests {
     }
 
     #[test]
-    fn codecopy_gadget() {
+    fn codecopy_gadget_simple() {
         test_ok(0x00, 0x00, 0x20, false);
         test_ok(0x20, 0x30, 0x30, false);
         test_ok(0x10, 0x20, 0x42, false);
@@ -239,6 +239,6 @@ mod tests {
 
     #[test]
     fn codecopy_gadget_large() {
-        test_ok(0x00, 0x00, 0x02, true);
+        test_ok(0x103, 0x102, 0x101, true);
     }
 }

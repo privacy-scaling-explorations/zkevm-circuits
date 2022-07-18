@@ -10,7 +10,6 @@ use crate::{
                 ConstraintBuilder, StepStateTransition,
                 Transition::{Delta, To},
             },
-            from_bytes,
             memory_gadget::{MemoryAddressGadget, MemoryExpansionGadget},
             not, sum, CachedRegion, Cell, Word,
         },
@@ -116,7 +115,7 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
         }
 
         // check memory copy
-        let memory_address = MemoryAddressGadget::construct(cb, mstart.clone(), msize.clone());
+        let memory_address = MemoryAddressGadget::construct(cb, mstart, msize);
 
         // Calculate the next memory size and the gas cost for this memory
         // access
@@ -136,10 +135,10 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
                 CopyDataType::Memory.expr(),
                 tx_id.expr(),
                 CopyDataType::TxLog.expr(),
-                mstart.expr(),
-                mstart.expr() + msize.expr(),
+                memory_address.offset(),
+                memory_address.address(),
                 dst_addr,
-                msize.expr(),
+                memory_address.length(),
                 cb.curr.state.rw_counter.expr() + cb.rw_counter_offset().expr(),
                 copy_rwc_inc.expr(),
             );
@@ -153,7 +152,7 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
 
         let gas_cost = GasCost::LOG.as_u64().expr()
             + GasCost::LOG.as_u64().expr() * topic_count.clone()
-            + 8.expr() * from_bytes::expr(&msize.cells)
+            + 8.expr() * memory_address.length()
             + memory_expansion.gas_cost();
         // State transition
 
@@ -259,8 +258,9 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use eth_types::{bytecode, evm_types::OpcodeId, Bytecode, Word};
+    use eth_types::{evm_types::OpcodeId, Bytecode, Word};
     use mock::TestContext;
+    use rand::Rng;
 
     use crate::test_util::run_test_circuits;
 
@@ -305,9 +305,9 @@ mod test {
 
     // test single log code and single copy log step
     fn test_log_ok(topics: &[Word]) {
-        let pushdata = "1234567890abcdef1234567890abcdef";
-        // prepare first 32 bytes for memory reading
-        let mut code_prepare = prepare_code(pushdata, 0);
+        let mut pushdata = [0u8; 320];
+        rand::thread_rng().try_fill(&mut pushdata[..]).unwrap();
+        let mut code_prepare = prepare_code(&pushdata, 1);
 
         let log_codes = [
             OpcodeId::LOG0,
@@ -346,9 +346,9 @@ mod test {
     // test multi log op codes and multi copy log steps
     fn test_multi_log_ok(topics: &[Word]) {
         // prepare memory data
-        let pushdata = "1234567890abcdef1234567890abcdef";
-        // prepare first 32 bytes for memory reading
-        let mut code_prepare = prepare_code(pushdata, 0);
+        let mut pushdata = [0u8; 320];
+        rand::thread_rng().try_fill(&mut pushdata[..]).unwrap();
+        let mut code_prepare = prepare_code(&pushdata, 0);
 
         let log_codes = [
             OpcodeId::LOG0,
@@ -375,7 +375,7 @@ mod test {
 
         // second log op code
         // prepare additinal bytes for memory reading
-        code.append(&prepare_code(pushdata, 0x20));
+        code.append(&prepare_code(&pushdata, 0x20));
         mstart = 0x00usize;
         // when mszie > 0x20 (32) needs multi copy steps
         msize = 0x30usize;
@@ -399,16 +399,15 @@ mod test {
     }
 
     /// prepare memory reading data
-    fn prepare_code(data: &str, offset: u32) -> Bytecode {
-        // data is in hex format
-        assert_eq!(data.bytes().len(), 32);
+    fn prepare_code(data: &[u8], offset: usize) -> Bytecode {
+        assert_eq!(data.len() % 32, 0);
         // prepare memory data
-        let pushdata = hex::decode(data).unwrap();
-        return bytecode! {
-            // populate memory.
-            PUSH16(Word::from_big_endian(&pushdata))
-            PUSH1(offset) // offset
-            MSTORE
-        };
+        let mut code = Bytecode::default();
+        for (i, d) in data.chunks(32).enumerate() {
+            code.push(32, Word::from_big_endian(d));
+            code.push(32, Word::from(offset + i * 32));
+            code.write_op(OpcodeId::MSTORE);
+        }
+        code
     }
 }

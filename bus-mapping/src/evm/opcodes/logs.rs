@@ -126,14 +126,11 @@ fn gen_copy_steps(
     data_start_index: usize,
 ) -> Result<Vec<CopyStep>, Error> {
     // Get memory data
-    let mem = geth_step.memory.0.as_slice();
+    let mem = geth_step
+        .memory
+        .read_chunk(src_addr.into(), bytes_left.into());
     let mut copy_steps = Vec::with_capacity(2 * bytes_left);
-    for (idx, byte) in mem
-        .iter()
-        .enumerate()
-        .skip(src_addr as usize)
-        .take(bytes_left)
-    {
+    for (idx, byte) in mem.iter().enumerate() {
         let addr = src_addr + idx as u64;
         let rwc = state.block_ctx.rwc;
         let (value, is_pad) = if addr < src_addr_end {
@@ -154,7 +151,6 @@ fn gen_copy_steps(
             rwc,
             rwc_inc_left: 0,
         });
-
         // Write
         copy_steps.push(CopyStep {
             addr: (data_start_index + idx) as u64,

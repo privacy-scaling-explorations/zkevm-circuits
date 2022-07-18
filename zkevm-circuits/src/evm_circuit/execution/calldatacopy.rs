@@ -10,6 +10,7 @@ use crate::{
                 ConstraintBuilder, StepStateTransition,
                 Transition::{Delta, To},
             },
+            from_bytes,
             memory_gadget::{MemoryAddressGadget, MemoryCopierGasGadget, MemoryExpansionGadget},
             not, select, CachedRegion, Cell, MemoryAddress,
         },
@@ -54,8 +55,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
         cb.stack_pop(data_offset.expr());
         cb.stack_pop(length.expr());
 
-        let memory_address =
-            MemoryAddressGadget::construct(cb, memory_offset.clone(), length.clone());
+        let memory_address = MemoryAddressGadget::construct(cb, memory_offset, length);
         let src_id = cb.query_cell();
         let call_data_length = cb.query_cell();
         let call_data_offset = cb.query_cell();
@@ -121,10 +121,10 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
                 src_tag,
                 cb.curr.state.call_id.expr(),
                 CopyDataType::Memory.expr(),
-                call_data_offset.expr() + data_offset.expr(),
+                call_data_offset.expr() + from_bytes::expr(&data_offset.cells),
                 call_data_offset.expr() + call_data_length.expr(),
-                memory_offset.expr(),
-                length.expr(),
+                memory_address.offset(),
+                memory_address.length(),
                 cb.curr.state.rw_counter.expr() + cb.rw_counter_offset().expr(),
                 copy_rwc_inc.expr(),
             );
@@ -301,8 +301,8 @@ mod test {
             // call ADDR_B.
             PUSH1(0x00) // retLength
             PUSH1(0x00) // retOffset
-            PUSH1(call_data_length) // argsLength
-            PUSH1(call_data_offset) // argsOffset
+            PUSH32(call_data_length) // argsLength
+            PUSH32(call_data_offset) // argsOffset
             PUSH1(0x00) // value
             PUSH32(addr_b.to_word()) // addr
             PUSH32(0x1_0000) // gas
@@ -337,8 +337,8 @@ mod test {
 
     #[test]
     fn calldatacopy_gadget_large() {
-        test_ok_root(0x80, 0x40, 0x10, 90);
-        test_ok_internal(0x30, 0x70, 0x20, 0x10, 90);
+        test_ok_root(0x204, 0x103, 0x102, 0x101);
+        test_ok_internal(0x30, 0x204, 0x103, 0x102, 0x101);
     }
 
     #[test]
