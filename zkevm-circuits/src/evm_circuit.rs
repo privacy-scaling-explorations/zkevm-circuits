@@ -34,10 +34,10 @@ impl<F: Field> EvmCircuit<F> {
         rw_table: &dyn LookupTable<F>,
         bytecode_table: &dyn LookupTable<F>,
         block_table: &dyn LookupTable<F>,
+        copy_table: &dyn LookupTable<F>,
     ) -> Self {
         let fixed_table = [(); 4].map(|_| meta.fixed_column());
         let byte_table = [(); 1].map(|_| meta.fixed_column());
-
         let execution = Box::new(ExecutionConfig::configure(
             meta,
             power_of_randomness,
@@ -47,6 +47,7 @@ impl<F: Field> EvmCircuit<F> {
             rw_table,
             bytecode_table,
             block_table,
+            copy_table,
         ));
 
         Self {
@@ -104,7 +105,8 @@ impl<F: Field> EvmCircuit<F> {
         layouter: &mut impl Layouter<F>,
         block: &Block<F>,
     ) -> Result<(), Error> {
-        self.execution.assign_block(layouter, block, false)
+        self.execution.assign_block(layouter, block, false)?;
+        Ok(())
     }
 
     /// Assign exact steps in block without padding for unit test purpose
@@ -114,7 +116,8 @@ impl<F: Field> EvmCircuit<F> {
         layouter: &mut impl Layouter<F>,
         block: &Block<F>,
     ) -> Result<(), Error> {
-        self.execution.assign_block(layouter, block, true)
+        self.execution.assign_block(layouter, block, true)?;
+        Ok(())
     }
 
     /// Calculate which rows are "actually" used in the circuit
@@ -142,6 +145,7 @@ impl<F: Field> EvmCircuit<F> {
 #[cfg(any(feature = "test", test))]
 pub mod test {
     use crate::{
+        copy_circuit::CopyCircuit,
         evm_circuit::{
             table::FixedTableTag,
             witness::{Block, BlockContext, Bytecode, RwMap, Transaction},
@@ -190,6 +194,7 @@ pub mod test {
         rw_table: RwTable,
         bytecode_table: [Column<Advice>; 5],
         block_table: [Column<Advice>; 3],
+        copy_table: CopyCircuit<F>,
         evm_circuit: EvmCircuit<F>,
     }
 
@@ -374,6 +379,7 @@ pub mod test {
             let rw_table = RwTable::construct(meta);
             let bytecode_table = [(); 5].map(|_| meta.advice_column());
             let block_table = [(); 3].map(|_| meta.advice_column());
+            let copy_table = CopyCircuit::configure(meta, &tx_table, &rw_table, &bytecode_table);
 
             // This gate is used just to get the array of expressions from the power of
             // randomness instance column, so that later on we don't need to query
@@ -398,6 +404,7 @@ pub mod test {
                 rw_table,
                 bytecode_table,
                 block_table,
+                copy_table,
                 evm_circuit: EvmCircuit::configure(
                     meta,
                     power_of_randomness,
@@ -405,6 +412,7 @@ pub mod test {
                     &rw_table,
                     &bytecode_table,
                     &block_table,
+                    &copy_table,
                 ),
             }
         }
@@ -426,6 +434,7 @@ pub mod test {
                 self.block.randomness,
             )?;
             config.load_block(&mut layouter, &self.block.context, self.block.randomness)?;
+            config.copy_table.assign_block(&mut layouter, &self.block)?;
             config
                 .evm_circuit
                 .assign_block_exact(&mut layouter, &self.block)
