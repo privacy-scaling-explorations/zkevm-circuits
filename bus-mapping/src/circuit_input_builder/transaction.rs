@@ -17,6 +17,8 @@ use super::{call::ReversionGroup, Call, CallContext, CallKind, CodeSource, ExecS
 pub struct TransactionContext {
     /// Unique identifier of transaction of the block. The value is `index + 1`.
     id: usize,
+    /// The index of logs made in the transaction.
+    pub(crate) log_id: usize,
     /// Identifier if this transaction is last one of the block or not.
     is_last_tx: bool,
     /// Call stack.
@@ -71,6 +73,7 @@ impl TransactionContext {
                 .ok_or(Error::EthTypeError(eth_types::Error::IncompleteBlock))?
                 .as_u64() as usize
                 + 1,
+            log_id: 0,
             is_last_tx,
             call_is_success,
             calls: Vec::new(),

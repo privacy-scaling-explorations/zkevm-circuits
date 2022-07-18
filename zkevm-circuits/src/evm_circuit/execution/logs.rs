@@ -10,15 +10,15 @@ use crate::{
                 ConstraintBuilder, StepStateTransition,
                 Transition::{Delta, To},
             },
-            from_bytes,
             memory_gadget::{MemoryAddressGadget, MemoryExpansionGadget},
-            sum, CachedRegion, Cell, Word,
+            not, sum, CachedRegion, Cell, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     util::Expr,
 };
 use array_init::array_init;
+use bus_mapping::circuit_input_builder::CopyDataType;
 use eth_types::Field;
 use eth_types::{evm_types::GasCost, evm_types::OpcodeId, ToLittleEndian, ToScalar};
 use halo2_proofs::plonk::Error;
@@ -35,6 +35,7 @@ pub(crate) struct LogGadget<F> {
     is_static_call: Cell<F>,
     is_persistent: Cell<F>,
     tx_id: Cell<F>,
+    copy_rwc_inc: Cell<F>,
     memory_expansion: MemoryExpansionGadget<F, 1, N_BYTES_MEMORY_WORD_SIZE>,
 }
 
@@ -114,7 +115,7 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
         }
 
         // check memory copy
-        let memory_address = MemoryAddressGadget::construct(cb, mstart, msize.clone());
+        let memory_address = MemoryAddressGadget::construct(cb, mstart, msize);
 
         // Calculate the next memory size and the gas cost for this memory
         // access
@@ -124,57 +125,39 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
             [memory_address.address()],
         );
 
-        // If the iterative process has not yet finished, we constrain the next step to
-        // be another `CopyToLog` while adding some additional
-        // constraints to the auxiliary data.
-        // Constrain the next step CopyToLog if length != 0
-        cb.constrain_next_step(
-            ExecutionState::CopyToLog,
-            Some(memory_address.has_length()),
-            |cb| {
-                let next_src_addr = cb.query_cell();
-                let next_bytes_left = cb.query_cell();
-                let next_src_addr_end = cb.query_cell();
-                let next_is_persistent = cb.query_bool();
-                let next_tx_id = cb.query_cell();
-                let next_data_start_index = cb.query_cell();
-
-                cb.require_equal(
-                    "next_src_addr = memory_offset",
-                    next_src_addr.expr(),
-                    memory_address.offset(),
-                );
-                cb.require_equal(
-                    "next_bytes_left = length",
-                    next_bytes_left.expr(),
-                    memory_address.length(),
-                );
-                cb.require_equal(
-                    "next_src_addr_end = memory_offset + length",
-                    next_src_addr_end.expr(),
-                    memory_address.offset() + memory_address.length(),
-                );
-                cb.require_equal(
-                    "next_is_persistent = is_persistent",
-                    next_is_persistent.expr(),
-                    is_persistent.expr(),
-                );
-                cb.require_equal("next_tx_id = tx_id", next_tx_id.expr(), tx_id.expr());
-                cb.require_zero(
-                    "next_data_start_index starts with 0",
-                    next_data_start_index.expr(),
-                );
-            },
-        );
+        let copy_rwc_inc = cb.query_cell();
+        let dst_addr = (1u64 << 32).expr() * TxLogFieldTag::Data.expr()
+            + (1u64 << 48).expr() * (cb.curr.state.log_id.expr() + 1.expr());
+        let cond = memory_address.has_length() * is_persistent.expr();
+        cb.condition(cond.clone(), |cb| {
+            cb.copy_table_lookup(
+                cb.curr.state.call_id.expr(),
+                CopyDataType::Memory.expr(),
+                tx_id.expr(),
+                CopyDataType::TxLog.expr(),
+                memory_address.offset(),
+                memory_address.address(),
+                dst_addr,
+                memory_address.length(),
+                cb.curr.state.rw_counter.expr() + cb.rw_counter_offset().expr(),
+                copy_rwc_inc.expr(),
+            );
+        });
+        cb.condition(not::expr(cond), |cb| {
+            cb.require_zero(
+                "if length is 0 or tx is not persistent, copy table rwc inc == 0",
+                copy_rwc_inc.expr(),
+            );
+        });
 
         let gas_cost = GasCost::LOG.as_u64().expr()
             + GasCost::LOG.as_u64().expr() * topic_count.clone()
-            + 8.expr() * from_bytes::expr(&msize.cells)
+            + 8.expr() * memory_address.length()
             + memory_expansion.gas_cost();
         // State transition
 
         let step_state_transition = StepStateTransition {
-            rw_counter: Delta(cb.rw_counter_offset()),
+            rw_counter: Delta(cb.rw_counter_offset() + copy_rwc_inc.expr()),
             program_counter: Delta(1.expr()),
             stack_pointer: Delta(2.expr() + topic_count),
             memory_word_size: To(memory_expansion.next_memory_word_size()),
@@ -194,6 +177,7 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
             is_static_call,
             is_persistent,
             tx_id,
+            copy_rwc_inc,
             memory_expansion,
         }
     }
@@ -257,20 +241,32 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
         self.tx_id
             .assign(region, offset, Some(F::from(tx.id as u64)))?;
 
+        let key = (tx.id, call.id, step.program_counter as usize);
+        let copy_rwc_inc = block
+            .copy_events
+            .get(&key)
+            .unwrap()
+            .steps
+            .first()
+            .map_or(F::zero(), |cs| F::from(cs.rwc_inc_left));
+        self.copy_rwc_inc
+            .assign(region, offset, Some(copy_rwc_inc))?;
+
         Ok(())
     }
 }
 
 #[cfg(test)]
 mod test {
-    use eth_types::{bytecode, evm_types::OpcodeId, Bytecode, Word};
+    use eth_types::{evm_types::OpcodeId, Bytecode, Word};
     use mock::TestContext;
+    use rand::Rng;
 
     use crate::test_util::run_test_circuits;
 
     //TODO：add is_persistent = false cases
     #[test]
-    fn log_tests() {
+    fn log_gadget_simple() {
         // zero topic: log0
         test_log_ok(&[]);
         // one topic: log1
@@ -289,7 +285,7 @@ mod test {
     }
 
     #[test]
-    fn multi_log_tests() {
+    fn log_gadget_multi_logs() {
         // zero topic: log0
         test_multi_log_ok(&[]);
         // one topic: log1
@@ -309,9 +305,9 @@ mod test {
 
     // test single log code and single copy log step
     fn test_log_ok(topics: &[Word]) {
-        let pushdata = "1234567890abcdef1234567890abcdef";
-        // prepare first 32 bytes for memory reading
-        let mut code_prepare = prepare_code(pushdata, 0);
+        let mut pushdata = [0u8; 320];
+        rand::thread_rng().try_fill(&mut pushdata[..]).unwrap();
+        let mut code_prepare = prepare_code(&pushdata, 1);
 
         let log_codes = [
             OpcodeId::LOG0,
@@ -350,9 +346,9 @@ mod test {
     // test multi log op codes and multi copy log steps
     fn test_multi_log_ok(topics: &[Word]) {
         // prepare memory data
-        let pushdata = "1234567890abcdef1234567890abcdef";
-        // prepare first 32 bytes for memory reading
-        let mut code_prepare = prepare_code(pushdata, 0);
+        let mut pushdata = [0u8; 320];
+        rand::thread_rng().try_fill(&mut pushdata[..]).unwrap();
+        let mut code_prepare = prepare_code(&pushdata, 0);
 
         let log_codes = [
             OpcodeId::LOG0,
@@ -379,7 +375,7 @@ mod test {
 
         // second log op code
         // prepare additinal bytes for memory reading
-        code.append(&prepare_code(pushdata, 0x20));
+        code.append(&prepare_code(&pushdata, 0x20));
         mstart = 0x00usize;
         // when mszie > 0x20 (32) needs multi copy steps
         msize = 0x30usize;
@@ -403,16 +399,15 @@ mod test {
     }
 
     /// prepare memory reading data
-    fn prepare_code(data: &str, offset: u32) -> Bytecode {
-        // data is in hex format
-        assert_eq!(data.bytes().len(), 32);
+    fn prepare_code(data: &[u8], offset: usize) -> Bytecode {
+        assert_eq!(data.len() % 32, 0);
         // prepare memory data
-        let pushdata = hex::decode(data).unwrap();
-        return bytecode! {
-            // populate memory.
-            PUSH16(Word::from_big_endian(&pushdata))
-            PUSH1(offset) // offset
-            MSTORE
-        };
+        let mut code = Bytecode::default();
+        for (i, d) in data.chunks(32).enumerate() {
+            code.push(32, Word::from_big_endian(d));
+            code.push(32, Word::from(offset + i * 32));
+            code.write_op(OpcodeId::MSTORE);
+        }
+        code
     }
 }

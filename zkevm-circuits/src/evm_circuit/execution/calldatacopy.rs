@@ -12,13 +12,13 @@ use crate::{
             },
             from_bytes,
             memory_gadget::{MemoryAddressGadget, MemoryCopierGasGadget, MemoryExpansionGadget},
-            CachedRegion, Cell, MemoryAddress,
+            not, select, CachedRegion, Cell, MemoryAddress,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     util::Expr,
 };
-use bus_mapping::evm::OpcodeId;
+use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId};
 use eth_types::Field;
 use eth_types::ToLittleEndian;
 use halo2_proofs::plonk::Error;
@@ -33,6 +33,7 @@ pub(crate) struct CallDataCopyGadget<F> {
     src_id: Cell<F>,
     call_data_length: Cell<F>,
     call_data_offset: Cell<F>, // Only used in the internal call
+    copy_rwc_inc: Cell<F>,
     memory_expansion: MemoryExpansionGadget<F, 1, N_BYTES_MEMORY_WORD_SIZE>,
     memory_copier_gas: MemoryCopierGasGadget<F>,
 }
@@ -108,50 +109,37 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
             memory_expansion.gas_cost(),
         );
 
-        // Constrain the next step CopyToMemory if length != 0
-        cb.constrain_next_step(
-            ExecutionState::CopyToMemory,
-            Some(memory_address.has_length()),
-            |cb| {
-                let next_src_addr = cb.query_cell();
-                let next_dst_addr = cb.query_cell();
-                let next_bytes_left = cb.query_cell();
-                let next_src_addr_end = cb.query_cell();
-                let next_from_tx = cb.query_cell();
-                let next_src_id = cb.query_cell();
-                cb.require_equal(
-                    "next_src_addr = data_offset + call_data_offset",
-                    next_src_addr.expr(),
-                    from_bytes::expr(&data_offset.cells) + call_data_offset.expr(),
-                );
-                cb.require_equal(
-                    "next_dst_addr = memory_offset",
-                    next_dst_addr.expr(),
-                    memory_address.offset(),
-                );
-                cb.require_equal(
-                    "next_bytes_left = length",
-                    next_bytes_left.expr(),
-                    memory_address.length(),
-                );
-                cb.require_equal(
-                    "next_src_addr_end = call_data_length + call_data_offset",
-                    next_src_addr_end.expr(),
-                    call_data_length.expr() + call_data_offset.expr(),
-                );
-                cb.require_equal(
-                    "next_from_tx = is_root",
-                    next_from_tx.expr(),
-                    cb.curr.state.is_root.expr(),
-                );
-                cb.require_equal("next_src_id = src_id", next_src_id.expr(), src_id.expr());
-            },
+        let copy_rwc_inc = cb.query_cell();
+        let src_tag = select::expr(
+            cb.curr.state.is_root.expr(),
+            CopyDataType::TxCalldata.expr(),
+            CopyDataType::Memory.expr(),
         );
+        cb.condition(memory_address.has_length(), |cb| {
+            cb.copy_table_lookup(
+                src_id.expr(),
+                src_tag,
+                cb.curr.state.call_id.expr(),
+                CopyDataType::Memory.expr(),
+                call_data_offset.expr() + from_bytes::expr(&data_offset.cells),
+                call_data_offset.expr() + call_data_length.expr(),
+                memory_address.offset(),
+                memory_address.length(),
+                cb.curr.state.rw_counter.expr() + cb.rw_counter_offset().expr(),
+                copy_rwc_inc.expr(),
+            );
+        });
+        cb.condition(not::expr(memory_address.has_length()), |cb| {
+            cb.require_zero(
+                "if no bytes to copy, copy table rwc inc == 0",
+                copy_rwc_inc.expr(),
+            );
+        });
 
         // State transition
         let step_state_transition = StepStateTransition {
             // 1 tx id lookup + 3 stack pop + option(calldatalength lookup)
-            rw_counter: Delta(cb.rw_counter_offset()),
+            rw_counter: Delta(cb.rw_counter_offset() + copy_rwc_inc.expr()),
             program_counter: Delta(1.expr()),
             stack_pointer: Delta(3.expr()),
             gas_left: Delta(
@@ -169,6 +157,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
             src_id,
             call_data_length,
             call_data_offset,
+            copy_rwc_inc,
             memory_expansion,
             memory_copier_gas,
         }
@@ -214,6 +203,17 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
             .assign(region, offset, Some(F::from(call_data_length as u64)))?;
         self.call_data_offset
             .assign(region, offset, Some(F::from(call_data_offset as u64)))?;
+
+        let key = (tx.id, call.id, step.program_counter as usize);
+        let copy_rwc_inc = block
+            .copy_events
+            .get(&key)
+            .unwrap()
+            .steps
+            .first()
+            .map_or(F::zero(), |cs| F::from(cs.rwc_inc_left));
+        self.copy_rwc_inc
+            .assign(region, offset, Some(copy_rwc_inc))?;
 
         // Memory expansion
         let (_, memory_expansion_gas_cost) = self.memory_expansion.assign(
@@ -278,13 +278,13 @@ mod test {
         call_data_length: usize,
         dst_offset: usize,
         offset: usize,
-        copy_size: usize,
+        length: usize,
     ) {
         let (addr_a, addr_b) = (mock::MOCK_ACCOUNTS[0], mock::MOCK_ACCOUNTS[1]);
 
         // code B gets called by code A, so the call is an internal call.
         let code_b = bytecode! {
-            PUSH32(copy_size)  // size
+            PUSH32(length)  // size
             PUSH32(offset)     // offset
             PUSH32(dst_offset) // dst_offset
             CALLDATACOPY
@@ -301,8 +301,8 @@ mod test {
             // call ADDR_B.
             PUSH1(0x00) // retLength
             PUSH1(0x00) // retOffset
-            PUSH1(call_data_length) // argsLength
-            PUSH1(call_data_offset) // argsOffset
+            PUSH32(call_data_length) // argsLength
+            PUSH32(call_data_offset) // argsOffset
             PUSH1(0x00) // value
             PUSH32(addr_b.to_word()) // addr
             PUSH32(0x1_0000) // gas
@@ -331,25 +331,25 @@ mod test {
 
     #[test]
     fn calldatacopy_gadget_simple() {
-        test_ok_root(0x40, 0x40, 0x00, 0x0A);
-        test_ok_internal(0x40, 0x40, 0xA0, 0x10, 0x0A);
+        test_ok_root(0x40, 0x40, 0x00, 10);
+        test_ok_internal(0x40, 0x40, 0xA0, 0x10, 10);
     }
 
     #[test]
-    fn calldatacopy_gadget_multi_step() {
-        test_ok_root(0x80, 0x40, 0x10, 0x5A);
-        test_ok_internal(0x30, 0x70, 0x20, 0x10, 0x5A);
+    fn calldatacopy_gadget_large() {
+        test_ok_root(0x204, 0x103, 0x102, 0x101);
+        test_ok_internal(0x30, 0x204, 0x103, 0x102, 0x101);
     }
 
     #[test]
     fn calldatacopy_gadget_out_of_bound() {
-        test_ok_root(0x40, 0x40, 0x20, 0x28);
-        test_ok_internal(0x40, 0x20, 0xA0, 0x28, 0x0A);
+        test_ok_root(0x40, 0x40, 0x20, 40);
+        test_ok_internal(0x40, 0x20, 0xA0, 0x28, 10);
     }
 
     #[test]
     fn calldatacopy_gadget_zero_length() {
-        test_ok_root(0x40, 0x40, 0x00, 0x00);
-        test_ok_internal(0x40, 0x40, 0xA0, 0x10, 0x00);
+        test_ok_root(0x40, 0x40, 0x00, 0);
+        test_ok_internal(0x40, 0x40, 0xA0, 0x10, 0);
     }
 }
