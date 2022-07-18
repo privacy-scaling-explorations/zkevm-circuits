@@ -48,7 +48,7 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
         let msize = cb.query_rlc();
 
         // Pop mstart_address, msize from stack
-        cb.stack_pop(mstart.clone().expr());
+        cb.stack_pop(mstart.expr());
         cb.stack_pop(msize.expr());
         // read tx id
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
@@ -114,7 +114,7 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
         }
 
         // check memory copy
-        let memory_address = MemoryAddressGadget::construct(cb, mstart.clone(), msize.clone());
+        let memory_address = MemoryAddressGadget::construct(cb, mstart, msize.clone());
 
         // Calculate the next memory size and the gas cost for this memory
         // access
@@ -142,7 +142,7 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
                 cb.require_equal(
                     "next_src_addr = memory_offset",
                     next_src_addr.expr(),
-                    mstart.expr(),
+                    memory_address.offset(),
                 );
                 cb.require_equal(
                     "next_bytes_left = length",
@@ -152,7 +152,7 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
                 cb.require_equal(
                     "next_src_addr_end = memory_offset + length",
                     next_src_addr_end.expr(),
-                    mstart.expr() + memory_address.length(),
+                    memory_address.offset() + memory_address.length(),
                 );
                 cb.require_equal(
                     "next_is_persistent = is_persistent",
@@ -324,7 +324,8 @@ mod test {
         let topic_count = topics.len();
         let cur_op_code = log_codes[topic_count];
 
-        let mstart = 0x00usize;
+        // use more than 256 for testing offset rlc
+        let mstart = 0x102usize;
         let msize = 0x20usize;
         let mut code = Bytecode::default();
         // make dynamic topics push operations
