@@ -9,6 +9,8 @@ use external_tracer::{trace, TraceConfig};
 use helpers::*;
 use itertools::Itertools;
 
+pub use external_tracer::LoggerConfig;
+
 /// TestContext is a type that contains all the information from a block
 /// required to build the circuit inputs.
 ///
@@ -102,17 +104,12 @@ impl<const NACC: usize, const NTX: usize> From<TestContext<NACC, NTX>> for GethD
 }
 
 impl<const NACC: usize, const NTX: usize> TestContext<NACC, NTX> {
-    /// Create a new TestContext which starts with `NACC` default accounts and
-    /// `NTX` default transactions.  Afterwards, we apply the `acc_fns`
-    /// function to the accounts, the `func_tx` to the transactions and
-    /// the `func_block` to the block, where each of these functions can
-    /// mutate their target using the builder pattern. Finally an
-    /// execution trace is generated of the resulting input block and state.
-    pub fn new<FAcc, FTx, Fb>(
+    pub fn new_with_logger_config<FAcc, FTx, Fb>(
         history_hashes: Option<Vec<Word>>,
         acc_fns: FAcc,
         func_tx: FTx,
         func_block: Fb,
+        logger_config: LoggerConfig,
     ) -> Result<Self, Error>
     where
         FTx: FnOnce(Vec<&mut MockTransaction>, [MockAccount; NACC]),
@@ -171,7 +168,12 @@ impl<const NACC: usize, const NTX: usize> TestContext<NACC, NTX> {
             .try_into()
             .expect("Mismatched acc len");
 
-        let geth_traces = gen_geth_traces(block.clone(), accounts.clone(), history_hashes.clone())?;
+        let geth_traces = gen_geth_traces(
+            block.clone(),
+            accounts.clone(),
+            history_hashes.clone(),
+            logger_config,
+        )?;
 
         Ok(Self {
             chain_id,
@@ -180,6 +182,32 @@ impl<const NACC: usize, const NTX: usize> TestContext<NACC, NTX> {
             eth_block: block,
             geth_traces,
         })
+    }
+
+    /// Create a new TestContext which starts with `NACC` default accounts and
+    /// `NTX` default transactions.  Afterwards, we apply the `acc_fns`
+    /// function to the accounts, the `func_tx` to the transactions and
+    /// the `func_block` to the block, where each of these functions can
+    /// mutate their target using the builder pattern. Finally an
+    /// execution trace is generated of the resulting input block and state.
+    pub fn new<FAcc, FTx, Fb>(
+        history_hashes: Option<Vec<Word>>,
+        acc_fns: FAcc,
+        func_tx: FTx,
+        func_block: Fb,
+    ) -> Result<Self, Error>
+    where
+        FTx: FnOnce(Vec<&mut MockTransaction>, [MockAccount; NACC]),
+        Fb: FnOnce(&mut MockBlock, Vec<MockTransaction>) -> &mut MockBlock,
+        FAcc: FnOnce([&mut MockAccount; NACC]),
+    {
+        Self::new_with_logger_config(
+            history_hashes,
+            acc_fns,
+            func_tx,
+            func_block,
+            LoggerConfig::default(),
+        )
     }
 
     /// Returns a simple TestContext setup with a single tx executing the
@@ -203,6 +231,7 @@ fn gen_geth_traces<const NACC: usize, const NTX: usize>(
     block: Block<Transaction>,
     accounts: [Account; NACC],
     history_hashes: Option<Vec<Word>>,
+    logger_config: LoggerConfig,
 ) -> Result<[GethExecTrace; NTX], Error> {
     let trace_config = TraceConfig {
         chain_id: block.transactions[0].chain_id.unwrap_or_default(),
@@ -217,6 +246,7 @@ fn gen_geth_traces<const NACC: usize, const NTX: usize>(
             .iter()
             .map(eth_types::geth_types::Transaction::from_eth_tx)
             .collect(),
+        logger_config,
     };
     let traces = trace(&trace_config)?;
     let result: [GethExecTrace; NTX] = traces.try_into().expect("Unexpected len mismatch");

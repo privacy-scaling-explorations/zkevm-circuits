@@ -14,6 +14,7 @@ pub(crate) struct StackOnlyOpcode<const N_POP: usize, const N_PUSH: usize>;
 
 impl<const N_POP: usize, const N_PUSH: usize> Opcode for StackOnlyOpcode<N_POP, N_PUSH> {
     fn gen_associated_ops(
+        &self,
         state: &mut CircuitInputStateRef,
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {

@@ -21,6 +21,45 @@ pub struct TraceConfig {
     pub accounts: HashMap<Address, Account>,
     /// transaction
     pub transactions: Vec<Transaction>,
+    /// logger
+    pub logger_config: LoggerConfig,
+}
+
+/// Configuration structure for `logger.Config`
+#[derive(Debug, Clone, Serialize)]
+pub struct LoggerConfig {
+    /// enable memory capture
+    #[serde(rename = "EnableMemory")]
+    pub enable_memory: bool,
+    /// disable stack capture
+    #[serde(rename = "DisableStack")]
+    pub disable_stack: bool,
+    /// disable storage capture
+    #[serde(rename = "DisableStorage")]
+    pub disable_storage: bool,
+    /// enable return data capture
+    #[serde(rename = "EnableReturnData")]
+    pub enable_return_data: bool,
+}
+
+impl Default for LoggerConfig {
+    fn default() -> Self {
+        Self {
+            enable_memory: true,
+            disable_stack: false,
+            disable_storage: false,
+            enable_return_data: true,
+        }
+    }
+}
+
+impl LoggerConfig {
+    pub fn enable_memory() -> Self {
+        Self {
+            enable_memory: true,
+            ..Self::default()
+        }
+    }
 }
 
 /// Creates a trace for the specified config

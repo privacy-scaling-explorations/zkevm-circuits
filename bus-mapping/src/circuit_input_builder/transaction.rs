@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 
+use eth_types::evm_types::Memory;
 use eth_types::{Address, GethExecTrace, Word};
 use ethers_core::utils::get_contract_address;
 
@@ -156,6 +157,8 @@ impl TransactionContext {
             index: call_idx,
             reversible_write_counter: 0,
             call_data,
+            memory: Memory::default(),
+            return_data: vec![],
         });
     }
 
@@ -232,7 +235,7 @@ impl Transaction {
             }
         } else {
             // Contract creation
-            let code_hash = code_db.insert(eth_tx.input.to_vec());
+            let code_hash = code_db.insert(None, eth_tx.input.to_vec());
             Call {
                 call_id,
                 kind: CallKind::Create,

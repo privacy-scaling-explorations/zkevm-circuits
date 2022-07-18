@@ -1,6 +1,8 @@
 //! Doc this
-use crate::Error;
 use crate::{DebugWord, Word};
+use crate::{Error, ToBigEndian};
+use serde::ser::SerializeMap;
+use serde::{Serialize, Serializer};
 use std::collections::HashMap;
 use std::fmt;
 
@@ -20,6 +22,19 @@ impl fmt::Debug for Storage {
         f.debug_map()
             .entries(self.0.iter().map(|(k, v)| (DebugWord(k), DebugWord(v))))
             .finish()
+    }
+}
+
+impl Serialize for Storage {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut ser = serializer.serialize_map(Some(self.0.len()))?;
+        for (k, v) in self.0.iter() {
+            ser.serialize_entry(&hex::encode(k.to_be_bytes()), &hex::encode(v.to_be_bytes()))?;
+        }
+        ser.end()
     }
 }
 

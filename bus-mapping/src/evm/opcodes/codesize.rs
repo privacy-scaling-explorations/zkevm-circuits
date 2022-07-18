@@ -12,6 +12,7 @@ pub(crate) struct Codesize;
 
 impl Opcode for Codesize {
     fn gen_associated_ops(
+        &self,
         state: &mut CircuitInputStateRef,
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {

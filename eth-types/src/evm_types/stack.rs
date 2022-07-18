@@ -1,8 +1,9 @@
 //! Doc this
-use crate::Error;
 use crate::{DebugWord, Word};
+use crate::{Error, ToBigEndian};
 use core::str::FromStr;
-use serde::Deserialize;
+use serde::ser::SerializeSeq;
+use serde::{Deserialize, Serialize, Serializer};
 use std::fmt;
 
 /// Represents a `StackAddress` of the EVM.
@@ -61,6 +62,25 @@ impl fmt::Debug for Stack {
         f.debug_list()
             .entries(self.0.iter().map(DebugWord))
             .finish()
+    }
+}
+
+impl Serialize for Stack {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut ser = serializer.serialize_seq(Some(self.0.len()))?;
+        for e in self.0.iter() {
+            let encoded = hex::encode(e.to_be_bytes());
+            let trimmed = encoded.trim_start_matches('0');
+            if trimmed.is_empty() {
+                ser.serialize_element("0")?;
+            } else {
+                ser.serialize_element(trimmed)?;
+            }
+        }
+        ser.end()
     }
 }
 

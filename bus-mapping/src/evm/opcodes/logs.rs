@@ -16,6 +16,7 @@ pub(crate) struct Log;
 
 impl Opcode for Log {
     fn gen_associated_ops(
+        &self,
         state: &mut CircuitInputStateRef,
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
@@ -24,6 +25,16 @@ impl Opcode for Log {
         let mut exec_steps = vec![gen_log_step(state, geth_step)?];
         let log_copy_steps = gen_log_copy_steps(state, geth_steps)?;
         exec_steps.extend(log_copy_steps);
+
+        // reconstruction
+        let offset = geth_step.stack.nth_last(0)?.as_usize();
+        let length = geth_step.stack.nth_last(1)?.as_usize();
+
+        state
+            .call_ctx_mut()?
+            .memory
+            .extend_at_least(offset + length);
+
         Ok(exec_steps)
     }
 }
@@ -121,7 +132,6 @@ fn gen_log_step(
 
 fn gen_log_copy_step(
     state: &mut CircuitInputStateRef,
-    geth_steps: &[GethExecStep],
     exec_step: &mut ExecStep,
     src_addr: u64,
     src_addr_end: u64,
@@ -130,7 +140,11 @@ fn gen_log_copy_step(
 ) -> Result<(), Error> {
     // Get memory data
     let memory_address: MemoryAddress = Word::from(src_addr).try_into()?;
-    let mem_read_value = geth_steps[0].memory.read_word(memory_address).to_be_bytes();
+    let mem_read_value = state
+        .call_ctx()?
+        .memory
+        .read_word(memory_address)
+        .to_be_bytes();
 
     let data_end_index = std::cmp::min(bytes_left, MAX_COPY_BYTES);
     for (idx, _) in mem_read_value.iter().enumerate().take(data_end_index) {
@@ -189,7 +203,6 @@ fn gen_log_copy_steps(
         exec_step.exec_state = ExecState::CopyToLog;
         gen_log_copy_step(
             state,
-            geth_steps,
             &mut exec_step,
             src_addr + copied as u64,
             buffer_addr_end,

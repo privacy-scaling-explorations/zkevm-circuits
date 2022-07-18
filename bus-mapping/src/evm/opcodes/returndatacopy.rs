@@ -1,57 +1,50 @@
 use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
 use crate::evm::Opcode;
 use crate::Error;
-use eth_types::{GethExecStep, ToAddress};
+use eth_types::GethExecStep;
 
-#[derive(Debug, Copy, Clone)]
-pub(crate) struct Return;
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Returndatacopy;
 
-impl Opcode for Return {
+impl Opcode for Returndatacopy {
     fn gen_associated_ops(
         &self,
         state: &mut CircuitInputStateRef,
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
+        // TODO: complete `ExecStep` and circuit implementation
+        let exec_step = state.new_step(&geth_steps[0])?;
+
+        // reconstruction
         let geth_step = &geth_steps[0];
-        let exec_step = state.new_step(geth_step)?;
+        let dest_offset = geth_step.stack.nth_last(0)?;
+        let offset = geth_step.stack.nth_last(1)?;
+        let size = geth_step.stack.nth_last(2)?;
 
-        let current_call = state.call()?.clone();
-        let offset = geth_step.stack.nth_last(0)?.as_usize();
-        let length = geth_step.stack.nth_last(1)?.as_usize();
+        // can we reduce this clone?
+        let return_data = state.call_ctx()?.return_data.clone();
 
-        // can we use ref here?
-        let memory = state.call_ctx()?.memory.clone();
-        // skip reconstruction for root-level return/revert
-        if !current_call.is_root {
-            if !current_call.is_create() {
-                // handle normal return/revert
-                // copy return data
-                // update to the caller memory
-                let caller_ctx = state.caller_ctx_mut()?;
-                let return_offset = current_call.return_data_offset as usize;
-                // already resized in Call::reconstruct_memory
-                // caller_ctx.memory.extend_at_least(return_offset + length);
-                caller_ctx.memory.0[return_offset..return_offset + length]
-                    .copy_from_slice(&memory.0[offset..offset + length]);
-                caller_ctx.return_data.resize(length as usize, 0);
-                caller_ctx
-                    .return_data
-                    .copy_from_slice(&memory.0[offset..offset + length]);
+        let call_ctx = state.call_ctx_mut()?;
+        let memory = &mut call_ctx.memory;
+        let length = size.as_usize();
+        if length != 0 {
+            let mem_starts = dest_offset.as_usize();
+            let mem_ends = mem_starts + length;
+            let data_starts = offset.as_usize();
+            let data_ends = data_starts + length;
+            let minimal_length = dest_offset.as_usize() + length;
+            if data_ends <= return_data.len() {
+                memory.extend_at_least(minimal_length);
+                memory[mem_starts..mem_ends].copy_from_slice(&return_data[data_starts..data_ends]);
             } else {
-                // dealing with contract creation
-                assert!(offset + length <= memory.0.len());
-                let code = memory.0[offset..offset + length].to_vec();
-                let contract_addr = geth_steps[1].stack.nth_last(0)?.to_address();
-                state.code_db.insert(Some(contract_addr), code);
+                assert_eq!(geth_steps.len(), 1);
+                // if overflows this opcode would fails current context, so
+                // there is no more steps.
             }
         }
-
-        state.handle_return(&geth_steps[0])?;
         Ok(vec![exec_step])
     }
 }
-
-// TODO: circuit implement
 
 #[cfg(test)]
 mod return_tests {
@@ -101,6 +94,12 @@ mod return_tests {
             DUP6
             PUSH2 (0xFFFF)
             CALL
+
+            PUSH1 (0x20)
+            PUSH1 (0)
+            PUSH1 (0x40)
+            RETURNDATACOPY
+
             STOP
         };
         // Get the execution steps from the external tracer
@@ -128,21 +127,21 @@ mod return_tests {
         // CALLDATACOPY
         // PUSH1 0x20
         // PUSH1 0
-        // REVERT
+        // RETURN
         //
-        // bytecode: 0x6020600060003760206000FD
+        // bytecode: 0x6020600060003760206000F3
         //
         // // constructor
-        // PUSH12 0x6020600060003760206000FD
+        // PUSH12 0x6020600060003760206000F3
         // PUSH1 0
         // MSTORE
         // PUSH1 0xC
         // PUSH1 0x14
         // RETURN
         //
-        // bytecode: 0x6B6020600060003760206000FD600052600C6014F3
+        // bytecode: 0x6B6020600060003760206000F3600052600C6014F3
         let code = bytecode! {
-            PUSH21(word!("6B6020600060003760206000FD600052600C6014F3"))
+            PUSH21(word!("6B6020600060003760206000F3600052600C6014F3"))
             PUSH1(0)
             MSTORE
 
@@ -159,6 +158,12 @@ mod return_tests {
             DUP6
             PUSH2 (0xFFFF)
             CALL
+
+            PUSH1 (0x40)
+            PUSH1 (0)
+            PUSH1 (0x40)
+            RETURNDATACOPY
+
             STOP
         };
         // Get the execution steps from the external tracer
