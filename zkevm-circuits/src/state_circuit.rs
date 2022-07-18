@@ -7,7 +7,6 @@ mod random_linear_combination;
 #[cfg(test)]
 mod test;
 
-use crate::util::Expr;
 use crate::{
     evm_circuit::{
         param::N_BYTES_WORD,

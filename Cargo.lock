@@ -1854,6 +1854,7 @@ checksum = "eabb4a44450da02c90444cf74558da904edde8fb4e9035a9a6a4e15445af0bd7"
 [[package]]
 name = "halo2_proofs"
 version = "0.1.0-beta.1"
+source = "git+https://github.com/ed255/halo2.git?branch=feature/dev-tooling#47834696cc62fb4c259c255d713e596b1e24f283"
 dependencies = [
  "blake2b_simd 1.0.0",
  "bumpalo",

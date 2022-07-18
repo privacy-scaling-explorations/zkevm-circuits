@@ -1,5 +1,8 @@
 //! Table definitions used cross-circuits
 
+// CHANGELOG: Move table definitions from evm_circuit/table.rs and rw_table.rs
+// to here
+
 use crate::evm_circuit::witness::RwRow;
 use crate::evm_circuit::{
     util::{rlc, RandomLinearCombination},

@@ -149,13 +149,8 @@ pub mod test {
     use crate::{
         copy_circuit::CopyCircuit,
         evm_circuit::{table::FixedTableTag, witness::Block, EvmCircuit},
-        evm_circuit::{
-            table::FixedTableTag,
-            witness::{Block, BlockContext, Bytecode, RwMap, Transaction},
-            EvmCircuit,
-        },
         table::{load_block, load_bytecodes, load_rws, load_txs, BlockTable, RwTable},
-        util::{power_of_randomness_from_instance, Expr},
+        util::power_of_randomness_from_instance,
     };
     use eth_types::{Field, Word};
     use halo2_proofs::{
@@ -237,6 +232,7 @@ pub mod test {
                 &rw_table,
                 &bytecode_table,
                 &block_table,
+                &copy_table,
             );
 
             Self::Config {
@@ -245,15 +241,7 @@ pub mod test {
                 bytecode_table,
                 block_table,
                 copy_table,
-                evm_circuit: EvmCircuit::configure(
-                    meta,
-                    power_of_randomness,
-                    &tx_table,
-                    &rw_table,
-                    &bytecode_table,
-                    &block_table,
-                    &copy_table,
-                ),
+                evm_circuit,
             }
         }
 

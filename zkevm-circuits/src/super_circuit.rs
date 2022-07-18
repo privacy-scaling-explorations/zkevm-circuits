@@ -12,6 +12,7 @@
 #![allow(missing_docs)]
 // use halo2_proofs::plonk::*;
 
+use crate::copy_circuit::CopyCircuit;
 use crate::tx_circuit::{self, TxCircuit, TxCircuitConfig};
 
 use crate::bytecode_circuit::bytecode_unroller::{
@@ -121,6 +122,8 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
         let bytecode_table = BytecodeTable::construct(meta);
         let block_table = BlockTable::construct(meta);
         let keccak_table = KeccakTable::construct(meta);
+        // TODO: Split CopyCircuit into a Table and the configuration.
+        let copy_table = CopyCircuit::configure(meta, &tx_table, &rw_table, &bytecode_table);
 
         let power_of_randomness = power_of_randomness_from_instance(meta);
         let evm_circuit = EvmCircuit::configure(
@@ -135,6 +138,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
             &rw_table,
             &bytecode_table,
             &block_table,
+            &copy_table,
         );
 
         Self::Config {
