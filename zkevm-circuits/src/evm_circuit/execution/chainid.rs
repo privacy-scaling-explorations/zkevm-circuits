@@ -1,8 +1,8 @@
 use crate::{
+        table::BlockContextFieldTag,
     evm_circuit::{
         execution::ExecutionGadget,
         step::ExecutionState,
-        table::BlockContextFieldTag,
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},

@@ -12,21 +12,17 @@
 #![allow(missing_docs)]
 // use halo2_proofs::plonk::*;
 
-use crate::tx_circuit::{self, TxCircuit, TxCircuitConfig, TxTable};
+use crate::tx_circuit::{self, TxCircuit, TxCircuitConfig};
 
 use crate::bytecode_circuit::bytecode_unroller::{
-    unroll, BytecodeTable, Config as BytecodeConfig, UnrolledBytecode,
+    unroll, Config as BytecodeConfig, UnrolledBytecode,
 };
 
-use crate::util::power_of_randomness_from_instance;
-use crate::{
-    evm_circuit::{
-        table::{BlockTable, FixedTableTag, KeccakTable},
-        witness::Block,
-        EvmCircuit, {load_block, load_keccaks, load_rws},
-    },
-    rw_table::RwTable,
+use crate::evm_circuit::{table::FixedTableTag, witness::Block, EvmCircuit};
+use crate::table::{
+    load_block, load_keccaks, load_rws, BlockTable, BytecodeTable, KeccakTable, RwTable, TxTable,
 };
+use crate::util::power_of_randomness_from_instance;
 use eth_types::Field;
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner},

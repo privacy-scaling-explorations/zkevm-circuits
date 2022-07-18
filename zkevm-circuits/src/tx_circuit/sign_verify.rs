@@ -6,10 +6,9 @@
 
 use crate::{
     evm_circuit::{
-        load_keccaks,
-        table::KeccakTable,
         util::{not, RandomLinearCombination, Word},
     },
+        table::{load_keccaks, KeccakTable},
     util::Expr,
 };
 use ecc::{EccConfig, GeneralEccChip};

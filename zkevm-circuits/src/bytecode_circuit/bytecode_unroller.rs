@@ -1,12 +1,9 @@
 use crate::{
-    evm_circuit::{
-        load_keccaks,
-        table::{BytecodeFieldTag, KeccakTable, TableColumns},
-        util::{
-            and, constraint_builder::BaseConstraintBuilder, not, or, select,
-            RandomLinearCombination,
-        },
+    evm_circuit::util::{
+        and, constraint_builder::BaseConstraintBuilder, not, or, select, RandomLinearCombination,
     },
+    table::{load_keccaks, BytecodeTable, KeccakTable},
+    table::{BytecodeFieldTag, TableColumns},
     util::Expr,
 };
 use bus_mapping::evm::OpcodeId;
@@ -39,41 +36,6 @@ pub(crate) struct BytecodeRow<F: Field> {
 pub struct UnrolledBytecode<F: Field> {
     bytes: Vec<u8>,
     rows: Vec<BytecodeRow<F>>,
-}
-
-// CHANGELOG: Added BytecodeTable to help reusing the table config with other
-// circuits
-#[derive(Clone, Debug)]
-pub struct BytecodeTable {
-    pub code_hash: Column<Advice>, // CHANGELOG: Renamed from hash
-    pub tag: Column<Advice>,
-    pub index: Column<Advice>,
-    pub is_code: Column<Advice>,
-    pub value: Column<Advice>,
-}
-
-impl BytecodeTable {
-    pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
-        Self {
-            code_hash: meta.advice_column(),
-            tag: meta.advice_column(),
-            index: meta.advice_column(),
-            is_code: meta.advice_column(),
-            value: meta.advice_column(),
-        }
-    }
-}
-
-impl TableColumns<Advice> for BytecodeTable {
-    fn columns(&self) -> Vec<Column<Advice>> {
-        vec![
-            self.code_hash,
-            self.tag,
-            self.index,
-            self.is_code,
-            self.value,
-        ]
-    }
 }
 
 #[derive(Clone, Debug)]

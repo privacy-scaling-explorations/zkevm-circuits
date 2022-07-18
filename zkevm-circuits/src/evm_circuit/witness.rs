@@ -1,12 +1,13 @@
 #![allow(missing_docs)]
-use crate::evm_circuit::{
+use crate::{evm_circuit::{
     param::{N_BYTES_WORD, STACK_CAPACITY},
     step::ExecutionState,
+    util::RandomLinearCombination,
+},
     table::{
         AccountFieldTag, BlockContextFieldTag, BytecodeFieldTag, CallContextFieldTag, RwTableTag,
         TxContextFieldTag, TxLogFieldTag, TxReceiptFieldTag,
     },
-    util::RandomLinearCombination,
 };
 
 use bus_mapping::{

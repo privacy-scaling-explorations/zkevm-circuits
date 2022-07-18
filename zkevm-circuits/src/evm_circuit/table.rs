@@ -1,17 +1,14 @@
 use crate::evm_circuit::step::ExecutionState;
 use crate::impl_expr;
-pub use crate::tx_circuit::TxFieldTag as TxContextFieldTag;
+use crate::table::TableColumns;
+pub use crate::table::TxContextFieldTag;
 use eth_types::Field;
 use halo2_proofs::{
-    plonk::{Advice, Column, ColumnType, ConstraintSystem, Expression, Fixed, VirtualCells},
+    plonk::{Advice, Column, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
 use strum::IntoEnumIterator;
-use strum_macros::{EnumCount, EnumIter};
-
-pub trait TableColumns<C: ColumnType> {
-    fn columns(&self) -> Vec<Column<C>>;
-}
+use strum_macros::EnumIter;
 
 pub trait LookupTable<F: Field> {
     fn table_exprs(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>>;
@@ -51,6 +48,7 @@ pub enum FixedTableTag {
     ResponsibleOpcode,
     Pow2,
 }
+impl_expr!(FixedTableTag);
 
 impl FixedTableTag {
     pub fn build<F: Field>(&self) -> Box<dyn Iterator<Item = [F; 4]>> {
@@ -135,124 +133,6 @@ impl FixedTableTag {
 //     CallDataGasCost,
 //     CallData,
 // }
-
-// Keep the sequence consistent with OpcodeId for scalar
-#[derive(Clone, Copy, Debug)]
-pub enum BlockContextFieldTag {
-    Coinbase = 1,
-    Timestamp,
-    Number,
-    Difficulty,
-    GasLimit,
-    BaseFee = 8,
-    BlockHash,
-    ChainId,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, EnumIter)]
-pub enum RwTableTag {
-    Start = 1,
-    Stack,
-    Memory,
-    AccountStorage,
-    TxAccessListAccount,
-    TxAccessListAccountStorage,
-    TxRefund,
-    Account,
-    AccountDestructed,
-    CallContext,
-    TxLog,
-    TxReceipt,
-}
-
-impl RwTableTag {
-    pub fn is_reversible(self) -> bool {
-        return matches!(
-            self,
-            RwTableTag::TxAccessListAccount
-                | RwTableTag::TxAccessListAccountStorage
-                | RwTableTag::TxRefund
-                | RwTableTag::Account
-                | RwTableTag::AccountStorage
-                | RwTableTag::AccountDestructed
-        );
-    }
-}
-
-impl From<RwTableTag> for usize {
-    fn from(t: RwTableTag) -> Self {
-        t as usize
-    }
-}
-
-#[derive(Clone, Copy, Debug, EnumIter)]
-pub enum AccountFieldTag {
-    Nonce = 1,
-    Balance,
-    CodeHash,
-}
-
-#[derive(Clone, Copy, Debug)]
-pub enum BytecodeFieldTag {
-    Length,
-    Byte,
-    Padding,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, EnumIter)]
-pub enum TxLogFieldTag {
-    Address = 1,
-    Topic,
-    Data,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, EnumIter, EnumCount)]
-pub enum TxReceiptFieldTag {
-    PostStateOrStatus = 1,
-    CumulativeGasUsed,
-    LogLength,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, EnumIter)]
-pub enum CallContextFieldTag {
-    RwCounterEndOfReversion = 1,
-    CallerId,
-    TxId,
-    Depth,
-    CallerAddress,
-    CalleeAddress,
-    CallDataOffset,
-    CallDataLength,
-    ReturnDataOffset,
-    ReturnDataLength,
-    Value,
-    IsSuccess,
-    IsPersistent,
-    IsStatic,
-
-    LastCalleeId,
-    LastCalleeReturnDataOffset,
-    LastCalleeReturnDataLength,
-
-    IsRoot,
-    IsCreate,
-    CodeHash,
-    ProgramCounter,
-    StackPointer,
-    GasLeft,
-    MemorySize,
-    ReversibleWriteCounter,
-}
-
-impl_expr!(FixedTableTag);
-// impl_expr!(TxContextFieldTag);
-impl_expr!(RwTableTag);
-impl_expr!(AccountFieldTag);
-impl_expr!(BytecodeFieldTag);
-impl_expr!(CallContextFieldTag);
-impl_expr!(BlockContextFieldTag);
-impl_expr!(TxLogFieldTag);
-impl_expr!(TxReceiptFieldTag);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, EnumIter)]
 pub(crate) enum Table {
@@ -410,60 +290,5 @@ impl<F: Field> Lookup<F> {
             .map(|expr| expr.degree())
             .max()
             .unwrap()
-    }
-}
-
-// TODO: Move to src/tables.rs
-#[derive(Clone, Debug)]
-pub struct BlockTable {
-    pub tag: Column<Advice>,
-    pub index: Column<Advice>,
-    pub value: Column<Advice>,
-}
-
-impl BlockTable {
-    pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
-        Self {
-            tag: meta.advice_column(),
-            index: meta.advice_column(),
-            value: meta.advice_column(),
-        }
-    }
-}
-
-impl TableColumns<Advice> for BlockTable {
-    fn columns(&self) -> Vec<Column<Advice>> {
-        vec![self.tag, self.index, self.value]
-    }
-}
-
-// TODO: Move to src/tables.rs
-#[derive(Clone, Debug)]
-pub struct KeccakTable {
-    pub is_enabled: Column<Advice>,
-    pub input_rlc: Column<Advice>, // RLC of input bytes
-    pub input_len: Column<Advice>,
-    pub output_rlc: Column<Advice>, // RLC of hash of input bytes
-}
-
-impl KeccakTable {
-    pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
-        Self {
-            is_enabled: meta.advice_column(),
-            input_rlc: meta.advice_column(),
-            input_len: meta.advice_column(),
-            output_rlc: meta.advice_column(),
-        }
-    }
-}
-
-impl TableColumns<Advice> for KeccakTable {
-    fn columns(&self) -> Vec<Column<Advice>> {
-        vec![
-            self.is_enabled,
-            self.input_rlc,
-            self.input_len,
-            self.output_rlc,
-        ]
     }
 }

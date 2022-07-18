@@ -5,10 +5,10 @@ use eth_types::{Field, ToLittleEndian};
 use halo2_proofs::plonk::{Error, Expression};
 
 use crate::{
+        table::{CallContextFieldTag, TxContextFieldTag},
     evm_circuit::{
         param::{N_BYTES_MEMORY_ADDRESS, N_BYTES_WORD},
         step::ExecutionState,
-        table::{CallContextFieldTag, TxContextFieldTag},
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},

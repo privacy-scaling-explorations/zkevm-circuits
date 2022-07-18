@@ -8,11 +8,7 @@
 
 pub mod sign_verify;
 
-use crate::evm_circuit::{
-    load_keccaks,
-    table::{KeccakTable, TableColumns},
-};
-use crate::impl_expr;
+use crate::table::{load_keccaks, KeccakTable, TxFieldTag, TxTable};
 use crate::util::{power_of_randomness_from_instance, random_linear_combine_word as rlc};
 use eth_types::{
     geth_types::Transaction, Address, Field, ToBigEndian, ToLittleEndian, ToScalar, Word,
@@ -155,41 +151,6 @@ fn tx_to_sign_data(tx: &Transaction, chain_id: u64) -> Result<SignData, Error> {
     })
 }
 
-// TODO: Deduplicate with
-// `zkevm-circuits/src/evm_circuit/table.rs::TxContextFieldTag`.
-/// Tag used to identify each field in the transaction in a row of the
-/// transaction table.
-#[derive(Clone, Copy, Debug)]
-pub enum TxFieldTag {
-    /// Unused tag
-    Null = 0,
-    /// Nonce
-    Nonce,
-    /// Gas
-    Gas,
-    /// GasPrice
-    GasPrice,
-    /// CallerAddress
-    CallerAddress,
-    /// CalleeAddress
-    CalleeAddress,
-    /// IsCreate
-    IsCreate,
-    /// Value
-    Value,
-    /// CallDataLength
-    CallDataLength,
-    /// Gas cost for transaction call data (4 for byte == 0, 16 otherwise)
-    CallDataGasCost,
-    /// TxSignHash: Hash of the transaction without the signature, used for
-    /// signing.
-    TxSignHash,
-    /// CallData
-    CallData,
-}
-
-impl_expr!(TxFieldTag);
-
 /// Config for TxCircuit
 #[derive(Clone, Debug)]
 pub struct TxCircuitConfig<F: Field> {
@@ -200,32 +161,6 @@ pub struct TxCircuitConfig<F: Field> {
     sign_verify: SignVerifyConfig<F>,
     keccak_table: KeccakTable,
     _marker: PhantomData<F>,
-}
-
-/// TxTable columns
-#[derive(Clone, Debug)]
-pub struct TxTable {
-    pub tx_id: Column<Advice>,
-    pub tag: Column<Advice>,
-    pub index: Column<Advice>,
-    pub value: Column<Advice>,
-}
-
-impl TxTable {
-    pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
-        Self {
-            tx_id: meta.advice_column(),
-            tag: meta.advice_column(),
-            index: meta.advice_column(),
-            value: meta.advice_column(),
-        }
-    }
-}
-
-impl TableColumns<Advice> for TxTable {
-    fn columns(&self) -> Vec<Column<Advice>> {
-        vec![self.tx_id, self.tag, self.index, self.value]
-    }
 }
 
 impl<F: Field> TxCircuitConfig<F> {

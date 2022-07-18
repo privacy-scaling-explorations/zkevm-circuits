@@ -1,9 +1,9 @@
 use crate::{
+        table::{AccountFieldTag, CallContextFieldTag},
     evm_circuit::{
         execution::ExecutionGadget,
         param::N_BYTES_ACCOUNT_ADDRESS,
         step::ExecutionState,
-        table::{AccountFieldTag, CallContextFieldTag},
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{

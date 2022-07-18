@@ -1,8 +1,8 @@
 use crate::{
+        table::CallContextFieldTag,
     evm_circuit::{
         execution::ExecutionGadget,
         step::ExecutionState,
-        table::CallContextFieldTag,
         util::{
             common_gadget::RestoreContextGadget,
             constraint_builder::{

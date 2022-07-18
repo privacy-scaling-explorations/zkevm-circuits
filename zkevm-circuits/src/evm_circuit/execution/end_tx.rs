@@ -1,12 +1,12 @@
 use crate::{
-    evm_circuit::{
-        execution::ExecutionGadget,
-        param::N_BYTES_GAS,
-        step::ExecutionState,
         table::{
             BlockContextFieldTag, CallContextFieldTag, RwTableTag, TxContextFieldTag,
             TxReceiptFieldTag,
         },
+    evm_circuit::{
+        execution::ExecutionGadget,
+        param::N_BYTES_GAS,
+        step::ExecutionState,
         util::{
             common_gadget::UpdateBalanceGadget,
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},

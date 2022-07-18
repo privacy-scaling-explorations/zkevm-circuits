@@ -3,11 +3,15 @@ use crate::{
         param::STACK_CAPACITY,
         step::{ExecutionState, Step},
         table::{
-            AccountFieldTag, BytecodeFieldTag, CallContextFieldTag, FixedTableTag, Lookup,
-            RwTableTag, Table, TxContextFieldTag, TxLogFieldTag, TxReceiptFieldTag,
+             FixedTableTag, Lookup,
+            Table, 
         },
         util::{Cell, RandomLinearCombination, Word},
     },
+        table::{
+            AccountFieldTag, BytecodeFieldTag, CallContextFieldTag,
+            RwTableTag, TxContextFieldTag, TxLogFieldTag, TxReceiptFieldTag,
+        },
     util::Expr,
 };
 use eth_types::Field;

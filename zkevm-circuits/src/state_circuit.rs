@@ -7,10 +7,11 @@ mod random_linear_combination;
 #[cfg(test)]
 mod test;
 
-use crate::evm_circuit::{
+use crate::{evm_circuit::{
     param::N_BYTES_WORD,
-    table::RwTableTag,
     witness::{Rw, RwMap},
+},
+    table::RwTableTag,
 };
 use crate::util::Expr;
 use constraint_builder::{ConstraintBuilder, Queries};

@@ -1,8 +1,9 @@
 use super::CachedRegion;
 use crate::{
+        table::{AccountFieldTag, CallContextFieldTag, },
     evm_circuit::{
         param::N_BYTES_GAS,
-        table::{AccountFieldTag, CallContextFieldTag, FixedTableTag, Lookup},
+        table::{ FixedTableTag, Lookup},
         util::{
             constraint_builder::{
                 ConstraintBuilder, ReversionInfo, StepStateTransition,

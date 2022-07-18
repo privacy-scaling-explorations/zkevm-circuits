@@ -260,12 +260,14 @@ pub(crate) mod test {
     use halo2_proofs::arithmetic::BaseExt;
     use halo2_proofs::pairing::bn256::Fr;
 
-    use crate::evm_circuit::{
+    use crate::{
+        evm_circuit::{
         step::ExecutionState,
-        table::RwTableTag,
         test::run_test_circuit_incomplete_fixed_table,
         witness::{Block, Bytecode, Call, ExecStep, Rw, RwMap, Transaction},
-    };
+    },
+        table::RwTableTag,
+};
 
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn make_copy_code_step(

@@ -1,9 +1,9 @@
 use crate::{
+        table::{CallContextFieldTag, RwTableTag, TxLogFieldTag},
     evm_circuit::{
         execution::ExecutionGadget,
         param::N_BYTES_MEMORY_WORD_SIZE,
         step::ExecutionState,
-        table::{CallContextFieldTag, RwTableTag, TxLogFieldTag},
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{
