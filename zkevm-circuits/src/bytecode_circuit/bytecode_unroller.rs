@@ -2,8 +2,8 @@ use crate::{
     evm_circuit::util::{
         and, constraint_builder::BaseConstraintBuilder, not, or, select, RandomLinearCombination,
     },
-    table::{load_keccaks, BytecodeTable, KeccakTable},
     table::{BytecodeFieldTag, TableColumns},
+    table::{BytecodeTable, KeccakTable},
     util::Expr,
 };
 use bus_mapping::evm::OpcodeId;
@@ -717,7 +717,7 @@ fn into_words(message: &[u8]) -> Vec<u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::util::power_of_randomness_from_instance;
+    use crate::{table::load_keccaks, util::power_of_randomness_from_instance};
     use eth_types::{Bytecode, Word};
     use halo2_proofs::{
         circuit::{Layouter, SimpleFloorPlanner},

@@ -17,12 +17,13 @@ use itertools::Itertools;
 use keccak256::plain::Keccak;
 use strum_macros::{EnumCount, EnumIter};
 
+/// Trait used for dynamic tables.
 pub trait TableColumns<C: ColumnType> {
+    /// Returns the list of columns following the table order.  This trait
+    /// requires all the columns to be of the same type.
     fn columns(&self) -> Vec<Column<C>>;
 }
 
-// TODO: Deduplicate with
-// `zkevm-circuits/src/evm_circuit/table.rs::TxContextFieldTag`.
 /// Tag used to identify each field in the transaction in a row of the
 /// transaction table.
 #[derive(Clone, Copy, Debug)]
@@ -54,18 +55,25 @@ pub enum TxFieldTag {
     CallData,
 }
 impl_expr!(TxFieldTag);
+
+/// Alias for TxFieldTag used by EVM Circuit
 pub type TxContextFieldTag = TxFieldTag;
 
-/// TxTable columns
+/// Table that contains the fields of all Transactions in a block
 #[derive(Clone, Debug)]
 pub struct TxTable {
+    /// Tx ID
     pub tx_id: Column<Advice>,
+    /// Tag (TxContextFieldTag)
     pub tag: Column<Advice>,
+    /// Index for Tag = CallData
     pub index: Column<Advice>,
+    /// Value
     pub value: Column<Advice>,
 }
 
 impl TxTable {
+    /// Construct a new TxTable
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
         Self {
             tx_id: meta.advice_column(),
@@ -82,7 +90,8 @@ impl TableColumns<Advice> for TxTable {
     }
 }
 
-// TODO: Move to src/tables.rs
+/// Assign the `TxTable` from a list of block `Transaction`s, followig the same
+/// layout that the Tx Circuit uses.
 pub fn load_txs<F: Field>(
     tx_table: &TxTable,
     layouter: &mut impl Layouter<F>,
@@ -126,24 +135,38 @@ pub fn load_txs<F: Field>(
     )
 }
 
+/// Tag to identify the operation type in a RwTable row
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, EnumIter)]
 pub enum RwTableTag {
+    /// Start (used for padding)
     Start = 1,
+    /// Stack operation
     Stack,
+    /// Memory operation
     Memory,
+    /// Account Storage operation
     AccountStorage,
+    /// Tx Access List Account operation
     TxAccessListAccount,
+    /// Tx Access List Account Storage operation
     TxAccessListAccountStorage,
+    /// Tx Refund operation
     TxRefund,
+    /// Account operation
     Account,
+    /// Account Destructed operation
     AccountDestructed,
+    /// Call Context operation
     CallContext,
+    /// Tx Log operation
     TxLog,
+    /// Tx Receipt operation
     TxReceipt,
 }
 impl_expr!(RwTableTag);
 
 impl RwTableTag {
+    /// Returns true if the RwTable operation is reversible
     pub fn is_reversible(self) -> bool {
         return matches!(
             self,
@@ -163,75 +186,125 @@ impl From<RwTableTag> for usize {
     }
 }
 
+/// Tag for an AccountField in RwTable
 #[derive(Clone, Copy, Debug, EnumIter)]
 pub enum AccountFieldTag {
+    /// Nonce field
     Nonce = 1,
+    /// Balance field
     Balance,
+    /// CodeHash field
     CodeHash,
 }
 impl_expr!(AccountFieldTag);
 
+/// Tag for a TxLogField in RwTable
 #[derive(Clone, Copy, Debug, PartialEq, EnumIter)]
 pub enum TxLogFieldTag {
+    /// Address field
     Address = 1,
+    /// Topic field
     Topic,
+    /// Data field
     Data,
 }
 impl_expr!(TxLogFieldTag);
 
+/// Tag for a TxReceiptField in RwTable
 #[derive(Clone, Copy, Debug, PartialEq, EnumIter, EnumCount)]
 pub enum TxReceiptFieldTag {
+    /// Tx result
     PostStateOrStatus = 1,
+    /// CumulativeGasUsed in the tx
     CumulativeGasUsed,
+    /// Number of logs in the tx
     LogLength,
 }
 impl_expr!(TxReceiptFieldTag);
 
+/// Tag for a CallContextField in RwTable
 #[derive(Clone, Copy, Debug, PartialEq, EnumIter)]
 pub enum CallContextFieldTag {
+    /// RwCounterEndOfReversion
     RwCounterEndOfReversion = 1,
+    /// CallerId
     CallerId,
+    /// TxId
     TxId,
+    /// Depth
     Depth,
+    /// CallerAddress
     CallerAddress,
+    /// CalleeAddress
     CalleeAddress,
+    /// CallDataOffset
     CallDataOffset,
+    /// CallDataLength
     CallDataLength,
+    /// ReturnDataOffset
     ReturnDataOffset,
+    /// ReturnDataLength
     ReturnDataLength,
+    /// Value
     Value,
+    /// IsSuccess
     IsSuccess,
+    /// IsPersistent
     IsPersistent,
+    /// IsStatic
     IsStatic,
 
+    /// LastCalleeId
     LastCalleeId,
+    /// LastCalleeReturnDataOffset
     LastCalleeReturnDataOffset,
+    /// LastCalleeReturnDataLength
     LastCalleeReturnDataLength,
 
+    /// IsRoot
     IsRoot,
+    /// IsCreate
     IsCreate,
+    /// CodeHash
     CodeHash,
+    /// ProgramCounter
     ProgramCounter,
+    /// StackPointer
     StackPointer,
+    /// GasLeft
     GasLeft,
+    /// MemorySize
     MemorySize,
+    /// ReversibleWriteCounter
     ReversibleWriteCounter,
 }
 impl_expr!(CallContextFieldTag);
 
-/// The rw table shared between evm circuit and state circuit
+/// The RwTable shared between EVM Circuit and State Circuit, which contains
+/// traces of the EVM state operations.
 #[derive(Clone, Copy)]
 pub struct RwTable {
+    /// Read Write Counter
     pub rw_counter: Column<Advice>,
+    /// Is Write
     pub is_write: Column<Advice>,
+    /// Tag
     pub tag: Column<Advice>,
+    /// Key1 (Id)
     pub key1: Column<Advice>,
+    /// Key2 (Address)
     pub key2: Column<Advice>,
+    /// Key3 (FieldTag)
     pub key3: Column<Advice>,
+    /// Key3 (StorageKey)
     pub key4: Column<Advice>,
+    /// Value
     pub value: Column<Advice>,
+    /// Value Previous
     pub value_prev: Column<Advice>,
+    /// Aux1 (Committed Value)
     pub aux1: Column<Advice>,
+    /// Aux2
     pub aux2: Column<Advice>,
 }
 
@@ -253,6 +326,7 @@ impl TableColumns<Advice> for RwTable {
     }
 }
 impl RwTable {
+    /// Construct a new RwTable
     pub fn construct<F: FieldExt>(meta: &mut ConstraintSystem<F>) -> Self {
         Self {
             rw_counter: meta.advice_column(),
@@ -268,6 +342,7 @@ impl RwTable {
             aux2: meta.advice_column(),
         }
     }
+    /// Assign a `RwRow` at offset into the `RwTable`
     pub fn assign<F: FieldExt>(
         &self,
         region: &mut Region<'_, F>,
@@ -293,7 +368,8 @@ impl RwTable {
     }
 }
 
-// TODO: Move to src/tables.rs
+/// Assign the `RwTable` from a `RwMap`, followig the same
+/// table layout that the State Circuit uses.
 pub fn load_rws<F: Field>(
     rw_table: &RwTable,
     layouter: &mut impl Layouter<F>,
@@ -327,26 +403,37 @@ pub fn load_rws<F: Field>(
     )
 }
 
+/// Tag to identify the field in a Bytecode Table row
 #[derive(Clone, Copy, Debug)]
 pub enum BytecodeFieldTag {
+    /// Length field
     Length,
+    /// Byte field
     Byte,
+    /// Padding field
     Padding,
 }
 impl_expr!(BytecodeFieldTag);
 
 // CHANGELOG: Added BytecodeTable to help reusing the table config with other
 // circuits
+/// Table with Bytecode indexed by its Code Hash
 #[derive(Clone, Debug)]
 pub struct BytecodeTable {
+    /// Code Hash
     pub code_hash: Column<Advice>, // CHANGELOG: Renamed from hash
+    /// Tag
     pub tag: Column<Advice>,
+    /// Index
     pub index: Column<Advice>,
+    /// Is Code is true when the byte is not an argument to a PUSH* instruction.
     pub is_code: Column<Advice>,
+    /// Value
     pub value: Column<Advice>,
 }
 
 impl BytecodeTable {
+    /// Construct a new BytecodeTable
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
         Self {
             code_hash: meta.advice_column(),
@@ -372,7 +459,8 @@ impl TableColumns<Advice> for BytecodeTable {
 
 // use crate::util::TableShow;
 
-// TODO: Move to src/tables.rs
+/// Assign the `BytecodeTable` from a list of bytecodes, followig the same
+/// table layout that the Bytecode Circuit uses.
 pub fn load_bytecodes<'a, F: Field>(
     bytecode_table: &BytecodeTable,
     layouter: &mut impl Layouter<F>,
@@ -419,29 +507,43 @@ pub fn load_bytecodes<'a, F: Field>(
     )
 }
 
+/// Tag to identify the field in a Block Table row
 // Keep the sequence consistent with OpcodeId for scalar
 #[derive(Clone, Copy, Debug)]
 pub enum BlockContextFieldTag {
+    /// Coinbase field
     Coinbase = 1,
+    /// Timestamp field
     Timestamp,
+    /// Number field
     Number,
+    /// Difficulty field
     Difficulty,
+    /// Gas Limit field
     GasLimit,
+    /// Base Fee field
     BaseFee = 8,
+    /// Block Hash field
     BlockHash,
+    /// Chain ID field.  Although this is not a field in the block header, we
+    /// add it here for convenience.
     ChainId,
 }
 impl_expr!(BlockContextFieldTag);
 
-// TODO: Move to src/tables.rs
+/// Table with Block header fields
 #[derive(Clone, Debug)]
 pub struct BlockTable {
+    /// Tag
     pub tag: Column<Advice>,
+    /// Index
     pub index: Column<Advice>,
+    /// Value
     pub value: Column<Advice>,
 }
 
 impl BlockTable {
+    /// Construct a new BlockTable
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
         Self {
             tag: meta.advice_column(),
@@ -457,7 +559,7 @@ impl TableColumns<Advice> for BlockTable {
     }
 }
 
-// TODO: Move to src/tables.rs
+/// Assign the `BlockTable` from a `BlockContext`.
 pub fn load_block<F: Field>(
     block_table: &BlockTable,
     layouter: &mut impl Layouter<F>,
@@ -496,16 +598,21 @@ pub fn load_block<F: Field>(
     )
 }
 
-// TODO: Move to src/tables.rs
+/// Keccak Table, used to verify keccak hashing from RLC'ed input.
 #[derive(Clone, Debug)]
 pub struct KeccakTable {
+    /// True when the row is enabled
     pub is_enabled: Column<Advice>,
+    /// Byte array input as `RLC(reversed(input))`
     pub input_rlc: Column<Advice>, // RLC of input bytes
+    /// Byte array input length
     pub input_len: Column<Advice>,
+    /// RLC of the hash result
     pub output_rlc: Column<Advice>, // RLC of hash of input bytes
 }
 
 impl KeccakTable {
+    /// Construct a new KeccakTable
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
         Self {
             is_enabled: meta.advice_column(),
@@ -527,6 +634,7 @@ impl TableColumns<Advice> for KeccakTable {
     }
 }
 
+/// Generate the keccak table assignments from a byte array input.
 pub fn keccak_table_assignments<F: Field>(input: &[u8], randomness: F) -> Vec<[F; 4]> {
     // CHANGELOG: Using `RLC(reversed(input))`
     let input_rlc: F = rlc::value(input.iter().rev(), randomness);
@@ -546,6 +654,8 @@ pub fn keccak_table_assignments<F: Field>(input: &[u8], randomness: F) -> Vec<[F
 // `RLC(reversed(input))` for convenience of the circuits that do the lookups.
 // This allows calculating the `input_rlc` after all the inputs bytes have been
 // layed out via the pattern `acc[i] = acc[i-1] * r + value[i]`.
+/// Assign the `KeccakTable` from a list hashing inputs, followig the same
+/// table layout that the Keccak Circuit uses.
 pub fn load_keccaks<'a, F: Field>(
     keccak_table: &KeccakTable,
     layouter: &mut impl Layouter<F>,

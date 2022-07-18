@@ -6,7 +6,7 @@
 
 use crate::{
     evm_circuit::util::{not, RandomLinearCombination, Word},
-    table::{load_keccaks, KeccakTable},
+    table::KeccakTable,
     util::Expr,
 };
 use ecc::{EccConfig, GeneralEccChip};
@@ -833,7 +833,7 @@ fn pub_key_hash_to_address<F: Field>(pk_hash: &[u8]) -> F {
 #[cfg(test)]
 mod sign_verify_tests {
     use super::*;
-    use crate::util::power_of_randomness_from_instance;
+    use crate::{table::load_keccaks, util::power_of_randomness_from_instance};
     use group::Group;
     use halo2_proofs::{
         circuit::SimpleFloorPlanner, dev::MockProver, pairing::bn256::Fr, plonk::Circuit,

@@ -18,7 +18,6 @@
 
 pub mod bytecode_circuit;
 pub mod evm_circuit;
-pub mod rw_table;
 pub mod state_circuit;
 pub mod super_circuit;
 pub mod table;
