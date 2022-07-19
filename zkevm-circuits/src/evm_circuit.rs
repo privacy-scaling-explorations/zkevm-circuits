@@ -11,7 +11,7 @@ pub(crate) mod util;
 pub mod table;
 pub mod witness;
 
-use crate::table::{BytecodeTable, LookupTable, TxTable};
+use crate::table::LookupTable;
 use eth_types::Field;
 use execution::ExecutionConfig;
 use itertools::Itertools;
@@ -145,11 +145,12 @@ impl<F: Field> EvmCircuit<F> {
 
 #[cfg(any(feature = "test", test))]
 pub mod test {
-    use super::*;
     use crate::{
-        copy_circuit::CopyCircuit,
         evm_circuit::{table::FixedTableTag, witness::Block, EvmCircuit},
-        table::{load_block, load_bytecodes, load_rws, load_txs, BlockTable, RwTable},
+        table::{
+            load_block, load_bytecodes, load_copy, load_rws, load_txs, BlockTable, BytecodeTable,
+            CopyTable, RwTable, TxTable,
+        },
         util::power_of_randomness_from_instance,
     };
     use eth_types::{Field, Word};
@@ -190,7 +191,7 @@ pub mod test {
         rw_table: RwTable,
         bytecode_table: BytecodeTable,
         block_table: BlockTable,
-        copy_table: CopyCircuit<F>,
+        copy_table: CopyTable,
         evm_circuit: EvmCircuit<F>,
     }
 
@@ -222,7 +223,8 @@ pub mod test {
             let rw_table = RwTable::construct(meta);
             let bytecode_table = BytecodeTable::construct(meta);
             let block_table = BlockTable::construct(meta);
-            let copy_table = CopyCircuit::configure(meta, &tx_table, &rw_table, &bytecode_table);
+            let q_copy_table = meta.fixed_column();
+            let copy_table = CopyTable::construct(meta, q_copy_table);
 
             let power_of_randomness = power_of_randomness_from_instance(meta);
             let evm_circuit = EvmCircuit::configure(
@@ -278,7 +280,12 @@ pub mod test {
                 &self.block.context,
                 self.block.randomness,
             )?;
-            config.copy_table.assign_block(&mut layouter, &self.block)?;
+            load_copy(
+                &config.copy_table,
+                &mut layouter,
+                &self.block,
+                self.block.randomness,
+            )?;
             config
                 .evm_circuit
                 .assign_block_exact(&mut layouter, &self.block)

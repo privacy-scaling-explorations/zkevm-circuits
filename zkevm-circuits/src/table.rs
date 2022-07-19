@@ -3,13 +3,16 @@
 // CHANGELOG: Move table definitions from evm_circuit/table.rs and rw_table.rs
 // to here
 
+use crate::copy_circuit::number_or_hash_to_field;
 use crate::evm_circuit::witness::RwRow;
 use crate::evm_circuit::{
     util::{rlc, RandomLinearCombination},
-    witness::{BlockContext, Bytecode, RwMap, Transaction},
+    witness::{Block, BlockContext, Bytecode, RwMap, Transaction},
 };
 use crate::impl_expr;
-use eth_types::{Field, ToLittleEndian, Word};
+use bus_mapping::circuit_input_builder::{CopyDataType, CopyEvent};
+use eth_types::{Field, ToAddress, ToLittleEndian, ToScalar, Word, U256};
+use gadgets::binary_number::{BinaryNumberChip, BinaryNumberConfig};
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::Region,
@@ -20,37 +23,28 @@ use itertools::Itertools;
 use keccak256::plain::Keccak;
 use strum_macros::{EnumCount, EnumIter};
 
-// /// Trait used for dynamic tables.
-// pub trait TableColumns<C: ColumnType> {
-//     /// Returns the list of columns following the table order.  This trait
-//     /// requires all the columns to be of the same type.
-//     fn columns(&self) -> Vec<Column<C>>;
-// }
+/// Trait used for dynamic tables.  Used to get an automatic implementation of
+/// the LookupTable trait where each `table_expr` is a query to each column at
+/// `Rotation::cur`.
+pub trait TableColumns {
+    /// Returns the list of advice columns following the table order.
+    fn columns(&self) -> Vec<Column<Advice>>;
+}
 
 /// Trait used to define lookup tables
-pub trait LookupTable {
-    /// Returns the list of advice columns following the table order.
-    fn columns(&self) -> Vec<Column<Advice>> {
-        Vec::new()
-    }
-
+pub trait LookupTable<F: Field> {
     /// Return the list of expressions used to define the lookup table.
-    fn table_exprs<F: Field>(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>> {
+    fn table_exprs(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>>;
+}
+
+impl<F: Field, T: TableColumns> LookupTable<F> for T {
+    fn table_exprs(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>> {
         self.columns()
             .iter()
             .map(|column| meta.query_advice(*column, Rotation::cur()))
             .collect()
     }
 }
-
-// impl<F: Field, T: TableColumns<Advice>> LookupTable<F> for T {
-//     fn table_exprs(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>> {
-//         self.columns()
-//             .iter()
-//             .map(|column| meta.query_advice(*column, Rotation::cur()))
-//             .collect()
-//     }
-// }
 
 impl<F: Field, C: Into<Column<Any>> + Clone, const W: usize> LookupTable<F> for [C; W] {
     fn table_exprs(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>> {
@@ -120,7 +114,7 @@ impl TxTable {
     }
 }
 
-impl<F: Field> LookupTable<F> for TxTable {
+impl TableColumns for TxTable {
     fn columns(&self) -> Vec<Column<Advice>> {
         vec![self.tx_id, self.tag, self.index, self.value]
     }
@@ -344,7 +338,7 @@ pub struct RwTable {
     pub aux2: Column<Advice>,
 }
 
-impl<F: Field> LookupTable<F> for RwTable {
+impl TableColumns for RwTable {
     fn columns(&self) -> Vec<Column<Advice>> {
         vec![
             self.rw_counter,
@@ -481,7 +475,7 @@ impl BytecodeTable {
     }
 }
 
-impl<F: Field> LookupTable<F> for BytecodeTable {
+impl TableColumns for BytecodeTable {
     fn columns(&self) -> Vec<Column<Advice>> {
         vec![
             self.code_hash,
@@ -589,7 +583,7 @@ impl BlockTable {
     }
 }
 
-impl<F: Field> LookupTable<F> for BlockTable {
+impl TableColumns for BlockTable {
     fn columns(&self) -> Vec<Column<Advice>> {
         vec![self.tag, self.index, self.value]
     }
@@ -659,7 +653,7 @@ impl KeccakTable {
     }
 }
 
-impl<F: Field> LookupTable<F> for KeccakTable {
+impl TableColumns for KeccakTable {
     fn columns(&self) -> Vec<Column<Advice>> {
         vec![
             self.is_enabled,
@@ -741,37 +735,41 @@ pub fn load_keccaks<'a, F: Field>(
 
 /// Copy Table, used to verify copies of byte chunks between Memory, Bytecode,
 /// TxLogs and TxCallData.
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct CopyTable {
-    /// Boolean value to indicate the first row in a copy event.
+    /// Whether the row is the first read-write pair for a copy event.
     pub is_first: Column<Advice>,
-    /// Can be $txID, $callID, $codeHash (RLC encoded).
+    /// The relevant ID for the read-write row, represented as a random linear
+    /// combination. The ID may be one of the below:
+    /// 1. Call ID/Caller ID for CopyDataType::Memory
+    /// 2. RLC encoding of bytecode hash for CopyDataType::Bytecode
+    /// 3. Transaction ID for CopyDataType::TxCalldata, CopyDataType::TxLog
     pub id: Column<Advice>,
-    /// Type of data source/destination, including Memory, Bytecode, TxCalldata,
-    /// TxLog.
-    pub tag: Column<Advice>,
-    /// Address in the source data.  Can be memory address, byte index in the
-    /// bytecode, tx call data, and tx log data.
+    /// The source/destination address for this copy step.  Can be memory
+    /// address, byte index in the bytecode, tx call data, and tx log data.
     pub addr: Column<Advice>,
-    /// Address boundary of the source data. Any data read from address greater
-    /// than or equal to this value will be 0.
+    /// The end of the source buffer for the copy event.  Any data read from an
+    /// address greater than or equal to this value will be 0.
     pub src_addr_end: Column<Advice>,
-    /// Number of bytes to be copied.
+    /// The number of bytes left to be copied.
     pub bytes_left: Column<Advice>,
-    /// Current RW counter at the beginning of the copy
+    /// The associated read-write counter for this row.
     pub rw_counter: Column<Advice>,
-    /// How much the RW counter will increase in a copy event.
+    /// Decrementing counter denoting reverse read-write counter.
     pub rwc_inc_left: Column<Advice>,
+    /// Binary chip to constrain the copy table conditionally depending on the
+    /// current row's tag, whether it is Bytecode, Memory, TxCalldata or
+    /// TxLog.
+    pub tag: BinaryNumberConfig<CopyDataType, 3>,
 }
 
-/*
 impl CopyTable {
     /// Construct a new KeccakTable
-    pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
+    pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>, q_enable: Column<Fixed>) -> Self {
         Self {
             is_first: meta.advice_column(),
             id: meta.advice_column(),
-            tag: meta.advice_column(),
+            tag: BinaryNumberChip::configure(meta, q_enable),
             addr: meta.advice_column(),
             src_addr_end: meta.advice_column(),
             bytes_left: meta.advice_column(),
@@ -781,12 +779,11 @@ impl CopyTable {
     }
 }
 
-impl TableColumns<Advice> for CopyTable {
+impl CopyTable {
     fn columns(&self) -> Vec<Column<Advice>> {
         vec![
             self.is_first,
             self.id,
-            self.tag,
             self.addr,
             self.src_addr_end,
             self.bytes_left,
@@ -813,4 +810,91 @@ impl<F: Field> LookupTable<F> for CopyTable {
         ]
     }
 }
-*/
+
+/// Generate the keccak table assignments from a byte array input.
+pub fn copy_table_assignments<F: Field>(
+    copy_event: &CopyEvent,
+    randomness: F,
+) -> Vec<(CopyDataType, [F; 7])> {
+    let mut assignments = Vec::new();
+    for (step_idx, copy_step) in copy_event.steps.iter().enumerate() {
+        // is_first
+        let is_first = if step_idx == 0 { F::one() } else { F::zero() };
+        // id
+        let id = {
+            let id = if copy_step.rw.is_read() {
+                &copy_event.src_id
+            } else {
+                &copy_event.dst_id
+            };
+            number_or_hash_to_field(id, randomness)
+        };
+        // addr
+        let addr = match copy_step.tag {
+            CopyDataType::TxLog => {
+                let addr = (U256::from(copy_step.addr)
+                    + (U256::from(TxLogFieldTag::Data as u64) << 32)
+                    + (U256::from(copy_event.log_id.unwrap()) << 48))
+                    .to_address();
+                addr.to_scalar().unwrap()
+            }
+            _ => F::from(copy_step.addr),
+        };
+        assignments.push((
+            copy_step.tag,
+            [
+                is_first,
+                id,
+                addr,
+                F::from(copy_event.src_addr_end), // src_addr_end
+                F::from(copy_event.length - step_idx as u64 / 2), // bytes_left
+                F::from(copy_step.rwc.0 as u64),  // rw_counter
+                F::from(copy_step.rwc_inc_left),  // rw_inc_left
+            ],
+        ));
+    }
+    assignments
+}
+
+/// Assign the `CopyTable` from a `Block`.
+pub fn load_copy<F: Field>(
+    copy_table: &CopyTable,
+    layouter: &mut impl Layouter<F>,
+    block: &Block<F>,
+    randomness: F,
+) -> Result<(), Error> {
+    layouter.assign_region(
+        || "copy table",
+        |mut region| {
+            let mut offset = 0;
+            for column in copy_table.columns() {
+                region.assign_advice(
+                    || "copy table all-zero row",
+                    column,
+                    offset,
+                    || Ok(F::zero()),
+                )?;
+            }
+            offset += 1;
+
+            let tag_chip = BinaryNumberChip::construct(copy_table.tag);
+            let copy_table_columns = copy_table.columns();
+            for copy_event in block.copy_events.values() {
+                for (tag, row) in copy_table_assignments(copy_event, randomness) {
+                    for (column, value) in copy_table_columns.iter().zip_eq(row) {
+                        region.assign_advice(
+                            || format!("copy table row {}", offset),
+                            *column,
+                            offset,
+                            || Ok(value),
+                        )?;
+                    }
+                    tag_chip.assign(&mut region, offset, &tag)?;
+                    offset += 1;
+                }
+            }
+
+            Ok(())
+        },
+    )
+}

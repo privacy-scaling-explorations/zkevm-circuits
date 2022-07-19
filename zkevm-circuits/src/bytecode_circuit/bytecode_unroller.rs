@@ -2,7 +2,7 @@ use crate::{
     evm_circuit::util::{
         and, constraint_builder::BaseConstraintBuilder, not, or, select, RandomLinearCombination,
     },
-    table::{BytecodeFieldTag, BytecodeTable, KeccakTable, LookupTable},
+    table::{BytecodeFieldTag, BytecodeTable, KeccakTable, TableColumns},
     util::Expr,
 };
 use bus_mapping::evm::OpcodeId;

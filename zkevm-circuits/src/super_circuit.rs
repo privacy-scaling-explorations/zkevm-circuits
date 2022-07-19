@@ -48,7 +48,6 @@
 //!   - [x] Tx Circuit
 //!   - [ ] MPT Circuit
 
-use crate::copy_circuit::CopyCircuit;
 use crate::tx_circuit::{self, TxCircuit, TxCircuitConfig};
 
 use crate::bytecode_circuit::bytecode_unroller::{
@@ -57,7 +56,8 @@ use crate::bytecode_circuit::bytecode_unroller::{
 
 use crate::evm_circuit::{table::FixedTableTag, witness::Block, EvmCircuit};
 use crate::table::{
-    load_block, load_keccaks, load_rws, BlockTable, BytecodeTable, KeccakTable, RwTable, TxTable,
+    load_block, load_copy, load_keccaks, load_rws, BlockTable, BytecodeTable, CopyTable,
+    KeccakTable, RwTable, TxTable,
 };
 use crate::util::power_of_randomness_from_instance;
 use eth_types::Field;
@@ -74,6 +74,7 @@ pub struct SuperCircuitConfig<F: Field, const MAX_TXS: usize, const MAX_CALLDATA
     bytecode_table: BytecodeTable,
     block_table: BlockTable,
     keccak_table: KeccakTable,
+    copy_table: CopyTable,
     evm_circuit: EvmCircuit<F>,
     tx_circuit: TxCircuitConfig<F>,
     bytecode_circuit: BytecodeConfig<F>,
@@ -119,8 +120,8 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
         let bytecode_table = BytecodeTable::construct(meta);
         let block_table = BlockTable::construct(meta);
         let keccak_table = KeccakTable::construct(meta);
-        // TODO: Split CopyCircuit into a Table and the configuration.
-        let copy_table = CopyCircuit::configure(meta, &tx_table, &rw_table, &bytecode_table);
+        let q_copy_table = meta.fixed_column();
+        let copy_table = CopyTable::construct(meta, q_copy_table);
 
         let power_of_randomness = power_of_randomness_from_instance(meta);
         let evm_circuit = EvmCircuit::configure(
@@ -139,6 +140,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
             bytecode_table: bytecode_table.clone(),
             block_table,
             keccak_table: keccak_table.clone(),
+            copy_table,
             evm_circuit,
             tx_circuit: TxCircuitConfig::new(
                 meta,
@@ -189,9 +191,15 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
             &self.block.context,
             self.block.randomness,
         )?;
+        load_copy(
+            &config.copy_table,
+            &mut layouter,
+            &self.block,
+            self.block.randomness,
+        )?;
         config
             .evm_circuit
-            .assign_block_exact(&mut layouter, &self.block)?;
+            .assign_block(&mut layouter, &self.block)?;
         // --- Tx Circuit ---
         self.tx_circuit.assign(&config.tx_circuit, &mut layouter)?;
         // --- Bytecode Circuit ---

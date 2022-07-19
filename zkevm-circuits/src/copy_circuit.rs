@@ -5,13 +5,13 @@
 use bus_mapping::circuit_input_builder::{CopyDataType, CopyEvent, CopyStep, NumberOrHash};
 use eth_types::{Field, ToAddress, ToScalar, U256};
 use gadgets::{
-    binary_number::{BinaryNumberChip, BinaryNumberConfig},
+    binary_number::BinaryNumberChip,
     less_than::{LtChip, LtConfig, LtInstruction},
     util::{and, not, or, Expr},
 };
 use halo2_proofs::{
     circuit::{Layouter, Region},
-    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, Selector, VirtualCells},
+    plonk::{Advice, Column, ConstraintSystem, Error, Fixed, Selector},
     poly::Rotation,
 };
 
@@ -20,8 +20,28 @@ use crate::{
         util::{constraint_builder::BaseConstraintBuilder, RandomLinearCombination},
         witness::Block,
     },
-    table::{BytecodeFieldTag, LookupTable, RwTableTag, TxContextFieldTag, TxLogFieldTag},
+    table::{
+        BytecodeFieldTag, CopyTable, LookupTable, RwTableTag, TxContextFieldTag, TxLogFieldTag,
+    },
 };
+
+/// Encode the type `NumberOrHash` into a field element
+pub fn number_or_hash_to_field<F: Field>(v: &NumberOrHash, randomness: F) -> F {
+    match v {
+        NumberOrHash::Number(n) => F::from(*n as u64),
+        NumberOrHash::Hash(h) => {
+            // since code hash in the bytecode table is represented in
+            // the little-endian form, we reverse the big-endian bytes
+            // of H256.
+            let le_bytes = {
+                let mut b = h.to_fixed_bytes();
+                b.reverse();
+                b
+            };
+            RandomLinearCombination::random_linear_combine(le_bytes, randomness)
+        }
+    }
+}
 
 /// The rw table shared between evm circuit and state circuit
 #[derive(Clone, Copy, Debug)]
@@ -31,22 +51,11 @@ pub struct CopyCircuit<F> {
     /// Whether this row denotes a step. A read row is a step and a write row is
     /// not.
     pub q_step: Selector,
-    /// Whether the row is the first read-write pair for a copy event.
-    pub is_first: Column<Advice>,
     /// Whether the row is the last read-write pair for a copy event.
     pub is_last: Column<Advice>,
-    /// The relevant ID for the read-write row, represented as a random linear
-    /// combination. The ID may be one of the below:
-    /// 1. Call ID/Caller ID for CopyDataType::Memory
-    /// 2. RLC encoding of bytecode hash for CopyDataType::Bytecode
-    /// 3. Transaction ID for CopyDataType::TxCalldata, CopyDataType::TxLog
-    pub id: Column<Advice>,
-    /// The source/destination address for this copy step.
-    pub addr: Column<Advice>,
-    /// The end of the source buffer for the copy event.
-    pub src_addr_end: Column<Advice>,
-    /// The number of bytes left to be copied.
-    pub bytes_left: Column<Advice>,
+    /// The Copy Table contains the columns that are exposed via the lookup
+    /// expressions
+    pub copy_table: CopyTable,
     /// The value copied in this copy step.
     pub value: Column<Advice>,
     /// In case of a bytecode tag, this denotes whether or not the copied byte
@@ -54,36 +63,10 @@ pub struct CopyCircuit<F> {
     pub is_code: Column<Advice>,
     /// Whether the row is padding.
     pub is_pad: Column<Advice>,
-    /// The associated read-write counter for this row.
-    pub rw_counter: Column<Advice>,
-    /// Decrementing counter denoting reverse read-write counter.
-    pub rwc_inc_left: Column<Advice>,
-    /// Binary chip to constrain the copy table conditionally depending on the
-    /// current row's tag, whether it is Bytecode, Memory, TxCalldata or
-    /// TxLog.
-    pub tag: BinaryNumberConfig<CopyDataType, 3>,
     /// Lt chip to check: src_addr < src_addr_end.
     /// Since `src_addr` and `src_addr_end` are u64, 8 bytes are sufficient for
     /// the Lt chip.
     pub addr_lt_addr_end: LtConfig<F, 8>,
-}
-
-impl<F: Field> LookupTable<F> for CopyCircuit<F> {
-    fn table_exprs(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>> {
-        vec![
-            meta.query_advice(self.is_first, Rotation::cur()),
-            meta.query_advice(self.id, Rotation::cur()), // src_id
-            self.tag.value(Rotation::cur())(meta),       // src_tag
-            meta.query_advice(self.id, Rotation::next()), // dst_id
-            self.tag.value(Rotation::next())(meta),      // dst_tag
-            meta.query_advice(self.addr, Rotation::cur()), // src_addr
-            meta.query_advice(self.src_addr_end, Rotation::cur()), // src_addr_end
-            meta.query_advice(self.addr, Rotation::next()), // dst_addr
-            meta.query_advice(self.bytes_left, Rotation::cur()), // length
-            meta.query_advice(self.rw_counter, Rotation::cur()), // rw_counter
-            meta.query_advice(self.rwc_inc_left, Rotation::cur()), // rwc_inc_left
-        ]
-    }
 }
 
 impl<F: Field> CopyCircuit<F> {
@@ -94,22 +77,22 @@ impl<F: Field> CopyCircuit<F> {
         tx_table: &dyn LookupTable<F>,
         rw_table: &dyn LookupTable<F>,
         bytecode_table: &dyn LookupTable<F>,
+        copy_table: CopyTable,
+        q_enable: Column<Fixed>,
     ) -> Self {
-        let q_enable = meta.fixed_column();
         let q_step = meta.complex_selector();
-        let is_first = meta.advice_column();
         let is_last = meta.advice_column();
-        let id = meta.advice_column();
-        let addr = meta.advice_column();
-        let src_addr_end = meta.advice_column();
-        let bytes_left = meta.advice_column();
         let value = meta.advice_column();
         let is_code = meta.advice_column();
         let is_pad = meta.advice_column();
-        let rw_counter = meta.advice_column();
-        let rwc_inc_left = meta.advice_column();
-
-        let tag = BinaryNumberChip::configure(meta, q_enable);
+        let is_first = copy_table.is_first;
+        let id = copy_table.id;
+        let addr = copy_table.addr;
+        let src_addr_end = copy_table.src_addr_end;
+        let bytes_left = copy_table.bytes_left;
+        let rw_counter = copy_table.rw_counter;
+        let rwc_inc_left = copy_table.rwc_inc_left;
+        let tag = copy_table.tag;
 
         let addr_lt_addr_end = LtChip::configure(
             meta,
@@ -279,7 +262,8 @@ impl<F: Field> CopyCircuit<F> {
                 1.expr(),
                 RwTableTag::TxLog.expr(),
                 meta.query_advice(id, Rotation::cur()), // tx_id
-                meta.query_advice(addr, Rotation::cur()), // byte_index || field_tag || log_id
+                meta.query_advice(addr, Rotation::cur()), /* byte_index || field_tag ||
+                                                         * log_id */
                 0.expr(),
                 0.expr(),
                 meta.query_advice(value, Rotation::cur()),
@@ -329,19 +313,12 @@ impl<F: Field> CopyCircuit<F> {
         Self {
             q_enable,
             q_step,
-            is_first,
             is_last,
-            id,
-            addr,
-            src_addr_end,
-            bytes_left,
             value,
             is_code,
             is_pad,
-            rw_counter,
-            rwc_inc_left,
-            tag,
             addr_lt_addr_end,
+            copy_table,
         }
     }
 
@@ -351,7 +328,7 @@ impl<F: Field> CopyCircuit<F> {
         layouter: &mut impl Layouter<F>,
         block: &Block<F>,
     ) -> Result<(), Error> {
-        let tag_chip = BinaryNumberChip::construct(self.tag);
+        let tag_chip = BinaryNumberChip::construct(self.copy_table.tag);
         let lt_chip = LtChip::construct(self.addr_lt_addr_end);
 
         layouter.assign_region(
@@ -412,7 +389,7 @@ impl<F: Field> CopyCircuit<F> {
         // is_first
         region.assign_advice(
             || format!("assign is_first {}", offset),
-            self.is_first,
+            self.copy_table.is_first,
             offset,
             || Ok(if step_idx == 0 { F::one() } else { F::zero() }),
         )?;
@@ -432,29 +409,14 @@ impl<F: Field> CopyCircuit<F> {
         // id
         region.assign_advice(
             || format!("assign id {}", offset),
-            self.id,
+            self.copy_table.id,
             offset,
-            || {
-                Ok(match id {
-                    NumberOrHash::Number(n) => F::from(*n as u64),
-                    NumberOrHash::Hash(h) => {
-                        // since code hash in the bytecode table is represented in
-                        // the little-endian form, we reverse the big-endian bytes
-                        // of H256.
-                        let le_bytes = {
-                            let mut b = h.to_fixed_bytes();
-                            b.reverse();
-                            b
-                        };
-                        RandomLinearCombination::random_linear_combine(le_bytes, randomness)
-                    }
-                })
-            },
+            || Ok(number_or_hash_to_field(id, randomness)),
         )?;
         // addr
         region.assign_advice(
             || format!("assign addr {}", offset),
-            self.addr,
+            self.copy_table.addr,
             offset,
             || {
                 Ok(match copy_step.tag {
@@ -493,14 +455,14 @@ impl<F: Field> CopyCircuit<F> {
         // rw_counter
         region.assign_advice(
             || format!("assign rw_counter {}", offset),
-            self.rw_counter,
+            self.copy_table.rw_counter,
             offset,
             || Ok(F::from(copy_step.rwc.0 as u64)),
         )?;
         // rwc_inc_left
         region.assign_advice(
             || format!("assign rwc_inc_left {}", offset),
-            self.rwc_inc_left,
+            self.copy_table.rwc_inc_left,
             offset,
             || Ok(F::from(copy_step.rwc_inc_left)),
         )?;
@@ -511,14 +473,14 @@ impl<F: Field> CopyCircuit<F> {
             // src_addr_end
             region.assign_advice(
                 || format!("assign src_addr_end {}", offset),
-                self.src_addr_end,
+                self.copy_table.src_addr_end,
                 offset,
                 || Ok(F::from(copy_event.src_addr_end)),
             )?;
             // bytes_left
             region.assign_advice(
                 || format!("assign bytes_left {}", offset),
-                self.bytes_left,
+                self.copy_table.bytes_left,
                 offset,
                 || Ok(F::from(bytes_left)),
             )?;
@@ -544,7 +506,7 @@ impl<F: Field> CopyCircuit<F> {
         // is_first
         region.assign_advice(
             || format!("assign is_first {}", offset),
-            self.is_first,
+            self.copy_table.is_first,
             offset,
             || Ok(F::zero()),
         )?;
@@ -558,28 +520,28 @@ impl<F: Field> CopyCircuit<F> {
         // id
         region.assign_advice(
             || format!("assign id {}", offset),
-            self.id,
+            self.copy_table.id,
             offset,
             || Ok(F::zero()),
         )?;
         // addr
         region.assign_advice(
             || format!("assign addr {}", offset),
-            self.addr,
+            self.copy_table.addr,
             offset,
             || Ok(F::zero()),
         )?;
         // src_addr_end
         region.assign_advice(
             || format!("assign src_addr_end {}", offset),
-            self.src_addr_end,
+            self.copy_table.src_addr_end,
             offset,
             || Ok(F::zero()),
         )?;
         // bytes_left
         region.assign_advice(
             || format!("assign bytes_left {}", offset),
-            self.bytes_left,
+            self.copy_table.bytes_left,
             offset,
             || Ok(F::zero()),
         )?;
@@ -607,14 +569,14 @@ impl<F: Field> CopyCircuit<F> {
         // rw_counter
         region.assign_advice(
             || format!("assign rw_counter {}", offset),
-            self.rw_counter,
+            self.copy_table.rw_counter,
             offset,
             || Ok(F::zero()),
         )?;
         // rwc_inc_left
         region.assign_advice(
             || format!("assign rwc_inc_left {}", offset),
-            self.rwc_inc_left,
+            self.copy_table.rwc_inc_left,
             offset,
             || Ok(F::zero()),
         )?;
@@ -626,6 +588,7 @@ impl<F: Field> CopyCircuit<F> {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use bus_mapping::{
         circuit_input_builder::{CircuitInputBuilder, CopyDataType},
         mock::BlockData,
@@ -644,8 +607,6 @@ mod tests {
         evm_circuit::witness::{block_convert, Block},
         table::{load_bytecodes, load_rws, load_txs, BytecodeTable, RwTable, TxTable},
     };
-
-    use super::CopyCircuit;
 
     #[derive(Clone)]
     struct MyConfig<F> {
@@ -678,7 +639,16 @@ mod tests {
             let tx_table = TxTable::construct(meta);
             let rw_table = RwTable::construct(meta);
             let bytecode_table = BytecodeTable::construct(meta);
-            let copy_table = CopyCircuit::configure(meta, &tx_table, &rw_table, &bytecode_table);
+            let q_enable = meta.fixed_column();
+            let copy_table = CopyTable::construct(meta, q_enable);
+            let copy_table = CopyCircuit::configure(
+                meta,
+                &tx_table,
+                &rw_table,
+                &bytecode_table,
+                copy_table,
+                q_enable,
+            );
 
             MyConfig {
                 tx_table,
