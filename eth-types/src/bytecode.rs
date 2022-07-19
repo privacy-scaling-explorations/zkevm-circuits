@@ -3,17 +3,30 @@
 use crate::{evm_types::OpcodeId, Bytes, Word};
 use std::collections::HashMap;
 
+/// Helper struct that represents a single element in a bytecode.
+#[derive(Copy, Clone, Debug, Default, PartialEq)]
+pub struct BytecodeElement {
+    /// The byte value of the element.
+    pub value: u8,
+    /// Whether the element is an opcode or push data byte.
+    pub is_code: bool,
+}
+
 /// EVM Bytecode
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct Bytecode {
-    code: Vec<u8>,
+    code: Vec<BytecodeElement>,
     num_opcodes: usize,
     markers: HashMap<String, usize>,
 }
 
 impl From<Bytecode> for Bytes {
     fn from(code: Bytecode) -> Self {
-        code.code.into()
+        code.code
+            .iter()
+            .map(|e| e.value)
+            .collect::<Vec<u8>>()
+            .into()
     }
 }
 
@@ -27,14 +40,14 @@ pub enum BytecodeError {
 }
 
 impl Bytecode {
-    /// Get a reference to the generated code
-    pub fn code(&self) -> &[u8] {
-        &self.code
+    /// Get the bytecode element at an index.
+    pub fn get(&self, index: usize) -> Option<BytecodeElement> {
+        self.code.get(index).cloned()
     }
 
     /// Get the generated code
     pub fn to_vec(&self) -> Vec<u8> {
-        self.code.clone()
+        self.code.iter().map(|e| e.value).collect()
     }
 
     /// Append
@@ -53,12 +66,12 @@ impl Bytecode {
 
     fn write_op_internal(&mut self, op: u8) -> &mut Self {
         self.num_opcodes += 1;
-        self.write(op)
+        self.write(op, true)
     }
 
     /// Write byte
-    pub fn write(&mut self, byte: u8) -> &mut Self {
-        self.code.push(byte);
+    pub fn write(&mut self, value: u8, is_code: bool) -> &mut Self {
+        self.code.push(BytecodeElement { value, is_code });
         self
     }
 
@@ -73,7 +86,7 @@ impl Bytecode {
         value.to_little_endian(&mut bytes);
         // Write the bytes MSB to LSB
         for i in 0..n {
-            self.write(bytes[n - 1 - i]);
+            self.write(bytes[n - 1 - i], false);
         }
         // Check if the full value could be pushed
         for byte in bytes.iter().skip(n) {

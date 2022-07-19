@@ -1,6 +1,6 @@
 //! Block-related utility module
 
-use super::transaction::Transaction;
+use super::{transaction::Transaction, CopyEvent};
 use crate::{
     operation::{OperationContainer, RWCounter},
     Error,
@@ -60,6 +60,8 @@ pub struct Block {
     pub container: OperationContainer,
     /// Transactions contained in the block
     pub txs: Vec<Transaction>,
+    /// Copy events in this block.
+    pub copy_events: Vec<CopyEvent>,
     code: HashMap<Hash, Vec<u8>>,
 }
 
@@ -92,6 +94,7 @@ impl Block {
             base_fee: eth_block.base_fee_per_gas.unwrap_or_default(),
             container: OperationContainer::new(),
             txs: Vec::new(),
+            copy_events: Vec::new(),
             code: HashMap::new(),
         })
     }
@@ -104,5 +107,12 @@ impl Block {
     #[cfg(test)]
     pub fn txs_mut(&mut self) -> &mut Vec<Transaction> {
         &mut self.txs
+    }
+}
+
+impl Block {
+    /// Push a copy event to the block.
+    pub fn add_copy_event(&mut self, copy: CopyEvent) {
+        self.copy_events.push(copy);
     }
 }

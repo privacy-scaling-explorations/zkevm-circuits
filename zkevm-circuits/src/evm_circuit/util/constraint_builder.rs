@@ -1074,6 +1074,40 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         );
     }
 
+    // Copy Table
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn copy_table_lookup(
+        &mut self,
+        src_id: Expression<F>,
+        src_tag: Expression<F>,
+        dst_id: Expression<F>,
+        dst_tag: Expression<F>,
+        src_addr: Expression<F>,
+        src_addr_end: Expression<F>,
+        dst_addr: Expression<F>,
+        length: Expression<F>,
+        rw_counter: Expression<F>,
+        rwc_inc: Expression<F>,
+    ) {
+        self.add_lookup(
+            "copy lookup",
+            Lookup::CopyTable {
+                is_first: 1.expr(), // is_first
+                src_id,
+                src_tag,
+                dst_id,
+                dst_tag,
+                src_addr,
+                src_addr_end,
+                dst_addr,
+                length,
+                rw_counter,
+                rwc_inc,
+            },
+        );
+    }
+
     // Validation
 
     pub(crate) fn validate_degree(&self, degree: usize, name: &'static str) {

@@ -23,9 +23,6 @@ pub enum ExecutionState {
     BeginTx,
     EndTx,
     EndBlock,
-    CopyCodeToMemory,
-    CopyToMemory,
-    CopyToLog,
     // Opcode successful cases
     STOP,
     ADD_SUB,     // ADD, SUB

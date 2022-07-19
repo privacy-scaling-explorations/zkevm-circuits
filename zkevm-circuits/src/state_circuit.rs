@@ -13,7 +13,6 @@ use crate::evm_circuit::{
     util::RandomLinearCombination,
     witness::{Rw, RwMap},
 };
-use crate::util::Expr;
 use constraint_builder::{ConstraintBuilder, Queries};
 use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word};
 use gadgets::binary_number::{BinaryNumberChip, BinaryNumberConfig};

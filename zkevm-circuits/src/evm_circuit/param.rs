@@ -14,6 +14,7 @@ pub(crate) const LOOKUP_CONFIG: &[(Table, usize)] = &[
     (Table::Bytecode, 4),
     (Table::Block, 1),
     (Table::Byte, 24),
+    (Table::Copy, 1),
 ];
 
 /// Maximum number of bytes that an integer can fit in field without wrapping

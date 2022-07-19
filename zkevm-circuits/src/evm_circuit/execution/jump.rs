@@ -101,7 +101,7 @@ mod test {
             JUMP
         };
         for _ in 0..(destination - 34) {
-            bytecode.write(0);
+            bytecode.write(0, false);
         }
         bytecode.append(&bytecode! {
             JUMPDEST

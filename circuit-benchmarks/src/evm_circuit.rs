@@ -25,6 +25,7 @@ impl<F: Field> Circuit<F> for TestCircuit<F> {
         let rw_table = [(); 11].map(|_| meta.advice_column());
         let bytecode_table = [(); 5].map(|_| meta.advice_column());
         let block_table = [(); 3].map(|_| meta.advice_column());
+        let copy_table = [(); 11].map(|_| meta.advice_column());
         // Use constant expression to mock constant instance column for a more
         // reasonable benchmark.
         let power_of_randomness = [(); 31].map(|_| Expression::Constant(F::one()));
@@ -36,6 +37,7 @@ impl<F: Field> Circuit<F> for TestCircuit<F> {
             &rw_table,
             &bytecode_table,
             &block_table,
+            &copy_table,
         )
     }
 

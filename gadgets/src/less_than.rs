@@ -28,7 +28,7 @@ pub trait LtInstruction<F: FieldExt> {
 }
 
 /// Config for the Lt chip.
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct LtConfig<F, const N_BYTES: usize> {
     /// Denotes the lt outcome. If lhs < rhs then lt == 1, otherwise lt == 0.
     pub lt: Column<Advice>,
@@ -247,7 +247,7 @@ mod test {
                 config: Self::Config,
                 mut layouter: impl Layouter<F>,
             ) -> Result<(), Error> {
-                let chip = LtChip::construct(config.lt.clone());
+                let chip = LtChip::construct(config.lt);
 
                 let values: Vec<_> = self
                     .values
@@ -366,7 +366,7 @@ mod test {
                 config: Self::Config,
                 mut layouter: impl Layouter<F>,
             ) -> Result<(), Error> {
-                let chip = LtChip::construct(config.lt.clone());
+                let chip = LtChip::construct(config.lt);
 
                 let values: Vec<_> = self
                     .values

@@ -36,7 +36,7 @@ where
 }
 
 /// Config for the binary number chip.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct BinaryNumberConfig<T, const N: usize> {
     /// Must be constrained to be binary for correctness.
     pub bits: [Column<Advice>; N],
@@ -100,6 +100,7 @@ where
 ///    T.
 ///  - creating expressions (via the Config) that evaluate to 1 when the bits
 ///    match a specific value and 0 otherwise.
+#[derive(Clone, Debug)]
 pub struct BinaryNumberChip<F: Field, T, const N: usize> {
     config: BinaryNumberConfig<T, N>,
     _marker: PhantomData<F>,

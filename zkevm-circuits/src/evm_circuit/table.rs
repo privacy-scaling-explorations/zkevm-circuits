@@ -255,6 +255,7 @@ pub(crate) enum Table {
     Bytecode,
     Block,
     Byte,
+    Copy,
 }
 
 #[derive(Clone, Debug)]
@@ -324,6 +325,34 @@ pub(crate) enum Lookup<F> {
         /// Value of the field.
         value: Expression<F>,
     },
+    /// Lookup to copy table.
+    CopyTable {
+        /// Whether the row is the first row of the copy event.
+        is_first: Expression<F>,
+        /// The source ID for the copy event.
+        src_id: Expression<F>,
+        /// The source tag for the copy event.
+        src_tag: Expression<F>,
+        /// The destination ID for the copy event.
+        dst_id: Expression<F>,
+        /// The destination tag for the copy event.
+        dst_tag: Expression<F>,
+        /// The source address where bytes are copied from.
+        src_addr: Expression<F>,
+        /// The source address where all source-side bytes have been copied.
+        /// This does not necessarily mean there no more bytes to be copied, but
+        /// any bytes following this address will indicating padding.
+        src_addr_end: Expression<F>,
+        /// The destination address at which bytes are copied.
+        dst_addr: Expression<F>,
+        /// The number of bytes to be copied in this copy event.
+        length: Expression<F>,
+        /// The RW counter at the start of the copy event.
+        rw_counter: Expression<F>,
+        /// The RW counter that is incremented by the time all bytes have been
+        /// copied specific to this copy event.
+        rwc_inc: Expression<F>,
+    },
     /// Conditional lookup enabled by the first element.
     Conditional(Expression<F>, Box<Lookup<F>>),
 }
@@ -341,6 +370,7 @@ impl<F: FieldExt> Lookup<F> {
             Self::Bytecode { .. } => Table::Bytecode,
             Self::Block { .. } => Table::Block,
             Self::Byte { .. } => Table::Byte,
+            Self::CopyTable { .. } => Table::Copy,
             Self::Conditional(_, lookup) => lookup.table(),
         }
     }
@@ -389,6 +419,31 @@ impl<F: FieldExt> Lookup<F> {
             Self::Byte { value } => {
                 vec![value.clone()]
             }
+            Self::CopyTable {
+                is_first,
+                src_id,
+                src_tag,
+                dst_id,
+                dst_tag,
+                src_addr,
+                src_addr_end,
+                dst_addr,
+                length,
+                rw_counter,
+                rwc_inc,
+            } => vec![
+                is_first.clone(),
+                src_id.clone(),
+                src_tag.clone(),
+                dst_id.clone(),
+                dst_tag.clone(),
+                src_addr.clone(),
+                src_addr_end.clone(),
+                dst_addr.clone(),
+                length.clone(),
+                rw_counter.clone(),
+                rwc_inc.clone(),
+            ],
             Self::Conditional(condition, lookup) => lookup
                 .input_exprs()
                 .into_iter()
