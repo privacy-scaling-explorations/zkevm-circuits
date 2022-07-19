@@ -58,20 +58,20 @@ impl<F: Field> TableShow<F> {
                 len
             })
             .collect();
-        for row in 0..self.columns[0].len() {
+        for row_index in 0..self.columns[0].len() {
             print!("|");
-            for col in 0..self.columns.len() {
+            for (column_index, column) in self.columns.iter().enumerate() {
                 print!(
                     " {:02x} |",
-                    self.columns[col][row]
+                    column[row_index]
                         .to_repr()
                         .as_ref()
                         .iter()
-                        .take(num_bytes[col])
+                        .take(num_bytes[column_index])
                         .format("")
                 );
             }
-            println!("");
+            println!();
         }
     }
 }

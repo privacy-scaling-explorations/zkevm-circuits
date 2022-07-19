@@ -6,7 +6,7 @@ use eth_types::{
     GethExecStep, H256,
 };
 use gadgets::impl_expr;
-use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
+use halo2_proofs::plonk::Expression;
 use strum_macros::EnumIter;
 
 /// An execution step of the EVM.

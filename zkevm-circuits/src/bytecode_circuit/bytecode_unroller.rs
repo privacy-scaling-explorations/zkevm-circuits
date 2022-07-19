@@ -353,12 +353,11 @@ impl<F: Field> Config<F> {
                 not::expr(meta.query_advice(padding, Rotation::cur())),
             ]);
             let lookup_columns = vec![hash_input_rlc, code_length, bytecode_table.code_hash];
-            let mut constraints = vec![];
             // CHANGELOG: Add is_enabled expression to the keccak lookup
-            constraints.push((
+            let mut constraints = vec![(
                 enable.clone(),
                 meta.query_advice(keccak_table.is_enabled, Rotation::cur()),
-            ));
+            )];
             for (i, column) in keccak_table.columns().iter().skip(1).enumerate() {
                 constraints.push((
                     enable.clone() * meta.query_advice(lookup_columns[i], Rotation::cur()),

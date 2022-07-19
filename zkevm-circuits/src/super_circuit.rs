@@ -1,16 +1,52 @@
-//! Mario Kart: Super Circuit
-//! ⠀⠀⠀⠀⠀⠀⠀⢀⣀⣀⡀⠀⠀⠀⠀⠀⠀⠀
-//! ⠀⠀⠀⠀⡠⣴⣮⣷⣶⡶⣾⣽⣶⢤⡀⠀⠀⠀
-//! ⠀⠀⢠⣾⣿⢧⣾⣿⣿⣧⣿⣿⣿⣷⡱⡄⠀⠀
-//! ⠀⣠⣿⣿⣯⣿⣿⣿⣿⡿⣼⣻⠿⠟⠛⠻⢦⡀
-//! ⡼⠁⢿⣟⣎⣿⣿⠿⠟⠃⠉⠀⠀⠀⠀⠀⠀⣷
-//! ⢳⡀⠀⠀⠀⠀⠀⠀⠀⣀⡠⡤⢲⣾⡏⢱⡠⠃
-//! ⠀⠉⠲⡲⠒⠒⡖⠚⠿⢿⠃⠡⡀⠉⢁⠞⠀⠀
-//! ⠀⠀⠀⠘⠳⢄⣘⢤⣀⠈⢂⣤⠴⠚⠁⠀⠀⠀
-//! ⠀⠀⠀⠀⠀⠀⠀⠉⠉⠉⠁⠀⠀⠀⠀⠀⠀⠀
-
-#![allow(missing_docs)]
-// use halo2_proofs::plonk::*;
+//! The Super Circuit is a circuit that contains all the circuits of the
+//! zkEVM in order to achieve two things:
+//! - Check the correct integration between circuits via the shared lookup
+//!   tables, to verify that the table layouts match.
+//! - Allow having a single circuit setup for which a proof can be generated
+//!   that would be verified under a single aggregation circuit for the first
+//!   milestone.
+//!
+//! The current implementation contains the following circuits:
+//!
+//! - [x] EVM Circuit
+//! - [ ] State Circuit
+//! - [x] Tx Circuit
+//! - [x] Bytecode Circuit
+//! - [ ] Copy Circuit
+//! - [ ] Keccak Circuit
+//! - [ ] MPT Circuit
+//! - [ ] PublicInputs Circuit
+//!
+//! And the following shared tables, with the circuits that use them:
+//!
+//! - [ ] Copy Table
+//!   - [ ] Copy Circuit
+//!   - [ ] EVM Circuit
+//! - [ ] Rw Table
+//!   - [ ] State Circuit
+//!   - [ ] EVM Circuit
+//!   - [ ] Copy Circuit
+//! - [x] Tx Table
+//!   - [x] Tx Circuit
+//!   - [x] EVM Circuit
+//!   - [ ] Copy Circuit
+//!   - [ ] PublicInputs Circuit
+//! - [x] Bytecode Table
+//!   - [x] Bytecode Circuit
+//!   - [x] EVM Circuit
+//!   - [ ] Copy Circuit
+//! - [ ] Block Table
+//!   - [ ] EVM Circuit
+//!   - [ ] PublicInputs Circuit
+//! - [ ] MPT Table
+//!   - [ ] MPT Circuit
+//!   - [ ] State Circuit
+//! - [x] Keccak Table
+//!   - [ ] Keccak Circuit
+//!   - [ ] EVM Circuit
+//!   - [x] Bytecode Circuit
+//!   - [x] Tx Circuit
+//!   - [ ] MPT Circuit
 
 use crate::copy_circuit::CopyCircuit;
 use crate::tx_circuit::{self, TxCircuit, TxCircuitConfig};
@@ -27,51 +63,10 @@ use crate::util::power_of_randomness_from_instance;
 use eth_types::Field;
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner},
-    plonk::{Circuit, ConstraintSystem, Error, Expression},
+    plonk::{Circuit, ConstraintSystem, Error},
 };
 
-// The SuperCircuit contains the following circuits:
-//
-// - [x] EVM Circuit
-// - [ ] State Circuit
-// - [x] Tx Circuit
-// - [x] Bytecode Circuit
-// - [ ] Copy Circuit
-// - [ ] Keccak Circuit
-// - [ ] MPT Circuit
-// - [ ] PublicInputs Circuit
-//
-// And the following shared tables, with the circuits that use them:
-//
-// - [ ] Copy Table
-//   - [ ] Copy Circuit
-//   - [ ] EVM Circuit
-// - [ ] Rw Table
-//   - [ ] State Circuit
-//   - [ ] EVM Circuit
-//   - [ ] Copy Circuit
-// - [x] Tx Table
-//   - [x] Tx Circuit
-//   - [x] EVM Circuit
-//   - [ ] Copy Circuit
-//   - [ ] PublicInputs Circuit
-// - [x] Bytecode Table
-//   - [x] Bytecode Circuit
-//   - [x] EVM Circuit
-//   - [ ] Copy Circuit
-// - [ ] Block Table
-//   - [ ] EVM Circuit
-//   - [ ] PublicInputs Circuit
-// - [ ] MPT Table
-//   - [ ] MPT Circuit
-//   - [ ] State Circuit
-// - [x] Keccak Table
-//   - [ ] Keccak Circuit
-//   - [ ] EVM Circuit
-//   - [x] Bytecode Circuit
-//   - [x] Tx Circuit
-//   - [ ] MPT Circuit
-
+/// Configuration of the Super Circuit
 #[derive(Clone)]
 pub struct SuperCircuitConfig<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> {
     tx_table: TxTable,
@@ -84,6 +79,7 @@ pub struct SuperCircuitConfig<F: Field, const MAX_TXS: usize, const MAX_CALLDATA
     bytecode_circuit: BytecodeConfig<F>,
 }
 
+/// The Super Circuit contains all the zkEVM circuits
 #[derive(Default)]
 pub struct SuperCircuit<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> {
     // EVM Circuit
@@ -99,6 +95,7 @@ pub struct SuperCircuit<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usiz
 impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
     SuperCircuit<F, MAX_TXS, MAX_CALLDATA>
 {
+    /// Return the number of rows required to verify a given block
     pub fn get_num_rows_required(block: &Block<F>) -> usize {
         let mut cs = ConstraintSystem::default();
         let config = Self::configure(&mut cs);
@@ -128,12 +125,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
         let power_of_randomness = power_of_randomness_from_instance(meta);
         let evm_circuit = EvmCircuit::configure(
             meta,
-            power_of_randomness[..31]
-                .iter()
-                .cloned()
-                .collect::<Vec<Expression<F>>>()
-                .try_into()
-                .unwrap(),
+            power_of_randomness[..31].to_vec().try_into().unwrap(),
             &tx_table,
             &rw_table,
             &bytecode_table,
@@ -224,7 +216,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
             self.block.context.chain_id.as_u64(),
         )?);
         // Lookups from BytecodeCircuit
-        for (_, bytecode) in &self.block.bytecodes {
+        for bytecode in self.block.bytecodes.values() {
             keccak_inputs.push(bytecode.bytes.clone());
         }
         // Load Keccak Table
@@ -380,7 +372,7 @@ mod super_circuit_tests {
         let addr_b = address!("0x000000000000000000000000000000000000BBBB");
 
         let mut wallets = HashMap::new();
-        wallets.insert(wallet_a.address(), wallet_a.clone());
+        wallets.insert(wallet_a.address(), wallet_a);
 
         // Create a custom tx setting Gas to
         let mut block: GethData = TestContext::<2, 1>::new(
@@ -408,7 +400,7 @@ mod super_circuit_tests {
             .eth_block
             .transactions
             .iter()
-            .map(|tx| geth_types::Transaction::from_eth_tx(tx))
+            .map(geth_types::Transaction::from_eth_tx)
             .collect();
 
         let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
