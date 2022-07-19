@@ -30,15 +30,6 @@ impl From<Bytecode> for Bytes {
     }
 }
 
-/// Error while constructing `Bytecode` from raw bytes.
-#[derive(Debug)]
-pub enum BytecodeError {
-    /// Invalid byte that is not reserved for any known opcode.
-    InvalidByte(u8),
-    /// Insufficient number of bytes following a PUSH instruction.
-    InsufficientPush,
-}
-
 impl Bytecode {
     /// Get the bytecode element at an index.
     pub fn get(&self, index: usize) -> Option<BytecodeElement> {
@@ -155,34 +146,35 @@ impl Bytecode {
     }
 }
 
-impl TryFrom<Vec<u8>> for Bytecode {
-    type Error = BytecodeError;
-
-    fn try_from(input: Vec<u8>) -> Result<Self, Self::Error> {
+impl From<Vec<u8>> for Bytecode {
+    fn from(input: Vec<u8>) -> Self {
         let mut code = Bytecode::default();
 
         let mut input_iter = input.iter();
         while let Some(byte) = input_iter.next() {
             if let Ok(op) = OpcodeId::try_from(*byte) {
+                code.write_op(op);
                 if op.is_push() {
                     let n = (op.as_u8() - OpcodeId::PUSH1.as_u8() + 1) as usize;
-                    let mut value = vec![0u8; n];
-                    for value_byte in value.iter_mut() {
-                        *value_byte = input_iter
-                            .next()
-                            .cloned()
-                            .ok_or(BytecodeError::InsufficientPush)?;
+                    for _ in 0..n {
+                        match input_iter.next() {
+                            Some(v) => {
+                                code.write(*v, false);
+                            }
+                            None => {
+                                // out of boundary is allowed
+                                // see also: https://github.com/ethereum/go-ethereum/blob/997f1c4f0abcd78f645e6e7ced6db4b42ad59c9d/core/vm/analysis.go#L65
+                                break;
+                            }
+                        }
                     }
-                    code.push(n, Word::from(value.as_slice()));
-                } else {
-                    code.write_op(op);
                 }
             } else {
-                return Err(BytecodeError::InvalidByte(*byte));
+                code.write_op(OpcodeId::INVALID(*byte));
             }
         }
 
-        Ok(code)
+        code
     }
 }
 
