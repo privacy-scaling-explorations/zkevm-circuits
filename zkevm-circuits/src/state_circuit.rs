@@ -7,10 +7,12 @@ mod random_linear_combination;
 #[cfg(test)]
 mod test;
 
-use crate::evm_circuit::{
-    param::N_BYTES_WORD,
+use crate::{
+    evm_circuit::{
+        param::N_BYTES_WORD,
+        witness::{Rw, RwMap},
+    },
     table::RwTableTag,
-    witness::{Rw, RwMap},
 };
 use constraint_builder::{ConstraintBuilder, Queries};
 use eth_types::{Address, Field};

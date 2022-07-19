@@ -3,7 +3,6 @@ use crate::{
         execution::ExecutionGadget,
         param::N_BYTES_GAS,
         step::ExecutionState,
-        table::{AccountFieldTag, CallContextFieldTag, TxContextFieldTag},
         util::{
             common_gadget::TransferWithGasFeeGadget,
             constraint_builder::{
@@ -15,6 +14,7 @@ use crate::{
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
+    table::{AccountFieldTag, CallContextFieldTag, TxFieldTag as TxContextFieldTag},
     util::Expr,
 };
 use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar};

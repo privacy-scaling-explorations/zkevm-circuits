@@ -3,7 +3,6 @@ use crate::{
         execution::ExecutionGadget,
         param::N_BYTES_ACCOUNT_ADDRESS,
         step::ExecutionState,
-        table::CallContextFieldTag,
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
@@ -11,6 +10,7 @@ use crate::{
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
+    table::CallContextFieldTag,
     util::Expr,
 };
 use bus_mapping::evm::OpcodeId;

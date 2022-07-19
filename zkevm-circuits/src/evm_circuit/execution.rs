@@ -3,13 +3,14 @@ use crate::{
     evm_circuit::{
         param::{MAX_STEP_HEIGHT, STEP_WIDTH},
         step::{ExecutionState, Step},
-        table::{LookupTable, Table},
+        table::Table,
         util::{
             constraint_builder::{BaseConstraintBuilder, ConstraintBuilder},
             rlc, CellType,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
+    table::LookupTable,
     util::Expr,
 };
 use eth_types::Field;

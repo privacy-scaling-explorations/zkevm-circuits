@@ -1,3 +1,4 @@
 max_width = 100
 wrap_comments = true
+normalize_comments = false
 edition = "2021"

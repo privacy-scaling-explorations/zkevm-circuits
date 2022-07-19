@@ -1,4 +1,4 @@
-use crate::evm_circuit::table::CallContextFieldTag;
+use crate::table::CallContextFieldTag;
 use eth_types::Field;
 use halo2_proofs::{
     circuit::Layouter,
