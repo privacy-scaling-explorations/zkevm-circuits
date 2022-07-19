@@ -9,15 +9,13 @@ mod test;
 
 use crate::evm_circuit::{
     param::N_BYTES_WORD,
-    table::RwTableTag,
+    table::{AccountFieldTag, RwTableTag},
+    util::RandomLinearCombination,
     witness::{Rw, RwMap},
 };
 use constraint_builder::{ConstraintBuilder, Queries};
-use eth_types::{Address, Field};
-use gadgets::{
-    binary_number::{BinaryNumberChip, BinaryNumberConfig},
-    util::Expr,
-};
+use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word};
+use gadgets::binary_number::{BinaryNumberChip, BinaryNumberConfig};
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner},
     plonk::{
@@ -25,11 +23,11 @@ use halo2_proofs::{
     },
     poly::Rotation,
 };
+use itertools::Itertools;
 use lexicographic_ordering::Config as LexicographicOrderingConfig;
 use lookups::{Chip as LookupsChip, Config as LookupsConfig, Queries as LookupsQueries};
 use multiple_precision_integer::{Chip as MpiChip, Config as MpiConfig, Queries as MpiQueries};
 use random_linear_combination::{Chip as RlcChip, Config as RlcConfig, Queries as RlcQueries};
-#[cfg(test)]
 use std::collections::HashMap;
 use std::iter::once;
 
@@ -48,6 +46,7 @@ pub struct StateConfig {
     initial_value: Column<Advice>, /* Assigned value at the start of the block. For Rw::Account
                                     * and Rw::AccountStorage rows this is the committed value in
                                     * the MPT, for others, it is 0. */
+    state_root: Column<Advice>,
     lexicographic_ordering: LexicographicOrderingConfig,
     lookups: LookupsConfig,
     power_of_randomness: [Column<Instance>; N_BYTES_WORD - 1],
@@ -71,8 +70,68 @@ type Lookup<F> = (&'static str, Expression<F>, Expression<F>);
 pub struct StateCircuit<F: Field, const N_ROWS: usize> {
     pub(crate) randomness: F,
     pub(crate) rows: Vec<Rw>,
+    updates: HashMap<MptKey, MptValue<F>>,
     #[cfg(test)]
     overrides: HashMap<(test::AdviceColumn, isize), F>,
+}
+
+#[derive(Eq, PartialEq, Hash, Clone, Debug)]
+enum MptKey {
+    Account {
+        address: Address,
+        field_tag: AccountFieldTag,
+    },
+    AccountStorage {
+        tx_id: usize,
+        address: Address,
+        storage_key: Word,
+    },
+}
+
+impl MptKey {
+    fn address<F: Field>(&self) -> F {
+        match self {
+            Self::Account { address, .. } | Self::AccountStorage { address, .. } => {
+                address.to_scalar().unwrap()
+            }
+        }
+    }
+    fn field_tag<F: Field>(&self) -> F {
+        match self {
+            Self::Account { field_tag, .. } => F::from(*field_tag as u64),
+            Self::AccountStorage { .. } => F::zero(),
+        }
+    }
+    fn storage_key<F: Field>(&self, randomness: F) -> F {
+        match self {
+            Self::Account { .. } => F::zero(),
+            Self::AccountStorage { storage_key, .. } => {
+                RandomLinearCombination::random_linear_combine(
+                    storage_key.to_le_bytes(),
+                    randomness,
+                )
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct MptValue<F> {
+    old_root: F,
+    new_root: F,
+    old_value: F,
+    new_value: F,
+}
+
+impl<F: Field> MptValue<F> {
+    fn new(row: &Rw, old_root: F, new_root: F, randomness: F) -> Self {
+        Self {
+            old_root,
+            new_root,
+            old_value: row.value_prev_assignment(randomness).unwrap(),
+            new_value: row.value_assignment(randomness),
+        }
+    }
 }
 
 impl<F: Field, const N_ROWS: usize> StateCircuit<F, N_ROWS> {
@@ -89,9 +148,13 @@ impl<F: Field, const N_ROWS: usize> StateCircuit<F, N_ROWS> {
                 row.rw_counter(),
             )
         });
+        // TODO: take real mpt updates in constructor.
+        let updates = fake_mpt_updates(&rows, randomness);
+        // dbg!(updates.clone());
         Self {
             randomness,
             rows,
+            updates,
             #[cfg(test)]
             overrides: HashMap::new(),
         }
@@ -118,7 +181,8 @@ impl<F: Field, const N_ROWS: usize> Circuit<F> for StateCircuit<F, N_ROWS> {
         let lookups = LookupsChip::configure(meta);
         let power_of_randomness = [0; N_BYTES_WORD - 1].map(|_| meta.instance_column());
 
-        let [is_write, field_tag, value, initial_value] = [0; 4].map(|_| meta.advice_column());
+        let [is_write, field_tag, value, initial_value, state_root] =
+            [0; 5].map(|_| meta.advice_column());
 
         let tag = BinaryNumberChip::configure(meta, selector);
 
@@ -149,6 +213,7 @@ impl<F: Field, const N_ROWS: usize> Circuit<F> for StateCircuit<F, N_ROWS> {
             is_write,
             value,
             initial_value,
+            state_root,
             lexicographic_ordering,
             lookups,
             power_of_randomness,
@@ -172,7 +237,11 @@ impl<F: Field, const N_ROWS: usize> Circuit<F> for StateCircuit<F, N_ROWS> {
         config: Self::Config,
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
-        LookupsChip::construct(config.lookups).load(&mut layouter)?;
+        LookupsChip::construct(config.lookups).load(
+            &mut layouter,
+            &self.updates,
+            self.randomness,
+        )?;
 
         let tag_chip = BinaryNumberChip::construct(config.sort_keys.tag);
 
@@ -186,6 +255,7 @@ impl<F: Field, const N_ROWS: usize> Circuit<F> for StateCircuit<F, N_ROWS> {
                 let prev_rows = once(None).chain(rows.clone().map(Some));
 
                 let mut initial_value = F::zero();
+                let mut state_root = F::zero();
 
                 for (offset, (row, prev_row)) in rows.zip(prev_rows).enumerate() {
                     region.assign_fixed(|| "selector", config.selector, offset, || Ok(F::one()))?;
@@ -233,6 +303,15 @@ impl<F: Field, const N_ROWS: usize> Circuit<F> for StateCircuit<F, N_ROWS> {
                         || Ok(row.value_assignment(self.randomness)),
                     )?;
 
+                    // TODO: Remove special case for initial values for Rw::CallContext and
+                    // Rw::TxReceipt, which can only be determined by the value for the first
+                    // access row.
+                    if !matches!(row.tag(), RwTableTag::CallContext | RwTableTag::TxReceipt) {
+                        initial_value = mpt_key(&row)
+                            .map(|key| self.updates.get(&key).unwrap().old_value)
+                            .unwrap_or_default();
+                    }
+
                     if let Some(prev_row) = prev_row {
                         let is_first_access = config.lexicographic_ordering.assign(
                             &mut region,
@@ -241,19 +320,21 @@ impl<F: Field, const N_ROWS: usize> Circuit<F> for StateCircuit<F, N_ROWS> {
                             &prev_row,
                         )?;
 
-                        // TODO: Get initial_values from MPT updates instead.
+                        // For first access to a group, we possibly need to update the initial value
+                        // for RwTableTag::CallContext and RwTableTag::TxReceipt rows and update the
+                        // state root.
                         if is_first_access {
-                            // TODO: Set initial values for Rw::CallContext and Rw::TxReceipt to be
-                            // 0 instead of special casing them.
-                            initial_value = if matches!(
-                                row.tag(),
-                                RwTableTag::CallContext | RwTableTag::TxReceipt
-                            ) {
-                                row.value_assignment(self.randomness)
-                            } else {
-                                row.value_prev_assignment(self.randomness)
-                                    .unwrap_or_default()
-                            };
+                            if matches!(row.tag(), RwTableTag::CallContext | RwTableTag::TxReceipt)
+                            {
+                                initial_value = row.value_assignment(self.randomness);
+                            }
+
+                            if let Some(update) =
+                                mpt_key(&prev_row).map(|key| self.updates.get(&key).unwrap())
+                            {
+                                assert_eq!(state_root, update.old_root);
+                                state_root = update.new_root;
+                            }
                         }
                     }
 
@@ -263,6 +344,34 @@ impl<F: Field, const N_ROWS: usize> Circuit<F> for StateCircuit<F, N_ROWS> {
                         offset,
                         || Ok(initial_value),
                     )?;
+
+                    // TODO: Switch from Rw::Start -> Rw::Padding to simplify this logic.
+                    // State root assignment is at offset-1 because the state root changes on the
+                    // last access row.
+                    if offset != 0 {
+                        region.assign_advice(
+                            || "state_root",
+                            config.state_root,
+                            offset - 1,
+                            || Ok(state_root),
+                        )?;
+                    }
+
+                    if offset == N_ROWS - 1 {
+                        // last row is always a last access, so we need to handle the case where the
+                        // state root changes because of an mpt lookup on the last row.
+                        if let Some(update) =
+                            mpt_key(&row).map(|key| self.updates.get(&key).unwrap())
+                        {
+                            state_root = update.new_root;
+                        }
+                        region.assign_advice(
+                            || "state_root",
+                            config.state_root,
+                            offset,
+                            || Ok(state_root),
+                        )?;
+                    }
                 }
 
                 #[cfg(test)]
@@ -330,5 +439,52 @@ fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: &StateConfig) -> Queries
             * meta.query_advice(first_different_limb.bits[1], Rotation::cur())
             * meta.query_advice(first_different_limb.bits[2], Rotation::cur())
             * meta.query_advice(first_different_limb.bits[3], Rotation::cur()),
+        state_root: meta.query_advice(c.state_root, Rotation::cur()),
+        state_root_prev: meta.query_advice(c.state_root, Rotation::prev()),
+        state_root_next: meta.query_advice(c.state_root, Rotation::next()),
     }
+}
+
+fn mpt_key(row: &Rw) -> Option<MptKey> {
+    match row {
+        Rw::Account {
+            account_address,
+            field_tag,
+            ..
+        } => Some(MptKey::Account {
+            address: *account_address,
+            field_tag: *field_tag,
+        }),
+        Rw::AccountStorage {
+            tx_id,
+            account_address,
+            storage_key,
+            ..
+        } => Some(MptKey::AccountStorage {
+            tx_id: *tx_id,
+            address: *account_address,
+            storage_key: *storage_key,
+        }),
+        _ => None,
+    }
+}
+
+fn fake_mpt_updates<F: Field>(rows: &[Rw], randomness: F) -> HashMap<MptKey, MptValue<F>> {
+    rows.iter()
+        .group_by(|row| mpt_key(row))
+        .into_iter()
+        .filter_map(|(key, rows)| key.map(|key| (key, rows)))
+        .enumerate()
+        .map(|(i, (key, mut rows))| {
+            let first = rows.next().unwrap();
+            let mut value = MptValue::new(
+                first,
+                F::from(i as u64),
+                F::from((i + 1) as u64),
+                randomness,
+            );
+            value.new_value = rows.last().unwrap_or(first).value_assignment(randomness);
+            (key, value)
+        })
+        .collect()
 }
