@@ -1,35 +1,10 @@
 use crate::evm_circuit::step::ExecutionState;
 use crate::impl_expr;
-use crate::table::TableColumns;
 pub use crate::table::TxContextFieldTag;
 use eth_types::Field;
-use halo2_proofs::{
-    plonk::{Advice, Any, Column, Expression, VirtualCells},
-    poly::Rotation,
-};
+use halo2_proofs::plonk::Expression;
 use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
-
-pub trait LookupTable<F: Field> {
-    fn table_exprs(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>>;
-}
-
-impl<F: Field, T: TableColumns<Advice>> LookupTable<F> for T {
-    fn table_exprs(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>> {
-        self.columns()
-            .iter()
-            .map(|column| meta.query_advice(*column, Rotation::cur()))
-            .collect()
-    }
-}
-
-impl<F: Field, C: Into<Column<Any>> + Clone, const W: usize> LookupTable<F> for [C; W] {
-    fn table_exprs(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>> {
-        self.iter()
-            .map(|column| meta.query_any(column.clone(), Rotation::cur()))
-            .collect()
-    }
-}
 
 #[derive(Clone, Copy, Debug, EnumIter)]
 pub enum FixedTableTag {
@@ -119,20 +94,6 @@ impl FixedTableTag {
         }
     }
 }
-
-// #[derive(Clone, Copy, Debug)]
-// pub enum TxContextFieldTag {
-//     Nonce = 1,
-//     Gas,
-//     GasPrice,
-//     CallerAddress,
-//     CalleeAddress,
-//     IsCreate,
-//     Value,
-//     CallDataLength,
-//     CallDataGasCost,
-//     CallData,
-// }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, EnumIter)]
 pub(crate) enum Table {

@@ -15,16 +15,49 @@ use halo2_proofs::{
     circuit::Region,
     plonk::{Advice, Column, ConstraintSystem, Error},
 };
-use halo2_proofs::{circuit::Layouter, plonk::*};
+use halo2_proofs::{circuit::Layouter, plonk::*, poly::Rotation};
 use itertools::Itertools;
 use keccak256::plain::Keccak;
 use strum_macros::{EnumCount, EnumIter};
 
-/// Trait used for dynamic tables.
-pub trait TableColumns<C: ColumnType> {
-    /// Returns the list of columns following the table order.  This trait
-    /// requires all the columns to be of the same type.
-    fn columns(&self) -> Vec<Column<C>>;
+// /// Trait used for dynamic tables.
+// pub trait TableColumns<C: ColumnType> {
+//     /// Returns the list of columns following the table order.  This trait
+//     /// requires all the columns to be of the same type.
+//     fn columns(&self) -> Vec<Column<C>>;
+// }
+
+/// Trait used to define lookup tables
+pub trait LookupTable {
+    /// Returns the list of advice columns following the table order.
+    fn columns(&self) -> Vec<Column<Advice>> {
+        Vec::new()
+    }
+
+    /// Return the list of expressions used to define the lookup table.
+    fn table_exprs<F: Field>(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>> {
+        self.columns()
+            .iter()
+            .map(|column| meta.query_advice(*column, Rotation::cur()))
+            .collect()
+    }
+}
+
+// impl<F: Field, T: TableColumns<Advice>> LookupTable<F> for T {
+//     fn table_exprs(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>> {
+//         self.columns()
+//             .iter()
+//             .map(|column| meta.query_advice(*column, Rotation::cur()))
+//             .collect()
+//     }
+// }
+
+impl<F: Field, C: Into<Column<Any>> + Clone, const W: usize> LookupTable<F> for [C; W] {
+    fn table_exprs(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>> {
+        self.iter()
+            .map(|column| meta.query_any(column.clone(), Rotation::cur()))
+            .collect()
+    }
 }
 
 /// Tag used to identify each field in the transaction in a row of the
@@ -87,7 +120,7 @@ impl TxTable {
     }
 }
 
-impl TableColumns<Advice> for TxTable {
+impl<F: Field> LookupTable<F> for TxTable {
     fn columns(&self) -> Vec<Column<Advice>> {
         vec![self.tx_id, self.tag, self.index, self.value]
     }
@@ -311,7 +344,7 @@ pub struct RwTable {
     pub aux2: Column<Advice>,
 }
 
-impl TableColumns<Advice> for RwTable {
+impl<F: Field> LookupTable<F> for RwTable {
     fn columns(&self) -> Vec<Column<Advice>> {
         vec![
             self.rw_counter,
@@ -448,7 +481,7 @@ impl BytecodeTable {
     }
 }
 
-impl TableColumns<Advice> for BytecodeTable {
+impl<F: Field> LookupTable<F> for BytecodeTable {
     fn columns(&self) -> Vec<Column<Advice>> {
         vec![
             self.code_hash,
@@ -556,7 +589,7 @@ impl BlockTable {
     }
 }
 
-impl TableColumns<Advice> for BlockTable {
+impl<F: Field> LookupTable<F> for BlockTable {
     fn columns(&self) -> Vec<Column<Advice>> {
         vec![self.tag, self.index, self.value]
     }
@@ -626,7 +659,7 @@ impl KeccakTable {
     }
 }
 
-impl TableColumns<Advice> for KeccakTable {
+impl<F: Field> LookupTable<F> for KeccakTable {
     fn columns(&self) -> Vec<Column<Advice>> {
         vec![
             self.is_enabled,
@@ -705,3 +738,79 @@ pub fn load_keccaks<'a, F: Field>(
         },
     )
 }
+
+/// Copy Table, used to verify copies of byte chunks between Memory, Bytecode,
+/// TxLogs and TxCallData.
+#[derive(Clone, Debug)]
+pub struct CopyTable {
+    /// Boolean value to indicate the first row in a copy event.
+    pub is_first: Column<Advice>,
+    /// Can be $txID, $callID, $codeHash (RLC encoded).
+    pub id: Column<Advice>,
+    /// Type of data source/destination, including Memory, Bytecode, TxCalldata,
+    /// TxLog.
+    pub tag: Column<Advice>,
+    /// Address in the source data.  Can be memory address, byte index in the
+    /// bytecode, tx call data, and tx log data.
+    pub addr: Column<Advice>,
+    /// Address boundary of the source data. Any data read from address greater
+    /// than or equal to this value will be 0.
+    pub src_addr_end: Column<Advice>,
+    /// Number of bytes to be copied.
+    pub bytes_left: Column<Advice>,
+    /// Current RW counter at the beginning of the copy
+    pub rw_counter: Column<Advice>,
+    /// How much the RW counter will increase in a copy event.
+    pub rwc_inc_left: Column<Advice>,
+}
+
+/*
+impl CopyTable {
+    /// Construct a new KeccakTable
+    pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
+        Self {
+            is_first: meta.advice_column(),
+            id: meta.advice_column(),
+            tag: meta.advice_column(),
+            addr: meta.advice_column(),
+            src_addr_end: meta.advice_column(),
+            bytes_left: meta.advice_column(),
+            rw_counter: meta.advice_column(),
+            rwc_inc_left: meta.advice_column(),
+        }
+    }
+}
+
+impl TableColumns<Advice> for CopyTable {
+    fn columns(&self) -> Vec<Column<Advice>> {
+        vec![
+            self.is_first,
+            self.id,
+            self.tag,
+            self.addr,
+            self.src_addr_end,
+            self.bytes_left,
+            self.rw_counter,
+            self.rwc_inc_left,
+        ]
+    }
+}
+
+impl<F: Field> LookupTable<F> for CopyTable {
+    fn table_exprs(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>> {
+        vec![
+            meta.query_advice(self.is_first, Rotation::cur()),
+            meta.query_advice(self.id, Rotation::cur()), // src_id
+            self.tag.value(Rotation::cur())(meta),       // src_tag
+            meta.query_advice(self.id, Rotation::next()), // dst_id
+            self.tag.value(Rotation::next())(meta),      // dst_tag
+            meta.query_advice(self.addr, Rotation::cur()), // src_addr
+            meta.query_advice(self.src_addr_end, Rotation::cur()), // src_addr_end
+            meta.query_advice(self.addr, Rotation::next()), // dst_addr
+            meta.query_advice(self.bytes_left, Rotation::cur()), // length
+            meta.query_advice(self.rw_counter, Rotation::cur()), // rw_counter
+            meta.query_advice(self.rwc_inc_left, Rotation::cur()), // rwc_inc_left
+        ]
+    }
+}
+*/

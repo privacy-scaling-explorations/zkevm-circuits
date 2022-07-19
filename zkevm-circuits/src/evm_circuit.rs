@@ -11,11 +11,11 @@ pub(crate) mod util;
 pub mod table;
 pub mod witness;
 
-use crate::table::{BytecodeTable, TxTable};
+use crate::table::{BytecodeTable, LookupTable, TxTable};
 use eth_types::Field;
 use execution::ExecutionConfig;
 use itertools::Itertools;
-use table::{FixedTableTag, LookupTable};
+use table::FixedTableTag;
 use witness::Block;
 
 /// EvmCircuit implements verification of execution trace of a block.

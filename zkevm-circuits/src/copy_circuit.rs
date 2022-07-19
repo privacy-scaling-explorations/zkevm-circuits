@@ -17,11 +17,10 @@ use halo2_proofs::{
 
 use crate::{
     evm_circuit::{
-        table::LookupTable,
         util::{constraint_builder::BaseConstraintBuilder, RandomLinearCombination},
         witness::Block,
     },
-    table::{BytecodeFieldTag, RwTableTag, TxContextFieldTag, TxLogFieldTag},
+    table::{BytecodeFieldTag, LookupTable, RwTableTag, TxContextFieldTag, TxLogFieldTag},
 };
 
 /// The rw table shared between evm circuit and state circuit
