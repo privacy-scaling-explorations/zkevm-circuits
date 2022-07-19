@@ -1243,6 +1243,7 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::TIMESTAMP | OpcodeId::NUMBER | OpcodeId::GASLIMIT => {
                         ExecutionState::BLOCKCTXU64
                     }
+                    OpcodeId::BALANCE => ExecutionState::BALANCE,
                     OpcodeId::COINBASE => ExecutionState::BLOCKCTXU160,
                     OpcodeId::DIFFICULTY | OpcodeId::BASEFEE => ExecutionState::BLOCKCTXU256,
                     OpcodeId::GAS => ExecutionState::GAS,
@@ -1263,7 +1264,6 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     // dummy ops
                     OpcodeId::SHA3 => dummy!(ExecutionState::SHA3),
                     OpcodeId::ADDRESS => dummy!(ExecutionState::ADDRESS),
-                    OpcodeId::BALANCE => dummy!(ExecutionState::BALANCE),
                     OpcodeId::BLOCKHASH => dummy!(ExecutionState::BLOCKHASH),
                     OpcodeId::EXP => dummy!(ExecutionState::EXP),
                     OpcodeId::SHL => dummy!(ExecutionState::SHL),
