@@ -3,8 +3,6 @@
 use core::fmt::{Display, Formatter, Result as FmtResult};
 use std::error::Error as StdError;
 
-use crate::bytecode::BytecodeError;
-
 /// Error type for any BusMapping related failure.
 #[derive(Debug)]
 pub enum Error {
@@ -33,14 +31,6 @@ pub enum Error {
     /// Error when an EvmWord is too big to be converted into a
     /// `MemoryAddress`.
     WordToMemAddr,
-    /// Error propagated from bytecode module.
-    BytecodeError(BytecodeError),
-}
-
-impl From<BytecodeError> for Error {
-    fn from(e: BytecodeError) -> Self {
-        Self::BytecodeError(e)
-    }
 }
 
 impl Display for Error {
