@@ -785,6 +785,7 @@ mod pi_circuit_test {
         }
     }
 
+    /// Compute the raw_public_inputs column from the verifier's perspective.
     fn raw_public_inputs_col<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>(
         public_data: &PublicData,
         randomness: F, // For RLC encoding
@@ -793,6 +794,7 @@ mod pi_circuit_test {
         let extra = public_data.get_extra_values();
         let txs = public_data.get_tx_table_values();
 
+        let mut offset = 0;
         let mut result =
             vec![F::zero(); BLOCK_LEN + EXTRA_LEN + 3 * (TX_LEN * MAX_TXS + MAX_CALLDATA)];
 
@@ -800,32 +802,40 @@ mod pi_circuit_test {
         // coinbase
         let mut coinbase_bytes = [0u8; 32];
         coinbase_bytes[12..].clone_from_slice(block.coinbase.as_bytes());
-        result.push(rlc(coinbase_bytes, randomness));
+        result[offset] = rlc(coinbase_bytes, randomness);
+        offset += 1;
         // gas_limit
-        result.push(rlc(block.gas_limit.to_le_bytes(), randomness));
+        result[offset] = rlc(block.gas_limit.to_le_bytes(), randomness);
+        offset += 1;
         // number
-        result.push(F::from(block.number));
+        result[offset] = F::from(block.number);
+        offset += 1;
         // timestamp
-        result.push(rlc(block.timestamp.to_le_bytes(), randomness));
+        result[offset] = rlc(block.timestamp.to_le_bytes(), randomness);
+        offset += 1;
         // difficulty
-        result.push(rlc(block.difficulty.to_le_bytes(), randomness));
+        result[offset] = rlc(block.difficulty.to_le_bytes(), randomness);
+        offset += 1;
         // base_fee
-        result.push(rlc(block.base_fee.to_le_bytes(), randomness));
+        result[offset] = rlc(block.base_fee.to_le_bytes(), randomness);
+        offset += 1;
         // chain_id
-        result.push(rlc(block.chain_id.to_le_bytes(), randomness));
+        result[offset] = rlc(block.chain_id.to_le_bytes(), randomness);
+        offset += 1;
         // Previous block hashes
         for prev_hash in block.history_hashes {
-            result.push(rlc(prev_hash.to_le_bytes(), randomness));
+            result[offset] = rlc(prev_hash.to_le_bytes(), randomness);
+            offset += 1;
         }
 
         // Insert Extra Values
         // block Root
-        result.push(rlc(extra.state_root.to_fixed_bytes(), randomness));
+        result[BLOCK_LEN] = rlc(extra.state_root.to_fixed_bytes(), randomness);
         // parent block hash
-        result.push(rlc(extra.parent_block_hash.to_fixed_bytes(), randomness));
+        result[BLOCK_LEN + 1] = rlc(extra.parent_block_hash.to_fixed_bytes(), randomness);
 
         // Insert Tx table
-        let mut offset = 0;
+        offset = 0;
         assert!(txs.len() < MAX_TXS);
         let tx_default = TxValues::default();
 
@@ -885,13 +895,16 @@ mod pi_circuit_test {
         let mut rng = ChaCha20Rng::seed_from_u64(2);
         let randomness = F::random(&mut rng);
 
-        // TODO Should be computed from the public_data
-        // a random value is generated for testing
-        // In this example all are set to zero
-        let rand_rpi = F::zero();
+        let rand_rpi = F::random(&mut rng);
+        let rlc_rpi_col =
+            raw_public_inputs_col::<F, MAX_TXS, MAX_CALLDATA>(&public_data, randomness);
+        assert_eq!(
+            rlc_rpi_col.len(),
+            BLOCK_LEN + EXTRA_LEN + 3 * (TX_LEN * MAX_TXS + MAX_CALLDATA)
+        );
 
         // Computation of raw_pulic_inputs
-        let rlc_rpi = raw_public_inputs_col::<F, MAX_TXS, MAX_CALLDATA>(&public_data, randomness)
+        let rlc_rpi = rlc_rpi_col
             .iter()
             .rev()
             .fold(F::zero(), |acc, val| acc * rand_rpi + val);
