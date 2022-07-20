@@ -2,6 +2,7 @@
 pub struct Proofs {
     pub state_proof: eth_types::Bytes,
     pub evm_proof: eth_types::Bytes,
+    pub duration: u64,
 }
 
 #[derive(Debug, serde::Serialize)]
