@@ -364,10 +364,12 @@ mod super_circuit_tests {
     }
 
     // High memory usage test.  Run in serial with:
-    // `cargo test [...] serial_ -- --ignored --test-threads 1`
+    // `cargo test [...] skip_ -- --ignored --test-threads 1`
+    // NOTE: This test is not run as part of CI because it requires more memory than
+    // is available in github workers and so it gets killed before completion.
     #[ignore]
     #[test]
-    fn serial_test_super_circuit() {
+    fn skip_test_super_circuit() {
         let mut rng = ChaCha20Rng::seed_from_u64(2);
 
         let chain_id = (*MOCK_CHAIN_ID).as_u64();
