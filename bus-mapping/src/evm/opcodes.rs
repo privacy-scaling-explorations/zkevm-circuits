@@ -15,7 +15,6 @@ use eth_types::{
 };
 use keccak256::EMPTY_HASH;
 use log::warn;
-use std::collections::HashMap;
 
 mod call;
 mod calldatacopy;
@@ -372,10 +371,7 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
     }
 }
 
-pub fn gen_end_tx_ops(
-    state: &mut CircuitInputStateRef,
-    cumulative_gas_used: &mut HashMap<usize, u64>,
-) -> Result<ExecStep, Error> {
+pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Error> {
     let mut exec_step = state.new_end_tx_step();
     let call = state.tx.calls()[0].clone();
 
@@ -438,7 +434,7 @@ pub fn gen_end_tx_ops(
     )?;
 
     // handle tx receipt tag
-    state.tx_receipt_read(
+    state.tx_receipt_write(
         &mut exec_step,
         state.tx_ctx.id(),
         TxReceiptField::PostStateOrStatus,
@@ -446,34 +442,30 @@ pub fn gen_end_tx_ops(
     )?;
 
     let log_id = exec_step.log_id;
-    state.tx_receipt_read(
+    state.tx_receipt_write(
         &mut exec_step,
         state.tx_ctx.id(),
         TxReceiptField::LogLength,
         log_id as u64,
     )?;
 
-    let gas_used = state.tx.gas - exec_step.gas_left.0;
-    let mut current_cumulative_gas_used: u64 = 0;
     if state.tx_ctx.id() > 1 {
-        current_cumulative_gas_used = *cumulative_gas_used.get(&(state.tx_ctx.id() - 1)).unwrap();
         // query pre tx cumulative gas
         state.tx_receipt_read(
             &mut exec_step,
             state.tx_ctx.id() - 1,
             TxReceiptField::CumulativeGasUsed,
-            current_cumulative_gas_used,
+            state.block_ctx.cumulative_gas_used,
         )?;
     }
 
-    state.tx_receipt_read(
+    state.block_ctx.cumulative_gas_used += state.tx.gas - exec_step.gas_left.0;
+    state.tx_receipt_write(
         &mut exec_step,
         state.tx_ctx.id(),
         TxReceiptField::CumulativeGasUsed,
-        current_cumulative_gas_used + gas_used,
+        state.block_ctx.cumulative_gas_used,
     )?;
-
-    cumulative_gas_used.insert(state.tx_ctx.id(), current_cumulative_gas_used + gas_used);
 
     if !state.tx_ctx.is_last_tx() {
         state.call_context_read(

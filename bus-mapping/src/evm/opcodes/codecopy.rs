@@ -106,10 +106,7 @@ fn gen_copy_event(
     let length = geth_step.stack.nth_last(2)?.as_u64();
 
     let code_hash = state.call()?.code_hash;
-    let bytecode: Bytecode = state
-        .code(code_hash)?
-        .try_into()
-        .map_err(eth_types::Error::BytecodeError)?;
+    let bytecode: Bytecode = state.code(code_hash)?.into();
     let src_addr_end = bytecode.to_vec().len() as u64;
 
     let mut exec_step = state.new_step(geth_step)?;
