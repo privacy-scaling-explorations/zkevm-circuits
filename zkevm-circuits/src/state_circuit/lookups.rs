@@ -1,4 +1,4 @@
-use super::{MptKey, MptValue};
+use super::mpt_updates::{MptKey, MptValue};
 use crate::evm_circuit::table::CallContextFieldTag;
 use eth_types::Field;
 use halo2_proofs::{
@@ -6,8 +6,7 @@ use halo2_proofs::{
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
-use std::collections::HashMap;
-use std::marker::PhantomData;
+use std::{collections::HashMap, marker::PhantomData};
 use strum::IntoEnumIterator;
 
 #[derive(Clone, Copy)]
