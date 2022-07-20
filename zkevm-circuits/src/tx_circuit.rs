@@ -4,11 +4,9 @@
 // - *_be: Big-Endian bytes
 // - *_le: Little-Endian bytes
 
-#![allow(missing_docs)]
-
 pub mod sign_verify;
 
-use crate::table::{load_keccaks, KeccakTable, TxFieldTag, TxTable};
+use crate::table::{KeccakTable, TxFieldTag, TxTable};
 use crate::util::{power_of_randomness_from_instance, random_linear_combine_word as rlc};
 use eth_types::{
     geth_types::Transaction, Address, Field, ToBigEndian, ToLittleEndian, ToScalar, Word,
@@ -88,6 +86,7 @@ fn ct_option_ok_or<T, E>(v: CtOption<T>, err: E) -> Result<T, E> {
     Option::<T>::from(v).ok_or(err)
 }
 
+/// Return all the keccak inputs that the Tx Circuit requires.
 pub fn keccak_inputs(txs: &[Transaction], chain_id: u64) -> Result<Vec<Vec<u8>>, Error> {
     let mut inputs = Vec::new();
     let sign_datas: Vec<SignData> = txs
@@ -164,6 +163,7 @@ pub struct TxCircuitConfig<F: Field> {
 }
 
 impl<F: Field> TxCircuitConfig<F> {
+    /// Return a new TxCircuitConfig
     pub fn new(
         meta: &mut ConstraintSystem<F>,
         power_of_randomness: [Expression<F>; sign_verify::POW_RAND_SIZE],
@@ -223,6 +223,7 @@ pub struct TxCircuit<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> 
 impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
     TxCircuit<F, MAX_TXS, MAX_CALLDATA>
 {
+    /// Return a new TxCircuit
     pub fn new(
         aux_generator: Secp256k1Affine,
         randomness: F,
@@ -241,6 +242,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
         }
     }
 
+    /// Make the assignments to the TxCircuit
     pub fn assign(
         &self,
         config: &TxCircuitConfig<F>,
@@ -280,7 +282,6 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
                     let address_cell = assigned_sig_verif.address.cell();
                     let msg_hash_rlc_cell = assigned_sig_verif.msg_hash_rlc.cell();
                     let msg_hash_rlc_value = assigned_sig_verif.msg_hash_rlc.value();
-                    // println!("DBG tx_circuit.assign");
                     for (tag, value) in &[
                         (
                             TxFieldTag::Nonce,
@@ -327,14 +328,6 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
                     ] {
                         let assigned_cell =
                             config.assign_row(&mut region, offset, i + 1, *tag, 0, *value)?;
-                        // println!(
-                        //     "{:02} {:?} {:?} {:?} {:?}",
-                        //     offset,
-                        //     i + 1,
-                        //     *tag as u64,
-                        //     0,
-                        //     *value
-                        // );
                         offset += 1;
 
                         // Ref. spec 0. Copy constraints using fixed offsets between the tx rows and
@@ -415,8 +408,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
         self.assign(&config, &mut layouter)?;
-        load_keccaks(
-            &config.keccak_table,
+        config.keccak_table.load(
             &mut layouter,
             keccak_inputs(&self.txs, self.chain_id)?
                 .iter()

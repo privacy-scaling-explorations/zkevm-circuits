@@ -19,9 +19,9 @@
 //!
 //! And the following shared tables, with the circuits that use them:
 //!
-//! - [ ] Copy Table
+//! - [x] Copy Table
 //!   - [ ] Copy Circuit
-//!   - [ ] EVM Circuit
+//!   - [x] EVM Circuit
 //! - [ ] Rw Table
 //!   - [ ] State Circuit
 //!   - [ ] EVM Circuit
@@ -55,10 +55,7 @@ use crate::bytecode_circuit::bytecode_unroller::{
 };
 
 use crate::evm_circuit::{table::FixedTableTag, witness::Block, EvmCircuit};
-use crate::table::{
-    load_block, load_copy, load_keccaks, load_rws, BlockTable, BytecodeTable, CopyTable,
-    KeccakTable, RwTable, TxTable,
-};
+use crate::table::{BlockTable, BytecodeTable, CopyTable, KeccakTable, RwTable, TxTable};
 use crate::util::power_of_randomness_from_instance;
 use eth_types::Field;
 use halo2_proofs::{
@@ -167,36 +164,15 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
             .evm_circuit
             .load_fixed_table(&mut layouter, self.fixed_table_tags.clone())?;
         config.evm_circuit.load_byte_table(&mut layouter)?;
-        // load_txs(
-        //     &config.tx_table,
-        //     &mut layouter,
-        //     &self.block.txs,
-        //     self.block.randomness,
-        // )?;
-        load_rws(
-            &config.rw_table,
-            &mut layouter,
-            &self.block.rws,
-            self.block.randomness,
-        )?;
-        // load_bytecodes(
-        //     &config.bytecode_table,
-        //     &mut layouter,
-        //     &self.block.bytecodes,
-        //     self.block.randomness,
-        // )?;
-        load_block(
-            &config.block_table,
-            &mut layouter,
-            &self.block.context,
-            self.block.randomness,
-        )?;
-        load_copy(
-            &config.copy_table,
-            &mut layouter,
-            &self.block,
-            self.block.randomness,
-        )?;
+        config
+            .rw_table
+            .load(&mut layouter, &self.block.rws, self.block.randomness)?;
+        config
+            .block_table
+            .load(&mut layouter, &self.block.context, self.block.randomness)?;
+        config
+            .copy_table
+            .load(&mut layouter, &self.block, self.block.randomness)?;
         config
             .evm_circuit
             .assign_block(&mut layouter, &self.block)?;
@@ -228,8 +204,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
             keccak_inputs.push(bytecode.bytes.clone());
         }
         // Load Keccak Table
-        load_keccaks(
-            &config.keccak_table,
+        config.keccak_table.load(
             &mut layouter,
             keccak_inputs.iter().map(|b| b.as_slice()),
             self.block.randomness,
@@ -342,7 +317,6 @@ mod super_circuit_tests {
             block,
             fixed_table_tags,
             tx_circuit,
-            // bytecode_size: 2usize.pow(k),
             bytecode_size: bytecodes_len + 64,
         };
         let prover = MockProver::<F>::run(k, &circuit, instance).unwrap();
@@ -364,10 +338,12 @@ mod super_circuit_tests {
     }
 
     // High memory usage test.  Run in serial with:
-    // `cargo test [...] serial_ -- --ignored --test-threads 1`
+    // `cargo test [...] skip_ -- --ignored --test-threads 1`
+    // NOTE: This test is not run as part of CI because it requires more memory than
+    // is available in github workers and so it gets killed before completion.
     #[ignore]
     #[test]
-    fn serial_test_super_circuit() {
+    fn skip_test_super_circuit() {
         let mut rng = ChaCha20Rng::seed_from_u64(2);
 
         let chain_id = (*MOCK_CHAIN_ID).as_u64();
@@ -385,7 +361,6 @@ mod super_circuit_tests {
         let mut wallets = HashMap::new();
         wallets.insert(wallet_a.address(), wallet_a);
 
-        // Create a custom tx setting Gas to
         let mut block: GethData = TestContext::<2, 1>::new(
             None,
             |accs| {

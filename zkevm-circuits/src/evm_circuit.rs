@@ -147,10 +147,7 @@ impl<F: Field> EvmCircuit<F> {
 pub mod test {
     use crate::{
         evm_circuit::{table::FixedTableTag, witness::Block, EvmCircuit},
-        table::{
-            load_block, load_bytecodes, load_copy, load_rws, load_txs, BlockTable, BytecodeTable,
-            CopyTable, RwTable, TxTable,
-        },
+        table::{BlockTable, BytecodeTable, CopyTable, RwTable, TxTable},
         util::power_of_randomness_from_instance,
     };
     use eth_types::{Field, Word};
@@ -256,36 +253,23 @@ pub mod test {
                 .evm_circuit
                 .load_fixed_table(&mut layouter, self.fixed_table_tags.clone())?;
             config.evm_circuit.load_byte_table(&mut layouter)?;
-            load_txs(
-                &config.tx_table,
-                &mut layouter,
-                &self.block.txs,
-                self.block.randomness,
-            )?;
-            load_rws(
-                &config.rw_table,
-                &mut layouter,
-                &self.block.rws,
-                self.block.randomness,
-            )?;
-            load_bytecodes(
-                &config.bytecode_table,
+            config
+                .tx_table
+                .load(&mut layouter, &self.block.txs, self.block.randomness)?;
+            config
+                .rw_table
+                .load(&mut layouter, &self.block.rws, self.block.randomness)?;
+            config.bytecode_table.load(
                 &mut layouter,
                 self.block.bytecodes.iter().map(|(_, b)| b),
                 self.block.randomness,
             )?;
-            load_block(
-                &config.block_table,
-                &mut layouter,
-                &self.block.context,
-                self.block.randomness,
-            )?;
-            load_copy(
-                &config.copy_table,
-                &mut layouter,
-                &self.block,
-                self.block.randomness,
-            )?;
+            config
+                .block_table
+                .load(&mut layouter, &self.block.context, self.block.randomness)?;
+            config
+                .copy_table
+                .load(&mut layouter, &self.block, self.block.randomness)?;
             config
                 .evm_circuit
                 .assign_block_exact(&mut layouter, &self.block)

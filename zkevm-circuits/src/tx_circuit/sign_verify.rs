@@ -11,7 +11,7 @@ use crate::{
 };
 use ecc::{EccConfig, GeneralEccChip};
 use ecdsa::ecdsa::{AssignedEcdsaSig, AssignedPublicKey, EcdsaChip};
-use eth_types::{self, Field, ToLittleEndian};
+use eth_types::{self, Field};
 use gadgets::is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction};
 use group::{ff::Field as GroupField, prime::PrimeCurveAffine, Curve};
 use halo2_proofs::{
@@ -86,8 +86,6 @@ pub(crate) fn pk_bytes_le(pk: &Secp256k1Affine) -> [u8; 64] {
     pk_le
 }
 
-// CHANGELOG: Add function to obtain all the keccak inputs required by the
-// SignVerifyChip
 pub(crate) fn keccak_inputs(sigs: &[SignData]) -> Vec<Vec<u8>> {
     let mut inputs = Vec::new();
     for sig in sigs {
@@ -228,8 +226,6 @@ impl<F: Field> SignVerifyConfig<F> {
             // Column 3: output_rlc (pk_hash_rlc)
             let keccak_output_rlc = meta.query_advice(keccak_table.output_rlc, Rotation::cur());
             let mut pk_hash_rev = pk_hash.map(|c| meta.query_advice(c, Rotation::cur()));
-            // CHANGELOG: Reverse the pk_hash used in the lookup so that the RLC is
-            // calculated as if it was a hash in an Ethereum Word.
             pk_hash_rev.reverse(); // Ethereum decodes pk_hash into a Word as big endian, but
                                    // `random_linear_combine_expr` expects LSB first.
             let pk_hash_rlc = RandomLinearCombination::random_linear_combine_expr(
@@ -298,8 +294,6 @@ pub(crate) struct KeccakAux {
     output: [u8; 32],
 }
 
-use crate::util::TableShow;
-
 impl<F: Field> SignVerifyConfig<F> {
     pub(crate) fn load_range(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
         let bit_len_lookup = BIT_LEN_LIMB / NUMBER_OF_LOOKUP_LIMBS;
@@ -307,83 +301,6 @@ impl<F: Field> SignVerifyConfig<F> {
         range_chip.load_limb_range_table(layouter)?;
         range_chip.load_overflow_range_tables(layouter)?;
 
-        Ok(())
-    }
-
-    fn keccak_assign_row(
-        &self,
-        region: &mut Region<'_, F>,
-        offset: usize,
-        is_enabled: F,
-        input_rlc: F,
-        input_len: usize,
-        output_rlc: F,
-    ) -> Result<(), Error> {
-        for (name, column, value) in &[
-            ("is_enabled", self.keccak_table.is_enabled, is_enabled),
-            ("input_rlc", self.keccak_table.input_rlc, input_rlc),
-            (
-                "input_len",
-                self.keccak_table.input_len,
-                F::from(input_len as u64),
-            ),
-            ("output_rlc", self.keccak_table.output_rlc, output_rlc),
-        ] {
-            region.assign_advice(
-                || format!("Keccak table assign {} {}", name, offset),
-                *column,
-                offset,
-                || Ok(*value),
-            )?;
-        }
-        Ok(())
-    }
-
-    pub(crate) fn load_keccak(
-        &self,
-        layouter: &mut impl Layouter<F>,
-        auxs: Vec<KeccakAux>,
-        randomness: F,
-    ) -> Result<(), Error> {
-        layouter.assign_region(
-            || "keccak table",
-            |mut region| {
-                let mut offset = 0;
-
-                // All zero row to allow simulating a disabled lookup.
-                self.keccak_assign_row(&mut region, offset, F::zero(), F::zero(), 0, F::zero())?;
-                offset += 1;
-
-                println!("> sign_verify.load_keccak");
-                let mut table =
-                    TableShow::<F>::new(vec!["is_enabled", "input_rlc", "input_len", "output_rlc"]);
-
-                for aux in &auxs {
-                    let KeccakAux { input, output } = aux;
-                    let input_rlc =
-                        RandomLinearCombination::random_linear_combine(*input, randomness);
-                    let output_rlc = Word::random_linear_combine(
-                        eth_types::Word::from_big_endian(output.as_slice()).to_le_bytes(),
-                        randomness,
-                    );
-                    self.keccak_assign_row(
-                        &mut region,
-                        offset,
-                        F::one(),
-                        input_rlc,
-                        input.len(),
-                        output_rlc,
-                    )?;
-                    offset += 1;
-                    table.push(0, F::one());
-                    table.push(1, input_rlc);
-                    table.push(2, F::from(input.len() as u64));
-                    table.push(3, output_rlc);
-                }
-                table.print();
-                Ok(())
-            },
-        )?;
         Ok(())
     }
 
@@ -756,7 +673,6 @@ impl<F: Field, const MAX_VERIF: usize> SignVerifyChip<F, MAX_VERIF> {
             },
         )?;
 
-        // config.load_keccak(layouter, keccak_auxs, randomness)?;
         config.load_range(layouter)?;
 
         Ok(assigned_sig_verifs)
@@ -833,7 +749,7 @@ fn pub_key_hash_to_address<F: Field>(pk_hash: &[u8]) -> F {
 #[cfg(test)]
 mod sign_verify_tests {
     use super::*;
-    use crate::{table::load_keccaks, util::power_of_randomness_from_instance};
+    use crate::util::power_of_randomness_from_instance;
     use group::Group;
     use halo2_proofs::{
         circuit::SimpleFloorPlanner, dev::MockProver, pairing::bn256::Fr, plonk::Circuit,
@@ -887,8 +803,7 @@ mod sign_verify_tests {
                 self.randomness,
                 &self.signatures,
             )?;
-            load_keccaks(
-                &config.sign_verify.keccak_table,
+            config.sign_verify.keccak_table.load(
                 &mut layouter,
                 keccak_inputs(&self.signatures).iter().map(|b| b.as_slice()),
                 self.randomness,

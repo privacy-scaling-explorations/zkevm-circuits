@@ -1,8 +1,5 @@
 //! Table definitions used cross-circuits
 
-// CHANGELOG: Move table definitions from evm_circuit/table.rs and rw_table.rs
-// to here
-
 use crate::copy_circuit::number_or_hash_to_field;
 use crate::evm_circuit::witness::RwRow;
 use crate::evm_circuit::{
@@ -112,57 +109,53 @@ impl TxTable {
             value: meta.advice_column(),
         }
     }
+
+    /// Assign the `TxTable` from a list of block `Transaction`s, followig the
+    /// same layout that the Tx Circuit uses.
+    pub fn load<F: Field>(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        txs: &[Transaction],
+        randomness: F,
+    ) -> Result<(), Error> {
+        layouter.assign_region(
+            || "tx table",
+            |mut region| {
+                let mut offset = 0;
+                for column in self.columns() {
+                    region.assign_advice(
+                        || "tx table all-zero row",
+                        column,
+                        offset,
+                        || Ok(F::zero()),
+                    )?;
+                }
+                offset += 1;
+
+                let tx_table_columns = self.columns();
+                for tx in txs.iter() {
+                    for row in tx.table_assignments(randomness) {
+                        for (column, value) in tx_table_columns.iter().zip_eq(row) {
+                            region.assign_advice(
+                                || format!("tx table row {}", offset),
+                                *column,
+                                offset,
+                                || Ok(value),
+                            )?;
+                        }
+                        offset += 1;
+                    }
+                }
+                Ok(())
+            },
+        )
+    }
 }
 
 impl TableColumns for TxTable {
     fn columns(&self) -> Vec<Column<Advice>> {
         vec![self.tx_id, self.tag, self.index, self.value]
     }
-}
-
-/// Assign the `TxTable` from a list of block `Transaction`s, followig the same
-/// layout that the Tx Circuit uses.
-pub fn load_txs<F: Field>(
-    tx_table: &TxTable,
-    layouter: &mut impl Layouter<F>,
-    txs: &[Transaction],
-    randomness: F,
-) -> Result<(), Error> {
-    layouter.assign_region(
-        || "tx table",
-        |mut region| {
-            let mut offset = 0;
-            for column in tx_table.columns() {
-                region.assign_advice(
-                    || "tx table all-zero row",
-                    column,
-                    offset,
-                    || Ok(F::zero()),
-                )?;
-            }
-            offset += 1;
-
-            // println!("DBG load_txs");
-            let tx_table_columns = tx_table.columns();
-            for tx in txs.iter() {
-                for row in tx.table_assignments(randomness) {
-                    // print!("{:02} ", offset);
-                    for (column, value) in tx_table_columns.iter().zip_eq(row) {
-                        // print!("{:?} ", value);
-                        region.assign_advice(
-                            || format!("tx table row {}", offset),
-                            *column,
-                            offset,
-                            || Ok(value),
-                        )?;
-                    }
-                    offset += 1;
-                    // println!("");
-                }
-            }
-            Ok(())
-        },
-    )
 }
 
 /// Tag to identify the operation type in a RwTable row
@@ -396,41 +389,41 @@ impl RwTable {
         }
         Ok(())
     }
-}
 
-/// Assign the `RwTable` from a `RwMap`, followig the same
-/// table layout that the State Circuit uses.
-pub fn load_rws<F: Field>(
-    rw_table: &RwTable,
-    layouter: &mut impl Layouter<F>,
-    rws: &RwMap,
-    randomness: F,
-) -> Result<(), Error> {
-    layouter.assign_region(
-        || "rw table",
-        |mut region| {
-            let mut offset = 0;
-            rw_table.assign(&mut region, offset, &Default::default())?;
-            offset += 1;
-
-            let mut rows = rws
-                .0
-                .values()
-                .flat_map(|rws| rws.iter())
-                .collect::<Vec<_>>();
-
-            rows.sort_by_key(|a| a.rw_counter());
-            let mut expected_rw_counter = 1;
-            for rw in rows {
-                assert!(rw.rw_counter() == expected_rw_counter);
-                expected_rw_counter += 1;
-
-                rw_table.assign(&mut region, offset, &rw.table_assignment(randomness))?;
+    /// Assign the `RwTable` from a `RwMap`, followig the same
+    /// table layout that the State Circuit uses.
+    pub fn load<F: Field>(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        rws: &RwMap,
+        randomness: F,
+    ) -> Result<(), Error> {
+        layouter.assign_region(
+            || "rw table",
+            |mut region| {
+                let mut offset = 0;
+                self.assign(&mut region, offset, &Default::default())?;
                 offset += 1;
-            }
-            Ok(())
-        },
-    )
+
+                let mut rows = rws
+                    .0
+                    .values()
+                    .flat_map(|rws| rws.iter())
+                    .collect::<Vec<_>>();
+
+                rows.sort_by_key(|a| a.rw_counter());
+                let mut expected_rw_counter = 1;
+                for rw in rows {
+                    assert!(rw.rw_counter() == expected_rw_counter);
+                    expected_rw_counter += 1;
+
+                    self.assign(&mut region, offset, &rw.table_assignment(randomness))?;
+                    offset += 1;
+                }
+                Ok(())
+            },
+        )
+    }
 }
 
 /// Tag to identify the field in a Bytecode Table row
@@ -445,13 +438,11 @@ pub enum BytecodeFieldTag {
 }
 impl_expr!(BytecodeFieldTag);
 
-// CHANGELOG: Added BytecodeTable to help reusing the table config with other
-// circuits
 /// Table with Bytecode indexed by its Code Hash
 #[derive(Clone, Debug)]
 pub struct BytecodeTable {
     /// Code Hash
-    pub code_hash: Column<Advice>, // CHANGELOG: Renamed from hash
+    pub code_hash: Column<Advice>,
     /// Tag
     pub tag: Column<Advice>,
     /// Index
@@ -473,6 +464,47 @@ impl BytecodeTable {
             value: meta.advice_column(),
         }
     }
+
+    /// Assign the `BytecodeTable` from a list of bytecodes, followig the same
+    /// table layout that the Bytecode Circuit uses.
+    pub fn load<'a, F: Field>(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        bytecodes: impl IntoIterator<Item = &'a Bytecode> + Clone,
+        randomness: F,
+    ) -> Result<(), Error> {
+        layouter.assign_region(
+            || "bytecode table",
+            |mut region| {
+                let mut offset = 0;
+                for column in self.columns() {
+                    region.assign_advice(
+                        || "bytecode table all-zero row",
+                        column,
+                        offset,
+                        || Ok(F::zero()),
+                    )?;
+                }
+                offset += 1;
+
+                let bytecode_table_columns = self.columns();
+                for bytecode in bytecodes.clone() {
+                    for row in bytecode.table_assignments(randomness) {
+                        for (column, value) in bytecode_table_columns.iter().zip_eq(row) {
+                            region.assign_advice(
+                                || format!("bytecode table row {}", offset),
+                                *column,
+                                offset,
+                                || Ok(value),
+                            )?;
+                        }
+                        offset += 1;
+                    }
+                }
+                Ok(())
+            },
+        )
+    }
 }
 
 impl TableColumns for BytecodeTable {
@@ -485,56 +517,6 @@ impl TableColumns for BytecodeTable {
             self.value,
         ]
     }
-}
-
-// use crate::util::TableShow;
-
-/// Assign the `BytecodeTable` from a list of bytecodes, followig the same
-/// table layout that the Bytecode Circuit uses.
-pub fn load_bytecodes<'a, F: Field>(
-    bytecode_table: &BytecodeTable,
-    layouter: &mut impl Layouter<F>,
-    bytecodes: impl IntoIterator<Item = &'a Bytecode> + Clone,
-    randomness: F,
-) -> Result<(), Error> {
-    // println!("> load_bytecodes");
-    // let mut table = TableShow::<F>::new(vec!["codeHash", "tag", "index",
-    // "isCode", "value"]);
-    layouter.assign_region(
-        || "bytecode table",
-        |mut region| {
-            let mut offset = 0;
-            for column in bytecode_table.columns() {
-                region.assign_advice(
-                    || "bytecode table all-zero row",
-                    column,
-                    offset,
-                    || Ok(F::zero()),
-                )?;
-            }
-            offset += 1;
-
-            let bytecode_table_columns = bytecode_table.columns();
-            for bytecode in bytecodes.clone() {
-                for row in bytecode.table_assignments(randomness) {
-                    // let mut column_index = 0;
-                    for (column, value) in bytecode_table_columns.iter().zip_eq(row) {
-                        region.assign_advice(
-                            || format!("bytecode table row {}", offset),
-                            *column,
-                            offset,
-                            || Ok(value),
-                        )?;
-                        // table.push(column_index, value);
-                        // column_index += 1;
-                    }
-                    offset += 1;
-                }
-            }
-            // table.print();
-            Ok(())
-        },
-    )
 }
 
 /// Tag to identify the field in a Block Table row
@@ -581,51 +563,51 @@ impl BlockTable {
             value: meta.advice_column(),
         }
     }
+
+    /// Assign the `BlockTable` from a `BlockContext`.
+    pub fn load<F: Field>(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        block: &BlockContext,
+        randomness: F,
+    ) -> Result<(), Error> {
+        layouter.assign_region(
+            || "block table",
+            |mut region| {
+                let mut offset = 0;
+                for column in self.columns() {
+                    region.assign_advice(
+                        || "block table all-zero row",
+                        column,
+                        offset,
+                        || Ok(F::zero()),
+                    )?;
+                }
+                offset += 1;
+
+                let block_table_columns = self.columns();
+                for row in block.table_assignments(randomness) {
+                    for (column, value) in block_table_columns.iter().zip_eq(row) {
+                        region.assign_advice(
+                            || format!("block table row {}", offset),
+                            *column,
+                            offset,
+                            || Ok(value),
+                        )?;
+                    }
+                    offset += 1;
+                }
+
+                Ok(())
+            },
+        )
+    }
 }
 
 impl TableColumns for BlockTable {
     fn columns(&self) -> Vec<Column<Advice>> {
         vec![self.tag, self.index, self.value]
     }
-}
-
-/// Assign the `BlockTable` from a `BlockContext`.
-pub fn load_block<F: Field>(
-    block_table: &BlockTable,
-    layouter: &mut impl Layouter<F>,
-    block: &BlockContext,
-    randomness: F,
-) -> Result<(), Error> {
-    layouter.assign_region(
-        || "block table",
-        |mut region| {
-            let mut offset = 0;
-            for column in block_table.columns() {
-                region.assign_advice(
-                    || "block table all-zero row",
-                    column,
-                    offset,
-                    || Ok(F::zero()),
-                )?;
-            }
-            offset += 1;
-
-            let block_table_columns = block_table.columns();
-            for row in block.table_assignments(randomness) {
-                for (column, value) in block_table_columns.iter().zip_eq(row) {
-                    region.assign_advice(
-                        || format!("block table row {}", offset),
-                        *column,
-                        offset,
-                        || Ok(value),
-                    )?;
-                }
-                offset += 1;
-            }
-
-            Ok(())
-        },
-    )
 }
 
 /// Keccak Table, used to verify keccak hashing from RLC'ed input.
@@ -651,6 +633,67 @@ impl KeccakTable {
             output_rlc: meta.advice_column(),
         }
     }
+
+    /// Generate the keccak table assignments from a byte array input.
+    pub fn assignments<F: Field>(input: &[u8], randomness: F) -> Vec<[F; 4]> {
+        let input_rlc: F = rlc::value(input.iter().rev(), randomness);
+        let input_len = F::from(input.len() as u64);
+        let mut keccak = Keccak::default();
+        keccak.update(input);
+        let output = keccak.digest();
+        let output_rlc = RandomLinearCombination::<F, 32>::random_linear_combine(
+            Word::from_big_endian(output.as_slice()).to_le_bytes(),
+            randomness,
+        );
+
+        vec![[F::one(), input_rlc, input_len, output_rlc]]
+    }
+
+    // NOTE: For now, the input_rlc of the keccak is defined as
+    // `RLC(reversed(input))` for convenience of the circuits that do the lookups.
+    // This allows calculating the `input_rlc` after all the inputs bytes have been
+    // layed out via the pattern `acc[i] = acc[i-1] * r + value[i]`.
+    /// Assign the `KeccakTable` from a list hashing inputs, followig the same
+    /// table layout that the Keccak Circuit uses.
+    pub fn load<'a, F: Field>(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        inputs: impl IntoIterator<Item = &'a [u8]> + Clone,
+        randomness: F,
+    ) -> Result<(), Error> {
+        layouter.assign_region(
+            || "keccak table",
+            |mut region| {
+                let mut offset = 0;
+                for column in self.columns() {
+                    region.assign_advice(
+                        || "keccak table all-zero row",
+                        column,
+                        offset,
+                        || Ok(F::zero()),
+                    )?;
+                }
+                offset += 1;
+
+                let keccak_table_columns = self.columns();
+                for input in inputs.clone() {
+                    for row in Self::assignments(input, randomness) {
+                        // let mut column_index = 0;
+                        for (column, value) in keccak_table_columns.iter().zip_eq(row) {
+                            region.assign_advice(
+                                || format!("keccak table row {}", offset),
+                                *column,
+                                offset,
+                                || Ok(value),
+                            )?;
+                        }
+                        offset += 1;
+                    }
+                }
+                Ok(())
+            },
+        )
+    }
 }
 
 impl TableColumns for KeccakTable {
@@ -662,75 +705,6 @@ impl TableColumns for KeccakTable {
             self.output_rlc,
         ]
     }
-}
-
-/// Generate the keccak table assignments from a byte array input.
-pub fn keccak_table_assignments<F: Field>(input: &[u8], randomness: F) -> Vec<[F; 4]> {
-    // CHANGELOG: Using `RLC(reversed(input))`
-    let input_rlc: F = rlc::value(input.iter().rev(), randomness);
-    let input_len = F::from(input.len() as u64);
-    let mut keccak = Keccak::default();
-    keccak.update(input);
-    let output = keccak.digest();
-    let output_rlc = RandomLinearCombination::<F, 32>::random_linear_combine(
-        Word::from_big_endian(output.as_slice()).to_le_bytes(),
-        randomness,
-    );
-
-    vec![[F::one(), input_rlc, input_len, output_rlc]]
-}
-
-// NOTE: For now, the input_rlc of the keccak is defined as
-// `RLC(reversed(input))` for convenience of the circuits that do the lookups.
-// This allows calculating the `input_rlc` after all the inputs bytes have been
-// layed out via the pattern `acc[i] = acc[i-1] * r + value[i]`.
-/// Assign the `KeccakTable` from a list hashing inputs, followig the same
-/// table layout that the Keccak Circuit uses.
-pub fn load_keccaks<'a, F: Field>(
-    keccak_table: &KeccakTable,
-    layouter: &mut impl Layouter<F>,
-    inputs: impl IntoIterator<Item = &'a [u8]> + Clone,
-    randomness: F,
-) -> Result<(), Error> {
-    // println!("> super_circuit.load_keccaks");
-    // let mut table = TableShow::<F>::new(vec!["is_enabled", "input_rlc",
-    // "input_len", "output_rlc"]);
-    layouter.assign_region(
-        || "keccak table",
-        |mut region| {
-            let mut offset = 0;
-            for column in keccak_table.columns() {
-                region.assign_advice(
-                    || "keccak table all-zero row",
-                    column,
-                    offset,
-                    || Ok(F::zero()),
-                )?;
-            }
-            offset += 1;
-
-            let keccak_table_columns = keccak_table.columns();
-            for input in inputs.clone() {
-                // println!("+ {:?}", input);
-                for row in keccak_table_assignments(input, randomness) {
-                    // let mut column_index = 0;
-                    for (column, value) in keccak_table_columns.iter().zip_eq(row) {
-                        region.assign_advice(
-                            || format!("keccak table row {}", offset),
-                            *column,
-                            offset,
-                            || Ok(value),
-                        )?;
-                        // table.push(column_index, value);
-                        // column_index += 1;
-                    }
-                    offset += 1;
-                }
-            }
-            // table.print();
-            Ok(())
-        },
-    )
 }
 
 /// Copy Table, used to verify copies of byte chunks between Memory, Bytecode,
@@ -777,6 +751,94 @@ impl CopyTable {
             rwc_inc_left: meta.advice_column(),
         }
     }
+
+    /// Generate the keccak table assignments from a byte array input.
+    pub fn assignments<F: Field>(
+        copy_event: &CopyEvent,
+        randomness: F,
+    ) -> Vec<(CopyDataType, [F; 7])> {
+        let mut assignments = Vec::new();
+        for (step_idx, copy_step) in copy_event.steps.iter().enumerate() {
+            // is_first
+            let is_first = if step_idx == 0 { F::one() } else { F::zero() };
+            // id
+            let id = {
+                let id = if copy_step.rw.is_read() {
+                    &copy_event.src_id
+                } else {
+                    &copy_event.dst_id
+                };
+                number_or_hash_to_field(id, randomness)
+            };
+            // addr
+            let addr = match copy_step.tag {
+                CopyDataType::TxLog => {
+                    let addr = (U256::from(copy_step.addr)
+                        + (U256::from(TxLogFieldTag::Data as u64) << 32)
+                        + (U256::from(copy_event.log_id.unwrap()) << 48))
+                        .to_address();
+                    addr.to_scalar().unwrap()
+                }
+                _ => F::from(copy_step.addr),
+            };
+            assignments.push((
+                copy_step.tag,
+                [
+                    is_first,
+                    id,
+                    addr,
+                    F::from(copy_event.src_addr_end), // src_addr_end
+                    F::from(copy_event.length - step_idx as u64 / 2), // bytes_left
+                    F::from(copy_step.rwc.0 as u64),  // rw_counter
+                    F::from(copy_step.rwc_inc_left),  // rw_inc_left
+                ],
+            ));
+        }
+        assignments
+    }
+
+    /// Assign the `CopyTable` from a `Block`.
+    pub fn load<F: Field>(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        block: &Block<F>,
+        randomness: F,
+    ) -> Result<(), Error> {
+        layouter.assign_region(
+            || "copy table",
+            |mut region| {
+                let mut offset = 0;
+                for column in self.columns() {
+                    region.assign_advice(
+                        || "copy table all-zero row",
+                        column,
+                        offset,
+                        || Ok(F::zero()),
+                    )?;
+                }
+                offset += 1;
+
+                let tag_chip = BinaryNumberChip::construct(self.tag);
+                let copy_table_columns = self.columns();
+                for copy_event in block.copy_events.values() {
+                    for (tag, row) in Self::assignments(copy_event, randomness) {
+                        for (column, value) in copy_table_columns.iter().zip_eq(row) {
+                            region.assign_advice(
+                                || format!("copy table row {}", offset),
+                                *column,
+                                offset,
+                                || Ok(value),
+                            )?;
+                        }
+                        tag_chip.assign(&mut region, offset, &tag)?;
+                        offset += 1;
+                    }
+                }
+
+                Ok(())
+            },
+        )
+    }
 }
 
 impl CopyTable {
@@ -809,92 +871,4 @@ impl<F: Field> LookupTable<F> for CopyTable {
             meta.query_advice(self.rwc_inc_left, Rotation::cur()), // rwc_inc_left
         ]
     }
-}
-
-/// Generate the keccak table assignments from a byte array input.
-pub fn copy_table_assignments<F: Field>(
-    copy_event: &CopyEvent,
-    randomness: F,
-) -> Vec<(CopyDataType, [F; 7])> {
-    let mut assignments = Vec::new();
-    for (step_idx, copy_step) in copy_event.steps.iter().enumerate() {
-        // is_first
-        let is_first = if step_idx == 0 { F::one() } else { F::zero() };
-        // id
-        let id = {
-            let id = if copy_step.rw.is_read() {
-                &copy_event.src_id
-            } else {
-                &copy_event.dst_id
-            };
-            number_or_hash_to_field(id, randomness)
-        };
-        // addr
-        let addr = match copy_step.tag {
-            CopyDataType::TxLog => {
-                let addr = (U256::from(copy_step.addr)
-                    + (U256::from(TxLogFieldTag::Data as u64) << 32)
-                    + (U256::from(copy_event.log_id.unwrap()) << 48))
-                    .to_address();
-                addr.to_scalar().unwrap()
-            }
-            _ => F::from(copy_step.addr),
-        };
-        assignments.push((
-            copy_step.tag,
-            [
-                is_first,
-                id,
-                addr,
-                F::from(copy_event.src_addr_end), // src_addr_end
-                F::from(copy_event.length - step_idx as u64 / 2), // bytes_left
-                F::from(copy_step.rwc.0 as u64),  // rw_counter
-                F::from(copy_step.rwc_inc_left),  // rw_inc_left
-            ],
-        ));
-    }
-    assignments
-}
-
-/// Assign the `CopyTable` from a `Block`.
-pub fn load_copy<F: Field>(
-    copy_table: &CopyTable,
-    layouter: &mut impl Layouter<F>,
-    block: &Block<F>,
-    randomness: F,
-) -> Result<(), Error> {
-    layouter.assign_region(
-        || "copy table",
-        |mut region| {
-            let mut offset = 0;
-            for column in copy_table.columns() {
-                region.assign_advice(
-                    || "copy table all-zero row",
-                    column,
-                    offset,
-                    || Ok(F::zero()),
-                )?;
-            }
-            offset += 1;
-
-            let tag_chip = BinaryNumberChip::construct(copy_table.tag);
-            let copy_table_columns = copy_table.columns();
-            for copy_event in block.copy_events.values() {
-                for (tag, row) in copy_table_assignments(copy_event, randomness) {
-                    for (column, value) in copy_table_columns.iter().zip_eq(row) {
-                        region.assign_advice(
-                            || format!("copy table row {}", offset),
-                            *column,
-                            offset,
-                            || Ok(value),
-                        )?;
-                    }
-                    tag_chip.assign(&mut region, offset, &tag)?;
-                    offset += 1;
-                }
-            }
-
-            Ok(())
-        },
-    )
 }
