@@ -363,8 +363,11 @@ mod super_circuit_tests {
         run_test_circuit::<F, MAX_TXS, MAX_CALLDATA>(inputs, FixedTableTag::iter().collect())
     }
 
+    // High memory usage test.  Run in serial with:
+    // `cargo test [...] serial_ -- --ignored --test-threads 1`
+    #[ignore]
     #[test]
-    fn test_super_circuit() {
+    fn serial_test_super_circuit() {
         let mut rng = ChaCha20Rng::seed_from_u64(2);
 
         let chain_id = (*MOCK_CHAIN_ID).as_u64();
