@@ -249,10 +249,9 @@ impl<F: Field, const N_ROWS: usize> Circuit<F> for StateCircuit<F, N_ROWS> {
                         || Ok(row.value_assignment(self.randomness)),
                     )?;
 
-                    // TODO: Remove special case for initial values for Rw::CallContext and
-                    // Rw::TxReceipt, which can only be determined by the value for the first
-                    // access row.
-                    if !matches!(row.tag(), RwTableTag::CallContext | RwTableTag::TxReceipt) {
+                    // TODO: Remove special case for initial values for Rw::CallContext rows, which
+                    // can only be determined by the value for the first access row.
+                    if !matches!(row.tag(), RwTableTag::CallContext) {
                         initial_value = self.updates.get(&row).unwrap_or_default().old_value;
                     }
 
@@ -264,13 +263,13 @@ impl<F: Field, const N_ROWS: usize> Circuit<F> for StateCircuit<F, N_ROWS> {
                             &prev_row,
                         )?;
 
-                        // For first access to a group, we possibly need to update the initial value
-                        // for RwTableTag::CallContext and RwTableTag::TxReceipt rows and update the
-                        // state root.
+                        // For first access to a group, we need to update the state root and, for
+                        // RwTableTag::CallContext rows, update the initial value.
                         if is_first_access {
-                            if matches!(row.tag(), RwTableTag::CallContext | RwTableTag::TxReceipt)
-                            {
-                                initial_value = row.value_assignment(self.randomness);
+                            // TODO: Set initial values for Rw::CallContext to be 0 instead of
+                            // special casing it.
+                            if matches!(row.tag(), RwTableTag::CallContext) {
+                                initial_value = row.value_assignment(self.randomness)
                             }
 
                             if let Some(update) = self.updates.get(&prev_row) {
