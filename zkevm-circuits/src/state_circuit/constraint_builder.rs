@@ -12,6 +12,7 @@ use crate::util::Expr;
 use eth_types::Field;
 use gadgets::binary_number::BinaryNumberConfig;
 use halo2_proofs::plonk::Expression;
+use itertools::Itertools;
 use strum::IntoEnumIterator;
 
 #[derive(Clone)]
@@ -35,7 +36,7 @@ pub struct Queries<F: Field> {
     pub state_root_prev: Expression<F>,
     pub state_root_next: Expression<F>,
     pub lookups: LookupsQueries<F>,
-    pub power_of_randomness: [Expression<F>; N_BYTES_WORD - 1],
+    pub powers_of_lookup_randomness: [Expression<F>; 6],
     pub first_access: Expression<F>,
     pub not_first_access: Expression<F>,
 }
@@ -478,8 +479,6 @@ impl<F: Field> Queries<F> {
     }
 
     fn mpt_lookup(&self) -> Expression<F> {
-        // TODO: some of these values are already RLC'ed. We probably want to do
-        // the lookup on the raw values?
         [
             self.storage_key.encoded.clone(),
             self.field_tag(),
@@ -488,9 +487,8 @@ impl<F: Field> Queries<F> {
             self.value(),
             self.initial_value(),
         ]
-        // [4.expr()]
         .iter()
-        .zip(&self.power_of_randomness)
+        .zip_eq(&self.powers_of_lookup_randomness)
         .fold(self.address.value.clone(), |result, (a, b)| {
             result + a.clone() * b.clone()
         })

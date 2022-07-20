@@ -68,7 +68,8 @@ impl<F: Field> Chip<F> {
         &self,
         layouter: &mut impl Layouter<F>,
         updates: &HashMap<MptKey, MptValue<F>>,
-        randomness: F,
+        word_randomness: F,
+        lookup_randomness: F,
     ) -> Result<(), Error> {
         for (column, exponent) in [
             (self.config.u8, 8),
@@ -110,8 +111,9 @@ impl<F: Field> Chip<F> {
             },
         )?;
 
+        // TODO: move this into mpt_updates since it's not fixed.
         layouter.assign_region(
-            || "assign call_context_field_tags fixed column",
+            || "assign rlc(mpt_updates) lookup column",
             |mut region| {
                 region.assign_advice(
                     || "mpt update lookup",
@@ -124,7 +126,14 @@ impl<F: Field> Chip<F> {
                         || "mpt update lookup",
                         self.config.mpt_update,
                         offset + 1,
-                        || Ok(mpt_update_assignment(key, value, randomness)),
+                        || {
+                            Ok(mpt_update_assignment(
+                                key,
+                                value,
+                                word_randomness,
+                                lookup_randomness,
+                            ))
+                        },
                     )?;
                 }
                 Ok(())
@@ -135,10 +144,15 @@ impl<F: Field> Chip<F> {
     }
 }
 
-fn mpt_update_assignment<F: Field>(key: &MptKey, value: &MptValue<F>, randomness: F) -> F {
+fn mpt_update_assignment<F: Field>(
+    key: &MptKey,
+    value: &MptValue<F>,
+    word_randomness: F,
+    lookup_randomness: F,
+) -> F {
     let rlc = [
         key.address(),
-        key.storage_key(randomness),
+        key.storage_key(word_randomness),
         key.field_tag(),
         value.new_root,
         value.old_root,
@@ -147,7 +161,7 @@ fn mpt_update_assignment<F: Field>(key: &MptKey, value: &MptValue<F>, randomness
     ]
     .iter()
     .rev()
-    .fold(F::zero(), |result, a| randomness * result + a);
+    .fold(F::zero(), |result, a| lookup_randomness * result + a);
 
     rlc * (value.new_root - value.old_root)
 }

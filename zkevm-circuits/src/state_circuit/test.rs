@@ -977,10 +977,11 @@ fn bad_initial_tx_receipt_value() {
 }
 
 fn prover(rows: Vec<Rw>, overrides: HashMap<(AdviceColumn, isize), Fr>) -> MockProver<Fr> {
-    let randomness = Fr::rand();
-    let updates = fake_mpt_updates(&rows, randomness);
+    let word_randomness = Fr::rand();
+    let updates = fake_mpt_updates(&rows, word_randomness);
     let circuit = StateCircuit::<Fr, N_ROWS> {
-        randomness,
+        word_randomness,
+        lookup_randomness: Fr::rand(),
         rows,
         updates,
         overrides,

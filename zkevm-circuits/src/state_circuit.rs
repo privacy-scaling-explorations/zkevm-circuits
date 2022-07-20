@@ -54,7 +54,8 @@ pub struct StateConfig {
     state_root: Column<Advice>,
     lexicographic_ordering: LexicographicOrderingConfig,
     lookups: LookupsConfig,
-    power_of_randomness: [Column<Instance>; N_BYTES_WORD - 1],
+    powers_of_lookup_randomness: [Column<Instance>; 6],
+    powers_of_word_randomness: [Column<Instance>; N_BYTES_WORD - 1],
 }
 
 /// Keys for sorting the rows of the state circuit
@@ -73,8 +74,9 @@ type Lookup<F> = (&'static str, Expression<F>, Expression<F>);
 /// State Circuit for proving RwTable is valid
 #[derive(Default)]
 pub struct StateCircuit<F: Field, const N_ROWS: usize> {
-    pub(crate) randomness: F,
-    pub(crate) rows: Vec<Rw>,
+    word_randomness: F,
+    lookup_randomness: F,
+    rows: Vec<Rw>,
     updates: MptUpdates<F>,
     #[cfg(test)]
     overrides: HashMap<(test::AdviceColumn, isize), F>,
@@ -96,9 +98,10 @@ impl<F: Field, const N_ROWS: usize> StateCircuit<F, N_ROWS> {
         });
         // TODO: take real mpt updates in constructor.
         let updates = fake_mpt_updates(&rows, randomness);
-        // dbg!(updates.clone());
         Self {
-            randomness,
+            // TODO: take in two randomnesses.
+            word_randomness: randomness,
+            lookup_randomness: randomness,
             rows,
             updates,
             #[cfg(test)]
@@ -108,9 +111,18 @@ impl<F: Field, const N_ROWS: usize> StateCircuit<F, N_ROWS> {
 
     /// powers of randomness for instance columns
     pub fn instance(&self) -> Vec<Vec<F>> {
-        (1..32)
-            .map(|exp| vec![self.randomness.pow(&[exp, 0, 0, 0]); N_ROWS])
+        let powers_of_word_randomness =
+            (1..32).map(|exp| vec![pow(self.word_randomness, exp); N_ROWS]);
+        let powers_of_lookup_randomness =
+            (0..6).map(|exp| vec![pow(self.lookup_randomness, 1 + exp); N_ROWS]);
+        powers_of_word_randomness
+            .chain(powers_of_lookup_randomness)
             .collect()
+    }
+
+    /// Number of active (i.e. non-Rw::Start) rows in the circuit.
+    pub fn len(&self) -> usize {
+        self.rows.len()
     }
 }
 
@@ -125,7 +137,8 @@ impl<F: Field, const N_ROWS: usize> Circuit<F> for StateCircuit<F, N_ROWS> {
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
         let selector = meta.fixed_column();
         let lookups = LookupsChip::configure(meta);
-        let power_of_randomness = [0; N_BYTES_WORD - 1].map(|_| meta.instance_column());
+        let powers_of_word_randomness = [0; N_BYTES_WORD - 1].map(|_| meta.instance_column());
+        let powers_of_lookup_randomness = [0; 6].map(|_| meta.instance_column());
 
         let [is_write, field_tag, value, initial_value, state_root] =
             [0; 5].map(|_| meta.advice_column());
@@ -134,7 +147,7 @@ impl<F: Field, const N_ROWS: usize> Circuit<F> for StateCircuit<F, N_ROWS> {
 
         let id = MpiChip::configure(meta, selector, lookups.u16);
         let address = MpiChip::configure(meta, selector, lookups.u16);
-        let storage_key = RlcChip::configure(meta, selector, lookups.u8, power_of_randomness);
+        let storage_key = RlcChip::configure(meta, selector, lookups.u8, powers_of_word_randomness);
         let rw_counter = MpiChip::configure(meta, selector, lookups.u16);
 
         let sort_keys = SortKeysConfig {
@@ -150,7 +163,7 @@ impl<F: Field, const N_ROWS: usize> Circuit<F> for StateCircuit<F, N_ROWS> {
             meta,
             sort_keys,
             lookups.u16,
-            power_of_randomness,
+            powers_of_word_randomness,
         );
 
         let config = Self::Config {
@@ -162,7 +175,8 @@ impl<F: Field, const N_ROWS: usize> Circuit<F> for StateCircuit<F, N_ROWS> {
             state_root,
             lexicographic_ordering,
             lookups,
-            power_of_randomness,
+            powers_of_word_randomness,
+            powers_of_lookup_randomness,
         };
 
         let mut constraint_builder = ConstraintBuilder::new();
@@ -186,7 +200,8 @@ impl<F: Field, const N_ROWS: usize> Circuit<F> for StateCircuit<F, N_ROWS> {
         LookupsChip::construct(config.lookups).load(
             &mut layouter,
             &self.updates.0,
-            self.randomness,
+            self.word_randomness,
+            self.lookup_randomness,
         )?;
 
         let tag_chip = BinaryNumberChip::construct(config.sort_keys.tag);
@@ -238,7 +253,7 @@ impl<F: Field, const N_ROWS: usize> Circuit<F> for StateCircuit<F, N_ROWS> {
                         config.sort_keys.storage_key.assign(
                             &mut region,
                             offset,
-                            self.randomness,
+                            self.word_randomness,
                             storage_key,
                         )?;
                     }
@@ -246,7 +261,7 @@ impl<F: Field, const N_ROWS: usize> Circuit<F> for StateCircuit<F, N_ROWS> {
                         || "value",
                         config.value,
                         offset,
-                        || Ok(row.value_assignment(self.randomness)),
+                        || Ok(row.value_assignment(self.word_randomness)),
                     )?;
 
                     // TODO: Remove special case for initial values for Rw::CallContext rows, which
@@ -269,7 +284,7 @@ impl<F: Field, const N_ROWS: usize> Circuit<F> for StateCircuit<F, N_ROWS> {
                             // TODO: Set initial values for Rw::CallContext to be 0 instead of
                             // special casing it.
                             if matches!(row.tag(), RwTableTag::CallContext) {
-                                initial_value = row.value_assignment(self.randomness)
+                                initial_value = row.value_assignment(self.word_randomness)
                             }
 
                             if let Some(update) = self.updates.get(&prev_row) {
@@ -363,8 +378,8 @@ fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: &StateConfig) -> Queries
         initial_value: meta.query_advice(c.initial_value, Rotation::cur()),
         initial_value_prev: meta.query_advice(c.initial_value, Rotation::prev()),
         lookups: LookupsQueries::new(meta, c.lookups),
-        power_of_randomness: c
-            .power_of_randomness
+        powers_of_lookup_randomness: c
+            .powers_of_lookup_randomness
             .map(|c| meta.query_instance(c, Rotation::cur())),
         // this isn't binary! only 0 if most significant 4 bits are all 1.
         first_access: 4.expr()
@@ -382,4 +397,8 @@ fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: &StateConfig) -> Queries
         state_root_prev: meta.query_advice(c.state_root, Rotation::prev()),
         state_root_next: meta.query_advice(c.state_root, Rotation::next()),
     }
+}
+
+fn pow<F: Field>(x: F, exponent: usize) -> F {
+    x.pow(&[exponent.try_into().unwrap(), 0, 0, 0])
 }
