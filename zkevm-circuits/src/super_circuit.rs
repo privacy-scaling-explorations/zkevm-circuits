@@ -259,7 +259,7 @@ mod super_circuit_tests {
     use ethers_signers::{LocalWallet, Signer};
     use group::{Curve, Group};
     use halo2_proofs::arithmetic::{CurveAffine, Field as Halo2Field};
-    use halo2_proofs::dev::{MockProver, VerifyConfig, VerifyFailure};
+    use halo2_proofs::dev::{MockProver, VerifyFailure};
     use halo2_proofs::pairing::bn256::Fr;
     use mock::{TestContext, MOCK_CHAIN_ID};
     use rand::SeedableRng;
@@ -320,12 +320,7 @@ mod super_circuit_tests {
             bytecode_size: bytecodes_len + 64,
         };
         let prover = MockProver::<F>::run(k, &circuit, instance).unwrap();
-        prover.verify_par(VerifyConfig {
-            selectors: false,
-            gates: false,
-            lookups: true,
-            perms: false,
-        })
+        prover.verify()
     }
 
     fn run_test_circuit_complete_fixed_table<F: Field>(

@@ -1854,19 +1854,15 @@ checksum = "eabb4a44450da02c90444cf74558da904edde8fb4e9035a9a6a4e15445af0bd7"
 [[package]]
 name = "halo2_proofs"
 version = "0.1.0-beta.1"
-source = "git+https://github.com/ed255/halo2.git?branch=feature/dev-tooling#47834696cc62fb4c259c255d713e596b1e24f283"
+source = "git+https://github.com/privacy-scaling-explorations/halo2.git?tag=v2022_06_03#1fc67702da729b41bfeebc9764c4c6effbd1f9ad"
 dependencies = [
  "blake2b_simd 1.0.0",
  "bumpalo",
  "cfg-if 0.1.10",
  "ff 0.11.1",
  "group 0.11.0",
- "log",
- "num-bigint",
- "num-integer",
  "pairing_bn256",
  "plotters",
- "poseidon",
  "rand",
  "rand_core",
  "rayon",
@@ -2901,17 +2897,6 @@ dependencies = [
  "crc32fast",
  "deflate",
  "miniz_oxide",
-]
-
-[[package]]
-name = "poseidon"
-version = "0.1.0"
-source = "git+https://github.com/appliedzkp/poseidon.git?branch=circuit#1f8609776f64f36b518aac1732f18758d65a2791"
-dependencies = [
- "group 0.11.0",
- "pairing_bn256",
- "rand",
- "subtle",
 ]
 
 [[package]]
