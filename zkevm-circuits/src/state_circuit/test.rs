@@ -474,7 +474,7 @@ fn storage_key_mismatch() {
         tx_id: 4,
         committed_value: U256::from(34),
     }];
-    let overrides = HashMap::from([((AdviceColumn::StorageKey, 0), Fr::from(10))]);
+    let overrides = HashMap::from([((AdviceColumn::StorageKeyByte0, 0), Fr::from(200))]);
 
     let result = verify_with_overrides(rows, overrides);
 
@@ -493,13 +493,30 @@ fn storage_key_byte_out_of_range() {
         tx_id: 4,
         committed_value: U256::from(500),
     }];
+    assert_eq!(verify(rows.clone()), Ok(()));
+
+    let word_randomness = Fr::from(3023401231);
     let overrides = HashMap::from([
-        ((AdviceColumn::StorageKey, 0), Fr::from(256)),
-        ((AdviceColumn::StorageKeyByte0, 0), Fr::from(256)),
+        ((AdviceColumn::StorageKey, 0), word_randomness),
+        ((AdviceColumn::StorageKeyByte0, 0), word_randomness),
         ((AdviceColumn::StorageKeyByte1, 0), Fr::zero()),
     ]);
 
-    let result = verify_with_overrides(rows, overrides);
+    let updates = MptUpdates::mock_from(&rows);
+    let used_rows = rows.len();
+
+    let circuit = StateCircuit::<Fr, N_ROWS> {
+        word_randomness,
+        lookup_randomness: Fr::rand(),
+        rows,
+        updates,
+        overrides,
+    };
+    let instance = circuit.instance();
+
+    let prover = MockProver::<Fr>::run(17, &circuit, instance).unwrap();
+
+    let result = prover.verify_at_rows(N_ROWS - used_rows..N_ROWS, N_ROWS - used_rows..N_ROWS);
 
     assert_error_matches(result, "rlc bytes fit into u8");
 }
