@@ -132,7 +132,7 @@ impl PublicData {
                 to_addr: tx.to.unwrap_or_else(Address::zero),
                 is_create: (tx.to.is_none() as u64),
                 value: tx.value,
-                call_data_len: (tx.call_data.0.len() as u64).into(),
+                call_data_len: tx.call_data.0.len() as u64,
                 tx_sign_hash: msg_hash_le,
             });
         }
@@ -305,6 +305,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
 
     /// Assigns a tx_table row and stores the values in a vec for the
     /// raw_public_inputs column
+    #[allow(clippy::too_many_arguments)]
     fn assign_tx_row(
         &self,
         region: &mut Region<'_, F>,
@@ -481,6 +482,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
     ///   - parent block hash
     /// to the raw_public_inputs column and stores a copy in a
     /// vector for computing RLC(raw_public_inputs).
+    #[allow(clippy::type_complexity)]
     fn assign_extra_fields(
         &self,
         region: &mut Region<'_, F>,
@@ -524,6 +526,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
     }
 
     /// Assign `rpi_rlc_acc` and `rand_rpi` columns
+    #[allow(clippy::type_complexity)]
     fn assign_rlc_pi(
         &self,
         region: &mut Region<'_, F>,
