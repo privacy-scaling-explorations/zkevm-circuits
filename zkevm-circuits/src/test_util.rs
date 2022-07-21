@@ -91,7 +91,10 @@ pub fn test_circuits_using_witness_block(
     // state circuit and evm circuit must be same
     if config.enable_state_circuit_test {
         const N_ROWS: usize = 1 << 16;
-        let state_circuit = StateCircuit::<Fr, N_ROWS>::new(block.randomness, block.rws);
+        // TODO: don't use block.randomness for both word_randomness and
+        // lookup_randomness.
+        let state_circuit =
+            StateCircuit::<Fr, N_ROWS>::new(block.rws, block.randomness, block.randomness);
         let power_of_randomness = state_circuit.instance();
         let prover = MockProver::<Fr>::run(18, &state_circuit, power_of_randomness).unwrap();
         prover.verify_at_rows(

@@ -89,11 +89,10 @@ fn test_state_circuit_ok(
         ..Default::default()
     });
 
-    let randomness = Fr::rand();
-    let circuit = StateCircuit::<Fr, N_ROWS>::new(randomness, rw_map);
-    let power_of_randomness = circuit.instance();
+    let circuit = StateCircuit::<Fr, N_ROWS>::new(rw_map, Fr::rand(), Fr::rand());
+    let instance = circuit.instance();
 
-    let prover = MockProver::<Fr>::run(19, &circuit, power_of_randomness).unwrap();
+    let prover = MockProver::<Fr>::run(19, &circuit, instance).unwrap();
     let verify_result = prover.verify();
     assert_eq!(verify_result, Ok(()));
 }
@@ -107,13 +106,11 @@ fn degree() {
 
 #[test]
 fn verifying_key_independent_of_rw_length() {
-    let randomness = Fr::rand();
     let degree = 17;
     let params = Params::<G1Affine>::unsafe_setup::<Bn256>(degree);
 
-    let no_rows = StateCircuit::<Fr, N_ROWS>::new(randomness, RwMap::default());
+    let no_rows = StateCircuit::<Fr, N_ROWS>::new(RwMap::default(), Fr::rand(), Fr::rand());
     let one_row = StateCircuit::<Fr, N_ROWS>::new(
-        randomness,
         RwMap::from(&OperationContainer {
             memory: vec![Operation::new(
                 RWCounter::from(1),
@@ -134,6 +131,8 @@ fn verifying_key_independent_of_rw_length() {
             )],
             ..Default::default()
         }),
+        Fr::rand(),
+        Fr::rand(),
     );
 
     // halo2::plonk::VerifyingKey doesn't derive Eq, so we check for equality using

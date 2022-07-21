@@ -83,7 +83,7 @@ pub struct StateCircuit<F: Field, const N_ROWS: usize> {
 
 impl<F: Field, const N_ROWS: usize> StateCircuit<F, N_ROWS> {
     /// make a new state circuit from an RwMap
-    pub fn new(randomness: F, rw_map: RwMap) -> Self {
+    pub fn new(rw_map: RwMap, word_randomness: F, lookup_randomness: F) -> Self {
         let mut rows: Vec<_> = rw_map.0.into_values().flatten().collect();
         rows.sort_by_key(|row| {
             (
@@ -98,9 +98,8 @@ impl<F: Field, const N_ROWS: usize> StateCircuit<F, N_ROWS> {
         // TODO: take real mpt updates in constructor.
         let updates = MptUpdates::mock_from(&rows);
         Self {
-            // TODO: take in two randomnesses.
-            word_randomness: randomness,
-            lookup_randomness: randomness,
+            word_randomness,
+            lookup_randomness,
             rows,
             updates,
             #[cfg(test)]
