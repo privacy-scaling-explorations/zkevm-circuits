@@ -1,4 +1,4 @@
-use super::{fake_mpt_updates, StateCircuit, StateConfig};
+use super::{MptUpdates, StateCircuit, StateConfig};
 use crate::evm_circuit::{
     table::{AccountFieldTag, CallContextFieldTag, RwTableTag, TxLogFieldTag, TxReceiptFieldTag},
     witness::{Rw, RwMap},
@@ -119,6 +119,18 @@ fn verifying_key_independent_of_rw_length() {
                 RWCounter::from(1),
                 RW::WRITE,
                 MemoryOp::new(1, MemoryAddress::from(0), 32),
+            )],
+            storage: vec![Operation::new(
+                RWCounter::from(2),
+                RW::WRITE,
+                StorageOp::new(
+                    U256::from(100).to_address(),
+                    Word::from(0x40),
+                    Word::from(32),
+                    Word::from(1214123),
+                    1usize,
+                    Word::from(1231293),
+                ),
             )],
             ..Default::default()
         }),
@@ -978,7 +990,7 @@ fn bad_initial_tx_receipt_value() {
 
 fn prover(rows: Vec<Rw>, overrides: HashMap<(AdviceColumn, isize), Fr>) -> MockProver<Fr> {
     let word_randomness = Fr::rand();
-    let updates = fake_mpt_updates(&rows, word_randomness);
+    let updates = MptUpdates::mock_from(&rows);
     let circuit = StateCircuit::<Fr, N_ROWS> {
         word_randomness,
         lookup_randomness: Fr::rand(),

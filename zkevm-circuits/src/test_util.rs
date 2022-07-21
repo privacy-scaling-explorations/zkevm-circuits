@@ -95,8 +95,8 @@ pub fn test_circuits_using_witness_block(
         let power_of_randomness = state_circuit.instance();
         let prover = MockProver::<Fr>::run(18, &state_circuit, power_of_randomness).unwrap();
         prover.verify_at_rows(
-            N_ROWS - state_circuit.len()..N_ROWS,
-            N_ROWS - state_circuit.len()..N_ROWS,
+            N_ROWS - state_circuit.n_active_rows()..N_ROWS,
+            N_ROWS - state_circuit.n_active_rows()..N_ROWS,
         )?
     }
 

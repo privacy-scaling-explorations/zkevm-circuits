@@ -1,4 +1,4 @@
-use super::mpt_updates::{MptKey, MptValue};
+use super::mpt_updates::MptUpdates;
 use crate::evm_circuit::table::CallContextFieldTag;
 use eth_types::Field;
 use halo2_proofs::{
@@ -6,7 +6,7 @@ use halo2_proofs::{
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
-use std::{collections::HashMap, marker::PhantomData};
+use std::marker::PhantomData;
 use strum::IntoEnumIterator;
 
 #[derive(Clone, Copy)]
@@ -17,6 +17,7 @@ pub struct Config {
     pub u10: Column<Fixed>,
     pub u16: Column<Fixed>,
     pub call_context_field_tag: Column<Fixed>,
+    // TODO: move this into mpt_updates and rename this to fixed_lookups.
     pub mpt_update: Column<Advice>,
 }
 
@@ -67,7 +68,7 @@ impl<F: Field> Chip<F> {
     pub(super) fn load(
         &self,
         layouter: &mut impl Layouter<F>,
-        updates: &HashMap<MptKey, MptValue<F>>,
+        updates: &MptUpdates,
         word_randomness: F,
         lookup_randomness: F,
     ) -> Result<(), Error> {
@@ -116,24 +117,17 @@ impl<F: Field> Chip<F> {
             || "assign rlc(mpt_updates) lookup column",
             |mut region| {
                 region.assign_advice(
-                    || "mpt update lookup",
+                    || "0 mpt update lookup",
                     self.config.mpt_update,
                     0,
                     || Ok(F::zero()),
                 )?;
-                for (offset, (key, value)) in updates.iter().enumerate() {
+                for (offset, update) in updates.iter().enumerate() {
                     region.assign_advice(
                         || "mpt update lookup",
                         self.config.mpt_update,
                         offset + 1,
-                        || {
-                            Ok(mpt_update_assignment(
-                                key,
-                                value,
-                                word_randomness,
-                                lookup_randomness,
-                            ))
-                        },
+                        || Ok(update.lookup_assignment(word_randomness, lookup_randomness)),
                     )?;
                 }
                 Ok(())
@@ -142,26 +136,4 @@ impl<F: Field> Chip<F> {
 
         Ok(())
     }
-}
-
-fn mpt_update_assignment<F: Field>(
-    key: &MptKey,
-    value: &MptValue<F>,
-    word_randomness: F,
-    lookup_randomness: F,
-) -> F {
-    let rlc = [
-        key.address(),
-        key.storage_key(word_randomness),
-        key.field_tag(),
-        value.new_root,
-        value.old_root,
-        value.new_value,
-        value.old_value,
-    ]
-    .iter()
-    .rev()
-    .fold(F::zero(), |result, a| lookup_randomness * result + a);
-
-    rlc * (value.new_root - value.old_root)
 }

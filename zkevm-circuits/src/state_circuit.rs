@@ -13,7 +13,6 @@ use crate::evm_circuit::{
     table::RwTableTag,
     witness::{Rw, RwMap},
 };
-use crate::state_circuit::mpt_updates::mpt_key;
 use constraint_builder::{ConstraintBuilder, Queries};
 use eth_types::{Address, Field};
 use gadgets::{
@@ -29,7 +28,7 @@ use halo2_proofs::{
 };
 use lexicographic_ordering::Config as LexicographicOrderingConfig;
 use lookups::{Chip as LookupsChip, Config as LookupsConfig, Queries as LookupsQueries};
-use mpt_updates::{fake_mpt_updates, MptUpdates};
+use mpt_updates::MptUpdates;
 use multiple_precision_integer::{Chip as MpiChip, Config as MpiConfig, Queries as MpiQueries};
 use random_linear_combination::{Chip as RlcChip, Config as RlcConfig, Queries as RlcQueries};
 #[cfg(test)]
@@ -77,7 +76,7 @@ pub struct StateCircuit<F: Field, const N_ROWS: usize> {
     word_randomness: F,
     lookup_randomness: F,
     rows: Vec<Rw>,
-    updates: MptUpdates<F>,
+    updates: MptUpdates,
     #[cfg(test)]
     overrides: HashMap<(test::AdviceColumn, isize), F>,
 }
@@ -97,7 +96,7 @@ impl<F: Field, const N_ROWS: usize> StateCircuit<F, N_ROWS> {
             )
         });
         // TODO: take real mpt updates in constructor.
-        let updates = fake_mpt_updates(&rows, randomness);
+        let updates = MptUpdates::mock_from(&rows);
         Self {
             // TODO: take in two randomnesses.
             word_randomness: randomness,
@@ -121,7 +120,7 @@ impl<F: Field, const N_ROWS: usize> StateCircuit<F, N_ROWS> {
     }
 
     /// Number of active (i.e. non-Rw::Start) rows in the circuit.
-    pub fn len(&self) -> usize {
+    pub fn n_active_rows(&self) -> usize {
         self.rows.len()
     }
 }
@@ -199,7 +198,7 @@ impl<F: Field, const N_ROWS: usize> Circuit<F> for StateCircuit<F, N_ROWS> {
     ) -> Result<(), Error> {
         LookupsChip::construct(config.lookups).load(
             &mut layouter,
-            &self.updates.0,
+            &self.updates,
             self.word_randomness,
             self.lookup_randomness,
         )?;
@@ -267,7 +266,11 @@ impl<F: Field, const N_ROWS: usize> Circuit<F> for StateCircuit<F, N_ROWS> {
                     // TODO: Remove special case for initial values for Rw::CallContext rows, which
                     // can only be determined by the value for the first access row.
                     if !matches!(row.tag(), RwTableTag::CallContext) {
-                        initial_value = self.updates.get(&row).unwrap_or_default().old_value;
+                        initial_value = self
+                            .updates
+                            .get(&row)
+                            .map(|u| u.value_assignments(self.word_randomness).1)
+                            .unwrap_or_default();
                     }
 
                     if let Some(prev_row) = prev_row {
@@ -288,8 +291,10 @@ impl<F: Field, const N_ROWS: usize> Circuit<F> for StateCircuit<F, N_ROWS> {
                             }
 
                             if let Some(update) = self.updates.get(&prev_row) {
-                                assert_eq!(state_root, update.old_root);
-                                state_root = update.new_root;
+                                let (new_root, old_root) =
+                                    update.root_assignments(self.word_randomness);
+                                assert_eq!(state_root, old_root);
+                                state_root = new_root;
                             }
                         }
                     }
@@ -317,7 +322,8 @@ impl<F: Field, const N_ROWS: usize> Circuit<F> for StateCircuit<F, N_ROWS> {
                         // last row is always a last access, so we need to handle the case where the
                         // state root changes because of an mpt lookup on the last row.
                         if let Some(update) = self.updates.get(&row) {
-                            state_root = update.new_root;
+                            let (new_root, _) = update.root_assignments(self.word_randomness);
+                            state_root = new_root;
                         }
                         region.assign_advice(
                             || "state_root",
