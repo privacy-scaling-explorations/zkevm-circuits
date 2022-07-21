@@ -52,12 +52,11 @@ async fn test_state_circuit_block(block_num: u64) {
         ..Default::default()
     });
 
-    let randomness = Fr::rand();
-    let circuit = StateCircuit::<Fr, { 1 << 16 }>::new(randomness, rw_map);
-    let power_of_randomness = circuit.instance();
+    let circuit = StateCircuit::<Fr, { 1 << 16 }>::new(rw_map, Fr::rand(), Fr::rand());
+    let instance = circuit.instance();
 
     use halo2_proofs::pairing::bn256::Fr as Fp;
-    let prover = MockProver::<Fp>::run(DEGREE as u32, &circuit, power_of_randomness).unwrap();
+    let prover = MockProver::<Fp>::run(DEGREE as u32, &circuit, instance).unwrap();
     prover.verify().expect("state_circuit verification failed");
 }
 
