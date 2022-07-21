@@ -76,7 +76,9 @@ impl<F: Field> TableShow<F> {
     }
 }
 
-/// TODO
+/// Query N instances at current rotation and return their expressions.  This
+/// function is used to get the power of randomness (passed as
+/// instances) in our tests.
 pub fn power_of_randomness_from_instance<F: Field, const N: usize>(
     meta: &mut ConstraintSystem<F>,
 ) -> [Expression<F>; N] {

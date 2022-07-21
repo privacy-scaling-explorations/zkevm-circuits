@@ -16,8 +16,6 @@ use halo2_proofs::{
 use keccak256::plain::Keccak;
 use std::vec;
 
-// use crate::util::TableShow;
-
 use super::param::PUSH_TABLE_WIDTH;
 
 /// Public data for the bytecode
@@ -58,8 +56,6 @@ pub struct Config<F> {
     push_table: [Column<Fixed>; PUSH_TABLE_WIDTH],
     keccak_table: KeccakTable,
 }
-
-// use crate::util::TableShow;
 
 impl<F: Field> Config<F> {
     pub(crate) fn configure(
@@ -572,55 +568,15 @@ impl<F: Field> Config<F> {
         Ok(())
     }
 
-    // CHANGELOG: Moved to a new function to allow not calling it when integrating
-    // circuits together.
-    // pub(crate) fn load_keccaks(
-    //     &self,
-    //     layouter: &mut impl Layouter<F>,
-    //     bytecodes: &[UnrolledBytecode<F>],
-    //     randomness: F,
-    // ) -> Result<(), Error> {
-    //     println!("> bytecode_circuit.load_keccaks");
-    //     let mut table =
-    //         TableShow::<F>::new(vec!["is_enabled", "input_rlc", "input_len",
-    // "output_rlc"]);     layouter.assign_region(
-    //         || "keccak table",
-    //         |mut region| {
-    //             for (offset, bytecode) in bytecodes.iter().map(|v|
-    // v.bytes.clone()).enumerate() {                 let code_hash: F =
-    // keccak(&bytecode[..], randomness);                 // println!("+ {:?}",
-    // bytecode);                 let input_rlc: F =
-    // rlc::value(bytecode.iter().rev(), randomness);                 let size =
-    // F::from(bytecode.len() as u64);                 for (name, column, value)
-    // in &[                     ("is_enable", self.keccak_table.is_enabled,
-    // F::one()),                     ("input_rlc", self.keccak_table.input_rlc,
-    // input_rlc),                     ("input_len",
-    // self.keccak_table.input_len, size),                     ("output_rlc",
-    // self.keccak_table.output_rlc, code_hash),                 ] {
-    //                     region.assign_advice(
-    //                         || format!("Keccak table assign {} {}", name,
-    // offset),                         *column,
-    //                         offset,
-    //                         || Ok(*value),
-    //                     )?;
-    //                 }
-    //                 table.push(0, F::one());
-    //                 table.push(1, input_rlc);
-    //                 table.push(2, size);
-    //                 table.push(3, code_hash);
-    //             }
-    //             table.print();
-    //             Ok(())
-    //         },
-    //     )
-    // }
+    // CHANGELOG: Moved load_keccaks to a new function to allow not calling it when
+    // integrating circuits together.
 
     /// load fixed tables
     pub(crate) fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
         // push table: BYTE -> NUM_PUSHED:
-        // [0, OpcodeId::PUSH1[ -> 0
+        // [0, OpcodeId::PUSH1] -> 0
         // [OpcodeId::PUSH1, OpcodeId::PUSH32] -> [1..32]
-        // ]OpcodeId::PUSH32, 256[ -> 0
+        // [OpcodeId::PUSH32, 256] -> 0
         layouter.assign_region(
             || "push table",
             |mut region| {
@@ -715,7 +671,7 @@ fn into_words(message: &[u8]) -> Vec<u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{table::load_keccaks, util::power_of_randomness_from_instance};
+    use crate::util::power_of_randomness_from_instance;
     use eth_types::{Bytecode, Word};
     use halo2_proofs::{
         circuit::{Layouter, SimpleFloorPlanner},
@@ -764,8 +720,7 @@ mod tests {
             mut layouter: impl Layouter<F>,
         ) -> Result<(), Error> {
             config.load(&mut layouter)?;
-            load_keccaks(
-                &config.keccak_table,
+            config.keccak_table.load(
                 &mut layouter,
                 self.bytecodes.iter().map(|b| b.bytes.as_slice()),
                 self.randomness,

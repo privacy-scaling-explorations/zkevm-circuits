@@ -201,7 +201,7 @@ pub enum NumberOrHash {
 
 /// Defines a copy event associated with EVM opcodes such as CALLDATACOPY,
 /// CODECOPY, CREATE, etc. More information:
-/// https://github.com/privacy-scaling-explorations/zkevm-specs/blob/master/specs/copy-proof.md.
+/// <https://github.com/privacy-scaling-explorations/zkevm-specs/blob/master/specs/copy-proof.md>.
 #[derive(Clone, Debug)]
 pub struct CopyEvent {
     /// Represents the start address at the source of the copy event.

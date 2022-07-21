@@ -8,7 +8,7 @@
 
 pub mod sign_verify;
 
-use crate::table::{load_keccaks, KeccakTable, TxFieldTag, TxTable};
+use crate::table::{KeccakTable, TxFieldTag, TxTable};
 use crate::util::{power_of_randomness_from_instance, random_linear_combine_word as rlc};
 use eth_types::{
     geth_types::Transaction, Address, Field, ToBigEndian, ToLittleEndian, ToScalar, Word,
@@ -415,8 +415,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
         self.assign(&config, &mut layouter)?;
-        load_keccaks(
-            &config.keccak_table,
+        config.keccak_table.load(
             &mut layouter,
             keccak_inputs(&self.txs, self.chain_id)?
                 .iter()

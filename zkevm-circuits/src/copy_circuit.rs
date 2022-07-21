@@ -605,7 +605,7 @@ mod tests {
 
     use crate::{
         evm_circuit::witness::{block_convert, Block},
-        table::{load_bytecodes, load_rws, load_txs, BytecodeTable, RwTable, TxTable},
+        table::{BytecodeTable, RwTable, TxTable},
     };
 
     #[derive(Clone)]
@@ -663,20 +663,13 @@ mod tests {
             config: Self::Config,
             mut layouter: impl Layouter<F>,
         ) -> Result<(), halo2_proofs::plonk::Error> {
-            load_txs(
-                &config.tx_table,
-                &mut layouter,
-                &self.block.txs,
-                self.block.randomness,
-            )?;
-            load_rws(
-                &config.rw_table,
-                &mut layouter,
-                &self.block.rws,
-                self.block.randomness,
-            )?;
-            load_bytecodes(
-                &config.bytecode_table,
+            config
+                .tx_table
+                .load(&mut layouter, &self.block.txs, self.block.randomness)?;
+            config
+                .rw_table
+                .load(&mut layouter, &self.block.rws, self.block.randomness)?;
+            config.bytecode_table.load(
                 &mut layouter,
                 self.block.bytecodes.values(),
                 self.block.randomness,

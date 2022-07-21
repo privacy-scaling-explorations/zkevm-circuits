@@ -55,10 +55,7 @@ use crate::bytecode_circuit::bytecode_unroller::{
 };
 
 use crate::evm_circuit::{table::FixedTableTag, witness::Block, EvmCircuit};
-use crate::table::{
-    load_block, load_copy, load_keccaks, load_rws, BlockTable, BytecodeTable, CopyTable,
-    KeccakTable, RwTable, TxTable,
-};
+use crate::table::{BlockTable, BytecodeTable, CopyTable, KeccakTable, RwTable, TxTable};
 use crate::util::power_of_randomness_from_instance;
 use eth_types::Field;
 use halo2_proofs::{
@@ -167,36 +164,15 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
             .evm_circuit
             .load_fixed_table(&mut layouter, self.fixed_table_tags.clone())?;
         config.evm_circuit.load_byte_table(&mut layouter)?;
-        // load_txs(
-        //     &config.tx_table,
-        //     &mut layouter,
-        //     &self.block.txs,
-        //     self.block.randomness,
-        // )?;
-        load_rws(
-            &config.rw_table,
-            &mut layouter,
-            &self.block.rws,
-            self.block.randomness,
-        )?;
-        // load_bytecodes(
-        //     &config.bytecode_table,
-        //     &mut layouter,
-        //     &self.block.bytecodes,
-        //     self.block.randomness,
-        // )?;
-        load_block(
-            &config.block_table,
-            &mut layouter,
-            &self.block.context,
-            self.block.randomness,
-        )?;
-        load_copy(
-            &config.copy_table,
-            &mut layouter,
-            &self.block,
-            self.block.randomness,
-        )?;
+        config
+            .rw_table
+            .load(&mut layouter, &self.block.rws, self.block.randomness)?;
+        config
+            .block_table
+            .load(&mut layouter, &self.block.context, self.block.randomness)?;
+        config
+            .copy_table
+            .load(&mut layouter, &self.block, self.block.randomness)?;
         config
             .evm_circuit
             .assign_block(&mut layouter, &self.block)?;
@@ -228,8 +204,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
             keccak_inputs.push(bytecode.bytes.clone());
         }
         // Load Keccak Table
-        load_keccaks(
-            &config.keccak_table,
+        config.keccak_table.load(
             &mut layouter,
             keccak_inputs.iter().map(|b| b.as_slice()),
             self.block.randomness,

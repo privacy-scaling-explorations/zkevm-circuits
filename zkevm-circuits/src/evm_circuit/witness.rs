@@ -1207,10 +1207,6 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::DIFFICULTY | OpcodeId::BASEFEE => ExecutionState::BLOCKCTXU256,
                     OpcodeId::GAS => ExecutionState::GAS,
                     OpcodeId::SELFBALANCE => ExecutionState::SELFBALANCE,
-                    OpcodeId::SHA3 => {
-                        log::warn!("ExecutionState::SHA3 is implemented with DummyGadget");
-                        ExecutionState::SHA3
-                    }
                     OpcodeId::SHR => ExecutionState::SHR,
                     OpcodeId::SLOAD => ExecutionState::SLOAD,
                     OpcodeId::SSTORE => ExecutionState::SSTORE,
@@ -1225,6 +1221,7 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::CODESIZE => ExecutionState::CODESIZE,
                     OpcodeId::RETURN | OpcodeId::REVERT => ExecutionState::RETURN,
                     // dummy ops
+                    OpcodeId::SHA3 => dummy!(ExecutionState::SHA3),
                     OpcodeId::ADDRESS => dummy!(ExecutionState::ADDRESS),
                     OpcodeId::BALANCE => dummy!(ExecutionState::BALANCE),
                     OpcodeId::BLOCKHASH => dummy!(ExecutionState::BLOCKHASH),
