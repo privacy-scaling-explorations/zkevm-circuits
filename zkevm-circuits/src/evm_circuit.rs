@@ -534,7 +534,8 @@ mod evm_circuit_stats {
     /// - height/gas: ratio between circuit cost and gas cost
     ///
     /// Run with:
-    /// `cargo test -p zkevm-circuits --release get_evm_states_stats -- --nocapture --ignored`
+    /// `cargo test -p zkevm-circuits --release get_evm_states_stats --
+    /// --nocapture --ignored`
     #[ignore]
     #[test]
     pub fn get_evm_states_stats() {
