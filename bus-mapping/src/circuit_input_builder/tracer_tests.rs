@@ -246,19 +246,9 @@ fn tracer_err_insufficient_balance() {
     let next_step = block.geth_traces[0].struct_logs.get(index + 1);
     assert_eq!(step.error, None);
     assert_eq!(next_step.unwrap().op, OpcodeId::PUSH2);
-    assert_eq!(next_step.unwrap().stack, Stack(vec![Word::zero()])); // success = 0
+    assert_eq!(next_step.unwrap().stack, Stack(vec![Word::zero()])); // failure = 0
 
     let mut builder = CircuitInputBuilderTx::new(&block, step);
-    builder.builder.sdb.set_account(
-        &ADDR_A,
-        Account {
-            nonce: Word::zero(),
-            balance: Word::from(555u64), /* same value as in
-                                          * `mock::new_tracer_account` */
-            storage: HashMap::new(),
-            code_hash: Hash::zero(),
-        },
-    );
     assert_eq!(
         builder.state_ref().get_step_err(step, next_step).unwrap(),
         Some(ExecError::InsufficientBalance)
