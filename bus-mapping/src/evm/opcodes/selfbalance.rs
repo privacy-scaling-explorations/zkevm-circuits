@@ -9,6 +9,7 @@ pub(crate) struct Selfbalance;
 
 impl Opcode for Selfbalance {
     fn gen_associated_ops(
+        &self,
         state: &mut CircuitInputStateRef,
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {

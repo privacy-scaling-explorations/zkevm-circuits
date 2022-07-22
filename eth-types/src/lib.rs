@@ -40,7 +40,7 @@ pub use ethers_core::types::{
     Address, Block, Bytes, H160, H256, U256, U64,
 };
 
-use serde::{de, Deserialize};
+use serde::{de, Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
 use std::str::FromStr;
@@ -248,7 +248,7 @@ struct GethExecStepInternal {
 
 /// The execution step type returned by geth RPC debug_trace* methods.
 /// Corresponds to `StructLogRes` in `go-ethereum/internal/ethapi/api.go`.
-#[derive(Clone, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq, Serialize)]
 #[doc(hidden)]
 pub struct GethExecStep {
     pub pc: ProgramCounter,
@@ -295,7 +295,7 @@ impl fmt::Debug for GethExecStep {
             .field("depth", &self.depth)
             .field("error", &self.error)
             .field("stack", &self.stack)
-            .field("memory", &self.memory)
+            // .field("memory", &self.memory)
             .field("storage", &self.storage)
             .finish()
     }
@@ -353,7 +353,7 @@ pub struct ResultGethExecTrace {
 /// The deserialization truncates the memory of each step in `struct_logs` to
 /// the memory size before the expansion, so that it corresponds to the memory
 /// before the step is executed.
-#[derive(Deserialize, Clone, Debug, Eq, PartialEq)]
+#[derive(Deserialize, Serialize, Clone, Debug, Eq, PartialEq)]
 pub struct GethExecTrace {
     /// Used gas
     pub gas: Gas,

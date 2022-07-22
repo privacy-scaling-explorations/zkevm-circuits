@@ -10,6 +10,7 @@ pub(crate) struct Swap<const N: usize>;
 
 impl<const N: usize> Opcode for Swap<N> {
     fn gen_associated_ops(
+        &self,
         state: &mut CircuitInputStateRef,
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {

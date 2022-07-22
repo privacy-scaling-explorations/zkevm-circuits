@@ -14,7 +14,12 @@ lazy_static! {
 
 /// Memory storage for contract code by code hash.
 #[derive(Debug, Clone)]
-pub struct CodeDB(pub HashMap<Hash, Vec<u8>>);
+pub struct CodeDB {
+    /// contract address to code hash
+    pub address_hash: HashMap<Address, Hash>,
+    /// code hash to code
+    pub hash_code: HashMap<Hash, Vec<u8>>,
+}
 
 impl Default for CodeDB {
     fn default() -> Self {
@@ -25,12 +30,18 @@ impl Default for CodeDB {
 impl CodeDB {
     /// Create a new empty Self.
     pub fn new() -> Self {
-        Self(HashMap::new())
+        Self {
+            address_hash: HashMap::new(),
+            hash_code: HashMap::new(),
+        }
     }
     /// Insert code indexed by code hash, and return the code hash.
-    pub fn insert(&mut self, code: Vec<u8>) -> Hash {
+    pub fn insert(&mut self, address: Option<Address>, code: Vec<u8>) -> Hash {
         let hash = H256(keccak256(&code));
-        self.0.insert(hash, code);
+        self.hash_code.insert(hash, code);
+        if let Some(address) = address {
+            self.address_hash.insert(address, hash);
+        }
         hash
     }
 }

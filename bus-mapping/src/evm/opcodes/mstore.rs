@@ -13,6 +13,7 @@ pub(crate) struct Mstore<const IS_MSTORE8: bool>;
 
 impl<const IS_MSTORE8: bool> Opcode for Mstore<IS_MSTORE8> {
     fn gen_associated_ops(
+        &self,
         state: &mut CircuitInputStateRef,
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
@@ -46,6 +47,29 @@ impl<const IS_MSTORE8: bool> Opcode for Mstore<IS_MSTORE8> {
                 for (i, byte) in bytes.iter().enumerate() {
                     state.memory_write(&mut exec_step, offset_addr.map(|a| a + i), *byte)?;
                 }
+            }
+        }
+
+        // reconstruction
+        let offset = geth_step.stack.nth_last(0)?;
+        let value = geth_step.stack.nth_last(1)?;
+        let offset_addr: MemoryAddress = offset.try_into()?;
+
+        let call_ctx = state.call_ctx_mut()?;
+        let memory = &mut call_ctx.memory;
+        let minimal_length = offset_addr.0 + if IS_MSTORE8 { 1 } else { 32 };
+        memory.extend_at_least(minimal_length);
+
+        let mem_starts = offset_addr.0;
+
+        match IS_MSTORE8 {
+            true => {
+                let val = *value.to_le_bytes().first().unwrap();
+                memory.0[mem_starts] = val;
+            }
+            false => {
+                let bytes = value.to_be_bytes();
+                memory[mem_starts..mem_starts + 32].copy_from_slice(&bytes);
             }
         }
 

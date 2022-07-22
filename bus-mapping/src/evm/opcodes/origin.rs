@@ -9,6 +9,7 @@ pub(crate) struct Origin;
 
 impl Opcode for Origin {
     fn gen_associated_ops(
+        &self,
         state: &mut CircuitInputStateRef,
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {

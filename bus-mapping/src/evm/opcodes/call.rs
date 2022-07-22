@@ -13,6 +13,7 @@ use eth_types::{
 };
 use keccak256::EMPTY_HASH;
 use log::warn;
+use std::cmp::max;
 
 /// Placeholder structure used to implement [`Opcode`] trait over it
 /// corresponding to the `OpcodeId::CALL` `OpcodeId`.
@@ -21,15 +22,39 @@ pub(crate) struct Call;
 
 impl Opcode for Call {
     fn gen_associated_ops(
+        &self,
         state: &mut CircuitInputStateRef,
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];
+
+        let args_offset = geth_step.stack.nth_last(3)?.as_usize();
+        let args_length = geth_step.stack.nth_last(4)?.as_usize();
+        let ret_offset = geth_step.stack.nth_last(5)?.as_usize();
+        let ret_length = geth_step.stack.nth_last(6)?.as_usize();
+
+        // we need to keep the memory until parse_call complete
+        let call_ctx = state.call_ctx_mut()?;
+        let args_minimal = if args_length != 0 {
+            args_offset + args_length
+        } else {
+            0
+        };
+        let ret_minimal = if ret_length != 0 {
+            ret_offset + ret_length
+        } else {
+            0
+        };
+        if args_minimal != 0 || ret_minimal != 0 {
+            let minimal_length = max(args_minimal, ret_minimal);
+            call_ctx.memory.extend_at_least(minimal_length);
+        }
+
         let mut exec_step = state.new_step(geth_step)?;
 
         let tx_id = state.tx_ctx.id();
-        let current_call = state.call()?.clone();
         let call = state.parse_call(geth_step)?;
+        let current_call = state.call()?.clone();
 
         // NOTE: For `RwCounterEndOfReversion` we use the `0` value as a placeholder,
         // and later set the proper value in
@@ -81,7 +106,7 @@ impl Opcode for Call {
         )?;
 
         // Switch to callee's call context
-        state.push_call(call.clone(), geth_step);
+        state.push_call(call.clone());
 
         for (field, value) in [
             (CallContextField::RwCounterEndOfReversion, 0.into()),
@@ -111,10 +136,11 @@ impl Opcode for Call {
             state.account_read(&mut exec_step, call.address, field, value, value)?;
         }
 
+        let current_call_ctx = state.call_ctx()?;
         // Calculate next_memory_word_size and callee_gas_left manually in case
         // there isn't next geth_step (e.g. callee doesn't have code).
         let next_memory_word_size = [
-            geth_step.memory.word_size() as u64,
+            current_call_ctx.memory.word_size() as u64,
             (call.call_data_offset + call.call_data_length + 31) / 32,
             (call.return_data_offset + call.return_data_length + 31) / 32,
         ]
@@ -136,7 +162,7 @@ impl Opcode for Call {
         } else {
             0
         } + memory_expansion_gas_cost(
-            geth_step.memory.word_size() as u64,
+            current_call_ctx.memory.word_size() as u64,
             next_memory_word_size,
         );
         let callee_gas_left = eip150_gas(geth_step.gas.0 - gas_cost, geth_step.stack.last()?);

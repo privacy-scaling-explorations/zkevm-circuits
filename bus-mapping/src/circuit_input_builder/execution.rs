@@ -1,5 +1,6 @@
 //! Execution step related module.
 
+use crate::circuit_input_builder::CallContext;
 use crate::{error::ExecError, exec_trace::OperationRef, operation::RWCounter};
 use eth_types::{
     evm_types::{Gas, GasCost, OpcodeId, ProgramCounter},
@@ -46,7 +47,7 @@ impl ExecStep {
     /// Create a new Self from a `GethExecStep`.
     pub fn new(
         step: &GethExecStep,
-        call_index: usize,
+        call_ctx: &CallContext,
         rwc: RWCounter,
         reversible_write_counter: usize,
         log_id: usize,
@@ -55,11 +56,11 @@ impl ExecStep {
             exec_state: ExecState::Op(step.op),
             pc: step.pc,
             stack_size: step.stack.0.len(),
-            memory_size: step.memory.0.len(),
+            memory_size: call_ctx.memory.len(),
             gas_left: step.gas,
             gas_cost: step.gas_cost,
             gas_refund: Gas(0),
-            call_index,
+            call_index: call_ctx.index,
             rwc,
             reversible_write_counter,
             log_id,

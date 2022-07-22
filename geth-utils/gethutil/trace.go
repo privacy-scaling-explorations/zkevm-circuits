@@ -121,6 +121,7 @@ type TraceConfig struct {
 	Block         Block                      `json:"block_constants"`
 	Accounts      map[common.Address]Account `json:"accounts"`
 	Transactions  []Transaction              `json:"transactions"`
+	LoggerConfig  *logger.Config             `json:"logger_config"`
 }
 
 func Trace(config TraceConfig) ([]*ExecutionResult, error) {
@@ -213,7 +214,7 @@ func Trace(config TraceConfig) ([]*ExecutionResult, error) {
 	// Run the transactions with tracing enabled.
 	executionResults := make([]*ExecutionResult, len(config.Transactions))
 	for i, message := range messages {
-		tracer := logger.NewStructLogger(&logger.Config{EnableMemory: true})
+		tracer := logger.NewStructLogger(config.LoggerConfig)
 		evm := vm.NewEVM(blockCtx, core.NewEVMTxContext(message), stateDB, &chainConfig, vm.Config{Debug: true, Tracer: tracer, NoBaseFee: true})
 
 		result, err := core.ApplyMessage(evm, message, new(core.GasPool).AddGas(message.Gas()))
