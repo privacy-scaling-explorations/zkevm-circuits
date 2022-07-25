@@ -195,7 +195,7 @@ pub mod test {
         bytecode_table: [Column<Advice>; 5],
         block_table: [Column<Advice>; 3],
         copy_table: CopyCircuit<F>,
-        evm_circuit: EvmCircuit<F>,
+        pub evm_circuit: EvmCircuit<F>,
     }
 
     impl<F: Field> TestCircuitConfig<F> {
@@ -513,5 +513,84 @@ pub mod test {
         block: Block<F>,
     ) -> Result<(), Vec<VerifyFailure>> {
         run_test_circuit(block, FixedTableTag::iter().collect())
+    }
+}
+
+#[cfg(test)]
+mod evm_circuit_stats {
+    use super::test::*;
+    use super::*;
+    use crate::evm_circuit::step::ExecutionState;
+    use eth_types::{bytecode, evm_types::OpcodeId, geth_types::GethData};
+    use halo2_proofs::pairing::bn256::Fr;
+    use halo2_proofs::plonk::ConstraintSystem;
+    use mock::test_ctx::{helpers::*, TestContext};
+    use strum::IntoEnumIterator;
+
+    /// This function prints to stdout a table with all the implemented states
+    /// and their responsible opcodes with the following stats:
+    /// - height: number of rows used by the execution state
+    /// - gas: gas value used for the opcode execution
+    /// - height/gas: ratio between circuit cost and gas cost
+    ///
+    /// Run with:
+    /// `cargo test -p zkevm-circuits --release get_evm_states_stats --
+    /// --nocapture --ignored`
+    #[ignore]
+    #[test]
+    pub fn get_evm_states_stats() {
+        let mut meta = ConstraintSystem::<Fr>::default();
+        let circuit = TestCircuit::configure(&mut meta);
+
+        let mut implemented_states = Vec::new();
+        for state in ExecutionState::iter() {
+            let height = circuit.evm_circuit.execution.get_step_height_option(state);
+            if let Some(h) = height {
+                implemented_states.push((state, h));
+            }
+        }
+
+        let mut stats = Vec::new();
+        for (state, h) in implemented_states {
+            for opcode in state.responsible_opcodes() {
+                let mut code = bytecode! {
+                    PUSH2(0x8000)
+                    PUSH2(0x00)
+                    PUSH2(0x10)
+                    PUSH2(0x20)
+                    PUSH2(0x30)
+                    PUSH2(0x40)
+                    PUSH2(0x50)
+                };
+                code.write_op(opcode);
+                code.write_op(OpcodeId::STOP);
+                let block: GethData = TestContext::<2, 1>::new(
+                    None,
+                    account_0_code_account_1_no_code(code),
+                    tx_from_1_to_0,
+                    |block, _tx| block.number(0xcafeu64),
+                )
+                .unwrap()
+                .into();
+                let gas_cost = block.geth_traces[0].struct_logs[7].gas_cost.0;
+                stats.push((state, opcode, h, gas_cost));
+            }
+        }
+
+        println!(
+            "| {: <14} | {: <14} | {: <2} | {: >6} | {: <5} |",
+            "state", "opcode", "h", "g", "h/g"
+        );
+        println!("| ---            | ---            | ---|    --- | ---   |");
+        for (state, opcode, height, gas_cost) in stats {
+            println!(
+                "| {: <14} | {: <14} | {: >2} | {: >6} | {: >1.3} |",
+                format!("{:?}", state),
+                format!("{:?}", opcode),
+                height,
+                gas_cost,
+                height as f64 / gas_cost as f64
+            );
+        }
     }
 }
