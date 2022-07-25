@@ -7,7 +7,7 @@ use std::marker::PhantomData;
 
 use crate::{
     helpers::get_is_extension_node,
-    param::{KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH, IS_BRANCH_S_PLACEHOLDER_POS, IS_BRANCH_C_PLACEHOLDER_POS, LAYOUT_OFFSET}, mpt::MainCols,
+    param::{KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH, IS_BRANCH_S_PLACEHOLDER_POS, IS_BRANCH_C_PLACEHOLDER_POS, RLP_NUM}, mpt::MainCols,
 };
 
 #[derive(Clone, Debug)]
@@ -82,9 +82,9 @@ impl<F: Field> BranchHashInParentConfig<F> {
             let is_last_branch_child = meta.query_advice(is_last_branch_child, Rotation::cur());
 
             // When placeholder branch, we don't check its hash in a parent.
-            let mut is_branch_placeholder = meta.query_advice(s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - LAYOUT_OFFSET], Rotation(-16));
+            let mut is_branch_placeholder = meta.query_advice(s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM], Rotation(-16));
             if !is_s {
-                is_branch_placeholder = meta.query_advice(s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - LAYOUT_OFFSET], Rotation(-16));
+                is_branch_placeholder = meta.query_advice(s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM], Rotation(-16));
             }
 
             let is_extension_node = get_is_extension_node(meta, s_main.bytes, -16);

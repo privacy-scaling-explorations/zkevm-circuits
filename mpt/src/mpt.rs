@@ -18,7 +18,7 @@ use crate::{
     branch_rlc::BranchRLCConfig,
     branch_rlc_init::BranchRLCInitConfig,
     helpers::bytes_into_rlc,
-    param::{COUNTER_WITNESS_LEN, IS_NON_EXISTING_ACCOUNT_POS, LAYOUT_OFFSET, NOT_FIRST_LEVEL_POS},
+    param::{COUNTER_WITNESS_LEN, IS_NON_EXISTING_ACCOUNT_POS, RLP_NUM, NOT_FIRST_LEVEL_POS},
 };
 
 /*
@@ -762,7 +762,7 @@ impl<F: Field> MPTConfig<F> {
                 || format!("assign s_advice {}", idx),
                 self.s_main.bytes[idx],
                 offset,
-                || Ok(F::from(row[LAYOUT_OFFSET + idx] as u64)),
+                || Ok(F::from(row[RLP_NUM + idx] as u64)),
             )?;
         }
 
@@ -785,7 +785,7 @@ impl<F: Field> MPTConfig<F> {
         )?;
 
         for (idx, _c) in self.c_main.bytes.iter().enumerate() {
-            let val = get_val(WITNESS_ROW_WIDTH / 2 + LAYOUT_OFFSET + idx);
+            let val = get_val(WITNESS_ROW_WIDTH / 2 + RLP_NUM + idx);
             region.assign_advice(
                 || format!("assign c_advice {}", idx),
                 self.c_main.bytes[idx],

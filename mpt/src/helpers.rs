@@ -8,7 +8,7 @@ use crate::{
     mpt::FixedTableTag,
     param::{
         HASH_WIDTH, IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS, IS_EXT_LONG_ODD_C16_POS,
-        IS_EXT_LONG_ODD_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS, LAYOUT_OFFSET,
+        IS_EXT_LONG_ODD_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS, RLP_NUM,
         R_TABLE_LEN,
     },
 };
@@ -178,27 +178,27 @@ pub fn get_is_extension_node<F: Field>(
     // Constraints on selectors are in extension_node.
     // NOTE: even and odd refers to number of nibbles that are compactly encoded.
     let is_ext_short_c16 = meta.query_advice(
-        s_advices[IS_EXT_SHORT_C16_POS - LAYOUT_OFFSET],
+        s_advices[IS_EXT_SHORT_C16_POS - RLP_NUM],
         Rotation(rot),
     );
     let is_ext_short_c1 = meta.query_advice(
-        s_advices[IS_EXT_SHORT_C1_POS - LAYOUT_OFFSET],
+        s_advices[IS_EXT_SHORT_C1_POS - RLP_NUM],
         Rotation(rot),
     );
     let is_ext_long_even_c16 = meta.query_advice(
-        s_advices[IS_EXT_LONG_EVEN_C16_POS - LAYOUT_OFFSET],
+        s_advices[IS_EXT_LONG_EVEN_C16_POS - RLP_NUM],
         Rotation(rot),
     );
     let is_ext_long_even_c1 = meta.query_advice(
-        s_advices[IS_EXT_LONG_EVEN_C1_POS - LAYOUT_OFFSET],
+        s_advices[IS_EXT_LONG_EVEN_C1_POS - RLP_NUM],
         Rotation(rot),
     );
     let is_ext_long_odd_c16 = meta.query_advice(
-        s_advices[IS_EXT_LONG_ODD_C16_POS - LAYOUT_OFFSET],
+        s_advices[IS_EXT_LONG_ODD_C16_POS - RLP_NUM],
         Rotation(rot),
     );
     let is_ext_long_odd_c1 = meta.query_advice(
-        s_advices[IS_EXT_LONG_ODD_C1_POS - LAYOUT_OFFSET],
+        s_advices[IS_EXT_LONG_ODD_C1_POS - RLP_NUM],
         Rotation(rot),
     );
 
@@ -216,11 +216,11 @@ pub fn get_is_extension_node_one_nibble<F: Field>(
     rot: i32,
 ) -> Expression<F> {
     let is_ext_short_c16 = meta.query_advice(
-        s_advices[IS_EXT_SHORT_C16_POS - LAYOUT_OFFSET],
+        s_advices[IS_EXT_SHORT_C16_POS - RLP_NUM],
         Rotation(rot),
     );
     let is_ext_short_c1 = meta.query_advice(
-        s_advices[IS_EXT_SHORT_C1_POS - LAYOUT_OFFSET],
+        s_advices[IS_EXT_SHORT_C1_POS - RLP_NUM],
         Rotation(rot),
     );
 
