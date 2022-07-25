@@ -31,8 +31,9 @@ impl Opcode for Return {
                 let return_offset = current_call.return_data_offset as usize;
                 // already resized in Call::reconstruct_memory
                 // caller_ctx.memory.extend_at_least(return_offset + length);
-                caller_ctx.memory.0[return_offset..return_offset + length]
-                    .copy_from_slice(&memory.0[offset..offset + length]);
+                let copy_len = std::cmp::min(current_call.return_data_length as usize, length);
+                caller_ctx.memory.0[return_offset..return_offset + copy_len]
+                    .copy_from_slice(&memory.0[offset..offset + copy_len]);
                 caller_ctx.return_data.resize(length as usize, 0);
                 caller_ctx
                     .return_data
