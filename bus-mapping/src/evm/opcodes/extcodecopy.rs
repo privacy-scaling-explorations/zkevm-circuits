@@ -11,7 +11,6 @@ pub(crate) struct Extcodecopy;
 
 impl Opcode for Extcodecopy {
     fn gen_associated_ops(
-        &self,
         state: &mut CircuitInputStateRef,
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {

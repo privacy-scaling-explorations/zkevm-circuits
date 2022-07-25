@@ -85,7 +85,6 @@ pub trait Opcode: Debug {
     /// [`StorageOp`](crate::operation::StorageOp)s associated to the Opcode
     /// is implemented for.
     fn gen_associated_ops(
-        &self,
         state: &mut CircuitInputStateRef,
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error>;
@@ -96,7 +95,6 @@ struct Dummy;
 
 impl Opcode for Dummy {
     fn gen_associated_ops(
-        &self,
         state: &mut CircuitInputStateRef,
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
@@ -104,137 +102,137 @@ impl Opcode for Dummy {
     }
 }
 
-fn down_cast_to_opcode(opcode_id: &OpcodeId) -> &dyn Opcode {
+type FnGenAssociatedOps = fn(
+    state: &mut CircuitInputStateRef,
+    geth_steps: &[GethExecStep],
+) -> Result<Vec<ExecStep>, Error>;
+
+fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
     if opcode_id.is_push() {
-        return &StackOnlyOpcode::<0, 1>;
+        return StackOnlyOpcode::<0, 1>::gen_associated_ops;
     }
 
     match opcode_id {
-        OpcodeId::STOP => &Stop,
-        OpcodeId::ADD => &StackOnlyOpcode::<2, 1>,
-        OpcodeId::MUL => &StackOnlyOpcode::<2, 1>,
-        OpcodeId::SUB => &StackOnlyOpcode::<2, 1>,
-        OpcodeId::DIV => &StackOnlyOpcode::<2, 1>,
-        OpcodeId::SDIV => &StackOnlyOpcode::<2, 1>,
-        OpcodeId::MOD => &StackOnlyOpcode::<2, 1>,
-        OpcodeId::SMOD => &StackOnlyOpcode::<2, 1>,
-        OpcodeId::ADDMOD => &StackOnlyOpcode::<3, 1>,
-        OpcodeId::MULMOD => &StackOnlyOpcode::<3, 1>,
-        OpcodeId::EXP => &StackOnlyOpcode::<2, 1>,
-        OpcodeId::SIGNEXTEND => &StackOnlyOpcode::<2, 1>,
-        OpcodeId::LT => &StackOnlyOpcode::<2, 1>,
-        OpcodeId::GT => &StackOnlyOpcode::<2, 1>,
-        OpcodeId::SLT => &StackOnlyOpcode::<2, 1>,
-        OpcodeId::SGT => &StackOnlyOpcode::<2, 1>,
-        OpcodeId::EQ => &StackOnlyOpcode::<2, 1>,
-        OpcodeId::ISZERO => &StackOnlyOpcode::<1, 1>,
-        OpcodeId::AND => &StackOnlyOpcode::<2, 1>,
-        OpcodeId::OR => &StackOnlyOpcode::<2, 1>,
-        OpcodeId::XOR => &StackOnlyOpcode::<2, 1>,
-        OpcodeId::NOT => &StackOnlyOpcode::<1, 1>,
-        OpcodeId::BYTE => &StackOnlyOpcode::<2, 1>,
-        OpcodeId::SHL => &StackOnlyOpcode::<2, 1>,
-        OpcodeId::SHR => &StackOnlyOpcode::<2, 1>,
-        OpcodeId::SAR => &StackOnlyOpcode::<2, 1>,
-        OpcodeId::SHA3 => &Sha3,
-        OpcodeId::ADDRESS => &StackOnlyOpcode::<0, 1>,
-        OpcodeId::BALANCE => &StackOnlyOpcode::<1, 1>,
-        OpcodeId::ORIGIN => &Origin,
-        OpcodeId::CALLER => &Caller,
-        OpcodeId::CALLVALUE => &Callvalue,
-        OpcodeId::CALLDATASIZE => &Calldatasize,
-        OpcodeId::CALLDATALOAD => &Calldataload,
-        OpcodeId::CALLDATACOPY => &Calldatacopy,
-        OpcodeId::GASPRICE => &GasPrice,
-        OpcodeId::CODECOPY => &Codecopy,
-        OpcodeId::CODESIZE => &Codesize,
-        OpcodeId::EXTCODESIZE => &StackOnlyOpcode::<1, 1>,
-        OpcodeId::EXTCODECOPY => &Extcodecopy,
-        OpcodeId::RETURNDATASIZE => &StackOnlyOpcode::<0, 1>,
-        OpcodeId::RETURNDATACOPY => &Returndatacopy,
-        OpcodeId::EXTCODEHASH => &Extcodehash,
-        OpcodeId::BLOCKHASH => &StackOnlyOpcode::<1, 1>,
-        OpcodeId::COINBASE => &StackOnlyOpcode::<0, 1>,
-        OpcodeId::TIMESTAMP => &StackOnlyOpcode::<0, 1>,
-        OpcodeId::NUMBER => &StackOnlyOpcode::<0, 1>,
-        OpcodeId::DIFFICULTY => &StackOnlyOpcode::<0, 1>,
-        OpcodeId::GASLIMIT => &StackOnlyOpcode::<0, 1>,
-        OpcodeId::CHAINID => &StackOnlyOpcode::<0, 1>,
-        OpcodeId::SELFBALANCE => &Selfbalance,
-        OpcodeId::BASEFEE => &StackOnlyOpcode::<0, 1>,
-        OpcodeId::POP => &StackOnlyOpcode::<1, 0>,
-        OpcodeId::MLOAD => &Mload,
-        OpcodeId::MSTORE => &Mstore::<false>,
-        OpcodeId::MSTORE8 => &Mstore::<true>,
-        OpcodeId::SLOAD => &Sload,
-        OpcodeId::SSTORE => &Sstore,
-        OpcodeId::JUMP => &StackOnlyOpcode::<1, 0>,
-        OpcodeId::JUMPI => &StackOnlyOpcode::<2, 0>,
-        OpcodeId::PC => &StackOnlyOpcode::<0, 1>,
-        OpcodeId::MSIZE => &StackOnlyOpcode::<0, 1>,
-        OpcodeId::GAS => &StackOnlyOpcode::<0, 1>,
-        OpcodeId::JUMPDEST => &Dummy,
-        OpcodeId::DUP1 => &Dup::<1>,
-        OpcodeId::DUP2 => &Dup::<2>,
-        OpcodeId::DUP3 => &Dup::<3>,
-        OpcodeId::DUP4 => &Dup::<4>,
-        OpcodeId::DUP5 => &Dup::<5>,
-        OpcodeId::DUP6 => &Dup::<6>,
-        OpcodeId::DUP7 => &Dup::<7>,
-        OpcodeId::DUP8 => &Dup::<8>,
-        OpcodeId::DUP9 => &Dup::<9>,
-        OpcodeId::DUP10 => &Dup::<10>,
-        OpcodeId::DUP11 => &Dup::<11>,
-        OpcodeId::DUP12 => &Dup::<12>,
-        OpcodeId::DUP13 => &Dup::<13>,
-        OpcodeId::DUP14 => &Dup::<14>,
-        OpcodeId::DUP15 => &Dup::<15>,
-        OpcodeId::DUP16 => &Dup::<16>,
-        OpcodeId::SWAP1 => &Swap::<1>,
-        OpcodeId::SWAP2 => &Swap::<2>,
-        OpcodeId::SWAP3 => &Swap::<3>,
-        OpcodeId::SWAP4 => &Swap::<4>,
-        OpcodeId::SWAP5 => &Swap::<5>,
-        OpcodeId::SWAP6 => &Swap::<6>,
-        OpcodeId::SWAP7 => &Swap::<7>,
-        OpcodeId::SWAP8 => &Swap::<8>,
-        OpcodeId::SWAP9 => &Swap::<9>,
-        OpcodeId::SWAP10 => &Swap::<10>,
-        OpcodeId::SWAP11 => &Swap::<11>,
-        OpcodeId::SWAP12 => &Swap::<12>,
-        OpcodeId::SWAP13 => &Swap::<13>,
-        OpcodeId::SWAP14 => &Swap::<14>,
-        OpcodeId::SWAP15 => &Swap::<15>,
-        OpcodeId::SWAP16 => &Swap::<16>,
-        OpcodeId::LOG0 => &Log,
-        OpcodeId::LOG1 => &Log,
-        OpcodeId::LOG2 => &Log,
-        OpcodeId::LOG3 => &Log,
-        OpcodeId::LOG4 => &Log,
-        // OpcodeId::CREATE => {},
-        OpcodeId::CALL => &Call,
-        // OpcodeId::CALLCODE => {},
-        OpcodeId::RETURN => &Return,
-        // OpcodeId::DELEGATECALL => {},
-        // OpcodeId::CREATE2 => {},
-        // OpcodeId::STATICCALL => {},
-        // REVERT is almost the same as RETURN
-        OpcodeId::REVERT => &Return,
+        OpcodeId::STOP => Stop::gen_associated_ops,
+        OpcodeId::ADD => StackOnlyOpcode::<2, 1>::gen_associated_ops,
+        OpcodeId::MUL => StackOnlyOpcode::<2, 1>::gen_associated_ops,
+        OpcodeId::SUB => StackOnlyOpcode::<2, 1>::gen_associated_ops,
+        OpcodeId::DIV => StackOnlyOpcode::<2, 1>::gen_associated_ops,
+        OpcodeId::SDIV => StackOnlyOpcode::<2, 1>::gen_associated_ops,
+        OpcodeId::MOD => StackOnlyOpcode::<2, 1>::gen_associated_ops,
+        OpcodeId::SMOD => StackOnlyOpcode::<2, 1>::gen_associated_ops,
+        OpcodeId::ADDMOD => StackOnlyOpcode::<3, 1>::gen_associated_ops,
+        OpcodeId::MULMOD => StackOnlyOpcode::<3, 1>::gen_associated_ops,
+        OpcodeId::EXP => StackOnlyOpcode::<2, 1>::gen_associated_ops,
+        OpcodeId::SIGNEXTEND => StackOnlyOpcode::<2, 1>::gen_associated_ops,
+        OpcodeId::LT => StackOnlyOpcode::<2, 1>::gen_associated_ops,
+        OpcodeId::GT => StackOnlyOpcode::<2, 1>::gen_associated_ops,
+        OpcodeId::SLT => StackOnlyOpcode::<2, 1>::gen_associated_ops,
+        OpcodeId::SGT => StackOnlyOpcode::<2, 1>::gen_associated_ops,
+        OpcodeId::EQ => StackOnlyOpcode::<2, 1>::gen_associated_ops,
+        OpcodeId::ISZERO => StackOnlyOpcode::<1, 1>::gen_associated_ops,
+        OpcodeId::AND => StackOnlyOpcode::<2, 1>::gen_associated_ops,
+        OpcodeId::OR => StackOnlyOpcode::<2, 1>::gen_associated_ops,
+        OpcodeId::XOR => StackOnlyOpcode::<2, 1>::gen_associated_ops,
+        OpcodeId::NOT => StackOnlyOpcode::<1, 1>::gen_associated_ops,
+        OpcodeId::BYTE => StackOnlyOpcode::<2, 1>::gen_associated_ops,
+        OpcodeId::SHL => StackOnlyOpcode::<2, 1>::gen_associated_ops,
+        OpcodeId::SHR => StackOnlyOpcode::<2, 1>::gen_associated_ops,
+        OpcodeId::SAR => StackOnlyOpcode::<2, 1>::gen_associated_ops,
+        OpcodeId::SHA3 => Sha3::gen_associated_ops,
+        OpcodeId::ADDRESS => StackOnlyOpcode::<0, 1>::gen_associated_ops,
+        OpcodeId::BALANCE => StackOnlyOpcode::<1, 1>::gen_associated_ops,
+        OpcodeId::ORIGIN => Origin::gen_associated_ops,
+        OpcodeId::CALLER => Caller::gen_associated_ops,
+        OpcodeId::CALLVALUE => Callvalue::gen_associated_ops,
+        OpcodeId::CALLDATASIZE => Calldatasize::gen_associated_ops,
+        OpcodeId::CALLDATALOAD => Calldataload::gen_associated_ops,
+        OpcodeId::CALLDATACOPY => Calldatacopy::gen_associated_ops,
+        OpcodeId::GASPRICE => GasPrice::gen_associated_ops,
+        OpcodeId::CODECOPY => Codecopy::gen_associated_ops,
+        OpcodeId::CODESIZE => Codesize::gen_associated_ops,
+        OpcodeId::EXTCODESIZE => StackOnlyOpcode::<1, 1>::gen_associated_ops,
+        OpcodeId::EXTCODECOPY => Extcodecopy::gen_associated_ops,
+        OpcodeId::RETURNDATASIZE => StackOnlyOpcode::<0, 1>::gen_associated_ops,
+        OpcodeId::RETURNDATACOPY => Returndatacopy::gen_associated_ops,
+        OpcodeId::EXTCODEHASH => Extcodehash::gen_associated_ops,
+        OpcodeId::BLOCKHASH => StackOnlyOpcode::<1, 1>::gen_associated_ops,
+        OpcodeId::COINBASE => StackOnlyOpcode::<0, 1>::gen_associated_ops,
+        OpcodeId::TIMESTAMP => StackOnlyOpcode::<0, 1>::gen_associated_ops,
+        OpcodeId::NUMBER => StackOnlyOpcode::<0, 1>::gen_associated_ops,
+        OpcodeId::DIFFICULTY => StackOnlyOpcode::<0, 1>::gen_associated_ops,
+        OpcodeId::GASLIMIT => StackOnlyOpcode::<0, 1>::gen_associated_ops,
+        OpcodeId::CHAINID => StackOnlyOpcode::<0, 1>::gen_associated_ops,
+        OpcodeId::SELFBALANCE => Selfbalance::gen_associated_ops,
+        OpcodeId::BASEFEE => StackOnlyOpcode::<0, 1>::gen_associated_ops,
+        OpcodeId::POP => StackOnlyOpcode::<1, 0>::gen_associated_ops,
+        OpcodeId::MLOAD => Mload::gen_associated_ops,
+        OpcodeId::MSTORE => Mstore::<false>::gen_associated_ops,
+        OpcodeId::MSTORE8 => Mstore::<true>::gen_associated_ops,
+        OpcodeId::SLOAD => Sload::gen_associated_ops,
+        OpcodeId::SSTORE => Sstore::gen_associated_ops,
+        OpcodeId::JUMP => StackOnlyOpcode::<1, 0>::gen_associated_ops,
+        OpcodeId::JUMPI => StackOnlyOpcode::<2, 0>::gen_associated_ops,
+        OpcodeId::PC => StackOnlyOpcode::<0, 1>::gen_associated_ops,
+        OpcodeId::MSIZE => StackOnlyOpcode::<0, 1>::gen_associated_ops,
+        OpcodeId::GAS => StackOnlyOpcode::<0, 1>::gen_associated_ops,
+        OpcodeId::JUMPDEST => Dummy::gen_associated_ops,
+        OpcodeId::DUP1 => Dup::<1>::gen_associated_ops,
+        OpcodeId::DUP2 => Dup::<2>::gen_associated_ops,
+        OpcodeId::DUP3 => Dup::<3>::gen_associated_ops,
+        OpcodeId::DUP4 => Dup::<4>::gen_associated_ops,
+        OpcodeId::DUP5 => Dup::<5>::gen_associated_ops,
+        OpcodeId::DUP6 => Dup::<6>::gen_associated_ops,
+        OpcodeId::DUP7 => Dup::<7>::gen_associated_ops,
+        OpcodeId::DUP8 => Dup::<8>::gen_associated_ops,
+        OpcodeId::DUP9 => Dup::<9>::gen_associated_ops,
+        OpcodeId::DUP10 => Dup::<10>::gen_associated_ops,
+        OpcodeId::DUP11 => Dup::<11>::gen_associated_ops,
+        OpcodeId::DUP12 => Dup::<12>::gen_associated_ops,
+        OpcodeId::DUP13 => Dup::<13>::gen_associated_ops,
+        OpcodeId::DUP14 => Dup::<14>::gen_associated_ops,
+        OpcodeId::DUP15 => Dup::<15>::gen_associated_ops,
+        OpcodeId::DUP16 => Dup::<16>::gen_associated_ops,
+        OpcodeId::SWAP1 => Swap::<1>::gen_associated_ops,
+        OpcodeId::SWAP2 => Swap::<2>::gen_associated_ops,
+        OpcodeId::SWAP3 => Swap::<3>::gen_associated_ops,
+        OpcodeId::SWAP4 => Swap::<4>::gen_associated_ops,
+        OpcodeId::SWAP5 => Swap::<5>::gen_associated_ops,
+        OpcodeId::SWAP6 => Swap::<6>::gen_associated_ops,
+        OpcodeId::SWAP7 => Swap::<7>::gen_associated_ops,
+        OpcodeId::SWAP8 => Swap::<8>::gen_associated_ops,
+        OpcodeId::SWAP9 => Swap::<9>::gen_associated_ops,
+        OpcodeId::SWAP10 => Swap::<10>::gen_associated_ops,
+        OpcodeId::SWAP11 => Swap::<11>::gen_associated_ops,
+        OpcodeId::SWAP12 => Swap::<12>::gen_associated_ops,
+        OpcodeId::SWAP13 => Swap::<13>::gen_associated_ops,
+        OpcodeId::SWAP14 => Swap::<14>::gen_associated_ops,
+        OpcodeId::SWAP15 => Swap::<15>::gen_associated_ops,
+        OpcodeId::SWAP16 => Swap::<16>::gen_associated_ops,
+        OpcodeId::LOG0 => Log::gen_associated_ops,
+        OpcodeId::LOG1 => Log::gen_associated_ops,
+        OpcodeId::LOG2 => Log::gen_associated_ops,
+        OpcodeId::LOG3 => Log::gen_associated_ops,
+        OpcodeId::LOG4 => Log::gen_associated_ops,
+        OpcodeId::CALL => Call::gen_associated_ops,
+        OpcodeId::RETURN => Return::gen_associated_ops,
+        // REVERT is almost the same as RETURN)
+        OpcodeId::REVERT => Return::gen_associated_ops,
         OpcodeId::SELFDESTRUCT => {
             warn!("Using dummy gen_selfdestruct_ops for opcode SELFDESTRUCT");
-            &DummySelfDestruct
+            DummySelfDestruct::gen_associated_ops
         }
         OpcodeId::CALLCODE | OpcodeId::DELEGATECALL | OpcodeId::STATICCALL => {
             warn!("Using dummy gen_call_ops for opcode {:?}", opcode_id);
-            &DummyCall
+            DummyCall::gen_associated_ops
         }
         OpcodeId::CREATE | OpcodeId::CREATE2 => {
             warn!("Using dummy gen_create_ops for opcode {:?}", opcode_id);
-            &DummyCreate
+            DummyCreate::gen_associated_ops
         }
         _ => {
             warn!("Using dummy gen_associated_ops for opcode {:?}", opcode_id);
-            &Dummy
+            Dummy::gen_associated_ops
         }
     }
 }
@@ -247,7 +245,7 @@ pub fn gen_associated_ops(
     state: &mut CircuitInputStateRef,
     geth_steps: &[GethExecStep],
 ) -> Result<Vec<ExecStep>, Error> {
-    let opcode = down_cast_to_opcode(opcode_id);
+    let fn_gen_associated_ops = fn_gen_associated_ops(opcode_id);
 
     let memory_enabled = !geth_steps.iter().all(|s| s.memory.is_empty());
     if memory_enabled {
@@ -259,7 +257,7 @@ pub fn gen_associated_ops(
         );
     }
 
-    let steps = opcode.gen_associated_ops(state, geth_steps)?;
+    let steps = fn_gen_associated_ops(state, geth_steps)?;
 
     if geth_steps.len() > 1 {
         // if !geth_steps[1].memory.borrow().is_empty() {
@@ -535,7 +533,6 @@ struct DummyCall;
 
 impl Opcode for DummyCall {
     fn gen_associated_ops(
-        &self,
         state: &mut CircuitInputStateRef,
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
@@ -591,7 +588,6 @@ struct DummySelfDestruct;
 
 impl Opcode for DummySelfDestruct {
     fn gen_associated_ops(
-        &self,
         state: &mut CircuitInputStateRef,
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {

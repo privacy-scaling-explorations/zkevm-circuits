@@ -17,7 +17,6 @@ pub(crate) struct Stop;
 
 impl Opcode for Stop {
     fn gen_associated_ops(
-        &self,
         state: &mut CircuitInputStateRef,
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {

@@ -8,7 +8,6 @@ pub(crate) struct Returndatacopy;
 
 impl Opcode for Returndatacopy {
     fn gen_associated_ops(
-        &self,
         state: &mut CircuitInputStateRef,
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {

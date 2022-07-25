@@ -13,7 +13,6 @@ pub(crate) struct Extcodehash;
 
 impl Opcode for Extcodehash {
     fn gen_associated_ops(
-        &self,
         state: &mut CircuitInputStateRef,
         steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {

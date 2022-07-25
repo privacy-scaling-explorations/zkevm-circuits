@@ -14,7 +14,6 @@ pub(crate) struct Codecopy;
 
 impl Opcode for Codecopy {
     fn gen_associated_ops(
-        &self,
         state: &mut CircuitInputStateRef,
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {

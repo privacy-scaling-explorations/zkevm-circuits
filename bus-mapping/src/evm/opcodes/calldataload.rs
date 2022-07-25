@@ -12,7 +12,6 @@ pub(crate) struct Calldataload;
 
 impl Opcode for Calldataload {
     fn gen_associated_ops(
-        &self,
         state: &mut CircuitInputStateRef,
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {

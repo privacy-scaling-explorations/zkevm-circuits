@@ -8,7 +8,6 @@ pub(crate) struct Return;
 
 impl Opcode for Return {
     fn gen_associated_ops(
-        &self,
         state: &mut CircuitInputStateRef,
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {

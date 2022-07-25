@@ -13,7 +13,6 @@ pub(crate) struct Calldatasize;
 
 impl Opcode for Calldatasize {
     fn gen_associated_ops(
-        &self,
         state: &mut CircuitInputStateRef,
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {

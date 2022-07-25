@@ -9,7 +9,6 @@ pub(crate) struct Sha3;
 
 impl Opcode for Sha3 {
     fn gen_associated_ops(
-        &self,
         state: &mut CircuitInputStateRef,
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
@@ -17,7 +16,7 @@ impl Opcode for Sha3 {
         let geth_step = &geth_steps[0];
 
         log::warn!("incomplete SHA3 implementation");
-        let steps = StackOnlyOpcode::<2, 1>.gen_associated_ops(state, geth_steps)?;
+        let steps = StackOnlyOpcode::<2, 1>::gen_associated_ops(state, geth_steps)?;
 
         // reconstruction
         let offset = geth_step.stack.nth_last(0)?.as_usize();
