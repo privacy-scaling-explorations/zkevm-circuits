@@ -3,7 +3,7 @@ use crate::{
     evm_circuit::{
         param::{MAX_STEP_HEIGHT, STEP_WIDTH},
         util::{Cell, RandomLinearCombination},
-        witness::{Block, Call, CodeSource, ExecStep, Transaction},
+        witness::{Block, Call, ExecStep, Transaction},
     },
     util::Expr,
 };
@@ -13,23 +13,21 @@ use halo2_proofs::{
     arithmetic::FieldExt,
     plonk::{Advice, Column, ConstraintSystem, Error, Expression},
 };
+use strum::IntoEnumIterator;
+use strum_macros::EnumIter;
 
 #[allow(non_camel_case_types)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, EnumIter)]
 pub enum ExecutionState {
     // Internal state
     BeginTx,
     EndTx,
     EndBlock,
-    CopyCodeToMemory,
-    CopyToMemory,
-    CopyToLog,
     // Opcode successful cases
     STOP,
     ADD_SUB,     // ADD, SUB
     MUL_DIV_MOD, // MUL, DIV, MOD
-    SDIV,
-    SMOD,
+    SDIV_SMOD,   // SDIV, SMOD
     ADDMOD,
     MULMOD,
     EXP,
@@ -79,7 +77,7 @@ pub enum ExecutionState {
     PUSH, // PUSH1, PUSH2, ..., PUSH32
     DUP,  // DUP1, DUP2, ..., DUP16
     SWAP, // SWAP1, SWAP2, ..., SWAP16
-    LOG,  // LOG1, LOG2, ..., LOG5
+    LOG,  // LOG0, LOG1, ..., LOG4
     CREATE,
     CALL,
     CALLCODE,
@@ -132,124 +130,18 @@ impl ExecutionState {
         *self as u64
     }
 
-    pub(crate) fn iterator() -> impl Iterator<Item = Self> {
-        [
-            Self::BeginTx,
-            Self::EndTx,
-            Self::EndBlock,
-            Self::CopyCodeToMemory,
-            Self::CopyToMemory,
-            Self::CopyToLog,
-            Self::STOP,
-            Self::ADD_SUB,
-            Self::MUL_DIV_MOD,
-            Self::SDIV,
-            Self::SMOD,
-            Self::ADDMOD,
-            Self::MULMOD,
-            Self::EXP,
-            Self::SIGNEXTEND,
-            Self::CMP,
-            Self::SCMP,
-            Self::ISZERO,
-            Self::BITWISE,
-            Self::NOT,
-            Self::BYTE,
-            Self::SHL,
-            Self::SHR,
-            Self::SAR,
-            Self::SHA3,
-            Self::ADDRESS,
-            Self::BALANCE,
-            Self::ORIGIN,
-            Self::CALLER,
-            Self::CALLVALUE,
-            Self::CALLDATALOAD,
-            Self::CALLDATASIZE,
-            Self::CALLDATACOPY,
-            Self::CODESIZE,
-            Self::CODECOPY,
-            Self::GASPRICE,
-            Self::EXTCODESIZE,
-            Self::EXTCODECOPY,
-            Self::RETURNDATASIZE,
-            Self::RETURNDATACOPY,
-            Self::EXTCODEHASH,
-            Self::BLOCKHASH,
-            Self::BLOCKCTXU64,
-            Self::BLOCKCTXU160,
-            Self::BLOCKCTXU256,
-            Self::CHAINID,
-            Self::SELFBALANCE,
-            Self::POP,
-            Self::MEMORY,
-            Self::SLOAD,
-            Self::SSTORE,
-            Self::JUMP,
-            Self::JUMPI,
-            Self::PC,
-            Self::MSIZE,
-            Self::GAS,
-            Self::JUMPDEST,
-            Self::PUSH,
-            Self::DUP,
-            Self::SWAP,
-            Self::LOG,
-            Self::CREATE,
-            Self::CALL,
-            Self::CALLCODE,
-            Self::RETURN,
-            Self::DELEGATECALL,
-            Self::CREATE2,
-            Self::STATICCALL,
-            Self::REVERT,
-            Self::SELFDESTRUCT,
-            Self::ErrorInvalidOpcode,
-            Self::ErrorStackOverflow,
-            Self::ErrorStackUnderflow,
-            Self::ErrorWriteProtection,
-            Self::ErrorDepth,
-            Self::ErrorInsufficientBalance,
-            Self::ErrorContractAddressCollision,
-            Self::ErrorInvalidCreationCode,
-            Self::ErrorMaxCodeSizeExceeded,
-            Self::ErrorInvalidJump,
-            Self::ErrorReturnDataOutOfBound,
-            Self::ErrorOutOfGasConstant,
-            Self::ErrorOutOfGasStaticMemoryExpansion,
-            Self::ErrorOutOfGasDynamicMemoryExpansion,
-            Self::ErrorOutOfGasMemoryCopy,
-            Self::ErrorOutOfGasAccountAccess,
-            Self::ErrorOutOfGasCodeStore,
-            Self::ErrorOutOfGasLOG,
-            Self::ErrorOutOfGasEXP,
-            Self::ErrorOutOfGasSHA3,
-            Self::ErrorOutOfGasEXTCODECOPY,
-            Self::ErrorOutOfGasSLOAD,
-            Self::ErrorOutOfGasSSTORE,
-            Self::ErrorOutOfGasCALL,
-            Self::ErrorOutOfGasCALLCODE,
-            Self::ErrorOutOfGasDELEGATECALL,
-            Self::ErrorOutOfGasCREATE2,
-            Self::ErrorOutOfGasSTATICCALL,
-            Self::ErrorOutOfGasSELFDESTRUCT,
-        ]
-        .iter()
-        .copied()
-    }
-
     pub(crate) fn amount() -> usize {
-        Self::iterator().count()
+        Self::iter().count()
     }
 
-    pub(crate) fn halts(&self) -> bool {
+    pub(crate) fn halts_in_success(&self) -> bool {
+        matches!(self, Self::STOP | Self::RETURN | Self::SELFDESTRUCT)
+    }
+
+    pub(crate) fn halts_in_exception(&self) -> bool {
         matches!(
             self,
-            Self::STOP
-                | Self::RETURN
-                | Self::REVERT
-                | Self::SELFDESTRUCT
-                | Self::ErrorInvalidOpcode
+            Self::ErrorInvalidOpcode
                 | Self::ErrorStackOverflow
                 | Self::ErrorStackUnderflow
                 | Self::ErrorWriteProtection
@@ -281,13 +173,16 @@ impl ExecutionState {
         )
     }
 
+    pub(crate) fn halts(&self) -> bool {
+        self.halts_in_success() || self.halts_in_exception() || matches!(self, Self::REVERT)
+    }
+
     pub(crate) fn responsible_opcodes(&self) -> Vec<OpcodeId> {
         match self {
             Self::STOP => vec![OpcodeId::STOP],
             Self::ADD_SUB => vec![OpcodeId::ADD, OpcodeId::SUB],
             Self::MUL_DIV_MOD => vec![OpcodeId::MUL, OpcodeId::DIV, OpcodeId::MOD],
-            Self::SDIV => vec![OpcodeId::SDIV],
-            Self::SMOD => vec![OpcodeId::SMOD],
+            Self::SDIV_SMOD => vec![OpcodeId::SDIV, OpcodeId::SMOD],
             Self::ADDMOD => vec![OpcodeId::ADDMOD],
             Self::MULMOD => vec![OpcodeId::MULMOD],
             Self::EXP => vec![OpcodeId::EXP],
@@ -440,15 +335,13 @@ pub(crate) struct StepState<F> {
     pub(crate) is_root: Cell<F>,
     /// Whether the call is a create call
     pub(crate) is_create: Cell<F>,
-    // This is the identifier of current executed bytecode, which is used to
-    // lookup current executed code and used to do code copy. In most time,
-    // it would be bytecode_hash, but when it comes to root creation call, the
-    // executed bytecode is actually from transaction calldata, so it might be
-    // tx_id if we decide to lookup different table.
-    // However, how to handle root creation call is yet to be determined, see
-    // issue https://github.com/appliedzkp/zkevm-specs/issues/73 for more
-    // discussion.
-    pub(crate) code_source: Cell<F>,
+    /// Denotes the hash of the bytecode for the current call.
+    /// In the case of a contract creation root call, this denotes the hash of
+    /// the tx calldata.
+    /// In the case of a contract creation internal call, this denotes the hash
+    /// of the chunk of bytes from caller's memory that represent the
+    /// contract init code.
+    pub(crate) code_hash: Cell<F>,
     /// The program counter
     pub(crate) program_counter: Cell<F>,
     /// The stack pointer
@@ -461,12 +354,6 @@ pub(crate) struct StepState<F> {
     pub(crate) reversible_write_counter: Cell<F>,
     /// The counter for log index
     pub(crate) log_id: Cell<F>,
-}
-
-#[derive(Clone, Debug)]
-pub(crate) struct StepRow<F> {
-    pub(crate) qs_byte_lookup: Cell<F>,
-    pub(crate) cells: [Cell<F>; STEP_WIDTH],
 }
 
 #[derive(Clone, Debug)]
@@ -490,7 +377,7 @@ impl<F: FieldExt> Step<F> {
                 call_id: cell_manager.query_cell(CellType::Storage),
                 is_root: cell_manager.query_cell(CellType::Storage),
                 is_create: cell_manager.query_cell(CellType::Storage),
-                code_source: cell_manager.query_cell(CellType::Storage),
+                code_hash: cell_manager.query_cell(CellType::Storage),
                 program_counter: cell_manager.query_cell(CellType::Storage),
                 stack_pointer: cell_manager.query_cell(CellType::Storage),
                 gas_left: cell_manager.query_cell(CellType::Storage),
@@ -548,18 +435,14 @@ impl<F: FieldExt> Step<F> {
         self.state
             .is_create
             .assign(region, offset, Some(F::from(call.is_create as u64)))?;
-        match call.code_source {
-            CodeSource::Account(code_hash) => {
-                self.state.code_source.assign(
-                    region,
-                    offset,
-                    Some(RandomLinearCombination::random_linear_combine(
-                        code_hash.to_le_bytes(),
-                        block.randomness,
-                    )),
-                )?;
-            }
-        }
+        self.state.code_hash.assign(
+            region,
+            offset,
+            Some(RandomLinearCombination::random_linear_combine(
+                call.code_hash.to_le_bytes(),
+                block.randomness,
+            )),
+        )?;
         self.state.program_counter.assign(
             region,
             offset,

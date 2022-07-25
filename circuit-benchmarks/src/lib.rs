@@ -14,6 +14,10 @@ pub mod keccak_permutation;
 
 #[cfg(test)]
 #[cfg(feature = "benches")]
+pub mod tx_circuit;
+
+#[cfg(test)]
+#[cfg(feature = "benches")]
 pub mod bit_keccak;
 
 #[cfg(test)]

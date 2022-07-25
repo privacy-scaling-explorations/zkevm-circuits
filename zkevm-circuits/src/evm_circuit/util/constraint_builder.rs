@@ -28,12 +28,6 @@ use super::{rlc, CachedRegion, CellType, StoredExpression};
 const MAX_DEGREE: usize = 5;
 const IMPLICIT_DEGREE: usize = 3;
 
-#[derive(Clone, Debug, Default)]
-struct StepRowUsage {
-    next_idx: usize,
-    is_byte_lookup_enabled: bool,
-}
-
 pub(crate) enum Transition<T> {
     Same,
     Delta(T),
@@ -53,7 +47,7 @@ pub(crate) struct StepStateTransition<F: FieldExt> {
     pub(crate) call_id: Transition<Expression<F>>,
     pub(crate) is_root: Transition<Expression<F>>,
     pub(crate) is_create: Transition<Expression<F>>,
-    pub(crate) code_source: Transition<Expression<F>>,
+    pub(crate) code_hash: Transition<Expression<F>>,
     pub(crate) program_counter: Transition<Expression<F>>,
     pub(crate) stack_pointer: Transition<Expression<F>>,
     pub(crate) gas_left: Transition<Expression<F>>,
@@ -78,7 +72,7 @@ impl<F: FieldExt> StepStateTransition<F> {
             call_id: Transition::Any,
             is_root: Transition::Any,
             is_create: Transition::Any,
-            code_source: Transition::Any,
+            code_hash: Transition::Any,
             program_counter: Transition::Any,
             stack_pointer: Transition::Any,
             gas_left: Transition::Any,
@@ -456,7 +450,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         constrain!(call_id);
         constrain!(is_root);
         constrain!(is_create);
-        constrain!(code_source);
+        constrain!(code_hash);
         constrain!(program_counter);
         constrain!(stack_pointer);
         constrain!(gas_left);
@@ -512,7 +506,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         self.add_lookup(
             "Opcode lookup",
             Lookup::Bytecode {
-                hash: self.curr.state.code_source.expr(),
+                hash: self.curr.state.code_hash.expr(),
                 tag: BytecodeFieldTag::Byte.expr(),
                 index,
                 is_code,
@@ -1018,35 +1012,11 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         );
     }
 
-    pub(crate) fn memory_lookup_with_counter(
-        &mut self,
-        rw_counter: Expression<F>,
-        is_write: Expression<F>,
-        memory_address: Expression<F>,
-        byte: Expression<F>,
-    ) {
-        self.rw_lookup_with_counter(
-            "Memory lookup",
-            rw_counter,
-            is_write,
-            RwTableTag::Memory,
-            [
-                self.curr.state.call_id.expr(),
-                memory_address,
-                0.expr(),
-                0.expr(),
-                byte,
-                0.expr(),
-                0.expr(),
-                0.expr(),
-            ],
-        );
-    }
-
     pub(crate) fn tx_log_lookup(
         &mut self,
         tx_id: Expression<F>,
-        tag: TxLogFieldTag,
+        log_id: Expression<F>,
+        field_tag: TxLogFieldTag,
         index: Expression<F>,
         value: Expression<F>,
     ) {
@@ -1056,8 +1026,8 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             RwTableTag::TxLog,
             [
                 tx_id,
-                index + (1u64 << 8).expr() * self.curr.state.log_id.expr(),
-                tag.expr(),
+                index + (1u64 << 32).expr() * field_tag.expr() + (1u64 << 48).expr() * log_id,
+                0.expr(),
                 0.expr(),
                 value,
                 0.expr(),
@@ -1069,25 +1039,16 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
 
     // Tx Receipt
 
-    pub(crate) fn tx_receipt(
-        &mut self,
-        tx_id: Expression<F>,
-        field_tag: TxReceiptFieldTag,
-    ) -> Cell<F> {
-        let cell = self.query_cell();
-        self.tx_receipt_lookup(tx_id, field_tag, cell.expr());
-        cell
-    }
-
     pub(crate) fn tx_receipt_lookup(
         &mut self,
+        is_write: Expression<F>,
         tx_id: Expression<F>,
         tag: TxReceiptFieldTag,
         value: Expression<F>,
     ) {
         self.rw_lookup(
             "tx receipt lookup",
-            0.expr(),
+            is_write,
             RwTableTag::TxReceipt,
             [
                 tx_id,
@@ -1099,6 +1060,40 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
                 0.expr(),
                 0.expr(),
             ],
+        );
+    }
+
+    // Copy Table
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn copy_table_lookup(
+        &mut self,
+        src_id: Expression<F>,
+        src_tag: Expression<F>,
+        dst_id: Expression<F>,
+        dst_tag: Expression<F>,
+        src_addr: Expression<F>,
+        src_addr_end: Expression<F>,
+        dst_addr: Expression<F>,
+        length: Expression<F>,
+        rw_counter: Expression<F>,
+        rwc_inc: Expression<F>,
+    ) {
+        self.add_lookup(
+            "copy lookup",
+            Lookup::CopyTable {
+                is_first: 1.expr(), // is_first
+                src_id,
+                src_tag,
+                dst_id,
+                dst_tag,
+                src_addr,
+                src_addr_end,
+                dst_addr,
+                length,
+                rw_counter,
+                rwc_inc,
+            },
         );
     }
 

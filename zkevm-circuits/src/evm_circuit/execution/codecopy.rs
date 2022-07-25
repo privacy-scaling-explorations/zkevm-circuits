@@ -1,6 +1,6 @@
 use std::convert::TryInto;
 
-use bus_mapping::evm::OpcodeId;
+use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId};
 use eth_types::{Field, ToLittleEndian};
 use halo2_proofs::plonk::Error;
 
@@ -13,9 +13,9 @@ use crate::{
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition},
             from_bytes,
             memory_gadget::{MemoryAddressGadget, MemoryCopierGasGadget, MemoryExpansionGadget},
-            CachedRegion, Cell, MemoryAddress,
+            not, CachedRegion, Cell, MemoryAddress,
         },
-        witness::{Block, Call, CodeSource, ExecStep, Transaction},
+        witness::{Block, Call, ExecStep, Transaction},
     },
     util::Expr,
 };
@@ -38,6 +38,9 @@ pub(crate) struct CodeCopyGadget<F> {
     /// Opcode CODECOPY needs to copy code bytes into memory. We account for
     /// the copying costs using the memory copier gas gadget.
     memory_copier_gas: MemoryCopierGasGadget<F>,
+    /// RW inverse counter from the copy table at the start of related copy
+    /// steps.
+    copy_rwc_inc: Cell<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
@@ -49,23 +52,23 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
         let opcode = cb.query_cell();
 
         // Query elements to be popped from the stack.
-        let dest_memory_offset = cb.query_cell();
+        let dst_memory_offset = cb.query_cell();
         let code_offset = cb.query_rlc();
         let size = cb.query_rlc();
 
         // Pop items from stack.
-        cb.stack_pop(dest_memory_offset.expr());
+        cb.stack_pop(dst_memory_offset.expr());
         cb.stack_pop(code_offset.expr());
         cb.stack_pop(size.expr());
 
         // Construct memory address in the destionation (memory) to which we copy code.
-        let dst_memory_addr = MemoryAddressGadget::construct(cb, dest_memory_offset, size.clone());
+        let dst_memory_addr = MemoryAddressGadget::construct(cb, dst_memory_offset, size);
 
-        // Fetch the source code running in current environment.
-        let code_source = cb.curr.state.code_source.clone();
+        // Fetch the hash of bytecode running in current environment.
+        let code_hash = cb.curr.state.code_hash.clone();
 
         // Fetch the bytecode length from the bytecode table.
-        let code_size = cb.bytecode_length(code_source.expr());
+        let code_size = cb.bytecode_length(code_hash.expr());
 
         // Calculate the next memory size and the gas cost for this memory
         // access. This also accounts for the dynamic gas required to copy bytes to
@@ -81,49 +84,31 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
             memory_expansion.gas_cost(),
         );
 
-        // Constrain the next step to be the internal `CopyCodeToMemory` step and add
-        // some preliminary checks on its auxiliary data.
-        cb.constrain_next_step(
-            ExecutionState::CopyCodeToMemory,
-            Some(dst_memory_addr.has_length()),
-            |cb| {
-                let next_src_addr = cb.query_cell();
-                let next_dst_addr = cb.query_cell();
-                let next_bytes_left = cb.query_cell();
-                let next_src_addr_end = cb.query_cell();
-                let next_code_source = cb.query_word();
-
-                cb.require_equal(
-                    "next_src_addr == code_offset",
-                    next_src_addr.expr(),
-                    from_bytes::expr(&code_offset.cells),
-                );
-                cb.require_equal(
-                    "next_dst_addr = memory_offset",
-                    next_dst_addr.expr(),
-                    dst_memory_addr.offset(),
-                );
-                cb.require_equal(
-                    "next_bytes_left = length",
-                    next_bytes_left.expr(),
-                    size.expr(),
-                );
-                cb.require_equal(
-                    "next_src_addr_end == code_size",
-                    next_src_addr_end.expr(),
-                    code_size.expr(),
-                );
-                cb.require_equal(
-                    "next_code_source == code_source",
-                    next_code_source.expr(),
-                    code_source.expr(),
-                );
-            },
-        );
+        let copy_rwc_inc = cb.query_cell();
+        cb.condition(dst_memory_addr.has_length(), |cb| {
+            cb.copy_table_lookup(
+                code_hash.expr(),
+                CopyDataType::Bytecode.expr(),
+                cb.curr.state.call_id.expr(),
+                CopyDataType::Memory.expr(),
+                from_bytes::expr(&code_offset.cells),
+                code_size.expr(),
+                dst_memory_addr.offset(),
+                dst_memory_addr.length(),
+                cb.curr.state.rw_counter.expr() + cb.rw_counter_offset().expr(),
+                copy_rwc_inc.expr(),
+            );
+        });
+        cb.condition(not::expr(dst_memory_addr.has_length()), |cb| {
+            cb.require_zero(
+                "if no bytes to copy, copy table rwc inc == 0",
+                copy_rwc_inc.expr(),
+            );
+        });
 
         // Expected state transition.
         let step_state_transition = StepStateTransition {
-            rw_counter: Transition::Delta(cb.rw_counter_offset()),
+            rw_counter: Transition::Delta(cb.rw_counter_offset() + copy_rwc_inc.expr()),
             program_counter: Transition::Delta(1.expr()),
             stack_pointer: Transition::Delta(3.expr()),
             memory_word_size: Transition::To(memory_expansion.next_memory_word_size()),
@@ -141,6 +126,7 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
             dst_memory_addr,
             memory_expansion,
             memory_copier_gas,
+            copy_rwc_inc,
         }
     }
 
@@ -149,7 +135,7 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
-        _tx: &Transaction,
+        tx: &Transaction,
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
@@ -177,11 +163,7 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
 
         let code = block
             .bytecodes
-            .iter()
-            .find(|b| {
-                let CodeSource::Account(code_source) = &call.code_source;
-                b.hash == *code_source
-            })
+            .get(&call.code_hash)
             .expect("could not find current environment's bytecode");
         self.code_size
             .assign(region, offset, Some(F::from(code.bytes.len() as u64)))?;
@@ -201,6 +183,17 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
         self.memory_copier_gas
             .assign(region, offset, size.as_u64(), memory_expansion_cost)?;
 
+        let key = (tx.id, call.id, step.program_counter as usize);
+        let copy_rwc_inc = block
+            .copy_events
+            .get(&key)
+            .unwrap()
+            .steps
+            .first()
+            .map_or(F::zero(), |cs| F::from(cs.rwc_inc_left));
+        self.copy_rwc_inc
+            .assign(region, offset, Some(copy_rwc_inc))?;
+
         Ok(())
     }
 }
@@ -212,14 +205,22 @@ mod tests {
 
     use crate::test_util::run_test_circuits;
 
-    fn test_ok(memory_offset: usize, code_offset: usize, size: usize) {
-        let code = bytecode! {
+    fn test_ok(memory_offset: usize, code_offset: usize, size: usize, large: bool) {
+        let mut code = bytecode! {};
+        if large {
+            for _ in 0..0x101 {
+                code.push(1, Word::from(123));
+            }
+        }
+        let tail = bytecode! {
             PUSH32(Word::from(size))
             PUSH32(Word::from(code_offset))
             PUSH32(Word::from(memory_offset))
             CODECOPY
             STOP
         };
+        code.append(&tail);
+
         assert_eq!(
             run_test_circuits(
                 TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap(),
@@ -230,9 +231,14 @@ mod tests {
     }
 
     #[test]
-    fn codecopy_gadget() {
-        test_ok(0x00, 0x00, 0x20);
-        test_ok(0x20, 0x30, 0x30);
-        test_ok(0x10, 0x20, 0x42);
+    fn codecopy_gadget_simple() {
+        test_ok(0x00, 0x00, 0x20, false);
+        test_ok(0x20, 0x30, 0x30, false);
+        test_ok(0x10, 0x20, 0x42, false);
+    }
+
+    #[test]
+    fn codecopy_gadget_large() {
+        test_ok(0x103, 0x102, 0x101, true);
     }
 }

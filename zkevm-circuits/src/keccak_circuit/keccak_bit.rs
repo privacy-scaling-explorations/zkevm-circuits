@@ -1,8 +1,9 @@
 use crate::{
-    evm_circuit::util::{constraint_builder::BaseConstraintBuilder, not, xor},
+    evm_circuit::util::{constraint_builder::BaseConstraintBuilder, not},
     util::Expr,
 };
 use eth_types::Field;
+use gadgets::util::xor;
 use halo2_proofs::{
     circuit::{Layouter, Region, SimpleFloorPlanner},
     plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Fixed, Selector, TableColumn},

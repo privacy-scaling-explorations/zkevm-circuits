@@ -35,7 +35,7 @@ pub(crate) struct CallGadget<F> {
     opcode: Cell<F>,
     tx_id: Cell<F>,
     reversion_info: ReversionInfo<F>,
-    caller_address: Cell<F>,
+    current_address: Cell<F>,
     is_static: Cell<F>,
     depth: Cell<F>,
     gas: Word<F>,
@@ -43,8 +43,8 @@ pub(crate) struct CallGadget<F> {
     value: Word<F>,
     is_success: Cell<F>,
     gas_is_u64: IsZeroGadget<F>,
-    is_warm_access: Cell<F>,
-    is_warm_access_prev: Cell<F>,
+    is_warm: Cell<F>,
+    is_warm_prev: Cell<F>,
     callee_reversion_info: ReversionInfo<F>,
     value_is_zero: IsZeroGadget<F>,
     cd_address: MemoryAddressGadget<F>,
@@ -90,8 +90,8 @@ impl<F: Field> ExecutionGadget<F> for CallGadget<F> {
 
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
         let mut reversion_info = cb.reversion_info(None);
-        let [caller_address, is_static, depth] = [
-            CallContextFieldTag::CallerAddress,
+        let [current_address, is_static, depth] = [
+            CallContextFieldTag::CalleeAddress,
             CallContextFieldTag::IsStatic,
             CallContextFieldTag::Depth,
         ]
@@ -123,13 +123,13 @@ impl<F: Field> ExecutionGadget<F> for CallGadget<F> {
         );
 
         // Add callee to access list
-        let is_warm_access = cb.query_bool();
-        let is_warm_access_prev = cb.query_bool();
+        let is_warm = cb.query_bool();
+        let is_warm_prev = cb.query_bool();
         cb.account_access_list_write(
             tx_id.expr(),
             callee_address.clone(),
-            is_warm_access.expr(),
-            is_warm_access_prev.expr(),
+            is_warm.expr(),
+            is_warm_prev.expr(),
             Some(&mut reversion_info),
         );
 
@@ -159,7 +159,7 @@ impl<F: Field> ExecutionGadget<F> for CallGadget<F> {
         });
         let transfer = TransferGadget::construct(
             cb,
-            caller_address.expr(),
+            current_address.expr(),
             callee_address.clone(),
             value.clone(),
             &mut callee_reversion_info,
@@ -189,7 +189,7 @@ impl<F: Field> ExecutionGadget<F> for CallGadget<F> {
         );
         // Sum up gas cost
         let gas_cost = select::expr(
-            is_warm_access_prev.expr(),
+            is_warm_prev.expr(),
             GasCost::WARM_ACCESS.expr(),
             GasCost::COLD_ACCOUNT_ACCESS.expr(),
         ) + has_value.clone()
@@ -255,7 +255,7 @@ impl<F: Field> ExecutionGadget<F> for CallGadget<F> {
                     memory_expansion.next_memory_word_size(),
                 ),
                 (
-                    CallContextFieldTag::StateWriteCounter,
+                    CallContextFieldTag::ReversibleWriteCounter,
                     cb.curr.state.reversible_write_counter.expr() + 1.expr(),
                 ),
             ] {
@@ -267,7 +267,7 @@ impl<F: Field> ExecutionGadget<F> for CallGadget<F> {
                 (CallContextFieldTag::CallerId, cb.curr.state.call_id.expr()),
                 (CallContextFieldTag::TxId, tx_id.expr()),
                 (CallContextFieldTag::Depth, depth.expr() + 1.expr()),
-                (CallContextFieldTag::CallerAddress, caller_address.expr()),
+                (CallContextFieldTag::CallerAddress, current_address.expr()),
                 (CallContextFieldTag::CalleeAddress, callee_address),
                 (CallContextFieldTag::CallDataOffset, cd_address.offset()),
                 (CallContextFieldTag::CallDataLength, cd_address.length()),
@@ -281,7 +281,7 @@ impl<F: Field> ExecutionGadget<F> for CallGadget<F> {
                 (CallContextFieldTag::LastCalleeReturnDataLength, 0.expr()),
                 (CallContextFieldTag::IsRoot, 0.expr()),
                 (CallContextFieldTag::IsCreate, 0.expr()),
-                (CallContextFieldTag::CodeSource, callee_code_hash.expr()),
+                (CallContextFieldTag::CodeHash, callee_code_hash.expr()),
             ] {
                 cb.call_context_lookup(false.expr(), Some(callee_call_id.expr()), field_tag, value);
             }
@@ -294,7 +294,7 @@ impl<F: Field> ExecutionGadget<F> for CallGadget<F> {
                 call_id: To(callee_call_id.expr()),
                 is_root: To(false.expr()),
                 is_create: To(false.expr()),
-                code_source: To(callee_code_hash.expr()),
+                code_hash: To(callee_code_hash.expr()),
                 gas_left: To(callee_gas_left),
                 reversible_write_counter: To(2.expr()),
                 ..StepStateTransition::new_context()
@@ -305,7 +305,7 @@ impl<F: Field> ExecutionGadget<F> for CallGadget<F> {
             opcode,
             tx_id,
             reversion_info,
-            caller_address,
+            current_address,
             is_static,
             depth,
             gas: gas_word,
@@ -313,8 +313,8 @@ impl<F: Field> ExecutionGadget<F> for CallGadget<F> {
             value,
             is_success,
             gas_is_u64,
-            is_warm_access,
-            is_warm_access_prev,
+            is_warm,
+            is_warm_prev,
             callee_reversion_info,
             value_is_zero,
             cd_address,
@@ -339,7 +339,7 @@ impl<F: Field> ExecutionGadget<F> for CallGadget<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        let [tx_id, caller_address, is_static, depth, callee_rw_counter_end_of_reversion, callee_is_persistent] =
+        let [tx_id, current_address, is_static, depth, callee_rw_counter_end_of_reversion, callee_is_persistent] =
             [
                 step.rw_indices[0],
                 step.rw_indices[3],
@@ -361,8 +361,7 @@ impl<F: Field> ExecutionGadget<F> for CallGadget<F> {
                 step.rw_indices[13],
             ]
             .map(|idx| block.rws[idx].stack_value());
-        let (is_warm_access, is_warm_access_prev) =
-            block.rws[step.rw_indices[14]].tx_access_list_value_pair();
+        let (is_warm, is_warm_prev) = block.rws[step.rw_indices[14]].tx_access_list_value_pair();
         let [caller_balance_pair, callee_balance_pair, (callee_nonce, _), (callee_code_hash, _)] =
             [
                 step.rw_indices[17],
@@ -384,8 +383,8 @@ impl<F: Field> ExecutionGadget<F> for CallGadget<F> {
             call.rw_counter_end_of_reversion,
             call.is_persistent,
         )?;
-        self.caller_address
-            .assign(region, offset, caller_address.to_scalar())?;
+        self.current_address
+            .assign(region, offset, current_address.to_scalar())?;
         self.is_static
             .assign(region, offset, Some(F::from(is_static.low_u64())))?;
         self.depth
@@ -403,13 +402,10 @@ impl<F: Field> ExecutionGadget<F> for CallGadget<F> {
             offset,
             sum::value(&gas.to_le_bytes()[N_BYTES_GAS..]),
         )?;
-        self.is_warm_access
-            .assign(region, offset, Some(F::from(is_warm_access as u64)))?;
-        self.is_warm_access_prev.assign(
-            region,
-            offset,
-            Some(F::from(is_warm_access_prev as u64)),
-        )?;
+        self.is_warm
+            .assign(region, offset, Some(F::from(is_warm as u64)))?;
+        self.is_warm_prev
+            .assign(region, offset, Some(F::from(is_warm_prev as u64)))?;
         self.callee_reversion_info.assign(
             region,
             offset,
@@ -462,7 +458,7 @@ impl<F: Field> ExecutionGadget<F> for CallGadget<F> {
             Word::random_linear_combine(*EMPTY_HASH_LE, block.randomness),
         )?;
         let has_value = !value.is_zero();
-        let gas_cost = if is_warm_access_prev {
+        let gas_cost = if is_warm_prev {
             GasCost::WARM_ACCESS.as_u64()
         } else {
             GasCost::COLD_ACCOUNT_ACCESS.as_u64()
