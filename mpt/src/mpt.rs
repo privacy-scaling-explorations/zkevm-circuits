@@ -29,7 +29,7 @@ use crate::{
         IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, IS_CODEHASH_MOD_POS, IS_EXT_LONG_EVEN_C16_POS,
         IS_EXT_LONG_EVEN_C1_POS, IS_EXT_LONG_ODD_C16_POS, IS_EXT_LONG_ODD_C1_POS,
         IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS, IS_NONCE_MOD_POS, IS_STORAGE_MOD_POS,
-        LAYOUT_OFFSET, NOT_FIRST_LEVEL_POS, IS_ACCOUNT_DELETE_MOD_POS, IS_NON_EXISTING_ACCOUNT_POS,
+        RLP_NUM, NOT_FIRST_LEVEL_POS, IS_ACCOUNT_DELETE_MOD_POS, IS_NON_EXISTING_ACCOUNT_POS,
     },
     roots::RootsChip,
     storage_root_in_account_leaf::StorageRootChip, account_non_existing::AccountNonExistingChip,
@@ -451,8 +451,8 @@ impl<F: FieldExt> MPTConfig<F> {
             is_account_leaf_in_added_branch,
             s_advices,
             modified_node,
-            s_advices[IS_BRANCH_C16_POS - LAYOUT_OFFSET],
-            s_advices[IS_BRANCH_C1_POS - LAYOUT_OFFSET],
+            s_advices[IS_BRANCH_C16_POS - RLP_NUM],
+            s_advices[IS_BRANCH_C1_POS - RLP_NUM],
             key_rlc,
             key_rlc_mult,
             acc_r,
@@ -497,7 +497,7 @@ impl<F: FieldExt> MPTConfig<F> {
             q_not_first,
             is_account_leaf_in_added_branch,
             is_last_branch_child,
-            s_advices[IS_BRANCH_S_PLACEHOLDER_POS - LAYOUT_OFFSET],
+            s_advices[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM],
             s_advices,
             s_mod_node_hash_rlc,
             acc_s,
@@ -512,7 +512,7 @@ impl<F: FieldExt> MPTConfig<F> {
             q_not_first,
             is_account_leaf_in_added_branch,
             is_last_branch_child,
-            s_advices[IS_BRANCH_C_PLACEHOLDER_POS - LAYOUT_OFFSET],
+            s_advices[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
             s_advices,
             c_mod_node_hash_rlc,
             acc_c,
@@ -720,7 +720,7 @@ impl<F: FieldExt> MPTConfig<F> {
             key_rlc_mult,
             sel1,
             sel2,
-            s_advices[IS_BRANCH_S_PLACEHOLDER_POS - LAYOUT_OFFSET],
+            s_advices[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM],
             is_account_leaf_in_added_branch,
             r_table.clone(),
             fixed_table.clone(),
@@ -755,7 +755,7 @@ impl<F: FieldExt> MPTConfig<F> {
             key_rlc_mult,
             sel1,
             sel2,
-            s_advices[IS_BRANCH_C_PLACEHOLDER_POS - LAYOUT_OFFSET],
+            s_advices[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
             is_account_leaf_in_added_branch,
             r_table.clone(),
             fixed_table.clone(),
@@ -811,7 +811,7 @@ impl<F: FieldExt> MPTConfig<F> {
             key_rlc_mult,
             mult_diff,
             is_account_leaf_in_added_branch,
-            s_advices[IS_BRANCH_S_PLACEHOLDER_POS - LAYOUT_OFFSET],
+            s_advices[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM],
             true,
             acc_r,
             fixed_table.clone(),
@@ -838,7 +838,7 @@ impl<F: FieldExt> MPTConfig<F> {
             key_rlc_mult,
             mult_diff,
             is_account_leaf_in_added_branch,
-            s_advices[IS_BRANCH_C_PLACEHOLDER_POS - LAYOUT_OFFSET],
+            s_advices[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
             false,
             acc_r,
             fixed_table.clone(),
@@ -1428,7 +1428,7 @@ impl<F: FieldExt> MPTConfig<F> {
                 || format!("assign s_advice {}", idx),
                 self.s_advices[idx],
                 offset,
-                || Ok(F::from(row[LAYOUT_OFFSET + idx] as u64)),
+                || Ok(F::from(row[RLP_NUM + idx] as u64)),
             )?;
         }
 
@@ -1458,7 +1458,7 @@ impl<F: FieldExt> MPTConfig<F> {
         )?;
 
         for (idx, _c) in self.c_advices.iter().enumerate() {
-            let val = get_val(WITNESS_ROW_WIDTH / 2 + LAYOUT_OFFSET + idx);
+            let val = get_val(WITNESS_ROW_WIDTH / 2 + RLP_NUM + idx);
             region.assign_advice(
                 || format!("assign c_advice {}", idx),
                 self.c_advices[idx],

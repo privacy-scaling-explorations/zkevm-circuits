@@ -17,7 +17,7 @@ use crate::{
 
 use crate::param::{
     HASH_WIDTH, IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS, KECCAK_INPUT_WIDTH,
-    KECCAK_OUTPUT_WIDTH, LAYOUT_OFFSET, R_TABLE_LEN,
+    KECCAK_OUTPUT_WIDTH, RLP_NUM, R_TABLE_LEN,
 };
 
 #[derive(Clone, Debug)]
@@ -84,11 +84,11 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchChip<F> {
             let mut constraints = vec![];
 
             let is_branch_s_placeholder = meta.query_advice(
-                s_advices[IS_BRANCH_S_PLACEHOLDER_POS - LAYOUT_OFFSET],
+                s_advices[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM],
                 Rotation(rot_branch_init),
             );
             let is_branch_c_placeholder = meta.query_advice(
-                s_advices[IS_BRANCH_C_PLACEHOLDER_POS - LAYOUT_OFFSET],
+                s_advices[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
                 Rotation(rot_branch_init),
             );
 
@@ -133,11 +133,11 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchChip<F> {
         let sel = |meta: &mut VirtualCells<F>| {
             let q_enable = q_enable(meta);
             let is_branch_s_placeholder = meta.query_advice(
-                s_advices[IS_BRANCH_S_PLACEHOLDER_POS - LAYOUT_OFFSET],
+                s_advices[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM],
                 Rotation(rot_branch_init),
             );
             let is_branch_c_placeholder = meta.query_advice(
-                s_advices[IS_BRANCH_C_PLACEHOLDER_POS - LAYOUT_OFFSET],
+                s_advices[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
                 Rotation(rot_branch_init),
             );
 
@@ -204,11 +204,11 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchChip<F> {
             // sel1 and sel2 determines whether drifted_pos needs to be
             // multiplied by 16 or not.
             let sel1 = meta.query_advice(
-                s_advices[IS_BRANCH_C16_POS - LAYOUT_OFFSET],
+                s_advices[IS_BRANCH_C16_POS - RLP_NUM],
                 Rotation(rot_branch_init),
             );
             let sel2 = meta.query_advice(
-                s_advices[IS_BRANCH_C1_POS - LAYOUT_OFFSET],
+                s_advices[IS_BRANCH_C1_POS - RLP_NUM],
                 Rotation(rot_branch_init),
             );
 
@@ -220,11 +220,11 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchChip<F> {
             // Key RLC of the drifted leaf needs to be the same as key RLC of the leaf
             // before it drifted down into extension/branch.
             let is_branch_s_placeholder = meta.query_advice(
-                s_advices[IS_BRANCH_S_PLACEHOLDER_POS - LAYOUT_OFFSET],
+                s_advices[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM],
                 Rotation(rot_branch_init),
             );
             let is_branch_c_placeholder = meta.query_advice(
-                s_advices[IS_BRANCH_C_PLACEHOLDER_POS - LAYOUT_OFFSET],
+                s_advices[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
                 Rotation(rot_branch_init),
             );
 
@@ -401,12 +401,12 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchChip<F> {
             // Any rotation that lands into branch children can be used.
             let rot = -17;
             let mut is_branch_placeholder = meta.query_advice(
-                s_advices[IS_BRANCH_S_PLACEHOLDER_POS - LAYOUT_OFFSET],
+                s_advices[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM],
                 Rotation(rot_branch_init),
             );
             if !is_s {
                 is_branch_placeholder = meta.query_advice(
-                    s_advices[IS_BRANCH_C_PLACEHOLDER_POS - LAYOUT_OFFSET],
+                    s_advices[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
                     Rotation(rot_branch_init),
                 );
             }

@@ -12,7 +12,7 @@ use crate::{
         HASH_WIDTH, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, IS_BRANCH_C_PLACEHOLDER_POS,
         IS_BRANCH_S_PLACEHOLDER_POS, IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS,
         IS_EXT_LONG_ODD_C16_POS, IS_EXT_LONG_ODD_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS,
-        KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH, LAYOUT_OFFSET, IS_S_EXT_LONGER_THAN_55_POS, IS_C_EXT_LONGER_THAN_55_POS, IS_S_BRANCH_IN_EXT_HASHED_POS, IS_C_BRANCH_IN_EXT_HASHED_POS,
+        KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH, RLP_NUM, IS_S_EXT_LONGER_THAN_55_POS, IS_C_EXT_LONGER_THAN_55_POS, IS_S_BRANCH_IN_EXT_HASHED_POS, IS_C_BRANCH_IN_EXT_HASHED_POS,
     },
 };
 
@@ -148,46 +148,46 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
 
             // To reduce the expression degree, we pack together multiple information.
             let is_ext_short_c16 = meta.query_advice(
-                s_advices[IS_EXT_SHORT_C16_POS - LAYOUT_OFFSET],
+                s_advices[IS_EXT_SHORT_C16_POS - RLP_NUM],
                 Rotation(rot_into_branch_init),
             );
             let is_ext_short_c1 = meta.query_advice(
-                s_advices[IS_EXT_SHORT_C1_POS - LAYOUT_OFFSET],
+                s_advices[IS_EXT_SHORT_C1_POS - RLP_NUM],
                 Rotation(rot_into_branch_init),
             );
             let is_ext_long_even_c16 = meta.query_advice(
-                s_advices[IS_EXT_LONG_EVEN_C16_POS - LAYOUT_OFFSET],
+                s_advices[IS_EXT_LONG_EVEN_C16_POS - RLP_NUM],
                 Rotation(rot_into_branch_init),
             );
             let is_ext_long_even_c1 = meta.query_advice(
-                s_advices[IS_EXT_LONG_EVEN_C1_POS - LAYOUT_OFFSET],
+                s_advices[IS_EXT_LONG_EVEN_C1_POS - RLP_NUM],
                 Rotation(rot_into_branch_init),
             );
             let is_ext_long_odd_c16 = meta.query_advice(
-                s_advices[IS_EXT_LONG_ODD_C16_POS - LAYOUT_OFFSET],
+                s_advices[IS_EXT_LONG_ODD_C16_POS - RLP_NUM],
                 Rotation(rot_into_branch_init),
             );
             let is_ext_long_odd_c1 = meta.query_advice(
-                s_advices[IS_EXT_LONG_ODD_C1_POS - LAYOUT_OFFSET],
+                s_advices[IS_EXT_LONG_ODD_C1_POS - RLP_NUM],
                 Rotation(rot_into_branch_init),
             );
             let mut is_ext_longer_than_55 = meta.query_advice(
-                s_advices[IS_S_EXT_LONGER_THAN_55_POS - LAYOUT_OFFSET],
+                s_advices[IS_S_EXT_LONGER_THAN_55_POS - RLP_NUM],
                 Rotation(rot_into_branch_init),
             );
             if !is_s {
                 is_ext_longer_than_55 = meta.query_advice(
-                    s_advices[IS_C_EXT_LONGER_THAN_55_POS - LAYOUT_OFFSET],
+                    s_advices[IS_C_EXT_LONGER_THAN_55_POS - RLP_NUM],
                     Rotation(rot_into_branch_init),
                 );
             }
             let mut is_branch_in_ext_hashed = meta.query_advice(
-                s_advices[IS_S_BRANCH_IN_EXT_HASHED_POS - LAYOUT_OFFSET],
+                s_advices[IS_S_BRANCH_IN_EXT_HASHED_POS - RLP_NUM],
                 Rotation(rot_into_branch_init),
             );
             if !is_s {
                 is_branch_in_ext_hashed = meta.query_advice(
-                    s_advices[IS_C_BRANCH_IN_EXT_HASHED_POS - LAYOUT_OFFSET],
+                    s_advices[IS_C_BRANCH_IN_EXT_HASHED_POS - RLP_NUM],
                     Rotation(rot_into_branch_init),
                 );
             }
@@ -268,11 +268,11 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
 
             // is_branch_c16 and is_branch_c1 correspond to the six extension selectors.
             let is_branch_c16 = meta.query_advice(
-                s_advices[IS_BRANCH_C16_POS - LAYOUT_OFFSET],
+                s_advices[IS_BRANCH_C16_POS - RLP_NUM],
                 Rotation(rot_into_branch_init),
             );
             let is_branch_c1 = meta.query_advice(
-                s_advices[IS_BRANCH_C1_POS - LAYOUT_OFFSET],
+                s_advices[IS_BRANCH_C1_POS - RLP_NUM],
                 Rotation(rot_into_branch_init),
             );
             let mut constrain_sel = |branch_sel: Expression<F>, ext_sel: Expression<F>| {
@@ -561,9 +561,9 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
             );
 
             // When placeholder extension, we don't check its hash in a parent.
-            let mut is_branch_placeholder = s_advices[IS_BRANCH_S_PLACEHOLDER_POS - LAYOUT_OFFSET];
+            let mut is_branch_placeholder = s_advices[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM];
             if !is_s {
-                is_branch_placeholder = s_advices[IS_BRANCH_C_PLACEHOLDER_POS - LAYOUT_OFFSET];
+                is_branch_placeholder = s_advices[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM];
             }
             let is_branch_placeholder =
                 meta.query_advice(is_branch_placeholder, Rotation(rot_into_branch_init));

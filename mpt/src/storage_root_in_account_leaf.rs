@@ -10,7 +10,7 @@ use crate::{
     helpers::{get_is_extension_node, bytes_expr_into_rlc},
     param::{
         HASH_WIDTH, IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS, KECCAK_INPUT_WIDTH,
-        KECCAK_OUTPUT_WIDTH, LAYOUT_OFFSET, ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND, ACCOUNT_LEAF_ROWS, ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND, LEAF_VALUE_S_IND, LEAF_VALUE_C_IND, BRANCH_ROWS_NUM,
+        KECCAK_OUTPUT_WIDTH, RLP_NUM, ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND, ACCOUNT_LEAF_ROWS, ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND, LEAF_VALUE_S_IND, LEAF_VALUE_C_IND, BRANCH_ROWS_NUM,
     },
 };
 
@@ -53,12 +53,12 @@ impl<F: FieldExt> StorageRootChip<F> {
                 let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
                 let rot_into_branch_init = -16;
                 let mut is_branch_placeholder = meta.query_advice(
-                    s_advices[IS_BRANCH_S_PLACEHOLDER_POS - LAYOUT_OFFSET],
+                    s_advices[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM],
                     Rotation(rot_into_branch_init),
                 );
                 if !is_s {
                     is_branch_placeholder = meta.query_advice(
-                        s_advices[IS_BRANCH_C_PLACEHOLDER_POS - LAYOUT_OFFSET],
+                        s_advices[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
                         Rotation(rot_into_branch_init),
                     );
                 }
@@ -136,14 +136,14 @@ impl<F: FieldExt> StorageRootChip<F> {
                 let mut rot_into_branch_init = -17;
                 let mut rot_into_last_branch_child = -1;
                 let mut is_branch_placeholder = meta.query_advice(
-                    s_advices[IS_BRANCH_S_PLACEHOLDER_POS - LAYOUT_OFFSET],
+                    s_advices[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM],
                     Rotation(rot_into_branch_init),
                 );
                 if !is_s {
                     rot_into_branch_init = -18;
                     rot_into_last_branch_child = -2;
                     is_branch_placeholder = meta.query_advice(
-                        s_advices[IS_BRANCH_C_PLACEHOLDER_POS - LAYOUT_OFFSET],
+                        s_advices[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
                         Rotation(rot_into_branch_init),
                     );
                 }
@@ -311,7 +311,7 @@ impl<F: FieldExt> StorageRootChip<F> {
             let mut is_leaf = meta.query_advice(is_leaf_s_value, Rotation::cur());
             let mut rot_into_branch_init = -LEAF_VALUE_S_IND - BRANCH_ROWS_NUM;
             let mut is_branch_placeholder = meta.query_advice(
-                s_advices[IS_BRANCH_S_PLACEHOLDER_POS - LAYOUT_OFFSET],
+                s_advices[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM],
                 Rotation(rot_into_branch_init),
             );
             if !is_s {
@@ -321,7 +321,7 @@ impl<F: FieldExt> StorageRootChip<F> {
                 is_leaf = meta.query_advice(is_leaf_c_value, Rotation::cur());
                 rot_into_branch_init = -LEAF_VALUE_C_IND - BRANCH_ROWS_NUM;
                 is_branch_placeholder = meta.query_advice(
-                    s_advices[IS_BRANCH_C_PLACEHOLDER_POS - LAYOUT_OFFSET],
+                    s_advices[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
                     Rotation(rot_into_branch_init),
                 );
             }

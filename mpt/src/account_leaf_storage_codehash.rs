@@ -12,7 +12,7 @@ use crate::{
     param::{
         ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND, ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND, BRANCH_ROWS_NUM,
         EXTENSION_ROWS_NUM, HASH_WIDTH, IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS,
-        KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH, LAYOUT_OFFSET, ACCOUNT_NON_EXISTING_IND,
+        KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH, RLP_NUM, ACCOUNT_NON_EXISTING_IND,
     },
 };
 
@@ -268,12 +268,12 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
 
             // Rotate into branch init:
             let mut is_branch_placeholder = meta.query_advice(
-                s_advices[IS_BRANCH_S_PLACEHOLDER_POS - LAYOUT_OFFSET],
+                s_advices[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM],
                 Rotation(-ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND - BRANCH_ROWS_NUM),
             );
             if !is_s {
                 is_branch_placeholder = meta.query_advice(
-                    s_advices[IS_BRANCH_C_PLACEHOLDER_POS - LAYOUT_OFFSET],
+                    s_advices[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
                     Rotation(-ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND - BRANCH_ROWS_NUM),
                 );
             }
@@ -325,12 +325,12 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
 
                 // Rotate into branch init:
                 let mut is_branch_placeholder = meta.query_advice(
-                    s_advices[IS_BRANCH_S_PLACEHOLDER_POS - LAYOUT_OFFSET],
+                    s_advices[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM],
                     Rotation(-ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND - BRANCH_ROWS_NUM),
                 );
                 if !is_s {
                     is_branch_placeholder = meta.query_advice(
-                        s_advices[IS_BRANCH_C_PLACEHOLDER_POS - LAYOUT_OFFSET],
+                        s_advices[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
                         Rotation(-ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND - BRANCH_ROWS_NUM),
                     );
                 }
@@ -386,12 +386,12 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
 
                 // Rotate into branch init:
                 let mut is_branch_placeholder = meta.query_advice(
-                    s_advices[IS_BRANCH_S_PLACEHOLDER_POS - LAYOUT_OFFSET],
+                    s_advices[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM],
                     Rotation(-ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND - BRANCH_ROWS_NUM),
                 );
                 if !is_s {
                     is_branch_placeholder = meta.query_advice(
-                        s_advices[IS_BRANCH_C_PLACEHOLDER_POS - LAYOUT_OFFSET],
+                        s_advices[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
                         Rotation(-ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND - BRANCH_ROWS_NUM),
                     );
                 }

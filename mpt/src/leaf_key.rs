@@ -10,7 +10,7 @@ use crate::{
     helpers::{compute_rlc, get_bool_constraint, key_len_lookup, mult_diff_lookup, range_lookups},
     mpt::FixedTableTag,
     param::{
-        BRANCH_ROWS_NUM, HASH_WIDTH, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, LAYOUT_OFFSET,
+        BRANCH_ROWS_NUM, HASH_WIDTH, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, RLP_NUM,
         R_TABLE_LEN,
     },
 };
@@ -186,11 +186,11 @@ impl<F: FieldExt> LeafKeyChip<F> {
 
                 // sel1 and sel2 are in init branch
                 let sel1 = meta.query_advice(
-                    s_advices[IS_BRANCH_C16_POS - LAYOUT_OFFSET],
+                    s_advices[IS_BRANCH_C16_POS - RLP_NUM],
                     Rotation(rot - 1),
                 );
                 let sel2 = meta.query_advice(
-                    s_advices[IS_BRANCH_C1_POS - LAYOUT_OFFSET],
+                    s_advices[IS_BRANCH_C1_POS - RLP_NUM],
                     Rotation(rot - 1),
                 );
 
@@ -503,12 +503,12 @@ impl<F: FieldExt> LeafKeyChip<F> {
             // there are all 32 bytes in a key.
             let sel1 = (one.clone() - is_first_storage_level.clone())
                 * meta.query_advice(
-                    s_advices[IS_BRANCH_C16_POS - LAYOUT_OFFSET],
+                    s_advices[IS_BRANCH_C16_POS - RLP_NUM],
                     Rotation(rot_level_above - 1),
                 );
             let sel2 = (one.clone() - is_first_storage_level.clone())
                 * meta.query_advice(
-                    s_advices[IS_BRANCH_C1_POS - LAYOUT_OFFSET],
+                    s_advices[IS_BRANCH_C1_POS - RLP_NUM],
                     Rotation(rot_level_above - 1),
                 )
                 + is_first_storage_level.clone();

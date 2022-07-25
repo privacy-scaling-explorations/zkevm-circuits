@@ -11,7 +11,7 @@ use crate::{
     mpt::FixedTableTag,
     param::{
         HASH_WIDTH, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS, IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS, IS_EXT_LONG_ODD_C16_POS, IS_EXT_LONG_ODD_C1_POS, 
-        IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS, LAYOUT_OFFSET, R_TABLE_LEN,
+        IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS, RLP_NUM, R_TABLE_LEN,
     },
 };
 
@@ -134,9 +134,9 @@ impl<F: FieldExt> AccountLeafKeyChip<F> {
                 let mut constraints = vec![];
 
                 let mut is_branch_placeholder =
-                    s_advices[IS_BRANCH_S_PLACEHOLDER_POS - LAYOUT_OFFSET];
+                    s_advices[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM];
                 if !is_s {
-                    is_branch_placeholder = s_advices[IS_BRANCH_C_PLACEHOLDER_POS - LAYOUT_OFFSET];
+                    is_branch_placeholder = s_advices[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM];
                 }
                 let is_branch_placeholder = meta.query_advice(
                     is_branch_placeholder,
@@ -153,11 +153,11 @@ impl<F: FieldExt> AccountLeafKeyChip<F> {
 
                 // sel1, sel2 is in init branch
                 let sel1 = meta.query_advice(
-                    s_advices[IS_BRANCH_C16_POS - LAYOUT_OFFSET],
+                    s_advices[IS_BRANCH_C16_POS - RLP_NUM],
                     Rotation(rot_into_first_branch_child - 1),
                 );
                 let sel2 = meta.query_advice(
-                    s_advices[IS_BRANCH_C1_POS - LAYOUT_OFFSET],
+                    s_advices[IS_BRANCH_C1_POS - RLP_NUM],
                     Rotation(rot_into_first_branch_child - 1),
                 );
 
@@ -328,9 +328,9 @@ impl<F: FieldExt> AccountLeafKeyChip<F> {
             let q_enable = q_enable(meta);
             let mut constraints = vec![];
 
-            let mut is_branch_placeholder = s_advices[IS_BRANCH_S_PLACEHOLDER_POS - LAYOUT_OFFSET];
+            let mut is_branch_placeholder = s_advices[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM];
             if !is_s {
-                is_branch_placeholder = s_advices[IS_BRANCH_C_PLACEHOLDER_POS - LAYOUT_OFFSET];
+                is_branch_placeholder = s_advices[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM];
             }
             let is_branch_placeholder = meta.query_advice(
                 is_branch_placeholder,
@@ -344,11 +344,11 @@ impl<F: FieldExt> AccountLeafKeyChip<F> {
             let key_mult_start = meta.query_advice(key_rlc_mult_prev, Rotation::cur());
 
             let sel1p = meta.query_advice(
-                s_advices[IS_BRANCH_C16_POS - LAYOUT_OFFSET],
+                s_advices[IS_BRANCH_C16_POS - RLP_NUM],
                 Rotation(rot_into_first_branch_child - 1),
             );
             let sel2p = meta.query_advice(
-                s_advices[IS_BRANCH_C1_POS - LAYOUT_OFFSET],
+                s_advices[IS_BRANCH_C1_POS - RLP_NUM],
                 Rotation(rot_into_first_branch_child - 1),
             );
 
@@ -382,27 +382,27 @@ impl<F: FieldExt> AccountLeafKeyChip<F> {
             */
 
             let is_ext_short_c16 = meta.query_advice(
-                s_advices[IS_EXT_SHORT_C16_POS - LAYOUT_OFFSET],
+                s_advices[IS_EXT_SHORT_C16_POS - RLP_NUM],
                 Rotation(rot_into_init),
             );
             let is_ext_short_c1 = meta.query_advice(
-                s_advices[IS_EXT_SHORT_C1_POS - LAYOUT_OFFSET],
+                s_advices[IS_EXT_SHORT_C1_POS - RLP_NUM],
                 Rotation(rot_into_init),
             );
             let is_ext_long_even_c16 = meta.query_advice(
-                s_advices[IS_EXT_LONG_EVEN_C16_POS - LAYOUT_OFFSET],
+                s_advices[IS_EXT_LONG_EVEN_C16_POS - RLP_NUM],
                 Rotation(rot_into_init),
             );
             let is_ext_long_even_c1 = meta.query_advice(
-                s_advices[IS_EXT_LONG_EVEN_C1_POS - LAYOUT_OFFSET],
+                s_advices[IS_EXT_LONG_EVEN_C1_POS - RLP_NUM],
                 Rotation(rot_into_init),
             );
             let is_ext_long_odd_c16 = meta.query_advice(
-                s_advices[IS_EXT_LONG_ODD_C16_POS - LAYOUT_OFFSET],
+                s_advices[IS_EXT_LONG_ODD_C16_POS - RLP_NUM],
                 Rotation(rot_into_init),
             );
             let is_ext_long_odd_c1 = meta.query_advice(
-                s_advices[IS_EXT_LONG_ODD_C1_POS - LAYOUT_OFFSET],
+                s_advices[IS_EXT_LONG_ODD_C1_POS - RLP_NUM],
                 Rotation(rot_into_init),
             );
 
@@ -485,7 +485,7 @@ impl<F: FieldExt> AccountLeafKeyChip<F> {
                 let is_leaf_placeholder = meta.query_advice(sel2, Rotation(rot_into_init+1));
                 let is_account_delete_mod = meta.query_advice(is_account_delete_mod, Rotation::cur());
                 let is_branch_placeholder = meta.query_advice(
-                    s_advices[IS_BRANCH_C_PLACEHOLDER_POS - LAYOUT_OFFSET],
+                    s_advices[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
                     Rotation(rot_into_init),
                 );
 

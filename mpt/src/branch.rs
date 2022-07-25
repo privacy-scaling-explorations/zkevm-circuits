@@ -11,7 +11,7 @@ use crate::{
     mpt::FixedTableTag,
     param::{
         BRANCH_0_C_START, BRANCH_0_S_START, HASH_WIDTH, IS_BRANCH_C_PLACEHOLDER_POS,
-        IS_BRANCH_S_PLACEHOLDER_POS, LAYOUT_OFFSET, RLP_NUM,
+        IS_BRANCH_S_PLACEHOLDER_POS, RLP_NUM,
     },
 };
 
@@ -427,11 +427,11 @@ impl<F: FieldExt> BranchChip<F> {
             let drifted_pos_cur = meta.query_advice(drifted_pos, Rotation::cur());
             let node_index_cur = meta.query_advice(node_index, Rotation::cur());
             let is_branch_placeholder_s = meta.query_advice(
-                s_advices[IS_BRANCH_S_PLACEHOLDER_POS - LAYOUT_OFFSET],
+                s_advices[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM],
                 Rotation::prev(),
             );
             let is_branch_placeholder_c = meta.query_advice(
-                s_advices[IS_BRANCH_C_PLACEHOLDER_POS - LAYOUT_OFFSET],
+                s_advices[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
                 Rotation::prev(),
             );
             constraints.push((
@@ -492,11 +492,11 @@ impl<F: FieldExt> BranchChip<F> {
             let is_branch_init_cur = meta.query_advice(is_branch_init, Rotation::cur());
 
             let is_branch_placeholder_s = meta.query_advice(
-                s_advices[IS_BRANCH_S_PLACEHOLDER_POS - LAYOUT_OFFSET],
+                s_advices[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM],
                 Rotation::cur(),
             );
             let is_branch_placeholder_c = meta.query_advice(
-                s_advices[IS_BRANCH_C_PLACEHOLDER_POS - LAYOUT_OFFSET],
+                s_advices[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
                 Rotation::cur(),
             );
             let q_enable = meta.query_fixed(q_enable, Rotation::cur());

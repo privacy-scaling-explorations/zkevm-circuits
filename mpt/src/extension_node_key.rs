@@ -14,7 +14,7 @@ use crate::{
     mpt::FixedTableTag,
     param::{
         HASH_WIDTH,
-        LAYOUT_OFFSET, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS, IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS, IS_EXT_LONG_ODD_C16_POS, IS_EXT_LONG_ODD_C1_POS, EXTENSION_ROWS_NUM, BRANCH_ROWS_NUM,
+        RLP_NUM, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS, IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS, IS_EXT_LONG_ODD_C16_POS, IS_EXT_LONG_ODD_C1_POS, EXTENSION_ROWS_NUM, BRANCH_ROWS_NUM,
     },
 };
 
@@ -76,27 +76,27 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
             // Constraints on selectors are in extension_node.
             // NOTE: even and odd refers to number of nibbles that are compactly encoded.
             let is_ext_short_c16 = meta.query_advice(
-                s_advices[IS_EXT_SHORT_C16_POS - LAYOUT_OFFSET],
+                s_advices[IS_EXT_SHORT_C16_POS - RLP_NUM],
                 Rotation(rot_into_branch_init),
             );
             let is_ext_short_c1 = meta.query_advice(
-                s_advices[IS_EXT_SHORT_C1_POS - LAYOUT_OFFSET],
+                s_advices[IS_EXT_SHORT_C1_POS - RLP_NUM],
                 Rotation(rot_into_branch_init),
             );
             let is_ext_long_even_c16 = meta.query_advice(
-                s_advices[IS_EXT_LONG_EVEN_C16_POS - LAYOUT_OFFSET],
+                s_advices[IS_EXT_LONG_EVEN_C16_POS - RLP_NUM],
                 Rotation(rot_into_branch_init),
             );
             let is_ext_long_even_c1 = meta.query_advice(
-                s_advices[IS_EXT_LONG_EVEN_C1_POS - LAYOUT_OFFSET],
+                s_advices[IS_EXT_LONG_EVEN_C1_POS - RLP_NUM],
                 Rotation(rot_into_branch_init),
             );
             let is_ext_long_odd_c16 = meta.query_advice(
-                s_advices[IS_EXT_LONG_ODD_C16_POS - LAYOUT_OFFSET],
+                s_advices[IS_EXT_LONG_ODD_C16_POS - RLP_NUM],
                 Rotation(rot_into_branch_init),
             );
             let is_ext_long_odd_c1 = meta.query_advice(
-                s_advices[IS_EXT_LONG_ODD_C1_POS - LAYOUT_OFFSET],
+                s_advices[IS_EXT_LONG_ODD_C1_POS - RLP_NUM],
                 Rotation(rot_into_branch_init),
             );
 
@@ -111,9 +111,9 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
             // node key nibble needs to be multiplied by 16 or not.
             
             let sel1 =
-                meta.query_advice( s_advices[IS_BRANCH_C16_POS - LAYOUT_OFFSET], Rotation(rot_into_branch_init));
+                meta.query_advice( s_advices[IS_BRANCH_C16_POS - RLP_NUM], Rotation(rot_into_branch_init));
             let sel2 =
-                meta.query_advice(s_advices[IS_BRANCH_C1_POS - LAYOUT_OFFSET], Rotation(rot_into_branch_init));
+                meta.query_advice(s_advices[IS_BRANCH_C1_POS - RLP_NUM], Rotation(rot_into_branch_init));
 
             // We are in extension row C, -18 brings us in the branch init row.
             // -19 is account leaf storage codehash when we are in the first storage proof level.
@@ -482,11 +482,11 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
                 meta.query_advice(is_extension_c_row, Rotation::cur());
 
             let is_ext_long_even_c16 = meta.query_advice(
-                s_advices[IS_EXT_LONG_EVEN_C16_POS - LAYOUT_OFFSET],
+                s_advices[IS_EXT_LONG_EVEN_C16_POS - RLP_NUM],
                 Rotation(rot_into_branch_init),
             );
             let is_ext_long_even_c1 = meta.query_advice(
-                s_advices[IS_EXT_LONG_EVEN_C1_POS - LAYOUT_OFFSET],
+                s_advices[IS_EXT_LONG_EVEN_C1_POS - RLP_NUM],
                 Rotation(rot_into_branch_init),
             );
 
@@ -504,11 +504,11 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
                 meta.query_advice(is_extension_c_row, Rotation::cur());
 
             let is_ext_long_odd_c16 = meta.query_advice(
-                s_advices[IS_EXT_LONG_ODD_C16_POS - LAYOUT_OFFSET],
+                s_advices[IS_EXT_LONG_ODD_C16_POS - RLP_NUM],
                 Rotation(rot_into_branch_init),
             );
             let is_ext_long_odd_c1 = meta.query_advice(
-                s_advices[IS_EXT_LONG_ODD_C1_POS - LAYOUT_OFFSET],
+                s_advices[IS_EXT_LONG_ODD_C1_POS - RLP_NUM],
                 Rotation(rot_into_branch_init),
             );
 
@@ -527,27 +527,27 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
                 meta.query_advice(is_extension_c_row, Rotation::cur());
 
             let is_ext_short_c16 = meta.query_advice(
-                s_advices[IS_EXT_SHORT_C16_POS - LAYOUT_OFFSET],
+                s_advices[IS_EXT_SHORT_C16_POS - RLP_NUM],
                 Rotation(rot_into_branch_init),
             );
             let is_ext_short_c1 = meta.query_advice(
-                s_advices[IS_EXT_SHORT_C1_POS - LAYOUT_OFFSET],
+                s_advices[IS_EXT_SHORT_C1_POS - RLP_NUM],
                 Rotation(rot_into_branch_init),
             );
             let is_ext_long_even_c16 = meta.query_advice(
-                s_advices[IS_EXT_LONG_EVEN_C16_POS - LAYOUT_OFFSET],
+                s_advices[IS_EXT_LONG_EVEN_C16_POS - RLP_NUM],
                 Rotation(rot_into_branch_init),
             );
             let is_ext_long_even_c1 = meta.query_advice(
-                s_advices[IS_EXT_LONG_EVEN_C1_POS - LAYOUT_OFFSET],
+                s_advices[IS_EXT_LONG_EVEN_C1_POS - RLP_NUM],
                 Rotation(rot_into_branch_init),
             );
             let is_ext_long_odd_c16 = meta.query_advice(
-                s_advices[IS_EXT_LONG_ODD_C16_POS - LAYOUT_OFFSET],
+                s_advices[IS_EXT_LONG_ODD_C16_POS - RLP_NUM],
                 Rotation(rot_into_branch_init),
             );
             let is_ext_long_odd_c1 = meta.query_advice(
-                s_advices[IS_EXT_LONG_ODD_C1_POS - LAYOUT_OFFSET],
+                s_advices[IS_EXT_LONG_ODD_C1_POS - RLP_NUM],
                 Rotation(rot_into_branch_init),
             );
 
@@ -604,9 +604,9 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
                     meta.query_advice(not_first_level, Rotation::cur());
 
                 let sel1 =
-                    meta.query_advice( s_advices[IS_BRANCH_C16_POS - LAYOUT_OFFSET], Rotation(rot_into_branch_init));
+                    meta.query_advice( s_advices[IS_BRANCH_C16_POS - RLP_NUM], Rotation(rot_into_branch_init));
                 let sel2 =
-                    meta.query_advice(s_advices[IS_BRANCH_C1_POS - LAYOUT_OFFSET], Rotation(rot_into_branch_init));
+                    meta.query_advice(s_advices[IS_BRANCH_C1_POS - RLP_NUM], Rotation(rot_into_branch_init));
 
                 let long_even_sel2 = get_long_even(meta) * sel2;
                 let long_odd_sel1 = get_long_odd(meta) * sel1;
@@ -637,9 +637,9 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
                     meta.query_advice(not_first_level, Rotation::cur());
 
                 let sel1 =
-                    meta.query_advice( s_advices[IS_BRANCH_C16_POS - LAYOUT_OFFSET], Rotation(rot_into_branch_init));
+                    meta.query_advice( s_advices[IS_BRANCH_C16_POS - RLP_NUM], Rotation(rot_into_branch_init));
                 let sel2 =
-                    meta.query_advice(s_advices[IS_BRANCH_C1_POS - LAYOUT_OFFSET], Rotation(rot_into_branch_init));
+                    meta.query_advice(s_advices[IS_BRANCH_C1_POS - RLP_NUM], Rotation(rot_into_branch_init));
 
                 let long_even_sel2 = get_long_even(meta) * sel2;
                 let long_odd_sel1 = get_long_odd(meta) * sel1;
@@ -669,11 +669,11 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
             let is_extension_s_row =
                 meta.query_advice(is_extension_s_row, Rotation::cur());
             let is_ext_short_c16 = meta.query_advice(
-                s_advices[IS_EXT_SHORT_C16_POS - LAYOUT_OFFSET],
+                s_advices[IS_EXT_SHORT_C16_POS - RLP_NUM],
                 Rotation(rot_into_branch_init),
             );
             let is_ext_short_c1 = meta.query_advice(
-                s_advices[IS_EXT_SHORT_C1_POS - LAYOUT_OFFSET],
+                s_advices[IS_EXT_SHORT_C1_POS - RLP_NUM],
                 Rotation(rot_into_branch_init),
             );
             let is_short = is_ext_short_c16.clone()
@@ -686,19 +686,19 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
                 meta.query_advice(is_extension_s_row, Rotation::cur());
 
             let is_ext_long_even_c16 = meta.query_advice(
-                s_advices[IS_EXT_LONG_EVEN_C16_POS - LAYOUT_OFFSET],
+                s_advices[IS_EXT_LONG_EVEN_C16_POS - RLP_NUM],
                 Rotation(rot_into_branch_init),
             );
             let is_ext_long_even_c1 = meta.query_advice(
-                s_advices[IS_EXT_LONG_EVEN_C1_POS - LAYOUT_OFFSET],
+                s_advices[IS_EXT_LONG_EVEN_C1_POS - RLP_NUM],
                 Rotation(rot_into_branch_init),
             );
             let is_ext_long_odd_c16 = meta.query_advice(
-                s_advices[IS_EXT_LONG_ODD_C16_POS - LAYOUT_OFFSET],
+                s_advices[IS_EXT_LONG_ODD_C16_POS - RLP_NUM],
                 Rotation(rot_into_branch_init),
             );
             let is_ext_long_odd_c1 = meta.query_advice(
-                s_advices[IS_EXT_LONG_ODD_C1_POS - LAYOUT_OFFSET],
+                s_advices[IS_EXT_LONG_ODD_C1_POS - RLP_NUM],
                 Rotation(rot_into_branch_init),
             );
             let is_long = is_ext_long_even_c16.clone()

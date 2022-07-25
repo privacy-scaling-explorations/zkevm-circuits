@@ -10,7 +10,7 @@ use crate::{
     helpers::{compute_rlc, key_len_lookup, mult_diff_lookup, range_lookups},
     mpt::FixedTableTag,
     param::{
-        HASH_WIDTH, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, LAYOUT_OFFSET, ACCOUNT_NON_EXISTING_IND, BRANCH_ROWS_NUM,
+        HASH_WIDTH, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, RLP_NUM, ACCOUNT_NON_EXISTING_IND, BRANCH_ROWS_NUM,
     },
 };
 
@@ -140,11 +140,11 @@ impl<F: FieldExt> AccountNonExistingChip<F> {
 
                 // sel1, sel2 is in init branch
                 let c16 = meta.query_advice(
-                    s_advices[IS_BRANCH_C16_POS - LAYOUT_OFFSET],
+                    s_advices[IS_BRANCH_C16_POS - RLP_NUM],
                     Rotation(rot_into_first_branch_child - 1),
                 );
                 let c1 = meta.query_advice(
-                    s_advices[IS_BRANCH_C1_POS - LAYOUT_OFFSET],
+                    s_advices[IS_BRANCH_C1_POS - RLP_NUM],
                     Rotation(rot_into_first_branch_child - 1),
                 );
 

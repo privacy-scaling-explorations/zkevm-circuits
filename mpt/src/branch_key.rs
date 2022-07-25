@@ -8,7 +8,7 @@ use std::marker::PhantomData;
 
 use crate::param::{
     HASH_WIDTH, IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS, IS_EXT_LONG_ODD_C16_POS,
-    IS_EXT_LONG_ODD_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS, LAYOUT_OFFSET,
+    IS_EXT_LONG_ODD_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS, RLP_NUM,
 };
 
 #[derive(Clone, Debug)]
@@ -61,25 +61,25 @@ impl<F: FieldExt> BranchKeyChip<F> {
             let modified_node_cur = meta.query_advice(modified_node, Rotation::cur());
 
             let is_ext_short_c16 = meta.query_advice(
-                s_advices[IS_EXT_SHORT_C16_POS - LAYOUT_OFFSET],
+                s_advices[IS_EXT_SHORT_C16_POS - RLP_NUM],
                 Rotation(-1),
             );
             let is_ext_short_c1 =
-                meta.query_advice(s_advices[IS_EXT_SHORT_C1_POS - LAYOUT_OFFSET], Rotation(-1));
+                meta.query_advice(s_advices[IS_EXT_SHORT_C1_POS - RLP_NUM], Rotation(-1));
             let is_ext_long_even_c16 = meta.query_advice(
-                s_advices[IS_EXT_LONG_EVEN_C16_POS - LAYOUT_OFFSET],
+                s_advices[IS_EXT_LONG_EVEN_C16_POS - RLP_NUM],
                 Rotation(-1),
             );
             let is_ext_long_even_c1 = meta.query_advice(
-                s_advices[IS_EXT_LONG_EVEN_C1_POS - LAYOUT_OFFSET],
+                s_advices[IS_EXT_LONG_EVEN_C1_POS - RLP_NUM],
                 Rotation(-1),
             );
             let is_ext_long_odd_c16 = meta.query_advice(
-                s_advices[IS_EXT_LONG_ODD_C16_POS - LAYOUT_OFFSET],
+                s_advices[IS_EXT_LONG_ODD_C16_POS - RLP_NUM],
                 Rotation(-1),
             );
             let is_ext_long_odd_c1 = meta.query_advice(
-                s_advices[IS_EXT_LONG_ODD_C1_POS - LAYOUT_OFFSET],
+                s_advices[IS_EXT_LONG_ODD_C1_POS - RLP_NUM],
                 Rotation(-1),
             );
 
