@@ -258,19 +258,18 @@ fn tracer_err_insufficient_balance() {
 #[test]
 fn tracer_call_success() {
     let code_a = bytecode! {
-    PUSH1(0x0) // retLength
-    PUSH1(0x0) // retOffset
-    PUSH1(0x0) // argsLength
-    PUSH1(0x0) // argsOffset
-    PUSH32(Word::from(0x1000)) // value
-    PUSH32(Word::from(0x000000000000000000000000000000000cafe001)) // addr
-    PUSH32(0x1_0000) // gas
-    CALL
-
-    PUSH2(0xaa)
+        PUSH1(0x0) // retLength
+        PUSH1(0x0) // retOffset
+        PUSH1(0x0) // argsLength
+        PUSH1(0x0) // argsOffset
+        PUSH32(Word::from(0x1000)) // value
+        PUSH32(Word::from(0x000000000000000000000000000000000cafe001)) // addr
+        PUSH32(0x1_0000) // gas
+        CALL
+        PUSH2(0xaa)
     };
     let code_b = bytecode! {
-    STOP
+        STOP
     };
 
     // Get the execution steps from the external tracer

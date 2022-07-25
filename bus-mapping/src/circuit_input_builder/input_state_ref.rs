@@ -901,7 +901,7 @@ impl<'a> CircuitInputStateRef<'a> {
 
         // Return from a call without calling RETURN or STOP and having success
         // is unexpected.
-        if step.depth != next_depth
+        if step.depth == next_depth + 1
             && next_result != Word::zero()
             && !matches!(step.op, OpcodeId::RETURN | OpcodeId::STOP)
         {
