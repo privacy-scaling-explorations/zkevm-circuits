@@ -55,7 +55,7 @@ impl MptUpdate {
         let (new_root_assignment, old_root_assignment) = self.root_assignments(word_randomness);
         let (new_value_assignment, old_value_assignment) = self.value_assignments(word_randomness);
 
-        let rlc = [
+        [
             self.key.address(),
             self.key.storage_key(word_randomness),
             self.key.field_tag(),
@@ -66,9 +66,7 @@ impl MptUpdate {
         ]
         .iter()
         .rev()
-        .fold(F::zero(), |result, a| lookup_randomness * result + a);
-
-        rlc * (new_root_assignment - old_root_assignment)
+        .fold(F::zero(), |result, a| lookup_randomness * result + a)
     }
 
     pub fn value_assignments<F: Field>(&self, word_randomness: F) -> (F, F) {
