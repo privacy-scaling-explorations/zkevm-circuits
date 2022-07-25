@@ -357,12 +357,6 @@ pub(crate) struct StepState<F> {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct StepRow<F> {
-    pub(crate) qs_byte_lookup: Cell<F>,
-    pub(crate) cells: [Cell<F>; STEP_WIDTH],
-}
-
-#[derive(Clone, Debug)]
 pub(crate) struct Step<F> {
     pub(crate) state: StepState<F>,
     pub(crate) cell_manager: CellManager<F>,

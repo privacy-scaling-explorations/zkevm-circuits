@@ -28,12 +28,6 @@ use super::{rlc, CachedRegion, CellType, StoredExpression};
 const MAX_DEGREE: usize = 5;
 const IMPLICIT_DEGREE: usize = 3;
 
-#[derive(Clone, Debug, Default)]
-struct StepRowUsage {
-    next_idx: usize,
-    is_byte_lookup_enabled: bool,
-}
-
 pub(crate) enum Transition<T> {
     Same,
     Delta(T),
