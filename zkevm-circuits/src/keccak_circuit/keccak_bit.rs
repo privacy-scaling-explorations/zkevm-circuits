@@ -20,7 +20,7 @@ const RHOM: [[usize; 5]; 5] = [
     [28, 55, 25, 21, 56],
     [27, 20, 39, 8, 14],
 ];
-const IOTA_ROUND_CST: [u64; 24] = [
+const IOTA_ROUND_CST: [u64; 25] = [
     0x0000000000000001,
     0x0000000000008082,
     0x800000000000808a,
@@ -45,6 +45,7 @@ const IOTA_ROUND_CST: [u64; 24] = [
     0x8000000000008080,
     0x0000000080000001,
     0x8000000080008008,
+    0x0000000000000000, // absorb round
 ];
 // Bit positions that have a non-zero value in `IOTA_ROUND_CST`.
 const IOTA_ROUND_BIT_POS: [usize; 7] = [0, 1, 3, 7, 15, 31, 63];
@@ -165,9 +166,9 @@ impl<F: Field> KeccakBitConfig<F> {
         let mut c = vec![vec![0u64.expr(); 64]; 5];
         meta.create_gate("Query Theta c bits", |meta| {
             let mut counter = 0;
-            for i in 0..5 {
-                for k in 0..64 {
-                    c[i][k] = meta.query_advice(c_bits[counter], Rotation::cur());
+            for c in c.iter_mut() {
+                for c in c.iter_mut() {
+                    *c = meta.query_advice(c_bits[counter], Rotation::cur());
                     counter += 1;
                 }
             }
@@ -179,9 +180,9 @@ impl<F: Field> KeccakBitConfig<F> {
             for k in 0..64 {
                 a[k] = meta.query_advice(a_bits[k], Rotation::cur());
             }
-            for i in 0..25 {
-                for k in 0..64 {
-                    a_next[i][k] = meta.query_advice(a_bits[k], Rotation((i + 1) as i32));
+            for (i, a_next) in a_next.iter_mut().enumerate() {
+                for (k, a_next) in a_next.iter_mut().enumerate() {
+                    *a_next = meta.query_advice(a_bits[k], Rotation((i + 1) as i32));
                 }
             }
             vec![0u64.expr()]
@@ -191,10 +192,10 @@ impl<F: Field> KeccakBitConfig<F> {
         // TODO: pack 4 (or even more) of these in a single lookup
         // => Total number of lookups: 5*64/4 = 80
         let mut theta = Vec::new();
-        for i in 0..5 {
+        for (i, c) in c.iter().enumerate() {
             let pi = (5 + i - 1) % 5;
             let ni = (i + 1) % 5;
-            for k in 0..64 {
+            for (k, c) in c.iter().enumerate() {
                 let pk = (64 + k - 1) % 64;
                 /*input = input * 10u64.expr()
                 + (b[pi][0][k].clone()
@@ -222,7 +223,7 @@ impl<F: Field> KeccakBitConfig<F> {
                     xor::expr(b[ni][1][pk].clone(), b[ni][2][pk].clone()),
                 )
                 + xor::expr(b[ni][3][pk].clone(), b[ni][4][pk].clone());*/
-                theta.push((c[i][k].clone(), bit));
+                theta.push((c.clone(), bit));
             }
         }
 
@@ -250,17 +251,17 @@ impl<F: Field> KeccakBitConfig<F> {
 
             // State bits
             // TODO: optimize
-            for i in 0..5 {
-                for j in 0..5 {
-                    for k in 0..64 {
-                        cb.require_boolean("boolean state bit", b[i][j][k].clone());
+            for b in &b {
+                for b in b {
+                    for b in b {
+                        cb.require_boolean("boolean state bit", b.clone());
                     }
                 }
             }
 
             // Absorb bits
-            for k in 0..64 {
-                cb.require_boolean("boolean state bit", a[k].clone());
+            for a in &a {
+                cb.require_boolean("boolean state bit", a.clone());
             }
 
             cb.gate(meta.query_selector(q_enable))
@@ -283,15 +284,16 @@ impl<F: Field> KeccakBitConfig<F> {
             b = ob.clone();
 
             // Rho/Pi
-            for i in 0..5 {
-                for j in 0..5 {
+            for (i, b) in b.iter().enumerate() {
+                for (j, b) in b.iter().enumerate() {
                     for k in 0..64 {
-                        ob[j][(2 * i + 3 * j) % 5][k] = b[i][j][(64 + k - RHOM[i][j]) % 64].clone();
+                        ob[j][(2 * i + 3 * j) % 5][k] = b[(64 + k - RHOM[i][j]) % 64].clone();
                     }
                 }
             }
             b = ob.clone();
 
+            // Chi/Iota
             let mut iota_counter = 0;
             for i in 0..5 {
                 for j in 0..5 {
@@ -381,8 +383,7 @@ impl<F: Field> KeccakBitConfig<F> {
         layouter.assign_region(
             || "assign keccak rounds",
             |mut region| {
-                let mut offset = 0;
-                for keccak_row in witness.iter() {
+                for (offset, keccak_row) in witness.iter().enumerate() {
                     self.set_row(
                         &mut region,
                         offset,
@@ -391,7 +392,6 @@ impl<F: Field> KeccakBitConfig<F> {
                         keccak_row.c_bits,
                         keccak_row.a_bits,
                     )?;
-                    offset += 1;
                 }
                 Ok(())
             },
@@ -556,22 +556,22 @@ fn keccak(bytes: Vec<u8>) -> Vec<KeccakRow> {
         }
 
         let mut counter = 0;
-        for round in 0..25 {
+        for (round, round_cst) in IOTA_ROUND_CST.iter().enumerate() {
             let mut a_bits = [0u8; 64];
             if counter < rate {
-                for k in 0..64 {
-                    a_bits[k] = chunk[counter];
+                for a_bit in a_bits.iter_mut() {
+                    *a_bit = chunk[counter];
                     counter += 1;
                 }
             }
 
             let mut c = [[0u8; 64]; 5];
-            for i in 0..5 {
+            for (i, c) in c.iter_mut().enumerate() {
                 let pi = (5 + i - 1) % 5;
                 let ni = (i + 1) % 5;
-                for k in 0..64 {
+                for (k, c) in c.iter_mut().enumerate() {
                     let pk = (64 + k - 1) % 64;
-                    c[i][k] = (b[pi][0][k]
+                    *c = (b[pi][0][k]
                         + b[pi][1][k]
                         + b[pi][2][k]
                         + b[pi][3][k]
@@ -588,10 +588,10 @@ fn keccak(bytes: Vec<u8>) -> Vec<KeccakRow> {
             // Flatten bits
             let mut counter = 0;
             let mut s_bits = [0u8; KECCAK_WIDTH];
-            for i in 0..5 {
-                for j in 0..5 {
-                    for k in 0..64 {
-                        s_bits[counter] = b[i][j][k];
+            for b in b {
+                for b in b {
+                    for b in b {
+                        s_bits[counter] = b;
                         counter += 1;
                     }
                 }
@@ -600,9 +600,9 @@ fn keccak(bytes: Vec<u8>) -> Vec<KeccakRow> {
             // Flatten bits
             let mut counter = 0;
             let mut c_bits = [0u8; C_WIDTH];
-            for i in 0..5 {
-                for k in 0..64 {
-                    c_bits[counter] = c[i][k];
+            for c in c {
+                for c in c {
+                    c_bits[counter] = c;
                     counter += 1;
                 }
             }
@@ -627,18 +627,18 @@ fn keccak(bytes: Vec<u8>) -> Vec<KeccakRow> {
                 }
 
                 // Rho/Pi
-                let mut ob = b.clone();
-                for i in 0..5 {
-                    for j in 0..5 {
+                let mut ob = b;
+                for (i, b) in b.iter().enumerate() {
+                    for (j, b) in b.iter().enumerate() {
                         for k in 0..64 {
-                            ob[j][(2 * i + 3 * j) % 5][k] = b[i][j][(64 + k - RHOM[i][j]) % 64]
+                            ob[j][(2 * i + 3 * j) % 5][k] = b[(64 + k - RHOM[i][j]) % 64]
                         }
                     }
                 }
                 b = ob;
 
                 // Chi
-                let mut ob = b.clone();
+                let mut ob = b;
                 for i in 0..5 {
                     for j in 0..5 {
                         for k in 0..64 {
@@ -650,10 +650,8 @@ fn keccak(bytes: Vec<u8>) -> Vec<KeccakRow> {
                 b = ob;
 
                 // Iota
-                if round < 24 {
-                    for k in IOTA_ROUND_BIT_POS {
-                        b[0][0][k] ^= ((IOTA_ROUND_CST[round] >> k) & 1) as u8;
-                    }
+                for k in IOTA_ROUND_BIT_POS {
+                    b[0][0][k] ^= ((round_cst >> k) & 1) as u8;
                 }
             }
         }
@@ -706,7 +704,7 @@ mod tests {
     }
 
     #[test]
-    fn new_keccak_simple() {
+    fn bit_keccak_simple() {
         let k = 8;
         let inputs = keccak(vec![1u8; 200]);
         verify::<Fr>(k, inputs, true);

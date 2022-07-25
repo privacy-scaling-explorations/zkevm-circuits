@@ -33,8 +33,7 @@ mod tests {
         // Bench setup generation
         let setup_message = format!("Setup generation with degree = {}", degree);
         let start1 = start_timer!(|| setup_message);
-        let general_params: Params<G1Affine> =
-            Params::<G1Affine>::unsafe_setup::<Bn256>(degree.try_into().unwrap());
+        let general_params: Params<G1Affine> = Params::<G1Affine>::unsafe_setup::<Bn256>(degree);
         let verifier_params: ParamsVerifier<Bn256> =
             general_params.verifier(degree as usize * 2).unwrap();
         end_timer!(start1);
