@@ -17,8 +17,6 @@ impl Opcode for Extcodecopy {
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];
         let mut exec_steps = vec![gen_codecopy_step(state, geth_step)?];
-        let memory_copy_steps = gen_memory_copy_steps(state, geth_steps)?;
-        exec_steps.extend(memory_copy_steps);
 
         // reconstruction
         let address = geth_steps[0].stack.nth_last(0)?.to_address();
@@ -49,6 +47,9 @@ impl Opcode for Extcodecopy {
                 // out of bound bytes
             }
         }
+
+        let memory_copy_steps = gen_memory_copy_steps(state, geth_steps)?;
+        exec_steps.extend(memory_copy_steps);
         Ok(exec_steps)
     }
 }

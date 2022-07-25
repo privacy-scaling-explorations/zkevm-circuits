@@ -21,8 +21,6 @@ impl Opcode for Calldatacopy {
         let geth_step = &geth_steps[0];
 
         let mut exec_steps = vec![gen_calldatacopy_step(state, geth_step)?];
-        let memory_copy_steps = gen_memory_copy_steps(state, geth_steps)?;
-        exec_steps.extend(memory_copy_steps);
 
         // reconstruction
         let memory_offset = geth_step.stack.nth_last(0)?.as_u64();
@@ -49,6 +47,8 @@ impl Opcode for Calldatacopy {
             }
         }
 
+        let memory_copy_steps = gen_memory_copy_steps(state, geth_steps)?;
+        exec_steps.extend(memory_copy_steps);
         Ok(exec_steps)
     }
 }
