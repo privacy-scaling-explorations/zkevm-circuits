@@ -29,12 +29,12 @@ const EXTRA_LEN: usize = 2;
 #[derive(Clone, Default, Debug)]
 pub struct BlockValues {
     coinbase: Address,
-    gas_limit: Word,
+    gas_limit: u64,
     number: u64,
-    timestamp: Word,
+    timestamp: u64,
     difficulty: Word,
     base_fee: Word, // NOTE: BaseFee was added by EIP-1559 and is ignored in legacy headers.
-    chain_id: Word,
+    chain_id: u64,
     history_hashes: Vec<U256>,
 }
 
@@ -98,12 +98,12 @@ impl PublicData {
         history_hashes.extend(vec![U256::zero(); 256 - history_hashes.len()]);
         BlockValues {
             coinbase: self.block_constants.coinbase,
-            gas_limit: self.block_constants.gas_limit,
+            gas_limit: self.block_constants.gas_limit.as_u64(),
             number: self.block_constants.number.as_u64(),
-            timestamp: self.block_constants.timestamp,
+            timestamp: self.block_constants.timestamp.as_u64(),
             difficulty: self.block_constants.difficulty,
             base_fee: self.block_constants.base_fee,
-            chain_id: self.extra.chain_id,
+            chain_id: self.extra.chain_id.as_u64(),
             history_hashes,
         }
     }
@@ -233,6 +233,15 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
             vec![q_not_end * (cur_rand_rpi - next_rand_rpi)]
         });
 
+        // 0.2 Block table -> value column match with raw_public_inputs at expected
+        // offset
+        meta.create_gate("", |meta| {
+            let q_block_table = meta.query_selector(q_block_table);
+            let block_value = meta.query_advice(block_value, Rotation::cur());
+            let rpi_block_value = meta.query_advice(raw_public_inputs, Rotation::cur());
+            vec![q_block_table * (block_value - rpi_block_value)]
+        });
+
         let offset = BLOCK_LEN + EXTRA_LEN;
         let tx_table_len = MAX_TXS * TX_LEN + MAX_CALLDATA;
 
@@ -270,13 +279,6 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
             );
 
             vec![q_tx_table * (tx_value - rpi_tx_value)]
-        });
-
-        meta.create_gate("", |meta| {
-            let q_block_table = meta.query_selector(q_block_table);
-            let block_value = meta.query_advice(block_value, Rotation::cur());
-            let rpi_block_value = meta.query_advice(raw_public_inputs, Rotation::cur());
-            vec![q_block_table * (block_value - rpi_block_value)]
         });
 
         Self {
@@ -381,9 +383,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
         }
 
         // coinbase
-        let mut coinbase_bytes = [0u8; 32];
-        coinbase_bytes[12..].clone_from_slice(block_values.coinbase.as_bytes());
-        let coinbase = rlc(coinbase_bytes, randomness);
+        let coinbase = block_values.coinbase.to_scalar().unwrap();
         region.assign_advice(|| "coinbase", self.block_value, offset, || Ok(coinbase))?;
         region.assign_advice(
             || "coinbase",
@@ -395,7 +395,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
         offset += 1;
 
         // gas_limit
-        let gas_limit = rlc(block_values.gas_limit.to_le_bytes(), randomness);
+        let gas_limit = F::from(block_values.gas_limit);
         region.assign_advice(|| "gas_limit", self.block_value, offset, || Ok(gas_limit))?;
         region.assign_advice(
             || "gas_limit",
@@ -414,7 +414,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
         offset += 1;
 
         // timestamp
-        let timestamp = rlc(block_values.timestamp.to_le_bytes(), randomness);
+        let timestamp = F::from(block_values.timestamp);
         region.assign_advice(|| "timestamp", self.block_value, offset, || Ok(timestamp))?;
         region.assign_advice(
             || "timestamp",
@@ -450,7 +450,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
         offset += 1;
 
         // chain_id
-        let chain_id = rlc(block_values.chain_id.to_le_bytes(), randomness);
+        let chain_id = F::from(block_values.chain_id);
         region.assign_advice(|| "chain_id", self.block_value, offset, || Ok(chain_id))?;
         let chain_id_cell = region.assign_advice(
             || "chain_id",
@@ -808,13 +808,13 @@ mod pi_circuit_test {
         result[offset] = rlc(coinbase_bytes, randomness);
         offset += 1;
         // gas_limit
-        result[offset] = rlc(block.gas_limit.to_le_bytes(), randomness);
+        result[offset] = F::from(block.gas_limit);
         offset += 1;
         // number
         result[offset] = F::from(block.number);
         offset += 1;
         // timestamp
-        result[offset] = rlc(block.timestamp.to_le_bytes(), randomness);
+        result[offset] = F::from(block.timestamp);
         offset += 1;
         // difficulty
         result[offset] = rlc(block.difficulty.to_le_bytes(), randomness);
@@ -823,7 +823,7 @@ mod pi_circuit_test {
         result[offset] = rlc(block.base_fee.to_le_bytes(), randomness);
         offset += 1;
         // chain_id
-        result[offset] = rlc(block.chain_id.to_le_bytes(), randomness);
+        result[offset] = F::from(block.chain_id);
         offset += 1;
         // Previous block hashes
         for prev_hash in block.history_hashes {
@@ -922,7 +922,7 @@ mod pi_circuit_test {
         let public_inputs = vec![
             rand_rpi,
             rlc_rpi,
-            rlc(public_data.extra.chain_id.to_le_bytes(), randomness),
+            F::from(public_data.extra.chain_id.as_u64()),
             rlc(
                 public_data.extra.eth_block.state_root.to_fixed_bytes(),
                 randomness,
