@@ -550,7 +550,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
         self.q_end.enable(region, offset)?;
 
         // Next rows
-        for offset in (1..circuit_len).rev().skip(1) {
+        for offset in (1..circuit_len-1).rev() {
             rpi_rlc_acc *= rand_rpi;
             rpi_rlc_acc += raw_pi_vals[offset];
             region.assign_advice(
