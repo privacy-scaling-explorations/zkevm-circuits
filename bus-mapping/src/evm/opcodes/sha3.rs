@@ -1,10 +1,13 @@
-use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
-use crate::evm::opcodes::stackonlyop::StackOnlyOpcode;
-use crate::evm::Opcode;
-use crate::Error;
-use eth_types::GethExecStep;
+use crate::{
+    circuit_input_builder::{CircuitInputStateRef, ExecStep},
+    Error,
+};
+use eth_types::{GethExecStep, Word, U256};
+use ethers_core::utils::keccak256;
 
-#[derive(Debug, Copy, Clone)]
+use super::Opcode;
+
+#[derive(Clone, Copy, Debug)]
 pub(crate) struct Sha3;
 
 impl Opcode for Sha3 {
@@ -12,22 +15,168 @@ impl Opcode for Sha3 {
         state: &mut CircuitInputStateRef,
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
-        // TODO: add rw operations needed, like memory reads and other lookups
         let geth_step = &geth_steps[0];
+        let mut exec_step = state.new_step(geth_step)?;
 
-        log::warn!("incomplete SHA3 implementation");
-        let steps = StackOnlyOpcode::<2, 1>::gen_associated_ops(state, geth_steps)?;
+        let expected_sha3 = geth_steps[1].stack.last()?;
 
-        // reconstruction
-        let offset = geth_step.stack.nth_last(0)?.as_usize();
-        let length = geth_step.stack.nth_last(1)?.as_usize();
+        // byte offset in the memory.
+        let offset = geth_step.stack.nth_last(0)?;
+        state.stack_read(&mut exec_step, geth_step.stack.nth_last_filled(0), offset)?;
 
-        if length != 0 {
+        // byte size to read in the memory.
+        let size = geth_step.stack.nth_last(1)?;
+        state.stack_read(&mut exec_step, geth_step.stack.nth_last_filled(1), size)?;
+
+        if size.gt(&U256::zero()) {
             state
                 .call_ctx_mut()?
                 .memory
-                .extend_at_least(offset + length);
+                .extend_at_least(offset.as_usize() + size.as_usize());
         }
-        Ok(steps)
+
+        let memory = geth_step
+            .memory
+            .read_chunk(offset.as_usize().into(), size.as_usize().into());
+
+        // keccak-256 hash of the given data in memory.
+        let sha3 = keccak256(&memory);
+        debug_assert_eq!(Word::from_big_endian(&sha3), expected_sha3);
+        state.stack_write(
+            &mut exec_step,
+            geth_steps[1].stack.last_filled(),
+            sha3.into(),
+        )?;
+
+        Ok(vec![exec_step])
+    }
+}
+
+#[cfg(test)]
+mod sha3_tests {
+    use eth_types::{bytecode, evm_types::OpcodeId, geth_types::GethData, Bytecode, Word};
+    use ethers_core::utils::keccak256;
+    use mock::{
+        test_ctx::helpers::{account_0_code_account_1_no_code, tx_from_1_to_0},
+        TestContext,
+    };
+    use rand::{random, Rng};
+
+    use crate::{
+        circuit_input_builder::ExecState,
+        mock::BlockData,
+        operation::{StackOp, RW},
+    };
+
+    enum MemoryKind {
+        Empty,
+        LessThanSize,
+        EqualToSize,
+        MoreThanSize,
+    }
+
+    fn rand_bytes(size: usize) -> Vec<u8> {
+        (0..size).map(|_| random()).collect::<Vec<u8>>()
+    }
+
+    fn test_ok(offset: usize, size: usize, mem_kind: MemoryKind) {
+        let mut rng = rand::thread_rng();
+        let data_len = match mem_kind {
+            MemoryKind::LessThanSize => offset + rng.gen_range(0..size),
+            MemoryKind::EqualToSize => offset + size,
+            MemoryKind::MoreThanSize => offset + size + rng.gen_range(0..size),
+            MemoryKind::Empty => 0,
+        };
+        let data = rand_bytes(data_len);
+        let mut memory = Vec::with_capacity(data_len);
+
+        // add opcodes to populate memory in the current context.
+        let mut code = Bytecode::default();
+        for (i, mem_chunk) in data.chunks(32).enumerate() {
+            let mem_value = if mem_chunk.len() < 32 {
+                std::iter::repeat(0u8)
+                    .take(32 - mem_chunk.len())
+                    .chain(mem_chunk.to_vec())
+                    .collect::<Vec<u8>>()
+            } else {
+                mem_chunk.to_vec()
+            };
+            memory.extend_from_slice(&mem_value);
+            code.push(32, Word::from_big_endian(&mem_value));
+            code.push(32, (32 * i).into());
+            code.write_op(OpcodeId::MSTORE);
+        }
+
+        // append SHA3 related opcodes at the tail end.
+        let code_tail = bytecode! {
+            PUSH32(size)
+            PUSH32(offset)
+            SHA3
+            STOP
+        };
+        code.append(&code_tail);
+
+        // The memory that is hashed.
+        let mut memory_view = memory
+            .into_iter()
+            .skip(offset)
+            .take(size)
+            .collect::<Vec<u8>>();
+        memory_view.resize(size, 0);
+        let expected_sha3_value = keccak256(&memory_view);
+
+        let block: GethData = TestContext::<2, 1>::new(
+            None,
+            account_0_code_account_1_no_code(code),
+            tx_from_1_to_0,
+            |block, _txs| block,
+        )
+        .unwrap()
+        .into();
+
+        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+        builder
+            .handle_block(&block.eth_block, &block.geth_traces)
+            .unwrap();
+
+        let step = builder.block.txs()[0]
+            .steps()
+            .iter()
+            .find(|step| step.exec_state == ExecState::Op(OpcodeId::SHA3))
+            .unwrap();
+
+        let call_id = builder.block.txs()[0].calls()[0].call_id;
+
+        // 2 stack reads and 1 stack write.
+        assert_eq!(step.bus_mapping_instance.len(), 3);
+
+        // stack read and write.
+        assert_eq!(
+            [0, 1, 2]
+                .map(|idx| &builder.block.container.stack[step.bus_mapping_instance[idx].as_usize()])
+                .map(|op| (op.rw(), op.op())),
+            [
+                (
+                    RW::READ,
+                    &StackOp::new(call_id, 1022.into(), Word::from(offset)),
+                ),
+                (
+                    RW::READ,
+                    &StackOp::new(call_id, 1023.into(), Word::from(size)),
+                ),
+                (
+                    RW::WRITE,
+                    &StackOp::new(call_id, 1023.into(), expected_sha3_value.into()),
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn sha3_opcode_ok() {
+        test_ok(0x10, 0x32, MemoryKind::Empty);
+        test_ok(0x34, 0x44, MemoryKind::LessThanSize);
+        test_ok(0x222, 0x111, MemoryKind::EqualToSize);
+        test_ok(0x20, 0x30, MemoryKind::MoreThanSize);
     }
 }
