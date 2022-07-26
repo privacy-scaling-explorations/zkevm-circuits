@@ -1,10 +1,7 @@
 use super::Opcode;
-use crate::circuit_input_builder::{
-    CircuitInputStateRef, CopyDetails, ExecState, ExecStep, StepAuxiliaryData,
-};
-use crate::constants::MAX_COPY_BYTES;
+use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
 use crate::Error;
-use eth_types::{GethExecStep, ToAddress, ToWord};
+use eth_types::{GethExecStep, ToAddress};
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Extcodecopy;
@@ -15,7 +12,7 @@ impl Opcode for Extcodecopy {
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];
-        let mut exec_steps = vec![gen_codecopy_step(state, geth_step)?];
+        let exec_steps = vec![gen_extcodecopy_step(state, geth_step)?];
 
         // reconstruction
         let address = geth_steps[0].stack.nth_last(0)?.to_address();
@@ -47,13 +44,12 @@ impl Opcode for Extcodecopy {
             }
         }
 
-        let memory_copy_steps = gen_memory_copy_steps(state, geth_steps)?;
-        exec_steps.extend(memory_copy_steps);
+        // TODO: implement copy event
         Ok(exec_steps)
     }
 }
 
-fn gen_codecopy_step(
+fn gen_extcodecopy_step(
     state: &mut CircuitInputStateRef,
     geth_step: &GethExecStep,
 ) -> Result<ExecStep, Error> {
@@ -74,66 +70,6 @@ fn gen_codecopy_step(
     state.stack_read(&mut exec_step, geth_step.stack.nth_last_filled(2), offset)?;
     state.stack_read(&mut exec_step, geth_step.stack.nth_last_filled(3), length)?;
     Ok(exec_step)
-}
-
-fn gen_memory_copy_step(
-    state: &mut CircuitInputStateRef,
-    exec_step: &mut ExecStep,
-    aux_data: StepAuxiliaryData,
-    code: &[u8],
-) -> Result<(), Error> {
-    for idx in 0..std::cmp::min(aux_data.bytes_left as usize, MAX_COPY_BYTES) {
-        let addr = (aux_data.src_addr as usize) + idx;
-        let byte = if addr < (aux_data.src_addr_end as usize) {
-            code[addr]
-        } else {
-            0
-        };
-        state.memory_write(exec_step, ((aux_data.dst_addr as usize) + idx).into(), byte)?;
-    }
-
-    exec_step.aux_data = Some(aux_data);
-
-    Ok(())
-}
-
-fn gen_memory_copy_steps(
-    state: &mut CircuitInputStateRef,
-    geth_steps: &[GethExecStep],
-) -> Result<Vec<ExecStep>, Error> {
-    let address = geth_steps[0].stack.nth_last(0)?.to_address();
-    let dest_offset = geth_steps[0].stack.nth_last(1)?.as_u64();
-    let code_offset = geth_steps[0].stack.nth_last(2)?.as_u64();
-    let length = geth_steps[0].stack.nth_last(3)?.as_u64();
-
-    let (exist, account) = state.sdb.get_account(&address);
-    assert!(exist, "target account does not exist");
-    let code = state.code(account.code_hash)?;
-    let src_addr_end = code.len() as u64;
-
-    let code_source = account.code_hash.to_word();
-    let mut copied = 0;
-    let mut steps = vec![];
-    while copied < length {
-        let mut exec_step = state.new_step(&geth_steps[1])?;
-        exec_step.exec_state = ExecState::CopyCodeToMemory;
-        gen_memory_copy_step(
-            state,
-            &mut exec_step,
-            StepAuxiliaryData::new(
-                code_offset + copied,
-                dest_offset + copied,
-                length - copied,
-                src_addr_end,
-                CopyDetails::Code(code_source),
-            ),
-            &code,
-        )?;
-        steps.push(exec_step);
-        copied += MAX_COPY_BYTES as u64;
-    }
-
-    Ok(steps)
 }
 
 #[cfg(test)]

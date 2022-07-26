@@ -23,9 +23,6 @@ pub enum ExecutionState {
     BeginTx,
     EndTx,
     EndBlock,
-    CopyCodeToMemory,
-    CopyToMemory,
-    CopyToLog,
     // Opcode successful cases
     STOP,
     ADD_SUB,     // ADD, SUB
@@ -357,12 +354,6 @@ pub(crate) struct StepState<F> {
     pub(crate) reversible_write_counter: Cell<F>,
     /// The counter for log index
     pub(crate) log_id: Cell<F>,
-}
-
-#[derive(Clone, Debug)]
-pub(crate) struct StepRow<F> {
-    pub(crate) qs_byte_lookup: Cell<F>,
-    pub(crate) cells: [Cell<F>; STEP_WIDTH],
 }
 
 #[derive(Clone, Debug)]

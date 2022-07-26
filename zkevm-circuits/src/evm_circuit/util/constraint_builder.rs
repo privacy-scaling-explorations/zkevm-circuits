@@ -28,12 +28,6 @@ use super::{rlc, CachedRegion, CellType, StoredExpression};
 const MAX_DEGREE: usize = 5;
 const IMPLICIT_DEGREE: usize = 3;
 
-#[derive(Clone, Debug, Default)]
-struct StepRowUsage {
-    next_idx: usize,
-    is_byte_lookup_enabled: bool,
-}
-
 pub(crate) enum Transition<T> {
     Same,
     Delta(T),
@@ -1041,25 +1035,16 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
 
     // Tx Receipt
 
-    pub(crate) fn tx_receipt(
-        &mut self,
-        tx_id: Expression<F>,
-        field_tag: TxReceiptFieldTag,
-    ) -> Cell<F> {
-        let cell = self.query_cell();
-        self.tx_receipt_lookup(tx_id, field_tag, cell.expr());
-        cell
-    }
-
     pub(crate) fn tx_receipt_lookup(
         &mut self,
+        is_write: Expression<F>,
         tx_id: Expression<F>,
         tag: TxReceiptFieldTag,
         value: Expression<F>,
     ) {
         self.rw_lookup(
             "tx receipt lookup",
-            0.expr(),
+            is_write,
             RwTableTag::TxReceipt,
             [
                 tx_id,
@@ -1071,6 +1056,40 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
                 0.expr(),
                 0.expr(),
             ],
+        );
+    }
+
+    // Copy Table
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn copy_table_lookup(
+        &mut self,
+        src_id: Expression<F>,
+        src_tag: Expression<F>,
+        dst_id: Expression<F>,
+        dst_tag: Expression<F>,
+        src_addr: Expression<F>,
+        src_addr_end: Expression<F>,
+        dst_addr: Expression<F>,
+        length: Expression<F>,
+        rw_counter: Expression<F>,
+        rwc_inc: Expression<F>,
+    ) {
+        self.add_lookup(
+            "copy lookup",
+            Lookup::CopyTable {
+                is_first: 1.expr(), // is_first
+                src_id,
+                src_tag,
+                dst_id,
+                dst_tag,
+                src_addr,
+                src_addr_end,
+                dst_addr,
+                length,
+                rw_counter,
+                rwc_inc,
+            },
         );
     }
 

@@ -250,23 +250,72 @@ fn tracer_err_insufficient_balance() {
     let next_step = block.geth_traces[0].struct_logs.get(index + 1);
     assert_eq!(step.error, None);
     assert_eq!(next_step.unwrap().op, OpcodeId::PUSH2);
-    assert_eq!(next_step.unwrap().stack, Stack(vec![Word::zero()])); // success = 0
+    assert_eq!(next_step.unwrap().stack, Stack(vec![Word::zero()])); // failure = 0
 
     let mut builder = CircuitInputBuilderTx::new(&block, step);
-    builder.builder.sdb.set_account(
-        &ADDR_A,
-        Account {
-            nonce: Word::zero(),
-            balance: Word::from(555u64), /* same value as in
-                                          * `mock::new_tracer_account` */
-            storage: HashMap::new(),
-            code_hash: Hash::zero(),
-        },
-    );
     assert_eq!(
         builder.state_ref().get_step_err(step, next_step).unwrap(),
         Some(ExecError::InsufficientBalance)
     );
+}
+
+#[test]
+fn tracer_call_success() {
+    let code_a = bytecode! {
+        PUSH1(0x0) // retLength
+        PUSH1(0x0) // retOffset
+        PUSH1(0x0) // argsLength
+        PUSH1(0x0) // argsOffset
+        PUSH32(Word::from(0x1000)) // value
+        PUSH32(Word::from(0x000000000000000000000000000000000cafe001)) // addr
+        PUSH32(0x1_0000) // gas
+        CALL
+        PUSH2(0xaa)
+    };
+    let code_b = bytecode! {
+        STOP
+    };
+
+    // Get the execution steps from the external tracer
+    let block: GethData = TestContext::<3, 1>::new(
+        None,
+        |accs| {
+            accs[0]
+                .address(address!("0x0000000000000000000000000000000000000000"))
+                .code(code_a)
+                .balance(Word::from(10000u64));
+            accs[1]
+                .address(address!("0x000000000000000000000000000000000cafe001"))
+                .code(code_b);
+            accs[2]
+                .address(address!("0x000000000000000000000000000000000cafe002"))
+                .balance(Word::from(1u64 << 30));
+        },
+        |mut txs, accs| {
+            txs[0].to(accs[0].address).from(accs[2].address);
+        },
+        |block, _tx| block.number(0xcafeu64),
+    )
+    .unwrap()
+    .into();
+
+    // get last CALL
+    let (index, step) = block.geth_traces[0]
+        .struct_logs
+        .iter()
+        .enumerate()
+        .rev()
+        .find(|(_, s)| s.op == OpcodeId::CALL)
+        .unwrap();
+    let next_step = block.geth_traces[0].struct_logs.get(index + 1);
+    assert_eq!(step.error, None);
+    assert_eq!(next_step.unwrap().op, OpcodeId::STOP);
+    assert_eq!(next_step.unwrap().stack, Stack(vec![]));
+
+    let mut builder = CircuitInputBuilderTx::new(&block, step);
+    let error = builder.state_ref().get_step_err(step, next_step);
+    // expects no errors detected
+    assert_eq!(error.unwrap(), None);
 }
 
 #[test]
@@ -299,9 +348,9 @@ fn tracer_err_address_collision() {
 
     let mut code_b = Bytecode::default();
     // pad code_creator to multiple of 32 bytes
-    let len = code_creator.code().len();
+    let len = code_creator.to_vec().len();
     let code_creator: Vec<u8> = code_creator
-        .code()
+        .to_vec()
         .iter()
         .cloned()
         .chain(0u8..((32 - len % 32) as u8))
@@ -443,9 +492,9 @@ fn tracer_err_code_store_out_of_gas() {
 
     let mut code_b = Bytecode::default();
     // pad code_creator to multiple of 32 bytes
-    let len = code_creator.code().len();
+    let len = code_creator.to_vec().len();
     let code_creator: Vec<u8> = code_creator
-        .code()
+        .to_vec()
         .iter()
         .cloned()
         .chain(0..(32 - len % 32) as u8)
@@ -550,9 +599,9 @@ fn tracer_err_invalid_code() {
 
     let mut code_b = Bytecode::default();
     // pad code_creator to multiple of 32 bytes
-    let len = code_creator.code().len();
+    let len = code_creator.to_vec().len();
     let code_creator: Vec<u8> = code_creator
-        .code()
+        .to_vec()
         .iter()
         .cloned()
         .chain(0u8..((32 - len % 32) as u8))
@@ -655,9 +704,9 @@ fn tracer_err_max_code_size_exceeded() {
 
     let mut code_b = Bytecode::default();
     // pad code_creator to multiple of 32 bytes
-    let len = code_creator.code().len();
+    let len = code_creator.to_vec().len();
     let code_creator: Vec<u8> = code_creator
-        .code()
+        .to_vec()
         .iter()
         .cloned()
         .chain(0u8..((32 - len % 32) as u8))
@@ -750,9 +799,9 @@ fn tracer_create_stop() {
 
     let mut code_b = Bytecode::default();
     // pad code_creator to multiple of 32 bytes
-    let len = code_creator.code().len();
+    let len = code_creator.to_vec().len();
     let code_creator: Vec<u8> = code_creator
-        .code()
+        .to_vec()
         .iter()
         .cloned()
         .chain(0u8..((32 - len % 32) as u8))
@@ -1232,7 +1281,7 @@ fn tracer_err_invalid_opcode() {
     // The second opcode is invalid (0x0f)
     let mut code = bytecode::Bytecode::default();
     code.write_op(OpcodeId::PC);
-    code.write(0x0f);
+    code.write(0x0f, true);
     let block: GethData = TestContext::<2, 1>::new_with_logger_config(
         None,
         |accs| {
@@ -1468,9 +1517,9 @@ fn create2_address() {
 
     let mut code_b = Bytecode::default();
     // pad code_creator to multiple of 32 bytes
-    let len = code_creator.code().len();
+    let len = code_creator.to_vec().len();
     let code_creator: Vec<u8> = code_creator
-        .code()
+        .to_vec()
         .iter()
         .cloned()
         .chain(0u8..((32 - len % 32) as u8))
@@ -1568,9 +1617,9 @@ fn create_address() {
 
     let mut code_b = Bytecode::default();
     // pad code_creator to multiple of 32 bytes
-    let len = code_creator.code().len();
+    let len = code_creator.to_vec().len();
     let code_creator: Vec<u8> = code_creator
-        .code()
+        .to_vec()
         .iter()
         .cloned()
         .chain(0u8..((32 - len % 32) as u8))
@@ -1895,9 +1944,9 @@ fn test_gen_access_trace_create_push_call_stack() {
 
     let mut code_b = Bytecode::default();
     // pad code_creator to multiple of 32 bytes
-    let len = code_creator.code().len();
+    let len = code_creator.to_vec().len();
     let code_creator: Vec<u8> = code_creator
-        .code()
+        .to_vec()
         .iter()
         .cloned()
         .chain(0u8..((32 - len % 32) as u8))

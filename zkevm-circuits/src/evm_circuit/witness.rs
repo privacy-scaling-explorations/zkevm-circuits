@@ -10,7 +10,7 @@ use crate::evm_circuit::{
 };
 
 use bus_mapping::{
-    circuit_input_builder::{self, StepAuxiliaryData},
+    circuit_input_builder::{self, CopyEvent},
     error::{ExecError, OogError},
     operation::{self, AccountField, CallContextField, TxLogField, TxReceiptField},
 };
@@ -36,6 +36,9 @@ pub struct Block<F> {
     pub bytecodes: HashMap<Word, Bytecode>,
     /// The block context
     pub context: BlockContext,
+    /// Copy events for the EVM circuit's Copy Table, a mapping from (tx_id ||
+    /// call_id || pc) to the corresponding copy event.
+    pub copy_events: HashMap<(usize, usize, usize), CopyEvent>,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -304,8 +307,6 @@ pub struct ExecStep {
     pub log_id: usize,
     /// The opcode corresponds to the step
     pub opcode: Option<OpcodeId>,
-    /// Step auxiliary data
-    pub aux_data: Option<StepAuxiliaryData>,
 }
 
 impl ExecStep {
@@ -373,48 +374,6 @@ impl std::ops::Index<(RwTableTag, usize)> for RwMap {
 
     fn index(&self, (tag, idx): (RwTableTag, usize)) -> &Self::Output {
         &self.0.get(&tag).unwrap()[idx]
-    }
-}
-
-impl RwMap {
-    /// These "sorted_xx" methods are used in state circuit
-    pub fn sorted_memory_rw(&self) -> Vec<Rw> {
-        let mut sorted = self.0[&RwTableTag::Memory].clone();
-        sorted.sort_by_key(|x| match x {
-            Rw::Memory {
-                call_id,
-                memory_address,
-                ..
-            } => (*call_id, *memory_address),
-            _ => panic!("invalid memory rw"),
-        });
-        sorted
-    }
-
-    pub fn sorted_stack_rw(&self) -> Vec<Rw> {
-        let mut sorted = self.0[&RwTableTag::Stack].clone();
-        sorted.sort_by_key(|x| match x {
-            Rw::Stack {
-                call_id,
-                stack_pointer,
-                ..
-            } => (*call_id, *stack_pointer),
-            _ => panic!("invalid stack rw"),
-        });
-        sorted
-    }
-
-    pub fn sorted_storage_rw(&self) -> Vec<Rw> {
-        let mut sorted = self.0[&RwTableTag::AccountStorage].clone();
-        sorted.sort_by_key(|x| match x {
-            Rw::AccountStorage {
-                account_address,
-                storage_key,
-                ..
-            } => (*account_address, *storage_key),
-            _ => panic!("invalid storage rw"),
-        });
-        sorted
     }
 }
 
@@ -1282,9 +1241,6 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
             }
             circuit_input_builder::ExecState::BeginTx => ExecutionState::BeginTx,
             circuit_input_builder::ExecState::EndTx => ExecutionState::EndTx,
-            circuit_input_builder::ExecState::CopyToMemory => ExecutionState::CopyToMemory,
-            circuit_input_builder::ExecState::CopyToLog => ExecutionState::CopyToLog,
-            circuit_input_builder::ExecState::CopyCodeToMemory => ExecutionState::CopyCodeToMemory,
         }
     }
 }
@@ -1333,7 +1289,6 @@ fn step_convert(step: &circuit_input_builder::ExecStep) -> ExecStep {
         memory_size: step.memory_size as u64,
         reversible_write_counter: step.reversible_write_counter,
         log_id: step.log_id,
-        aux_data: step.aux_data.map(Into::into),
     }
 }
 
@@ -1426,6 +1381,16 @@ pub fn block_convert(
                             Bytecode::new(code_db.hash_code.get(&code_hash).unwrap().to_vec());
                         (bytecode.hash, bytecode)
                     })
+            })
+            .collect(),
+        copy_events: block
+            .copy_events
+            .iter()
+            .map(|copy_event| {
+                (
+                    (copy_event.tx_id, copy_event.call_id, copy_event.pc.0),
+                    copy_event.clone(),
+                )
             })
             .collect(),
     }

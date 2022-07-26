@@ -11,6 +11,8 @@ use halo2_proofs::{
     poly::Rotation,
 };
 
+use crate::util::Expr;
+
 /// Trait that needs to be implemented for any gadget or circuit that wants to
 /// implement `IsZero`.
 pub trait IsZeroInstruction<F: FieldExt> {
@@ -34,6 +36,13 @@ pub struct IsZeroConfig<F> {
     /// This can be used directly for custom gate at the offset if `is_zero` is
     /// called, it will be 1 if `value` is zero, and 0 otherwise.
     pub is_zero_expression: Expression<F>,
+}
+
+impl<F: FieldExt> IsZeroConfig<F> {
+    /// Returns the is_zero expression
+    pub fn expr(&self) -> Expression<F> {
+        self.is_zero_expression.clone()
+    }
 }
 
 /// Wrapper arround [`IsZeroConfig`] for which [`Chip`] is implemented.
@@ -63,7 +72,7 @@ impl<F: FieldExt> IsZeroChip<F> {
         value_inv: Column<Advice>,
     ) -> IsZeroConfig<F> {
         // dummy initialization
-        let mut is_zero_expression = Expression::Constant(F::zero());
+        let mut is_zero_expression = 0.expr();
 
         meta.create_gate("is_zero gate", |meta| {
             let q_enable = q_enable(meta);
@@ -71,19 +80,13 @@ impl<F: FieldExt> IsZeroChip<F> {
             let value_inv = meta.query_advice(value_inv, Rotation::cur());
             let value = value(meta);
 
-            let one = Expression::Constant(F::one());
-            is_zero_expression = one - value.clone() * value_inv.clone();
+            is_zero_expression = 1.expr() - value.clone() * value_inv;
 
-            // This checks `value_inv ≡ value.invert()` when `value` is not
-            // zero: value ⋅ (1 - value ⋅ value_inv)
-            let poly1 = value * is_zero_expression.clone();
-            // This checks `value_inv ≡ 0` when `value` is zero:
-            // value_inv ⋅ (1 - value ⋅ value_inv)
-            let poly2 = value_inv * is_zero_expression.clone();
-
-            [poly1, poly2]
-                .into_iter()
-                .map(move |poly| q_enable.clone() * poly)
+            // We wish to satisfy the below constrain for the following cases:
+            //
+            // 1. value == 0
+            // 2. if value != 0, require is_zero_expression == 0 => value_inv == value.invert()
+            [q_enable * value * is_zero_expression.clone()]
         });
 
         IsZeroConfig::<F> {
