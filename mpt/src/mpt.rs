@@ -169,13 +169,20 @@ pub enum FixedTableTag {
 }
 
 #[derive(Default)]
+/*
+Some values are accumulating through the rows (or block of rows) and we need to access the previous value
+to continue the calculation, for this reason the previous values are stored in ProofVariables struct.
+Such accumulated value is for example key_rlc which stores the intermediate key RLC (in each branch
+and extension node block a new intermediate key RLC is computed).
+Also, for example, modified_node is given in branch init but needed to be set in every branch children row.
+*/
 struct ProofVariables<F> {
-    modified_node: u8,
-    s_mod_node_hash_rlc: F,
-    c_mod_node_hash_rlc: F,
-    node_index: u8,
-    acc_s: F,
-    acc_mult_s: F,
+    modified_node: u8, // branch child that is being changed, it is the same in all branch children rows
+    s_mod_node_hash_rlc: F, // hash rlc of the modified_node for S proof, it is the same in all branch children rows
+    c_mod_node_hash_rlc: F, // hash rlc of the modified_node for C proof, it is the same in all branch children rows
+    node_index: u8, // branch child index
+    acc_s: F, // RLC accumulator for the whole node (taking into account all RLP bytes of the node)
+    acc_mult_s: F, // multiplier for acc_s
     acc_account_s: F,
     acc_mult_account_s: F,
     acc_account_c: F,
@@ -184,18 +191,18 @@ struct ProofVariables<F> {
     acc_mult_nonce_balance_s: F,
     acc_nonce_balance_c: F,
     acc_mult_nonce_balance_c: F,
-    acc_c: F,
-    acc_mult_c: F,
+    acc_c: F, // RLC accumulator for the whole node (taking into account all RLP bytes of the node)
+    acc_mult_c: F, // multiplier for acc_c
     key_rlc: F, /* used first for account address, then for storage key */
-    key_rlc_mult: F,
-    extension_node_rlc: F,
+    key_rlc_mult: F, // multiplier for key_rlc
+    extension_node_rlc: F, // RLC accumulator for extension node
     key_rlc_prev: F, /* for leaf after placeholder extension/branch, we need to go one level
                       * back to get previous key_rlc */
     key_rlc_mult_prev: F,
-    mult_diff: F,
+    mult_diff: F, // power of randomness r: multiplier_curr = multiplier_prev * mult_diff
     key_rlc_sel: bool, /* If true, nibble is multiplied by 16, otherwise by 1. */
-    is_branch_s_placeholder: bool,
-    is_branch_c_placeholder: bool,
+    is_branch_s_placeholder: bool, // whether S branch is just a placeholder
+    is_branch_c_placeholder: bool, // whether C branch is just a placeholder
     drifted_pos: u8, /* needed when leaf turned into branch and leaf moves into a branch where
                       * it's at drifted_pos position */
     rlp_len_rem_s: i32, /* branch RLP length remainder, in each branch children row this value

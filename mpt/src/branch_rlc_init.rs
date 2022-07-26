@@ -6,7 +6,7 @@ use halo2_proofs::{
 use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
-use crate::param::HASH_WIDTH;
+use crate::{param::HASH_WIDTH, helpers::get_bool_constraint};
 
 #[derive(Clone, Debug)]
 pub(crate) struct BranchRLCInitConfig {}
@@ -70,20 +70,20 @@ impl<F: FieldExt> BranchRLCInitChip<F> {
             let three_rlp_bytes_c = (one.clone() - c1.clone()) * c2.clone();
 
             constraints.push((
-                "branch init two_rlp_bytes_s boolean",
-                q_enable.clone() * s1.clone() * (one.clone() - s1.clone()),
+                "branch init s1 boolean",
+                get_bool_constraint(q_enable.clone(), s1.clone())
             ));
             constraints.push((
-                "branch init two_rlp_bytes_c boolean",
-                q_enable.clone() * c1.clone() * (one.clone() - c1.clone()),
+                "branch init c1 boolean",
+                get_bool_constraint(q_enable.clone(), c1.clone())
             ));
             constraints.push((
-                "branch init three_rlp_bytes_s boolean",
-                q_enable.clone() * s2.clone() * (one.clone() - s2.clone()),
+                "branch init s2 boolean",
+                get_bool_constraint(q_enable.clone(), s2.clone())
             ));
             constraints.push((
-                "branch init three_rlp_bytes_c boolean",
-                q_enable.clone() * c2.clone() * (one.clone() - c2.clone()),
+                "branch init c2 boolean",
+                get_bool_constraint(q_enable.clone(), c2.clone())
             ));
 
             let s_rlp1 = meta.query_advice(s_advices[2], Rotation::cur());
