@@ -2428,20 +2428,23 @@ impl<F: FieldExt> MPTConfig<F> {
                                 offset,
                             )?;
 
-                            let assign_long_short = |region: &mut Region<'_, F>, long: bool| {
-                                let mut is_short = false;
-                                let mut is_long = false;
-                                if long {
-                                    is_long = true;
-                                } else {
-                                    is_short = true;
+                            let assign_long_short = |region: &mut Region<'_, F>, typ: &str| {
+                                let mut flag1 = false;
+                                let mut flag2 = false;
+                                if typ == "long" {
+                                    flag1 = true;
+                                } else if typ == "short" {
+                                    flag2 = true;
+                                } else if typ == "last_level" {
+                                    flag1 = true;
+                                    flag2 = true;
                                 }
                                 region
                                     .assign_advice(
                                         || "assign s_modified_node_rlc".to_string(),
                                         self.s_mod_node_hash_rlc,
                                         offset,
-                                        || Ok(F::from(is_long as u64)),
+                                        || Ok(F::from(flag1 as u64)),
                                     )
                                     .ok();
                                 region
@@ -2449,7 +2452,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                         || "assign c_modified_node_rlc".to_string(),
                                         self.c_mod_node_hash_rlc,
                                         offset,
-                                        || Ok(F::from(is_short as u64)),
+                                        || Ok(F::from(flag2 as u64)),
                                     )
                                     .ok();
                             };
@@ -2488,21 +2491,31 @@ impl<F: FieldExt> MPTConfig<F> {
                             if row[row.len() - 1] == 2 || row[row.len() - 1] == 3 {
                                 /*
                                 getProof storage leaf examples:
-                                 [226,160,59,138,106,70,105,186,37,13,38,205,122,69,158,202,157,33,95,131,7,227,58,235,229,3,121,188,90,54,23,236,52,68,1]
-                                 [248,67,160,59,138,106,70,105,186,37,13,38,205,122,69,158,202,157,33,95,131,7,227,58,235,229,3,121,188,90,54,23,236,52,68,161,160,187,239,170,18,88,1,56,188,38,60,149,117,120,38,223,78,36,235,129,201,170,170,170,170,170,17
+                                  short (one RLP byte > 128: 160):
+                                  [226,160,59,138,106,70,105,186,37,13,38,205,122,69,158,202,157,33,95,131,7,227,58,235,229,3,121,188,90,54,23,236,52,68,1]
 
-                                 long value in the last level:
-                                 [227,32,161,160,187,239,170,18,88,1,56,188,38,60,149,117,120,38,223,78,36,235,129,201,170,170,170,170,170,170,170,170,170,170,170,170]
-                                 32 at position 1 means there is no key nibbles (last level)
+                                  long (two RLP bytes: 67, 160):
+                                  [248,67,160,59,138,106,70,105,186,37,13,38,205,122,69,158,202,157,33,95,131,7,227,58,235,229,3,121,188,90,54,23,236,52,68,161,160,187,239,170,18,88,1,56,188,38,60,149,117,120,38,223,78,36,235,129,201,170,170,170,170,170,17
 
-                                 [194,32,1]
-                                 [196,130,32,0,1]
+                                  last_level (one RLP byte: 32)
+                                  32 at position 1 means there are no key nibbles (last level):
+                                  [227,32,161,160,187,239,170,18,88,1,56,188,38,60,149,117,120,38,223,78,36,235,129,201,170,170,170,170,170,170,170,170,170,170,170,170]
+                                  [194,32,1]
+
+                                  this one falls into short again:
+                                  [196,130,32,0,1]
                                 */
 
                                 // Info whether leaf rlp is long or short.
                                 // Long means the key length is at position 2.
                                 // Short means the key length is at position 1.
-                                assign_long_short(&mut region, witness[ind][0] == 248);
+                                let mut typ = "short";
+                                if witness[ind][0] == 248 {
+                                    typ = "long";
+                                } else if witness[ind][1] == 32 {
+                                    typ = "last_level";
+                                }
+                                assign_long_short(&mut region, typ);
 
                                 if row[0] < 223 { // needs to be shorter than 32 bytes
                                     // not_hashed
@@ -2517,10 +2530,13 @@ impl<F: FieldExt> MPTConfig<F> {
                                 pv.acc_s = F::zero();
                                 pv.acc_mult_s = F::one();
                                 let len: usize;
-                                if row[0] == 248 {
+                                if typ == "long" {
                                     len = (row[2] - 128) as usize + 3;
-                                } else {
+                                } else if typ == "short" {
                                     len = (row[1] - 128) as usize + 2;
+                                } else {
+                                    // last_level
+                                    len = 1;
                                 }
                                 compute_acc_and_mult(
                                     row,
@@ -2555,7 +2571,10 @@ impl<F: FieldExt> MPTConfig<F> {
                                     key_rlc_new = pv.key_rlc_prev;
                                     key_rlc_mult_new = pv.key_rlc_mult_prev;
                                 }
-                                compute_key_rlc(&mut key_rlc_new, &mut key_rlc_mult_new, start);
+                                if typ != "last_level" {
+                                    // If in last level, the key RLC is already computed.
+                                    compute_key_rlc(&mut key_rlc_new, &mut key_rlc_mult_new, start);
+                                }
                                 region.assign_advice(
                                     || "assign key_rlc".to_string(),
                                     self.key_rlc,
@@ -2594,6 +2613,12 @@ impl<F: FieldExt> MPTConfig<F> {
                                     if row_prev[1] - key_len - 1 > 1 {
                                         is_long = true;
                                     }
+                                } else if row_prev[1] == 32 {
+                                    // last level
+                                    let leaf_len = row_prev[0] - 192;
+                                    if leaf_len - 1 > 1 {
+                                        is_long = true;
+                                    }
                                 } else {
                                     let leaf_len = row_prev[0] - 192;
                                     let key_len = row_prev[1] - 128;
@@ -2604,7 +2629,11 @@ impl<F: FieldExt> MPTConfig<F> {
                                 // Short means there is only one byte for value (no RLP specific bytes).
                                 // Long means there is more than one byte for value which brings two
                                 // RLP specific bytes, like: 161 160 ... for 32-long value.
-                                assign_long_short(&mut region, is_long);
+                                let mut typ = "short";
+                                if is_long {
+                                    typ = "long";
+                                } 
+                                assign_long_short(&mut region, typ);
 
                                 // Leaf RLC
                                 compute_acc_and_mult(
@@ -3008,7 +3037,13 @@ impl<F: FieldExt> MPTConfig<F> {
                                 // row[1] != 0 just to avoid usize problems below (when row doesn't
                                 // need to be assigned) Info whether
                                 // leaf rlp is long or short.
-                                assign_long_short(&mut region, witness[ind][0] == 248);
+                                let mut typ = "short";
+                                if witness[ind][0] == 248 {
+                                    typ = "long";
+                                } else if witness[ind][1] == 32 {
+                                    typ = "last_level";
+                                }
+                                assign_long_short(&mut region, typ);
 
                                 pv.acc_s = F::zero();
                                 pv.acc_mult_s = F::one();

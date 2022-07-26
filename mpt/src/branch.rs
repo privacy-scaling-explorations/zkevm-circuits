@@ -172,6 +172,25 @@ impl<F: FieldExt> BranchChip<F> {
             let c1 = meta.query_advice(s_advices[0], Rotation::prev());
             let c2 = meta.query_advice(s_advices[1], Rotation::prev());
 
+            // There should never be:
+            // rlp1, rlp2: 0, 0
+            constraints.push((
+                "not both zeros: rlp1, rlp2",
+                q_not_first.clone()
+                    * is_branch_init_prev.clone()
+                    * (one.clone() - s1.clone())
+                    * (one.clone() - s2.clone()),
+            ));
+            // There should never be:
+            // s_advices[0], s_advices[1]: 0, 0
+            constraints.push((
+                "not both zeros: s_advices[0], s_advices[1]",
+                q_not_first.clone()
+                    * is_branch_init_prev.clone()
+                    * (one.clone() - c1.clone())
+                    * (one.clone() - c2.clone()),
+            ));
+
             let one_rlp_byte_s = s1.clone() * s2.clone();
             let two_rlp_bytes_s = s1.clone() * (one.clone() - s2.clone());
             let three_rlp_bytes_s = (one.clone() - s1.clone()) * s2.clone();
@@ -236,7 +255,7 @@ impl<F: FieldExt> BranchChip<F> {
             // then s_rlp1 in this row will have s_rlp1 = 81 - 33.
 
             // is_branch_child with node_index = 0
-            // rlp_byte1_s stores the number of bytes in the branch (81 in the example with two RLP bytes)
+            // rlp_byte1_s stores the number of bytes in the branch (81 in the example with two RLP bytes) 
 
             constraints.push((
                 "first branch children one RLP meta byte S",
