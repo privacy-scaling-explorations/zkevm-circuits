@@ -51,8 +51,6 @@ impl Opcode for Return {
     }
 }
 
-// TODO: circuit implement
-
 #[cfg(test)]
 mod return_tests {
     use crate::mock::BlockData;
