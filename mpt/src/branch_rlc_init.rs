@@ -5,7 +5,7 @@ use halo2_proofs::{
 use eth_types::Field;
 use std::marker::PhantomData;
 use crate::{
-    helpers::range_lookups,
+    helpers::{range_lookups, get_bool_constraint},
     mpt::{FixedTableTag, MainCols},
     param::HASH_WIDTH,
 };
@@ -61,15 +61,11 @@ impl<F: Field> BranchRLCInitConfig<F> {
             let one = Expression::Constant(F::one());
             constraints.push((
                 "branch init two_rlp_bytes_s boolean",
-                q_enable.clone()
-                    * two_rlp_bytes_s.clone()
-                    * (one.clone() - two_rlp_bytes_s.clone()),
+                get_bool_constraint(q_enable.clone(), two_rlp_bytes_s.clone()),
             ));
             constraints.push((
                 "branch init two_rlp_bytes_c boolean",
-                q_enable.clone()
-                    * two_rlp_bytes_c.clone()
-                    * (one.clone() - two_rlp_bytes_c.clone()),
+                get_bool_constraint(q_enable.clone(), two_rlp_bytes_c.clone()),
             ));
             constraints.push((
                 "branch init three_rlp_bytes_s boolean",
