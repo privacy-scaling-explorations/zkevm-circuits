@@ -722,7 +722,6 @@ impl<F: FieldExt> MPTConfig<F> {
             c_mod_node_hash_rlc,
             acc_s,
             acc_mult_s,
-            acc_c, // used for not_hashed
             key_rlc,
             key_rlc_mult,
             sel1,
@@ -757,7 +756,6 @@ impl<F: FieldExt> MPTConfig<F> {
             c_mod_node_hash_rlc,
             acc_s,
             acc_mult_s,
-            acc_c, // used for not_hashed
             key_rlc,
             key_rlc_mult,
             sel1,

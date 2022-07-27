@@ -273,6 +273,8 @@ impl<F: FieldExt> LeafValueChip<F> {
             let is_leaf = meta.query_advice(is_leaf_value, Rotation::cur());
             let q_enable = q_not_first * not_first_level * is_leaf;
 
+            let not_hashed = meta.query_advice(acc_c, Rotation::prev());
+
             let rlc = meta.query_advice(acc_s, Rotation::cur());
 
             let mut placeholder_leaf = meta.query_advice(sel1, Rotation(rot));
@@ -295,6 +297,7 @@ impl<F: FieldExt> LeafValueChip<F> {
                     * rlc
                     * (one.clone() - placeholder_leaf.clone())
                     * (one.clone() - is_leaf_without_branch.clone())
+                    * (one.clone() - not_hashed.clone())
                     * (one.clone() - is_branch_placeholder.clone()),
                 meta.query_fixed(keccak_table[0], Rotation::cur()),
             ));
@@ -308,8 +311,26 @@ impl<F: FieldExt> LeafValueChip<F> {
                     * mod_node_hash_rlc_cur
                     * (one.clone() - placeholder_leaf.clone())
                     * (one.clone() - is_leaf_without_branch.clone())
+                    * (one.clone() - not_hashed.clone())
                     * (one.clone() - is_branch_placeholder.clone()),
                 keccak_table_i,
+            ));
+
+            constraints
+        });
+
+        meta.create_gate("non-hashed leaf in parent", |meta| {
+            let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
+            let is_leaf = meta.query_advice(is_leaf_value, Rotation::cur());
+            let q_enable = q_not_first * is_leaf;
+
+            let not_hashed = meta.query_advice(acc_c, Rotation::prev());
+
+            // TODO: replace acc_c with some other column, acc_c is taken
+            let mut constraints = vec![];
+            constraints.push((
+                "non-hashed",
+                q_enable.clone() * (one.clone() - not_hashed), // for debugging
             ));
 
             constraints

@@ -40,7 +40,6 @@ impl<F: FieldExt> LeafKeyChip<F> {
         c_mod_node_hash_rlc: Column<Advice>,
         acc: Column<Advice>,
         acc_mult: Column<Advice>,
-        not_hashed: Column<Advice>,
         key_rlc: Column<Advice>,
         key_rlc_mult: Column<Advice>,
         key_rlc_prev: Column<Advice>,
