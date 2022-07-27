@@ -1,5 +1,8 @@
 use crate::{
-    circuit_input_builder::{CircuitInputStateRef, ExecStep},
+    circuit_input_builder::{
+        CircuitInputStateRef, CopyDataType, CopyEvent, CopyStep, ExecStep, NumberOrHash,
+    },
+    operation::RW,
     Error,
 };
 use eth_types::{GethExecStep, Word, U256};
@@ -47,6 +50,50 @@ impl Opcode for Sha3 {
             geth_steps[1].stack.last_filled(),
             sha3.into(),
         )?;
+
+        // Memory read operations
+        let mut steps = Vec::with_capacity(2 * size.as_usize());
+        for (i, byte) in memory.iter().enumerate() {
+            let rwc = state.block_ctx.rwc;
+            state.memory_read(&mut exec_step, (offset.as_usize() + i).into(), *byte)?;
+            steps.push(CopyStep {
+                addr: offset.as_u64() + (i as u64),
+                tag: CopyDataType::Memory,
+                rw: RW::READ,
+                value: *byte,
+                is_code: None,
+                is_pad: false,
+                rwc,
+                rwc_inc_left: 0,
+            });
+            steps.push(CopyStep {
+                addr: i as u64,
+                tag: CopyDataType::RlcAcc,
+                rw: RW::WRITE,
+                value: *byte,
+                is_code: None,
+                is_pad: false,
+                rwc,
+                rwc_inc_left: 0,
+            })
+        }
+
+        let call_id = state.call()?.call_id;
+        state.push_copy(CopyEvent {
+            src_addr: offset.as_u64(),
+            src_addr_end: offset.as_u64() + size.as_u64(),
+            src_type: CopyDataType::Memory,
+            src_id: NumberOrHash::Number(call_id),
+            dst_addr: 0,
+            dst_type: CopyDataType::RlcAcc,
+            dst_id: NumberOrHash::Number(call_id),
+            log_id: None,
+            length: size.as_u64(),
+            steps,
+            tx_id: state.tx_ctx.id(),
+            call_id,
+            pc: exec_step.pc,
+        });
 
         Ok(vec![exec_step])
     }
@@ -170,6 +217,9 @@ mod sha3_tests {
                 ),
             ]
         );
+
+        // TODO(rohit): check memory reads
+        // TODO(rohit): check copy event and steps
     }
 
     #[test]

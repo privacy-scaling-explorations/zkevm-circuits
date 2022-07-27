@@ -153,6 +153,10 @@ pub enum CopyDataType {
     TxCalldata,
     /// When the destination for the copy event is tx's log.
     TxLog,
+    /// When the destination rows are not directly for copying but for a special
+    /// scenario where we wish to accumulate the value (RLC) over all rows.
+    /// This is used for Copy Lookup from SHA3 opcode verification.
+    RlcAcc,
 }
 
 impl From<CopyDataType> for usize {
