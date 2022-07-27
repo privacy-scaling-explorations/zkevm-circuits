@@ -242,8 +242,8 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
             vec![q_block_table * (block_value - rpi_block_value)]
         });
 
-        let offset = BLOCK_LEN + EXTRA_LEN;
-        let tx_table_len = MAX_TXS * TX_LEN + MAX_CALLDATA;
+        let offset = BLOCK_LEN + 1 + EXTRA_LEN;
+        let tx_table_len = MAX_TXS * TX_LEN + 1 + MAX_CALLDATA;
 
         //  0.3 Tx table -> {tx_id, index, value} column match with raw_public_inputs
         // at expected offset
@@ -311,7 +311,8 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
     /// Return the number of rows in the circuit
     #[inline]
     fn circuit_len() -> usize {
-        BLOCK_LEN + EXTRA_LEN + 3 * (TX_LEN * MAX_TXS + MAX_CALLDATA)
+        // +1 empty row in block table, +1 empty row in tx_table
+        BLOCK_LEN + 1 + EXTRA_LEN + 3 * (TX_LEN * MAX_TXS + 1 + MAX_CALLDATA)
     }
 
     /// Assigns a tx_table row and stores the values in a vec for the
@@ -341,9 +342,9 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
         region.assign_advice(|| "tx_value", self.tx_value, offset, || Ok(tx_value))?;
 
         // Assign vals to raw_public_inputs column
-        let tx_table_len = TX_LEN * MAX_TXS + MAX_CALLDATA;
+        let tx_table_len = TX_LEN * MAX_TXS + 1 + MAX_CALLDATA;
 
-        let id_offset = BLOCK_LEN + EXTRA_LEN;
+        let id_offset = BLOCK_LEN + 1 + EXTRA_LEN;
         let index_offset = id_offset + tx_table_len;
         let value_offset = index_offset + tx_table_len;
 
@@ -390,6 +391,17 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
         for i in 0..BLOCK_LEN {
             self.q_block_table.enable(region, offset + i)?;
         }
+
+        // zero row
+        region.assign_advice(|| "zero", self.block_value, offset, || Ok(F::zero()))?;
+        region.assign_advice(
+            || "coinbase",
+            self.raw_public_inputs,
+            offset,
+            || Ok(F::zero()),
+        )?;
+        raw_pi_vals[offset] = F::zero();
+        offset += 1;
 
         // coinbase
         let coinbase = block_values.coinbase.to_scalar().unwrap();
@@ -498,7 +510,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
         randomness: F,
         raw_pi_vals: &mut Vec<F>,
     ) -> Result<[AssignedCell<F, F>; 2], Error> {
-        let mut offset = BLOCK_LEN;
+        let mut offset = BLOCK_LEN + 1;
         // block hash
         // let block_hash = rlc(extra.block_hash.to_fixed_bytes(), randomness);
         // region.assign_advice(
@@ -541,7 +553,6 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
         rand_rpi: F,
         raw_pi_vals: Vec<F>,
     ) -> Result<(AssignedCell<F, F>, AssignedCell<F, F>), Error> {
-        // TODO account for extra empty tx row if needed
         let circuit_len = PiCircuitConfig::<F, MAX_TXS, MAX_CALLDATA>::circuit_len();
         assert_eq!(circuit_len, raw_pi_vals.len());
 
@@ -643,6 +654,18 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
                 let txs = self.public_data.get_tx_table_values();
                 assert!(txs.len() <= MAX_TXS);
                 let tx_default = TxValues::default();
+
+                // Add empty row
+                config.assign_tx_row(
+                    &mut region,
+                    offset,
+                    0,
+                    TxFieldTag::Null,
+                    0,
+                    F::zero(),
+                    &mut raw_pi_vals,
+                )?;
+                offset += 1;
 
                 for i in 0..MAX_TXS {
                     let tx = if i < txs.len() { &txs[i] } else { &tx_default };
@@ -807,9 +830,12 @@ mod pi_circuit_test {
 
         let mut offset = 0;
         let mut result =
-            vec![F::zero(); BLOCK_LEN + EXTRA_LEN + 3 * (TX_LEN * MAX_TXS + MAX_CALLDATA)];
+            vec![F::zero(); BLOCK_LEN + 1 + EXTRA_LEN + 3 * (TX_LEN * MAX_TXS + 1 + MAX_CALLDATA)];
 
         //  Insert Block Values
+        // zero row
+        result[offset] = F::zero();
+        offset += 1;
         // coinbase
         let mut coinbase_bytes = [0u8; 32];
         coinbase_bytes[12..].clone_from_slice(block.coinbase.as_bytes());
@@ -850,11 +876,18 @@ mod pi_circuit_test {
         assert!(txs.len() < MAX_TXS);
         let tx_default = TxValues::default();
 
-        let tx_table_len = TX_LEN * MAX_TXS + MAX_CALLDATA;
+        let tx_table_len = TX_LEN * MAX_TXS + 1 + MAX_CALLDATA;
 
-        let id_offset = BLOCK_LEN + EXTRA_LEN;
+        let id_offset = BLOCK_LEN + 1 + EXTRA_LEN;
         let index_offset = id_offset + tx_table_len;
         let value_offset = index_offset + tx_table_len;
+
+        // Insert zero row
+        result[id_offset + offset] = F::zero();
+        result[index_offset + offset] = F::zero();
+        result[value_offset + offset] = F::zero();
+
+        offset += 1;
 
         for i in 0..MAX_TXS {
             let tx = if i < txs.len() { &txs[i] } else { &tx_default };
@@ -911,7 +944,7 @@ mod pi_circuit_test {
             raw_public_inputs_col::<F, MAX_TXS, MAX_CALLDATA>(&public_data, randomness);
         assert_eq!(
             rlc_rpi_col.len(),
-            BLOCK_LEN + EXTRA_LEN + 3 * (TX_LEN * MAX_TXS + MAX_CALLDATA)
+            BLOCK_LEN + 1 + EXTRA_LEN + 3 * (TX_LEN * MAX_TXS + 1 + MAX_CALLDATA)
         );
 
         // Computation of raw_pulic_inputs
