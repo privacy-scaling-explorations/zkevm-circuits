@@ -839,7 +839,7 @@ impl<'a> CircuitInputStateRef<'a> {
         let call = self.call()?;
 
         // Return from a call with a failure
-        if step.depth != next_depth && next_result.is_zero() {
+        if step.depth == next_depth + 1 && next_result.is_zero() {
             if !matches!(step.op, OpcodeId::RETURN) {
                 // Without calling RETURN
                 return Ok(match step.op {
@@ -901,7 +901,7 @@ impl<'a> CircuitInputStateRef<'a> {
 
         // Return from a call without calling RETURN or STOP and having success
         // is unexpected.
-        if step.depth != next_depth
+        if step.depth == next_depth + 1
             && next_result != Word::zero()
             && !matches!(step.op, OpcodeId::RETURN | OpcodeId::STOP)
         {
