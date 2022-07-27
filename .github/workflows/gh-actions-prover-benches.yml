@@ -5,7 +5,7 @@ on:
 jobs:
   Prover_benchmarking_Automation:
     if: contains(github.event.label.name, 'benchmarks')
-    runs-on: self-hosted
+    runs-on: pse-runner
     env:
       PR_NUMBER: ${{ github.event.number }}
 
