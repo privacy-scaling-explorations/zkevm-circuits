@@ -10,16 +10,21 @@ on:
 ## `actions-rs/toolchain@v1` overwrite set to false so that
 ## `rust-toolchain` is always used and the only source of truth.
 
-# If you forked this repo, you can remove concurrency
-concurrency: 
-  group: ${{ github.head_ref || github.run_id }}
-  cancel-in-progress: false
-
 jobs:
+
+  consecutiveness:
+    if: github.event.pull_request.draft == false && github.repository == 'privacy-scaling-explorations/zkevm-circuits'
+
+    runs-on: ubuntu-latest
+    steps:
+    - uses: mktcode/consecutive-workflow-action@v1
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
 
   wakeuprunner:
     if: github.event.pull_request.draft == false && github.repository == 'privacy-scaling-explorations/zkevm-circuits'
 
+    needs: [consecutiveness]
     name: Wake up self-hosted runner
     runs-on: pse-runner
 
