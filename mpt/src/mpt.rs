@@ -2543,7 +2543,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                     len = (row[1] - 128) as usize + 2;
                                 } else {
                                     // last_level
-                                    len = 1;
+                                    len = 2;
                                 }
                                 compute_acc_and_mult(
                                     row,

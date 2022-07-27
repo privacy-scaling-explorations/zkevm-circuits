@@ -82,7 +82,7 @@ impl<F: FieldExt> LeafKeyChip<F> {
 
             let last_level = flag1.clone() * flag2.clone();
             let is_long = flag1.clone() * (one.clone() - flag2.clone());
-            // let is_short = (one.clone() - flag1.clone()) * flag2.clone();
+            let is_short = (one.clone() - flag1.clone()) * flag2.clone();
 
             constraints.push((
                 "is_long: s_rlp1 = 248",
@@ -105,10 +105,11 @@ impl<F: FieldExt> LeafKeyChip<F> {
                 q_enable.clone() * (one.clone() - flag1.clone()) * (one.clone() - flag2.clone()),
             ));
 
-            let mut rlc = s_rlp1;
-            rlc = rlc + s_rlp2 * r_table[0].clone();
+            // If leaf in last level, it contains only s_rlp1 and s_rlp2, while s_advices are 0.
+            let rlc_last_level = s_rlp1 + s_rlp2 * r_table[0].clone();
 
-            rlc = rlc + compute_rlc(meta, s_advices.to_vec(), 1, one.clone(), 0, r_table.clone());
+            let mut rlc = rlc_last_level.clone()
+                + compute_rlc(meta, s_advices.to_vec(), 1, one.clone(), 0, r_table.clone());
 
             let c_rlp1 = meta.query_advice(c_rlp1, Rotation::cur());
             // c_rlp2 can appear if long and if no branch above leaf
@@ -117,26 +118,39 @@ impl<F: FieldExt> LeafKeyChip<F> {
             rlc = rlc + c_rlp2 * r_table[R_TABLE_LEN - 1].clone() * r_table[2].clone();
 
             let acc = meta.query_advice(acc, Rotation::cur());
-            constraints.push(("Leaf key acc", q_enable * (rlc - acc)));
+            constraints.push(("Leaf key acc",
+                q_enable.clone()
+                * (is_short + is_long) // activate if is_short or is_long
+                * (rlc - acc.clone())));
+            
+            constraints.push(("Leaf key acc last level",
+                q_enable
+                * last_level
+                * (rlc_last_level - acc)));
 
             constraints
         });
 
         let sel_short = |meta: &mut VirtualCells<F>| {
             let q_enable = q_enable(meta);
-            let is_short = meta.query_advice(c_mod_node_hash_rlc, Rotation::cur());
+            let flag1 = meta.query_advice(s_mod_node_hash_rlc, Rotation::cur());
+            let flag2 = meta.query_advice(c_mod_node_hash_rlc, Rotation::cur());
+            let is_short = (one.clone() - flag1.clone()) * flag2.clone();
 
             q_enable * is_short
         };
         let sel_long = |meta: &mut VirtualCells<F>| {
             let q_enable = q_enable(meta);
-            let is_long = meta.query_advice(s_mod_node_hash_rlc, Rotation::cur());
+            let flag1 = meta.query_advice(s_mod_node_hash_rlc, Rotation::cur());
+            let flag2 = meta.query_advice(c_mod_node_hash_rlc, Rotation::cur());
+            let is_long = flag1.clone() * (one.clone() - flag2.clone());
 
             q_enable * is_long
         };
 
         /*
-        // There are 0s after key length.
+        There are 0s after key length (this doesn't need to be checked for last_level as
+        in this case s_advices are not used).
         for ind in 0..HASH_WIDTH {
             key_len_lookup(
                 meta,
@@ -325,6 +339,10 @@ impl<F: FieldExt> LeafKeyChip<F> {
         );
 
         meta.create_gate("Storage leaf key RLC (leaf in first level)", |meta| {
+            // Note: last_level (leaf being in the last level) cannot occur here because we are
+            // in the first level. If both flags would be 1, is_long and is_short would
+            // both be true which would lead into failed constraints.
+
             let q_enable = q_enable(meta);
             let mut constraints = vec![];
 
@@ -481,6 +499,10 @@ impl<F: FieldExt> LeafKeyChip<F> {
         // For a leaf after placeholder, we need to use key_rlc from previous level
         // (the branch above placeholder).
         meta.create_gate("Storage leaf key RLC (after placeholder)", |meta| {
+            // Note: last_level cannot occur in a leaf after placeholder branch, because being
+            // after placeholder branch means this leaf drifted down into a new branch (in a parallel
+            // proof) and thus cannot be in the last level.
+
             let q_enable = q_enable(meta);
             let mut constraints = vec![];
 

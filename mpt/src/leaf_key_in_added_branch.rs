@@ -76,20 +76,30 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
 
             let c248 = Expression::Constant(F::from(248));
             let s_rlp1 = meta.query_advice(s_rlp1, Rotation::cur());
-            let is_long = meta.query_advice(s_mod_node_hash_rlc, Rotation::cur());
-            let is_short = meta.query_advice(c_mod_node_hash_rlc, Rotation::cur());
+
+            let flag1 = meta.query_advice(s_mod_node_hash_rlc, Rotation::cur());
+            let flag2 = meta.query_advice(c_mod_node_hash_rlc, Rotation::cur());
+            let last_level = flag1.clone() * flag2.clone();
+            let is_long = flag1.clone() * (one.clone() - flag2.clone());
+            let is_short = (one.clone() - flag1.clone()) * flag2.clone();
+
             constraints.push((
                 "is_long",
                 q_enable.clone() * is_long.clone() * (s_rlp1.clone() - c248),
             ));
             constraints.push((
-                "is_long is boolean",
-                get_bool_constraint(q_enable.clone(), is_long.clone()),
+                "flag1 is boolean",
+                get_bool_constraint(q_enable.clone(), flag1.clone()),
             ));
             constraints.push((
-                "is_short is boolean",
-                get_bool_constraint(q_enable.clone(), is_long.clone()),
+                "flag2 is boolean",
+                get_bool_constraint(q_enable.clone(), flag2.clone()),
             ));
+            constraints.push((
+                "not both zeros: flag1, flag2",
+                q_enable.clone() * (one.clone() - flag1.clone()) * (one.clone() - flag2.clone()),
+            ));
+
             let is_branch_s_placeholder = meta.query_advice(
                 s_advices[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM],
                 Rotation(rot_branch_init),
@@ -98,21 +108,11 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
                 s_advices[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
                 Rotation(rot_branch_init),
             );
-            let is_leaf_in_first_storage_level =
-                meta.query_advice(is_account_leaf_in_added_branch, Rotation(rot_into_account));
-
-            constraints.push((
-                "is_long + is_short = 1 when leaf drifts",
-                q_enable.clone()
-                    * (is_branch_s_placeholder.clone() + is_branch_c_placeholder.clone()) // drifted leaf appears only when there is a placeholder branch
-                    * (one.clone() - is_leaf_in_first_storage_level.clone())
-                    * (is_long.clone() + is_short.clone() - one.clone()),
-            ));
 
             let s_rlp2 = meta.query_advice(s_rlp2, Rotation::cur());
-            let mut rlc = s_rlp1 + s_rlp2 * r_table[0].clone();
+            let rlc_last_level = s_rlp1 + s_rlp2 * r_table[0].clone();
 
-            rlc = rlc + compute_rlc(meta, s_advices.to_vec(), 1, one.clone(), 0, r_table.clone());
+            let mut rlc = rlc_last_level.clone() + compute_rlc(meta, s_advices.to_vec(), 1, one.clone(), 0, r_table.clone());
 
             let c_rlp1 = meta.query_advice(c_rlp1, Rotation::cur());
             rlc = rlc + c_rlp1 * r_table[R_TABLE_LEN - 1].clone() * r_table[1].clone();
@@ -120,9 +120,16 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
             rlc = rlc + c_rlp2 * r_table[R_TABLE_LEN - 1].clone() * r_table[2].clone();
 
             let acc = meta.query_advice(acc_s, Rotation::cur());
-            constraints.push(("Leaf key acc", q_enable
+            constraints.push(("Leaf key acc", q_enable.clone()
+                    * (is_short + is_long) // activate if is_short or is_long
                     * (is_branch_s_placeholder.clone() + is_branch_c_placeholder.clone()) // drifted leaf appears only when there is a placeholder branch
-                    * (rlc - acc)));
+                    * (rlc - acc.clone())));
+
+            constraints.push(("Leaf key acc last level", q_enable
+                    * last_level
+                    * (is_branch_s_placeholder.clone() + is_branch_c_placeholder.clone()) // drifted leaf appears only when there is a placeholder branch
+                    * (rlc_last_level - acc)));
+
 
             constraints
         });
@@ -139,7 +146,10 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
             );
             let is_leaf_in_first_storage_level =
                 meta.query_advice(is_account_leaf_in_added_branch, Rotation(rot_into_account));
-            let is_short = meta.query_advice(c_mod_node_hash_rlc, Rotation::cur());
+
+            let flag1 = meta.query_advice(s_mod_node_hash_rlc, Rotation::cur());
+            let flag2 = meta.query_advice(c_mod_node_hash_rlc, Rotation::cur());
+            let is_short = (one.clone() - flag1.clone()) * flag2.clone();
 
             q_enable * is_short * (is_branch_s_placeholder + is_branch_c_placeholder)
                 * (one.clone() - is_leaf_in_first_storage_level.clone())
@@ -156,14 +166,18 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
             );
             let is_leaf_in_first_storage_level =
                 meta.query_advice(is_account_leaf_in_added_branch, Rotation(rot_into_account));
-            let is_long = meta.query_advice(s_mod_node_hash_rlc, Rotation::cur());
+
+            let flag1 = meta.query_advice(s_mod_node_hash_rlc, Rotation::cur());
+            let flag2 = meta.query_advice(c_mod_node_hash_rlc, Rotation::cur());
+            let is_long = flag1.clone() * (one.clone() - flag2.clone());
 
             q_enable * is_long * (is_branch_s_placeholder + is_branch_c_placeholder)
                 * (one.clone() - is_leaf_in_first_storage_level.clone())
         };
 
         /*
-        // There are 0s after key length.
+        There are 0s after key length (this doesn't need to be checked for last_level as
+        in this case s_advices are not used).
         for ind in 0..HASH_WIDTH {
             key_len_lookup(
                 meta,
@@ -208,9 +222,11 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
           Leaf S             || Leaf C
                              || Drifted leaf (this is Leaf S drifted into Added branch)
 
-          Leaf S needs to have the same RLC as Drifted leaf.
-          Note that Leaf S RLC is computed by taking key_rlc from Branch S and then adding the bytes in Leaf key S row.
-          Drifted leaf RLC is computed by taking key_rlc from Added branch and then adding the bytes in Drifted leaf row.
+          Leaf S needs to have the same key RLC as Drifted leaf.
+          Note that Leaf S key RLC is computed by taking key_rlc from Branch S and
+          then adding the bytes in Leaf key S row.
+          Drifted leaf RLC is computed by taking key_rlc from Added branch and
+          then adding the bytes in Drifted leaf row.
 
         Delete case (C branch is placeholder):
           Branch S                        || Branch C             
@@ -245,8 +261,11 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
 
             let mult_diff = meta.query_advice(mult_diff, Rotation(rot_branch_init + 1));
 
-            let is_long = meta.query_advice(s_mod_node_hash_rlc, Rotation::cur());
-            let is_short = meta.query_advice(c_mod_node_hash_rlc, Rotation::cur());
+            let flag1 = meta.query_advice(s_mod_node_hash_rlc, Rotation::cur());
+            let flag2 = meta.query_advice(c_mod_node_hash_rlc, Rotation::cur());
+            let last_level = flag1.clone() * flag2.clone();
+            let is_long = flag1.clone() * (one.clone() - flag2.clone());
+            let is_short = (one.clone() - flag1.clone()) * flag2.clone();
 
             // Key RLC of the drifted leaf needs to be the same as key RLC of the leaf
             // before it drifted down into extension/branch.
@@ -259,6 +278,8 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
                 Rotation(rot_branch_init),
             );
 
+            // We retrieve key_rlc from the leaf that was replaced by a branch. This RLC
+            // need to be the same as drifted leaf key RLC.
             let leaf_key_s_rlc = meta.query_advice(key_rlc, Rotation(-(LEAF_DRIFTED_IND - LEAF_KEY_S_IND)));
             let leaf_key_c_rlc = meta.query_advice(key_rlc, Rotation(-(LEAF_DRIFTED_IND - LEAF_KEY_C_IND)));
 
@@ -312,14 +333,16 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
                 key_rlc_short = key_rlc_short + s * key_mult.clone() * r_table[ind - 1].clone();
             }
 
-            // Note: drifted leaf key can't reach c_rlp1 because it has at most 31 nibbles.
+            // Note: drifted leaf key cannot reach c_rlp1 because it has at most 31 nibbles.
             // In case of 31 nibbles, key occupies 32 bytes (in case of 32 nibbles and no
             // branch above the leaf, the key occupies 33 bytes).
 
             // No need to distinguish between sel1 and sel2 here as it was already
             // when computing key_rlc.
+            // Note: if S placeholder, leaf_key_s_rlc is key_rlc of the leaf before it drifted down
+            // in a new branch. This value needs to be the same as key_rlc of the drifted leaf.
             constraints.push((
-                "Drifted leaf key placeholder S",
+                "Drifted leaf key S short",
                 q_enable.clone()
                     * is_branch_s_placeholder.clone()
                     * is_short.clone()
@@ -327,7 +350,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
                     * (leaf_key_s_rlc.clone() - key_rlc_short.clone()),
             ));
             constraints.push((
-                "Drifted leaf key placeholder C",
+                "Drifted leaf key C short",
                 q_enable.clone()
                     * is_branch_c_placeholder.clone()
                     * is_short.clone()
@@ -367,7 +390,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
             // No need to distinguish between sel1 and sel2 here as it was already
             // when computing key_rlc.
             constraints.push((
-                "Drifted leaf key placeholder S long",
+                "Drifted leaf key S long",
                 q_enable.clone()
                     * is_branch_s_placeholder.clone()
                     * is_long.clone()
@@ -375,12 +398,40 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
                     * (leaf_key_s_rlc.clone() - key_rlc_long.clone()),
             ));
             constraints.push((
-                "Drifted leaf key placeholder C long",
+                "Drifted leaf key C long",
                 q_enable.clone()
                     * is_branch_c_placeholder.clone()
                     * is_long.clone()
                     * (one.clone() - is_leaf_in_first_storage_level.clone())
                     * (leaf_key_c_rlc.clone() - key_rlc_long.clone()),
+            ));
+
+            // Last level:
+            let s_rlp2 = meta.query_advice(s_rlp2, Rotation::cur());
+            constraints.push((
+                "Leaf key acc s_rlp2 = 32 last level",
+                q_enable.clone()
+                    * (is_branch_s_placeholder.clone() + is_branch_c_placeholder.clone()) // drifted leaf appears only when there is a placeholder branch
+                    * (s_rlp2.clone() - c32.clone())
+                    * (one.clone() - is_leaf_in_first_storage_level.clone())
+                    * last_level.clone(),
+            ));
+
+            constraints.push((
+                "Drifted leaf key S last level",
+                q_enable.clone()
+                    * is_branch_s_placeholder.clone()
+                    * last_level.clone()
+                    * (one.clone() - is_leaf_in_first_storage_level.clone())
+                    * (leaf_key_s_rlc.clone() - key_rlc_start.clone()), // no nibbles in drifted leaf
+            ));
+            constraints.push((
+                "Drifted leaf key C last level",
+                q_enable.clone()
+                    * is_branch_c_placeholder.clone()
+                    * last_level.clone()
+                    * (one.clone() - is_leaf_in_first_storage_level.clone())
+                    * (leaf_key_c_rlc.clone() - key_rlc_start), // no nibbles in drifted leaf
             ));
 
             constraints
