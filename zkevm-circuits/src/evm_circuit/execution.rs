@@ -64,6 +64,7 @@ mod push;
 mod r#return;
 mod sdiv_smod;
 mod selfbalance;
+mod sha3;
 mod shr;
 mod signed_comparator;
 mod signextend;
@@ -72,6 +73,7 @@ mod sstore;
 mod stop;
 mod swap;
 
+use self::sha3::Sha3Gadget;
 use add_sub::AddSubGadget;
 use addmod::AddModGadget;
 use begin_tx::BeginTxGadget;
@@ -191,8 +193,8 @@ pub(crate) struct ExecutionConfig<F> {
     return_gadget: ReturnGadget<F>,
     sdiv_smod_gadget: SignedDivModGadget<F>,
     selfbalance_gadget: SelfbalanceGadget<F>,
+    sha3_gadget: Sha3Gadget<F>,
     shr_gadget: ShrGadget<F>,
-    sha3_gadget: DummyGadget<F, 2, 1, { ExecutionState::SHA3 }>,
     address_gadget: DummyGadget<F, 0, 1, { ExecutionState::ADDRESS }>,
     balance_gadget: DummyGadget<F, 1, 1, { ExecutionState::BALANCE }>,
     blockhash_gadget: DummyGadget<F, 1, 1, { ExecutionState::BLOCKHASH }>,
@@ -863,7 +865,6 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::BLOCKCTXU256 => assign_exec_step!(self.block_ctx_u256_gadget),
             ExecutionState::SELFBALANCE => assign_exec_step!(self.selfbalance_gadget),
             // dummy gadgets
-            ExecutionState::SHA3 => assign_exec_step!(self.sha3_gadget),
             ExecutionState::ADDRESS => assign_exec_step!(self.address_gadget),
             ExecutionState::BALANCE => assign_exec_step!(self.balance_gadget),
             ExecutionState::BLOCKHASH => assign_exec_step!(self.blockhash_gadget),
@@ -881,6 +882,7 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::STATICCALL => assign_exec_step!(self.staticcall_gadget),
             ExecutionState::SELFDESTRUCT => assign_exec_step!(self.selfdestruct_gadget),
             // end of dummy gadgets
+            ExecutionState::SHA3 => assign_exec_step!(self.sha3_gadget),
             ExecutionState::SHR => assign_exec_step!(self.shr_gadget),
             ExecutionState::SIGNEXTEND => assign_exec_step!(self.signextend_gadget),
             ExecutionState::SLOAD => assign_exec_step!(self.sload_gadget),
