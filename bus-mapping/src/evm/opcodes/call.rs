@@ -26,6 +26,7 @@ impl Opcode for Call {
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];
+        let mut exec_step = state.new_step(geth_step)?;
 
         let args_offset = geth_step.stack.nth_last(3)?.as_usize();
         let args_length = geth_step.stack.nth_last(4)?.as_usize();
@@ -48,8 +49,6 @@ impl Opcode for Call {
             let minimal_length = max(args_minimal, ret_minimal);
             call_ctx.memory.extend_at_least(minimal_length);
         }
-
-        let mut exec_step = state.new_step(geth_step)?;
 
         let tx_id = state.tx_ctx.id();
         let call = state.parse_call(geth_step)?;
@@ -135,18 +134,22 @@ impl Opcode for Call {
             state.account_read(&mut exec_step, call.address, field, value, value)?;
         }
 
-        let current_call_ctx = state.call_ctx()?;
         // Calculate next_memory_word_size and callee_gas_left manually in case
         // there isn't next geth_step (e.g. callee doesn't have code).
+        debug_assert_eq!(exec_step.memory_size % 32, 0);
+        let curr_memory_word_size = (exec_step.memory_size as u64) / 32;
         let next_memory_word_size = [
-            current_call_ctx.memory.word_size() as u64,
+            curr_memory_word_size,
             (call.call_data_offset + call.call_data_length + 31) / 32,
             (call.return_data_offset + call.return_data_length + 31) / 32,
         ]
         .into_iter()
         .max()
         .unwrap();
+
         let has_value = !call.value.is_zero();
+        let memory_expansion_gas_cost =
+            memory_expansion_gas_cost(curr_memory_word_size, next_memory_word_size);
         let gas_cost = if is_warm {
             GasCost::WARM_ACCESS.as_u64()
         } else {
@@ -160,11 +163,9 @@ impl Opcode for Call {
                 }
         } else {
             0
-        } + memory_expansion_gas_cost(
-            current_call_ctx.memory.word_size() as u64,
-            next_memory_word_size,
-        );
-        let callee_gas_left = eip150_gas(geth_step.gas.0 - gas_cost, geth_step.stack.last()?);
+        } + memory_expansion_gas_cost;
+        let gas_specified = geth_step.stack.last()?;
+        let callee_gas_left = eip150_gas(geth_step.gas.0 - gas_cost, gas_specified);
 
         // There are 3 branches from here.
         match (
