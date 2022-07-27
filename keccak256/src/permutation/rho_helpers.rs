@@ -134,7 +134,7 @@ impl RhoLane {
         chunks.resize(RHO_LANE_SIZE, 0);
         let chunks: [u8; RHO_LANE_SIZE] = chunks.try_into().unwrap();
         let special_high = *chunks.get(64).unwrap();
-        let special_low = *chunks.get(0).unwrap();
+        let special_low = *chunks.first().unwrap();
         debug_assert!(special_high + special_low < B13, "invalid Rho input lane");
         let output = convert_b13_lane_to_b9(input.clone(), rotation);
 
