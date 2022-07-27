@@ -102,6 +102,9 @@ impl GasCost {
     pub const CREATE: Self = Self(32000);
     /// Constant cost for copying every word
     pub const COPY: Self = Self(3);
+    /// Constant cost for copying every word, specifically in the case of SHA3
+    /// opcode.
+    pub const COPY_SHA3: Self = Self(6);
     /// Constant cost for accessing account or storage key
     pub const WARM_ACCESS: Self = Self(100);
     /// Constant cost for a cold SLOAD

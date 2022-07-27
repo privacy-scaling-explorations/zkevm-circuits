@@ -334,14 +334,13 @@ impl<F: Field, const N: usize, const N_BYTES_MEMORY_WORD_SIZE: usize>
 /// This gas cost is the difference between the next and current memory costs:
 /// `memory_cost = Gmem * memory_size + floor(memory_size * memory_size / 512)`
 #[derive(Clone, Debug)]
-pub(crate) struct MemoryCopierGasGadget<F> {
+pub(crate) struct MemoryCopierGasGadget<F, const GAS_COPY: GasCost> {
     word_size: MemoryWordSizeGadget<F>,
     gas_cost: Expression<F>,
     gas_cost_range_check: RangeCheckGadget<F, N_BYTES_GAS>,
 }
 
-impl<F: Field> MemoryCopierGasGadget<F> {
-    pub const GAS_COPY: GasCost = GasCost::COPY;
+impl<F: Field, const GAS_COPY: GasCost> MemoryCopierGasGadget<F, GAS_COPY> {
     pub const WORD_SIZE: u64 = 32u64;
 
     /// Input requirements:
@@ -358,7 +357,7 @@ impl<F: Field> MemoryCopierGasGadget<F> {
     ) -> Self {
         let word_size = MemoryWordSizeGadget::construct(cb, num_bytes);
 
-        let gas_cost = word_size.expr() * Self::GAS_COPY.expr() + memory_expansion_gas_cost;
+        let gas_cost = word_size.expr() * GAS_COPY.expr() + memory_expansion_gas_cost;
         let gas_cost_range_check = RangeCheckGadget::construct(cb, gas_cost.clone());
 
         Self {
@@ -381,7 +380,7 @@ impl<F: Field> MemoryCopierGasGadget<F> {
         memory_expansion_gas_cost: u64,
     ) -> Result<u64, Error> {
         let word_size = self.word_size.assign(region, offset, num_bytes)?;
-        let gas_cost = word_size * Self::GAS_COPY.as_u64() + memory_expansion_gas_cost;
+        let gas_cost = word_size * GAS_COPY.as_u64() + memory_expansion_gas_cost;
         self.gas_cost_range_check
             .assign(region, offset, F::from(gas_cost))?;
         // Return the memory copier gas cost
