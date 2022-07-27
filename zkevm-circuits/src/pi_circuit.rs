@@ -247,39 +247,48 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
 
         //  0.3 Tx table -> {tx_id, index, value} column match with raw_public_inputs
         // at expected offset
-        meta.create_gate("", |meta| {
-            // row.q_tx_table * row.tx_table.tx_id
-            // == row.q_tx_table * row_offset_tx_table_tx_id.raw_public_inputs
-            let q_tx_table = meta.query_selector(q_tx_table);
-            let tx_id = meta.query_advice(tx_id, Rotation::cur());
-            let rpi_tx_id = meta.query_advice(raw_public_inputs, Rotation(offset as i32));
+        meta.create_gate(
+            "tx_table.tx_id[i] == raw_public_inputs[offset + i]",
+            |meta| {
+                // row.q_tx_table * row.tx_table.tx_id
+                // == row.q_tx_table * row_offset_tx_table_tx_id.raw_public_inputs
+                let q_tx_table = meta.query_selector(q_tx_table);
+                let tx_id = meta.query_advice(tx_id, Rotation::cur());
+                let rpi_tx_id = meta.query_advice(raw_public_inputs, Rotation(offset as i32));
 
-            vec![q_tx_table * (tx_id - rpi_tx_id)]
-        });
+                vec![q_tx_table * (tx_id - rpi_tx_id)]
+            },
+        );
 
-        meta.create_gate("", |meta| {
-            // row.q_tx_table * row.tx_table.tx_index
-            // == row.q_tx_table * row_offset_tx_table_tx_index.raw_public_inputs
-            let q_tx_table = meta.query_selector(q_tx_table);
-            let tx_index = meta.query_advice(index, Rotation::cur());
-            let rpi_tx_index =
-                meta.query_advice(raw_public_inputs, Rotation((offset + tx_table_len) as i32));
+        meta.create_gate(
+            "tx_table.index[i] == raw_public_inputs[offset + tx_table_len + i]",
+            |meta| {
+                // row.q_tx_table * row.tx_table.tx_index
+                // == row.q_tx_table * row_offset_tx_table_tx_index.raw_public_inputs
+                let q_tx_table = meta.query_selector(q_tx_table);
+                let tx_index = meta.query_advice(index, Rotation::cur());
+                let rpi_tx_index =
+                    meta.query_advice(raw_public_inputs, Rotation((offset + tx_table_len) as i32));
 
-            vec![q_tx_table * (tx_index - rpi_tx_index)]
-        });
+                vec![q_tx_table * (tx_index - rpi_tx_index)]
+            },
+        );
 
-        meta.create_gate("", |meta| {
-            // row.q_tx_table * row.tx_table.tx_value
-            // == row.q_tx_table * row_offset_tx_table_tx_value.raw_public_inputs
-            let q_tx_table = meta.query_selector(q_tx_table);
-            let tx_value = meta.query_advice(tx_value, Rotation::cur());
-            let rpi_tx_value = meta.query_advice(
-                raw_public_inputs,
-                Rotation((offset + 2 * tx_table_len) as i32),
-            );
+        meta.create_gate(
+            "tx_table.tx_value[i] == raw_public_inputs[offset + 2* tx_table_len + i]",
+            |meta| {
+                // row.q_tx_table * row.tx_table.tx_value
+                // == row.q_tx_table * row_offset_tx_table_tx_value.raw_public_inputs
+                let q_tx_table = meta.query_selector(q_tx_table);
+                let tx_value = meta.query_advice(tx_value, Rotation::cur());
+                let rpi_tx_value = meta.query_advice(
+                    raw_public_inputs,
+                    Rotation((offset + 2 * tx_table_len) as i32),
+                );
 
-            vec![q_tx_table * (tx_value - rpi_tx_value)]
-        });
+                vec![q_tx_table * (tx_value - rpi_tx_value)]
+            },
+        );
 
         Self {
             q_block_table,
@@ -482,14 +491,13 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
     ///   - parent block hash
     /// to the raw_public_inputs column and stores a copy in a
     /// vector for computing RLC(raw_public_inputs).
-    #[allow(clippy::type_complexity)]
     fn assign_extra_fields(
         &self,
         region: &mut Region<'_, F>,
         extra: ExtraValues,
         randomness: F,
         raw_pi_vals: &mut Vec<F>,
-    ) -> Result<(AssignedCell<F, F>, AssignedCell<F, F>), Error> {
+    ) -> Result<[AssignedCell<F, F>; 2], Error> {
         let mut offset = BLOCK_LEN;
         // block hash
         // let block_hash = rlc(extra.block_hash.to_fixed_bytes(), randomness);
@@ -522,7 +530,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
             || Ok(parent_block_hash),
         )?;
         raw_pi_vals[offset] = parent_block_hash;
-        Ok((state_root_cell, parent_block_hash_cell))
+        Ok([state_root_cell, parent_block_hash_cell])
     }
 
     /// Assign `rpi_rlc_acc` and `rand_rpi` columns
@@ -550,7 +558,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
         self.q_end.enable(region, offset)?;
 
         // Next rows
-        for offset in (1..circuit_len-1).rev() {
+        for offset in (1..circuit_len - 1).rev() {
             rpi_rlc_acc *= rand_rpi;
             rpi_rlc_acc += raw_pi_vals[offset];
             region.assign_advice(
@@ -609,7 +617,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
         let pi_cells = layouter.assign_region(
             || "region 0",
             |mut region| {
-                let circuit_len = BLOCK_LEN + EXTRA_LEN + 3 * (TX_LEN * MAX_TXS + MAX_CALLDATA);
+                let circuit_len = Self::Config::circuit_len();
                 let mut raw_pi_vals = vec![F::zero(); circuit_len];
 
                 // Assign block table
@@ -623,7 +631,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
 
                 // Assign extra fields
                 let extra_vals = self.public_data.get_extra_values();
-                let (state_root, prev_block_hash) = config.assign_extra_fields(
+                let [state_root, prev_block_hash] = config.assign_extra_fields(
                     &mut region,
                     extra_vals,
                     self.randomness,
@@ -633,7 +641,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
                 let mut offset = 0;
                 // Assign Tx table
                 let txs = self.public_data.get_tx_table_values();
-                assert!(txs.len() < MAX_TXS);
+                assert!(txs.len() <= MAX_TXS);
                 let tx_default = TxValues::default();
 
                 for i in 0..MAX_TXS {
