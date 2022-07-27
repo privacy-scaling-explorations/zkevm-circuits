@@ -34,9 +34,8 @@ impl Opcode for Return {
                 caller_ctx.memory.0[return_offset..return_offset + copy_len]
                     .copy_from_slice(&memory.0[offset..offset + copy_len]);
                 caller_ctx.return_data.resize(length as usize, 0);
-                caller_ctx
-                    .return_data
-                    .copy_from_slice(&memory.0[offset..offset + length]);
+                caller_ctx.return_data[0..copy_len]
+                    .copy_from_slice(&memory.0[offset..offset + copy_len]);
             } else {
                 // dealing with contract creation
                 assert!(offset + length <= memory.0.len());
