@@ -261,7 +261,7 @@ pub mod test {
                 .load(&mut layouter, &self.block.rws, self.block.randomness)?;
             config.bytecode_table.load(
                 &mut layouter,
-                self.block.bytecodes.iter().map(|(_, b)| b),
+                self.block.bytecodes.values(),
                 self.block.randomness,
             )?;
             config

@@ -2,7 +2,7 @@ use crate::{
     evm_circuit::util::{
         and, constraint_builder::BaseConstraintBuilder, not, or, select, RandomLinearCombination,
     },
-    table::{BytecodeFieldTag, BytecodeTable, KeccakTable, TableColumns},
+    table::{BytecodeFieldTag, BytecodeTable, DynamicTableColumns, KeccakTable},
     util::Expr,
 };
 use bus_mapping::evm::OpcodeId;
@@ -680,13 +680,7 @@ mod tests {
         }
 
         fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-            let bytecode_table = BytecodeTable {
-                code_hash: meta.advice_column(),
-                tag: meta.advice_column(),
-                index: meta.advice_column(),
-                is_code: meta.advice_column(),
-                value: meta.advice_column(),
-            };
+            let bytecode_table = BytecodeTable::construct(meta);
 
             let randomness = power_of_randomness_from_instance::<_, 1>(meta);
             let keccak_table = KeccakTable::construct(meta);
@@ -717,7 +711,9 @@ mod tests {
             randomness,
         };
 
-        let instance = vec![vec![randomness; (1 << k) - 7 + 1]];
+        let num_rows = 1 << k;
+        const NUM_BLINDING_ROWS: usize = 7 - 1;
+        let instance = vec![vec![randomness; num_rows - NUM_BLINDING_ROWS]];
         let prover = MockProver::<F>::run(k, &circuit, instance).unwrap();
         let err = prover.verify();
         let print_failures = true;

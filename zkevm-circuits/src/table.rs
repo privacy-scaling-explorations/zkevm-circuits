@@ -23,7 +23,7 @@ use strum_macros::{EnumCount, EnumIter};
 /// Trait used for dynamic tables.  Used to get an automatic implementation of
 /// the LookupTable trait where each `table_expr` is a query to each column at
 /// `Rotation::cur`.
-pub trait TableColumns {
+pub trait DynamicTableColumns {
     /// Returns the list of advice columns following the table order.
     fn columns(&self) -> Vec<Column<Advice>>;
 }
@@ -34,7 +34,7 @@ pub trait LookupTable<F: Field> {
     fn table_exprs(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>>;
 }
 
-impl<F: Field, T: TableColumns> LookupTable<F> for T {
+impl<F: Field, T: DynamicTableColumns> LookupTable<F> for T {
     fn table_exprs(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>> {
         self.columns()
             .iter()
@@ -152,7 +152,7 @@ impl TxTable {
     }
 }
 
-impl TableColumns for TxTable {
+impl DynamicTableColumns for TxTable {
     fn columns(&self) -> Vec<Column<Advice>> {
         vec![self.tx_id, self.tag, self.index, self.value]
     }
@@ -331,7 +331,7 @@ pub struct RwTable {
     pub aux2: Column<Advice>,
 }
 
-impl TableColumns for RwTable {
+impl DynamicTableColumns for RwTable {
     fn columns(&self) -> Vec<Column<Advice>> {
         vec![
             self.rw_counter,
@@ -507,7 +507,7 @@ impl BytecodeTable {
     }
 }
 
-impl TableColumns for BytecodeTable {
+impl DynamicTableColumns for BytecodeTable {
     fn columns(&self) -> Vec<Column<Advice>> {
         vec![
             self.code_hash,
@@ -604,7 +604,7 @@ impl BlockTable {
     }
 }
 
-impl TableColumns for BlockTable {
+impl DynamicTableColumns for BlockTable {
     fn columns(&self) -> Vec<Column<Advice>> {
         vec![self.tag, self.index, self.value]
     }
@@ -696,7 +696,7 @@ impl KeccakTable {
     }
 }
 
-impl TableColumns for KeccakTable {
+impl DynamicTableColumns for KeccakTable {
     fn columns(&self) -> Vec<Column<Advice>> {
         vec![
             self.is_enabled,
@@ -738,7 +738,7 @@ pub struct CopyTable {
 }
 
 impl CopyTable {
-    /// Construct a new KeccakTable
+    /// Construct a new CopyTable
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>, q_enable: Column<Fixed>) -> Self {
         Self {
             is_first: meta.advice_column(),
@@ -752,7 +752,7 @@ impl CopyTable {
         }
     }
 
-    /// Generate the keccak table assignments from a byte array input.
+    /// Generate the copy table assignments from a copy event.
     pub fn assignments<F: Field>(
         copy_event: &CopyEvent,
         randomness: F,

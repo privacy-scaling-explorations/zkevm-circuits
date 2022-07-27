@@ -317,6 +317,9 @@ mod super_circuit_tests {
             block,
             fixed_table_tags,
             tx_circuit,
+            // Instead of using 1 << k - NUM_BLINDING_ROWS, we use a much smaller number of enabled
+            // rows for the Bytecode Circuit because otherwise it penalizes significantly the
+            // MockProver verification time.
             bytecode_size: bytecodes_len + 64,
         };
         let prover = MockProver::<F>::run(k, &circuit, instance).unwrap();
