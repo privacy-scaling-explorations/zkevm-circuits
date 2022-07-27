@@ -658,7 +658,7 @@ impl KeccakTable {
     pub fn load<'a, F: Field>(
         &self,
         layouter: &mut impl Layouter<F>,
-        inputs: impl IntoIterator<Item = &'a [u8]> + Clone,
+        inputs: impl IntoIterator<Item = Vec<u8>> + Clone,
         randomness: F,
     ) -> Result<(), Error> {
         layouter.assign_region(
@@ -677,7 +677,7 @@ impl KeccakTable {
 
                 let keccak_table_columns = self.columns();
                 for input in inputs.clone() {
-                    for row in Self::assignments(input, randomness) {
+                    for row in Self::assignments(&input, randomness) {
                         // let mut column_index = 0;
                         for (column, value) in keccak_table_columns.iter().zip_eq(row) {
                             region.assign_advice(

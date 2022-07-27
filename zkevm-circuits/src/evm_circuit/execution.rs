@@ -234,6 +234,7 @@ impl<F: Field> ExecutionConfig<F> {
         bytecode_table: &dyn LookupTable<F>,
         block_table: &dyn LookupTable<F>,
         copy_table: &dyn LookupTable<F>,
+        keccak_table: &dyn LookupTable<F>,
     ) -> Self {
         let q_usable = meta.complex_selector();
         let q_step = meta.advice_column();
@@ -446,6 +447,7 @@ impl<F: Field> ExecutionConfig<F> {
             bytecode_table,
             block_table,
             copy_table,
+            keccak_table,
             &power_of_randomness,
             &cell_manager,
         );
@@ -620,6 +622,7 @@ impl<F: Field> ExecutionConfig<F> {
         bytecode_table: &dyn LookupTable<F>,
         block_table: &dyn LookupTable<F>,
         copy_table: &dyn LookupTable<F>,
+        keccak_table: &dyn LookupTable<F>,
         power_of_randomness: &[Expression<F>; 31],
         cell_manager: &CellManager<F>,
     ) {
@@ -635,6 +638,7 @@ impl<F: Field> ExecutionConfig<F> {
                         Table::Block => block_table,
                         Table::Byte => byte_table,
                         Table::Copy => copy_table,
+                        Table::Keccak => keccak_table,
                     }
                     .table_exprs(meta);
                     vec![(

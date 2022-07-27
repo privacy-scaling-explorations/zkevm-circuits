@@ -129,6 +129,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
             &bytecode_table,
             &block_table,
             &copy_table,
+            &keccak_table,
         );
 
         Self::Config {
@@ -204,11 +205,9 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
             keccak_inputs.push(bytecode.bytes.clone());
         }
         // Load Keccak Table
-        config.keccak_table.load(
-            &mut layouter,
-            keccak_inputs.iter().map(|b| b.as_slice()),
-            self.block.randomness,
-        )?;
+        config
+            .keccak_table
+            .load(&mut layouter, keccak_inputs, self.block.randomness)?;
         Ok(())
     }
 }

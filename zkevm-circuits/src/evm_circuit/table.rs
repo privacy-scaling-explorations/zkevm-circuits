@@ -104,6 +104,7 @@ pub(crate) enum Table {
     Block,
     Byte,
     Copy,
+    Keccak,
 }
 
 #[derive(Clone, Debug)]
@@ -195,11 +196,25 @@ pub(crate) enum Lookup<F> {
         dst_addr: Expression<F>,
         /// The number of bytes to be copied in this copy event.
         length: Expression<F>,
+        /// The RLC accumulator value, which is used for SHA3 opcode.
+        rlc_acc: Expression<F>,
         /// The RW counter at the start of the copy event.
         rw_counter: Expression<F>,
         /// The RW counter that is incremented by the time all bytes have been
         /// copied specific to this copy event.
         rwc_inc: Expression<F>,
+    },
+    /// Lookup to keccak table.
+    KeccakTable {
+        /// State of the keccak row.
+        state_tag: Expression<F>,
+        /// Length of input that is being hashed.
+        input_len: Expression<F>,
+        /// Accumulator to the input.
+        acc_input: Expression<F>,
+        /// Output (hash) until this state. At state_tag == FINALIZE this
+        /// signifies the final output keccak256 hash of the input.
+        output: Expression<F>,
     },
     /// Conditional lookup enabled by the first element.
     Conditional(Expression<F>, Box<Lookup<F>>),
@@ -219,6 +234,7 @@ impl<F: Field> Lookup<F> {
             Self::Block { .. } => Table::Block,
             Self::Byte { .. } => Table::Byte,
             Self::CopyTable { .. } => Table::Copy,
+            Self::KeccakTable { .. } => Table::Keccak,
             Self::Conditional(_, lookup) => lookup.table(),
         }
     }
@@ -277,6 +293,7 @@ impl<F: Field> Lookup<F> {
                 src_addr_end,
                 dst_addr,
                 length,
+                rlc_acc,
                 rw_counter,
                 rwc_inc,
             } => vec![
@@ -289,8 +306,20 @@ impl<F: Field> Lookup<F> {
                 src_addr_end.clone(),
                 dst_addr.clone(),
                 length.clone(),
+                rlc_acc.clone(),
                 rw_counter.clone(),
                 rwc_inc.clone(),
+            ],
+            Self::KeccakTable {
+                state_tag,
+                input_len,
+                acc_input,
+                output,
+            } => vec![
+                state_tag.clone(),
+                input_len.clone(),
+                acc_input.clone(),
+                output.clone(),
             ],
             Self::Conditional(condition, lookup) => lookup
                 .input_exprs()

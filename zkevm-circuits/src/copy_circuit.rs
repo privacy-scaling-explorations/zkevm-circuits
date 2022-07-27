@@ -11,13 +11,13 @@ use gadgets::{
 };
 use halo2_proofs::{
     circuit::{Layouter, Region},
-    plonk::{Advice, Column, ConstraintSystem, Error, Fixed, Selector},
+    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, Selector},
     poly::Rotation,
 };
 
 use crate::{
     evm_circuit::{
-        util::{constraint_builder::BaseConstraintBuilder, RandomLinearCombination},
+        util::{constraint_builder::BaseConstraintBuilder, rlc, RandomLinearCombination},
         witness::Block,
     },
     table::{
@@ -58,6 +58,11 @@ pub struct CopyCircuit<F> {
     pub copy_table: CopyTable,
     /// The value copied in this copy step.
     pub value: Column<Advice>,
+    /// An accumulator value in the RLC representation. This is used for
+    /// specific purposes, for instance, when `tag == CopyDataType::RlcAcc`.
+    /// Having an additional column for the `rlc_acc` simplifies the lookup
+    /// to copy table.
+    pub rlc_acc: Column<Advice>,
     /// In case of a bytecode tag, this denotes whether or not the copied byte
     /// is an opcode or push data byte.
     pub is_code: Column<Advice>,
@@ -79,10 +84,12 @@ impl<F: Field> CopyCircuit<F> {
         bytecode_table: &dyn LookupTable<F>,
         copy_table: CopyTable,
         q_enable: Column<Fixed>,
+        randomness: Expression<F>,
     ) -> Self {
         let q_step = meta.complex_selector();
         let is_last = meta.advice_column();
         let value = meta.advice_column();
+        let rlc_acc = meta.advice_column();
         let is_code = meta.advice_column();
         let is_pad = meta.advice_column();
         let is_first = copy_table.is_first;
@@ -173,6 +180,11 @@ impl<F: Field> CopyCircuit<F> {
                         meta.query_advice(rwc_inc_left, Rotation::cur()) - rw_diff.clone(),
                         meta.query_advice(rwc_inc_left, Rotation::next()),
                     );
+                    cb.require_equal(
+                        "rows[0].rlc_acc == rows[1].rlc_acc",
+                        meta.query_advice(rlc_acc, Rotation::cur()),
+                        meta.query_advice(rlc_acc, Rotation::next()),
+                    );
                 },
             );
             cb.condition(meta.query_advice(is_last, Rotation::cur()), |cb| {
@@ -182,11 +194,24 @@ impl<F: Field> CopyCircuit<F> {
                     rw_diff,
                 );
             });
+            cb.condition(
+                and::expr([
+                    meta.query_advice(is_last, Rotation::cur()),
+                    tag.value_equals(CopyDataType::RlcAcc, Rotation::cur())(meta),
+                ]),
+                |cb| {
+                    cb.require_equal(
+                        "value == rlc_acc at the last row for RlcAcc",
+                        meta.query_advice(value, Rotation::cur()),
+                        meta.query_advice(rlc_acc, Rotation::cur()),
+                    );
+                },
+            );
 
             cb.gate(meta.query_fixed(q_enable, Rotation::cur()))
         });
 
-        meta.create_gate("verify step", |meta| {
+        meta.create_gate("verify step (q_step == 1)", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
             cb.require_zero(
@@ -229,6 +254,25 @@ impl<F: Field> CopyCircuit<F> {
             );
 
             cb.gate(meta.query_selector(q_step))
+        });
+
+        meta.create_gate("verify_step (q_step == 0)", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
+
+            cb.require_equal(
+                "rows[2].value == rows[0].value * r + rows[1].value",
+                meta.query_advice(value, Rotation(2)),
+                meta.query_advice(value, Rotation::cur()) * randomness
+                    + meta.query_advice(value, Rotation::next()),
+            );
+
+            cb.gate(and::expr([
+                meta.query_fixed(q_enable, Rotation::cur()),
+                not::expr(meta.query_selector(q_step)),
+                not::expr(meta.query_advice(is_last, Rotation::cur())),
+                tag.value_equals(CopyDataType::RlcAcc, Rotation::cur())(meta),
+                not::expr(meta.query_advice(is_pad, Rotation::cur())),
+            ]))
         });
 
         meta.lookup_any("Memory lookup", |meta| {
@@ -314,6 +358,7 @@ impl<F: Field> CopyCircuit<F> {
             q_step,
             is_last,
             value,
+            rlc_acc,
             is_code,
             is_pad,
             addr_lt_addr_end,
@@ -335,7 +380,30 @@ impl<F: Field> CopyCircuit<F> {
             |mut region| {
                 let mut offset = 0;
                 for copy_event in block.copy_events.values() {
+                    let rlc_acc = if copy_event.dst_type == CopyDataType::RlcAcc {
+                        let values = copy_event
+                            .steps
+                            .iter()
+                            .filter(|s| s.rw.is_write())
+                            .map(|s| s.value)
+                            .collect::<Vec<u8>>();
+                        rlc::value(&values, block.randomness)
+                    } else {
+                        F::zero()
+                    };
+                    let mut value_acc = F::zero();
                     for (step_idx, copy_step) in copy_event.steps.iter().enumerate() {
+                        let value = if copy_event.dst_type == CopyDataType::RlcAcc {
+                            if copy_step.rw.is_read() {
+                                F::from(copy_step.value as u64)
+                            } else {
+                                value_acc =
+                                    value_acc * block.randomness + F::from(copy_step.value as u64);
+                                value_acc
+                            }
+                        } else {
+                            F::from(copy_step.value as u64)
+                        };
                         self.assign_step(
                             &mut region,
                             offset,
@@ -343,6 +411,8 @@ impl<F: Field> CopyCircuit<F> {
                             copy_event,
                             step_idx,
                             copy_step,
+                            value,
+                            rlc_acc,
                             &tag_chip,
                             &lt_chip,
                         )?;
@@ -368,6 +438,8 @@ impl<F: Field> CopyCircuit<F> {
         copy_event: &CopyEvent,
         step_idx: usize,
         copy_step: &CopyStep,
+        value: F,
+        rlc_acc: F,
         tag_chip: &BinaryNumberChip<F, CopyDataType, 3>,
         lt_chip: &LtChip<F, 8>,
     ) -> Result<(), Error> {
@@ -435,7 +507,14 @@ impl<F: Field> CopyCircuit<F> {
             || format!("assign value {}", offset),
             self.value,
             offset,
-            || Ok(F::from(copy_step.value as u64)),
+            || Ok(value),
+        )?;
+        // rlc_acc
+        region.assign_advice(
+            || format!("assign rlc_acc {}", offset),
+            self.rlc_acc,
+            offset,
+            || Ok(rlc_acc),
         )?;
         // is_code
         region.assign_advice(
@@ -551,6 +630,13 @@ impl<F: Field> CopyCircuit<F> {
             offset,
             || Ok(F::zero()),
         )?;
+        // rlc_acc
+        region.assign_advice(
+            || format!("assign rlc_acc {}", offset),
+            self.rlc_acc,
+            offset,
+            || Ok(F::zero()),
+        )?;
         // is_code
         region.assign_advice(
             || format!("assign is_code {}", offset),
@@ -620,7 +706,11 @@ mod tests {
         block: Block<F>,
     }
 
-    impl<F> MyCircuit<F> {
+    impl<F: Field> MyCircuit<F> {
+        pub fn r() -> F {
+            F::from(123456u64)
+        }
+
         pub fn new(block: Block<F>) -> Self {
             Self { block }
         }
@@ -647,6 +737,7 @@ mod tests {
                 &bytecode_table,
                 copy_table,
                 q_enable,
+                randomness.expr(),
             );
 
             MyConfig {
