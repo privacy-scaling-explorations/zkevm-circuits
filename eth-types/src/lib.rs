@@ -194,7 +194,7 @@ impl<F: Field> ToScalar<F> for Address {
 }
 
 /// Struct used to define the storage proof
-#[derive(Debug, Default, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Default, Clone, PartialEq, Eq, Deserialize)]
 pub struct StorageProof {
     /// Storage key
     pub key: U256,
@@ -205,7 +205,7 @@ pub struct StorageProof {
 }
 
 /// Struct used to define the result of `eth_getProof` call
-#[derive(Debug, Default, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Default, Clone, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EIP1186ProofResponse {
     /// Account address

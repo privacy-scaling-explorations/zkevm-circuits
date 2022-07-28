@@ -150,17 +150,11 @@ async fn handle_method(
             let options: ProofRequestOptions =
                 serde_json::from_value(options.to_owned()).map_err(|e| e.to_string())?;
 
-            match shared_state.get_or_enqueue(&options).await {
-                // No error
-                None => Ok(serde_json::Value::Null),
-                Some(result) => {
-                    if let Err(err) = result {
-                        return Err(err);
-                    }
-
-                    Ok(serde_json::to_value(result.unwrap()).unwrap())
-                }
-            }
+            shared_state
+                .get_or_enqueue(&options)
+                .await
+                .map(|result| serde_json::to_value(result?).map_err(|e| e.to_string()))
+                .unwrap_or_else(|| Ok(serde_json::Value::Null))
         }
         // TODO/TBD: add method to only return the witnesses for a block.
         //  block table, tx table, etc...

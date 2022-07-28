@@ -584,9 +584,9 @@ mod evm_circuit_stats {
         println!("| ---            | ---            | ---|    --- | ---   |");
         for (state, opcode, height, gas_cost) in stats {
             println!(
-                "| {: <14} | {: <14} | {: >2} | {: >6} | {: >1.3} |",
-                format!("{:?}", state),
-                format!("{:?}", opcode),
+                "| {: <14?} | {: <14?} | {: >2} | {: >6} | {: >1.3} |",
+                state,
+                opcode,
                 height,
                 gas_cost,
                 height as f64 / gas_cost as f64
