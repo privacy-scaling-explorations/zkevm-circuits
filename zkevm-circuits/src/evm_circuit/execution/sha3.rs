@@ -1,5 +1,5 @@
 use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId};
-use eth_types::{evm_types::GasCost, Field};
+use eth_types::{evm_types::GasCost, Field, ToLittleEndian};
 use gadgets::util::Expr;
 use halo2_proofs::plonk::Error;
 
@@ -10,7 +10,7 @@ use crate::evm_circuit::{
         common_gadget::SameContextGadget,
         constraint_builder::{ConstraintBuilder, StepStateTransition, Transition},
         memory_gadget::{MemoryAddressGadget, MemoryCopierGasGadget, MemoryExpansionGadget},
-        CachedRegion, Cell, Word,
+        rlc, CachedRegion, Cell, Word,
     },
     witness::{Block, Call, ExecStep, Transaction},
 };
@@ -20,17 +20,12 @@ use super::ExecutionGadget;
 #[derive(Clone, Debug)]
 pub(crate) struct Sha3Gadget<F> {
     same_context: SameContextGadget<F>,
+    memory_address: MemoryAddressGadget<F>,
     sha3_rlc: Word<F>,
-    rlc_acc: Cell<F>,
-    /// Opcode CODECOPY has a dynamic gas cost:
-    /// gas_code = static_gas * minimum_word_size + memory_expansion_cost
-    memory_expansion: MemoryExpansionGadget<F, 1, N_BYTES_MEMORY_WORD_SIZE>,
-    /// Opcode CODECOPY needs to copy code bytes into memory. We account for
-    /// the copying costs using the memory copier gas gadget.
-    memory_copier_gas: MemoryCopierGasGadget<F, { GasCost::COPY_SHA3 }>,
-    /// RW inverse counter from the copy table at the start of related copy
-    /// steps.
     copy_rwc_inc: Cell<F>,
+    rlc_acc: Cell<F>,
+    memory_expansion: MemoryExpansionGadget<F, 1, N_BYTES_MEMORY_WORD_SIZE>,
+    memory_copier_gas: MemoryCopierGasGadget<F, { GasCost::COPY_SHA3 }>,
 }
 
 impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
@@ -50,16 +45,6 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
         cb.stack_push(sha3_rlc.expr());
 
         let memory_address = MemoryAddressGadget::construct(cb, offset, size);
-        let memory_expansion = MemoryExpansionGadget::construct(
-            cb,
-            cb.curr.state.memory_word_size.expr(),
-            [memory_address.address()],
-        );
-        let memory_copier_gas = MemoryCopierGasGadget::construct(
-            cb,
-            memory_address.length(),
-            memory_expansion.gas_cost(),
-        );
 
         let copy_rwc_inc = cb.query_cell();
         let rlc_acc = cb.query_cell();
@@ -78,6 +63,17 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
         );
         cb.keccak_table_lookup(memory_address.length(), rlc_acc.expr(), sha3_rlc.expr());
 
+        let memory_expansion = MemoryExpansionGadget::construct(
+            cb,
+            cb.curr.state.memory_word_size.expr(),
+            [memory_address.address()],
+        );
+        let memory_copier_gas = MemoryCopierGasGadget::construct(
+            cb,
+            memory_address.length(),
+            memory_expansion.gas_cost(),
+        );
+
         let step_state_transition = StepStateTransition {
             rw_counter: Transition::Delta(cb.rw_counter_offset() + copy_rwc_inc.expr()),
             program_counter: Transition::Delta(1.expr()),
@@ -92,24 +88,72 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
 
         Self {
             same_context,
+            memory_address,
             sha3_rlc,
+            copy_rwc_inc,
             rlc_acc,
             memory_expansion,
             memory_copier_gas,
-            copy_rwc_inc,
         }
     }
 
     fn assign_exec_step(
         &self,
-        _region: &mut CachedRegion<'_, '_, F>,
-        _offset: usize,
-        _block: &Block<F>,
-        _transaction: &Transaction,
-        _call: &Call,
-        _step: &ExecStep,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+        block: &Block<F>,
+        tx: &Transaction,
+        call: &Call,
+        step: &ExecStep,
     ) -> Result<(), Error> {
-        // TODO(rohit): assign to SHA3 gadget
-        unimplemented!()
+        self.same_context.assign_exec_step(region, offset, step)?;
+
+        let [memory_offset, size, sha3_output] =
+            [step.rw_indices[0], step.rw_indices[1], step.rw_indices[2]]
+                .map(|idx| block.rws[idx].stack_value());
+        let memory_address =
+            self.memory_address
+                .assign(region, offset, memory_offset, size, block.randomness)?;
+        self.sha3_rlc
+            .assign(region, offset, Some(sha3_output.to_le_bytes()))?;
+
+        let key = (tx.id, call.id, step.program_counter as usize);
+        let copy_rwc_inc = block
+            .copy_events
+            .get(&key)
+            .unwrap()
+            .steps
+            .first()
+            .map_or(F::zero(), |cs| F::from(cs.rwc_inc_left));
+        self.copy_rwc_inc
+            .assign(region, offset, Some(copy_rwc_inc))?;
+
+        let values = block
+            .copy_events
+            .get(&key)
+            .unwrap()
+            .steps
+            .iter()
+            .filter(|s| s.rw.is_write())
+            .map(|s| s.value)
+            .collect::<Vec<u8>>();
+        let rlc_acc = rlc::value(&values, block.randomness);
+        self.rlc_acc.assign(region, offset, Some(rlc_acc))?;
+
+        // Memory expansion and dynamic gas cost for reading it.
+        let (_, memory_expansion_gas_cost) = self.memory_expansion.assign(
+            region,
+            offset,
+            step.memory_word_size(),
+            [memory_address],
+        )?;
+        self.memory_copier_gas.assign(
+            region,
+            offset,
+            size.as_u64(),
+            memory_expansion_gas_cost as u64,
+        )?;
+
+        Ok(())
     }
 }
