@@ -715,17 +715,13 @@ mod tests {
         const NUM_BLINDING_ROWS: usize = 7 - 1;
         let instance = vec![vec![randomness; num_rows - NUM_BLINDING_ROWS]];
         let prover = MockProver::<F>::run(k, &circuit, instance).unwrap();
-        let err = prover.verify();
-        let print_failures = true;
-        if err.is_err() && print_failures {
-            for e in err.err().iter() {
-                for s in e.iter() {
-                    println!("{}", s);
-                }
+        let result = prover.verify();
+        if let Err(failures) = &result {
+            for failure in failures.iter() {
+                println!("{}", failure);
             }
         }
-        let err = prover.verify();
-        assert_eq!(err.is_ok(), success);
+        assert_eq!(result.is_ok(), success);
     }
 
     /// Verify unrolling code

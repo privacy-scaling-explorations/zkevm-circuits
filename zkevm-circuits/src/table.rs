@@ -191,7 +191,7 @@ impl_expr!(RwTableTag);
 impl RwTableTag {
     /// Returns true if the RwTable operation is reversible
     pub fn is_reversible(self) -> bool {
-        return matches!(
+        matches!(
             self,
             RwTableTag::TxAccessListAccount
                 | RwTableTag::TxAccessListAccountStorage
@@ -199,7 +199,7 @@ impl RwTableTag {
                 | RwTableTag::Account
                 | RwTableTag::AccountStorage
                 | RwTableTag::AccountDestructed
-        );
+        )
     }
 }
 
@@ -222,7 +222,7 @@ pub enum AccountFieldTag {
 impl_expr!(AccountFieldTag);
 
 /// Tag for a TxLogField in RwTable
-#[derive(Clone, Copy, Debug, PartialEq, EnumIter)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, EnumIter)]
 pub enum TxLogFieldTag {
     /// Address field
     Address = 1,
@@ -234,7 +234,7 @@ pub enum TxLogFieldTag {
 impl_expr!(TxLogFieldTag);
 
 /// Tag for a TxReceiptField in RwTable
-#[derive(Clone, Copy, Debug, PartialEq, EnumIter, EnumCount)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, EnumIter, EnumCount)]
 pub enum TxReceiptFieldTag {
     /// Tx result
     PostStateOrStatus = 1,
@@ -246,7 +246,7 @@ pub enum TxReceiptFieldTag {
 impl_expr!(TxReceiptFieldTag);
 
 /// Tag for a CallContextField in RwTable
-#[derive(Clone, Copy, Debug, PartialEq, EnumIter)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, EnumIter)]
 pub enum CallContextFieldTag {
     /// RwCounterEndOfReversion
     RwCounterEndOfReversion = 1,

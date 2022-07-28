@@ -168,7 +168,7 @@ impl<F: FieldExt> Expr<F> for i32 {
     #[inline]
     fn expr(&self) -> Expression<F> {
         Expression::Constant(
-            F::from(self.abs() as u64)
+            F::from(self.unsigned_abs() as u64)
                 * if self.is_negative() {
                     -F::one()
                 } else {
