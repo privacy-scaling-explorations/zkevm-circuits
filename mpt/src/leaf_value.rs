@@ -80,8 +80,12 @@ impl<F: FieldExt> LeafValueChip<F> {
             let c192 = Expression::Constant(F::from(192));
             let is_long = meta.query_advice(s_mod_node_hash_rlc, Rotation::cur());
             let is_short = meta.query_advice(c_mod_node_hash_rlc, Rotation::cur());
-            let is_leaf_long = meta.query_advice(s_mod_node_hash_rlc, Rotation::prev());
-            let is_leaf_short = meta.query_advice(c_mod_node_hash_rlc, Rotation::prev());
+            let flag1 = meta.query_advice(s_mod_node_hash_rlc, Rotation::prev());
+            let flag2 = meta.query_advice(c_mod_node_hash_rlc, Rotation::prev());
+            let last_level = flag1.clone() * flag2.clone();
+            let is_leaf_long = flag1.clone() * (one.clone() - flag2.clone());
+            let is_leaf_short = (one.clone() - flag1.clone()) * flag2.clone();
+
             let s_rlp1_prev = meta.query_advice(s_rlp1, Rotation::prev());
             let s_rlp1_cur = meta.query_advice(s_rlp1, Rotation::cur());
 
@@ -202,7 +206,7 @@ impl<F: FieldExt> LeafValueChip<F> {
 
             let short_short_check = short_remainder.clone() - one.clone();
             let long_long_check = long_remainder - long_value_len.clone();
-            let short_long_check = short_remainder - long_value_len;
+            let short_long_check = short_remainder - long_value_len.clone();
             // Note: long short is not possible because the key has at most 32 bytes and
             // short value means only 1 byte which (together with RLP meta
             // bytes) cannot go over 55 bytes.
@@ -221,10 +225,30 @@ impl<F: FieldExt> LeafValueChip<F> {
                 "RLP leaf short value long",
                 q_enable.clone() * short_long_check * is_leaf_short.clone() * is_long.clone(),
             ));
-
             constraints.push((
                 "RLP long value check",
                 q_enable.clone() * long_value_check * is_long.clone(),
+            ));
+
+            // example: [194,32,1]
+            // Note: s_rlp2 = 32 when last_level is checked in leaf_key.
+            constraints.push((
+                "RLP check last level short value",
+                q_enable.clone()
+                    * (s_rlp1_prev.clone() - Expression::Constant(F::from(194)))
+                    * last_level.clone()
+                    * is_short.clone(),
+            ));
+
+            let last_level_long_check = s_rlp1_prev.clone() - c192.clone()
+                - one.clone() - long_value_len;
+            // example:  [227,32,161,160,187,239,170,18,88,1,56,188,38,60,149,117,120,38,223,78,36,235,129,201,170,170,170,170,170,170,170,170,170,170,170,170]
+            constraints.push((
+                "RLP check last level long value",
+                q_enable.clone()
+                    * last_level_long_check
+                    * last_level.clone()
+                    * is_long.clone(),
             ));
 
             // sel is set to 1 in leaf value row when leaf is without branch and it is a
@@ -320,17 +344,45 @@ impl<F: FieldExt> LeafValueChip<F> {
         });
 
         meta.create_gate("non-hashed leaf in parent", |meta| {
+            // When leaf is not hashed, the mod_node_hash_rlc stores the RLC of the leaf bytes
+            // (instead of the RLC of leaf hash). So we take leaf RLC and compare it to the value
+            // stored in mod_node_hash_rlc.
+
             let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
+            let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
             let is_leaf = meta.query_advice(is_leaf_value, Rotation::cur());
-            let q_enable = q_not_first * is_leaf;
+            let q_enable = q_not_first * not_first_level * is_leaf;
 
             let not_hashed = meta.query_advice(acc_c, Rotation::prev());
 
-            // TODO: replace acc_c with some other column, acc_c is taken
+            let rlc = meta.query_advice(acc_s, Rotation::cur());
+
+            let mut placeholder_leaf = meta.query_advice(sel1, Rotation(rot));
+            if !is_s {
+                placeholder_leaf = meta.query_advice(sel2, Rotation(rot));
+            }
+
+            let is_branch_placeholder =
+                meta.query_advice(is_branch_placeholder, Rotation(rot_into_init));
+
+            // For leaf without branch, the constraints are in storage_root_in_account_leaf.
+            let is_leaf_without_branch =
+                meta.query_advice(is_account_leaf_in_added_branch, Rotation(rot_into_account));
+
+            let mut mod_node_hash_rlc_cur = meta.query_advice(s_mod_node_hash_rlc, Rotation(rot));
+            if !is_s {
+                mod_node_hash_rlc_cur = meta.query_advice(c_mod_node_hash_rlc, Rotation(rot));
+            }
+
             let mut constraints = vec![];
             constraints.push((
                 "non-hashed",
-                q_enable.clone() * (one.clone() - not_hashed), // for debugging
+                q_enable.clone()
+                    * (rlc - mod_node_hash_rlc_cur)
+                    * (one.clone() - placeholder_leaf.clone())
+                    * (one.clone() - is_leaf_without_branch.clone())
+                    * not_hashed.clone()
+                    * (one.clone() - is_branch_placeholder.clone()),
             ));
 
             constraints

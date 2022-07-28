@@ -2522,16 +2522,6 @@ impl<F: FieldExt> MPTConfig<F> {
                                 }
                                 assign_long_short(&mut region, typ);
 
-                                if row[0] < 223 { // needs to be shorter than 32 bytes
-                                    // not_hashed
-                                    region.assign_advice(
-                                        || "assign not_hashed".to_string(),
-                                        self.acc_c,
-                                        offset,
-                                        || Ok(F::one()),
-                                    )?;
-                                }
-
                                 pv.acc_s = F::zero();
                                 pv.acc_mult_s = F::one();
                                 let len: usize;
@@ -2559,6 +2549,17 @@ impl<F: FieldExt> MPTConfig<F> {
                                     F::zero(),
                                     offset,
                                 )?;
+
+                                // note that this assignment needs to be after assign_acc call
+                                if row[0] < 223 { // when shorter than 32 bytes, the node doesn't get hashed
+                                    // not_hashed
+                                    region.assign_advice(
+                                        || "assign not_hashed".to_string(),
+                                        self.acc_c,
+                                        offset,
+                                        || Ok(F::one()),
+                                    )?;
+                                }
 
                                 // TODO: handle if branch or extension node is added
                                 let mut start = S_START - 1;

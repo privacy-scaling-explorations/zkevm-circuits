@@ -44,6 +44,8 @@ impl<F: FieldExt> StorageRootChip<F> {
         let config = StorageRootConfig {};
         let one = Expression::Constant(F::one());
 
+        // TODO: non-hashed leaf
+
         // Storage first level branch hash - root in last account leaf (ordinary branch,
         // not extension node).
         meta.lookup_any(
