@@ -1,7 +1,5 @@
 //! Lt chip can be used to compare LT for two expressions LHS and RHS.
 
-use std::array;
-
 use eth_types::Field;
 use halo2_proofs::{
     arithmetic::FieldExt,
@@ -78,7 +76,9 @@ impl<F: Field, const N_BYTES: usize> LtChip<F, N_BYTES> {
 
             let check_b = bool_check(lt);
 
-            array::IntoIter::new([check_a, check_b]).map(move |poly| q_enable.clone() * poly)
+            [check_a, check_b]
+                .into_iter()
+                .map(move |poly| q_enable.clone() * poly)
         });
 
         LtConfig { lt, diff, range }

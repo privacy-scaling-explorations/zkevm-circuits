@@ -3,7 +3,7 @@ use crate::{exec_trace::OperationRef, Error};
 use eth_types::{evm_types::OpcodeId, Address, Hash, Word};
 
 /// Type of a *CALL*/CREATE* Function.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CallKind {
     /// CALL
     Call,

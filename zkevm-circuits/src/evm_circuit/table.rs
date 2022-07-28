@@ -160,7 +160,7 @@ pub enum RwTableTag {
 
 impl RwTableTag {
     pub fn is_reversible(self) -> bool {
-        return matches!(
+        matches!(
             self,
             RwTableTag::TxAccessListAccount
                 | RwTableTag::TxAccessListAccountStorage
@@ -168,7 +168,7 @@ impl RwTableTag {
                 | RwTableTag::Account
                 | RwTableTag::AccountStorage
                 | RwTableTag::AccountDestructed
-        );
+        )
     }
 }
 
@@ -192,21 +192,21 @@ pub enum BytecodeFieldTag {
     Padding,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, EnumIter)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, EnumIter)]
 pub enum TxLogFieldTag {
     Address = 1,
     Topic,
     Data,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, EnumIter, EnumCount)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, EnumIter, EnumCount)]
 pub enum TxReceiptFieldTag {
     PostStateOrStatus = 1,
     CumulativeGasUsed,
     LogLength,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, EnumIter)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, EnumIter)]
 pub enum CallContextFieldTag {
     RwCounterEndOfReversion = 1,
     CallerId,

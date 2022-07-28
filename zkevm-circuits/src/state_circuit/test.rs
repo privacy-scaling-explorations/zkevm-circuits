@@ -1009,7 +1009,7 @@ fn verify_with_overrides(
 }
 
 fn assert_error_matches(result: Result<(), Vec<VerifyFailure>>, name: &str) {
-    let errors = result.err().expect("result is not an error");
+    let errors = result.expect_err("result is not an error");
     assert_eq!(errors.len(), 1, "{:?}", errors);
     match &errors[0] {
         VerifyFailure::ConstraintNotSatisfied { constraint, .. } => {
