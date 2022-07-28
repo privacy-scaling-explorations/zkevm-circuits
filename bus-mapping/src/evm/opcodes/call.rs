@@ -101,7 +101,7 @@ impl Opcode for Call {
         )?;
 
         let (_, callee_account) = state.sdb.get_account(&call.address);
-        let is_account_empty = callee_account.is_empty();
+        let is_empty_account = callee_account.is_empty();
         let callee_nonce = callee_account.nonce;
         let callee_code_hash = callee_account.code_hash;
         for (field, value) in [
@@ -128,7 +128,7 @@ impl Opcode for Call {
             GasCost::COLD_ACCOUNT_ACCESS.as_u64()
         } + if has_value {
             GasCost::CALL_WITH_VALUE.as_u64()
-                + if is_account_empty {
+                + if is_empty_account {
                     GasCost::NEW_ACCOUNT.as_u64()
                 } else {
                     0
