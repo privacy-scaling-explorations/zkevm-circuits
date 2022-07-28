@@ -59,7 +59,7 @@ impl Display for Error {
 impl StdError for Error {}
 
 /// Out of Gas errors by opcode
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum OogError {
     /// Out of Gas for opcodes which have non-zero constant gas cost
     Constant,
@@ -105,7 +105,7 @@ pub enum OogError {
 }
 
 /// EVM Execution Error
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ExecError {
     /// Invalid Opcode
     InvalidOpcode,

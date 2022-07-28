@@ -737,17 +737,13 @@ mod tests {
         };
 
         let prover = MockProver::<F>::run(k, &circuit, vec![]).unwrap();
-        let err = prover.verify();
-        let print_failures = true;
-        if err.is_err() && print_failures {
-            for e in err.err().iter() {
-                for s in e.iter() {
-                    println!("{}", s);
-                }
+        let result = prover.verify();
+        if let Err(failures) = &result {
+            for failure in failures.iter() {
+                println!("{}", failure);
             }
         }
-        let err = prover.verify();
-        assert_eq!(err.is_ok(), success);
+        assert_eq!(result.is_ok(), success);
     }
 
     /// Verify unrolling code
