@@ -17,6 +17,8 @@ use super::{call::ReversionGroup, Call, CallContext, CallKind, CodeSource, ExecS
 pub struct TransactionContext {
     /// Unique identifier of transaction of the block. The value is `index + 1`.
     id: usize,
+    /// The index of logs made in the transaction.
+    pub(crate) log_id: usize,
     /// Identifier if this transaction is last one of the block or not.
     is_last_tx: bool,
     /// Call stack.
@@ -71,6 +73,7 @@ impl TransactionContext {
                 .ok_or(Error::EthTypeError(eth_types::Error::IncompleteBlock))?
                 .as_u64() as usize
                 + 1,
+            log_id: 0,
             is_last_tx,
             call_is_success,
             calls: Vec::new(),
@@ -96,14 +99,24 @@ impl TransactionContext {
         &self.calls
     }
 
+    /// Return the index of the caller (the second last call in the call stack).
+    pub(crate) fn caller_index(&self) -> Result<usize, Error> {
+        self.caller_ctx().map(|call| call.index)
+    }
+
     /// Return the index of the current call (the last call in the call stack).
     pub(crate) fn call_index(&self) -> Result<usize, Error> {
+        self.call_ctx().map(|call| call.index)
+    }
+
+    pub(crate) fn caller_ctx(&self) -> Result<&CallContext, Error> {
         self.calls
-            .last()
+            .len()
+            .checked_sub(2)
+            .map(|idx| &self.calls[idx])
             .ok_or(Error::InvalidGethExecTrace(
                 "Call stack is empty but call is used",
             ))
-            .map(|call| call.index)
     }
 
     pub(crate) fn call_ctx(&self) -> Result<&CallContext, Error> {

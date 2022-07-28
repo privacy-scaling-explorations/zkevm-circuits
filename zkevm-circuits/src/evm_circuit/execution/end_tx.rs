@@ -104,11 +104,13 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
 
         // constrain tx receipt fields
         cb.tx_receipt_lookup(
+            1.expr(),
             tx_id.expr(),
             TxReceiptFieldTag::PostStateOrStatus,
             is_persistent.expr(),
         );
         cb.tx_receipt_lookup(
+            1.expr(),
             tx_id.expr(),
             TxReceiptFieldTag::LogLength,
             cb.curr.state.log_id.expr(),
@@ -126,6 +128,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
 
         cb.condition(1.expr() - is_first_tx.expr(), |cb| {
             cb.tx_receipt_lookup(
+                0.expr(),
                 tx_id.expr() - 1.expr(),
                 TxReceiptFieldTag::CumulativeGasUsed,
                 current_cumulative_gas_used.expr(),
@@ -133,6 +136,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
         });
 
         cb.tx_receipt_lookup(
+            1.expr(),
             tx_id.expr(),
             TxReceiptFieldTag::CumulativeGasUsed,
             gas_used + current_cumulative_gas_used.expr(),
