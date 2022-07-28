@@ -2,7 +2,7 @@ use crate::{
     evm_circuit::util::{constraint_builder::BaseConstraintBuilder, not},
     util::Expr,
 };
-use eth_types::Field;
+use eth_types::{Field, Word};
 use gadgets::util::xor;
 use halo2_proofs::{
     circuit::{Layouter, Region, SimpleFloorPlanner},
@@ -330,8 +330,8 @@ impl<F: Field> KeccakBitConfig<F> {
 
             let absorb_positions = get_absorb_positions();
             let mut a_slice = 0;
-            for i in 0..5 {
-                for j in 0..5 {
+            for j in 0..5 {
+                for i in 0..5 {
                     if absorb_positions.contains(&(i, j)) {
                         for k in 0..64 {
                             cb.require_equal(
@@ -518,8 +518,8 @@ impl<F: Field> KeccakBitConfig<F> {
 
 fn get_absorb_positions() -> Vec<(usize, usize)> {
     let mut absorb_positions = Vec::new();
-    for i in 0..5 {
-        for j in 0..5 {
+    for j in 0..5 {
+        for i in 0..5 {
             if i + j * 5 < 17 {
                 absorb_positions.push((i, j));
             }
@@ -538,10 +538,12 @@ fn keccak(bytes: Vec<u8>) -> Vec<KeccakRow> {
 
     let absorb_positions = get_absorb_positions();
 
-    // TODO: correct padding
-    while bits.len() % rate != 0 {
+    // Padding
+    bits.push(1);
+    while (bits.len() + 1) % rate != 0 {
         bits.push(0);
     }
+    bits.push(1);
 
     let chunks = bits.chunks(rate);
     let num_chunks = chunks.len();
@@ -658,6 +660,13 @@ fn keccak(bytes: Vec<u8>) -> Vec<KeccakRow> {
         }
     }
 
+    let hash_bytes = b
+        .into_iter()
+        .take(4)
+        .map(|a| from_bits(&a[0]).as_u64().to_le_bytes())
+        .collect::<Vec<_>>();
+    println!("Hash: {:x?}", &(hash_bytes[0..4].concat()));
+
     rows
 }
 
@@ -674,6 +683,26 @@ fn into_bits(bytes: &[u8]) -> Vec<u8> {
     }
 
     bits
+}
+
+fn from_bits(bits: &[u8]) -> Word {
+    let mut value = Word::zero();
+    for (idx, bit) in bits.iter().enumerate() {
+        value += Word::from(*bit as u64) << idx;
+    }
+    value
+}
+
+fn to_bytes(bits: &[u8]) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    for byte_bits in bits.chunks(5) {
+        let mut value = 0u8;
+        for (idx, bit) in byte_bits.iter().enumerate() {
+            value += *bit << idx;
+        }
+        bytes.push(value);
+    }
+    bytes
 }
 
 #[cfg(test)]
@@ -707,7 +736,8 @@ mod tests {
     #[test]
     fn bit_keccak_simple() {
         let k = 8;
-        let inputs = keccak(vec![1u8; 200]);
+        let input = (0u8..136).collect::<Vec<_>>();
+        let inputs = keccak(input.to_vec());
         verify::<Fr>(k, inputs, true);
     }
 }

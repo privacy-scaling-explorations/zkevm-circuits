@@ -1529,10 +1529,12 @@ fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: Vec<u8>) {
 
     let absorb_positions = get_absorb_positions();
 
-    // TODO: correct padding
-    while bits.len() % rate != 0 {
+    // Padding
+    bits.push(1);
+    while (bits.len() + 1) % rate != 0 {
         bits.push(0);
     }
+    bits.push(1);
 
     let chunks = bits.chunks(rate);
     let num_chunks = chunks.len();
@@ -1771,11 +1773,12 @@ fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: Vec<u8>) {
         }
     }
 
-    for (i, b) in b.iter().enumerate() {
-        for (j, b) in b.iter().enumerate() {
-            println!("[{}][{}]: {:?}", i, j, *b);
-        }
-    }
+    let hash_bytes = b
+        .into_iter()
+        .take(4)
+        .map(|a| from_bits(&unpack(a[0])).as_u64().to_le_bytes())
+        .collect::<Vec<_>>();
+    println!("Hash: {:x?}", &(hash_bytes[0..4].concat()));
 }
 
 fn multi_keccak<F: Field>(bytes: Vec<Vec<u8>>) -> Vec<KeccakRow<F>> {
@@ -1799,6 +1802,14 @@ fn to_bits(bytes: &[u8]) -> Vec<u8> {
     }
 
     bits
+}
+
+fn from_bits(bits: &[u8]) -> Word {
+    let mut value = Word::zero();
+    for (idx, bit) in bits.iter().enumerate() {
+        value += Word::from(*bit as u64) << idx;
+    }
+    value
 }
 
 fn pack(bits: &[u8]) -> Word {
@@ -1859,14 +1870,12 @@ mod tests {
     #[test]
     fn packed_multi_keccak_simple() {
         let k = 10;
-
-        let input_a = (0u8..135).collect::<Vec<_>>();
-        let input_b = (0u8..250).collect::<Vec<_>>();
         let inputs = multi_keccak(vec![
-            input_a.clone(),
-            input_b.clone(),
-            input_a,
-            input_b,
+            vec![],
+            (0u8..1).collect::<Vec<_>>(),
+            (0u8..135).collect::<Vec<_>>(),
+            (0u8..136).collect::<Vec<_>>(),
+            (0u8..200).collect::<Vec<_>>(),
         ]);
         verify::<Fr>(k, inputs, true);
     }
