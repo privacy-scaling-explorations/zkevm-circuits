@@ -53,7 +53,7 @@ async fn test_state_circuit_block(block_num: u64) {
     });
 
     let randomness = Fr::rand();
-    let circuit = StateCircuit::<Fr, { 1 << 16 }>::new(randomness, rw_map);
+    let circuit = StateCircuit::<Fr>::new(randomness, rw_map, 1 << 16);
     let power_of_randomness = circuit.instance();
 
     use halo2_proofs::pairing::bn256::Fr as Fp;

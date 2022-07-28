@@ -12,12 +12,13 @@ mod tests {
     };
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
+    use zkevm_circuits::evm_circuit::witness::RwMap;
     use zkevm_circuits::state_circuit::StateCircuit;
 
     #[cfg_attr(not(feature = "benches"), ignore)]
     #[test]
     fn bench_state_circuit_prover() {
-        let empty_circuit = StateCircuit::<Fr, { 1 << 16 }>::default();
+        let empty_circuit = StateCircuit::<Fr>::new(Fr::default(), RwMap::default(), 1 << 16);
 
         // Initialize the polynomial commitment parameters
         let rng = XorShiftRng::from_seed([
