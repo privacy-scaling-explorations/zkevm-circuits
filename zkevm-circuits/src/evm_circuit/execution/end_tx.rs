@@ -3,10 +3,6 @@ use crate::{
         execution::ExecutionGadget,
         param::N_BYTES_GAS,
         step::ExecutionState,
-        table::{
-            BlockContextFieldTag, CallContextFieldTag, RwTableTag, TxContextFieldTag,
-            TxReceiptFieldTag,
-        },
         util::{
             common_gadget::UpdateBalanceGadget,
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
@@ -17,6 +13,9 @@ use crate::{
             CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
+    },
+    table::{
+        BlockContextFieldTag, CallContextFieldTag, RwTableTag, TxContextFieldTag, TxReceiptFieldTag,
     },
     util::Expr,
 };

@@ -408,8 +408,12 @@ pub(crate) mod rlc {
         rlc
     }
 
-    pub(crate) fn value<F: FieldExt>(values: &[u8], randomness: F) -> F {
-        values.iter().rev().fold(F::zero(), |acc, value| {
+    pub(crate) fn value<'a, F: FieldExt, I>(values: I, randomness: F) -> F
+    where
+        I: IntoIterator<Item = &'a u8>,
+        <I as IntoIterator>::IntoIter: DoubleEndedIterator,
+    {
+        values.into_iter().rev().fold(F::zero(), |acc, value| {
             acc * randomness + F::from(*value as u64)
         })
     }

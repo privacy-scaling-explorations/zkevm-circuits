@@ -6,7 +6,8 @@
 
 pub mod sign_verify;
 
-use crate::util::{random_linear_combine_word as rlc, Expr};
+use crate::table::{KeccakTable, TxFieldTag, TxTable};
+use crate::util::{power_of_randomness_from_instance, random_linear_combine_word as rlc};
 use eth_types::{
     geth_types::Transaction, Address, Field, ToBigEndian, ToLittleEndian, ToScalar, Word,
 };
@@ -14,8 +15,7 @@ use ff::PrimeField;
 use group::GroupEncoding;
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter, Region, SimpleFloorPlanner},
-    plonk::{Advice, Circuit, Column, ConstraintSystem, Error},
-    poly::Rotation,
+    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Expression},
 };
 use itertools::Itertools;
 use lazy_static::lazy_static;
@@ -23,6 +23,7 @@ use libsecp256k1;
 use log::error;
 use num::Integer;
 use num_bigint::BigUint;
+// use rand_core::RngCore;
 use rlp::RlpStream;
 use secp256k1::Secp256k1Affine;
 use sha3::{Digest, Keccak256};
@@ -85,6 +86,21 @@ fn ct_option_ok_or<T, E>(v: CtOption<T>, err: E) -> Result<T, E> {
     Option::<T>::from(v).ok_or(err)
 }
 
+/// Return all the keccak inputs that the Tx Circuit requires.
+pub fn keccak_inputs(txs: &[Transaction], chain_id: u64) -> Result<Vec<Vec<u8>>, Error> {
+    let mut inputs = Vec::new();
+    let sign_datas: Vec<SignData> = txs
+        .iter()
+        .map(|tx| tx_to_sign_data(tx, chain_id))
+        .try_collect()?;
+    // Keccak inputs from SignVerify Chip
+    let sign_verify_inputs = sign_verify::keccak_inputs(&sign_datas);
+    inputs.extend_from_slice(&sign_verify_inputs);
+    // NOTE: We don't verify the Tx Hash in the circuit yet, so we don't have more
+    // hash inputs.
+    Ok(inputs)
+}
+
 fn tx_to_sign_data(tx: &Transaction, chain_id: u64) -> Result<SignData, Error> {
     let sig_r_le = tx.r.to_le_bytes();
     let sig_s_le = tx.s.to_le_bytes();
@@ -134,37 +150,6 @@ fn tx_to_sign_data(tx: &Transaction, chain_id: u64) -> Result<SignData, Error> {
     })
 }
 
-// TODO: Deduplicate with
-// `zkevm-circuits/src/evm_circuit/table.rs::TxContextFieldTag`.
-/// Tag used to identify each field in the transaction in a row of the
-/// transaction table.
-#[derive(Clone, Copy, Debug)]
-pub enum TxFieldTag {
-    /// Unused tag
-    Null = 0,
-    /// Nonce
-    Nonce,
-    /// Gas
-    Gas,
-    /// GasPrice
-    GasPrice,
-    /// CallerAddress
-    CallerAddress,
-    /// CalleeAddress
-    CalleeAddress,
-    /// IsCreate
-    IsCreate,
-    /// Value
-    Value,
-    /// CallDataLength
-    CallDataLength,
-    /// TxSignHash: Hash of the transaction without the signature, used for
-    /// signing.
-    TxSignHash,
-    /// CallData
-    CallData,
-}
-
 /// Config for TxCircuit
 #[derive(Clone, Debug)]
 pub struct TxCircuitConfig<F: Field> {
@@ -173,35 +158,25 @@ pub struct TxCircuitConfig<F: Field> {
     index: Column<Advice>,
     value: Column<Advice>,
     sign_verify: SignVerifyConfig<F>,
+    keccak_table: KeccakTable,
     _marker: PhantomData<F>,
 }
 
 impl<F: Field> TxCircuitConfig<F> {
-    fn new(meta: &mut ConstraintSystem<F>) -> Self {
-        let tx_id = meta.advice_column();
-        let tag = meta.advice_column();
-        let index = meta.advice_column();
-        let value = meta.advice_column();
+    /// Return a new TxCircuitConfig
+    pub fn new(
+        meta: &mut ConstraintSystem<F>,
+        power_of_randomness: [Expression<F>; sign_verify::POW_RAND_SIZE],
+        tx_table: TxTable,
+        keccak_table: KeccakTable,
+    ) -> Self {
+        let tx_id = tx_table.tx_id;
+        let tag = tx_table.tag;
+        let index = tx_table.index;
+        let value = tx_table.value;
         meta.enable_equality(value);
 
-        // This gate is used just to get the array of expressions from the power of
-        // randomness instance column, so that later on we don't need to query
-        // columns everywhere, and can pass the power of randomness array
-        // expression everywhere.  The gate itself doesn't add any constraints.
-        let power_of_randomness = {
-            let columns = [(); sign_verify::POW_RAND_SIZE].map(|_| meta.instance_column());
-            let mut power_of_randomness = None;
-
-            meta.create_gate("power of randomness", |meta| {
-                power_of_randomness =
-                    Some(columns.map(|column| meta.query_instance(column, Rotation::cur())));
-
-                [0.expr()]
-            });
-
-            power_of_randomness.unwrap()
-        };
-        let sign_verify = SignVerifyConfig::new(meta, power_of_randomness);
+        let sign_verify = SignVerifyConfig::new(meta, power_of_randomness, keccak_table.clone());
 
         Self {
             tx_id,
@@ -209,6 +184,7 @@ impl<F: Field> TxCircuitConfig<F> {
             index,
             value,
             sign_verify,
+            keccak_table,
             _marker: PhantomData,
         }
     }
@@ -232,7 +208,7 @@ impl<F: Field> TxCircuitConfig<F> {
 }
 
 /// Tx Circuit for verifying transaction signatures
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct TxCircuit<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> {
     /// SignVerify chip
     pub sign_verify: SignVerifyChip<F, MAX_TXS>,
@@ -244,24 +220,33 @@ pub struct TxCircuit<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> 
     pub chain_id: u64,
 }
 
-impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
-    for TxCircuit<F, MAX_TXS, MAX_CALLDATA>
+impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
+    TxCircuit<F, MAX_TXS, MAX_CALLDATA>
 {
-    type Config = TxCircuitConfig<F>;
-    type FloorPlanner = SimpleFloorPlanner;
-
-    fn without_witnesses(&self) -> Self {
-        Self::default()
+    /// Return a new TxCircuit
+    pub fn new(
+        aux_generator: Secp256k1Affine,
+        randomness: F,
+        chain_id: u64,
+        txs: Vec<Transaction>,
+    ) -> Self {
+        TxCircuit::<F, MAX_TXS, MAX_CALLDATA> {
+            sign_verify: SignVerifyChip {
+                aux_generator,
+                window_size: 2,
+                _marker: PhantomData,
+            },
+            randomness,
+            txs,
+            chain_id,
+        }
     }
 
-    fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-        TxCircuitConfig::new(meta)
-    }
-
-    fn synthesize(
+    /// Make the assignments to the TxCircuit
+    pub fn assign(
         &self,
-        config: Self::Config,
-        mut layouter: impl Layouter<F>,
+        config: &TxCircuitConfig<F>,
+        layouter: &mut impl Layouter<F>,
     ) -> Result<(), Error> {
         assert!(self.txs.len() <= MAX_TXS);
         let sign_datas: Vec<SignData> = self
@@ -274,12 +259,9 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
                 })
             })
             .try_collect()?;
-        let assigned_sig_verifs = self.sign_verify.assign(
-            &config.sign_verify,
-            &mut layouter,
-            self.randomness,
-            &sign_datas,
-        )?;
+        let assigned_sig_verifs =
+            self.sign_verify
+                .assign(&config.sign_verify, layouter, self.randomness, &sign_datas)?;
 
         layouter.assign_region(
             || "tx table",
@@ -305,10 +287,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
                             TxFieldTag::Nonce,
                             rlc(tx.nonce.to_le_bytes(), self.randomness),
                         ),
-                        (
-                            TxFieldTag::Gas,
-                            rlc(tx.gas_limit.to_le_bytes(), self.randomness),
-                        ),
+                        (TxFieldTag::Gas, F::from(tx.gas_limit.as_u64())),
                         (
                             TxFieldTag::GasPrice,
                             rlc(tx.gas_price.to_le_bytes(), self.randomness),
@@ -332,6 +311,15 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
                         (
                             TxFieldTag::CallDataLength,
                             F::from(tx.call_data.0.len() as u64),
+                        ),
+                        (
+                            TxFieldTag::CallDataGasCost,
+                            F::from(
+                                tx.call_data
+                                    .0
+                                    .iter()
+                                    .fold(0, |acc, byte| acc + if *byte == 0 { 4 } else { 16 }),
+                            ),
                         ),
                         (
                             TxFieldTag::TxSignHash,
@@ -388,6 +376,45 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
             },
         )?;
         Ok(())
+    }
+}
+
+impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
+    for TxCircuit<F, MAX_TXS, MAX_CALLDATA>
+{
+    type Config = TxCircuitConfig<F>;
+    type FloorPlanner = SimpleFloorPlanner;
+
+    fn without_witnesses(&self) -> Self {
+        Self::default()
+    }
+
+    fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
+        let tx_table = TxTable {
+            tx_id: meta.advice_column(),
+            tag: meta.advice_column(),
+            index: meta.advice_column(),
+            value: meta.advice_column(),
+        };
+
+        let power_of_randomness = power_of_randomness_from_instance(meta);
+        let keccak_table = KeccakTable::construct(meta);
+        TxCircuitConfig::new(meta, power_of_randomness, tx_table, keccak_table)
+    }
+
+    fn synthesize(
+        &self,
+        config: Self::Config,
+        mut layouter: impl Layouter<F>,
+    ) -> Result<(), Error> {
+        self.assign(&config, &mut layouter)?;
+        config.keccak_table.load(
+            &mut layouter,
+            keccak_inputs(&self.txs, self.chain_id)?
+                .iter()
+                .map(|b| b.as_slice()),
+            self.randomness,
+        )
     }
 }
 

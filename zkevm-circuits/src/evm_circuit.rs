@@ -11,10 +11,11 @@ pub(crate) mod util;
 pub mod table;
 pub mod witness;
 
+use crate::table::LookupTable;
 use eth_types::Field;
 use execution::ExecutionConfig;
 use itertools::Itertools;
-use table::{FixedTableTag, LookupTable};
+use table::FixedTableTag;
 use witness::Block;
 
 /// EvmCircuit implements verification of execution trace of a block.
@@ -145,23 +146,16 @@ impl<F: Field> EvmCircuit<F> {
 #[cfg(any(feature = "test", test))]
 pub mod test {
     use crate::{
-        copy_circuit::CopyCircuit,
-        evm_circuit::{
-            table::FixedTableTag,
-            witness::{Block, BlockContext, Bytecode, RwMap, Transaction},
-            EvmCircuit,
-        },
-        rw_table::RwTable,
-        util::Expr,
+        evm_circuit::{table::FixedTableTag, witness::Block, EvmCircuit},
+        table::{BlockTable, BytecodeTable, CopyTable, RwTable, TxTable},
+        util::power_of_randomness_from_instance,
     };
     use eth_types::{Field, Word};
     use halo2_proofs::{
         circuit::{Layouter, SimpleFloorPlanner},
         dev::{MockProver, VerifyFailure},
-        plonk::{Advice, Circuit, Column, ConstraintSystem, Error},
-        poly::Rotation,
+        plonk::{Circuit, ConstraintSystem, Error},
     };
-    use itertools::Itertools;
     use rand::{
         distributions::uniform::{SampleRange, SampleUniform},
         random, thread_rng, Rng,
@@ -190,165 +184,12 @@ pub mod test {
 
     #[derive(Clone)]
     pub struct TestCircuitConfig<F> {
-        tx_table: [Column<Advice>; 4],
+        tx_table: TxTable,
         rw_table: RwTable,
-        bytecode_table: [Column<Advice>; 5],
-        block_table: [Column<Advice>; 3],
-        copy_table: CopyCircuit<F>,
+        bytecode_table: BytecodeTable,
+        block_table: BlockTable,
+        copy_table: CopyTable,
         pub evm_circuit: EvmCircuit<F>,
-    }
-
-    impl<F: Field> TestCircuitConfig<F> {
-        fn load_txs(
-            &self,
-            layouter: &mut impl Layouter<F>,
-            txs: &[Transaction],
-            randomness: F,
-        ) -> Result<(), Error> {
-            layouter.assign_region(
-                || "tx table",
-                |mut region| {
-                    let mut offset = 0;
-                    for column in self.tx_table {
-                        region.assign_advice(
-                            || "tx table all-zero row",
-                            column,
-                            offset,
-                            || Ok(F::zero()),
-                        )?;
-                    }
-                    offset += 1;
-
-                    for tx in txs.iter() {
-                        for row in tx.table_assignments(randomness) {
-                            for (column, value) in self.tx_table.iter().zip_eq(row) {
-                                region.assign_advice(
-                                    || format!("tx table row {}", offset),
-                                    *column,
-                                    offset,
-                                    || Ok(value),
-                                )?;
-                            }
-                            offset += 1;
-                        }
-                    }
-                    Ok(())
-                },
-            )
-        }
-
-        fn load_rws(
-            &self,
-            layouter: &mut impl Layouter<F>,
-            rws: &RwMap,
-            randomness: F,
-        ) -> Result<(), Error> {
-            layouter.assign_region(
-                || "rw table",
-                |mut region| {
-                    let mut offset = 0;
-                    self.rw_table
-                        .assign(&mut region, offset, &Default::default())?;
-                    offset += 1;
-
-                    let mut rows = rws
-                        .0
-                        .values()
-                        .flat_map(|rws| rws.iter())
-                        .collect::<Vec<_>>();
-
-                    rows.sort_by_key(|a| a.rw_counter());
-                    let mut expected_rw_counter = 1;
-                    for rw in rows {
-                        assert!(rw.rw_counter() == expected_rw_counter);
-                        expected_rw_counter += 1;
-
-                        self.rw_table.assign(
-                            &mut region,
-                            offset,
-                            &rw.table_assignment(randomness),
-                        )?;
-                        offset += 1;
-                    }
-                    Ok(())
-                },
-            )
-        }
-
-        fn load_bytecodes<'a>(
-            &self,
-            layouter: &mut impl Layouter<F>,
-            bytecodes: impl IntoIterator<Item = &'a Bytecode> + Clone,
-            randomness: F,
-        ) -> Result<(), Error> {
-            layouter.assign_region(
-                || "bytecode table",
-                |mut region| {
-                    let mut offset = 0;
-                    for column in self.bytecode_table {
-                        region.assign_advice(
-                            || "bytecode table all-zero row",
-                            column,
-                            offset,
-                            || Ok(F::zero()),
-                        )?;
-                    }
-                    offset += 1;
-
-                    for bytecode in bytecodes.clone() {
-                        for row in bytecode.table_assignments(randomness) {
-                            for (column, value) in self.bytecode_table.iter().zip_eq(row) {
-                                region.assign_advice(
-                                    || format!("bytecode table row {}", offset),
-                                    *column,
-                                    offset,
-                                    || Ok(value),
-                                )?;
-                            }
-                            offset += 1;
-                        }
-                    }
-                    Ok(())
-                },
-            )
-        }
-
-        fn load_block(
-            &self,
-            layouter: &mut impl Layouter<F>,
-            block: &BlockContext,
-            randomness: F,
-        ) -> Result<(), Error> {
-            layouter.assign_region(
-                || "block table",
-                |mut region| {
-                    let mut offset = 0;
-                    for column in self.block_table {
-                        region.assign_advice(
-                            || "block table all-zero row",
-                            column,
-                            offset,
-                            || Ok(F::zero()),
-                        )?;
-                    }
-                    offset += 1;
-
-                    for row in block.table_assignments(randomness) {
-                        for (column, value) in self.block_table.iter().zip_eq(row) {
-                            region.assign_advice(
-                                || format!("block table row {}", offset),
-                                *column,
-                                offset,
-                                || Ok(value),
-                            )?;
-                        }
-                        offset += 1;
-                    }
-
-                    Ok(())
-                },
-            )
-        }
     }
 
     #[derive(Default)]
@@ -375,29 +216,23 @@ pub mod test {
         }
 
         fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-            let tx_table = [(); 4].map(|_| meta.advice_column());
+            let tx_table = TxTable::construct(meta);
             let rw_table = RwTable::construct(meta);
-            let bytecode_table = [(); 5].map(|_| meta.advice_column());
-            let block_table = [(); 3].map(|_| meta.advice_column());
-            let copy_table = CopyCircuit::configure(meta, &tx_table, &rw_table, &bytecode_table);
+            let bytecode_table = BytecodeTable::construct(meta);
+            let block_table = BlockTable::construct(meta);
+            let q_copy_table = meta.fixed_column();
+            let copy_table = CopyTable::construct(meta, q_copy_table);
 
-            // This gate is used just to get the array of expressions from the power of
-            // randomness instance column, so that later on we don't need to query
-            // columns everywhere, and can pass the power of randomness array
-            // expression everywhere.  The gate itself doesn't add any constraints.
-            let power_of_randomness = {
-                let columns = [(); 31].map(|_| meta.instance_column());
-                let mut power_of_randomness = None;
-
-                meta.create_gate("", |meta| {
-                    power_of_randomness =
-                        Some(columns.map(|column| meta.query_instance(column, Rotation::cur())));
-
-                    [0.expr()]
-                });
-
-                power_of_randomness.unwrap()
-            };
+            let power_of_randomness = power_of_randomness_from_instance(meta);
+            let evm_circuit = EvmCircuit::configure(
+                meta,
+                power_of_randomness,
+                &tx_table,
+                &rw_table,
+                &bytecode_table,
+                &block_table,
+                &copy_table,
+            );
 
             Self::Config {
                 tx_table,
@@ -405,15 +240,7 @@ pub mod test {
                 bytecode_table,
                 block_table,
                 copy_table,
-                evm_circuit: EvmCircuit::configure(
-                    meta,
-                    power_of_randomness,
-                    &tx_table,
-                    &rw_table,
-                    &bytecode_table,
-                    &block_table,
-                    &copy_table,
-                ),
+                evm_circuit,
             }
         }
 
@@ -426,15 +253,23 @@ pub mod test {
                 .evm_circuit
                 .load_fixed_table(&mut layouter, self.fixed_table_tags.clone())?;
             config.evm_circuit.load_byte_table(&mut layouter)?;
-            config.load_txs(&mut layouter, &self.block.txs, self.block.randomness)?;
-            config.load_rws(&mut layouter, &self.block.rws, self.block.randomness)?;
-            config.load_bytecodes(
+            config
+                .tx_table
+                .load(&mut layouter, &self.block.txs, self.block.randomness)?;
+            config
+                .rw_table
+                .load(&mut layouter, &self.block.rws, self.block.randomness)?;
+            config.bytecode_table.load(
                 &mut layouter,
                 self.block.bytecodes.values(),
                 self.block.randomness,
             )?;
-            config.load_block(&mut layouter, &self.block.context, self.block.randomness)?;
-            config.copy_table.assign_block(&mut layouter, &self.block)?;
+            config
+                .block_table
+                .load(&mut layouter, &self.block.context, self.block.randomness)?;
+            config
+                .copy_table
+                .load(&mut layouter, &self.block, self.block.randomness)?;
             config
                 .evm_circuit
                 .assign_block_exact(&mut layouter, &self.block)
