@@ -27,11 +27,13 @@ fn dummy_gen_create_ops(
     let offset = geth_step.stack.nth_last(1)?.as_usize();
     let length = geth_step.stack.nth_last(2)?.as_usize();
 
-    state
-        .call_ctx_mut()?
-        .memory
-        .extend_at_least(offset + length);
-
+    if length != 0 {
+        state
+            .call_ctx_mut()?
+            .memory
+            .extend_at_least(offset + length);
+    }
+    
     let mut exec_step = state.new_step(geth_step)?;
 
     let tx_id = state.tx_ctx.id();
