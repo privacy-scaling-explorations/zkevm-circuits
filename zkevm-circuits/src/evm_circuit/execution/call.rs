@@ -53,7 +53,7 @@ pub(crate) struct CallGadget<F> {
     transfer: TransferGadget<F>,
     callee_nonce: Cell<F>,
     callee_code_hash: Cell<F>,
-    is_account_empty: BatchedIsZeroGadget<F, 2>,
+    is_empty_nonce_and_balance: BatchedIsZeroGadget<F, 2>,
     is_empty_code_hash: IsEqualGadget<F>,
     one_64th_gas: ConstantDivisionGadget<F, N_BYTES_GAS>,
     capped_callee_gas_left: MinMaxGadget<F, N_BYTES_GAS>,
@@ -172,7 +172,7 @@ impl<F: Field> ExecutionGadget<F> for CallGadget<F> {
                 cb.account_read(callee_address.clone(), field_tag, value.expr());
                 value
             });
-        let is_account_empty = BatchedIsZeroGadget::construct(
+        let is_empty_nonce_and_balance = BatchedIsZeroGadget::construct(
             cb,
             [
                 callee_nonce.expr(),
@@ -187,16 +187,14 @@ impl<F: Field> ExecutionGadget<F> for CallGadget<F> {
                 cb.power_of_randomness(),
             ),
         );
+        let is_empty_account = is_empty_nonce_and_balance.expr() * is_empty_code_hash.expr();
         // Sum up gas cost
         let gas_cost = select::expr(
             is_warm_prev.expr(),
             GasCost::WARM_ACCESS.expr(),
             GasCost::COLD_ACCOUNT_ACCESS.expr(),
         ) + has_value.clone()
-            * (GasCost::CALL_WITH_VALUE.expr()
-                + is_account_empty.expr()
-                    * is_empty_code_hash.expr()
-                    * GasCost::NEW_ACCOUNT.expr())
+            * (GasCost::CALL_WITH_VALUE.expr() + is_empty_account * GasCost::NEW_ACCOUNT.expr())
             + memory_expansion.gas_cost();
 
         // Apply EIP 150
@@ -323,7 +321,7 @@ impl<F: Field> ExecutionGadget<F> for CallGadget<F> {
             transfer,
             callee_nonce,
             callee_code_hash,
-            is_account_empty,
+            is_empty_nonce_and_balance,
             is_empty_code_hash,
             one_64th_gas,
             capped_callee_gas_left,
@@ -443,7 +441,7 @@ impl<F: Field> ExecutionGadget<F> for CallGadget<F> {
                 block.randomness,
             )),
         )?;
-        let is_account_empty = self.is_account_empty.assign(
+        let is_empty_nonce_and_balance = self.is_empty_nonce_and_balance.assign(
             region,
             offset,
             [
@@ -451,12 +449,13 @@ impl<F: Field> ExecutionGadget<F> for CallGadget<F> {
                 Word::random_linear_combine(callee_balance_pair.1.to_le_bytes(), block.randomness),
             ],
         )?;
-        self.is_empty_code_hash.assign(
+        let is_empty_code_hash = self.is_empty_code_hash.assign(
             region,
             offset,
             Word::random_linear_combine(callee_code_hash.to_le_bytes(), block.randomness),
             Word::random_linear_combine(*EMPTY_HASH_LE, block.randomness),
         )?;
+        let is_empty_account = is_empty_nonce_and_balance * is_empty_code_hash;
         let has_value = !value.is_zero();
         let gas_cost = if is_warm_prev {
             GasCost::WARM_ACCESS.as_u64()
@@ -464,7 +463,7 @@ impl<F: Field> ExecutionGadget<F> for CallGadget<F> {
             GasCost::COLD_ACCOUNT_ACCESS.as_u64()
         } + if has_value {
             GasCost::CALL_WITH_VALUE.as_u64()
-                + if is_account_empty == F::one() {
+                + if is_empty_account == F::one() {
                     GasCost::NEW_ACCOUNT.as_u64()
                 } else {
                     0
