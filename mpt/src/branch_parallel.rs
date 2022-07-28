@@ -1,12 +1,12 @@
 use halo2_proofs::{
     circuit::Chip,
-    plonk::{Advice, Column, ConstraintSystem, Expression, Fixed, Selector},
+    plonk::{Advice, Column, ConstraintSystem, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
 use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
-use crate::{helpers::bytes_expr_into_rlc, param::HASH_WIDTH};
+use crate::{helpers::{bytes_expr_into_rlc, key_len_lookup}, param::HASH_WIDTH};
 
 #[derive(Clone, Debug)]
 pub(crate) struct BranchParallelConfig {}
@@ -209,6 +209,29 @@ impl<F: FieldExt> BranchParallelChip<F> {
 
             constraints
         });
+        
+        let sel = |meta: &mut VirtualCells<F>| {
+            let q_enable = meta.query_fixed(q_enable, Rotation::cur());
+            let is_branch_child_cur = meta.query_advice(is_branch_child, Rotation::cur());
+            let is_node_hashed = meta.query_advice(is_node_hashed, Rotation::cur());
+            
+            q_enable * is_branch_child_cur * is_node_hashed
+        };
+
+        /*
+        There are 0s after the last non-hashed node byte.
+        for ind in 1..HASH_WIDTH {
+            key_len_lookup(
+                meta,
+                sel,
+                ind,
+                s_advices[0],
+                s_advices[ind],
+                192,
+                fixed_table,
+            )
+        }
+        */
 
         config
     }

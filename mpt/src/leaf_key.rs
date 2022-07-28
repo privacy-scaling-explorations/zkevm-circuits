@@ -161,7 +161,7 @@ impl<F: FieldExt> LeafKeyChip<F> {
                 fixed_table,
             )
         }
-        key_len_lookup(meta, sel_short, 32, s_advices[0], c_rlp1, 128, fixed_table);
+        key_len_lookup(meta, sel_short, 32, s_rlp2, c_rlp1, 128, fixed_table);
 
         for ind in 1..HASH_WIDTH {
             key_len_lookup(

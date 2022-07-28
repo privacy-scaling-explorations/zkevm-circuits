@@ -343,8 +343,9 @@ impl<F: FieldExt> LeafValueChip<F> {
             constraints
         });
 
-        // TODO: somewhere needs to be checked that there are 0s in *_advices after the last
-        // byte of non-hashed branch child
+        // Note: branch_parallel checks that there are 0s in *_advices after the last
+        // byte of the non-hashed branch child (otherwise some corrupted RLC could be provided
+        // as all *_advices are used).
         meta.create_gate("non-hashed leaf in parent", |meta| {
             // When leaf is not hashed, the mod_node_hash_rlc stores the RLC of the leaf bytes
             // (instead of the RLC of leaf hash). So we take leaf RLC and compare it to the value
@@ -377,7 +378,6 @@ impl<F: FieldExt> LeafValueChip<F> {
             }
 
             let mut constraints = vec![];
-            // TODO: check if this work correctly
             constraints.push((
                 "non-hashed",
                 q_enable.clone()

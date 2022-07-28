@@ -95,11 +95,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
                 "flag2 is boolean",
                 get_bool_constraint(q_enable.clone(), flag2.clone()),
             ));
-            constraints.push((
-                "not both zeros: flag1, flag2",
-                q_enable.clone() * (one.clone() - flag1.clone()) * (one.clone() - flag2.clone()),
-            ));
-
+            
             let is_branch_s_placeholder = meta.query_advice(
                 s_advices[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM],
                 Rotation(rot_branch_init),
@@ -108,6 +104,14 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
                 s_advices[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
                 Rotation(rot_branch_init),
             );
+
+            constraints.push((
+                "not both zeros: flag1, flag2",
+                q_enable.clone()
+                    * (is_branch_s_placeholder.clone() + is_branch_c_placeholder.clone()) // there is no added leaf when no placeholder branch
+                    * (one.clone() - flag1.clone())
+                    * (one.clone() - flag2.clone()),
+            ));
 
             let s_rlp2 = meta.query_advice(s_rlp2, Rotation::cur());
             let rlc_last_level = s_rlp1 + s_rlp2 * r_table[0].clone();
