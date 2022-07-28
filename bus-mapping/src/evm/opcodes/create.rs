@@ -33,7 +33,7 @@ fn dummy_gen_create_ops(
             .memory
             .extend_at_least(offset + length);
     }
-    
+
     let mut exec_step = state.new_step(geth_step)?;
 
     let tx_id = state.tx_ctx.id();
