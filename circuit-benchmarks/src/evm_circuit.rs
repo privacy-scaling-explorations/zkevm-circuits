@@ -6,6 +6,7 @@ use halo2_proofs::{
     plonk::{Circuit, ConstraintSystem, Error, Expression},
 };
 use zkevm_circuits::evm_circuit::{witness::Block, EvmCircuit};
+use zkevm_circuits::table::{BlockTable, BytecodeTable, RwTable, TxTable};
 
 #[derive(Debug, Default)]
 pub struct TestCircuit<F> {
@@ -21,10 +22,10 @@ impl<F: Field> Circuit<F> for TestCircuit<F> {
     }
 
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-        let tx_table = [(); 4].map(|_| meta.advice_column());
-        let rw_table = [(); 11].map(|_| meta.advice_column());
-        let bytecode_table = [(); 5].map(|_| meta.advice_column());
-        let block_table = [(); 3].map(|_| meta.advice_column());
+        let tx_table = TxTable::construct(meta);
+        let rw_table = RwTable::construct(meta);
+        let bytecode_table = BytecodeTable::construct(meta);
+        let block_table = BlockTable::construct(meta);
         let copy_table = [(); 11].map(|_| meta.advice_column());
         // Use constant expression to mock constant instance column for a more
         // reasonable benchmark.
