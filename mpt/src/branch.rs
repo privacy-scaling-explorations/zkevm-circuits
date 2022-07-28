@@ -223,6 +223,8 @@ impl<F: FieldExt> BranchChip<F> {
             let s_rlp2_cur = meta.query_advice(s_rlp2, Rotation::cur());
             let c_rlp1_cur = meta.query_advice(c_rlp1, Rotation::cur());
             let c_rlp2_cur = meta.query_advice(c_rlp2, Rotation::cur());
+            let s_advices0_cur = meta.query_advice(s_advices[0], Rotation::cur());
+            let c_advices0_cur = meta.query_advice(c_advices[0], Rotation::cur());
 
             // s bytes in this row:
             // If empty, then s_rlp2 = 0:
@@ -238,9 +240,9 @@ impl<F: FieldExt> BranchChip<F> {
             let mut bytes_num_in_row_s = s_rlp2_cur.clone() * c160_inv.clone() * c32.clone() + one.clone();
             let mut bytes_num_in_row_c = c_rlp2_cur.clone() * c160_inv * c32 + one.clone();
 
-            bytes_num_in_row_s = is_node_hashed_s.clone() * (s_rlp2_cur.clone() - c192.clone() + one.clone())
+            bytes_num_in_row_s = is_node_hashed_s.clone() * (s_advices0_cur.clone() - c192.clone() + one.clone())
                 + (one.clone() - is_node_hashed_s.clone()) * bytes_num_in_row_s.clone();
-            bytes_num_in_row_c = is_node_hashed_c.clone() * (c_rlp2_cur.clone() - c192.clone() + one.clone())
+            bytes_num_in_row_c = is_node_hashed_c.clone() * (c_advices0_cur.clone() - c192.clone() + one.clone())
                 + (one.clone() - is_node_hashed_c.clone()) * bytes_num_in_row_c.clone();
 
             // One RLP byte:

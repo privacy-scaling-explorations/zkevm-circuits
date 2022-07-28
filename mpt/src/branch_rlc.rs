@@ -90,10 +90,11 @@ impl<F: FieldExt> BranchRLCChip<F> {
                         - branch_mult_prev.clone() * r_table[R_TABLE_LEN - 1].clone() * r_table[0].clone()),
             ));
 
-            let mut acc = branch_acc_prev.clone() + rlp2.clone() * branch_mult_prev.clone(); 
-            for ind in 0..HASH_WIDTH {
+            let advices0 = meta.query_advice(advices[0], Rotation::cur());
+            let mut acc = branch_acc_prev.clone() + advices0 * branch_mult_prev.clone(); 
+            for ind in 1..HASH_WIDTH {
                 let a = meta.query_advice(advices[ind], Rotation::cur());
-                acc = acc + a * branch_mult_prev.clone() * r_table[ind].clone();
+                acc = acc + a * branch_mult_prev.clone() * r_table[ind-1].clone();
             }
             constraints.push((
                 "branch acc non-hashed",

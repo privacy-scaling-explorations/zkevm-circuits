@@ -1570,13 +1570,13 @@ impl<F: FieldExt> MPTConfig<F> {
             || "is_node_hashed_s",
             self.is_node_hashed_s,
             offset,
-            || Ok(F::from((row[S_RLP_START + 1] > 192) as u64)),
+            || Ok(F::from((row[S_RLP_START + 1] == 0 && row[S_START] > 192) as u64)),
         )?;
         region.assign_advice(
             || "is_node_hashed_c",
             self.is_node_hashed_c,
             offset,
-            || Ok(F::from((row[C_RLP_START + 1] > 192) as u64)),
+            || Ok(F::from((row[C_RLP_START + 1] == 0 && row[C_START] > 192) as u64)),
         )?;
 
         Ok(())
@@ -1966,8 +1966,8 @@ impl<F: FieldExt> MPTConfig<F> {
                             
                             if row[S_RLP_START + 1] == 160 {
                                 pv.rlp_len_rem_s -= 33;
-                            } else if row[S_RLP_START + 1] > 192 {
-                                let len = row[S_RLP_START + 1] as i32 - 192;
+                            } else if row[S_RLP_START + 1] == 0 && row[S_START] > 192 {
+                                let len = row[S_START] as i32 - 192;
                                 pv.rlp_len_rem_s -= len + 1;
                                 for _ in 0..len {
                                     node_mult_diff_s *= self.acc_r;
@@ -1977,8 +1977,8 @@ impl<F: FieldExt> MPTConfig<F> {
                             }
                             if row[C_RLP_START + 1] == 160 {
                                 pv.rlp_len_rem_c -= 33;
-                            } else if row[C_RLP_START + 1] > 192 {
-                                let len = row[C_RLP_START + 1] as i32 - 192;
+                            } else if row[C_RLP_START + 1] == 0 && row[C_START] > 192 {
+                                let len = row[C_START] as i32 - 192;
                                 pv.rlp_len_rem_c -= len + 1;
                                 for _ in 0..len {
                                     node_mult_diff_c *= self.acc_r;
@@ -2264,7 +2264,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                  branch_mult: &mut F,
                                  rlp_start: usize,
                                  start: usize| {
-                                    if row[rlp_start + 1] == 0 {
+                                    if row[rlp_start + 1] == 0 && row[start] == 128 {
                                         *branch_acc += c128 * *branch_mult;
                                         *branch_mult *= self.acc_r;
                                     } else if row[rlp_start + 1] == 160 {
@@ -2276,12 +2276,12 @@ impl<F: FieldExt> MPTConfig<F> {
                                             *branch_mult *= self.acc_r;
                                         }
                                     } else {
-                                        *branch_acc += F::from(row[rlp_start + 1] as u64) * *branch_mult;
+                                        *branch_acc += F::from(row[start] as u64) * *branch_mult;
                                         *branch_mult *= self.acc_r;
-                                        let len = row[rlp_start + 1] as usize - 192;
+                                        let len = row[start] as usize - 192;
                                         for i in 0..len {
                                             *branch_acc +=
-                                                F::from(row[start + i] as u64) * *branch_mult;
+                                                F::from(row[start + 1 + i] as u64) * *branch_mult;
                                             *branch_mult *= self.acc_r;
                                         }
                                     }
