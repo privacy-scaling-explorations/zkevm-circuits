@@ -1,4 +1,6 @@
-use anyhow::Result;
+use std::str::FromStr;
+
+use anyhow::{bail, Result};
 use eth_types::{evm_types::OpcodeId, GethExecTrace, U256};
 use prettytable::Table;
 use zkevm_circuits::test_util::{get_fixed_table, BytecodeTestConfig, FixedTableConfig};
@@ -6,14 +8,8 @@ use zkevm_circuits::test_util::{get_fixed_table, BytecodeTestConfig, FixedTableC
 const OPCODES_NEED_FULL_FIXED_TABLE: [OpcodeId; 3] = [OpcodeId::AND, OpcodeId::OR, OpcodeId::XOR];
 
 // see https://github.com/appliedzkp/zkevm-circuits/issues/477
-pub const OPCODES_UNIMPLEMENTED: [OpcodeId; 31] = [
-    OpcodeId::SDIV,
-    OpcodeId::SMOD,
-    OpcodeId::ADDMOD,
-    OpcodeId::MULMOD,
+pub const OPCODES_UNIMPLEMENTED: [OpcodeId; 20] = [
     OpcodeId::EXP,
-    OpcodeId::NOT,
-    OpcodeId::CODESIZE,
     OpcodeId::SHL,
     OpcodeId::SHR,
     OpcodeId::SAR,
@@ -27,11 +23,6 @@ pub const OPCODES_UNIMPLEMENTED: [OpcodeId; 31] = [
     OpcodeId::RETURNDATASIZE,
     OpcodeId::RETURNDATACOPY,
     OpcodeId::BLOCKHASH,
-    OpcodeId::LOG1,
-    OpcodeId::LOG2,
-    OpcodeId::LOG3,
-    OpcodeId::LOG4,
-    OpcodeId::LOG0,
     OpcodeId::CREATE,
     OpcodeId::CREATE2,
     OpcodeId::CALLCODE,
@@ -39,6 +30,74 @@ pub const OPCODES_UNIMPLEMENTED: [OpcodeId; 31] = [
     OpcodeId::STATICCALL,
     OpcodeId::SELFDESTRUCT,
 ];
+
+#[derive(Debug, PartialEq, PartialOrd)]
+pub enum MainnetFork {
+    Merge = 14,
+    GrayGlacier = 13,
+    ArrowGlacier = 12,
+    Altair = 11,
+    London = 10,
+    Berlin = 9,
+    MuirGlacier = 8,
+    Istanbul = 7,
+    Constantinople = 6,
+    Byzantium = 5,
+    SpuriousDragon = 4,
+    TangerineWhistle = 3,
+    Homestead = 2,
+    Frontier = 1,
+}
+
+pub const TEST_FORK: MainnetFork = MainnetFork::Merge;
+
+impl FromStr for MainnetFork {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(match s {
+            "Merge" => Self::Merge,
+            "Gray Glacier" => Self::GrayGlacier,
+            "Arrow Glacier" => Self::ArrowGlacier,
+            "Altair" => Self::Altair,
+            "London" => Self::London,
+            "Berlin" => Self::Berlin,
+            "Muir Glacier" => Self::MuirGlacier,
+            "Istanbul" => Self::Istanbul,
+            "Constantinople" => Self::Constantinople,
+            "Byzantium" => Self::Byzantium,
+            "Spurious Dragon" => Self::SpuriousDragon,
+            "TangeringWhistle" => Self::TangerineWhistle,
+            "Homestead" => Self::Homestead,
+            "Frontier" => Self::Frontier,
+            _ => bail!(format!("Unknown network '{}'", s)),
+        })
+    }
+}
+
+impl MainnetFork {
+    pub fn in_network_range(expect: &[String]) -> Result<bool, anyhow::Error> {
+        let in_network = if expect.is_empty() {
+            true
+        } else {
+            let mut in_network = false;
+            for network in expect {
+                if let Some(network) = network.strip_prefix(">=") {
+                    if crate::utils::TEST_FORK >= crate::utils::MainnetFork::from_str(network)? {
+                        in_network = true;
+                    }
+                } else {
+                    if crate::utils::TEST_FORK == crate::utils::MainnetFork::from_str(&network)? {
+                        in_network = true;
+                    }
+                }
+            }
+            in_network
+        };
+
+        Ok(in_network)
+    }
+}
 
 pub fn config_bytecode_test_config<OPS: Iterator<Item = OpcodeId>>(
     cfg: &mut BytecodeTestConfig,
@@ -121,4 +180,14 @@ pub fn print_trace(trace: GethExecTrace) -> Result<()> {
     table.printstd();
 
     Ok(())
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    #[test]
+    fn networks() { 
+        assert!(MainnetFork::in_network_range(&[String::from(">=Istanbul")]).expect("can parse network"));
+    }
+
 }

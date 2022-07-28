@@ -10,6 +10,7 @@ use std::collections::HashMap;
 use std::convert::TryInto;
 use std::str::FromStr;
 use yaml_rust::Yaml;
+use crate::utils::MainnetFork;
 
 type Label = String;
 
@@ -118,11 +119,21 @@ impl<'a> YamlStateTestBuilder<'a> {
             // parse expects (account states before executing the transaction)
             let mut expects = Vec::new();
             for expect in yaml_test["expect"].as_vec().context("as_vec")?.iter() {
+                let networks : Vec<_> = expect["network"]
+                    .as_vec()
+                    .expect("cannot convert network into vec<string>")
+                    .iter()
+                    .map(|n| n.as_str().expect("cannot convert network into string").to_string())
+                    .collect();
+
                 let data_refs = Self::parse_refs(&expect["indexes"]["data"])?;
                 let gparse_refs = Self::parse_refs(&expect["indexes"]["gas"])?;
                 let value_refs = Self::parse_refs(&expect["indexes"]["value"])?;
                 let result = self.parse_accounts(&expect["result"])?;
-                expects.push((data_refs, gparse_refs, value_refs, result));
+
+                if MainnetFork::in_network_range(&networks)? {
+                    expects.push((data_refs, gparse_refs, value_refs, result));
+                }
             }
 
             // generate all the tests defined in the transaction by generating product of

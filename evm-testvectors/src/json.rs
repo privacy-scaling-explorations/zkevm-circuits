@@ -3,6 +3,7 @@
 use super::compiler::Compiler;
 use crate::abi;
 use crate::statetest::{AccountMatch, Env, StateTest};
+use crate::utils::MainnetFork;
 use anyhow::{bail, Context, Result};
 use eth_types::evm_types::OpcodeId;
 use eth_types::{geth_types::Account, Address, Bytes, H256, U256};
@@ -145,7 +146,10 @@ impl<'a> JsonStateTestBuilder<'a> {
                 let gas_refs = Self::parse_refs(&expect.indexes.gas)?;
                 let value_refs = Self::parse_refs(&expect.indexes.value)?;
                 let result = self.parse_accounts_post(&expect.result)?;
-                expects.push((data_refs, gas_refs, value_refs, result));
+
+                if MainnetFork::in_network_range(&expect.network)? {
+                    expects.push((data_refs, gas_refs, value_refs, result));
+                }
             }
 
             for (idx_data, data) in data_s.iter().enumerate() {
@@ -274,7 +278,7 @@ impl<'a> JsonStateTestBuilder<'a> {
                 if it.starts_with(':') {
                     let tag = &it[..it.find(&[' ', '\n']).expect("unable to find end tag")];
                     it = &it[tag.len() + 1..];
-                    let value_len = if tag == ":yul" || tag == ":solidity" {
+                    let value_len = if tag == ":yul" || tag == ":solidity" || tag == ":asm" {
                         it.len()
                     } else {
                         it.find(':').unwrap_or(it.len())
@@ -343,6 +347,8 @@ impl<'a> JsonStateTestBuilder<'a> {
             self.compiler.yul(yul)?
         } else if let Some(solidity) = tags.get(":solidity") {
             self.compiler.solidity(solidity)?
+        } else if let Some(asm) = tags.get(":asm") {
+            self.compiler.asm(asm)?
         } else {
             bail!("do not know what to do with code(2) '{:?}'", as_str);
         };

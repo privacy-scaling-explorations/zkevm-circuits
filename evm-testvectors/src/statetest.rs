@@ -12,28 +12,32 @@ use std::{collections::HashMap, str::FromStr};
 use thiserror::Error;
 use zkevm_circuits::test_util::BytecodeTestConfig;
 
+const EVMERR_OOG: &str = "out of gas";
+const EVMERR_STACKUNDERFLOW: &str = "stack underflow";
+const EVMERR_GAS_UINT64OVERFLOW: &str = "gas uint64 overflow";
+
 #[derive(PartialEq, Eq, Error, Debug)]
 pub enum StateTestError {
-    #[error("cannot generate circuit input: `{0}`")]
+    #[error("CannotGenerateCircuitInput({0})")]
     CircuitInput(String),
-    #[error("balance mismatch (expected {expected:?}, found {found:?})")]
+    #[error("BalanceMismatch(expected:{expected:?}, found:{found:?})")]
     BalanceMismatch { expected: U256, found: U256 },
-    #[error("nonce mismatch (expected {expected:?}, found {found:?})")]
+    #[error("NonceMismatch(expected:{expected:?}, found:{found:?})")]
     NonceMismatch { expected: U256, found: U256 },
-    #[error("code mismatch (expected {expected:?}, found {found:?})")]
+    #[error("CodeMismatch(expected: {expected:?}, found:{found:?})")]
     CodeMismatch { expected: Bytes, found: Bytes },
-    #[error("storage mismatch slot={slot:?} (expected {expected:?}, found {found:?})")]
+    #[error("StorgeMismatch(slot:{slot:?} expected:{expected:?}, found: {found:?})")]
     StorageMismatch {
         slot: U256,
         expected: U256,
         found: U256,
     },
-    #[error("test skipped due {0} > max gas")]
+    #[error("SkipTesstMaxGasLimit({0})")]
     SkipTestMaxGasLimit(u64),
-    #[error("test skipped due {0} > max steps")]
+    #[error("SkipTestMaxSteps({0})")]
     SkipTestMaxSteps(usize),
-    #[error("test skipped unimplemented opcode {0}")]
-    SkipUnimplementedOpcode(String),
+    #[error("SkipUnimplemented({0})")]
+    SkipUnimplemented(String),
 }
 
 #[derive(Debug, Clone)]
@@ -47,7 +51,7 @@ impl Default for StateTestConfig {
     fn default() -> Self {
         Self {
             max_gas: Gas(1000000),
-            max_steps: 1000,
+            max_steps: 2048,
             run_circuit: true,
             bytecode_test_config: BytecodeTestConfig::default(),
         }
@@ -334,6 +338,12 @@ impl StateTest {
         // get the geth traces
         let (_, trace_config, post) = self.clone().into_traceconfig();
 
+        if self.to.is_none() {
+            return Err(StateTestError::SkipUnimplemented(format!(
+                "TransactionCreation"
+            )));
+        }
+
         let geth_traces = external_tracer::trace(&trace_config)
             .map_err(|err| StateTestError::CircuitInput(err.to_string()))?;
 
@@ -351,20 +361,20 @@ impl StateTest {
             .iter()
             .find(|step| OPCODES_UNIMPLEMENTED.contains(&step.op))
         {
-            return Err(StateTestError::SkipUnimplementedOpcode(format!(
-                "{:?}",
+            return Err(StateTestError::SkipUnimplemented(format!(
+                "OPCODE {:?}",
                 step.op
             )));
         }
 
-        if geth_traces[0]
-            .struct_logs
-            .iter()
-            .any(|step| step.error.as_ref().map(|e| e.contains("stack underflow")) == Some(true))
-        {
-            return Err(StateTestError::SkipUnimplementedOpcode(String::from(
-                "stack underflow not implemented",
-            )));
+        for err in [EVMERR_STACKUNDERFLOW, EVMERR_OOG, EVMERR_GAS_UINT64OVERFLOW] {
+            if geth_traces[0]
+                .struct_logs
+                .iter()
+                .any(|step| step.error.as_ref().map(|e| e.contains(err)) == Some(true))
+            {
+                return Err(StateTestError::SkipUnimplemented(format!("Error {}", err)));
+            }
         }
 
         if geth_traces[0].gas > config.max_gas {

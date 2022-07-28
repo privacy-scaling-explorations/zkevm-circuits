@@ -27,6 +27,16 @@ pub enum BytecodeError {
 }
 
 impl Bytecode {
+    /// Build not checked bytecode
+    pub unsafe fn from_raw_unsafe(input: Vec<u8>) -> Self {
+        Self {
+            code: input,
+            markers: HashMap::new(),
+            num_opcodes: 0
+        }
+    }
+
+
     /// Get a reference to the generated code
     pub fn code(&self) -> &[u8] {
         &self.code
@@ -310,6 +320,7 @@ impl TryFrom<Vec<u8>> for Bytecode {
 
         Ok(code)
     }
+
 }
 
 /// EVM code macro

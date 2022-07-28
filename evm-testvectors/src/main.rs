@@ -3,6 +3,7 @@ mod compiler;
 mod json;
 mod result_cache;
 mod statetest;
+mod testme;
 mod utils;
 mod yaml;
 
@@ -134,7 +135,7 @@ fn run_test_suite(tcs: Vec<StateTest>, config: StateTestConfig) -> Result<()> {
         // handle known error
         if let Err(err) = result {
             match err {
-                StateTestError::SkipUnimplementedOpcode(_)
+                StateTestError::SkipUnimplemented(_)
                 | StateTestError::SkipTestMaxSteps(_)
                 | StateTestError::SkipTestMaxGasLimit(_) => {
                     log::warn!(target: "vmvectests", "SKIPPED test {} : {:?}",id, err);
@@ -184,12 +185,22 @@ fn run_bytecode(code: &str, mut bytecode_test_config: BytecodeTestConfig) -> Res
     use std::str::FromStr;
     use zkevm_circuits::test_util::run_test_circuits;
 
+    let mut unsafe_code = false;
+
     let bytecode = if let Ok(bytes) = hex::decode(code) {
-        let bytecode = bytecode::Bytecode::try_from(bytes).expect("unable to decode bytecode");
-        for op in bytecode.iter() {
-            println!("{}", op.to_string());
+        match bytecode::Bytecode::try_from(bytes.clone()) {
+            Ok(bytecode) => {
+                for op in bytecode.iter() {
+                    println!("{}", op.to_string());
+                }
+                bytecode
+            }
+            Err(err) => {
+                println!("Failed to parse bytecode {:?}", err);
+                unsafe_code = true;
+                unsafe { bytecode::Bytecode::from_raw_unsafe(bytes) }
+            }
         }
-        bytecode
     } else {
         let mut bytecode = bytecode::Bytecode::default();
         for op in code.split(';') {
@@ -200,10 +211,14 @@ fn run_bytecode(code: &str, mut bytecode_test_config: BytecodeTestConfig) -> Res
         bytecode
     };
 
-    config_bytecode_test_config(
-        &mut bytecode_test_config,
-        bytecode.iter().map(|op| op.opcode()),
-    );
+    if !unsafe_code {
+        config_bytecode_test_config(
+            &mut bytecode_test_config,
+            bytecode.iter().map(|op| op.opcode()),
+        );
+    } else {
+        config_bytecode_test_config(&mut bytecode_test_config, std::iter::empty());
+    }
 
     let result = run_test_circuits(
         TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode)?,
@@ -234,8 +249,8 @@ fn main() -> Result<()> {
     ResultCache::new(PathBuf::from(RESULT_CACHE))?.sort()?;
 
     let config = StateTestConfig {
-        max_steps: 1000,
-        max_gas: Gas(100000000),
+        max_steps: 65535,
+        max_gas: Gas(100000),
         run_circuit: !args.skip_circuit,
         bytecode_test_config,
     };

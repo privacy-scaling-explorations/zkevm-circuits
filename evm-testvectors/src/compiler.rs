@@ -1,6 +1,7 @@
 #![allow(clippy::map_entry)]
 
 use anyhow::{bail, Context, Result};
+use eth_types::{bytecode, Bytecode};
 use eth_types::{Bytes, H256};
 use keccak256::plain::Keccak;
 use std::collections::HashMap;
@@ -8,6 +9,7 @@ use std::io::Read;
 use std::io::Write;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
+use std::str::FromStr;
 
 struct Cache {
     entries: HashMap<H256, Bytes>,
@@ -109,6 +111,20 @@ impl Compiler {
         }
     }
 
+    /// compiles ASM code
+    pub fn asm(&mut self, src: &str) -> Result<Bytes> {
+        let mut bytecode = Bytecode::default();
+        for op in src.split(';') {
+            let op = match bytecode::OpcodeWithData::from_str(op.trim()) {
+                Ok(op) => op,
+                Err(err) => bail!("unable to process asm entry {}: {}", op, err),
+            };
+            bytecode.append_op(op);
+        }
+        let bytes = Bytes::from(bytecode.code().to_vec());
+        Ok(bytes)
+    }
+
     /// compiles LLL code
     pub fn lll(&mut self, src: &str) -> Result<Bytes> {
         if let Some(bytecode) = self.cache.as_mut().and_then(|c| c.get(src)) {
@@ -127,6 +143,7 @@ impl Compiler {
 
         Ok(bytecode)
     }
+
     /// compiles YUL code
     pub fn yul(&mut self, src: &str) -> Result<Bytes> {
         if let Some(bytecode) = self.cache.as_mut().and_then(|c| c.get(src)) {
