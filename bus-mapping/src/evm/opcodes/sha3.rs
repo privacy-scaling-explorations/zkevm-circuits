@@ -54,8 +54,7 @@ impl Opcode for Sha3 {
         // Memory read operations
         let mut steps = Vec::with_capacity(2 * size.as_usize());
         for (i, byte) in memory.iter().enumerate() {
-            let rwc = state.block_ctx.rwc;
-            state.memory_read(&mut exec_step, (offset.as_usize() + i).into(), *byte)?;
+            // Read step
             steps.push(CopyStep {
                 addr: offset.as_u64() + (i as u64),
                 tag: CopyDataType::Memory,
@@ -63,9 +62,11 @@ impl Opcode for Sha3 {
                 value: *byte,
                 is_code: None,
                 is_pad: false,
-                rwc,
+                rwc: state.block_ctx.rwc,
                 rwc_inc_left: 0,
             });
+            state.memory_read(&mut exec_step, (offset.as_usize() + i).into(), *byte)?;
+            // Write step
             steps.push(CopyStep {
                 addr: i as u64,
                 tag: CopyDataType::RlcAcc,
@@ -73,7 +74,7 @@ impl Opcode for Sha3 {
                 value: *byte,
                 is_code: None,
                 is_pad: false,
-                rwc,
+                rwc: state.block_ctx.rwc,
                 rwc_inc_left: 0,
             })
         }
@@ -113,9 +114,9 @@ mod sha3_tests {
     use rand::{random, Rng};
 
     use crate::{
-        circuit_input_builder::ExecState,
+        circuit_input_builder::{CopyDataType, CopyStep, ExecState},
         mock::BlockData,
-        operation::{StackOp, RW},
+        operation::{MemoryOp, RWCounter, StackOp, RW},
     };
 
     enum MemoryKind {
@@ -156,6 +157,7 @@ mod sha3_tests {
             code.push(32, (32 * i).into());
             code.write_op(OpcodeId::MSTORE);
         }
+        let memory_len = memory.len();
 
         // append SHA3 related opcodes at the tail end.
         let code_tail = bytecode! {
@@ -197,9 +199,6 @@ mod sha3_tests {
 
         let call_id = builder.block.txs()[0].calls()[0].call_id;
 
-        // 2 stack reads and 1 stack write.
-        assert_eq!(step.bus_mapping_instance.len(), 3);
-
         // stack read and write.
         assert_eq!(
             [0, 1, 2]
@@ -221,8 +220,68 @@ mod sha3_tests {
             ]
         );
 
-        // TODO(rohit): check memory reads
-        // TODO(rohit): check copy event and steps
+        // Memory reads.
+        // Initial memory_len bytes are the memory writes from MSTORE instruction, so we
+        // skip them.
+        assert_eq!(
+            (memory_len..(memory_len + size))
+                .map(|idx| &builder.block.container.memory[idx])
+                .map(|op| (op.rw(), op.op().clone()))
+                .collect::<Vec<(RW, MemoryOp)>>(),
+            {
+                let mut memory_ops = Vec::with_capacity(size);
+                (0..size).for_each(|idx| {
+                    let value = memory_view[idx];
+                    memory_ops.push((
+                        RW::READ,
+                        MemoryOp::new(call_id, (offset + idx).into(), value),
+                    ));
+                });
+                memory_ops
+            },
+        );
+
+        let copy_events = builder.block.copy_events.clone();
+
+        // single copy event with `size` reads and `size` writes.
+        assert_eq!(copy_events.len(), 1);
+        assert_eq!(copy_events[0].steps.len(), 2 * size);
+
+        let mut rwc = RWCounter(step.rwc.0 + 3); // 2 stack reads and 1 stack write.
+        for (idx, copy_rw_pair) in copy_events[0].steps.chunks(2).enumerate() {
+            assert_eq!(copy_rw_pair.len(), 2);
+            let value = memory_view[idx];
+            // read
+            let read_step = copy_rw_pair[0].clone();
+            assert_eq!(
+                read_step,
+                CopyStep {
+                    addr: (offset + idx) as u64,
+                    tag: CopyDataType::Memory,
+                    rw: RW::READ,
+                    value,
+                    is_code: None,
+                    is_pad: false,
+                    rwc: rwc.inc_pre(),
+                    rwc_inc_left: (size - idx) as u64,
+                }
+            );
+            // write
+            let write_step = copy_rw_pair[1].clone();
+            assert_eq!(
+                write_step,
+                CopyStep {
+                    addr: idx as u64,
+                    tag: CopyDataType::RlcAcc,
+                    rw: RW::WRITE,
+                    value,
+                    is_code: None,
+                    is_pad: false,
+                    rwc,
+                    rwc_inc_left: (size - idx - 1) as u64,
+                }
+            );
+        }
     }
 
     #[test]
