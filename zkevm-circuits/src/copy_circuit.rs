@@ -58,11 +58,6 @@ pub struct CopyCircuit<F> {
     pub copy_table: CopyTable,
     /// The value copied in this copy step.
     pub value: Column<Advice>,
-    /// An accumulator value in the RLC representation. This is used for
-    /// specific purposes, for instance, when `tag == CopyDataType::RlcAcc`.
-    /// Having an additional column for the `rlc_acc` simplifies the lookup
-    /// to copy table.
-    pub rlc_acc: Column<Advice>,
     /// In case of a bytecode tag, this denotes whether or not the copied byte
     /// is an opcode or push data byte.
     pub is_code: Column<Advice>,
@@ -89,7 +84,6 @@ impl<F: Field> CopyCircuit<F> {
         let q_step = meta.complex_selector();
         let is_last = meta.advice_column();
         let value = meta.advice_column();
-        let rlc_acc = meta.advice_column();
         let is_code = meta.advice_column();
         let is_pad = meta.advice_column();
         let is_first = copy_table.is_first;
@@ -97,6 +91,7 @@ impl<F: Field> CopyCircuit<F> {
         let addr = copy_table.addr;
         let src_addr_end = copy_table.src_addr_end;
         let bytes_left = copy_table.bytes_left;
+        let rlc_acc = copy_table.rlc_acc;
         let rw_counter = copy_table.rw_counter;
         let rwc_inc_left = copy_table.rwc_inc_left;
         let tag = copy_table.tag;
@@ -358,7 +353,6 @@ impl<F: Field> CopyCircuit<F> {
             q_step,
             is_last,
             value,
-            rlc_acc,
             is_code,
             is_pad,
             addr_lt_addr_end,
@@ -512,7 +506,7 @@ impl<F: Field> CopyCircuit<F> {
         // rlc_acc
         region.assign_advice(
             || format!("assign rlc_acc {}", offset),
-            self.rlc_acc,
+            self.copy_table.rlc_acc,
             offset,
             || Ok(rlc_acc),
         )?;
@@ -633,7 +627,7 @@ impl<F: Field> CopyCircuit<F> {
         // rlc_acc
         region.assign_advice(
             || format!("assign rlc_acc {}", offset),
-            self.rlc_acc,
+            self.copy_table.rlc_acc,
             offset,
             || Ok(F::zero()),
         )?;
@@ -707,8 +701,8 @@ mod tests {
     }
 
     impl<F: Field> MyCircuit<F> {
-        pub fn r() -> F {
-            F::from(123456u64)
+        pub fn r() -> Expression<F> {
+            123456u64.expr()
         }
 
         pub fn new(block: Block<F>) -> Self {
@@ -737,7 +731,7 @@ mod tests {
                 &bytecode_table,
                 copy_table,
                 q_enable,
-                randomness.expr(),
+                Self::r().expr(),
             );
 
             MyConfig {
