@@ -70,16 +70,17 @@ type Lookup<F> = (&'static str, Expression<F>, Expression<F>);
 
 /// State Circuit for proving RwTable is valid
 #[derive(Default)]
-pub struct StateCircuit<F: Field, const N_ROWS: usize> {
+pub struct StateCircuit<F: Field> {
     pub(crate) randomness: F,
     pub(crate) rows: Vec<Rw>,
+    pub(crate) n_rows: usize,
     #[cfg(test)]
     overrides: HashMap<(test::AdviceColumn, isize), F>,
 }
 
-impl<F: Field, const N_ROWS: usize> StateCircuit<F, N_ROWS> {
+impl<F: Field> StateCircuit<F> {
     /// make a new state circuit from an RwMap
-    pub fn new(randomness: F, rw_map: RwMap) -> Self {
+    pub fn new(randomness: F, rw_map: RwMap, n_rows: usize) -> Self {
         let mut rows: Vec<_> = rw_map.0.into_values().flatten().collect();
         rows.sort_by_key(|row| {
             (
@@ -94,6 +95,7 @@ impl<F: Field, const N_ROWS: usize> StateCircuit<F, N_ROWS> {
         Self {
             randomness,
             rows,
+            n_rows,
             #[cfg(test)]
             overrides: HashMap::new(),
         }
@@ -102,12 +104,12 @@ impl<F: Field, const N_ROWS: usize> StateCircuit<F, N_ROWS> {
     /// powers of randomness for instance columns
     pub fn instance(&self) -> Vec<Vec<F>> {
         (1..32)
-            .map(|exp| vec![self.randomness.pow(&[exp, 0, 0, 0]); N_ROWS])
+            .map(|exp| vec![self.randomness.pow(&[exp, 0, 0, 0]); self.n_rows])
             .collect()
     }
 }
 
-impl<F: Field, const N_ROWS: usize> Circuit<F> for StateCircuit<F, N_ROWS> {
+impl<F: Field> Circuit<F> for StateCircuit<F> {
     type Config = StateConfig;
     type FloorPlanner = SimpleFloorPlanner;
 
@@ -181,7 +183,7 @@ impl<F: Field, const N_ROWS: usize> Circuit<F> for StateCircuit<F, N_ROWS> {
         layouter.assign_region(
             || "rw table",
             |mut region| {
-                let padding_length = N_ROWS - self.rows.len();
+                let padding_length = self.n_rows - self.rows.len();
                 let padding = (1..=padding_length).map(|rw_counter| Rw::Start { rw_counter });
 
                 let rows = padding.chain(self.rows.iter().cloned());

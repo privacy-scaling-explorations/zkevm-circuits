@@ -90,7 +90,7 @@ fn test_state_circuit_ok(
     });
 
     let randomness = Fr::rand();
-    let circuit = StateCircuit::<Fr, N_ROWS>::new(randomness, rw_map);
+    let circuit = StateCircuit::<Fr>::new(randomness, rw_map, N_ROWS);
     let power_of_randomness = circuit.instance();
 
     let prover = MockProver::<Fr>::run(19, &circuit, power_of_randomness).unwrap();
@@ -101,7 +101,7 @@ fn test_state_circuit_ok(
 #[test]
 fn degree() {
     let mut meta = ConstraintSystem::<Fr>::default();
-    StateCircuit::<Fr, N_ROWS>::configure(&mut meta);
+    StateCircuit::<Fr>::configure(&mut meta);
     assert_eq!(meta.degree(), 9);
 }
 
@@ -111,8 +111,8 @@ fn verifying_key_independent_of_rw_length() {
     let degree = 17;
     let params = Params::<G1Affine>::unsafe_setup::<Bn256>(degree);
 
-    let no_rows = StateCircuit::<Fr, N_ROWS>::new(randomness, RwMap::default());
-    let one_row = StateCircuit::<Fr, N_ROWS>::new(
+    let no_rows = StateCircuit::<Fr>::new(randomness, RwMap::default(), N_ROWS);
+    let one_row = StateCircuit::<Fr>::new(
         randomness,
         RwMap::from(&OperationContainer {
             memory: vec![Operation::new(
@@ -122,6 +122,7 @@ fn verifying_key_independent_of_rw_length() {
             )],
             ..Default::default()
         }),
+        N_ROWS,
     );
 
     // halo2::plonk::VerifyingKey doesn't derive Eq, so we check for equality using
@@ -978,10 +979,11 @@ fn bad_initial_tx_receipt_value() {
 
 fn prover(rows: Vec<Rw>, overrides: HashMap<(AdviceColumn, isize), Fr>) -> MockProver<Fr> {
     let randomness = Fr::rand();
-    let circuit = StateCircuit::<Fr, N_ROWS> {
+    let circuit = StateCircuit::<Fr> {
         randomness,
         rows,
         overrides,
+        n_rows: N_ROWS,
     };
     let power_of_randomness = circuit.instance();
 
