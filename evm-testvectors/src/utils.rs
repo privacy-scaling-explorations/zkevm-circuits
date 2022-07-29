@@ -5,7 +5,7 @@ use eth_types::{evm_types::OpcodeId, GethExecTrace, U256};
 use prettytable::Table;
 use zkevm_circuits::test_util::{get_fixed_table, BytecodeTestConfig, FixedTableConfig};
 
-const OPCODES_NEED_FULL_FIXED_TABLE: [OpcodeId; 3] = [OpcodeId::AND, OpcodeId::OR, OpcodeId::XOR];
+const OPCODES_NEED_FULL_FIXED_TABLE: [OpcodeId; 4] = [OpcodeId::AND, OpcodeId::OR, OpcodeId::XOR, OpcodeId::NOT];
 
 // see https://github.com/appliedzkp/zkevm-circuits/issues/477
 pub const OPCODES_UNIMPLEMENTED: [OpcodeId; 20] = [
@@ -112,8 +112,8 @@ pub fn config_bytecode_test_config<OPS: Iterator<Item = OpcodeId>>(
 
 pub fn print_trace(trace: GethExecTrace) -> Result<()> {
     fn u256_to_str(u: &U256) -> String {
-        if u.leading_zeros() < 26 {
-            format!("{:x}", u)
+        if *u > U256::from_str("0x1000000000000000").unwrap() {
+            format!("0x{:x}", u)
         } else {
             u.to_string()
         }

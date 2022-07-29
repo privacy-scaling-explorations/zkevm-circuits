@@ -7,16 +7,7 @@ mod test {
     use zkevm_circuits::evm_circuit::witness::block_convert;
 
     #[test]
-    fn test_with_value() {
-        test(Word::one());
-    }
-
-    #[test]
-    fn test_without_value() {
-        test(Word::zero());
-    }
-
-    fn test(value: Word) {
+    fn testme(){
         let addr0 = address!("0x00000000000000000000000000000000000cafe0");
         let addr1 = address!("0x00000000000000000000000000000000000cafe1");
         let addr2 = address!("0x00000000000000000000000000000000000cafe2");
@@ -26,8 +17,8 @@ mod test {
             PUSH32(0)
             PUSH32(0)
             PUSH32(0)
-            PUSH32(value)
-            PUSH20(0xcafe2)
+            PUSH32(0)
+            PUSH32(Word::from("0x00000000000000000000000000000000000cafe2"))
             PUSH32(100000)
             CALL
             STOP
@@ -39,7 +30,7 @@ mod test {
         let block: GethData = TestContext::<3, 1>::new(
             None,
             |accs| {
-                accs[0].address(addr0).balance(Word::from(1u64 << 30));
+                accs[0].address(addr0).balance(Word::one() << 18);
                 accs[1].address(addr1).code(code1);
                 accs[2].address(addr2).code(code2);
             },
@@ -47,8 +38,7 @@ mod test {
                 txs[0]
                     .from(accs[0].address)
                     .to(accs[1].address)
-                    .gas(Word::from(200000u64))
-                    .value(Word::one());
+                    .gas(Word::from(200000u64));
             },
             |block, _tx| block.number(0xcafeu64),
         )

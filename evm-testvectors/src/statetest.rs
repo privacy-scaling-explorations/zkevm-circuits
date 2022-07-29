@@ -381,6 +381,15 @@ impl StateTest {
             return Err(StateTestError::SkipTestMaxGasLimit(geth_traces[0].gas.0));
         }
 
+        if let Some(acc) = self.pre.get(&self.to.unwrap()) {
+            if acc.code.0.is_empty() {
+                return Err(StateTestError::SkipUnimplemented("Calling to empty accounts unimplemented (1)".to_string()));
+            }
+        } else {
+            return Err(StateTestError::SkipUnimplemented("Calling to empty accounts unimplemented (2)".to_string()));
+        }
+        
+
         config_bytecode_test_config(
             &mut config.bytecode_test_config,
             geth_traces[0].struct_logs.iter().map(|step| step.op),

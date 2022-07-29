@@ -10,6 +10,19 @@ pub struct ResultCache {
 }
 
 impl ResultCache {
+    pub fn report(&self) -> String {
+        let mut info : Vec<String> = Vec::new();
+        let mut rev : HashMap<String, usize>= HashMap::new();
+        for (_,v) in &self.entries {
+            *rev.entry(v.clone()).or_default() += 1;
+        }
+        for (v,count) in rev {
+            info.push(format!("{:04} => {}",count,v)); 
+        }
+        info.sort();
+        info.join("\n")
+    }
+
     pub fn new(path: PathBuf) -> Result<Self> {
         let entries = if let Ok(mut file) = std::fs::File::open(&path) {
             let mut buf = String::new();
@@ -25,7 +38,7 @@ impl ResultCache {
         Ok(Self { path, entries })
     }
 
-    pub fn sort(&self) -> Result<()> {
+    pub fn write_sorted(&self) -> Result<()> {
         let mut lines: Vec<_> = self.entries.iter().collect();
         lines.sort_by(|(k1, v1), (k2, v2)| (v1, k1).cmp(&(v2, k2)));
         let buf = lines

@@ -246,7 +246,7 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
-    ResultCache::new(PathBuf::from(RESULT_CACHE))?.sort()?;
+    ResultCache::new(PathBuf::from(RESULT_CACHE))?.write_sorted()?;
 
     let config = StateTestConfig {
         max_steps: 65535,
@@ -306,7 +306,9 @@ fn main() -> Result<()> {
         run_single_test(test, config)?;
     } else {
         run_test_suite(tests, config)?;
+        println!("REPORT\n{}",ResultCache::new(PathBuf::from(RESULT_CACHE))?.report());
     }
+
 
     Ok(())
 }

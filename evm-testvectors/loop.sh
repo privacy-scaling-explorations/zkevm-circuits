@@ -1,4 +1,4 @@
 while :
 do
-	 cargo run --release -- --path "tests/src/GeneralStateTestsFiller/**/*.json" --skip-state-circuit
+	 cargo run --release -- --path "tests/src/GeneralStateTestsFiller/**/*" --skip-state-circuit
 done
