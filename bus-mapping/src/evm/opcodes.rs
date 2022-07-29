@@ -3,8 +3,7 @@ use crate::{
     circuit_input_builder::{CircuitInputStateRef, ExecStep},
     evm::OpcodeId,
     operation::{
-        AccountField, AccountOp, CallContextField, TxAccessListAccountOp, TxReceiptField,
-        TxRefundOp, RW,
+        AccountField, CallContextField, TxAccessListAccountOp, TxReceiptField, TxRefundOp, RW,
     },
     Error,
 };
@@ -25,7 +24,9 @@ mod callvalue;
 mod chainid;
 mod codecopy;
 mod codesize;
+mod create;
 mod dup;
+mod extcodecopy;
 mod extcodehash;
 mod gasprice;
 mod logs;
@@ -34,12 +35,17 @@ mod mstore;
 mod number;
 mod origin;
 mod r#return;
+mod returndatacopy;
 mod selfbalance;
+mod sha3;
 mod sload;
 mod sstore;
 mod stackonlyop;
 mod stop;
 mod swap;
+
+#[cfg(test)]
+mod memory_expansion_test;
 
 use call::Call;
 use calldatacopy::Calldatacopy;
@@ -49,7 +55,9 @@ use caller::Caller;
 use callvalue::Callvalue;
 use codecopy::Codecopy;
 use codesize::Codesize;
+use create::DummyCreate;
 use dup::Dup;
+use extcodecopy::Extcodecopy;
 use extcodehash::Extcodehash;
 use gasprice::GasPrice;
 use logs::Log;
@@ -57,7 +65,9 @@ use mload::Mload;
 use mstore::Mstore;
 use origin::Origin;
 use r#return::Return;
+use returndatacopy::Returndatacopy;
 use selfbalance::Selfbalance;
+use sha3::Sha3;
 use sload::Sload;
 use sstore::Sstore;
 use stackonlyop::StackOnlyOpcode;
@@ -79,11 +89,16 @@ pub trait Opcode: Debug {
     ) -> Result<Vec<ExecStep>, Error>;
 }
 
-fn dummy_gen_associated_ops(
-    state: &mut CircuitInputStateRef,
-    geth_steps: &[GethExecStep],
-) -> Result<Vec<ExecStep>, Error> {
-    Ok(vec![state.new_step(&geth_steps[0])?])
+#[derive(Debug, Copy, Clone)]
+struct Dummy;
+
+impl Opcode for Dummy {
+    fn gen_associated_ops(
+        state: &mut CircuitInputStateRef,
+        geth_steps: &[GethExecStep],
+    ) -> Result<Vec<ExecStep>, Error> {
+        Ok(vec![state.new_step(&geth_steps[0])?])
+    }
 }
 
 type FnGenAssociatedOps = fn(
@@ -123,7 +138,7 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         OpcodeId::SHL => StackOnlyOpcode::<2, 1>::gen_associated_ops,
         OpcodeId::SHR => StackOnlyOpcode::<2, 1>::gen_associated_ops,
         OpcodeId::SAR => StackOnlyOpcode::<2, 1>::gen_associated_ops,
-        OpcodeId::SHA3 => StackOnlyOpcode::<2, 1>::gen_associated_ops,
+        OpcodeId::SHA3 => Sha3::gen_associated_ops,
         OpcodeId::ADDRESS => StackOnlyOpcode::<0, 1>::gen_associated_ops,
         OpcodeId::BALANCE => StackOnlyOpcode::<1, 1>::gen_associated_ops,
         OpcodeId::ORIGIN => Origin::gen_associated_ops,
@@ -136,9 +151,9 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         OpcodeId::CODECOPY => Codecopy::gen_associated_ops,
         OpcodeId::CODESIZE => Codesize::gen_associated_ops,
         OpcodeId::EXTCODESIZE => StackOnlyOpcode::<1, 1>::gen_associated_ops,
-        OpcodeId::EXTCODECOPY => StackOnlyOpcode::<4, 0>::gen_associated_ops,
+        OpcodeId::EXTCODECOPY => Extcodecopy::gen_associated_ops,
         OpcodeId::RETURNDATASIZE => StackOnlyOpcode::<0, 1>::gen_associated_ops,
-        OpcodeId::RETURNDATACOPY => StackOnlyOpcode::<3, 0>::gen_associated_ops,
+        OpcodeId::RETURNDATACOPY => Returndatacopy::gen_associated_ops,
         OpcodeId::EXTCODEHASH => Extcodehash::gen_associated_ops,
         OpcodeId::BLOCKHASH => StackOnlyOpcode::<1, 1>::gen_associated_ops,
         OpcodeId::COINBASE => StackOnlyOpcode::<0, 1>::gen_associated_ops,
@@ -160,7 +175,7 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         OpcodeId::PC => StackOnlyOpcode::<0, 1>::gen_associated_ops,
         OpcodeId::MSIZE => StackOnlyOpcode::<0, 1>::gen_associated_ops,
         OpcodeId::GAS => StackOnlyOpcode::<0, 1>::gen_associated_ops,
-        OpcodeId::JUMPDEST => dummy_gen_associated_ops,
+        OpcodeId::JUMPDEST => Dummy::gen_associated_ops,
         OpcodeId::DUP1 => Dup::<1>::gen_associated_ops,
         OpcodeId::DUP2 => Dup::<2>::gen_associated_ops,
         OpcodeId::DUP3 => Dup::<3>::gen_associated_ops,
@@ -198,37 +213,30 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         OpcodeId::LOG2 => Log::gen_associated_ops,
         OpcodeId::LOG3 => Log::gen_associated_ops,
         OpcodeId::LOG4 => Log::gen_associated_ops,
-        // OpcodeId::CREATE => {},
         OpcodeId::CALL => Call::gen_associated_ops,
-        // OpcodeId::CALLCODE => {},
-        // OpcodeId::RETURN => {},
-        // OpcodeId::DELEGATECALL => {},
-        // OpcodeId::CREATE2 => {},
-        // OpcodeId::STATICCALL => {},
-        // OpcodeId::REVERT => {},
-        OpcodeId::REVERT | OpcodeId::RETURN => {
-            warn!("Using dummy gen_associated_ops for opcode {:?}", opcode_id);
-            Return::gen_associated_ops
-        }
+        OpcodeId::RETURN => Return::gen_associated_ops,
+        // REVERT is almost the same as RETURN
+        OpcodeId::REVERT => Return::gen_associated_ops,
         OpcodeId::SELFDESTRUCT => {
             warn!("Using dummy gen_selfdestruct_ops for opcode SELFDESTRUCT");
-            dummy_gen_selfdestruct_ops
+            DummySelfDestruct::gen_associated_ops
         }
         OpcodeId::CALLCODE | OpcodeId::DELEGATECALL | OpcodeId::STATICCALL => {
             warn!("Using dummy gen_call_ops for opcode {:?}", opcode_id);
-            dummy_gen_call_ops
+            DummyCall::gen_associated_ops
         }
         OpcodeId::CREATE | OpcodeId::CREATE2 => {
             warn!("Using dummy gen_create_ops for opcode {:?}", opcode_id);
-            dummy_gen_create_ops
+            DummyCreate::gen_associated_ops
         }
         _ => {
             warn!("Using dummy gen_associated_ops for opcode {:?}", opcode_id);
-            dummy_gen_associated_ops
+            Dummy::gen_associated_ops
         }
     }
 }
 
+#[allow(clippy::collapsible_else_if)]
 /// Generate the associated operations according to the particular
 /// [`OpcodeId`].
 pub fn gen_associated_ops(
@@ -237,7 +245,20 @@ pub fn gen_associated_ops(
     geth_steps: &[GethExecStep],
 ) -> Result<Vec<ExecStep>, Error> {
     let fn_gen_associated_ops = fn_gen_associated_ops(opcode_id);
-    fn_gen_associated_ops(state, geth_steps)
+
+    let memory_enabled = !geth_steps.iter().all(|s| s.memory.is_empty());
+    if memory_enabled {
+        assert_eq!(
+            &state.call_ctx()?.memory,
+            &geth_steps[0].memory,
+            "last step of {:?} goes wrong",
+            opcode_id
+        );
+    }
+
+    let steps = fn_gen_associated_ops(state, geth_steps)?;
+
+    Ok(steps)
 }
 
 pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Error> {
@@ -479,6 +500,18 @@ pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
     Ok(exec_step)
 }
 
+#[derive(Debug, Copy, Clone)]
+struct DummyCall;
+
+impl Opcode for DummyCall {
+    fn gen_associated_ops(
+        state: &mut CircuitInputStateRef,
+        geth_steps: &[GethExecStep],
+    ) -> Result<Vec<ExecStep>, Error> {
+        dummy_gen_call_ops(state, geth_steps)
+    }
+}
+
 fn dummy_gen_call_ops(
     state: &mut CircuitInputStateRef,
     geth_steps: &[GethExecStep],
@@ -504,7 +537,7 @@ fn dummy_gen_call_ops(
         },
     )?;
 
-    state.push_call(call.clone(), geth_step);
+    state.push_call(call.clone());
 
     match (
         state.is_precompiled(&call.address),
@@ -522,75 +555,17 @@ fn dummy_gen_call_ops(
     }
 }
 
-fn dummy_gen_create_ops(
-    state: &mut CircuitInputStateRef,
-    geth_steps: &[GethExecStep],
-) -> Result<Vec<ExecStep>, Error> {
-    let geth_step = &geth_steps[0];
-    let mut exec_step = state.new_step(geth_step)?;
+#[derive(Debug, Copy, Clone)]
+struct DummySelfDestruct;
 
-    let tx_id = state.tx_ctx.id();
-    let call = state.parse_call(geth_step)?;
-
-    // Increase caller's nonce
-    let nonce_prev = state.sdb.get_nonce(&call.caller_address);
-    state.push_op_reversible(
-        &mut exec_step,
-        RW::WRITE,
-        AccountOp {
-            address: call.caller_address,
-            field: AccountField::Nonce,
-            value: (nonce_prev + 1).into(),
-            value_prev: nonce_prev.into(),
-        },
-    )?;
-
-    // Add callee into access list
-    let is_warm = state.sdb.check_account_in_access_list(&call.address);
-    state.push_op_reversible(
-        &mut exec_step,
-        RW::WRITE,
-        TxAccessListAccountOp {
-            tx_id,
-            address: call.address,
-            is_warm: true,
-            is_warm_prev: is_warm,
-        },
-    )?;
-
-    state.push_call(call.clone(), geth_step);
-
-    // Increase callee's nonce
-    let nonce_prev = state.sdb.get_nonce(&call.address);
-    debug_assert!(nonce_prev == 0);
-    state.push_op_reversible(
-        &mut exec_step,
-        RW::WRITE,
-        AccountOp {
-            address: call.address,
-            field: AccountField::Nonce,
-            value: 1.into(),
-            value_prev: 0.into(),
-        },
-    )?;
-
-    state.transfer(
-        &mut exec_step,
-        call.caller_address,
-        call.address,
-        call.value,
-    )?;
-
-    if call.code_hash.to_fixed_bytes() == *EMPTY_HASH {
-        // 1. Create with empty initcode.
-        state.handle_return(geth_step)?;
-        Ok(vec![exec_step])
-    } else {
-        // 2. Create with non-empty initcode.
-        Ok(vec![exec_step])
+impl Opcode for DummySelfDestruct {
+    fn gen_associated_ops(
+        state: &mut CircuitInputStateRef,
+        geth_steps: &[GethExecStep],
+    ) -> Result<Vec<ExecStep>, Error> {
+        dummy_gen_selfdestruct_ops(state, geth_steps)
     }
 }
-
 fn dummy_gen_selfdestruct_ops(
     state: &mut CircuitInputStateRef,
     geth_steps: &[GethExecStep],

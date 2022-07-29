@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 
+use eth_types::evm_types::Memory;
 use eth_types::{Address, GethExecTrace, Word};
 use ethers_core::utils::get_contract_address;
 
@@ -159,6 +160,8 @@ impl TransactionContext {
             index: call_idx,
             reversible_write_counter: 0,
             call_data,
+            memory: Memory::default(),
+            return_data: vec![],
         });
     }
 

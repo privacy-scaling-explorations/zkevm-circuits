@@ -22,6 +22,18 @@ impl Opcode for Log {
             state.push_copy(copy_event);
             state.tx_ctx.log_id += 1;
         }
+
+        // reconstruction
+        let offset = geth_step.stack.nth_last(0)?.as_usize();
+        let length = geth_step.stack.nth_last(1)?.as_usize();
+
+        if length != 0 {
+            state
+                .call_ctx_mut()?
+                .memory
+                .extend_at_least(offset + length);
+        }
+
         Ok(vec![exec_step])
     }
 }
@@ -118,7 +130,6 @@ fn gen_log_step(
 
 fn gen_copy_steps(
     state: &mut CircuitInputStateRef,
-    geth_step: &GethExecStep,
     exec_step: &mut ExecStep,
     src_addr: u64,
     src_addr_end: u64,
@@ -126,9 +137,11 @@ fn gen_copy_steps(
     data_start_index: usize,
 ) -> Result<Vec<CopyStep>, Error> {
     // Get memory data
-    let mem = geth_step
+    let mem = state
+        .call_ctx()?
         .memory
         .read_chunk(src_addr.into(), bytes_left.into());
+
     let mut copy_steps = Vec::with_capacity(2 * bytes_left);
     for (idx, byte) in mem.iter().enumerate() {
         let addr = src_addr + idx as u64;
@@ -186,15 +199,7 @@ fn gen_copy_event(
 
     let (src_addr, src_addr_end) = (memory_start, memory_start + msize as u64);
 
-    let mut steps = gen_copy_steps(
-        state,
-        geth_step,
-        exec_step,
-        src_addr,
-        src_addr_end,
-        msize,
-        0,
-    )?;
+    let mut steps = gen_copy_steps(state, exec_step, src_addr, src_addr_end, msize, 0)?;
 
     for cs in steps.iter_mut() {
         cs.rwc_inc_left = state.block_ctx.rwc.0 as u64 - cs.rwc.0 as u64;
