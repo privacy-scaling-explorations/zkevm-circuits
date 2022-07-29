@@ -238,7 +238,7 @@ impl Transaction {
             }
         } else {
             // Contract creation
-            let code_hash = code_db.insert(None, eth_tx.input.to_vec());
+            let code_hash = code_db.insert(eth_tx.input.to_vec());
             Call {
                 call_id,
                 kind: CallKind::Create,

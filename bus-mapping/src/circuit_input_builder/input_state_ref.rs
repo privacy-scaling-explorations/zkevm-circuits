@@ -458,7 +458,7 @@ impl<'a> CircuitInputStateRef<'a> {
     /// Fetch and return code for the given code hash from the code DB.
     pub fn code(&self, code_hash: H256) -> Result<Vec<u8>, Error> {
         self.code_db
-            .hash_code
+            .0
             .get(&code_hash)
             .cloned()
             .ok_or(Error::CodeNotFound(code_hash))
@@ -599,7 +599,7 @@ impl<'a> CircuitInputStateRef<'a> {
         let (code_source, code_hash) = match kind {
             CallKind::Create | CallKind::Create2 => {
                 let init_code = get_create_init_code(caller_ctx, step)?.to_vec();
-                let code_hash = self.code_db.insert(None, init_code);
+                let code_hash = self.code_db.insert(init_code);
                 (CodeSource::Memory, code_hash)
             }
             _ => {
@@ -800,7 +800,7 @@ impl<'a> CircuitInputStateRef<'a> {
             let code = call_ctx
                 .memory
                 .read_chunk(offset.low_u64().into(), length.low_u64().into());
-            let code_hash = self.code_db.insert(None, code);
+            let code_hash = self.code_db.insert(code);
             let (found, callee_account) = self.sdb.get_account_mut(&call.address);
             if !found {
                 return Err(Error::AccountNotFound(call.address));

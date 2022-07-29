@@ -330,8 +330,8 @@ impl<P: JsonRpcClient> BuilderClient<P> {
         }
 
         let mut code_db = CodeDB::new();
-        for (address, code) in codes {
-            code_db.insert(Some(address), code.clone());
+        for (_address, code) in codes {
+            code_db.insert(code.clone());
         }
         (sdb, code_db)
     }
