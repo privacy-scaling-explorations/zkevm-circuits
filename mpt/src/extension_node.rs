@@ -3,6 +3,7 @@ use halo2_proofs::{
     plonk::{Advice, Column, ConstraintSystem, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
+use itertools::Itertools;
 use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
@@ -406,6 +407,9 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
 
         // Note: acc_mult is checked in extension_node_key.
 
+        // TODO: the lookup below needs to be executed for (one - is_branch_hashed),
+        // while for is_branch_hashed there needs to be additional gate for RLC comparison. Also,
+        // 0s after the branch bytes end need to be ensured.
         // Check whether branch hash is in extension node row.
         meta.lookup_any("extension_node branch hash in extension row", |meta| {
             let q_enable = q_enable(meta);
@@ -487,27 +491,54 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
                     * (rlc - acc_s.clone()),
             ));
 
+
             // We use rotation 0 in both cases from now on:
             let c_rlp2 = meta.query_advice(c_rlp2, Rotation::cur());
             let c160 = Expression::Constant(F::from(160_u64));
+            let c160_inv = Expression::Constant(F::from(160_u64).invert().unwrap());
+
+            // c_rlp2 = 160 when branch is hashed (longer than 31) and c_rlp2 = 0 otherwise
+            let is_branch_hashed = c_rlp2.clone() * c160_inv;
+
             constraints.push((
                 "c_rlp2",
-                q_not_first.clone() * q_enable.clone() * (c_rlp2.clone() - c160),
+                q_not_first.clone()
+                    * q_enable.clone()
+                    * is_branch_hashed.clone()
+                    * (c_rlp2.clone() - c160),
             ));
 
-            let acc_mult_s = meta.query_advice(acc_mult_s, Rotation::cur());
-            rlc = acc_s + c_rlp2 * acc_mult_s.clone();
+            // Note: hashed branch has 160 at c_rlp2 and hash in c_advices,
+            // non-hashed branch has 0 at c_rlp2 and all the bytes in c_advices
 
-            let c_advices_rlc = compute_rlc(meta, c_advices.to_vec(), 0, acc_mult_s, 0, r_table);
+            let acc_mult_s = meta.query_advice(acc_mult_s, Rotation::cur());
+            let c_advices0 = meta.query_advice(c_advices[0], Rotation::cur());
+            rlc = acc_s.clone() + c_rlp2 * acc_mult_s.clone();
+            let c_advices_rlc = compute_rlc(meta, c_advices.to_vec(), 0, acc_mult_s.clone(), 0, r_table.clone());
             rlc = rlc + c_advices_rlc;
+
+            let mut rlc_non_hashed_branch = acc_s + c_advices0 * acc_mult_s.clone();
+            let c_advices_rlc_non_hashed = compute_rlc(meta,
+                c_advices.iter().skip(1).map(|v| *v).collect_vec(), 0, acc_mult_s, 0, r_table);
+            rlc_non_hashed_branch = rlc_non_hashed_branch + c_advices_rlc_non_hashed;
 
             let acc_c = meta.query_advice(acc_c, Rotation::cur());
             constraints.push((
                 "acc_c",
+                q_not_first.clone()
+                    * q_enable.clone()
+                    * (one.clone() - is_branch_init_prev.clone())
+                    * (one.clone() - is_branch_hashed.clone())
+                    * (rlc - acc_c.clone()),
+            ));
+
+            constraints.push((
+                "acc_c non-hashed branch",
                 q_not_first
                     * q_enable
                     * (one.clone() - is_branch_init_prev.clone())
-                    * (rlc - acc_c),
+                    * is_branch_hashed
+                    * (rlc_non_hashed_branch - acc_c),
             ));
 
             constraints

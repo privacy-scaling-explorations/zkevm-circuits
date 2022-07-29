@@ -3106,12 +3106,19 @@ impl<F: FieldExt> MPTConfig<F> {
                                     // Final RLC value.
                                     pv.acc_c = pv.acc_s;
                                     pv.acc_mult_c = pv.acc_mult_s;
+                                    let mut start = C_RLP_START + 1;
+                                    let mut len = HASH_WIDTH + 1;
+                                    if row[C_RLP_START + 1] == 0 {
+                                        // non-hashed branch in extension node
+                                        start = C_START;
+                                        len = HASH_WIDTH;
+                                    }
                                     compute_acc_and_mult(
                                         row,
                                         &mut pv.acc_c,
                                         &mut pv.acc_mult_c,
-                                        C_RLP_START + 1,
-                                        HASH_WIDTH + 1,
+                                        start,
+                                        len,
                                     );
 
                                     self.assign_acc(
@@ -3136,12 +3143,19 @@ impl<F: FieldExt> MPTConfig<F> {
                                     // for both S and C).
                                     pv.acc_c = pv.acc_s;
                                     pv.acc_mult_c = pv.acc_mult_s;
+                                    let mut start = C_RLP_START + 1;
+                                    let mut len = HASH_WIDTH + 1;
+                                    if row[C_RLP_START + 1] == 0 {
+                                        // non-hashed branch in extension node
+                                        start = C_START;
+                                        len = HASH_WIDTH;
+                                    }
                                     compute_acc_and_mult(
                                         row,
                                         &mut pv.acc_c,
                                         &mut pv.acc_mult_c,
-                                        C_RLP_START + 1,
-                                        HASH_WIDTH + 1,
+                                        start,
+                                        len,
                                     );
 
                                     self.assign_acc(
