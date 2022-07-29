@@ -528,7 +528,7 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
                 q_not_first.clone()
                     * q_enable.clone()
                     * (one.clone() - is_branch_init_prev.clone())
-                    * (one.clone() - is_branch_hashed.clone())
+                    * is_branch_hashed.clone()
                     * (rlc - acc_c.clone()),
             ));
 
@@ -537,7 +537,7 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
                 q_not_first
                     * q_enable
                     * (one.clone() - is_branch_init_prev.clone())
-                    * is_branch_hashed
+                    * (one.clone() - is_branch_hashed)
                     * (rlc_non_hashed_branch - acc_c),
             ));
 
