@@ -55,13 +55,13 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
             CopyDataType::RlcAcc.expr(),
             memory_address.offset(),
             memory_address.address(),
-            0.expr(), // dst_id for CopyDataType::RlcAcc is 0.
+            0.expr(), // dst_addr for CopyDataType::RlcAcc is 0.
             memory_address.length(),
             rlc_acc.expr(),
-            cb.curr.state.rw_counter.expr() + cb.rw_counter_offset().expr(),
+            cb.curr.state.rw_counter.expr() + cb.rw_counter_offset(),
             copy_rwc_inc.expr(),
         );
-        cb.keccak_table_lookup(memory_address.length(), rlc_acc.expr(), sha3_rlc.expr());
+        cb.keccak_table_lookup(rlc_acc.expr(), memory_address.length(), sha3_rlc.expr());
 
         let memory_expansion = MemoryExpansionGadget::construct(
             cb,
@@ -155,5 +155,47 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
         )?;
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use eth_types::bytecode;
+    use mock::TestContext;
+
+    use crate::test_util::run_test_circuits;
+
+    #[test]
+    fn sha3_gadget_simple() {
+        let code = bytecode! {
+            PUSH32(0x08) // size
+            PUSH32(0x00) // offset
+            SHA3
+            STOP
+        };
+        assert_eq!(
+            run_test_circuits(
+                TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap(),
+                None
+            ),
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn sha3_gadget_large() {
+        let code = bytecode! {
+            PUSH32(0x101)
+            PUSH32(0x202)
+            SHA3
+            STOP
+        };
+        assert_eq!(
+            run_test_circuits(
+                TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap(),
+                None
+            ),
+            Ok(())
+        );
     }
 }

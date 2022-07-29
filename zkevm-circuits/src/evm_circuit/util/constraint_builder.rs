@@ -1098,17 +1098,16 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
 
     pub(crate) fn keccak_table_lookup(
         &mut self,
+        input_rlc: Expression<F>,
         input_len: Expression<F>,
-        acc_input: Expression<F>,
-        output: Expression<F>,
+        output_rlc: Expression<F>,
     ) {
         self.add_lookup(
             "keccak lookup",
             Lookup::KeccakTable {
-                state_tag: 2.expr(), // FINALIZE
+                input_rlc,
                 input_len,
-                acc_input,
-                output,
+                output_rlc,
             },
         );
     }

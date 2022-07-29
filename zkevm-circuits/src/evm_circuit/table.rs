@@ -2,6 +2,7 @@ use crate::evm_circuit::step::ExecutionState;
 use crate::impl_expr;
 pub use crate::table::TxContextFieldTag;
 use eth_types::Field;
+use gadgets::util::Expr;
 use halo2_proofs::plonk::Expression;
 use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
@@ -206,15 +207,13 @@ pub(crate) enum Lookup<F> {
     },
     /// Lookup to keccak table.
     KeccakTable {
-        /// State of the keccak row.
-        state_tag: Expression<F>,
+        /// Accumulator to the input.
+        input_rlc: Expression<F>,
         /// Length of input that is being hashed.
         input_len: Expression<F>,
-        /// Accumulator to the input.
-        acc_input: Expression<F>,
-        /// Output (hash) until this state. At state_tag == FINALIZE this
-        /// signifies the final output keccak256 hash of the input.
-        output: Expression<F>,
+        /// Output (hash) until this state. This is the RLC representation of
+        /// the final output keccak256 hash of the input.
+        output_rlc: Expression<F>,
     },
     /// Conditional lookup enabled by the first element.
     Conditional(Expression<F>, Box<Lookup<F>>),
@@ -311,15 +310,14 @@ impl<F: Field> Lookup<F> {
                 rwc_inc.clone(),
             ],
             Self::KeccakTable {
-                state_tag,
+                input_rlc,
                 input_len,
-                acc_input,
-                output,
+                output_rlc,
             } => vec![
-                state_tag.clone(),
+                1.expr(), // is_enabled
+                input_rlc.clone(),
                 input_len.clone(),
-                acc_input.clone(),
-                output.clone(),
+                output_rlc.clone(),
             ],
             Self::Conditional(condition, lookup) => lookup
                 .input_exprs()
