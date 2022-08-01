@@ -19,6 +19,33 @@ use crate::{
 #[derive(Clone, Debug)]
 pub(crate) struct AccountLeafNonceBalanceConfig {}
 
+/*
+An account leaf occupies 8 rows.
+Contrary as in the branch rows, the `S` and `C` leaves are not positioned parallel to each other.
+The rows are the following:
+ACCOUNT_LEAF_KEY_S
+ACCOUNT_LEAF_KEY_C
+ACCOUNT_NON_EXISTING
+ACCOUNT_LEAF_NONCE_BALANCE_S
+ACCOUNT_LEAF_NONCE_BALANCE_C
+ACCOUNT_LEAF_STORAGE_CODEHASH_S
+ACCOUNT_LEAF_STORAGE_CODEHASH_C
+ACCOUNT_DRIFTED_LEAF
+
+This chip applies to ACCOUNT_LEAF_NONCE_BALANCE_S and ACCOUNT_LEAF_NONCE_BALANCE_C rows.
+
+For example, the two rows might be:
+[184,70,128,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,248,68,128,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+[184,70,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,248,68,128,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+
+In `ACCOUNT_LEAF_NONCE_BALANCE_S` example row, there is `S` nonce stored in `s_main` and `S` balance in
+`c_main`. We can see nonce in `S` proof is `0 = 128 - 128`.
+
+In `ACCOUNT_LEAF_NONCE_BALANCE_C` example row, there is `C` nonce stored in `s_main` and `C` balance in
+`c_main`. We can see nonce in `C` proof is `1`.
+
+
+*/
 pub(crate) struct AccountLeafNonceBalanceChip<F> {
     config: AccountLeafNonceBalanceConfig,
     _marker: PhantomData<F>,
@@ -52,7 +79,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
         let one = Expression::Constant(F::one());
         let c128 = Expression::Constant(F::from(128));
 
-        meta.create_gate("account leaf nonce balance", |meta| {
+        meta.create_gate("Account leaf nonce balance RLC & RLP", |meta| {
             let q_enable = q_enable(meta);
             let mut constraints = vec![];
 
@@ -95,12 +122,14 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
                 Rotation(rot),
             );
 
+            // Nonce and balance can occupy 1 or more bytes. If 1 byte, we say it is short. If more than 1 byte,
+            // we say it is long.
             constraints.push((
-                "bool check is_nonce_long",
+                "Bool check is_nonce_long",
                 get_bool_constraint(q_enable.clone(), is_nonce_long.clone()),
             ));
             constraints.push((
-                "bool check is_balance_long",
+                "Bool check is_balance_long",
                 get_bool_constraint(q_enable.clone(), is_balance_long.clone()),
             ));
 
