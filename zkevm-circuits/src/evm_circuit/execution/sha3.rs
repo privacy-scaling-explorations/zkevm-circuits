@@ -38,7 +38,7 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
 
         let offset = cb.query_cell();
         let size = cb.query_rlc();
-        let sha3_rlc = cb.query_word();
+        let sha3_rlc = cb.query_rlc();
 
         cb.stack_pop(offset.expr());
         cb.stack_pop(size.expr());

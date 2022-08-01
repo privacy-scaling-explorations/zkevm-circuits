@@ -38,7 +38,8 @@ impl Opcode for Sha3 {
                 .extend_at_least(offset.as_usize() + size.as_usize());
         }
 
-        let memory = geth_step
+        let memory = state
+            .call_ctx()?
             .memory
             .read_chunk(offset.as_usize().into(), size.as_usize().into());
 
