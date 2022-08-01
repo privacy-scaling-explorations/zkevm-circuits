@@ -26,7 +26,7 @@ use crate::{
     param::{
         ACCOUNT_LEAF_KEY_C_IND, ACCOUNT_LEAF_KEY_S_IND, ACCOUNT_LEAF_NONCE_BALANCE_C_IND,
         ACCOUNT_LEAF_NONCE_BALANCE_S_IND, COUNTER_WITNESS_LEN, IS_BALANCE_MOD_POS,
-        IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, IS_CODEHASH_MOD_POS, IS_EXT_LONG_EVEN_C16_POS,
+        IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, IS_EXT_LONG_EVEN_C16_POS,
         IS_EXT_LONG_EVEN_C1_POS, IS_EXT_LONG_ODD_C16_POS, IS_EXT_LONG_ODD_C1_POS,
         IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS, IS_NONCE_MOD_POS, IS_STORAGE_MOD_POS,
         RLP_NUM, NOT_FIRST_LEVEL_POS, IS_ACCOUNT_DELETE_MOD_POS, IS_NON_EXISTING_ACCOUNT_POS,
@@ -157,7 +157,6 @@ pub struct MPTConfig<F> {
     is_storage_mod: Column<Advice>,
     is_nonce_mod: Column<Advice>,
     is_balance_mod: Column<Advice>,
-    is_codehash_mod: Column<Advice>,
     is_account_delete_mod: Column<Advice>,
     is_non_existing_account_proof: Column<Advice>,
     is_non_existing_account_row: Column<Advice>,
@@ -378,7 +377,6 @@ impl<F: FieldExt> MPTConfig<F> {
         let is_storage_mod = meta.advice_column();
         let is_nonce_mod = meta.advice_column();
         let is_balance_mod = meta.advice_column();
-        let is_codehash_mod = meta.advice_column();
         let is_account_delete_mod = meta.advice_column();
         let is_non_existing_account_proof = meta.advice_column();
         let is_non_existing_account_row = meta.advice_column();
@@ -412,7 +410,6 @@ impl<F: FieldExt> MPTConfig<F> {
             is_storage_mod,
             is_nonce_mod,
             is_balance_mod,
-            is_codehash_mod,
             is_account_delete_mod,
             is_non_existing_account_proof,
             is_non_existing_account_row,
@@ -923,7 +920,6 @@ impl<F: FieldExt> MPTConfig<F> {
             is_storage_mod,
             is_nonce_mod,
             is_balance_mod,
-            is_codehash_mod,
             is_account_delete_mod,
             is_non_existing_account_proof,
             fixed_table.clone(),
@@ -953,7 +949,6 @@ impl<F: FieldExt> MPTConfig<F> {
             is_storage_mod,
             is_nonce_mod,
             is_balance_mod,
-            is_codehash_mod,
             is_account_delete_mod,
             is_non_existing_account_proof,
             fixed_table.clone(),
@@ -980,7 +975,6 @@ impl<F: FieldExt> MPTConfig<F> {
             is_storage_mod,
             is_nonce_mod,
             is_balance_mod,
-            is_codehash_mod,
             is_account_delete_mod,
             is_non_existing_account_proof,
             true,
@@ -1006,7 +1000,6 @@ impl<F: FieldExt> MPTConfig<F> {
             is_storage_mod,
             is_nonce_mod,
             is_balance_mod,
-            is_codehash_mod,
             is_account_delete_mod,
             is_non_existing_account_proof,
             false,
@@ -1096,7 +1089,6 @@ impl<F: FieldExt> MPTConfig<F> {
             is_storage_mod,
             is_nonce_mod,
             is_balance_mod,
-            is_codehash_mod,
             is_account_delete_mod,
             is_non_existing_account_proof,
             is_non_existing_account_row,
@@ -1734,12 +1726,6 @@ impl<F: FieldExt> MPTConfig<F> {
                             self.is_balance_mod,
                             offset,
                             || Ok(F::from(row[row.len() - IS_BALANCE_MOD_POS] as u64)),
-                        )?;
-                        region.assign_advice(
-                            || "is_codehash_mod",
-                            self.is_codehash_mod,
-                            offset,
-                            || Ok(F::from(row[row.len() - IS_CODEHASH_MOD_POS] as u64)),
                         )?;
                         region.assign_advice(
                             || "is_account_delete_mod",

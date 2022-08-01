@@ -19,7 +19,6 @@ use crate::{
 #[derive(Clone, Debug)]
 pub(crate) struct AccountLeafNonceBalanceConfig {}
 
-// Verifies the intermediate account leaf RLC.
 pub(crate) struct AccountLeafNonceBalanceChip<F> {
     config: AccountLeafNonceBalanceConfig,
     _marker: PhantomData<F>,
@@ -44,7 +43,6 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
         is_storage_mod: Column<Advice>,
         is_nonce_mod: Column<Advice>,
         is_balance_mod: Column<Advice>,
-        is_codehash_mod: Column<Advice>,
         is_account_delete_mod: Column<Advice>,
         is_non_existing_account_proof: Column<Advice>,
         fixed_table: [Column<Fixed>; 3],
@@ -236,14 +234,12 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
                 let is_storage_mod = meta.query_advice(is_storage_mod, Rotation::cur());
                 let is_nonce_mod = meta.query_advice(is_nonce_mod, Rotation::cur());
                 let is_balance_mod = meta.query_advice(is_balance_mod, Rotation::cur());
-                let is_codehash_mod = meta.query_advice(is_codehash_mod, Rotation::cur());
                 let is_account_delete_mod = meta.query_advice(is_account_delete_mod, Rotation::cur());
 
                 constraints.push((
                     "if storage / codehash / balance mod: nonce_s = nonce_c",
                     q_enable.clone()
                         * (is_storage_mod.clone()
-                            + is_codehash_mod.clone()
                             + is_balance_mod.clone())
                         * (one.clone() - is_account_delete_mod.clone())
                         * (nonce_s_from_cur.clone() - nonce_stored.clone()),
@@ -251,7 +247,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
                 constraints.push((
                     "if storage / codehash / nonce mod: balance_s = balance_c",
                     q_enable.clone()
-                        * (is_storage_mod.clone() + is_codehash_mod.clone() + is_nonce_mod.clone())
+                        * (is_storage_mod.clone() + is_nonce_mod.clone())
                         * (one.clone() - is_account_delete_mod.clone())
                         * (balance_s_from_cur.clone() - balance_stored.clone()),
                 ));

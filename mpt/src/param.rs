@@ -73,7 +73,6 @@ pub const IS_STORAGE_MOD_POS: usize = 3;
 pub const IS_NONCE_MOD_POS: usize = 4;
 // row.len() - IS_BALANCE_MOD_POS holds the information whether the proof is about balance modification
 pub const IS_BALANCE_MOD_POS: usize = 5;
-pub const IS_CODEHASH_MOD_POS: usize = 6; // TODO: to be removed
 // row.len() - IS_ACCOUNT_DELETE_MOD_POS holds the information whether the proof is about account delete modification
 pub const IS_ACCOUNT_DELETE_MOD_POS: usize = 7;
 // row.len() - IS_NON_EXISTING_ACCOUNT_POS holds the information whether the proof shows the account does not exist 
