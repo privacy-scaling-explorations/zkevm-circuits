@@ -73,7 +73,6 @@ mod test {
     use crate::evm_circuit::{
         test::run_test_circuit_incomplete_fixed_table, witness::block_convert,
     };
-    use crate::test_util::run_test_circuits;
     use bus_mapping::{evm::OpcodeId, mock::BlockData};
     use eth_types::{self, bytecode, evm_types::GasCost, geth_types::GethData, Word};
     use mock::{
@@ -152,61 +151,5 @@ mod test {
         // in root call
         test_oog_constant(mock_tx(eth(1), gwei(2), vec![]), false);
         // TODO: add internal call test
-    }
-
-    #[test]
-    fn stack_overflow_simple() {
-        test_stack_overflow(OpcodeId::PUSH1, &[1]);
-    }
-
-    fn test_stack_overflow(opcode: OpcodeId, bytes: &[u8]) {
-        assert!(bytes.len() as u8 == opcode.as_u8() - OpcodeId::PUSH1.as_u8() + 1,);
-
-        let mut bytecode = bytecode! {
-            .write_op(opcode)
-        };
-        for b in bytes {
-            bytecode.write(*b, false);
-        }
-        // still add 1024 causes stack overflow
-        for _ in 0..1025 {
-            bytecode.write_op(opcode);
-            for b in bytes {
-                bytecode.write(*b, false);
-            }
-        }
-        // append final stop op code
-        bytecode.write_op(OpcodeId::STOP);
-
-        assert_eq!(
-            run_test_circuits(
-                TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
-                None
-            ),
-            Ok(())
-        );
-    }
-
-    fn test_stack_underflow(value: Word) {
-        let bytecode = bytecode! {
-            PUSH32(value)
-            POP
-            POP
-            STOP
-        };
-
-        assert_eq!(
-            run_test_circuits(
-                TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
-                None
-            ),
-            Ok(())
-        );
-    }
-
-    #[test]
-    fn pop_gadget_underflow() {
-        test_stack_underflow(Word::from(0x030201));
-        test_stack_underflow(Word::from(0xab));
     }
 }

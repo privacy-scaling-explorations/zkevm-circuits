@@ -94,7 +94,6 @@ use dup::DupGadget;
 use end_block::EndBlockGadget;
 use end_tx::EndTxGadget;
 use error_oog_constant::ErrorOOGConstantGadget;
-use error_oog_static_memory::ErrorOOGStaticMemoryGadget;
 use extcodehash::ExtcodehashGadget;
 use gas::GasGadget;
 use gasprice::GasPriceGadget;
@@ -222,7 +221,8 @@ pub(crate) struct ExecutionConfig<F> {
     block_ctx_u256_gadget: BlockCtxU256Gadget<F>,
     // error gadgets
     error_oog_constant: ErrorOOGConstantGadget<F>,
-    error_oog_static_memory_gadget: ErrorOOGStaticMemoryGadget<F>,
+    error_oog_static_memory_gadget:
+        DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasStaticMemoryExpansion }>,
     error_stack_overflow: DummyGadget<F, 0, 0, { ExecutionState::ErrorStackOverflow }>,
     error_stack_underflow: DummyGadget<F, 0, 0, { ExecutionState::ErrorStackUnderflow }>,
     error_oog_dynamic_memory_gadget:
