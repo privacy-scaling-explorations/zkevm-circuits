@@ -15,6 +15,7 @@ use eth_types::{
 use keccak256::EMPTY_HASH;
 use log::warn;
 
+mod balance;
 mod call;
 mod calldatacopy;
 mod calldataload;
@@ -28,6 +29,7 @@ mod create;
 mod dup;
 mod extcodecopy;
 mod extcodehash;
+mod extcodesize;
 mod gasprice;
 mod logs;
 mod mload;
@@ -47,6 +49,7 @@ mod swap;
 #[cfg(test)]
 mod memory_expansion_test;
 
+use balance::Balance;
 use call::Call;
 use calldatacopy::Calldatacopy;
 use calldataload::Calldataload;
@@ -59,6 +62,7 @@ use create::DummyCreate;
 use dup::Dup;
 use extcodecopy::Extcodecopy;
 use extcodehash::Extcodehash;
+use extcodesize::Extcodesize;
 use gasprice::GasPrice;
 use logs::Log;
 use mload::Mload;
@@ -140,7 +144,7 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         OpcodeId::SAR => StackOnlyOpcode::<2, 1>::gen_associated_ops,
         OpcodeId::SHA3 => Sha3::gen_associated_ops,
         OpcodeId::ADDRESS => StackOnlyOpcode::<0, 1>::gen_associated_ops,
-        OpcodeId::BALANCE => StackOnlyOpcode::<1, 1>::gen_associated_ops,
+        OpcodeId::BALANCE => Balance::gen_associated_ops,
         OpcodeId::ORIGIN => Origin::gen_associated_ops,
         OpcodeId::CALLER => Caller::gen_associated_ops,
         OpcodeId::CALLVALUE => Callvalue::gen_associated_ops,
@@ -150,7 +154,7 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         OpcodeId::GASPRICE => GasPrice::gen_associated_ops,
         OpcodeId::CODECOPY => Codecopy::gen_associated_ops,
         OpcodeId::CODESIZE => Codesize::gen_associated_ops,
-        OpcodeId::EXTCODESIZE => StackOnlyOpcode::<1, 1>::gen_associated_ops,
+        OpcodeId::EXTCODESIZE => Extcodesize::gen_associated_ops,
         OpcodeId::EXTCODECOPY => Extcodecopy::gen_associated_ops,
         OpcodeId::RETURNDATASIZE => StackOnlyOpcode::<0, 1>::gen_associated_ops,
         OpcodeId::RETURNDATACOPY => Returndatacopy::gen_associated_ops,
@@ -225,9 +229,13 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
             warn!("Using dummy gen_call_ops for opcode {:?}", opcode_id);
             DummyCall::gen_associated_ops
         }
-        OpcodeId::CREATE | OpcodeId::CREATE2 => {
+        OpcodeId::CREATE => {
             warn!("Using dummy gen_create_ops for opcode {:?}", opcode_id);
-            DummyCreate::gen_associated_ops
+            DummyCreate::<false>::gen_associated_ops
+        }
+        OpcodeId::CREATE2 => {
+            warn!("Using dummy gen_create_ops for opcode {:?}", opcode_id);
+            DummyCreate::<true>::gen_associated_ops
         }
         _ => {
             warn!("Using dummy gen_associated_ops for opcode {:?}", opcode_id);
