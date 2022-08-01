@@ -102,10 +102,17 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
                 Rotation(rot_branch_init),
             );
 
+            // If leaf is in first storage level, there cannot be drifted leaf and placeholder branch
+            // and we do not need to trigger any checks. Note that in this case is_branch_*_placeholder
+            // is computed wrongly and we cannot rely on it.
+            let is_leaf_in_first_storage_level =
+                meta.query_advice(is_account_leaf_in_added_branch, Rotation(rot_into_account));
+
             constraints.push((
                 "not both zeros: flag1, flag2",
                 q_enable.clone()
                     * (is_branch_s_placeholder.clone() + is_branch_c_placeholder.clone()) // there is no added leaf when no placeholder branch
+                    * (one.clone() - is_leaf_in_first_storage_level.clone())
                     * (one.clone() - flag1.clone())
                     * (one.clone() - flag2.clone()),
             ));
@@ -123,14 +130,15 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
             let acc = meta.query_advice(acc_s, Rotation::cur());
             constraints.push(("Leaf key acc", q_enable.clone()
                     * (is_short + is_long) // activate if is_short or is_long
+                    * (one.clone() - is_leaf_in_first_storage_level.clone())
                     * (is_branch_s_placeholder.clone() + is_branch_c_placeholder.clone()) // drifted leaf appears only when there is a placeholder branch
                     * (rlc - acc.clone())));
 
             constraints.push(("Leaf key acc last level", q_enable
-                    * last_level
+                    * last_level // activate if in last level
+                    * (one.clone() - is_leaf_in_first_storage_level.clone())
                     * (is_branch_s_placeholder.clone() + is_branch_c_placeholder.clone()) // drifted leaf appears only when there is a placeholder branch
                     * (rlc_last_level - acc)));
-
 
             constraints
         });
