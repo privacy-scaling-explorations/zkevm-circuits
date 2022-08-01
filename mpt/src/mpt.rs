@@ -74,6 +74,13 @@ use crate::{
 // TODO: constraints for the length of key and address RLC to be 32 bytes long
 
 #[derive(Clone, Debug)]
+pub(crate) struct MainCols { // Main as opposed to other columns which are selectors and RLC accumulators.
+    pub(crate) rlp1: Column<Advice>,
+    pub(crate) rlp2: Column<Advice>,
+    pub(crate) bytes: [Column<Advice>; HASH_WIDTH],
+}
+
+#[derive(Clone, Debug)]
 pub struct MPTConfig<F> {
     q_enable: Column<Fixed>,
     q_not_first: Column<Fixed>, // not first row
@@ -110,12 +117,8 @@ pub struct MPTConfig<F> {
     is_extension_node_s: Column<Advice>, /* contains extension node key (s_advices) and hash of
                                           * the branch (c_advices) */
     is_extension_node_c: Column<Advice>,
-    s_rlp1: Column<Advice>,
-    s_rlp2: Column<Advice>,
-    c_rlp1: Column<Advice>,
-    c_rlp2: Column<Advice>,
-    s_advices: [Column<Advice>; HASH_WIDTH],
-    c_advices: [Column<Advice>; HASH_WIDTH],
+    s_main: MainCols,
+    c_main: MainCols,
     s_mod_node_hash_rlc: Column<Advice>, /* modified node s_advices RLC when s_advices present
                                           * hash (used also for leaf long/short) */
     c_mod_node_hash_rlc: Column<Advice>, /* modified node c_advices RLC when c_advices present
@@ -298,21 +301,24 @@ impl<F: FieldExt> MPTConfig<F> {
         let is_extension_node_s = meta.advice_column();
         let is_extension_node_c = meta.advice_column();
 
-        let s_rlp1 = meta.advice_column();
-        let s_rlp2 = meta.advice_column();
-        let s_advices: [Column<Advice>; HASH_WIDTH] = (0..HASH_WIDTH)
-            .map(|_| meta.advice_column())
-            .collect::<Vec<_>>()
-            .try_into()
-            .unwrap();
-
-        let c_rlp1 = meta.advice_column();
-        let c_rlp2 = meta.advice_column();
-        let c_advices: [Column<Advice>; HASH_WIDTH] = (0..HASH_WIDTH)
-            .map(|_| meta.advice_column())
-            .collect::<Vec<_>>()
-            .try_into()
-            .unwrap();
+        let s_main = MainCols {
+            rlp1: meta.advice_column(),
+            rlp2: meta.advice_column(),
+            bytes: (0..HASH_WIDTH)
+                .map(|_| meta.advice_column())
+                .collect::<Vec<_>>()
+                .try_into()
+                .unwrap(),
+        };
+        let c_main = MainCols {
+            rlp1: meta.advice_column(),
+            rlp2: meta.advice_column(),
+            bytes: (0..HASH_WIDTH)
+                .map(|_| meta.advice_column())
+                .collect::<Vec<_>>()
+                .try_into()
+                .unwrap(),
+        };
 
         let keccak_table: [Column<Fixed>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH] = (0
             ..KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH)
@@ -431,12 +437,8 @@ impl<F: FieldExt> MPTConfig<F> {
             meta,
             q_enable,
             q_not_first,
-            s_rlp1,
-            s_rlp2,
-            c_rlp1,
-            c_rlp2,
-            s_advices,
-            c_advices,
+            s_main.clone(),
+            c_main.clone(),
             is_branch_init,
             is_branch_child,
             is_last_branch_child,
@@ -456,10 +458,10 @@ impl<F: FieldExt> MPTConfig<F> {
             not_first_level,
             is_branch_init,
             is_account_leaf_in_added_branch,
-            s_advices,
+            s_main.clone(),
             modified_node,
-            s_advices[IS_BRANCH_C16_POS - RLP_NUM],
-            s_advices[IS_BRANCH_C1_POS - RLP_NUM],
+            s_main.bytes[IS_BRANCH_C16_POS - RLP_NUM], // TODO: remove
+            s_main.bytes[IS_BRANCH_C1_POS - RLP_NUM], // TODO: remove
             key_rlc,
             key_rlc_mult,
             acc_r,
@@ -471,8 +473,7 @@ impl<F: FieldExt> MPTConfig<F> {
             q_not_first,
             is_branch_child,
             s_mod_node_hash_rlc,
-            s_rlp2,
-            s_advices,
+            s_main.clone(),
             node_index,
             is_modified,
             is_at_drifted_pos,
@@ -487,8 +488,7 @@ impl<F: FieldExt> MPTConfig<F> {
             q_not_first,
             is_branch_child,
             c_mod_node_hash_rlc,
-            c_rlp2,
-            c_advices,
+            c_main.clone(),
             node_index,
             is_modified,
             is_at_drifted_pos,
@@ -504,8 +504,8 @@ impl<F: FieldExt> MPTConfig<F> {
             q_not_first,
             is_account_leaf_in_added_branch,
             is_last_branch_child,
-            s_advices[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM],
-            s_advices,
+            s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM], // TODO: remove
+            s_main.clone(),
             s_mod_node_hash_rlc,
             acc_s,
             acc_mult_s,
@@ -519,8 +519,8 @@ impl<F: FieldExt> MPTConfig<F> {
             q_not_first,
             is_account_leaf_in_added_branch,
             is_last_branch_child,
-            s_advices[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
-            s_advices,
+            s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM], // TODO: remove
+            s_main.clone(),
             c_mod_node_hash_rlc,
             acc_c,
             acc_mult_c,
@@ -532,7 +532,7 @@ impl<F: FieldExt> MPTConfig<F> {
             |meta| {
                 let is_extension_node_s = meta.query_advice(is_extension_node_s, Rotation::cur());
                 // is_extension_node is in branch init row
-                let is_extension_node = get_is_extension_node(meta, s_advices, -17);
+                let is_extension_node = get_is_extension_node(meta, s_main.bytes, -17);
 
                 is_extension_node_s * is_extension_node
             },
@@ -541,11 +541,8 @@ impl<F: FieldExt> MPTConfig<F> {
             q_not_first,
             is_account_leaf_in_added_branch,
             is_branch_init,
-            s_rlp1,
-            s_rlp2,
-            c_rlp2,
-            s_advices,
-            c_advices,
+            s_main.clone(),
+            c_main.clone(),
             acc_s,
             acc_mult_s,
             acc_c,
@@ -562,7 +559,7 @@ impl<F: FieldExt> MPTConfig<F> {
             |meta| {
                 let is_extension_node_c = meta.query_advice(is_extension_node_c, Rotation::cur());
                 // is_extension_node is in branch init row
-                let is_extension_node = get_is_extension_node(meta, s_advices, -18);
+                let is_extension_node = get_is_extension_node(meta, s_main.bytes, -18);
 
                 is_extension_node_c * is_extension_node
             },
@@ -571,11 +568,8 @@ impl<F: FieldExt> MPTConfig<F> {
             q_not_first,
             is_account_leaf_in_added_branch,
             is_branch_init,
-            s_rlp1,
-            s_rlp2,
-            c_rlp2,
-            s_advices,
-            c_advices,
+            s_main.clone(),
+            c_main.clone(),
             acc_s,
             acc_mult_s,
             acc_c,
@@ -594,11 +588,8 @@ impl<F: FieldExt> MPTConfig<F> {
             is_branch_init,
             is_branch_child,
             is_account_leaf_in_added_branch,
-            s_rlp1,
-            s_rlp2,
-            c_rlp1,
-            s_advices,
-            c_advices,
+            s_main.clone(),
+            c_main.clone(),
             modified_node,
             key_rlc,
             key_rlc_mult,
@@ -617,7 +608,7 @@ impl<F: FieldExt> MPTConfig<F> {
             is_leaf_c_value,
             is_account_leaf_in_added_branch,
             is_last_branch_child,
-            s_advices,
+            s_main.clone(),
             acc_s,
             acc_mult_s,
             acc_c,
@@ -636,7 +627,7 @@ impl<F: FieldExt> MPTConfig<F> {
             is_leaf_c_value,
             is_account_leaf_in_added_branch,
             is_last_branch_child,
-            s_advices, // s_advices (and not c_advices) is correct
+            s_main.clone(), // s_main (and not c_main) is correct
             acc_s,
             acc_mult_s,
             acc_c,
@@ -653,9 +644,7 @@ impl<F: FieldExt> MPTConfig<F> {
                 meta.query_advice(is_branch_init, Rotation::cur())
                     * meta.query_fixed(q_enable, Rotation::cur())
             },
-            s_rlp1,
-            s_rlp2,
-            s_advices,
+            s_main.clone(),
             acc_s,
             acc_mult_s,
             acc_c,
@@ -671,8 +660,7 @@ impl<F: FieldExt> MPTConfig<F> {
 
                 q_not_first * is_branch_child
             },
-            s_rlp2,
-            s_advices,
+            s_main.clone(),
             acc_s,
             acc_mult_s,
             is_node_hashed_s,
@@ -689,8 +677,7 @@ impl<F: FieldExt> MPTConfig<F> {
 
                 q_not_first * is_branch_child
             },
-            c_rlp2,
-            c_advices,
+            c_main.clone(),
             acc_c,
             acc_mult_c,
             is_node_hashed_c,
@@ -713,11 +700,8 @@ impl<F: FieldExt> MPTConfig<F> {
                 // first row. q_not_first is needed to avoid PoisenedConstraint.
                 q_not_first * not_first_level * is_leaf_s
             },
-            s_rlp1,
-            s_rlp2,
-            c_rlp1,
-            c_rlp2,
-            s_advices,
+            s_main.clone(),
+            c_main.clone(),
             s_mod_node_hash_rlc,
             c_mod_node_hash_rlc,
             acc_s,
@@ -726,7 +710,7 @@ impl<F: FieldExt> MPTConfig<F> {
             key_rlc_mult,
             sel1,
             sel2,
-            s_advices[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM],
+            s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM], // TODO: remove
             is_account_leaf_in_added_branch,
             r_table.clone(),
             fixed_table.clone(),
@@ -747,11 +731,8 @@ impl<F: FieldExt> MPTConfig<F> {
                 // first row. q_not_first is needed to avoid PoisenedConstraint.
                 q_not_first * not_first_level * is_leaf_c
             },
-            s_rlp1,
-            s_rlp2,
-            c_rlp1,
-            c_rlp2,
-            s_advices,
+            s_main.clone(),
+            c_main.clone(),
             s_mod_node_hash_rlc,
             c_mod_node_hash_rlc,
             acc_s,
@@ -760,7 +741,7 @@ impl<F: FieldExt> MPTConfig<F> {
             key_rlc_mult,
             sel1,
             sel2,
-            s_advices[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
+            s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM], // TODO: remove
             is_account_leaf_in_added_branch,
             r_table.clone(),
             fixed_table.clone(),
@@ -776,11 +757,8 @@ impl<F: FieldExt> MPTConfig<F> {
 
                 q_not_first * not_first_level * is_leaf
             },
-            s_rlp1,
-            s_rlp2,
-            c_rlp1,
-            c_rlp2,
-            s_advices,
+            s_main.clone(),
+            c_main.clone(),
             s_mod_node_hash_rlc,
             c_mod_node_hash_rlc,
             acc_s,
@@ -801,9 +779,7 @@ impl<F: FieldExt> MPTConfig<F> {
             q_not_first,
             not_first_level,
             is_leaf_s_value,
-            s_rlp1,
-            s_rlp2,
-            s_advices,
+            s_main.clone(),
             s_mod_node_hash_rlc,
             c_mod_node_hash_rlc,
             keccak_table,
@@ -816,7 +792,7 @@ impl<F: FieldExt> MPTConfig<F> {
             key_rlc_mult,
             mult_diff,
             is_account_leaf_in_added_branch,
-            s_advices[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM],
+            s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM],
             true,
             acc_r,
             fixed_table.clone(),
@@ -828,9 +804,7 @@ impl<F: FieldExt> MPTConfig<F> {
             q_not_first,
             not_first_level,
             is_leaf_c_value,
-            s_rlp1,
-            s_rlp2,
-            s_advices,
+            s_main.clone(),
             s_mod_node_hash_rlc,
             c_mod_node_hash_rlc,
             keccak_table,
@@ -843,7 +817,7 @@ impl<F: FieldExt> MPTConfig<F> {
             key_rlc_mult,
             mult_diff,
             is_account_leaf_in_added_branch,
-            s_advices[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
+            s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
             false,
             acc_r,
             fixed_table.clone(),
@@ -859,11 +833,8 @@ impl<F: FieldExt> MPTConfig<F> {
                 q_enable * is_account_leaf_key_s
             },
             not_first_level,
-            s_rlp1,
-            s_rlp2,
-            c_rlp1,
-            c_rlp2,
-            s_advices,
+            s_main.clone(),
+            c_main.clone(),
             acc_s,
             acc_mult_s,
             key_rlc,
@@ -889,11 +860,8 @@ impl<F: FieldExt> MPTConfig<F> {
                 q_enable * is_account_leaf_key_c
             },
             not_first_level,
-            s_rlp1,
-            s_rlp2,
-            c_rlp1,
-            c_rlp2,
-            s_advices,
+            s_main.clone(),
+            c_main.clone(),
             acc_s,
             acc_mult_s,
             key_rlc,
@@ -921,11 +889,8 @@ impl<F: FieldExt> MPTConfig<F> {
                 q_enable * is_account_non_existing_row * is_account_non_existing_proof
             },
             not_first_level,
-            s_rlp1,
-            s_rlp2,
-            c_rlp1,
-            c_rlp2,
-            s_advices,
+            s_main.clone(),
+            c_main.clone(),
             key_rlc,
             key_rlc_mult,
             acc_s,
@@ -943,12 +908,8 @@ impl<F: FieldExt> MPTConfig<F> {
                     meta.query_advice(is_account_leaf_nonce_balance_s, Rotation::cur());
                 q_not_first * is_account_leaf_nonce_balance_s
             },
-            s_rlp1,
-            s_rlp2,
-            c_rlp1,
-            c_rlp2,
-            s_advices,
-            c_advices,
+            s_main.clone(),
+            c_main.clone(),
             acc_s,
             acc_mult_s,
             acc_mult_c,
@@ -977,12 +938,8 @@ impl<F: FieldExt> MPTConfig<F> {
                     meta.query_advice(is_account_leaf_nonce_balance_c, Rotation::cur());
                 q_not_first * is_account_leaf_nonce_balance_c
             },
-            s_rlp1,
-            s_rlp2,
-            c_rlp1,
-            c_rlp2,
-            s_advices,
-            c_advices,
+            s_main.clone(),
+            c_main.clone(),
             acc_s,
             acc_mult_s,
             acc_mult_c,
@@ -1009,11 +966,8 @@ impl<F: FieldExt> MPTConfig<F> {
             q_not_first,
             not_first_level,
             is_account_leaf_storage_codehash_s,
-            s_rlp1,
-            s_rlp2,
-            c_rlp2,
-            s_advices,
-            c_advices,
+            s_main.clone(),
+            c_main.clone(),
             acc_r,
             acc_s,
             acc_mult_s,
@@ -1038,11 +992,8 @@ impl<F: FieldExt> MPTConfig<F> {
             q_not_first,
             not_first_level,
             is_account_leaf_storage_codehash_c,
-            s_rlp1,
-            s_rlp2,
-            c_rlp2,
-            s_advices,
-            c_advices,
+            s_main.clone(),
+            c_main.clone(),
             acc_r,
             acc_s,
             acc_mult_s,
@@ -1072,12 +1023,8 @@ impl<F: FieldExt> MPTConfig<F> {
                 q_not_first * not_first_level * is_account_leaf_in_added_branch
             },
             not_first_level,
-            s_rlp1,
-            s_rlp2,
-            c_rlp1,
-            c_rlp2,
-            s_advices,
-            c_advices[0],
+            s_main.clone(),
+            c_main.clone(),
             s_mod_node_hash_rlc,
             c_mod_node_hash_rlc,
             acc_s,
@@ -1123,12 +1070,8 @@ impl<F: FieldExt> MPTConfig<F> {
             is_leaf_in_added_branch,
             is_extension_node_s,
             is_extension_node_c,
-            s_rlp1,
-            s_rlp2,
-            c_rlp1,
-            c_rlp2,
-            s_advices,
-            c_advices,
+            s_main,
+            c_main,
             s_mod_node_hash_rlc,
             c_mod_node_hash_rlc,
             acc_s,
@@ -1416,14 +1359,14 @@ impl<F: FieldExt> MPTConfig<F> {
 
         region.assign_advice(
             || "assign s_rlp1".to_string(),
-            self.s_rlp1,
+            self.s_main.rlp1,
             offset,
             || Ok(F::from(row[0] as u64)),
         )?;
 
         region.assign_advice(
             || "assign s_rlp2".to_string(),
-            self.s_rlp2,
+            self.s_main.rlp2,
             offset,
             || Ok(F::from(row[1] as u64)),
         )?;
@@ -1431,7 +1374,7 @@ impl<F: FieldExt> MPTConfig<F> {
         for idx in 0..HASH_WIDTH {
             region.assign_advice(
                 || format!("assign s_advice {}", idx),
-                self.s_advices[idx],
+                self.s_main.bytes[idx],
                 offset,
                 || Ok(F::from(row[RLP_NUM + idx] as u64)),
             )?;
@@ -1451,22 +1394,22 @@ impl<F: FieldExt> MPTConfig<F> {
 
         region.assign_advice(
             || "assign c_rlp1".to_string(),
-            self.c_rlp1,
+            self.c_main.rlp1,
             offset,
             || Ok(F::from(get_val(WITNESS_ROW_WIDTH / 2))),
         )?;
         region.assign_advice(
             || "assign c_rlp2".to_string(),
-            self.c_rlp2,
+            self.c_main.rlp2,
             offset,
             || Ok(F::from(get_val(WITNESS_ROW_WIDTH / 2 + 1))),
         )?;
 
-        for (idx, _c) in self.c_advices.iter().enumerate() {
+        for (idx, _c) in self.c_main.bytes.iter().enumerate() {
             let val = get_val(WITNESS_ROW_WIDTH / 2 + RLP_NUM + idx);
             region.assign_advice(
                 || format!("assign c_advice {}", idx),
-                self.c_advices[idx],
+                self.c_main.bytes[idx],
                 offset,
                 || Ok(F::from(val)),
             )?;
@@ -1555,13 +1498,13 @@ impl<F: FieldExt> MPTConfig<F> {
 
         region.assign_advice(
             || "s_rlp1",
-            self.s_rlp1,
+            self.s_main.rlp1,
             offset,
             || Ok(F::from(s_rlp1 as u64)),
         )?;
         region.assign_advice(
             || "c_rlp1",
-            self.c_rlp1,
+            self.c_main.rlp1,
             offset,
             || Ok(F::from(c_rlp1 as u64)),
         )?;

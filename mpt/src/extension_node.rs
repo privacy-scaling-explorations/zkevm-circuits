@@ -10,11 +10,11 @@ use std::marker::PhantomData;
 use crate::{
     helpers::{compute_rlc, get_bool_constraint, bytes_expr_into_rlc},
     param::{
-        HASH_WIDTH, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, IS_BRANCH_C_PLACEHOLDER_POS,
+        IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, IS_BRANCH_C_PLACEHOLDER_POS,
         IS_BRANCH_S_PLACEHOLDER_POS, IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS,
         IS_EXT_LONG_ODD_C16_POS, IS_EXT_LONG_ODD_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS,
         KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH, RLP_NUM, IS_S_EXT_LONGER_THAN_55_POS, IS_C_EXT_LONGER_THAN_55_POS, IS_S_BRANCH_IN_EXT_HASHED_POS, IS_C_BRANCH_IN_EXT_HASHED_POS,
-    },
+    }, mpt::MainCols,
 };
 
 #[derive(Clone, Debug)]
@@ -108,11 +108,8 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
         is_account_leaf_in_added_branch: Column<Advice>,
         is_branch_init: Column<Advice>, /* to avoid ConstraintPoisened and failed lookups (when
                                          * rotation lands < 0) */
-        s_rlp1: Column<Advice>,
-        s_rlp2: Column<Advice>,
-        c_rlp2: Column<Advice>,
-        s_advices: [Column<Advice>; HASH_WIDTH],
-        c_advices: [Column<Advice>; HASH_WIDTH],
+        s_main: MainCols,
+        c_main: MainCols,
         acc_s: Column<Advice>,
         acc_mult_s: Column<Advice>,
         acc_c: Column<Advice>,
@@ -149,46 +146,46 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
 
             // To reduce the expression degree, we pack together multiple information.
             let is_ext_short_c16 = meta.query_advice(
-                s_advices[IS_EXT_SHORT_C16_POS - RLP_NUM],
+                s_main.bytes[IS_EXT_SHORT_C16_POS - RLP_NUM],
                 Rotation(rot_into_branch_init),
             );
             let is_ext_short_c1 = meta.query_advice(
-                s_advices[IS_EXT_SHORT_C1_POS - RLP_NUM],
+                s_main.bytes[IS_EXT_SHORT_C1_POS - RLP_NUM],
                 Rotation(rot_into_branch_init),
             );
             let is_ext_long_even_c16 = meta.query_advice(
-                s_advices[IS_EXT_LONG_EVEN_C16_POS - RLP_NUM],
+                s_main.bytes[IS_EXT_LONG_EVEN_C16_POS - RLP_NUM],
                 Rotation(rot_into_branch_init),
             );
             let is_ext_long_even_c1 = meta.query_advice(
-                s_advices[IS_EXT_LONG_EVEN_C1_POS - RLP_NUM],
+                s_main.bytes[IS_EXT_LONG_EVEN_C1_POS - RLP_NUM],
                 Rotation(rot_into_branch_init),
             );
             let is_ext_long_odd_c16 = meta.query_advice(
-                s_advices[IS_EXT_LONG_ODD_C16_POS - RLP_NUM],
+                s_main.bytes[IS_EXT_LONG_ODD_C16_POS - RLP_NUM],
                 Rotation(rot_into_branch_init),
             );
             let is_ext_long_odd_c1 = meta.query_advice(
-                s_advices[IS_EXT_LONG_ODD_C1_POS - RLP_NUM],
+                s_main.bytes[IS_EXT_LONG_ODD_C1_POS - RLP_NUM],
                 Rotation(rot_into_branch_init),
             );
             let mut is_ext_longer_than_55 = meta.query_advice(
-                s_advices[IS_S_EXT_LONGER_THAN_55_POS - RLP_NUM],
+                s_main.bytes[IS_S_EXT_LONGER_THAN_55_POS - RLP_NUM],
                 Rotation(rot_into_branch_init),
             );
             if !is_s {
                 is_ext_longer_than_55 = meta.query_advice(
-                    s_advices[IS_C_EXT_LONGER_THAN_55_POS - RLP_NUM],
+                    s_main.bytes[IS_C_EXT_LONGER_THAN_55_POS - RLP_NUM],
                     Rotation(rot_into_branch_init),
                 );
             }
             let mut is_branch_in_ext_hashed = meta.query_advice(
-                s_advices[IS_S_BRANCH_IN_EXT_HASHED_POS - RLP_NUM],
+                s_main.bytes[IS_S_BRANCH_IN_EXT_HASHED_POS - RLP_NUM],
                 Rotation(rot_into_branch_init),
             );
             if !is_s {
                 is_branch_in_ext_hashed = meta.query_advice(
-                    s_advices[IS_C_BRANCH_IN_EXT_HASHED_POS - RLP_NUM],
+                    s_main.bytes[IS_C_BRANCH_IN_EXT_HASHED_POS - RLP_NUM],
                     Rotation(rot_into_branch_init),
                 );
             }
@@ -269,11 +266,11 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
 
             // is_branch_c16 and is_branch_c1 correspond to the six extension selectors.
             let is_branch_c16 = meta.query_advice(
-                s_advices[IS_BRANCH_C16_POS - RLP_NUM],
+                s_main.bytes[IS_BRANCH_C16_POS - RLP_NUM],
                 Rotation(rot_into_branch_init),
             );
             let is_branch_c1 = meta.query_advice(
-                s_advices[IS_BRANCH_C1_POS - RLP_NUM],
+                s_main.bytes[IS_BRANCH_C1_POS - RLP_NUM],
                 Rotation(rot_into_branch_init),
             );
             let mut constrain_sel = |branch_sel: Expression<F>, ext_sel: Expression<F>| {
@@ -298,7 +295,7 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
             If key_len = 1 (is_short = 1, is_long = 0)
             [226,16,160,172,105,12...
             there is no byte specifying key length, but in this case the first byte is 226.
-            So, when s_rlp1 = 226, we need to ensure is_key_odd = 1, is_key_even = 0
+            So, when s_main.rlp1 = 226, we need to ensure is_key_odd = 1, is_key_even = 0
             (is_key_even = 0 can be omitted because of the constraints above).
 
             If key_len > 1 (is_short = 0, is_long = 1)
@@ -308,8 +305,8 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
 
             // In C we have nibbles, we check below only for S.
             if is_s {
-                let s_rlp1 = meta.query_advice(s_rlp1, Rotation::cur());
-                let s_advices0 = meta.query_advice(s_advices[0], Rotation::cur());
+                let s_rlp1 = meta.query_advice(s_main.rlp1, Rotation::cur());
+                let s_advices0 = meta.query_advice(s_main.bytes[0], Rotation::cur());
 
                 let is_one_nibble = is_ext_short_c16.clone() + is_ext_short_c1.clone();
                 let is_even_nibbles = is_ext_long_even_c16.clone() + is_ext_long_even_c1.clone();
@@ -348,7 +345,7 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
                 ));
 
                 // [228,130,0,149,160,114,253...
-                let s_rlp2 = meta.query_advice(s_rlp2, Rotation::cur());
+                let s_rlp2 = meta.query_advice(s_main.rlp2, Rotation::cur());
                 constraints.push((
                     "long RLP",
                     q_not_first.clone()
@@ -436,7 +433,7 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
 
             let mut sc_hash = vec![];
             // Note: extension node has branch hash always in c_advices.
-            for column in c_advices.iter() {
+            for column in c_main.bytes.iter() {
                 sc_hash.push(meta.query_advice(*column, Rotation::cur()));
             }
             let hash_rlc = bytes_expr_into_rlc(&sc_hash, acc_r);
@@ -467,14 +464,14 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
             // However, to make space for nibble witnesses, we put nibbles in
             // extension row C s_advices. So we use s_advices from S row.
 
-            let s_rlp1 = meta.query_advice(s_rlp1, Rotation(rot));
+            let s_rlp1 = meta.query_advice(s_main.rlp1, Rotation(rot));
             let mut rlc = s_rlp1;
-            let s_rlp2 = meta.query_advice(s_rlp2, Rotation(rot));
+            let s_rlp2 = meta.query_advice(s_main.rlp2, Rotation(rot));
             rlc = rlc + s_rlp2 * r_table[0].clone();
 
             let s_advices_rlc = compute_rlc(
                 meta,
-                s_advices.to_vec(),
+                s_main.bytes.to_vec(),
                 1,
                 one.clone(),
                 rot,
@@ -493,7 +490,7 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
 
 
             // We use rotation 0 in both cases from now on:
-            let c_rlp2 = meta.query_advice(c_rlp2, Rotation::cur());
+            let c_rlp2 = meta.query_advice(c_main.rlp2, Rotation::cur());
             let c160 = Expression::Constant(F::from(160_u64));
             let c160_inv = Expression::Constant(F::from(160_u64).invert().unwrap());
 
@@ -512,14 +509,14 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
             // non-hashed branch has 0 at c_rlp2 and all the bytes in c_advices
 
             let acc_mult_s = meta.query_advice(acc_mult_s, Rotation::cur());
-            let c_advices0 = meta.query_advice(c_advices[0], Rotation::cur());
+            let c_advices0 = meta.query_advice(c_main.bytes[0], Rotation::cur());
             rlc = acc_s.clone() + c_rlp2 * acc_mult_s.clone();
-            let c_advices_rlc = compute_rlc(meta, c_advices.to_vec(), 0, acc_mult_s.clone(), 0, r_table.clone());
+            let c_advices_rlc = compute_rlc(meta, c_main.bytes.to_vec(), 0, acc_mult_s.clone(), 0, r_table.clone());
             rlc = rlc + c_advices_rlc;
 
             let mut rlc_non_hashed_branch = acc_s + c_advices0 * acc_mult_s.clone();
             let c_advices_rlc_non_hashed = compute_rlc(meta,
-                c_advices.iter().skip(1).map(|v| *v).collect_vec(), 0, acc_mult_s, 0, r_table);
+                c_main.bytes.iter().skip(1).map(|v| *v).collect_vec(), 0, acc_mult_s, 0, r_table);
             rlc_non_hashed_branch = rlc_non_hashed_branch + c_advices_rlc_non_hashed;
 
             let acc_c = meta.query_advice(acc_c, Rotation::cur());
@@ -592,9 +589,9 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
             );
 
             // When placeholder extension, we don't check its hash in a parent.
-            let mut is_branch_placeholder = s_advices[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM];
+            let mut is_branch_placeholder = s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM];
             if !is_s {
-                is_branch_placeholder = s_advices[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM];
+                is_branch_placeholder = s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM];
             }
             let is_branch_placeholder =
                 meta.query_advice(is_branch_placeholder, Rotation(rot_into_branch_init));

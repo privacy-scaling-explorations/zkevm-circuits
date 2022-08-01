@@ -6,7 +6,7 @@ use halo2_proofs::{
 use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
-use crate::{param::{HASH_WIDTH, R_TABLE_LEN}, helpers::{mult_diff_lookup, key_len_lookup}};
+use crate::{param::{HASH_WIDTH, R_TABLE_LEN}, helpers::{mult_diff_lookup, key_len_lookup}, mpt::MainCols};
 
 #[derive(Clone, Debug)]
 pub(crate) struct BranchRLCConfig {}
@@ -22,8 +22,7 @@ impl<F: FieldExt> BranchRLCChip<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         q_enable: impl Fn(&mut VirtualCells<'_, F>) -> Expression<F>,
-        rlp2: Column<Advice>,
-        advices: [Column<Advice>; HASH_WIDTH],
+        main: MainCols,
         branch_acc: Column<Advice>,
         branch_mult: Column<Advice>,
         is_node_hashed: Column<Advice>,
@@ -38,7 +37,7 @@ impl<F: FieldExt> BranchRLCChip<F> {
             let q_enable = q_enable(meta);
 
             let mut constraints = vec![];
-            let rlp2 = meta.query_advice(rlp2, Rotation::cur());
+            let rlp2 = meta.query_advice(main.rlp2, Rotation::cur());
             let branch_acc_prev = meta.query_advice(branch_acc, Rotation::prev());
             let branch_acc_cur = meta.query_advice(branch_acc, Rotation::cur());
             let branch_mult_prev = meta.query_advice(branch_mult, Rotation::prev());
@@ -70,7 +69,7 @@ impl<F: FieldExt> BranchRLCChip<F> {
 
             // non-empty
             let mut expr = c160 * branch_mult_prev.clone();
-            for (ind, col) in advices.iter().enumerate() {
+            for (ind, col) in main.bytes.iter().enumerate() {
                 let s = meta.query_advice(*col, Rotation::cur());
                 expr = expr + s * branch_mult_prev.clone() * r_table[ind].clone();
             }
@@ -90,10 +89,10 @@ impl<F: FieldExt> BranchRLCChip<F> {
                         - branch_mult_prev.clone() * r_table[R_TABLE_LEN - 1].clone() * r_table[0].clone()),
             ));
 
-            let advices0 = meta.query_advice(advices[0], Rotation::cur());
+            let advices0 = meta.query_advice(main.bytes[0], Rotation::cur());
             let mut acc = branch_acc_prev.clone() + advices0 * branch_mult_prev.clone(); 
             for ind in 1..HASH_WIDTH {
-                let a = meta.query_advice(advices[ind], Rotation::cur());
+                let a = meta.query_advice(main.bytes[ind], Rotation::cur());
                 acc = acc + a * branch_mult_prev.clone() * r_table[ind-1].clone();
             }
             constraints.push((
@@ -121,7 +120,7 @@ impl<F: FieldExt> BranchRLCChip<F> {
         };
 
         // Note: key_len uses 192, not 128
-        mult_diff_lookup(meta, sel, 0, rlp2, node_mult_diff, 192, fixed_table);
+        mult_diff_lookup(meta, sel, 0, main.rlp2, node_mult_diff, 192, fixed_table);
         
         /*
         // There are 0s after key length.
@@ -131,7 +130,7 @@ impl<F: FieldExt> BranchRLCChip<F> {
                 sel,
                 ind + 1,
                 rlp2,
-                advices[ind],
+                main.bytes[ind],
                 192,
                 fixed_table,
             )

@@ -9,9 +9,9 @@ use std::marker::PhantomData;
 use crate::{
     helpers::{get_is_extension_node, bytes_expr_into_rlc},
     param::{
-        HASH_WIDTH, IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS, KECCAK_INPUT_WIDTH,
+        IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS, KECCAK_INPUT_WIDTH,
         KECCAK_OUTPUT_WIDTH, RLP_NUM, ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND, ACCOUNT_LEAF_ROWS, ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND, LEAF_VALUE_S_IND, LEAF_VALUE_C_IND, BRANCH_ROWS_NUM,
-    },
+    }, mpt::MainCols,
 };
 
 #[derive(Clone, Debug)]
@@ -31,7 +31,7 @@ impl<F: FieldExt> StorageRootChip<F> {
         is_leaf_c_value: Column<Advice>,
         is_account_leaf_in_added_branch: Column<Advice>,
         is_last_branch_child: Column<Advice>,
-        s_advices: [Column<Advice>; HASH_WIDTH],
+        s_main: MainCols,
         acc_s: Column<Advice>,
         acc_mult_s: Column<Advice>,
         acc_c: Column<Advice>,
@@ -55,12 +55,12 @@ impl<F: FieldExt> StorageRootChip<F> {
                 let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
                 let rot_into_branch_init = -16;
                 let mut is_branch_placeholder = meta.query_advice(
-                    s_advices[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM],
+                    s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM],
                     Rotation(rot_into_branch_init),
                 );
                 if !is_s {
                     is_branch_placeholder = meta.query_advice(
-                        s_advices[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
+                        s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
                         Rotation(rot_into_branch_init),
                     );
                 }
@@ -72,7 +72,7 @@ impl<F: FieldExt> StorageRootChip<F> {
                 );
 
                 let is_extension_node =
-                    get_is_extension_node(meta, s_advices, rot_into_branch_init);
+                    get_is_extension_node(meta, s_main.bytes, rot_into_branch_init);
 
                 // We need to do the lookup only if we are in the last branch child.
                 let is_last_branch_child = meta.query_advice(is_last_branch_child, Rotation::cur());
@@ -91,8 +91,8 @@ impl<F: FieldExt> StorageRootChip<F> {
                 let branch_acc = acc + c128 * mult;
 
                 let mut sc_hash = vec![];
-                // Note: storage root is always in s_advices!
-                for column in s_advices.iter() {
+                // Note: storage root is always in s_main.bytes!
+                for column in s_main.bytes.iter() {
                     if is_s {
                         sc_hash
                             .push(meta.query_advice(*column,
@@ -138,14 +138,14 @@ impl<F: FieldExt> StorageRootChip<F> {
                 let mut rot_into_branch_init = -17;
                 let mut rot_into_last_branch_child = -1;
                 let mut is_branch_placeholder = meta.query_advice(
-                    s_advices[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM],
+                    s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM],
                     Rotation(rot_into_branch_init),
                 );
                 if !is_s {
                     rot_into_branch_init = -18;
                     rot_into_last_branch_child = -2;
                     is_branch_placeholder = meta.query_advice(
-                        s_advices[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
+                        s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
                         Rotation(rot_into_branch_init),
                     );
                 }
@@ -157,7 +157,7 @@ impl<F: FieldExt> StorageRootChip<F> {
                 );
 
                 let is_extension_node =
-                    get_is_extension_node(meta, s_advices, rot_into_branch_init);
+                    get_is_extension_node(meta, s_main.bytes, rot_into_branch_init);
 
                 // We need to do the lookup only if we are in the last branch child.
                 let is_after_last_branch_child =
@@ -167,8 +167,8 @@ impl<F: FieldExt> StorageRootChip<F> {
                 let acc = meta.query_advice(acc_c, Rotation::cur());
 
                 let mut sc_hash = vec![];
-                // Note: storage root is always in s_advices!
-                for column in s_advices.iter() {
+                // Note: storage root is always in s_main.bytes!
+                for column in s_main.bytes.iter() {
                     if is_s {
                         sc_hash
                             .push(meta.query_advice(*column, 
@@ -233,8 +233,8 @@ impl<F: FieldExt> StorageRootChip<F> {
                 let acc = meta.query_advice(acc_s, Rotation::cur());
 
                 let mut sc_hash = vec![];
-                // Note: storage root is always in s_advices!
-                for column in s_advices.iter() {
+                // Note: storage root is always in s_main.bytes!
+                for column in s_main.bytes.iter() {
                     sc_hash.push(
                         meta.query_advice(*column, Rotation(rot_into_storage_root)),
                     );
@@ -287,7 +287,7 @@ impl<F: FieldExt> StorageRootChip<F> {
                 86, 232, 31, 23, 27, 204, 85, 166, 255, 131, 69, 230, 146, 192, 248, 110, 91, 72,
                 224, 27, 153, 108, 173, 192, 1, 98, 47, 181, 227, 99, 180, 33,
             ];
-            for (ind, col) in s_advices.iter().enumerate() {
+            for (ind, col) in s_main.bytes.iter().enumerate() {
                 let s = meta.query_advice(*col, Rotation(rot_into_storage_root));
                 constraints.push((
                     "If placeholder leaf without branch (sel = 1), then storage trie is empty",
@@ -313,7 +313,7 @@ impl<F: FieldExt> StorageRootChip<F> {
             let mut is_leaf = meta.query_advice(is_leaf_s_value, Rotation::cur());
             let mut rot_into_branch_init = -LEAF_VALUE_S_IND - BRANCH_ROWS_NUM;
             let mut is_branch_placeholder = meta.query_advice(
-                s_advices[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM],
+                s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM],
                 Rotation(rot_into_branch_init),
             );
             if !is_s {
@@ -323,7 +323,7 @@ impl<F: FieldExt> StorageRootChip<F> {
                 is_leaf = meta.query_advice(is_leaf_c_value, Rotation::cur());
                 rot_into_branch_init = -LEAF_VALUE_C_IND - BRANCH_ROWS_NUM;
                 is_branch_placeholder = meta.query_advice(
-                    s_advices[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
+                    s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
                     Rotation(rot_into_branch_init),
                 );
             }
@@ -337,8 +337,8 @@ impl<F: FieldExt> StorageRootChip<F> {
             let acc = meta.query_advice(acc_s, Rotation::cur());
 
             let mut sc_hash = vec![];
-            // Note: storage root is always in s_advices!
-            for column in s_advices.iter() {
+            // Note: storage root is always in s_main.bytes!
+            for column in s_main.bytes.iter() {
                 sc_hash.push(meta.query_advice(*column, Rotation(rot_into_storage_root)));
             }
             let hash_rlc = bytes_expr_into_rlc(&sc_hash, acc_r);

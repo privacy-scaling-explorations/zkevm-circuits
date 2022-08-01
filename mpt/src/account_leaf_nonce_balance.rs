@@ -9,7 +9,7 @@ use std::marker::PhantomData;
 
 use crate::{
     helpers::{compute_rlc, get_bool_constraint, key_len_lookup, mult_diff_lookup, range_lookups},
-    mpt::FixedTableTag,
+    mpt::{FixedTableTag, MainCols},
     param::{
         ACCOUNT_LEAF_KEY_C_IND, ACCOUNT_LEAF_KEY_S_IND, ACCOUNT_LEAF_NONCE_BALANCE_C_IND,
         ACCOUNT_LEAF_NONCE_BALANCE_S_IND, HASH_WIDTH, ACCOUNT_NON_EXISTING_IND,
@@ -29,12 +29,8 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         q_enable: impl Fn(&mut VirtualCells<'_, F>) -> Expression<F> + Copy,
-        s_rlp1: Column<Advice>,
-        s_rlp2: Column<Advice>,
-        c_rlp1: Column<Advice>,
-        c_rlp2: Column<Advice>,
-        s_advices: [Column<Advice>; HASH_WIDTH],
-        c_advices: [Column<Advice>; HASH_WIDTH],
+        s_main: MainCols,
+        c_main: MainCols,
         acc_s: Column<Advice>,
         acc_mult_s: Column<Advice>,
         acc_mult_c: Column<Advice>,
@@ -73,8 +69,8 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
             // part is of length 1 (183 + 1 = 184) and there are 80 bytes in this string.
             // Then there is a list rlp meta data 248 78 where (this is stored in c_rlp1 and
             // c_rlp2) 78 = 3 (nonce) + 9 (balance) + 33 (storage) + 33
-            // (codehash). We have nonce in s_advices and balance in c_advices.
-            // s_rlp1  s_rlp2  c_rlp1  c_rlp2  s_advices  c_advices
+            // (codehash). We have nonce in s_main.bytes and balance in c_main.bytes.
+            // s_rlp1  s_rlp2  c_rlp1  c_rlp2  s_main.bytes  c_main.bytes
             // 184     80      248     78      nonce      balance
 
             let mut rot = -(ACCOUNT_LEAF_NONCE_BALANCE_S_IND - ACCOUNT_LEAF_KEY_S_IND);
@@ -111,21 +107,21 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
             ));
 
             for ind in 1..HASH_WIDTH {
-                let s = meta.query_advice(s_advices[ind], Rotation::cur());
-                let c = meta.query_advice(c_advices[ind], Rotation::cur());
+                let s = meta.query_advice(s_main.bytes[ind], Rotation::cur());
+                let c = meta.query_advice(c_main.bytes[ind], Rotation::cur());
                 constraints.push((
-                    "s_advices[i] = 0 for i > 0 when is_nonce_short",
+                    "s_main.bytes[i] = 0 for i > 0 when is_nonce_short",
                     q_enable.clone() * (one.clone() - is_nonce_long.clone()) * s.clone(),
                 ));
                 constraints.push((
-                    "c_advices[i] = 0 for i > 0 when is_balance_short",
+                    "c_main.bytes[i] = 0 for i > 0 when is_balance_short",
                     q_enable.clone() * (one.clone() - is_balance_long.clone()) * c.clone(),
                 ));
             }
 
-            let key_len = meta.query_advice(s_advices[0], Rotation(rot)) - c128.clone();
-            let s_advices0_cur = meta.query_advice(s_advices[0], Rotation::cur());
-            let s_advices1_cur = meta.query_advice(s_advices[1], Rotation::cur());
+            let key_len = meta.query_advice(s_main.bytes[0], Rotation(rot)) - c128.clone();
+            let s_advices0_cur = meta.query_advice(s_main.bytes[0], Rotation::cur());
+            let s_advices1_cur = meta.query_advice(s_main.bytes[1], Rotation::cur());
 
             // When non_existing_account_proof and wrong leaf, these constraints need to be checked (the wrong
             // leaf is being checked). When non_existing_account_proof and not wrong leaf (there are only branches
@@ -133,7 +129,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
             // that there is nil in the parent branch at the proper position (see account_non_existing), note
             // that we need (placeholder) account leaf for lookups and to know when to check that parent branch
             // has a nil.
-            let is_wrong_leaf = meta.query_advice(s_rlp1, Rotation(rot_into_non_existing));
+            let is_wrong_leaf = meta.query_advice(s_main.rlp1, Rotation(rot_into_non_existing));
             let is_non_existing_account_proof = meta.query_advice(is_non_existing_account_proof, Rotation::cur());
 
             constraints.push((
@@ -145,17 +141,17 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
             // Note: (is_non_existing_account_proof.clone() - is_wrong_leaf.clone() - one.clone())
             // cannot be 0 when is_non_existing_account_proof = 0.
 
-            let s_rlp1 = meta.query_advice(s_rlp1, Rotation::cur());
-            let rlp_len = meta.query_advice(s_rlp2, Rotation(rot));
-            let s_rlp2 = meta.query_advice(s_rlp2, Rotation::cur());
+            let s_rlp1 = meta.query_advice(s_main.rlp1, Rotation::cur());
+            let rlp_len = meta.query_advice(s_main.rlp2, Rotation(rot));
+            let s_rlp2 = meta.query_advice(s_main.rlp2, Rotation::cur());
 
             let mut expr = acc_prev + s_rlp1.clone() * acc_mult_prev.clone();
             let mut rind = 0;
             expr = expr + s_rlp2.clone() * acc_mult_prev.clone() * r_table[rind].clone();
             rind += 1;
 
-            let c_rlp1 = meta.query_advice(c_rlp1, Rotation::cur());
-            let c_rlp2 = meta.query_advice(c_rlp2, Rotation::cur());
+            let c_rlp1 = meta.query_advice(c_main.rlp1, Rotation::cur());
+            let c_rlp2 = meta.query_advice(c_main.rlp2, Rotation::cur());
             constraints.push((
                 "leaf nonce balance c_rlp1",
                 q_enable.clone()
@@ -170,7 +166,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
             let nonce_value_long_rlc = s_advices1_cur.clone()
                 + compute_rlc(
                     meta,
-                    s_advices.iter().skip(2).map(|v| *v).collect_vec(),
+                    s_main.bytes.iter().skip(2).map(|v| *v).collect_vec(),
                     0,
                     one.clone(),
                     0,
@@ -192,13 +188,13 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
 
             expr = expr + nonce_rlc * r_table[rind].clone() * acc_mult_prev.clone();
 
-            let c_advices0_cur = meta.query_advice(c_advices[0], Rotation::cur());
-            let c_advices1_cur = meta.query_advice(c_advices[1], Rotation::cur());
+            let c_advices0_cur = meta.query_advice(c_main.bytes[0], Rotation::cur());
+            let c_advices1_cur = meta.query_advice(c_main.bytes[1], Rotation::cur());
             let balance_stored = meta.query_advice(c_mod_node_hash_rlc, Rotation::cur());
             let balance_value_long_rlc = c_advices1_cur.clone()
                 + compute_rlc(
                     meta,
-                    c_advices.iter().skip(2).map(|v| *v).collect_vec(),
+                    c_main.bytes.iter().skip(2).map(|v| *v).collect_vec(),
                     0,
                     one.clone(),
                     0,
@@ -304,11 +300,11 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
                 + (one.clone() - is_balance_long.clone());
 
             /*
-            s_rlp1  s_rlp2  c_rlp1  c_rlp2  s_advices  c_advices
+            s_rlp1  s_rlp2  c_rlp1  c_rlp2  s_main.bytes  c_main.bytes
             184     80      248     78      nonce      balance
 
             Or:
-            s_rlp1  s_rlp2  c_rlp1  c_rlp2  s_advices                         c_advices
+            s_rlp1  s_rlp2  c_rlp1  c_rlp2  s_main.bytes                         c_main.bytes
             248     109     157     (this is key row, 157 means key of length 29)
             184     77      248     75      7 (short nonce , only one byte)   135 (means balance is of length 7) 28 ... 59
             */
@@ -366,21 +362,21 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
                                   * need to be checked as it's not used) */
             5, /* 4 for s_rlp1, s_rlp2, c_rlp1, c_rlp1; 1 for byte with length
                 * info */
-            s_advices[0],
+            s_main.bytes[0],
             mult_diff_nonce,
             128,
             fixed_table,
         );
 
-        // There are zeros in s_advices after nonce length:
+        // There are zeros in s_main.bytes after nonce length:
         /*
         for ind in 1..HASH_WIDTH {
             key_len_lookup(
                 meta,
                 q_enable,
                 ind,
-                s_advices[0],
-                s_advices[ind],
+                s_main.bytes[0],
+                s_main.bytes[ind],
                 128,
                 fixed_table,
             )
@@ -409,21 +405,21 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
                                     * doesn't need to be
                                     * checked as it's not used) */
             1, // 1 for byte with length info
-            c_advices[0],
+            c_main.bytes[0],
             mult_diff_balance,
             128,
             fixed_table,
         );
 
-        // There are zeros in c_advices after balance length:
+        // There are zeros in c_main.bytes after balance length:
         /*
         for ind in 1..HASH_WIDTH {
             key_len_lookup(
                 meta,
                 q_enable,
                 ind,
-                c_advices[0],
-                c_advices[ind],
+                c_main.bytes[0],
+                c_main.bytes[ind],
                 128,
                 fixed_table,
             )
@@ -433,14 +429,14 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
         range_lookups(
             meta,
             q_enable,
-            s_advices.to_vec(),
+            s_main.bytes.to_vec(),
             FixedTableTag::Range256,
             fixed_table,
         );
         range_lookups(
             meta,
             q_enable,
-            c_advices.to_vec(),
+            c_main.bytes.to_vec(),
             FixedTableTag::Range256,
             fixed_table,
         );
@@ -448,7 +444,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
         range_lookups(
             meta,
             q_enable,
-            [s_rlp1, s_rlp2, c_rlp2].to_vec(),
+            [s_main.rlp1, s_main.rlp2, c_main.rlp2].to_vec(),
             FixedTableTag::Range256,
             fixed_table,
         );

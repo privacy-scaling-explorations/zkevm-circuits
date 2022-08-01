@@ -8,10 +8,10 @@ use std::marker::PhantomData;
 
 use crate::{
     helpers::{compute_rlc, get_bool_constraint, key_len_lookup, mult_diff_lookup, range_lookups},
-    mpt::FixedTableTag,
+    mpt::{FixedTableTag, MainCols},
     param::{
-        BRANCH_ROWS_NUM, HASH_WIDTH, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, RLP_NUM,
-        R_TABLE_LEN,
+        BRANCH_ROWS_NUM, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, RLP_NUM,
+        R_TABLE_LEN, HASH_WIDTH,
     },
 };
 
@@ -31,11 +31,8 @@ impl<F: FieldExt> LeafKeyChip<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         q_enable: impl Fn(&mut VirtualCells<'_, F>) -> Expression<F> + Copy,
-        s_rlp1: Column<Advice>,
-        s_rlp2: Column<Advice>,
-        c_rlp1: Column<Advice>,
-        c_rlp2: Column<Advice>,
-        s_advices: [Column<Advice>; HASH_WIDTH],
+        s_main: MainCols,
+        c_main: MainCols,
         s_mod_node_hash_rlc: Column<Advice>,
         c_mod_node_hash_rlc: Column<Advice>,
         acc: Column<Advice>,
@@ -74,8 +71,8 @@ impl<F: FieldExt> LeafKeyChip<F> {
             let mut constraints = vec![];
 
             let c248 = Expression::Constant(F::from(248));
-            let s_rlp1 = meta.query_advice(s_rlp1, Rotation::cur());
-            let s_rlp2 = meta.query_advice(s_rlp2, Rotation::cur());
+            let s_rlp1 = meta.query_advice(s_main.rlp1, Rotation::cur());
+            let s_rlp2 = meta.query_advice(s_main.rlp2, Rotation::cur());
             let flag1 = meta.query_advice(s_mod_node_hash_rlc, Rotation::cur());
             let flag2 = meta.query_advice(c_mod_node_hash_rlc, Rotation::cur());
 
@@ -104,15 +101,15 @@ impl<F: FieldExt> LeafKeyChip<F> {
                 q_enable.clone() * (one.clone() - flag1.clone()) * (one.clone() - flag2.clone()),
             ));
 
-            // If leaf in last level, it contains only s_rlp1 and s_rlp2, while s_advices are 0.
+            // If leaf in last level, it contains only s_rlp1 and s_rlp2, while s_main.bytes are 0.
             let rlc_last_level = s_rlp1 + s_rlp2 * r_table[0].clone();
 
             let mut rlc = rlc_last_level.clone()
-                + compute_rlc(meta, s_advices.to_vec(), 1, one.clone(), 0, r_table.clone());
+                + compute_rlc(meta, s_main.bytes.to_vec(), 1, one.clone(), 0, r_table.clone());
 
-            let c_rlp1 = meta.query_advice(c_rlp1, Rotation::cur());
+            let c_rlp1 = meta.query_advice(c_main.rlp1, Rotation::cur());
             // c_rlp2 can appear if long and if no branch above leaf
-            let c_rlp2 = meta.query_advice(c_rlp2, Rotation::cur());
+            let c_rlp2 = meta.query_advice(c_main.rlp2, Rotation::cur());
             rlc = rlc + c_rlp1 * r_table[R_TABLE_LEN - 1].clone() * r_table[1].clone();
             rlc = rlc + c_rlp2 * r_table[R_TABLE_LEN - 1].clone() * r_table[2].clone();
 
@@ -149,39 +146,39 @@ impl<F: FieldExt> LeafKeyChip<F> {
 
         /*
         There are 0s after key length (this doesn't need to be checked for last_level as
-        in this case s_advices are not used).
+        in this case s_main.bytes are not used).
         for ind in 0..HASH_WIDTH {
             key_len_lookup(
                 meta,
                 sel_short,
                 ind + 1,
-                s_rlp2,
-                s_advices[ind],
+                s_main.rlp2,
+                s_main.bytes[ind],
                 128,
                 fixed_table,
             )
         }
-        key_len_lookup(meta, sel_short, 32, s_rlp2, c_rlp1, 128, fixed_table);
+        key_len_lookup(meta, sel_short, 32, s_main.rlp2, c_main.rlp1, 128, fixed_table);
 
         for ind in 1..HASH_WIDTH {
             key_len_lookup(
                 meta,
                 sel_long,
                 ind,
-                s_advices[0],
-                s_advices[ind],
+                s_main.bytes[0],
+                s_main.bytes[ind],
                 128,
                 fixed_table,
             )
         }
-        key_len_lookup(meta, sel_long, 32, s_advices[0], c_rlp1, 128, fixed_table);
-        key_len_lookup(meta, sel_long, 33, s_advices[0], c_rlp2, 128, fixed_table);
+        key_len_lookup(meta, sel_long, 32, s_main.bytes[0], c_main.rlp1, 128, fixed_table);
+        key_len_lookup(meta, sel_long, 33, s_main.bytes[0], c_main.rlp2, 128, fixed_table);
         */
 
         // acc_mult corresponds to key length (short):
-        mult_diff_lookup(meta, sel_short, 2, s_rlp2, acc_mult, 128, fixed_table);
+        mult_diff_lookup(meta, sel_short, 2, s_main.rlp2, acc_mult, 128, fixed_table);
         // acc_mult corresponds to key length (long):
-        mult_diff_lookup(meta, sel_long, 3, s_advices[0], acc_mult, 128, fixed_table);
+        mult_diff_lookup(meta, sel_long, 3, s_main.bytes[0], acc_mult, 128, fixed_table);
 
         // Checking the key - accumulated RLC is taken (computed using the path through
         // branches) and key bytes are added to the RLC. The external circuit
@@ -214,11 +211,11 @@ impl<F: FieldExt> LeafKeyChip<F> {
 
                 // sel1 and sel2 are in init branch
                 let sel1 = meta.query_advice(
-                    s_advices[IS_BRANCH_C16_POS - RLP_NUM],
+                    s_main.bytes[IS_BRANCH_C16_POS - RLP_NUM],
                     Rotation(rot - 1),
                 );
                 let sel2 = meta.query_advice(
-                    s_advices[IS_BRANCH_C1_POS - RLP_NUM],
+                    s_main.bytes[IS_BRANCH_C1_POS - RLP_NUM],
                     Rotation(rot - 1),
                 );
 
@@ -230,16 +227,16 @@ impl<F: FieldExt> LeafKeyChip<F> {
                 // incorporated in key_rlc. That means we need to ignore the first nibble here
                 // (in leaf key).
 
-                // For short RLP (key starts at s_advices[0]):
+                // For short RLP (key starts at s_main.bytes[0]):
 
-                // If sel1 = 1, we have one nibble+48 in s_advices[0].
-                let s_advice0 = meta.query_advice(s_advices[0], Rotation::cur());
+                // If sel1 = 1, we have one nibble+48 in s_main.bytes[0].
+                let s_advice0 = meta.query_advice(s_main.bytes[0], Rotation::cur());
                 let mut key_rlc_acc_short = key_rlc_acc_start.clone()
                     + (s_advice0.clone() - c48.clone()) * key_mult_start.clone() * sel1.clone();
                 let mut key_mult = key_mult_start.clone() * r_table[0].clone() * sel1.clone();
                 key_mult = key_mult + key_mult_start.clone() * sel2.clone(); // set to key_mult_start if sel2, stays key_mult if sel1
 
-                // If sel2 = 1 and !is_branch_placeholder, we have 32 in s_advices[0].
+                // If sel2 = 1 and !is_branch_placeholder, we have 32 in s_main.bytes[0].
                 constraints.push((
                     "Leaf key acc s_advice0",
                     q_enable.clone()
@@ -250,17 +247,17 @@ impl<F: FieldExt> LeafKeyChip<F> {
                         * is_short.clone(),
                 ));
 
-                let s_advices1 = meta.query_advice(s_advices[1], Rotation::cur());
+                let s_advices1 = meta.query_advice(s_main.bytes[1], Rotation::cur());
                 key_rlc_acc_short = key_rlc_acc_short + s_advices1.clone() * key_mult.clone();
 
                 for ind in 2..HASH_WIDTH {
-                    let s = meta.query_advice(s_advices[ind], Rotation::cur());
+                    let s = meta.query_advice(s_main.bytes[ind], Rotation::cur());
                     key_rlc_acc_short =
                         key_rlc_acc_short + s * key_mult.clone() * r_table[ind - 2].clone();
                 }
 
                 // c_rlp1 can appear if no branch above the leaf
-                let c_rlp1 = meta.query_advice(c_rlp1, Rotation::cur());
+                let c_rlp1 = meta.query_advice(c_main.rlp1, Rotation::cur());
                 key_rlc_acc_short =
                     key_rlc_acc_short + c_rlp1.clone() * key_mult.clone() * r_table[30].clone();
 
@@ -277,16 +274,16 @@ impl<F: FieldExt> LeafKeyChip<F> {
                         * is_short.clone(),
                 ));
 
-                // For long RLP (key starts at s_advices[1]):
+                // For long RLP (key starts at s_main.bytes[1]):
 
-                // If sel1 = 1, we have nibble+48 in s_advices[1].
-                let s_advice1 = meta.query_advice(s_advices[1], Rotation::cur());
+                // If sel1 = 1, we have nibble+48 in s_main.bytes[1].
+                let s_advice1 = meta.query_advice(s_main.bytes[1], Rotation::cur());
                 let mut key_rlc_acc_long = key_rlc_acc_start.clone()
                     + (s_advice1.clone() - c48.clone()) * key_mult_start.clone() * sel1.clone();
                 let mut key_mult = key_mult_start.clone() * r_table[0].clone() * sel1.clone();
                 key_mult = key_mult + key_mult_start.clone() * sel2.clone(); // set to key_mult_start if sel2, stays key_mult if sel1
 
-                // If sel2 = 1 and !is_branch_placeholder, we have 32 in s_advices[1].
+                // If sel2 = 1 and !is_branch_placeholder, we have 32 in s_main.bytes[1].
                 constraints.push((
                     "Leaf key acc s_advice1",
                     q_enable.clone()
@@ -297,11 +294,11 @@ impl<F: FieldExt> LeafKeyChip<F> {
                         * is_long.clone(),
                 ));
 
-                let s_advices2 = meta.query_advice(s_advices[2], Rotation::cur());
+                let s_advices2 = meta.query_advice(s_main.bytes[2], Rotation::cur());
                 key_rlc_acc_long = key_rlc_acc_long + s_advices2 * key_mult.clone();
 
                 for ind in 3..HASH_WIDTH {
-                    let s = meta.query_advice(s_advices[ind], Rotation::cur());
+                    let s = meta.query_advice(s_main.bytes[ind], Rotation::cur());
                     key_rlc_acc_long =
                         key_rlc_acc_long + s * key_mult.clone() * r_table[ind - 3].clone();
                 }
@@ -309,7 +306,7 @@ impl<F: FieldExt> LeafKeyChip<F> {
                 key_rlc_acc_long =
                     key_rlc_acc_long + c_rlp1.clone() * key_mult.clone() * r_table[29].clone();
                 // c_rlp2 can appear if no branch above the leaf
-                let c_rlp2 = meta.query_advice(c_rlp2, Rotation::cur());
+                let c_rlp2 = meta.query_advice(c_main.rlp2, Rotation::cur());
                 key_rlc_acc_long =
                     key_rlc_acc_long + c_rlp2 * key_mult.clone() * r_table[30].clone();
 
@@ -352,10 +349,10 @@ impl<F: FieldExt> LeafKeyChip<F> {
 
             // Note: when leaf is in the first level, the key stored in the leaf is always of length 33 -
             // the first byte being 32 (when after branch, the information whether there the key is odd or even
-            // is in s_advices[IS_BRANCH_C16_POS - LAYOUT_OFFSET] (see sel1/sel2).
+            // is in s_main.bytes[IS_BRANCH_C16_POS - LAYOUT_OFFSET] (see sel1/sel2).
 
-            // For short RLP (key starts at s_advices[0]):
-            let s_advice0 = meta.query_advice(s_advices[0], Rotation::cur());
+            // For short RLP (key starts at s_main.bytes[0]):
+            let s_advice0 = meta.query_advice(s_main.bytes[0], Rotation::cur());
             let mut key_rlc_acc_short = Expression::Constant(F::zero());
             let key_mult = one.clone();
 
@@ -367,17 +364,17 @@ impl<F: FieldExt> LeafKeyChip<F> {
                     * is_short.clone(),
             ));
 
-            let s_advices1 = meta.query_advice(s_advices[1], Rotation::cur());
+            let s_advices1 = meta.query_advice(s_main.bytes[1], Rotation::cur());
             key_rlc_acc_short = key_rlc_acc_short + s_advices1.clone() * key_mult.clone();
 
             for ind in 2..HASH_WIDTH {
-                let s = meta.query_advice(s_advices[ind], Rotation::cur());
+                let s = meta.query_advice(s_main.bytes[ind], Rotation::cur());
                 key_rlc_acc_short =
                     key_rlc_acc_short + s * key_mult.clone() * r_table[ind - 2].clone();
             }
 
             // c_rlp1 can appear if no branch above the leaf
-            let c_rlp1 = meta.query_advice(c_rlp1, Rotation::cur());
+            let c_rlp1 = meta.query_advice(c_main.rlp1, Rotation::cur());
             key_rlc_acc_short =
                 key_rlc_acc_short + c_rlp1.clone() * key_mult.clone() * r_table[30].clone();
 
@@ -393,8 +390,8 @@ impl<F: FieldExt> LeafKeyChip<F> {
                     * is_short.clone(),
             ));
 
-            // For long RLP (key starts at s_advices[1]):
-            let s_advice1 = meta.query_advice(s_advices[1], Rotation::cur());
+            // For long RLP (key starts at s_main.bytes[1]):
+            let s_advice1 = meta.query_advice(s_main.bytes[1], Rotation::cur());
             let mut key_rlc_acc_long = Expression::Constant(F::zero());
 
             constraints.push((
@@ -405,11 +402,11 @@ impl<F: FieldExt> LeafKeyChip<F> {
                     * is_long.clone(),
             ));
 
-            let s_advices2 = meta.query_advice(s_advices[2], Rotation::cur());
+            let s_advices2 = meta.query_advice(s_main.bytes[2], Rotation::cur());
             key_rlc_acc_long = key_rlc_acc_long + s_advices2 * key_mult.clone();
 
             for ind in 3..HASH_WIDTH {
-                let s = meta.query_advice(s_advices[ind], Rotation::cur());
+                let s = meta.query_advice(s_main.bytes[ind], Rotation::cur());
                 key_rlc_acc_long =
                     key_rlc_acc_long + s * key_mult.clone() * r_table[ind - 3].clone();
             }
@@ -417,7 +414,7 @@ impl<F: FieldExt> LeafKeyChip<F> {
             key_rlc_acc_long =
                 key_rlc_acc_long + c_rlp1.clone() * key_mult.clone() * r_table[29].clone();
             // c_rlp2 can appear if no branch above the leaf
-            let c_rlp2 = meta.query_advice(c_rlp2, Rotation::cur());
+            let c_rlp2 = meta.query_advice(c_main.rlp2, Rotation::cur());
             key_rlc_acc_long = key_rlc_acc_long + c_rlp2 * key_mult.clone() * r_table[30].clone();
 
             constraints.push((
@@ -540,26 +537,26 @@ impl<F: FieldExt> LeafKeyChip<F> {
             // there are all 32 bytes in a key.
             let sel1 = (one.clone() - is_first_storage_level.clone())
                 * meta.query_advice(
-                    s_advices[IS_BRANCH_C16_POS - RLP_NUM],
+                    s_main.bytes[IS_BRANCH_C16_POS - RLP_NUM],
                     Rotation(rot_level_above - 1),
                 );
             let sel2 = (one.clone() - is_first_storage_level.clone())
                 * meta.query_advice(
-                    s_advices[IS_BRANCH_C1_POS - RLP_NUM],
+                    s_main.bytes[IS_BRANCH_C1_POS - RLP_NUM],
                     Rotation(rot_level_above - 1),
                 )
                 + is_first_storage_level.clone();
 
-            // For short RLP (key starts at s_advices[0]):
+            // For short RLP (key starts at s_main.bytes[0]):
 
-            // If sel1 = 1, we have one nibble+48 in s_advices[0].
-            let s_advice0 = meta.query_advice(s_advices[0], Rotation::cur());
+            // If sel1 = 1, we have one nibble+48 in s_main.bytes[0].
+            let s_advice0 = meta.query_advice(s_main.bytes[0], Rotation::cur());
             let mut key_rlc_acc_short = key_rlc_acc_start.clone()
                 + (s_advice0.clone() - c48.clone()) * key_mult_start.clone() * sel1.clone();
             let key_mult = key_mult_start.clone() * r_table[0].clone() * sel1.clone()
                 + key_mult_start.clone() * sel2.clone(); // set to key_mult_start if sel2, stays key_mult if sel1
 
-            // If sel2 = 1, we have 32 in s_advices[0].
+            // If sel2 = 1, we have 32 in s_main.bytes[0].
             constraints.push((
                 "Leaf key acc s_advice0",
                 q_enable.clone()
@@ -570,16 +567,16 @@ impl<F: FieldExt> LeafKeyChip<F> {
                     * is_short.clone(),
             ));
 
-            let s_advices1 = meta.query_advice(s_advices[1], Rotation::cur());
+            let s_advices1 = meta.query_advice(s_main.bytes[1], Rotation::cur());
             key_rlc_acc_short = key_rlc_acc_short + s_advices1.clone() * key_mult.clone();
 
             for ind in 2..HASH_WIDTH {
-                let s = meta.query_advice(s_advices[ind], Rotation::cur());
+                let s = meta.query_advice(s_main.bytes[ind], Rotation::cur());
                 key_rlc_acc_short =
                     key_rlc_acc_short + s * key_mult.clone() * r_table[ind - 2].clone();
             }
 
-            let c_rlp1 = meta.query_advice(c_rlp1, Rotation::cur());
+            let c_rlp1 = meta.query_advice(c_main.rlp1, Rotation::cur());
             key_rlc_acc_short =
                 key_rlc_acc_short + c_rlp1.clone() * key_mult.clone() * r_table[30].clone();
 
@@ -596,14 +593,14 @@ impl<F: FieldExt> LeafKeyChip<F> {
                     * is_short.clone(),
             ));
 
-            // For long RLP (key starts at s_advices[1]):
+            // For long RLP (key starts at s_main.bytes[1]):
 
-            // If sel1 = 1, we have nibble+48 in s_advices[1].
-            let s_advice1 = meta.query_advice(s_advices[1], Rotation::cur());
+            // If sel1 = 1, we have nibble+48 in s_main.bytes[1].
+            let s_advice1 = meta.query_advice(s_main.bytes[1], Rotation::cur());
             let mut key_rlc_acc_long = key_rlc_acc_start.clone()
                 + (s_advice1.clone() - c48.clone()) * key_mult_start.clone() * sel1.clone();
 
-            // If sel2 = 1, we have 32 in s_advices[1].
+            // If sel2 = 1, we have 32 in s_main.bytes[1].
             constraints.push((
                 "Leaf key acc s_advice1",
                 q_enable.clone()
@@ -614,11 +611,11 @@ impl<F: FieldExt> LeafKeyChip<F> {
                     * is_long.clone(),
             ));
 
-            let s_advices2 = meta.query_advice(s_advices[2], Rotation::cur());
+            let s_advices2 = meta.query_advice(s_main.bytes[2], Rotation::cur());
             key_rlc_acc_long = key_rlc_acc_long + s_advices2 * key_mult.clone();
 
             for ind in 3..HASH_WIDTH {
-                let s = meta.query_advice(s_advices[ind], Rotation::cur());
+                let s = meta.query_advice(s_main.bytes[ind], Rotation::cur());
                 key_rlc_acc_long =
                     key_rlc_acc_long + s * key_mult.clone() * r_table[ind - 3].clone();
             }
@@ -626,7 +623,7 @@ impl<F: FieldExt> LeafKeyChip<F> {
             key_rlc_acc_long =
                 key_rlc_acc_long + c_rlp1.clone() * key_mult.clone() * r_table[29].clone();
 
-            let c_rlp2 = meta.query_advice(c_rlp2, Rotation::cur());
+            let c_rlp2 = meta.query_advice(c_main.rlp2, Rotation::cur());
             key_rlc_acc_long = key_rlc_acc_long + c_rlp2.clone() * key_mult * r_table[30].clone();
 
             // No need to distinguish between sel1 and sel2 here as it was already
@@ -646,14 +643,14 @@ impl<F: FieldExt> LeafKeyChip<F> {
         range_lookups(
             meta,
             q_enable,
-            s_advices.to_vec(),
+            s_main.bytes.to_vec(),
             FixedTableTag::Range256,
             fixed_table,
         );
         range_lookups(
             meta,
             q_enable,
-            [s_rlp1, s_rlp2, c_rlp1, c_rlp2].to_vec(),
+            [s_main.rlp1, s_main.rlp2, c_main.rlp1, c_main.rlp2].to_vec(),
             FixedTableTag::Range256,
             fixed_table,
         );

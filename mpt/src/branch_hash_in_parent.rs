@@ -8,7 +8,7 @@ use std::marker::PhantomData;
 
 use crate::{
     helpers::get_is_extension_node,
-    param::{HASH_WIDTH, KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH},
+    param::{KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH}, mpt::MainCols,
 };
 
 #[derive(Clone, Debug)]
@@ -28,7 +28,7 @@ impl<F: FieldExt> BranchHashInParentChip<F> {
         is_account_leaf_in_added_branch: Column<Advice>,
         is_last_branch_child: Column<Advice>,
         is_branch_placeholder: Column<Advice>,
-        s_advices: [Column<Advice>; HASH_WIDTH],
+        s_main: MainCols,
         mod_node_hash_rlc: Column<Advice>,
         acc: Column<Advice>,
         acc_mult: Column<Advice>,
@@ -46,7 +46,7 @@ impl<F: FieldExt> BranchHashInParentChip<F> {
 
                 let is_last_branch_child = meta.query_advice(is_last_branch_child, Rotation::cur());
                 let is_branch_placeholder = meta.query_advice(is_branch_placeholder, Rotation(-16));
-                let is_extension_node = get_is_extension_node(meta, s_advices, -16);
+                let is_extension_node = get_is_extension_node(meta, s_main.bytes, -16);
 
                 // TODO: acc currently doesn't have branch ValueNode info (which 128 if nil)
                 let acc = meta.query_advice(acc, Rotation::cur());
@@ -97,7 +97,7 @@ impl<F: FieldExt> BranchHashInParentChip<F> {
             // When placeholder branch, we don't check its hash in a parent.
             let is_branch_placeholder = meta.query_advice(is_branch_placeholder, Rotation(-16));
 
-            let is_extension_node = get_is_extension_node(meta, s_advices, -16);
+            let is_extension_node = get_is_extension_node(meta, s_main.bytes, -16);
 
             // TODO: acc currently doesn't have branch ValueNode info (which 128 if nil)
             let acc = meta.query_advice(acc, Rotation::cur());

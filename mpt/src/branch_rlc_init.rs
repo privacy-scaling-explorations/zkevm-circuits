@@ -6,7 +6,7 @@ use halo2_proofs::{
 use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
-use crate::{param::HASH_WIDTH, helpers::get_bool_constraint};
+use crate::{helpers::get_bool_constraint, mpt::MainCols};
 
 #[derive(Clone, Debug)]
 pub(crate) struct BranchRLCInitConfig {}
@@ -23,9 +23,7 @@ impl<F: FieldExt> BranchRLCInitChip<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         q_enable: impl FnOnce(&mut VirtualCells<'_, F>) -> Expression<F>,
-        s_rlp1: Column<Advice>,
-        s_rlp2: Column<Advice>,
-        s_advices: [Column<Advice>; HASH_WIDTH],
+        s_main: MainCols,
         acc_s: Column<Advice>,
         acc_mult_s: Column<Advice>,
         acc_c: Column<Advice>,
@@ -56,10 +54,10 @@ impl<F: FieldExt> BranchRLCInitChip<F> {
             let branch_mult_s_cur = meta.query_advice(acc_mult_s, Rotation::cur());
             let branch_mult_c_cur = meta.query_advice(acc_mult_c, Rotation::cur());
 
-            let s1 = meta.query_advice(s_rlp1, Rotation::cur());
-            let s2 = meta.query_advice(s_rlp2, Rotation::cur());
-            let c1 = meta.query_advice(s_advices[0], Rotation::cur());
-            let c2 = meta.query_advice(s_advices[1], Rotation::cur());
+            let s1 = meta.query_advice(s_main.rlp1, Rotation::cur());
+            let s2 = meta.query_advice(s_main.rlp2, Rotation::cur());
+            let c1 = meta.query_advice(s_main.bytes[0], Rotation::cur());
+            let c2 = meta.query_advice(s_main.bytes[1], Rotation::cur());
 
             let one_rlp_byte_s = s1.clone() * s2.clone();
             let two_rlp_bytes_s = s1.clone() * (one.clone() - s2.clone());
@@ -86,13 +84,13 @@ impl<F: FieldExt> BranchRLCInitChip<F> {
                 get_bool_constraint(q_enable.clone(), c2.clone())
             ));
 
-            let s_rlp1 = meta.query_advice(s_advices[2], Rotation::cur());
-            let s_rlp2 = meta.query_advice(s_advices[3], Rotation::cur());
-            let s_rlp3 = meta.query_advice(s_advices[4], Rotation::cur());
+            let s_rlp1 = meta.query_advice(s_main.bytes[2], Rotation::cur());
+            let s_rlp2 = meta.query_advice(s_main.bytes[3], Rotation::cur());
+            let s_rlp3 = meta.query_advice(s_main.bytes[4], Rotation::cur());
 
-            let c_rlp1 = meta.query_advice(s_advices[5], Rotation::cur());
-            let c_rlp2 = meta.query_advice(s_advices[6], Rotation::cur());
-            let c_rlp3 = meta.query_advice(s_advices[7], Rotation::cur());
+            let c_rlp1 = meta.query_advice(s_main.bytes[5], Rotation::cur());
+            let c_rlp2 = meta.query_advice(s_main.bytes[6], Rotation::cur());
+            let c_rlp3 = meta.query_advice(s_main.bytes[7], Rotation::cur());
 
             let mult_one = Expression::Constant(acc_r);
             constraints.push((

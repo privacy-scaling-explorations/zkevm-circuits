@@ -8,7 +8,7 @@ use std::marker::PhantomData;
 
 use crate::{
     helpers::{compute_rlc, key_len_lookup, mult_diff_lookup, range_lookups},
-    mpt::FixedTableTag,
+    mpt::{FixedTableTag, MainCols},
     param::{
         HASH_WIDTH, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, RLP_NUM, ACCOUNT_NON_EXISTING_IND, BRANCH_ROWS_NUM,
     },
@@ -37,11 +37,8 @@ impl<F: FieldExt> AccountNonExistingChip<F> {
         meta: &mut ConstraintSystem<F>,
         q_enable: impl Fn(&mut VirtualCells<'_, F>) -> Expression<F> + Copy,
         not_first_level: Column<Advice>,
-        s_rlp1: Column<Advice>,
-        s_rlp2: Column<Advice>,
-        c_rlp1: Column<Advice>,
-        c_rlp2: Column<Advice>,
-        s_advices: [Column<Advice>; HASH_WIDTH],
+        s_main: MainCols,
+        c_main: MainCols,
         key_rlc: Column<Advice>,
         key_rlc_mult: Column<Advice>,
         acc_s: Column<Advice>,
@@ -70,15 +67,15 @@ impl<F: FieldExt> AccountNonExistingChip<F> {
                 let sum_prev = meta.query_advice(key_rlc_mult, Rotation::cur());
                 let diff_inv = meta.query_advice(acc_s, Rotation::cur());
 
-                let c_rlp1_prev = meta.query_advice(c_rlp1, Rotation::prev());
-                let c_rlp2_prev = meta.query_advice(c_rlp2, Rotation::prev());
+                let c_rlp1_prev = meta.query_advice(c_main.rlp1, Rotation::prev());
+                let c_rlp2_prev = meta.query_advice(c_main.rlp2, Rotation::prev());
 
                 let mut sum_check = Expression::Constant(F::zero());
                 let mut sum_prev_check = Expression::Constant(F::zero());
                 let mut mult = r_table[0].clone();
                 for ind in 1..HASH_WIDTH {
-                    sum_check = sum_check + meta.query_advice(s_advices[ind], Rotation::cur()) * mult.clone();
-                    sum_prev_check = sum_prev_check + meta.query_advice(s_advices[ind], Rotation::prev()) * mult.clone();
+                    sum_check = sum_check + meta.query_advice(s_main.bytes[ind], Rotation::cur()) * mult.clone();
+                    sum_prev_check = sum_prev_check + meta.query_advice(s_main.bytes[ind], Rotation::prev()) * mult.clone();
                     mult = mult * r_table[0].clone();
                 }
                 sum_check = sum_check + c_rlp1_cur * mult.clone();
@@ -129,7 +126,7 @@ impl<F: FieldExt> AccountNonExistingChip<F> {
                 // Wrong leaf has a meaning only for non existing account proof. For this proof, there are two cases:
                 // 1. A leaf is returned that is not at the required address (wrong leaf).
                 // 2. A branch is returned as the last element of getProof and there is nil object at address position. Placeholder account leaf is added in this case.
-                let is_wrong_leaf = meta.query_advice(s_rlp1, Rotation::cur());
+                let is_wrong_leaf = meta.query_advice(s_main.rlp1, Rotation::cur());
                 // is_wrong_leaf is checked to be bool in account_leaf_nonce_balance (q_enable in this chip
                 // is true only when non_existing_account).
 
@@ -140,24 +137,24 @@ impl<F: FieldExt> AccountNonExistingChip<F> {
 
                 // sel1, sel2 is in init branch
                 let c16 = meta.query_advice(
-                    s_advices[IS_BRANCH_C16_POS - RLP_NUM],
+                    s_main.bytes[IS_BRANCH_C16_POS - RLP_NUM],
                     Rotation(rot_into_first_branch_child - 1),
                 );
                 let c1 = meta.query_advice(
-                    s_advices[IS_BRANCH_C1_POS - RLP_NUM],
+                    s_main.bytes[IS_BRANCH_C1_POS - RLP_NUM],
                     Rotation(rot_into_first_branch_child - 1),
                 );
 
                 let c48 = Expression::Constant(F::from(48));
 
-                // If c16 = 1, we have nibble+48 in s_advices[0].
-                let s_advice1 = meta.query_advice(s_advices[1], Rotation::cur());
+                // If c16 = 1, we have nibble+48 in s_main.bytes[0].
+                let s_advice1 = meta.query_advice(s_main.bytes[1], Rotation::cur());
                 let mut key_rlc_acc = key_rlc_acc_start.clone()
                     + (s_advice1.clone() - c48) * key_mult_start.clone() * c16.clone();
                 let mut key_mult = key_mult_start.clone() * r_table[0].clone() * c16;
                 key_mult = key_mult + key_mult_start.clone() * c1.clone(); // set to key_mult_start if sel2, stays key_mult if sel1
 
-                // If c1 = 1, we have 32 in s_advices[0].
+                // If c1 = 1, we have 32 in s_main.bytes[0].
                 constraints.push((
                     "Account leaf key acc s_advice1",
                     q_enable.clone()
@@ -167,16 +164,16 @@ impl<F: FieldExt> AccountNonExistingChip<F> {
                         * c1,
                 ));
 
-                let s_advices2 = meta.query_advice(s_advices[2], Rotation::cur());
+                let s_advices2 = meta.query_advice(s_main.bytes[2], Rotation::cur());
                 key_rlc_acc = key_rlc_acc + s_advices2 * key_mult.clone();
 
                 for ind in 3..HASH_WIDTH {
-                    let s = meta.query_advice(s_advices[ind], Rotation::cur());
+                    let s = meta.query_advice(s_main.bytes[ind], Rotation::cur());
                     key_rlc_acc = key_rlc_acc + s * key_mult.clone() * r_table[ind - 3].clone();
                 }
 
-                let c_rlp1_cur = meta.query_advice(c_rlp1, Rotation::cur());
-                let c_rlp2_cur = meta.query_advice(c_rlp2, Rotation::cur());
+                let c_rlp1_cur = meta.query_advice(c_main.rlp1, Rotation::cur());
+                let c_rlp2_cur = meta.query_advice(c_main.rlp2, Rotation::cur());
                 key_rlc_acc = key_rlc_acc + c_rlp1_cur.clone() * key_mult.clone() * r_table[29].clone();
                 key_rlc_acc = key_rlc_acc + c_rlp2_cur.clone() * key_mult * r_table[30].clone();
 
@@ -220,13 +217,13 @@ impl<F: FieldExt> AccountNonExistingChip<F> {
             let is_leaf_in_first_level =
                 one.clone() - meta.query_advice(not_first_level, Rotation::cur());
             
-            let is_wrong_leaf = meta.query_advice(s_rlp1, Rotation::cur());
+            let is_wrong_leaf = meta.query_advice(s_main.rlp1, Rotation::cur());
 
             // Note: when leaf is in the first level, the key stored in the leaf is always of length 33 -
             // the first byte being 32 (when after branch, the information whether there the key is odd or even
-            // is in s_advices[IS_BRANCH_C16_POS - LAYOUT_OFFSET] (see sel1/sel2).
+            // is in s_main.bytes[IS_BRANCH_C16_POS - LAYOUT_OFFSET] (see sel1/sel2).
 
-            let s_advice1 = meta.query_advice(s_advices[1], Rotation::cur());
+            let s_advice1 = meta.query_advice(s_main.bytes[1], Rotation::cur());
             let mut key_rlc_acc = Expression::Constant(F::zero());
 
             constraints.push((
@@ -237,16 +234,16 @@ impl<F: FieldExt> AccountNonExistingChip<F> {
                 * is_leaf_in_first_level.clone(),
             ));
 
-            let s_advices2 = meta.query_advice(s_advices[2], Rotation::cur());
+            let s_advices2 = meta.query_advice(s_main.bytes[2], Rotation::cur());
             key_rlc_acc = key_rlc_acc + s_advices2;
 
             for ind in 3..HASH_WIDTH {
-                let s = meta.query_advice(s_advices[ind], Rotation::cur());
+                let s = meta.query_advice(s_main.bytes[ind], Rotation::cur());
                 key_rlc_acc = key_rlc_acc + s * r_table[ind - 3].clone();
             }
 
-            let c_rlp1_cur = meta.query_advice(c_rlp1, Rotation::cur());
-            let c_rlp2_cur = meta.query_advice(c_rlp2, Rotation::cur());
+            let c_rlp1_cur = meta.query_advice(c_main.rlp1, Rotation::cur());
+            let c_rlp2_cur = meta.query_advice(c_main.rlp2, Rotation::cur());
             key_rlc_acc = key_rlc_acc + c_rlp1_cur.clone() * r_table[29].clone();
             key_rlc_acc = key_rlc_acc + c_rlp2_cur.clone() * r_table[30].clone();
 
@@ -269,14 +266,14 @@ impl<F: FieldExt> AccountNonExistingChip<F> {
         range_lookups(
             meta,
             q_enable,
-            s_advices.to_vec(),
+            s_main.bytes.to_vec(),
             FixedTableTag::Range256,
             fixed_table,
         );
         range_lookups(
             meta,
             q_enable,
-            [s_rlp2, c_rlp1, c_rlp2].to_vec(),
+            [s_main.rlp2, c_main.rlp1, c_main.rlp2].to_vec(),
             FixedTableTag::Range256,
             fixed_table,
         );

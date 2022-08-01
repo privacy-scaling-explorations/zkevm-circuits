@@ -8,7 +8,7 @@ use std::marker::PhantomData;
 
 use crate::{
     helpers::{get_bool_constraint, range_lookups},
-    mpt::FixedTableTag,
+    mpt::{FixedTableTag, MainCols},
     param::{
         BRANCH_0_C_START, BRANCH_0_S_START, HASH_WIDTH, IS_BRANCH_C_PLACEHOLDER_POS,
         IS_BRANCH_S_PLACEHOLDER_POS, RLP_NUM,
@@ -28,12 +28,8 @@ impl<F: FieldExt> BranchChip<F> {
         meta: &mut ConstraintSystem<F>,
         q_enable: Column<Fixed>,
         q_not_first: Column<Fixed>,
-        s_rlp1: Column<Advice>,
-        s_rlp2: Column<Advice>,
-        c_rlp1: Column<Advice>,
-        c_rlp2: Column<Advice>,
-        s_advices: [Column<Advice>; HASH_WIDTH],
-        c_advices: [Column<Advice>; HASH_WIDTH],
+        s_main: MainCols,
+        c_main: MainCols,
         is_branch_init: Column<Advice>,
         is_branch_child: Column<Advice>,
         is_last_branch_child: Column<Advice>,
@@ -71,14 +67,14 @@ impl<F: FieldExt> BranchChip<F> {
         range_lookups(
             meta,
             sel,
-            s_advices.to_vec(),
+            s_main.bytes.to_vec(),
             FixedTableTag::Range256,
             fixed_table,
         );
         range_lookups(
             meta,
             sel,
-            c_advices.to_vec(),
+            c_main.bytes.to_vec(),
             FixedTableTag::Range256,
             fixed_table,
         );
@@ -95,8 +91,8 @@ impl<F: FieldExt> BranchChip<F> {
                 let is_modified = meta.query_advice(is_modified, Rotation::cur());
                 let is_at_drifted_pos = meta.query_advice(is_at_drifted_pos, Rotation::cur());
 
-                let s_rlp2 = meta.query_advice(s_rlp2, Rotation::cur());
-                let c_rlp2 = meta.query_advice(c_rlp2, Rotation::cur());
+                let s_rlp2 = meta.query_advice(s_main.rlp2, Rotation::cur());
+                let c_rlp2 = meta.query_advice(c_main.rlp2, Rotation::cur());
 
                 // We do not compare s_rlp1 = c_rlp1 because there is stored
                 // info about S and C RLP length.
@@ -108,9 +104,9 @@ impl<F: FieldExt> BranchChip<F> {
                         * (node_index_cur.clone() - modified_node.clone()),
                 ));
 
-                for (ind, col) in s_advices.iter().enumerate() {
+                for (ind, col) in s_main.bytes.iter().enumerate() {
                     let s = meta.query_advice(*col, Rotation::cur());
-                    let c = meta.query_advice(c_advices[ind], Rotation::cur());
+                    let c = meta.query_advice(c_main.bytes[ind], Rotation::cur());
                     constraints.push((
                         "s = c when NOT is_modified",
                         q_enable.clone()
@@ -167,10 +163,10 @@ impl<F: FieldExt> BranchChip<F> {
             rlp1, rlp2: 0, 1 means 3 RLP bytes
             */
 
-            let s1 = meta.query_advice(s_rlp1, Rotation::prev());
-            let s2 = meta.query_advice(s_rlp2, Rotation::prev());
-            let c1 = meta.query_advice(s_advices[0], Rotation::prev());
-            let c2 = meta.query_advice(s_advices[1], Rotation::prev());
+            let s1 = meta.query_advice(s_main.rlp1, Rotation::prev());
+            let s2 = meta.query_advice(s_main.rlp2, Rotation::prev());
+            let c1 = meta.query_advice(s_main.bytes[0], Rotation::prev());
+            let c2 = meta.query_advice(s_main.bytes[1], Rotation::prev());
 
             // There should never be:
             // rlp1, rlp2: 0, 0
@@ -200,18 +196,18 @@ impl<F: FieldExt> BranchChip<F> {
             let three_rlp_bytes_c = (one.clone() - c1.clone()) * c2.clone();
 
             let rlp_byte0_s =
-                meta.query_advice(s_advices[BRANCH_0_S_START - RLP_NUM], Rotation::prev());
+                meta.query_advice(s_main.bytes[BRANCH_0_S_START - RLP_NUM], Rotation::prev());
             let rlp_byte1_s =
-                meta.query_advice(s_advices[BRANCH_0_S_START - RLP_NUM + 1], Rotation::prev());
+                meta.query_advice(s_main.bytes[BRANCH_0_S_START - RLP_NUM + 1], Rotation::prev());
             let rlp_byte2_s =
-                meta.query_advice(s_advices[BRANCH_0_S_START - RLP_NUM + 2], Rotation::prev());
+                meta.query_advice(s_main.bytes[BRANCH_0_S_START - RLP_NUM + 2], Rotation::prev());
 
             let rlp_byte0_c =
-                meta.query_advice(s_advices[BRANCH_0_C_START - RLP_NUM], Rotation::prev());
+                meta.query_advice(s_main.bytes[BRANCH_0_C_START - RLP_NUM], Rotation::prev());
             let rlp_byte1_c =
-                meta.query_advice(s_advices[BRANCH_0_C_START - RLP_NUM + 1], Rotation::prev());
+                meta.query_advice(s_main.bytes[BRANCH_0_C_START - RLP_NUM + 1], Rotation::prev());
             let rlp_byte2_c =
-                meta.query_advice(s_advices[BRANCH_0_C_START - RLP_NUM + 2], Rotation::prev());
+                meta.query_advice(s_main.bytes[BRANCH_0_C_START - RLP_NUM + 2], Rotation::prev());
 
             let one = Expression::Constant(F::one());
             let c32 = Expression::Constant(F::from(32_u64));
@@ -219,12 +215,12 @@ impl<F: FieldExt> BranchChip<F> {
             let c256 = Expression::Constant(F::from(256_u64));
             let c160_inv = Expression::Constant(F::from(160_u64).invert().unwrap());
 
-            let s_rlp1_cur = meta.query_advice(s_rlp1, Rotation::cur());
-            let s_rlp2_cur = meta.query_advice(s_rlp2, Rotation::cur());
-            let c_rlp1_cur = meta.query_advice(c_rlp1, Rotation::cur());
-            let c_rlp2_cur = meta.query_advice(c_rlp2, Rotation::cur());
-            let s_advices0_cur = meta.query_advice(s_advices[0], Rotation::cur());
-            let c_advices0_cur = meta.query_advice(c_advices[0], Rotation::cur());
+            let s_rlp1_cur = meta.query_advice(s_main.rlp1, Rotation::cur());
+            let s_rlp2_cur = meta.query_advice(s_main.rlp2, Rotation::cur());
+            let c_rlp1_cur = meta.query_advice(c_main.rlp1, Rotation::cur());
+            let c_rlp2_cur = meta.query_advice(c_main.rlp2, Rotation::cur());
+            let s_advices0_cur = meta.query_advice(s_main.bytes[0], Rotation::cur());
+            let c_advices0_cur = meta.query_advice(c_main.bytes[0], Rotation::cur());
 
             // s bytes in this row:
             // If empty, then s_rlp2 = 0:
@@ -308,8 +304,8 @@ impl<F: FieldExt> BranchChip<F> {
 
             // is_branch_child with node_index > 0
             let is_branch_child_cur = meta.query_advice(is_branch_child, Rotation::cur());
-            let s_rlp1_prev = meta.query_advice(s_rlp1, Rotation::prev());
-            let c_rlp1_prev = meta.query_advice(c_rlp1, Rotation::prev());
+            let s_rlp1_prev = meta.query_advice(s_main.rlp1, Rotation::prev());
+            let c_rlp1_prev = meta.query_advice(c_main.rlp1, Rotation::prev());
             constraints.push((
                 "branch children (node_index > 0) S",
                 q_not_first.clone()
@@ -448,11 +444,11 @@ impl<F: FieldExt> BranchChip<F> {
             let drifted_pos_cur = meta.query_advice(drifted_pos, Rotation::cur());
             let node_index_cur = meta.query_advice(node_index, Rotation::cur());
             let is_branch_placeholder_s = meta.query_advice(
-                s_advices[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM],
+                s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM],
                 Rotation::prev(),
             );
             let is_branch_placeholder_c = meta.query_advice(
-                s_advices[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
+                s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
                 Rotation::prev(),
             );
             constraints.push((
@@ -513,11 +509,11 @@ impl<F: FieldExt> BranchChip<F> {
             let is_branch_init_cur = meta.query_advice(is_branch_init, Rotation::cur());
 
             let is_branch_placeholder_s = meta.query_advice(
-                s_advices[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM],
+                s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM],
                 Rotation::cur(),
             );
             let is_branch_placeholder_c = meta.query_advice(
-                s_advices[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
+                s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
                 Rotation::cur(),
             );
             let q_enable = meta.query_fixed(q_enable, Rotation::cur());

@@ -8,10 +8,10 @@ use std::marker::PhantomData;
 
 use crate::{
     helpers::range_lookups,
-    mpt::FixedTableTag,
+    mpt::{FixedTableTag, MainCols},
     param::{
         ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND, ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND, BRANCH_ROWS_NUM,
-        EXTENSION_ROWS_NUM, HASH_WIDTH, IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS,
+        EXTENSION_ROWS_NUM, IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS,
         KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH, RLP_NUM, ACCOUNT_NON_EXISTING_IND,
     },
 };
@@ -32,11 +32,8 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
         q_not_first: Column<Fixed>,
         not_first_level: Column<Advice>,
         is_account_leaf_storage_codehash: Column<Advice>,
-        s_rlp1: Column<Advice>,
-        s_rlp2: Column<Advice>,
-        c_rlp2: Column<Advice>,
-        s_advices: [Column<Advice>; HASH_WIDTH],
-        c_advices: [Column<Advice>; HASH_WIDTH],
+        s_main: MainCols,
+        c_main: MainCols,
         acc_r: F,
         acc: Column<Advice>,
         acc_mult: Column<Advice>,
@@ -70,9 +67,9 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
             let mut constraints = vec![];
 
             // We have storage length in s_rlp2 (which is 160 presenting 128 + 32).
-            // We have storage hash in s_advices.
+            // We have storage hash in s_main.bytes.
             // We have codehash length in c_rlp2 (which is 160 presenting 128 + 32).
-            // We have codehash in c_advices.
+            // We have codehash in c_main.bytes.
 
             // Rows:
             // account leaf key
@@ -92,7 +89,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
             // that there is nil in the parent branch at the proper position (see account_non_existing), note
             // that we need (placeholder) account leaf for lookups and to know when to check that parent branch
             // has a nil.
-            let is_wrong_leaf = meta.query_advice(s_rlp1, Rotation(rot_into_non_existing));
+            let is_wrong_leaf = meta.query_advice(s_main.rlp1, Rotation(rot_into_non_existing));
             let is_non_existing_account_proof = meta.query_advice(is_non_existing_account_proof, Rotation::cur());
             // Note: (is_non_existing_account_proof.clone() - is_wrong_leaf.clone() - one.clone())
             // cannot be 0 when is_non_existing_account_proof = 0 (see account_leaf_nonce_balance).
@@ -101,8 +98,8 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
             let rot = -2;
             let acc_prev = meta.query_advice(acc, Rotation(rot));
             let acc_mult_prev = meta.query_advice(acc_mult, Rotation(rot));
-            let s_rlp2 = meta.query_advice(s_rlp2, Rotation::cur());
-            let c_rlp2 = meta.query_advice(c_rlp2, Rotation::cur());
+            let s_rlp2 = meta.query_advice(s_main.rlp2, Rotation::cur());
+            let c_rlp2 = meta.query_advice(c_main.rlp2, Rotation::cur());
             constraints.push((
                 "account leaf storage codehash s_rlp2",
                 q_enable.clone()
@@ -120,7 +117,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
 
             let mut storage_root_rlc = Expression::Constant(F::zero());
             let mut curr_r = one.clone();
-            for col in s_advices.iter() {
+            for col in s_main.bytes.iter() {
                 let s = meta.query_advice(*col, Rotation::cur());
                 storage_root_rlc = storage_root_rlc + s * curr_r.clone();
                 curr_r = curr_r * acc_r;
@@ -140,7 +137,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
 
             curr_r = one.clone();
             let mut codehash_rlc = Expression::Constant(F::zero());
-            for col in c_advices.iter() {
+            for col in c_main.bytes.iter() {
                 let c = meta.query_advice(*col, Rotation::cur());
                 codehash_rlc = codehash_rlc + c * curr_r.clone();
                 curr_r = curr_r * acc_r;
@@ -268,12 +265,12 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
 
             // Rotate into branch init:
             let mut is_branch_placeholder = meta.query_advice(
-                s_advices[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM],
+                s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM],
                 Rotation(-ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND - BRANCH_ROWS_NUM),
             );
             if !is_s {
                 is_branch_placeholder = meta.query_advice(
-                    s_advices[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
+                    s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
                     Rotation(-ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND - BRANCH_ROWS_NUM),
                 );
             }
@@ -325,12 +322,12 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
 
                 // Rotate into branch init:
                 let mut is_branch_placeholder = meta.query_advice(
-                    s_advices[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM],
+                    s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM],
                     Rotation(-ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND - BRANCH_ROWS_NUM),
                 );
                 if !is_s {
                     is_branch_placeholder = meta.query_advice(
-                        s_advices[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
+                        s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
                         Rotation(-ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND - BRANCH_ROWS_NUM),
                     );
                 }
@@ -386,12 +383,12 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
 
                 // Rotate into branch init:
                 let mut is_branch_placeholder = meta.query_advice(
-                    s_advices[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM],
+                    s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM],
                     Rotation(-ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND - BRANCH_ROWS_NUM),
                 );
                 if !is_s {
                     is_branch_placeholder = meta.query_advice(
-                        s_advices[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
+                        s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
                         Rotation(-ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND - BRANCH_ROWS_NUM),
                     );
                 }
@@ -434,14 +431,14 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
         range_lookups(
             meta,
             sel.clone(),
-            s_advices.to_vec(),
+            s_main.bytes.to_vec(),
             FixedTableTag::Range256,
             fixed_table,
         );
         range_lookups(
             meta,
             sel.clone(),
-            c_advices.to_vec(),
+            c_main.bytes.to_vec(),
             FixedTableTag::Range256,
             fixed_table,
         );
@@ -449,7 +446,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
         range_lookups(
             meta,
             sel,
-            [s_rlp2, c_rlp2].to_vec(),
+            [s_main.rlp2, c_main.rlp2].to_vec(),
             FixedTableTag::Range256,
             fixed_table,
         );

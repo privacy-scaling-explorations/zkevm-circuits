@@ -6,10 +6,10 @@ use halo2_proofs::{
 use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
-use crate::param::{
-    HASH_WIDTH, IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS, IS_EXT_LONG_ODD_C16_POS,
+use crate::{param::{
+    IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS, IS_EXT_LONG_ODD_C16_POS,
     IS_EXT_LONG_ODD_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS, RLP_NUM,
-};
+}, mpt::MainCols};
 
 #[derive(Clone, Debug)]
 pub(crate) struct BranchKeyConfig {}
@@ -30,7 +30,7 @@ impl<F: FieldExt> BranchKeyChip<F> {
                                           * key rlc) */
         is_branch_init: Column<Advice>,
         is_account_leaf_in_added_branch: Column<Advice>,
-        s_advices: [Column<Advice>; HASH_WIDTH],
+        s_main: MainCols,
         modified_node: Column<Advice>, // index of the modified node
         c16_col: Column<Advice>,
         c1_col: Column<Advice>,
@@ -61,25 +61,25 @@ impl<F: FieldExt> BranchKeyChip<F> {
             let modified_node_cur = meta.query_advice(modified_node, Rotation::cur());
 
             let is_ext_short_c16 = meta.query_advice(
-                s_advices[IS_EXT_SHORT_C16_POS - RLP_NUM],
+                s_main.bytes[IS_EXT_SHORT_C16_POS - RLP_NUM],
                 Rotation(-1),
             );
             let is_ext_short_c1 =
-                meta.query_advice(s_advices[IS_EXT_SHORT_C1_POS - RLP_NUM], Rotation(-1));
+                meta.query_advice(s_main.bytes[IS_EXT_SHORT_C1_POS - RLP_NUM], Rotation(-1));
             let is_ext_long_even_c16 = meta.query_advice(
-                s_advices[IS_EXT_LONG_EVEN_C16_POS - RLP_NUM],
+                s_main.bytes[IS_EXT_LONG_EVEN_C16_POS - RLP_NUM],
                 Rotation(-1),
             );
             let is_ext_long_even_c1 = meta.query_advice(
-                s_advices[IS_EXT_LONG_EVEN_C1_POS - RLP_NUM],
+                s_main.bytes[IS_EXT_LONG_EVEN_C1_POS - RLP_NUM],
                 Rotation(-1),
             );
             let is_ext_long_odd_c16 = meta.query_advice(
-                s_advices[IS_EXT_LONG_ODD_C16_POS - RLP_NUM],
+                s_main.bytes[IS_EXT_LONG_ODD_C16_POS - RLP_NUM],
                 Rotation(-1),
             );
             let is_ext_long_odd_c1 = meta.query_advice(
-                s_advices[IS_EXT_LONG_ODD_C1_POS - RLP_NUM],
+                s_main.bytes[IS_EXT_LONG_ODD_C1_POS - RLP_NUM],
                 Rotation(-1),
             );
 

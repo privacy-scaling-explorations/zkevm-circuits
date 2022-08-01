@@ -8,8 +8,8 @@ use std::marker::PhantomData;
 
 use crate::{
     helpers::{get_bool_constraint, key_len_lookup, range_lookups},
-    mpt::FixedTableTag,
-    param::{BRANCH_ROWS_NUM, HASH_WIDTH, KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH},
+    mpt::{FixedTableTag, MainCols},
+    param::{BRANCH_ROWS_NUM, KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH},
 };
 
 #[derive(Clone, Debug)]
@@ -29,9 +29,7 @@ impl<F: FieldExt> LeafValueChip<F> {
         q_not_first: Column<Fixed>,
         not_first_level: Column<Advice>,
         is_leaf_value: Column<Advice>,
-        s_rlp1: Column<Advice>,
-        s_rlp2: Column<Advice>,
-        s_advices: [Column<Advice>; HASH_WIDTH],
+        s_main: MainCols,
         s_mod_node_hash_rlc: Column<Advice>,
         c_mod_node_hash_rlc: Column<Advice>,
         keccak_table: [Column<Fixed>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
@@ -86,8 +84,8 @@ impl<F: FieldExt> LeafValueChip<F> {
             let is_leaf_long = flag1.clone() * (one.clone() - flag2.clone());
             let is_leaf_short = (one.clone() - flag1.clone()) * flag2.clone();
 
-            let s_rlp1_prev = meta.query_advice(s_rlp1, Rotation::prev());
-            let s_rlp1_cur = meta.query_advice(s_rlp1, Rotation::cur());
+            let s_rlp1_prev = meta.query_advice(s_main.rlp1, Rotation::prev());
+            let s_rlp1_cur = meta.query_advice(s_main.rlp1, Rotation::cur());
 
             constraints.push((
                 "is_long is boolean",
@@ -110,12 +108,12 @@ impl<F: FieldExt> LeafValueChip<F> {
 
             let leaf_rlc_prev = meta.query_advice(acc_s, Rotation::prev());
             let leaf_mult_prev = meta.query_advice(acc_mult_s, Rotation::prev());
-            let s_rlp2_prev = meta.query_advice(s_rlp2, Rotation::prev());
-            let s_rlp2_cur = meta.query_advice(s_rlp2, Rotation::cur());
+            let s_rlp2_prev = meta.query_advice(s_main.rlp2, Rotation::prev());
+            let s_rlp2_cur = meta.query_advice(s_main.rlp2, Rotation::cur());
 
             let mut value_rlc_long = Expression::Constant(F::zero());
             let mut mult_long = F::one();
-            for col in s_advices.iter() {
+            for col in s_main.bytes.iter() {
                 let s = meta.query_advice(*col, Rotation::cur());
                 value_rlc_long = value_rlc_long + s * mult_long.clone();
                 mult_long = mult_long * acc_r;
@@ -185,7 +183,7 @@ impl<F: FieldExt> LeafValueChip<F> {
                     * (one.clone() - is_leaf_without_branch.clone())
                     * s_rlp2_cur.clone(),
             ));
-            for col in s_advices.iter() {
+            for col in s_main.bytes.iter() {
                 let s = meta.query_advice(*col, Rotation::cur());
                 constraints.push((
                     "Placeholder leaf (no value set) needs to have value = 0",
@@ -197,7 +195,7 @@ impl<F: FieldExt> LeafValueChip<F> {
             }
 
             // RLP constraints:
-            let s_advices0_prev = meta.query_advice(s_advices[0], Rotation::prev());
+            let s_advices0_prev = meta.query_advice(s_main.bytes[0], Rotation::prev());
             let short_remainder = s_rlp1_prev.clone() - c192.clone() - s_rlp2_prev.clone()
                 + c128.clone()
                 - one.clone();
@@ -277,7 +275,7 @@ impl<F: FieldExt> LeafValueChip<F> {
                 sel = meta.query_advice(sel2, Rotation::cur());
                 rot_into_storage_root = -5;
             }
-            for (ind, col) in s_advices.iter().enumerate() {
+            for (ind, col) in s_main.bytes.iter().enumerate() {
                 let s = meta.query_advice(*col, Rotation(rot_into_storage_root));
                 constraints.push((
                     "If placeholder leaf without branch (sel = 1), then storage trie is empty",
@@ -402,15 +400,15 @@ impl<F: FieldExt> LeafValueChip<F> {
             let mut rlc = meta.query_advice(acc_s, Rotation::prev());
             let mut mult = meta.query_advice(acc_mult_s, Rotation::prev());
 
-            let s_rlp1 = meta.query_advice(s_rlp1, Rotation::cur());
+            let s_rlp1 = meta.query_advice(s_main.rlp1, Rotation::cur());
             rlc = rlc + s_rlp1 * mult.clone();
             mult = mult * acc_r;
 
-            let s_rlp2 = meta.query_advice(s_rlp2, Rotation::cur());
+            let s_rlp2 = meta.query_advice(s_main.rlp2, Rotation::cur());
             rlc = rlc + s_rlp2 * mult.clone();
             mult = mult * acc_r;
 
-            for col in s_advices.iter() {
+            for col in s_main.bytes.iter() {
                 let s = meta.query_advice(*col, Rotation::cur());
                 rlc = rlc + s * mult.clone();
                 mult = mult * acc_r;
@@ -515,27 +513,27 @@ impl<F: FieldExt> LeafValueChip<F> {
         range_lookups(
             meta,
             sel,
-            s_advices.to_vec(),
+            s_main.bytes.to_vec(),
             FixedTableTag::Range256,
             fixed_table,
         );
         range_lookups(
             meta,
             sel,
-            [s_rlp1, s_rlp2].to_vec(),
+            [s_main.rlp1, s_main.rlp2].to_vec(),
             FixedTableTag::Range256,
             fixed_table,
         );
 
-        // There are zeros in s_advices after value:
+        // There are zeros in s_main.bytes after value:
         /*
         for ind in 0..HASH_WIDTH {
             key_len_lookup(
                 meta,
                 sel,
                 ind + 1,
-                s_rlp2,
-                s_advices[ind],
+                s_main.rlp2,
+                s_main.bytes[ind],
                 128,
                 fixed_table,
             )

@@ -11,7 +11,7 @@ use crate::{
         compute_rlc, get_bool_constraint, get_is_extension_node_one_nibble, key_len_lookup,
         mult_diff_lookup, range_lookups,
     },
-    mpt::FixedTableTag,
+    mpt::{FixedTableTag, MainCols},
     param::{IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, ACCOUNT_DRIFTED_LEAF_IND, BRANCH_ROWS_NUM, ACCOUNT_LEAF_KEY_S_IND, ACCOUNT_LEAF_KEY_C_IND, ACCOUNT_LEAF_NONCE_BALANCE_S_IND, ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND, ACCOUNT_LEAF_NONCE_BALANCE_C_IND, ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND},
 };
 
@@ -33,12 +33,8 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchChip<F> {
         meta: &mut ConstraintSystem<F>,
         q_enable: impl Fn(&mut VirtualCells<'_, F>) -> Expression<F> + Copy,
         not_first_level: Column<Advice>,
-        s_rlp1: Column<Advice>,
-        s_rlp2: Column<Advice>,
-        c_rlp1: Column<Advice>,
-        c_rlp2: Column<Advice>,
-        s_advices: [Column<Advice>; HASH_WIDTH],
-        c_advices0: Column<Advice>,
+        s_main: MainCols,
+        c_main: MainCols,
         s_mod_node_hash_rlc: Column<Advice>,
         c_mod_node_hash_rlc: Column<Advice>,
         acc_s: Column<Advice>,
@@ -84,16 +80,16 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchChip<F> {
             let mut constraints = vec![];
 
             let is_branch_s_placeholder = meta.query_advice(
-                s_advices[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM],
+                s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM],
                 Rotation(rot_branch_init),
             );
             let is_branch_c_placeholder = meta.query_advice(
-                s_advices[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
+                s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
                 Rotation(rot_branch_init),
             );
 
             let c248 = Expression::Constant(F::from(248));
-            let s_rlp1 = meta.query_advice(s_rlp1, Rotation::cur());
+            let s_rlp1 = meta.query_advice(s_main.rlp1, Rotation::cur());
             constraints.push((
                 "account leaf key s_rlp1 = 248",
                 q_enable.clone()
@@ -103,21 +99,21 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchChip<F> {
 
             let mut ind = 0;
             let mut expr =
-                s_rlp1 + meta.query_advice(s_rlp2, Rotation::cur()) * r_table[ind].clone();
+                s_rlp1 + meta.query_advice(s_main.rlp2, Rotation::cur()) * r_table[ind].clone();
             ind += 1;
 
             expr = expr
                 + compute_rlc(
                     meta,
-                    s_advices.to_vec(),
+                    s_main.bytes.to_vec(),
                     ind,
                     one.clone(),
                     0,
                     r_table.clone(),
                 );
 
-            let c_rlp1 = meta.query_advice(c_rlp1, Rotation::cur());
-            let c_rlp2 = meta.query_advice(c_rlp2, Rotation::cur());
+            let c_rlp1 = meta.query_advice(c_main.rlp1, Rotation::cur());
+            let c_rlp2 = meta.query_advice(c_main.rlp2, Rotation::cur());
             expr = expr + c_rlp1.clone() * r_table[R_TABLE_LEN - 1].clone() * r_table[1].clone();
             expr = expr + c_rlp2.clone() * r_table[R_TABLE_LEN - 1].clone() * r_table[2].clone();
 
@@ -133,11 +129,11 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchChip<F> {
         let sel = |meta: &mut VirtualCells<F>| {
             let q_enable = q_enable(meta);
             let is_branch_s_placeholder = meta.query_advice(
-                s_advices[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM],
+                s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM],
                 Rotation(rot_branch_init),
             );
             let is_branch_c_placeholder = meta.query_advice(
-                s_advices[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
+                s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
                 Rotation(rot_branch_init),
             );
 
@@ -150,18 +146,18 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchChip<F> {
                 meta,
                 q_enable,
                 ind,
-                s_advices[0],
-                s_advices[ind],
+                s_main.bytes[0],
+                s_main.bytes[ind],
                 128,
                 fixed_table,
             )
         }
-        key_len_lookup(meta, sel, 32, s_advices[0], c_rlp1, 128, fixed_table);
-        key_len_lookup(meta, sel, 33, s_advices[0], c_rlp2, 128, fixed_table);
+        key_len_lookup(meta, sel, 32, s_main.bytes[0], c_rlp1, 128, fixed_table);
+        key_len_lookup(meta, sel, 33, s_main.bytes[0], c_rlp2, 128, fixed_table);
         */
 
         // acc_mult corresponds to key length:
-        mult_diff_lookup(meta, sel, 3, s_advices[0], acc_mult_s, 128, fixed_table);
+        mult_diff_lookup(meta, sel, 3, s_main.bytes[0], acc_mult_s, 128, fixed_table);
 
         /*
         Leaf key S
@@ -204,11 +200,11 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchChip<F> {
             // sel1 and sel2 determines whether drifted_pos needs to be
             // multiplied by 16 or not.
             let sel1 = meta.query_advice(
-                s_advices[IS_BRANCH_C16_POS - RLP_NUM],
+                s_main.bytes[IS_BRANCH_C16_POS - RLP_NUM],
                 Rotation(rot_branch_init),
             );
             let sel2 = meta.query_advice(
-                s_advices[IS_BRANCH_C1_POS - RLP_NUM],
+                s_main.bytes[IS_BRANCH_C1_POS - RLP_NUM],
                 Rotation(rot_branch_init),
             );
 
@@ -220,11 +216,11 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchChip<F> {
             // Key RLC of the drifted leaf needs to be the same as key RLC of the leaf
             // before it drifted down into extension/branch.
             let is_branch_s_placeholder = meta.query_advice(
-                s_advices[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM],
+                s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM],
                 Rotation(rot_branch_init),
             );
             let is_branch_c_placeholder = meta.query_advice(
-                s_advices[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
+                s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
                 Rotation(rot_branch_init),
             );
 
@@ -239,7 +235,7 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchChip<F> {
             let leaf_key_s_rlc = meta.query_advice(key_rlc, Rotation(-(ACCOUNT_DRIFTED_LEAF_IND - ACCOUNT_LEAF_KEY_S_IND)));
             let leaf_key_c_rlc = meta.query_advice(key_rlc, Rotation(-(ACCOUNT_DRIFTED_LEAF_IND - ACCOUNT_LEAF_KEY_C_IND)));
 
-            let is_one_nibble = get_is_extension_node_one_nibble(meta, s_advices, rot_branch_init);
+            let is_one_nibble = get_is_extension_node_one_nibble(meta, s_main.bytes, rot_branch_init);
 
             // Any rotation that lands into branch children can be used.
             let drifted_pos = meta.query_advice(drifted_pos, Rotation(-17));
@@ -258,10 +254,10 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchChip<F> {
 
             let key_rlc_start = key_rlc_cur.clone() + drifted_pos.clone() * drifted_pos_mult;
 
-            // If sel1 = 1, we have one nibble+48 in s_advices[1].
-            let s_advice1 = meta.query_advice(s_advices[1], Rotation::cur());
+            // If sel1 = 1, we have one nibble+48 in s_main.bytes[1].
+            let s_advice1 = meta.query_advice(s_main.bytes[1], Rotation::cur());
 
-            // If sel2 = 1, we have 32 in s_advices[1].
+            // If sel2 = 1, we have 32 in s_main.bytes[1].
             constraints.push((
                 "Leaf key acc s_advice1",
                 q_enable.clone()
@@ -274,13 +270,13 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchChip<F> {
                 + (s_advice1.clone() - c48.clone()) * sel1.clone() * key_mult.clone();
 
             for ind in 2..HASH_WIDTH {
-                let s = meta.query_advice(s_advices[ind], Rotation::cur());
+                let s = meta.query_advice(s_main.bytes[ind], Rotation::cur());
                 key_mult = key_mult * r_table[0].clone();
                 key_rlc = key_rlc + s * key_mult.clone();
             }
 
             key_mult = key_mult * r_table[0].clone();
-            let c_rlp1 = meta.query_advice(c_rlp1, Rotation::cur());
+            let c_rlp1 = meta.query_advice(c_main.rlp1, Rotation::cur());
             key_rlc = key_rlc + c_rlp1.clone() * key_mult;
 
             // No need to distinguish between sel1 and sel2 here as it was already
@@ -331,17 +327,17 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchChip<F> {
 
             let mult_diff_nonce = meta.query_advice(acc_c, Rotation(nonce_rot));
 
-            let s_rlp1_nonce = meta.query_advice(s_rlp1, Rotation(nonce_rot));
+            let s_rlp1_nonce = meta.query_advice(s_main.rlp1, Rotation(nonce_rot));
             rlc = rlc + s_rlp1_nonce * acc_mult.clone();
 
-            let s_rlp2_nonce = meta.query_advice(s_rlp2, Rotation(nonce_rot));
+            let s_rlp2_nonce = meta.query_advice(s_main.rlp2, Rotation(nonce_rot));
             let mut rind = 0;
         
             rlc = rlc + s_rlp2_nonce * acc_mult.clone() * r_table[rind].clone();
             rind += 1;
 
-            let c_rlp1_nonce = meta.query_advice(c_rlp1, Rotation(nonce_rot));
-            let c_rlp2_nonce = meta.query_advice(c_rlp2, Rotation(nonce_rot));
+            let c_rlp1_nonce = meta.query_advice(c_main.rlp1, Rotation(nonce_rot));
+            let c_rlp2_nonce = meta.query_advice(c_main.rlp2, Rotation(nonce_rot));
             rlc = rlc + c_rlp1_nonce.clone() * acc_mult.clone() * r_table[rind].clone();
             rind += 1;
             rlc = rlc + c_rlp2_nonce.clone() * acc_mult.clone() * r_table[rind].clone();
@@ -368,21 +364,21 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchChip<F> {
                 );
             }
 
-            let s_advices0_nonce = meta.query_advice(s_advices[0], Rotation(nonce_rot));
+            let s_advices0_nonce = meta.query_advice(s_main.bytes[0], Rotation(nonce_rot));
             let nonce_stored = meta.query_advice(s_mod_node_hash_rlc, Rotation(nonce_rot));
             let nonce_rlc = (s_advices0_nonce.clone() + nonce_stored.clone() * r_table[0].clone()) * is_nonce_long.clone()
                 + nonce_stored.clone() * (one.clone() - is_nonce_long.clone()); 
             rlc = rlc + nonce_rlc * r_table[rind].clone() * acc_mult.clone();
 
-            let c_advices0_nonce = meta.query_advice(c_advices0, Rotation(nonce_rot));
+            let c_advices0_nonce = meta.query_advice(c_main.bytes[0], Rotation(nonce_rot));
             let balance_stored = meta.query_advice(c_mod_node_hash_rlc, Rotation(nonce_rot));
             let balance_rlc = (c_advices0_nonce.clone() + balance_stored.clone() * r_table[0].clone()) * is_balance_long.clone()
                 + balance_stored.clone() * (one.clone() - is_balance_long.clone()); 
             let mut curr_r = mult_diff_nonce.clone() * acc_mult.clone();
             rlc = rlc + balance_rlc * curr_r.clone();
 
-            let s_rlp2_storage = meta.query_advice(s_rlp2, Rotation(storage_codehash_rot));
-            let c_rlp2_storage = meta.query_advice(c_rlp2, Rotation(storage_codehash_rot));
+            let s_rlp2_storage = meta.query_advice(s_main.rlp2, Rotation(storage_codehash_rot));
+            let c_rlp2_storage = meta.query_advice(c_main.rlp2, Rotation(storage_codehash_rot));
 
             let mult_diff_balance = meta.query_advice(key_rlc_mult, Rotation(nonce_rot));
             curr_r = curr_r * mult_diff_balance;
@@ -401,12 +397,12 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchChip<F> {
             // Any rotation that lands into branch children can be used.
             let rot = -17;
             let mut is_branch_placeholder = meta.query_advice(
-                s_advices[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM],
+                s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM],
                 Rotation(rot_branch_init),
             );
             if !is_s {
                 is_branch_placeholder = meta.query_advice(
-                    s_advices[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
+                    s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
                     Rotation(rot_branch_init),
                 );
             }
@@ -449,14 +445,14 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchChip<F> {
         range_lookups(
             meta,
             q_enable,
-            s_advices.to_vec(),
+            s_main.bytes.to_vec(),
             FixedTableTag::Range256,
             fixed_table,
         );
         range_lookups(
             meta,
             q_enable,
-            [s_rlp1, s_rlp2, c_rlp1, c_rlp2].to_vec(),
+            [s_main.rlp1, s_main.rlp2, c_main.rlp1, c_main.rlp2].to_vec(),
             FixedTableTag::Range256,
             fixed_table,
         );

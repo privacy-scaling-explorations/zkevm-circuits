@@ -6,7 +6,7 @@ use halo2_proofs::{
 use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
-use crate::{helpers::{bytes_expr_into_rlc, key_len_lookup}, param::HASH_WIDTH};
+use crate::{helpers::{bytes_expr_into_rlc, key_len_lookup}, mpt::MainCols};
 
 #[derive(Clone, Debug)]
 pub(crate) struct BranchParallelConfig {}
@@ -25,8 +25,7 @@ impl<F: FieldExt> BranchParallelChip<F> {
         q_not_first: Column<Fixed>,
         is_branch_child: Column<Advice>,
         mod_node_hash_rlc: Column<Advice>,
-        rlp2: Column<Advice>,
-        advices: [Column<Advice>; HASH_WIDTH],
+        main: MainCols,
         node_index: Column<Advice>,
         is_modified: Column<Advice>,
         is_at_drifted_pos: Column<Advice>,
@@ -47,7 +46,7 @@ impl<F: FieldExt> BranchParallelChip<F> {
             let mut constraints = vec![];
 
             let is_branch_child_cur = meta.query_advice(is_branch_child, Rotation::cur());
-            let rlp2 = meta.query_advice(rlp2, Rotation::cur());
+            let rlp2 = meta.query_advice(main.rlp2, Rotation::cur());
 
             // Note that s_rlp1 and c_rlp1 store RLP stream length data (subtracted
             // by the number of bytes in branch rows until that position).
@@ -71,7 +70,7 @@ impl<F: FieldExt> BranchParallelChip<F> {
             // and values need to be bytes which is constrained by the lookups
             // on s_advices and c_advices).
 
-            let advice0 = meta.query_advice(advices[0], Rotation::cur());
+            let advice0 = meta.query_advice(main.bytes[0], Rotation::cur());
             constraints.push((
                 "*_advices[0] = 128 in empty",
                 q_enable.clone()
@@ -82,7 +81,7 @@ impl<F: FieldExt> BranchParallelChip<F> {
                                                  * value (0-255). */
             ));
 
-            for col in advices.iter().skip(1) {
+            for col in main.bytes.iter().skip(1) {
                 let s = meta.query_advice(*col, Rotation::cur());
                 constraints.push((
                     "*_advices[i] = 0 for i > 0 in empty",
@@ -144,7 +143,7 @@ impl<F: FieldExt> BranchParallelChip<F> {
 
             let mut sc_hash = vec![];
             // Note: storage root is always in s_advices!
-            for column in advices.iter() {
+            for column in main.bytes.iter() {
                 sc_hash.push(meta.query_advice(*column, Rotation::cur()));
             }
             let hash_rlc = bytes_expr_into_rlc(&sc_hash, acc_r);
@@ -177,7 +176,7 @@ impl<F: FieldExt> BranchParallelChip<F> {
             let sel_cur = meta.query_advice(sel, Rotation::cur());
 
             // advices[0] = 128
-            let advices0 = meta.query_advice(advices[0], Rotation::cur());
+            let advices0 = meta.query_advice(main.bytes[0], Rotation::cur());
             constraints.push((
                 "branch child sel *_advices0",
                 q_not_first.clone()
@@ -187,7 +186,7 @@ impl<F: FieldExt> BranchParallelChip<F> {
                     * sel_cur.clone(),
             ));
             // advices[i] = 0 for i > 0
-            for column in advices.iter().skip(1) {
+            for column in main.bytes.iter().skip(1) {
                 let s = meta.query_advice(*column, Rotation::cur());
                 constraints.push((
                     "branch child sel *_advices",
@@ -225,8 +224,8 @@ impl<F: FieldExt> BranchParallelChip<F> {
                 meta,
                 sel,
                 ind,
-                s_advices[0],
-                s_advices[ind],
+                main.bytes[0],
+                main.bytes[ind],
                 192,
                 fixed_table,
             )
