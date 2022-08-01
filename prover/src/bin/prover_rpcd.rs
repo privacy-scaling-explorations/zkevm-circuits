@@ -1,14 +1,10 @@
 use env_logger::Env;
-use halo2_proofs::pairing::bn256::G1Affine;
-use halo2_proofs::poly::commitment::Params;
 use hyper::body::Buf;
 use hyper::body::HttpBody;
 use hyper::header::HeaderValue;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Method, Request, Response, Server, StatusCode};
 use std::env::var;
-use std::fs::File;
-use std::sync::Arc;
 
 use prover::shared_state::SharedState;
 use prover::structs::*;
@@ -150,30 +146,15 @@ async fn handle_method(
     match method {
         // enqueues a task for computating proof for any given block
         "proof" => {
-            if params.len() != 3 {
-                return Err("expected [block_num, rpc_url, retry_if_error]".to_string());
-            }
+            let options = params.get(0).ok_or("expected struct ProofRequestOptions")?;
+            let options: ProofRequestOptions =
+                serde_json::from_value(options.to_owned()).map_err(|e| e.to_string())?;
 
-            let block_num = params[0].as_u64().ok_or("block number at params[0]")?;
-            let rpc_url = params[1].as_str().ok_or("rpc url at params[1]")?;
-            let retry_if_error = params[2]
-                .as_bool()
-                .ok_or("bool retry_if_error at params[2]")?;
-
-            match shared_state
-                .get_or_enqueue(&block_num, rpc_url, &retry_if_error)
+            shared_state
+                .get_or_enqueue(&options)
                 .await
-            {
-                // No error
-                None => Ok(serde_json::Value::Null),
-                Some(result) => {
-                    if let Err(err) = result {
-                        return Err(err);
-                    }
-
-                    Ok(serde_json::to_value(result.unwrap()).unwrap())
-                }
-            }
+                .map(|result| serde_json::to_value(result?).map_err(|e| e.to_string()))
+                .unwrap_or_else(|| Ok(serde_json::Value::Null))
         }
         // TODO/TBD: add method to only return the witnesses for a block.
         //  block table, tx table, etc...
@@ -240,23 +221,15 @@ async fn main() {
 
         // starts the duty cycle loop
         let ctx = shared_state.clone();
-        let h2 = tokio::spawn(async move {
-            // lazily load params
-            let params_path: String = var("PARAMS_PATH")
-                .expect("PARAMS_PATH env var")
-                .parse()
-                .expect("Cannot parse PARAMS_PATH env var");
-            // load polynomial commitment parameters
-            let params_fs = File::open(&params_path).expect("couldn't open params");
-            let params: Arc<Params<G1Affine>> = Arc::new(
-                Params::read::<_>(&mut std::io::BufReader::new(params_fs))
-                    .expect("Failed to read params"),
-            );
-            log::info!("params: initialized");
-
+        // use a dedicated runtime for mixed async / heavy (blocking) compute
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let h2 = rt.spawn(async move {
             let ctx = ctx.clone();
             loop {
-                ctx.duty_cycle(params.clone()).await;
+                ctx.duty_cycle().await;
                 tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
             }
         });

@@ -2,20 +2,19 @@ use crate::{
     evm_circuit::{
         param::STACK_CAPACITY,
         step::{ExecutionState, Step},
-        table::{
-            AccountFieldTag, BytecodeFieldTag, CallContextFieldTag, FixedTableTag, Lookup,
-            RwTableTag, Table, TxContextFieldTag, TxLogFieldTag, TxReceiptFieldTag,
-        },
+        table::{FixedTableTag, Lookup, Table},
         util::{Cell, RandomLinearCombination, Word},
+    },
+    table::{
+        AccountFieldTag, BytecodeFieldTag, CallContextFieldTag, RwTableTag, TxContextFieldTag,
+        TxLogFieldTag, TxReceiptFieldTag,
     },
     util::Expr,
 };
-use halo2_proofs::{
-    arithmetic::FieldExt,
-    plonk::{
-        Error,
-        Expression::{self, Constant},
-    },
+use eth_types::Field;
+use halo2_proofs::plonk::{
+    Error,
+    Expression::{self, Constant},
 };
 use std::convert::TryInto;
 
@@ -27,12 +26,6 @@ use super::{rlc, CachedRegion, CellType, StoredExpression};
 // allows 2^2+1-3 = 2.
 const MAX_DEGREE: usize = 5;
 const IMPLICIT_DEGREE: usize = 3;
-
-#[derive(Clone, Debug, Default)]
-struct StepRowUsage {
-    next_idx: usize,
-    is_byte_lookup_enabled: bool,
-}
 
 pub(crate) enum Transition<T> {
     Same,
@@ -48,7 +41,7 @@ impl<F> Default for Transition<F> {
 }
 
 #[derive(Default)]
-pub(crate) struct StepStateTransition<F: FieldExt> {
+pub(crate) struct StepStateTransition<F: Field> {
     pub(crate) rw_counter: Transition<Expression<F>>,
     pub(crate) call_id: Transition<Expression<F>>,
     pub(crate) is_root: Transition<Expression<F>>,
@@ -62,7 +55,7 @@ pub(crate) struct StepStateTransition<F: FieldExt> {
     pub(crate) log_id: Transition<Expression<F>>,
 }
 
-impl<F: FieldExt> StepStateTransition<F> {
+impl<F: Field> StepStateTransition<F> {
     pub(crate) fn new_context() -> Self {
         Self {
             program_counter: Transition::To(0.expr()),
@@ -106,7 +99,7 @@ pub(crate) struct ReversionInfo<F> {
     reversible_write_counter: Expression<F>,
 }
 
-impl<F: FieldExt> ReversionInfo<F> {
+impl<F: Field> ReversionInfo<F> {
     pub(crate) fn rw_counter_end_of_reversion(&self) -> Expression<F> {
         self.rw_counter_end_of_reversion.expr()
     }
@@ -149,7 +142,7 @@ pub struct BaseConstraintBuilder<F> {
     pub condition: Option<Expression<F>>,
 }
 
-impl<F: FieldExt> BaseConstraintBuilder<F> {
+impl<F: Field> BaseConstraintBuilder<F> {
     pub(crate) fn new(max_degree: usize) -> Self {
         BaseConstraintBuilder {
             constraints: Vec::new(),
@@ -256,7 +249,7 @@ pub(crate) struct ConstraintBuilder<'a, F> {
     stored_expressions: Vec<StoredExpression<F>>,
 }
 
-impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
+impl<'a, F: Field> ConstraintBuilder<'a, F> {
     pub(crate) fn new(
         curr: Step<F>,
         next: Step<F>,
@@ -1014,36 +1007,11 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         );
     }
 
-    pub(crate) fn memory_lookup_with_counter(
-        &mut self,
-        rw_counter: Expression<F>,
-        is_write: Expression<F>,
-        memory_address: Expression<F>,
-        byte: Expression<F>,
-    ) {
-        self.rw_lookup_with_counter(
-            "Memory lookup",
-            rw_counter,
-            is_write,
-            RwTableTag::Memory,
-            [
-                self.curr.state.call_id.expr(),
-                memory_address,
-                0.expr(),
-                0.expr(),
-                byte,
-                0.expr(),
-                0.expr(),
-                0.expr(),
-            ],
-        );
-    }
-
     pub(crate) fn tx_log_lookup(
         &mut self,
         tx_id: Expression<F>,
         log_id: Expression<F>,
-        tag: TxLogFieldTag,
+        field_tag: TxLogFieldTag,
         index: Expression<F>,
         value: Expression<F>,
     ) {
@@ -1053,8 +1021,8 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             RwTableTag::TxLog,
             [
                 tx_id,
-                index + (1u64 << 8).expr() * log_id,
-                tag.expr(),
+                index + (1u64 << 32).expr() * field_tag.expr() + (1u64 << 48).expr() * log_id,
+                0.expr(),
                 0.expr(),
                 value,
                 0.expr(),
@@ -1066,25 +1034,16 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
 
     // Tx Receipt
 
-    pub(crate) fn tx_receipt(
-        &mut self,
-        tx_id: Expression<F>,
-        field_tag: TxReceiptFieldTag,
-    ) -> Cell<F> {
-        let cell = self.query_cell();
-        self.tx_receipt_lookup(tx_id, field_tag, cell.expr());
-        cell
-    }
-
     pub(crate) fn tx_receipt_lookup(
         &mut self,
+        is_write: Expression<F>,
         tx_id: Expression<F>,
         tag: TxReceiptFieldTag,
         value: Expression<F>,
     ) {
         self.rw_lookup(
             "tx receipt lookup",
-            0.expr(),
+            is_write,
             RwTableTag::TxReceipt,
             [
                 tx_id,
@@ -1096,6 +1055,40 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
                 0.expr(),
                 0.expr(),
             ],
+        );
+    }
+
+    // Copy Table
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn copy_table_lookup(
+        &mut self,
+        src_id: Expression<F>,
+        src_tag: Expression<F>,
+        dst_id: Expression<F>,
+        dst_tag: Expression<F>,
+        src_addr: Expression<F>,
+        src_addr_end: Expression<F>,
+        dst_addr: Expression<F>,
+        length: Expression<F>,
+        rw_counter: Expression<F>,
+        rwc_inc: Expression<F>,
+    ) {
+        self.add_lookup(
+            "copy lookup",
+            Lookup::CopyTable {
+                is_first: 1.expr(), // is_first
+                src_id,
+                src_tag,
+                dst_id,
+                dst_tag,
+                src_addr,
+                src_addr_end,
+                dst_addr,
+                length,
+                rw_counter,
+                rwc_inc,
+            },
         );
     }
 

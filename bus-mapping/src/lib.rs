@@ -225,8 +225,9 @@
 #![allow(clippy::upper_case_acronyms)] // Too pedantic
 
 extern crate alloc;
+extern crate core;
+
 pub mod circuit_input_builder;
-pub mod constants;
 pub mod error;
 pub mod evm;
 pub mod exec_trace;

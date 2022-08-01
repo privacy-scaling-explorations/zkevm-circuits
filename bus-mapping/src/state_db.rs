@@ -37,7 +37,7 @@ impl CodeDB {
 
 /// Account of the Ethereum State Trie, which contains an in-memory key-value
 /// database that represents the Account Storage Trie.
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Account {
     /// Nonce
     pub nonce: Word,

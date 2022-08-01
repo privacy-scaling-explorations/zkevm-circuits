@@ -3,8 +3,7 @@ use crate::{
     circuit_input_builder::{CircuitInputStateRef, ExecStep},
     evm::OpcodeId,
     operation::{
-        AccountField, AccountOp, CallContextField, CallContextOp, TxAccessListAccountOp,
-        TxReceiptField, TxReceiptOp, TxRefundOp, RW,
+        AccountField, CallContextField, TxAccessListAccountOp, TxReceiptField, TxRefundOp, RW,
     },
     Error,
 };
@@ -15,7 +14,6 @@ use eth_types::{
 };
 use keccak256::EMPTY_HASH;
 use log::warn;
-use std::collections::HashMap;
 
 mod call;
 mod calldatacopy;
@@ -26,7 +24,9 @@ mod callvalue;
 mod chainid;
 mod codecopy;
 mod codesize;
+mod create;
 mod dup;
+mod extcodecopy;
 mod extcodehash;
 mod gasprice;
 mod logs;
@@ -34,12 +34,18 @@ mod mload;
 mod mstore;
 mod number;
 mod origin;
+mod r#return;
+mod returndatacopy;
 mod selfbalance;
+mod sha3;
 mod sload;
 mod sstore;
 mod stackonlyop;
 mod stop;
 mod swap;
+
+#[cfg(test)]
+mod memory_expansion_test;
 
 use call::Call;
 use calldatacopy::Calldatacopy;
@@ -49,14 +55,19 @@ use caller::Caller;
 use callvalue::Callvalue;
 use codecopy::Codecopy;
 use codesize::Codesize;
+use create::DummyCreate;
 use dup::Dup;
+use extcodecopy::Extcodecopy;
 use extcodehash::Extcodehash;
 use gasprice::GasPrice;
 use logs::Log;
 use mload::Mload;
 use mstore::Mstore;
 use origin::Origin;
+use r#return::Return;
+use returndatacopy::Returndatacopy;
 use selfbalance::Selfbalance;
+use sha3::Sha3;
 use sload::Sload;
 use sstore::Sstore;
 use stackonlyop::StackOnlyOpcode;
@@ -78,11 +89,16 @@ pub trait Opcode: Debug {
     ) -> Result<Vec<ExecStep>, Error>;
 }
 
-fn dummy_gen_associated_ops(
-    state: &mut CircuitInputStateRef,
-    geth_steps: &[GethExecStep],
-) -> Result<Vec<ExecStep>, Error> {
-    Ok(vec![state.new_step(&geth_steps[0])?])
+#[derive(Debug, Copy, Clone)]
+struct Dummy;
+
+impl Opcode for Dummy {
+    fn gen_associated_ops(
+        state: &mut CircuitInputStateRef,
+        geth_steps: &[GethExecStep],
+    ) -> Result<Vec<ExecStep>, Error> {
+        Ok(vec![state.new_step(&geth_steps[0])?])
+    }
 }
 
 type FnGenAssociatedOps = fn(
@@ -122,9 +138,9 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         OpcodeId::SHL => StackOnlyOpcode::<2, 1>::gen_associated_ops,
         OpcodeId::SHR => StackOnlyOpcode::<2, 1>::gen_associated_ops,
         OpcodeId::SAR => StackOnlyOpcode::<2, 1>::gen_associated_ops,
-        OpcodeId::SHA3 => StackOnlyOpcode::<2, 1>::gen_associated_ops,
-        // OpcodeId::ADDRESS => {},
-        // OpcodeId::BALANCE => {},
+        OpcodeId::SHA3 => Sha3::gen_associated_ops,
+        OpcodeId::ADDRESS => StackOnlyOpcode::<0, 1>::gen_associated_ops,
+        OpcodeId::BALANCE => StackOnlyOpcode::<1, 1>::gen_associated_ops,
         OpcodeId::ORIGIN => Origin::gen_associated_ops,
         OpcodeId::CALLER => Caller::gen_associated_ops,
         OpcodeId::CALLVALUE => Callvalue::gen_associated_ops,
@@ -134,12 +150,12 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         OpcodeId::GASPRICE => GasPrice::gen_associated_ops,
         OpcodeId::CODECOPY => Codecopy::gen_associated_ops,
         OpcodeId::CODESIZE => Codesize::gen_associated_ops,
-        // OpcodeId::EXTCODESIZE => {},
-        // OpcodeId::EXTCODECOPY => {},
-        // OpcodeId::RETURNDATASIZE => {},
-        // OpcodeId::RETURNDATACOPY => {},
+        OpcodeId::EXTCODESIZE => StackOnlyOpcode::<1, 1>::gen_associated_ops,
+        OpcodeId::EXTCODECOPY => Extcodecopy::gen_associated_ops,
+        OpcodeId::RETURNDATASIZE => StackOnlyOpcode::<0, 1>::gen_associated_ops,
+        OpcodeId::RETURNDATACOPY => Returndatacopy::gen_associated_ops,
         OpcodeId::EXTCODEHASH => Extcodehash::gen_associated_ops,
-        // OpcodeId::BLOCKHASH => {},
+        OpcodeId::BLOCKHASH => StackOnlyOpcode::<1, 1>::gen_associated_ops,
         OpcodeId::COINBASE => StackOnlyOpcode::<0, 1>::gen_associated_ops,
         OpcodeId::TIMESTAMP => StackOnlyOpcode::<0, 1>::gen_associated_ops,
         OpcodeId::NUMBER => StackOnlyOpcode::<0, 1>::gen_associated_ops,
@@ -159,7 +175,7 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         OpcodeId::PC => StackOnlyOpcode::<0, 1>::gen_associated_ops,
         OpcodeId::MSIZE => StackOnlyOpcode::<0, 1>::gen_associated_ops,
         OpcodeId::GAS => StackOnlyOpcode::<0, 1>::gen_associated_ops,
-        OpcodeId::JUMPDEST => dummy_gen_associated_ops,
+        OpcodeId::JUMPDEST => Dummy::gen_associated_ops,
         OpcodeId::DUP1 => Dup::<1>::gen_associated_ops,
         OpcodeId::DUP2 => Dup::<2>::gen_associated_ops,
         OpcodeId::DUP3 => Dup::<3>::gen_associated_ops,
@@ -197,35 +213,30 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         OpcodeId::LOG2 => Log::gen_associated_ops,
         OpcodeId::LOG3 => Log::gen_associated_ops,
         OpcodeId::LOG4 => Log::gen_associated_ops,
-        // OpcodeId::CREATE => {},
         OpcodeId::CALL => Call::gen_associated_ops,
-        // OpcodeId::CALLCODE => {},
-        // TODO: Handle RETURN by its own gen_associated_ops.
-        OpcodeId::RETURN => Stop::gen_associated_ops,
-        // OpcodeId::DELEGATECALL => {},
-        // OpcodeId::CREATE2 => {},
-        // OpcodeId::STATICCALL => {},
-        // TODO: Handle REVERT by its own gen_associated_ops.
-        OpcodeId::REVERT => Stop::gen_associated_ops,
+        OpcodeId::RETURN => Return::gen_associated_ops,
+        // REVERT is almost the same as RETURN
+        OpcodeId::REVERT => Return::gen_associated_ops,
         OpcodeId::SELFDESTRUCT => {
             warn!("Using dummy gen_selfdestruct_ops for opcode SELFDESTRUCT");
-            dummy_gen_selfdestruct_ops
+            DummySelfDestruct::gen_associated_ops
         }
         OpcodeId::CALLCODE | OpcodeId::DELEGATECALL | OpcodeId::STATICCALL => {
             warn!("Using dummy gen_call_ops for opcode {:?}", opcode_id);
-            dummy_gen_call_ops
+            DummyCall::gen_associated_ops
         }
         OpcodeId::CREATE | OpcodeId::CREATE2 => {
             warn!("Using dummy gen_create_ops for opcode {:?}", opcode_id);
-            dummy_gen_create_ops
+            DummyCreate::gen_associated_ops
         }
         _ => {
             warn!("Using dummy gen_associated_ops for opcode {:?}", opcode_id);
-            dummy_gen_associated_ops
+            Dummy::gen_associated_ops
         }
     }
 }
 
+#[allow(clippy::collapsible_else_if)]
 /// Generate the associated operations according to the particular
 /// [`OpcodeId`].
 pub fn gen_associated_ops(
@@ -234,7 +245,20 @@ pub fn gen_associated_ops(
     geth_steps: &[GethExecStep],
 ) -> Result<Vec<ExecStep>, Error> {
     let fn_gen_associated_ops = fn_gen_associated_ops(opcode_id);
-    fn_gen_associated_ops(state, geth_steps)
+
+    let memory_enabled = !geth_steps.iter().all(|s| s.memory.is_empty());
+    if memory_enabled {
+        assert_eq!(
+            &state.call_ctx()?.memory,
+            &geth_steps[0].memory,
+            "last step of {:?} goes wrong",
+            opcode_id
+        );
+    }
+
+    let steps = fn_gen_associated_ops(state, geth_steps)?;
+
+    Ok(steps)
 }
 
 pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Error> {
@@ -252,44 +276,30 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
             (call.is_persistent as usize).into(),
         ),
     ] {
-        state.push_op(
-            &mut exec_step,
-            RW::READ,
-            CallContextOp {
-                call_id: call.call_id,
-                field,
-                value,
-            },
-        );
+        state.call_context_read(&mut exec_step, call.call_id, field, value);
     }
 
     // Increase caller's nonce
     let caller_address = call.caller_address;
     let nonce_prev = state.sdb.increase_nonce(&caller_address);
-    state.push_op(
+    state.account_write(
         &mut exec_step,
-        RW::WRITE,
-        AccountOp {
-            address: caller_address,
-            field: AccountField::Nonce,
-            value: (nonce_prev + 1).into(),
-            value_prev: nonce_prev.into(),
-        },
-    );
+        caller_address,
+        AccountField::Nonce,
+        (nonce_prev + 1).into(),
+        nonce_prev.into(),
+    )?;
 
     // Add caller and callee into access list
     for address in [call.caller_address, call.address] {
         state.sdb.add_account_to_access_list(address);
-        state.push_op(
+        state.tx_accesslist_account_write(
             &mut exec_step,
-            RW::WRITE,
-            TxAccessListAccountOp {
-                tx_id: state.tx_ctx.id(),
-                address,
-                is_warm: true,
-                is_warm_prev: false,
-            },
-        );
+            state.tx_ctx.id(),
+            address,
+            true,
+            false,
+        )?;
     }
 
     // Calculate intrinsic gas cost
@@ -335,16 +345,13 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
             Ok(exec_step)
         }
         (_, _, is_empty_code_hash) => {
-            state.push_op(
+            state.account_read(
                 &mut exec_step,
-                RW::READ,
-                AccountOp {
-                    address: call.address,
-                    field: AccountField::CodeHash,
-                    value: code_hash.to_word(),
-                    value_prev: code_hash.to_word(),
-                },
-            );
+                call.address,
+                AccountField::CodeHash,
+                code_hash.to_word(),
+                code_hash.to_word(),
+            )?;
 
             // 3. Call to account with empty code.
             if is_empty_code_hash {
@@ -375,17 +382,9 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
                 (CallContextField::LastCalleeReturnDataLength, 0.into()),
                 (CallContextField::IsRoot, 1.into()),
                 (CallContextField::IsCreate, 0.into()),
-                (CallContextField::CodeSource, code_hash.to_word()),
+                (CallContextField::CodeHash, code_hash.to_word()),
             ] {
-                state.push_op(
-                    &mut exec_step,
-                    RW::READ,
-                    CallContextOp {
-                        call_id: call.call_id,
-                        field,
-                        value,
-                    },
-                );
+                state.call_context_read(&mut exec_step, call.call_id, field, value);
             }
 
             Ok(exec_step)
@@ -393,30 +392,21 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
     }
 }
 
-pub fn gen_end_tx_ops(
-    state: &mut CircuitInputStateRef,
-    cumulative_gas_used: &mut HashMap<usize, u64>,
-) -> Result<ExecStep, Error> {
+pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Error> {
     let mut exec_step = state.new_end_tx_step();
     let call = state.tx.calls()[0].clone();
 
-    state.push_op(
+    state.call_context_read(
         &mut exec_step,
-        RW::READ,
-        CallContextOp {
-            call_id: call.call_id,
-            field: CallContextField::TxId,
-            value: state.tx_ctx.id().into(),
-        },
+        call.call_id,
+        CallContextField::TxId,
+        state.tx_ctx.id().into(),
     );
-    state.push_op(
+    state.call_context_read(
         &mut exec_step,
-        RW::READ,
-        CallContextOp {
-            call_id: call.call_id,
-            field: CallContextField::IsPersistent,
-            value: Word::from(call.is_persistent as u8),
-        },
+        call.call_id,
+        CallContextField::IsPersistent,
+        Word::from(call.is_persistent as u8),
     );
 
     let refund = state.sdb.refund();
@@ -439,16 +429,14 @@ pub fn gen_end_tx_ops(
     let caller_balance_prev = caller_account.balance;
     let caller_balance =
         caller_account.balance + state.tx.gas_price * (exec_step.gas_left.0 + effective_refund);
-    state.push_op(
+
+    state.account_write(
         &mut exec_step,
-        RW::WRITE,
-        AccountOp {
-            address: call.caller_address,
-            field: AccountField::Balance,
-            value: caller_balance,
-            value_prev: caller_balance_prev,
-        },
-    );
+        call.caller_address,
+        AccountField::Balance,
+        caller_balance,
+        caller_balance_prev,
+    )?;
 
     let effective_tip = state.tx.gas_price - state.block.base_fee;
     let (found, coinbase_account) = state.sdb.get_account_mut(&state.block.coinbase);
@@ -458,80 +446,70 @@ pub fn gen_end_tx_ops(
     let coinbase_balance_prev = coinbase_account.balance;
     let coinbase_balance =
         coinbase_account.balance + effective_tip * (state.tx.gas - exec_step.gas_left.0);
-    state.push_op(
+    state.account_write(
         &mut exec_step,
-        RW::WRITE,
-        AccountOp {
-            address: state.block.coinbase,
-            field: AccountField::Balance,
-            value: coinbase_balance,
-            value_prev: coinbase_balance_prev,
-        },
-    );
+        state.block.coinbase,
+        AccountField::Balance,
+        coinbase_balance,
+        coinbase_balance_prev,
+    )?;
 
     // handle tx receipt tag
-    state.push_op(
+    state.tx_receipt_write(
         &mut exec_step,
-        RW::READ,
-        TxReceiptOp {
-            tx_id: state.tx_ctx.id(),
-            field: TxReceiptField::PostStateOrStatus,
-            value: call.is_persistent as u64,
-        },
-    );
+        state.tx_ctx.id(),
+        TxReceiptField::PostStateOrStatus,
+        call.is_persistent as u64,
+    )?;
 
     let log_id = exec_step.log_id;
-    state.push_op(
+    state.tx_receipt_write(
         &mut exec_step,
-        RW::READ,
-        TxReceiptOp {
-            tx_id: state.tx_ctx.id(),
-            field: TxReceiptField::LogLength,
-            value: log_id as u64,
-        },
-    );
+        state.tx_ctx.id(),
+        TxReceiptField::LogLength,
+        log_id as u64,
+    )?;
 
-    let gas_used = state.tx.gas - exec_step.gas_left.0;
-    let mut current_cumulative_gas_used: u64 = 0;
     if state.tx_ctx.id() > 1 {
-        current_cumulative_gas_used = *cumulative_gas_used.get(&(state.tx_ctx.id() - 1)).unwrap();
         // query pre tx cumulative gas
-        state.push_op(
+        state.tx_receipt_read(
             &mut exec_step,
-            RW::READ,
-            TxReceiptOp {
-                tx_id: state.tx_ctx.id() - 1,
-                field: TxReceiptField::CumulativeGasUsed,
-                value: current_cumulative_gas_used,
-            },
-        );
+            state.tx_ctx.id() - 1,
+            TxReceiptField::CumulativeGasUsed,
+            state.block_ctx.cumulative_gas_used,
+        )?;
     }
 
-    state.push_op(
+    state.block_ctx.cumulative_gas_used += state.tx.gas - exec_step.gas_left.0;
+    state.tx_receipt_write(
         &mut exec_step,
-        RW::READ,
-        TxReceiptOp {
-            tx_id: state.tx_ctx.id(),
-            field: TxReceiptField::CumulativeGasUsed,
-            value: current_cumulative_gas_used + gas_used,
-        },
-    );
-
-    cumulative_gas_used.insert(state.tx_ctx.id(), current_cumulative_gas_used + gas_used);
+        state.tx_ctx.id(),
+        TxReceiptField::CumulativeGasUsed,
+        state.block_ctx.cumulative_gas_used,
+    )?;
 
     if !state.tx_ctx.is_last_tx() {
-        state.push_op(
+        state.call_context_read(
             &mut exec_step,
-            RW::READ,
-            CallContextOp {
-                call_id: state.block_ctx.rwc.0 + 1,
-                field: CallContextField::TxId,
-                value: (state.tx_ctx.id() + 1).into(),
-            },
+            state.block_ctx.rwc.0 + 1,
+            CallContextField::TxId,
+            (state.tx_ctx.id() + 1).into(),
         );
     }
 
     Ok(exec_step)
+}
+
+#[derive(Debug, Copy, Clone)]
+struct DummyCall;
+
+impl Opcode for DummyCall {
+    fn gen_associated_ops(
+        state: &mut CircuitInputStateRef,
+        geth_steps: &[GethExecStep],
+    ) -> Result<Vec<ExecStep>, Error> {
+        dummy_gen_call_ops(state, geth_steps)
+    }
 }
 
 fn dummy_gen_call_ops(
@@ -559,7 +537,7 @@ fn dummy_gen_call_ops(
         },
     )?;
 
-    state.push_call(call.clone(), geth_step);
+    state.push_call(call.clone());
 
     match (
         state.is_precompiled(&call.address),
@@ -577,75 +555,17 @@ fn dummy_gen_call_ops(
     }
 }
 
-fn dummy_gen_create_ops(
-    state: &mut CircuitInputStateRef,
-    geth_steps: &[GethExecStep],
-) -> Result<Vec<ExecStep>, Error> {
-    let geth_step = &geth_steps[0];
-    let mut exec_step = state.new_step(geth_step)?;
+#[derive(Debug, Copy, Clone)]
+struct DummySelfDestruct;
 
-    let tx_id = state.tx_ctx.id();
-    let call = state.parse_call(geth_step)?;
-
-    // Increase caller's nonce
-    let nonce_prev = state.sdb.get_nonce(&call.caller_address);
-    state.push_op_reversible(
-        &mut exec_step,
-        RW::WRITE,
-        AccountOp {
-            address: call.caller_address,
-            field: AccountField::Nonce,
-            value: (nonce_prev + 1).into(),
-            value_prev: nonce_prev.into(),
-        },
-    )?;
-
-    // Add callee into access list
-    let is_warm = state.sdb.check_account_in_access_list(&call.address);
-    state.push_op_reversible(
-        &mut exec_step,
-        RW::WRITE,
-        TxAccessListAccountOp {
-            tx_id,
-            address: call.address,
-            is_warm: true,
-            is_warm_prev: is_warm,
-        },
-    )?;
-
-    state.push_call(call.clone(), geth_step);
-
-    // Increase callee's nonce
-    let nonce_prev = state.sdb.get_nonce(&call.address);
-    debug_assert!(nonce_prev == 0);
-    state.push_op_reversible(
-        &mut exec_step,
-        RW::WRITE,
-        AccountOp {
-            address: call.address,
-            field: AccountField::Nonce,
-            value: 1.into(),
-            value_prev: 0.into(),
-        },
-    )?;
-
-    state.transfer(
-        &mut exec_step,
-        call.caller_address,
-        call.address,
-        call.value,
-    )?;
-
-    if call.code_hash.to_fixed_bytes() == *EMPTY_HASH {
-        // 1. Create with empty initcode.
-        state.handle_return(geth_step)?;
-        Ok(vec![exec_step])
-    } else {
-        // 2. Create with non-empty initcode.
-        Ok(vec![exec_step])
+impl Opcode for DummySelfDestruct {
+    fn gen_associated_ops(
+        state: &mut CircuitInputStateRef,
+        geth_steps: &[GethExecStep],
+    ) -> Result<Vec<ExecStep>, Error> {
+        dummy_gen_selfdestruct_ops(state, geth_steps)
     }
 }
-
 fn dummy_gen_selfdestruct_ops(
     state: &mut CircuitInputStateRef,
     geth_steps: &[GethExecStep],

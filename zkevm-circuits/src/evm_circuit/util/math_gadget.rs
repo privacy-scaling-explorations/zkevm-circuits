@@ -882,6 +882,81 @@ impl<F: Field> MulAddWordsGadget<F> {
     }
 }
 
+#[derive(Clone, Debug)]
+/// CmpWordsGadget compares two words, exposing `eq`  and `lt`
+pub(crate) struct CmpWordsGadget<F> {
+    comparison_lo: ComparisonGadget<F, 16>,
+    comparison_hi: ComparisonGadget<F, 16>,
+    pub eq: Expression<F>,
+    pub lt: Expression<F>,
+}
+
+impl<F: Field> CmpWordsGadget<F> {
+    pub(crate) fn construct(
+        cb: &mut ConstraintBuilder<F>,
+        a: &util::Word<F>,
+        b: &util::Word<F>,
+    ) -> Self {
+        // `a[0..16] <= b[0..16]`
+        let comparison_lo = ComparisonGadget::construct(
+            cb,
+            from_bytes::expr(&a.cells[0..16]),
+            from_bytes::expr(&b.cells[0..16]),
+        );
+
+        let (lt_lo, eq_lo) = comparison_lo.expr();
+
+        // `a[16..32] <= b[16..32]`
+        let comparison_hi = ComparisonGadget::construct(
+            cb,
+            from_bytes::expr(&a.cells[16..32]),
+            from_bytes::expr(&b.cells[16..32]),
+        );
+        let (lt_hi, eq_hi) = comparison_hi.expr();
+
+        // `a < b` when:
+        // - `a[16..32] < b[16..32]` OR
+        // - `a[16..32] == b[16..32]` AND `a[0..16] < b[0..16]`
+        let lt = select::expr(lt_hi, 1.expr(), eq_hi.clone() * lt_lo);
+
+        // `a == b` when both parts are equal
+        let eq = eq_hi * eq_lo;
+
+        Self {
+            comparison_lo,
+            comparison_hi,
+            lt,
+            eq,
+        }
+    }
+
+    pub(crate) fn assign(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+        a: Word,
+        b: Word,
+    ) -> Result<(), Error> {
+        // `a[0..1] <= b[0..16]`
+        self.comparison_lo.assign(
+            region,
+            offset,
+            from_bytes::value(&a.to_le_bytes()[0..16]),
+            from_bytes::value(&b.to_le_bytes()[0..16]),
+        )?;
+
+        // `a[16..32] <= b[16..32]`
+        self.comparison_hi.assign(
+            region,
+            offset,
+            from_bytes::value(&a.to_le_bytes()[16..32]),
+            from_bytes::value(&b.to_le_bytes()[16..32]),
+        )?;
+
+        Ok(())
+    }
+}
+
 /// Construct the gadget that checks a * b + c == d * 2**256 + e
 /// where a, b, c, d, e are 256-bit words.
 ///
@@ -1149,5 +1224,91 @@ impl<F: Field> ModGadget<F> {
         )?;
 
         Ok(())
+    }
+}
+
+/// Construction of 256-bit word original and absolute values, which is useful
+/// for opcodes operated on signed values.
+#[derive(Clone, Debug)]
+pub(crate) struct AbsWordGadget<F> {
+    x: util::Word<F>,
+    x_abs: util::Word<F>,
+    sum: util::Word<F>,
+    is_neg: LtGadget<F, 1>,
+    add_words: AddWordsGadget<F, 2, false>,
+}
+
+impl<F: Field> AbsWordGadget<F> {
+    pub(crate) fn construct(cb: &mut ConstraintBuilder<F>) -> Self {
+        let x = cb.query_word();
+        let x_abs = cb.query_word();
+        let sum = cb.query_word();
+        let x_lo = from_bytes::expr(&x.cells[0..16]);
+        let x_hi = from_bytes::expr(&x.cells[16..32]);
+        let x_abs_lo = from_bytes::expr(&x_abs.cells[0..16]);
+        let x_abs_hi = from_bytes::expr(&x_abs.cells[16..32]);
+        let is_neg = LtGadget::construct(cb, 127.expr(), x.cells[31].expr());
+
+        cb.add_constraint(
+            "x_abs_lo == x_lo when x >= 0",
+            (1.expr() - is_neg.expr()) * (x_abs_lo.expr() - x_lo.expr()),
+        );
+        cb.add_constraint(
+            "x_abs_hi == x_hi when x >= 0",
+            (1.expr() - is_neg.expr()) * (x_abs_hi.expr() - x_hi.expr()),
+        );
+
+        // When `is_neg`, constrain `sum == 0` and `carry == 1`. Since the final
+        // result is `1 << 256`.
+        let add_words = AddWordsGadget::construct(cb, [x.clone(), x_abs.clone()], sum.clone());
+        cb.add_constraint(
+            "sum == 0 when x < 0",
+            is_neg.expr() * add_words.sum().expr(),
+        );
+        cb.add_constraint(
+            "carry_hi == 1 when x < 0",
+            is_neg.expr() * (1.expr() - add_words.carry().as_ref().unwrap().expr()),
+        );
+
+        Self {
+            x,
+            x_abs,
+            sum,
+            is_neg,
+            add_words,
+        }
+    }
+
+    pub(crate) fn assign(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+        x: Word,
+        x_abs: Word,
+    ) -> Result<(), Error> {
+        self.x.assign(region, offset, Some(x.to_le_bytes()))?;
+        self.x_abs
+            .assign(region, offset, Some(x_abs.to_le_bytes()))?;
+        self.is_neg.assign(
+            region,
+            offset,
+            127.into(),
+            u64::from(x.to_le_bytes()[31]).into(),
+        )?;
+        let sum = x.overflowing_add(x_abs).0;
+        self.sum.assign(region, offset, Some(sum.to_le_bytes()))?;
+        self.add_words.assign(region, offset, [x, x_abs], sum)
+    }
+
+    pub(crate) fn x(&self) -> &util::Word<F> {
+        &self.x
+    }
+
+    pub(crate) fn x_abs(&self) -> &util::Word<F> {
+        &self.x_abs
+    }
+
+    pub(crate) fn is_neg(&self) -> &LtGadget<F, 1> {
+        &self.is_neg
     }
 }

@@ -156,7 +156,7 @@ mod test {
             .write_op(opcode)
         };
         for b in bytes {
-            bytecode.write(*b);
+            bytecode.write(*b, false);
         }
         bytecode.write_op(OpcodeId::STOP);
 

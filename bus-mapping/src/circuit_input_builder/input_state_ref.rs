@@ -2,14 +2,15 @@
 
 use super::{
     get_call_memory_offset_length, get_create_init_code, Block, BlockContext, Call, CallContext,
-    CallKind, CodeSource, ExecState, ExecStep, Transaction, TransactionContext,
+    CallKind, CodeSource, CopyEvent, ExecState, ExecStep, Transaction, TransactionContext,
 };
 use crate::{
     error::{get_step_reported_error, ExecError},
     exec_trace::OperationRef,
     operation::{
         AccountField, AccountOp, CallContextField, CallContextOp, MemoryOp, Op, OpEnum, Operation,
-        StackOp, Target, TxLogField, TxLogOp, RW,
+        StackOp, Target, TxAccessListAccountOp, TxLogField, TxLogOp, TxReceiptField, TxReceiptOp,
+        RW,
     },
     state_db::{CodeDB, StateDB},
     Error,
@@ -42,18 +43,12 @@ impl<'a> CircuitInputStateRef<'a> {
     pub fn new_step(&self, geth_step: &GethExecStep) -> Result<ExecStep, Error> {
         let call_ctx = self.tx_ctx.call_ctx()?;
 
-        let pre_log_id = if self.tx.is_steps_empty() {
-            0
-        } else {
-            self.tx.last_step().log_id
-        };
-
         Ok(ExecStep::new(
             geth_step,
-            call_ctx.index,
+            call_ctx,
             self.block_ctx.rwc,
             call_ctx.reversible_write_counter,
-            pre_log_id,
+            self.tx_ctx.log_id,
         ))
     }
 
@@ -84,7 +79,7 @@ impl<'a> CircuitInputStateRef<'a> {
             } else {
                 0
             },
-            log_id: prev_step.log_id,
+            log_id: self.tx_ctx.log_id,
             ..Default::default()
         }
     }
@@ -260,7 +255,7 @@ impl<'a> CircuitInputStateRef<'a> {
 
     /// Push a read type [`AccountOp`] into the
     /// [`OperationContainer`](crate::operation::OperationContainer) with the
-    /// next [`RWCounter`](crate::operation::RWCounter)  and `call_id`, and then
+    /// next [`RWCounter`](crate::operation::RWCounter), and then
     /// adds a reference to the stored operation ([`OperationRef`]) inside
     /// the bus-mapping instance of the current [`ExecStep`].  Then increase
     /// the `block_ctx` [`RWCounter`](crate::operation::RWCounter)  by one.
@@ -275,6 +270,28 @@ impl<'a> CircuitInputStateRef<'a> {
         self.push_op(
             step,
             RW::READ,
+            AccountOp::new(address, field, value, value_prev),
+        );
+        Ok(())
+    }
+
+    /// Push a write type [`AccountOp`] into the
+    /// [`OperationContainer`](crate::operation::OperationContainer) with the
+    /// next [`RWCounter`](crate::operation::RWCounter), and then
+    /// adds a reference to the stored operation ([`OperationRef`]) inside
+    /// the bus-mapping instance of the current [`ExecStep`].  Then increase
+    /// the `block_ctx` [`RWCounter`](crate::operation::RWCounter)  by one.
+    pub fn account_write(
+        &mut self,
+        step: &mut ExecStep,
+        address: Address,
+        field: AccountField,
+        value: Word,
+        value_prev: Word,
+    ) -> Result<(), Error> {
+        self.push_op(
+            step,
+            RW::WRITE,
             AccountOp::new(address, field, value, value_prev),
         );
         Ok(())
@@ -299,6 +316,83 @@ impl<'a> CircuitInputStateRef<'a> {
             step,
             RW::WRITE,
             TxLogOp::new(tx_id, log_id, field, index, value),
+        );
+        Ok(())
+    }
+
+    /// Push a read type [`TxReceiptOp`] into the
+    /// [`OperationContainer`](crate::operation::OperationContainer) with the
+    /// next [`RWCounter`](crate::operation::RWCounter), and then
+    /// adds a reference to the stored operation ([`OperationRef`]) inside
+    /// the bus-mapping instance of the current [`ExecStep`].  Then increase
+    /// the `block_ctx` [`RWCounter`](crate::operation::RWCounter)  by one.
+    pub fn tx_receipt_read(
+        &mut self,
+        step: &mut ExecStep,
+        tx_id: usize,
+        field: TxReceiptField,
+        value: u64,
+    ) -> Result<(), Error> {
+        self.push_op(
+            step,
+            RW::READ,
+            TxReceiptOp {
+                tx_id,
+                field,
+                value,
+            },
+        );
+        Ok(())
+    }
+
+    /// Push a write type [`TxReceiptOp`] into the
+    /// [`OperationContainer`](crate::operation::OperationContainer) with the
+    /// next [`RWCounter`](crate::operation::RWCounter), and then
+    /// adds a reference to the stored operation ([`OperationRef`]) inside
+    /// the bus-mapping instance of the current [`ExecStep`].  Then increase
+    /// the `block_ctx` [`RWCounter`](crate::operation::RWCounter)  by one.
+    pub fn tx_receipt_write(
+        &mut self,
+        step: &mut ExecStep,
+        tx_id: usize,
+        field: TxReceiptField,
+        value: u64,
+    ) -> Result<(), Error> {
+        self.push_op(
+            step,
+            RW::WRITE,
+            TxReceiptOp {
+                tx_id,
+                field,
+                value,
+            },
+        );
+        Ok(())
+    }
+
+    /// Push a write type [`TxAccessListAccountOp`] into the
+    /// [`OperationContainer`](crate::operation::OperationContainer) with the
+    /// next [`RWCounter`](crate::operation::RWCounter), and then
+    /// adds a reference to the stored operation ([`OperationRef`]) inside
+    /// the bus-mapping instance of the current [`ExecStep`].  Then increase
+    /// the `block_ctx` [`RWCounter`](crate::operation::RWCounter)  by one.
+    pub fn tx_accesslist_account_write(
+        &mut self,
+        step: &mut ExecStep,
+        tx_id: usize,
+        address: Address,
+        is_warm: bool,
+        is_warm_prev: bool,
+    ) -> Result<(), Error> {
+        self.push_op(
+            step,
+            RW::WRITE,
+            TxAccessListAccountOp {
+                tx_id,
+                address,
+                is_warm,
+                is_warm_prev,
+            },
         );
         Ok(())
     }
@@ -370,6 +464,13 @@ impl<'a> CircuitInputStateRef<'a> {
             .ok_or(Error::CodeNotFound(code_hash))
     }
 
+    /// Reference to the caller's Call
+    pub fn caller(&self) -> Result<&Call, Error> {
+        self.tx_ctx
+            .caller_index()
+            .map(|caller_idx| &self.tx.calls()[caller_idx])
+    }
+
     /// Reference to the current Call
     pub fn call(&self) -> Result<&Call, Error> {
         self.tx_ctx
@@ -385,6 +486,11 @@ impl<'a> CircuitInputStateRef<'a> {
     }
 
     /// Reference to the current CallContext
+    pub fn caller_ctx(&self) -> Result<&CallContext, Error> {
+        self.tx_ctx.caller_ctx()
+    }
+
+    /// Reference to the current CallContext
     pub fn call_ctx(&self) -> Result<&CallContext, Error> {
         self.tx_ctx.call_ctx()
     }
@@ -394,12 +500,24 @@ impl<'a> CircuitInputStateRef<'a> {
         self.tx_ctx.call_ctx_mut()
     }
 
+    /// Mutable reference to the caller CallContext
+    pub fn caller_ctx_mut(&mut self) -> Result<&mut CallContext, Error> {
+        self.tx_ctx
+            .calls
+            .iter_mut()
+            .rev()
+            .nth(1)
+            .ok_or(Error::InternalError("caller id not found in call map"))
+    }
+
     /// Push a new [`Call`] into the [`Transaction`], and add its index and
     /// [`CallContext`] in the `call_stack` of the [`TransactionContext`]
-    pub fn push_call(&mut self, call: Call, step: &GethExecStep) {
+    pub fn push_call(&mut self, call: Call) {
+        let current_call = self.call_ctx().expect("current call not found");
         let call_data = match call.kind {
             CallKind::Call | CallKind::CallCode | CallKind::DelegateCall | CallKind::StaticCall => {
-                step.memory
+                current_call
+                    .memory
                     .read_chunk(call.call_data_offset.into(), call.call_data_length.into())
             }
             CallKind::Create | CallKind::Create2 => Vec::new(),
@@ -431,11 +549,12 @@ impl<'a> CircuitInputStateRef<'a> {
     /// deterministically from the arguments in the stack.
     pub(crate) fn create2_address(&self, step: &GethExecStep) -> Result<Address, Error> {
         let salt = step.stack.nth_last(3)?;
-        let init_code = get_create_init_code(step)?;
+        let call_ctx = self.call_ctx()?;
+        let init_code = get_create_init_code(call_ctx, step)?.to_vec();
         Ok(get_create2_address(
             self.call()?.address,
             salt.to_be_bytes().to_vec(),
-            init_code.to_vec(),
+            init_code,
         ))
     }
 
@@ -454,6 +573,7 @@ impl<'a> CircuitInputStateRef<'a> {
             .unwrap();
         let kind = CallKind::try_from(step.op)?;
         let caller = self.call()?;
+        let caller_ctx = self.call_ctx()?;
 
         let (caller_address, address, value) = match kind {
             CallKind::Call => (
@@ -478,8 +598,8 @@ impl<'a> CircuitInputStateRef<'a> {
 
         let (code_source, code_hash) = match kind {
             CallKind::Create | CallKind::Create2 => {
-                let init_code = get_create_init_code(step)?;
-                let code_hash = self.code_db.insert(init_code.to_vec());
+                let init_code = get_create_init_code(caller_ctx, step)?.to_vec();
+                let code_hash = self.code_db.insert(init_code);
                 (CodeSource::Memory, code_hash)
             }
             _ => {
@@ -671,12 +791,13 @@ impl<'a> CircuitInputStateRef<'a> {
     /// previous call context.
     pub fn handle_return(&mut self, step: &GethExecStep) -> Result<(), Error> {
         let call = self.call()?.clone();
+        let call_ctx = self.call_ctx()?;
 
         // Store deployed code if it's a successful create
         if call.is_create() && call.is_success {
             let offset = step.stack.nth_last(0)?;
             let length = step.stack.nth_last(1)?;
-            let code = step
+            let code = call_ctx
                 .memory
                 .read_chunk(offset.low_u64().into(), length.low_u64().into());
             let code_hash = self.code_db.insert(code);
@@ -695,6 +816,11 @@ impl<'a> CircuitInputStateRef<'a> {
         self.tx_ctx.pop_call_ctx();
 
         Ok(())
+    }
+
+    /// Push a copy event to the state.
+    pub fn push_copy(&mut self, copy: CopyEvent) {
+        self.block.add_copy_event(copy);
     }
 
     pub(crate) fn get_step_err(
@@ -726,9 +852,10 @@ impl<'a> CircuitInputStateRef<'a> {
             .unwrap_or_else(Word::zero);
 
         let call = self.call()?;
+        let call_ctx = self.call_ctx()?;
 
         // Return from a call with a failure
-        if step.depth != next_depth && next_result.is_zero() {
+        if step.depth == next_depth + 1 && next_result.is_zero() {
             if !matches!(step.op, OpcodeId::RETURN) {
                 // Without calling RETURN
                 return Ok(match step.op {
@@ -764,8 +891,8 @@ impl<'a> CircuitInputStateRef<'a> {
                     if length > Word::from(0x6000u64) {
                         return Ok(Some(ExecError::MaxCodeSizeExceeded));
                     } else if length > Word::zero()
-                        && !step.memory.0.is_empty()
-                        && step.memory.0.get(offset.low_u64() as usize) == Some(&0xef)
+                        && !call_ctx.memory.is_empty()
+                        && call_ctx.memory.0.get(offset.low_u64() as usize) == Some(&0xef)
                     {
                         return Ok(Some(ExecError::InvalidCreationCode));
                     } else if Word::from(200u64) * length > Word::from(step.gas.0) {
@@ -790,7 +917,7 @@ impl<'a> CircuitInputStateRef<'a> {
 
         // Return from a call without calling RETURN or STOP and having success
         // is unexpected.
-        if step.depth != next_depth
+        if step.depth == next_depth + 1
             && next_result != Word::zero()
             && !matches!(step.op, OpcodeId::RETURN | OpcodeId::STOP)
         {

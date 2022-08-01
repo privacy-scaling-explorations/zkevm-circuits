@@ -2,7 +2,6 @@ use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
         step::ExecutionState,
-        table::{CallContextFieldTag, TxContextFieldTag},
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
@@ -10,6 +9,7 @@ use crate::{
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
+    table::{CallContextFieldTag, TxContextFieldTag},
     util::Expr,
 };
 use bus_mapping::evm::OpcodeId;
@@ -72,7 +72,7 @@ impl<F: Field> ExecutionGadget<F> for GasPriceGadget<F> {
         _: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        let gas_price = block.rws.sorted_stack_rw()[0].stack_value();
+        let gas_price = block.rws[step.rw_indices[1]].stack_value();
 
         self.tx_id
             .assign(region, offset, Some(F::from(tx.id as u64)))?;

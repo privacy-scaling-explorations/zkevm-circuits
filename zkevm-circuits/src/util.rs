@@ -1,72 +1,36 @@
 //! Common utility traits and functions.
-use bus_mapping::operation::Target;
-use eth_types::{
-    evm_types::{GasCost, OpcodeId},
-    Field,
+use eth_types::Field;
+use halo2_proofs::{
+    plonk::{ConstraintSystem, Expression},
+    poly::Rotation,
 };
-use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
 
-pub(crate) trait Expr<F: FieldExt> {
-    fn expr(&self) -> Expression<F>;
-}
-
-/// Implementation trait `Expr` for type able to be casted to u64
-#[macro_export]
-macro_rules! impl_expr {
-    ($type:ty) => {
-        impl<F: FieldExt> $crate::util::Expr<F> for $type {
-            #[inline]
-            fn expr(&self) -> Expression<F> {
-                Expression::Constant(F::from(*self as u64))
-            }
-        }
-    };
-    ($type:ty, $method:path) => {
-        impl<F: FieldExt> Expr<F> for $type {
-            #[inline]
-            fn expr(&self) -> Expression<F> {
-                Expression::Constant(F::from($method(self) as u64))
-            }
-        }
-    };
-}
-
-impl_expr!(bool);
-impl_expr!(u8);
-impl_expr!(u64);
-impl_expr!(usize);
-impl_expr!(Target);
-impl_expr!(OpcodeId, OpcodeId::as_u8);
-impl_expr!(GasCost, GasCost::as_u64);
-
-impl<F: FieldExt> Expr<F> for Expression<F> {
-    #[inline]
-    fn expr(&self) -> Expression<F> {
-        self.clone()
-    }
-}
-
-impl<F: FieldExt> Expr<F> for &Expression<F> {
-    #[inline]
-    fn expr(&self) -> Expression<F> {
-        (*self).clone()
-    }
-}
-
-impl<F: FieldExt> Expr<F> for i32 {
-    #[inline]
-    fn expr(&self) -> Expression<F> {
-        Expression::Constant(
-            F::from(self.abs() as u64)
-                * if self.is_negative() {
-                    -F::one()
-                } else {
-                    F::one()
-                },
-        )
-    }
-}
+pub use gadgets::util::Expr;
 
 pub(crate) fn random_linear_combine_word<F: Field>(bytes: [u8; 32], randomness: F) -> F {
     crate::evm_circuit::util::Word::random_linear_combine(bytes, randomness)
+}
+
+/// Query N instances at current rotation and return their expressions.  This
+/// function is used to get the power of randomness (passed as
+/// instances) in our tests.
+pub fn power_of_randomness_from_instance<F: Field, const N: usize>(
+    meta: &mut ConstraintSystem<F>,
+) -> [Expression<F>; N] {
+    // This gate is used just to get the array of expressions from the power of
+    // randomness instance column, so that later on we don't need to query
+    // columns everywhere, and can pass the power of randomness array
+    // expression everywhere.  The gate itself doesn't add any constraints.
+
+    let columns = [(); N].map(|_| meta.instance_column());
+    let mut power_of_randomness = None;
+
+    meta.create_gate("power of randomness from instance", |meta| {
+        power_of_randomness =
+            Some(columns.map(|column| meta.query_instance(column, Rotation::cur())));
+
+        [0.expr()]
+    });
+
+    power_of_randomness.unwrap()
 }

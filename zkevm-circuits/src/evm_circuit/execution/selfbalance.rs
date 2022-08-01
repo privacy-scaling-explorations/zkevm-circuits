@@ -2,7 +2,6 @@ use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
         step::ExecutionState,
-        table::{AccountFieldTag, CallContextFieldTag},
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
@@ -10,6 +9,7 @@ use crate::{
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
+    table::{AccountFieldTag, CallContextFieldTag},
     util::Expr,
 };
 use bus_mapping::evm::OpcodeId;

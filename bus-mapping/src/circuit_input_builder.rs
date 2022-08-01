@@ -22,7 +22,7 @@ pub use call::{Call, CallContext, CallKind};
 use core::fmt::Debug;
 use eth_types::{self, Address, GethExecStep, GethExecTrace, Word};
 use ethers_providers::JsonRpcClient;
-pub use execution::{CopyDetails, ExecState, ExecStep, StepAuxiliaryData};
+pub use execution::{CopyDataType, CopyEvent, CopyStep, ExecState, ExecStep, NumberOrHash};
 pub use input_state_ref::CircuitInputStateRef;
 use std::collections::HashMap;
 pub use transaction::{Transaction, TransactionContext};
@@ -34,9 +34,9 @@ pub use transaction::{Transaction, TransactionContext};
 ///
 /// 1. Take a [`eth_types::Block`] to build the circuit input associated with
 /// the block. 2. For each [`eth_types::Transaction`] in the block, take the
-/// [`eth_types::GethExecTrace`] to    build the circuit input associated with
-/// each transaction, and the bus-mapping operations    associated with each
-/// `eth_types::GethExecStep`] in the [`eth_types::GethExecTrace`].
+/// [`eth_types::GethExecTrace`] to build the circuit input associated with
+/// each transaction, and the bus-mapping operations associated with each
+/// [`eth_types::GethExecStep`] in the [`eth_types::GethExecTrace`].
 ///
 /// The generated bus-mapping operations are:
 /// [`StackOp`](crate::operation::StackOp)s,
@@ -138,15 +138,9 @@ impl<'a> CircuitInputBuilder {
         geth_traces: &[eth_types::GethExecTrace],
     ) -> Result<(), Error> {
         // accumulates gas across all txs in the block
-        let mut cumulative_gas_used = HashMap::new();
         for (tx_index, tx) in eth_block.transactions.iter().enumerate() {
             let geth_trace = &geth_traces[tx_index];
-            self.handle_tx(
-                tx,
-                geth_trace,
-                tx_index + 1 == eth_block.transactions.len(),
-                &mut cumulative_gas_used,
-            )?;
+            self.handle_tx(tx, geth_trace, tx_index + 1 == eth_block.transactions.len())?;
         }
         self.set_value_ops_call_context_rwc_eor();
         Ok(())
@@ -162,7 +156,6 @@ impl<'a> CircuitInputBuilder {
         eth_tx: &eth_types::Transaction,
         geth_trace: &GethExecTrace,
         is_last_tx: bool,
-        cumulative_gas_used: &mut HashMap<usize, u64>,
     ) -> Result<(), Error> {
         let mut tx = self.new_tx(eth_tx, !geth_trace.failed)?;
         let mut tx_ctx = TransactionContext::new(eth_tx, geth_trace, is_last_tx)?;
@@ -189,10 +182,7 @@ impl<'a> CircuitInputBuilder {
         // - execution_state: EndTx
         // - op: None
         // Generate EndTx step
-        let end_tx_step = gen_end_tx_ops(
-            &mut self.state_ref(&mut tx, &mut tx_ctx),
-            cumulative_gas_used,
-        )?;
+        let end_tx_step = gen_end_tx_ops(&mut self.state_ref(&mut tx, &mut tx_ctx))?;
         tx.steps_mut().push(end_tx_step);
 
         self.sdb.commit_tx();
@@ -203,10 +193,14 @@ impl<'a> CircuitInputBuilder {
 }
 
 /// Retrieve the init_code from memory for {CREATE, CREATE2}
-pub fn get_create_init_code(step: &GethExecStep) -> Result<&[u8], Error> {
+pub fn get_create_init_code<'a, 'b>(
+    call_ctx: &'a CallContext,
+    step: &'b GethExecStep,
+) -> Result<&'a [u8], Error> {
     let offset = step.stack.nth_last(1)?;
     let length = step.stack.nth_last(2)?;
-    Ok(&step.memory.0[offset.low_u64() as usize..(offset.low_u64() + length.low_u64()) as usize])
+    Ok(&call_ctx.memory.0
+        [offset.low_u64() as usize..(offset.low_u64() + length.low_u64()) as usize])
 }
 
 /// Retrieve the memory offset and length of call.
