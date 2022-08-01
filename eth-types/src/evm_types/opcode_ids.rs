@@ -346,6 +346,19 @@ impl OpcodeId {
                 | OpcodeId::STATICCALL
         )
     }
+    
+    /// Returns `true` if the `OpcodeId` is a `CALL` or `CREATE` related .
+    pub fn is_call_or_create(&self) -> bool {
+        [
+            Self::CALL,
+            Self::DELEGATECALL,
+            Self::CALLCODE,
+            Self::STATICCALL,
+            Self::CREATE,
+            Self::CREATE2,
+        ]
+        .contains(self)
+    }
 }
 
 impl OpcodeId {
