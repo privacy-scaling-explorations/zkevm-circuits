@@ -12,6 +12,7 @@ impl Opcode for Extcodesize {
         state: &mut CircuitInputStateRef,
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
+        // TODO: finish this, only access list part is done
         let geth_step = &geth_steps[0];
         let mut exec_step = state.new_step(geth_step)?;
 
