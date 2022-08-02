@@ -20,6 +20,9 @@ eth-types = { path = "../eth-types" }
 secp256k1 = { git = "https://github.com/privacy-scaling-explorations/halo2wrong", tag = "v2022_06_03", features = ["kzg"] }
 group = "0.11"
 env_logger = "0.9"
+ethers-signers = "0.6"
+mock = { path="../mock" }
+rand_chacha = "0.3"
 
 [features]
 default = []
