@@ -118,8 +118,29 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
                 Rotation(rot),
             );
 
-            // Nonce and balance can occupy 1 or more bytes. If 1 byte, we say it is short. If more than 1 byte,
-            // we say it is long.
+            /*
+            If nonce (same holds for balance) is smaller or equal to 128, then it will occupy only one byte:
+            `s_main.bytes[0]` (`c_main.bytes[0]` for balance).
+            For example, the row [184,70,128,0,...,0] holds 128 in bytes[0] which means nonce = 128 - 128 = 0.
+            For example, the row [184,70,1,0,...,0] holds 1 in bytes[0] which means nonce = 1.
+
+            In case nonce (same for balance) is bigger than 128, it will occupy more than 1 byte.
+            The example row below shows nonce value 142, while 129 means there is a nonce of byte
+            length `1 = 129 - 128`.
+            Balance in the example row below is: 28 + 5 * 256 + 107 * 256^2 + ... + 59 * 256^6, while
+            135 means there are 7 = 135 - 128 bytes.
+            ```
+            [rlp1 rlp2 bytes[0] bytes[1]]           rlp1 rlp2 bytes[0] bytes[1]   ...    ]
+            [184  78   129      142       0 0 ... 0 248  76   135      28       5 107 201 118 120 59 0 0 ... 0]
+
+            The `sel1` column in the `ACCOUNT_LEAF_KEY_S` or `ACCOUNT_LEAF_KEY_C` row
+            is used to mark whether nonce is of 1 byte (short) or more than 1 byte (long).
+            `sel1 = 1` means long, `sel1 = 0` means short.
+            `Bool check is_nonce_long` constraint ensures the `sel1` value is boolean.
+
+            Analogously, `sel2` holds the information whether balance is long or short.
+            `Bool check is_balance_long` constraint ensures the `sel2` value is boolean.
+            */
             constraints.push((
                 "Bool check is_nonce_long",
                 get_bool_constraint(q_enable.clone(), is_nonce_long.clone()),
@@ -129,6 +150,25 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
                 get_bool_constraint(q_enable.clone(), is_balance_long.clone()),
             ));
 
+            /*
+            It is important that there are 0s in `s_main.bytes` after the nonce bytes end.
+            When nonce is short (1 byte), like in `[184,70,1,0,...]`, the constraint is simple:
+            `s_main.bytes[i] = 0` for all `i > 0`.
+
+            When nonce is long, the constraints need to be written differently because we do not
+            know the length of nonce in advance.
+            The row below holds nonce length specification in `s_main.bytes[0]`.
+            The length in the example below is `1 = 129 - 128`,
+            so the constraint needs to be `s_main.bytes[i] = 0` for
+            all `i > 1` (note that the actual value is in `s_main.bytes[1]`).
+
+            ```
+            [184  78   129      142       0 0 ... 0 248  76   135      28       5 107 201 118 120 59 0 0 ... 0]
+            ```
+
+            But instead of 129 we could have 130 or some other value in `s_main.bytes[0]`. For this
+            reason, the constraints are implemented using `key_len_lookup` (see below).
+            */
             for ind in 1..HASH_WIDTH {
                 let s = meta.query_advice(s_main.bytes[ind], Rotation::cur());
                 let c = meta.query_advice(c_main.bytes[ind], Rotation::cur());
@@ -146,24 +186,30 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
             let s_advices0_cur = meta.query_advice(s_main.bytes[0], Rotation::cur());
             let s_advices1_cur = meta.query_advice(s_main.bytes[1], Rotation::cur());
 
-            // When non_existing_account_proof and wrong leaf, these constraints need to be checked (the wrong
-            // leaf is being checked). When non_existing_account_proof and not wrong leaf (there are only branches
-            // in the proof and a placeholder account leaf), these constraints are not checked. It is checked
-            // that there is nil in the parent branch at the proper position (see account_non_existing), note
-            // that we need (placeholder) account leaf for lookups and to know when to check that parent branch
-            // has a nil.
+            /*
+            When `non_existing_account_proof` proof type (which can be of two subtypes: with wrong leaf
+            and without wrong leaf, more about it below), the `is_wrong_leaf` flag specifies whether
+            the subtype is with wrong leaf or not.
+            When `non_existing_account_proof` without wrong leaf
+            the proof contains only branches and a placeholder account leaf.
+            In this case, it is checked that there is nil in the parent branch
+            at the proper position (see `account_non_existing`). Note that we need (placeholder) account
+            leaf for lookups and to know when to check that parent branch has a nil.
+
+            In `is_wrong_leaf is bool` we only check that `is_wrong_leaf` is a boolean values.
+            Other wrong leaf related constraints are in other gates.
+            */
             let is_wrong_leaf = meta.query_advice(s_main.rlp1, Rotation(rot_into_non_existing));
             let is_non_existing_account_proof = meta.query_advice(proof_type.is_non_existing_account_proof, Rotation::cur());
-
             constraints.push((
                 "is_wrong_leaf is bool",
                 q_enable.clone()
                     * (one.clone() - is_wrong_leaf.clone())
                     * is_wrong_leaf.clone(),
             ));
+
             // Note: (is_non_existing_account_proof.clone() - is_wrong_leaf.clone() - one.clone())
             // cannot be 0 when is_non_existing_account_proof = 0.
-
             let s_rlp1 = meta.query_advice(s_main.rlp1, Rotation::cur());
             let rlp_len = meta.query_advice(s_main.rlp2, Rotation(rot));
             let s_rlp2 = meta.query_advice(s_main.rlp2, Rotation::cur());
@@ -176,7 +222,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
             let c_rlp1 = meta.query_advice(c_main.rlp1, Rotation::cur());
             let c_rlp2 = meta.query_advice(c_main.rlp2, Rotation::cur());
             constraints.push((
-                "leaf nonce balance c_rlp1",
+                "Leaf nonce balance c_rlp1",
                 q_enable.clone()
                 * (is_non_existing_account_proof.clone() - is_wrong_leaf.clone() - one.clone())
                 * (c_rlp1.clone() - c248.clone()),
@@ -243,6 +289,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
                 let balance_s_from_cur = meta.query_advice(sel2, Rotation::cur());
 
                 // Note: when nonce or balance is 0, the actual value in the RLP encoding is 128!
+                // TODO: when finalizing lookups, having 128 instead of 0 needs to be taken into account.
 
                 // We need correct previous nonce to enable lookup in nonce balance C row:
                 constraints.push((
@@ -322,12 +369,12 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
 
             /*
             s_rlp1  s_rlp2  c_rlp1  c_rlp2  s_main.bytes  c_main.bytes
-            184     80      248     78      nonce      balance
+            184     80      248     78      nonce         balance
 
             Or:
             s_rlp1  s_rlp2  c_rlp1  c_rlp2  s_main.bytes                         c_main.bytes
             248     109     157     (this is key row, 157 means key of length 29)
-            184     77      248     75      7 (short nonce , only one byte)   135 (means balance is of length 7) 28 ... 59
+            184     77      248     75      7 (short nonce , only one byte)      135 (means balance is of length 7) 28 ... 59
             */
 
             constraints.push(("RLP 1", q_enable.clone()
