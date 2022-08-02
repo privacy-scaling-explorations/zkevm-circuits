@@ -74,6 +74,15 @@ use crate::{
 // TODO: constraints for the length of key and address RLC to be 32 bytes long
 
 #[derive(Clone, Debug)]
+pub(crate) struct ProofTypeCols {
+    pub(crate) is_storage_mod: Column<Advice>,
+    pub(crate) is_nonce_mod: Column<Advice>,
+    pub(crate) is_balance_mod: Column<Advice>,
+    pub(crate) is_account_delete_mod: Column<Advice>,
+    pub(crate) is_non_existing_account_proof: Column<Advice>,
+}
+
+#[derive(Clone, Debug)]
 pub(crate) struct MainCols { // Main as opposed to other columns which are selectors and RLC accumulators.
     pub(crate) rlp1: Column<Advice>,
     pub(crate) rlp2: Column<Advice>,
@@ -82,6 +91,7 @@ pub(crate) struct MainCols { // Main as opposed to other columns which are selec
 
 #[derive(Clone, Debug)]
 pub struct MPTConfig<F> {
+    proof_type: ProofTypeCols,
     q_enable: Column<Fixed>,
     q_not_first: Column<Fixed>, // not first row
     not_first_level: Column<Advice>,
@@ -154,11 +164,6 @@ pub struct MPTConfig<F> {
                                   * enable lookup for storage key/value (to have address RLC in
                                   * the same row as storage key/value). */
     counter: Column<Advice>,
-    is_storage_mod: Column<Advice>,
-    is_nonce_mod: Column<Advice>,
-    is_balance_mod: Column<Advice>,
-    is_account_delete_mod: Column<Advice>,
-    is_non_existing_account_proof: Column<Advice>,
     is_non_existing_account_row: Column<Advice>,
 }
 
@@ -274,6 +279,14 @@ impl<F: FieldExt> MPTConfig<F> {
         // s_mod_node_hash_rlc and c_mod_node_hash_rlc), so we can choose the
         // rotations smartly to have at least as possible of them
 
+        let proof_type = ProofTypeCols {
+            is_storage_mod: meta.advice_column(),
+            is_nonce_mod: meta.advice_column(),
+            is_balance_mod: meta.advice_column(),
+            is_account_delete_mod: meta.advice_column(),
+            is_non_existing_account_proof: meta.advice_column(),
+        };
+
         let is_branch_init = meta.advice_column();
         let is_branch_child = meta.advice_column();
         let is_last_branch_child = meta.advice_column();
@@ -374,15 +387,11 @@ impl<F: FieldExt> MPTConfig<F> {
 
         let address_rlc = meta.advice_column();
         let counter = meta.advice_column();
-        let is_storage_mod = meta.advice_column();
-        let is_nonce_mod = meta.advice_column();
-        let is_balance_mod = meta.advice_column();
-        let is_account_delete_mod = meta.advice_column();
-        let is_non_existing_account_proof = meta.advice_column();
         let is_non_existing_account_row = meta.advice_column();
 
         SelectorsChip::<F>::configure(
             meta,
+            proof_type.clone(),
             q_enable,
             q_not_first,
             not_first_level,
@@ -407,11 +416,6 @@ impl<F: FieldExt> MPTConfig<F> {
             sel2,
             is_modified,
             is_at_drifted_pos,
-            is_storage_mod,
-            is_nonce_mod,
-            is_balance_mod,
-            is_account_delete_mod,
-            is_non_existing_account_proof,
             is_non_existing_account_row,
         );
 
@@ -822,6 +826,7 @@ impl<F: FieldExt> MPTConfig<F> {
 
         AccountLeafKeyChip::<F>::configure(
             meta,
+            proof_type.clone(),
             |meta| {
                 let q_enable = meta.query_fixed(q_enable, Rotation::cur());
                 let is_account_leaf_key_s =
@@ -842,13 +847,12 @@ impl<F: FieldExt> MPTConfig<F> {
             fixed_table.clone(),
             address_rlc,
             sel2,
-            is_account_delete_mod,
-            is_non_existing_account_proof,
             true,
         );
 
         AccountLeafKeyChip::<F>::configure(
             meta,
+            proof_type.clone(),
             |meta| {
                 let q_enable = meta.query_fixed(q_enable, Rotation::cur());
                 let is_account_leaf_key_c =
@@ -869,8 +873,6 @@ impl<F: FieldExt> MPTConfig<F> {
             fixed_table.clone(),
             address_rlc,
             sel2,
-            is_account_delete_mod,
-            is_non_existing_account_proof,
             false,
         );
 
@@ -881,7 +883,7 @@ impl<F: FieldExt> MPTConfig<F> {
                 let is_account_non_existing_row =
                     meta.query_advice(is_non_existing_account_row, Rotation::cur());
                 let is_account_non_existing_proof =
-                    meta.query_advice(is_non_existing_account_proof, Rotation::cur());
+                    meta.query_advice(proof_type.is_non_existing_account_proof, Rotation::cur());
 
                 q_enable * is_account_non_existing_row * is_account_non_existing_proof
             },
@@ -899,6 +901,7 @@ impl<F: FieldExt> MPTConfig<F> {
 
         AccountLeafNonceBalanceChip::<F>::configure(
             meta,
+            proof_type.clone(),
             |meta| {
                 let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
                 let is_account_leaf_nonce_balance_s =
@@ -917,17 +920,13 @@ impl<F: FieldExt> MPTConfig<F> {
             c_mod_node_hash_rlc,
             sel1,
             sel2,
-            is_storage_mod,
-            is_nonce_mod,
-            is_balance_mod,
-            is_account_delete_mod,
-            is_non_existing_account_proof,
             fixed_table.clone(),
             true,
         );
 
         AccountLeafNonceBalanceChip::<F>::configure(
             meta,
+            proof_type.clone(),
             |meta| {
                 let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
                 let is_account_leaf_nonce_balance_c =
@@ -946,17 +945,13 @@ impl<F: FieldExt> MPTConfig<F> {
             c_mod_node_hash_rlc,
             sel1,
             sel2,
-            is_storage_mod,
-            is_nonce_mod,
-            is_balance_mod,
-            is_account_delete_mod,
-            is_non_existing_account_proof,
             fixed_table.clone(),
             false,
         );
 
         AccountLeafStorageCodehashChip::<F>::configure(
             meta,
+            proof_type.clone(),
             inter_start_root,
             q_not_first,
             not_first_level,
@@ -972,16 +967,12 @@ impl<F: FieldExt> MPTConfig<F> {
             sel1,
             sel2,
             keccak_table,
-            is_storage_mod,
-            is_nonce_mod,
-            is_balance_mod,
-            is_account_delete_mod,
-            is_non_existing_account_proof,
             true,
         );
 
         AccountLeafStorageCodehashChip::<F>::configure(
             meta,
+            proof_type.clone(),
             inter_final_root,
             q_not_first,
             not_first_level,
@@ -997,11 +988,6 @@ impl<F: FieldExt> MPTConfig<F> {
             sel1,
             sel2,
             keccak_table,
-            is_storage_mod,
-            is_nonce_mod,
-            is_balance_mod,
-            is_account_delete_mod,
-            is_non_existing_account_proof,
             false,
         );
 
@@ -1036,6 +1022,7 @@ impl<F: FieldExt> MPTConfig<F> {
         );
 
         MPTConfig {
+            proof_type,
             q_enable,
             q_not_first,
             not_first_level,
@@ -1086,11 +1073,6 @@ impl<F: FieldExt> MPTConfig<F> {
             fixed_table,
             address_rlc,
             counter,
-            is_storage_mod,
-            is_nonce_mod,
-            is_balance_mod,
-            is_account_delete_mod,
-            is_non_existing_account_proof,
             is_non_existing_account_row,
         }
     }
@@ -1711,31 +1693,31 @@ impl<F: FieldExt> MPTConfig<F> {
 
                         region.assign_advice(
                             || "is_storage_mod",
-                            self.is_storage_mod,
+                            self.proof_type.is_storage_mod,
                             offset,
                             || Ok(F::from(row[row.len() - IS_STORAGE_MOD_POS] as u64)),
                         )?;
                         region.assign_advice(
                             || "is_nonce_mod",
-                            self.is_nonce_mod,
+                            self.proof_type.is_nonce_mod,
                             offset,
                             || Ok(F::from(row[row.len() - IS_NONCE_MOD_POS] as u64)),
                         )?;
                         region.assign_advice(
                             || "is_balance_mod",
-                            self.is_balance_mod,
+                            self.proof_type.is_balance_mod,
                             offset,
                             || Ok(F::from(row[row.len() - IS_BALANCE_MOD_POS] as u64)),
                         )?;
                         region.assign_advice(
                             || "is_account_delete_mod",
-                            self.is_account_delete_mod,
+                            self.proof_type.is_account_delete_mod,
                             offset,
                             || Ok(F::from(row[row.len() - IS_ACCOUNT_DELETE_MOD_POS] as u64)),
                         )?;
                         region.assign_advice(
                             || "is_non_existing_account",
-                            self.is_non_existing_account_proof,
+                            self.proof_type.is_non_existing_account_proof,
                             offset,
                             || Ok(F::from(row[row.len() - IS_NON_EXISTING_ACCOUNT_POS] as u64)),
                         )?;

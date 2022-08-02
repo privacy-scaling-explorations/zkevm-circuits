@@ -9,7 +9,7 @@ use std::marker::PhantomData;
 
 use crate::{
     helpers::{compute_rlc, get_bool_constraint, key_len_lookup, mult_diff_lookup, range_lookups},
-    mpt::{FixedTableTag, MainCols},
+    mpt::{FixedTableTag, MainCols, ProofTypeCols},
     param::{
         ACCOUNT_LEAF_KEY_C_IND, ACCOUNT_LEAF_KEY_S_IND, ACCOUNT_LEAF_NONCE_BALANCE_C_IND,
         ACCOUNT_LEAF_NONCE_BALANCE_S_IND, HASH_WIDTH, ACCOUNT_NON_EXISTING_IND,
@@ -54,6 +54,7 @@ pub(crate) struct AccountLeafNonceBalanceChip<F> {
 impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
+        proof_type: ProofTypeCols,
         q_enable: impl Fn(&mut VirtualCells<'_, F>) -> Expression<F> + Copy,
         s_main: MainCols,
         c_main: MainCols,
@@ -67,11 +68,6 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
         c_mod_node_hash_rlc: Column<Advice>,
         sel1: Column<Advice>,
         sel2: Column<Advice>,
-        is_storage_mod: Column<Advice>,
-        is_nonce_mod: Column<Advice>,
-        is_balance_mod: Column<Advice>,
-        is_account_delete_mod: Column<Advice>,
-        is_non_existing_account_proof: Column<Advice>,
         fixed_table: [Column<Fixed>; 3],
         is_s: bool,
     ) -> AccountLeafNonceBalanceConfig {
@@ -157,7 +153,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
             // that we need (placeholder) account leaf for lookups and to know when to check that parent branch
             // has a nil.
             let is_wrong_leaf = meta.query_advice(s_main.rlp1, Rotation(rot_into_non_existing));
-            let is_non_existing_account_proof = meta.query_advice(is_non_existing_account_proof, Rotation::cur());
+            let is_non_existing_account_proof = meta.query_advice(proof_type.is_non_existing_account_proof, Rotation::cur());
 
             constraints.push((
                 "is_wrong_leaf is bool",
@@ -260,10 +256,10 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
                 ));
 
                 // Check there is only one modification at once:
-                let is_storage_mod = meta.query_advice(is_storage_mod, Rotation::cur());
-                let is_nonce_mod = meta.query_advice(is_nonce_mod, Rotation::cur());
-                let is_balance_mod = meta.query_advice(is_balance_mod, Rotation::cur());
-                let is_account_delete_mod = meta.query_advice(is_account_delete_mod, Rotation::cur());
+                let is_storage_mod = meta.query_advice(proof_type.is_storage_mod, Rotation::cur());
+                let is_nonce_mod = meta.query_advice(proof_type.is_nonce_mod, Rotation::cur());
+                let is_balance_mod = meta.query_advice(proof_type.is_balance_mod, Rotation::cur());
+                let is_account_delete_mod = meta.query_advice(proof_type.is_account_delete_mod, Rotation::cur());
 
                 constraints.push((
                     "if storage / codehash / balance mod: nonce_s = nonce_c",

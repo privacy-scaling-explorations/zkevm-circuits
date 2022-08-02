@@ -8,7 +8,7 @@ use std::marker::PhantomData;
 
 use crate::{
     helpers::{compute_rlc, key_len_lookup, mult_diff_lookup, range_lookups},
-    mpt::{FixedTableTag, MainCols},
+    mpt::{FixedTableTag, MainCols, ProofTypeCols},
     param::{
         HASH_WIDTH, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS, IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS, IS_EXT_LONG_ODD_C16_POS, IS_EXT_LONG_ODD_C1_POS, 
         IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS, RLP_NUM, R_TABLE_LEN,
@@ -27,6 +27,7 @@ pub(crate) struct AccountLeafKeyChip<F> {
 impl<F: FieldExt> AccountLeafKeyChip<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
+        proof_type: ProofTypeCols,
         q_enable: impl Fn(&mut VirtualCells<'_, F>) -> Expression<F> + Copy,
         not_first_level: Column<Advice>,
         s_main: MainCols,
@@ -41,8 +42,6 @@ impl<F: FieldExt> AccountLeafKeyChip<F> {
         fixed_table: [Column<Fixed>; 3],
         address_rlc: Column<Advice>,
         sel2: Column<Advice>,
-        is_account_delete_mod: Column<Advice>,
-        is_account_non_existing_proof: Column<Advice>,
         is_s: bool,
     ) -> AccountLeafKeyConfig {
         let config = AccountLeafKeyConfig {};
@@ -204,7 +203,7 @@ impl<F: FieldExt> AccountLeafKeyChip<F> {
                 ));
 
                 let is_non_existing_account_proof =
-                    meta.query_advice(is_account_non_existing_proof, Rotation::cur());
+                    meta.query_advice(proof_type.is_non_existing_account_proof, Rotation::cur());
                 constraints.push((
                     "Computed account address RLC same as value in address_rlc column 1",
                     q_enable
@@ -264,7 +263,7 @@ impl<F: FieldExt> AccountLeafKeyChip<F> {
             ));
 
             let is_non_existing_account_proof =
-                meta.query_advice(is_account_non_existing_proof, Rotation::cur());
+                meta.query_advice(proof_type.is_non_existing_account_proof, Rotation::cur());
             constraints.push((
                 "Computed account address RLC same as value in address_rlc column",
                 q_enable
@@ -480,7 +479,7 @@ impl<F: FieldExt> AccountLeafKeyChip<F> {
                 let q_enable = q_enable(meta);
                 // is_leaf_placeholder is stored in branch children: sel1 for S, sel2 for C.
                 let is_leaf_placeholder = meta.query_advice(sel2, Rotation(rot_into_init+1));
-                let is_account_delete_mod = meta.query_advice(is_account_delete_mod, Rotation::cur());
+                let is_account_delete_mod = meta.query_advice(proof_type.is_account_delete_mod, Rotation::cur());
                 let is_branch_placeholder = meta.query_advice(
                     s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
                     Rotation(rot_into_init),

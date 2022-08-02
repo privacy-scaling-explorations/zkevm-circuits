@@ -8,7 +8,7 @@ use std::marker::PhantomData;
 
 use crate::{
     helpers::range_lookups,
-    mpt::{FixedTableTag, MainCols},
+    mpt::{FixedTableTag, MainCols, ProofTypeCols},
     param::{
         ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND, ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND, BRANCH_ROWS_NUM,
         EXTENSION_ROWS_NUM, IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS,
@@ -28,6 +28,7 @@ pub(crate) struct AccountLeafStorageCodehashChip<F> {
 impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
+        proof_type: ProofTypeCols,
         inter_root: Column<Advice>,
         q_not_first: Column<Fixed>,
         not_first_level: Column<Advice>,
@@ -43,11 +44,6 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
         sel1: Column<Advice>,
         sel2: Column<Advice>,
         keccak_table: [Column<Fixed>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
-        is_storage_mod: Column<Advice>,
-        is_nonce_mod: Column<Advice>,
-        is_balance_mod: Column<Advice>,
-        is_account_delete_mod: Column<Advice>,
-        is_non_existing_account_proof: Column<Advice>,
         is_s: bool,
     ) -> AccountLeafStorageCodehashConfig {
         let config = AccountLeafStorageCodehashConfig {};
@@ -89,7 +85,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
             // that we need (placeholder) account leaf for lookups and to know when to check that parent branch
             // has a nil.
             let is_wrong_leaf = meta.query_advice(s_main.rlp1, Rotation(rot_into_non_existing));
-            let is_non_existing_account_proof = meta.query_advice(is_non_existing_account_proof, Rotation::cur());
+            let is_non_existing_account_proof = meta.query_advice(proof_type.is_non_existing_account_proof, Rotation::cur());
             // Note: (is_non_existing_account_proof.clone() - is_wrong_leaf.clone() - one.clone())
             // cannot be 0 when is_non_existing_account_proof = 0 (see account_leaf_nonce_balance).
 
@@ -167,9 +163,9 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
                 ));
 
                 // Check there is only one modification at once:
-                let is_nonce_mod = meta.query_advice(is_nonce_mod, Rotation::cur());
-                let is_balance_mod = meta.query_advice(is_balance_mod, Rotation::cur());
-                let is_account_delete_mod = meta.query_advice(is_account_delete_mod, Rotation::cur());
+                let is_nonce_mod = meta.query_advice(proof_type.is_nonce_mod, Rotation::cur());
+                let is_balance_mod = meta.query_advice(proof_type.is_balance_mod, Rotation::cur());
+                let is_account_delete_mod = meta.query_advice(proof_type.is_account_delete_mod, Rotation::cur());
 
                 constraints.push((
                     "if nonce / balance / codehash mod: storage_root_s = storage_root_c",

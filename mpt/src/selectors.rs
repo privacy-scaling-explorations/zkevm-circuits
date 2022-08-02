@@ -6,7 +6,7 @@ use halo2_proofs::{
 use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
-use crate::helpers::get_bool_constraint;
+use crate::{helpers::get_bool_constraint, mpt::ProofTypeCols};
 
 #[derive(Clone, Debug)]
 pub(crate) struct SelectorsConfig {}
@@ -20,6 +20,7 @@ pub(crate) struct SelectorsChip<F> {
 impl<F: FieldExt> SelectorsChip<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
+        proof_type: ProofTypeCols,
         q_enable: Column<Fixed>,
         q_not_first: Column<Fixed>,
         not_first_level: Column<Advice>,
@@ -44,11 +45,6 @@ impl<F: FieldExt> SelectorsChip<F> {
         sel2: Column<Advice>,
         is_modified: Column<Advice>,
         is_at_drifted_pos: Column<Advice>,
-        is_storage_mod: Column<Advice>,
-        is_nonce_mod: Column<Advice>,
-        is_balance_mod: Column<Advice>,
-        is_account_delete_mod: Column<Advice>,
-        is_non_existing_account_proof: Column<Advice>,
         is_non_existing_account_row: Column<Advice>,
     ) -> SelectorsConfig {
         let config = SelectorsConfig {};
@@ -83,12 +79,12 @@ impl<F: FieldExt> SelectorsChip<F> {
             let sel1 = meta.query_advice(sel1, Rotation::cur());
             let sel2 = meta.query_advice(sel2, Rotation::cur());
 
-            let is_storage_mod = meta.query_advice(is_storage_mod, Rotation::cur());
-            let is_nonce_mod = meta.query_advice(is_nonce_mod, Rotation::cur());
-            let is_balance_mod = meta.query_advice(is_balance_mod, Rotation::cur());
-            let is_account_delete_mod = meta.query_advice(is_account_delete_mod, Rotation::cur());
+            let is_storage_mod = meta.query_advice(proof_type.is_storage_mod, Rotation::cur());
+            let is_nonce_mod = meta.query_advice(proof_type.is_nonce_mod, Rotation::cur());
+            let is_balance_mod = meta.query_advice(proof_type.is_balance_mod, Rotation::cur());
+            let is_account_delete_mod = meta.query_advice(proof_type.is_account_delete_mod, Rotation::cur());
+            let is_non_existing_account_proof = meta.query_advice(proof_type.is_non_existing_account_proof, Rotation::cur());
             let is_non_existing_account_row = meta.query_advice(is_non_existing_account_row, Rotation::cur());
-            let is_non_existing_account_proof = meta.query_advice(is_non_existing_account_proof, Rotation::cur());
 
             constraints.push((
                 "bool check not_first_level",
@@ -393,16 +389,16 @@ impl<F: FieldExt> SelectorsChip<F> {
                 // storage proof - constraints for this are implemented using address_rlc column
                 // to be changed to the proper value only in the account leaf key row.
 
-                let is_storage_mod_prev = meta.query_advice(is_storage_mod, Rotation::prev());
-                let is_storage_mod_cur = meta.query_advice(is_storage_mod, Rotation::cur());
-                let is_nonce_mod_prev = meta.query_advice(is_nonce_mod, Rotation::prev());
-                let is_nonce_mod_cur = meta.query_advice(is_nonce_mod, Rotation::cur());
-                let is_balance_mod_prev = meta.query_advice(is_balance_mod, Rotation::prev());
-                let is_balance_mod_cur = meta.query_advice(is_balance_mod, Rotation::cur());
-                let is_account_delete_mod_prev = meta.query_advice(is_account_delete_mod, Rotation::prev());
-                let is_account_delete_mod_cur = meta.query_advice(is_account_delete_mod, Rotation::cur());
-                let is_non_existing_account_proof_cur = meta.query_advice(is_non_existing_account_proof, Rotation::prev());
-                let is_non_existing_account_proof_prev = meta.query_advice(is_non_existing_account_proof, Rotation::cur());
+                let is_storage_mod_prev = meta.query_advice(proof_type.is_storage_mod, Rotation::prev());
+                let is_storage_mod_cur = meta.query_advice(proof_type.is_storage_mod, Rotation::cur());
+                let is_nonce_mod_prev = meta.query_advice(proof_type.is_nonce_mod, Rotation::prev());
+                let is_nonce_mod_cur = meta.query_advice(proof_type.is_nonce_mod, Rotation::cur());
+                let is_balance_mod_prev = meta.query_advice(proof_type.is_balance_mod, Rotation::prev());
+                let is_balance_mod_cur = meta.query_advice(proof_type.is_balance_mod, Rotation::cur());
+                let is_account_delete_mod_prev = meta.query_advice(proof_type.is_account_delete_mod, Rotation::prev());
+                let is_account_delete_mod_cur = meta.query_advice(proof_type.is_account_delete_mod, Rotation::cur());
+                let is_non_existing_account_proof_cur = meta.query_advice(proof_type.is_non_existing_account_proof, Rotation::prev());
+                let is_non_existing_account_proof_prev = meta.query_advice(proof_type.is_non_existing_account_proof, Rotation::cur());
 
                 let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
 
