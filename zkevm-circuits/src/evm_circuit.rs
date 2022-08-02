@@ -20,13 +20,13 @@ use witness::Block;
 
 /// EvmCircuit implements verification of execution trace of a block.
 #[derive(Clone, Debug)]
-pub struct EvmCircuit<F> {
+pub struct EvmCircuitConfig<F> {
     fixed_table: [Column<Fixed>; 4],
     byte_table: [Column<Fixed>; 1],
     execution: Box<ExecutionConfig<F>>,
 }
 
-impl<F: Field> EvmCircuit<F> {
+impl<F: Field> EvmCircuitConfig<F> {
     /// Configure EvmCircuit
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
@@ -152,7 +152,7 @@ pub mod test {
     use std::convert::TryInto;
 
     use crate::{
-        evm_circuit::{table::FixedTableTag, witness::Block, EvmCircuit},
+        evm_circuit::{table::FixedTableTag, witness::Block, EvmCircuitConfig},
         table::{BlockTable, BytecodeTable, CopyTable, RwTable, TxTable},
         util::DEFAULT_RAND,
     };
@@ -196,16 +196,16 @@ pub mod test {
         bytecode_table: BytecodeTable,
         block_table: BlockTable,
         copy_table: CopyTable,
-        pub evm_circuit: EvmCircuit<F>,
+        pub evm_circuit: EvmCircuitConfig<F>,
     }
 
     #[derive(Default)]
-    pub struct TestCircuit<F> {
+    pub struct EvmTestCircuit<F> {
         block: Block<F>,
         fixed_table_tags: Vec<FixedTableTag>,
     }
 
-    impl<F: Field> TestCircuit<F> {
+    impl<F: Field> EvmTestCircuit<F> {
         pub fn new(block: Block<F>, fixed_table_tags: Vec<FixedTableTag>) -> Self {
             let mut fixed_table_tags = fixed_table_tags;
             if fixed_table_tags.is_empty() {
@@ -246,7 +246,7 @@ pub mod test {
                     .sum::<usize>(),
             );
 
-            let num_rows_required_for_steps = TestCircuit::get_num_rows_required(&self.block);
+            let num_rows_required_for_steps = EvmTestCircuit::get_num_rows_required(&self.block);
             let k = k.max(log2_ceil(64 + num_rows_required_for_steps));
 
             let k = k.max(log2_ceil(
@@ -263,7 +263,7 @@ pub mod test {
         }
     }
 
-    impl<F: Field> Circuit<F> for TestCircuit<F> {
+    impl<F: Field> Circuit<F> for EvmTestCircuit<F> {
         type Config = TestCircuitConfig<F>;
         type FloorPlanner = SimpleFloorPlanner;
 
@@ -283,7 +283,7 @@ pub mod test {
                 .try_into()
                 .unwrap();
             let copy_table = CopyTable::construct(meta, q_copy_table);
-            let evm_circuit = EvmCircuit::configure(
+            let evm_circuit = EvmCircuitConfig::configure(
                 meta,
                 power_of_randomness,
                 &tx_table,
@@ -317,7 +317,7 @@ pub mod test {
                 .load(&mut layouter, &self.block.txs, self.block.randomness)?;
             config.rw_table.load(
                 &mut layouter,
-                &self.block.rws,
+                &self.block.rws.table_assignments(),
                 self.block.randomness,
                 self.block.state_circuit_pad_to,
             )?;
@@ -339,16 +339,16 @@ pub mod test {
         }
     }
 
-    impl<F: Field> TestCircuit<F> {
+    impl<F: Field> EvmTestCircuit<F> {
         pub fn get_num_rows_required(block: &Block<F>) -> usize {
             let mut cs = ConstraintSystem::default();
-            let config = TestCircuit::configure(&mut cs);
+            let config = EvmTestCircuit::configure(&mut cs);
             config.evm_circuit.get_num_rows_required(block)
         }
 
         pub fn get_active_rows(block: &Block<F>) -> (Vec<usize>, Vec<usize>) {
             let mut cs = ConstraintSystem::default();
-            let config = TestCircuit::configure(&mut cs);
+            let config = EvmTestCircuit::configure(&mut cs);
             config.evm_circuit.get_active_rows(block)
         }
     }
@@ -357,8 +357,8 @@ pub mod test {
         block: Block<F>,
         fixed_table_tags: Vec<FixedTableTag>,
     ) -> Result<(), Vec<VerifyFailure>> {
-        let (active_gate_rows, active_lookup_rows) = TestCircuit::get_active_rows(&block);
-        let circuit = TestCircuit::<F>::new(block.clone(), fixed_table_tags);
+        let (active_gate_rows, active_lookup_rows) = EvmTestCircuit::get_active_rows(&block);
+        let circuit = EvmTestCircuit::<F>::new(block.clone(), fixed_table_tags);
         let k = circuit.estimate_k();
         let _block = block;
         //block.pad_to = (1 << k) - 64;
@@ -418,7 +418,7 @@ mod evm_circuit_stats {
     #[test]
     pub fn get_evm_states_stats() {
         let mut meta = ConstraintSystem::<Fr>::default();
-        let circuit = TestCircuit::configure(&mut meta);
+        let circuit = EvmTestCircuit::configure(&mut meta);
 
         let mut implemented_states = Vec::new();
         for state in ExecutionState::iter() {

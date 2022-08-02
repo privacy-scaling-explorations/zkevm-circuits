@@ -1,7 +1,7 @@
 //! Table definitions used cross-circuits
 
 use crate::copy_circuit::number_or_hash_to_field;
-use crate::evm_circuit::witness::RwRow;
+use crate::evm_circuit::witness::{Rw, RwRow};
 use crate::evm_circuit::{
     util::{rlc, RandomLinearCombination},
     witness::{Block, BlockContext, Bytecode, RwMap, Transaction},
@@ -395,23 +395,31 @@ impl RwTable {
     pub fn load<F: Field>(
         &self,
         layouter: &mut impl Layouter<F>,
-        rws: &RwMap,
+        rws: &[Rw],
         randomness: F,
         n_rows: usize,
     ) -> Result<(), Error> {
         layouter.assign_region(
             || "rw table",
-            |mut region| {
-                // uncomment this line in evm circuit to check rwc is continuous
-                //rws.check_rw_counter_sanity();
-                let rows = rws.table_assignments();
-                let (rows, _) = RwMap::table_assignments_prepad(rows, n_rows);
-                for (offset, row) in rows.iter().enumerate() {
-                    self.assign(&mut region, offset, &row.table_assignment(randomness))?;
-                }
-                Ok(())
-            },
+            |mut region| self.load_with_region(&mut region, rws, randomness, n_rows),
         )
+    }
+
+    pub(crate) fn load_with_region<F: Field>(
+        &self,
+        region: &mut Region<'_, F>,
+        rws: &[Rw],
+        randomness: F,
+        n_rows: usize,
+    ) -> Result<(), Error> {
+        // uncomment this line in evm circuit to check rwc is continuous
+        //rws.check_rw_counter_sanity();
+        //let rows = rws.table_assignments();
+        let (rows, _) = RwMap::table_assignments_prepad(rws, n_rows);
+        for (offset, row) in rows.iter().enumerate() {
+            self.assign(region, offset, &row.table_assignment(randomness))?;
+        }
+        Ok(())
     }
 }
 

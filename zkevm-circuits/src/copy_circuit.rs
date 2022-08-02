@@ -667,7 +667,7 @@ mod tests {
                 .load(&mut layouter, &self.block.txs, self.block.randomness)?;
             config.rw_table.load(
                 &mut layouter,
-                &self.block.rws,
+                &self.block.rws.table_assignments(),
                 self.block.randomness,
                 self.block.state_circuit_pad_to,
             )?;

@@ -1,4 +1,4 @@
-use super::{StateCircuit, StateConfig};
+use super::{StateCircuit, StateConfigBase};
 use crate::{
     evm_circuit::witness::{Rw, RwMap},
     table::{AccountFieldTag, CallContextFieldTag, RwTableTag, TxLogFieldTag, TxReceiptFieldTag},
@@ -24,7 +24,7 @@ use strum::IntoEnumIterator;
 
 const N_ROWS: usize = 1 << 16;
 
-#[derive(Hash, Eq, PartialEq, Clone)]
+#[derive(Hash, Eq, PartialEq, Clone, Debug)]
 pub enum AdviceColumn {
     IsWrite,
     Address,
@@ -53,7 +53,7 @@ pub enum AdviceColumn {
 impl AdviceColumn {
     pub fn value<F: Field, const QUICK_CHECK: bool>(
         &self,
-        config: &StateConfig<F, QUICK_CHECK>,
+        config: &StateConfigBase<F, QUICK_CHECK>,
     ) -> Column<Advice> {
         match self {
             Self::IsWrite => config.rw_table.is_write,
@@ -867,6 +867,7 @@ fn invalid_tags() {
         if tags.contains(&i) {
             continue;
         }
+        println!("invalid tags {:?}", i);
         let bits: [Fr; 4] = i
             .as_bits()
             .map(|bit| if bit { Fr::one() } else { Fr::zero() });
@@ -879,7 +880,7 @@ fn invalid_tags() {
         ]);
 
         let result = prover(vec![], overrides).verify_at_rows(0..1, 0..1);
-
+        println!("result is {:?}", result);
         assert_error_matches(result, "binary number value in range");
     }
 }

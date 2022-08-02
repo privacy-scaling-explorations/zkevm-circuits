@@ -84,6 +84,7 @@ where
                 .iter()
                 .zip(&expressions)
                 .map(|(&bit, expression)| {
+                    //println!("value_equals_expr {:?}", bit);
                     if bit {
                         expression.clone()
                     } else {
@@ -176,6 +177,8 @@ where
         value: &T,
     ) -> Result<(), Error> {
         for (&bit, &column) in value.as_bits().iter().zip(&self.config.bits) {
+            //println!("tag chip assign {:?} col {:?} v {:?} off {:?}", value.as_bits(),
+            // column, bit, offset);
             region.assign_advice(
                 || format!("binary number {:?}", column),
                 column,

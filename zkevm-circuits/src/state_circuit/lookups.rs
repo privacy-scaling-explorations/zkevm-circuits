@@ -8,7 +8,7 @@ use halo2_proofs::{
 use std::marker::PhantomData;
 use strum::IntoEnumIterator;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct Config<const QUICK_CHECK: bool> {
     // Can these be TableColumn's?
     // https://github.com/zcash/halo2/blob/642efc1536d3ea2566b04814bd60a00c4745ae22/halo2_proofs/src/plonk/circuit.rs#L266

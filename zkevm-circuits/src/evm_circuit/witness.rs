@@ -408,8 +408,8 @@ impl RwMap {
             debug_assert_eq!(idx, rw_counter - 1);
         }
     }
-    pub fn table_assignments_prepad(rows: Vec<Rw>, target_len: usize) -> (Vec<Rw>, usize) {
-        let padding_length = if target_len > rows.len() {
+    pub(crate) fn padding_len(rows: &[Rw], target_len: usize) -> usize {
+        if target_len > rows.len() {
             target_len - rows.len()
         } else {
             if target_len != 0 {
@@ -420,18 +420,24 @@ impl RwMap {
                 );
             }
             1
-        };
+        }
+    }
+    pub fn table_assignments_prepad(rows: &[Rw], target_len: usize) -> (Vec<Rw>, usize) {
+        let padding_length = Self::padding_len(rows, target_len);
         let padding = (1..=padding_length).map(|rw_counter| Rw::Start { rw_counter });
-        (padding.chain(rows.into_iter()).collect(), padding_length)
+        (
+            padding.chain(rows.iter().cloned()).collect(),
+            padding_length,
+        )
     }
     pub fn table_assignments(&self) -> Vec<Rw> {
         let mut rows: Vec<Rw> = self.0.values().flatten().cloned().collect();
         rows.sort_by_key(|row| {
             (
                 row.tag() as u64,
-                row.field_tag().unwrap_or_default(),
                 row.id().unwrap_or_default(),
                 row.address().unwrap_or_default(),
+                row.field_tag().unwrap_or_default(),
                 row.storage_key().unwrap_or_default(),
                 row.rw_counter(),
             )

@@ -10,7 +10,7 @@ use lazy_static::lazy_static;
 use log::trace;
 use strum::IntoEnumIterator;
 use zkevm_circuits::evm_circuit::table::FixedTableTag;
-use zkevm_circuits::evm_circuit::test::TestCircuit;
+use zkevm_circuits::evm_circuit::test::EvmTestCircuit;
 use zkevm_circuits::evm_circuit::witness::RwMap;
 use zkevm_circuits::evm_circuit::{
     test::run_test_circuit_complete_fixed_table, test::run_test_circuit_incomplete_fixed_table,
@@ -58,9 +58,9 @@ async fn test_mock_prove_tx() {
                 )
         })
         .collect();
-    let (active_gate_rows, active_lookup_rows) = TestCircuit::get_active_rows(&block);
+    let (active_gate_rows, active_lookup_rows) = EvmTestCircuit::get_active_rows(&block);
 
-    let circuit = TestCircuit::<Fr>::new(block, fixed_table_tags);
+    let circuit = EvmTestCircuit::<Fr>::new(block, fixed_table_tags);
     let k = circuit.estimate_k();
     let prover = MockProver::<Fr>::run(k, &circuit, vec![]).unwrap();
     if *FAST {
