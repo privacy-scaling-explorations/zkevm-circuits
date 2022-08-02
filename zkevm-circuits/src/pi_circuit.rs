@@ -57,7 +57,7 @@ pub struct TxValues {
 pub struct ExtraValues {
     // block_hash: H256,
     state_root: H256,
-    parent_block_hash: H256,
+    prev_state_root: H256,
 }
 
 /// PublicData contains all the values that the PiCircuit recieves as input
@@ -70,7 +70,7 @@ pub struct PublicData {
     /// Constants related to Ethereum block
     pub block_constants: BlockConstants,
     /// Previous block root
-    pub block_prev_root: Word,
+    pub prev_state_root: H256,
 }
 
 impl Default for PublicData {
@@ -86,7 +86,7 @@ impl Default for PublicData {
             txs: Vec::new(),
             extra: geth_data,
             block_constants: BlockConstants::default(),
-            block_prev_root: Word::default(),
+            prev_state_root: H256::default(),
         }
     }
 }
@@ -144,7 +144,7 @@ impl PublicData {
         ExtraValues {
             // block_hash: self.extra.eth_block.hash.unwrap_or_else(H256::zero),
             state_root: self.extra.eth_block.state_root,
-            parent_block_hash: self.extra.eth_block.parent_hash,
+            prev_state_root: self.prev_state_root,
         }
     }
 }
@@ -522,7 +522,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
         // raw_pi_vals[offset] = block_hash;
         // offset += 1;
 
-        // block root
+        // block state root
         let state_root = rlc(extra.state_root.to_fixed_bytes(), randomness);
         let state_root_cell = region.assign_advice(
             || "state.root",
@@ -533,16 +533,16 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
         raw_pi_vals[offset] = state_root;
         offset += 1;
 
-        // parent block hash
-        let parent_block_hash = rlc(extra.parent_block_hash.to_fixed_bytes(), randomness);
-        let parent_block_hash_cell = region.assign_advice(
+        // previous block state root
+        let prev_state_root = rlc(extra.prev_state_root.to_fixed_bytes(), randomness);
+        let prev_state_root_cell = region.assign_advice(
             || "parent_block.hash",
             self.raw_public_inputs,
             offset,
-            || Ok(parent_block_hash),
+            || Ok(prev_state_root),
         )?;
-        raw_pi_vals[offset] = parent_block_hash;
-        Ok([state_root_cell, parent_block_hash_cell])
+        raw_pi_vals[offset] = prev_state_root;
+        Ok([state_root_cell, prev_state_root_cell])
     }
 
     /// Assign `rpi_rlc_acc` and `rand_rpi` columns
@@ -828,7 +828,7 @@ mod pi_circuit_test {
         // block Root
         result[BLOCK_LEN] = rlc(extra.state_root.to_fixed_bytes(), randomness);
         // parent block hash
-        result[BLOCK_LEN + 1] = rlc(extra.parent_block_hash.to_fixed_bytes(), randomness);
+        result[BLOCK_LEN + 1] = rlc(extra.prev_state_root.to_fixed_bytes(), randomness);
 
         // Insert Tx table
         offset = 0;
@@ -927,10 +927,7 @@ mod pi_circuit_test {
                 public_data.extra.eth_block.state_root.to_fixed_bytes(),
                 randomness,
             ),
-            rlc(
-                public_data.extra.eth_block.parent_hash.to_fixed_bytes(),
-                randomness,
-            ),
+            rlc(public_data.prev_state_root.to_fixed_bytes(), randomness),
         ];
 
         let circuit = PiCircuit::<F, MAX_TXS, MAX_CALLDATA> {
