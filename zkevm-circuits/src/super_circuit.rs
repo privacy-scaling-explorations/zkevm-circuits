@@ -12,7 +12,7 @@
 //! - [ ] State Circuit
 //! - [x] Tx Circuit
 //! - [x] Bytecode Circuit
-//! - [ ] Copy Circuit
+//! - [x] Copy Circuit
 //! - [ ] Keccak Circuit
 //! - [ ] MPT Circuit
 //! - [ ] PublicInputs Circuit
@@ -20,21 +20,21 @@
 //! And the following shared tables, with the circuits that use them:
 //!
 //! - [x] Copy Table
-//!   - [ ] Copy Circuit
+//!   - [x] Copy Circuit
 //!   - [x] EVM Circuit
 //! - [ ] Rw Table
 //!   - [ ] State Circuit
 //!   - [ ] EVM Circuit
-//!   - [ ] Copy Circuit
+//!   - [x] Copy Circuit
 //! - [x] Tx Table
 //!   - [x] Tx Circuit
 //!   - [x] EVM Circuit
-//!   - [ ] Copy Circuit
+//!   - [x] Copy Circuit
 //!   - [ ] PublicInputs Circuit
 //! - [x] Bytecode Table
 //!   - [x] Bytecode Circuit
 //!   - [x] EVM Circuit
-//!   - [ ] Copy Circuit
+//!   - [x] Copy Circuit
 //! - [ ] Block Table
 //!   - [ ] EVM Circuit
 //!   - [ ] PublicInputs Circuit
@@ -48,6 +48,7 @@
 //!   - [x] Tx Circuit
 //!   - [ ] MPT Circuit
 
+use crate::copy_circuit;
 use crate::tx_circuit::{self, TxCircuit, TxCircuitConfig};
 
 use crate::bytecode_circuit::bytecode_unroller::{
@@ -68,10 +69,11 @@ use bus_mapping::mock::BlockData;
 use eth_types::geth_types::{self, GethData};
 use group::{Curve, Group};
 use halo2_proofs::arithmetic::{CurveAffine, Field as Halo2Field};
+use halo2_proofs::pairing::bn256::Fr;
 use rand::RngCore;
 use secp256k1::Secp256k1Affine;
 use strum::IntoEnumIterator;
-use halo2_proofs::pairing::bn256::Fr;
+use super::copy_circuit::CopyCircuit;
 
 /// Configuration of the Super Circuit
 #[derive(Clone)]
@@ -85,6 +87,7 @@ pub struct SuperCircuitConfig<F: Field, const MAX_TXS: usize, const MAX_CALLDATA
     evm_circuit: EvmCircuit<F>,
     tx_circuit: TxCircuitConfig<F>,
     bytecode_circuit: BytecodeConfig<F>,
+    copy_circuit: CopyCircuit<F>,
 }
 
 /// The Super Circuit contains all the zkEVM circuits
@@ -131,6 +134,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
         let copy_table = CopyTable::construct(meta, q_copy_table);
 
         let power_of_randomness = power_of_randomness_from_instance(meta);
+        let copy_circuit = CopyCircuit::configure(meta, &tx_table, &rw_table, &bytecode_table, copy_table, q_copy_table);
         let evm_circuit = EvmCircuit::configure(
             meta,
             power_of_randomness[..31].to_vec().try_into().unwrap(),
@@ -161,6 +165,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
                 bytecode_table,
                 keccak_table,
             ),
+            copy_circuit
         }
     }
 
@@ -202,6 +207,9 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
             &bytecodes,
             self.block.randomness,
         )?;
+        // --- Copy Circuit ---
+        config.copy_circuit.assign_block(&mut layouter, &self.block)?; 
+
         // --- Keccak Table ---
         let mut keccak_inputs = Vec::new();
         // Lookups from TxCircuit
@@ -223,81 +231,76 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
     }
 }
 
-impl<const MAX_TXS: usize, const MAX_CALLDATA: usize> SuperCircuit::<Fr, MAX_TXS, MAX_CALLDATA> {
+impl<const MAX_TXS: usize, const MAX_CALLDATA: usize> SuperCircuit<Fr, MAX_TXS, MAX_CALLDATA> {
     /// TODO
-    pub fn build(
-        geth_data: GethData,
-        rng: impl RngCore + Clone,
-    ) -> (u32, Self, Vec<Vec<Fr>>) {
-
-    let txs = geth_data
-        .eth_block
-        .transactions
-        .iter()
-        .map(geth_types::Transaction::from_eth_tx)
-        .collect();
-
-    let mut builder = BlockData::new_from_geth_data(geth_data.clone()).new_circuit_input_builder();
-
-    builder
-        .handle_block(&geth_data.eth_block, &geth_data.geth_traces)
-        .expect("could not handle block tx");
-    let mut block = block_convert(&builder.block, &builder.code_db);
-
-    block.randomness = Fr::random(rng.clone());
-    let aux_generator = <Secp256k1Affine as CurveAffine>::CurveExt::random(rng).to_affine();
-
-    let fixed_table_tags : Vec<FixedTableTag> = FixedTableTag::iter().collect();
-    let log2_ceil = |n| u32::BITS - (n as u32).leading_zeros() - (n & (n - 1) == 0) as u32;
-
-    let num_rows_required_for_steps =
-        SuperCircuit::<_, MAX_TXS, MAX_CALLDATA>::get_num_rows_required(&block);
-
-    let k = log2_ceil(
-        64 + fixed_table_tags
+    pub fn build(geth_data: GethData, rng: impl RngCore + Clone) -> (u32, Self, Vec<Vec<Fr>>) {
+        let txs = geth_data
+            .eth_block
+            .transactions
             .iter()
-            .map(|tag| tag.build::<Fr>().count())
-            .sum::<usize>(),
-    );
-    let bytecodes_len = block
-        .bytecodes
-        .iter()
-        .map(|(_, bytecode)| bytecode.bytes.len())
-        .sum::<usize>();
-    let k = k.max(log2_ceil(64 + bytecodes_len));
-    let k = k.max(log2_ceil(64 + num_rows_required_for_steps));
-    let k = k + 1;
-    log::debug!("evm circuit uses k = {}", k);
+            .map(geth_types::Transaction::from_eth_tx)
+            .collect();
 
-    let mut instance: Vec<Vec<Fr>> = (1..POW_RAND_SIZE + 1)
-        .map(|exp| vec![block.randomness.pow_vartime(&[exp as u64, 0, 0, 0]); (1 << k) - 64])
-        .collect();
-    // SignVerifyChip -> ECDSAChip -> MainGate instance column
-    instance.push(vec![]);
+        let mut builder =
+            BlockData::new_from_geth_data(geth_data.clone()).new_circuit_input_builder();
 
-    let chain_id = block.context.chain_id;
-    let tx_circuit = TxCircuit::new(aux_generator, block.randomness, chain_id.as_u64(), txs);
+        builder
+            .handle_block(&geth_data.eth_block, &geth_data.geth_traces)
+            .expect("could not handle block tx");
+        let mut block = block_convert(&builder.block, &builder.code_db);
 
-    let circuit = SuperCircuit::<_, MAX_TXS, MAX_CALLDATA> {
-        block,
-        fixed_table_tags,
-        tx_circuit,
-        // Instead of using 1 << k - NUM_BLINDING_ROWS, we use a much smaller number of enabled
-        // rows for the Bytecode Circuit because otherwise it penalizes significantly the
-        // MockProver verification time.
-        bytecode_size: bytecodes_len + 64,
-    };
-    (k, circuit, instance) 
+        block.randomness = Fr::random(rng.clone());
+        let aux_generator = <Secp256k1Affine as CurveAffine>::CurveExt::random(rng).to_affine();
 
+        let fixed_table_tags: Vec<FixedTableTag> = FixedTableTag::iter().collect();
+        let log2_ceil = |n| u32::BITS - (n as u32).leading_zeros() - (n & (n - 1) == 0) as u32;
+
+        let num_rows_required_for_steps =
+            SuperCircuit::<_, MAX_TXS, MAX_CALLDATA>::get_num_rows_required(&block);
+
+        let k = log2_ceil(
+            64 + fixed_table_tags
+                .iter()
+                .map(|tag| tag.build::<Fr>().count())
+                .sum::<usize>(),
+        );
+        let bytecodes_len = block
+            .bytecodes
+            .iter()
+            .map(|(_, bytecode)| bytecode.bytes.len())
+            .sum::<usize>();
+        let k = k.max(log2_ceil(64 + bytecodes_len));
+        let k = k.max(log2_ceil(64 + num_rows_required_for_steps));
+        let k = k + 1;
+        log::debug!("super circuit uses k = {}", k);
+
+        let mut instance: Vec<Vec<Fr>> = (1..POW_RAND_SIZE + 1)
+            .map(|exp| vec![block.randomness.pow_vartime(&[exp as u64, 0, 0, 0]); (1 << k) - 64])
+            .collect();
+        // SignVerifyChip -> ECDSAChip -> MainGate instance column
+        instance.push(vec![]);
+
+        let chain_id = block.context.chain_id;
+        let tx_circuit = TxCircuit::new(aux_generator, block.randomness, chain_id.as_u64(), txs);
+
+        let circuit = SuperCircuit::<_, MAX_TXS, MAX_CALLDATA> {
+            block,
+            fixed_table_tags,
+            tx_circuit,
+            // Instead of using 1 << k - NUM_BLINDING_ROWS, we use a much smaller number of enabled
+            // rows for the Bytecode Circuit because otherwise it penalizes significantly the
+            // MockProver verification time.
+            bytecode_size: bytecodes_len + 64,
+        };
+        (k, circuit, instance)
     }
-
 }
 
 #[cfg(test)]
 mod super_circuit_tests {
     use super::*;
-    use halo2_proofs::dev::MockProver;
     use ethers_signers::{LocalWallet, Signer};
+    use halo2_proofs::dev::MockProver;
     use mock::{TestContext, MOCK_CHAIN_ID};
     use rand::SeedableRng;
     use rand_chacha::ChaCha20Rng;
@@ -351,7 +354,8 @@ mod super_circuit_tests {
 
         block.sign(&wallets);
 
-        let (k, circuit, instance) = SuperCircuit::<_,1,32>::build(block, ChaCha20Rng::seed_from_u64(2));
+        let (k, circuit, instance) =
+            SuperCircuit::<_, 1, 32>::build(block, ChaCha20Rng::seed_from_u64(2));
         let prover = MockProver::run(k, &circuit, instance).unwrap();
         let res = prover.verify();
         if let Err(err) = res {
