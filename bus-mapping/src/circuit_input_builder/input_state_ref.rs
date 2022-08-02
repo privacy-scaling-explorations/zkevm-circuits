@@ -919,10 +919,13 @@ impl<'a> CircuitInputStateRef<'a> {
         // is unexpected.
         if step.depth == next_depth + 1
             && next_result != Word::zero()
-            && !matches!(step.op, OpcodeId::RETURN | OpcodeId::STOP)
+            && !matches!(
+                step.op,
+                OpcodeId::RETURN | OpcodeId::STOP | OpcodeId::SELFDESTRUCT
+            )
         {
             return Err(Error::UnexpectedExecStepError(
-                "success result without {RETURN, STOP}",
+                "success result without {RETURN, STOP, SELFDESTRUCT}",
                 step.clone(),
             ));
         }
