@@ -136,9 +136,9 @@ where
     pub fn configure<const QUICK_CHECK: bool>(
         meta: &mut ConstraintSystem<F>,
         selector: Column<Fixed>,
+        value: Column<Advice>,
         lookup: lookups::Config<QUICK_CHECK>,
     ) -> Config<T, N> {
-        let value = meta.advice_column();
         let limbs = [0; N].map(|_| meta.advice_column());
 
         for &limb in &limbs {

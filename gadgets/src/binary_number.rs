@@ -122,6 +122,7 @@ where
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         selector: Column<Fixed>,
+        value: Option<Column<Advice>>,
     ) -> BinaryNumberConfig<T, N> {
         let bits = [0; N].map(|_| meta.advice_column());
         bits.map(|bit| {
@@ -136,6 +137,17 @@ where
             bits,
             _marker: PhantomData,
         };
+
+        if let Some(value) = value {
+            meta.create_gate("binary number value", |meta| {
+                let selector = meta.query_fixed(selector, Rotation::cur());
+                vec![
+                    selector
+                        * (config.value(Rotation::cur())(meta)
+                            - meta.query_advice(value, Rotation::cur())),
+                ]
+            });
+        }
 
         // Disallow bit patterns (if any) that don't correspond to a variant of T.
         let valid_values: BTreeSet<usize> = T::iter().map(|t| from_bits(&t.as_bits())).collect();

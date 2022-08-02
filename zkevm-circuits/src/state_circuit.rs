@@ -12,7 +12,7 @@ use crate::{
         param::N_BYTES_WORD,
         witness::{Rw, RwMap},
     },
-    table::RwTableTag,
+    table::{RwTable, RwTableTag},
     util::{Expr, DEFAULT_RAND},
 };
 use constraint_builder::{ConstraintBuilder, Queries};
@@ -40,12 +40,8 @@ const N_LIMBS_ID: usize = 2;
 pub struct StateConfig<F, const QUICK_CHECK: bool> {
     selector: Column<Fixed>, // Figure out why you get errors when this is Selector.
     // https://github.com/privacy-scaling-explorations/zkevm-circuits/issues/407
+    rw_table: RwTable,
     sort_keys: SortKeysConfig,
-    is_write: Column<Advice>,
-    value: Column<Advice>,
-    value_prev: Column<Advice>,
-    aux2: Column<Advice>,
-    rw_rlc: Column<Advice>,
     initial_value: Column<Advice>, /* Assigned value at the start of the block. For Rw::Account
                                     * and Rw::AccountStorage rows this is the committed value in
                                     * the MPT, for others, it is 0. */
@@ -126,7 +122,8 @@ where
 
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
         // rw rlc must be first col. Used in aggregator
-        let rw_rlc = meta.advice_column();
+        //let rw_rlc = meta.advice_column();
+        let rw_table = RwTable::construct(meta);
         let selector = meta.fixed_column();
         let lookups = LookupsChip::configure(meta);
         let power_of_randomness: [Expression<F>; 31] = (1..32)
@@ -135,41 +132,24 @@ where
             .try_into()
             .unwrap();
 
-        let rw_counter = MpiChip::configure(meta, selector, lookups);
-        let is_write = meta.advice_column();
-        let tag = BinaryNumberChip::configure(meta, selector);
-        let id = MpiChip::configure(meta, selector, lookups);
-        let address = MpiChip::configure(meta, selector, lookups);
-        let field_tag = meta.advice_column();
-
-        let storage_key = RlcChip::configure(meta, selector, lookups, power_of_randomness.clone());
-
-        let value = meta.advice_column();
-        let value_prev = meta.advice_column();
-        // committed_value
-        let aux2 = meta.advice_column();
-
-        log::debug!(
-            "rw cols {:?}",
-            (
-                rw_counter.value,
-                is_write,
-                tag,
-                id.value,
-                address.value,
-                field_tag,
-                storage_key.encoded,
-                value,
-                value_prev,
-                aux2
-            )
+        let rw_counter = MpiChip::configure(meta, selector, rw_table.rw_counter, lookups);
+        let tag = BinaryNumberChip::configure(meta, selector, Some(rw_table.tag));
+        let id = MpiChip::configure(meta, selector, rw_table.id, lookups);
+        let address = MpiChip::configure(meta, selector, rw_table.address, lookups);
+        let storage_key = RlcChip::configure(
+            meta,
+            selector,
+            rw_table.storage_key,
+            lookups,
+            power_of_randomness.clone(),
         );
+
         let initial_value = meta.advice_column();
 
         let sort_keys = SortKeysConfig {
             tag,
             id,
-            field_tag,
+            field_tag: rw_table.field_tag,
             address,
             storage_key,
             rw_counter,
@@ -185,15 +165,11 @@ where
         let config = Self::Config {
             selector,
             sort_keys,
-            is_write,
-            value,
             initial_value,
             lexicographic_ordering,
             lookups,
             power_of_randomness,
-            value_prev,
-            aux2,
-            rw_rlc,
+            rw_table,
         };
 
         let mut constraint_builder = ConstraintBuilder::new();
@@ -217,7 +193,6 @@ where
         LookupsChip::construct(config.lookups).load(&mut layouter)?;
 
         let tag_chip = BinaryNumberChip::construct(config.sort_keys.tag);
-
         layouter.assign_region(
             || "rw table",
             |mut region| {
@@ -234,18 +209,18 @@ where
                     }
 
                     region.assign_fixed(|| "selector", config.selector, offset, || Ok(F::one()))?;
+                    tag_chip.assign(&mut region, offset, &row.tag())?;
+                    config.rw_table.assign(
+                        &mut region,
+                        offset,
+                        &row.table_assignment(self.randomness),
+                    )?;
+
                     config.sort_keys.rw_counter.assign(
                         &mut region,
                         offset,
                         row.rw_counter() as u32,
                     )?;
-                    region.assign_advice(
-                        || "is_write",
-                        config.is_write,
-                        offset,
-                        || Ok(if row.is_write() { F::one() } else { F::zero() }),
-                    )?;
-                    tag_chip.assign(&mut region, offset, &row.tag())?;
                     if let Some(id) = row.id() {
                         config.sort_keys.id.assign(&mut region, offset, id as u32)?;
                     }
@@ -254,14 +229,6 @@ where
                             .sort_keys
                             .address
                             .assign(&mut region, offset, address)?;
-                    }
-                    if let Some(field_tag) = row.field_tag() {
-                        region.assign_advice(
-                            || "field_tag",
-                            config.sort_keys.field_tag,
-                            offset,
-                            || Ok(F::from(field_tag as u64)),
-                        )?;
                     }
                     if let Some(storage_key) = row.storage_key() {
                         config.sort_keys.storage_key.assign(
@@ -272,43 +239,16 @@ where
                         )?;
                     }
 
-                    region.assign_advice(
-                        || "value",
-                        config.value,
-                        offset,
-                        || Ok(row.value_assignment(self.randomness)),
-                    )?;
-                    region.assign_advice(
-                        || "prev value",
-                        config.value_prev,
-                        offset,
-                        || {
-                            Ok(row
-                                .value_prev_assignment(self.randomness)
-                                .unwrap_or_default())
-                        },
-                    )?;
-                    region.assign_advice(
-                        || "aux2",
-                        config.aux2,
-                        offset,
-                        || {
-                            Ok(row
-                                .committed_value_assignment(self.randomness)
-                                .unwrap_or_default())
-                        },
-                    )?;
-
                     // TODO: fix this after cs.challenge() is implemented in halo2
-                    let _randomness_phase_next = self.randomness;
-                    let rw_values = row.table_assignment(self.randomness);
-                    let rlc_value = rw_values.rlc(self.randomness);
-                    region.assign_advice(
-                        || "assign rw row on rw table",
-                        config.rw_rlc,
-                        offset,
-                        || Ok(rlc_value),
-                    )?;
+                    //let _randomness_phase_next = self.randomness;
+                    //let rw_values = row.table_assignment(self.randomness);
+                    //let rlc_value = rw_values.rlc(self.randomness);
+                    //region.assign_advice(
+                    //    || "assign rw row on rw table",
+                    //    config.rw_rlc,
+                    //    offset,
+                    //    || Ok(rlc_value),
+                    //)?;
 
                     if let Some(prev_row) = prev_row {
                         let is_first_access = config.lexicographic_ordering.assign(
@@ -370,7 +310,7 @@ fn queries<F: Field, const QUICK_CHECK: bool>(
         lexicographic_ordering_selector: meta
             .query_fixed(c.lexicographic_ordering.selector, Rotation::cur()),
         rw_counter: MpiQueries::new(meta, c.sort_keys.rw_counter),
-        is_write: meta.query_advice(c.is_write, Rotation::cur()),
+        is_write: meta.query_advice(c.rw_table.is_write, Rotation::cur()),
         tag: c.sort_keys.tag.value(Rotation::cur())(meta),
         tag_bits: c
             .sort_keys
@@ -390,11 +330,11 @@ fn queries<F: Field, const QUICK_CHECK: bool>(
         address: MpiQueries::new(meta, c.sort_keys.address),
         field_tag: meta.query_advice(c.sort_keys.field_tag, Rotation::cur()),
         storage_key: RlcQueries::new(meta, c.sort_keys.storage_key),
-        value: meta.query_advice(c.value, Rotation::cur()),
-        value_prev_col: meta.query_advice(c.value_prev, Rotation::cur()),
-        aux2: meta.query_advice(c.aux2, Rotation::cur()),
-        rw_rlc: meta.query_advice(c.rw_rlc, Rotation::cur()),
-        value_prev: meta.query_advice(c.value, Rotation::prev()),
+        value: meta.query_advice(c.rw_table.value, Rotation::cur()),
+        value_prev_col: meta.query_advice(c.rw_table.value_prev, Rotation::cur()),
+        aux2: meta.query_advice(c.rw_table.aux2, Rotation::cur()),
+        //rw_rlc: meta.query_advice(c.rw_rlc, Rotation::cur()),
+        value_prev: meta.query_advice(c.rw_table.value, Rotation::prev()),
         initial_value: meta.query_advice(c.initial_value, Rotation::cur()),
         initial_value_prev: meta.query_advice(c.initial_value, Rotation::prev()),
         lookups: LookupsQueries::new(meta, c.lookups),

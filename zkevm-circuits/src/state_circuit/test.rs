@@ -37,6 +37,7 @@ pub enum AdviceColumn {
     RwCounter,
     RwCounterLimb0,
     RwCounterLimb1,
+    Tag,
     TagBit0,
     TagBit1,
     TagBit2,
@@ -55,17 +56,18 @@ impl AdviceColumn {
         config: &StateConfig<F, QUICK_CHECK>,
     ) -> Column<Advice> {
         match self {
-            Self::IsWrite => config.is_write,
+            Self::IsWrite => config.rw_table.is_write,
             Self::Address => config.sort_keys.address.value,
             Self::AddressLimb0 => config.sort_keys.address.limbs[0],
             Self::AddressLimb1 => config.sort_keys.address.limbs[1],
             Self::StorageKey => config.sort_keys.storage_key.encoded,
             Self::StorageKeyByte0 => config.sort_keys.storage_key.bytes[0],
             Self::StorageKeyByte1 => config.sort_keys.storage_key.bytes[1],
-            Self::Value => config.value,
+            Self::Value => config.rw_table.value,
             Self::RwCounter => config.sort_keys.rw_counter.value,
             Self::RwCounterLimb0 => config.sort_keys.rw_counter.limbs[0],
             Self::RwCounterLimb1 => config.sort_keys.rw_counter.limbs[1],
+            Self::Tag => config.rw_table.tag,
             Self::TagBit0 => config.sort_keys.tag.bits[0],
             Self::TagBit1 => config.sort_keys.tag.bits[1],
             Self::TagBit2 => config.sort_keys.tag.bits[2],
@@ -873,6 +875,7 @@ fn invalid_tags() {
             ((AdviceColumn::TagBit1, first_row_offset), bits[1]),
             ((AdviceColumn::TagBit2, first_row_offset), bits[2]),
             ((AdviceColumn::TagBit3, first_row_offset), bits[3]),
+            ((AdviceColumn::Tag, first_row_offset), Fr::from(i as u64)),
         ]);
 
         let result = prover(vec![], overrides).verify_at_rows(0..1, 0..1);

@@ -114,7 +114,7 @@ impl Config {
         powers_of_randomness: [Expression<F>; N_BYTES_WORD - 1],
     ) -> Self {
         let selector = meta.fixed_column();
-        let first_different_limb = BinaryNumberChip::configure(meta, selector);
+        let first_different_limb = BinaryNumberChip::configure(meta, selector, None);
         let limb_difference = meta.advice_column();
         let limb_difference_inverse = meta.advice_column();
 
