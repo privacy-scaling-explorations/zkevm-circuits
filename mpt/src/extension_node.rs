@@ -8,7 +8,7 @@ use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
 use crate::{
-    helpers::{compute_rlc, get_bool_constraint, bytes_expr_into_rlc},
+    helpers::{compute_rlc, get_bool_constraint, bytes_expr_into_rlc, key_len_lookup},
     param::{
         IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, IS_BRANCH_C_PLACEHOLDER_POS,
         IS_BRANCH_S_PLACEHOLDER_POS, IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS,
@@ -176,16 +176,6 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
             if !is_s {
                 is_ext_longer_than_55 = meta.query_advice(
                     s_main.bytes[IS_C_EXT_LONGER_THAN_55_POS - RLP_NUM],
-                    Rotation(rot_into_branch_init),
-                );
-            }
-            let mut is_branch_in_ext_hashed = meta.query_advice(
-                s_main.bytes[IS_S_BRANCH_IN_EXT_HASHED_POS - RLP_NUM],
-                Rotation(rot_into_branch_init),
-            );
-            if !is_s {
-                is_branch_in_ext_hashed = meta.query_advice(
-                    s_main.bytes[IS_C_BRANCH_IN_EXT_HASHED_POS - RLP_NUM],
                     Rotation(rot_into_branch_init),
                 );
             }
@@ -404,14 +394,15 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
 
         // Note: acc_mult is checked in extension_node_key.
 
-        // TODO: the lookup below needs to be executed for (one - is_branch_hashed),
-        // while for is_branch_hashed there needs to be additional gate for RLC comparison. Also,
-        // 0s after the branch bytes end need to be ensured.
         // Check whether branch hash is in extension node row.
         meta.lookup_any("extension_node branch hash in extension row", |meta| {
             let q_enable = q_enable(meta);
             let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
             let is_branch_init_prev = meta.query_advice(is_branch_init, Rotation::prev());
+
+            let c_rlp2 = meta.query_advice(c_main.rlp2, Rotation::cur());
+            let c160_inv = Expression::Constant(F::from(160_u64).invert().unwrap());
+            let is_branch_hashed = c_rlp2 * c160_inv;
 
             let mut acc = meta.query_advice(acc_s, Rotation(-1));
             let mut mult = meta.query_advice(acc_mult_s, Rotation(-1));
@@ -420,13 +411,14 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
                 mult = meta.query_advice(acc_mult_c, Rotation(-2));
             }
             // TODO: acc currently doesn't have branch ValueNode info (which 128 if nil)
-            let branch_acc = acc + c128 * mult;
+            let branch_acc = acc + c128.clone() * mult;
 
             let mut constraints = vec![];
             constraints.push((
                 q_not_first.clone()
                     * q_enable.clone()
                     * (one.clone() - is_branch_init_prev.clone())
+                    * is_branch_hashed.clone()
                     * branch_acc, // TODO: replace with acc once ValueNode is added
                 meta.query_fixed(keccak_table[0], Rotation::cur()),
             ));
@@ -441,12 +433,80 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
                 q_not_first.clone()
                     * q_enable.clone()
                     * (one.clone() - is_branch_init_prev)
+                    * is_branch_hashed.clone()
                     * hash_rlc.clone(),
                 meta.query_fixed(keccak_table[1], Rotation::cur()),
             ));
 
             constraints
         });
+
+        // Check whether branch hash is in extension node row (non-hashed branch).
+        // Note: there need to be 0s after branch ends in extension node c_main.bytes (see
+        // the constraints below).
+        meta.create_gate("extension_node branch hash in extension row (non-hashed branch)", |meta| {
+            let mut constraints = vec![];
+            let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
+            let q_enable = q_enable(meta);
+
+            let c_rlp2 = meta.query_advice(c_main.rlp2, Rotation::cur());
+            let c160_inv = Expression::Constant(F::from(160_u64).invert().unwrap());
+            // c_rlp2 = 160 when branch is hashed (longer than 31) and c_rlp2 = 0 otherwise
+            let is_branch_hashed = c_rlp2.clone() * c160_inv;
+
+            let mut acc = meta.query_advice(acc_s, Rotation(-1));
+            let mut mult = meta.query_advice(acc_mult_s, Rotation(-1));
+            if !is_s {
+                acc = meta.query_advice(acc_c, Rotation(-2));
+                mult = meta.query_advice(acc_mult_c, Rotation(-2));
+            }
+            // TODO: acc currently doesn't have branch ValueNode info (which 128 if nil)
+            let branch_acc = acc + c128 * mult;
+
+            let mut branch_in_ext = vec![];
+            // Note: extension node has branch hash always in c_advices.
+            for column in c_main.bytes.iter() {
+                branch_in_ext.push(meta.query_advice(*column, Rotation::cur()));
+            }
+            let rlc = bytes_expr_into_rlc(&branch_in_ext, acc_r);
+
+            constraints.push((
+                "non-hashed branch rlc",
+                q_not_first
+                    * q_enable
+                    * (one.clone() - is_branch_hashed)
+                    * (branch_acc - rlc),
+            ));
+
+            constraints
+        });
+
+        let sel_branch_non_hashed = |meta: &mut VirtualCells<F>| {
+            let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
+            let q_enable = q_enable(meta);
+
+            let c_rlp2 = meta.query_advice(c_main.rlp2, Rotation::cur());
+            let c160_inv = Expression::Constant(F::from(160_u64).invert().unwrap());
+            // c_rlp2 = 160 when branch is hashed (longer than 31) and c_rlp2 = 0 otherwise
+            let is_branch_hashed = c_rlp2.clone() * c160_inv;
+
+            q_not_first * q_enable * (one.clone() - is_branch_hashed)
+        };
+
+        // There are 0s after non-hashed branch ends in c_main.bytes.
+        /*
+        for ind in 1..HASH_WIDTH {
+            key_len_lookup(
+                meta,
+                sel_branch_non_hashed,
+                ind,
+                c_main.bytes[0],
+                c_main.bytes[ind],
+                192,
+                fixed_table,
+            )
+        }
+        */ 
 
         // Check whether RLC is properly computed.
         meta.create_gate("Extension node RLC", |meta| {
