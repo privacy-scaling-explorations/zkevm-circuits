@@ -4,9 +4,11 @@ use std::io::Cursor;
 use std::marker::PhantomData;
 
 use eth_types::geth_types::BlockConstants;
+use eth_types::geth_types::GethData;
 use eth_types::H256;
-use eth_types::{geth_types::GethData, U256};
-use eth_types::{geth_types::Transaction, Address, Field, ToLittleEndian, ToScalar, Word};
+use eth_types::{
+    geth_types::Transaction, Address, Field, ToBigEndian, ToLittleEndian, ToScalar, Word,
+};
 use ethers_core::types::Block;
 use halo2_proofs::arithmetic::BaseExt;
 use halo2_proofs::plonk::Instance;
@@ -35,7 +37,7 @@ pub struct BlockValues {
     difficulty: Word,
     base_fee: Word, // NOTE: BaseFee was added by EIP-1559 and is ignored in legacy headers.
     chain_id: u64,
-    history_hashes: Vec<U256>,
+    history_hashes: Vec<H256>,
 }
 
 /// Values of the tx table (as in the spec)
@@ -94,8 +96,13 @@ impl Default for PublicData {
 impl PublicData {
     /// Returns struct with values for the block table
     pub fn get_block_table_values(&self) -> BlockValues {
-        let mut history_hashes = self.extra.history_hashes.clone();
-        history_hashes.extend(vec![U256::zero(); 256 - history_hashes.len()]);
+        let mut history_hashes: Vec<H256> = self
+            .extra
+            .history_hashes
+            .iter()
+            .map(|&hash| H256::from(hash.to_be_bytes()))
+            .collect();
+        history_hashes.extend(vec![H256::zero(); 256 - history_hashes.len()]);
         BlockValues {
             coinbase: self.block_constants.coinbase,
             gas_limit: self.block_constants.gas_limit.as_u64(),
@@ -203,8 +210,8 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
         meta.create_gate(
             "rpi_rlc_acc[i] = rand_rpi * rpi_rlc_acc[i+1] + raw_public_inputs[i] ",
             |meta| {
-                // row.rpi_rlc_acc == q_not_end * row_next.rpi_rlc_acc * row.rand_rpi +
-                // row.raw_public_inputs
+                // q_not_end * row.rpi_rlc_acc ==
+                // (q_not_end * row_next.rpi_rlc_acc * row.rand_rpi + row.raw_public_inputs )
                 let q_not_end = meta.query_selector(q_not_end);
                 let cur_rpi_rlc_acc = meta.query_advice(rpi_rlc_acc, Rotation::cur());
                 let next_rpi_rlc_acc = meta.query_advice(rpi_rlc_acc, Rotation::next());
@@ -483,7 +490,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
         offset += 1;
 
         for prev_hash in block_values.history_hashes {
-            let prev_hash = rlc(prev_hash.to_le_bytes(), randomness);
+            let prev_hash = rlc(prev_hash.to_fixed_bytes(), randomness);
             region.assign_advice(|| "prev_hash", self.block_value, offset, || Ok(prev_hash))?;
             region.assign_advice(
                 || "prev_hash",
@@ -820,7 +827,7 @@ mod pi_circuit_test {
         offset += 1;
         // Previous block hashes
         for prev_hash in block.history_hashes {
-            result[offset] = rlc(prev_hash.to_le_bytes(), randomness);
+            result[offset] = rlc(prev_hash.to_fixed_bytes(), randomness);
             offset += 1;
         }
 
