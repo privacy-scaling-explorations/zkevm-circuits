@@ -54,7 +54,7 @@ mod jumpi;
 mod logs;
 mod memory;
 mod msize;
-mod mul_div_mod_shl_shr;
+mod mul_div_mod;
 mod mulmod;
 mod not;
 mod origin;
@@ -64,6 +64,7 @@ mod push;
 mod r#return;
 mod sdiv_smod;
 mod selfbalance;
+mod shl_shr;
 mod signed_comparator;
 mod signextend;
 mod sload;
@@ -102,7 +103,7 @@ use jumpi::JumpiGadget;
 use logs::LogGadget;
 use memory::MemoryGadget;
 use msize::MsizeGadget;
-use mul_div_mod_shl_shr::MulDivModShlShrGadget;
+use mul_div_mod::MulDivModGadget;
 use mulmod::MulModGadget;
 use not::NotGadget;
 use origin::OriginGadget;
@@ -112,6 +113,7 @@ use push::PushGadget;
 use r#return::ReturnGadget;
 use sdiv_smod::SignedDivModGadget;
 use selfbalance::SelfbalanceGadget;
+use shl_shr::ShlShrGadget;
 use signed_comparator::SignedComparatorGadget;
 use signextend::SignextendGadget;
 use sload::SloadGadget;
@@ -179,7 +181,7 @@ pub(crate) struct ExecutionConfig<F> {
     log_gadget: LogGadget<F>,
     memory_gadget: MemoryGadget<F>,
     msize_gadget: MsizeGadget<F>,
-    mul_div_mod_shl_shr_gadget: MulDivModShlShrGadget<F>,
+    mul_div_mod_gadget: MulDivModGadget<F>,
     mulmod_gadget: MulModGadget<F>,
     not_gadget: NotGadget<F>,
     origin_gadget: OriginGadget<F>,
@@ -205,6 +207,7 @@ pub(crate) struct ExecutionConfig<F> {
     create2_gadget: DummyGadget<F, 4, 1, { ExecutionState::CREATE2 }>,
     staticcall_gadget: DummyGadget<F, 6, 1, { ExecutionState::STATICCALL }>,
     selfdestruct_gadget: DummyGadget<F, 1, 0, { ExecutionState::SELFDESTRUCT }>,
+    shl_shr_gadget: ShlShrGadget<F>,
     signed_comparator_gadget: SignedComparatorGadget<F>,
     signextend_gadget: SignextendGadget<F>,
     sload_gadget: SloadGadget<F>,
@@ -388,7 +391,7 @@ impl<F: Field> ExecutionConfig<F> {
             log_gadget: configure_gadget!(),
             memory_gadget: configure_gadget!(),
             msize_gadget: configure_gadget!(),
-            mul_div_mod_shl_shr_gadget: configure_gadget!(),
+            mul_div_mod_gadget: configure_gadget!(),
             mulmod_gadget: configure_gadget!(),
             not_gadget: configure_gadget!(),
             origin_gadget: configure_gadget!(),
@@ -414,6 +417,7 @@ impl<F: Field> ExecutionConfig<F> {
             create2_gadget: configure_gadget!(),
             staticcall_gadget: configure_gadget!(),
             selfdestruct_gadget: configure_gadget!(),
+            shl_shr_gadget: configure_gadget!(),
             signed_comparator_gadget: configure_gadget!(),
             signextend_gadget: configure_gadget!(),
             sload_gadget: configure_gadget!(),
@@ -838,9 +842,7 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::LOG => assign_exec_step!(self.log_gadget),
             ExecutionState::MEMORY => assign_exec_step!(self.memory_gadget),
             ExecutionState::MSIZE => assign_exec_step!(self.msize_gadget),
-            ExecutionState::MUL_DIV_MOD_SHL_SHR => {
-                assign_exec_step!(self.mul_div_mod_shl_shr_gadget)
-            }
+            ExecutionState::MUL_DIV_MOD => assign_exec_step!(self.mul_div_mod_gadget),
             ExecutionState::MULMOD => assign_exec_step!(self.mulmod_gadget),
             ExecutionState::NOT => assign_exec_step!(self.not_gadget),
             ExecutionState::ORIGIN => assign_exec_step!(self.origin_gadget),
@@ -872,6 +874,7 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::STATICCALL => assign_exec_step!(self.staticcall_gadget),
             ExecutionState::SELFDESTRUCT => assign_exec_step!(self.selfdestruct_gadget),
             // end of dummy gadgets
+            ExecutionState::SHL_SHR => assign_exec_step!(self.shl_shr_gadget),
             ExecutionState::SIGNEXTEND => assign_exec_step!(self.signextend_gadget),
             ExecutionState::SLOAD => assign_exec_step!(self.sload_gadget),
             ExecutionState::SSTORE => assign_exec_step!(self.sstore_gadget),

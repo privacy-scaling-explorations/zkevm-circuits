@@ -8,9 +8,7 @@ use crate::{
             common_gadget::SameContextGadget,
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
             from_bytes,
-            math_gadget::{
-                generate_lagrange_base_polynomial, IsZeroGadget, LtWordGadget, MulAddWordsGadget,
-            },
+            math_gadget::{IsZeroGadget, LtWordGadget, MulAddWordsGadget},
             sum, CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
@@ -19,25 +17,22 @@ use crate::{
 };
 use bus_mapping::evm::OpcodeId;
 use eth_types::{Field, ToLittleEndian, U256};
-use halo2_proofs::plonk::{Error, Expression};
+use halo2_proofs::plonk::Error;
 
-/// MulDivModShlShrGadget verifies opcode MUL, DIV, MOD, SHL and SHR.
-/// For MUL, verify pop1 * pop2 == push;
-/// For DIV, verify pop1 / pop2 == push;
-/// For MOD, verify pop1 % pop2 == push;
+/// ShlShrGadget verifies opcode SHL and SHR.
 /// For SHL, verify pop1 * (2^pop2) == push;
 /// For SHR, verify pop1 / (2^pop2) = push;
 /// when pop1, pop2, push are 256-bit words.
 #[derive(Clone, Debug)]
-pub(crate) struct MulDivModShlShrGadget<F> {
+pub(crate) struct ShlShrGadget<F> {
     same_context: SameContextGadget<F>,
     quotient: util::Word<F>,
     divisor: util::Word<F>,
     remainder: util::Word<F>,
     dividend: util::Word<F>,
-    /// Shift word used for opcode SHL and SHR
-    pop1: util::Word<F>,
-    /// First byte of shift value for opcode SHL and SHR
+    /// Shift word
+    shift: util::Word<F>,
+    /// First byte of shift word
     shf0: Cell<F>,
     /// Gadget that verifies quotient * divisor + remainder = dividend
     mul_add_words: MulAddWordsGadget<F>,
@@ -49,24 +44,21 @@ pub(crate) struct MulDivModShlShrGadget<F> {
     remainder_lt_divisor: LtWordGadget<F>,
 }
 
-impl<F: Field> ExecutionGadget<F> for MulDivModShlShrGadget<F> {
-    const NAME: &'static str = "MUL_DIV_MOD_SHL_SHR";
+impl<F: Field> ExecutionGadget<F> for ShlShrGadget<F> {
+    const NAME: &'static str = "SHL_SHR";
 
-    const EXECUTION_STATE: ExecutionState = ExecutionState::MUL_DIV_MOD_SHL_SHR;
+    const EXECUTION_STATE: ExecutionState = ExecutionState::SHL_SHR;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
-        let is_mul = is_opcode(&opcode, OpcodeId::MUL);
-        let is_div = is_opcode(&opcode, OpcodeId::DIV);
-        let is_mod = is_opcode(&opcode, OpcodeId::MOD);
-        let is_shl = is_opcode(&opcode, OpcodeId::SHL);
-        let is_shr = is_opcode(&opcode, OpcodeId::SHR);
+        let is_shl = OpcodeId::SHR.expr() - opcode.expr();
+        let is_shr = 1.expr() - is_shl.expr();
 
         let quotient = cb.query_word();
         let divisor = cb.query_word();
         let remainder = cb.query_word();
         let dividend = cb.query_word();
-        let pop1 = cb.query_word();
+        let shift = cb.query_word();
         let shf0 = cb.query_cell();
 
         let mul_add_words =
@@ -75,24 +67,19 @@ impl<F: Field> ExecutionGadget<F> for MulDivModShlShrGadget<F> {
         let remainder_is_zero = IsZeroGadget::construct(cb, sum::expr(&remainder.cells));
         let remainder_lt_divisor = LtWordGadget::construct(cb, &remainder, &divisor);
 
-        // Based on different opcode cases, constrain stack pops and pushes as:
-        // - for `MUL`, two pops are quotient and divisor, and push is dividend.
-        // - for `DIV`, two pops are dividend and divisor, and push is quotient.
-        // - for `MOD`, two pops are dividend and divisor, and push is remainder.
-        // - for `SHL`, two pops are shift and quotient, and push is dividend.
-        // - for `SHR`, two pops are shift and dividend, and push is quotient.
-        cb.stack_pop(pop1.expr());
-        cb.stack_pop(
-            (is_mul.clone() + is_div.clone() + is_mod.clone()) * divisor.expr()
-                + is_shl.clone() * quotient.expr()
-                + is_shr.clone() * dividend.expr(),
-        );
+        // Constrain stack pops and pushes as:
+        // - for SHL, two pops are shift and quotient, and push is dividend.
+        // - for SHR, two pops are shift and dividend, and push is quotient.
+        cb.stack_pop(shift.expr());
+        cb.stack_pop(is_shl.expr() * quotient.expr() + is_shr.expr() * dividend.expr());
         cb.stack_push(
-            (is_mul.clone() + is_shl.clone()) * dividend.expr()
-                + (is_div.clone() + is_shr.clone())
-                    * quotient.expr()
-                    * (1.expr() - divisor_is_zero.expr())
-                + is_mod.clone() * remainder.expr() * (1.expr() - divisor_is_zero.expr()),
+            is_shl.expr() * dividend.expr()
+                + is_shr.expr() * quotient.expr() * (1.expr() - divisor_is_zero.expr()),
+        );
+
+        cb.require_zero(
+            "shift == shift.cells[0] when divisor != 0",
+            (1.expr() - divisor_is_zero.expr()) * (shift.expr() - shift.cells[0].expr()),
         );
 
         cb.require_zero(
@@ -101,50 +88,34 @@ impl<F: Field> ExecutionGadget<F> for MulDivModShlShrGadget<F> {
         );
 
         cb.require_zero(
-            "remainder == 0 for both opcode MUL and SHL",
-            (is_mul.clone() + is_shl.clone()) * (1.expr() - remainder_is_zero.expr()),
+            "remainder == 0 for opcode SHL",
+            is_shl * (1.expr() - remainder_is_zero.expr()),
         );
 
         cb.require_zero(
-            "overflow == 0 for opcode DIV, MOD and SHR",
-            (is_div.clone() + is_mod.clone() + is_shr.clone()) * mul_add_words.overflow(),
+            "overflow == 0 for opcode SHR",
+            is_shr * mul_add_words.overflow(),
         );
 
-        cb.require_zero(
-            "pop1 == pop1.cells[0] when divisor != 0 for opcode SHL and SHR",
-            (is_shl.clone() + is_shr.clone())
-                * (1.expr() - divisor_is_zero.expr())
-                * (pop1.expr() - pop1.cells[0].expr()),
-        );
-
-        // For opcode SHL and SHR, constrain `divisor_lo == 2^shf0` when
-        // `shf0 < 128`, and `divisor_hi == 2^(128 - shf0)` otherwise.
+        // Constrain divisor_lo == 2^shf0 when shf0 < 128, and
+        // divisor_hi == 2^(128 - shf0) otherwise.
         let divisor_lo = from_bytes::expr(&divisor.cells[..16]);
         let divisor_hi = from_bytes::expr(&divisor.cells[16..]);
-        cb.condition(
-            (is_shl.clone() + is_shr.clone()) * (1.expr() - divisor_is_zero.expr()),
-            |cb| {
-                cb.add_lookup(
-                    "Pow2 lookup of shf0, divisor_lo and divisor_hi for opcode SHL and SHR",
-                    Lookup::Fixed {
-                        tag: FixedTableTag::Pow2.expr(),
-                        values: [shf0.expr(), divisor_lo.expr(), divisor_hi.expr()],
-                    },
-                );
-            },
-        );
-
-        let gas_cost = is_mul * OpcodeId::MUL.constant_gas_cost().expr()
-            + is_div * OpcodeId::DIV.constant_gas_cost().expr()
-            + is_mod * OpcodeId::MOD.constant_gas_cost().expr()
-            + is_shl * OpcodeId::SHL.constant_gas_cost().expr()
-            + is_shr * OpcodeId::SHR.constant_gas_cost().expr();
+        cb.condition(1.expr() - divisor_is_zero.expr(), |cb| {
+            cb.add_lookup(
+                "Pow2 lookup of shf0, divisor_lo and divisor_hi",
+                Lookup::Fixed {
+                    tag: FixedTableTag::Pow2.expr(),
+                    values: [shf0.expr(), divisor_lo.expr(), divisor_hi.expr()],
+                },
+            );
+        });
 
         let step_state_transition = StepStateTransition {
             rw_counter: Delta(3.expr()),
             program_counter: Delta(1.expr()),
             stack_pointer: Delta(1.expr()),
-            gas_left: Delta(-gas_cost),
+            gas_left: Delta(-OpcodeId::SHL.constant_gas_cost().expr()),
             ..Default::default()
         };
 
@@ -156,7 +127,7 @@ impl<F: Field> ExecutionGadget<F> for MulDivModShlShrGadget<F> {
             divisor,
             remainder,
             dividend,
-            pop1,
+            shift,
             shf0,
             mul_add_words,
             divisor_is_zero,
@@ -177,23 +148,8 @@ impl<F: Field> ExecutionGadget<F> for MulDivModShlShrGadget<F> {
         self.same_context.assign_exec_step(region, offset, step)?;
         let indices = [step.rw_indices[0], step.rw_indices[1], step.rw_indices[2]];
         let [pop1, pop2, push] = indices.map(|idx| block.rws[idx].stack_value());
-
-        // Get the first byte of shift value only for opcode SHL and SHR.
         let shf0 = pop1.to_le_bytes()[0];
-
         let (quotient, divisor, remainder, dividend) = match step.opcode.unwrap() {
-            OpcodeId::MUL => (pop1, pop2, U256::from(0), push),
-            OpcodeId::DIV => (push, pop2, pop1 - push * pop2, pop1),
-            OpcodeId::MOD => (
-                if pop2.is_zero() {
-                    U256::from(0)
-                } else {
-                    pop1 / pop2
-                },
-                pop2,
-                if pop2.is_zero() { pop1 } else { push },
-                pop1,
-            ),
             OpcodeId::SHL => (
                 pop2,
                 if U256::from(shf0) == pop1 {
@@ -214,7 +170,6 @@ impl<F: Field> ExecutionGadget<F> for MulDivModShlShrGadget<F> {
             }
             _ => unreachable!(),
         };
-
         self.quotient
             .assign(region, offset, Some(quotient.to_le_bytes()))?;
         self.divisor
@@ -223,7 +178,8 @@ impl<F: Field> ExecutionGadget<F> for MulDivModShlShrGadget<F> {
             .assign(region, offset, Some(remainder.to_le_bytes()))?;
         self.dividend
             .assign(region, offset, Some(dividend.to_le_bytes()))?;
-        self.pop1.assign(region, offset, Some(pop1.to_le_bytes()))?;
+        self.shift
+            .assign(region, offset, Some(pop1.to_le_bytes()))?;
         self.shf0
             .assign(region, offset, Some(u64::from(shf0).into()))?;
         self.mul_add_words
@@ -237,23 +193,6 @@ impl<F: Field> ExecutionGadget<F> for MulDivModShlShrGadget<F> {
         self.remainder_lt_divisor
             .assign(region, offset, remainder, divisor)
     }
-}
-
-#[inline]
-fn is_opcode<F: Field>(opcode: &Cell<F>, opcode_id: OpcodeId) -> Expression<F> {
-    generate_lagrange_base_polynomial(
-        opcode,
-        opcode_id.as_u8() as usize,
-        [
-            OpcodeId::MUL,
-            OpcodeId::DIV,
-            OpcodeId::MOD,
-            OpcodeId::SHL,
-            OpcodeId::SHR,
-        ]
-        .into_iter()
-        .map(|op_id| op_id.as_u8() as usize),
-    )
 }
 
 #[cfg(test)]
@@ -279,51 +218,6 @@ mod test {
             ),
             Ok(())
         );
-    }
-
-    #[test]
-    fn mul_gadget_tests() {
-        test_ok(OpcodeId::MUL, Word::from(0xABCD), Word::from(0x1234));
-        test_ok(OpcodeId::MUL, Word::from(0xABCD), Word::from(0x1234) << 240);
-        test_ok(
-            OpcodeId::MUL,
-            Word::from(0xABCD) << 240,
-            Word::from(0x1234) << 240,
-        );
-        let max_word = Word::from_big_endian(&[255_u8; 32]);
-        test_ok(OpcodeId::MUL, max_word, Word::from(0x1234));
-        test_ok(OpcodeId::MUL, max_word, Word::from(0));
-        test_ok(OpcodeId::MUL, rand_word(), rand_word());
-    }
-
-    #[test]
-    fn div_gadget_tests() {
-        test_ok(OpcodeId::DIV, Word::from(0xABCD), Word::from(0x1234));
-        test_ok(OpcodeId::DIV, Word::from(0xABCD), Word::from(0x1234) << 240);
-        test_ok(
-            OpcodeId::DIV,
-            Word::from(0xABCD) << 240,
-            Word::from(0x1234) << 240,
-        );
-        let max_word = Word::from_big_endian(&[255_u8; 32]);
-        test_ok(OpcodeId::DIV, max_word, Word::from(0x1234));
-        test_ok(OpcodeId::DIV, max_word, Word::from(0));
-        test_ok(OpcodeId::DIV, rand_word(), rand_word());
-    }
-
-    #[test]
-    fn mod_gadget_tests() {
-        test_ok(OpcodeId::MOD, Word::from(0xABCD), Word::from(0x1234));
-        test_ok(OpcodeId::MOD, Word::from(0xABCD), Word::from(0x1234) << 240);
-        test_ok(
-            OpcodeId::MOD,
-            Word::from(0xABCD) << 240,
-            Word::from(0x1234) << 240,
-        );
-        let max_word = Word::from_big_endian(&[255_u8; 32]);
-        test_ok(OpcodeId::MOD, max_word, Word::from(0x1234));
-        test_ok(OpcodeId::MOD, max_word, Word::from(0));
-        test_ok(OpcodeId::MOD, rand_word(), rand_word());
     }
 
     #[test]

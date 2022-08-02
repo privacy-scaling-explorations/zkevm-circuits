@@ -25,9 +25,10 @@ pub enum ExecutionState {
     EndBlock,
     // Opcode successful cases
     STOP,
-    ADD_SUB,             // ADD, SUB
-    MUL_DIV_MOD_SHL_SHR, // MUL, DIV, MOD, SHL, SHR
-    SDIV_SMOD,           // SDIV, SMOD
+    ADD_SUB,     // ADD, SUB
+    MUL_DIV_MOD, // MUL, DIV, MOD
+    SDIV_SMOD,   // SDIV, SMOD
+    SHL_SHR,     // SHL, SHR
     ADDMOD,
     MULMOD,
     EXP,
@@ -179,14 +180,9 @@ impl ExecutionState {
         match self {
             Self::STOP => vec![OpcodeId::STOP],
             Self::ADD_SUB => vec![OpcodeId::ADD, OpcodeId::SUB],
-            Self::MUL_DIV_MOD_SHL_SHR => vec![
-                OpcodeId::MUL,
-                OpcodeId::DIV,
-                OpcodeId::MOD,
-                OpcodeId::SHL,
-                OpcodeId::SHR,
-            ],
+            Self::MUL_DIV_MOD => vec![OpcodeId::MUL, OpcodeId::DIV, OpcodeId::MOD],
             Self::SDIV_SMOD => vec![OpcodeId::SDIV, OpcodeId::SMOD],
+            Self::SHL_SHR => vec![OpcodeId::SHL, OpcodeId::SHR],
             Self::ADDMOD => vec![OpcodeId::ADDMOD],
             Self::MULMOD => vec![OpcodeId::MULMOD],
             Self::EXP => vec![OpcodeId::EXP],
