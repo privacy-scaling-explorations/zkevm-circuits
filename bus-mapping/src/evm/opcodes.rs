@@ -15,6 +15,7 @@ use eth_types::{
 use keccak256::EMPTY_HASH;
 use log::warn;
 
+mod address;
 mod call;
 mod calldatacopy;
 mod calldataload;
@@ -47,6 +48,7 @@ mod swap;
 #[cfg(test)]
 mod memory_expansion_test;
 
+use address::Address;
 use call::Call;
 use calldatacopy::Calldatacopy;
 use calldataload::Calldataload;
@@ -139,7 +141,7 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         OpcodeId::SHR => StackOnlyOpcode::<2, 1>::gen_associated_ops,
         OpcodeId::SAR => StackOnlyOpcode::<2, 1>::gen_associated_ops,
         OpcodeId::SHA3 => Sha3::gen_associated_ops,
-        OpcodeId::ADDRESS => StackOnlyOpcode::<0, 1>::gen_associated_ops,
+        OpcodeId::ADDRESS => Address::gen_associated_ops,
         OpcodeId::BALANCE => StackOnlyOpcode::<1, 1>::gen_associated_ops,
         OpcodeId::ORIGIN => Origin::gen_associated_ops,
         OpcodeId::CALLER => Caller::gen_associated_ops,
