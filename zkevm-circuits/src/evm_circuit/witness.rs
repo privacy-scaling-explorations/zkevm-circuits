@@ -1465,7 +1465,7 @@ pub fn block_convert(
             .iter()
             .map(|copy_event| {
                 (
-                    (copy_event.tx_id, copy_event.call_id, copy_event.pc.0),
+                    (copy_event.tx_id, copy_event.call_id, copy_event.gas_left),
                     copy_event.clone(),
                 )
             })

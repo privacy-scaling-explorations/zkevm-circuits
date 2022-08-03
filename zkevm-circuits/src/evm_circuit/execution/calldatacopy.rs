@@ -204,7 +204,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
         self.call_data_offset
             .assign(region, offset, Some(F::from(call_data_offset as u64)))?;
 
-        let key = (tx.id, call.id, step.program_counter as usize);
+        let key = (tx.id, call.id, step.gas_left as usize);
         let copy_rwc_inc = block
             .copy_events
             .get(&key)

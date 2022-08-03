@@ -183,7 +183,7 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
         self.memory_copier_gas
             .assign(region, offset, size.as_u64(), memory_expansion_cost)?;
 
-        let key = (tx.id, call.id, step.program_counter as usize);
+        let key = (tx.id, call.id, step.gas_left as usize);
         let copy_rwc_inc = block
             .copy_events
             .get(&key)
