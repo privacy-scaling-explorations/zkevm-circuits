@@ -1,12 +1,12 @@
 use halo2_proofs::{
     circuit::Chip,
-    plonk::{Advice, Column, ConstraintSystem, Expression, Fixed, Selector, VirtualCells},
+    plonk::{Advice, Column, ConstraintSystem, Expression, Fixed},
     poly::Rotation,
 };
 use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
-use crate::{helpers::get_bool_constraint, mpt::ProofTypeCols};
+use crate::{helpers::get_bool_constraint, mpt::{ProofTypeCols, AccountLeafCols}};
 
 #[derive(Clone, Debug)]
 pub(crate) struct SelectorsConfig {}
@@ -31,21 +31,14 @@ impl<F: FieldExt> SelectorsChip<F> {
         is_leaf_s_value: Column<Advice>,
         is_leaf_c_key: Column<Advice>,
         is_leaf_c_value: Column<Advice>,
-        is_account_leaf_key_s: Column<Advice>,
-        is_account_leaf_key_c: Column<Advice>,
-        is_account_leaf_nonce_balance_s: Column<Advice>,
-        is_account_leaf_nonce_balance_c: Column<Advice>,
-        is_account_leaf_storage_codehash_s: Column<Advice>,
-        is_account_leaf_storage_codehash_c: Column<Advice>,
-        is_account_leaf_in_added_branch: Column<Advice>,
         is_leaf_in_added_branch: Column<Advice>,
+        account_leaf: AccountLeafCols,
         is_extension_node_s: Column<Advice>,
         is_extension_node_c: Column<Advice>,
         sel1: Column<Advice>,
         sel2: Column<Advice>,
         is_modified: Column<Advice>,
         is_at_drifted_pos: Column<Advice>,
-        is_non_existing_account_row: Column<Advice>,
     ) -> SelectorsConfig {
         let config = SelectorsConfig {};
         let one = Expression::Constant(F::one());
@@ -63,18 +56,18 @@ impl<F: FieldExt> SelectorsChip<F> {
             let is_leaf_c_key = meta.query_advice(is_leaf_c_key, Rotation::cur());
             let is_leaf_c_value = meta.query_advice(is_leaf_c_value, Rotation::cur());
 
-            let is_account_leaf_key_s = meta.query_advice(is_account_leaf_key_s, Rotation::cur());
-            let is_account_leaf_key_c = meta.query_advice(is_account_leaf_key_c, Rotation::cur());
+            let is_account_leaf_key_s = meta.query_advice(account_leaf.is_key_s, Rotation::cur());
+            let is_account_leaf_key_c = meta.query_advice(account_leaf.is_key_c, Rotation::cur());
             let is_account_leaf_nonce_balance_s =
-                meta.query_advice(is_account_leaf_nonce_balance_s, Rotation::cur());
+                meta.query_advice(account_leaf.is_nonce_balance_s, Rotation::cur());
             let is_account_leaf_nonce_balance_c =
-                meta.query_advice(is_account_leaf_nonce_balance_c, Rotation::cur());
+                meta.query_advice(account_leaf.is_nonce_balance_c, Rotation::cur());
             let is_account_leaf_storage_codehash_s =
-                meta.query_advice(is_account_leaf_storage_codehash_s, Rotation::cur());
+                meta.query_advice(account_leaf.is_storage_codehash_s, Rotation::cur());
             let is_account_leaf_storage_codehash_c =
-                meta.query_advice(is_account_leaf_storage_codehash_c, Rotation::cur());
+                meta.query_advice(account_leaf.is_storage_codehash_c, Rotation::cur());
             let is_account_leaf_in_added_branch =
-                meta.query_advice(is_account_leaf_in_added_branch, Rotation::cur());
+                meta.query_advice(account_leaf.is_in_added_branch, Rotation::cur());
 
             let sel1 = meta.query_advice(sel1, Rotation::cur());
             let sel2 = meta.query_advice(sel2, Rotation::cur());
@@ -84,7 +77,7 @@ impl<F: FieldExt> SelectorsChip<F> {
             let is_balance_mod = meta.query_advice(proof_type.is_balance_mod, Rotation::cur());
             let is_account_delete_mod = meta.query_advice(proof_type.is_account_delete_mod, Rotation::cur());
             let is_non_existing_account_proof = meta.query_advice(proof_type.is_non_existing_account_proof, Rotation::cur());
-            let is_non_existing_account_row = meta.query_advice(is_non_existing_account_row, Rotation::cur());
+            let is_non_existing_account_row = meta.query_advice(account_leaf.is_non_existing_account_row, Rotation::cur());
 
             constraints.push((
                 "bool check not_first_level",
@@ -241,33 +234,33 @@ impl<F: FieldExt> SelectorsChip<F> {
                     meta.query_advice(is_leaf_in_added_branch, Rotation::cur());
 
                 let is_account_leaf_key_s_prev =
-                    meta.query_advice(is_account_leaf_key_s, Rotation::prev());
+                    meta.query_advice(account_leaf.is_key_s, Rotation::prev());
                 let is_account_leaf_key_s_cur =
-                    meta.query_advice(is_account_leaf_key_s, Rotation::cur());
+                    meta.query_advice(account_leaf.is_key_s, Rotation::cur());
                 let is_account_leaf_key_c_prev =
-                    meta.query_advice(is_account_leaf_key_c, Rotation::prev());
+                    meta.query_advice(account_leaf.is_key_c, Rotation::prev());
                 let is_account_leaf_key_c_cur =
-                    meta.query_advice(is_account_leaf_key_c, Rotation::cur());
+                    meta.query_advice(account_leaf.is_key_c, Rotation::cur());
                 let is_account_leaf_nonce_balance_s_prev =
-                    meta.query_advice(is_account_leaf_nonce_balance_s, Rotation::prev());
+                    meta.query_advice(account_leaf.is_nonce_balance_s, Rotation::prev());
                 let is_account_leaf_nonce_balance_s_cur =
-                    meta.query_advice(is_account_leaf_nonce_balance_s, Rotation::cur());
+                    meta.query_advice(account_leaf.is_nonce_balance_s, Rotation::cur());
                 let is_account_leaf_nonce_balance_c_prev =
-                    meta.query_advice(is_account_leaf_nonce_balance_c, Rotation::prev());
+                    meta.query_advice(account_leaf.is_nonce_balance_c, Rotation::prev());
                 let is_account_leaf_nonce_balance_c_cur =
-                    meta.query_advice(is_account_leaf_nonce_balance_c, Rotation::cur());
+                    meta.query_advice(account_leaf.is_nonce_balance_c, Rotation::cur());
                 let is_account_leaf_storage_codehash_s_prev =
-                    meta.query_advice(is_account_leaf_storage_codehash_s, Rotation::prev());
+                    meta.query_advice(account_leaf.is_storage_codehash_s, Rotation::prev());
                 let is_account_leaf_storage_codehash_s_cur =
-                    meta.query_advice(is_account_leaf_storage_codehash_s, Rotation::cur());
+                    meta.query_advice(account_leaf.is_storage_codehash_s, Rotation::cur());
                 let is_account_leaf_storage_codehash_c_prev =
-                    meta.query_advice(is_account_leaf_storage_codehash_c, Rotation::prev());
+                    meta.query_advice(account_leaf.is_storage_codehash_c, Rotation::prev());
                 let is_account_leaf_storage_codehash_c_cur =
-                    meta.query_advice(is_account_leaf_storage_codehash_c, Rotation::cur());
+                    meta.query_advice(account_leaf.is_storage_codehash_c, Rotation::cur());
                 let is_account_leaf_in_added_branch_prev =
-                    meta.query_advice(is_account_leaf_in_added_branch, Rotation::prev());
+                    meta.query_advice(account_leaf.is_in_added_branch, Rotation::prev());
                 let is_account_leaf_in_added_branch_cur =
-                    meta.query_advice(is_account_leaf_in_added_branch, Rotation::cur());
+                    meta.query_advice(account_leaf.is_in_added_branch, Rotation::cur());
 
                 let is_extension_node_s_prev =
                     meta.query_advice(is_extension_node_s, Rotation::prev());
@@ -279,9 +272,9 @@ impl<F: FieldExt> SelectorsChip<F> {
                     meta.query_advice(is_extension_node_c, Rotation::cur());
 
                 let is_non_existing_account_row_prev =
-                    meta.query_advice(is_non_existing_account_row, Rotation::prev());
+                    meta.query_advice(account_leaf.is_non_existing_account_row, Rotation::prev());
                 let is_non_existing_account_row_cur =
-                    meta.query_advice(is_non_existing_account_row, Rotation::cur());
+                    meta.query_advice(account_leaf.is_non_existing_account_row, Rotation::cur());
 
 
                 // Branch init can start after another branch (means after extension node C)

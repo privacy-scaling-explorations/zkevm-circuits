@@ -90,6 +90,18 @@ pub(crate) struct MainCols { // Main as opposed to other columns which are selec
 }
 
 #[derive(Clone, Debug)]
+pub(crate) struct AccountLeafCols {
+    pub(crate) is_key_s: Column<Advice>,
+    pub(crate) is_key_c: Column<Advice>,
+    pub(crate) is_non_existing_account_row: Column<Advice>,
+    pub(crate) is_nonce_balance_s: Column<Advice>,
+    pub(crate) is_nonce_balance_c: Column<Advice>,
+    pub(crate) is_storage_codehash_s: Column<Advice>,
+    pub(crate) is_storage_codehash_c: Column<Advice>,
+    pub(crate) is_in_added_branch: Column<Advice>,
+}
+
+#[derive(Clone, Debug)]
 pub struct MPTConfig<F> {
     proof_type: ProofTypeCols,
     q_enable: Column<Fixed>,
@@ -104,13 +116,6 @@ pub struct MPTConfig<F> {
     is_leaf_s_value: Column<Advice>,
     is_leaf_c: Column<Advice>,
     is_leaf_c_value: Column<Advice>,
-    is_account_leaf_key_s: Column<Advice>,
-    is_account_leaf_key_c: Column<Advice>,
-    is_account_leaf_nonce_balance_s: Column<Advice>,
-    is_account_leaf_nonce_balance_c: Column<Advice>,
-    is_account_leaf_storage_codehash_s: Column<Advice>,
-    is_account_leaf_storage_codehash_c: Column<Advice>,
-    is_account_leaf_in_added_branch: Column<Advice>,
     node_index: Column<Advice>,
     is_modified: Column<Advice>,   // whether this branch node is modified
     modified_node: Column<Advice>, // index of the modified node
@@ -129,6 +134,7 @@ pub struct MPTConfig<F> {
     is_extension_node_c: Column<Advice>,
     s_main: MainCols,
     c_main: MainCols,
+    account_leaf: AccountLeafCols,
     s_mod_node_hash_rlc: Column<Advice>, /* modified node s_advices RLC when s_advices present
                                           * hash (used also for leaf long/short) */
     c_mod_node_hash_rlc: Column<Advice>, /* modified node c_advices RLC when c_advices present
@@ -164,7 +170,6 @@ pub struct MPTConfig<F> {
                                   * enable lookup for storage key/value (to have address RLC in
                                   * the same row as storage key/value). */
     counter: Column<Advice>,
-    is_non_existing_account_row: Column<Advice>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -287,6 +292,17 @@ impl<F: FieldExt> MPTConfig<F> {
             is_non_existing_account_proof: meta.advice_column(),
         };
 
+        let account_leaf = AccountLeafCols {
+            is_key_s : meta.advice_column(),
+            is_key_c : meta.advice_column(),
+            is_non_existing_account_row : meta.advice_column(),
+            is_nonce_balance_s : meta.advice_column(),
+            is_nonce_balance_c : meta.advice_column(),
+            is_storage_codehash_s : meta.advice_column(),
+            is_storage_codehash_c : meta.advice_column(),
+            is_in_added_branch : meta.advice_column(),
+        };
+
         let is_branch_init = meta.advice_column();
         let is_branch_child = meta.advice_column();
         let is_last_branch_child = meta.advice_column();
@@ -294,14 +310,6 @@ impl<F: FieldExt> MPTConfig<F> {
         let is_leaf_s_value = meta.advice_column();
         let is_leaf_c = meta.advice_column();
         let is_leaf_c_value = meta.advice_column();
-
-        let is_account_leaf_key_s = meta.advice_column();
-        let is_account_leaf_key_c = meta.advice_column();
-        let is_account_leaf_nonce_balance_s = meta.advice_column();
-        let is_account_leaf_nonce_balance_c = meta.advice_column();
-        let is_account_leaf_storage_codehash_s = meta.advice_column();
-        let is_account_leaf_storage_codehash_c = meta.advice_column();
-        let is_account_leaf_in_added_branch = meta.advice_column();
 
         let node_index = meta.advice_column();
         let is_modified = meta.advice_column();
@@ -387,7 +395,6 @@ impl<F: FieldExt> MPTConfig<F> {
 
         let address_rlc = meta.advice_column();
         let counter = meta.advice_column();
-        let is_non_existing_account_row = meta.advice_column();
 
         SelectorsChip::<F>::configure(
             meta,
@@ -402,21 +409,14 @@ impl<F: FieldExt> MPTConfig<F> {
             is_leaf_s_value,
             is_leaf_c,
             is_leaf_c_value,
-            is_account_leaf_key_s,
-            is_account_leaf_key_c,
-            is_account_leaf_nonce_balance_s,
-            is_account_leaf_nonce_balance_c,
-            is_account_leaf_storage_codehash_s,
-            is_account_leaf_storage_codehash_c,
-            is_account_leaf_in_added_branch,
             is_leaf_in_added_branch,
+            account_leaf.clone(),
             is_extension_node_s,
             is_extension_node_c,
             sel1,
             sel2,
             is_modified,
             is_at_drifted_pos,
-            is_non_existing_account_row,
         );
 
         RootsChip::<F>::configure(
@@ -426,7 +426,7 @@ impl<F: FieldExt> MPTConfig<F> {
             not_first_level,
             is_leaf_in_added_branch,
             is_branch_init,
-            is_account_leaf_key_s,
+            account_leaf.is_key_s,
             is_leaf_s,
             inter_start_root,
             inter_final_root,
@@ -458,7 +458,7 @@ impl<F: FieldExt> MPTConfig<F> {
             q_not_first,
             not_first_level,
             is_branch_init,
-            is_account_leaf_in_added_branch,
+            account_leaf.is_in_added_branch,
             s_main.clone(),
             modified_node,
             s_main.bytes[IS_BRANCH_C16_POS - RLP_NUM], // TODO: remove
@@ -503,7 +503,7 @@ impl<F: FieldExt> MPTConfig<F> {
             inter_start_root,
             not_first_level,
             q_not_first,
-            is_account_leaf_in_added_branch,
+            account_leaf.is_in_added_branch,
             is_last_branch_child,
             s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM], // TODO: remove
             s_main.clone(),
@@ -518,7 +518,7 @@ impl<F: FieldExt> MPTConfig<F> {
             inter_final_root,
             not_first_level,
             q_not_first,
-            is_account_leaf_in_added_branch,
+            account_leaf.is_in_added_branch,
             is_last_branch_child,
             s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM], // TODO: remove
             s_main.clone(),
@@ -540,7 +540,7 @@ impl<F: FieldExt> MPTConfig<F> {
             inter_start_root,
             not_first_level,
             q_not_first,
-            is_account_leaf_in_added_branch,
+            account_leaf.is_in_added_branch,
             is_branch_init,
             s_main.clone(),
             c_main.clone(),
@@ -567,7 +567,7 @@ impl<F: FieldExt> MPTConfig<F> {
             inter_final_root,
             not_first_level,
             q_not_first,
-            is_account_leaf_in_added_branch,
+            account_leaf.is_in_added_branch,
             is_branch_init,
             s_main.clone(),
             c_main.clone(),
@@ -588,7 +588,7 @@ impl<F: FieldExt> MPTConfig<F> {
             not_first_level,
             is_branch_init,
             is_branch_child,
-            is_account_leaf_in_added_branch,
+            account_leaf.is_in_added_branch,
             s_main.clone(),
             c_main.clone(),
             modified_node,
@@ -607,7 +607,7 @@ impl<F: FieldExt> MPTConfig<F> {
             not_first_level,
             is_leaf_s_value,
             is_leaf_c_value,
-            is_account_leaf_in_added_branch,
+            account_leaf.is_in_added_branch,
             is_last_branch_child,
             s_main.clone(),
             acc_s,
@@ -626,7 +626,7 @@ impl<F: FieldExt> MPTConfig<F> {
             not_first_level,
             is_leaf_s_value,
             is_leaf_c_value,
-            is_account_leaf_in_added_branch,
+            account_leaf.is_in_added_branch,
             is_last_branch_child,
             s_main.clone(), // s_main (and not c_main) is correct
             acc_s,
@@ -712,7 +712,7 @@ impl<F: FieldExt> MPTConfig<F> {
             sel1,
             sel2,
             s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM], // TODO: remove
-            is_account_leaf_in_added_branch,
+            account_leaf.is_in_added_branch,
             r_table.clone(),
             fixed_table.clone(),
             true,
@@ -743,7 +743,7 @@ impl<F: FieldExt> MPTConfig<F> {
             sel1,
             sel2,
             s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM], // TODO: remove
-            is_account_leaf_in_added_branch,
+            account_leaf.is_in_added_branch,
             r_table.clone(),
             fixed_table.clone(),
             false,
@@ -768,7 +768,7 @@ impl<F: FieldExt> MPTConfig<F> {
             key_rlc_mult,
             mult_diff,
             drifted_pos,
-            is_account_leaf_in_added_branch,
+            account_leaf.is_in_added_branch,
             r_table.clone(),
             fixed_table.clone(),
             keccak_table.clone(),
@@ -792,7 +792,7 @@ impl<F: FieldExt> MPTConfig<F> {
             key_rlc,
             key_rlc_mult,
             mult_diff,
-            is_account_leaf_in_added_branch,
+            account_leaf.is_in_added_branch,
             s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM],
             true,
             acc_r,
@@ -817,7 +817,7 @@ impl<F: FieldExt> MPTConfig<F> {
             key_rlc,
             key_rlc_mult,
             mult_diff,
-            is_account_leaf_in_added_branch,
+            account_leaf.is_in_added_branch,
             s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
             false,
             acc_r,
@@ -830,7 +830,7 @@ impl<F: FieldExt> MPTConfig<F> {
             |meta| {
                 let q_enable = meta.query_fixed(q_enable, Rotation::cur());
                 let is_account_leaf_key_s =
-                    meta.query_advice(is_account_leaf_key_s, Rotation::cur());
+                    meta.query_advice(account_leaf.is_key_s, Rotation::cur());
 
                 q_enable * is_account_leaf_key_s
             },
@@ -856,7 +856,7 @@ impl<F: FieldExt> MPTConfig<F> {
             |meta| {
                 let q_enable = meta.query_fixed(q_enable, Rotation::cur());
                 let is_account_leaf_key_c =
-                    meta.query_advice(is_account_leaf_key_c, Rotation::cur());
+                    meta.query_advice(account_leaf.is_key_c, Rotation::cur());
 
                 q_enable * is_account_leaf_key_c
             },
@@ -881,7 +881,7 @@ impl<F: FieldExt> MPTConfig<F> {
             |meta| {
                 let q_enable = meta.query_fixed(q_enable, Rotation::cur());
                 let is_account_non_existing_row =
-                    meta.query_advice(is_non_existing_account_row, Rotation::cur());
+                    meta.query_advice(account_leaf.is_non_existing_account_row, Rotation::cur());
                 let is_account_non_existing_proof =
                     meta.query_advice(proof_type.is_non_existing_account_proof, Rotation::cur());
 
@@ -905,7 +905,7 @@ impl<F: FieldExt> MPTConfig<F> {
             |meta| {
                 let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
                 let is_account_leaf_nonce_balance_s =
-                    meta.query_advice(is_account_leaf_nonce_balance_s, Rotation::cur());
+                    meta.query_advice(account_leaf.is_nonce_balance_s, Rotation::cur());
                 q_not_first * is_account_leaf_nonce_balance_s
             },
             s_main.clone(),
@@ -930,7 +930,7 @@ impl<F: FieldExt> MPTConfig<F> {
             |meta| {
                 let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
                 let is_account_leaf_nonce_balance_c =
-                    meta.query_advice(is_account_leaf_nonce_balance_c, Rotation::cur());
+                    meta.query_advice(account_leaf.is_nonce_balance_c, Rotation::cur());
                 q_not_first * is_account_leaf_nonce_balance_c
             },
             s_main.clone(),
@@ -955,7 +955,7 @@ impl<F: FieldExt> MPTConfig<F> {
             inter_start_root,
             q_not_first,
             not_first_level,
-            is_account_leaf_storage_codehash_s,
+            account_leaf.is_storage_codehash_s,
             s_main.clone(),
             c_main.clone(),
             acc_r,
@@ -976,7 +976,7 @@ impl<F: FieldExt> MPTConfig<F> {
             inter_final_root,
             q_not_first,
             not_first_level,
-            is_account_leaf_storage_codehash_c,
+            account_leaf.is_storage_codehash_c,
             s_main.clone(),
             c_main.clone(),
             acc_r,
@@ -997,7 +997,7 @@ impl<F: FieldExt> MPTConfig<F> {
                 let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
                 let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
                 let is_account_leaf_in_added_branch =
-                    meta.query_advice(is_account_leaf_in_added_branch, Rotation::cur());
+                    meta.query_advice(account_leaf.is_in_added_branch, Rotation::cur());
 
                 q_not_first * not_first_level * is_account_leaf_in_added_branch
             },
@@ -1035,13 +1035,6 @@ impl<F: FieldExt> MPTConfig<F> {
             is_leaf_s_value,
             is_leaf_c,
             is_leaf_c_value,
-            is_account_leaf_key_s,
-            is_account_leaf_key_c,
-            is_account_leaf_nonce_balance_s,
-            is_account_leaf_nonce_balance_c,
-            is_account_leaf_storage_codehash_s,
-            is_account_leaf_storage_codehash_c,
-            is_account_leaf_in_added_branch,
             node_index,
             is_modified,
             modified_node,
@@ -1052,6 +1045,7 @@ impl<F: FieldExt> MPTConfig<F> {
             is_extension_node_c,
             s_main,
             c_main,
+            account_leaf,
             s_mod_node_hash_rlc,
             c_mod_node_hash_rlc,
             acc_s,
@@ -1073,7 +1067,6 @@ impl<F: FieldExt> MPTConfig<F> {
             fixed_table,
             address_rlc,
             counter,
-            is_non_existing_account_row,
         }
     }
 
@@ -1265,43 +1258,43 @@ impl<F: FieldExt> MPTConfig<F> {
 
         region.assign_advice(
             || "assign is account leaf key s".to_string(),
-            self.is_account_leaf_key_s,
+            self.account_leaf.is_key_s,
             offset,
             || Ok(F::from(is_account_leaf_key_s as u64)),
         )?;
         region.assign_advice(
             || "assign is account leaf key c".to_string(),
-            self.is_account_leaf_key_c,
+            self.account_leaf.is_key_c,
             offset,
             || Ok(F::from(is_account_leaf_key_c as u64)),
         )?;
         region.assign_advice(
             || "assign is account leaf nonce balance s".to_string(),
-            self.is_account_leaf_nonce_balance_s,
+            self.account_leaf.is_nonce_balance_s,
             offset,
             || Ok(F::from(is_account_leaf_nonce_balance_s as u64)),
         )?;
         region.assign_advice(
             || "assign is account leaf nonce balance c".to_string(),
-            self.is_account_leaf_nonce_balance_c,
+            self.account_leaf.is_nonce_balance_c,
             offset,
             || Ok(F::from(is_account_leaf_nonce_balance_c as u64)),
         )?;
         region.assign_advice(
             || "assign is account leaf storage codehash s".to_string(),
-            self.is_account_leaf_storage_codehash_s,
+            self.account_leaf.is_storage_codehash_s,
             offset,
             || Ok(F::from(is_account_leaf_storage_codehash_s as u64)),
         )?;
         region.assign_advice(
             || "assign is account leaf storage codehash c".to_string(),
-            self.is_account_leaf_storage_codehash_c,
+            self.account_leaf.is_storage_codehash_c,
             offset,
             || Ok(F::from(is_account_leaf_storage_codehash_c as u64)),
         )?;
         region.assign_advice(
             || "assign is account leaf in added branch".to_string(),
-            self.is_account_leaf_in_added_branch,
+            self.account_leaf.is_in_added_branch,
             offset,
             || Ok(F::from(is_account_leaf_in_added_branch as u64)),
         )?;
@@ -1326,7 +1319,7 @@ impl<F: FieldExt> MPTConfig<F> {
         )?;
         region.assign_advice(
             || "assign is non existing account row".to_string(),
-            self.is_non_existing_account_row,
+            self.account_leaf.is_non_existing_account_row,
             offset,
             || Ok(F::from(is_non_existing_account_row as u64)),
         )?;
