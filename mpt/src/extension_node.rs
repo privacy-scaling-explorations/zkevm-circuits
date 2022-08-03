@@ -124,6 +124,7 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
         let one = Expression::Constant(F::from(1_u64));
         let c33 = Expression::Constant(F::from(33));
         let c128 = Expression::Constant(F::from(128));
+        let c160_inv = Expression::Constant(F::from(160_u64).invert().unwrap());
         let c192 = Expression::Constant(F::from(192));
         let c226 = Expression::Constant(F::from(226));
         let mut rot_into_branch_init = -17;
@@ -236,6 +237,15 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
                     is_ext_long_odd_c1.clone(),
                 ),
             ));
+            constraints.push((
+                "bool check is_ext_lonnger_than_55",
+                get_bool_constraint(
+                    q_not_first.clone()
+                        * q_enable.clone()
+                        * (one.clone() - is_branch_init_prev.clone()),
+                    is_ext_longer_than_55.clone(),
+                ),
+            ));
 
             // At most one of the six selectors above can be enabled. If sum is 0, it is
             // a regular branch. If sum is 1, it is an extension node.
@@ -322,36 +332,86 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
                         * s_advices0,
                 ));
 
+                let c_rlp2 = meta.query_advice(c_main.rlp2, Rotation::cur());
+                let is_branch_hashed = c_rlp2 * c160_inv.clone();
+
+                // If extension node
+
                 // RLP:
                 // If only one nibble
                 // [226,16,160,172,105,12...
                 constraints.push((
-                    "short RLP",
+                    "One nibble & HASHED branch * ext not longer than 55 RLP",
                     q_not_first.clone()
                         * q_enable.clone()
                         * (one.clone() - is_ext_longer_than_55.clone())
                         * is_one_nibble.clone()
+                        * is_branch_hashed.clone()
                         * (s_rlp1.clone() - c192.clone() - c33.clone() - one.clone()),
+                ));
+
+                let c_advices0 = meta.query_advice(c_main.bytes[0], Rotation::cur());
+                // TODO: prepare test
+                constraints.push((
+                    "One nibble & NON-HASHED branch * ext not longer than 55 RLP",
+                    q_not_first.clone()
+                        * q_enable.clone()
+                        * (one.clone() - is_ext_longer_than_55.clone())
+                        * is_one_nibble.clone()
+                        * (one.clone() - is_branch_hashed.clone())
+                        * (s_rlp1.clone() - c192.clone() - one.clone() - (c_advices0.clone() - c192.clone()) - one.clone()),
                 ));
 
                 // [228,130,0,149,160,114,253...
                 let s_rlp2 = meta.query_advice(s_main.rlp2, Rotation::cur());
                 constraints.push((
-                    "long RLP",
+                    "More than one nibble & HASHED branch & ext not longer than 55 RLP",
                     q_not_first.clone()
                         * q_enable.clone()
                         * (one.clone() - is_ext_longer_than_55.clone())
-                        * (is_even_nibbles.clone()
-                        + is_long_odd_nibbles.clone())
-                        * (s_rlp1 - c192.clone() - (s_rlp2 - c128.clone()) - one.clone() - c33.clone()),
+                        * (is_even_nibbles.clone() + is_long_odd_nibbles.clone())
+                        * is_branch_hashed.clone()
+                        * (s_rlp1.clone() - c192.clone() - (s_rlp2.clone() - c128.clone()) - one.clone() - c33.clone()),
                 ));
 
+                constraints.push((
+                    "More than one nibble & NON-HASHED branch & ext not longer than 55 RLP",
+                    q_not_first.clone()
+                        * q_enable.clone()
+                        * (one.clone() - is_ext_longer_than_55.clone())
+                        * (is_even_nibbles.clone() + is_long_odd_nibbles.clone())
+                        * (one.clone() - is_branch_hashed.clone())
+                        * (s_rlp1.clone() - c192.clone() - (s_rlp2.clone() - c128.clone()) - one.clone()
+                            - (c_advices0.clone() - c192.clone()) - one.clone()),
+                ));
+
+                // Note: ext longer than 55 RLP cannot appear when there is only one nibble because in this case
+                // we would have 1 byte for a nibble and at most 32 bytes for branch.
+
+                // Example:
+                // [248,67,160,59,138,106,70,105,186,37,13,38,205,122,69,158,202,157,33,95,131,7,227,58,235,229,3,121,188,90,54,23,236,52,68,161,160,...
+                // TODO: test
                 /* 
-                TODO:
-                - is_ext_longer_than_55 (if longer than additional byte at position 1)
-                - 0 after len in c_advices (for s_advices it's in extension_node_key)
-                - flag for whether c_advices contain list (c_rlp2 > 192) or string (c_rlp2 = 160) - this
-                  is the same as saying whether the branch is not hashed or it is (see is_branch_in_ext_hashed)
+                constraints.push((
+                    "More than one nibble & HASHED branch & ext longer than 55 RLP",
+                    q_not_first.clone()
+                        * q_enable.clone()
+                        * is_ext_longer_than_55.clone()
+                        * is_branch_hashed.clone()
+                        * (s_rlp1.clone() - c192.clone() - (s_rlp2.clone() - c128.clone()) - one.clone()
+                            - (c_advices0.clone() - c192.clone()) - one.clone()),
+                ));
+
+                // TODO: test
+                constraints.push((
+                    "More than one nibble & NON-HASHED branch & ext longer than 55 RLP",
+                    q_not_first.clone()
+                        * q_enable.clone()
+                        * is_ext_longer_than_55.clone()
+                        * (one.clone() - is_branch_hashed.clone())
+                        * (s_rlp1.clone() - c192.clone() - (s_rlp2.clone() - c128.clone()) - one.clone()
+                            - (c_advices0.clone() - c192.clone()) - one.clone()),
+                ));
                 */
 
                 // [228,130,0,149,160,114,253,150,133,18,192,156,19,241,162,51,210,24,1,151,16,48,7,177,42,60,49,34,230,254,242,79,132,165,90,75,249]
@@ -401,8 +461,7 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
             let is_branch_init_prev = meta.query_advice(is_branch_init, Rotation::prev());
 
             let c_rlp2 = meta.query_advice(c_main.rlp2, Rotation::cur());
-            let c160_inv = Expression::Constant(F::from(160_u64).invert().unwrap());
-            let is_branch_hashed = c_rlp2 * c160_inv;
+            let is_branch_hashed = c_rlp2 * c160_inv.clone();
 
             let mut acc = meta.query_advice(acc_s, Rotation(-1));
             let mut mult = meta.query_advice(acc_mult_s, Rotation(-1));
@@ -450,9 +509,8 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
             let q_enable = q_enable(meta);
 
             let c_rlp2 = meta.query_advice(c_main.rlp2, Rotation::cur());
-            let c160_inv = Expression::Constant(F::from(160_u64).invert().unwrap());
             // c_rlp2 = 160 when branch is hashed (longer than 31) and c_rlp2 = 0 otherwise
-            let is_branch_hashed = c_rlp2.clone() * c160_inv;
+            let is_branch_hashed = c_rlp2.clone() * c160_inv.clone();
 
             let mut acc = meta.query_advice(acc_s, Rotation(-1));
             let mut mult = meta.query_advice(acc_mult_s, Rotation(-1));
@@ -486,9 +544,8 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
             let q_enable = q_enable(meta);
 
             let c_rlp2 = meta.query_advice(c_main.rlp2, Rotation::cur());
-            let c160_inv = Expression::Constant(F::from(160_u64).invert().unwrap());
             // c_rlp2 = 160 when branch is hashed (longer than 31) and c_rlp2 = 0 otherwise
-            let is_branch_hashed = c_rlp2.clone() * c160_inv;
+            let is_branch_hashed = c_rlp2.clone() * c160_inv.clone();
 
             q_not_first * q_enable * (one.clone() - is_branch_hashed)
         };
@@ -552,10 +609,9 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
             // We use rotation 0 in both cases from now on:
             let c_rlp2 = meta.query_advice(c_main.rlp2, Rotation::cur());
             let c160 = Expression::Constant(F::from(160_u64));
-            let c160_inv = Expression::Constant(F::from(160_u64).invert().unwrap());
 
             // c_rlp2 = 160 when branch is hashed (longer than 31) and c_rlp2 = 0 otherwise
-            let is_branch_hashed = c_rlp2.clone() * c160_inv;
+            let is_branch_hashed = c_rlp2.clone() * c160_inv.clone();
 
             constraints.push((
                 "c_rlp2",
