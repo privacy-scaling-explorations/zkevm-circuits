@@ -203,8 +203,15 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
             let is_non_existing_account_proof = meta.query_advice(proof_type.is_non_existing_account_proof, Rotation::cur());
             constraints.push((
                 "is_wrong_leaf is bool",
+                get_bool_constraint(q_enable.clone(), is_wrong_leaf.clone()),
+            ));
+
+            // Note: some is_wrong_leaf constraints are in this chip because account_non_existing chip
+            // only triggers constraints for non_existing_account proof (see q_enable).
+            constraints.push((
+                "is_wrong_leaf needs to be 0 when not in non_existing_account proof",
                 q_enable.clone()
-                    * (one.clone() - is_wrong_leaf.clone())
+                    * (one.clone() - is_non_existing_account_proof.clone())
                     * is_wrong_leaf.clone(),
             ));
 
@@ -221,9 +228,28 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
 
             let c_rlp1 = meta.query_advice(c_main.rlp1, Rotation::cur());
             let c_rlp2 = meta.query_advice(c_main.rlp2, Rotation::cur());
+            /*
+            `c_main.rlp1` needs to always be 248. This is RLP byte meaning that behind this byte
+            there is a list which has one byte that specifies the length - `at c_main.rlp2`.
+
+            The only exception is when `is_non_existing_account_proof = 1` & `is_wrong_leaf = 0`.
+            In this case the value does not matter as the account leaf is only a placeholder and
+            does not use `c_main`. Note that it uses `s_main` for nibbles because the account address
+            is computed using nibbles and this account address needs to be as required by a lookup.
+            That means there is an account leaf which is just a placeholder but it still has the
+            correct address.
+
+            Example:
+            [184  78   129      142       0 0 ... 0 248  76   135      28       5 107 201 118 120 59 0 0 ... 0]
+            248 at c_main.rlp1 means one byte for length. This byte is 76, meaning there are 76 bytes after it.
+            */
             constraints.push((
                 "Leaf nonce balance c_rlp1",
                 q_enable.clone()
+                // Note that the selector below is always different from 0, except when
+                // `is_non_existing_account_proof = 1` & `is_wrong_leaf = 0`.
+                // This is because `is_wrong_leaf` can be 1 only when `is_non_existing_account_proof = 1`
+                // (see the constraint above).
                 * (is_non_existing_account_proof.clone() - is_wrong_leaf.clone() - one.clone())
                 * (c_rlp1.clone() - c248.clone()),
             ));
@@ -246,12 +272,23 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
                 + s_advices0_cur.clone() * (one.clone() - is_nonce_long.clone());
 
             let nonce_stored = meta.query_advice(s_mod_node_hash_rlc, Rotation::cur());
+            /*
+            Besides having nonce (its bytes) stored in `s_main.bytes`, we also have the RLC
+            of nonce bytes stored in `s_mod_node_hash_rlc` column. The value in this column
+            is to be used by lookups.
+            This constraint ensures the RLC of a nonce is computed properly when nonce is long.
+            */
             constraints.push((
-                "nonce RLC long",
+                "Nonce RLC long",
                 q_enable.clone() * is_nonce_long.clone() * (nonce_value_long_rlc.clone() - nonce_stored.clone()),
             ));
+
+            /*
+            Similarly as in `Nonce RLP long` constraint, this constraint ensures the RLC of a nonce
+            is computed properly when nonce is short.
+            */
             constraints.push((
-                "nonce RLC short",
+                "Nonce RLC short",
                 q_enable.clone() * (one.clone() - is_nonce_long.clone()) * (s_advices0_cur.clone() - nonce_stored.clone()),
             ));
 
@@ -273,10 +310,23 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
             let balance_rlc = (c_advices0_cur.clone() + balance_value_long_rlc.clone() * r_table[0].clone()) * is_balance_long.clone()
                 + c_advices0_cur.clone() * (one.clone() - is_balance_long.clone());
 
+            /*
+            Besides having balance (its bytes) stored in `c_main.bytes`, we also have the RLC
+            of nonce bytes stored in `c_mod_node_hash_rlc` column. The value in this column
+            is to be used by lookups.
+            `Balance RLP long` constraint ensures the RLC of a balance is computed properly when
+            balance is long.
+            */
             constraints.push((
                 "balance RLC long",
                 q_enable.clone() * is_balance_long.clone() * (balance_value_long_rlc.clone() - balance_stored.clone()),
             ));
+
+            /*
+            Similarly as in `Balance RLP long` constraint, 
+            `Balance RLP short` constraint ensures the RLC of a balance is computed properly when
+            balance is short.
+            */
             constraints.push((
                 "balance RLC short",
                 q_enable.clone() * (one.clone() - is_balance_long.clone()) * (c_advices0_cur.clone() - balance_stored.clone()),
@@ -291,14 +341,21 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
                 // Note: when nonce or balance is 0, the actual value in the RLP encoding is 128!
                 // TODO: when finalizing lookups, having 128 instead of 0 needs to be taken into account.
 
-                // We need correct previous nonce to enable lookup in nonce balance C row:
+                /*
+                To enable lookup for nonce modification we need to have S nonce and C nonce in the same row.
+                For this reason, S nonce RLC is copied to `sel1` column in C row.
+                */
                 constraints.push((
-                    "nonce prev RLC",
+                    "S nonce RLC is correctly copied to C row",
                     q_enable.clone() * (nonce_s_from_prev.clone() - nonce_s_from_cur.clone()),
                 ));
-                // We need correct previous balance to enable lookup in nonce balance C row:
+
+                /*
+                To enable lookup for balance modification we need to have S balance and C balance in the same row.
+                For this reason, S balance RLC is copied to `sel2` column in C row.
+                */
                 constraints.push((
-                    "balance prev RLC",
+                    "S balance RLC is correctly copied to C row",
                     q_enable.clone() * (balance_s_from_prev.clone() - balance_s_from_cur.clone()),
                 ));
 
@@ -308,16 +365,25 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
                 let is_balance_mod = meta.query_advice(proof_type.is_balance_mod, Rotation::cur());
                 let is_account_delete_mod = meta.query_advice(proof_type.is_account_delete_mod, Rotation::cur());
 
+                /*
+                We need to ensure there is only one modification at a time. If there is storage or
+                balance modification, we need to ensure `S` nonce and `C` nonce are the same.
+                */
                 constraints.push((
-                    "if storage / codehash / balance mod: nonce_s = nonce_c",
+                    "If storage or balance modification: S nonce = C nonce",
                     q_enable.clone()
                         * (is_storage_mod.clone()
                             + is_balance_mod.clone())
                         * (one.clone() - is_account_delete_mod.clone())
                         * (nonce_s_from_cur.clone() - nonce_stored.clone()),
                 ));
+
+                /*
+                We need to ensure there is only one modification at a time. If there is storage or
+                nonce modification, we need to ensure `S` balance and `C` balance are the same.
+                */
                 constraints.push((
-                    "if storage / codehash / nonce mod: balance_s = balance_c",
+                    "If storage or nonce modification: S balance = C balance",
                     q_enable.clone()
                         * (is_storage_mod.clone() + is_nonce_mod.clone())
                         * (one.clone() - is_account_delete_mod.clone())
@@ -332,15 +398,61 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
 
             let acc_mult_final = meta.query_advice(acc_mult_s, Rotation::cur());
 
+            /*
+            When adding nonce bytes to the account leaf RLC we do:
+            `rlc_after_nonce = rlc_tmp + s_main.bytes[0] * mult_tmp + s_main.bytes[1] * mult_tmp * r
+                + ... + s_main.bytes[k] * mult_tmp * r^k`
+            Note that `rlc_tmp` means the RLC after the previous row, while `mult_tmp` means the multiplier
+            (power of randomness `r`) that needs to be used for the first byte in the current row.
+
+            In this case we assumed there are `k + 1` nonce bytes. After this we continue adding bytes:
+            `rlc_after_nonce + b1 * mult_tmp * r^{k+1} + b2 * mult_tmp * r^{k+1} * r + ...
+            Note that `b1` and `b2` are the first two bytes that need to used next (balance bytes).
+
+            The problem is `k` can be different from case to case. For this reason, we store `r^{k+1}` in
+            `mult_diff_nonce` (which is actually `acc_c`).
+            That means we can compute the expression above as:
+            `rlc_after_nonce + b1 * mult_tmp * mult_diff_nonce + b2 * mult_tmp * mult_diff_nonce * r + ...
+
+            However, we need to ensure that `mult_diff_nonce` corresponds to `s_main.bytes[0]` where the length
+            of the nonce is specified. This is done using `key_len_lookup` below.
+
+            There is one more detail: when computing RLC after nonce, we compute also the bytes that come before
+            nonce bytes in the row. These are: `s_main.rlp1`, `s_main.rlp2`, `c_main.rlp1`, `c_main.rlp2`.
+            It is a bit confusing (we are limited with layout), but `c_main.rlp1` and `c_main.rlp2`
+            are bytes that actually appear in the account leaf RLP stream before `s_main.bytes`.
+            So we have:
+            `rlc_after_nonce = rlc_tmp + s_main.rlp1 * mult_tmp + s_main.rlp2 * mult_tmp * r
+                + c_main.rlp1 * mult_tmp * r^2 + c_main.rlp2 * mult_tmp * r^3 + s_main.bytes[0] * mult_tmp * r^4 + ...
+                + s_main.bytes[k] * mult_tmp * r^4 * r^k`
+            That means `mult_diff_nonce` needs to store `r^4 * r^{k+1}` and we continue computing the RLC
+            as mentioned above:
+            `rlc_after_nonce + b1 * mult_tmp * mult_diff_nonce + b2 * mult_tmp * mult_diff_nonce * r + ...
+
+            Let us observe the following example.
+            [184  78   129      142       0 0 ... 0 248  76   135      28       5 107 201 118 120 59 0 0 ... 0]
+            Here:
+            `rlc_after_nonce = rlc_tmp + 184 * mult_tmp + 78 * mult_tmp * r + 248 * mult_tmp * r^2
+                + 76 * mult_tmp * r^3 + 129 * mult_tmp * r^4 + 142 * mult_tmp * r^5`
+            And we continue computing the RLC:
+            `rlc_after_nonce + 135 * mult_tmp * mult_diff_nonce + 28 + mult_tmp * mult_diff_nonce * r + ... `
+            */
             constraints.push((
-                "leaf nonce acc mult (nonce long)",
+                "Leaf nonce acc mult (nonce long)",
                 q_enable.clone()
                     * is_nonce_long.clone()
                     * (acc_mult_after_nonce.clone()
                         - acc_mult_prev.clone() * mult_diff_nonce.clone()),
             ));
+
+
+            /*
+            When nonce is short (occupying only one byte), we know in advance that `mult_diff_nonce = r^5`
+            as there are `s_main.rlp1`, `s_main.rlp2`, `c_main.rlp1`, `c_main.rlp2`, and `s_main.bytes[0]` bytes
+            to be taken into account.
+            */
             constraints.push((
-                "leaf nonce acc mult (nonce short)",
+                "Leaf nonce acc mult (nonce short)",
                 q_enable.clone()
                     * (one.clone() - is_nonce_long.clone())
                     * (acc_mult_after_nonce.clone() - acc_mult_prev.clone() * r_table[4].clone()), // r_table[4] because of s_rlp1, s_rlp2, c_rlp1, c_rlp2, and 1 for nonce_len = 1
