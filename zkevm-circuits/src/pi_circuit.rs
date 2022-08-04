@@ -174,7 +174,8 @@ pub struct PiCircuitConfig<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: u
     q_not_end: Selector,
     q_end: Selector,
 
-    pi: Column<Instance>, // p, rand_pi, chain_ID, state_root, prev_state_root
+    pi: Column<Instance>, // rpi_rand, rpi_rlc, chain_ID, state_root, prev_state_root
+
     _marker: PhantomData<F>,
 }
 
@@ -507,7 +508,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
 
     /// Assigns the extra fields (not in block or tx tables):
     ///   - state root
-    ///   - parent block hash
+    ///   - previous block state root
     /// to the raw_public_inputs column and stores a copy in a
     /// vector for computing RLC(raw_public_inputs).
     fn assign_extra_fields(
@@ -649,7 +650,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
 
                 // Assign extra fields
                 let extra_vals = self.public_data.get_extra_values();
-                let [state_root, prev_block_hash] = config.assign_extra_fields(
+                let [state_root, prev_state_root] = config.assign_extra_fields(
                     &mut region,
                     extra_vals,
                     self.randomness,
@@ -758,7 +759,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
                     rpi_rlc,
                     chain_id,
                     state_root,
-                    prev_block_hash,
+                    prev_state_root,
                 ])
             },
         )?;
