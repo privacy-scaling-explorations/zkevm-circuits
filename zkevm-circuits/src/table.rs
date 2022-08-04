@@ -655,10 +655,10 @@ impl KeccakTable {
     // layed out via the pattern `acc[i] = acc[i-1] * r + value[i]`.
     /// Assign the `KeccakTable` from a list hashing inputs, followig the same
     /// table layout that the Keccak Circuit uses.
-    pub fn load<'a, F: Field>(
+    pub fn load<F: Field>(
         &self,
         layouter: &mut impl Layouter<F>,
-        inputs: impl IntoIterator<Item = &'a [u8]> + Clone,
+        inputs: impl IntoIterator<Item = Vec<u8>> + Clone,
         randomness: F,
     ) -> Result<(), Error> {
         layouter.assign_region(
@@ -677,7 +677,7 @@ impl KeccakTable {
 
                 let keccak_table_columns = self.columns();
                 for input in inputs.clone() {
-                    for row in Self::assignments(input, randomness) {
+                    for row in Self::assignments(&input, randomness) {
                         // let mut column_index = 0;
                         for (column, value) in keccak_table_columns.iter().zip_eq(row) {
                             region.assign_advice(
@@ -727,6 +727,11 @@ pub struct CopyTable {
     pub src_addr_end: Column<Advice>,
     /// The number of bytes left to be copied.
     pub bytes_left: Column<Advice>,
+    /// An accumulator value in the RLC representation. This is used for
+    /// specific purposes, for instance, when `tag == CopyDataType::RlcAcc`.
+    /// Having an additional column for the `rlc_acc` simplifies the lookup
+    /// to copy table.
+    pub rlc_acc: Column<Advice>,
     /// The associated read-write counter for this row.
     pub rw_counter: Column<Advice>,
     /// Decrementing counter denoting reverse read-write counter.
@@ -747,6 +752,7 @@ impl CopyTable {
             addr: meta.advice_column(),
             src_addr_end: meta.advice_column(),
             bytes_left: meta.advice_column(),
+            rlc_acc: meta.advice_column(),
             rw_counter: meta.advice_column(),
             rwc_inc_left: meta.advice_column(),
         }
@@ -756,8 +762,19 @@ impl CopyTable {
     pub fn assignments<F: Field>(
         copy_event: &CopyEvent,
         randomness: F,
-    ) -> Vec<(CopyDataType, [F; 7])> {
+    ) -> Vec<(CopyDataType, [F; 8])> {
         let mut assignments = Vec::new();
+        let rlc_acc = if copy_event.dst_type == CopyDataType::RlcAcc {
+            let values = copy_event
+                .steps
+                .iter()
+                .filter(|s| s.rw.is_write())
+                .map(|s| s.value)
+                .collect::<Vec<u8>>();
+            rlc::value(&values, randomness)
+        } else {
+            F::zero()
+        };
         for (step_idx, copy_step) in copy_event.steps.iter().enumerate() {
             // is_first
             let is_first = if step_idx == 0 { F::one() } else { F::zero() };
@@ -789,6 +806,7 @@ impl CopyTable {
                     addr,
                     F::from(copy_event.src_addr_end), // src_addr_end
                     F::from(copy_event.length - step_idx as u64 / 2), // bytes_left
+                    rlc_acc,                          // rlc_acc
                     F::from(copy_step.rwc.0 as u64),  // rw_counter
                     F::from(copy_step.rwc_inc_left),  // rw_inc_left
                 ],
@@ -849,6 +867,7 @@ impl CopyTable {
             self.addr,
             self.src_addr_end,
             self.bytes_left,
+            self.rlc_acc,
             self.rw_counter,
             self.rwc_inc_left,
         ]
@@ -867,6 +886,7 @@ impl<F: Field> LookupTable<F> for CopyTable {
             meta.query_advice(self.src_addr_end, Rotation::cur()), // src_addr_end
             meta.query_advice(self.addr, Rotation::next()), // dst_addr
             meta.query_advice(self.bytes_left, Rotation::cur()), // length
+            meta.query_advice(self.rlc_acc, Rotation::cur()), // rlc_acc
             meta.query_advice(self.rw_counter, Rotation::cur()), // rw_counter
             meta.query_advice(self.rwc_inc_left, Rotation::cur()), // rwc_inc_left
         ]

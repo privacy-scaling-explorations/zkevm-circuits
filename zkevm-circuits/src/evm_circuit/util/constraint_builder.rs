@@ -1071,6 +1071,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         src_addr_end: Expression<F>,
         dst_addr: Expression<F>,
         length: Expression<F>,
+        rlc_acc: Expression<F>,
         rw_counter: Expression<F>,
         rwc_inc: Expression<F>,
     ) {
@@ -1086,8 +1087,27 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
                 src_addr_end,
                 dst_addr,
                 length,
+                rlc_acc,
                 rw_counter,
                 rwc_inc,
+            },
+        );
+    }
+
+    // Keccak Table
+
+    pub(crate) fn keccak_table_lookup(
+        &mut self,
+        input_rlc: Expression<F>,
+        input_len: Expression<F>,
+        output_rlc: Expression<F>,
+    ) {
+        self.add_lookup(
+            "keccak lookup",
+            Lookup::KeccakTable {
+                input_rlc,
+                input_len,
+                output_rlc,
             },
         );
     }

@@ -139,6 +139,7 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
                 memory_address.address(),
                 dst_addr,
                 memory_address.length(),
+                0.expr(), // for LOGN, rlc_acc is 0
                 cb.curr.state.rw_counter.expr() + cb.rw_counter_offset().expr(),
                 copy_rwc_inc.expr(),
             );
