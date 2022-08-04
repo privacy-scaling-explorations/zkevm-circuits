@@ -117,7 +117,7 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
         self.sha3_rlc
             .assign(region, offset, Some(sha3_output.to_le_bytes()))?;
 
-        let key = (tx.id, call.id, step.program_counter as usize);
+        let key = (tx.id, call.id, step.gas_left);
         let copy_rwc_inc = block
             .copy_events
             .get(&key)

@@ -237,5 +237,5 @@ pub struct CopyEvent {
     /// Helper field for witness generation.
     pub call_id: usize,
     /// Helper field for witness generation.
-    pub pc: ProgramCounter,
+    pub gas_left: u64,
 }
