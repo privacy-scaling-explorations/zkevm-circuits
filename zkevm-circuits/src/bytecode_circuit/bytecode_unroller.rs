@@ -1,4 +1,3 @@
-use crate::util::power_of_randomness_from_instance;
 use crate::{
     evm_circuit::util::{
         and, constraint_builder::BaseConstraintBuilder, not, or, select, RandomLinearCombination,
@@ -9,7 +8,6 @@ use crate::{
 use bus_mapping::evm::OpcodeId;
 use eth_types::{Field, ToLittleEndian, Word};
 use gadgets::is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction};
-use halo2_proofs::{circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit};
 use halo2_proofs::{
     circuit::{Layouter, Region},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, Selector, VirtualCells},
@@ -32,7 +30,7 @@ pub(crate) struct BytecodeRow<F: Field> {
 /// Unrolled bytecode
 #[derive(Clone, Debug, PartialEq)]
 pub struct UnrolledBytecode<F: Field> {
-    bytes: Vec<u8>,
+    pub(crate) bytes: Vec<u8>,
     rows: Vec<BytecodeRow<F>>,
 }
 
@@ -56,7 +54,7 @@ pub struct Config<F> {
     length_inv: Column<Advice>,
     length_is_zero: IsZeroConfig<F>,
     push_table: [Column<Fixed>; PUSH_TABLE_WIDTH],
-    keccak_table: KeccakTable,
+    pub(crate) keccak_table: KeccakTable,
 }
 
 impl<F: Field> Config<F> {
@@ -651,103 +649,12 @@ fn into_words(message: &[u8]) -> Vec<u64> {
     words
 }
 
-/// TODO
-pub mod dev {
-    use super::*;
-    /// TODO
-    #[derive(Default)]
-    pub struct BytecodeCircuitTester<F: Field> {
-        bytecodes: Vec<UnrolledBytecode<F>>,
-        size: usize,
-        randomness: F,
-    }
-
-    fn get_randomness<F: Field>() -> F {
-        F::from(123456)
-    }
-
-    impl<F: Field> Circuit<F> for BytecodeCircuitTester<F> {
-        type Config = Config<F>;
-        type FloorPlanner = SimpleFloorPlanner;
-
-        fn without_witnesses(&self) -> Self {
-            Self::default()
-        }
-
-        fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-            let bytecode_table = BytecodeTable::construct(meta);
-
-            let randomness = power_of_randomness_from_instance::<_, 1>(meta);
-            let keccak_table = KeccakTable::construct(meta);
-
-            Config::configure(meta, randomness[0].clone(), bytecode_table, keccak_table)
-        }
-
-        fn synthesize(
-            &self,
-            config: Self::Config,
-            mut layouter: impl Layouter<F>,
-        ) -> Result<(), Error> {
-            config.load(&mut layouter)?;
-            config.keccak_table.load(
-                &mut layouter,
-                self.bytecodes.iter().map(|b| b.bytes.as_slice()),
-                self.randomness,
-            )?;
-            config.assign(&mut layouter, self.size, &self.bytecodes, self.randomness)?;
-            Ok(())
-        }
-    }
-
-    impl<F: Field> BytecodeCircuitTester<F> {
-        /// TODO
-        pub fn verify_raw(k: u32, bytecodes: Vec<Vec<u8>>, randomness: F) {
-            let unrolled: Vec<_> = bytecodes
-                .iter()
-                .map(|b| unroll(b.clone(), randomness))
-                .collect();
-            Self::verify(k, unrolled, randomness, true);
-        }
-
-        pub(crate) fn verify(
-            k: u32,
-            bytecodes: Vec<UnrolledBytecode<F>>,
-            randomness: F,
-            success: bool,
-        ) {
-            let circuit = BytecodeCircuitTester::<F> {
-                bytecodes,
-                size: 2usize.pow(k),
-                randomness,
-            };
-
-            let num_rows = 1 << k;
-            const NUM_BLINDING_ROWS: usize = 7 - 1;
-            let instance = vec![vec![randomness; num_rows - NUM_BLINDING_ROWS]];
-            let prover = MockProver::<F>::run(k, &circuit, instance).unwrap();
-            let result = prover.verify();
-            if let Err(failures) = &result {
-                for failure in failures.iter() {
-                    println!("{}", failure);
-                }
-            }
-            assert_eq!(result.is_ok(), success);
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use super::dev::*;
     use super::*;
-    use crate::util::power_of_randomness_from_instance;
+    use crate::bytecode_circuit::dev::test_bytecode_circuit_unrolled;
     use eth_types::Bytecode;
-    use halo2_proofs::{
-        circuit::SimpleFloorPlanner,
-        dev::MockProver,
-        pairing::bn256::Fr,
-        plonk::{Circuit, ConstraintSystem, Error},
-    };
+    use halo2_proofs::pairing::bn256::Fr;
 
     fn get_randomness<F: Field>() -> F {
         F::from(123456)
@@ -820,35 +727,35 @@ mod tests {
             unrolled,
         );
         // Verify the unrolling in the circuit
-        BytecodeCircuitTester::<Fr>::verify(k, vec![unrolled], randomness, true);
+        test_bytecode_circuit_unrolled(k, vec![unrolled], randomness, true);
     }
 
     /// Tests a fully empty circuit
     #[test]
     fn bytecode_empty() {
         let k = 9;
-        let randomness = get_randomness();
-        BytecodeCircuitTester::<Fr>::verify(k, vec![unroll(vec![], randomness)], randomness, true);
+        let randomness: Fr = get_randomness();
+        test_bytecode_circuit_unrolled(k, vec![unroll(vec![], randomness)], randomness, true);
     }
 
     #[test]
     fn bytecode_simple() {
         let k = 9;
-        let randomness = get_randomness();
+        let randomness: Fr = get_randomness();
         let bytecodes = vec![
             unroll(vec![7u8], randomness),
             unroll(vec![6u8], randomness),
             unroll(vec![5u8], randomness),
         ];
-        BytecodeCircuitTester::<Fr>::verify(k, bytecodes, randomness, true);
+        test_bytecode_circuit_unrolled(k, bytecodes, randomness, true);
     }
 
     /// Tests a fully full circuit
     #[test]
     fn bytecode_full() {
         let k = 9;
-        let randomness = get_randomness();
-        BytecodeCircuitTester::<Fr>::verify(
+        let randomness: Fr = get_randomness();
+        test_bytecode_circuit_unrolled(
             k,
             vec![unroll(vec![7u8; 2usize.pow(k) - 7], randomness)],
             randomness,
@@ -860,8 +767,8 @@ mod tests {
     #[test]
     fn bytecode_incomplete() {
         let k = 9;
-        let randomness = get_randomness();
-        BytecodeCircuitTester::<Fr>::verify(
+        let randomness: Fr = get_randomness();
+        test_bytecode_circuit_unrolled(
             k,
             vec![unroll(vec![7u8; 2usize.pow(k) + 1], randomness)],
             randomness,
@@ -873,8 +780,8 @@ mod tests {
     #[test]
     fn bytecode_push() {
         let k = 9;
-        let randomness = get_randomness();
-        BytecodeCircuitTester::<Fr>::verify(
+        let randomness: Fr = get_randomness();
+        test_bytecode_circuit_unrolled(
             k,
             vec![
                 unroll(vec![], randomness),
@@ -908,18 +815,18 @@ mod tests {
         let randomness = get_randomness();
         let bytecode = vec![8u8, 2, 3, 8, 9, 7, 128];
         let unrolled = unroll(bytecode, randomness);
-        BytecodeCircuitTester::<Fr>::verify(k, vec![unrolled.clone()], randomness, true);
+        test_bytecode_circuit_unrolled(k, vec![unrolled.clone()], randomness, true);
         // Change the code_hash on the first position
         {
             let mut invalid = unrolled.clone();
             invalid.rows[0].code_hash += Fr::from(1u64);
-            BytecodeCircuitTester::<Fr>::verify(k, vec![invalid], randomness, false);
+            test_bytecode_circuit_unrolled(k, vec![invalid], randomness, false);
         }
         // Change the code_hash on another position
         {
             let mut invalid = unrolled.clone();
             invalid.rows[4].code_hash += Fr::from(1u64);
-            BytecodeCircuitTester::<Fr>::verify(k, vec![invalid], randomness, false);
+            test_bytecode_circuit_unrolled(k, vec![invalid], randomness, false);
         }
         // Change all the hashes so it doesn't match the keccak lookup code_hash
         {
@@ -927,7 +834,7 @@ mod tests {
             for row in invalid.rows.iter_mut() {
                 row.code_hash = Fr::one();
             }
-            BytecodeCircuitTester::<Fr>::verify(k, vec![invalid], randomness, false);
+            test_bytecode_circuit_unrolled(k, vec![invalid], randomness, false);
         }
     }
 
@@ -936,23 +843,23 @@ mod tests {
     #[ignore]
     fn bytecode_invalid_index() {
         let k = 9;
-        let randomness = get_randomness();
+        let randomness: Fr = get_randomness();
         let bytecode = vec![8u8, 2, 3, 8, 9, 7, 128];
         let unrolled = unroll(bytecode, randomness);
-        BytecodeCircuitTester::<Fr>::verify(k, vec![unrolled.clone()], randomness, true);
+        test_bytecode_circuit_unrolled(k, vec![unrolled.clone()], randomness, true);
         // Start the index at 1
         {
             let mut invalid = unrolled.clone();
             for row in invalid.rows.iter_mut() {
                 row.index += Fr::one();
             }
-            BytecodeCircuitTester::<Fr>::verify > (k, vec![invalid], randomness, false);
+            test_bytecode_circuit_unrolled(k, vec![invalid], randomness, false);
         }
         // Don't increment an index once
         {
             let mut invalid = unrolled;
             invalid.rows.last_mut().unwrap().index -= Fr::one();
-            BytecodeCircuitTester::<Fr>::verify(k, vec![invalid], randomness, false);
+            test_bytecode_circuit_unrolled(k, vec![invalid], randomness, false);
         }
     }
 
@@ -963,24 +870,24 @@ mod tests {
         let randomness = get_randomness();
         let bytecode = vec![8u8, 2, 3, 8, 9, 7, 128];
         let unrolled = unroll(bytecode, randomness);
-        BytecodeCircuitTester::<Fr>::verify(k, vec![unrolled.clone()], randomness, true);
+        test_bytecode_circuit_unrolled(k, vec![unrolled.clone()], randomness, true);
         // Change the first byte
         {
             let mut invalid = unrolled.clone();
             invalid.rows[1].value = Fr::from(9u64);
-            BytecodeCircuitTester::<Fr>::verify(k, vec![invalid], randomness, false);
+            test_bytecode_circuit_unrolled(k, vec![invalid], randomness, false);
         }
         // Change a byte on another position
         {
             let mut invalid = unrolled.clone();
             invalid.rows[5].value = Fr::from(6u64);
-            BytecodeCircuitTester::<Fr>::verify(k, vec![invalid], randomness, false);
+            test_bytecode_circuit_unrolled(k, vec![invalid], randomness, false);
         }
         // Set a byte value out of range
         {
             let mut invalid = unrolled;
             invalid.rows[3].value = Fr::from(256u64);
-            BytecodeCircuitTester::<Fr>::verify(k, vec![invalid], randomness, false);
+            test_bytecode_circuit_unrolled(k, vec![invalid], randomness, false);
         }
     }
 
@@ -999,24 +906,24 @@ mod tests {
             OpcodeId::PUSH6.as_u8(),
         ];
         let unrolled = unroll(bytecode, randomness);
-        BytecodeCircuitTester::<Fr>::verify(k, vec![unrolled.clone()], randomness, true);
+        test_bytecode_circuit_unrolled(k, vec![unrolled.clone()], randomness, true);
         // Mark the 3rd byte as code (is push data from the first PUSH1)
         {
             let mut invalid = unrolled.clone();
             invalid.rows[3].is_code = Fr::one();
-            BytecodeCircuitTester::<Fr>::verify(k, vec![invalid], randomness, false);
+            test_bytecode_circuit_unrolled(k, vec![invalid], randomness, false);
         }
         // Mark the 4rd byte as data (is code)
         {
             let mut invalid = unrolled.clone();
             invalid.rows[4].is_code = Fr::zero();
-            BytecodeCircuitTester::<Fr>::verify(k, vec![invalid], randomness, false);
+            test_bytecode_circuit_unrolled(k, vec![invalid], randomness, false);
         }
         // Mark the 7th byte as code (is data for the PUSH7)
         {
             let mut invalid = unrolled;
             invalid.rows[7].is_code = Fr::one();
-            BytecodeCircuitTester::<Fr>::verify(k, vec![invalid], randomness, false);
+            test_bytecode_circuit_unrolled(k, vec![invalid], randomness, false);
         }
     }
 }

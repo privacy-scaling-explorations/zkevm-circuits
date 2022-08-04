@@ -17,7 +17,8 @@ use paste::paste;
 use rand_chacha::rand_core::SeedableRng;
 use rand_chacha::ChaCha20Rng;
 use std::marker::PhantomData;
-use zkevm_circuits::bytecode_circuit::bytecode_unroller::dev::BytecodeCircuitTester;
+use zkevm_circuits::bytecode_circuit::dev::test_bytecode_circuit;
+use zkevm_circuits::copy_circuit::dev::test_copy_circuit;
 use zkevm_circuits::evm_circuit::witness::RwMap;
 use zkevm_circuits::evm_circuit::{
     test::run_test_circuit_complete_fixed_table, witness::block_convert,
@@ -125,7 +126,19 @@ pub async fn test_bytecode_circuit_block(block_num: u64) {
     let (builder, _) = cli.gen_inputs(block_num).await.unwrap();
     let bytecodes: Vec<Vec<u8>> = builder.code_db.0.values().cloned().collect();
 
-    BytecodeCircuitTester::<Fr>::verify_raw(DEGREE, bytecodes, randomness);
+    test_bytecode_circuit(DEGREE, bytecodes, randomness);
+}
+
+pub async fn test_copy_circuit_block(block_num: u64) {
+    const DEGREE: u32 = 16;
+
+    log::info!("test copy circuit, block number: {}", block_num);
+    let cli = get_client();
+    let cli = BuilderClient::new(cli).await.unwrap();
+    let (builder, _) = cli.gen_inputs(block_num).await.unwrap();
+    let block = block_convert(&builder.block, &builder.code_db);
+
+    assert!(test_copy_circuit(DEGREE, block).is_ok());
 }
 
 macro_rules! declare_tests {
@@ -157,6 +170,13 @@ macro_rules! declare_tests {
                 log_init();
                 let block_num = GEN_DATA.blocks.get($block_tag).unwrap();
                 test_bytecode_circuit_block(*block_num).await;
+            }
+
+            #[tokio::test]
+            async fn [<test_copy_ $name>]() {
+                log_init();
+                let block_num = GEN_DATA.blocks.get($block_tag).unwrap();
+                test_copy_circuit_block(*block_num).await;
             }
 
         }

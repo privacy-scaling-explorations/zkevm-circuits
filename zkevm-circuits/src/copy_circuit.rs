@@ -585,30 +585,23 @@ impl<F: Field> CopyCircuit<F> {
     }
 }
 
-#[cfg(test)]
-mod tests {
+/// Dev helpers
+pub mod dev {
     use super::*;
-    use bus_mapping::{
-        circuit_input_builder::{CircuitInputBuilder, CopyDataType},
-        mock::BlockData,
-        operation::RWCounter,
-    };
-    use eth_types::{bytecode, geth_types::GethData, Field, Word};
+    use eth_types::Field;
     use halo2_proofs::{
         circuit::{Layouter, SimpleFloorPlanner},
         dev::{MockProver, VerifyFailure},
         plonk::{Circuit, ConstraintSystem},
     };
-    use mock::TestContext;
-    use rand::{prelude::SliceRandom, Rng};
 
     use crate::{
-        evm_circuit::witness::{block_convert, Block},
+        evm_circuit::witness::Block,
         table::{BytecodeTable, RwTable, TxTable},
     };
 
     #[derive(Clone)]
-    struct MyConfig<F> {
+    struct CopyCircuitTesterConfig<F> {
         tx_table: TxTable,
         rw_table: RwTable,
         bytecode_table: BytecodeTable,
@@ -616,18 +609,18 @@ mod tests {
     }
 
     #[derive(Default)]
-    struct MyCircuit<F> {
+    struct CopyCircuitTester<F> {
         block: Block<F>,
     }
 
-    impl<F> MyCircuit<F> {
+    impl<F> CopyCircuitTester<F> {
         pub fn new(block: Block<F>) -> Self {
             Self { block }
         }
     }
 
-    impl<F: Field> Circuit<F> for MyCircuit<F> {
-        type Config = MyConfig<F>;
+    impl<F: Field> Circuit<F> for CopyCircuitTester<F> {
+        type Config = CopyCircuitTesterConfig<F>;
         type FloorPlanner = SimpleFloorPlanner;
 
         fn without_witnesses(&self) -> Self {
@@ -649,7 +642,7 @@ mod tests {
                 q_enable,
             );
 
-            MyConfig {
+            CopyCircuitTesterConfig {
                 tx_table,
                 rw_table,
                 bytecode_table,
@@ -677,11 +670,27 @@ mod tests {
         }
     }
 
-    fn run_circuit<F: Field>(k: u32, block: Block<F>) -> Result<(), Vec<VerifyFailure>> {
-        let circuit = MyCircuit::<F>::new(block);
+    /// Test copy circuit with the provided block witness
+    pub fn test_copy_circuit<F: Field>(k: u32, block: Block<F>) -> Result<(), Vec<VerifyFailure>> {
+        let circuit = CopyCircuitTester::<F>::new(block);
         let prover = MockProver::<F>::run(k, &circuit, vec![]).unwrap();
         prover.verify()
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::dev::test_copy_circuit;
+    use bus_mapping::{
+        circuit_input_builder::{CircuitInputBuilder, CopyDataType},
+        mock::BlockData,
+        operation::RWCounter,
+    };
+    use eth_types::{bytecode, geth_types::GethData, Word};
+    use mock::TestContext;
+    use rand::{prelude::SliceRandom, Rng};
+
+    use crate::evm_circuit::witness::block_convert;
 
     fn gen_calldatacopy_data() -> CircuitInputBuilder {
         let code = bytecode! {
@@ -721,14 +730,14 @@ mod tests {
     fn copy_circuit_valid_calldatacopy() {
         let builder = gen_calldatacopy_data();
         let block = block_convert(&builder.block, &builder.code_db);
-        assert!(run_circuit(10, block).is_ok());
+        assert!(test_copy_circuit(10, block).is_ok());
     }
 
     #[test]
     fn copy_circuit_valid_codecopy() {
         let builder = gen_codecopy_data();
         let block = block_convert(&builder.block, &builder.code_db);
-        assert!(run_circuit(10, block).is_ok());
+        assert!(test_copy_circuit(10, block).is_ok());
     }
 
     fn perturb_tag(block: &mut bus_mapping::circuit_input_builder::Block, tag: CopyDataType) {
@@ -760,7 +769,7 @@ mod tests {
             false => perturb_tag(&mut builder.block, CopyDataType::TxCalldata),
         }
         let block = block_convert(&builder.block, &builder.code_db);
-        assert!(run_circuit(10, block).is_err());
+        assert!(test_copy_circuit(10, block).is_err());
     }
 
     #[test]
@@ -771,6 +780,6 @@ mod tests {
             false => perturb_tag(&mut builder.block, CopyDataType::Bytecode),
         }
         let block = block_convert(&builder.block, &builder.code_db);
-        assert!(run_circuit(10, block).is_err());
+        assert!(test_copy_circuit(10, block).is_err());
     }
 }

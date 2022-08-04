@@ -1,5 +1,6 @@
 //! The bytecode circuit implementation.
 
+pub(crate) mod bytecode_unroller;
 /// Bytecode circuit
-pub mod bytecode_unroller;
+pub mod dev;
 pub(crate) mod param;
