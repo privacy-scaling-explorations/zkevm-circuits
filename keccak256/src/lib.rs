@@ -13,16 +13,12 @@ pub mod plain;
 
 lazy_static::lazy_static! {
     pub static ref EMPTY_HASH: [u8; 32] = {
-
-
         let mut keccak = plain::Keccak::default();
         keccak.update(&[]);
         keccak.digest().try_into().unwrap()
     };
     pub static ref EMPTY_HASH_LE: [u8; 32] = {
-
         use itertools::Itertools;
-
         EMPTY_HASH.iter().rev().cloned().collect_vec().try_into().unwrap()
     };
 }

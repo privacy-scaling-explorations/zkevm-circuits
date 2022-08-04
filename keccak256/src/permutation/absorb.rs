@@ -174,17 +174,13 @@ impl<F: Field> AbsorbConfig<F> {
 
 #[cfg(test)]
 mod tests {
-    use crate::common::State;
+    use super::*;
     use crate::keccak_arith::KeccakFArith;
-    use halo2_proofs::circuit::Layouter;
     use halo2_proofs::pairing;
-    use halo2_proofs::plonk::{Advice, Column, ConstraintSystem, Error};
     use halo2_proofs::{circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit};
-    use itertools::Itertools;
     use pairing::bn256::Fr as Fp;
     use pairing::group::ff::PrimeField;
     use pretty_assertions::assert_eq;
-    use std::marker::PhantomData;
 
     #[test]
     fn test_absorb_gate() {

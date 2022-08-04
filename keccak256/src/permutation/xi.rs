@@ -110,7 +110,6 @@ mod tests {
     use halo2_proofs::plonk::{Advice, Column, ConstraintSystem, Error};
     use halo2_proofs::{circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit};
     use itertools::Itertools;
-
     use std::marker::PhantomData;
 
     #[test]

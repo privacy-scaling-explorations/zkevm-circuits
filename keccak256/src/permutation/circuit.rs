@@ -21,7 +21,6 @@ use halo2_proofs::{
     poly::Rotation,
 };
 use itertools::Itertools;
-
 #[derive(Clone, Debug)]
 pub struct KeccakFConfig<F: Field> {
     generic: GenericConfig<F>,
