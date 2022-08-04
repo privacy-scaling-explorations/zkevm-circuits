@@ -1,5 +1,3 @@
-use std::convert::TryInto;
-
 use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId};
 use eth_types::{evm_types::GasCost, Field, ToLittleEndian};
 use halo2_proofs::plonk::Error;

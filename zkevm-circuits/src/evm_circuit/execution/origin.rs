@@ -16,7 +16,6 @@ use crate::{
 use bus_mapping::evm::OpcodeId;
 use eth_types::{Field, ToLittleEndian};
 use halo2_proofs::plonk::Error;
-use std::convert::TryInto;
 
 #[derive(Clone, Debug)]
 pub(crate) struct OriginGadget<F> {

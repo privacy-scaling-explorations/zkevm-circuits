@@ -20,7 +20,7 @@ use halo2_proofs::{
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector, VirtualCells},
     poly::Rotation,
 };
-use std::{collections::HashMap, convert::TryInto, iter};
+use std::{collections::HashMap, iter};
 use strum::IntoEnumIterator;
 
 mod add_sub;
