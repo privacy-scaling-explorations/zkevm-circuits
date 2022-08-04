@@ -28,6 +28,7 @@ pub struct EvmCircuit<F> {
 
 impl<F: Field> EvmCircuit<F> {
     /// Configure EvmCircuit
+    #[allow(clippy::too_many_arguments)]
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         power_of_randomness: [Expression<F>; 31],
@@ -36,6 +37,7 @@ impl<F: Field> EvmCircuit<F> {
         bytecode_table: &dyn LookupTable<F>,
         block_table: &dyn LookupTable<F>,
         copy_table: &dyn LookupTable<F>,
+        keccak_table: &dyn LookupTable<F>,
     ) -> Self {
         let fixed_table = [(); 4].map(|_| meta.fixed_column());
         let byte_table = [(); 1].map(|_| meta.fixed_column());
@@ -49,6 +51,7 @@ impl<F: Field> EvmCircuit<F> {
             bytecode_table,
             block_table,
             copy_table,
+            keccak_table,
         ));
 
         Self {
@@ -147,9 +150,10 @@ impl<F: Field> EvmCircuit<F> {
 pub mod test {
     use crate::{
         evm_circuit::{table::FixedTableTag, witness::Block, EvmCircuit},
-        table::{BlockTable, BytecodeTable, CopyTable, RwTable, TxTable},
+        table::{BlockTable, BytecodeTable, CopyTable, KeccakTable, RwTable, TxTable},
         util::power_of_randomness_from_instance,
     };
+    use bus_mapping::circuit_input_builder::CopyDataType;
     use eth_types::{Field, Word};
     use halo2_proofs::{
         circuit::{Layouter, SimpleFloorPlanner},
@@ -189,6 +193,7 @@ pub mod test {
         bytecode_table: BytecodeTable,
         block_table: BlockTable,
         copy_table: CopyTable,
+        keccak_table: KeccakTable,
         pub evm_circuit: EvmCircuit<F>,
     }
 
@@ -222,6 +227,7 @@ pub mod test {
             let block_table = BlockTable::construct(meta);
             let q_copy_table = meta.fixed_column();
             let copy_table = CopyTable::construct(meta, q_copy_table);
+            let keccak_table = KeccakTable::construct(meta);
 
             let power_of_randomness = power_of_randomness_from_instance(meta);
             let evm_circuit = EvmCircuit::configure(
@@ -232,6 +238,7 @@ pub mod test {
                 &bytecode_table,
                 &block_table,
                 &copy_table,
+                &keccak_table,
             );
 
             Self::Config {
@@ -240,6 +247,7 @@ pub mod test {
                 bytecode_table,
                 block_table,
                 copy_table,
+                keccak_table,
                 evm_circuit,
             }
         }
@@ -270,6 +278,21 @@ pub mod test {
             config
                 .copy_table
                 .load(&mut layouter, &self.block, self.block.randomness)?;
+            config.keccak_table.load(
+                &mut layouter,
+                self.block
+                    .copy_events
+                    .values()
+                    .filter(|ce| ce.dst_type == CopyDataType::RlcAcc)
+                    .map(|ce| {
+                        ce.steps
+                            .iter()
+                            .filter(|s| s.rw.is_write())
+                            .map(|s| s.value)
+                            .collect::<Vec<u8>>()
+                    }),
+                self.block.randomness,
+            )?;
             config
                 .evm_circuit
                 .assign_block_exact(&mut layouter, &self.block)

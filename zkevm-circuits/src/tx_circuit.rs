@@ -410,9 +410,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
         self.assign(&config, &mut layouter)?;
         config.keccak_table.load(
             &mut layouter,
-            keccak_inputs(&self.txs, self.chain_id)?
-                .iter()
-                .map(|b| b.as_slice()),
+            keccak_inputs(&self.txs, self.chain_id)?,
             self.randomness,
         )
     }
