@@ -135,7 +135,7 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
-        tx: &Transaction,
+        _: &Transaction,
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
@@ -182,17 +182,7 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
         )?;
         self.memory_copier_gas
             .assign(region, offset, size.as_u64(), memory_expansion_cost)?;
-
-        let key = (tx.id, call.id, step.program_counter as usize);
-        let copy_rwc_inc = block
-            .copy_events
-            .get(&key)
-            .unwrap()
-            .steps
-            .first()
-            .map_or(F::zero(), |cs| F::from(cs.rwc_inc_left));
-        self.copy_rwc_inc
-            .assign(region, offset, Some(copy_rwc_inc))?;
+        self.copy_rwc_inc.assign(region, offset, Some(F::one()))?;
 
         Ok(())
     }

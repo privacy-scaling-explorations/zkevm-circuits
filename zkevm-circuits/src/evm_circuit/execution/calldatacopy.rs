@@ -19,11 +19,10 @@ use crate::{
     util::Expr,
 };
 use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId};
-use eth_types::Field;
-use eth_types::ToLittleEndian;
+use eth_types::{Field, ToLittleEndian, Word, ToScalar};
 use halo2_proofs::plonk::Error;
 
-use std::convert::TryInto;
+use std::cmp::min;
 
 #[derive(Clone, Debug)]
 pub(crate) struct CallDataCopyGadget<F> {
@@ -190,8 +189,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
             ),
         )?;
         let src_id = if call.is_root { tx.id } else { call.caller_id };
-        self.src_id
-            .assign(region, offset, Some(F::from(src_id as u64)))?;
+        self.src_id.assign(region, offset, Some(F::from(u64::try_from(src_id).unwrap())))?;
 
         // Call data length and call data offset
         let (call_data_length, call_data_offset) = if call.is_root {
@@ -200,20 +198,24 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
             (call.call_data_length, call.call_data_offset)
         };
         self.call_data_length
-            .assign(region, offset, Some(F::from(call_data_length as u64)))?;
+            .assign(region, offset, Some(F::from(call_data_length)))?;
         self.call_data_offset
-            .assign(region, offset, Some(F::from(call_data_offset as u64)))?;
+            .assign(region, offset, Some(F::from(call_data_offset)))?;
 
-        let key = (tx.id, call.id, step.program_counter as usize);
-        let copy_rwc_inc = block
-            .copy_events
-            .get(&key)
-            .unwrap()
-            .steps
-            .first()
-            .map_or(F::zero(), |cs| F::from(cs.rwc_inc_left));
+        let n_memory_reads: u64 = if call.is_root {
+            0 // No memory reads when reading from tx call data.
+        } else {
+            min(
+                length.low_u64(),
+                call_data_length
+                    .checked_sub(call_data_offset)
+                    .unwrap_or_default(),
+            )
+        };
+        let copy_rwc_inc = length // number of memory writes
+            + Word::from(n_memory_reads);
         self.copy_rwc_inc
-            .assign(region, offset, Some(copy_rwc_inc))?;
+            .assign(region, offset, copy_rwc_inc.to_scalar())?;
 
         // Memory expansion
         let (_, memory_expansion_gas_cost) = self.memory_expansion.assign(

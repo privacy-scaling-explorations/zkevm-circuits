@@ -241,16 +241,7 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
         self.tx_id
             .assign(region, offset, Some(F::from(tx.id as u64)))?;
 
-        let key = (tx.id, call.id, step.program_counter as usize);
-        let copy_rwc_inc = block
-            .copy_events
-            .get(&key)
-            .unwrap()
-            .steps
-            .first()
-            .map_or(F::zero(), |cs| F::from(cs.rwc_inc_left));
-        self.copy_rwc_inc
-            .assign(region, offset, Some(copy_rwc_inc))?;
+        self.copy_rwc_inc.assign(region, offset, Some(F::one()))?;
 
         Ok(())
     }

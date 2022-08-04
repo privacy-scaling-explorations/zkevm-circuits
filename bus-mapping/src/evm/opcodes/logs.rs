@@ -216,9 +216,6 @@ fn gen_copy_event(
         log_id: Some(state.tx_ctx.log_id as u64 + 1),
         length: msize as u64,
         steps,
-        tx_id: state.tx_ctx.id(),
-        call_id: state.call()?.call_id,
-        pc: exec_step.pc,
     })
 }
 

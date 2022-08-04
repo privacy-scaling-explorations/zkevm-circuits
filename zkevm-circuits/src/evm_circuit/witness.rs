@@ -38,9 +38,8 @@ pub struct Block<F> {
     pub bytecodes: HashMap<Word, Bytecode>,
     /// The block context
     pub context: BlockContext,
-    /// Copy events for the EVM circuit's Copy Table, a mapping from (tx_id ||
-    /// call_id || pc) to the corresponding copy event.
-    pub copy_events: HashMap<(usize, usize, usize), CopyEvent>,
+    /// Copy events for the EVM circuit's copy table.
+    pub copy_events: Vec<CopyEvent>,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -1384,15 +1383,6 @@ pub fn block_convert(
                     })
             })
             .collect(),
-        copy_events: block
-            .copy_events
-            .iter()
-            .map(|copy_event| {
-                (
-                    (copy_event.tx_id, copy_event.call_id, copy_event.pc.0),
-                    copy_event.clone(),
-                )
-            })
-            .collect(),
+        copy_events: block.copy_events.clone(),
     }
 }

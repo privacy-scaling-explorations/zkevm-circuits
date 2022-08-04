@@ -334,7 +334,7 @@ impl<F: Field> CopyCircuit<F> {
             || "assign copy table",
             |mut region| {
                 let mut offset = 0;
-                for copy_event in block.copy_events.values() {
+                for copy_event in &block.copy_events {
                     for (step_idx, copy_step) in copy_event.steps.iter().enumerate() {
                         self.assign_step(
                             &mut region,
