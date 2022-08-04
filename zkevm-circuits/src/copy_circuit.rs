@@ -693,10 +693,12 @@ pub mod dev {
         block: Block<F>,
     }
 
-    impl<F> CopyCircuitTester<F> {
-
+    impl<F: Field> CopyCircuitTester<F> {
         pub fn new(block: Block<F>) -> Self {
             Self { block }
+        }
+        pub fn r() -> Expression<F> {
+            123456u64.expr()
         }
     }
 

@@ -45,7 +45,7 @@ impl<F: Field> Circuit<F> for BytecodeCircuitTester<F> {
         config.load(&mut layouter)?;
         config.keccak_table.load(
             &mut layouter,
-            self.bytecodes.iter().map(|b| b.bytes.as_slice()),
+            self.bytecodes.iter().map(|b| b.bytes.clone()),
             self.randomness,
         )?;
         config.assign(&mut layouter, self.size, &self.bytecodes, self.randomness)?;
