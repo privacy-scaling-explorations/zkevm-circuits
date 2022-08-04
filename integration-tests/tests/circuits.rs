@@ -24,6 +24,7 @@ use zkevm_circuits::state_circuit::StateCircuit;
 use zkevm_circuits::tx_circuit::{
     sign_verify::SignVerifyChip, Secp256k1Affine, TxCircuit, POW_RAND_SIZE, VERIF_HEIGHT,
 };
+use paste::paste;
 
 lazy_static! {
     pub static ref GEN_DATA: GenDataOutput = GenDataOutput::load();
@@ -114,26 +115,28 @@ async fn test_tx_circuit_block(block_num: u64) {
 }
 
 macro_rules! declare_tests {
-    ($test_evm_name:ident, $test_state_name:ident, $test_tx_name:ident, $block_tag:expr) => {
-        #[tokio::test]
-        async fn $test_evm_name() {
-            log_init();
-            let block_num = GEN_DATA.blocks.get($block_tag).unwrap();
-            test_evm_circuit_block(*block_num).await;
-        }
+    ($name:ident, $block_tag:expr) => {
+        paste! {
+            #[tokio::test]
+            async fn [<test_evm_ $name>]() {
+                log_init();
+                let block_num = GEN_DATA.blocks.get($block_tag).unwrap();
+                test_evm_circuit_block(*block_num).await;
+            }
 
-        #[tokio::test]
-        async fn $test_state_name() {
-            log_init();
-            let block_num = GEN_DATA.blocks.get($block_tag).unwrap();
-            test_state_circuit_block(*block_num).await;
-        }
+            #[tokio::test]
+            async fn [<test_state_ $name>]() {
+                log_init();
+                let block_num = GEN_DATA.blocks.get($block_tag).unwrap();
+                test_state_circuit_block(*block_num).await;
+            }
 
-        #[tokio::test]
-        async fn $test_tx_name() {
-            log_init();
-            let block_num = GEN_DATA.blocks.get($block_tag).unwrap();
-            test_tx_circuit_block(*block_num).await;
+            #[tokio::test]
+            async fn [<test_tx_ $name>]() {
+                log_init();
+                let block_num = GEN_DATA.blocks.get($block_tag).unwrap();
+                test_tx_circuit_block(*block_num).await;
+            }
         }
     };
 }
@@ -156,20 +159,14 @@ declare_tests!(
 );
 */
 declare_tests!(
-    test_evm_circuit_erc20_openzeppelin_transfer_fail,
-    test_state_circuit_erc20_openzeppelin_transfer_fail,
-    test_tx_circuit_erc20_openzeppelin_transfer_fail,
+    circuit_erc20_openzeppelin_transfer_fail,
     "ERC20 OpenZeppelin transfer failed"
 );
 declare_tests!(
-    test_evm_circuit_erc20_openzeppelin_transfer_succeed,
-    test_state_circuit_erc20_openzeppelin_transfer_succeed,
-    test_tx_circuit_erc20_openzeppelin_transfer_succeed,
+    circuit_erc20_openzeppelin_transfer_succeed,
     "ERC20 OpenZeppelin transfer successful"
 );
 declare_tests!(
-    test_evm_circuit_multiple_erc20_openzeppelin_transfers,
-    test_state_circuit_multiple_erc20_openzeppelin_transfers,
-    test_tx_circuit_multiple_erc20_openzeppelin_transfers,
+    circuit_multiple_erc20_openzeppelin_transfers,
     "Multiple ERC20 OpenZeppelin transfers"
 );

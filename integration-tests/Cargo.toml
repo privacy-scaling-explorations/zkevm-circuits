@@ -23,6 +23,7 @@ halo2_proofs = { version = "0.1.0-beta.1" }
 ff =  "0.11"
 rand_chacha = "0.3"
 group = "0.11"
+paste = "1.0"
 
 [dev-dependencies]
 pretty_assertions = "1.0.0"
