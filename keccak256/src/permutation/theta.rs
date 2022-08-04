@@ -6,7 +6,7 @@ use halo2_proofs::{
     poly::Rotation,
 };
 use itertools::Itertools;
-use std::convert::TryInto;
+
 use std::marker::PhantomData;
 
 #[derive(Clone, Debug)]
@@ -110,7 +110,7 @@ mod tests {
         plonk::{Advice, Circuit, Column, ConstraintSystem, Error},
     };
     use itertools::Itertools;
-    use std::convert::TryInto;
+
     use std::marker::PhantomData;
 
     #[test]

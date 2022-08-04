@@ -9,7 +9,7 @@ use halo2_proofs::{
     poly::Rotation,
 };
 use itertools::Itertools;
-use std::convert::TryInto;
+
 use std::marker::PhantomData;
 use strum_macros::{Display, EnumIter};
 

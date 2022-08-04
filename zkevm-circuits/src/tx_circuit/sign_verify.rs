@@ -33,10 +33,7 @@ use maingate::{
     RangeConfig, RangeInstructions, RegionCtx, UnassignedValue,
 };
 use secp256k1::Secp256k1Affine;
-use std::{
-    io::Cursor,
-    marker::PhantomData,
-};
+use std::{io::Cursor, marker::PhantomData};
 
 /// Power of randomness vector size required for the SignVerifyChip
 pub const POW_RAND_SIZE: usize = 63;

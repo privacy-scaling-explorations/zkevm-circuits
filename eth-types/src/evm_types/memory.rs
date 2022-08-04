@@ -330,7 +330,6 @@ impl Memory {
 
 #[cfg(test)]
 mod memory_tests {
-    use std::convert::TryInto;
 
     use super::*;
 

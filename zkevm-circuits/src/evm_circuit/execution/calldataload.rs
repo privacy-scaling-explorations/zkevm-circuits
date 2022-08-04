@@ -1,5 +1,3 @@
-use std::convert::TryInto;
-
 use bus_mapping::evm::OpcodeId;
 use eth_types::{Field, ToLittleEndian};
 use halo2_proofs::plonk::{Error, Expression};

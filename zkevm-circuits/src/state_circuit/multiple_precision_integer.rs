@@ -8,7 +8,7 @@ use halo2_proofs::{
     poly::Rotation,
 };
 use itertools::Itertools;
-use std::convert::TryInto;
+
 use std::marker::PhantomData;
 
 pub trait ToLimbs<const N: usize> {
