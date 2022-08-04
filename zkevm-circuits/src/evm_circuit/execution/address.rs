@@ -88,17 +88,15 @@ impl<F: Field> ExecutionGadget<F> for AddressGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::test_util::run_test_circuits;
-    use eth_types::bytecode;
-    use mock::TestContext;
+    use crate::{evm_circuit::test::rand_bytes, test_util::run_test_circuits};
+    use eth_types::{bytecode, ToWord, Word};
+    use mock::test_ctx::TestContext;
 
-    #[test]
-    fn address_gadget_test() {
+    fn test_root_ok() {
         let bytecode = bytecode! {
             ADDRESS
             STOP
         };
-
         assert_eq!(
             run_test_circuits(
                 TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
@@ -106,5 +104,65 @@ mod test {
             ),
             Ok(())
         );
+    }
+
+    fn test_internal_ok(call_data_offset: usize, call_data_length: usize) {
+        let (addr_a, addr_b) = (mock::MOCK_ACCOUNTS[0], mock::MOCK_ACCOUNTS[1]);
+
+        // code B gets called by code A, so the call is an internal call.
+        let code_b = bytecode! {
+            ADDRESS
+            STOP
+        };
+
+        // code A calls code B.
+        let pushdata = rand_bytes(8);
+        let code_a = bytecode! {
+            // populate memory in A's context.
+            PUSH8(Word::from_big_endian(&pushdata))
+            PUSH1(0x00) // offset
+            MSTORE
+            // call ADDR_B.
+            PUSH1(0x00) // retLength
+            PUSH1(0x00) // retOffset
+            PUSH32(call_data_length) // argsLength
+            PUSH32(call_data_offset) // argsOffset
+            PUSH1(0x00) // value
+            PUSH32(addr_b.to_word()) // addr
+            PUSH32(0x1_0000) // gas
+            CALL
+            STOP
+        };
+
+        let ctx = TestContext::<3, 1>::new(
+            None,
+            |accs| {
+                accs[0].address(addr_b).code(code_b);
+                accs[1].address(addr_a).code(code_a);
+                accs[2]
+                    .address(mock::MOCK_ACCOUNTS[2])
+                    .balance(Word::from(1u64 << 30));
+            },
+            |mut txs, accs| {
+                txs[0].to(accs[1].address).from(accs[2].address);
+            },
+            |block, _tx| block,
+        )
+        .unwrap();
+
+        assert_eq!(run_test_circuits(ctx, None), Ok(()));
+    }
+
+    #[test]
+    fn address_gadget_root() {
+        test_root_ok();
+    }
+
+    #[test]
+    fn address_gadget_internal() {
+        test_internal_ok(0x20, 0x00);
+        test_internal_ok(0x20, 0x10);
+        test_internal_ok(0x40, 0x20);
+        test_internal_ok(0x1010, 0xff);
     }
 }
