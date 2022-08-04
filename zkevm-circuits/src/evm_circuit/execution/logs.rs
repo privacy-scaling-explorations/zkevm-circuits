@@ -240,6 +240,8 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
             .assign(region, offset, Some(F::from(is_persistent)))?;
         self.tx_id
             .assign(region, offset, Some(F::from(tx.id as u64)))?;
+        // rw_counter increase from copy table lookup is `msize` memory reads + `msize`
+        // log writes.
         self.copy_rwc_inc
             .assign(region, offset, (msize + msize).to_scalar())?;
 

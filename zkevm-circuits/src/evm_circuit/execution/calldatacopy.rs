@@ -19,7 +19,7 @@ use crate::{
     util::Expr,
 };
 use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId};
-use eth_types::{Field, ToLittleEndian, ToScalar, Word};
+use eth_types::{Field, ToLittleEndian, ToScalar};
 use halo2_proofs::plonk::Error;
 
 use std::cmp::min;

@@ -182,6 +182,7 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
         )?;
         self.memory_copier_gas
             .assign(region, offset, size.as_u64(), memory_expansion_cost)?;
+        // rw_counter increase from copy table lookup is number of bytes copied.
         self.copy_rwc_inc.assign(region, offset, size.to_scalar())?;
 
         Ok(())

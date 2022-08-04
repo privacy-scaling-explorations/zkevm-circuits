@@ -132,7 +132,6 @@ fn gen_copy_steps(
     state: &mut CircuitInputStateRef,
     exec_step: &mut ExecStep,
     src_addr: u64,
-    src_addr_end: u64,
     bytes_left: usize,
 ) -> Result<Vec<CopyStep>, Error> {
     // Get memory data
@@ -144,32 +143,26 @@ fn gen_copy_steps(
     let mut copy_steps = Vec::with_capacity(2 * bytes_left);
     for (idx, byte) in mem.iter().enumerate() {
         let addr = src_addr + idx as u64;
-        let rwc = state.block_ctx.rwc;
-        let (value, is_pad) = if addr < src_addr_end {
-            state.memory_read(exec_step, (addr as usize).into(), *byte)?;
-            (*byte, false)
-        } else {
-            panic!();
-            (0, true)
-        };
 
-        // Read
+        // Read memory
         copy_steps.push(CopyStep {
             addr,
             tag: CopyDataType::Memory,
             rw: RW::READ,
-            value,
+            value: *byte,
             is_code: None,
-            is_pad,
-            rwc,
+            is_pad: false,
+            rwc: state.block_ctx.rwc,
             rwc_inc_left: 0,
         });
-        // Write
+        state.memory_read(exec_step, (addr as usize).into(), *byte)?;
+
+        // Write log
         copy_steps.push(CopyStep {
             addr: idx as u64,
             tag: CopyDataType::TxLog,
             rw: RW::WRITE,
-            value,
+            value: *byte,
             is_code: None,
             is_pad: false,
             rwc: state.block_ctx.rwc,
@@ -181,7 +174,7 @@ fn gen_copy_steps(
             state.tx_ctx.log_id + 1,
             TxLogField::Data,
             idx,
-            Word::from(value),
+            Word::from(*byte),
         )?;
     }
 
@@ -199,7 +192,7 @@ fn gen_copy_event(
 
     let (src_addr, src_addr_end) = (memory_start, memory_start + msize as u64);
 
-    let mut steps = gen_copy_steps(state, exec_step, src_addr, src_addr_end, msize)?;
+    let mut steps = gen_copy_steps(state, exec_step, src_addr, msize)?;
 
     for cs in steps.iter_mut() {
         cs.rwc_inc_left = state.block_ctx.rwc.0 as u64 - cs.rwc.0 as u64;
