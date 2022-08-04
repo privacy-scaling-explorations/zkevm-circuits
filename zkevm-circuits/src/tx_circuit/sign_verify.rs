@@ -805,7 +805,7 @@ mod sign_verify_tests {
             )?;
             config.sign_verify.keccak_table.load(
                 &mut layouter,
-                keccak_inputs(&self.signatures).iter().map(|b| b.as_slice()),
+                keccak_inputs(&self.signatures),
                 self.randomness,
             )?;
             Ok(())

@@ -19,8 +19,8 @@ use crate::{
     util::Expr,
 };
 use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId};
-use eth_types::Field;
 use eth_types::ToLittleEndian;
+use eth_types::{evm_types::GasCost, Field};
 use halo2_proofs::plonk::Error;
 
 use std::convert::TryInto;
@@ -35,7 +35,7 @@ pub(crate) struct CallDataCopyGadget<F> {
     call_data_offset: Cell<F>, // Only used in the internal call
     copy_rwc_inc: Cell<F>,
     memory_expansion: MemoryExpansionGadget<F, 1, N_BYTES_MEMORY_WORD_SIZE>,
-    memory_copier_gas: MemoryCopierGasGadget<F>,
+    memory_copier_gas: MemoryCopierGasGadget<F, { GasCost::COPY }>,
 }
 
 impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
@@ -125,6 +125,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
                 call_data_offset.expr() + call_data_length.expr(),
                 memory_address.offset(),
                 memory_address.length(),
+                0.expr(), // for CALLDATACOPY rlc_acc is 0
                 cb.curr.state.rw_counter.expr() + cb.rw_counter_offset().expr(),
                 copy_rwc_inc.expr(),
             );
@@ -204,7 +205,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
         self.call_data_offset
             .assign(region, offset, Some(F::from(call_data_offset as u64)))?;
 
-        let key = (tx.id, call.id, step.program_counter as usize);
+        let key = (tx.id, call.id, step.gas_left);
         let copy_rwc_inc = block
             .copy_events
             .get(&key)

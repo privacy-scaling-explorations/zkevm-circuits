@@ -1,7 +1,7 @@
 use std::convert::TryInto;
 
 use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId};
-use eth_types::{Field, ToLittleEndian};
+use eth_types::{evm_types::GasCost, Field, ToLittleEndian};
 use halo2_proofs::plonk::Error;
 
 use crate::{
@@ -37,7 +37,7 @@ pub(crate) struct CodeCopyGadget<F> {
     memory_expansion: MemoryExpansionGadget<F, 1, N_BYTES_MEMORY_WORD_SIZE>,
     /// Opcode CODECOPY needs to copy code bytes into memory. We account for
     /// the copying costs using the memory copier gas gadget.
-    memory_copier_gas: MemoryCopierGasGadget<F>,
+    memory_copier_gas: MemoryCopierGasGadget<F, { GasCost::COPY }>,
     /// RW inverse counter from the copy table at the start of related copy
     /// steps.
     copy_rwc_inc: Cell<F>,
@@ -95,6 +95,7 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
                 code_size.expr(),
                 dst_memory_addr.offset(),
                 dst_memory_addr.length(),
+                0.expr(), // for CODECOPY, rlc_acc is 0
                 cb.curr.state.rw_counter.expr() + cb.rw_counter_offset().expr(),
                 copy_rwc_inc.expr(),
             );
@@ -183,7 +184,7 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
         self.memory_copier_gas
             .assign(region, offset, size.as_u64(), memory_expansion_cost)?;
 
-        let key = (tx.id, call.id, step.program_counter as usize);
+        let key = (tx.id, call.id, step.gas_left);
         let copy_rwc_inc = block
             .copy_events
             .get(&key)
