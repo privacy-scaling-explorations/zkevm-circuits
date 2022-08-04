@@ -2,15 +2,28 @@
 
 use bus_mapping::circuit_input_builder::BuilderClient;
 use bus_mapping::operation::OperationContainer;
-use halo2_proofs::dev::MockProver;
-use integration_tests::{get_client, log_init, GenDataOutput};
+use eth_types::geth_types;
+use group::{Curve, Group};
+use halo2_proofs::arithmetic::BaseExt;
+use halo2_proofs::{
+    arithmetic::{CurveAffine, Field},
+    dev::MockProver,
+    pairing::bn256::Fr,
+};
+use integration_tests::{get_client, log_init, GenDataOutput, CHAIN_ID};
 use lazy_static::lazy_static;
 use log::trace;
+use rand_chacha::rand_core::SeedableRng;
+use rand_chacha::ChaCha20Rng;
+use std::marker::PhantomData;
 use zkevm_circuits::evm_circuit::witness::RwMap;
 use zkevm_circuits::evm_circuit::{
     test::run_test_circuit_complete_fixed_table, witness::block_convert,
 };
 use zkevm_circuits::state_circuit::StateCircuit;
+use zkevm_circuits::tx_circuit::{
+    sign_verify::SignVerifyChip, Secp256k1Affine, TxCircuit, POW_RAND_SIZE, VERIF_HEIGHT,
+};
 
 lazy_static! {
     pub static ref GEN_DATA: GenDataOutput = GenDataOutput::load();
@@ -20,20 +33,17 @@ async fn test_evm_circuit_block(block_num: u64) {
     log::info!("test evm circuit, block number: {}", block_num);
     let cli = get_client();
     let cli = BuilderClient::new(cli).await.unwrap();
-    let builder = cli.gen_inputs(block_num).await.unwrap();
+    let (builder, _) = cli.gen_inputs(block_num).await.unwrap();
 
     let block = block_convert(&builder.block, &builder.code_db);
     run_test_circuit_complete_fixed_table(block).expect("evm_circuit verification failed");
 }
 
 async fn test_state_circuit_block(block_num: u64) {
-    use halo2_proofs::arithmetic::BaseExt;
-    use halo2_proofs::pairing::bn256::Fr;
-
     log::info!("test state circuit, block number: {}", block_num);
     let cli = get_client();
     let cli = BuilderClient::new(cli).await.unwrap();
-    let builder = cli.gen_inputs(block_num).await.unwrap();
+    let (builder, _) = cli.gen_inputs(block_num).await.unwrap();
 
     // Generate state proof
     let stack_ops = builder.block.container.sorted_stack();
@@ -61,8 +71,50 @@ async fn test_state_circuit_block(block_num: u64) {
     prover.verify().expect("state_circuit verification failed");
 }
 
+async fn test_tx_circuit_block(block_num: u64) {
+    const DEGREE: u32 = 20;
+
+    log::info!("test tx circuit, block number: {}", block_num);
+    let cli = get_client();
+    let cli = BuilderClient::new(cli).await.unwrap();
+
+    let (_, eth_block) = cli.gen_inputs(block_num).await.unwrap();
+    let txs: Vec<_> = eth_block
+        .transactions
+        .iter()
+        .map(|tx| geth_types::Transaction::from_eth_tx(tx))
+        .collect();
+
+    let mut rng = ChaCha20Rng::seed_from_u64(2);
+    let aux_generator = <Secp256k1Affine as CurveAffine>::CurveExt::random(&mut rng).to_affine();
+
+    let randomness = Fr::random(&mut rng);
+    let mut instance: Vec<Vec<Fr>> = (1..POW_RAND_SIZE + 1)
+        .map(|exp| vec![randomness.pow(&[exp as u64, 0, 0, 0]); txs.len() * VERIF_HEIGHT])
+        .collect();
+
+    instance.push(vec![]);
+    let circuit = TxCircuit::<Fr, 4, { 4 * (4 + 32 + 32) }> {
+        sign_verify: SignVerifyChip {
+            aux_generator,
+            window_size: 2,
+            _marker: PhantomData,
+        },
+        randomness,
+        txs,
+        chain_id: CHAIN_ID,
+    };
+
+    let prover = match MockProver::run(DEGREE, &circuit, instance) {
+        Ok(prover) => prover,
+        Err(e) => panic!("{:#?}", e),
+    };
+
+    prover.verify().expect("tx_circuit verification failed");
+}
+
 macro_rules! declare_tests {
-    ($test_evm_name:ident, $test_state_name:ident, $block_tag:expr) => {
+    ($test_evm_name:ident, $test_state_name:ident, $test_tx_name:ident, $block_tag:expr) => {
         #[tokio::test]
         async fn $test_evm_name() {
             log_init();
@@ -75,6 +127,13 @@ macro_rules! declare_tests {
             log_init();
             let block_num = GEN_DATA.blocks.get($block_tag).unwrap();
             test_state_circuit_block(*block_num).await;
+        }
+
+        #[tokio::test]
+        async fn $test_tx_name() {
+            log_init();
+            let block_num = GEN_DATA.blocks.get($block_tag).unwrap();
+            test_tx_circuit_block(*block_num).await;
         }
     };
 }
@@ -99,15 +158,18 @@ declare_tests!(
 declare_tests!(
     test_evm_circuit_erc20_openzeppelin_transfer_fail,
     test_state_circuit_erc20_openzeppelin_transfer_fail,
+    test_tx_circuit_erc20_openzeppelin_transfer_fail,
     "ERC20 OpenZeppelin transfer failed"
 );
 declare_tests!(
     test_evm_circuit_erc20_openzeppelin_transfer_succeed,
     test_state_circuit_erc20_openzeppelin_transfer_succeed,
+    test_tx_circuit_erc20_openzeppelin_transfer_succeed,
     "ERC20 OpenZeppelin transfer successful"
 );
 declare_tests!(
     test_evm_circuit_multiple_erc20_openzeppelin_transfers,
     test_state_circuit_multiple_erc20_openzeppelin_transfers,
+    test_tx_circuit_multiple_erc20_openzeppelin_transfers,
     "Multiple ERC20 OpenZeppelin transfers"
 );
