@@ -13,9 +13,11 @@ use halo2_proofs::{
 use integration_tests::{get_client, log_init, GenDataOutput, CHAIN_ID};
 use lazy_static::lazy_static;
 use log::trace;
+use paste::paste;
 use rand_chacha::rand_core::SeedableRng;
 use rand_chacha::ChaCha20Rng;
 use std::marker::PhantomData;
+use zkevm_circuits::bytecode_circuit::bytecode_unroller::dev::BytecodeCircuitTester;
 use zkevm_circuits::evm_circuit::witness::RwMap;
 use zkevm_circuits::evm_circuit::{
     test::run_test_circuit_complete_fixed_table, witness::block_convert,
@@ -24,7 +26,6 @@ use zkevm_circuits::state_circuit::StateCircuit;
 use zkevm_circuits::tx_circuit::{
     sign_verify::SignVerifyChip, Secp256k1Affine, TxCircuit, POW_RAND_SIZE, VERIF_HEIGHT,
 };
-use paste::paste;
 
 lazy_static! {
     pub static ref GEN_DATA: GenDataOutput = GenDataOutput::load();
@@ -114,6 +115,19 @@ async fn test_tx_circuit_block(block_num: u64) {
     prover.verify().expect("tx_circuit verification failed");
 }
 
+pub async fn test_bytecode_circuit_block(block_num: u64) {
+    const DEGREE: u32 = 16;
+    let randomness = Fr::from(123456);
+
+    log::info!("test bytecode circuit, block number: {}", block_num);
+    let cli = get_client();
+    let cli = BuilderClient::new(cli).await.unwrap();
+    let (builder, _) = cli.gen_inputs(block_num).await.unwrap();
+    let bytecodes: Vec<Vec<u8>> = builder.code_db.0.values().cloned().collect();
+
+    BytecodeCircuitTester::<Fr>::verify_raw(DEGREE, bytecodes, randomness);
+}
+
 macro_rules! declare_tests {
     ($name:ident, $block_tag:expr) => {
         paste! {
@@ -137,6 +151,14 @@ macro_rules! declare_tests {
                 let block_num = GEN_DATA.blocks.get($block_tag).unwrap();
                 test_tx_circuit_block(*block_num).await;
             }
+
+            #[tokio::test]
+            async fn [<test_bytecode_ $name>]() {
+                log_init();
+                let block_num = GEN_DATA.blocks.get($block_tag).unwrap();
+                test_bytecode_circuit_block(*block_num).await;
+            }
+
         }
     };
 }
