@@ -102,8 +102,8 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
-        _: &Transaction,
-        _: &Call,
+        _tx: &Transaction,
+        _call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
@@ -119,7 +119,7 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
 
         self.copy_rwc_inc.assign(region, offset, size.to_scalar())?;
 
-        let values: Vec<_> = (3..3 + (size.low_u64() as usize))
+        let values: Vec<u8> = (3..3 + (size.low_u64() as usize))
             .map(|i| block.rws[step.rw_indices[i]].memory_value())
             .collect();
         let rlc_acc = rlc::value(&values, block.randomness);
