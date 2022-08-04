@@ -1,7 +1,7 @@
 use std::convert::TryInto;
 
 use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId};
-use eth_types::{Field, ToLittleEndian};
+use eth_types::{Field, ToLittleEndian, ToScalar};
 use halo2_proofs::plonk::Error;
 
 use crate::{
@@ -182,7 +182,7 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
         )?;
         self.memory_copier_gas
             .assign(region, offset, size.as_u64(), memory_expansion_cost)?;
-        self.copy_rwc_inc.assign(region, offset, Some(F::one()))?;
+        self.copy_rwc_inc.assign(region, offset, size.to_scalar())?;
 
         Ok(())
     }

@@ -101,7 +101,7 @@ fn gen_log_step(
     // generates topic operation dynamically
     let topic_count = match exec_step.exec_state {
         ExecState::Op(op_id) => (op_id.as_u8() - OpcodeId::LOG0.as_u8()) as usize,
-        _ => panic!("currently only handle succeful log state"),
+        _ => panic!("currently only handle successful log state"),
     };
 
     for i in 0..topic_count {
@@ -134,7 +134,6 @@ fn gen_copy_steps(
     src_addr: u64,
     src_addr_end: u64,
     bytes_left: usize,
-    data_start_index: usize,
 ) -> Result<Vec<CopyStep>, Error> {
     // Get memory data
     let mem = state
@@ -150,6 +149,7 @@ fn gen_copy_steps(
             state.memory_read(exec_step, (addr as usize).into(), *byte)?;
             (*byte, false)
         } else {
+            panic!();
             (0, true)
         };
 
@@ -166,7 +166,7 @@ fn gen_copy_steps(
         });
         // Write
         copy_steps.push(CopyStep {
-            addr: (data_start_index + idx) as u64,
+            addr: idx as u64,
             tag: CopyDataType::TxLog,
             rw: RW::WRITE,
             value,
@@ -180,7 +180,7 @@ fn gen_copy_steps(
             state.tx_ctx.id(),
             state.tx_ctx.log_id + 1,
             TxLogField::Data,
-            data_start_index + idx,
+            idx,
             Word::from(value),
         )?;
     }
@@ -199,7 +199,7 @@ fn gen_copy_event(
 
     let (src_addr, src_addr_end) = (memory_start, memory_start + msize as u64);
 
-    let mut steps = gen_copy_steps(state, exec_step, src_addr, src_addr_end, msize, 0)?;
+    let mut steps = gen_copy_steps(state, exec_step, src_addr, src_addr_end, msize)?;
 
     for cs in steps.iter_mut() {
         cs.rwc_inc_left = state.block_ctx.rwc.0 as u64 - cs.rwc.0 as u64;

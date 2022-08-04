@@ -19,7 +19,7 @@ use crate::{
     util::Expr,
 };
 use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId};
-use eth_types::{Field, ToLittleEndian, Word, ToScalar};
+use eth_types::{Field, ToLittleEndian, ToScalar, Word};
 use halo2_proofs::plonk::Error;
 
 use std::cmp::min;
@@ -189,7 +189,11 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
             ),
         )?;
         let src_id = if call.is_root { tx.id } else { call.caller_id };
-        self.src_id.assign(region, offset, Some(F::from(u64::try_from(src_id).unwrap())))?;
+        self.src_id.assign(
+            region,
+            offset,
+            Some(F::from(u64::try_from(src_id).unwrap())),
+        )?;
 
         // Call data length and call data offset
         let (call_data_length, call_data_offset) = if call.is_root {
@@ -202,18 +206,22 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
         self.call_data_offset
             .assign(region, offset, Some(F::from(call_data_offset)))?;
 
-        let n_memory_reads: u64 = if call.is_root {
-            0 // No memory reads when reading from tx call data.
-        } else {
-            min(
-                length.low_u64(),
-                call_data_length
-                    .checked_sub(call_data_offset)
-                    .unwrap_or_default(),
-            )
-        };
-        let copy_rwc_inc = length // number of memory writes
-            + Word::from(n_memory_reads);
+        // rw_counter increase from copy lookup is `length` memory writes + a variable
+        // number of memory reads.
+        let copy_rwc_inc = length
+            + if call.is_root {
+                // no memory reads when reading from tx call data.
+                0
+            } else {
+                // memory reads when reading from memory of caller is capped by call_data_length
+                // - data_offset.
+                min(
+                    length.low_u64(),
+                    call_data_length
+                        .checked_sub(data_offset.low_u64())
+                        .unwrap_or_default(),
+                )
+            };
         self.copy_rwc_inc
             .assign(region, offset, copy_rwc_inc.to_scalar())?;
 
