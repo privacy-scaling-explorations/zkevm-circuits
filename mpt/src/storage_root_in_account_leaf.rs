@@ -11,7 +11,7 @@ use crate::{
     param::{
         IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS, KECCAK_INPUT_WIDTH,
         KECCAK_OUTPUT_WIDTH, RLP_NUM, ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND, ACCOUNT_LEAF_ROWS, ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND, LEAF_VALUE_S_IND, LEAF_VALUE_C_IND, BRANCH_ROWS_NUM,
-    }, mpt::MainCols,
+    }, mpt::{MainCols, StorageLeafCols},
 };
 
 #[derive(Clone, Debug)]
@@ -27,9 +27,8 @@ impl<F: FieldExt> StorageRootChip<F> {
         meta: &mut ConstraintSystem<F>,
         q_enable: Column<Fixed>,
         not_first_level: Column<Advice>,
-        is_leaf_s_value: Column<Advice>,
-        is_leaf_c_value: Column<Advice>,
         is_account_leaf_in_added_branch: Column<Advice>,
+        storage_leaf: StorageLeafCols,
         is_last_branch_child: Column<Advice>,
         s_main: MainCols,
         acc_s: Column<Advice>,
@@ -213,11 +212,11 @@ impl<F: FieldExt> StorageRootChip<F> {
 
                 let mut rot_into_storage_root = -LEAF_VALUE_S_IND - (ACCOUNT_LEAF_ROWS - ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND);
                 let mut rot_into_last_account_row = -LEAF_VALUE_S_IND - 1;
-                let mut is_leaf = meta.query_advice(is_leaf_s_value, Rotation::cur());
+                let mut is_leaf = meta.query_advice(storage_leaf.is_s_value, Rotation::cur());
                 if !is_s {
                     rot_into_storage_root = -LEAF_VALUE_C_IND - (ACCOUNT_LEAF_ROWS - ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND);
                     rot_into_last_account_row = -LEAF_VALUE_C_IND - 1;
-                    is_leaf = meta.query_advice(is_leaf_c_value, Rotation::cur());
+                    is_leaf = meta.query_advice(storage_leaf.is__c_value, Rotation::cur());
                 }
 
                 // Note: if leaf is a placeholder, the root in account leaf needs to be hash of empty trie
@@ -269,11 +268,11 @@ impl<F: FieldExt> StorageRootChip<F> {
 
             let mut rot_into_storage_root = -LEAF_VALUE_S_IND - (ACCOUNT_LEAF_ROWS - ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND);
             let mut rot_into_last_account_row = -LEAF_VALUE_S_IND - 1;
-            let mut is_leaf = meta.query_advice(is_leaf_s_value, Rotation::cur());
+            let mut is_leaf = meta.query_advice(storage_leaf.is_s_value, Rotation::cur());
             if !is_s {
                 rot_into_storage_root = -LEAF_VALUE_C_IND - (ACCOUNT_LEAF_ROWS - ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND);
                 rot_into_last_account_row = -LEAF_VALUE_C_IND - 1;
-                is_leaf = meta.query_advice(is_leaf_c_value, Rotation::cur());
+                is_leaf = meta.query_advice(storage_leaf.is__c_value, Rotation::cur());
             }
             let is_placeholder = meta.query_advice(sel, Rotation::cur());
             
@@ -310,7 +309,7 @@ impl<F: FieldExt> StorageRootChip<F> {
             let mut rot_into_storage_root = -LEAF_VALUE_S_IND - (ACCOUNT_LEAF_ROWS - ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND) - BRANCH_ROWS_NUM;
             let mut rot_into_last_account_row = -LEAF_VALUE_S_IND - 1;
             let mut rot_into_last_account_row_placeholder = -LEAF_VALUE_S_IND - 1 - BRANCH_ROWS_NUM;
-            let mut is_leaf = meta.query_advice(is_leaf_s_value, Rotation::cur());
+            let mut is_leaf = meta.query_advice(storage_leaf.is_s_value, Rotation::cur());
             let mut rot_into_branch_init = -LEAF_VALUE_S_IND - BRANCH_ROWS_NUM;
             let mut is_branch_placeholder = meta.query_advice(
                 s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM],
@@ -320,7 +319,7 @@ impl<F: FieldExt> StorageRootChip<F> {
                 rot_into_storage_root = -LEAF_VALUE_C_IND - (ACCOUNT_LEAF_ROWS - ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND) - BRANCH_ROWS_NUM;
                 rot_into_last_account_row = -LEAF_VALUE_C_IND - 1;
                 rot_into_last_account_row_placeholder = -LEAF_VALUE_C_IND - 1 - BRANCH_ROWS_NUM;
-                is_leaf = meta.query_advice(is_leaf_c_value, Rotation::cur());
+                is_leaf = meta.query_advice(storage_leaf.is__c_value, Rotation::cur());
                 rot_into_branch_init = -LEAF_VALUE_C_IND - BRANCH_ROWS_NUM;
                 is_branch_placeholder = meta.query_advice(
                     s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],

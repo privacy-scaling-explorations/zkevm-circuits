@@ -6,6 +6,8 @@ use halo2_proofs::{
 use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
+use crate::mpt::StorageLeafCols;
+
 #[derive(Clone, Debug)]
 pub(crate) struct RootsConfig {}
 
@@ -23,10 +25,9 @@ impl<F: FieldExt> RootsChip<F> {
         q_enable: Column<Fixed>,
         q_not_first: Column<Fixed>,
         not_first_level: Column<Advice>,
-        is_leaf_in_added_branch: Column<Advice>,
         is_branch_init: Column<Advice>,
         is_account_leaf_key_s: Column<Advice>,
-        is_storage_leaf_key_s: Column<Advice>,
+        storage_leaf: StorageLeafCols,
         inter_start_root: Column<Advice>,
         inter_final_root: Column<Advice>,
         address_rlc: Column<Advice>,
@@ -43,8 +44,8 @@ impl<F: FieldExt> RootsChip<F> {
             let not_first_level_cur = meta.query_advice(not_first_level, Rotation::cur());
             let is_branch_init = meta.query_advice(is_branch_init, Rotation::cur());
             let is_account_leaf_key_s = meta.query_advice(is_account_leaf_key_s, Rotation::cur());
-            let is_storage_leaf_key_s = meta.query_advice(is_storage_leaf_key_s, Rotation::cur());
-            let is_leaf_in_added_branch_prev = meta.query_advice(is_leaf_in_added_branch, Rotation::prev());
+            let is_storage_leaf_key_s = meta.query_advice(storage_leaf.is_s_key, Rotation::cur());
+            let is_leaf_in_added_branch_prev = meta.query_advice(storage_leaf.is_in_added_branch, Rotation::prev());
 
             let start_root_prev = meta.query_advice(inter_start_root, Rotation::prev());
             let start_root_cur = meta.query_advice(inter_start_root, Rotation::cur());
