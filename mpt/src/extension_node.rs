@@ -127,6 +127,7 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
         let c160_inv = Expression::Constant(F::from(160_u64).invert().unwrap());
         let c192 = Expression::Constant(F::from(192));
         let c226 = Expression::Constant(F::from(226));
+        let c248 = Expression::Constant(F::from(248));
         let mut rot_into_branch_init = -17;
         if !is_s {
             rot_into_branch_init = -18;
@@ -329,7 +330,7 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
                     q_not_first.clone()
                         * q_enable.clone()
                         * is_even_nibbles.clone()
-                        * s_advices0,
+                        * s_advices0.clone(),
                 ));
 
                 let c_rlp2 = meta.query_advice(c_main.rlp2, Rotation::cur());
@@ -390,29 +391,34 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
 
                 // Example:
                 // [248,67,160,59,138,106,70,105,186,37,13,38,205,122,69,158,202,157,33,95,131,7,227,58,235,229,3,121,188,90,54,23,236,52,68,161,160,...
-                // TODO: test
-                /* 
                 constraints.push((
-                    "More than one nibble & HASHED branch & ext longer than 55 RLP",
+                    "ext longer than 55 RLP: s_rlp1 = 248",
                     q_not_first.clone()
                         * q_enable.clone()
                         * is_ext_longer_than_55.clone()
-                        * is_branch_hashed.clone()
-                        * (s_rlp1.clone() - c192.clone() - (s_rlp2.clone() - c128.clone()) - one.clone()
-                            - (c_advices0.clone() - c192.clone()) - one.clone()),
+                        * (s_rlp1.clone() - c248.clone()),
                 ));
 
                 // TODO: test
                 constraints.push((
-                    "More than one nibble & NON-HASHED branch & ext longer than 55 RLP",
+                    "HASHED branch & ext longer than 55 RLP",
+                    q_not_first.clone()
+                        * q_enable.clone()
+                        * is_ext_longer_than_55.clone()
+                        * is_branch_hashed.clone()
+                        * (s_rlp2.clone() - (s_advices0.clone() - c128.clone()) - one.clone() - c33.clone()),
+                ));
+
+                // TODO: test
+                constraints.push((
+                    "NON-HASHED branch & ext longer than 55 RLP",
                     q_not_first.clone()
                         * q_enable.clone()
                         * is_ext_longer_than_55.clone()
                         * (one.clone() - is_branch_hashed.clone())
-                        * (s_rlp1.clone() - c192.clone() - (s_rlp2.clone() - c128.clone()) - one.clone()
+                        * (s_rlp1.clone() - (s_advices0 - c128.clone()) - one.clone()
                             - (c_advices0.clone() - c192.clone()) - one.clone()),
                 ));
-                */
 
                 // [228,130,0,149,160,114,253,150,133,18,192,156,19,241,162,51,210,24,1,151,16,48,7,177,42,60,49,34,230,254,242,79,132,165,90,75,249]
                 // Note that the first element (228 in this case) can go much higher - for example, if there

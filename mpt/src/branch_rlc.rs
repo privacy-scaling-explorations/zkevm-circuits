@@ -106,7 +106,7 @@ impl<F: FieldExt> BranchRLCChip<F> {
                 "branch acc mult non-hashed",
                 q_enable.clone()
                     * is_node_hashed.clone()
-                    * (branch_mult_cur - branch_mult_prev * node_mult_diff * r_table[0].clone()), // * r_table[0] because of the first (key_len) byte
+                    * (branch_mult_cur - branch_mult_prev * node_mult_diff * r_table[0].clone()), // * r_table[0] because of the first (length) byte
             ));
 
             constraints
@@ -119,17 +119,17 @@ impl<F: FieldExt> BranchRLCChip<F> {
             q_enable * is_node_hashed
         };
 
-        // Note: key_len uses 192, not 128
-        mult_diff_lookup(meta, sel, 0, main.rlp2, node_mult_diff, 192, fixed_table);
+        // Note: non-hashed branch uses 192, not 128 (it is RLP list, not string)
+        mult_diff_lookup(meta, sel, 0, main.bytes[0], node_mult_diff, 192, fixed_table);
         
         /*
-        // There are 0s after key length.
-        for ind in 0..HASH_WIDTH {
+        // There are 0s after non-hashed branch ends.
+        for ind in 1..HASH_WIDTH {
             key_len_lookup(
                 meta,
                 sel,
-                ind + 1,
-                rlp2,
+                ind,
+                main.bytes[0],
                 main.bytes[ind],
                 192,
                 fixed_table,
