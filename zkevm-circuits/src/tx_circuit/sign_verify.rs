@@ -34,7 +34,6 @@ use maingate::{
 };
 use secp256k1::Secp256k1Affine;
 use std::{
-    convert::{TryFrom, TryInto},
     io::Cursor,
     marker::PhantomData,
 };
