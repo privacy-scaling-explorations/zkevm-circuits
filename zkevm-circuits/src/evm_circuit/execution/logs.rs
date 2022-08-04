@@ -139,6 +139,7 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
                 memory_address.address(),
                 dst_addr,
                 memory_address.length(),
+                0.expr(), // for LOGN, rlc_acc is 0
                 cb.curr.state.rw_counter.expr() + cb.rw_counter_offset().expr(),
                 copy_rwc_inc.expr(),
             );
@@ -241,7 +242,7 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
         self.tx_id
             .assign(region, offset, Some(F::from(tx.id as u64)))?;
 
-        let key = (tx.id, call.id, step.program_counter as usize);
+        let key = (tx.id, call.id, step.gas_left);
         let copy_rwc_inc = block
             .copy_events
             .get(&key)

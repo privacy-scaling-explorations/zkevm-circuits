@@ -39,8 +39,8 @@ pub struct Block<F> {
     /// The block context
     pub context: BlockContext,
     /// Copy events for the EVM circuit's Copy Table, a mapping from (tx_id ||
-    /// call_id || pc) to the corresponding copy event.
-    pub copy_events: HashMap<(usize, usize, usize), CopyEvent>,
+    /// call_id || gas_left) to the corresponding copy event.
+    pub copy_events: HashMap<(usize, usize, u64), CopyEvent>,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -1389,7 +1389,7 @@ pub fn block_convert(
             .iter()
             .map(|copy_event| {
                 (
-                    (copy_event.tx_id, copy_event.call_id, copy_event.pc.0),
+                    (copy_event.tx_id, copy_event.call_id, copy_event.gas_left),
                     copy_event.clone(),
                 )
             })
