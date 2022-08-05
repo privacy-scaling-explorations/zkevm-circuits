@@ -16,9 +16,6 @@ use crate::{
     },
 };
 
-#[derive(Clone, Debug)]
-pub(crate) struct AccountLeafNonceBalanceConfig {}
-
 /*
 An account leaf occupies 8 rows.
 Contrary as in the branch rows, the `S` and `C` leaves are not positioned parallel to each other.
@@ -54,12 +51,12 @@ The whole account leaf looks like:
 [0,160,86,232,31,23,27,204,85,166,255,131,69,230,146,192,248,110,91,72,224,27,153,108,173,192,1,98,47,181,227,99,180,33,0,160,197,210,70,1,134,247,35,60,146,126,125,178,220,199,3,192,229,0,182,83,202,130,39,59,123,250,216,4,93,133,164,122]
 [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
 */
-pub(crate) struct AccountLeafNonceBalanceChip<F> {
-    config: AccountLeafNonceBalanceConfig,
+#[derive(Clone, Debug)]
+pub(crate) struct AccountLeafNonceBalanceConfig<F> {
     _marker: PhantomData<F>,
 }
 
-impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
+impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         proof_type: ProofTypeCols,
@@ -78,8 +75,8 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
         sel2: Column<Advice>,
         fixed_table: [Column<Fixed>; 3],
         is_s: bool,
-    ) -> AccountLeafNonceBalanceConfig {
-        let config = AccountLeafNonceBalanceConfig {};
+    ) -> Self {
+        let config = AccountLeafNonceBalanceConfig { _marker: PhantomData, };
         let one = Expression::Constant(F::one());
         let c128 = Expression::Constant(F::from(128));
 
@@ -729,23 +726,11 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
         config
     }
 
-    pub fn construct(config: AccountLeafNonceBalanceConfig) -> Self {
-        Self {
-            config,
-            _marker: PhantomData,
-        }
-    }
-}
-
-impl<F: FieldExt> Chip<F> for AccountLeafNonceBalanceChip<F> {
-    type Config = AccountLeafNonceBalanceConfig;
-    type Loaded = ();
-
-    fn config(&self) -> &Self::Config {
-        &self.config
+    pub fn assign(
+        meta: &mut ConstraintSystem<F>,
+        proof_type: ProofTypeCols,
+    ) {
+     
     }
 
-    fn loaded(&self) -> &Self::Loaded {
-        &()
-    }
 }

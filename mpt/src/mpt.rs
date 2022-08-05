@@ -10,7 +10,7 @@ use std::convert::TryInto;
 use crate::{
     account_leaf_key::AccountLeafKeyChip,
     account_leaf_key_in_added_branch::AccountLeafKeyInAddedBranchChip,
-    account_leaf_nonce_balance::AccountLeafNonceBalanceChip,
+    account_leaf_nonce_balance::AccountLeafNonceBalanceConfig,
     account_leaf_storage_codehash::AccountLeafStorageCodehashChip,
     branch::BranchChip,
     branch_hash_in_parent::BranchHashInParentChip,
@@ -202,6 +202,8 @@ pub struct MPTConfig<F> {
                                   * enable lookup for storage key/value (to have address RLC in
                                   * the same row as storage key/value). */
     counter: Column<Advice>,
+    account_leaf_nonce_balance_config_s: AccountLeafNonceBalanceConfig<F>,
+    account_leaf_nonce_balance_config_c: AccountLeafNonceBalanceConfig<F>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -903,7 +905,7 @@ impl<F: FieldExt> MPTConfig<F> {
             address_rlc,
         );
 
-        AccountLeafNonceBalanceChip::<F>::configure(
+        let account_leaf_nonce_balance_config_s = AccountLeafNonceBalanceConfig::<F>::configure(
             meta,
             proof_type.clone(),
             |meta| {
@@ -928,7 +930,7 @@ impl<F: FieldExt> MPTConfig<F> {
             true,
         );
 
-        AccountLeafNonceBalanceChip::<F>::configure(
+        let account_leaf_nonce_balance_config_c = AccountLeafNonceBalanceConfig::<F>::configure(
             meta,
             proof_type.clone(),
             |meta| {
@@ -1058,6 +1060,8 @@ impl<F: FieldExt> MPTConfig<F> {
             fixed_table,
             address_rlc,
             counter,
+            account_leaf_nonce_balance_config_s,
+            account_leaf_nonce_balance_config_c,
         }
     }
 
@@ -2205,22 +2209,7 @@ impl<F: FieldExt> MPTConfig<F> {
 
                             offset += 1;
                             pv.node_index += 1;
-                        } else if row[row.len() - 1] == 2
-                            || row[row.len() - 1] == 3
-                            || row[row.len() - 1] == 4
-                            || row[row.len() - 1] == 6
-                            || row[row.len() - 1] == 7
-                            || row[row.len() - 1] == 8
-                            || row[row.len() - 1] == 9
-                            || row[row.len() - 1] == 10
-                            || row[row.len() - 1] == 11
-                            || row[row.len() - 1] == 13
-                            || row[row.len() - 1] == 14
-                            || row[row.len() - 1] == 15
-                            || row[row.len() - 1] == 16
-                            || row[row.len() - 1] == 17
-                            || row[row.len() - 1] == 18
-                        {
+                        } else {
                             // leaf s or leaf c or leaf key s or leaf key c
                             region.assign_fixed(
                                 || "q_enable",
@@ -2234,7 +2223,6 @@ impl<F: FieldExt> MPTConfig<F> {
 
                             let mut is_extension_node_s = false;
                             let mut is_extension_node_c = false;
-                            let mut is_non_existing_account = false;
 
                             if row[row.len() - 1] == 2 {
                                 storage_leaf.is_s_key = true;
@@ -2651,6 +2639,8 @@ impl<F: FieldExt> MPTConfig<F> {
                                     offset,
                                 )?;
                             } else if row[row.len() - 1] == 7 || row[row.len() - 1] == 8 {
+                                // self.account_leaf_nonce_balance_config_s
+
                                 let mut nonce_len: usize = 1;
                                 // Note: when nonce or balance is 0, the actual value stored in RLP encoding is 128.
                                 if row[S_START] > 128 {
