@@ -24,7 +24,7 @@ use halo2_proofs::arithmetic::{BaseExt, FieldExt};
 use halo2_proofs::pairing::bn256::Fr;
 use itertools::Itertools;
 use sha3::{Digest, Keccak256};
-use std::{collections::HashMap, convert::TryInto, iter};
+use std::{collections::HashMap, iter};
 
 #[derive(Debug, Default, Clone)]
 pub struct Block<F> {

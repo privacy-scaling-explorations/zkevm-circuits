@@ -18,8 +18,6 @@ use eth_types::Field;
 use eth_types::ToLittleEndian;
 use halo2_proofs::plonk::Error;
 
-use std::convert::TryInto;
-
 #[derive(Clone, Debug)]
 pub(crate) struct CoinbaseGadget<F> {
     same_context: SameContextGadget<F>,

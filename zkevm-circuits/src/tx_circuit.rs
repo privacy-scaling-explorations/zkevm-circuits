@@ -29,7 +29,6 @@ use secp256k1::Secp256k1Affine;
 use sha3::{Digest, Keccak256};
 use sign_verify::{pk_bytes_swap_endianness, SignData, SignVerifyChip, SignVerifyConfig};
 pub use sign_verify::{POW_RAND_SIZE, VERIF_HEIGHT};
-use std::convert::TryInto;
 use std::marker::PhantomData;
 use subtle::CtOption;
 

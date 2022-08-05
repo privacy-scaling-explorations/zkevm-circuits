@@ -16,7 +16,6 @@ use mock::test_ctx::{helpers::*, LoggerConfig, TestContext};
 use mock::MOCK_COINBASE;
 use pretty_assertions::assert_eq;
 use std::collections::HashSet;
-use std::iter::FromIterator;
 
 // Helper struct that contains a CircuitInputBuilder, a particuar tx and a
 // particular execution step so that we can easily get a

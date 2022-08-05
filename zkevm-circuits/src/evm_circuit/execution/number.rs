@@ -17,8 +17,6 @@ use bus_mapping::evm::OpcodeId;
 use eth_types::Field;
 use halo2_proofs::plonk::Error;
 
-use std::convert::TryFrom;
-
 #[derive(Clone, Debug)]
 pub(crate) struct NumberGadget<F> {
     same_context: SameContextGadget<F>,

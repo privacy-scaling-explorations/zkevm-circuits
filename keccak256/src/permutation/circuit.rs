@@ -21,7 +21,6 @@ use halo2_proofs::{
     poly::Rotation,
 };
 use itertools::Itertools;
-use std::convert::TryInto;
 #[derive(Clone, Debug)]
 pub struct KeccakFConfig<F: Field> {
     generic: GenericConfig<F>,
@@ -291,7 +290,6 @@ mod tests {
     use halo2_proofs::plonk::{ConstraintSystem, Error};
     use halo2_proofs::{circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit};
     use pretty_assertions::assert_eq;
-    use std::convert::TryInto;
 
     // TODO: Remove ignore once this can run in the CI without hanging.
     #[ignore]
