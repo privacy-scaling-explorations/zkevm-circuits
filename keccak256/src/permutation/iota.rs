@@ -3,7 +3,6 @@ use crate::common::{PERMUTATION, ROUND_CONSTANTS};
 use crate::gate_helpers::biguint_to_f;
 use eth_types::Field;
 use itertools::Itertools;
-use std::convert::TryInto;
 
 #[derive(Clone, Debug)]
 pub struct IotaConstants<F> {

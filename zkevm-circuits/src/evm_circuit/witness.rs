@@ -24,7 +24,7 @@ use halo2_proofs::arithmetic::{BaseExt, FieldExt};
 use halo2_proofs::pairing::bn256::Fr;
 use itertools::Itertools;
 use sha3::{Digest, Keccak256};
-use std::{collections::HashMap, convert::TryInto, iter};
+use std::{collections::HashMap, iter};
 
 #[derive(Debug, Default, Clone)]
 pub struct Block<F> {
@@ -1206,6 +1206,7 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::DIFFICULTY | OpcodeId::BASEFEE => ExecutionState::BLOCKCTXU256,
                     OpcodeId::GAS => ExecutionState::GAS,
                     OpcodeId::SELFBALANCE => ExecutionState::SELFBALANCE,
+                    OpcodeId::SHA3 => ExecutionState::SHA3,
                     OpcodeId::SHR => ExecutionState::SHR,
                     OpcodeId::SLOAD => ExecutionState::SLOAD,
                     OpcodeId::SSTORE => ExecutionState::SSTORE,
@@ -1220,7 +1221,6 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::CODESIZE => ExecutionState::CODESIZE,
                     OpcodeId::RETURN | OpcodeId::REVERT => ExecutionState::RETURN,
                     // dummy ops
-                    OpcodeId::SHA3 => dummy!(ExecutionState::SHA3),
                     OpcodeId::ADDRESS => dummy!(ExecutionState::ADDRESS),
                     OpcodeId::BALANCE => dummy!(ExecutionState::BALANCE),
                     OpcodeId::BLOCKHASH => dummy!(ExecutionState::BLOCKHASH),

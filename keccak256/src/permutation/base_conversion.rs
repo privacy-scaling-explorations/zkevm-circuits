@@ -6,7 +6,6 @@ use halo2_proofs::{
 
 use super::tables::BaseInfo;
 use eth_types::Field;
-use std::convert::TryInto;
 
 #[derive(Clone, Debug)]
 pub(crate) struct BaseConversionConfig<F> {

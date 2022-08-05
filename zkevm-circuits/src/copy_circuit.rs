@@ -381,7 +381,7 @@ impl<F: Field> CopyCircuit<F> {
                             .filter(|s| s.rw.is_write())
                             .map(|s| s.value)
                             .collect::<Vec<u8>>();
-                        rlc::value(&values, block.randomness)
+                        rlc::value(values.iter().rev(), block.randomness)
                     } else {
                         F::zero()
                     };
@@ -670,6 +670,7 @@ mod tests {
     use super::*;
     use bus_mapping::{
         circuit_input_builder::{CircuitInputBuilder, CopyDataType},
+        evm::{gen_sha3_code, MemoryKind},
         mock::BlockData,
         operation::RWCounter,
     };
@@ -802,6 +803,17 @@ mod tests {
         builder
     }
 
+    fn gen_sha3_data() -> CircuitInputBuilder {
+        let (code, _) = gen_sha3_code(0x20, 0x200, MemoryKind::EqualToSize);
+        let test_ctx = TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap();
+        let block: GethData = test_ctx.into();
+        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+        builder
+            .handle_block(&block.eth_block, &block.geth_traces)
+            .unwrap();
+        builder
+    }
+
     #[test]
     fn copy_circuit_valid_calldatacopy() {
         let builder = gen_calldatacopy_data();
@@ -814,6 +826,13 @@ mod tests {
         let builder = gen_codecopy_data();
         let block = block_convert(&builder.block, &builder.code_db);
         assert!(run_circuit(10, block).is_ok());
+    }
+
+    #[test]
+    fn copy_circuit_valid_sha3() {
+        let builder = gen_codecopy_data();
+        let block = block_convert(&builder.block, &builder.code_db);
+        assert!(run_circuit(20, block).is_ok());
     }
 
     fn perturb_tag(block: &mut bus_mapping::circuit_input_builder::Block, tag: CopyDataType) {

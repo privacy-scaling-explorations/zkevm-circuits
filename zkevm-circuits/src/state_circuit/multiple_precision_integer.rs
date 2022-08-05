@@ -1,5 +1,4 @@
-use super::N_LIMBS_ACCOUNT_ADDRESS;
-use super::N_LIMBS_RW_COUNTER;
+use super::{N_LIMBS_ACCOUNT_ADDRESS, N_LIMBS_RW_COUNTER};
 use crate::util::Expr;
 use eth_types::{Address, Field, ToScalar};
 use halo2_proofs::{
@@ -8,7 +7,6 @@ use halo2_proofs::{
     poly::Rotation,
 };
 use itertools::Itertools;
-use std::convert::TryInto;
 use std::marker::PhantomData;
 
 pub trait ToLimbs<const N: usize> {
