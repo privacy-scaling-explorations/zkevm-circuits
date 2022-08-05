@@ -373,7 +373,7 @@ impl<F: Field> CopyCircuit<F> {
             || "assign copy table",
             |mut region| {
                 let mut offset = 0;
-                for copy_event in block.copy_events.values() {
+                for copy_event in block.copy_events.iter() {
                     let rlc_acc = if copy_event.dst_type == CopyDataType::RlcAcc {
                         let values = copy_event
                             .steps

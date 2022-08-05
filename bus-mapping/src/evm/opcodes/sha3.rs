@@ -95,9 +95,6 @@ impl Opcode for Sha3 {
             log_id: None,
             length: size.as_u64(),
             steps,
-            tx_id: state.tx_ctx.id(),
-            call_id,
-            gas_left: exec_step.gas_left.0,
         });
 
         Ok(vec![exec_step])
