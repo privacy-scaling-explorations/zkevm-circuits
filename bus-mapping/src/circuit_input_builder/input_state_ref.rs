@@ -17,7 +17,7 @@ use crate::{
 };
 use eth_types::{
     evm_types::{Gas, MemoryAddress, OpcodeId, StackAddress},
-    Address, GethExecStep, ToAddress, ToBigEndian, Word, H256,
+    Address, GethExecStep, ToAddress, ToBigEndian, ToWord, Word, H256,
 };
 use ethers_core::utils::{get_contract_address, get_create2_address};
 
@@ -808,12 +808,113 @@ impl<'a> CircuitInputStateRef<'a> {
             callee_account.code_hash = code_hash;
         }
 
-        // Handle reversion if this call doens't end successfully
-        if !self.call()?.is_success {
+        // Handle reversion if this call doesn't end successfully
+        if !call.is_success {
             self.handle_reversion();
         }
 
         self.tx_ctx.pop_call_ctx();
+
+        Ok(())
+    }
+
+    /// asdfasdfa asf awefas dfa;sldkfj;alskjf
+    pub fn handle_stop(&mut self, steps: &[GethExecStep]) -> Result<Vec<ExecStep>, Error> {
+        let geth_step = &steps[0];
+
+        let mut exec_step = self.new_step(geth_step)?;
+
+        let call = self.call()?.clone();
+
+        self.call_context_read(
+            &mut exec_step,
+            call.call_id,
+            CallContextField::IsSuccess,
+            1.into(),
+        );
+        // need to move this into handle_restore_context.
+        self.call_context_read(
+            &mut exec_step,
+            call.call_id,
+            CallContextField::IsSuccess,
+            call.is_success.to_word(),
+        );
+
+        if !call.is_root {
+            self.handle_restore_context(steps, &mut exec_step)?;
+        }
+
+        Ok(vec![exec_step])
+    }
+
+    /// asdfasdfa asf awefas dfa;sldkfj;alskjf
+    pub fn handle_restore_context(
+        &mut self,
+        steps: &[GethExecStep],
+        exec_step: &mut ExecStep,
+    ) -> Result<(), Error> {
+        let call = self.call()?.clone();
+        let caller = self.caller()?.clone();
+        self.call_context_read(
+            exec_step,
+            call.call_id,
+            CallContextField::CallerId,
+            caller.call_id.into(),
+        );
+
+        let geth_step = &steps[0];
+        let geth_step_next = &steps[1];
+        let caller_gas_left = geth_step_next.gas.0 - geth_step.gas.0;
+        for (field, value) in [
+            (CallContextField::IsRoot, (caller.is_root as u64).into()),
+            (
+                CallContextField::IsCreate,
+                (caller.is_create() as u64).into(),
+            ),
+            (CallContextField::CodeHash, caller.code_hash.to_word()),
+            (CallContextField::ProgramCounter, geth_step_next.pc.0.into()),
+            (
+                CallContextField::StackPointer,
+                geth_step_next.stack.stack_pointer().0.into(),
+            ),
+            (CallContextField::GasLeft, caller_gas_left.into()),
+            (
+                CallContextField::MemorySize,
+                geth_step_next.memory.word_size().into(),
+            ),
+            (
+                CallContextField::ReversibleWriteCounter,
+                self.caller_ctx()?.reversible_write_counter.into(),
+            ),
+        ] {
+            self.call_context_read(exec_step, caller.call_id, field, value);
+        }
+
+        let [last_callee_return_data_offset, last_callee_return_data_length] = match geth_step.op {
+            OpcodeId::STOP => [Word::zero(); 2],
+            OpcodeId::REVERT | OpcodeId::RETURN => {
+                // TODO: move this back into the return bus mapping.
+                // somehow these got flipped.....
+                let length = geth_step.stack.last()?;
+                let offset = geth_step.stack.nth_last(1)?;
+                [offset, length]
+            }
+            _ => unreachable!(),
+        };
+
+        for (field, value) in [
+            (CallContextField::LastCalleeId, call.call_id.into()),
+            (
+                CallContextField::LastCalleeReturnDataOffset,
+                last_callee_return_data_offset,
+            ),
+            (
+                CallContextField::LastCalleeReturnDataLength,
+                last_callee_return_data_length,
+            ),
+        ] {
+            self.call_context_write(exec_step, caller.call_id, field, value);
+        }
 
         Ok(())
     }

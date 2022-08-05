@@ -412,6 +412,7 @@ impl<F: Field> CopyCircuit<F> {
                         )?;
                         offset += 1;
                     }
+                    dbg!(copy_event);
                 }
                 // pad two rows in the end to satisfy Halo2 cell assignment check
                 for _ in 0..2 {

@@ -140,6 +140,7 @@ impl<F: Field> MemoryAddressGadget<F> {
     }
 
     pub(crate) fn offset(&self) -> Expression<F> {
+        // we don't need to multiple by has length here?
         self.has_length() * from_bytes::expr(&self.memory_offset_bytes.cells)
     }
 

@@ -105,7 +105,7 @@ fn gen_calldatacopy_step(
     Ok(exec_step)
 }
 
-fn gen_copy_steps(
+pub(crate) fn gen_copy_steps(
     state: &mut CircuitInputStateRef,
     exec_step: &mut ExecStep,
     src_addr: u64,
