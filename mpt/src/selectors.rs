@@ -6,7 +6,7 @@ use halo2_proofs::{
 use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
-use crate::{helpers::get_bool_constraint, mpt::{ProofTypeCols, AccountLeafCols, StorageLeafCols}};
+use crate::{helpers::get_bool_constraint, mpt::{ProofTypeCols, AccountLeafCols, StorageLeafCols, BranchCols}};
 
 #[derive(Clone, Debug)]
 pub(crate) struct SelectorsConfig {}
@@ -24,17 +24,11 @@ impl<F: FieldExt> SelectorsChip<F> {
         q_enable: Column<Fixed>,
         q_not_first: Column<Fixed>,
         not_first_level: Column<Advice>,
-        is_branch_init: Column<Advice>,
-        is_branch_child: Column<Advice>,
-        is_last_branch_child: Column<Advice>,
+        branch: BranchCols,
         account_leaf: AccountLeafCols,
         storage_leaf: StorageLeafCols,
-        is_extension_node_s: Column<Advice>,
-        is_extension_node_c: Column<Advice>,
         sel1: Column<Advice>,
         sel2: Column<Advice>,
-        is_modified: Column<Advice>,
-        is_at_drifted_pos: Column<Advice>,
     ) -> SelectorsConfig {
         let config = SelectorsConfig {};
         let one = Expression::Constant(F::one());
@@ -44,9 +38,9 @@ impl<F: FieldExt> SelectorsChip<F> {
             let mut constraints = vec![];
 
             let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
-            let is_branch_init_cur = meta.query_advice(is_branch_init, Rotation::cur());
-            let is_branch_child_cur = meta.query_advice(is_branch_child, Rotation::cur());
-            let is_last_branch_child_cur = meta.query_advice(is_last_branch_child, Rotation::cur());
+            let is_branch_init_cur = meta.query_advice(branch.is_init, Rotation::cur());
+            let is_branch_child_cur = meta.query_advice(branch.is_child, Rotation::cur());
+            let is_last_branch_child_cur = meta.query_advice(branch.is_last_child, Rotation::cur());
             let is_leaf_s_key = meta.query_advice(storage_leaf.is_s_key, Rotation::cur());
             let is_leaf_s_value = meta.query_advice(storage_leaf.is_s_value, Rotation::cur());
             let is_leaf_c_key = meta.query_advice(storage_leaf.is_c_key, Rotation::cur());
@@ -144,12 +138,12 @@ impl<F: FieldExt> SelectorsChip<F> {
                 get_bool_constraint(q_enable.clone() * is_branch_child_cur, sel2.clone()),
             ));
 
-            let is_modified = meta.query_advice(is_modified, Rotation::cur());
-            let is_at_drifted_pos = meta.query_advice(is_at_drifted_pos, Rotation::cur());
+            let is_modified = meta.query_advice(branch.is_modified, Rotation::cur());
+            let is_at_drifted_pos = meta.query_advice(branch.is_at_drifted_pos, Rotation::cur());
             let is_leaf_in_added_branch =
                 meta.query_advice(storage_leaf.is_in_added_branch, Rotation::cur());
-            let is_extension_node_s = meta.query_advice(is_extension_node_s, Rotation::cur());
-            let is_extension_node_c = meta.query_advice(is_extension_node_c, Rotation::cur());
+            let is_extension_node_s = meta.query_advice(branch.is_extension_node_s, Rotation::cur());
+            let is_extension_node_c = meta.query_advice(branch.is_extension_node_c, Rotation::cur());
 
             constraints.push((
                 "bool check is_modified",
@@ -213,9 +207,9 @@ impl<F: FieldExt> SelectorsChip<F> {
                 let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
                 let mut constraints = vec![];
 
-                let is_branch_init_cur = meta.query_advice(is_branch_init, Rotation::cur());
+                let is_branch_init_cur = meta.query_advice(branch.is_init, Rotation::cur());
                 let is_last_branch_child_prev =
-                    meta.query_advice(is_last_branch_child, Rotation::prev());
+                    meta.query_advice(branch.is_last_child, Rotation::prev());
                 let is_leaf_s_key_prev = meta.query_advice(storage_leaf.is_s_key, Rotation::prev());
                 let is_leaf_s_key_cur = meta.query_advice(storage_leaf.is_s_key, Rotation::cur());
                 let is_leaf_s_value_prev = meta.query_advice(storage_leaf.is_s_value, Rotation::prev());
@@ -259,13 +253,13 @@ impl<F: FieldExt> SelectorsChip<F> {
                     meta.query_advice(account_leaf.is_in_added_branch, Rotation::cur());
 
                 let is_extension_node_s_prev =
-                    meta.query_advice(is_extension_node_s, Rotation::prev());
+                    meta.query_advice(branch.is_extension_node_s, Rotation::prev());
                 let is_extension_node_s_cur =
-                    meta.query_advice(is_extension_node_s, Rotation::cur());
+                    meta.query_advice(branch.is_extension_node_s, Rotation::cur());
                 let is_extension_node_c_prev =
-                    meta.query_advice(is_extension_node_c, Rotation::prev());
+                    meta.query_advice(branch.is_extension_node_c, Rotation::prev());
                 let is_extension_node_c_cur =
-                    meta.query_advice(is_extension_node_c, Rotation::cur());
+                    meta.query_advice(branch.is_extension_node_c, Rotation::cur());
 
                 let is_non_existing_account_row_prev =
                     meta.query_advice(account_leaf.is_non_existing_account_row, Rotation::prev());

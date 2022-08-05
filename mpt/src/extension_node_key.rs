@@ -11,7 +11,7 @@ use std::marker::PhantomData;
 
 use crate::{
     helpers::{compute_rlc, range_lookups, key_len_lookup, get_is_extension_node},
-    mpt::{FixedTableTag, MainCols},
+    mpt::{FixedTableTag, MainCols, BranchCols},
     param::{
         HASH_WIDTH,
         RLP_NUM, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS, IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS, IS_EXT_LONG_ODD_C16_POS, IS_EXT_LONG_ODD_C1_POS, EXTENSION_ROWS_NUM, BRANCH_ROWS_NUM,
@@ -31,17 +31,13 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
         meta: &mut ConstraintSystem<F>,
         q_not_first: Column<Fixed>,
         not_first_level: Column<Advice>, // to avoid rotating back when in the first branch (for key rlc)
-        is_branch_init: Column<Advice>,
-        is_branch_child: Column<Advice>,
+        branch: BranchCols,
         is_account_leaf_in_added_branch: Column<Advice>,
         s_main: MainCols,
         c_main: MainCols,
-        modified_node: Column<Advice>, // index of the modified node
         key_rlc: Column<Advice>, // used first for account address, then for storage key
         key_rlc_mult: Column<Advice>,
         mult_diff: Column<Advice>,
-        is_extension_s_row: Column<Advice>,
-        is_extension_c_row: Column<Advice>,
         fixed_table: [Column<Fixed>; 3],
         r_table: Vec<Expression<F>>,
     ) -> ExtensionNodeKeyConfig {
@@ -98,7 +94,7 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
             );
 
             let is_extension_c_row =
-                meta.query_advice(is_extension_c_row, Rotation::cur());
+                meta.query_advice(branch.is_extension_node_c, Rotation::cur());
 
             let is_extension_node = get_is_extension_node(meta, s_main.bytes, rot_into_branch_init);
 
@@ -120,15 +116,15 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
             );
 
             let is_branch_init_prev =
-                meta.query_advice(is_branch_init, Rotation::prev());
+                meta.query_advice(branch.is_init, Rotation::prev());
             let is_branch_child_prev =
-                meta.query_advice(is_branch_child, Rotation::prev());
+                meta.query_advice(branch.is_child, Rotation::prev());
             let is_branch_child_cur =
-                meta.query_advice(is_branch_child, Rotation::cur());
+                meta.query_advice(branch.is_child, Rotation::cur());
 
             // Any rotation that lands into branch children can be used:
             let modified_node_cur =
-                meta.query_advice(modified_node, Rotation(-2));
+                meta.query_advice(branch.modified_node, Rotation(-2));
             
             let key_rlc_prev = meta.query_advice(key_rlc, Rotation::prev());
             let key_rlc_prev_level = meta.query_advice(key_rlc, Rotation(rot_into_prev_branch));
@@ -476,7 +472,7 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
             );
 
             let is_extension_c_row =
-                meta.query_advice(is_extension_c_row, Rotation::cur());
+                meta.query_advice(branch.is_extension_node_c, Rotation::cur());
 
             let is_ext_long_even_c16 = meta.query_advice(
                 s_main.bytes[IS_EXT_LONG_EVEN_C16_POS - RLP_NUM],
@@ -498,7 +494,7 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
                 Rotation(rot_into_branch_init - 1),
             );
             let is_extension_c_row =
-                meta.query_advice(is_extension_c_row, Rotation::cur());
+                meta.query_advice(branch.is_extension_node_c, Rotation::cur());
 
             let is_ext_long_odd_c16 = meta.query_advice(
                 s_main.bytes[IS_EXT_LONG_ODD_C16_POS - RLP_NUM],
@@ -521,7 +517,7 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
                 meta.query_advice(not_first_level, Rotation::cur());
 
             let is_extension_c_row =
-                meta.query_advice(is_extension_c_row, Rotation::cur());
+                meta.query_advice(branch.is_extension_node_c, Rotation::cur());
 
             let is_ext_short_c16 = meta.query_advice(
                 s_main.bytes[IS_EXT_SHORT_C16_POS - RLP_NUM],
@@ -664,7 +660,7 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
 
         let sel_short = |meta: &mut VirtualCells<F>| {
             let is_extension_s_row =
-                meta.query_advice(is_extension_s_row, Rotation::cur());
+                meta.query_advice(branch.is_extension_node_s, Rotation::cur());
             let is_ext_short_c16 = meta.query_advice(
                 s_main.bytes[IS_EXT_SHORT_C16_POS - RLP_NUM],
                 Rotation(rot_into_branch_init),
@@ -680,7 +676,7 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
         };
         let sel_long = |meta: &mut VirtualCells<F>| {
             let is_extension_s_row =
-                meta.query_advice(is_extension_s_row, Rotation::cur());
+                meta.query_advice(branch.is_extension_node_s, Rotation::cur());
 
             let is_ext_long_even_c16 = meta.query_advice(
                 s_main.bytes[IS_EXT_LONG_EVEN_C16_POS - RLP_NUM],
@@ -736,13 +732,13 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
 
         let sel_s = |meta: &mut VirtualCells<F>| {
             let is_extension_s_row =
-                meta.query_advice(is_extension_s_row, Rotation::cur());
+                meta.query_advice(branch.is_extension_node_s, Rotation::cur());
 
             get_is_extension_node(meta, s_main.bytes, rot_into_branch_init+1) * is_extension_s_row
         };
         let sel_c = |meta: &mut VirtualCells<F>| {
             let is_extension_c_row =
-                meta.query_advice(is_extension_c_row, Rotation::cur());
+                meta.query_advice(branch.is_extension_node_c, Rotation::cur());
 
             get_is_extension_node(meta, s_main.bytes, rot_into_branch_init) * is_extension_c_row
         };

@@ -8,7 +8,7 @@ use std::marker::PhantomData;
 
 use crate::{
     helpers::{get_bool_constraint, range_lookups},
-    mpt::{FixedTableTag, MainCols},
+    mpt::{FixedTableTag, MainCols, BranchCols},
     param::{
         BRANCH_0_C_START, BRANCH_0_S_START, HASH_WIDTH, IS_BRANCH_C_PLACEHOLDER_POS,
         IS_BRANCH_S_PLACEHOLDER_POS, RLP_NUM,
@@ -30,16 +30,7 @@ impl<F: FieldExt> BranchChip<F> {
         q_not_first: Column<Fixed>,
         s_main: MainCols,
         c_main: MainCols,
-        is_branch_init: Column<Advice>,
-        is_branch_child: Column<Advice>,
-        is_last_branch_child: Column<Advice>,
-        node_index: Column<Advice>,
-        is_modified: Column<Advice>, // whether this branch node is modified
-        modified_node: Column<Advice>, // index of the modified node
-        is_at_drifted_pos: Column<Advice>, // needed when leaf is turned into branch
-        drifted_pos: Column<Advice>, /* needed when leaf is turned into branch - first nibble of
-                                      * the key stored in a leaf (because the existing leaf will
-                                      * jump to this position in added branch) */
+        branch: BranchCols,
         is_node_hashed_s: Column<Advice>,
         is_node_hashed_c: Column<Advice>,
         fixed_table: [Column<Fixed>; 3],
@@ -49,7 +40,7 @@ impl<F: FieldExt> BranchChip<F> {
 
         let sel = |meta: &mut VirtualCells<F>| {
             let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
-            let is_branch_init = meta.query_advice(is_branch_init, Rotation::cur());
+            let is_branch_init = meta.query_advice(branch.is_init, Rotation::cur());
 
             q_not_first * (one.clone() - is_branch_init)
         };
@@ -85,11 +76,11 @@ impl<F: FieldExt> BranchChip<F> {
                 let q_enable = meta.query_fixed(q_enable, Rotation::cur());
                 let mut constraints = vec![];
 
-                let is_branch_child_cur = meta.query_advice(is_branch_child, Rotation::cur());
-                let node_index_cur = meta.query_advice(node_index, Rotation::cur());
-                let modified_node = meta.query_advice(modified_node, Rotation::cur());
-                let is_modified = meta.query_advice(is_modified, Rotation::cur());
-                let is_at_drifted_pos = meta.query_advice(is_at_drifted_pos, Rotation::cur());
+                let is_branch_child_cur = meta.query_advice(branch.is_child, Rotation::cur());
+                let node_index_cur = meta.query_advice(branch.node_index, Rotation::cur());
+                let modified_node = meta.query_advice(branch.modified_node, Rotation::cur());
+                let is_modified = meta.query_advice(branch.is_modified, Rotation::cur());
+                let is_at_drifted_pos = meta.query_advice(branch.is_at_drifted_pos, Rotation::cur());
 
                 let s_rlp2 = meta.query_advice(s_main.rlp2, Rotation::cur());
                 let c_rlp2 = meta.query_advice(c_main.rlp2, Rotation::cur());
@@ -156,7 +147,7 @@ impl<F: FieldExt> BranchChip<F> {
             let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
             let mut constraints = vec![];
 
-            let is_branch_init_prev = meta.query_advice(is_branch_init, Rotation::prev());
+            let is_branch_init_prev = meta.query_advice(branch.is_init, Rotation::prev());
             /*
             rlp1, rlp2: 1, 1 means 1 RLP byte
             rlp1, rlp2: 1, 0 means 2 RLP bytes
@@ -303,7 +294,7 @@ impl<F: FieldExt> BranchChip<F> {
             ));
 
             // is_branch_child with node_index > 0
-            let is_branch_child_cur = meta.query_advice(is_branch_child, Rotation::cur());
+            let is_branch_child_cur = meta.query_advice(branch.is_child, Rotation::cur());
             let s_rlp1_prev = meta.query_advice(s_main.rlp1, Rotation::prev());
             let c_rlp1_prev = meta.query_advice(c_main.rlp1, Rotation::prev());
             constraints.push((
@@ -324,7 +315,7 @@ impl<F: FieldExt> BranchChip<F> {
             // In final branch child s_rlp1 and c_rlp1 need to be 1 (because RLP length
             // specifies also ValueNode which occupies 1 byte).
             // TODO: ValueNode
-            let is_last_branch_child = meta.query_advice(is_last_branch_child, Rotation::cur());
+            let is_last_branch_child = meta.query_advice(branch.is_last_child, Rotation::cur());
             constraints.push((
                 "branch last child S",
                 q_not_first.clone()
@@ -343,12 +334,12 @@ impl<F: FieldExt> BranchChip<F> {
             let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
 
             let mut constraints = vec![];
-            let is_branch_child_prev = meta.query_advice(is_branch_child, Rotation::prev());
-            let is_branch_child_cur = meta.query_advice(is_branch_child, Rotation::cur());
-            let is_branch_init_prev = meta.query_advice(is_branch_init, Rotation::prev());
+            let is_branch_child_prev = meta.query_advice(branch.is_child, Rotation::prev());
+            let is_branch_child_cur = meta.query_advice(branch.is_child, Rotation::cur());
+            let is_branch_init_prev = meta.query_advice(branch.is_init, Rotation::prev());
             let is_last_branch_child_prev =
-                meta.query_advice(is_last_branch_child, Rotation::prev());
-            let is_last_branch_child_cur = meta.query_advice(is_last_branch_child, Rotation::cur());
+                meta.query_advice(branch.is_last_child, Rotation::prev());
+            let is_last_branch_child_cur = meta.query_advice(branch.is_last_child, Rotation::cur());
 
             // If we have branch child, we can only have branch child or branch init in the
             // previous row.
@@ -374,7 +365,7 @@ impl<F: FieldExt> BranchChip<F> {
             // and it's increasing by 1.
             // If we have is_branch_init in the previous row, we have
             // node_index = 0 in the current row.
-            let node_index_cur = meta.query_advice(node_index, Rotation::cur());
+            let node_index_cur = meta.query_advice(branch.node_index, Rotation::cur());
             constraints.push((
                 "first branch children 2",
                 q_not_first.clone()
@@ -383,7 +374,7 @@ impl<F: FieldExt> BranchChip<F> {
             ));
 
             // When is_branch_child changes back to 0, previous node_index has to be 15.
-            let node_index_prev = meta.query_advice(node_index, Rotation::prev());
+            let node_index_prev = meta.query_advice(branch.node_index, Rotation::prev());
             constraints.push((
                 "last branch children",
                 q_not_first.clone()
@@ -416,7 +407,7 @@ impl<F: FieldExt> BranchChip<F> {
             ));
 
             // node_index is increasing by 1 for is_branch_child
-            let node_index_prev = meta.query_advice(node_index, Rotation::prev());
+            let node_index_prev = meta.query_advice(branch.node_index, Rotation::prev());
             constraints.push((
                 "node index increasing for branch children",
                 q_not_first.clone()
@@ -426,8 +417,8 @@ impl<F: FieldExt> BranchChip<F> {
             ));
 
             // modified_node needs to be the same for all branch nodes
-            let modified_node_prev = meta.query_advice(modified_node, Rotation::prev());
-            let modified_node_cur = meta.query_advice(modified_node, Rotation::cur());
+            let modified_node_prev = meta.query_advice(branch.modified_node, Rotation::prev());
+            let modified_node_cur = meta.query_advice(branch.modified_node, Rotation::cur());
             constraints.push((
                 "modified node the same for all branch children",
                 q_not_first.clone()
@@ -440,9 +431,9 @@ impl<F: FieldExt> BranchChip<F> {
             // We check modified_node = drifted_pos in first branch node and then check
             // in each branch node: modified_node_prev = modified_node_cur and
             // drifted_pos_prev = drifted_pos_cur, this way we can use only Rotation(-1).
-            let drifted_pos_prev = meta.query_advice(drifted_pos, Rotation::prev());
-            let drifted_pos_cur = meta.query_advice(drifted_pos, Rotation::cur());
-            let node_index_cur = meta.query_advice(node_index, Rotation::cur());
+            let drifted_pos_prev = meta.query_advice(branch.drifted_pos, Rotation::prev());
+            let drifted_pos_cur = meta.query_advice(branch.drifted_pos, Rotation::cur());
+            let node_index_cur = meta.query_advice(branch.node_index, Rotation::cur());
             let is_branch_placeholder_s = meta.query_advice(
                 s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM],
                 Rotation::prev(),
@@ -471,10 +462,10 @@ impl<F: FieldExt> BranchChip<F> {
             ));
             // Constraint for modified_node being the same for all branch nodes is above.
 
-            let is_branch_child_cur = meta.query_advice(is_branch_child, Rotation::cur());
-            let is_modified = meta.query_advice(is_modified, Rotation::cur());
-            let is_at_drifted_pos = meta.query_advice(is_at_drifted_pos, Rotation::cur());
-            let drifted_pos = meta.query_advice(drifted_pos, Rotation::cur());
+            let is_branch_child_cur = meta.query_advice(branch.is_child, Rotation::cur());
+            let is_modified = meta.query_advice(branch.is_modified, Rotation::cur());
+            let is_at_drifted_pos = meta.query_advice(branch.is_at_drifted_pos, Rotation::cur());
+            let drifted_pos = meta.query_advice(branch.drifted_pos, Rotation::cur());
             // is_modified is:
             //   0 when node_index_cur != modified_node
             //   1 when node_index_cur == modified_node (it's checked in selectors.rs for
@@ -506,7 +497,7 @@ impl<F: FieldExt> BranchChip<F> {
             // Not merged with gate above because this needs to be checked in the first row
             // too and we need to avoid rotation -1.
             let mut constraints = vec![];
-            let is_branch_init_cur = meta.query_advice(is_branch_init, Rotation::cur());
+            let is_branch_init_cur = meta.query_advice(branch.is_init, Rotation::cur());
 
             let is_branch_placeholder_s = meta.query_advice(
                 s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM],

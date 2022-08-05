@@ -138,6 +138,23 @@ struct StorageLeaf {
 }
 
 #[derive(Clone, Debug)]
+pub(crate) struct BranchCols {
+    pub(crate) is_init: Column<Advice>,
+    pub(crate) is_child: Column<Advice>,
+    pub(crate) is_last_child: Column<Advice>,
+    pub(crate) node_index: Column<Advice>,
+    pub(crate) is_modified: Column<Advice>,   // whether this branch node is modified
+    pub(crate) modified_node: Column<Advice>, // index of the modified node
+    pub(crate) is_at_drifted_pos: Column<Advice>, // needed when leaf is turned into branch
+    pub(crate) drifted_pos: Column<Advice>,   /* needed when leaf is turned into branch - first nibble of
+                                    * the key stored in a leaf (because the existing leaf will
+                                    * jump to this position in added branch) */
+    pub(crate) is_extension_node_s: Column<Advice>, /* contains extension node key (s_advices) and hash of
+                                          * the branch (c_advices) */
+    pub(crate) is_extension_node_c: Column<Advice>,
+}
+
+#[derive(Clone, Debug)]
 pub struct MPTConfig<F> {
     proof_type: ProofTypeCols,
     q_enable: Column<Fixed>,
@@ -145,19 +162,7 @@ pub struct MPTConfig<F> {
     not_first_level: Column<Advice>,
     inter_start_root: Column<Advice>,
     inter_final_root: Column<Advice>,
-    is_branch_init: Column<Advice>,
-    is_branch_child: Column<Advice>,
-    is_last_branch_child: Column<Advice>,
-    node_index: Column<Advice>,
-    is_modified: Column<Advice>,   // whether this branch node is modified
-    modified_node: Column<Advice>, // index of the modified node
-    is_at_drifted_pos: Column<Advice>, // needed when leaf is turned into branch
-    drifted_pos: Column<Advice>,   /* needed when leaf is turned into branch - first nibble of
-                                    * the key stored in a leaf (because the existing leaf will
-                                    * jump to this position in added branch) */
-    is_extension_node_s: Column<Advice>, /* contains extension node key (s_advices) and hash of
-                                          * the branch (c_advices) */
-    is_extension_node_c: Column<Advice>,
+    branch: BranchCols,
     s_main: MainCols,
     c_main: MainCols,
     account_leaf: AccountLeafCols,
@@ -338,18 +343,18 @@ impl<F: FieldExt> MPTConfig<F> {
             is_in_added_branch : meta.advice_column(),
         };
 
-        let is_branch_init = meta.advice_column();
-        let is_branch_child = meta.advice_column();
-        let is_last_branch_child = meta.advice_column();
-
-        let node_index = meta.advice_column();
-        let is_modified = meta.advice_column();
-        let modified_node = meta.advice_column();
-
-        let is_at_drifted_pos = meta.advice_column();
-        let drifted_pos = meta.advice_column();
-        let is_extension_node_s = meta.advice_column();
-        let is_extension_node_c = meta.advice_column();
+        let branch = BranchCols {
+            is_init: meta.advice_column(),
+            is_child: meta.advice_column(),
+            is_last_child: meta.advice_column(),
+            node_index: meta.advice_column(),
+            is_modified: meta.advice_column(),
+            modified_node: meta.advice_column(),
+            is_at_drifted_pos: meta.advice_column(),
+            drifted_pos: meta.advice_column(),
+            is_extension_node_s: meta.advice_column(),
+            is_extension_node_c: meta.advice_column(),
+        };
 
         let s_main = MainCols {
             rlp1: meta.advice_column(),
@@ -432,17 +437,11 @@ impl<F: FieldExt> MPTConfig<F> {
             q_enable,
             q_not_first,
             not_first_level,
-            is_branch_init,
-            is_branch_child,
-            is_last_branch_child,
+            branch.clone(),
             account_leaf.clone(),
             storage_leaf.clone(),
-            is_extension_node_s,
-            is_extension_node_c,
             sel1,
             sel2,
-            is_modified,
-            is_at_drifted_pos,
         );
 
         RootsChip::<F>::configure(
@@ -450,7 +449,7 @@ impl<F: FieldExt> MPTConfig<F> {
             q_enable,
             q_not_first,
             not_first_level,
-            is_branch_init,
+            branch.is_init,
             account_leaf.is_key_s,
             storage_leaf.clone(),
             inter_start_root,
@@ -465,14 +464,7 @@ impl<F: FieldExt> MPTConfig<F> {
             q_not_first,
             s_main.clone(),
             c_main.clone(),
-            is_branch_init,
-            is_branch_child,
-            is_last_branch_child,
-            node_index,
-            is_modified,
-            modified_node,
-            is_at_drifted_pos,
-            drifted_pos,
+            branch.clone(),
             is_node_hashed_s,
             is_node_hashed_c,
             fixed_table.clone(),
@@ -482,10 +474,9 @@ impl<F: FieldExt> MPTConfig<F> {
             meta,
             q_not_first,
             not_first_level,
-            is_branch_init,
+            branch.clone(),
             account_leaf.is_in_added_branch,
             s_main.clone(),
-            modified_node,
             s_main.bytes[IS_BRANCH_C16_POS - RLP_NUM], // TODO: remove
             s_main.bytes[IS_BRANCH_C1_POS - RLP_NUM], // TODO: remove
             key_rlc,
@@ -497,12 +488,9 @@ impl<F: FieldExt> MPTConfig<F> {
             meta,
             q_enable,
             q_not_first,
-            is_branch_child,
+            branch.clone(),
             s_mod_node_hash_rlc,
             s_main.clone(),
-            node_index,
-            is_modified,
-            is_at_drifted_pos,
             sel1,
             is_node_hashed_s,
             acc_r,
@@ -512,12 +500,9 @@ impl<F: FieldExt> MPTConfig<F> {
             meta,
             q_enable,
             q_not_first,
-            is_branch_child,
+            branch.clone(),
             c_mod_node_hash_rlc,
             c_main.clone(),
-            node_index,
-            is_modified,
-            is_at_drifted_pos,
             sel2,
             is_node_hashed_c,
             acc_r,
@@ -529,7 +514,7 @@ impl<F: FieldExt> MPTConfig<F> {
             not_first_level,
             q_not_first,
             account_leaf.is_in_added_branch,
-            is_last_branch_child,
+            branch.is_last_child,
             s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM], // TODO: remove
             s_main.clone(),
             s_mod_node_hash_rlc,
@@ -544,7 +529,7 @@ impl<F: FieldExt> MPTConfig<F> {
             not_first_level,
             q_not_first,
             account_leaf.is_in_added_branch,
-            is_last_branch_child,
+            branch.is_last_child,
             s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM], // TODO: remove
             s_main.clone(),
             c_mod_node_hash_rlc,
@@ -556,7 +541,7 @@ impl<F: FieldExt> MPTConfig<F> {
         ExtensionNodeChip::<F>::configure(
             meta,
             |meta| {
-                let is_extension_node_s = meta.query_advice(is_extension_node_s, Rotation::cur());
+                let is_extension_node_s = meta.query_advice(branch.is_extension_node_s, Rotation::cur());
                 // is_extension_node is in branch init row
                 let is_extension_node = get_is_extension_node(meta, s_main.bytes, -17);
 
@@ -566,7 +551,7 @@ impl<F: FieldExt> MPTConfig<F> {
             not_first_level,
             q_not_first,
             account_leaf.is_in_added_branch,
-            is_branch_init,
+            branch.is_init,
             s_main.clone(),
             c_main.clone(),
             acc_s,
@@ -583,7 +568,7 @@ impl<F: FieldExt> MPTConfig<F> {
         ExtensionNodeChip::<F>::configure(
             meta,
             |meta| {
-                let is_extension_node_c = meta.query_advice(is_extension_node_c, Rotation::cur());
+                let is_extension_node_c = meta.query_advice(branch.is_extension_node_c, Rotation::cur());
                 // is_extension_node is in branch init row
                 let is_extension_node = get_is_extension_node(meta, s_main.bytes, -18);
 
@@ -593,7 +578,7 @@ impl<F: FieldExt> MPTConfig<F> {
             not_first_level,
             q_not_first,
             account_leaf.is_in_added_branch,
-            is_branch_init,
+            branch.is_init,
             s_main.clone(),
             c_main.clone(),
             acc_s,
@@ -611,17 +596,13 @@ impl<F: FieldExt> MPTConfig<F> {
             meta,
             q_not_first,
             not_first_level,
-            is_branch_init,
-            is_branch_child,
+            branch.clone(),
             account_leaf.is_in_added_branch,
             s_main.clone(),
             c_main.clone(),
-            modified_node,
             key_rlc,
             key_rlc_mult,
             mult_diff,
-            is_extension_node_s,
-            is_extension_node_c,
             fixed_table.clone(),
             r_table.clone(),
         );
@@ -632,7 +613,7 @@ impl<F: FieldExt> MPTConfig<F> {
             not_first_level,
             account_leaf.is_in_added_branch,
             storage_leaf.clone(),
-            is_last_branch_child,
+            branch.is_last_child,
             s_main.clone(),
             acc_s,
             acc_mult_s,
@@ -650,7 +631,7 @@ impl<F: FieldExt> MPTConfig<F> {
             not_first_level,
             account_leaf.is_in_added_branch,
             storage_leaf.clone(),
-            is_last_branch_child,
+            branch.is_last_child,
             s_main.clone(), // s_main (and not c_main) is correct
             acc_s,
             acc_mult_s,
@@ -665,7 +646,7 @@ impl<F: FieldExt> MPTConfig<F> {
         BranchRLCInitChip::<F>::configure(
             meta,
             |meta| {
-                meta.query_advice(is_branch_init, Rotation::cur())
+                meta.query_advice(branch.is_init, Rotation::cur())
                     * meta.query_fixed(q_enable, Rotation::cur())
             },
             s_main.clone(),
@@ -680,7 +661,7 @@ impl<F: FieldExt> MPTConfig<F> {
             meta,
             |meta| {
                 let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
-                let is_branch_child = meta.query_advice(is_branch_child, Rotation::cur());
+                let is_branch_child = meta.query_advice(branch.is_child, Rotation::cur());
 
                 q_not_first * is_branch_child
             },
@@ -697,7 +678,7 @@ impl<F: FieldExt> MPTConfig<F> {
             meta,
             |meta| {
                 let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
-                let is_branch_child = meta.query_advice(is_branch_child, Rotation::cur());
+                let is_branch_child = meta.query_advice(branch.is_child, Rotation::cur());
 
                 q_not_first * is_branch_child
             },
@@ -790,7 +771,7 @@ impl<F: FieldExt> MPTConfig<F> {
             key_rlc,
             key_rlc_mult,
             mult_diff,
-            drifted_pos,
+            branch.drifted_pos,
             account_leaf.is_in_added_branch,
             r_table.clone(),
             fixed_table.clone(),
@@ -1036,7 +1017,7 @@ impl<F: FieldExt> MPTConfig<F> {
             key_rlc,
             key_rlc_mult,
             mult_diff,
-            drifted_pos,
+            branch.drifted_pos,
             sel1,
             sel2,
             r_table.clone(),
@@ -1051,16 +1032,7 @@ impl<F: FieldExt> MPTConfig<F> {
             not_first_level,
             inter_start_root,
             inter_final_root,
-            is_branch_init,
-            is_branch_child,
-            is_last_branch_child,
-            node_index,
-            is_modified,
-            modified_node,
-            is_at_drifted_pos,
-            drifted_pos,
-            is_extension_node_s,
-            is_extension_node_c,
+            branch,
             s_main,
             c_main,
             account_leaf,
@@ -1107,14 +1079,14 @@ impl<F: FieldExt> MPTConfig<F> {
     ) -> Result<(), Error> {
         region.assign_advice(
             || "assign is_branch_init".to_string(),
-            self.is_branch_init,
+            self.branch.is_init,
             offset,
             || Ok(F::from(is_branch_init as u64)),
         )?;
 
         region.assign_advice(
             || "assign is_branch_child".to_string(),
-            self.is_branch_child,
+            self.branch.is_child,
             offset,
             || Ok(F::from(is_branch_child as u64)),
         )?;
@@ -1164,35 +1136,35 @@ impl<F: FieldExt> MPTConfig<F> {
 
         region.assign_advice(
             || "assign is_last_branch_child".to_string(),
-            self.is_last_branch_child,
+            self.branch.is_last_child,
             offset,
             || Ok(F::from(is_last_branch_child as u64)),
         )?;
 
         region.assign_advice(
             || "assign node_index".to_string(),
-            self.node_index,
+            self.branch.node_index,
             offset,
             || Ok(F::from(node_index as u64)),
         )?;
 
         region.assign_advice(
             || "assign modified node".to_string(),
-            self.modified_node,
+            self.branch.modified_node,
             offset,
             || Ok(F::from(modified_node as u64)),
         )?;
 
         region.assign_advice(
             || "assign drifted_pos".to_string(),
-            self.drifted_pos,
+            self.branch.drifted_pos,
             offset,
             || Ok(F::from(drifted_pos as u64)),
         )?;
 
         region.assign_advice(
             || "assign is_at_drifted_pos".to_string(),
-            self.is_at_drifted_pos,
+            self.branch.is_at_drifted_pos,
             offset,
             || Ok(F::from((drifted_pos == node_index) as u64)),
         )?;
@@ -1233,7 +1205,7 @@ impl<F: FieldExt> MPTConfig<F> {
 
         region.assign_advice(
             || "assign is_modified".to_string(),
-            self.is_modified,
+            self.branch.is_modified,
             offset,
             || Ok(F::from((modified_node == node_index) as u64)),
         )?;
@@ -1315,13 +1287,13 @@ impl<F: FieldExt> MPTConfig<F> {
         )?;
         region.assign_advice(
             || "assign is extension node s".to_string(),
-            self.is_extension_node_s,
+            self.branch.is_extension_node_s,
             offset,
             || Ok(F::from(is_extension_node_s as u64)),
         )?;
         region.assign_advice(
             || "assign is extension node c".to_string(),
-            self.is_extension_node_c,
+            self.branch.is_extension_node_c,
             offset,
             || Ok(F::from(is_extension_node_c as u64)),
         )?;

@@ -9,7 +9,7 @@ use std::marker::PhantomData;
 use crate::{param::{
     IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS, IS_EXT_LONG_ODD_C16_POS,
     IS_EXT_LONG_ODD_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS, RLP_NUM,
-}, mpt::MainCols};
+}, mpt::{MainCols, BranchCols}};
 
 #[derive(Clone, Debug)]
 pub(crate) struct BranchKeyConfig {}
@@ -28,10 +28,9 @@ impl<F: FieldExt> BranchKeyChip<F> {
         q_not_first: Column<Fixed>,
         not_first_level: Column<Advice>, /* to avoid rotating back when in the first branch (for
                                           * key rlc) */
-        is_branch_init: Column<Advice>,
+        branch: BranchCols,
         is_account_leaf_in_added_branch: Column<Advice>,
         s_main: MainCols,
-        modified_node: Column<Advice>, // index of the modified node
         c16_col: Column<Advice>,
         c1_col: Column<Advice>,
         key_rlc: Column<Advice>, // used first for account address, then for storage key
@@ -57,8 +56,8 @@ impl<F: FieldExt> BranchKeyChip<F> {
 
             let mut constraints = vec![];
 
-            let is_branch_init_prev = meta.query_advice(is_branch_init, Rotation::prev());
-            let modified_node_cur = meta.query_advice(modified_node, Rotation::cur());
+            let is_branch_init_prev = meta.query_advice(branch.is_init, Rotation::prev());
+            let modified_node_cur = meta.query_advice(branch.modified_node, Rotation::cur());
 
             let is_ext_short_c16 = meta.query_advice(
                 s_main.bytes[IS_EXT_SHORT_C16_POS - RLP_NUM],

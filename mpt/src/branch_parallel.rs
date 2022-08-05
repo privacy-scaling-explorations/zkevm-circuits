@@ -6,7 +6,7 @@ use halo2_proofs::{
 use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
-use crate::{helpers::{bytes_expr_into_rlc, key_len_lookup}, mpt::MainCols};
+use crate::{helpers::{bytes_expr_into_rlc, key_len_lookup}, mpt::{MainCols, BranchCols}};
 
 #[derive(Clone, Debug)]
 pub(crate) struct BranchParallelConfig {}
@@ -23,12 +23,9 @@ impl<F: FieldExt> BranchParallelChip<F> {
         meta: &mut ConstraintSystem<F>,
         q_enable: Column<Fixed>,
         q_not_first: Column<Fixed>,
-        is_branch_child: Column<Advice>,
+        branch: BranchCols,
         mod_node_hash_rlc: Column<Advice>,
         main: MainCols,
-        node_index: Column<Advice>,
-        is_modified: Column<Advice>,
-        is_at_drifted_pos: Column<Advice>,
         sel: Column<Advice>,
         is_node_hashed: Column<Advice>,
         acc_r: F,
@@ -45,7 +42,7 @@ impl<F: FieldExt> BranchParallelChip<F> {
             let q_enable = meta.query_fixed(q_enable, Rotation::cur());
             let mut constraints = vec![];
 
-            let is_branch_child_cur = meta.query_advice(is_branch_child, Rotation::cur());
+            let is_branch_child_cur = meta.query_advice(branch.is_child, Rotation::cur());
             let rlp2 = meta.query_advice(main.rlp2, Rotation::cur());
 
             // Note that s_rlp1 and c_rlp1 store RLP stream length data (subtracted
@@ -109,9 +106,9 @@ impl<F: FieldExt> BranchParallelChip<F> {
             let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
 
             let mut constraints = vec![];
-            let is_branch_child_cur = meta.query_advice(is_branch_child, Rotation::cur());
+            let is_branch_child_cur = meta.query_advice(branch.is_child, Rotation::cur());
 
-            let node_index_cur = meta.query_advice(node_index, Rotation::cur());
+            let node_index_cur = meta.query_advice(branch.node_index, Rotation::cur());
 
             // mod_node_hash_rlc is the same for all is_branch_child rows.
             // This is to enable easier comparison when in leaf row
@@ -132,8 +129,8 @@ impl<F: FieldExt> BranchParallelChip<F> {
 
             // s_mod_node_hash_rlc and c_mode_node_hash_rlc correspond to RLC of s_advices
             // and c_advices at the modified index
-            let is_modified = meta.query_advice(is_modified, Rotation::cur());
-            let is_at_drifted_pos = meta.query_advice(is_at_drifted_pos, Rotation::cur());
+            let is_modified = meta.query_advice(branch.is_modified, Rotation::cur());
+            let is_at_drifted_pos = meta.query_advice(branch.is_at_drifted_pos, Rotation::cur());
 
             // When it's NOT placeholder branch, is_modified = is_at_drifted_pos.
             // When it's placeholder branch, is_modified != is_at_drifted_pos.
@@ -211,7 +208,7 @@ impl<F: FieldExt> BranchParallelChip<F> {
         
         let sel = |meta: &mut VirtualCells<F>| {
             let q_enable = meta.query_fixed(q_enable, Rotation::cur());
-            let is_branch_child_cur = meta.query_advice(is_branch_child, Rotation::cur());
+            let is_branch_child_cur = meta.query_advice(branch.is_child, Rotation::cur());
             let is_node_hashed = meta.query_advice(is_node_hashed, Rotation::cur());
             
             q_enable * is_branch_child_cur * is_node_hashed
