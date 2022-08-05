@@ -1,7 +1,6 @@
 use eth_types::Field;
 use halo2_proofs::circuit::AssignedCell;
 use itertools::Itertools;
-use std::convert::TryInto;
 
 /// The Keccak Pi step
 ///

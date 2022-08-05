@@ -5,7 +5,7 @@ use halo2_proofs::{
     poly::Rotation,
 };
 use itertools::Itertools;
-use std::{convert::TryInto, marker::PhantomData};
+use std::marker::PhantomData;
 
 #[derive(Clone, Debug)]
 pub struct XiConfig<F> {
@@ -110,7 +110,6 @@ mod tests {
     use halo2_proofs::plonk::{Advice, Column, ConstraintSystem, Error};
     use halo2_proofs::{circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit};
     use itertools::Itertools;
-    use std::convert::TryInto;
     use std::marker::PhantomData;
 
     #[test]

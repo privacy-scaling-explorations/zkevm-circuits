@@ -8,7 +8,6 @@ use halo2_proofs::{
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
     poly::Rotation,
 };
-use std::convert::TryInto;
 
 pub type Byte = u8;
 pub type AssignedByte<F> = AssignedCell<F, F>;

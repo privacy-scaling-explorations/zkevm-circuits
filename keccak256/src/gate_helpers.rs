@@ -1,6 +1,5 @@
 use eth_types::Field;
 use num_bigint::BigUint;
-use std::convert::TryInto;
 
 /// Convert a bigUint value to FieldExt
 ///
