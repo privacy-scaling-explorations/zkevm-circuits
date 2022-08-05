@@ -104,8 +104,8 @@ impl Opcode for Sha3 {
     }
 }
 
-#[cfg(test)]
-mod sha3_tests {
+#[cfg(any(feature = "test", test))]
+pub mod sha3_tests {
     use eth_types::{bytecode, evm_types::OpcodeId, geth_types::GethData, Bytecode, Word};
     use ethers_core::utils::keccak256;
     use mock::{
@@ -120,18 +120,9 @@ mod sha3_tests {
         operation::{MemoryOp, RWCounter, StackOp, RW},
     };
 
-    enum MemoryKind {
-        Empty,
-        LessThanSize,
-        EqualToSize,
-        MoreThanSize,
-    }
-
-    fn rand_bytes(size: usize) -> Vec<u8> {
-        (0..size).map(|_| random()).collect::<Vec<u8>>()
-    }
-
-    fn test_ok(offset: usize, size: usize, mem_kind: MemoryKind) {
+    /// Generate bytecode for SHA3 opcode after having populated sufficient
+    /// memory given the offset and size arguments for SHA3.
+    pub fn gen_sha3_code(offset: usize, size: usize, mem_kind: MemoryKind) -> (Bytecode, Vec<u8>) {
         let mut rng = rand::thread_rng();
         let data_len = match mem_kind {
             MemoryKind::LessThanSize => offset + rng.gen_range(0..size),
@@ -158,8 +149,6 @@ mod sha3_tests {
             code.push(32, (32 * i).into());
             code.write_op(OpcodeId::MSTORE);
         }
-        let memory_len = memory.len();
-
         // append SHA3 related opcodes at the tail end.
         let code_tail = bytecode! {
             PUSH32(size)
@@ -168,6 +157,28 @@ mod sha3_tests {
             STOP
         };
         code.append(&code_tail);
+        (code, memory)
+    }
+
+    /// Memory of a context with respect to the input size to SHA3.
+    pub enum MemoryKind {
+        /// Variant defining empty memory.
+        Empty,
+        /// Variant defining memory length being less than size.
+        LessThanSize,
+        /// Variant defining memory length being equal to size.
+        EqualToSize,
+        /// Variant defining memory length being more than size.
+        MoreThanSize,
+    }
+
+    fn rand_bytes(size: usize) -> Vec<u8> {
+        (0..size).map(|_| random()).collect::<Vec<u8>>()
+    }
+
+    fn test_ok(offset: usize, size: usize, mem_kind: MemoryKind) {
+        let (code, memory) = gen_sha3_code(offset, size, mem_kind);
+        let memory_len = memory.len();
 
         // The memory that is hashed.
         let mut memory_view = memory
