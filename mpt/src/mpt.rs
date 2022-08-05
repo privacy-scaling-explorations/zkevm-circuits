@@ -156,26 +156,26 @@ pub(crate) struct BranchCols {
 
 #[derive(Clone, Debug)]
 pub struct MPTConfig<F> {
-    proof_type: ProofTypeCols,
-    q_enable: Column<Fixed>,
-    q_not_first: Column<Fixed>, // not first row
-    not_first_level: Column<Advice>,
-    inter_start_root: Column<Advice>,
-    inter_final_root: Column<Advice>,
-    branch: BranchCols,
-    s_main: MainCols,
-    c_main: MainCols,
-    account_leaf: AccountLeafCols,
-    storage_leaf: StorageLeafCols,
-    s_mod_node_hash_rlc: Column<Advice>, /* modified node s_advices RLC when s_advices present
+    pub(crate) proof_type: ProofTypeCols,
+    pub(crate) q_enable: Column<Fixed>,
+    pub(crate) q_not_first: Column<Fixed>, // not first row
+    pub(crate) not_first_level: Column<Advice>,
+    pub(crate) inter_start_root: Column<Advice>,
+    pub(crate) inter_final_root: Column<Advice>,
+    pub(crate) branch: BranchCols,
+    pub(crate) s_main: MainCols,
+    pub(crate) c_main: MainCols,
+    pub(crate) account_leaf: AccountLeafCols,
+    pub(crate) storage_leaf: StorageLeafCols,
+    pub(crate) s_mod_node_hash_rlc: Column<Advice>, /* modified node s_advices RLC when s_advices present
                                           * hash (used also for leaf long/short) */
-    c_mod_node_hash_rlc: Column<Advice>, /* modified node c_advices RLC when c_advices present
+    pub(crate) c_mod_node_hash_rlc: Column<Advice>, /* modified node c_advices RLC when c_advices present
                                           * hash (used also for leaf long/short) */
-    acc_s: Column<Advice>,      // for branch s and account leaf
-    acc_mult_s: Column<Advice>, // for branch s and account leaf
-    acc_c: Column<Advice>,      // for branch c
-    acc_mult_c: Column<Advice>, // for branch c
-    acc_r: F,
+    pub(crate) acc_s: Column<Advice>,      // for branch s and account leaf
+    pub(crate) acc_mult_s: Column<Advice>, // for branch s and account leaf
+    pub(crate) acc_c: Column<Advice>,      // for branch c
+    pub(crate) acc_mult_c: Column<Advice>, // for branch c
+    pub(crate) acc_r: F,
     // sel1 and sel2 in branch children: denote whether there is no leaf at is_modified (when value
     // is added or deleted from trie - but no branch is added or turned into leaf)
     // sel1 and sel2 in storage leaf key: key_rlc_prev and key_rlc_mult_prev
@@ -183,21 +183,21 @@ pub struct MPTConfig<F> {
     // in the branch above): whether leaf is just a placeholder
     // sel1 and sel2 in account leaf key specifies whether nonce / balance are short / long (check
     // nonce balance row: offset - 1)
-    sel1: Column<Advice>,
-    sel2: Column<Advice>,
-    is_node_hashed_s: Column<Advice>,
-    is_node_hashed_c: Column<Advice>,
-    node_mult_diff_s: Column<Advice>,
-    node_mult_diff_c: Column<Advice>,
+    pub(crate) sel1: Column<Advice>,
+    pub(crate) sel2: Column<Advice>,
+    pub(crate) is_node_hashed_s: Column<Advice>,
+    pub(crate) is_node_hashed_c: Column<Advice>,
+    pub(crate) node_mult_diff_s: Column<Advice>,
+    pub(crate) node_mult_diff_c: Column<Advice>,
     r_table: Vec<Expression<F>>,
     // key_rlc & key_rlc_mult used for account address, for storage key,
     // and for mult_diff_nonce/mult_diff_balance in account_leaf_nonce_balance
-    key_rlc: Column<Advice>,
-    key_rlc_mult: Column<Advice>,
-    mult_diff: Column<Advice>,
+    pub(crate) key_rlc: Column<Advice>,
+    pub(crate) key_rlc_mult: Column<Advice>,
+    pub(crate) mult_diff: Column<Advice>,
     keccak_table: [Column<Fixed>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
     fixed_table: [Column<Fixed>; 3],
-    address_rlc: Column<Advice>, /* The same in all rows of a modification. The same as
+    pub(crate) address_rlc: Column<Advice>, /* The same in all rows of a modification. The same as
                                   * address_rlc computed in the account leaf key row. Needed to
                                   * enable lookup for storage key/value (to have address RLC in
                                   * the same row as storage key/value). */
@@ -222,49 +222,49 @@ Such accumulated value is for example key_rlc which stores the intermediate key 
 and extension node block a new intermediate key RLC is computed).
 Also, for example, modified_node is given in branch init but needed to be set in every branch children row.
 */
-struct ProofVariables<F> {
-    modified_node: u8, // branch child that is being changed, it is the same in all branch children rows
-    s_mod_node_hash_rlc: F, // hash rlc of the modified_node for S proof, it is the same in all branch children rows
-    c_mod_node_hash_rlc: F, // hash rlc of the modified_node for C proof, it is the same in all branch children rows
-    node_index: u8, // branch child index
-    acc_s: F, // RLC accumulator for the whole node (taking into account all RLP bytes of the node)
-    acc_mult_s: F, // multiplier for acc_s
-    acc_account_s: F,
-    acc_mult_account_s: F,
-    acc_account_c: F,
-    acc_mult_account_c: F,
-    acc_nonce_balance_s: F,
-    acc_mult_nonce_balance_s: F,
-    acc_nonce_balance_c: F,
-    acc_mult_nonce_balance_c: F,
-    acc_c: F, // RLC accumulator for the whole node (taking into account all RLP bytes of the node)
-    acc_mult_c: F, // multiplier for acc_c
-    key_rlc: F, /* used first for account address, then for storage key */
-    key_rlc_mult: F, // multiplier for key_rlc
-    extension_node_rlc: F, // RLC accumulator for extension node
-    key_rlc_prev: F, /* for leaf after placeholder extension/branch, we need to go one level
+pub(crate) struct ProofVariables<F> {
+    pub(crate) modified_node: u8, // branch child that is being changed, it is the same in all branch children rows
+    pub(crate) s_mod_node_hash_rlc: F, // hash rlc of the modified_node for S proof, it is the same in all branch children rows
+    pub(crate) c_mod_node_hash_rlc: F, // hash rlc of the modified_node for C proof, it is the same in all branch children rows
+    pub(crate) node_index: u8, // branch child index
+    pub(crate) acc_s: F, // RLC accumulator for the whole node (taking into account all RLP bytes of the node)
+    pub(crate) acc_mult_s: F, // multiplier for acc_s
+    pub(crate) acc_account_s: F,
+    pub(crate) acc_mult_account_s: F,
+    pub(crate) acc_account_c: F,
+    pub(crate) acc_mult_account_c: F,
+    pub(crate) acc_nonce_balance_s: F,
+    pub(crate) acc_mult_nonce_balance_s: F,
+    pub(crate) acc_nonce_balance_c: F,
+    pub(crate) acc_mult_nonce_balance_c: F,
+    pub(crate) acc_c: F, // RLC accumulator for the whole node (taking into account all RLP bytes of the node)
+    pub(crate) acc_mult_c: F, // multiplier for acc_c
+    pub(crate) key_rlc: F, /* used first for account address, then for storage key */
+    pub(crate) key_rlc_mult: F, // multiplier for key_rlc
+    pub(crate) extension_node_rlc: F, // RLC accumulator for extension node
+    pub(crate) key_rlc_prev: F, /* for leaf after placeholder extension/branch, we need to go one level
                       * back to get previous key_rlc */
-    key_rlc_mult_prev: F,
-    mult_diff: F, // power of randomness r: multiplier_curr = multiplier_prev * mult_diff
-    key_rlc_sel: bool, /* If true, nibble is multiplied by 16, otherwise by 1. */
-    is_branch_s_placeholder: bool, // whether S branch is just a placeholder
-    is_branch_c_placeholder: bool, // whether C branch is just a placeholder
-    drifted_pos: u8, /* needed when leaf turned into branch and leaf moves into a branch where
+    pub(crate) key_rlc_mult_prev: F,
+    pub(crate) mult_diff: F, // power of randomness r: multiplier_curr = multiplier_prev * mult_diff
+    pub(crate) key_rlc_sel: bool, /* If true, nibble is multiplied by 16, otherwise by 1. */
+    pub(crate) is_branch_s_placeholder: bool, // whether S branch is just a placeholder
+    pub(crate) is_branch_c_placeholder: bool, // whether C branch is just a placeholder
+    pub(crate) drifted_pos: u8, /* needed when leaf turned into branch and leaf moves into a branch where
                       * it's at drifted_pos position */
-    rlp_len_rem_s: i32, /* branch RLP length remainder, in each branch children row this value
+    pub(crate) rlp_len_rem_s: i32, /* branch RLP length remainder, in each branch children row this value
                          * is subtracted by the number of RLP bytes in
                          * this row (1 or 33) */
-    rlp_len_rem_c: i32,
-    is_extension_node: bool,
-    is_even: bool,
-    is_odd: bool,
-    is_short: bool,
-    is_long: bool,
-    rlc1: F,
-    rlc2: F,
-    nonce_value_s: F,
-    balance_value_s: F,
-    before_account_leaf: bool,
+    pub(crate) rlp_len_rem_c: i32,
+    pub(crate) is_extension_node: bool,
+    pub(crate) is_even: bool,
+    pub(crate) is_odd: bool,
+    pub(crate) is_short: bool,
+    pub(crate) is_long: bool,
+    pub(crate) rlc1: F,
+    pub(crate) rlc2: F,
+    pub(crate) nonce_value_s: F,
+    pub(crate) balance_value_s: F,
+    pub(crate) before_account_leaf: bool,
 }
 
 impl<F: FieldExt> ProofVariables<F> {
@@ -1471,7 +1471,54 @@ impl<F: FieldExt> MPTConfig<F> {
         Ok(())
     }
 
-    fn assign_acc(
+    pub(crate) fn compute_acc_and_mult(
+        &self,
+        row: &Vec<u8>, acc: &mut F, mult: &mut F, start: usize, len: usize) {
+        for i in 0..len {
+            *acc += F::from(row[start + i] as u64) * *mult;
+            *mult *= self.acc_r;
+        }
+    }
+
+    pub(crate) fn compute_rlc_and_assign(
+        &self,
+        region: &mut Region<'_, F>,
+        row: &Vec<u8>,
+        pv: &mut ProofVariables<F>,
+        offset: usize,
+        s_start: usize, c_start: usize, len_s: usize, len_c: usize) -> Result<(), Error> {
+        self.compute_acc_and_mult(
+            row,
+            &mut pv.rlc1,
+            &mut F::one(),
+            s_start,
+            len_s,
+        );
+        region.assign_advice(
+            || "assign s_mod_node_hash_rlc".to_string(),
+            self.s_mod_node_hash_rlc,
+            offset,
+            || Ok(pv.rlc1),
+        )?;
+
+        self.compute_acc_and_mult(
+            row,
+            &mut pv.rlc2,
+            &mut F::one(),
+            c_start,
+            len_c,
+        );
+        region.assign_advice(
+            || "assign c_mod_node_hash_rlc".to_string(),
+            self.c_mod_node_hash_rlc,
+            offset,
+            || Ok(pv.rlc2),
+        )?;
+
+        Ok(())
+    }
+
+    pub(crate) fn assign_acc(
         &self,
         region: &mut Region<'_, F>,
         acc_s: F,
@@ -1519,51 +1566,6 @@ impl<F: FieldExt> MPTConfig<F> {
                 |mut region| {
                     let mut offset = 0;
                     let mut pv = ProofVariables::new();
-
-                    let compute_acc_and_mult =
-                        |row: &Vec<u8>, acc: &mut F, mult: &mut F, start: usize, len: usize| {
-                            for i in 0..len {
-                                *acc += F::from(row[start + i] as u64) * *mult;
-                                *mult *= self.acc_r;
-                            }
-                        };
-
-                    let compute_rlc_and_assign =
-                        |region: &mut Region<'_, F>,
-                         row: &Vec<u8>,
-                         pv: &mut ProofVariables<F>,
-                         offset: usize,
-                         s_start: usize, c_start: usize, len_s: usize, len_c: usize| -> Result<(), Error> {
-                            compute_acc_and_mult(
-                                row,
-                                &mut pv.rlc1,
-                                &mut F::one(),
-                                s_start,
-                                len_s,
-                            );
-                            region.assign_advice(
-                                || "assign s_mod_node_hash_rlc".to_string(),
-                                self.s_mod_node_hash_rlc,
-                                offset,
-                                || Ok(pv.rlc1),
-                            )?;
-
-                            compute_acc_and_mult(
-                                row,
-                                &mut pv.rlc2,
-                                &mut F::one(),
-                                c_start,
-                                len_c,
-                            );
-                            region.assign_advice(
-                                || "assign c_mod_node_hash_rlc".to_string(),
-                                self.c_mod_node_hash_rlc,
-                                offset,
-                                || Ok(pv.rlc2),
-                            )?;
-
-                            Ok(())
-                        };
 
                     // filter out rows that are just to be hashed
                     for (ind, row) in witness.iter().filter(|r| r[r.len() - 1] != 5).enumerate() {
@@ -1909,7 +1911,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                         if pv.is_even && pv.is_long {
                                             // extension node part:
                                             let key_len = ext_row[key_len_pos] as usize - 128 - 1; // -1 because the first byte is 0 (is_even)
-                                            compute_acc_and_mult(
+                                            self.compute_acc_and_mult(
                                                 ext_row,
                                                 &mut pv.extension_node_rlc,
                                                 &mut pv.key_rlc_mult,
@@ -2017,7 +2019,7 @@ impl<F: FieldExt> MPTConfig<F> {
 
                                             let key_len = ext_row[key_len_pos] as usize - 128;
 
-                                            compute_acc_and_mult(
+                                            self.compute_acc_and_mult(
                                                 ext_row,
                                                 &mut pv.extension_node_rlc,
                                                 &mut pv.key_rlc_mult,
@@ -2317,7 +2319,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                         *key_rlc_mult *= self.acc_r;
 
                                         let len = row[start] as usize - 128;
-                                        compute_acc_and_mult(
+                                        self.compute_acc_and_mult(
                                             row,
                                             key_rlc,
                                             key_rlc_mult,
@@ -2326,7 +2328,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                         );
                                     } else {
                                         let len = row[start] as usize - 128;
-                                        compute_acc_and_mult(
+                                        self.compute_acc_and_mult(
                                             row,
                                             key_rlc,
                                             key_rlc_mult,
@@ -2378,7 +2380,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                     // last_level
                                     len = 2;
                                 }
-                                compute_acc_and_mult(
+                                self.compute_acc_and_mult(
                                     row,
                                     &mut pv.acc_s,
                                     &mut pv.acc_mult_s,
@@ -2487,7 +2489,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                 assign_long_short(&mut region, typ);
 
                                 // Leaf RLC
-                                compute_acc_and_mult(
+                                self.compute_acc_and_mult(
                                     row,
                                     &mut pv.acc_s,
                                     &mut pv.acc_mult_s,
@@ -2502,7 +2504,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                 if is_long {
                                     start = 2;
                                 }
-                                compute_acc_and_mult(
+                                self.compute_acc_and_mult(
                                     row,
                                     &mut pv.acc_c,
                                     &mut pv.acc_mult_c,
@@ -2639,196 +2641,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                     offset,
                                 )?;
                             } else if row[row.len() - 1] == 7 || row[row.len() - 1] == 8 {
-                                // self.account_leaf_nonce_balance_config_s
-
-                                let mut nonce_len: usize = 1;
-                                // Note: when nonce or balance is 0, the actual value stored in RLP encoding is 128.
-                                if row[S_START] > 128 {
-                                    nonce_len = row[S_START] as usize - 128 + 1; // +1 for byte with length info
-                                    region.assign_advice(
-                                        || "assign sel1".to_string(),
-                                        self.sel1,
-                                        offset
-                                            - (ACCOUNT_LEAF_NONCE_BALANCE_S_IND
-                                                - ACCOUNT_LEAF_KEY_S_IND)
-                                                as usize,
-                                        || Ok(F::one()),
-                                    )?;
-                                } else {
-                                    region.assign_advice(
-                                        || "assign sel1".to_string(),
-                                        self.sel1,
-                                        offset
-                                            - (ACCOUNT_LEAF_NONCE_BALANCE_C_IND
-                                                - ACCOUNT_LEAF_KEY_C_IND)
-                                                as usize,
-                                        || Ok(F::zero()),
-                                    )?;
-                                }
-
-                                let mut balance_len: usize = 1;
-                                if row[C_START] > 128 {
-                                    balance_len = row[C_START] as usize - 128 + 1; // +1 for byte with length info
-                                    region.assign_advice(
-                                        || "assign sel2".to_string(),
-                                        self.sel2,
-                                        offset
-                                            - (ACCOUNT_LEAF_NONCE_BALANCE_S_IND
-                                                - ACCOUNT_LEAF_KEY_S_IND)
-                                                as usize,
-                                        || Ok(F::one()),
-                                    )?;
-                                } else {
-                                    region.assign_advice(
-                                        || "assign sel2".to_string(),
-                                        self.sel2,
-                                        offset
-                                            - (ACCOUNT_LEAF_NONCE_BALANCE_C_IND
-                                                - ACCOUNT_LEAF_KEY_C_IND)
-                                                as usize,
-                                        || Ok(F::zero()),
-                                    )?;
-                                }
-
-                                // nonce value RLC and balance value RLC:
-                                pv.rlc1 = F::zero();
-                                pv.rlc2 = F::zero();
-                                // Note: Below, it first computes and assigns the nonce RLC and balance RLC without
-                                // RLP specific byte (there is a RLP specific byte when nonce/balance RLP length > 1).
-                                if nonce_len == 1 && balance_len == 1 {
-                                    compute_rlc_and_assign(&mut region, row, &mut pv, offset, S_START, C_START, HASH_WIDTH, HASH_WIDTH)?;
-                                } else if nonce_len > 1 && balance_len == 1 {
-                                    compute_rlc_and_assign(&mut region, row, &mut pv, offset, S_START+1, C_START, HASH_WIDTH-1, HASH_WIDTH)?;
-                                } else if nonce_len == 1 && balance_len > 1 {
-                                    compute_rlc_and_assign(&mut region, row, &mut pv, offset, S_START, C_START+1, HASH_WIDTH, HASH_WIDTH-1)?;
-                                } else if nonce_len > 1 && balance_len > 1 {
-                                    compute_rlc_and_assign(&mut region, row, &mut pv, offset, S_START+1, C_START+1, HASH_WIDTH-1, HASH_WIDTH-1)?;
-                                }
-                                if row[row.len() - 1] == 7 {
-                                    pv.nonce_value_s = pv.rlc1;
-                                    pv.balance_value_s = pv.rlc2;
-                                }
-
-                                let mut acc_account;
-                                let mut acc_mult_account;
-                                if row[row.len() - 1] == 7 {
-                                    acc_account = pv.acc_account_s;
-                                    acc_mult_account = pv.acc_mult_account_s;
-                                    
-                                } else {
-                                    acc_account = pv.acc_account_c;
-                                    acc_mult_account = pv.acc_mult_account_c;
-
-                                    // assign nonce S
-                                    region.assign_advice(
-                                        || "assign sel1".to_string(),
-                                        self.sel1,
-                                        offset,
-                                        || Ok(pv.nonce_value_s),
-                                    )?;
-                                    // assign balance S
-                                    region.assign_advice(
-                                        || "assign sel2".to_string(),
-                                        self.sel2,
-                                        offset,
-                                        || Ok(pv.balance_value_s),
-                                    )?;
-                                }
-
-                                // s_rlp1, s_rlp2
-                                compute_acc_and_mult(
-                                    row,
-                                    &mut acc_account,
-                                    &mut acc_mult_account,
-                                    S_START - 2,
-                                    2,
-                                );
-                                // c_rlp1, c_rlp2
-                                compute_acc_and_mult(
-                                    row,
-                                    &mut acc_account,
-                                    &mut acc_mult_account,
-                                    C_START - 2,
-                                    2,
-                                );
-                                // nonce contribution to leaf RLC:
-                                /*
-                                If nonce stream length is 1, it doesn't have
-                                the first byte with length info. Same for balance.
-                                There are four possibilities:
-                                  - nonce is short (length 1), balance is short (length 1)
-                                  - nonce is short, balance is long
-                                  - nonce is long, balance is short
-                                  - nonce is long, balance is long
-                                We put this info in sel1/sel2 in the key row (sel1/sel2 are
-                                    already used for other purposes in nonce balance row):
-                                    - sel1/sel2: 0/0 (how to check: (1-sel1)*(1-sel2))
-                                    - sel1/sel2: 0/1 (how to check: (1-sel1)*sel2)
-                                    - sel1/sel2: 1/0 (how to check: sel1*(1-sel2))
-                                    - sel1/sel2: 1/1 (how to check: sel1*sel2)
-                                */
-                                
-                                compute_acc_and_mult(
-                                    row,
-                                    &mut acc_account,
-                                    &mut acc_mult_account,
-                                    S_START,
-                                    nonce_len,
-                                );
-
-                                let mut mult_diff_s = F::one();
-                                for _ in 0..nonce_len + 4 {
-                                    // + 4 because of s_rlp1, s_rlp2, c_rlp1, c_rlp2
-                                    mult_diff_s *= self.acc_r;
-                                }
-
-                                // It's easier to constrain (in account_leaf_nonce_balance.rs)
-                                // the multiplier if we store acc_mult both after nonce and after
-                                // balance.
-                                let acc_mult_tmp = acc_mult_account;
-                                
-                                // balance contribution to leaf RLC 
-                                compute_acc_and_mult(
-                                    row,
-                                    &mut acc_account,
-                                    &mut acc_mult_account,
-                                    C_START,
-                                    balance_len,
-                                );
-
-                                let mut mult_diff_c = F::one();
-                                for _ in 0..balance_len {
-                                    mult_diff_c *= self.acc_r;
-                                }
-
-                                self.assign_acc(
-                                    &mut region,
-                                    acc_account,
-                                    acc_mult_account,
-                                    F::zero(),
-                                    acc_mult_tmp,
-                                    offset,
-                                )?;
-
-                                region.assign_advice(
-                                    || "assign mult diff".to_string(),
-                                    self.acc_c, // assigning key_rlc leads into PoisonedConstraint
-                                    offset,
-                                    || Ok(mult_diff_s),
-                                )?;
-                                region.assign_advice(
-                                    || "assign mult diff".to_string(),
-                                    self.key_rlc_mult,
-                                    offset,
-                                    || Ok(mult_diff_c),
-                                )?;
-                                if row[row.len() - 1] == 7 {
-                                    pv.acc_nonce_balance_s = acc_account;
-                                    pv.acc_mult_nonce_balance_s = acc_mult_account;
-                                } else {
-                                    pv.acc_nonce_balance_c = acc_account;
-                                    pv.acc_mult_nonce_balance_c = acc_mult_account;
-                                }
+                                self.account_leaf_nonce_balance_config_s.assign(&mut region, self, &mut pv, row, offset);
                             } else if row[row.len() - 1] == 9 || row[row.len() - 1] == 11 {
                                 if row[row.len() - 1] == 9 {
                                     pv.acc_s = pv.acc_nonce_balance_s;
@@ -2837,7 +2650,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                     // storage root RLC and code hash RLC
                                     pv.rlc1 = F::zero();
                                     pv.rlc2 = F::zero();
-                                    compute_rlc_and_assign(&mut region, row, &mut pv, offset, S_START, C_START, HASH_WIDTH, HASH_WIDTH);
+                                    self.compute_rlc_and_assign(&mut region, row, &mut pv, offset, S_START, C_START, HASH_WIDTH, HASH_WIDTH);
                                 } else {
                                     pv.acc_s = pv.acc_nonce_balance_c;
                                     pv.acc_mult_s = pv.acc_mult_nonce_balance_c;
@@ -2860,10 +2673,10 @@ impl<F: FieldExt> MPTConfig<F> {
                                     // assign storage root RLC and code hash RLC for this row
                                     pv.rlc1 = F::zero();
                                     pv.rlc2 = F::zero();
-                                    compute_rlc_and_assign(&mut region, row, &mut pv, offset, S_START, C_START, HASH_WIDTH, HASH_WIDTH);
+                                    self.compute_rlc_and_assign(&mut region, row, &mut pv, offset, S_START, C_START, HASH_WIDTH, HASH_WIDTH);
                                 }
                                 // storage
-                                compute_acc_and_mult(
+                                self.compute_acc_and_mult(
                                     row,
                                     &mut pv.acc_s,
                                     &mut pv.acc_mult_s,
@@ -2871,7 +2684,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                     HASH_WIDTH + 1,
                                 );
                                 // code hash
-                                compute_acc_and_mult(
+                                self.compute_acc_and_mult(
                                     row,
                                     &mut pv.acc_s,
                                     &mut pv.acc_mult_s,
@@ -2906,7 +2719,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                 } else {
                                     len = (row[1] - 128) as usize + 2;
                                 }
-                                compute_acc_and_mult(
+                                self.compute_acc_and_mult(
                                     row,
                                     &mut pv.acc_s,
                                     &mut pv.acc_mult_s,
@@ -2942,7 +2755,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                     } else {
                                         len = (row[2] - 128) as usize + 3;
                                     }
-                                    compute_acc_and_mult(
+                                    self.compute_acc_and_mult(
                                         row,
                                         &mut pv.acc_s,
                                         &mut pv.acc_mult_s,
@@ -2960,7 +2773,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                         start = C_START;
                                         len = HASH_WIDTH;
                                     }
-                                    compute_acc_and_mult(
+                                    self.compute_acc_and_mult(
                                         row,
                                         &mut pv.acc_c,
                                         &mut pv.acc_mult_c,
@@ -2997,7 +2810,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                         start = C_START;
                                         len = HASH_WIDTH;
                                     }
-                                    compute_acc_and_mult(
+                                    self.compute_acc_and_mult(
                                         row,
                                         &mut pv.acc_c,
                                         &mut pv.acc_mult_c,
@@ -3027,7 +2840,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                 pv.acc_s = F::zero();
                                 pv.acc_mult_s = F::one();
                                 let len = (row[2] - 128) as usize + 3;
-                                compute_acc_and_mult(
+                                self.compute_acc_and_mult(
                                     row,
                                     &mut pv.acc_s,
                                     &mut pv.acc_mult_s,

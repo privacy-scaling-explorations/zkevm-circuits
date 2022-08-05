@@ -1,11 +1,11 @@
 use halo2_proofs::{
-    plonk::{Advice, Column, ConstraintSystem, Expression, Fixed, VirtualCells},
-    poly::Rotation,
+    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
+    poly::{Rotation}, circuit::Region,
 };
 use pairing::arithmetic::FieldExt;
 
 use crate::{
-    mpt::FixedTableTag,
+    mpt::{FixedTableTag, ProofVariables, MPTConfig},
     param::{
         HASH_WIDTH, IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS, IS_EXT_LONG_ODD_C16_POS,
         IS_EXT_LONG_ODD_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS, RLP_NUM,
@@ -250,3 +250,4 @@ pub(crate) fn bytes_expr_into_rlc<F: FieldExt>(message: &[Expression<F>], r: F) 
 
     rlc
 }
+

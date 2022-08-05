@@ -1,5 +1,5 @@
 use halo2_proofs::{
-    circuit::Chip,
+    circuit::Region,
     plonk::{Advice, Column, ConstraintSystem, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
@@ -9,10 +9,10 @@ use std::marker::PhantomData;
 
 use crate::{
     helpers::{compute_rlc, get_bool_constraint, key_len_lookup, mult_diff_lookup, range_lookups},
-    mpt::{FixedTableTag, MainCols, ProofTypeCols},
+    mpt::{FixedTableTag, MainCols, ProofTypeCols, ProofVariables, MPTConfig},
     param::{
         ACCOUNT_LEAF_KEY_C_IND, ACCOUNT_LEAF_KEY_S_IND, ACCOUNT_LEAF_NONCE_BALANCE_C_IND,
-        ACCOUNT_LEAF_NONCE_BALANCE_S_IND, HASH_WIDTH, ACCOUNT_NON_EXISTING_IND,
+        ACCOUNT_LEAF_NONCE_BALANCE_S_IND, HASH_WIDTH, ACCOUNT_NON_EXISTING_IND, S_START, C_START,
     },
 };
 
@@ -727,10 +727,201 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
     }
 
     pub fn assign(
-        meta: &mut ConstraintSystem<F>,
-        proof_type: ProofTypeCols,
+        &self,
+        region: &mut Region<'_, F>,
+        mpt_config: &MPTConfig<F>,
+        pv: &mut ProofVariables<F>,
+        row: &Vec<u8>,
+        offset: usize,
     ) {
-     
+        let mut nonce_len: usize = 1;
+        // Note: when nonce or balance is 0, the actual value stored in RLP encoding is 128.
+        if row[S_START] > 128 {
+            nonce_len = row[S_START] as usize - 128 + 1; // +1 for byte with length info
+            region.assign_advice(
+                || "assign sel1".to_string(),
+                mpt_config.sel1,
+                offset
+                    - (ACCOUNT_LEAF_NONCE_BALANCE_S_IND
+                        - ACCOUNT_LEAF_KEY_S_IND)
+                        as usize,
+                || Ok(F::one()),
+            ).ok();
+        } else {
+            region.assign_advice(
+                || "assign sel1".to_string(),
+                mpt_config.sel1,
+                offset
+                    - (ACCOUNT_LEAF_NONCE_BALANCE_C_IND
+                        - ACCOUNT_LEAF_KEY_C_IND)
+                        as usize,
+                || Ok(F::zero()),
+            ).ok();
+        }
+
+        let mut balance_len: usize = 1;
+        if row[C_START] > 128 {
+            balance_len = row[C_START] as usize - 128 + 1; // +1 for byte with length info
+            region.assign_advice(
+                || "assign sel2".to_string(),
+                mpt_config.sel2,
+                offset
+                    - (ACCOUNT_LEAF_NONCE_BALANCE_S_IND
+                        - ACCOUNT_LEAF_KEY_S_IND)
+                        as usize,
+                || Ok(F::one()),
+            ).ok();
+        } else {
+            region.assign_advice(
+                || "assign sel2".to_string(),
+                mpt_config.sel2,
+                offset
+                    - (ACCOUNT_LEAF_NONCE_BALANCE_C_IND
+                        - ACCOUNT_LEAF_KEY_C_IND)
+                        as usize,
+                || Ok(F::zero()),
+            ).ok();
+        }
+
+        // nonce value RLC and balance value RLC:
+        pv.rlc1 = F::zero();
+        pv.rlc2 = F::zero();
+        // Note: Below, it first computes and assigns the nonce RLC and balance RLC without
+        // RLP specific byte (there is a RLP specific byte when nonce/balance RLP length > 1).
+        if nonce_len == 1 && balance_len == 1 {
+            mpt_config.compute_rlc_and_assign(region, row, pv, offset, S_START, C_START, HASH_WIDTH, HASH_WIDTH).ok();
+        } else if nonce_len > 1 && balance_len == 1 {
+            mpt_config.compute_rlc_and_assign(region, row, pv, offset, S_START+1, C_START, HASH_WIDTH-1, HASH_WIDTH).ok();
+        } else if nonce_len == 1 && balance_len > 1 {
+            mpt_config.compute_rlc_and_assign(region, row, pv, offset, S_START, C_START+1, HASH_WIDTH, HASH_WIDTH-1).ok();
+        } else if nonce_len > 1 && balance_len > 1 {
+            mpt_config.compute_rlc_and_assign(region, row, pv, offset, S_START+1, C_START+1, HASH_WIDTH-1, HASH_WIDTH-1).ok();
+        }
+        if row[row.len() - 1] == 7 {
+            pv.nonce_value_s = pv.rlc1;
+            pv.balance_value_s = pv.rlc2;
+        }
+
+        let mut acc_account;
+        let mut acc_mult_account;
+        if row[row.len() - 1] == 7 {
+            acc_account = pv.acc_account_s;
+            acc_mult_account = pv.acc_mult_account_s;
+            
+        } else {
+            acc_account = pv.acc_account_c;
+            acc_mult_account = pv.acc_mult_account_c;
+
+            // assign nonce S
+            region.assign_advice(
+                || "assign sel1".to_string(),
+                mpt_config.sel1,
+                offset,
+                || Ok(pv.nonce_value_s),
+            ).ok();
+            // assign balance S
+            region.assign_advice(
+                || "assign sel2".to_string(),
+                mpt_config.sel2,
+                offset,
+                || Ok(pv.balance_value_s),
+            ).ok();
+        }
+
+        // s_rlp1, s_rlp2
+        mpt_config.compute_acc_and_mult(
+            row,
+            &mut acc_account,
+            &mut acc_mult_account,
+            S_START - 2,
+            2,
+        );
+        // c_rlp1, c_rlp2
+        mpt_config.compute_acc_and_mult(
+            row,
+            &mut acc_account,
+            &mut acc_mult_account,
+            C_START - 2,
+            2,
+        );
+        // nonce contribution to leaf RLC:
+        /*
+        If nonce stream length is 1, it doesn't have
+        the first byte with length info. Same for balance.
+        There are four possibilities:
+            - nonce is short (length 1), balance is short (length 1)
+            - nonce is short, balance is long
+            - nonce is long, balance is short
+            - nonce is long, balance is long
+        We put this info in sel1/sel2 in the key row (sel1/sel2 are
+            already used for other purposes in nonce balance row):
+            - sel1/sel2: 0/0 (how to check: (1-sel1)*(1-sel2))
+            - sel1/sel2: 0/1 (how to check: (1-sel1)*sel2)
+            - sel1/sel2: 1/0 (how to check: sel1*(1-sel2))
+            - sel1/sel2: 1/1 (how to check: sel1*sel2)
+        */
+        
+        mpt_config.compute_acc_and_mult(
+            row,
+            &mut acc_account,
+            &mut acc_mult_account,
+            S_START,
+            nonce_len,
+        );
+
+        let mut mult_diff_s = F::one();
+        for _ in 0..nonce_len + 4 {
+            // + 4 because of s_rlp1, s_rlp2, c_rlp1, c_rlp2
+            mult_diff_s *= mpt_config.acc_r;
+        }
+
+        // It's easier to constrain (in account_leaf_nonce_balance.rs)
+        // the multiplier if we store acc_mult both after nonce and after
+        // balance.
+        let acc_mult_tmp = acc_mult_account;
+        
+        // balance contribution to leaf RLC 
+        mpt_config.compute_acc_and_mult(
+            row,
+            &mut acc_account,
+            &mut acc_mult_account,
+            C_START,
+            balance_len,
+        );
+
+        let mut mult_diff_c = F::one();
+        for _ in 0..balance_len {
+            mult_diff_c *= mpt_config.acc_r;
+        }
+
+        mpt_config.assign_acc(
+            region,
+            acc_account,
+            acc_mult_account,
+            F::zero(),
+            acc_mult_tmp,
+            offset,
+        ).ok();
+
+        region.assign_advice(
+            || "assign mult diff".to_string(),
+            mpt_config.acc_c, // assigning key_rlc leads into PoisonedConstraint
+            offset,
+            || Ok(mult_diff_s),
+        ).ok();
+        region.assign_advice(
+            || "assign mult diff".to_string(),
+            mpt_config.key_rlc_mult,
+            offset,
+            || Ok(mult_diff_c),
+        ).ok();
+        if row[row.len() - 1] == 7 {
+            pv.acc_nonce_balance_s = acc_account;
+            pv.acc_mult_nonce_balance_s = acc_mult_account;
+        } else {
+            pv.acc_nonce_balance_c = acc_account;
+            pv.acc_mult_nonce_balance_c = acc_mult_account;
+        }
     }
 
 }
