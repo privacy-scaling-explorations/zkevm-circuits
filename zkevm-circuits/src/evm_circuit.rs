@@ -282,7 +282,7 @@ pub mod test {
                 &mut layouter,
                 self.block
                     .copy_events
-                    .values()
+                    .iter()
                     .filter(|ce| ce.dst_type == CopyDataType::RlcAcc)
                     .map(|ce| {
                         ce.steps

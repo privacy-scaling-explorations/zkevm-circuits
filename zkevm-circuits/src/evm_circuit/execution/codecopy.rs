@@ -1,5 +1,5 @@
 use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId};
-use eth_types::{evm_types::GasCost, Field, ToLittleEndian};
+use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar};
 use halo2_proofs::plonk::Error;
 
 use crate::{
@@ -134,7 +134,7 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
-        tx: &Transaction,
+        _: &Transaction,
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
@@ -181,17 +181,8 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
         )?;
         self.memory_copier_gas
             .assign(region, offset, size.as_u64(), memory_expansion_cost)?;
-
-        let key = (tx.id, call.id, step.gas_left);
-        let copy_rwc_inc = block
-            .copy_events
-            .get(&key)
-            .unwrap()
-            .steps
-            .first()
-            .map_or(F::zero(), |cs| F::from(cs.rwc_inc_left));
-        self.copy_rwc_inc
-            .assign(region, offset, Some(copy_rwc_inc))?;
+        // rw_counter increase from copy table lookup is number of bytes copied.
+        self.copy_rwc_inc.assign(region, offset, size.to_scalar())?;
 
         Ok(())
     }
