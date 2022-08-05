@@ -1,5 +1,4 @@
 use super::Opcode;
-// use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
 use crate::circuit_input_builder::CopyEvent;
 use crate::circuit_input_builder::CopyStep;
 use crate::circuit_input_builder::{CopyDataType, NumberOrHash};
@@ -63,16 +62,37 @@ impl Opcode for Return {
         }
 
         if call.is_create() {
-        } else if !is_root {
-            // if caller length > callee length, we need to fill the remaining memory with
-            // 0's.
-            for i in 0..10 {
-                state.push_op(
-                    &mut exec_step,
-                    RW::WRITE,
-                    MemoryOp::new(call.caller_id, copy_step.addr.into(), 0u8),
-                );
-            }
+        } else if !is_root && !length.is_zero() {
+            // // reconstruction????
+            //
+            // let callee_memory = &state.call_ctx()?.memory;
+            //
+            // // let offset = offset.low_u64() as usize;
+            // // let length = length.low_u64() as usize;
+            // // let mut return_buffer = callee_memory[offset..offset + length].to_vec();
+            // let mut return_data = state.call_ctx()?.return_data.clone();
+            // return_buffer.resize(call.return_data_offset + call.return_data_length as usize, 0);
+            //
+            // let caller_memory = &mut state.caller_ctx_mut()?.memory;
+            // let return_data_end = call.return_data_offset + call.return_data_length;
+            // caller_memory.0[call.return_data_offset as usize ..return_data_end as usize].copy_from_slice(&return_buffer);
+            //
+            // handle_copy(
+            //     state,
+            //     &mut exec_step,
+            //     Source {
+            //         tag: CopyDataType::Memory,
+            //         id: call.call_id,
+            //         offset: offset.try_into().unwrap(),
+            //         bytes: vec![],
+            //     },
+            //     Destination {
+            //         tag: CopyDataType::Memory,
+            //         id: call.caller_id,
+            //         offset: call.return_data_offset,
+            //         length: call.return_data_length.try_into().unwrap(),
+            //     },
+            // );
         }
 
         state.handle_return(step)?;
@@ -84,77 +104,79 @@ struct Source {
     tag: CopyDataType,
     id: usize,
     offset: u64,
-    bytes: Vec<u8>
+    bytes: Vec<u8>,
 }
 
 struct Destination {
     tag: CopyDataType,
-    id: u64,
+    id: usize,
     offset: u64,
-    length: usize
+    length: usize,
 }
 
 fn handle_copy(
     state: &mut CircuitInputStateRef,
+    step: &mut ExecStep,
     source: Source,
     destination: Destination,
 ) {
-    let mut buffer = Vec<u8> = vec![0; destination.length];
+    let mut buffer: Vec<u8> = vec![0; destination.length];
+    let mut rw_counters = vec![];
     for i in 0..destination.length {
-        buffer[i] =
+        if i < source.bytes.len() {
+            buffer[i] = source.bytes[i];
+            state.push_op(
+                step,
+                RW::READ,
+                MemoryOp::new(source.id, source.offset.into(), buffer[i]),
+            );
+        }
+        let read_rw_counter = state.block_ctx.rwc;
+        state.push_op(
+            step,
+            RW::WRITE,
+            MemoryOp::new(destination.id, destination.offset.into(), buffer[i]),
+        );
+        let write_rw_counter = state.block_ctx.rwc;
+
+        rw_counters.push((read_rw_counter, write_rw_counter));
     }
-    for i in 0..std::cmp::min(caller_length, callee_length) {
-        return_buffer[i] = step.memory.0[callee_offset + i];
-    }
 
-    let rw_counter = state.block_ctx.rwc;
-
-    // number of copy steps is always = 2 * destination.length?
-    // rw_counter increase is always source.length + destination.length?
-
-    for (i, value) in values.iter().enumerate() {
+    dbg!(&rw_counters);
+    let rw_counter_end = rw_counters.last().unwrap().1 .0;
+    let mut copy_steps = vec![];
+    for (byte, &(read_rw_counter, write_rw_counter)) in buffer.iter().zip(&rw_counters) {
         copy_steps.push(CopyStep {
-            addr: source.offset as u64,
+            addr: source.offset,
             tag: source.tag,
             rw: RW::READ,
-            value: *value,
+            value: *byte,
             is_code: None,
             is_pad: false,
-            rwc: (rw_counter.0 + 2 * i).into(),
-            rwc_inc_left: 2 * (length - i),
+            rwc: read_rw_counter,
+            rwc_inc_left: (rw_counter_end - read_rw_counter.0).try_into().unwrap(),
         });
-        state.push_op(
-            &mut exec_step,
-            RW::READ,
-            MemoryOp::new(source.id, source.offset.into(), *value),
-        );
-
         copy_steps.push(CopyStep {
-            addr: destination.offset as u64,
+            addr: destination.offset,
             tag: destination.tag,
             rw: RW::WRITE,
-            value: *value,
+            value: *byte,
             is_code: None,
             is_pad: false,
-            rwc: (rw_counter.0 + 2 * i + 1).into(),
-            rwc_inc_left: 2 * (length - i) - 1,
+            rwc: write_rw_counter,
+            rwc_inc_left: (rw_counter_end - write_rw_counter.0).try_into().unwrap(),
         });
-        state.push_op(
-            &mut exec_step,
-            RW::WRITE,
-            MemoryOp::new(destination.id, destination.offset.into(), *value),
-        );
     }
 
     state.push_copy(CopyEvent {
         src_type: CopyDataType::Memory,
         src_id: NumberOrHash::Number(source.id),
-        src_addr: source.offset as u64,
-        src_addr_end: (source.offset + values.len()) as u64,
+        src_addr: source.offset,
+        src_addr_end: source.offset + u64::try_from(source.bytes.len()).unwrap(),
         dst_type: CopyDataType::Memory,
         dst_id: NumberOrHash::Number(destination.id),
-        dst_addr: destination.offset as u64,
-        length: values.len().try_into().unwrap(),
+        dst_addr: destination.offset,
+        length: destination.length.try_into().unwrap(),
         log_id: None,
         steps: copy_steps,
     });

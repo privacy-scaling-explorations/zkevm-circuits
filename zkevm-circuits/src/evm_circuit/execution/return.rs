@@ -3,13 +3,13 @@ use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
         step::ExecutionState,
-        table::{AccountFieldTag, CallContextFieldTag},
         util::{
             common_gadget::RestoreContextGadget, constraint_builder::ConstraintBuilder, from_bytes,
             not, CachedRegion, Cell, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
+    table::{AccountFieldTag, CallContextFieldTag},
     util::Expr,
 };
 use bus_mapping::circuit_input_builder::CopyDataType;
@@ -132,6 +132,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
                     range.length(),               // source address end
                     return_data_offset.expr(),    // destination address
                     return_data_length.expr(),    // length
+                    0.expr(),
                     cb.curr.state.rw_counter.expr() + cb.rw_counter_offset().expr(),
                     range.length() + return_data_length.expr(),
                 );

@@ -38,7 +38,7 @@ impl Opcode for Returndatacopy {
             } else {
                 assert_eq!(geth_steps.len(), 1);
                 // if overflows this opcode would fails current context, so
-                // there is no more steps.
+                // there are no more steps.
             }
         }
         Ok(vec![exec_step])
