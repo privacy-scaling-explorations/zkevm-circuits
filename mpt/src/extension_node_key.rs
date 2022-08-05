@@ -26,6 +26,27 @@ pub(crate) struct ExtensionNodeKeyChip<F> {
     _marker: PhantomData<F>,
 }
 
+/*
+TODO: Currently, we do not store key for the C extension node - it is always the same as key for
+the S extension node. However, it can happen that one extension node is longer than 55 bytes and one not
+(being longer than 55 bytes is very unlikely because that would mean the extension need to be at least
+23 bytes long - adding 32 for branch hash would give us 55).
+In this case the longer than 55 bytes extension node starts as: [248, remaining_length, extension_bytes_length, ...],
+while the shorter than 55 bytes extension node starts as: [247, extension_bytes_length, ...].
+
+We do not have space to store C RLP & key into extension node C row as we already store key nibbles there (same
+for both extension nodes).
+
+The best seems to be to handle four different cases:
+ - s_short, c_short (not to be confused with short/long meaning nibbles, here it means the whole ext. node longer or shorter than 55 bytes)
+ - s_short, c_long
+ - s_long, c_short
+ - s_long, c_long
+
+Using this approach we do not need to store C RLP & key, but it will increase the degree
+(unless we pack this info together with short/long nibbles & c1/c16).
+*/
+
 impl<F: FieldExt> ExtensionNodeKeyChip<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
@@ -115,8 +136,6 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
                 Rotation(rot_into_branch_init-1),
             );
 
-            let is_branch_init_prev =
-                meta.query_advice(branch.is_init, Rotation::prev());
             let is_branch_child_prev =
                 meta.query_advice(branch.is_child, Rotation::prev());
             let is_branch_child_cur =
