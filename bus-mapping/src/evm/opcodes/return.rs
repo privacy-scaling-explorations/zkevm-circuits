@@ -80,26 +80,29 @@ impl Opcode for Return {
     }
 }
 
-struct CopyAddress {
+struct Source {
     tag: CopyDataType,
     id: usize,
-    offset: usize,
+    offset: u64,
+    bytes: Vec<u8>
+}
+
+struct Destination {
+    tag: CopyDataType,
+    id: u64,
+    offset: u64,
+    length: usize
 }
 
 fn handle_copy(
     state: &mut CircuitInputStateRef,
-    source: CopyAddress,
-    destination: CopyAddress,
-    values: &[u8],
+    source: Source,
+    destination: Destination,
 ) {
-    let caller_offset = call.return_data_offset as usize;
-    let caller_length = call.return_data_length as usize;
-
-    let callee_offset = offset.low_u64() as usize;
-    let callee_length = length.low_u64() as usize;
-    let callee_address = callee_offset + callee_length;
-
-    let mut return_buffer: Vec<u8> = vec![0; caller_length];
+    let mut buffer = Vec<u8> = vec![0; destination.length];
+    for i in 0..destination.length {
+        buffer[i] =
+    }
     for i in 0..std::cmp::min(caller_length, callee_length) {
         return_buffer[i] = step.memory.0[callee_offset + i];
     }
@@ -154,8 +157,5 @@ fn handle_copy(
         length: values.len().try_into().unwrap(),
         log_id: None,
         steps: copy_steps,
-        tx_id: state.tx_ctx.id(),
-        call_id: 0, // my god why is this here????
-        pc: 0.into(),
     });
 }
