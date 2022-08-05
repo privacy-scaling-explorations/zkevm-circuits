@@ -169,6 +169,7 @@ impl<const NACC: usize, const NTX: usize> TestContext<NACC, NTX> {
             .expect("Mismatched acc len");
 
         let geth_traces = gen_geth_traces(
+            chain_id,
             block.clone(),
             accounts.clone(),
             history_hashes.clone(),
@@ -228,13 +229,14 @@ impl<const NACC: usize, const NTX: usize> TestContext<NACC, NTX> {
 /// Generates execution traces for the transactions included in the provided
 /// Block
 fn gen_geth_traces<const NACC: usize, const NTX: usize>(
+    chain_id: Word,
     block: Block<Transaction>,
     accounts: [Account; NACC],
     history_hashes: Option<Vec<Word>>,
     logger_config: LoggerConfig,
 ) -> Result<[GethExecTrace; NTX], Error> {
     let trace_config = TraceConfig {
-        chain_id: block.transactions[0].chain_id.unwrap_or_default(),
+        chain_id,
         history_hashes: history_hashes.unwrap_or_default(),
         block_constants: BlockConstants::try_from(&block)?,
         accounts: accounts

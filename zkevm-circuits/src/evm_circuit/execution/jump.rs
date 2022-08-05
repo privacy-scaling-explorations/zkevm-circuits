@@ -18,8 +18,6 @@ use crate::{
 use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian};
 use halo2_proofs::plonk::Error;
 
-use std::convert::TryInto;
-
 #[derive(Clone, Debug)]
 pub(crate) struct JumpGadget<F> {
     same_context: SameContextGadget<F>,

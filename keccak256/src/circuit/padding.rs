@@ -6,7 +6,6 @@ use halo2_proofs::{
     poly::Rotation,
 };
 use itertools::Itertools;
-use std::convert::TryInto;
 use std::iter;
 use std::marker::PhantomData;
 

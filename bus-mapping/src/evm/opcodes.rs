@@ -15,6 +15,9 @@ use eth_types::{
 use keccak256::EMPTY_HASH;
 use log::warn;
 
+#[cfg(any(feature = "test", test))]
+pub use sha3::sha3_tests::{gen_sha3_code, MemoryKind};
+
 mod call;
 mod calldatacopy;
 mod calldataload;
