@@ -771,7 +771,7 @@ impl CopyTable {
                 .filter(|s| s.rw.is_write())
                 .map(|s| s.value)
                 .collect::<Vec<u8>>();
-            rlc::value(&values, randomness)
+            rlc::value(values.iter().rev(), randomness)
         } else {
             F::zero()
         };
