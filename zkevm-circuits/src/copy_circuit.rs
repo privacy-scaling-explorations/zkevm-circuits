@@ -719,7 +719,7 @@ mod tests {
     }
 
     fn get_randomness<F: Field>() -> F {
-        F::from(123456)
+        F::random(rand::thread_rng())
     }
 
     impl<F: Field> MyCircuit<F> {
