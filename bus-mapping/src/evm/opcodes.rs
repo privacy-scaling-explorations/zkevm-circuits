@@ -259,9 +259,33 @@ pub fn gen_associated_ops(
         );
     }
 
-    let steps = fn_gen_associated_ops(state, geth_steps)?;
+    // check if have error
+    let geth_step = &geth_steps[0];
+    let mut exec_step = state.new_step(geth_step)?;
+    let next_step = if geth_steps.len() > 1 {
+        Some(&geth_steps[1])
+    } else {
+        None
+    };
+    if let Some(exec_error) = state.get_step_err(geth_step, next_step).unwrap() {
+        log::warn!(
+            "geth error {:?} occurred in  {:?}",
+            exec_error,
+            geth_step.op
+        );
 
-    Ok(steps)
+        exec_step.error = Some(exec_error);
+        if geth_step.op.is_call_or_create() {
+            let call = state.parse_call(geth_step)?;
+            // Switch to callee's call context
+            state.push_call(call);
+        }
+
+        state.handle_return(geth_step)?;
+        return Ok(vec![exec_step]);
+    }
+    // if no errors, continue as normal
+    fn_gen_associated_ops(state, geth_steps)
 }
 
 pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Error> {
