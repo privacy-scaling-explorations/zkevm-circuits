@@ -20,7 +20,7 @@ use halo2_proofs::{
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector, VirtualCells},
     poly::Rotation,
 };
-use std::{collections::HashMap, convert::TryInto, iter};
+use std::{collections::HashMap, iter};
 use strum::IntoEnumIterator;
 
 mod add_sub;
@@ -65,6 +65,7 @@ mod push;
 mod r#return;
 mod sdiv_smod;
 mod selfbalance;
+mod sha3;
 mod shr;
 mod signed_comparator;
 mod signextend;
@@ -73,6 +74,7 @@ mod sstore;
 mod stop;
 mod swap;
 
+use self::sha3::Sha3Gadget;
 use add_sub::AddSubGadget;
 use addmod::AddModGadget;
 use address::AddressGadget;
@@ -194,8 +196,8 @@ pub(crate) struct ExecutionConfig<F> {
     return_gadget: ReturnGadget<F>,
     sdiv_smod_gadget: SignedDivModGadget<F>,
     selfbalance_gadget: SelfbalanceGadget<F>,
+    sha3_gadget: Sha3Gadget<F>,
     shr_gadget: ShrGadget<F>,
-    sha3_gadget: DummyGadget<F, 2, 1, { ExecutionState::SHA3 }>,
     balance_gadget: DummyGadget<F, 1, 1, { ExecutionState::BALANCE }>,
     blockhash_gadget: DummyGadget<F, 1, 1, { ExecutionState::BLOCKHASH }>,
     exp_gadget: DummyGadget<F, 2, 1, { ExecutionState::EXP }>,
@@ -236,6 +238,7 @@ impl<F: Field> ExecutionConfig<F> {
         bytecode_table: &dyn LookupTable<F>,
         block_table: &dyn LookupTable<F>,
         copy_table: &dyn LookupTable<F>,
+        keccak_table: &dyn LookupTable<F>,
     ) -> Self {
         let q_usable = meta.complex_selector();
         let q_step = meta.advice_column();
@@ -448,6 +451,7 @@ impl<F: Field> ExecutionConfig<F> {
             bytecode_table,
             block_table,
             copy_table,
+            keccak_table,
             &power_of_randomness,
             &cell_manager,
         );
@@ -622,6 +626,7 @@ impl<F: Field> ExecutionConfig<F> {
         bytecode_table: &dyn LookupTable<F>,
         block_table: &dyn LookupTable<F>,
         copy_table: &dyn LookupTable<F>,
+        keccak_table: &dyn LookupTable<F>,
         power_of_randomness: &[Expression<F>; 31],
         cell_manager: &CellManager<F>,
     ) {
@@ -637,6 +642,7 @@ impl<F: Field> ExecutionConfig<F> {
                         Table::Block => block_table,
                         Table::Byte => byte_table,
                         Table::Copy => copy_table,
+                        Table::Keccak => keccak_table,
                     }
                     .table_exprs(meta);
                     vec![(
@@ -862,7 +868,6 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::BLOCKCTXU256 => assign_exec_step!(self.block_ctx_u256_gadget),
             ExecutionState::SELFBALANCE => assign_exec_step!(self.selfbalance_gadget),
             // dummy gadgets
-            ExecutionState::SHA3 => assign_exec_step!(self.sha3_gadget),
             ExecutionState::BALANCE => assign_exec_step!(self.balance_gadget),
             ExecutionState::BLOCKHASH => assign_exec_step!(self.blockhash_gadget),
             ExecutionState::EXP => assign_exec_step!(self.exp_gadget),
@@ -879,6 +884,7 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::STATICCALL => assign_exec_step!(self.staticcall_gadget),
             ExecutionState::SELFDESTRUCT => assign_exec_step!(self.selfdestruct_gadget),
             // end of dummy gadgets
+            ExecutionState::SHA3 => assign_exec_step!(self.sha3_gadget),
             ExecutionState::SHR => assign_exec_step!(self.shr_gadget),
             ExecutionState::SIGNEXTEND => assign_exec_step!(self.signextend_gadget),
             ExecutionState::SLOAD => assign_exec_step!(self.sload_gadget),
