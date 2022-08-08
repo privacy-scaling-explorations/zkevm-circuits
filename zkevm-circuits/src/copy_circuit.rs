@@ -665,6 +665,7 @@ impl<F: Field> CopyCircuit<F> {
     }
 }
 
+#[cfg(feature = "dev")]
 /// Dev helpers
 pub mod dev {
     use super::*;

@@ -35,7 +35,7 @@ pub struct UnrolledBytecode<F: Field> {
 }
 
 #[derive(Clone, Debug)]
-/// TODO
+/// Bytecode circuit configuration
 pub struct Config<F> {
     randomness: Expression<F>,
     minimum_rows: usize,
@@ -583,7 +583,7 @@ impl<F: Field> Config<F> {
     }
 }
 
-/// TODO
+/// Get unrolled bytecode from raw bytes
 pub fn unroll<F: Field>(bytes: Vec<u8>, randomness: F) -> UnrolledBytecode<F> {
     let code_hash = keccak(&bytes[..], randomness);
     let mut rows = vec![BytecodeRow::<F> {

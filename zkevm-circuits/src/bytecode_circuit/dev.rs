@@ -54,7 +54,7 @@ impl<F: Field> Circuit<F> for BytecodeCircuitTester<F> {
 }
 
 impl<F: Field> BytecodeCircuitTester<F> {
-    /// TODO
+    /// Verify that the selected bytecode fulfills the circuit
     pub fn verify_raw(k: u32, bytecodes: Vec<Vec<u8>>, randomness: F) {
         let unrolled: Vec<_> = bytecodes
             .iter()
