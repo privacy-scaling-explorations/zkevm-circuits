@@ -1,5 +1,4 @@
 use halo2_proofs::{
-    circuit::Chip,
     plonk::{Advice, Column, ConstraintSystem, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
@@ -16,16 +15,51 @@ use crate::{
     },
 };
 
-#[derive(Clone, Debug)]
-pub(crate) struct AccountLeafStorageCodehashConfig {}
+/*
+An account leaf occupies 8 rows.
+Contrary as in the branch rows, the `S` and `C` leaves are not positioned parallel to each other.
+The rows are the following:
+ACCOUNT_LEAF_KEY_S
+ACCOUNT_LEAF_KEY_C
+ACCOUNT_NON_EXISTING
+ACCOUNT_LEAF_NONCE_BALANCE_S
+ACCOUNT_LEAF_NONCE_BALANCE_C
+ACCOUNT_LEAF_STORAGE_CODEHASH_S
+ACCOUNT_LEAF_STORAGE_CODEHASH_C
+ACCOUNT_DRIFTED_LEAF
 
-// Verifies the hash of a leaf is in the parent branch.
-pub(crate) struct AccountLeafStorageCodehashChip<F> {
-    config: AccountLeafStorageCodehashConfig,
+The constraints in this file apply to ACCOUNT_LEAF_STORAGE_CODEHASH_S and
+ACCOUNT_LEAF_STORAGE_CODEHASH_C rows.
+
+For example, the two rows might be:
+[0,160,86,232,31,23,27,204,85,166,255,131,69,230,146,192,248,110,91,72,224,27,153,108,173,192,1,98,47,181,227,99,180,33,0,160,197,210,70,1,134,247,35,60,146,126,125,178,220,199,3,192,229,0,182,83,202,130,39,59,123,250,216,4,93,133,164,122]
+[0,160,86,232,31,23,27,204,85,166,255,131,69,230,146,192,248,110,91,72,224,27,153,108,173,192,1,98,47,181,227,99,180,33,0,160,197,210,70,1,134,247,35,60,146,126,125,178,220,199,3,192,229,0,182,83,202,130,39,59,123,250,216,4,93,133,164,122]
+
+Here, in `ACCOUNT_LEAF_STORAGE_CODEHASH_S` example row, there is `S` storage root stored in `s_main.bytes`
+and `S` codehash in `c_main.bytes`. Both these values are hash outputs.
+We can see `s_main.rlp2 = 160` which specifies that the length of the following string is `32 = 160 - 128`
+(which is hash output). Similarly, `c_main.rlp2 = 160`.
+
+In `ACCOUNT_LEAF_STORAGE_CODEHASH_C` example row, there is `C` storage root stored in `s_main.bytes`
+and `C` codehash in `c_main.bytes`. Both these values are hash outputs.
+
+The whole account leaf looks like:
+[248,106,161,32,252,237,52,8,133,130,180,167,143,97,28,115,102,25,94,62,148,249,8,6,55,244,16,75,187,208,208,127,251,120,61,73,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+[248,106,161,32,252,237,52,8,133,130,180,167,143,97,28,115,102,25,94,62,148,249,8,6,55,244,16,75,187,208,208,127,251,120,61,73,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+[0,0,0,32,252,237,52,8,133,130,180,167,143,97,28,115,102,25,94,62,148,249,8,6,55,244,16,75,187,208,208,127,251,120,61,73,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+[184,70,128,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,248,68,128,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+[184,70,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,248,68,128,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+[0,160,86,232,31,23,27,204,85,166,255,131,69,230,146,192,248,110,91,72,224,27,153,108,173,192,1,98,47,181,227,99,180,33,0,160,197,210,70,1,134,247,35,60,146,126,125,178,220,199,3,192,229,0,182,83,202,130,39,59,123,250,216,4,93,133,164,122]
+[0,160,86,232,31,23,27,204,85,166,255,131,69,230,146,192,248,110,91,72,224,27,153,108,173,192,1,98,47,181,227,99,180,33,0,160,197,210,70,1,134,247,35,60,146,126,125,178,220,199,3,192,229,0,182,83,202,130,39,59,123,250,216,4,93,133,164,122]
+[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+*/
+
+#[derive(Clone, Debug)]
+pub(crate) struct AccountLeafStorageCodehashConfig<F> {
     _marker: PhantomData<F>,
 }
 
-impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
+impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         proof_type: ProofTypeCols,
@@ -45,8 +79,8 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
         sel2: Column<Advice>,
         keccak_table: [Column<Fixed>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
         is_s: bool,
-    ) -> AccountLeafStorageCodehashConfig {
-        let config = AccountLeafStorageCodehashConfig {};
+    ) -> Self {
+        let config = AccountLeafStorageCodehashConfig { _marker: PhantomData };
         let one = Expression::Constant(F::one());
 
         // We don't need to check acc_mult because it's not used after this row.
@@ -446,23 +480,5 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
         config
     }
 
-    pub fn construct(config: AccountLeafStorageCodehashConfig) -> Self {
-        Self {
-            config,
-            _marker: PhantomData,
-        }
-    }
 }
 
-impl<F: FieldExt> Chip<F> for AccountLeafStorageCodehashChip<F> {
-    type Config = AccountLeafStorageCodehashConfig;
-    type Loaded = ();
-
-    fn config(&self) -> &Self::Config {
-        &self.config
-    }
-
-    fn loaded(&self) -> &Self::Loaded {
-        &()
-    }
-}

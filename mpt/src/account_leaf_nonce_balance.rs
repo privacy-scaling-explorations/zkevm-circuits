@@ -29,14 +29,15 @@ ACCOUNT_LEAF_STORAGE_CODEHASH_S
 ACCOUNT_LEAF_STORAGE_CODEHASH_C
 ACCOUNT_DRIFTED_LEAF
 
-This chip applies to ACCOUNT_LEAF_NONCE_BALANCE_S and ACCOUNT_LEAF_NONCE_BALANCE_C rows.
+The constraints in this file apply to ACCOUNT_LEAF_NONCE_BALANCE_S and
+ACCOUNT_LEAF_NONCE_BALANCE_C rows.
 
 For example, the two rows might be:
 [184,70,128,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,248,68,128,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
 [184,70,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,248,68,128,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
 
-In `ACCOUNT_LEAF_NONCE_BALANCE_S` example row, there is `S` nonce stored in `s_main` and `S` balance in
-`c_main`. We can see nonce in `S` proof is `0 = 128 - 128`.
+Here, in `ACCOUNT_LEAF_NONCE_BALANCE_S` example row, there is `S` nonce stored in `s_main` and `S` balance
+in `c_main`. We can see nonce in `S` proof is `0 = 128 - 128`.
 
 In `ACCOUNT_LEAF_NONCE_BALANCE_C` example row, there is `C` nonce stored in `s_main` and `C` balance in
 `c_main`. We can see nonce in `C` proof is `1`.

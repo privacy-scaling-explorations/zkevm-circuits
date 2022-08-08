@@ -11,7 +11,7 @@ use crate::{
     account_leaf_key::AccountLeafKeyChip,
     account_leaf_key_in_added_branch::AccountLeafKeyInAddedBranchChip,
     account_leaf_nonce_balance::AccountLeafNonceBalanceConfig,
-    account_leaf_storage_codehash::AccountLeafStorageCodehashChip,
+    account_leaf_storage_codehash::AccountLeafStorageCodehashConfig,
     branch::BranchChip,
     branch_hash_in_parent::BranchHashInParentChip,
     branch_parallel::BranchParallelChip,
@@ -968,7 +968,7 @@ impl<F: FieldExt> MPTConfig<F> {
             false,
         );
 
-        AccountLeafStorageCodehashChip::<F>::configure(
+        AccountLeafStorageCodehashConfig::<F>::configure(
             meta,
             proof_type.clone(),
             inter_start_root,
@@ -989,7 +989,7 @@ impl<F: FieldExt> MPTConfig<F> {
             true,
         );
 
-        AccountLeafStorageCodehashChip::<F>::configure(
+        AccountLeafStorageCodehashConfig::<F>::configure(
             meta,
             proof_type.clone(),
             inter_final_root,
