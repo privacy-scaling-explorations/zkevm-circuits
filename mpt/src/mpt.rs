@@ -1082,30 +1082,23 @@ impl<F: FieldExt> MPTConfig<F> {
         &self,
         region: &mut Region<'_, F>,
         row: &[u8],
-        is_branch_init: bool,
-        is_branch_child: bool,
-        is_last_branch_child: bool,
-        node_index: u8,
-        modified_node: u8,
         account_leaf: AccountLeaf,
         storage_leaf: StorageLeaf,
-        drifted_pos: u8,
-        is_extension_node_s: bool,
-        is_extension_node_c: bool,
+        branch: Branch,
         offset: usize,
     ) -> Result<(), Error> {
         region.assign_advice(
             || "assign is_branch_init".to_string(),
             self.branch.is_init,
             offset,
-            || Ok(F::from(is_branch_init as u64)),
+            || Ok(F::from(branch.is_branch_init as u64)),
         )?;
 
         region.assign_advice(
             || "assign is_branch_child".to_string(),
             self.branch.is_child,
             offset,
-            || Ok(F::from(is_branch_child as u64)),
+            || Ok(F::from(branch.is_branch_child as u64)),
         )?;
 
         region.assign_advice(
@@ -1155,35 +1148,35 @@ impl<F: FieldExt> MPTConfig<F> {
             || "assign is_last_branch_child".to_string(),
             self.branch.is_last_child,
             offset,
-            || Ok(F::from(is_last_branch_child as u64)),
+            || Ok(F::from(branch.is_last_branch_child as u64)),
         )?;
 
         region.assign_advice(
             || "assign node_index".to_string(),
             self.branch.node_index,
             offset,
-            || Ok(F::from(node_index as u64)),
+            || Ok(F::from(branch.node_index as u64)),
         )?;
 
         region.assign_advice(
             || "assign modified node".to_string(),
             self.branch.modified_node,
             offset,
-            || Ok(F::from(modified_node as u64)),
+            || Ok(F::from(branch.modified_node as u64)),
         )?;
 
         region.assign_advice(
             || "assign drifted_pos".to_string(),
             self.branch.drifted_pos,
             offset,
-            || Ok(F::from(drifted_pos as u64)),
+            || Ok(F::from(branch.drifted_pos as u64)),
         )?;
 
         region.assign_advice(
             || "assign is_at_drifted_pos".to_string(),
             self.branch.is_at_drifted_pos,
             offset,
-            || Ok(F::from((drifted_pos == node_index) as u64)),
+            || Ok(F::from((branch.drifted_pos == branch.node_index) as u64)),
         )?;
 
         region.assign_advice(
@@ -1224,7 +1217,7 @@ impl<F: FieldExt> MPTConfig<F> {
             || "assign is_modified".to_string(),
             self.branch.is_modified,
             offset,
-            || Ok(F::from((modified_node == node_index) as u64)),
+            || Ok(F::from((branch.modified_node == branch.node_index) as u64)),
         )?;
 
         region.assign_advice(
@@ -1306,13 +1299,13 @@ impl<F: FieldExt> MPTConfig<F> {
             || "assign is extension node s".to_string(),
             self.branch.is_extension_node_s,
             offset,
-            || Ok(F::from(is_extension_node_s as u64)),
+            || Ok(F::from(branch.is_extension_node_s as u64)),
         )?;
         region.assign_advice(
             || "assign is extension node c".to_string(),
             self.branch.is_extension_node_c,
             offset,
-            || Ok(F::from(is_extension_node_c as u64)),
+            || Ok(F::from(branch.is_extension_node_c as u64)),
         )?;
         region.assign_advice(
             || "assign is non existing account row".to_string(),
@@ -1395,16 +1388,9 @@ impl<F: FieldExt> MPTConfig<F> {
         self.assign_row(
             region,
             row,
-            branch.is_branch_init,
-            branch.is_branch_child,
-            branch.is_last_branch_child,
-            branch.node_index,
-            branch.modified_node,
             account_leaf,
             storage_leaf, 
-            branch.drifted_pos,
-            branch.is_extension_node_s,
-            branch.is_extension_node_c,
+            branch,
             offset,
         )?;
 
@@ -1439,16 +1425,9 @@ impl<F: FieldExt> MPTConfig<F> {
         self.assign_row(
             region,
             row,
-            branch.is_branch_init,
-            branch.is_branch_child,
-            branch.is_last_branch_child,
-            branch.node_index,
-            branch.modified_node,
             account_leaf,
             storage_leaf,
-            branch.drifted_pos,
-            branch.is_extension_node_s,
-            branch.is_extension_node_c,
+            branch,
             offset,
         )?;
 
@@ -2297,16 +2276,9 @@ impl<F: FieldExt> MPTConfig<F> {
                             self.assign_row(
                                 &mut region,
                                 &row[0..row.len() - 1].to_vec(),
-                                branch.is_branch_init,
-                                branch.is_branch_child,
-                                branch.is_last_branch_child,
-                                branch.node_index,
-                                branch.modified_node,
                                 account_leaf,
                                 storage_leaf,
-                                branch.drifted_pos,
-                                branch.is_extension_node_s,
-                                branch.is_extension_node_c,
+                                branch,
                                 offset,
                             )?;
 
