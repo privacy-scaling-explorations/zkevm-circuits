@@ -63,6 +63,7 @@ use halo2_proofs::{
     plonk::{Circuit, ConstraintSystem, Error},
 };
 
+use super::copy_circuit::CopyCircuit;
 use crate::{evm_circuit::witness::block_convert, tx_circuit::sign_verify::POW_RAND_SIZE};
 use bus_mapping::mock::BlockData;
 use eth_types::geth_types::{self, GethData};
@@ -72,7 +73,6 @@ use halo2_proofs::pairing::bn256::Fr;
 use rand::RngCore;
 use secp256k1::Secp256k1Affine;
 use strum::IntoEnumIterator;
-use super::copy_circuit::CopyCircuit;
 
 /// Configuration of the Super Circuit
 #[derive(Clone)]
@@ -133,7 +133,6 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
         let copy_table = CopyTable::construct(meta, q_copy_table);
 
         let power_of_randomness = power_of_randomness_from_instance(meta);
-        let copy_circuit = CopyCircuit::configure(meta, &tx_table, &rw_table, &bytecode_table, copy_table, q_copy_table);
         let evm_circuit = EvmCircuit::configure(
             meta,
             power_of_randomness[..31].to_vec().try_into().unwrap(),
@@ -174,7 +173,6 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
                 bytecode_table,
                 keccak_table,
             ),
-            copy_circuit
         }
     }
 
@@ -217,7 +215,9 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
             self.block.randomness,
         )?;
         // --- Copy Circuit ---
-        config.copy_circuit.assign_block(&mut layouter, &self.block)?; 
+        config
+            .copy_circuit
+            .assign_block(&mut layouter, &self.block)?;
 
         // --- Keccak Table ---
         let mut keccak_inputs = Vec::new();
