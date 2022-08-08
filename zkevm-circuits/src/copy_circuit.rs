@@ -766,6 +766,7 @@ pub mod dev {
 #[cfg(test)]
 mod tests {
     use super::dev::test_copy_circuit;
+    use bus_mapping::evm::{gen_sha3_code, MemoryKind};
     use bus_mapping::{
         circuit_input_builder::{CircuitInputBuilder, CopyDataType},
         mock::BlockData,
@@ -840,7 +841,7 @@ mod tests {
     fn copy_circuit_valid_sha3() {
         let builder = gen_codecopy_data();
         let block = block_convert(&builder.block, &builder.code_db);
-        assert!(run_circuit(20, block).is_ok());
+        assert!(test_copy_circuit(20, block).is_ok());
     }
 
     fn perturb_tag(block: &mut bus_mapping::circuit_input_builder::Block, tag: CopyDataType) {
