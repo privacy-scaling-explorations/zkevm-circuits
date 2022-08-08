@@ -393,7 +393,6 @@ macro_rules! word_map {
     };
     ($($key_hex:expr => $value_hex:expr),*) => {
         {
-            use std::iter::FromIterator;
             std::collections::HashMap::from_iter([(
                     $(word!($key_hex), word!($value_hex)),*
             )])

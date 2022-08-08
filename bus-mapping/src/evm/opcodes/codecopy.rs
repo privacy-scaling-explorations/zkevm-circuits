@@ -161,9 +161,6 @@ fn gen_copy_event(
         log_id: None,
         length,
         steps: copy_steps,
-        tx_id: state.tx_ctx.id(),
-        call_id: state.call()?.call_id,
-        gas_left: exec_step.gas_left.0,
     })
 }
 

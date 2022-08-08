@@ -5,7 +5,6 @@ use crate::{
 use itertools::Itertools;
 use num_bigint::BigUint;
 use num_traits::Zero;
-use std::convert::TryInto;
 
 pub const BASE_NUM_OF_CHUNKS: u32 = 4;
 

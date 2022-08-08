@@ -16,7 +16,6 @@ use halo2_proofs::plonk::{
     Error,
     Expression::{self, Constant},
 };
-use std::convert::TryInto;
 
 use super::{rlc, CachedRegion, CellType, StoredExpression};
 

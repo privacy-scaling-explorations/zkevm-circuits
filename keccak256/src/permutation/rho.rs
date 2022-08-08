@@ -9,7 +9,6 @@ use halo2_proofs::{
     circuit::{AssignedCell, Layouter},
     plonk::{Advice, Column, ConstraintSystem, Error, Fixed},
 };
-use std::convert::TryInto;
 
 #[derive(Debug, Clone)]
 pub struct RhoConfig<F> {
@@ -106,7 +105,6 @@ mod tests {
         poly::Rotation,
     };
     use itertools::Itertools;
-    use std::convert::TryInto;
 
     #[test]
     fn test_rho_gate() {

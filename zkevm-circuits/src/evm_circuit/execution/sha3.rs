@@ -122,7 +122,7 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
         let values: Vec<u8> = (3..3 + (size.low_u64() as usize))
             .map(|i| block.rws[step.rw_indices[i]].memory_value())
             .collect();
-        let rlc_acc = rlc::value(&values, block.randomness);
+        let rlc_acc = rlc::value(values.iter().rev(), block.randomness);
         self.rlc_acc.assign(region, offset, Some(rlc_acc))?;
 
         // Memory expansion and dynamic gas cost for reading it.
@@ -145,19 +145,13 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
 
 #[cfg(test)]
 mod tests {
-    use eth_types::bytecode;
+    use bus_mapping::evm::{gen_sha3_code, MemoryKind};
     use mock::TestContext;
 
     use crate::test_util::run_test_circuits;
 
-    #[test]
-    fn sha3_gadget_simple() {
-        let code = bytecode! {
-            PUSH32(0x08) // size
-            PUSH32(0x00) // offset
-            SHA3
-            STOP
-        };
+    fn test_ok(offset: usize, size: usize, mem_kind: MemoryKind) {
+        let (code, _) = gen_sha3_code(offset, size, mem_kind);
         assert_eq!(
             run_test_circuits(
                 TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap(),
@@ -168,19 +162,18 @@ mod tests {
     }
 
     #[test]
+    fn sha3_gadget_simple() {
+        test_ok(0x00, 0x08, MemoryKind::Empty);
+        test_ok(0x10, 0x10, MemoryKind::LessThanSize);
+        test_ok(0x24, 0x16, MemoryKind::EqualToSize);
+        test_ok(0x32, 0x78, MemoryKind::MoreThanSize);
+    }
+
+    #[test]
     fn sha3_gadget_large() {
-        let code = bytecode! {
-            PUSH32(0x101)
-            PUSH32(0x202)
-            SHA3
-            STOP
-        };
-        assert_eq!(
-            run_test_circuits(
-                TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap(),
-                None
-            ),
-            Ok(())
-        );
+        test_ok(0x101, 0x202, MemoryKind::Empty);
+        test_ok(0x202, 0x303, MemoryKind::LessThanSize);
+        test_ok(0x303, 0x404, MemoryKind::EqualToSize);
+        test_ok(0x404, 0x505, MemoryKind::MoreThanSize);
     }
 }
