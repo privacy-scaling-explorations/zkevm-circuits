@@ -85,7 +85,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
 
         // We don't need to check acc_mult because it's not used after this row.
 
-        // Note: differently as in leaf_value (see empty_trie there), the placeholder
+        // Note: differently as in storage leaf value (see empty_trie there), the placeholder
         // leaf never appears in the first level here, because there is always
         // at least a genesis account.
         meta.create_gate("account leaf storage codehash", |meta| {
@@ -129,14 +129,24 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
             let acc_mult_prev = meta.query_advice(acc_mult, Rotation(rot));
             let s_rlp2 = meta.query_advice(s_main.rlp2, Rotation::cur());
             let c_rlp2 = meta.query_advice(c_main.rlp2, Rotation::cur());
+
+            /*
+            `s_main.rlp2` stores the RLP length of the hash of storage root. The hash output length is 32
+            and thus `s_main.rlp2` needs to be `160 = 128 + 32`. 
+            */
             constraints.push((
-                "account leaf storage codehash s_rlp2",
+                "Account leaf storage codehash s_main.rlp2 = 160",
                 q_enable.clone()
                 * (is_non_existing_account_proof.clone() - is_wrong_leaf.clone() - one.clone())
                 * (s_rlp2.clone() - c160.clone()),
             ));
+
+            /*
+            `c_main.rlp2` stores the RLP length of the codehash. The hash output length is 32
+            and thus `c_main.rlp2` needs to be `160 = 128 + 32`. 
+            */
             constraints.push((
-                "account leaf storage codehash c_rlp2",
+                "Account leaf storage codehash c_main.rlp2 = 160",
                 q_enable.clone()
                 * (is_non_existing_account_proof.clone() - is_wrong_leaf.clone() - one.clone())
                 * (c_rlp2.clone() - c160),
@@ -152,8 +162,15 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
                 curr_r = curr_r * acc_r;
             }
             let storage_root_stored = meta.query_advice(s_mod_node_hash_rlc, Rotation::cur());
+
+            /*
+            `s_main.bytes` contain storage root hash, but to simplify lookups we need to have
+            the RLC of storage root hash stored in some column too. The RLC is stored in
+            `s_mod_node_hash_rlc`. We need to ensure that this value corresponds to the RLC
+            of `s_main.bytes`.
+            */
             constraints.push((
-                "storage root RLC",
+                "Storage root RLC",
                 q_enable.clone() * (storage_root_rlc.clone() - storage_root_stored.clone()),
             ));
 
@@ -172,8 +189,15 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
                 curr_r = curr_r * acc_r;
             }
             let codehash_stored = meta.query_advice(c_mod_node_hash_rlc, Rotation::cur());
+
+            /*
+            `c_main.bytes` contain codehash, but to simplify lookups we need to have
+            the RLC of the codehash stored in some column too. The RLC is stored in
+            `c_mod_node_hash_rlc`. We need to ensure that this value corresponds to the RLC
+            of `c_main.bytes`.
+            */
             constraints.push((
-                "codehash RLC",
+                "Codehash RLC",
                 q_enable.clone() * (codehash_rlc.clone() - codehash_stored.clone()),
             ));
 
@@ -181,19 +205,19 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
                 let storage_root_s_from_prev =
                     meta.query_advice(s_mod_node_hash_rlc, Rotation::prev());
                 let storage_root_s_from_cur = meta.query_advice(sel1, Rotation::cur());
-                let codehash_s_from_prev = meta.query_advice(c_mod_node_hash_rlc, Rotation::prev());
                 let codehash_s_from_cur = meta.query_advice(sel2, Rotation::cur());
-                // We need correct previous storage root to enable lookup in storage codehash C
-                // row:
+
+                /*
+                To enable lookup for storage root modification we need to have S storage root
+                and C storage root in the same row.
+                For this reason, S storage root RLC is copied to `sel1` column in C row.
+
+                Note: we do not need such constraint for codehash as the codehash never changes.
+                */
                 constraints.push((
-                    "storage root prev RLC",
+                    "S storage root RLC is correctly copied to C row",
                     q_enable.clone()
                         * (storage_root_s_from_prev.clone() - storage_root_s_from_cur.clone()),
-                ));
-                // We need correct previous codehash to enable lookup in storage codehash C row:
-                constraints.push((
-                    "codehash prev RLC",
-                    q_enable.clone() * (codehash_s_from_prev.clone() - codehash_s_from_cur.clone()),
                 ));
 
                 // Check there is only one modification at once:
@@ -201,15 +225,29 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
                 let is_balance_mod = meta.query_advice(proof_type.is_balance_mod, Rotation::cur());
                 let is_account_delete_mod = meta.query_advice(proof_type.is_account_delete_mod, Rotation::cur());
 
+                /*
+                If the modification is nonce or balance modification, the storage root needs to 
+                stay the same.
+
+                Note: `is_non_existing_account_proof` uses only `S` proof.
+                */
                 constraints.push((
-                    "if nonce / balance / codehash mod: storage_root_s = storage_root_c",
+                    "If nonce / balance: storage_root_s = storage_root_c",
                     q_enable.clone()
                         * (is_nonce_mod.clone() + is_balance_mod.clone())
                         * (one.clone() - is_account_delete_mod.clone())
                         * (storage_root_s_from_cur.clone() - storage_root_stored.clone()),
                 ));
+
+                /*
+                If the modification is nonce or balance or storage modification (that means
+                always except for `is_account_delete_mod` and `is_non_existing_account_proof`),
+                the storage root needs to stay the same.
+
+                Note: `is_non_existing_account_proof` uses only `S` proof.
+                */
                 constraints.push((
-                    "if nonce / balance / storage mod: codehash_s = codehash_c",
+                    "If nonce / balance / storage mod: codehash_s = codehash_c",
                     q_enable.clone()
                         * (one.clone() - is_account_delete_mod.clone())
                         * (codehash_s_from_cur.clone() - codehash_stored.clone()),
@@ -219,21 +257,29 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
             expr = expr + codehash_rlc * old_curr_r;
 
             let acc = meta.query_advice(acc, Rotation::cur());
-            constraints.push(("account leaf storage codehash acc", q_enable * (expr - acc)));
+
+            /*
+            The RLC of the account leaf needs to be properly computed. We take the intermediate RLC
+            computed in the `ACCOUNT_LEAF_NONCE_BALANCE_*` row and add the bytes from the current row.
+            The computed RLC needs to be the same as the stored value in `acc_s` row.
+            */
+            constraints.push((
+                "Account leaf storage codehash RLC",
+                q_enable
+                    * (expr - acc)));
 
             constraints
         });
 
-        // Check hash of a leaf to be state root when leaf without branch.
-        // Note 1: first level branch compared to root in branch_hash_in_parent.
-        // Note 2: placeholder account leaf can appear in the first level, in this
-        // case it will be positioned after placeholder branch (because there is always
-        // at least a genesis account and adding a new leaf will make a branch). But in
-        // this case we do not check the hash to be the same as root (the lookup does
-        // not trigger because in this case account leaf is not in the first level rows)
-        // - this is ok because it is only a placeholder leaf.
+        /*
+        Check hash of an account leaf to be state root when the leaf is without a branch (the leaf
+        is in the first level).
+
+        Note: the constraints for the first level branch to be compared to the state root
+        are in `branch_hash_in_parent`.
+        */
         meta.lookup_any(
-            "account first level leaf without branch - compared to root",
+            "Account first level leaf without branch - compared to state root",
             |meta| {
                 let mut constraints = vec![];
                 let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
@@ -265,18 +311,20 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
             },
         );
 
-        // Check hash of a leaf.
-        meta.lookup_any("account_leaf_storage_codehash: hash of a leaf", |meta| {
+        /*
+        Hash of an account leaf needs to appear (when not in first level) at the proper position in the
+        parent branch.
+
+        Note: the placeholder leaf appears when a new account is created (in this case there was
+        no leaf before and we add a placeholder). There are no constraints for
+        a placeholder leaf, it is added only to maintain the parallel layout.
+        */
+        meta.lookup_any("Hash of an account leaf in a branch", |meta| {
             let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
 
             let is_account_leaf_storage_codehash =
                 meta.query_advice(is_account_leaf_storage_codehash, Rotation::cur());
-
-            // Placeholder leaf appears when a new account is created (and no existing leaf
-            // is replaced by a branch). There are no constraints for
-            // placeholder leaf except that the `modified_node`
-            // in parent branch is 0.
-
+ 
             // Rotate into any of the brach children rows:
             let mut is_placeholder_leaf = meta.query_advice(
                 sel1,
@@ -331,8 +379,17 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
             constraints
         });
 
+        /*
+        When there is a placeholder branch above the account leaf (it means the account leaf
+        drifted into newly added branch, this branch did not exist in `S` proof), the hash of the leaf
+        needs to be checked to be at the proper position in the branch above the placeholder branch.
+
+        Note: a placeholder leaf cannot appear when there is a branch placeholder
+        (a placeholder leaf appears when there is no leaf at certain position, while branch placeholder
+        appears when there is a leaf and it drifts down into a newly added branch).
+        */
         meta.lookup_any(
-            "account_leaf_storage_codehash: hash of a leaf (branch placeholder)",
+            "Hash of an account leaf when branch placeholder",
             |meta| {
                 let account_not_first_level = meta.query_advice(not_first_level, Rotation::cur());
                 // Any rotation that lands into branch can be used instead of -17.
@@ -340,11 +397,6 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
 
                 let is_account_leaf_storage_codehash =
                     meta.query_advice(is_account_leaf_storage_codehash, Rotation::cur());
-
-                // Note: placeholder leaf cannot appear when there is a branch placeholder
-                // (placeholder leaf appears when there is no leaf at certain
-                // position, while branch placeholder appears when there is a
-                // leaf on the way to this some position).
 
                 // Rotate into branch init:
                 let mut is_branch_placeholder = meta.query_advice(
@@ -391,8 +443,13 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
             },
         );
 
+        /*
+        When there is a placeholder branch above the account leaf (it means the account leaf
+        drifted into newly added branch, this branch did not exist in `S` proof) in the first level,
+        the hash of the leaf needs to be checked to be the state root.
+        */
         meta.lookup_any(
-            "account_leaf_storage_codehash: hash of a leaf compared to root (branch placeholder in first level)",
+            "Hash of an account leaf compared to root when branch placeholder in the first level",
             |meta| {
                 let account_not_first_level = meta.query_advice(not_first_level, Rotation::cur());
                 // Any rotation that lands into branch can be used instead of -17.
@@ -401,11 +458,6 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
 
                 let is_account_leaf_storage_codehash =
                     meta.query_advice(is_account_leaf_storage_codehash, Rotation::cur());
-
-                // Note: placeholder leaf cannot appear when there is a branch placeholder
-                // (placeholder leaf appears when there is no leaf at certain
-                // position, while branch placeholder appears when there is a
-                // leaf on the way to this some position).
 
                 // Rotate into branch init:
                 let mut is_branch_placeholder = meta.query_advice(
@@ -454,6 +506,11 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
             q_enable
         };
 
+        /*
+        Range lookups ensure that `s_main` and `c_main` columns are all bytes (between 0 - 255).
+
+        Note: `s_main.rlp1` and `c_main.rlp1` are not used.
+         */
         range_lookups(
             meta,
             sel.clone(),
@@ -468,7 +525,6 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
             FixedTableTag::Range256,
             fixed_table,
         );
-        // s_rlp1 and c_rlp1 not used
         range_lookups(
             meta,
             sel,
