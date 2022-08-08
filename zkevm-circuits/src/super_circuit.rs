@@ -48,7 +48,6 @@
 //!   - [x] Tx Circuit
 //!   - [ ] MPT Circuit
 
-use crate::copy_circuit;
 use crate::tx_circuit::{self, TxCircuit, TxCircuitConfig};
 
 use crate::bytecode_circuit::bytecode_unroller::{
@@ -143,6 +142,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
             &bytecode_table,
             &block_table,
             &copy_table,
+            &keccak_table,
         );
 
         Self::Config {
@@ -153,6 +153,15 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
             keccak_table: keccak_table.clone(),
             copy_table,
             evm_circuit,
+            copy_circuit: CopyCircuit::configure(
+                meta,
+                &tx_table,
+                &rw_table,
+                &bytecode_table,
+                copy_table,
+                q_copy_table,
+                power_of_randomness[0].clone(),
+            ),
             tx_circuit: TxCircuitConfig::new(
                 meta,
                 power_of_randomness.clone(),
@@ -222,11 +231,13 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
             keccak_inputs.push(bytecode.bytes.clone());
         }
         // Load Keccak Table
-        config.keccak_table.load(
-            &mut layouter,
-            keccak_inputs.iter().map(|b| b.as_slice()),
-            self.block.randomness,
-        )?;
+        config
+            .keccak_table
+            .load(&mut layouter, keccak_inputs, self.block.randomness)?;
+        // --- Copy Circuit ---
+        config
+            .copy_circuit
+            .assign_block(&mut layouter, &self.block)?;
         Ok(())
     }
 }

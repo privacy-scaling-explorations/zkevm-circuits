@@ -10,7 +10,6 @@ use halo2_proofs::{
     plonk::{Advice, Column, ConstraintSystem, Error, Selector},
     poly::Rotation,
 };
-use std::convert::TryInto;
 
 #[derive(Clone, Debug)]
 pub struct MixingConfig<F> {
@@ -237,7 +236,6 @@ mod tests {
     };
     use itertools::Itertools;
     use pretty_assertions::assert_eq;
-    use std::convert::TryInto;
 
     #[test]
     fn test_mixing_gate() {

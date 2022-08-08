@@ -15,7 +15,6 @@ use halo2_proofs::{
     poly::Rotation,
 };
 use sha3::{Digest, Keccak256};
-use std::convert::TryInto;
 
 #[cfg(test)]
 use halo2_proofs::circuit::Layouter;
