@@ -21,8 +21,6 @@ use crate::{
 use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian};
 use halo2_proofs::plonk::Error;
 
-use std::convert::TryInto;
-
 #[derive(Clone, Debug)]
 pub(crate) struct MemoryGadget<F> {
     same_context: SameContextGadget<F>,
@@ -276,5 +274,23 @@ mod test {
                 calc_gas_cost(opcode, memory_address),
             );
         }
+    }
+
+    #[test]
+    fn oog_static_memory_case() {
+        test_ok(
+            OpcodeId::MSTORE,
+            Word::from(0x12FFFF),
+            Word::from_big_endian(&(1..33).collect::<Vec<_>>()),
+            // insufficient gas
+            3000000,
+        );
+        test_ok(
+            OpcodeId::MLOAD,
+            Word::from(0x12FFFF),
+            Word::from_big_endian(&(1..33).collect::<Vec<_>>()),
+            // insufficient gas
+            21000,
+        );
     }
 }

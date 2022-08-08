@@ -14,7 +14,6 @@ use crate::{
 use array_init::array_init;
 use eth_types::{evm_types::GasCost, Field, ToLittleEndian, U256};
 use halo2_proofs::plonk::{Error, Expression};
-use std::convert::TryInto;
 
 /// Decodes the usable part of an address stored in a Word
 pub(crate) mod address_low {

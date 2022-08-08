@@ -232,10 +232,4 @@ pub struct CopyEvent {
     pub length: u64,
     /// Represents the list of copy steps in this copy event.
     pub steps: Vec<CopyStep>,
-    /// Helper field for witness generation.
-    pub tx_id: usize,
-    /// Helper field for witness generation.
-    pub call_id: usize,
-    /// Helper field for witness generation.
-    pub gas_left: u64,
 }

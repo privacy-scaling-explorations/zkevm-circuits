@@ -771,7 +771,7 @@ impl CopyTable {
                 .filter(|s| s.rw.is_write())
                 .map(|s| s.value)
                 .collect::<Vec<u8>>();
-            rlc::value(&values, randomness)
+            rlc::value(values.iter().rev(), randomness)
         } else {
             F::zero()
         };
@@ -838,7 +838,7 @@ impl CopyTable {
 
                 let tag_chip = BinaryNumberChip::construct(self.tag);
                 let copy_table_columns = self.columns();
-                for copy_event in block.copy_events.values() {
+                for copy_event in block.copy_events.iter() {
                     for (tag, row) in Self::assignments(copy_event, randomness) {
                         for (column, value) in copy_table_columns.iter().zip_eq(row) {
                             region.assign_advice(

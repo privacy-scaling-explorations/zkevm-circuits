@@ -1,7 +1,6 @@
 //! Doc this
 use crate::Error;
 use crate::{DebugByte, ToBigEndian, Word};
-use core::convert::TryFrom;
 use core::ops::{Add, AddAssign, Index, IndexMut, Mul, MulAssign, Range, Sub, SubAssign};
 use core::str::FromStr;
 use itertools::Itertools;
@@ -331,7 +330,6 @@ impl Memory {
 
 #[cfg(test)]
 mod memory_tests {
-    use std::convert::TryInto;
 
     use super::*;
 
