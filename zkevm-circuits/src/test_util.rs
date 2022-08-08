@@ -55,7 +55,7 @@ impl Default for BytecodeTestConfig {
             enable_evm_circuit_test: true,
             enable_state_circuit_test: true,
             gas_limit: 1_000_000u64,
-            evm_circuit_lookup_tags: vec![],
+            evm_circuit_lookup_tags: get_fixed_table(FixedTableConfig::Incomplete),
         }
     }
 }
