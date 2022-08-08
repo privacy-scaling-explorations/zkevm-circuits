@@ -27,7 +27,12 @@ pub(crate) struct ExtensionNodeKeyChip<F> {
 }
 
 /*
-TODO: Currently, we do not store key for the C extension node - it is always the same as key for
+TODO: extension node longer than 55 bytes - we leave this for now as it is very unlikely to happen.
+
+ExtensionNodeConfig supports extension nodes longer than 55 bytes, however ExtensionNodeKeyConfig
+currently does not. See below.
+
+Currently, we do not store key for the C extension node - it is always the same as key for
 the S extension node. However, it can happen that one extension node is longer than 55 bytes and one not
 (being longer than 55 bytes is very unlikely because that would mean the extension need to be at least
 23 bytes long - adding 32 for branch hash would give us 55).

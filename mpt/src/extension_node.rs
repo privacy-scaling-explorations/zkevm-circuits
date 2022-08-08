@@ -342,7 +342,7 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
                 // If only one nibble
                 // [226,16,160,172,105,12...
                 constraints.push((
-                    "One nibble & HASHED branch * ext not longer than 55 RLP",
+                    "One nibble & HASHED branch & ext not longer than 55 RLP",
                     q_not_first.clone()
                         * q_enable.clone()
                         * (one.clone() - is_ext_longer_than_55.clone())
@@ -354,7 +354,7 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
                 let c_advices0 = meta.query_advice(c_main.bytes[0], Rotation::cur());
                 // TODO: prepare test
                 constraints.push((
-                    "One nibble & NON-HASHED branch * ext not longer than 55 RLP",
+                    "One nibble & NON-HASHED branch & ext not longer than 55 RLP",
                     q_not_first.clone()
                         * q_enable.clone()
                         * (one.clone() - is_ext_longer_than_55.clone())
