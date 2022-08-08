@@ -24,8 +24,7 @@ use crate::{
     leaf_key_in_added_branch::LeafKeyInAddedBranchChip,
     leaf_value::LeafValueChip,
     param::{
-        ACCOUNT_LEAF_KEY_C_IND, ACCOUNT_LEAF_KEY_S_IND, ACCOUNT_LEAF_NONCE_BALANCE_C_IND,
-        ACCOUNT_LEAF_NONCE_BALANCE_S_IND, COUNTER_WITNESS_LEN, IS_BALANCE_MOD_POS,
+        COUNTER_WITNESS_LEN, IS_BALANCE_MOD_POS,
         IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, IS_EXT_LONG_EVEN_C16_POS,
         IS_EXT_LONG_EVEN_C1_POS, IS_EXT_LONG_ODD_C16_POS, IS_EXT_LONG_ODD_C1_POS,
         IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS, IS_NONCE_MOD_POS, IS_STORAGE_MOD_POS,
@@ -152,6 +151,20 @@ pub(crate) struct BranchCols {
     pub(crate) is_extension_node_s: Column<Advice>, /* contains extension node key (s_advices) and hash of
                                           * the branch (c_advices) */
     pub(crate) is_extension_node_c: Column<Advice>,
+}
+
+#[derive(Default)]
+struct Branch {
+    is_branch_init: bool,
+    is_branch_child: bool,
+    is_last_branch_child: bool,
+    node_index: u8,
+    is_modified: bool, 
+    modified_node: u8,
+    is_at_drifted_pos: bool,
+    drifted_pos: u8,
+    is_extension_node_s: bool,
+    is_extension_node_c: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -1376,10 +1389,23 @@ impl<F: FieldExt> MPTConfig<F> {
     ) -> Result<(), Error> {
         let account_leaf = AccountLeaf::default();
         let storage_leaf = StorageLeaf::default();
+        let mut branch = Branch::default();
+        branch.is_branch_init = true;
 
         self.assign_row(
-            region, row, true, false, false, 0, 0, account_leaf,
-            storage_leaf, 0, false, false, offset,
+            region,
+            row,
+            branch.is_branch_init,
+            branch.is_branch_child,
+            branch.is_last_branch_child,
+            branch.node_index,
+            branch.modified_node,
+            account_leaf,
+            storage_leaf, 
+            branch.drifted_pos,
+            branch.is_extension_node_s,
+            branch.is_extension_node_c,
+            offset,
         )?;
 
         Ok(())
@@ -1403,20 +1429,26 @@ impl<F: FieldExt> MPTConfig<F> {
     ) -> Result<(), Error> {
         let account_leaf = AccountLeaf::default();
         let storage_leaf = StorageLeaf::default();
+        let mut branch = Branch::default();
+        branch.is_branch_child = true;
+        branch.is_last_branch_child = node_index == 15;
+        branch.node_index = node_index;
+        branch.modified_node = key;
+        branch.drifted_pos = drifted_pos;
 
         self.assign_row(
             region,
             row,
-            false,
-            true,
-            node_index == 15,
-            node_index,
-            key,
+            branch.is_branch_init,
+            branch.is_branch_child,
+            branch.is_last_branch_child,
+            branch.node_index,
+            branch.modified_node,
             account_leaf,
             storage_leaf,
-            drifted_pos,
-            false,
-            false,
+            branch.drifted_pos,
+            branch.is_extension_node_s,
+            branch.is_extension_node_c,
             offset,
         )?;
 
@@ -2222,9 +2254,7 @@ impl<F: FieldExt> MPTConfig<F> {
                             
                             let mut account_leaf = AccountLeaf::default();
                             let mut storage_leaf = StorageLeaf::default();
-
-                            let mut is_extension_node_s = false;
-                            let mut is_extension_node_c = false;
+                            let mut branch = Branch::default();
 
                             if row[row.len() - 1] == 2 {
                                 storage_leaf.is_s_key = true;
@@ -2257,9 +2287,9 @@ impl<F: FieldExt> MPTConfig<F> {
                             } else if row[row.len() - 1] == 15 {
                                 storage_leaf.is_in_added_branch = true;
                             } else if row[row.len() - 1] == 16 {
-                                is_extension_node_s = true;
+                                branch.is_extension_node_s = true;
                             } else if row[row.len() - 1] == 17 {
-                                is_extension_node_c = true;
+                                branch.is_extension_node_c = true;
                             } else if row[row.len() - 1] == 18 {
                                 account_leaf.is_non_existing_account_row = true;
                             }
@@ -2267,16 +2297,16 @@ impl<F: FieldExt> MPTConfig<F> {
                             self.assign_row(
                                 &mut region,
                                 &row[0..row.len() - 1].to_vec(),
-                                false,
-                                false,
-                                false,
-                                0,
-                                0,
+                                branch.is_branch_init,
+                                branch.is_branch_child,
+                                branch.is_last_branch_child,
+                                branch.node_index,
+                                branch.modified_node,
                                 account_leaf,
                                 storage_leaf,
-                                0,
-                                is_extension_node_s,
-                                is_extension_node_c,
+                                branch.drifted_pos,
+                                branch.is_extension_node_s,
+                                branch.is_extension_node_c,
                                 offset,
                             )?;
 
