@@ -8,7 +8,7 @@ use std::marker::PhantomData;
 
 use crate::{
     helpers::get_is_extension_node,
-    param::{KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH}, mpt::MainCols,
+    param::{KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH}, mpt::{MainCols, AccumulatorPair},
 };
 
 #[derive(Clone, Debug)]
@@ -30,8 +30,7 @@ impl<F: FieldExt> BranchHashInParentChip<F> {
         is_branch_placeholder: Column<Advice>,
         s_main: MainCols,
         mod_node_hash_rlc: Column<Advice>,
-        acc: Column<Advice>,
-        acc_mult: Column<Advice>,
+        acc_pair: AccumulatorPair,
         keccak_table: [Column<Fixed>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
     ) -> BranchHashInParentConfig {
         let config = BranchHashInParentConfig {};
@@ -49,9 +48,9 @@ impl<F: FieldExt> BranchHashInParentChip<F> {
                 let is_extension_node = get_is_extension_node(meta, s_main.bytes, -16);
 
                 // TODO: acc currently doesn't have branch ValueNode info (which 128 if nil)
-                let acc = meta.query_advice(acc, Rotation::cur());
+                let acc = meta.query_advice(acc_pair.rlc, Rotation::cur());
                 let c128 = Expression::Constant(F::from(128));
-                let mult = meta.query_advice(acc_mult, Rotation::cur());
+                let mult = meta.query_advice(acc_pair.mult, Rotation::cur());
                 let branch_acc = acc + c128 * mult;
 
                 let root = meta.query_advice(inter_root, Rotation::cur());
@@ -100,9 +99,9 @@ impl<F: FieldExt> BranchHashInParentChip<F> {
             let is_extension_node = get_is_extension_node(meta, s_main.bytes, -16);
 
             // TODO: acc currently doesn't have branch ValueNode info (which 128 if nil)
-            let acc = meta.query_advice(acc, Rotation::cur());
+            let acc = meta.query_advice(acc_pair.rlc, Rotation::cur());
             let c128 = Expression::Constant(F::from(128));
-            let mult = meta.query_advice(acc_mult, Rotation::cur());
+            let mult = meta.query_advice(acc_pair.mult, Rotation::cur());
             let branch_acc = acc + c128 * mult;
 
             let mut constraints = vec![];

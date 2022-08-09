@@ -8,7 +8,7 @@ use std::marker::PhantomData;
 
 use crate::{
     helpers::{compute_rlc, get_bool_constraint, key_len_lookup, mult_diff_lookup, range_lookups},
-    mpt::{FixedTableTag, MainCols},
+    mpt::{FixedTableTag, MainCols, AccumulatorPair},
     param::{
         BRANCH_ROWS_NUM, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, RLP_NUM,
         R_TABLE_LEN, HASH_WIDTH,
@@ -35,8 +35,7 @@ impl<F: FieldExt> LeafKeyChip<F> {
         c_main: MainCols,
         s_mod_node_hash_rlc: Column<Advice>,
         c_mod_node_hash_rlc: Column<Advice>,
-        acc: Column<Advice>,
-        acc_mult: Column<Advice>,
+        acc_pair: AccumulatorPair,
         key_rlc: Column<Advice>,
         key_rlc_mult: Column<Advice>,
         key_rlc_prev: Column<Advice>,
@@ -113,7 +112,7 @@ impl<F: FieldExt> LeafKeyChip<F> {
             rlc = rlc + c_rlp1 * r_table[R_TABLE_LEN - 1].clone() * r_table[1].clone();
             rlc = rlc + c_rlp2 * r_table[R_TABLE_LEN - 1].clone() * r_table[2].clone();
 
-            let acc = meta.query_advice(acc, Rotation::cur());
+            let acc = meta.query_advice(acc_pair.rlc, Rotation::cur());
             constraints.push(("Leaf key acc",
                 q_enable.clone()
                 * (is_short + is_long) // activate if is_short or is_long
@@ -176,9 +175,9 @@ impl<F: FieldExt> LeafKeyChip<F> {
         */
 
         // acc_mult corresponds to key length (short):
-        mult_diff_lookup(meta, sel_short, 2, s_main.rlp2, acc_mult, 128, fixed_table);
+        mult_diff_lookup(meta, sel_short, 2, s_main.rlp2, acc_pair.mult, 128, fixed_table);
         // acc_mult corresponds to key length (long):
-        mult_diff_lookup(meta, sel_long, 3, s_main.bytes[0], acc_mult, 128, fixed_table);
+        mult_diff_lookup(meta, sel_long, 3, s_main.bytes[0], acc_pair.mult, 128, fixed_table);
 
         // Checking the key - accumulated RLC is taken (computed using the path through
         // branches) and key bytes are added to the RLC. The external circuit

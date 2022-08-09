@@ -6,7 +6,7 @@ use halo2_proofs::{
 use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
-use crate::{helpers::get_bool_constraint, mpt::MainCols};
+use crate::{helpers::get_bool_constraint, mpt::{MainCols, AccumulatorCols}};
 
 #[derive(Clone, Debug)]
 pub(crate) struct BranchRLCInitConfig {}
@@ -24,10 +24,7 @@ impl<F: FieldExt> BranchRLCInitChip<F> {
         meta: &mut ConstraintSystem<F>,
         q_enable: impl FnOnce(&mut VirtualCells<'_, F>) -> Expression<F>,
         s_main: MainCols,
-        acc_s: Column<Advice>,
-        acc_mult_s: Column<Advice>,
-        acc_c: Column<Advice>,
-        acc_mult_c: Column<Advice>,
+        accs: AccumulatorCols,
         acc_r: F,
     ) -> BranchRLCInitConfig {
         let config = BranchRLCInitConfig {};
@@ -49,10 +46,10 @@ impl<F: FieldExt> BranchRLCInitChip<F> {
             let mut constraints = vec![];
 
             // check branch accumulator S in row 0
-            let branch_acc_s_cur = meta.query_advice(acc_s, Rotation::cur());
-            let branch_acc_c_cur = meta.query_advice(acc_c, Rotation::cur());
-            let branch_mult_s_cur = meta.query_advice(acc_mult_s, Rotation::cur());
-            let branch_mult_c_cur = meta.query_advice(acc_mult_c, Rotation::cur());
+            let branch_acc_s_cur = meta.query_advice(accs.acc_s.rlc, Rotation::cur());
+            let branch_acc_c_cur = meta.query_advice(accs.acc_c.rlc, Rotation::cur());
+            let branch_mult_s_cur = meta.query_advice(accs.acc_s.mult, Rotation::cur());
+            let branch_mult_c_cur = meta.query_advice(accs.acc_c.mult, Rotation::cur());
 
             let s1 = meta.query_advice(s_main.rlp1, Rotation::cur());
             let s2 = meta.query_advice(s_main.rlp2, Rotation::cur());

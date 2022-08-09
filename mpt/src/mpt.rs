@@ -168,6 +168,33 @@ struct Branch {
 }
 
 #[derive(Clone, Debug)]
+pub(crate) struct AccumulatorPair {
+    pub(crate) rlc: Column<Advice>,
+    pub(crate) mult: Column<Advice>,
+}
+
+// Columns that store values that are being accumulated across multiple rows.
+#[derive(Clone, Debug)]
+pub(crate) struct AccumulatorCols {
+    pub(crate) acc_s: AccumulatorPair,
+    pub(crate) acc_c: AccumulatorPair,
+}
+
+// TODO: check whether sel1, sel2 are sometimes used for accumulated values and fix it.
+
+/*
+Columns that denote what kind of a row it is. These columns are used in different columns for
+different purposes (as opposed to for example branch.is_child - having dedicated columns simplifies
+ensuring the order of rows is corrrect, like branch.is_init appears only once and is followed
+by branch.is_child ... ). For example, columns sel1, sel2 are used for denoting whether
+the branch child is at modified node or whether the storage leaf is in short or long RLP format.
+#[derive(Clone, Debug)]
+pub(crate) struct DenoteCols {
+    pub(crate) sel: Column<Advice>,
+}
+*/
+
+#[derive(Clone, Debug)]
 pub struct MPTConfig<F> {
     pub(crate) proof_type: ProofTypeCols,
     pub(crate) q_enable: Column<Fixed>,
@@ -175,6 +202,7 @@ pub struct MPTConfig<F> {
     pub(crate) not_first_level: Column<Advice>,
     pub(crate) inter_start_root: Column<Advice>,
     pub(crate) inter_final_root: Column<Advice>,
+    pub(crate) accumulators: AccumulatorCols,
     pub(crate) branch: BranchCols,
     pub(crate) s_main: MainCols,
     pub(crate) c_main: MainCols,
@@ -184,10 +212,6 @@ pub struct MPTConfig<F> {
                                           * hash (used also for leaf long/short) */
     pub(crate) c_mod_node_hash_rlc: Column<Advice>, /* modified node c_advices RLC when c_advices present
                                           * hash (used also for leaf long/short) */
-    pub(crate) acc_s: Column<Advice>,      // for branch s and account leaf
-    pub(crate) acc_mult_s: Column<Advice>, // for branch s and account leaf
-    pub(crate) acc_c: Column<Advice>,      // for branch c
-    pub(crate) acc_mult_c: Column<Advice>, // for branch c
     pub(crate) acc_r: F,
     // sel1 and sel2 in branch children: denote whether there is no leaf at is_modified (when value
     // is added or deleted from trie - but no branch is added or turned into leaf)
@@ -406,10 +430,19 @@ impl<F: FieldExt> MPTConfig<F> {
         let s_mod_node_hash_rlc = meta.advice_column();
         let c_mod_node_hash_rlc = meta.advice_column();
 
-        let acc_s = meta.advice_column();
-        let acc_mult_s = meta.advice_column();
-        let acc_c = meta.advice_column();
-        let acc_mult_c = meta.advice_column();
+        let acc_s = AccumulatorPair {
+            rlc : meta.advice_column(),
+            mult : meta.advice_column(),
+        };
+        let acc_c = AccumulatorPair {
+            rlc : meta.advice_column(),
+            mult : meta.advice_column(),
+        };
+
+        let accumulators = AccumulatorCols {
+            acc_s: acc_s.clone(),
+            acc_c: acc_c.clone(),
+        };
 
         let sel1 = meta.advice_column();
         let sel2 = meta.advice_column();
@@ -533,8 +566,7 @@ impl<F: FieldExt> MPTConfig<F> {
             s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM], // TODO: remove
             s_main.clone(),
             s_mod_node_hash_rlc,
-            acc_s,
-            acc_mult_s,
+            acc_s.clone(),
             keccak_table,
         );
 
@@ -549,7 +581,6 @@ impl<F: FieldExt> MPTConfig<F> {
             s_main.clone(),
             c_mod_node_hash_rlc,
             acc_c,
-            acc_mult_c,
             keccak_table,
         );
 
@@ -569,10 +600,7 @@ impl<F: FieldExt> MPTConfig<F> {
             branch.is_init,
             s_main.clone(),
             c_main.clone(),
-            acc_s,
-            acc_mult_s,
-            acc_c,
-            acc_mult_c,
+            accumulators.clone(),
             keccak_table,
             s_mod_node_hash_rlc,
             r_table.clone(),
@@ -596,10 +624,7 @@ impl<F: FieldExt> MPTConfig<F> {
             branch.is_init,
             s_main.clone(),
             c_main.clone(),
-            acc_s,
-            acc_mult_s,
-            acc_c,
-            acc_mult_c,
+            accumulators.clone(),
             keccak_table,
             c_mod_node_hash_rlc,
             r_table.clone(),
@@ -630,10 +655,7 @@ impl<F: FieldExt> MPTConfig<F> {
             storage_leaf.clone(),
             branch.is_last_child,
             s_main.clone(),
-            acc_s,
-            acc_mult_s,
-            acc_c,
-            acc_mult_c,
+            accumulators.clone(),
             sel1,
             keccak_table,
             acc_r,
@@ -648,10 +670,7 @@ impl<F: FieldExt> MPTConfig<F> {
             storage_leaf.clone(),
             branch.is_last_child,
             s_main.clone(), // s_main (and not c_main) is correct
-            acc_s,
-            acc_mult_s,
-            acc_c,
-            acc_mult_c,
+            accumulators.clone(),
             sel2,
             keccak_table,
             acc_r,
@@ -665,10 +684,7 @@ impl<F: FieldExt> MPTConfig<F> {
                     * meta.query_fixed(q_enable, Rotation::cur())
             },
             s_main.clone(),
-            acc_s,
-            acc_mult_s,
-            acc_c,
-            acc_mult_c,
+            accumulators.clone(),
             acc_r,
         );
 
@@ -681,8 +697,7 @@ impl<F: FieldExt> MPTConfig<F> {
                 q_not_first * is_branch_child
             },
             s_main.clone(),
-            acc_s,
-            acc_mult_s,
+            accumulators.acc_s.clone(),
             is_node_hashed_s,
             node_mult_diff_s,
             r_table.clone(),
@@ -698,8 +713,7 @@ impl<F: FieldExt> MPTConfig<F> {
                 q_not_first * is_branch_child
             },
             c_main.clone(),
-            acc_c,
-            acc_mult_c,
+            accumulators.acc_c.clone(),
             is_node_hashed_c,
             node_mult_diff_c,
             r_table.clone(),
@@ -724,8 +738,7 @@ impl<F: FieldExt> MPTConfig<F> {
             c_main.clone(),
             s_mod_node_hash_rlc,
             c_mod_node_hash_rlc,
-            acc_s,
-            acc_mult_s,
+            accumulators.acc_s.clone(),
             key_rlc,
             key_rlc_mult,
             sel1,
@@ -755,8 +768,7 @@ impl<F: FieldExt> MPTConfig<F> {
             c_main.clone(),
             s_mod_node_hash_rlc,
             c_mod_node_hash_rlc,
-            acc_s,
-            acc_mult_s,
+            accumulators.acc_s.clone(),
             key_rlc,
             key_rlc_mult,
             sel1,
@@ -781,8 +793,7 @@ impl<F: FieldExt> MPTConfig<F> {
             c_main.clone(),
             s_mod_node_hash_rlc,
             c_mod_node_hash_rlc,
-            acc_s,
-            acc_mult_s,
+            acc_s.clone(),
             key_rlc,
             key_rlc_mult,
             mult_diff,
@@ -803,9 +814,7 @@ impl<F: FieldExt> MPTConfig<F> {
             s_mod_node_hash_rlc,
             c_mod_node_hash_rlc,
             keccak_table,
-            acc_s,
-            acc_mult_s,
-            acc_c,
+            accumulators.clone(),
             sel1,
             sel2,
             key_rlc,
@@ -828,9 +837,7 @@ impl<F: FieldExt> MPTConfig<F> {
             s_mod_node_hash_rlc,
             c_mod_node_hash_rlc,
             keccak_table,
-            acc_s,
-            acc_mult_s,
-            acc_c,
+            accumulators.clone(),
             sel1,
             sel2,
             key_rlc,
@@ -856,12 +863,9 @@ impl<F: FieldExt> MPTConfig<F> {
             not_first_level,
             s_main.clone(),
             c_main.clone(),
-            acc_s,
-            acc_mult_s,
+            accumulators.clone(),
             key_rlc,
             key_rlc_mult,
-            acc_c,
-            acc_mult_c,
             r_table.clone(),
             fixed_table.clone(),
             address_rlc,
@@ -882,12 +886,9 @@ impl<F: FieldExt> MPTConfig<F> {
             not_first_level,
             s_main.clone(),
             c_main.clone(),
-            acc_s,
-            acc_mult_s,
+            accumulators.clone(),
             key_rlc,
             key_rlc_mult,
-            acc_c,
-            acc_mult_c,
             r_table.clone(),
             fixed_table.clone(),
             address_rlc,
@@ -911,7 +912,7 @@ impl<F: FieldExt> MPTConfig<F> {
             c_main.clone(),
             key_rlc,
             key_rlc_mult,
-            acc_s,
+            accumulators.acc_s.rlc,
             sel1,
             r_table.clone(),
             fixed_table.clone(),
@@ -929,10 +930,7 @@ impl<F: FieldExt> MPTConfig<F> {
             },
             s_main.clone(),
             c_main.clone(),
-            acc_s,
-            acc_mult_s,
-            acc_mult_c,
-            acc_c,
+            accumulators.clone(),
             key_rlc_mult,
             r_table.clone(),
             s_mod_node_hash_rlc,
@@ -954,10 +952,7 @@ impl<F: FieldExt> MPTConfig<F> {
             },
             s_main.clone(),
             c_main.clone(),
-            acc_s,
-            acc_mult_s,
-            acc_mult_c,
-            acc_c,
+            accumulators.clone(),
             key_rlc_mult,
             r_table.clone(),
             s_mod_node_hash_rlc,
@@ -978,8 +973,7 @@ impl<F: FieldExt> MPTConfig<F> {
             s_main.clone(),
             c_main.clone(),
             acc_r,
-            acc_s,
-            acc_mult_s,
+            acc_s.clone(),
             fixed_table.clone(),
             s_mod_node_hash_rlc,
             c_mod_node_hash_rlc,
@@ -999,8 +993,7 @@ impl<F: FieldExt> MPTConfig<F> {
             s_main.clone(),
             c_main.clone(),
             acc_r,
-            acc_s,
-            acc_mult_s,
+            acc_s.clone(),
             fixed_table.clone(),
             s_mod_node_hash_rlc,
             c_mod_node_hash_rlc,
@@ -1025,10 +1018,7 @@ impl<F: FieldExt> MPTConfig<F> {
             c_main.clone(),
             s_mod_node_hash_rlc,
             c_mod_node_hash_rlc,
-            acc_s,
-            acc_mult_s,
-            acc_c, // mult_diff_nonce
-            acc_mult_c,
+            accumulators.clone(),
             key_rlc,
             key_rlc_mult,
             mult_diff,
@@ -1054,10 +1044,7 @@ impl<F: FieldExt> MPTConfig<F> {
             storage_leaf,
             s_mod_node_hash_rlc,
             c_mod_node_hash_rlc,
-            acc_s,
-            acc_mult_s,
-            acc_c,
-            acc_mult_c,
+            accumulators,
             acc_r,
             sel1,
             sel2,
@@ -1103,28 +1090,28 @@ impl<F: FieldExt> MPTConfig<F> {
 
         region.assign_advice(
             || "assign acc_s".to_string(),
-            self.acc_s,
+            self.accumulators.acc_s.rlc,
             offset,
             || Ok(F::zero()),
         )?;
 
         region.assign_advice(
             || "assign acc_mult_s".to_string(),
-            self.acc_mult_s,
+            self.accumulators.acc_s.mult,
             offset,
             || Ok(F::zero()),
         )?;
 
         region.assign_advice(
             || "assign acc_c".to_string(),
-            self.acc_c,
+            self.accumulators.acc_c.rlc,
             offset,
             || Ok(F::zero()),
         )?;
 
         region.assign_advice(
             || "assign acc_mult_c".to_string(),
-            self.acc_mult_c,
+            self.accumulators.acc_c.mult,
             offset,
             || Ok(F::zero()),
         )?;
@@ -1540,28 +1527,28 @@ impl<F: FieldExt> MPTConfig<F> {
     ) -> Result<(), Error> {
         region.assign_advice(
             || "assign acc_s".to_string(),
-            self.acc_s,
+            self.accumulators.acc_s.rlc,
             offset,
             || Ok(acc_s),
         )?;
 
         region.assign_advice(
             || "assign acc_mult_s".to_string(),
-            self.acc_mult_s,
+            self.accumulators.acc_s.mult,
             offset,
             || Ok(acc_mult_s),
         )?;
 
         region.assign_advice(
             || "assign acc_c".to_string(),
-            self.acc_c,
+            self.accumulators.acc_c.rlc,
             offset,
             || Ok(acc_c),
         )?;
 
         region.assign_advice(
             || "assign acc_mult_c".to_string(),
-            self.acc_mult_c,
+            self.accumulators.acc_c.mult,
             offset,
             || Ok(acc_mult_c),
         )?;
@@ -2404,7 +2391,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                     // not_hashed
                                     region.assign_advice(
                                         || "assign not_hashed".to_string(),
-                                        self.acc_c,
+                                        self.accumulators.acc_c.rlc,
                                         offset,
                                         || Ok(F::one()),
                                     )?;
@@ -2888,7 +2875,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                 )?;
                                 region.assign_advice(
                                     || "assign diff inv".to_string(),
-                                    self.acc_s,
+                                    self.accumulators.acc_s.rlc,
                                     offset,
                                     || Ok(diff_inv),
                                 )?;

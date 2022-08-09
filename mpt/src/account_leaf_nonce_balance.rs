@@ -9,7 +9,7 @@ use std::marker::PhantomData;
 
 use crate::{
     helpers::{compute_rlc, get_bool_constraint, key_len_lookup, mult_diff_lookup, range_lookups},
-    mpt::{FixedTableTag, MainCols, ProofTypeCols, ProofVariables, MPTConfig},
+    mpt::{FixedTableTag, MainCols, ProofTypeCols, ProofVariables, MPTConfig, AccumulatorCols},
     param::{
         ACCOUNT_LEAF_KEY_C_IND, ACCOUNT_LEAF_KEY_S_IND, ACCOUNT_LEAF_NONCE_BALANCE_C_IND,
         ACCOUNT_LEAF_NONCE_BALANCE_S_IND, HASH_WIDTH, ACCOUNT_NON_EXISTING_IND, S_START, C_START,
@@ -64,10 +64,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
         q_enable: impl Fn(&mut VirtualCells<'_, F>) -> Expression<F> + Copy,
         s_main: MainCols,
         c_main: MainCols,
-        acc_s: Column<Advice>,
-        acc_mult_s: Column<Advice>,
-        acc_mult_c: Column<Advice>,
-        mult_diff_nonce: Column<Advice>,
+        accs: AccumulatorCols, // accs.acc_c.rlc contains mult_diff_nonce
         mult_diff_balance: Column<Advice>,
         r_table: Vec<Expression<F>>,
         s_mod_node_hash_rlc: Column<Advice>,
@@ -108,11 +105,11 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
             }
             let c248 = Expression::Constant(F::from(248));
 
-            let acc_prev = meta.query_advice(acc_s, Rotation(rot));
-            let acc_mult_prev = meta.query_advice(acc_mult_s, Rotation(rot));
+            let acc_prev = meta.query_advice(accs.acc_s.rlc, Rotation(rot));
+            let acc_mult_prev = meta.query_advice(accs.acc_s.mult, Rotation(rot));
 
-            let acc_mult_after_nonce = meta.query_advice(acc_mult_c, Rotation::cur());
-            let mult_diff_nonce = meta.query_advice(mult_diff_nonce, Rotation::cur());
+            let acc_mult_after_nonce = meta.query_advice(accs.acc_c.mult, Rotation::cur());
+            let mult_diff_nonce = meta.query_advice(accs.acc_c.rlc, Rotation::cur());
             let mult_diff_balance = meta.query_advice(mult_diff_balance, Rotation::cur());
 
             let is_nonce_long = meta.query_advice(
@@ -375,10 +372,10 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
 
             expr = expr + balance_rlc * acc_mult_after_nonce.clone();
 
-            let acc = meta.query_advice(acc_s, Rotation::cur());
+            let acc = meta.query_advice(accs.acc_s.rlc, Rotation::cur());
             constraints.push(("leaf nonce balance acc", q_enable.clone() * (expr - acc)));
 
-            let acc_mult_final = meta.query_advice(acc_mult_s, Rotation::cur());
+            let acc_mult_final = meta.query_advice(accs.acc_s.mult, Rotation::cur());
 
             /*
             When adding nonce bytes to the account leaf RLC we do:
@@ -620,7 +617,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
             5, /* 4 for s_rlp1, s_rlp2, c_rlp1, c_rlp1; 1 for byte with length
                 * info */
             s_main.bytes[0],
-            mult_diff_nonce,
+            accs.acc_c.rlc,
             128,
             fixed_table,
         );
@@ -906,7 +903,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
 
         region.assign_advice(
             || "assign mult diff".to_string(),
-            mpt_config.acc_c, // assigning key_rlc leads into PoisonedConstraint
+            mpt_config.accumulators.acc_c.rlc, // assigning key_rlc leads into PoisonedConstraint
             offset,
             || Ok(mult_diff_s),
         ).ok();

@@ -6,7 +6,7 @@ use halo2_proofs::{
 use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
-use crate::{param::{HASH_WIDTH, R_TABLE_LEN}, helpers::{mult_diff_lookup, key_len_lookup}, mpt::MainCols};
+use crate::{param::{HASH_WIDTH, R_TABLE_LEN}, helpers::{mult_diff_lookup, key_len_lookup}, mpt::{MainCols, AccumulatorPair}};
 
 #[derive(Clone, Debug)]
 pub(crate) struct BranchRLCConfig {}
@@ -23,8 +23,7 @@ impl<F: FieldExt> BranchRLCChip<F> {
         meta: &mut ConstraintSystem<F>,
         q_enable: impl Fn(&mut VirtualCells<'_, F>) -> Expression<F>,
         main: MainCols,
-        branch_acc: Column<Advice>,
-        branch_mult: Column<Advice>,
+        branch_acc: AccumulatorPair,
         is_node_hashed: Column<Advice>,
         node_mult_diff: Column<Advice>,
         r_table: Vec<Expression<F>>,
@@ -38,10 +37,10 @@ impl<F: FieldExt> BranchRLCChip<F> {
 
             let mut constraints = vec![];
             let rlp2 = meta.query_advice(main.rlp2, Rotation::cur());
-            let branch_acc_prev = meta.query_advice(branch_acc, Rotation::prev());
-            let branch_acc_cur = meta.query_advice(branch_acc, Rotation::cur());
-            let branch_mult_prev = meta.query_advice(branch_mult, Rotation::prev());
-            let branch_mult_cur = meta.query_advice(branch_mult, Rotation::cur());
+            let branch_acc_prev = meta.query_advice(branch_acc.rlc, Rotation::prev());
+            let branch_acc_cur = meta.query_advice(branch_acc.rlc, Rotation::cur());
+            let branch_mult_prev = meta.query_advice(branch_acc.mult, Rotation::prev());
+            let branch_mult_cur = meta.query_advice(branch_acc.mult, Rotation::cur());
 
             let is_node_hashed = meta.query_advice(is_node_hashed, Rotation::cur());
 

@@ -8,7 +8,7 @@ use std::marker::PhantomData;
 
 use crate::{
     helpers::{compute_rlc, key_len_lookup, mult_diff_lookup, range_lookups},
-    mpt::{FixedTableTag, MainCols, ProofTypeCols},
+    mpt::{FixedTableTag, MainCols, ProofTypeCols, AccumulatorCols},
     param::{
         HASH_WIDTH, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS, IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS, IS_EXT_LONG_ODD_C16_POS, IS_EXT_LONG_ODD_C1_POS, 
         IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS, RLP_NUM, R_TABLE_LEN,
@@ -32,12 +32,9 @@ impl<F: FieldExt> AccountLeafKeyChip<F> {
         not_first_level: Column<Advice>,
         s_main: MainCols,
         c_main: MainCols,
-        acc_s: Column<Advice>,
-        acc_mult_s: Column<Advice>,
+        accs: AccumulatorCols, // acc_c contains key_rlc_prev & key_rlc_mult_prev
         key_rlc: Column<Advice>,
         key_rlc_mult: Column<Advice>,
-        key_rlc_prev: Column<Advice>,
-        key_rlc_mult_prev: Column<Advice>,
         r_table: Vec<Expression<F>>,
         fixed_table: [Column<Fixed>; 3],
         address_rlc: Column<Advice>,
@@ -91,7 +88,7 @@ impl<F: FieldExt> AccountLeafKeyChip<F> {
             expr = expr + c_rlp1.clone() * r_table[R_TABLE_LEN - 1].clone() * r_table[1].clone();
             expr = expr + c_rlp2.clone() * r_table[R_TABLE_LEN - 1].clone() * r_table[2].clone();
 
-            let acc = meta.query_advice(acc_s, Rotation::cur());
+            let acc = meta.query_advice(accs.acc_s.rlc, Rotation::cur());
 
             constraints.push(("leaf key acc", q_enable.clone() * (expr - acc)));
 
@@ -120,7 +117,7 @@ impl<F: FieldExt> AccountLeafKeyChip<F> {
         */
 
         // acc_mult corresponds to key length:
-        mult_diff_lookup(meta, q_enable, 3, s_main.bytes[0], acc_mult_s, 128, fixed_table);
+        mult_diff_lookup(meta, q_enable, 3, s_main.bytes[0], accs.acc_s.mult, 128, fixed_table);
         // No need to check key_rlc_mult as it's not used after this row.
 
         meta.create_gate(
@@ -305,8 +302,8 @@ impl<F: FieldExt> AccountLeafKeyChip<F> {
             let key_rlc_prev_level = (one.clone() - is_branch_in_first_level.clone())
                 * meta.query_advice(key_rlc, Rotation(rot_into_prev_branch));
 
-            let rlc_prev = meta.query_advice(key_rlc_prev, Rotation::cur());
-            let mult_prev = meta.query_advice(key_rlc_mult_prev, Rotation::cur());
+            let rlc_prev = meta.query_advice(accs.acc_c.rlc, Rotation::cur());
+            let mult_prev = meta.query_advice(accs.acc_c.mult, Rotation::cur());
 
             constraints.push((
                 "Previous key RLC",
@@ -336,8 +333,8 @@ impl<F: FieldExt> AccountLeafKeyChip<F> {
             let is_leaf_in_first_level =
                 one.clone() - meta.query_advice(not_first_level, Rotation::cur());
 
-            let key_rlc_acc_start = meta.query_advice(key_rlc_prev, Rotation::cur());
-            let key_mult_start = meta.query_advice(key_rlc_mult_prev, Rotation::cur());
+            let key_rlc_acc_start = meta.query_advice(accs.acc_c.rlc, Rotation::cur());
+            let key_mult_start = meta.query_advice(accs.acc_c.mult, Rotation::cur());
 
             let sel1p = meta.query_advice(
                 s_main.bytes[IS_BRANCH_C16_POS - RLP_NUM],

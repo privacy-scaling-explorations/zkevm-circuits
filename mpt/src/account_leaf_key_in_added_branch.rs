@@ -11,7 +11,7 @@ use crate::{
         compute_rlc, get_bool_constraint, get_is_extension_node_one_nibble, key_len_lookup,
         mult_diff_lookup, range_lookups,
     },
-    mpt::{FixedTableTag, MainCols},
+    mpt::{FixedTableTag, MainCols, AccumulatorCols},
     param::{IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, ACCOUNT_DRIFTED_LEAF_IND, BRANCH_ROWS_NUM, ACCOUNT_LEAF_KEY_S_IND, ACCOUNT_LEAF_KEY_C_IND, ACCOUNT_LEAF_NONCE_BALANCE_S_IND, ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND, ACCOUNT_LEAF_NONCE_BALANCE_C_IND, ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND},
 };
 
@@ -36,11 +36,8 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchChip<F> {
         s_main: MainCols,
         c_main: MainCols,
         s_mod_node_hash_rlc: Column<Advice>,
-        c_mod_node_hash_rlc: Column<Advice>,
-        acc_s: Column<Advice>,
-        acc_mult_s: Column<Advice>,
-        acc_c: Column<Advice>, // initially, key_rlc was used for mult_diff_nonce, but it caused PoisonedConstraint in extension_node_key
-        acc_mult_c: Column<Advice>,
+        c_mod_node_hash_rlc: Column<Advice>, 
+        accs: AccumulatorCols, // accs.acc_c contains mult_diff_nonce, initially key_rlc was used for mult_diff_nonce, but it caused PoisonedConstraint in extension_node_key
         key_rlc: Column<Advice>,
         key_rlc_mult: Column<Advice>,
         mult_diff: Column<Advice>,
@@ -117,7 +114,7 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchChip<F> {
             expr = expr + c_rlp1.clone() * r_table[R_TABLE_LEN - 1].clone() * r_table[1].clone();
             expr = expr + c_rlp2.clone() * r_table[R_TABLE_LEN - 1].clone() * r_table[2].clone();
 
-            let acc = meta.query_advice(acc_s, Rotation::cur());
+            let acc = meta.query_advice(accs.acc_s.rlc, Rotation::cur());
 
             constraints.push(("leaf key acc", q_enable.clone()
                 * (is_branch_s_placeholder + is_branch_c_placeholder) // drifted leaf appears only when there is a placeholder branch
@@ -157,7 +154,7 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchChip<F> {
         */
 
         // acc_mult corresponds to key length:
-        mult_diff_lookup(meta, sel, 3, s_main.bytes[0], acc_mult_s, 128, fixed_table);
+        mult_diff_lookup(meta, sel, 3, s_main.bytes[0], accs.acc_s.mult, 128, fixed_table);
 
         /*
         Leaf key S
@@ -228,7 +225,7 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchChip<F> {
             // (like meta.query_advice(key_rlc_mult, Rotation(-30))), but this throws an error
             // when account is in the first or second level. However, acc_mult_c in the account
             // leaf row stores this value too (the constraints for this are in account_leaf_key).
-            let branch_rlc_mult = meta.query_advice(acc_mult_c, Rotation(-(ACCOUNT_DRIFTED_LEAF_IND - ACCOUNT_LEAF_KEY_S_IND)));
+            let branch_rlc_mult = meta.query_advice(accs.acc_c.mult, Rotation(-(ACCOUNT_DRIFTED_LEAF_IND - ACCOUNT_LEAF_KEY_S_IND)));
 
             let mult_diff = meta.query_advice(mult_diff, Rotation(rot_branch_init + 1)); 
 
@@ -303,8 +300,8 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchChip<F> {
             is_s: bool | {
 
             let q_enable = q_enable(meta);
-            let mut rlc = meta.query_advice(acc_s, Rotation::cur());
-            let acc_mult = meta.query_advice(acc_mult_s, Rotation::cur());
+            let mut rlc = meta.query_advice(accs.acc_s.rlc, Rotation::cur());
+            let acc_mult = meta.query_advice(accs.acc_s.mult, Rotation::cur());
 
             /*
             Leaf key S
@@ -325,7 +322,7 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchChip<F> {
                 storage_codehash_rot = -(ACCOUNT_DRIFTED_LEAF_IND - ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND);
             }
 
-            let mult_diff_nonce = meta.query_advice(acc_c, Rotation(nonce_rot));
+            let mult_diff_nonce = meta.query_advice(accs.acc_c.rlc, Rotation(nonce_rot));
 
             let s_rlp1_nonce = meta.query_advice(s_main.rlp1, Rotation(nonce_rot));
             rlc = rlc + s_rlp1_nonce * acc_mult.clone();

@@ -11,7 +11,7 @@ use crate::{
     param::{
         IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS, KECCAK_INPUT_WIDTH,
         KECCAK_OUTPUT_WIDTH, RLP_NUM, ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND, ACCOUNT_LEAF_ROWS, ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND, LEAF_VALUE_S_IND, LEAF_VALUE_C_IND, BRANCH_ROWS_NUM,
-    }, mpt::{MainCols, StorageLeafCols},
+    }, mpt::{MainCols, StorageLeafCols, AccumulatorCols},
 };
 
 #[derive(Clone, Debug)]
@@ -31,10 +31,7 @@ impl<F: FieldExt> StorageRootChip<F> {
         storage_leaf: StorageLeafCols,
         is_last_branch_child: Column<Advice>,
         s_main: MainCols,
-        acc_s: Column<Advice>,
-        acc_mult_s: Column<Advice>,
-        acc_c: Column<Advice>,
-        acc_mult_c: Column<Advice>,
+        accs: AccumulatorCols,
         sel: Column<Advice>,
         keccak_table: [Column<Fixed>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
         acc_r: F,
@@ -76,16 +73,16 @@ impl<F: FieldExt> StorageRootChip<F> {
                 // We need to do the lookup only if we are in the last branch child.
                 let is_last_branch_child = meta.query_advice(is_last_branch_child, Rotation::cur());
 
-                let mut acc = meta.query_advice(acc_s, Rotation::cur());
+                let mut acc = meta.query_advice(accs.acc_s.rlc, Rotation::cur());
                 if !is_s {
-                    acc = meta.query_advice(acc_c, Rotation::cur());
+                    acc = meta.query_advice(accs.acc_c.rlc, Rotation::cur());
                 }
 
                 // TODO: acc currently doesn't have branch ValueNode info (which 128 if nil)
                 let c128 = Expression::Constant(F::from(128));
-                let mut mult = meta.query_advice(acc_mult_s, Rotation::cur());
+                let mut mult = meta.query_advice(accs.acc_s.mult, Rotation::cur());
                 if !is_s {
-                    mult = meta.query_advice(acc_mult_c, Rotation::cur());
+                    mult = meta.query_advice(accs.acc_c.mult, Rotation::cur());
                 }
                 let branch_acc = acc + c128 * mult;
 
@@ -163,7 +160,7 @@ impl<F: FieldExt> StorageRootChip<F> {
                     meta.query_advice(is_last_branch_child, Rotation(rot_into_last_branch_child));
 
                 // Note: acc_c in both cases.
-                let acc = meta.query_advice(acc_c, Rotation::cur());
+                let acc = meta.query_advice(accs.acc_c.rlc, Rotation::cur());
 
                 let mut sc_hash = vec![];
                 // Note: storage root is always in s_main.bytes!
@@ -229,7 +226,7 @@ impl<F: FieldExt> StorageRootChip<F> {
                     Rotation(rot_into_last_account_row),
                 );
 
-                let acc = meta.query_advice(acc_s, Rotation::cur());
+                let acc = meta.query_advice(accs.acc_s.rlc, Rotation::cur());
 
                 let mut sc_hash = vec![];
                 // Note: storage root is always in s_main.bytes!
@@ -333,7 +330,7 @@ impl<F: FieldExt> StorageRootChip<F> {
             let is_account_leaf_in_added_branch =
                 meta.query_advice(is_account_leaf_in_added_branch, Rotation(rot_into_last_account_row));
 
-            let acc = meta.query_advice(acc_s, Rotation::cur());
+            let acc = meta.query_advice(accs.acc_s.rlc, Rotation::cur());
 
             let mut sc_hash = vec![];
             // Note: storage root is always in s_main.bytes!

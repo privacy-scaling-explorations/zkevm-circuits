@@ -14,7 +14,7 @@ use crate::{
         IS_BRANCH_S_PLACEHOLDER_POS, IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS,
         IS_EXT_LONG_ODD_C16_POS, IS_EXT_LONG_ODD_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS,
         KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH, RLP_NUM, IS_S_EXT_LONGER_THAN_55_POS, IS_C_EXT_LONGER_THAN_55_POS, IS_S_BRANCH_IN_EXT_HASHED_POS, IS_C_BRANCH_IN_EXT_HASHED_POS,
-    }, mpt::MainCols,
+    }, mpt::{MainCols, AccumulatorCols},
 };
 
 #[derive(Clone, Debug)]
@@ -110,10 +110,7 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
                                          * rotation lands < 0) */
         s_main: MainCols,
         c_main: MainCols,
-        acc_s: Column<Advice>,
-        acc_mult_s: Column<Advice>,
-        acc_c: Column<Advice>,
-        acc_mult_c: Column<Advice>,
+        accs: AccumulatorCols,
         keccak_table: [Column<Fixed>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
         mod_node_hash_rlc: Column<Advice>,
         r_table: Vec<Expression<F>>,
@@ -469,11 +466,11 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
             let c_rlp2 = meta.query_advice(c_main.rlp2, Rotation::cur());
             let is_branch_hashed = c_rlp2 * c160_inv.clone();
 
-            let mut acc = meta.query_advice(acc_s, Rotation(-1));
-            let mut mult = meta.query_advice(acc_mult_s, Rotation(-1));
+            let mut acc = meta.query_advice(accs.acc_s.rlc, Rotation(-1));
+            let mut mult = meta.query_advice(accs.acc_s.mult, Rotation(-1));
             if !is_s {
-                acc = meta.query_advice(acc_c, Rotation(-2));
-                mult = meta.query_advice(acc_mult_c, Rotation(-2));
+                acc = meta.query_advice(accs.acc_c.rlc, Rotation(-2));
+                mult = meta.query_advice(accs.acc_c.mult, Rotation(-2));
             }
             // TODO: acc currently doesn't have branch ValueNode info (which 128 if nil)
             let branch_acc = acc + c128.clone() * mult;
@@ -518,11 +515,11 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
             // c_rlp2 = 160 when branch is hashed (longer than 31) and c_rlp2 = 0 otherwise
             let is_branch_hashed = c_rlp2.clone() * c160_inv.clone();
 
-            let mut acc = meta.query_advice(acc_s, Rotation(-1));
-            let mut mult = meta.query_advice(acc_mult_s, Rotation(-1));
+            let mut acc = meta.query_advice(accs.acc_s.rlc, Rotation(-1));
+            let mut mult = meta.query_advice(accs.acc_s.mult, Rotation(-1));
             if !is_s {
-                acc = meta.query_advice(acc_c, Rotation(-2));
-                mult = meta.query_advice(acc_mult_c, Rotation(-2));
+                acc = meta.query_advice(accs.acc_c.rlc, Rotation(-2));
+                mult = meta.query_advice(accs.acc_c.mult, Rotation(-2));
             }
             // TODO: acc currently doesn't have branch ValueNode info (which 128 if nil)
             let branch_acc = acc + c128 * mult;
@@ -602,7 +599,7 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
             );
             rlc = rlc + s_advices_rlc;
 
-            let acc_s = meta.query_advice(acc_s, Rotation(rot));
+            let acc_s = meta.query_advice(accs.acc_s.rlc, Rotation(rot));
             constraints.push((
                 "acc_s",
                 q_not_first.clone()
@@ -630,7 +627,7 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
             // Note: hashed branch has 160 at c_rlp2 and hash in c_advices,
             // non-hashed branch has 0 at c_rlp2 and all the bytes in c_advices
 
-            let acc_mult_s = meta.query_advice(acc_mult_s, Rotation::cur());
+            let acc_mult_s = meta.query_advice(accs.acc_s.mult, Rotation::cur());
             let c_advices0 = meta.query_advice(c_main.bytes[0], Rotation::cur());
             rlc = acc_s.clone() + c_rlp2 * acc_mult_s.clone();
             let c_advices_rlc = compute_rlc(meta, c_main.bytes.to_vec(), 0, acc_mult_s.clone(), 0, r_table.clone());
@@ -641,7 +638,7 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
                 c_main.bytes.iter().skip(1).map(|v| *v).collect_vec(), 0, acc_mult_s, 0, r_table);
             rlc_non_hashed_branch = rlc_non_hashed_branch + c_advices_rlc_non_hashed;
 
-            let acc_c = meta.query_advice(acc_c, Rotation::cur());
+            let acc_c = meta.query_advice(accs.acc_c.rlc, Rotation::cur());
             constraints.push((
                 "acc_c",
                 q_not_first.clone()
@@ -676,7 +673,7 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
                 let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
                 let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
 
-                let acc_c = meta.query_advice(acc_c, Rotation::cur());
+                let acc_c = meta.query_advice(accs.acc_c.rlc, Rotation::cur());
                 let root = meta.query_advice(inter_root, Rotation::cur());
 
                 constraints.push((
@@ -720,7 +717,7 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
 
             let mut constraints = vec![];
 
-            let acc_c = meta.query_advice(acc_c, Rotation::cur());
+            let acc_c = meta.query_advice(accs.acc_c.rlc, Rotation::cur());
             constraints.push((
                 not_first_level.clone()
                     * q_enable.clone()

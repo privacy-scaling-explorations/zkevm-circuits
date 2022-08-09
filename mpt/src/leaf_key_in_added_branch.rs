@@ -11,7 +11,7 @@ use crate::{
         compute_rlc, get_bool_constraint, get_is_extension_node_one_nibble, key_len_lookup,
         mult_diff_lookup, range_lookups,
     },
-    mpt::{FixedTableTag, MainCols},
+    mpt::{FixedTableTag, MainCols, AccumulatorPair},
     param::{IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, LEAF_DRIFTED_IND, BRANCH_ROWS_NUM, LEAF_KEY_S_IND, LEAF_KEY_C_IND},
 };
 
@@ -36,8 +36,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
         c_main: MainCols,
         s_mod_node_hash_rlc: Column<Advice>,
         c_mod_node_hash_rlc: Column<Advice>,
-        acc_s: Column<Advice>,
-        acc_mult_s: Column<Advice>,
+        acc_pair: AccumulatorPair,
         key_rlc: Column<Advice>,
         key_rlc_mult: Column<Advice>,
         mult_diff: Column<Advice>,
@@ -127,7 +126,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
             let c_rlp2 = meta.query_advice(c_main.rlp2, Rotation::cur());
             rlc = rlc + c_rlp2 * r_table[R_TABLE_LEN - 1].clone() * r_table[2].clone();
 
-            let acc = meta.query_advice(acc_s, Rotation::cur());
+            let acc = meta.query_advice(acc_pair.rlc, Rotation::cur());
             constraints.push(("Leaf key acc", q_enable.clone()
                     * (is_short + is_long) // activate if is_short or is_long
                     * (one.clone() - is_leaf_in_first_storage_level.clone())
@@ -214,9 +213,9 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
         */
 
         // acc_mult corresponds to key length (short):
-        mult_diff_lookup(meta, sel_short, 2, s_main.rlp2, acc_mult_s, 128, fixed_table);
+        mult_diff_lookup(meta, sel_short, 2, s_main.rlp2, acc_pair.mult, 128, fixed_table);
         // acc_mult corresponds to key length (long):
-        mult_diff_lookup(meta, sel_long, 3, s_main.bytes[0], acc_mult_s, 128, fixed_table);
+        mult_diff_lookup(meta, sel_long, 3, s_main.bytes[0], acc_pair.mult, 128, fixed_table);
 
         /*
         Leaf key S
@@ -477,8 +476,8 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
             let q_enable = q_enable(meta);
             let mut constraints = vec![];
 
-            let mut rlc = meta.query_advice(acc_s, Rotation::cur());
-            let acc_mult = meta.query_advice(acc_mult_s, Rotation::cur());
+            let mut rlc = meta.query_advice(acc_pair.rlc, Rotation::cur());
+            let acc_mult = meta.query_advice(acc_pair.mult, Rotation::cur());
 
             // If branch placeholder in S, leaf value is 3 above.
             let rot_val = -3;
@@ -539,8 +538,8 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
             let q_enable = q_enable(meta);
             let mut constraints = vec![];
 
-            let mut rlc = meta.query_advice(acc_s, Rotation::cur());
-            let acc_mult = meta.query_advice(acc_mult_s, Rotation::cur());
+            let mut rlc = meta.query_advice(acc_pair.rlc, Rotation::cur());
+            let acc_mult = meta.query_advice(acc_pair.mult, Rotation::cur());
 
             // If branch placeholder in C, value is 1 above.
             let rot_val = -1;
