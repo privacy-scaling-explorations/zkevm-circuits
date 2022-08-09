@@ -38,7 +38,7 @@ impl<const N: usize> Config<N> {
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
-        _randomness: F,
+        _randomness: F, // kept for future use
         value: U256,
     ) -> Result<(), Error> {
         let bytes = value.to_le_bytes();

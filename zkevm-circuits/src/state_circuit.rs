@@ -131,7 +131,7 @@ impl<F: Field> StateCircuitConfig<F> {
         )
     }
 
-    pub(crate) fn assign_with_region(
+    fn assign_with_region(
         &self,
         region: &mut Region<'_, F>,
         rows: &[Rw],
@@ -234,14 +234,6 @@ impl<F: Field> StateCircuit<F> {
             overrides: HashMap::new(),
         }
     }
-    /// estimate k needed to prover
-    pub fn estimate_k(&self) -> u32 {
-        let log2_ceil = |n| u32::BITS - (n as u32).leading_zeros() - (n & (n - 1) == 0) as u32;
-        let k = 17; // u16 lookup needed 1<<16 rows
-        let k = k.max(log2_ceil(64 + self.rows.len()));
-        log::debug!("state circuit uses k = {}", k);
-        k
-    }
 
     /// powers of randomness for instance columns
     pub fn instance(&self) -> Vec<Vec<F>> {
@@ -275,11 +267,11 @@ where
     ) -> Result<(), Error> {
         config.load(&mut layouter)?;
 
-        // We should not assign to same columns in different regions.
-        // Since overrides here assign to both rw table and other parts, we have to use
-        // one single region
+        // Assigning to same columns in different regions should be avoided.
+        // Here we use one single region to assign `overrides` to both rw table and
+        // other parts.
         layouter.assign_region(
-            || "full state circuit",
+            || "state circuit",
             |mut region| {
                 config.rw_table.load_with_region(
                     &mut region,
@@ -300,6 +292,7 @@ where
                         region.assign_advice(|| "override", advice_column, offset, || Ok(f))?;
                     }
                 }
+
                 Ok(())
             },
         )

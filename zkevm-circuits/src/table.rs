@@ -373,11 +373,11 @@ impl RwTable {
         row: &RwRow<F>,
     ) -> Result<(), Error> {
         for (column, value) in [
-            (self.rw_counter, (row.rw_counter)),
-            (self.is_write, (row.is_write)),
+            (self.rw_counter, row.rw_counter),
+            (self.is_write, row.is_write),
             (self.tag, row.tag),
             (self.id, row.id),
-            (self.address, (row.address)),
+            (self.address, row.address),
             (self.field_tag, row.field_tag),
             (self.storage_key, row.storage_key),
             (self.value, row.value),
@@ -412,9 +412,6 @@ impl RwTable {
         randomness: F,
         n_rows: usize,
     ) -> Result<(), Error> {
-        // uncomment this line in evm circuit to check rwc is continuous
-        //rws.check_rw_counter_sanity();
-        //let rows = rws.table_assignments();
         let (rows, _) = RwMap::table_assignments_prepad(rws, n_rows);
         for (offset, row) in rows.iter().enumerate() {
             self.assign(region, offset, &row.table_assignment(randomness))?;
