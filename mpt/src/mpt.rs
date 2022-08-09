@@ -239,8 +239,10 @@ pub struct MPTConfig<F> {
                                   * enable lookup for storage key/value (to have address RLC in
                                   * the same row as storage key/value). */
     counter: Column<Advice>,
-    account_leaf_nonce_balance_config_s: AccountLeafNonceBalanceConfig<F>,
-    account_leaf_nonce_balance_config_c: AccountLeafNonceBalanceConfig<F>,
+    account_leaf_nonce_balance_s: AccountLeafNonceBalanceConfig<F>,
+    account_leaf_nonce_balance_c: AccountLeafNonceBalanceConfig<F>,
+    account_leaf_storage_codehash_s: AccountLeafStorageCodehashConfig<F>,
+    account_leaf_storage_codehash_c: AccountLeafStorageCodehashConfig<F>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -919,7 +921,7 @@ impl<F: FieldExt> MPTConfig<F> {
             address_rlc,
         );
 
-        let account_leaf_nonce_balance_config_s = AccountLeafNonceBalanceConfig::<F>::configure(
+        let account_leaf_nonce_balance_s = AccountLeafNonceBalanceConfig::<F>::configure(
             meta,
             proof_type.clone(),
             |meta| {
@@ -941,7 +943,7 @@ impl<F: FieldExt> MPTConfig<F> {
             true,
         );
 
-        let account_leaf_nonce_balance_config_c = AccountLeafNonceBalanceConfig::<F>::configure(
+        let account_leaf_nonce_balance_c = AccountLeafNonceBalanceConfig::<F>::configure(
             meta,
             proof_type.clone(),
             |meta| {
@@ -963,7 +965,7 @@ impl<F: FieldExt> MPTConfig<F> {
             false,
         );
 
-        AccountLeafStorageCodehashConfig::<F>::configure(
+        let account_leaf_storage_codehash_s = AccountLeafStorageCodehashConfig::<F>::configure(
             meta,
             proof_type.clone(),
             inter_start_root,
@@ -983,7 +985,7 @@ impl<F: FieldExt> MPTConfig<F> {
             true,
         );
 
-        AccountLeafStorageCodehashConfig::<F>::configure(
+        let account_leaf_storage_codehash_c = AccountLeafStorageCodehashConfig::<F>::configure(
             meta,
             proof_type.clone(),
             inter_final_root,
@@ -1060,8 +1062,10 @@ impl<F: FieldExt> MPTConfig<F> {
             fixed_table,
             address_rlc,
             counter,
-            account_leaf_nonce_balance_config_s,
-            account_leaf_nonce_balance_config_c,
+            account_leaf_nonce_balance_s,
+            account_leaf_nonce_balance_c,
+            account_leaf_storage_codehash_s,
+            account_leaf_storage_codehash_c,
         }
     }
 
@@ -2641,65 +2645,14 @@ impl<F: FieldExt> MPTConfig<F> {
                                     pv.key_rlc_mult_prev,
                                     offset,
                                 )?;
-                            } else if row[row.len() - 1] == 7 || row[row.len() - 1] == 8 {
-                                self.account_leaf_nonce_balance_config_s.assign(&mut region, self, &mut pv, row, offset);
-                            } else if row[row.len() - 1] == 9 || row[row.len() - 1] == 11 {
-                                if row[row.len() - 1] == 9 {
-                                    pv.acc_s = pv.acc_nonce_balance_s;
-                                    pv.acc_mult_s = pv.acc_mult_nonce_balance_s;
-
-                                    // storage root RLC and code hash RLC
-                                    pv.rlc1 = F::zero();
-                                    pv.rlc2 = F::zero();
-                                    self.compute_rlc_and_assign(&mut region, row, &mut pv, offset, S_START, C_START, HASH_WIDTH, HASH_WIDTH);
-                                } else {
-                                    pv.acc_s = pv.acc_nonce_balance_c;
-                                    pv.acc_mult_s = pv.acc_mult_nonce_balance_c;
-
-                                    // assign storage root S
-                                    region.assign_advice(
-                                        || "assign sel1".to_string(),
-                                        self.sel1,
-                                        offset,
-                                        || Ok(pv.rlc1),
-                                    )?;
-                                    // assign code hash S
-                                    region.assign_advice(
-                                        || "assign sel2".to_string(),
-                                        self.sel2,
-                                        offset,
-                                        || Ok(pv.rlc2),
-                                    )?;
-
-                                    // assign storage root RLC and code hash RLC for this row
-                                    pv.rlc1 = F::zero();
-                                    pv.rlc2 = F::zero();
-                                    self.compute_rlc_and_assign(&mut region, row, &mut pv, offset, S_START, C_START, HASH_WIDTH, HASH_WIDTH);
-                                }
-                                // storage
-                                self.compute_acc_and_mult(
-                                    row,
-                                    &mut pv.acc_s,
-                                    &mut pv.acc_mult_s,
-                                    S_START - 1,
-                                    HASH_WIDTH + 1,
-                                );
-                                // code hash
-                                self.compute_acc_and_mult(
-                                    row,
-                                    &mut pv.acc_s,
-                                    &mut pv.acc_mult_s,
-                                    C_START - 1,
-                                    HASH_WIDTH + 1,
-                                );
-                                self.assign_acc(
-                                    &mut region,
-                                    pv.acc_s,
-                                    pv.acc_mult_s,
-                                    F::zero(),
-                                    F::zero(),
-                                    offset,
-                                )?;
+                            } else if row[row.len() - 1] == 7 {
+                                self.account_leaf_nonce_balance_s.assign(&mut region, self, &mut pv, row, offset);
+                            } else if row[row.len() - 1] == 8 {
+                                self.account_leaf_nonce_balance_c.assign(&mut region, self, &mut pv, row, offset);
+                            } else if row[row.len() - 1] == 9 {
+                                self.account_leaf_storage_codehash_s.assign(&mut region, self, &mut pv, row, offset);
+                            } else if row[row.len() - 1] == 11 {
+                                self.account_leaf_storage_codehash_c.assign(&mut region, self, &mut pv, row, offset);
                             } else if row[row.len() - 1] == 15 && row[1] != 0 {
                                 // row[1] != 0 just to avoid usize problems below (when row doesn't
                                 // need to be assigned) Info whether

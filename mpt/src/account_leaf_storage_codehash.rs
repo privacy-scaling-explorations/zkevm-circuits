@@ -1,17 +1,17 @@
 use halo2_proofs::{
     plonk::{Advice, Column, ConstraintSystem, Expression, Fixed, VirtualCells},
-    poly::Rotation,
+    poly::Rotation, circuit::Region,
 };
 use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
 use crate::{
     helpers::range_lookups,
-    mpt::{FixedTableTag, MainCols, ProofTypeCols, AccumulatorPair},
+    mpt::{FixedTableTag, MainCols, ProofTypeCols, AccumulatorPair, MPTConfig, ProofVariables},
     param::{
         ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND, ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND, BRANCH_ROWS_NUM,
         EXTENSION_ROWS_NUM, IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS,
-        KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH, RLP_NUM, ACCOUNT_NON_EXISTING_IND,
+        KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH, RLP_NUM, ACCOUNT_NON_EXISTING_IND, S_START, C_START, HASH_WIDTH,
     },
 };
 
@@ -535,5 +535,70 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
         config
     }
 
+    pub fn assign(
+        &self,
+        region: &mut Region<'_, F>,
+        mpt_config: &MPTConfig<F>,
+        pv: &mut ProofVariables<F>,
+        row: &Vec<u8>,
+        offset: usize,
+    ) {
+        if row[row.len() - 1] == 9 {
+            pv.acc_s = pv.acc_nonce_balance_s;
+            pv.acc_mult_s = pv.acc_mult_nonce_balance_s;
+
+            // storage root RLC and code hash RLC
+            pv.rlc1 = F::zero();
+            pv.rlc2 = F::zero();
+            mpt_config.compute_rlc_and_assign(region, row, pv, offset, S_START, C_START, HASH_WIDTH, HASH_WIDTH).ok();
+        } else {
+            pv.acc_s = pv.acc_nonce_balance_c;
+            pv.acc_mult_s = pv.acc_mult_nonce_balance_c;
+
+            // assign storage root S
+            region.assign_advice(
+                || "assign sel1".to_string(),
+                mpt_config.sel1,
+                offset,
+                || Ok(pv.rlc1),
+            ).ok();
+            // assign code hash S
+            region.assign_advice(
+                || "assign sel2".to_string(),
+                mpt_config.sel2,
+                offset,
+                || Ok(pv.rlc2),
+            ).ok();
+
+            // assign storage root RLC and code hash RLC for this row
+            pv.rlc1 = F::zero();
+            pv.rlc2 = F::zero();
+            mpt_config.compute_rlc_and_assign(region, row, pv, offset, S_START, C_START, HASH_WIDTH, HASH_WIDTH).ok();
+        }
+        // storage
+        mpt_config.compute_acc_and_mult(
+            row,
+            &mut pv.acc_s,
+            &mut pv.acc_mult_s,
+            S_START - 1,
+            HASH_WIDTH + 1,
+        );
+        // code hash
+        mpt_config.compute_acc_and_mult(
+            row,
+            &mut pv.acc_s,
+            &mut pv.acc_mult_s,
+            C_START - 1,
+            HASH_WIDTH + 1,
+        );
+        mpt_config.assign_acc(
+            region,
+            pv.acc_s,
+            pv.acc_mult_s,
+            F::zero(),
+            F::zero(),
+            offset,
+        ).ok();
+    }
 }
 
