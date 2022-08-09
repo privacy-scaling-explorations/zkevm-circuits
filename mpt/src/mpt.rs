@@ -8,7 +8,7 @@ use pairing::arithmetic::FieldExt;
 use std::convert::TryInto;
 
 use crate::{
-    account_leaf_key::AccountLeafKeyChip,
+    account_leaf_key::AccountLeafKeyConfig,
     account_leaf_key_in_added_branch::AccountLeafKeyInAddedBranchChip,
     account_leaf_nonce_balance::AccountLeafNonceBalanceConfig,
     account_leaf_storage_codehash::AccountLeafStorageCodehashConfig,
@@ -852,7 +852,7 @@ impl<F: FieldExt> MPTConfig<F> {
             fixed_table.clone(),
         );
 
-        AccountLeafKeyChip::<F>::configure(
+        AccountLeafKeyConfig::<F>::configure(
             meta,
             proof_type.clone(),
             |meta| {
@@ -875,7 +875,7 @@ impl<F: FieldExt> MPTConfig<F> {
             true,
         );
 
-        AccountLeafKeyChip::<F>::configure(
+        AccountLeafKeyConfig::<F>::configure(
             meta,
             proof_type.clone(),
             |meta| {

@@ -1,5 +1,4 @@
 use halo2_proofs::{
-    circuit::Chip,
     plonk::{Advice, Column, ConstraintSystem, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
@@ -15,16 +14,48 @@ use crate::{
     },
 };
 
-#[derive(Clone, Debug)]
-pub(crate) struct AccountLeafKeyConfig {}
+/*
+An account leaf occupies 8 rows.
+Contrary as in the branch rows, the `S` and `C` leaves are not positioned parallel to each other.
+The rows are the following:
+ACCOUNT_LEAF_KEY_S
+ACCOUNT_LEAF_KEY_C
+ACCOUNT_NON_EXISTING
+ACCOUNT_LEAF_NONCE_BALANCE_S
+ACCOUNT_LEAF_NONCE_BALANCE_C
+ACCOUNT_LEAF_STORAGE_CODEHASH_S
+ACCOUNT_LEAF_STORAGE_CODEHASH_C
+ACCOUNT_DRIFTED_LEAF
 
-// Verifies the address RLC and the intermediate account leaf RLC.
-pub(crate) struct AccountLeafKeyChip<F> {
-    config: AccountLeafKeyConfig,
+The constraints in this file apply to ACCOUNT_LEAF_KEY_S and ACCOUNT_LEAF_KEY_C rows.
+
+For example, the two rows might be:
+[248,106,161,32,252,237,52,8,133,130,180,167,143,97,28,115,102,25,94,62,148,249,8,6,55,244,16,75,187,208,208,127,251,120,61,73,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+[248,106,161,32,252,237,52,8,133,130,180,167,143,97,28,115,102,25,94,62,148,249,8,6,55,244,16,75,187,208,208,127,251,120,61,73,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+
+Here, in `ACCOUNT_LEAF_KEY_S` example row, there are key nibbles for `S` proof stored in compact form.
+The nibbles start at `s_main.bytes[1]` and can go to `c_main.rlp2`.
+
+In `ACCOUNT_LEAF_KEY_C` example row, there are key nibbles for `C` proof stored in compact form.
+The nibbles start at `s_main.bytes[1]` and can go to `c_main.rlp2`.
+
+The whole account leaf looks like:
+[248,106,161,32,252,237,52,8,133,130,180,167,143,97,28,115,102,25,94,62,148,249,8,6,55,244,16,75,187,208,208,127,251,120,61,73,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+[248,106,161,32,252,237,52,8,133,130,180,167,143,97,28,115,102,25,94,62,148,249,8,6,55,244,16,75,187,208,208,127,251,120,61,73,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+[0,0,0,32,252,237,52,8,133,130,180,167,143,97,28,115,102,25,94,62,148,249,8,6,55,244,16,75,187,208,208,127,251,120,61,73,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+[184,70,128,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,248,68,128,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+[184,70,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,248,68,128,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+[0,160,86,232,31,23,27,204,85,166,255,131,69,230,146,192,248,110,91,72,224,27,153,108,173,192,1,98,47,181,227,99,180,33,0,160,197,210,70,1,134,247,35,60,146,126,125,178,220,199,3,192,229,0,182,83,202,130,39,59,123,250,216,4,93,133,164,122]
+[0,160,86,232,31,23,27,204,85,166,255,131,69,230,146,192,248,110,91,72,224,27,153,108,173,192,1,98,47,181,227,99,180,33,0,160,197,210,70,1,134,247,35,60,146,126,125,178,220,199,3,192,229,0,182,83,202,130,39,59,123,250,216,4,93,133,164,122]
+[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+*/
+
+#[derive(Clone, Debug)]
+pub(crate) struct AccountLeafKeyConfig<F> {
     _marker: PhantomData<F>,
 }
 
-impl<F: FieldExt> AccountLeafKeyChip<F> {
+impl<F: FieldExt> AccountLeafKeyConfig<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         proof_type: ProofTypeCols,
@@ -40,8 +71,8 @@ impl<F: FieldExt> AccountLeafKeyChip<F> {
         address_rlc: Column<Advice>,
         sel2: Column<Advice>,
         is_s: bool,
-    ) -> AccountLeafKeyConfig {
-        let config = AccountLeafKeyConfig {};
+    ) -> Self {
+        let config = AccountLeafKeyConfig { _marker: PhantomData };
         let one = Expression::Constant(F::one());
         // key rlc is in the first branch node
         let mut rot_into_first_branch_child = -18;
@@ -50,7 +81,7 @@ impl<F: FieldExt> AccountLeafKeyChip<F> {
         }
         let rot_into_init = rot_into_first_branch_child - 1;
 
-        meta.create_gate("account leaf RLC after key", |meta| {
+        meta.create_gate("Account leaf RLC after key", |meta| {
             let q_enable = q_enable(meta);
             let mut constraints = vec![];
 
@@ -63,8 +94,15 @@ impl<F: FieldExt> AccountLeafKeyChip<F> {
             let c248 = Expression::Constant(F::from(248));
 
             let s_rlp1 = meta.query_advice(s_main.rlp1, Rotation::cur());
+
+            /*
+            Account leaf always starts with 248 because its length is always longer than 55 bytes due to
+            containing two hashes - storage root and codehash, which are both of 32 bytes. 
+            248 is RLP byte which means there is `1 = 248 - 247` byte specifying the length of the remaining
+            list. For example, in [248,112,157,59,...], there are 112 byte after the second byte.
+            */
             constraints.push((
-                "account leaf key s_rlp1 = 248",
+                "Account leaf key s_main.rlp1 = 248",
                 q_enable.clone() * (s_rlp1.clone() - c248),
             ));
 
@@ -90,7 +128,12 @@ impl<F: FieldExt> AccountLeafKeyChip<F> {
 
             let acc = meta.query_advice(accs.acc_s.rlc, Rotation::cur());
 
-            constraints.push(("leaf key acc", q_enable.clone() * (expr - acc)));
+            /*
+            In each row of the account leaf we compute an intermediate RLC of the whole leaf.
+            The RLC after account leaf key row is stored in `acc` column. We check the stored value
+            is computed correctly.
+            */
+            constraints.push(("Leaf key RLC", q_enable.clone() * (expr - acc)));
 
             constraints
         });
@@ -514,24 +557,5 @@ impl<F: FieldExt> AccountLeafKeyChip<F> {
 
         config
     }
-
-    pub fn construct(config: AccountLeafKeyConfig) -> Self {
-        Self {
-            config,
-            _marker: PhantomData,
-        }
-    }
 }
 
-impl<F: FieldExt> Chip<F> for AccountLeafKeyChip<F> {
-    type Config = AccountLeafKeyConfig;
-    type Loaded = ();
-
-    fn config(&self) -> &Self::Config {
-        &self.config
-    }
-
-    fn loaded(&self) -> &Self::Loaded {
-        &()
-    }
-}
