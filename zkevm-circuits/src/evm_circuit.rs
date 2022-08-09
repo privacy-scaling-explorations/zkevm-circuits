@@ -264,6 +264,7 @@ pub mod test {
             config
                 .tx_table
                 .load(&mut layouter, &self.block.txs, self.block.randomness)?;
+            self.block.rws.check_rw_counter_sanity();
             config.rw_table.load(
                 &mut layouter,
                 &self.block.rws.table_assignments(),

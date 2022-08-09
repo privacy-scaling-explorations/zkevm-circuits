@@ -1,4 +1,4 @@
-use super::{StateCircuit, StateConfigBase};
+use super::{StateCircuit, StateCircuitConfig};
 use crate::{
     evm_circuit::witness::{Rw, RwMap},
     table::{AccountFieldTag, CallContextFieldTag, RwTableTag, TxLogFieldTag, TxReceiptFieldTag},
@@ -51,10 +51,7 @@ pub enum AdviceColumn {
 }
 
 impl AdviceColumn {
-    pub fn value<F: Field, const QUICK_CHECK: bool>(
-        &self,
-        config: &StateConfigBase<F, QUICK_CHECK>,
-    ) -> Column<Advice> {
+    pub fn value<F: Field>(&self, config: &StateCircuitConfig<F>) -> Column<Advice> {
         match self {
             Self::IsWrite => config.rw_table.is_write,
             Self::Address => config.sort_keys.address.value,

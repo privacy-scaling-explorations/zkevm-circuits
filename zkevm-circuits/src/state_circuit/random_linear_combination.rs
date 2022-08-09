@@ -67,11 +67,11 @@ impl<F: Field, const N: usize> Chip<F, N> {
         }
     }
 
-    pub fn configure<const QUICK_CHECK: bool>(
+    pub fn configure(
         meta: &mut ConstraintSystem<F>,
         selector: Column<Fixed>,
         encoded: Column<Advice>,
-        lookup: lookups::Config<QUICK_CHECK>,
+        lookup: lookups::Config,
         power_of_randomness: [Expression<F>; 31],
     ) -> Config<N> {
         let bytes = [0; N].map(|_| meta.advice_column());

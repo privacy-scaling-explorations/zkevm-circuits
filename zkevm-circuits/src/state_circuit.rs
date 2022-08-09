@@ -37,7 +37,7 @@ const N_LIMBS_ID: usize = 2;
 
 /// Config for StateCircuit
 #[derive(Clone)]
-pub struct StateConfigBase<F, const QUICK_CHECK: bool> {
+pub struct StateCircuitConfig<F> {
     selector: Column<Fixed>, // Figure out why you get errors when this is Selector.
     // https://github.com/privacy-scaling-explorations/zkevm-circuits/issues/407
     rw_table: RwTable,
@@ -46,11 +46,11 @@ pub struct StateConfigBase<F, const QUICK_CHECK: bool> {
                                     * and Rw::AccountStorage rows this is the committed value in
                                     * the MPT, for others, it is 0. */
     lexicographic_ordering: LexicographicOrderingConfig,
-    lookups: LookupsConfig<QUICK_CHECK>,
+    lookups: LookupsConfig,
     power_of_randomness: [Expression<F>; N_BYTES_WORD - 1],
 }
 
-impl<F: Field, const QUICK_CHECK: bool> StateConfigBase<F, QUICK_CHECK> {
+impl<F: Field> StateCircuitConfig<F> {
     /// Configure StateCircuit
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
@@ -213,21 +213,8 @@ pub struct SortKeysConfig {
 type Lookup<F> = (&'static str, Expression<F>, Expression<F>);
 
 /// State Circuit for proving RwTable is valid
-pub type StateCircuit<F> = StateCircuitBase<F, false>;
-/// StateCircuitConfig with u16 lookup enabled
-pub type StateCircuitConfig<F> = StateConfigBase<F, false>;
-/// StateCircuit with lexicographic ordering u16 lookup disabled to allow
-/// smaller `k`. It is almost impossible to trigger u16 lookup verification
-/// error. So StateCircuitLight can be used in opcode gadgets test.
-/// Normal opcodes constaints error can still be captured but cost much less
-/// time.
-pub type StateCircuitLight<F> = StateCircuitBase<F, true>;
-/// StateCircuitConfig with u16 lookup disabled
-pub type StateCircuitConfigLight<F> = StateConfigBase<F, true>;
-
-/// State Circuit for proving RwTable is valid
 #[derive(Default, Clone)]
-pub struct StateCircuitBase<F, const QUICK_CHECK: bool> {
+pub struct StateCircuit<F> {
     pub(crate) randomness: F,
     pub(crate) rows: Vec<Rw>,
     pub(crate) n_rows: usize,
@@ -235,7 +222,7 @@ pub struct StateCircuitBase<F, const QUICK_CHECK: bool> {
     overrides: HashMap<(test::AdviceColumn, isize), F>,
 }
 
-impl<F: Field, const QUICK_CHECK: bool> StateCircuitBase<F, QUICK_CHECK> {
+impl<F: Field> StateCircuit<F> {
     /// make a new state circuit from an RwMap
     pub fn new(randomness: F, rw_map: RwMap, n_rows: usize) -> Self {
         let rows = rw_map.table_assignments();
@@ -250,9 +237,9 @@ impl<F: Field, const QUICK_CHECK: bool> StateCircuitBase<F, QUICK_CHECK> {
     /// estimate k needed to prover
     pub fn estimate_k(&self) -> u32 {
         let log2_ceil = |n| u32::BITS - (n as u32).leading_zeros() - (n & (n - 1) == 0) as u32;
-        let k = if QUICK_CHECK { 12 } else { 18 };
+        let k = 17; // u16 lookup needed 1<<16 rows
         let k = k.max(log2_ceil(64 + self.rows.len()));
-        log::info!("state circuit uses k = {}", k);
+        log::debug!("state circuit uses k = {}", k);
         k
     }
 
@@ -264,11 +251,11 @@ impl<F: Field, const QUICK_CHECK: bool> StateCircuitBase<F, QUICK_CHECK> {
     }
 }
 
-impl<F: Field, const QUICK_CHECK: bool> Circuit<F> for StateCircuitBase<F, QUICK_CHECK>
+impl<F: Field> Circuit<F> for StateCircuit<F>
 where
     F: Field,
 {
-    type Config = StateConfigBase<F, QUICK_CHECK>;
+    type Config = StateCircuitConfig<F>;
     type FloorPlanner = SimpleFloorPlanner;
 
     fn without_witnesses(&self) -> Self {
@@ -319,10 +306,7 @@ where
     }
 }
 
-fn queries<F: Field, const QUICK_CHECK: bool>(
-    meta: &mut VirtualCells<'_, F>,
-    c: &StateConfigBase<F, QUICK_CHECK>,
-) -> Queries<F> {
+fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: &StateCircuitConfig<F>) -> Queries<F> {
     let first_different_limb = c.lexicographic_ordering.first_different_limb;
     let final_bits_sum = meta.query_advice(first_different_limb.bits[3], Rotation::cur())
         + meta.query_advice(first_different_limb.bits[4], Rotation::cur());

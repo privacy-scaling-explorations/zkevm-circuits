@@ -380,7 +380,7 @@ impl std::ops::Index<(RwTableTag, usize)> for RwMap {
     }
 }
 impl RwMap {
-    // check rw_counter is continous and starting from 1
+    /// Check rw_counter is continous and starting from 1
     pub fn check_rw_counter_sanity(&self) {
         for (idx, rw_counter) in self
             .0
@@ -393,13 +393,16 @@ impl RwMap {
             debug_assert_eq!(idx, rw_counter - 1);
         }
     }
+    /// Calculates the number of Rw::Start rows needed.
+    /// `target_len` is allowed to be 0 as an "auto" mode,
+    /// then only 1 Rw::Start row will be prepadded.
     pub(crate) fn padding_len(rows: &[Rw], target_len: usize) -> usize {
         if target_len > rows.len() {
             target_len - rows.len()
         } else {
             if target_len != 0 {
                 log::error!(
-                    "RwMap::table_assignments_prepad len overflow {} {}",
+                    "RwMap::padding_len overflow, target_len: {}, rows.len(): {}",
                     target_len,
                     rows.len()
                 );
@@ -407,6 +410,7 @@ impl RwMap {
             1
         }
     }
+    /// Prepad Rw::Start rows to target length
     pub fn table_assignments_prepad(rows: &[Rw], target_len: usize) -> (Vec<Rw>, usize) {
         let padding_length = Self::padding_len(rows, target_len);
         let padding = (1..=padding_length).map(|rw_counter| Rw::Start { rw_counter });
@@ -415,6 +419,7 @@ impl RwMap {
             padding_length,
         )
     }
+    /// Build Rws for assignment
     pub fn table_assignments(&self) -> Vec<Rw> {
         let mut rows: Vec<Rw> = self.0.values().flatten().cloned().collect();
         rows.sort_by_key(|row| {

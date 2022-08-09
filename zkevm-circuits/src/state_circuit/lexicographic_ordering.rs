@@ -107,10 +107,10 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn configure<F: Field, const QUICK_CHECK: bool>(
+    pub fn configure<F: Field>(
         meta: &mut ConstraintSystem<F>,
         keys: SortKeysConfig,
-        lookup: lookups::Config<QUICK_CHECK>,
+        lookup: lookups::Config,
         powers_of_randomness: [Expression<F>; N_BYTES_WORD - 1],
     ) -> Self {
         let selector = meta.fixed_column();
