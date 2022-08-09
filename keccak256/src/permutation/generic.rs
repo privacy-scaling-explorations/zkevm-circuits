@@ -268,10 +268,8 @@ impl<F: Field> GenericConfig<F> {
                 if let Some(outcome) = &outcome {
                     region.constrain_equal(outcome.cell(), acc.cell())?;
                 }
-                if let Some((outcome, acc)) = outcome
-                    .as_ref()
-                    .map(|oc| oc.value().zip(acc.value()))
-                    .flatten()
+                if let Some((outcome, acc)) =
+                    outcome.as_ref().and_then(|oc| oc.value().zip(acc.value()))
                 {
                     debug_assert_eq!(outcome, acc);
                 }

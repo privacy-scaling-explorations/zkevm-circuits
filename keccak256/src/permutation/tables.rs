@@ -295,7 +295,7 @@ impl<F: Field> StackableTable<F> {
     pub(crate) fn assign_boolean_flag(
         &self,
         layouter: &mut impl Layouter<F>,
-        is_left: Option<bool>,
+        is_left: bool,
     ) -> Result<(AssignedCell<F, F>, AssignedCell<F, F>), Error> {
         layouter.assign_region(
             || "lookup for boolean flag",
@@ -312,13 +312,13 @@ impl<F: Field> StackableTable<F> {
                     || "left",
                     self.lookup_config.col1.0,
                     offset,
-                    || is_left.map(|flag| F::from(flag)).ok_or(Error::Synthesis),
+                    || Ok(F::from(is_left)),
                 )?;
                 let right = region.assign_advice(
                     || "right",
                     self.lookup_config.col2.0,
                     offset,
-                    || is_left.map(|flag| F::from(!flag)).ok_or(Error::Synthesis),
+                    || Ok(F::from(!is_left)),
                 )?;
                 Ok((left, right))
             },

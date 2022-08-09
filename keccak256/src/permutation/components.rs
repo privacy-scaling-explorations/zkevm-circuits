@@ -94,7 +94,7 @@ pub fn assign_rho<F: Field>(
 
         let input_from_chunks =
             generic.linear_combine_consts(layouter, input_coefs, input_pobs, None)?;
-        let last_chunk = generic.sub_advice(layouter, &lane, &input_from_chunks)?;
+        let last_chunk = generic.sub_advice(layouter, lane, &input_from_chunks)?;
 
         let final_output_coef = stackable.lookup_special_chunks(layouter, &last_chunk)?;
         output_coefs.push(final_output_coef);
@@ -237,7 +237,7 @@ pub fn convert_to_b9_mul_a4<F: Field>(
                 })
                 .rev()
                 .collect_vec();
-            let output = generic.linear_combine_consts(layouter, base9s.clone(), vs, None)?;
+            let output = generic.linear_combine_consts(layouter, base9s, vs, None)?;
             Ok(output)
         })
         .collect::<Result<Vec<AssignedCell<F, F>>, Error>>()?;

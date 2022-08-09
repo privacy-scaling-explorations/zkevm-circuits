@@ -27,7 +27,7 @@ pub struct KeccakFConfig<F: Field> {
     base13to9_config: Base13toBase9TableConfig<F>,
     from_b9_table: FromBase9TableConfig<F>,
     from_b2_table: FromBinaryTableConfig<F>,
-    advice: Column<Advice>,
+    pub advice: Column<Advice>,
 }
 
 impl<F: Field> KeccakFConfig<F> {
@@ -92,7 +92,6 @@ impl<F: Field> KeccakFConfig<F> {
         &self,
         layouter: &mut impl Layouter<F>,
         in_state: [AssignedCell<F, F>; 25],
-        flag: bool,
         next_mixing: Option<[F; NEXT_INPUTS_LANES]>,
     ) -> Result<([AssignedCell<F, F>; 25], [AssignedCell<F, F>; 25]), Error> {
         let iota_constants = IotaConstants::default();
@@ -131,7 +130,9 @@ impl<F: Field> KeccakFConfig<F> {
                 convert_from_b9_to_b13(layouter, &self.from_b9_table, &self.generic, state, false)?
                     .0;
         }
-        let (f_mix, f_no_mix) = self.stackable.assign_boolean_flag(layouter, Some(flag))?;
+        let (f_mix, f_no_mix) = self
+            .stackable
+            .assign_boolean_flag(layouter, next_mixing.is_some())?;
         state[0] = self.generic.conditional_add_const(
             layouter,
             &state[0],
@@ -147,7 +148,7 @@ impl<F: Field> KeccakFConfig<F> {
         for (i, input) in next_input.iter().enumerate() {
             state[i] = self
                 .generic
-                .conditional_add_advice(layouter, &state[i], &f_mix, &input)?;
+                .conditional_add_advice(layouter, &state[i], &f_mix, input)?;
         }
         let (mut state_b13, state_b2) =
             convert_from_b9_to_b13(layouter, &self.from_b9_table, &self.generic, state, true)?;
@@ -158,7 +159,7 @@ impl<F: Field> KeccakFConfig<F> {
             &f_mix,
             &iota_constants.round_constant_b13,
         )?;
-        Ok((state_b13.try_into().unwrap(), state_b2))
+        Ok((state_b13, state_b2))
     }
 }
 
@@ -188,8 +189,6 @@ mod tests {
             in_state: [F; 25],
             out_state: [F; 25],
             next_mixing: Option<[F; NEXT_INPUTS_LANES]>,
-            // flag
-            is_mixing: bool,
         }
 
         impl<F: Field> Circuit<F> for MyCircuit<F> {
@@ -234,8 +233,8 @@ mod tests {
                 )?;
 
                 let (state_b13, state_b2) =
-                    config.assign_all(&mut layouter, state, self.is_mixing, self.next_mixing)?;
-                if self.is_mixing {
+                    config.assign_all(&mut layouter, state, self.next_mixing)?;
+                if self.next_mixing.is_some() {
                     layouter.assign_region(
                         || "check final states",
                         |mut region| {
@@ -315,7 +314,6 @@ mod tests {
                 in_state: in_state_fp,
                 out_state: out_state_non_mix,
                 next_mixing: None,
-                is_mixing: false,
             };
 
             let prover = MockProver::<Fp>::run(17, &circuit, vec![]).unwrap();
@@ -328,7 +326,6 @@ mod tests {
                 in_state: out_state_non_mix,
                 out_state: out_state_non_mix,
                 next_mixing: None,
-                is_mixing: true,
             };
             let k = 17;
             let prover = MockProver::<Fp>::run(k, &circuit, vec![]).unwrap();
@@ -355,7 +352,6 @@ mod tests {
                 in_state: in_state_fp,
                 out_state: out_state_mix,
                 next_mixing: Some(next_input_fp),
-                is_mixing: true,
             };
 
             let prover = MockProver::<Fp>::run(17, &circuit, vec![]).unwrap();
@@ -368,7 +364,6 @@ mod tests {
                 in_state: out_state_non_mix,
                 out_state: out_state_non_mix,
                 next_mixing: Some(next_input_fp),
-                is_mixing: true,
             };
 
             let prover = MockProver::<Fp>::run(17, &circuit, vec![]).unwrap();
