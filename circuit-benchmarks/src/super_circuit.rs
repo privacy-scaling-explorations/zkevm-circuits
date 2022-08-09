@@ -71,7 +71,8 @@ mod tests {
         let start1 = start_timer!(|| setup_message);
         let general_params: Params<G1Affine> =
             Params::<G1Affine>::unsafe_setup::<Bn256>(DEGREE.try_into().unwrap());
-        let verifier_params: ParamsVerifier<Bn256> = general_params.verifier(DEGREE * 2).unwrap();
+        let verifier_params: ParamsVerifier<Bn256> =
+            general_params.verifier((1 << DEGREE) - 64).unwrap();
         end_timer!(start1);
 
         // Initialize the proving key
