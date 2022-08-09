@@ -1,6 +1,6 @@
 use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId};
 use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar};
-use gadgets::util::Expr;
+use gadgets::util::{not, Expr};
 use halo2_proofs::plonk::Error;
 
 use crate::evm_circuit::{
@@ -48,19 +48,25 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
 
         let copy_rwc_inc = cb.query_cell();
         let rlc_acc = cb.query_cell();
-        cb.copy_table_lookup(
-            cb.curr.state.call_id.expr(),
-            CopyDataType::Memory.expr(),
-            cb.curr.state.call_id.expr(),
-            CopyDataType::RlcAcc.expr(),
-            memory_address.offset(),
-            memory_address.address(),
-            0.expr(), // dst_addr for CopyDataType::RlcAcc is 0.
-            memory_address.length(),
-            rlc_acc.expr(),
-            cb.curr.state.rw_counter.expr() + cb.rw_counter_offset(),
-            copy_rwc_inc.expr(),
-        );
+        cb.condition(memory_address.has_length(), |cb| {
+            cb.copy_table_lookup(
+                cb.curr.state.call_id.expr(),
+                CopyDataType::Memory.expr(),
+                cb.curr.state.call_id.expr(),
+                CopyDataType::RlcAcc.expr(),
+                memory_address.offset(),
+                memory_address.address(),
+                0.expr(), // dst_addr for CopyDataType::RlcAcc is 0.
+                memory_address.length(),
+                rlc_acc.expr(),
+                cb.curr.state.rw_counter.expr() + cb.rw_counter_offset(),
+                copy_rwc_inc.expr(),
+            );
+        });
+        cb.condition(not::expr(memory_address.has_length()), |cb| {
+            cb.require_zero("copy_rwc_inc == 0 for size = 0", copy_rwc_inc.expr());
+            cb.require_zero("rlc_acc == 0 for size = 0", rlc_acc.expr());
+        });
         cb.keccak_table_lookup(rlc_acc.expr(), memory_address.length(), sha3_rlc.expr());
 
         let memory_expansion = MemoryExpansionGadget::construct(
@@ -159,6 +165,11 @@ mod tests {
             ),
             Ok(())
         );
+    }
+
+    #[test]
+    fn sha3_gadget_zero_length() {
+        test_ok(0x20, 0x00, MemoryKind::MoreThanSize);
     }
 
     #[test]
