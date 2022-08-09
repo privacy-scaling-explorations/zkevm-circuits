@@ -1,10 +1,10 @@
 //! Doc this
 use crate::Error;
 use crate::{DebugByte, ToBigEndian, Word};
-use core::convert::TryFrom;
-use core::ops::{Add, AddAssign, Index, IndexMut, Mul, MulAssign, Sub, SubAssign};
+use core::ops::{Add, AddAssign, Index, IndexMut, Mul, MulAssign, Range, Sub, SubAssign};
 use core::str::FromStr;
 use itertools::Itertools;
+use serde::{Serialize, Serializer};
 use std::fmt;
 
 /// Represents a `MemoryAddress` of the EVM.
@@ -218,20 +218,43 @@ impl From<Vec<Word>> for Memory {
     }
 }
 
-impl Index<MemoryAddress> for Memory {
-    type Output = u8;
-    fn index(&self, index: MemoryAddress) -> &Self::Output {
-        // MemoryAddress is in base 16. Therefore since the vec is not, we need
-        // to shift the addr.
-        &self.0[index.0 >> 5]
+impl Index<Range<usize>> for Memory {
+    type Output = [u8];
+
+    fn index(&self, index: Range<usize>) -> &Self::Output {
+        self.0.index(index)
     }
 }
 
-impl IndexMut<MemoryAddress> for Memory {
-    fn index_mut(&mut self, index: MemoryAddress) -> &mut Self::Output {
+impl IndexMut<Range<usize>> for Memory {
+    fn index_mut(&mut self, index: Range<usize>) -> &mut Self::Output {
+        self.0.index_mut(index)
+    }
+}
+
+impl<A: Into<MemoryAddress>> Index<A> for Memory {
+    type Output = u8;
+
+    fn index(&self, index: A) -> &Self::Output {
         // MemoryAddress is in base 16. Therefore since the vec is not, we need
         // to shift the addr.
-        &mut self.0[index.0 >> 5]
+        &self.0[index.into().0 >> 5]
+    }
+}
+
+impl<A: Into<MemoryAddress>> IndexMut<A> for Memory {
+    fn index_mut(&mut self, index: A) -> &mut Self::Output {
+        &mut self.0[index.into().0 >> 5]
+    }
+}
+
+impl Serialize for Memory {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let encoded = hex::encode(&self.0);
+        serializer.serialize_str(encoded.as_str())
     }
 }
 
@@ -246,6 +269,16 @@ impl Memory {
     /// Generate an new empty instance of EVM memory.
     pub const fn new() -> Memory {
         Memory(Vec::new())
+    }
+
+    /// Returns true if memory contains no elements.
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    /// Returns the number of elements in the memory.
+    pub fn len(&self) -> usize {
+        self.0.len()
     }
 
     /// Pushes a set of bytes or an [`Word`] in the last `Memory` position.
@@ -285,11 +318,18 @@ impl Memory {
     pub fn word_size(&self) -> usize {
         self.0.len() / 32
     }
+
+    /// Resize the memory for at least length and align to 32 bytes.
+    pub fn extend_at_least(&mut self, minimal_length: usize) {
+        let memory_size = (minimal_length + 31) / 32 * 32;
+        if memory_size > self.0.len() {
+            self.0.resize(memory_size, 0);
+        }
+    }
 }
 
 #[cfg(test)]
 mod memory_tests {
-    use std::convert::TryInto;
 
     use super::*;
 

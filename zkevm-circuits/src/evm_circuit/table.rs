@@ -1,31 +1,11 @@
-use crate::{evm_circuit::step::ExecutionState, impl_expr};
-use halo2_proofs::{
-    arithmetic::FieldExt,
-    plonk::{Advice, Column, Expression, Fixed, VirtualCells},
-    poly::Rotation,
-};
+use crate::evm_circuit::step::ExecutionState;
+use crate::impl_expr;
+pub use crate::table::TxContextFieldTag;
+use eth_types::Field;
+use gadgets::util::Expr;
+use halo2_proofs::plonk::Expression;
 use strum::IntoEnumIterator;
-use strum_macros::{EnumCount, EnumIter};
-
-pub trait LookupTable<F: FieldExt> {
-    fn table_exprs(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>>;
-}
-
-impl<F: FieldExt, const W: usize> LookupTable<F> for [Column<Advice>; W] {
-    fn table_exprs(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>> {
-        self.iter()
-            .map(|column| meta.query_advice(*column, Rotation::cur()))
-            .collect()
-    }
-}
-
-impl<F: FieldExt, const W: usize> LookupTable<F> for [Column<Fixed>; W] {
-    fn table_exprs(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>> {
-        self.iter()
-            .map(|column| meta.query_fixed(*column, Rotation::cur()))
-            .collect()
-    }
-}
+use strum_macros::EnumIter;
 
 #[derive(Clone, Copy, Debug, EnumIter)]
 pub enum FixedTableTag {
@@ -44,9 +24,10 @@ pub enum FixedTableTag {
     ResponsibleOpcode,
     Pow2,
 }
+impl_expr!(FixedTableTag);
 
 impl FixedTableTag {
-    pub fn build<F: FieldExt>(&self) -> Box<dyn Iterator<Item = [F; 4]>> {
+    pub fn build<F: Field>(&self) -> Box<dyn Iterator<Item = [F; 4]>> {
         let tag = F::from(*self as u64);
         match self {
             Self::Zero => Box::new((0..1).map(move |_| [tag, F::zero(), F::zero(), F::zero()])),
@@ -115,138 +96,6 @@ impl FixedTableTag {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
-pub enum TxContextFieldTag {
-    Nonce = 1,
-    Gas,
-    GasPrice,
-    CallerAddress,
-    CalleeAddress,
-    IsCreate,
-    Value,
-    CallDataLength,
-    CallDataGasCost,
-    CallData,
-}
-
-// Keep the sequence consistent with OpcodeId for scalar
-#[derive(Clone, Copy, Debug)]
-pub enum BlockContextFieldTag {
-    Coinbase = 1,
-    Timestamp,
-    Number,
-    Difficulty,
-    GasLimit,
-    BaseFee = 8,
-    BlockHash,
-    ChainId,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, EnumIter)]
-pub enum RwTableTag {
-    Start = 1,
-    Stack,
-    Memory,
-    AccountStorage,
-    TxAccessListAccount,
-    TxAccessListAccountStorage,
-    TxRefund,
-    Account,
-    AccountDestructed,
-    CallContext,
-    TxLog,
-    TxReceipt,
-}
-
-impl RwTableTag {
-    pub fn is_reversible(self) -> bool {
-        return matches!(
-            self,
-            RwTableTag::TxAccessListAccount
-                | RwTableTag::TxAccessListAccountStorage
-                | RwTableTag::TxRefund
-                | RwTableTag::Account
-                | RwTableTag::AccountStorage
-                | RwTableTag::AccountDestructed
-        );
-    }
-}
-
-impl From<RwTableTag> for usize {
-    fn from(t: RwTableTag) -> Self {
-        t as usize
-    }
-}
-
-#[derive(Clone, Copy, Debug, EnumIter)]
-pub enum AccountFieldTag {
-    Nonce = 1,
-    Balance,
-    CodeHash,
-}
-
-#[derive(Clone, Copy, Debug)]
-pub enum BytecodeFieldTag {
-    Length,
-    Byte,
-    Padding,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, EnumIter)]
-pub enum TxLogFieldTag {
-    Address = 1,
-    Topic,
-    Data,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, EnumIter, EnumCount)]
-pub enum TxReceiptFieldTag {
-    PostStateOrStatus = 1,
-    CumulativeGasUsed,
-    LogLength,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, EnumIter)]
-pub enum CallContextFieldTag {
-    RwCounterEndOfReversion = 1,
-    CallerId,
-    TxId,
-    Depth,
-    CallerAddress,
-    CalleeAddress,
-    CallDataOffset,
-    CallDataLength,
-    ReturnDataOffset,
-    ReturnDataLength,
-    Value,
-    IsSuccess,
-    IsPersistent,
-    IsStatic,
-
-    LastCalleeId,
-    LastCalleeReturnDataOffset,
-    LastCalleeReturnDataLength,
-
-    IsRoot,
-    IsCreate,
-    CodeHash,
-    ProgramCounter,
-    StackPointer,
-    GasLeft,
-    MemorySize,
-    ReversibleWriteCounter,
-}
-
-impl_expr!(FixedTableTag);
-impl_expr!(TxContextFieldTag);
-impl_expr!(RwTableTag);
-impl_expr!(AccountFieldTag);
-impl_expr!(BytecodeFieldTag);
-impl_expr!(CallContextFieldTag);
-impl_expr!(BlockContextFieldTag);
-impl_expr!(TxLogFieldTag);
-impl_expr!(TxReceiptFieldTag);
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, EnumIter)]
 pub(crate) enum Table {
     Fixed,
@@ -256,6 +105,7 @@ pub(crate) enum Table {
     Block,
     Byte,
     Copy,
+    Keccak,
 }
 
 #[derive(Clone, Debug)]
@@ -347,17 +197,29 @@ pub(crate) enum Lookup<F> {
         dst_addr: Expression<F>,
         /// The number of bytes to be copied in this copy event.
         length: Expression<F>,
+        /// The RLC accumulator value, which is used for SHA3 opcode.
+        rlc_acc: Expression<F>,
         /// The RW counter at the start of the copy event.
         rw_counter: Expression<F>,
         /// The RW counter that is incremented by the time all bytes have been
         /// copied specific to this copy event.
         rwc_inc: Expression<F>,
     },
+    /// Lookup to keccak table.
+    KeccakTable {
+        /// Accumulator to the input.
+        input_rlc: Expression<F>,
+        /// Length of input that is being hashed.
+        input_len: Expression<F>,
+        /// Output (hash) until this state. This is the RLC representation of
+        /// the final output keccak256 hash of the input.
+        output_rlc: Expression<F>,
+    },
     /// Conditional lookup enabled by the first element.
     Conditional(Expression<F>, Box<Lookup<F>>),
 }
 
-impl<F: FieldExt> Lookup<F> {
+impl<F: Field> Lookup<F> {
     pub(crate) fn conditional(self, condition: Expression<F>) -> Self {
         Self::Conditional(condition, self.into())
     }
@@ -371,6 +233,7 @@ impl<F: FieldExt> Lookup<F> {
             Self::Block { .. } => Table::Block,
             Self::Byte { .. } => Table::Byte,
             Self::CopyTable { .. } => Table::Copy,
+            Self::KeccakTable { .. } => Table::Keccak,
             Self::Conditional(_, lookup) => lookup.table(),
         }
     }
@@ -429,6 +292,7 @@ impl<F: FieldExt> Lookup<F> {
                 src_addr_end,
                 dst_addr,
                 length,
+                rlc_acc,
                 rw_counter,
                 rwc_inc,
             } => vec![
@@ -441,8 +305,19 @@ impl<F: FieldExt> Lookup<F> {
                 src_addr_end.clone(),
                 dst_addr.clone(),
                 length.clone(),
+                rlc_acc.clone(),
                 rw_counter.clone(),
                 rwc_inc.clone(),
+            ],
+            Self::KeccakTable {
+                input_rlc,
+                input_len,
+                output_rlc,
+            } => vec![
+                1.expr(), // is_enabled
+                input_rlc.clone(),
+                input_len.clone(),
+                output_rlc.clone(),
             ],
             Self::Conditional(condition, lookup) => lookup
                 .input_exprs()

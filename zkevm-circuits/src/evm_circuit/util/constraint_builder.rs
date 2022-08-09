@@ -2,22 +2,20 @@ use crate::{
     evm_circuit::{
         param::STACK_CAPACITY,
         step::{ExecutionState, Step},
-        table::{
-            AccountFieldTag, BytecodeFieldTag, CallContextFieldTag, FixedTableTag, Lookup,
-            RwTableTag, Table, TxContextFieldTag, TxLogFieldTag, TxReceiptFieldTag,
-        },
+        table::{FixedTableTag, Lookup, Table},
         util::{Cell, RandomLinearCombination, Word},
+    },
+    table::{
+        AccountFieldTag, BytecodeFieldTag, CallContextFieldTag, RwTableTag, TxContextFieldTag,
+        TxLogFieldTag, TxReceiptFieldTag,
     },
     util::Expr,
 };
-use halo2_proofs::{
-    arithmetic::FieldExt,
-    plonk::{
-        Error,
-        Expression::{self, Constant},
-    },
+use eth_types::Field;
+use halo2_proofs::plonk::{
+    Error,
+    Expression::{self, Constant},
 };
-use std::convert::TryInto;
 
 use super::{rlc, CachedRegion, CellType, StoredExpression};
 
@@ -42,7 +40,7 @@ impl<F> Default for Transition<F> {
 }
 
 #[derive(Default)]
-pub(crate) struct StepStateTransition<F: FieldExt> {
+pub(crate) struct StepStateTransition<F: Field> {
     pub(crate) rw_counter: Transition<Expression<F>>,
     pub(crate) call_id: Transition<Expression<F>>,
     pub(crate) is_root: Transition<Expression<F>>,
@@ -56,7 +54,7 @@ pub(crate) struct StepStateTransition<F: FieldExt> {
     pub(crate) log_id: Transition<Expression<F>>,
 }
 
-impl<F: FieldExt> StepStateTransition<F> {
+impl<F: Field> StepStateTransition<F> {
     pub(crate) fn new_context() -> Self {
         Self {
             program_counter: Transition::To(0.expr()),
@@ -100,7 +98,7 @@ pub(crate) struct ReversionInfo<F> {
     reversible_write_counter: Expression<F>,
 }
 
-impl<F: FieldExt> ReversionInfo<F> {
+impl<F: Field> ReversionInfo<F> {
     pub(crate) fn rw_counter_end_of_reversion(&self) -> Expression<F> {
         self.rw_counter_end_of_reversion.expr()
     }
@@ -143,7 +141,7 @@ pub struct BaseConstraintBuilder<F> {
     pub condition: Option<Expression<F>>,
 }
 
-impl<F: FieldExt> BaseConstraintBuilder<F> {
+impl<F: Field> BaseConstraintBuilder<F> {
     pub(crate) fn new(max_degree: usize) -> Self {
         BaseConstraintBuilder {
             constraints: Vec::new(),
@@ -250,7 +248,7 @@ pub(crate) struct ConstraintBuilder<'a, F> {
     stored_expressions: Vec<StoredExpression<F>>,
 }
 
-impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
+impl<'a, F: Field> ConstraintBuilder<'a, F> {
     pub(crate) fn new(
         curr: Step<F>,
         next: Step<F>,
@@ -1072,6 +1070,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         src_addr_end: Expression<F>,
         dst_addr: Expression<F>,
         length: Expression<F>,
+        rlc_acc: Expression<F>,
         rw_counter: Expression<F>,
         rwc_inc: Expression<F>,
     ) {
@@ -1087,8 +1086,27 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
                 src_addr_end,
                 dst_addr,
                 length,
+                rlc_acc,
                 rw_counter,
                 rwc_inc,
+            },
+        );
+    }
+
+    // Keccak Table
+
+    pub(crate) fn keccak_table_lookup(
+        &mut self,
+        input_rlc: Expression<F>,
+        input_len: Expression<F>,
+        output_rlc: Expression<F>,
+    ) {
+        self.add_lookup(
+            "keccak lookup",
+            Lookup::KeccakTable {
+                input_rlc,
+                input_len,
+                output_rlc,
             },
         );
     }

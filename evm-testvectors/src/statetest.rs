@@ -258,6 +258,7 @@ impl StateTest {
                     s: sig.s,
                 }],
                 accounts: self.pre,
+                ..Default::default()
             },
             self.result,
         )

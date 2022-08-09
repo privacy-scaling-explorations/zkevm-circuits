@@ -329,9 +329,32 @@ impl OpcodeId {
     pub fn is_swap(&self) -> bool {
         self.as_u8() >= Self::SWAP1.as_u8() && self.as_u8() <= Self::SWAP16.as_u8()
     }
+
     /// Returns `true` if the `OpcodeId` is a `LOGn`.
     pub fn is_log(&self) -> bool {
         self.as_u8() >= Self::LOG0.as_u8() && self.as_u8() <= Self::LOG4.as_u8()
+    }
+
+    /// Returns `true` if the `OpcodeId` is a CALL-like.
+    pub fn is_call(&self) -> bool {
+        matches!(
+            self,
+            OpcodeId::CREATE
+                | OpcodeId::CALL
+                | OpcodeId::CALLCODE
+                | OpcodeId::DELEGATECALL
+                | OpcodeId::STATICCALL
+        )
+    }
+
+    /// Returns `true` if the `OpcodeId` is a CREATE-like.
+    pub fn is_create(&self) -> bool {
+        matches!(self, OpcodeId::CREATE | Self::CREATE2)
+    }
+
+    /// Returns `true` if the `OpcodeId` is a `CALL` or `CREATE` related .
+    pub fn is_call_or_create(&self) -> bool {
+        self.is_call() || self.is_create()
     }
 }
 
@@ -637,6 +660,20 @@ impl OpcodeId {
             OpcodeId::INVALID(_) => GasCost::ZERO,
             OpcodeId::SELFDESTRUCT => GasCost::SELFDESTRUCT,
         }
+    }
+
+    /// Returns `true` if the `OpcodeId` has memory access
+    pub const fn has_memory_access(&self) -> bool {
+        matches!(
+            self,
+            OpcodeId::MLOAD
+                | OpcodeId::MSTORE
+                | OpcodeId::MSTORE8
+                | OpcodeId::CALLDATACOPY
+                | OpcodeId::RETURNDATACOPY
+                | OpcodeId::CODECOPY
+                | OpcodeId::EXTCODECOPY
+        )
     }
 }
 
