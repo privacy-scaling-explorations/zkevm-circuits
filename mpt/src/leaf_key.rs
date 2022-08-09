@@ -78,6 +78,7 @@ impl<F: FieldExt> LeafKeyChip<F> {
             let last_level = flag1.clone() * flag2.clone();
             let is_long = flag1.clone() * (one.clone() - flag2.clone());
             let is_short = (one.clone() - flag1.clone()) * flag2.clone();
+            let one_nibble = (one.clone() - flag1.clone()) * (one.clone() - flag2.clone());
 
             constraints.push((
                 "is_long: s_rlp1 = 248",
@@ -95,15 +96,11 @@ impl<F: FieldExt> LeafKeyChip<F> {
                 "flag2 is boolean",
                 get_bool_constraint(q_enable.clone(), flag2.clone()),
             ));
-            constraints.push((
-                "not both zeros: flag1, flag2",
-                q_enable.clone() * (one.clone() - flag1.clone()) * (one.clone() - flag2.clone()),
-            ));
 
             // If leaf in last level, it contains only s_rlp1 and s_rlp2, while s_main.bytes are 0.
-            let rlc_last_level = s_rlp1 + s_rlp2 * r_table[0].clone();
+            let rlc_last_level_or_one_nibble = s_rlp1 + s_rlp2 * r_table[0].clone();
 
-            let mut rlc = rlc_last_level.clone()
+            let mut rlc = rlc_last_level_or_one_nibble.clone()
                 + compute_rlc(meta, s_main.bytes.to_vec(), 1, one.clone(), 0, r_table.clone());
 
             let c_rlp1 = meta.query_advice(c_main.rlp1, Rotation::cur());
@@ -118,10 +115,10 @@ impl<F: FieldExt> LeafKeyChip<F> {
                 * (is_short + is_long) // activate if is_short or is_long
                 * (rlc - acc.clone())));
             
-            constraints.push(("Leaf key acc last level",
+            constraints.push(("Leaf key acc last level or one nibble",
                 q_enable
-                * last_level
-                * (rlc_last_level - acc)));
+                * (last_level + one_nibble)
+                * (rlc_last_level_or_one_nibble - acc)));
 
             constraints
         });
@@ -195,6 +192,7 @@ impl<F: FieldExt> LeafKeyChip<F> {
                 let last_level = flag1.clone() * flag2.clone();
                 let is_long = flag1.clone() * (one.clone() - flag2.clone());
                 let is_short = (one.clone() - flag1.clone()) * flag2.clone();
+                let one_nibble = (one.clone() - flag1.clone()) * (one.clone() - flag2.clone());
 
                 let is_leaf_in_first_level =
                     meta.query_advice(is_account_leaf_in_added_branch, Rotation(rot_into_account));
@@ -321,12 +319,12 @@ impl<F: FieldExt> LeafKeyChip<F> {
                 ));
 
                 constraints.push((
-                    "Key RLC last level",
+                    "Key RLC last level or one nibble",
                     q_enable.clone()
-                        * (key_rlc_acc_start - key_rlc.clone()) // no nibbles, key_rlc has already been computed
+                        * (key_rlc_acc_start - key_rlc.clone()) // key_rlc has already been computed
                         * (one.clone() - is_branch_placeholder.clone())
                         * (one.clone() - is_leaf_in_first_level.clone())
-                        * last_level.clone(),
+                        * (last_level + one_nibble),
                 ));
 
                 constraints

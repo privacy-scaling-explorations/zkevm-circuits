@@ -81,6 +81,7 @@ impl<F: FieldExt> LeafValueChip<F> {
             let last_level = flag1.clone() * flag2.clone();
             let is_leaf_long = flag1.clone() * (one.clone() - flag2.clone());
             let is_leaf_short = (one.clone() - flag1.clone()) * flag2.clone();
+            let one_nibble = (one.clone() - flag1.clone()) * (one.clone() - flag2.clone());
 
             let s_rlp1_prev = meta.query_advice(s_main.rlp1, Rotation::prev());
             let s_rlp1_cur = meta.query_advice(s_main.rlp1, Rotation::cur());
@@ -236,14 +237,14 @@ impl<F: FieldExt> LeafValueChip<F> {
                     * is_short.clone(),
             ));
 
-            let last_level_long_check = s_rlp1_prev.clone() - c192.clone()
+            let last_level_or_one_nibblelong_check = s_rlp1_prev.clone() - c192.clone()
                 - one.clone() - long_value_len;
             // example:  [227,32,161,160,187,239,170,18,88,1,56,188,38,60,149,117,120,38,223,78,36,235,129,201,170,170,170,170,170,170,170,170,170,170,170,170]
             constraints.push((
                 "RLP check last level long value",
                 q_enable.clone()
-                    * last_level_long_check
-                    * last_level.clone()
+                    * last_level_or_one_nibblelong_check
+                    * (last_level.clone() + one_nibble)
                     * is_long.clone(),
             ));
 

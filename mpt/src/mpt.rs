@@ -2269,6 +2269,14 @@ impl<F: FieldExt> MPTConfig<F> {
                                 offset,
                             )?;
 
+                            /*
+                            assign_long_short is used for setting flags for storage leaf and storage value.
+                            For storage leaf, it sets whether it is short (one RLP byte) or long (two RLP bytes)
+                            or last level (no nibbles in leaf, all nibbles in the path above the leaf) or one nibble.
+                            Note that last_level and one_nibble imply having only one RLP byte.
+
+                            For storage value, it sets whether it is short or long (value having more than one byte).
+                            */
                             let assign_long_short = |region: &mut Region<'_, F>, typ: &str| {
                                 let mut flag1 = false;
                                 let mut flag2 = false;
@@ -2355,6 +2363,8 @@ impl<F: FieldExt> MPTConfig<F> {
                                     typ = "long";
                                 } else if witness[ind][1] == 32 {
                                     typ = "last_level";
+                                } else if witness[ind][1] < 128 {
+                                    typ = "one_nibble";
                                 }
                                 assign_long_short(&mut region, typ);
 
@@ -2366,8 +2376,8 @@ impl<F: FieldExt> MPTConfig<F> {
                                 } else if typ == "short" {
                                     len = (row[1] - 128) as usize + 2;
                                 } else {
-                                    // last_level
-                                    len = 2;
+                                    // last_level or one_nibble
+                                    len = 2
                                 }
                                 self.compute_acc_and_mult(
                                     row,
@@ -2413,8 +2423,9 @@ impl<F: FieldExt> MPTConfig<F> {
                                     key_rlc_new = pv.key_rlc_prev;
                                     key_rlc_mult_new = pv.key_rlc_mult_prev;
                                 }
-                                if typ != "last_level" {
-                                    // If in last level, the key RLC is already computed.
+                                if typ != "last_level" && typ != "one_nibble" {
+                                    // If in last level or having only one nibble,
+                                    // the key RLC is already computed using the first two bytes above.
                                     compute_key_rlc(&mut key_rlc_new, &mut key_rlc_mult_new, start);
                                 }
                                 region.assign_advice(
@@ -2455,8 +2466,8 @@ impl<F: FieldExt> MPTConfig<F> {
                                     if row_prev[1] - key_len - 1 > 1 {
                                         is_long = true;
                                     }
-                                } else if row_prev[1] == 32 {
-                                    // last level
+                                } else if row_prev[1] < 128 {
+                                    // last_level or one_nibble
                                     let leaf_len = row_prev[0] - 192;
                                     if leaf_len - 1 > 1 {
                                         is_long = true;
