@@ -2,6 +2,7 @@ use crate::evm_circuit::step::ExecutionState;
 use crate::impl_expr;
 pub use crate::table::TxContextFieldTag;
 use eth_types::Field;
+use gadgets::util::Expr;
 use halo2_proofs::plonk::Expression;
 use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
@@ -104,6 +105,7 @@ pub(crate) enum Table {
     Block,
     Byte,
     Copy,
+    Keccak,
 }
 
 #[derive(Clone, Debug)]
@@ -195,11 +197,23 @@ pub(crate) enum Lookup<F> {
         dst_addr: Expression<F>,
         /// The number of bytes to be copied in this copy event.
         length: Expression<F>,
+        /// The RLC accumulator value, which is used for SHA3 opcode.
+        rlc_acc: Expression<F>,
         /// The RW counter at the start of the copy event.
         rw_counter: Expression<F>,
         /// The RW counter that is incremented by the time all bytes have been
         /// copied specific to this copy event.
         rwc_inc: Expression<F>,
+    },
+    /// Lookup to keccak table.
+    KeccakTable {
+        /// Accumulator to the input.
+        input_rlc: Expression<F>,
+        /// Length of input that is being hashed.
+        input_len: Expression<F>,
+        /// Output (hash) until this state. This is the RLC representation of
+        /// the final output keccak256 hash of the input.
+        output_rlc: Expression<F>,
     },
     /// Conditional lookup enabled by the first element.
     Conditional(Expression<F>, Box<Lookup<F>>),
@@ -219,6 +233,7 @@ impl<F: Field> Lookup<F> {
             Self::Block { .. } => Table::Block,
             Self::Byte { .. } => Table::Byte,
             Self::CopyTable { .. } => Table::Copy,
+            Self::KeccakTable { .. } => Table::Keccak,
             Self::Conditional(_, lookup) => lookup.table(),
         }
     }
@@ -277,6 +292,7 @@ impl<F: Field> Lookup<F> {
                 src_addr_end,
                 dst_addr,
                 length,
+                rlc_acc,
                 rw_counter,
                 rwc_inc,
             } => vec![
@@ -289,8 +305,19 @@ impl<F: Field> Lookup<F> {
                 src_addr_end.clone(),
                 dst_addr.clone(),
                 length.clone(),
+                rlc_acc.clone(),
                 rw_counter.clone(),
                 rwc_inc.clone(),
+            ],
+            Self::KeccakTable {
+                input_rlc,
+                input_len,
+                output_rlc,
+            } => vec![
+                1.expr(), // is_enabled
+                input_rlc.clone(),
+                input_len.clone(),
+                output_rlc.clone(),
             ],
             Self::Conditional(condition, lookup) => lookup
                 .input_exprs()

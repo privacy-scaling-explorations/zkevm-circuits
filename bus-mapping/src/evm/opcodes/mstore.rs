@@ -1,7 +1,6 @@
 use super::Opcode;
 use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
 use crate::Error;
-use core::convert::TryInto;
 use eth_types::evm_types::MemoryAddress;
 use eth_types::{GethExecStep, ToBigEndian, ToLittleEndian};
 
