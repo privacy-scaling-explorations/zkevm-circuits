@@ -17,7 +17,7 @@ mod test {
             PUSH32(0)
             PUSH32(0)
             PUSH32(0)
-            PUSH32(0)
+            PUSH32(1)
             PUSH32(Word::from("0x00000000000000000000000000000000000cafe2"))
             PUSH32(100000)
             CALL
