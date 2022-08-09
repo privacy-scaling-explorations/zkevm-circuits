@@ -145,35 +145,35 @@ macro_rules! declare_tests {
     ($name:ident, $block_tag:expr) => {
         paste! {
             #[tokio::test]
-            async fn [<test_evm_ $name>]() {
+            async fn [<serial_test_evm_ $name>]() {
                 log_init();
                 let block_num = GEN_DATA.blocks.get($block_tag).unwrap();
                 test_evm_circuit_block(*block_num).await;
             }
 
             #[tokio::test]
-            async fn [<test_state_ $name>]() {
+            async fn [<serial_test_state_ $name>]() {
                 log_init();
                 let block_num = GEN_DATA.blocks.get($block_tag).unwrap();
                 test_state_circuit_block(*block_num).await;
             }
 
             #[tokio::test]
-            async fn [<test_tx_ $name>]() {
+            async fn [<serial_test_tx_ $name>]() {
                 log_init();
                 let block_num = GEN_DATA.blocks.get($block_tag).unwrap();
                 test_tx_circuit_block(*block_num).await;
             }
 
             #[tokio::test]
-            async fn [<test_bytecode_ $name>]() {
+            async fn [<serial_test_bytecode_ $name>]() {
                 log_init();
                 let block_num = GEN_DATA.blocks.get($block_tag).unwrap();
                 test_bytecode_circuit_block(*block_num).await;
             }
 
             #[tokio::test]
-            async fn [<test_copy_ $name>]() {
+            async fn [<serial_test_copy_ $name>]() {
                 log_init();
                 let block_num = GEN_DATA.blocks.get($block_tag).unwrap();
                 test_copy_circuit_block(*block_num).await;
