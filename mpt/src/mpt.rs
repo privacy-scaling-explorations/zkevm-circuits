@@ -2280,6 +2280,7 @@ impl<F: FieldExt> MPTConfig<F> {
                             let assign_long_short = |region: &mut Region<'_, F>, typ: &str| {
                                 let mut flag1 = false;
                                 let mut flag2 = false;
+                                // for one_nibble, it is both 0
                                 if typ == "long" {
                                     flag1 = true;
                                 } else if typ == "short" {

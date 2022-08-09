@@ -36,6 +36,7 @@ impl<F: FieldExt> BranchHashInParentChip<F> {
         let config = BranchHashInParentConfig {};
         let one = Expression::Constant(F::from(1_u64));
 
+        // Note: branch in the first level cannot be shorter than 32 bytes (it is always hashed).
         meta.lookup_any(
             "branch in first level - hash compared to root",
             |meta| {

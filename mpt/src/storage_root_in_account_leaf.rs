@@ -44,6 +44,7 @@ impl<F: FieldExt> StorageRootChip<F> {
 
         // Storage first level branch hash - root in last account leaf (ordinary branch,
         // not extension node).
+        // Note: branch in the first level cannot be shorter than 32 bytes (it is always hashed).
         meta.lookup_any(
             "storage_root_in_account_leaf 1: root of the first level branch in account leaf",
             |meta| {
@@ -126,6 +127,7 @@ impl<F: FieldExt> StorageRootChip<F> {
 
         // Storage first level extension hash - root in last account leaf (extension
         // node).
+        // Note: extension node in the first level cannot be shorter than 32 bytes (it is always hashed).
         meta.lookup_any(
             "storage_root_in_account_leaf 2: root of the first level extension node in account leaf",
             |meta| {
@@ -202,6 +204,7 @@ impl<F: FieldExt> StorageRootChip<F> {
         );
 
         // If there is no branch, just a leaf.
+        // Note: storage leaf in the first level cannot be shorter than 32 bytes (it is always hashed).
         meta.lookup_any(
             "storage_root_in_account_leaf 3: root of the first level storage leaf in account leaf",
             |meta| {
@@ -299,6 +302,7 @@ impl<F: FieldExt> StorageRootChip<F> {
         });
 
         // If there is no branch, just a leaf, but after a placeholder.
+        // Note: branch in the first level cannot be shorter than 32 bytes (it is always hashed).
         meta.lookup_any("storage_root_in_account_leaf 4: root of the first level storage leaf (after branch placeholder) in account leaf", |meta| {
             let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
 
