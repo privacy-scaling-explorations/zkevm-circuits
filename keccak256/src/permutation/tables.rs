@@ -10,6 +10,7 @@ use halo2_proofs::{
 };
 use itertools::Itertools;
 use std::collections::HashMap;
+use std::marker::PhantomData;
 use strum_macros::{Display, EnumIter};
 
 use super::rho_helpers::{Conversion, STEP2_RANGE, STEP3_RANGE};

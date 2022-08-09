@@ -50,9 +50,9 @@ pub fn assign_rho<F: Field>(
 
         let input_from_chunks =
             generic.linear_combine_consts(layouter, input_coefs, input_pobs, None)?;
-        let last_chunk = generic.sub_advice(layouter, lane.clone(), input_from_chunks)?;
+        let diff = generic.sub_advice(layouter, lane.clone(), input_from_chunks)?;
 
-        let final_output_coef = stackable.lookup_special_chunks(layouter, &last_chunk)?;
+        let final_output_coef = stackable.lookup_special_chunks(layouter, &diff)?;
         output_coefs.push(final_output_coef);
 
         let output_lane =
@@ -88,6 +88,16 @@ mod tests {
         struct MyCircuit<F> {
             in_state: [F; 25],
             out_state: [F; 25],
+        }
+
+        #[derive(Clone)]
+        struct MyConfig<F> {
+            advice: Column<Advice>,
+            generic: GenericConfig<F>,
+            stackable: StackableTable<F>,
+            base13to9_config: Base13toBase9TableConfig<F>,
+        }
+        impl<F: Field> Circuit<F> for MyCircuit<F> {
             type Config = MyConfig<F>;
             type FloorPlanner = SimpleFloorPlanner;
 
