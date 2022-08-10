@@ -2,6 +2,7 @@ use crate::evm_circuit::util::not;
 use crate::{evm_circuit::util::constraint_builder::BaseConstraintBuilder, util::Expr};
 use eth_types::Word;
 use eth_types::{Field, ToScalar};
+use gadgets::util::select;
 use halo2_proofs::{
     circuit::{Layouter, Region, SimpleFloorPlanner},
     plonk::{
@@ -13,7 +14,8 @@ use itertools::Itertools;
 use std::{convert::TryInto, env::var, marker::PhantomData, vec};
 
 const KECCAK_WIDTH: usize = 25;
-const C_WIDTH: usize = 5 * 64;
+const NUM_WORDS_TO_ABSORB: usize = 17;
+
 const RHOM: [[usize; 5]; 5] = [
     [0, 36, 3, 41, 18],
     [1, 44, 10, 45, 2],
@@ -154,6 +156,7 @@ pub(crate) struct PartValue {
 #[derive(Clone, Debug)]
 pub struct KeccakPackedConfig<F> {
     q_enable: Selector,
+    q_first: Selector,
     q_round: Column<Fixed>,
     q_absorb: Column<Fixed>,
     q_end: Column<Advice>,
@@ -541,6 +544,7 @@ fn combine_sub_parts_value(input: Vec<PartValue>, part_size: usize) -> Vec<PartV
 impl<F: Field> KeccakPackedConfig<F> {
     pub(crate) fn configure(meta: &mut ConstraintSystem<F>) -> Self {
         let q_enable = meta.selector();
+        let q_first = meta.selector();
         let q_round = meta.fixed_column();
         let q_absorb = meta.fixed_column();
         let q_end = meta.advice_column();
@@ -576,15 +580,17 @@ impl<F: Field> KeccakPackedConfig<F> {
         let mut absorb_data_expr = 0u64.expr();
         let mut absorb_result_expr = 0u64.expr();
 
-        let mut absorb_from_next_expr = vec![0u64.expr(); 25];
-        let mut absorb_result_next_expr = vec![0u64.expr(); 25];
+        let mut absorb_from_next_expr = vec![0u64.expr(); NUM_WORDS_TO_ABSORB];
+        let mut absorb_data_next_expr = vec![0u64.expr(); NUM_WORDS_TO_ABSORB];
+        let mut absorb_result_next_expr = vec![0u64.expr(); NUM_WORDS_TO_ABSORB];
         meta.create_gate("Absorb data", |meta| {
             absorb_from_expr = meta.query_advice(absorb_from, Rotation::cur());
             absorb_data_expr = meta.query_advice(absorb_data, Rotation::cur());
             absorb_result_expr = meta.query_advice(absorb_result, Rotation::cur());
 
-            for i in 0..25 {
+            for i in 0..NUM_WORDS_TO_ABSORB {
                 absorb_from_next_expr[i] = meta.query_advice(absorb_from, Rotation((i + 1) as i32));
+                absorb_data_next_expr[i] = meta.query_advice(absorb_data, Rotation((i + 1) as i32));
                 absorb_result_next_expr[i] =
                     meta.query_advice(absorb_result, Rotation((i + 1) as i32));
             }
@@ -810,6 +816,22 @@ impl<F: Field> KeccakPackedConfig<F> {
         println!("num_parts_post: {}", num_parts_post);
         total_lookup_counter += lookup_counter;
 
+        meta.create_gate("input checks", |meta| {
+            let mut cb = BaseConstraintBuilder::new(5);
+            cb.require_boolean("boolean q_end", meta.query_advice(q_end, Rotation::cur()));
+            cb.gate(meta.query_selector(q_enable))
+        });
+
+        meta.create_gate("first row", |meta| {
+            let mut cb = BaseConstraintBuilder::new(5);
+            cb.require_equal(
+                "q_end needs to be enabled on the first row",
+                meta.query_advice(q_end, Rotation::cur()),
+                1.expr(),
+            );
+            cb.gate(meta.query_selector(q_first))
+        });
+
         meta.create_gate("round", |meta| {
             cb.gate(meta.query_fixed(q_round, Rotation::cur()))
         });
@@ -818,37 +840,41 @@ impl<F: Field> KeccakPackedConfig<F> {
             let mut cb = BaseConstraintBuilder::new(3);
 
             b = pre_b.clone();
+            let not_q_end = not::expr(meta.query_advice(q_end, Rotation::cur()));
 
             let absorb_positions = get_absorb_positions();
             let mut a_slice = 0;
             for j in 0..5 {
                 for i in 0..5 {
                     if absorb_positions.contains(&(i, j)) {
-                        cb.require_equal(
-                            "absorb verify input",
-                            absorb_from_next_expr[a_slice].clone(),
-                            b[i][j].clone(),
-                        );
+                        cb.condition(not_q_end.clone(), |cb| {
+                            cb.require_equal(
+                                "absorb verify input",
+                                absorb_from_next_expr[a_slice].clone(),
+                                b[i][j].clone(),
+                            );
+                        });
                         cb.require_equal(
                             "absorb result copy",
-                            absorb_result_next_expr[a_slice].clone(),
+                            select::expr(
+                                not_q_end.clone(),
+                                absorb_result_next_expr[a_slice].clone(),
+                                absorb_data_next_expr[a_slice].clone(),
+                            ),
                             b_next[i][j].clone(),
                         );
                         a_slice += 1;
                     } else {
                         cb.require_equal(
                             "absorb state copy",
-                            b[i][j].clone(),
+                            b[i][j].clone() * not_q_end.clone(),
                             b_next[i][j].clone(),
                         );
                     }
                 }
             }
 
-            cb.gate(
-                meta.query_fixed(q_absorb, Rotation::cur())
-                    * not::expr(meta.query_advice(q_end, Rotation::cur())),
-            )
+            cb.gate(meta.query_fixed(q_absorb, Rotation::cur()))
         });
 
         println!("Degree: {}", meta.degree());
@@ -872,6 +898,7 @@ impl<F: Field> KeccakPackedConfig<F> {
 
         KeccakPackedConfig {
             q_enable,
+            q_first,
             q_round,
             q_absorb,
             q_end,
@@ -923,9 +950,14 @@ impl<F: Field> KeccakPackedConfig<F> {
         absorb_data: AbsorbData,
         cell_values: Vec<F>,
     ) -> Result<(), Error> {
-        let round = offset % 25;
+        let round = (offset + 24) % 25;
 
         self.q_enable.enable(region, offset)?;
+
+        // q_first
+        if offset == 0 {
+            self.q_first.enable(region, offset)?;
+        }
 
         // q_round
         region.assign_fixed(
@@ -1191,7 +1223,7 @@ fn get_absorb_positions() -> Vec<(usize, usize)> {
     let mut absorb_positions = Vec::new();
     for j in 0..5 {
         for i in 0..5 {
-            if i + j * 5 < 17 {
+            if i + j * 5 < NUM_WORDS_TO_ABSORB {
                 absorb_positions.push((i, j));
             }
         }
@@ -1219,7 +1251,6 @@ fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: Vec<u8>) {
 
     let chunks = bits.chunks(rate);
     let num_chunks = chunks.len();
-    println!("num_chunks: {}", num_chunks);
     for (idx, chunk) in chunks.enumerate() {
         let mut absorb_rows = Vec::new();
         // Absorb
@@ -1242,7 +1273,7 @@ fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: Vec<u8>) {
                 absorb_data = absorb_rows[round].clone();
             }
 
-            let mut s_bits = [F::zero(); 25];
+            let mut s_bits = [F::zero(); KECCAK_WIDTH];
             for i in 0..5 {
                 for j in 0..5 {
                     s_bits[i * 5 + j] = b[i][j].to_scalar().unwrap();
@@ -1383,7 +1414,19 @@ fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: Vec<u8>) {
 }
 
 fn multi_keccak<F: Field>(bytes: Vec<Vec<u8>>) -> Vec<KeccakRow<F>> {
-    let mut rows: Vec<KeccakRow<F>> = Vec::new();
+    // Dummy first row so that the initial data is absorbed
+    // The initial data doesn't really matter, `q_end` just needs to be enabled.
+    let mut rows: Vec<KeccakRow<F>> = vec![KeccakRow {
+        s_bits: [F::zero(); KECCAK_WIDTH],
+        absorb_data: AbsorbData {
+            from: Word::zero(),
+            absorb: Word::zero(),
+            result: Word::zero(),
+        },
+        q_end: 1u64,
+        cell_values: Vec::new(),
+    }];
+    // Actual keccaks
     for bytes in bytes {
         keccak(&mut rows, bytes);
     }

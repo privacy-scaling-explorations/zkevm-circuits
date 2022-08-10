@@ -2,8 +2,9 @@ use crate::evm_circuit::util::not;
 use crate::{evm_circuit::util::constraint_builder::BaseConstraintBuilder, util::Expr};
 use eth_types::Word;
 use eth_types::{Field, ToScalar};
+use gadgets::util::select;
 use halo2_proofs::arithmetic::FieldExt;
-use halo2_proofs::plonk::VirtualCells;
+use halo2_proofs::plonk::{Selector, VirtualCells};
 use halo2_proofs::{
     circuit::{Layouter, Region, SimpleFloorPlanner},
     plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, TableColumn},
@@ -13,7 +14,8 @@ use itertools::Itertools;
 use std::{env::var, marker::PhantomData, vec};
 
 const KECCAK_WIDTH: usize = 25;
-const C_WIDTH: usize = 5 * 64;
+const NUM_WORDS_TO_ABSORB: usize = 17;
+
 const RHOM: [[usize; 5]; 5] = [
     [0, 36, 3, 41, 18],
     [1, 44, 10, 45, 2],
@@ -348,6 +350,8 @@ impl<F: FieldExt> CellManager<F> {
 /// KeccakConfig
 #[derive(Clone, Debug)]
 pub struct KeccakPackedConfig<F> {
+    q_enable: Selector,
+    q_first: Selector,
     q_round: Column<Fixed>,
     q_absorb: Column<Fixed>,
     q_end: Column<Advice>,
@@ -895,6 +899,8 @@ fn get_word_parts(part_size: usize, rot: usize, normalize: bool) -> WordParts {
 
 impl<F: Field> KeccakPackedConfig<F> {
     pub(crate) fn configure(meta: &mut ConstraintSystem<F>) -> Self {
+        let q_enable = meta.selector();
+        let q_first = meta.selector();
         let q_round = meta.fixed_column();
         let q_absorb = meta.fixed_column();
         let q_end = meta.advice_column();
@@ -929,11 +935,13 @@ impl<F: Field> KeccakPackedConfig<F> {
         let absorb_from = cell_manager.query_cell(meta);
         let absorb_data = cell_manager.query_cell(meta);
         let absorb_result = cell_manager.query_cell(meta);
-        let mut absorb_from_next = vec![0u64.expr(); 17];
-        let mut absorb_result_next = vec![0u64.expr(); 17];
-        for i in 0..17 {
+        let mut absorb_from_next = vec![0u64.expr(); NUM_WORDS_TO_ABSORB];
+        let mut absorb_data_next = vec![0u64.expr(); NUM_WORDS_TO_ABSORB];
+        let mut absorb_result_next = vec![0u64.expr(); NUM_WORDS_TO_ABSORB];
+        for i in 0..NUM_WORDS_TO_ABSORB {
             let rot = (i + 1) * get_num_rows_per_round();
             absorb_from_next[i] = absorb_from.at_offset(meta, rot).expr();
+            absorb_data_next[i] = absorb_data.at_offset(meta, rot).expr();
             absorb_result_next[i] = absorb_result.at_offset(meta, rot).expr();
         }
 
@@ -1217,6 +1225,22 @@ impl<F: Field> KeccakPackedConfig<F> {
         println!("Columns: {}", cell_manager.get_width());
         total_lookup_counter += lookup_counter;
 
+        meta.create_gate("input checks", |meta| {
+            let mut cb = BaseConstraintBuilder::new(5);
+            cb.require_boolean("boolean q_end", meta.query_advice(q_end, Rotation::cur()));
+            cb.gate(meta.query_selector(q_enable))
+        });
+
+        meta.create_gate("first row", |meta| {
+            let mut cb = BaseConstraintBuilder::new(5);
+            cb.require_equal(
+                "q_end needs to be enabled on the first row",
+                meta.query_advice(q_end, Rotation::cur()),
+                1.expr(),
+            );
+            cb.gate(meta.query_selector(q_first))
+        });
+
         meta.create_gate("round", |meta| {
             cb.gate(meta.query_fixed(q_round, Rotation::cur()))
         });
@@ -1225,37 +1249,41 @@ impl<F: Field> KeccakPackedConfig<F> {
             let mut cb = BaseConstraintBuilder::new(3);
 
             b = pre_b.clone();
+            let not_q_end = not::expr(meta.query_advice(q_end, Rotation::cur()));
 
             let absorb_positions = get_absorb_positions();
             let mut a_slice = 0;
             for j in 0..5 {
                 for i in 0..5 {
                     if absorb_positions.contains(&(i, j)) {
-                        cb.require_equal(
-                            "absorb input copy",
-                            absorb_from_next[a_slice].expr(),
-                            b[i][j].clone(),
-                        );
+                        cb.condition(not_q_end.clone(), |cb| {
+                            cb.require_equal(
+                                "absorb verify input",
+                                absorb_from_next[a_slice].clone(),
+                                b[i][j].clone(),
+                            );
+                        });
                         cb.require_equal(
                             "absorb result copy",
-                            absorb_result_next[a_slice].expr(),
+                            select::expr(
+                                not_q_end.clone(),
+                                absorb_result_next[a_slice].clone(),
+                                absorb_data_next[a_slice].clone(),
+                            ),
                             b_next[i][j].clone(),
                         );
                         a_slice += 1;
                     } else {
                         cb.require_equal(
                             "absorb state copy",
-                            b[i][j].clone(),
+                            b[i][j].clone() * not_q_end.clone(),
                             b_next[i][j].clone(),
                         );
                     }
                 }
             }
 
-            cb.gate(
-                meta.query_fixed(q_absorb, Rotation::cur())
-                    * not::expr(meta.query_advice(q_end, Rotation::cur())),
-            )
+            cb.gate(meta.query_fixed(q_absorb, Rotation::cur()))
         });
 
         println!("Degree: {}", meta.degree());
@@ -1278,6 +1306,8 @@ impl<F: Field> KeccakPackedConfig<F> {
         );
 
         KeccakPackedConfig {
+            q_enable,
+            q_first,
             q_round,
             q_absorb,
             q_end,
@@ -1314,6 +1344,11 @@ impl<F: Field> KeccakPackedConfig<F> {
         offset: usize,
         row: &KeccakRow<F>,
     ) -> Result<(), Error> {
+        // q_first
+        if offset == 0 {
+            self.q_first.enable(region, offset)?;
+        }
+
         // q_round
         region.assign_fixed(
             || format!("assign q_round {}", offset),
@@ -1513,7 +1548,7 @@ fn get_absorb_positions() -> Vec<(usize, usize)> {
     let mut absorb_positions = Vec::new();
     for j in 0..5 {
         for i in 0..5 {
-            if i + j * 5 < 17 {
+            if i + j * 5 < NUM_WORDS_TO_ABSORB {
                 absorb_positions.push((i, j));
             }
         }
@@ -1538,7 +1573,6 @@ fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: Vec<u8>) {
 
     let chunks = bits.chunks(rate);
     let num_chunks = chunks.len();
-    println!("num_chunks: {}", num_chunks);
     for (idx, chunk) in chunks.enumerate() {
         let mut absorb_rows = Vec::new();
         // Absorb
@@ -1783,6 +1817,17 @@ fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: Vec<u8>) {
 
 fn multi_keccak<F: Field>(bytes: Vec<Vec<u8>>) -> Vec<KeccakRow<F>> {
     let mut rows: Vec<KeccakRow<F>> = Vec::new();
+    // Dummy first row so that the initial data is absorbed
+    // The initial data doesn't really matter, `q_end` just needs to be enabled.
+    for idx in 0..get_num_rows_per_round() {
+        rows.push(KeccakRow {
+            q_round: false,
+            q_absorb: idx == 0,
+            round_cst: F::zero(),
+            q_end: 1u64,
+            cell_values: Vec::new(),
+        });
+    }
     for bytes in bytes {
         keccak(&mut rows, bytes);
     }
