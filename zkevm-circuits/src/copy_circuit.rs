@@ -905,4 +905,15 @@ mod tests {
         let block = block_convert(&builder.block, &builder.code_db);
         assert!(run_circuit(10, block, get_randomness()).is_err());
     }
+
+    #[test]
+    fn copy_circuit_invalid_sha3() {
+        let mut builder = gen_sha3_data();
+        match rand::thread_rng().gen_bool(0.5) {
+            true => perturb_tag(&mut builder.block, CopyDataType::Memory),
+            false => perturb_tag(&mut builder.block, CopyDataType::RlcAcc),
+        }
+        let block = block_convert(&builder.block, &builder.code_db);
+        assert!(run_circuit(20, block, get_randomness()).is_err());
+    }
 }
