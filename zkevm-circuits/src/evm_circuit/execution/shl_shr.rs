@@ -73,8 +73,8 @@ impl<F: Field> ExecutionGadget<F> for ShlShrGadget<F> {
         cb.stack_pop(shift.expr());
         cb.stack_pop(is_shl.expr() * quotient.expr() + is_shr.expr() * dividend.expr());
         cb.stack_push(
-            is_shl.expr() * dividend.expr()
-                + is_shr.expr() * quotient.expr() * (1.expr() - divisor_is_zero.expr()),
+            (is_shl.expr() * dividend.expr() + is_shr.expr() * quotient.expr())
+                * (1.expr() - divisor_is_zero.expr()),
         );
 
         cb.require_zero(
