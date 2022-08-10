@@ -15,7 +15,7 @@
 //! - [x] Copy Circuit
 //! - [ ] Keccak Circuit
 //! - [ ] MPT Circuit
-//! - [ ] PublicInputs Circuit
+//! - [x] PublicInputs Circuit
 //!
 //! And the following shared tables, with the circuits that use them:
 //!
@@ -54,6 +54,7 @@ use crate::bytecode_circuit::bytecode_unroller::{
     unroll, Config as BytecodeConfig, UnrolledBytecode,
 };
 
+use crate::pi_circuit::{PiCircuit, PiCircuitConfig, self, PublicData};
 use crate::evm_circuit::{table::FixedTableTag, witness::Block, EvmCircuit};
 use crate::table::{BlockTable, BytecodeTable, CopyTable, KeccakTable, RwTable, TxTable};
 use crate::util::power_of_randomness_from_instance;
@@ -66,7 +67,7 @@ use halo2_proofs::{
 use super::copy_circuit::CopyCircuit;
 use crate::{evm_circuit::witness::block_convert, tx_circuit::sign_verify::POW_RAND_SIZE};
 use bus_mapping::mock::BlockData;
-use eth_types::geth_types::{self, GethData};
+use eth_types::geth_types::{self, GethData, BlockConstants};
 use group::{Curve, Group};
 use halo2_proofs::arithmetic::{CurveAffine, Field as Halo2Field};
 use halo2_proofs::pairing::bn256::Fr;
@@ -87,6 +88,7 @@ pub struct SuperCircuitConfig<F: Field, const MAX_TXS: usize, const MAX_CALLDATA
     tx_circuit: TxCircuitConfig<F>,
     bytecode_circuit: BytecodeConfig<F>,
     copy_circuit: CopyCircuit<F>,
+    pi_circuit: PiCircuitConfig<F, MAX_TXS, MAX_CALLDATA>,
 }
 
 /// The Super Circuit contains all the zkEVM circuits
@@ -99,6 +101,7 @@ pub struct SuperCircuit<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usiz
     tx_circuit: TxCircuit<F, MAX_TXS, MAX_CALLDATA>,
     // Bytecode Circuit
     // bytecodes: Vec<UnrolledBytecode<F>>,
+    pi_circuit: PiCircuit<F, MAX_TXS, MAX_CALLDATA>,
     bytecode_size: usize,
 }
 
@@ -173,6 +176,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
                 bytecode_table,
                 keccak_table,
             ),
+            pi_circuit : PiCircuit::<F, MAX_TXS, MAX_CALLDATA>::configure(meta)
         }
     }
 
@@ -238,6 +242,8 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
         config
             .copy_circuit
             .assign_block(&mut layouter, &self.block)?;
+        // --- PublicInputs Circuit ---
+        self.pi_circuit.synthesize(config.pi_circuit, layouter)?; 
         Ok(())
     }
 }
@@ -245,7 +251,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
 impl<const MAX_TXS: usize, const MAX_CALLDATA: usize> SuperCircuit<Fr, MAX_TXS, MAX_CALLDATA> {
     /// TODO
     pub fn build(geth_data: GethData, rng: impl RngCore + Clone) -> (u32, Self, Vec<Vec<Fr>>) {
-        let txs = geth_data
+        let txs: Vec<geth_types::Transaction> = geth_data
             .eth_block
             .transactions
             .iter()
@@ -261,7 +267,7 @@ impl<const MAX_TXS: usize, const MAX_CALLDATA: usize> SuperCircuit<Fr, MAX_TXS, 
         let mut block = block_convert(&builder.block, &builder.code_db);
 
         block.randomness = Fr::random(rng.clone());
-        let aux_generator = <Secp256k1Affine as CurveAffine>::CurveExt::random(rng).to_affine();
+        let aux_generator = <Secp256k1Affine as CurveAffine>::CurveExt::random(rng.clone()).to_affine();
 
         let fixed_table_tags: Vec<FixedTableTag> = FixedTableTag::iter().collect();
         let log2_ceil = |n| u32::BITS - (n as u32).leading_zeros() - (n & (n - 1) == 0) as u32;
@@ -292,12 +298,30 @@ impl<const MAX_TXS: usize, const MAX_CALLDATA: usize> SuperCircuit<Fr, MAX_TXS, 
         instance.push(vec![]);
 
         let chain_id = block.context.chain_id;
-        let tx_circuit = TxCircuit::new(aux_generator, block.randomness, chain_id.as_u64(), txs);
-
+        let tx_circuit = TxCircuit::new(aux_generator, block.randomness, chain_id.as_u64(), txs.clone());
+        let pi_circuit = PiCircuit {
+            randomness : block.randomness,
+            rand_rpi :  Fr::random(rng.clone()),
+            public_data: PublicData {
+                txs,
+                extra: geth_data.clone(),
+                block_constants: BlockConstants {
+                    coinbase: geth_data.eth_block.author,
+                    timestamp: geth_data.eth_block.timestamp, 
+                    number: geth_data.eth_block.number.unwrap_or_default(),
+                    difficulty: geth_data.eth_block.difficulty,
+                    gas_limit: geth_data.eth_block.gas_limit,
+                    base_fee: geth_data.eth_block.base_fee_per_gas.unwrap_or_default()
+                },
+                prev_state_root : eth_types::H256::zero()
+            }
+        };
+        let _pi_circuit_instance = pi_circuit.instance();
         let circuit = SuperCircuit::<_, MAX_TXS, MAX_CALLDATA> {
             block,
             fixed_table_tags,
             tx_circuit,
+            pi_circuit,
             // Instead of using 1 << k - NUM_BLINDING_ROWS, we use a much smaller number of enabled
             // rows for the Bytecode Circuit because otherwise it penalizes significantly the
             // MockProver verification time.
