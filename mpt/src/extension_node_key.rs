@@ -35,7 +35,7 @@ currently does not. See below.
 Currently, we do not store key for the C extension node - it is always the same as key for
 the S extension node. However, it can happen that one extension node is longer than 55 bytes and one not
 (being longer than 55 bytes is very unlikely because that would mean the extension need to be at least
-23 bytes long - adding 32 for branch hash would give us 55).
+22 bytes long - adding 32 for branch hash and 2 RLP bytes would give us 56).
 In this case the longer than 55 bytes extension node starts as: [248, remaining_length, extension_bytes_length, ...],
 while the shorter than 55 bytes extension node starts as: [247, extension_bytes_length, ...].
 

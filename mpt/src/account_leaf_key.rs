@@ -137,13 +137,21 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
 
             constraints
         });
-
-        // Note: key length is always in s_main.bytes[0] here as opposed to storage
-        // key leaf where it can appear in s_rlp2 too. This is because account
-        // leaf contains nonce, balance, ... which makes it always longer than 55 bytes,
-        // which makes a RLP to start with 248 (s_rlp1) and having one byte (in s_rlp2)
-        // for the length of the remaining stream.
+ 
         /*
+        /*
+        Key RLC is computed over `s_main.bytes[1]`, ..., `s_main.bytes[31]` because we do not know
+        the key length in advance. To prevent changing the key and setting `s_main.bytes[i]` for
+        `i > nonce_len + 1` to get the correct nonce RLC, we need to ensure that
+        `s_main.bytes[i] = 0` for `i > key_len + 1`.
+        The key can also appear in `c_main.rlp1` and `c_main.rlp2`, so we need to check these two columns too.
+        
+        Note: the key length is always in s_main.bytes[0] here as opposed to storage
+        key leaf where it can appear in s_rlp2 too. This is because the account
+        leaf contains nonce, balance, ... which makes it always longer than 55 bytes,
+        which makes a RLP to start with 248 (s_rlp1) and having one byte (in s_rlp2)
+        for the length of the remaining stream.
+        */
         for ind in 1..HASH_WIDTH {
             key_len_lookup(
                 meta,
@@ -159,9 +167,20 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
         key_len_lookup(meta, q_enable, 33, s_main.bytes[0], c_main.rlp2, 128, fixed_table);
         */
 
-        // acc_mult corresponds to key length:
+        /*
+        When the account intermediate RLC needs to be computed in the next row (nonce balance row), we need
+        to know the intermediate RLC from the current row and the randomness multiplier (`r` to some power).
+        The power of randomness `r` is determined by the key length - the intermediate RLC in the current row
+        is computed as (key starts in `s_main.bytes[1]`):
+        `rlc = s_main.rlp1 + s_main.rlp2 * r + s_main.bytes[0] * r^2 + key_bytes[0] * r^3 + ... + key_bytes[key_len-1] * r^{key_len + 2}`
+        So the multiplier to be used in the next row is `r^{key_len + 2}`. 
+
+        `mult_diff` needs to correspond to the key length + 2 RLP bytes + 1 byte for byte that contains the key length.
+        That means `mult_diff` needs to be `r^{key_len+1}` where `key_len = s_main.bytes[0] - 128`.
+        */
         mult_diff_lookup(meta, q_enable, 3, s_main.bytes[0], accs.acc_s.mult, 128, fixed_table);
-        // No need to check key_rlc_mult as it's not used after this row.
+
+        //  Note: there is no need to check key_rlc_mult as it is not used after this row.
 
         meta.create_gate(
             "Account leaf address RLC (leaf not in first level, branch not placeholder)",
@@ -230,27 +249,17 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
                 key_rlc_acc = key_rlc_acc + c_rlp1 * key_mult.clone() * r_table[29].clone();
                 key_rlc_acc = key_rlc_acc + c_rlp2 * key_mult * r_table[30].clone();
 
-                let key_rlc = meta.query_advice(key_rlc, Rotation::cur());
                 let address_rlc = meta.query_advice(address_rlc, Rotation::cur());
-
-                // Key RLC is to be checked to verify that the proper key is used.
-                constraints.push((
-                    "Account address RLC",
-                    q_enable.clone()
-                        * (one.clone() - is_branch_placeholder.clone())
-                        * (one.clone() - is_leaf_in_first_level.clone())
-                        * (key_rlc_acc.clone() - key_rlc.clone()),
-                ));
 
                 let is_non_existing_account_proof =
                     meta.query_advice(proof_type.is_non_existing_account_proof, Rotation::cur());
                 constraints.push((
-                    "Computed account address RLC same as value in address_rlc column 1",
+                    "Computed account address RLC same as value in address_rlc column",
                     q_enable
                         * (one.clone() - is_branch_placeholder.clone())
                         * (one.clone() - is_leaf_in_first_level.clone())
                         * (one.clone() - is_non_existing_account_proof.clone())
-                        * (key_rlc.clone() - address_rlc.clone()),
+                        * (key_rlc_acc.clone() - address_rlc.clone()),
                 ));
 
                 constraints
@@ -291,16 +300,7 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
             key_rlc_acc = key_rlc_acc + c_rlp1 * r_table[29].clone();
             key_rlc_acc = key_rlc_acc + c_rlp2 * r_table[30].clone();
 
-            let key_rlc = meta.query_advice(key_rlc, Rotation::cur());
             let address_rlc = meta.query_advice(address_rlc, Rotation::cur());
-
-            // Key RLC is to be checked to verify that the proper key is used.
-            constraints.push((
-                "Account address RLC",
-                q_enable.clone()
-                    * is_leaf_in_first_level.clone()
-                    * (key_rlc_acc.clone() - key_rlc.clone()),
-            ));
 
             let is_non_existing_account_proof =
                 meta.query_advice(proof_type.is_non_existing_account_proof, Rotation::cur());
@@ -309,7 +309,7 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
                 q_enable
                 * is_leaf_in_first_level.clone()
                 * (one.clone() - is_non_existing_account_proof.clone())
-                * (key_rlc.clone() - address_rlc.clone()),
+                * (key_rlc_acc.clone() - address_rlc.clone()),
             ));
 
             constraints
