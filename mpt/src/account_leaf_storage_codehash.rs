@@ -7,7 +7,7 @@ use std::marker::PhantomData;
 
 use crate::{
     helpers::range_lookups,
-    mpt::{FixedTableTag, MainCols, ProofTypeCols, AccumulatorPair, MPTConfig, ProofVariables},
+    mpt::{FixedTableTag, MainCols, ProofTypeCols, AccumulatorPair, MPTConfig, ProofVariables, DenoteCols},
     param::{
         ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND, ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND, BRANCH_ROWS_NUM,
         EXTENSION_ROWS_NUM, IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS,
@@ -74,8 +74,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
         fixed_table: [Column<Fixed>; 3],
         s_mod_node_hash_rlc: Column<Advice>,
         c_mod_node_hash_rlc: Column<Advice>,
-        sel1: Column<Advice>,
-        sel2: Column<Advice>,
+        denoter: DenoteCols,
         keccak_table: [Column<Fixed>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
         is_s: bool,
     ) -> Self {
@@ -203,8 +202,8 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
             if !is_s {
                 let storage_root_s_from_prev =
                     meta.query_advice(s_mod_node_hash_rlc, Rotation::prev());
-                let storage_root_s_from_cur = meta.query_advice(sel1, Rotation::cur());
-                let codehash_s_from_cur = meta.query_advice(sel2, Rotation::cur());
+                let storage_root_s_from_cur = meta.query_advice(denoter.sel1, Rotation::cur());
+                let codehash_s_from_cur = meta.query_advice(denoter.sel2, Rotation::cur());
 
                 /*
                 To enable lookup for storage root modification we need to have S storage root
@@ -326,12 +325,12 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
  
             // Rotate into any of the brach children rows:
             let mut is_placeholder_leaf = meta.query_advice(
-                sel1,
+                denoter.sel1,
                 Rotation(-ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND - EXTENSION_ROWS_NUM - 1),
             );
             if !is_s {
                 is_placeholder_leaf = meta.query_advice(
-                    sel2,
+                    denoter.sel2,
                     Rotation(-ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND - EXTENSION_ROWS_NUM - 1),
                 );
             }
@@ -558,14 +557,14 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
             // assign storage root S
             region.assign_advice(
                 || "assign sel1".to_string(),
-                mpt_config.sel1,
+                mpt_config.denoter.sel1,
                 offset,
                 || Ok(pv.rlc1),
             ).ok();
             // assign code hash S
             region.assign_advice(
                 || "assign sel2".to_string(),
-                mpt_config.sel2,
+                mpt_config.denoter.sel2,
                 offset,
                 || Ok(pv.rlc2),
             ).ok();

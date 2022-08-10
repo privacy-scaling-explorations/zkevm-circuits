@@ -8,7 +8,7 @@ use std::marker::PhantomData;
 
 use crate::{
     helpers::{compute_rlc, get_bool_constraint, key_len_lookup, mult_diff_lookup, range_lookups},
-    mpt::{FixedTableTag, MainCols, AccumulatorPair},
+    mpt::{FixedTableTag, MainCols, AccumulatorPair, DenoteCols},
     param::{
         BRANCH_ROWS_NUM, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, RLP_NUM,
         R_TABLE_LEN, HASH_WIDTH,
@@ -38,8 +38,7 @@ impl<F: FieldExt> LeafKeyChip<F> {
         acc_pair: AccumulatorPair,
         key_rlc: Column<Advice>,
         key_rlc_mult: Column<Advice>,
-        key_rlc_prev: Column<Advice>,
-        key_rlc_mult_prev: Column<Advice>,
+        denoter: DenoteCols, // sel1 stores key_rlc_prev, sel2 stores key_rlc_mult_prev
         is_branch_placeholder: Column<Advice>,
         is_account_leaf_in_added_branch: Column<Advice>,
         r_table: Vec<Expression<F>>,
@@ -470,8 +469,8 @@ impl<F: FieldExt> LeafKeyChip<F> {
             let key_rlc_prev_level = (one.clone() - is_first_storage_level)
                 * meta.query_advice(key_rlc, Rotation(rot_into_prev_branch));
 
-            let rlc_prev = meta.query_advice(key_rlc_prev, Rotation::cur());
-            let mult_prev = meta.query_advice(key_rlc_mult_prev, Rotation::cur());
+            let rlc_prev = meta.query_advice(denoter.sel1, Rotation::cur());
+            let mult_prev = meta.query_advice(denoter.sel2, Rotation::cur());
 
             constraints.push((
                 "Previous key RLC",
@@ -520,9 +519,9 @@ impl<F: FieldExt> LeafKeyChip<F> {
             let key_rlc_prev = meta.query_advice(key_rlc, Rotation(rot_level_above));
             The ConstraintPoisoned error is thrown in extension_node_key.
             */
-            let key_rlc_acc_start = meta.query_advice(key_rlc_prev, Rotation::cur())
+            let key_rlc_acc_start = meta.query_advice(denoter.sel1, Rotation::cur())
                 * (one.clone() - is_first_storage_level.clone());
-            let key_mult_start = meta.query_advice(key_rlc_mult_prev, Rotation::cur())
+            let key_mult_start = meta.query_advice(denoter.sel2, Rotation::cur())
                 * (one.clone() - is_first_storage_level.clone())
                 + is_first_storage_level.clone();
 

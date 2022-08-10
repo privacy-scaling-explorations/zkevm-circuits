@@ -8,7 +8,7 @@ use std::marker::PhantomData;
 
 use crate::{
     helpers::{get_bool_constraint, range_lookups},
-    mpt::{FixedTableTag, MainCols, BranchCols},
+    mpt::{FixedTableTag, MainCols, BranchCols, DenoteCols},
     param::{
         BRANCH_0_C_START, BRANCH_0_S_START, HASH_WIDTH, IS_BRANCH_C_PLACEHOLDER_POS,
         IS_BRANCH_S_PLACEHOLDER_POS, RLP_NUM,
@@ -31,8 +31,7 @@ impl<F: FieldExt> BranchChip<F> {
         s_main: MainCols,
         c_main: MainCols,
         branch: BranchCols,
-        is_node_hashed_s: Column<Advice>,
-        is_node_hashed_c: Column<Advice>,
+        denoter: DenoteCols,
         fixed_table: [Column<Fixed>; 3],
     ) -> BranchConfig {
         let config = BranchConfig {};
@@ -219,8 +218,8 @@ impl<F: FieldExt> BranchChip<F> {
             // If non-empty, then s_rlp2 = 160:
             // s_rlp2 * c160_inv * c32 + 1 = 33
 
-            let is_node_hashed_s = meta.query_advice(is_node_hashed_s, Rotation::cur());
-            let is_node_hashed_c = meta.query_advice(is_node_hashed_c, Rotation::cur());
+            let is_node_hashed_s = meta.query_advice(denoter.is_node_hashed_s, Rotation::cur());
+            let is_node_hashed_c = meta.query_advice(denoter.is_node_hashed_c, Rotation::cur());
 
             // The following value can be either 1 or 33 (if hashed node),
             // depending on whether it's empty or non-empty row.

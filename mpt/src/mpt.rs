@@ -188,11 +188,21 @@ different purposes (as opposed to for example branch.is_child - having dedicated
 ensuring the order of rows is corrrect, like branch.is_init appears only once and is followed
 by branch.is_child ... ). For example, columns sel1, sel2 are used for denoting whether
 the branch child is at modified node or whether the storage leaf is in short or long RLP format.
+*/
 #[derive(Clone, Debug)]
 pub(crate) struct DenoteCols {
-    pub(crate) sel: Column<Advice>,
+    // sel1 and sel2 in branch children: denote whether there is no leaf at is_modified (when value
+    // is added or deleted from trie - but no branch is added or turned into leaf)
+    // sel1 and sel2 in storage leaf key: key_rlc_prev and key_rlc_mult_prev
+    // sel1 and sel2 in storage leaf value (only when leaf without branch as otherwise this info is
+    // in the branch above): whether leaf is just a placeholder
+    // sel1 and sel2 in account leaf key specifies whether nonce / balance are short / long (check
+    // nonce balance row: offset - 1)
+    pub(crate) sel1: Column<Advice>, // TODO: check LeafKeyChip where sel1 stores key_rlc_prev, sel2 stores key_rlc_mult_prev
+    pub(crate) sel2: Column<Advice>,
+    pub(crate) is_node_hashed_s: Column<Advice>,
+    pub(crate) is_node_hashed_c: Column<Advice>,
 }
-*/
 
 #[derive(Clone, Debug)]
 pub struct MPTConfig<F> {
@@ -208,22 +218,12 @@ pub struct MPTConfig<F> {
     pub(crate) c_main: MainCols,
     pub(crate) account_leaf: AccountLeafCols,
     pub(crate) storage_leaf: StorageLeafCols,
+    pub(crate) denoter: DenoteCols,
     pub(crate) s_mod_node_hash_rlc: Column<Advice>, /* modified node s_advices RLC when s_advices present
                                           * hash (used also for leaf long/short) */
     pub(crate) c_mod_node_hash_rlc: Column<Advice>, /* modified node c_advices RLC when c_advices present
                                           * hash (used also for leaf long/short) */
     pub(crate) acc_r: F,
-    // sel1 and sel2 in branch children: denote whether there is no leaf at is_modified (when value
-    // is added or deleted from trie - but no branch is added or turned into leaf)
-    // sel1 and sel2 in storage leaf key: key_rlc_prev and key_rlc_mult_prev
-    // sel1 and sel2 in storage leaf value (only when leaf without branch as otherwise this info is
-    // in the branch above): whether leaf is just a placeholder
-    // sel1 and sel2 in account leaf key specifies whether nonce / balance are short / long (check
-    // nonce balance row: offset - 1)
-    pub(crate) sel1: Column<Advice>,
-    pub(crate) sel2: Column<Advice>,
-    pub(crate) is_node_hashed_s: Column<Advice>,
-    pub(crate) is_node_hashed_c: Column<Advice>,
     pub(crate) node_mult_diff_s: Column<Advice>,
     pub(crate) node_mult_diff_c: Column<Advice>,
     r_table: Vec<Expression<F>>,
@@ -446,11 +446,12 @@ impl<F: FieldExt> MPTConfig<F> {
             acc_c: acc_c.clone(),
         };
 
-        let sel1 = meta.advice_column();
-        let sel2 = meta.advice_column();
-
-        let is_node_hashed_s = meta.advice_column();
-        let is_node_hashed_c = meta.advice_column();
+        let denoter = DenoteCols {
+            sel1: meta.advice_column(),
+            sel2: meta.advice_column(),
+            is_node_hashed_s: meta.advice_column(),
+            is_node_hashed_c: meta.advice_column(),
+        };
 
         let node_mult_diff_s = meta.advice_column();
         let node_mult_diff_c = meta.advice_column();
@@ -490,8 +491,7 @@ impl<F: FieldExt> MPTConfig<F> {
             branch.clone(),
             account_leaf.clone(),
             storage_leaf.clone(),
-            sel1,
-            sel2,
+            denoter.clone(),
         );
 
         RootsChip::<F>::configure(
@@ -515,8 +515,7 @@ impl<F: FieldExt> MPTConfig<F> {
             s_main.clone(),
             c_main.clone(),
             branch.clone(),
-            is_node_hashed_s,
-            is_node_hashed_c,
+            denoter.clone(),
             fixed_table.clone(),
         );
 
@@ -541,8 +540,8 @@ impl<F: FieldExt> MPTConfig<F> {
             branch.clone(),
             s_mod_node_hash_rlc,
             s_main.clone(),
-            sel1,
-            is_node_hashed_s,
+            denoter.sel1,
+            denoter.is_node_hashed_s,
             acc_r,
         );
 
@@ -553,8 +552,8 @@ impl<F: FieldExt> MPTConfig<F> {
             branch.clone(),
             c_mod_node_hash_rlc,
             c_main.clone(),
-            sel2,
-            is_node_hashed_c,
+            denoter.sel2,
+            denoter.is_node_hashed_c,
             acc_r,
         );
 
@@ -658,7 +657,7 @@ impl<F: FieldExt> MPTConfig<F> {
             branch.is_last_child,
             s_main.clone(),
             accumulators.clone(),
-            sel1,
+            denoter.sel1,
             keccak_table,
             acc_r,
             true,
@@ -673,7 +672,7 @@ impl<F: FieldExt> MPTConfig<F> {
             branch.is_last_child,
             s_main.clone(), // s_main (and not c_main) is correct
             accumulators.clone(),
-            sel2,
+            denoter.sel2,
             keccak_table,
             acc_r,
             false,
@@ -700,7 +699,7 @@ impl<F: FieldExt> MPTConfig<F> {
             },
             s_main.clone(),
             accumulators.acc_s.clone(),
-            is_node_hashed_s,
+            denoter.is_node_hashed_s,
             node_mult_diff_s,
             r_table.clone(),
             fixed_table,
@@ -716,7 +715,7 @@ impl<F: FieldExt> MPTConfig<F> {
             },
             c_main.clone(),
             accumulators.acc_c.clone(),
-            is_node_hashed_c,
+            denoter.is_node_hashed_c,
             node_mult_diff_c,
             r_table.clone(),
             fixed_table,
@@ -743,8 +742,7 @@ impl<F: FieldExt> MPTConfig<F> {
             accumulators.acc_s.clone(),
             key_rlc,
             key_rlc_mult,
-            sel1,
-            sel2,
+            denoter.clone(),
             s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM], // TODO: remove
             account_leaf.is_in_added_branch,
             r_table.clone(),
@@ -773,8 +771,7 @@ impl<F: FieldExt> MPTConfig<F> {
             accumulators.acc_s.clone(),
             key_rlc,
             key_rlc_mult,
-            sel1,
-            sel2,
+            denoter.clone(),
             s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM], // TODO: remove
             account_leaf.is_in_added_branch,
             r_table.clone(),
@@ -817,8 +814,7 @@ impl<F: FieldExt> MPTConfig<F> {
             c_mod_node_hash_rlc,
             keccak_table,
             accumulators.clone(),
-            sel1,
-            sel2,
+            denoter.clone(),
             key_rlc,
             key_rlc_mult,
             mult_diff,
@@ -840,8 +836,7 @@ impl<F: FieldExt> MPTConfig<F> {
             c_mod_node_hash_rlc,
             keccak_table,
             accumulators.clone(),
-            sel1,
-            sel2,
+            denoter.clone(),
             key_rlc,
             key_rlc_mult,
             mult_diff,
@@ -871,7 +866,7 @@ impl<F: FieldExt> MPTConfig<F> {
             r_table.clone(),
             fixed_table.clone(),
             address_rlc,
-            sel2,
+            denoter.sel2,
             true,
         );
 
@@ -894,7 +889,7 @@ impl<F: FieldExt> MPTConfig<F> {
             r_table.clone(),
             fixed_table.clone(),
             address_rlc,
-            sel2,
+            denoter.sel2,
             false,
         );
 
@@ -915,7 +910,7 @@ impl<F: FieldExt> MPTConfig<F> {
             key_rlc,
             key_rlc_mult,
             accumulators.acc_s.rlc,
-            sel1,
+            denoter.sel1,
             r_table.clone(),
             fixed_table.clone(),
             address_rlc,
@@ -937,8 +932,7 @@ impl<F: FieldExt> MPTConfig<F> {
             r_table.clone(),
             s_mod_node_hash_rlc,
             c_mod_node_hash_rlc,
-            sel1,
-            sel2,
+            denoter.clone(),
             fixed_table.clone(),
             true,
         );
@@ -959,8 +953,7 @@ impl<F: FieldExt> MPTConfig<F> {
             r_table.clone(),
             s_mod_node_hash_rlc,
             c_mod_node_hash_rlc,
-            sel1,
-            sel2,
+            denoter.clone(),
             fixed_table.clone(),
             false,
         );
@@ -979,8 +972,7 @@ impl<F: FieldExt> MPTConfig<F> {
             fixed_table.clone(),
             s_mod_node_hash_rlc,
             c_mod_node_hash_rlc,
-            sel1,
-            sel2,
+            denoter.clone(),
             keccak_table,
             true,
         );
@@ -999,8 +991,7 @@ impl<F: FieldExt> MPTConfig<F> {
             fixed_table.clone(),
             s_mod_node_hash_rlc,
             c_mod_node_hash_rlc,
-            sel1,
-            sel2,
+            denoter.clone(),
             keccak_table,
             false,
         );
@@ -1025,8 +1016,7 @@ impl<F: FieldExt> MPTConfig<F> {
             key_rlc_mult,
             mult_diff,
             branch.drifted_pos,
-            sel1,
-            sel2,
+            denoter.clone(),
             r_table.clone(),
             fixed_table.clone(),
             keccak_table.clone(),
@@ -1048,10 +1038,7 @@ impl<F: FieldExt> MPTConfig<F> {
             c_mod_node_hash_rlc,
             accumulators,
             acc_r,
-            sel1,
-            sel2,
-            is_node_hashed_s,
-            is_node_hashed_c,
+            denoter,
             node_mult_diff_s,
             node_mult_diff_c,
             r_table,
@@ -1193,13 +1180,13 @@ impl<F: FieldExt> MPTConfig<F> {
 
         region.assign_advice(
             || "assign sel1".to_string(),
-            self.sel1,
+            self.denoter.sel1,
             offset,
             || Ok(F::zero()),
         )?;
         region.assign_advice(
             || "assign sel2".to_string(),
-            self.sel2,
+            self.denoter.sel2,
             offset,
             || Ok(F::zero()),
         )?;
@@ -1459,13 +1446,13 @@ impl<F: FieldExt> MPTConfig<F> {
 
         region.assign_advice(
             || "is_node_hashed_s",
-            self.is_node_hashed_s,
+            self.denoter.is_node_hashed_s,
             offset,
             || Ok(F::from((row[S_RLP_START + 1] == 0 && row[S_START] > 192) as u64)),
         )?;
         region.assign_advice(
             || "is_node_hashed_c",
-            self.is_node_hashed_c,
+            self.denoter.is_node_hashed_c,
             offset,
             || Ok(F::from((row[C_RLP_START + 1] == 0 && row[C_START] > 192) as u64)),
         )?;
@@ -2125,13 +2112,13 @@ impl<F: FieldExt> MPTConfig<F> {
 
                             region.assign_advice(
                                 || "assign sel1".to_string(),
-                                self.sel1,
+                                self.denoter.sel1,
                                 offset,
                                 || Ok(sel1),
                             )?;
                             region.assign_advice(
                                 || "assign sel2".to_string(),
-                                self.sel2,
+                                self.denoter.sel2,
                                 offset,
                                 || Ok(sel2),
                             )?;
@@ -2449,13 +2436,13 @@ impl<F: FieldExt> MPTConfig<F> {
                                 // Constraint for this is in leaf_key.
                                 region.assign_advice(
                                     || "assign key_rlc".to_string(),
-                                    self.sel1,
+                                    self.denoter.sel1,
                                     offset,
                                     || Ok(pv.key_rlc_prev),
                                 )?;
                                 region.assign_advice(
                                     || "assign key_rlc_mult".to_string(),
-                                    self.sel2,
+                                    self.denoter.sel2,
                                     offset,
                                     || Ok(pv.key_rlc_mult_prev),
                                 )?;
@@ -2542,7 +2529,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                         // Leaf is without branch and it is just a placeholder.
                                         region.assign_advice(
                                             || "assign sel1".to_string(),
-                                            self.sel1,
+                                            self.denoter.sel1,
                                             offset,
                                             || Ok(F::one()),
                                         )?;
@@ -2576,7 +2563,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                         // Leaf is without branch and it is just a placeholder.
                                         region.assign_advice(
                                             || "assign sel2".to_string(),
-                                            self.sel2,
+                                            self.denoter.sel2,
                                             offset,
                                             || Ok(F::one()),
                                         )?;

@@ -11,7 +11,7 @@ use crate::{
         compute_rlc, get_bool_constraint, get_is_extension_node_one_nibble, key_len_lookup,
         mult_diff_lookup, range_lookups,
     },
-    mpt::{FixedTableTag, MainCols, AccumulatorCols},
+    mpt::{FixedTableTag, MainCols, AccumulatorCols, DenoteCols},
     param::{IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, ACCOUNT_DRIFTED_LEAF_IND, BRANCH_ROWS_NUM, ACCOUNT_LEAF_KEY_S_IND, ACCOUNT_LEAF_KEY_C_IND, ACCOUNT_LEAF_NONCE_BALANCE_S_IND, ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND, ACCOUNT_LEAF_NONCE_BALANCE_C_IND, ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND},
 };
 
@@ -42,8 +42,7 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchChip<F> {
         key_rlc_mult: Column<Advice>,
         mult_diff: Column<Advice>,
         drifted_pos: Column<Advice>,
-        sel1: Column<Advice>,
-        sel2: Column<Advice>,
+        denoter: DenoteCols,
         r_table: Vec<Expression<F>>,
         fixed_table: [Column<Fixed>; 3],
         keccak_table: [Column<Fixed>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
@@ -341,22 +340,22 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchChip<F> {
             rind += 1;
 
             let mut is_nonce_long = meta.query_advice(
-                sel1,
+                denoter.sel1,
                 Rotation(-(ACCOUNT_DRIFTED_LEAF_IND - ACCOUNT_LEAF_KEY_S_IND)),
             );
             if !is_s {
                 is_nonce_long = meta.query_advice(
-                    sel1,
+                    denoter.sel1,
                     Rotation(-(ACCOUNT_DRIFTED_LEAF_IND - ACCOUNT_LEAF_KEY_C_IND)),
                 );
             }
             let mut is_balance_long = meta.query_advice(
-                sel2,
+                denoter.sel2,
                 Rotation(-(ACCOUNT_DRIFTED_LEAF_IND - ACCOUNT_LEAF_KEY_S_IND)),
             );
             if !is_s {
                 is_balance_long = meta.query_advice(
-                    sel2,
+                    denoter.sel2,
                     Rotation(-(ACCOUNT_DRIFTED_LEAF_IND - ACCOUNT_LEAF_KEY_C_IND)),
                 );
             }

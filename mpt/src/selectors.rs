@@ -6,7 +6,7 @@ use halo2_proofs::{
 use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
-use crate::{helpers::get_bool_constraint, mpt::{ProofTypeCols, AccountLeafCols, StorageLeafCols, BranchCols}};
+use crate::{helpers::get_bool_constraint, mpt::{ProofTypeCols, AccountLeafCols, StorageLeafCols, BranchCols, DenoteCols}};
 
 #[derive(Clone, Debug)]
 pub(crate) struct SelectorsConfig {}
@@ -27,8 +27,7 @@ impl<F: FieldExt> SelectorsChip<F> {
         branch: BranchCols,
         account_leaf: AccountLeafCols,
         storage_leaf: StorageLeafCols,
-        sel1: Column<Advice>,
-        sel2: Column<Advice>,
+        denoter: DenoteCols,
     ) -> SelectorsConfig {
         let config = SelectorsConfig {};
         let one = Expression::Constant(F::one());
@@ -59,8 +58,8 @@ impl<F: FieldExt> SelectorsChip<F> {
             let is_account_leaf_in_added_branch =
                 meta.query_advice(account_leaf.is_in_added_branch, Rotation::cur());
 
-            let sel1 = meta.query_advice(sel1, Rotation::cur());
-            let sel2 = meta.query_advice(sel2, Rotation::cur());
+            let sel1 = meta.query_advice(denoter.sel1, Rotation::cur());
+            let sel2 = meta.query_advice(denoter.sel2, Rotation::cur());
 
             let is_storage_mod = meta.query_advice(proof_type.is_storage_mod, Rotation::cur());
             let is_nonce_mod = meta.query_advice(proof_type.is_nonce_mod, Rotation::cur());

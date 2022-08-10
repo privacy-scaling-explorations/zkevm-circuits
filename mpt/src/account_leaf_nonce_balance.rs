@@ -9,7 +9,7 @@ use std::marker::PhantomData;
 
 use crate::{
     helpers::{compute_rlc, get_bool_constraint, key_len_lookup, mult_diff_lookup, range_lookups},
-    mpt::{FixedTableTag, MainCols, ProofTypeCols, ProofVariables, MPTConfig, AccumulatorCols},
+    mpt::{FixedTableTag, MainCols, ProofTypeCols, ProofVariables, MPTConfig, AccumulatorCols, DenoteCols},
     param::{
         ACCOUNT_LEAF_KEY_C_IND, ACCOUNT_LEAF_KEY_S_IND, ACCOUNT_LEAF_NONCE_BALANCE_C_IND,
         ACCOUNT_LEAF_NONCE_BALANCE_S_IND, HASH_WIDTH, ACCOUNT_NON_EXISTING_IND, S_START, C_START,
@@ -69,8 +69,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
         r_table: Vec<Expression<F>>,
         s_mod_node_hash_rlc: Column<Advice>,
         c_mod_node_hash_rlc: Column<Advice>,
-        sel1: Column<Advice>,
-        sel2: Column<Advice>,
+        denoter: DenoteCols,
         fixed_table: [Column<Fixed>; 3],
         is_s: bool,
     ) -> Self {
@@ -113,11 +112,11 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
             let mult_diff_balance = meta.query_advice(mult_diff_balance, Rotation::cur());
 
             let is_nonce_long = meta.query_advice(
-                sel1,
+                denoter.sel1,
                 Rotation(rot),
             );
             let is_balance_long = meta.query_advice(
-                sel2,
+                denoter.sel2,
                 Rotation(rot),
             );
 
@@ -313,9 +312,9 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
 
             if !is_s {
                 let nonce_s_from_prev = meta.query_advice(s_mod_node_hash_rlc, Rotation::prev());
-                let nonce_s_from_cur = meta.query_advice(sel1, Rotation::cur());
+                let nonce_s_from_cur = meta.query_advice(denoter.sel1, Rotation::cur());
                 let balance_s_from_prev = meta.query_advice(c_mod_node_hash_rlc, Rotation::prev());
-                let balance_s_from_cur = meta.query_advice(sel2, Rotation::cur());
+                let balance_s_from_cur = meta.query_advice(denoter.sel2, Rotation::cur());
 
                 // Note: when nonce or balance is 0, the actual value in the RLP encoding is 128!
                 // TODO: when finalizing lookups, having 128 instead of 0 needs to be taken into account.
@@ -590,12 +589,12 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
         let q_enable_nonce_long = |meta: &mut VirtualCells<F>| {
             let q_enable = q_enable(meta);
             let mut is_nonce_long = meta.query_advice(
-                sel1,
+                denoter.sel1,
                 Rotation(-(ACCOUNT_LEAF_NONCE_BALANCE_S_IND - ACCOUNT_LEAF_KEY_S_IND)),
             );
             if !is_s {
                 is_nonce_long = meta.query_advice(
-                    sel1,
+                    denoter.sel1,
                     Rotation(-(ACCOUNT_LEAF_NONCE_BALANCE_C_IND - ACCOUNT_LEAF_KEY_C_IND)),
                 );
             }
@@ -646,12 +645,12 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
         let q_enable_balance_long = |meta: &mut VirtualCells<F>| {
             let q_enable = q_enable(meta);
             let mut is_balance_long = meta.query_advice(
-                sel1,
+                denoter.sel1,
                 Rotation(-(ACCOUNT_LEAF_NONCE_BALANCE_S_IND - ACCOUNT_LEAF_KEY_S_IND)),
             );
             if !is_s {
                 is_balance_long = meta.query_advice(
-                    sel1,
+                    denoter.sel1,
                     Rotation(-(ACCOUNT_LEAF_NONCE_BALANCE_C_IND - ACCOUNT_LEAF_KEY_C_IND)),
                 );
             }
@@ -738,7 +737,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
             nonce_len = row[S_START] as usize - 128 + 1; // +1 for byte with length info
             region.assign_advice(
                 || "assign sel1".to_string(),
-                mpt_config.sel1,
+                mpt_config.denoter.sel1,
                 offset
                     - (ACCOUNT_LEAF_NONCE_BALANCE_S_IND
                         - ACCOUNT_LEAF_KEY_S_IND)
@@ -748,7 +747,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
         } else {
             region.assign_advice(
                 || "assign sel1".to_string(),
-                mpt_config.sel1,
+                mpt_config.denoter.sel1,
                 offset
                     - (ACCOUNT_LEAF_NONCE_BALANCE_C_IND
                         - ACCOUNT_LEAF_KEY_C_IND)
@@ -762,7 +761,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
             balance_len = row[C_START] as usize - 128 + 1; // +1 for byte with length info
             region.assign_advice(
                 || "assign sel2".to_string(),
-                mpt_config.sel2,
+                mpt_config.denoter.sel2,
                 offset
                     - (ACCOUNT_LEAF_NONCE_BALANCE_S_IND
                         - ACCOUNT_LEAF_KEY_S_IND)
@@ -772,7 +771,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
         } else {
             region.assign_advice(
                 || "assign sel2".to_string(),
-                mpt_config.sel2,
+                mpt_config.denoter.sel2,
                 offset
                     - (ACCOUNT_LEAF_NONCE_BALANCE_C_IND
                         - ACCOUNT_LEAF_KEY_C_IND)
@@ -813,14 +812,14 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
             // assign nonce S
             region.assign_advice(
                 || "assign sel1".to_string(),
-                mpt_config.sel1,
+                mpt_config.denoter.sel1,
                 offset,
                 || Ok(pv.nonce_value_s),
             ).ok();
             // assign balance S
             region.assign_advice(
                 || "assign sel2".to_string(),
-                mpt_config.sel2,
+                mpt_config.denoter.sel2,
                 offset,
                 || Ok(pv.balance_value_s),
             ).ok();

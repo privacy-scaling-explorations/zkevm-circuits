@@ -8,7 +8,7 @@ use std::marker::PhantomData;
 
 use crate::{
     helpers::{get_bool_constraint, key_len_lookup, range_lookups},
-    mpt::{FixedTableTag, MainCols, AccumulatorCols},
+    mpt::{FixedTableTag, MainCols, AccumulatorCols, DenoteCols},
     param::{BRANCH_ROWS_NUM, KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH},
 };
 
@@ -34,8 +34,7 @@ impl<F: FieldExt> LeafValueChip<F> {
         c_mod_node_hash_rlc: Column<Advice>,
         keccak_table: [Column<Fixed>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
         accs: AccumulatorCols,
-        sel1: Column<Advice>,
-        sel2: Column<Advice>,
+        denoter: DenoteCols,
         key_rlc: Column<Advice>,
         key_rlc_mult: Column<Advice>, // to store key_rlc from previous row (to enable lookup)
         mult_diff: Column<Advice>,    /* to store leaf value S RLC from two rows above (to
@@ -161,9 +160,9 @@ impl<F: FieldExt> LeafValueChip<F> {
             // If sel = 1, value = 0:
             // This is to prevent attacks where sel would be set to 1 to avoid
             // hash in parent constraints.
-            let mut sel = meta.query_advice(sel1, Rotation(rot));
+            let mut sel = meta.query_advice(denoter.sel1, Rotation(rot));
             if !is_s {
-                sel = meta.query_advice(sel2, Rotation(rot));
+                sel = meta.query_advice(denoter.sel2, Rotation(rot));
             }
             let is_leaf_without_branch =
                 meta.query_advice(is_account_leaf_in_added_branch, Rotation(rot_into_account));
@@ -260,7 +259,7 @@ impl<F: FieldExt> LeafValueChip<F> {
                 86, 232, 31, 23, 27, 204, 85, 166, 255, 131, 69, 230, 146, 192, 248, 110, 91, 72,
                 224, 27, 153, 108, 173, 192, 1, 98, 47, 181, 227, 99, 180, 33,
             ];
-            let mut sel = meta.query_advice(sel1, Rotation::cur());
+            let mut sel = meta.query_advice(denoter.sel1, Rotation::cur());
 
             // account leaf storage codehash S
             // account leaf storage codehash C
@@ -271,7 +270,7 @@ impl<F: FieldExt> LeafValueChip<F> {
             // leaf value C
             let mut rot_into_storage_root = -4;
             if !is_s {
-                sel = meta.query_advice(sel2, Rotation::cur());
+                sel = meta.query_advice(denoter.sel2, Rotation::cur());
                 rot_into_storage_root = -5;
             }
             for (ind, col) in s_main.bytes.iter().enumerate() {
@@ -298,9 +297,9 @@ impl<F: FieldExt> LeafValueChip<F> {
 
             let rlc = meta.query_advice(accs.acc_s.rlc, Rotation::cur());
 
-            let mut placeholder_leaf = meta.query_advice(sel1, Rotation(rot));
+            let mut placeholder_leaf = meta.query_advice(denoter.sel1, Rotation(rot));
             if !is_s {
-                placeholder_leaf = meta.query_advice(sel2, Rotation(rot));
+                placeholder_leaf = meta.query_advice(denoter.sel2, Rotation(rot));
             }
 
             let is_branch_placeholder =
@@ -357,9 +356,9 @@ impl<F: FieldExt> LeafValueChip<F> {
 
             let rlc = meta.query_advice(accs.acc_s.rlc, Rotation::cur());
 
-            let mut placeholder_leaf = meta.query_advice(sel1, Rotation(rot));
+            let mut placeholder_leaf = meta.query_advice(denoter.sel1, Rotation(rot));
             if !is_s {
-                placeholder_leaf = meta.query_advice(sel2, Rotation(rot));
+                placeholder_leaf = meta.query_advice(denoter.sel2, Rotation(rot));
             }
 
             let is_branch_placeholder =
@@ -413,9 +412,9 @@ impl<F: FieldExt> LeafValueChip<F> {
                 mult = mult * acc_r;
             }
 
-            let mut sel = meta.query_advice(sel1, Rotation(rot));
+            let mut sel = meta.query_advice(denoter.sel1, Rotation(rot));
             if !is_s {
-                sel = meta.query_advice(sel2, Rotation(rot));
+                sel = meta.query_advice(denoter.sel2, Rotation(rot));
             }
 
             let is_branch_placeholder =
