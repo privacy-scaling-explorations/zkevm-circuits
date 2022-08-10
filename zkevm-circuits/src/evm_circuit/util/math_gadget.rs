@@ -8,7 +8,6 @@ use crate::{
 };
 use eth_types::{Field, ToLittleEndian, ToScalar, Word};
 use halo2_proofs::plonk::{Error, Expression};
-use std::convert::TryFrom;
 
 /// Returns `1` when `value == 0`, and returns `0` otherwise.
 #[derive(Clone, Debug)]

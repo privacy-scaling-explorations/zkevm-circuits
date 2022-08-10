@@ -20,7 +20,7 @@ use halo2_proofs::{
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector, VirtualCells},
     poly::Rotation,
 };
-use std::{collections::HashMap, convert::TryInto, iter};
+use std::{collections::HashMap, iter};
 use strum::IntoEnumIterator;
 
 mod add_sub;
@@ -43,6 +43,7 @@ mod dummy;
 mod dup;
 mod end_block;
 mod end_tx;
+mod error_oog_constant;
 mod error_oog_static_memory;
 mod extcodehash;
 mod gas;
@@ -64,6 +65,7 @@ mod push;
 mod r#return;
 mod sdiv_smod;
 mod selfbalance;
+mod sha3;
 mod shl_shr;
 mod signed_comparator;
 mod signextend;
@@ -72,6 +74,7 @@ mod sstore;
 mod stop;
 mod swap;
 
+use self::sha3::Sha3Gadget;
 use add_sub::AddSubGadget;
 use addmod::AddModGadget;
 use begin_tx::BeginTxGadget;
@@ -92,7 +95,7 @@ use dummy::DummyGadget;
 use dup::DupGadget;
 use end_block::EndBlockGadget;
 use end_tx::EndTxGadget;
-use error_oog_static_memory::ErrorOOGStaticMemoryGadget;
+use error_oog_constant::ErrorOOGConstantGadget;
 use extcodehash::ExtcodehashGadget;
 use gas::GasGadget;
 use gasprice::GasPriceGadget;
@@ -191,7 +194,8 @@ pub(crate) struct ExecutionConfig<F> {
     return_gadget: ReturnGadget<F>,
     sdiv_smod_gadget: SignedDivModGadget<F>,
     selfbalance_gadget: SelfbalanceGadget<F>,
-    sha3_gadget: DummyGadget<F, 2, 1, { ExecutionState::SHA3 }>,
+    sha3_gadget: Sha3Gadget<F>,
+    shl_shr_gadget: ShlShrGadget<F>,
     address_gadget: DummyGadget<F, 0, 1, { ExecutionState::ADDRESS }>,
     balance_gadget: DummyGadget<F, 1, 1, { ExecutionState::BALANCE }>,
     blockhash_gadget: DummyGadget<F, 1, 1, { ExecutionState::BLOCKHASH }>,
@@ -207,7 +211,6 @@ pub(crate) struct ExecutionConfig<F> {
     create2_gadget: DummyGadget<F, 4, 1, { ExecutionState::CREATE2 }>,
     staticcall_gadget: DummyGadget<F, 6, 1, { ExecutionState::STATICCALL }>,
     selfdestruct_gadget: DummyGadget<F, 1, 0, { ExecutionState::SELFDESTRUCT }>,
-    shl_shr_gadget: ShlShrGadget<F>,
     signed_comparator_gadget: SignedComparatorGadget<F>,
     signextend_gadget: SignextendGadget<F>,
     sload_gadget: SloadGadget<F>,
@@ -218,7 +221,38 @@ pub(crate) struct ExecutionConfig<F> {
     block_ctx_u160_gadget: BlockCtxU160Gadget<F>,
     block_ctx_u256_gadget: BlockCtxU256Gadget<F>,
     // error gadgets
-    error_oog_static_memory_gadget: ErrorOOGStaticMemoryGadget<F>,
+    error_oog_constant: ErrorOOGConstantGadget<F>,
+    error_oog_static_memory_gadget:
+        DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasStaticMemoryExpansion }>,
+    error_stack_overflow: DummyGadget<F, 0, 0, { ExecutionState::ErrorStackOverflow }>,
+    error_stack_underflow: DummyGadget<F, 0, 0, { ExecutionState::ErrorStackUnderflow }>,
+    error_oog_dynamic_memory_gadget:
+        DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasDynamicMemoryExpansion }>,
+    error_oog_log: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasLOG }>,
+    error_oog_sload: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasSLOAD }>,
+    error_oog_sstore: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasSSTORE }>,
+    error_oog_call: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasCALL }>,
+    error_oog_memory_copy: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasMemoryCopy }>,
+    error_oog_account_access: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasAccountAccess }>,
+    error_oog_sha3: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasSHA3 }>,
+    error_oog_ext_codecopy: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasEXTCODECOPY }>,
+    error_oog_call_code: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasCALLCODE }>,
+    error_oog_delegate_call: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasDELEGATECALL }>,
+    error_oog_exp: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasEXP }>,
+    error_oog_create2: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasCREATE2 }>,
+    error_oog_static_call: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasSTATICCALL }>,
+    error_oog_self_destruct: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasSELFDESTRUCT }>,
+    error_oog_code_store: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasCodeStore }>,
+    error_insufficient_balance: DummyGadget<F, 0, 0, { ExecutionState::ErrorInsufficientBalance }>,
+    error_invalid_jump: DummyGadget<F, 0, 0, { ExecutionState::ErrorInvalidJump }>,
+    error_depth: DummyGadget<F, 0, 0, { ExecutionState::ErrorDepth }>,
+    error_write_protection: DummyGadget<F, 0, 0, { ExecutionState::ErrorWriteProtection }>,
+    error_contract_address_collision:
+        DummyGadget<F, 0, 0, { ExecutionState::ErrorContractAddressCollision }>,
+    error_invalid_creation_code: DummyGadget<F, 0, 0, { ExecutionState::ErrorInvalidCreationCode }>,
+    error_return_data_out_of_bound:
+        DummyGadget<F, 0, 0, { ExecutionState::ErrorReturnDataOutOfBound }>,
+    invalid_opcode_gadget: DummyGadget<F, 0, 0, { ExecutionState::ErrorInvalidOpcode }>,
 }
 
 impl<F: Field> ExecutionConfig<F> {
@@ -233,6 +267,7 @@ impl<F: Field> ExecutionConfig<F> {
         bytecode_table: &dyn LookupTable<F>,
         block_table: &dyn LookupTable<F>,
         copy_table: &dyn LookupTable<F>,
+        keccak_table: &dyn LookupTable<F>,
     ) -> Self {
         let q_usable = meta.complex_selector();
         let q_step = meta.advice_column();
@@ -428,7 +463,34 @@ impl<F: Field> ExecutionConfig<F> {
             block_ctx_u160_gadget: configure_gadget!(),
             block_ctx_u256_gadget: configure_gadget!(),
             // error gadgets
+            error_oog_constant: configure_gadget!(),
             error_oog_static_memory_gadget: configure_gadget!(),
+            error_stack_overflow: configure_gadget!(),
+            error_stack_underflow: configure_gadget!(),
+            error_oog_dynamic_memory_gadget: configure_gadget!(),
+            error_oog_log: configure_gadget!(),
+            error_oog_sload: configure_gadget!(),
+            error_oog_sstore: configure_gadget!(),
+            error_oog_call: configure_gadget!(),
+            error_oog_memory_copy: configure_gadget!(),
+            error_oog_account_access: configure_gadget!(),
+            error_oog_sha3: configure_gadget!(),
+            error_oog_ext_codecopy: configure_gadget!(),
+            error_oog_call_code: configure_gadget!(),
+            error_oog_delegate_call: configure_gadget!(),
+            error_oog_exp: configure_gadget!(),
+            error_oog_create2: configure_gadget!(),
+            error_oog_static_call: configure_gadget!(),
+            error_oog_self_destruct: configure_gadget!(),
+            error_oog_code_store: configure_gadget!(),
+            error_insufficient_balance: configure_gadget!(),
+            error_invalid_jump: configure_gadget!(),
+            error_write_protection: configure_gadget!(),
+            error_depth: configure_gadget!(),
+            error_contract_address_collision: configure_gadget!(),
+            error_invalid_creation_code: configure_gadget!(),
+            error_return_data_out_of_bound: configure_gadget!(),
+            invalid_opcode_gadget: configure_gadget!(),
             // step and presets
             step: step_curr,
             height_map,
@@ -444,6 +506,7 @@ impl<F: Field> ExecutionConfig<F> {
             bytecode_table,
             block_table,
             copy_table,
+            keccak_table,
             &power_of_randomness,
             &cell_manager,
         );
@@ -618,6 +681,7 @@ impl<F: Field> ExecutionConfig<F> {
         bytecode_table: &dyn LookupTable<F>,
         block_table: &dyn LookupTable<F>,
         copy_table: &dyn LookupTable<F>,
+        keccak_table: &dyn LookupTable<F>,
         power_of_randomness: &[Expression<F>; 31],
         cell_manager: &CellManager<F>,
     ) {
@@ -633,6 +697,7 @@ impl<F: Field> ExecutionConfig<F> {
                         Table::Block => block_table,
                         Table::Byte => byte_table,
                         Table::Copy => copy_table,
+                        Table::Keccak => keccak_table,
                     }
                     .table_exprs(meta);
                     vec![(
@@ -857,7 +922,6 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::BLOCKCTXU256 => assign_exec_step!(self.block_ctx_u256_gadget),
             ExecutionState::SELFBALANCE => assign_exec_step!(self.selfbalance_gadget),
             // dummy gadgets
-            ExecutionState::SHA3 => assign_exec_step!(self.sha3_gadget),
             ExecutionState::ADDRESS => assign_exec_step!(self.address_gadget),
             ExecutionState::BALANCE => assign_exec_step!(self.balance_gadget),
             ExecutionState::BLOCKHASH => assign_exec_step!(self.blockhash_gadget),
@@ -874,16 +938,101 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::STATICCALL => assign_exec_step!(self.staticcall_gadget),
             ExecutionState::SELFDESTRUCT => assign_exec_step!(self.selfdestruct_gadget),
             // end of dummy gadgets
+            ExecutionState::SHA3 => assign_exec_step!(self.sha3_gadget),
             ExecutionState::SHL_SHR => assign_exec_step!(self.shl_shr_gadget),
             ExecutionState::SIGNEXTEND => assign_exec_step!(self.signextend_gadget),
             ExecutionState::SLOAD => assign_exec_step!(self.sload_gadget),
             ExecutionState::SSTORE => assign_exec_step!(self.sstore_gadget),
             ExecutionState::STOP => assign_exec_step!(self.stop_gadget),
             ExecutionState::SWAP => assign_exec_step!(self.swap_gadget),
-            // errors
+            // dummy errors
             ExecutionState::ErrorOutOfGasStaticMemoryExpansion => {
                 assign_exec_step!(self.error_oog_static_memory_gadget)
             }
+            ExecutionState::ErrorOutOfGasConstant => {
+                assign_exec_step!(self.error_oog_constant)
+            }
+            ExecutionState::ErrorOutOfGasDynamicMemoryExpansion => {
+                assign_exec_step!(self.error_oog_dynamic_memory_gadget)
+            }
+            ExecutionState::ErrorOutOfGasLOG => {
+                assign_exec_step!(self.error_oog_log)
+            }
+            ExecutionState::ErrorOutOfGasSLOAD => {
+                assign_exec_step!(self.error_oog_sload)
+            }
+            ExecutionState::ErrorOutOfGasSSTORE => {
+                assign_exec_step!(self.error_oog_sstore)
+            }
+            ExecutionState::ErrorOutOfGasCALL => {
+                assign_exec_step!(self.error_oog_call)
+            }
+            ExecutionState::ErrorOutOfGasMemoryCopy => {
+                assign_exec_step!(self.error_oog_memory_copy)
+            }
+            ExecutionState::ErrorOutOfGasAccountAccess => {
+                assign_exec_step!(self.error_oog_account_access)
+            }
+            ExecutionState::ErrorOutOfGasSHA3 => {
+                assign_exec_step!(self.error_oog_sha3)
+            }
+            ExecutionState::ErrorOutOfGasEXTCODECOPY => {
+                assign_exec_step!(self.error_oog_ext_codecopy)
+            }
+            ExecutionState::ErrorOutOfGasCALLCODE => {
+                assign_exec_step!(self.error_oog_call_code)
+            }
+            ExecutionState::ErrorOutOfGasDELEGATECALL => {
+                assign_exec_step!(self.error_oog_delegate_call)
+            }
+            ExecutionState::ErrorOutOfGasEXP => {
+                assign_exec_step!(self.error_oog_exp)
+            }
+            ExecutionState::ErrorOutOfGasCREATE2 => {
+                assign_exec_step!(self.error_oog_create2)
+            }
+            ExecutionState::ErrorOutOfGasSTATICCALL => {
+                assign_exec_step!(self.error_oog_static_call)
+            }
+            ExecutionState::ErrorOutOfGasSELFDESTRUCT => {
+                assign_exec_step!(self.error_oog_self_destruct)
+            }
+
+            ExecutionState::ErrorOutOfGasCodeStore => {
+                assign_exec_step!(self.error_oog_code_store)
+            }
+            ExecutionState::ErrorStackOverflow => {
+                assign_exec_step!(self.error_stack_overflow)
+            }
+            ExecutionState::ErrorStackUnderflow => {
+                assign_exec_step!(self.error_stack_underflow)
+            }
+            ExecutionState::ErrorInsufficientBalance => {
+                assign_exec_step!(self.error_insufficient_balance)
+            }
+            ExecutionState::ErrorInvalidJump => {
+                assign_exec_step!(self.error_invalid_jump)
+            }
+            ExecutionState::ErrorWriteProtection => {
+                assign_exec_step!(self.error_write_protection)
+            }
+            ExecutionState::ErrorDepth => {
+                assign_exec_step!(self.error_depth)
+            }
+            ExecutionState::ErrorContractAddressCollision => {
+                assign_exec_step!(self.error_contract_address_collision)
+            }
+            ExecutionState::ErrorInvalidCreationCode => {
+                assign_exec_step!(self.error_invalid_creation_code)
+            }
+            ExecutionState::ErrorReturnDataOutOfBound => {
+                assign_exec_step!(self.error_return_data_out_of_bound)
+            }
+
+            ExecutionState::ErrorInvalidOpcode => {
+                assign_exec_step!(self.invalid_opcode_gadget)
+            }
+
             _ => unimplemented!("unimplemented ExecutionState: {:?}", step.execution_state),
         }
 

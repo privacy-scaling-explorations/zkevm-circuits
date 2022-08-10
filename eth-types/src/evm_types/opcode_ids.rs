@@ -346,6 +346,16 @@ impl OpcodeId {
                 | OpcodeId::STATICCALL
         )
     }
+
+    /// Returns `true` if the `OpcodeId` is a CREATE-like.
+    pub fn is_create(&self) -> bool {
+        matches!(self, OpcodeId::CREATE | Self::CREATE2)
+    }
+
+    /// Returns `true` if the `OpcodeId` is a `CALL` or `CREATE` related .
+    pub fn is_call_or_create(&self) -> bool {
+        self.is_call() || self.is_create()
+    }
 }
 
 impl OpcodeId {

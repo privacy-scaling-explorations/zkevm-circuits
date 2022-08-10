@@ -24,7 +24,7 @@ use halo2_proofs::arithmetic::{BaseExt, FieldExt};
 use halo2_proofs::pairing::bn256::Fr;
 use itertools::Itertools;
 use sha3::{Digest, Keccak256};
-use std::{collections::HashMap, convert::TryInto, iter};
+use std::{collections::HashMap, iter};
 
 #[derive(Debug, Default, Clone)]
 pub struct Block<F> {
@@ -38,9 +38,8 @@ pub struct Block<F> {
     pub bytecodes: HashMap<Word, Bytecode>,
     /// The block context
     pub context: BlockContext,
-    /// Copy events for the EVM circuit's Copy Table, a mapping from (tx_id ||
-    /// call_id || pc) to the corresponding copy event.
-    pub copy_events: HashMap<(usize, usize, usize), CopyEvent>,
+    /// Copy events for the EVM circuit's copy table.
+    pub copy_events: Vec<CopyEvent>,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -1177,7 +1176,6 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::MUL | OpcodeId::DIV | OpcodeId::MOD => ExecutionState::MUL_DIV_MOD,
                     OpcodeId::MULMOD => ExecutionState::MULMOD,
                     OpcodeId::SDIV | OpcodeId::SMOD => ExecutionState::SDIV_SMOD,
-                    OpcodeId::SHL | OpcodeId::SHR => ExecutionState::SHL_SHR,
                     OpcodeId::EQ | OpcodeId::LT | OpcodeId::GT => ExecutionState::CMP,
                     OpcodeId::SLT | OpcodeId::SGT => ExecutionState::SCMP,
                     OpcodeId::SIGNEXTEND => ExecutionState::SIGNEXTEND,
@@ -1209,6 +1207,7 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::GAS => ExecutionState::GAS,
                     OpcodeId::SELFBALANCE => ExecutionState::SELFBALANCE,
                     OpcodeId::SHA3 => ExecutionState::SHA3,
+                    OpcodeId::SHL | OpcodeId::SHR => ExecutionState::SHL_SHR,
                     OpcodeId::SLOAD => ExecutionState::SLOAD,
                     OpcodeId::SSTORE => ExecutionState::SSTORE,
                     OpcodeId::CALLDATASIZE => ExecutionState::CALLDATASIZE,
@@ -1383,15 +1382,6 @@ pub fn block_convert(
                     })
             })
             .collect(),
-        copy_events: block
-            .copy_events
-            .iter()
-            .map(|copy_event| {
-                (
-                    (copy_event.tx_id, copy_event.call_id, copy_event.pc.0),
-                    copy_event.clone(),
-                )
-            })
-            .collect(),
+        copy_events: block.copy_events.clone(),
     }
 }

@@ -42,6 +42,7 @@ num-bigint = { version = "0.4" }
 subtle = "2.4"
 
 [dev-dependencies]
+bus-mapping = { path = "../bus-mapping", features = ["test"] }
 criterion = "0.3"
 ctor = "0.1.22"
 env_logger = "0.9.0"
