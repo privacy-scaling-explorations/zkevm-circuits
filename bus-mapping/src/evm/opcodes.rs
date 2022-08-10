@@ -19,6 +19,7 @@ use log::warn;
 pub use sha3::sha3_tests::{gen_sha3_code, MemoryKind};
 
 mod address;
+mod balance;
 mod call;
 mod calldatacopy;
 mod calldataload;
@@ -32,6 +33,7 @@ mod create;
 mod dup;
 mod extcodecopy;
 mod extcodehash;
+mod extcodesize;
 mod gasprice;
 mod logs;
 mod mload;
@@ -52,6 +54,7 @@ mod swap;
 mod memory_expansion_test;
 
 use address::Address;
+use balance::Balance;
 use call::Call;
 use calldatacopy::Calldatacopy;
 use calldataload::Calldataload;
@@ -64,6 +67,7 @@ use create::DummyCreate;
 use dup::Dup;
 use extcodecopy::Extcodecopy;
 use extcodehash::Extcodehash;
+use extcodesize::Extcodesize;
 use gasprice::GasPrice;
 use logs::Log;
 use mload::Mload;
@@ -145,7 +149,7 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         OpcodeId::SAR => StackOnlyOpcode::<2, 1>::gen_associated_ops,
         OpcodeId::SHA3 => Sha3::gen_associated_ops,
         OpcodeId::ADDRESS => Address::gen_associated_ops,
-        OpcodeId::BALANCE => StackOnlyOpcode::<1, 1>::gen_associated_ops,
+        OpcodeId::BALANCE => Balance::gen_associated_ops,
         OpcodeId::ORIGIN => Origin::gen_associated_ops,
         OpcodeId::CALLER => Caller::gen_associated_ops,
         OpcodeId::CALLVALUE => Callvalue::gen_associated_ops,
@@ -155,7 +159,7 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         OpcodeId::GASPRICE => GasPrice::gen_associated_ops,
         OpcodeId::CODECOPY => Codecopy::gen_associated_ops,
         OpcodeId::CODESIZE => Codesize::gen_associated_ops,
-        OpcodeId::EXTCODESIZE => StackOnlyOpcode::<1, 1>::gen_associated_ops,
+        OpcodeId::EXTCODESIZE => Extcodesize::gen_associated_ops,
         OpcodeId::EXTCODECOPY => Extcodecopy::gen_associated_ops,
         OpcodeId::RETURNDATASIZE => StackOnlyOpcode::<0, 1>::gen_associated_ops,
         OpcodeId::RETURNDATACOPY => Returndatacopy::gen_associated_ops,
@@ -230,9 +234,13 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
             warn!("Using dummy gen_call_ops for opcode {:?}", opcode_id);
             DummyCall::gen_associated_ops
         }
-        OpcodeId::CREATE | OpcodeId::CREATE2 => {
+        OpcodeId::CREATE => {
             warn!("Using dummy gen_create_ops for opcode {:?}", opcode_id);
-            DummyCreate::gen_associated_ops
+            DummyCreate::<false>::gen_associated_ops
+        }
+        OpcodeId::CREATE2 => {
+            warn!("Using dummy gen_create_ops for opcode {:?}", opcode_id);
+            DummyCreate::<true>::gen_associated_ops
         }
         _ => {
             warn!("Using dummy gen_associated_ops for opcode {:?}", opcode_id);
@@ -261,9 +269,33 @@ pub fn gen_associated_ops(
         );
     }
 
-    let steps = fn_gen_associated_ops(state, geth_steps)?;
+    // check if have error
+    let geth_step = &geth_steps[0];
+    let mut exec_step = state.new_step(geth_step)?;
+    let next_step = if geth_steps.len() > 1 {
+        Some(&geth_steps[1])
+    } else {
+        None
+    };
+    if let Some(exec_error) = state.get_step_err(geth_step, next_step).unwrap() {
+        log::warn!(
+            "geth error {:?} occurred in  {:?}",
+            exec_error,
+            geth_step.op
+        );
 
-    Ok(steps)
+        exec_step.error = Some(exec_error);
+        if geth_step.op.is_call_or_create() {
+            let call = state.parse_call(geth_step)?;
+            // Switch to callee's call context
+            state.push_call(call);
+        }
+
+        state.handle_return(geth_step)?;
+        return Ok(vec![exec_step]);
+    }
+    // if no errors, continue as normal
+    fn_gen_associated_ops(state, geth_steps)
 }
 
 pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Error> {
