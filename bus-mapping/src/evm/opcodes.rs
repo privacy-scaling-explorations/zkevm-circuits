@@ -622,16 +622,21 @@ fn dummy_gen_selfdestruct_ops(
         },
     )?;
 
-    let (found, receiver_account) = state.sdb.get_account(&receiver);
+    let (found, _) = state.sdb.get_account(&receiver);
     if !found {
         return Err(Error::AccountNotFound(receiver));
     }
-    let value = receiver_account.balance;
+    let (found, sender_account) = state.sdb.get_account(&sender);
+    if !found {
+        return Err(Error::AccountNotFound(sender));
+    }
+    let value = sender_account.balance;
     state.transfer(&mut exec_step, sender, receiver, value)?;
 
     if state.call()?.is_persistent {
         state.sdb.destruct_account(sender);
     }
 
+    state.handle_return(geth_step)?;
     Ok(vec![exec_step])
 }
