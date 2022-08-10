@@ -291,12 +291,6 @@ impl<const MAX_TXS: usize, const MAX_CALLDATA: usize> SuperCircuit<Fr, MAX_TXS, 
         let k = k + 1;
         log::debug!("super circuit uses k = {}", k);
 
-        let mut instance: Vec<Vec<Fr>> = (1..POW_RAND_SIZE + 1)
-            .map(|exp| vec![block.randomness.pow_vartime(&[exp as u64, 0, 0, 0]); (1 << k) - 64])
-            .collect();
-        // SignVerifyChip -> ECDSAChip -> MainGate instance column
-        instance.push(vec![]);
-
         let chain_id = block.context.chain_id;
         let tx_circuit = TxCircuit::new(aux_generator, block.randomness, chain_id.as_u64(), txs.clone());
         let pi_circuit = PiCircuit {
@@ -316,7 +310,16 @@ impl<const MAX_TXS: usize, const MAX_CALLDATA: usize> SuperCircuit<Fr, MAX_TXS, 
                 prev_state_root : eth_types::H256::zero()
             }
         };
-        let _pi_circuit_instance = pi_circuit.instance();
+
+        let mut instance: Vec<Vec<Fr>> = (1..POW_RAND_SIZE + 1)
+            .map(|exp| vec![block.randomness.pow_vartime(&[exp as u64, 0, 0, 0]); (1 << k) - 64])
+            .collect();
+        // SignVerifyChip -> ECDSAChip -> MainGate instance column
+        instance.push(vec![]);
+        // PublicInputCircuit instances
+        instance.push(pi_circuit.instance());
+        
+        
         let circuit = SuperCircuit::<_, MAX_TXS, MAX_CALLDATA> {
             block,
             fixed_table_tags,
