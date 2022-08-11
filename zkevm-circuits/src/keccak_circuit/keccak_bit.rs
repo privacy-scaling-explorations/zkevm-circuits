@@ -55,7 +55,7 @@ const IOTA_ROUND_CST: [u64; 25] = [
     0x0000000000000000, // absorb round
 ];
 // Bit positions that have a non-zero value in `IOTA_ROUND_CST`.
-const IOTA_ROUND_BIT_POS: [usize; 7] = [0, 1, 3, 7, 15, 31, 63];
+const ROUND_CST_BIT_POS: [usize; 7] = [0, 1, 3, 7, 15, 31, 63];
 const MAX_INPUT_THETA_LOOKUP: u64 = 5;
 
 fn get_degree() -> usize {
@@ -76,10 +76,10 @@ fn get_num_bits_per_theta_lookup() -> usize {
 
 #[derive(Clone, Debug, PartialEq)]
 struct KeccakRow<F> {
-    s_bits: [u8; KECCAK_WIDTH],
+    state: [u8; KECCAK_WIDTH],
     c_bits: [u8; C_WIDTH],
-    a_bits: [u8; ABSORB_WIDTH_PER_ROW],
-    q_end: u64,
+    input: [u8; ABSORB_WIDTH_PER_ROW],
+    is_final: u64,
     hash_rlc: F,
 }
 
@@ -90,12 +90,12 @@ pub struct KeccakBitConfig<F> {
     q_first: Selector,
     q_round: Column<Fixed>,
     q_absorb: Column<Fixed>,
-    q_end: Column<Advice>,
+    is_final: Column<Advice>,
     hash_rlc: Column<Advice>,
-    s_bits: [Column<Advice>; KECCAK_WIDTH],
+    state: [Column<Advice>; KECCAK_WIDTH],
     c_bits: [Column<Advice>; C_WIDTH],
-    a_bits: [Column<Advice>; ABSORB_WIDTH_PER_ROW],
-    iota_bits: [Column<Fixed>; IOTA_ROUND_BIT_POS.len()],
+    input: [Column<Advice>; ABSORB_WIDTH_PER_ROW],
+    round_cst: [Column<Fixed>; ROUND_CST_BIT_POS.len()],
     c_table: Vec<TableColumn>,
     _marker: PhantomData<F>,
 }
@@ -146,27 +146,27 @@ impl<F: Field> KeccakBitConfig<F> {
         let q_first = meta.selector();
         let q_round = meta.fixed_column();
         let q_absorb = meta.fixed_column();
-        let q_end = meta.advice_column();
+        let is_final = meta.advice_column();
         let hash_rlc = meta.advice_column();
-        let s_bits = array_init::array_init(|_| meta.advice_column());
+        let state = array_init::array_init(|_| meta.advice_column());
         let c_bits = array_init::array_init(|_| meta.advice_column());
-        let a_bits = array_init::array_init(|_| meta.advice_column());
-        let iota_bits = array_init::array_init(|_| meta.fixed_column());
+        let input = array_init::array_init(|_| meta.advice_column());
+        let round_cst = array_init::array_init(|_| meta.fixed_column());
 
         let mut c_table = Vec::new();
         for _ in 0..1 + num_bits_per_theta_lookup {
             c_table.push(meta.lookup_table_column());
         }
 
-        let mut b = vec![vec![vec![0u64.expr(); 64]; 5]; 5];
-        let mut b_next = vec![vec![vec![0u64.expr(); 64]; 5]; 5];
+        let mut s = vec![vec![vec![0u64.expr(); 64]; 5]; 5];
+        let mut s_next = vec![vec![vec![0u64.expr(); 64]; 5]; 5];
         meta.create_gate("Query state bits", |meta| {
             let mut counter = 0;
             for i in 0..5 {
                 for j in 0..5 {
                     for k in 0..64 {
-                        b[i][j][k] = meta.query_advice(s_bits[counter], Rotation::cur());
-                        b_next[i][j][k] = meta.query_advice(s_bits[counter], Rotation::next());
+                        s[i][j][k] = meta.query_advice(state[counter], Rotation::cur());
+                        s_next[i][j][k] = meta.query_advice(state[counter], Rotation::next());
                         counter += 1;
                     }
                 }
@@ -184,55 +184,32 @@ impl<F: Field> KeccakBitConfig<F> {
             }
             vec![0u64.expr()]
         });
-        let mut a = vec![0u64.expr(); 64];
-        let mut a_next = vec![vec![0u64.expr(); 64]; 25];
-        meta.create_gate("Absorb bits", |meta| {
+        let mut i = vec![0u64.expr(); 64];
+        let mut i_next = vec![vec![0u64.expr(); 64]; 17];
+        meta.create_gate("Query absorb inputs", |meta| {
             for k in 0..64 {
-                a[k] = meta.query_advice(a_bits[k], Rotation::cur());
+                i[k] = meta.query_advice(input[k], Rotation::cur());
             }
-            for (i, a_next) in a_next.iter_mut().enumerate() {
-                for (k, a_next) in a_next.iter_mut().enumerate() {
-                    *a_next = meta.query_advice(a_bits[k], Rotation((i + 1) as i32));
+            for (i, i_next) in i_next.iter_mut().enumerate() {
+                for (k, i_next) in i_next.iter_mut().enumerate() {
+                    *i_next = meta.query_advice(input[k], Rotation((i + 1) as i32));
                 }
             }
             vec![0u64.expr()]
         });
 
         // Theta lookups
-        // TODO: pack 4 (or even more) of these in a single lookup
-        // => Total number of lookups: 5*64/4 = 80
         let mut theta = Vec::new();
         for (i, c) in c.iter().enumerate() {
             let pi = (5 + i - 1) % 5;
             let ni = (i + 1) % 5;
             for (k, c) in c.iter().enumerate() {
                 let pk = (64 + k - 1) % 64;
-                /*input = input * 10u64.expr()
-                + (b[pi][0][k].clone()
-                    + b[pi][1][k].clone()
-                    + b[pi][2][k].clone()
-                    + b[pi][3][k].clone()
-                    + b[pi][4][k].clone()
-                    + b[ni][0][pk].clone()
-                    + b[ni][1][pk].clone()
-                    + b[ni][2][pk].clone()
-                    + b[ni][3][pk].clone()
-                    + b[ni][4][pk].clone());*/
-                let bit = xor::expr(b[pi][0][k].clone(), b[pi][1][k].clone())
-                    + xor::expr(b[pi][2][k].clone(), b[pi][3][k].clone())
-                    + xor::expr(b[pi][4][k].clone(), b[ni][0][pk].clone())
-                    + xor::expr(b[ni][1][pk].clone(), b[ni][2][pk].clone())
-                    + xor::expr(b[ni][3][pk].clone(), b[ni][4][pk].clone());
-                /*input = input * MAX_INPUT_THETA_LOOKUP.expr()
-                + xor::expr(
-                    xor::expr(b[pi][0][k].clone(), b[pi][1][k].clone()),
-                    xor::expr(b[pi][2][k].clone(), b[pi][3][k].clone()),
-                )
-                + xor::expr(
-                    xor::expr(b[pi][4][k].clone(), b[ni][0][pk].clone()),
-                    xor::expr(b[ni][1][pk].clone(), b[ni][2][pk].clone()),
-                )
-                + xor::expr(b[ni][3][pk].clone(), b[ni][4][pk].clone());*/
+                let bit = xor::expr(s[pi][0][k].clone(), s[pi][1][k].clone())
+                    + xor::expr(s[pi][2][k].clone(), s[pi][3][k].clone())
+                    + xor::expr(s[pi][4][k].clone(), s[ni][0][pk].clone())
+                    + xor::expr(s[ni][1][pk].clone(), s[ni][2][pk].clone())
+                    + xor::expr(s[ni][3][pk].clone(), s[ni][4][pk].clone());
                 theta.push((c.clone(), bit));
             }
         }
@@ -244,7 +221,6 @@ impl<F: Field> KeccakBitConfig<F> {
                 let mut input = 0u64.expr();
                 let mut tables = Vec::new();
                 for (idx, (bit, expr)) in chunk.iter().enumerate() {
-                    //input = input * MAX_INPUT_THETA_LOOKUP.expr() + expr.clone();
                     input = input + expr.clone() * factor.expr();
                     factor *= MAX_INPUT_THETA_LOOKUP;
                     tables.push((bit.clone(), c_table[1 + idx]));
@@ -259,13 +235,16 @@ impl<F: Field> KeccakBitConfig<F> {
         meta.create_gate("boolean checks", |meta| {
             let mut cb = BaseConstraintBuilder::new(5);
 
-            // Absorb bits
-            for a in &a {
-                cb.require_boolean("boolean state bit", a.clone());
+            // Input boolean
+            for i in &i {
+                cb.require_boolean("boolean state bit", i.clone());
             }
 
-            // q_end
-            cb.require_boolean("boolean q_end", meta.query_advice(q_end, Rotation::cur()));
+            // is_final boolean
+            cb.require_boolean(
+                "boolean is_final",
+                meta.query_advice(is_final, Rotation::cur()),
+            );
 
             cb.gate(meta.query_selector(q_enable))
         });
@@ -273,10 +252,10 @@ impl<F: Field> KeccakBitConfig<F> {
         meta.create_gate("first row", |meta| {
             let mut cb = BaseConstraintBuilder::new(5);
 
-            // q_end
+            // is_final
             cb.require_equal(
-                "q_end needs to be enabled on the first row",
-                meta.query_advice(q_end, Rotation::cur()),
+                "is_final needs to be enabled on the first row",
+                meta.query_advice(is_final, Rotation::cur()),
                 1.expr(),
             );
 
@@ -286,51 +265,51 @@ impl<F: Field> KeccakBitConfig<F> {
         meta.create_gate("round", |meta| {
             let mut cb = BaseConstraintBuilder::new(5);
 
-            let mut b = b.clone();
+            let mut s = s.clone();
 
             // Theta
-            let mut ob = vec![vec![vec![0u64.expr(); 64]; 5]; 5];
+            let mut os = vec![vec![vec![0u64.expr(); 64]; 5]; 5];
             for i in 0..5 {
                 for j in 0..5 {
                     for k in 0..64 {
-                        ob[i][j][k] = xor::expr(b[i][j][k].clone(), c[i][k].clone());
+                        os[i][j][k] = xor::expr(s[i][j][k].clone(), c[i][k].clone());
                     }
                 }
             }
-            b = ob.clone();
+            s = os.clone();
 
             // Rho/Pi
-            for (i, b) in b.iter().enumerate() {
+            for (i, b) in s.iter().enumerate() {
                 for (j, b) in b.iter().enumerate() {
                     for k in 0..64 {
-                        ob[j][(2 * i + 3 * j) % 5][k] = b[(64 + k - RHOM[i][j]) % 64].clone();
+                        os[j][(2 * i + 3 * j) % 5][k] = b[(64 + k - RHOM[i][j]) % 64].clone();
                     }
                 }
             }
-            b = ob.clone();
+            s = os.clone();
 
             // Chi/Iota
             let mut iota_counter = 0;
             for i in 0..5 {
                 for j in 0..5 {
                     for k in 0..64 {
-                        if i == 0 && j == 0 && IOTA_ROUND_BIT_POS.contains(&k) {
+                        if i == 0 && j == 0 && ROUND_CST_BIT_POS.contains(&k) {
                             cb.require_equal(
                                 "round state transition with round constant",
-                                not::expr(b[(i + 1) % 5][j][k].clone())
-                                    * b[(i + 2) % 5][j][k].clone(),
+                                not::expr(s[(i + 1) % 5][j][k].clone())
+                                    * s[(i + 2) % 5][j][k].clone(),
                                 xor::expr(
-                                    xor::expr(b[i][j][k].clone(), b_next[i][j][k].clone()),
-                                    meta.query_fixed(iota_bits[iota_counter], Rotation::cur()),
+                                    xor::expr(s[i][j][k].clone(), s_next[i][j][k].clone()),
+                                    meta.query_fixed(round_cst[iota_counter], Rotation::cur()),
                                 ),
                             );
                             iota_counter += 1;
                         } else {
                             cb.require_equal(
                                 "round state transition",
-                                not::expr(b[(i + 1) % 5][j][k].clone())
-                                    * b[(i + 2) % 5][j][k].clone(),
-                                xor::expr(b[i][j][k].clone(), b_next[i][j][k].clone()),
+                                not::expr(s[(i + 1) % 5][j][k].clone())
+                                    * s[(i + 2) % 5][j][k].clone(),
+                                xor::expr(s[i][j][k].clone(), s_next[i][j][k].clone()),
                             );
                         }
                     }
@@ -343,10 +322,10 @@ impl<F: Field> KeccakBitConfig<F> {
         meta.create_gate("absorb", |meta| {
             let mut cb = BaseConstraintBuilder::new(5);
 
-            let not_q_end = not::expr(meta.query_advice(q_end, Rotation::cur()));
+            let is_not_final = not::expr(meta.query_advice(is_final, Rotation::cur()));
 
             let absorb_positions = get_absorb_positions();
-            let mut a_slice = 0;
+            let mut input_slice = 0;
             for j in 0..5 {
                 for i in 0..5 {
                     if absorb_positions.contains(&(i, j)) {
@@ -354,19 +333,19 @@ impl<F: Field> KeccakBitConfig<F> {
                             cb.require_equal(
                                 "absorb bit",
                                 xor::expr(
-                                    b[i][j][k].clone() * not_q_end.clone(),
-                                    a_next[a_slice][k].clone(),
+                                    s[i][j][k].clone() * is_not_final.clone(),
+                                    i_next[input_slice][k].clone(),
                                 ),
-                                b_next[i][j][k].clone(),
+                                s_next[i][j][k].clone(),
                             );
                         }
-                        a_slice += 1;
+                        input_slice += 1;
                     } else {
                         for k in 0..64 {
                             cb.require_equal(
                                 "absorb copy",
-                                b[i][j][k].clone() * not_q_end.clone(),
-                                b_next[i][j][k].clone(),
+                                s[i][j][k].clone() * is_not_final.clone(),
+                                s_next[i][j][k].clone(),
                             );
                         }
                     }
@@ -376,19 +355,20 @@ impl<F: Field> KeccakBitConfig<F> {
             cb.gate(meta.query_fixed(q_absorb, Rotation::cur()))
         });
 
-        meta.create_gate("hash rlc", |meta| {
+        meta.create_gate("squeeze", |meta| {
             let mut cb = BaseConstraintBuilder::new(5);
 
-            let hash_bytes = b
+            // Squeeze out the hash
+            let hash_bytes = s
                 .into_iter()
                 .take(4)
                 .map(|a| to_bytes_expr(&a[0]))
-                .collect::<Vec<_>>()[0..4]
+                .take(4)
                 .concat();
 
             let rlc = compose_rlc(&hash_bytes, r);
 
-            cb.condition(meta.query_advice(q_end, Rotation::cur()), |cb| {
+            cb.condition(meta.query_advice(is_final, Rotation::cur()), |cb| {
                 cb.require_equal(
                     "hash rlc check",
                     rlc,
@@ -406,12 +386,12 @@ impl<F: Field> KeccakBitConfig<F> {
             q_first,
             q_round,
             q_absorb,
-            q_end,
+            is_final,
             hash_rlc,
-            s_bits,
+            state,
             c_bits,
-            a_bits,
-            iota_bits,
+            input,
+            round_cst,
             c_table,
             _marker: PhantomData,
         }
@@ -430,11 +410,11 @@ impl<F: Field> KeccakBitConfig<F> {
                     self.set_row(
                         &mut region,
                         offset,
-                        keccak_row.q_end,
+                        keccak_row.is_final,
                         keccak_row.hash_rlc,
-                        keccak_row.s_bits,
+                        keccak_row.state,
                         keccak_row.c_bits,
-                        keccak_row.a_bits,
+                        keccak_row.input,
                     )?;
                 }
                 Ok(())
@@ -447,11 +427,11 @@ impl<F: Field> KeccakBitConfig<F> {
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
-        q_end: u64,
+        is_final: u64,
         hash_rlc: F,
-        s_bits: [u8; KECCAK_WIDTH],
+        state: [u8; KECCAK_WIDTH],
         c_bits: [u8; C_WIDTH],
-        a_bits: [u8; ABSORB_WIDTH_PER_ROW],
+        input: [u8; ABSORB_WIDTH_PER_ROW],
     ) -> Result<(), Error> {
         let round = (offset + 24) % 25;
 
@@ -476,12 +456,12 @@ impl<F: Field> KeccakBitConfig<F> {
             offset,
             || Ok(F::from(round == 24)),
         )?;
-        // q_end
+        // is_final
         region.assign_advice(
-            || format!("assign q_end {}", offset),
-            self.q_end,
+            || format!("assign is_final {}", offset),
+            self.is_final,
             offset,
-            || Ok(F::from(q_end)),
+            || Ok(F::from(is_final)),
         )?;
         // hash_rlc
         region.assign_advice(
@@ -492,7 +472,7 @@ impl<F: Field> KeccakBitConfig<F> {
         )?;
 
         // State bits
-        for (idx, (bit, column)) in s_bits.iter().zip(self.s_bits.iter()).enumerate() {
+        for (idx, (bit, column)) in state.iter().zip(self.state.iter()).enumerate() {
             region.assign_advice(
                 || format!("assign state bit {} {}", idx, offset),
                 *column,
@@ -512,7 +492,7 @@ impl<F: Field> KeccakBitConfig<F> {
         }
 
         // Absorb c bits
-        for (idx, (bit, column)) in a_bits.iter().zip(self.a_bits.iter()).enumerate() {
+        for (idx, (bit, column)) in input.iter().zip(self.input.iter()).enumerate() {
             region.assign_advice(
                 || format!("assign absorb bits {} {}", idx, offset),
                 *column,
@@ -521,11 +501,11 @@ impl<F: Field> KeccakBitConfig<F> {
             )?;
         }
 
-        // Iota bit columns
+        // Round constant columns
         if round < 24 {
-            for (pos, column) in IOTA_ROUND_BIT_POS.iter().zip(self.iota_bits.iter()) {
+            for (pos, column) in ROUND_CST_BIT_POS.iter().zip(self.round_cst.iter()) {
                 region.assign_fixed(
-                    || format!("assign iota bit {} {}", *pos, offset),
+                    || format!("assign round constant bit {} {}", *pos, offset),
                     *column,
                     offset,
                     || Ok(F::from(((IOTA_ROUND_CST[round] >> *pos) & 1) as u64)),
@@ -620,10 +600,10 @@ fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: Vec<u8>, r: F) {
 
         let mut counter = 0;
         for (round, round_cst) in IOTA_ROUND_CST.iter().enumerate() {
-            let mut a_bits = [0u8; 64];
+            let mut input = [0u8; 64];
             if counter < rate {
-                for a_bit in a_bits.iter_mut() {
-                    *a_bit = chunk[counter];
+                for bit in input.iter_mut() {
+                    *bit = chunk[counter];
                     counter += 1;
                 }
             }
@@ -650,11 +630,11 @@ fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: Vec<u8>, r: F) {
 
             // Flatten bits
             let mut counter = 0;
-            let mut s_bits = [0u8; KECCAK_WIDTH];
+            let mut state = [0u8; KECCAK_WIDTH];
             for b in b {
                 for b in b {
                     for b in b {
-                        s_bits[counter] = b;
+                        state[counter] = b;
                         counter += 1;
                     }
                 }
@@ -670,10 +650,10 @@ fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: Vec<u8>, r: F) {
                 }
             }
 
-            let q_end = round == 24 && idx == num_chunks - 1;
+            let is_final = round == 24 && idx == num_chunks - 1;
 
             let mut hash_rlc = F::zero();
-            if q_end {
+            if is_final {
                 let hash_bytes = b
                     .into_iter()
                     .take(4)
@@ -685,10 +665,10 @@ fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: Vec<u8>, r: F) {
             }
 
             rows.push(KeccakRow {
-                s_bits,
+                state,
                 c_bits,
-                a_bits,
-                q_end: q_end as u64,
+                input,
+                is_final: is_final as u64,
                 hash_rlc,
             });
 
@@ -726,7 +706,7 @@ fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: Vec<u8>, r: F) {
                 b = ob;
 
                 // Iota
-                for k in IOTA_ROUND_BIT_POS {
+                for k in ROUND_CST_BIT_POS {
                     b[0][0][k] ^= ((round_cst >> k) & 1) as u8;
                 }
             }
@@ -745,12 +725,12 @@ fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: Vec<u8>, r: F) {
 
 fn multi_keccak<F: Field>(bytes: Vec<Vec<u8>>, r: F) -> Vec<KeccakRow<F>> {
     // Dummy first row so that the initial data is absorbed
-    // The initial data doesn't really matter, `q_end` just needs to be enabled.
+    // The initial data doesn't really matter, `is_final` just needs to be enabled.
     let mut rows: Vec<KeccakRow<F>> = vec![KeccakRow {
-        s_bits: [0u8; KECCAK_WIDTH],
+        state: [0u8; KECCAK_WIDTH],
         c_bits: [0u8; C_WIDTH],
-        a_bits: [0u8; ABSORB_WIDTH_PER_ROW],
-        q_end: 1u64,
+        input: [0u8; ABSORB_WIDTH_PER_ROW],
+        is_final: 1u64,
         hash_rlc: F::zero(),
     }];
     // Actual keccaks
