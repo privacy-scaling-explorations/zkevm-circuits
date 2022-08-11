@@ -561,7 +561,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
         rand_rpi: F,
         raw_pi_vals: Vec<F>,
     ) -> Result<(AssignedCell<F, F>, AssignedCell<F, F>), Error> {
-        let circuit_len = PiCircuitConfig::<F, MAX_TXS, MAX_CALLDATA>::circuit_len();
+        let circuit_len = Self::circuit_len();
         assert_eq!(circuit_len, raw_pi_vals.len());
 
         // Last row
