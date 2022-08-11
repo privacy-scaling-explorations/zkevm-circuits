@@ -396,7 +396,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
         raw_pi_vals: &mut Vec<F>,
     ) -> Result<AssignedCell<F, F>, Error> {
         let mut offset = 0;
-        for i in 0..BLOCK_LEN {
+        for i in 0..BLOCK_LEN + 1 {
             self.q_block_table.enable(region, offset + i)?;
         }
 
