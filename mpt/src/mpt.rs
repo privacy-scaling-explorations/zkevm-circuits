@@ -117,7 +117,7 @@ pub(crate) struct StorageLeafCols {
     pub(crate) is_s_key: Column<Advice>,
     pub(crate) is_s_value: Column<Advice>,
     pub(crate) is_c_key: Column<Advice>,
-    pub(crate) is__c_value: Column<Advice>,
+    pub(crate) is_c_value: Column<Advice>,
     /** it is at drifted_pos position in added branch,
     * note that this row could be omitted when there
     * is no added branch but then it would open a
@@ -176,8 +176,9 @@ pub(crate) struct AccumulatorPair {
 // Columns that store values that are being accumulated across multiple rows.
 #[derive(Clone, Debug)]
 pub(crate) struct AccumulatorCols {
-    pub(crate) acc_s: AccumulatorPair,
-    pub(crate) acc_c: AccumulatorPair,
+    pub(crate) acc_s: AccumulatorPair, // accumulating RLC for a node in S proof
+    pub(crate) acc_c: AccumulatorPair, // accumulating RLC for a node in C proof
+    pub(crate) key: AccumulatorPair, // accumulating RLC for address or key
 }
 
 // TODO: check whether sel1, sel2 are sometimes used for accumulated values and fix it.
@@ -229,8 +230,6 @@ pub struct MPTConfig<F> {
     r_table: Vec<Expression<F>>,
     // key_rlc & key_rlc_mult used for account address, for storage key,
     // and for mult_diff_nonce/mult_diff_balance in account_leaf_nonce_balance
-    pub(crate) key_rlc: Column<Advice>,
-    pub(crate) key_rlc_mult: Column<Advice>,
     pub(crate) mult_diff: Column<Advice>,
     keccak_table: [Column<Fixed>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
     fixed_table: [Column<Fixed>; 3],
@@ -380,7 +379,7 @@ impl<F: FieldExt> MPTConfig<F> {
             is_s_key : meta.advice_column(),
             is_s_value : meta.advice_column(),
             is_c_key : meta.advice_column(),
-            is__c_value : meta.advice_column(),
+            is_c_value : meta.advice_column(),
             is_in_added_branch : meta.advice_column(),
         };
 
@@ -440,10 +439,27 @@ impl<F: FieldExt> MPTConfig<F> {
             rlc : meta.advice_column(),
             mult : meta.advice_column(),
         };
+        let key = AccumulatorPair {
+            rlc : meta.advice_column(),
+            mult : meta.advice_column(),
+        };
+
+        // NOTE: key_rlc_mult wouldn't be needed if we would have
+        // big endian instead of little endian. However, then it would be much more
+        // difficult to handle the accumulator when we iterate over the key.
+        // At some point (but we don't know this point at compile time), key ends
+        // and from there on the values in the row need to be 0s.
+        // However, if we are computing rlc using little endian:
+        // rlc = rlc + row[i] * acc_r,
+        // rlc will stay the same once r[i] = 0.
+        // If big endian would be used:
+        // rlc = rlc * acc_r + row[i],
+        // the rlc would be multiplied by acc_r when row[i] = 0.
 
         let accumulators = AccumulatorCols {
             acc_s: acc_s.clone(),
             acc_c: acc_c.clone(),
+            key: key.clone(),
         };
 
         let denoter = DenoteCols {
@@ -463,22 +479,8 @@ impl<F: FieldExt> MPTConfig<F> {
         // but we don't want acc to be multiplied by mult_r when row[i] = 0 where
         // the stream already ended and 0s are only to fulfill the row.
 
-        let key_rlc = meta.advice_column();
-        let key_rlc_mult = meta.advice_column();
         let mult_diff = meta.advice_column();
-
-        // NOTE: key_rlc_mult wouldn't be needed if we would have
-        // big endian instead of little endian. However, then it would be much more
-        // difficult to handle the accumulator when we iterate over the key.
-        // At some point (but we don't know this point at compile time), key ends
-        // and from there on the values in the row need to be 0s.
-        // However, if we are computing rlc using little endian:
-        // rlc = rlc + row[i] * acc_r,
-        // rlc will stay the same once r[i] = 0.
-        // If big endian would be used:
-        // rlc = rlc * acc_r + row[i],
-        // the rlc would be multiplied by acc_r when row[i] = 0.
-
+ 
         let address_rlc = meta.advice_column();
         let counter = meta.advice_column();
 
@@ -528,8 +530,7 @@ impl<F: FieldExt> MPTConfig<F> {
             s_main.clone(),
             s_main.bytes[IS_BRANCH_C16_POS - RLP_NUM], // TODO: remove
             s_main.bytes[IS_BRANCH_C1_POS - RLP_NUM], // TODO: remove
-            key_rlc,
-            key_rlc_mult,
+            accumulators.key.clone(),
             acc_r,
         );
 
@@ -641,8 +642,7 @@ impl<F: FieldExt> MPTConfig<F> {
             account_leaf.is_in_added_branch,
             s_main.clone(),
             c_main.clone(),
-            key_rlc,
-            key_rlc_mult,
+            accumulators.key.clone(),
             mult_diff,
             fixed_table.clone(),
             r_table.clone(),
@@ -739,9 +739,7 @@ impl<F: FieldExt> MPTConfig<F> {
             c_main.clone(),
             s_mod_node_hash_rlc,
             c_mod_node_hash_rlc,
-            accumulators.acc_s.clone(),
-            key_rlc,
-            key_rlc_mult,
+            accumulators.clone(),
             denoter.clone(),
             s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM], // TODO: remove
             account_leaf.is_in_added_branch,
@@ -768,9 +766,7 @@ impl<F: FieldExt> MPTConfig<F> {
             c_main.clone(),
             s_mod_node_hash_rlc,
             c_mod_node_hash_rlc,
-            accumulators.acc_s.clone(),
-            key_rlc,
-            key_rlc_mult,
+            accumulators.clone(),
             denoter.clone(),
             s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM], // TODO: remove
             account_leaf.is_in_added_branch,
@@ -792,9 +788,7 @@ impl<F: FieldExt> MPTConfig<F> {
             c_main.clone(),
             s_mod_node_hash_rlc,
             c_mod_node_hash_rlc,
-            acc_s.clone(),
-            key_rlc,
-            key_rlc_mult,
+            accumulators.clone(),
             mult_diff,
             branch.drifted_pos,
             account_leaf.is_in_added_branch,
@@ -815,8 +809,6 @@ impl<F: FieldExt> MPTConfig<F> {
             keccak_table,
             accumulators.clone(),
             denoter.clone(),
-            key_rlc,
-            key_rlc_mult,
             mult_diff,
             account_leaf.is_in_added_branch,
             s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM],
@@ -830,15 +822,13 @@ impl<F: FieldExt> MPTConfig<F> {
             inter_final_root,
             q_not_first,
             not_first_level,
-            storage_leaf.is__c_value,
+            storage_leaf.is_c_value,
             s_main.clone(),
             s_mod_node_hash_rlc,
             c_mod_node_hash_rlc,
             keccak_table,
             accumulators.clone(),
             denoter.clone(),
-            key_rlc,
-            key_rlc_mult,
             mult_diff,
             account_leaf.is_in_added_branch,
             s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
@@ -861,8 +851,6 @@ impl<F: FieldExt> MPTConfig<F> {
             s_main.clone(),
             c_main.clone(),
             accumulators.clone(),
-            key_rlc,
-            key_rlc_mult,
             r_table.clone(),
             fixed_table.clone(),
             address_rlc,
@@ -884,8 +872,6 @@ impl<F: FieldExt> MPTConfig<F> {
             s_main.clone(),
             c_main.clone(),
             accumulators.clone(),
-            key_rlc,
-            key_rlc_mult,
             r_table.clone(),
             fixed_table.clone(),
             address_rlc,
@@ -907,9 +893,7 @@ impl<F: FieldExt> MPTConfig<F> {
             not_first_level,
             s_main.clone(),
             c_main.clone(),
-            key_rlc,
-            key_rlc_mult,
-            accumulators.acc_s.rlc,
+            accumulators.clone(),
             denoter.sel1,
             r_table.clone(),
             fixed_table.clone(),
@@ -928,7 +912,6 @@ impl<F: FieldExt> MPTConfig<F> {
             s_main.clone(),
             c_main.clone(),
             accumulators.clone(),
-            key_rlc_mult,
             r_table.clone(),
             s_mod_node_hash_rlc,
             c_mod_node_hash_rlc,
@@ -949,7 +932,6 @@ impl<F: FieldExt> MPTConfig<F> {
             s_main.clone(),
             c_main.clone(),
             accumulators.clone(),
-            key_rlc_mult,
             r_table.clone(),
             s_mod_node_hash_rlc,
             c_mod_node_hash_rlc,
@@ -1012,8 +994,6 @@ impl<F: FieldExt> MPTConfig<F> {
             s_mod_node_hash_rlc,
             c_mod_node_hash_rlc,
             accumulators.clone(),
-            key_rlc,
-            key_rlc_mult,
             mult_diff,
             branch.drifted_pos,
             denoter.clone(),
@@ -1042,8 +1022,6 @@ impl<F: FieldExt> MPTConfig<F> {
             node_mult_diff_s,
             node_mult_diff_c,
             r_table,
-            key_rlc,
-            key_rlc_mult,
             mult_diff,
             keccak_table,
             fixed_table,
@@ -1159,14 +1137,14 @@ impl<F: FieldExt> MPTConfig<F> {
 
         region.assign_advice(
             || "assign key rlc".to_string(),
-            self.key_rlc,
+            self.accumulators.key.rlc,
             offset,
             || Ok(F::zero()),
         )?;
 
         region.assign_advice(
             || "assign key rlc mult".to_string(),
-            self.key_rlc_mult,
+            self.accumulators.key.mult,
             offset,
             || Ok(F::zero()),
         )?;
@@ -1219,7 +1197,7 @@ impl<F: FieldExt> MPTConfig<F> {
         )?;
         region.assign_advice(
             || "assign is_leaf_c_value".to_string(),
-            self.storage_leaf.is__c_value,
+            self.storage_leaf.is_c_value,
             offset,
             || Ok(F::from(storage_leaf.is_c_value as u64)),
         )?;
@@ -1422,10 +1400,10 @@ impl<F: FieldExt> MPTConfig<F> {
             || Ok(c_mod_node_hash_rlc),
         )?;
 
-        region.assign_advice(|| "key rlc", self.key_rlc, offset, || Ok(key_rlc))?;
+        region.assign_advice(|| "key rlc", self.accumulators.key.rlc, offset, || Ok(key_rlc))?;
         region.assign_advice(
             || "key rlc mult",
-            self.key_rlc_mult,
+            self.accumulators.key.mult,
             offset,
             || Ok(key_rlc_mult),
         )?;
@@ -2187,13 +2165,13 @@ impl<F: FieldExt> MPTConfig<F> {
                             // This is to avoid Poisoned Constraint in extension_node_key.
                             region.assign_advice(
                                 || "assign key_rlc".to_string(),
-                                self.key_rlc,
+                                self.accumulators.key.rlc,
                                 offset,
                                 || Ok(pv.key_rlc),
                             )?;
                             region.assign_advice(
                                 || "assign key_rlc_mult".to_string(),
-                                self.key_rlc_mult,
+                                self.accumulators.key.mult,
                                 offset,
                                 || Ok(pv.key_rlc_mult),
                             )?;
@@ -2422,7 +2400,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                 }
                                 region.assign_advice(
                                     || "assign key_rlc".to_string(),
-                                    self.key_rlc,
+                                    self.accumulators.key.rlc,
                                     offset,
                                     || Ok(key_rlc_new),
                                 )?;
@@ -2537,7 +2515,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                 } else if row[row.len() - 1] == 14 {
                                     region.assign_advice(
                                         || "assign key_rlc into key_rlc_mult".to_string(),
-                                        self.key_rlc_mult,
+                                        self.accumulators.key.mult,
                                         offset,
                                         || Ok(pv.rlc2),
                                     )?;
@@ -2616,7 +2594,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                 compute_key_rlc(&mut key_rlc_new, &mut key_rlc_mult_new, S_START);
                                 region.assign_advice(
                                     || "assign key_rlc".to_string(),
-                                    self.key_rlc,
+                                    self.accumulators.key.rlc,
                                     offset,
                                     || Ok(key_rlc_new),
                                 )?;
@@ -2735,7 +2713,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                 }
                                 region.assign_advice(
                                     || "assign key_rlc".to_string(),
-                                    self.key_rlc,
+                                    self.accumulators.key.rlc,
                                     offset,
                                     || Ok(pv.extension_node_rlc),
                                 )?;
@@ -2773,7 +2751,7 @@ impl<F: FieldExt> MPTConfig<F> {
 
                                 region.assign_advice(
                                     || "assign key_rlc".to_string(),
-                                    self.key_rlc,
+                                    self.accumulators.key.rlc,
                                     offset,
                                     || Ok(pv.extension_node_rlc),
                                 )?;
@@ -2817,13 +2795,13 @@ impl<F: FieldExt> MPTConfig<F> {
 
                                 region.assign_advice(
                                     || "assign sum".to_string(),
-                                    self.key_rlc,
+                                    self.accumulators.key.rlc,
                                     offset,
                                     || Ok(sum),
                                 )?;
                                 region.assign_advice(
                                     || "assign sum prev".to_string(),
-                                    self.key_rlc_mult,
+                                    self.accumulators.key.mult,
                                     offset,
                                     || Ok(sum_prev),
                                 )?;

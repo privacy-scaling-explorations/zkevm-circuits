@@ -64,8 +64,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
         q_enable: impl Fn(&mut VirtualCells<'_, F>) -> Expression<F> + Copy,
         s_main: MainCols,
         c_main: MainCols,
-        accs: AccumulatorCols, // accs.acc_c.rlc contains mult_diff_nonce
-        mult_diff_balance: Column<Advice>,
+        accs: AccumulatorCols, // accs.acc_c.rlc contains mult_diff_nonce; accs.key.mult for mult_diff_balance
         r_table: Vec<Expression<F>>,
         s_mod_node_hash_rlc: Column<Advice>,
         c_mod_node_hash_rlc: Column<Advice>,
@@ -109,7 +108,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
 
             let acc_mult_after_nonce = meta.query_advice(accs.acc_c.mult, Rotation::cur());
             let mult_diff_nonce = meta.query_advice(accs.acc_c.rlc, Rotation::cur());
-            let mult_diff_balance = meta.query_advice(mult_diff_balance, Rotation::cur());
+            let mult_diff_balance = meta.query_advice(accs.key.mult, Rotation::cur());
 
             let is_nonce_long = meta.query_advice(
                 denoter.sel1,
@@ -669,7 +668,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
             q_enable_balance_long,
             1, // 1 for byte with length info
             c_main.bytes[0],
-            mult_diff_balance,
+            accs.key.mult,
             128,
             fixed_table,
         );
@@ -908,7 +907,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
         ).ok();
         region.assign_advice(
             || "assign mult diff".to_string(),
-            mpt_config.key_rlc_mult,
+            mpt_config.accumulators.key.mult,
             offset,
             || Ok(mult_diff_c),
         ).ok();

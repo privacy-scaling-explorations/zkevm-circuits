@@ -33,10 +33,8 @@ impl<F: FieldExt> LeafValueChip<F> {
         s_mod_node_hash_rlc: Column<Advice>,
         c_mod_node_hash_rlc: Column<Advice>,
         keccak_table: [Column<Fixed>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
-        accs: AccumulatorCols,
+        accs: AccumulatorCols, // key_rlc_mult (accs.key.mult) to store key_rlc from previous row (to enable lookup)
         denoter: DenoteCols,
-        key_rlc: Column<Advice>,
-        key_rlc_mult: Column<Advice>, // to store key_rlc from previous row (to enable lookup)
         mult_diff: Column<Advice>,    /* to store leaf value S RLC from two rows above (to
                                        * enable lookup) */
         is_account_leaf_in_added_branch: Column<Advice>,
@@ -143,8 +141,8 @@ impl<F: FieldExt> LeafValueChip<F> {
             // generator add all 0s as a placeholder leaf for this reason; no constraint
             // is needed for this 0s as the lookup will fail if otherwise.
             if !is_s {
-                let key_c_rlc_from_prev = meta.query_advice(key_rlc, Rotation(-1));
-                let key_c_rlc_from_cur = meta.query_advice(key_rlc_mult, Rotation::cur());
+                let key_c_rlc_from_prev = meta.query_advice(accs.key.rlc, Rotation(-1));
+                let key_c_rlc_from_cur = meta.query_advice(accs.key.mult, Rotation::cur());
                 let leaf_value_s_rlc_from_prev = meta.query_advice(accs.acc_c.rlc, Rotation(-2));
                 let leaf_value_s_rlc_from_cur = meta.query_advice(mult_diff, Rotation::cur());
                 constraints.push((

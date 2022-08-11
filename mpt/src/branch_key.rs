@@ -9,7 +9,7 @@ use std::marker::PhantomData;
 use crate::{param::{
     IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS, IS_EXT_LONG_ODD_C16_POS,
     IS_EXT_LONG_ODD_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS, RLP_NUM,
-}, mpt::{MainCols, BranchCols}};
+}, mpt::{MainCols, BranchCols, AccumulatorPair}};
 
 #[derive(Clone, Debug)]
 pub(crate) struct BranchKeyConfig {}
@@ -33,8 +33,7 @@ impl<F: FieldExt> BranchKeyChip<F> {
         s_main: MainCols,
         c16_col: Column<Advice>,
         c1_col: Column<Advice>,
-        key_rlc: Column<Advice>, // used first for account address, then for storage key
-        key_rlc_mult: Column<Advice>,
+        acc_pair: AccumulatorPair, // used first for account address, then for storage key
         acc_r: F,
     ) -> BranchKeyConfig {
         let config = BranchKeyConfig {};
@@ -105,10 +104,10 @@ impl<F: FieldExt> BranchKeyChip<F> {
             let sel1_cur = meta.query_advice(c16_col, Rotation::prev());
             let sel2_cur = meta.query_advice(c1_col, Rotation::prev());
 
-            let key_rlc_prev = meta.query_advice(key_rlc, Rotation(-19));
-            let key_rlc_cur = meta.query_advice(key_rlc, Rotation::cur());
-            let key_rlc_mult_prev = meta.query_advice(key_rlc_mult, Rotation(-19));
-            let key_rlc_mult_cur = meta.query_advice(key_rlc_mult, Rotation::cur());
+            let key_rlc_prev = meta.query_advice(acc_pair.rlc, Rotation(-19));
+            let key_rlc_cur = meta.query_advice(acc_pair.rlc, Rotation::cur());
+            let key_rlc_mult_prev = meta.query_advice(acc_pair.mult, Rotation(-19));
+            let key_rlc_mult_cur = meta.query_advice(acc_pair.mult, Rotation::cur());
             constraints.push((
                 "key_rlc sel1",
                 q_not_first.clone()

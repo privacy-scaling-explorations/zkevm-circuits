@@ -8,7 +8,7 @@ use std::marker::PhantomData;
 
 use crate::{
     helpers::{compute_rlc, get_bool_constraint, key_len_lookup, mult_diff_lookup, range_lookups},
-    mpt::{FixedTableTag, MainCols, AccumulatorPair, DenoteCols},
+    mpt::{FixedTableTag, MainCols, AccumulatorPair, DenoteCols, AccumulatorCols},
     param::{
         BRANCH_ROWS_NUM, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, RLP_NUM,
         R_TABLE_LEN, HASH_WIDTH,
@@ -35,9 +35,7 @@ impl<F: FieldExt> LeafKeyChip<F> {
         c_main: MainCols,
         s_mod_node_hash_rlc: Column<Advice>,
         c_mod_node_hash_rlc: Column<Advice>,
-        acc_pair: AccumulatorPair,
-        key_rlc: Column<Advice>,
-        key_rlc_mult: Column<Advice>,
+        accs: AccumulatorCols,
         denoter: DenoteCols, // sel1 stores key_rlc_prev, sel2 stores key_rlc_mult_prev
         is_branch_placeholder: Column<Advice>,
         is_account_leaf_in_added_branch: Column<Advice>,
@@ -108,7 +106,7 @@ impl<F: FieldExt> LeafKeyChip<F> {
             rlc = rlc + c_rlp1 * r_table[R_TABLE_LEN - 1].clone() * r_table[1].clone();
             rlc = rlc + c_rlp2 * r_table[R_TABLE_LEN - 1].clone() * r_table[2].clone();
 
-            let acc = meta.query_advice(acc_pair.rlc, Rotation::cur());
+            let acc = meta.query_advice(accs.acc_s.rlc, Rotation::cur());
             constraints.push(("Leaf key acc",
                 q_enable.clone()
                 * (is_short + is_long) // activate if is_short or is_long
@@ -171,9 +169,9 @@ impl<F: FieldExt> LeafKeyChip<F> {
         */
 
         // acc_mult corresponds to key length (short):
-        mult_diff_lookup(meta, sel_short, 2, s_main.rlp2, acc_pair.mult, 128, fixed_table);
+        mult_diff_lookup(meta, sel_short, 2, s_main.rlp2, accs.acc_s.mult, 128, fixed_table);
         // acc_mult corresponds to key length (long):
-        mult_diff_lookup(meta, sel_long, 3, s_main.bytes[0], acc_pair.mult, 128, fixed_table);
+        mult_diff_lookup(meta, sel_long, 3, s_main.bytes[0], accs.acc_s.mult, 128, fixed_table);
 
         // Checking the key - accumulated RLC is taken (computed using the path through
         // branches) and key bytes are added to the RLC. The external circuit
@@ -202,8 +200,8 @@ impl<F: FieldExt> LeafKeyChip<F> {
                     rot = -20;
                 }
 
-                let key_rlc_acc_start = meta.query_advice(key_rlc, Rotation(rot));
-                let key_mult_start = meta.query_advice(key_rlc_mult, Rotation(rot));
+                let key_rlc_acc_start = meta.query_advice(accs.key.rlc, Rotation(rot));
+                let key_mult_start = meta.query_advice(accs.key.mult, Rotation(rot));
 
                 // sel1 and sel2 are in init branch
                 let sel1 = meta.query_advice(
@@ -257,7 +255,7 @@ impl<F: FieldExt> LeafKeyChip<F> {
                 key_rlc_acc_short =
                     key_rlc_acc_short + c_rlp1.clone() * key_mult.clone() * r_table[30].clone();
 
-                let key_rlc = meta.query_advice(key_rlc, Rotation::cur());
+                let key_rlc = meta.query_advice(accs.key.rlc, Rotation::cur());
 
                 // No need to distinguish between sel1 and sel2 here as it was already
                 // when computing key_rlc_acc_short.
@@ -374,7 +372,7 @@ impl<F: FieldExt> LeafKeyChip<F> {
             key_rlc_acc_short =
                 key_rlc_acc_short + c_rlp1.clone() * key_mult.clone() * r_table[30].clone();
 
-            let key_rlc = meta.query_advice(key_rlc, Rotation::cur());
+            let key_rlc = meta.query_advice(accs.key.rlc, Rotation::cur());
 
             // No need to distinguish between sel1 and sel2 here as it was already
             // when computing key_rlc_acc_short.
@@ -463,11 +461,11 @@ impl<F: FieldExt> LeafKeyChip<F> {
 
             // key_rlc_mult_prev_level = 1 if is_first_storage_level
             let key_rlc_mult_prev_level = (one.clone() - is_first_storage_level.clone())
-                * meta.query_advice(key_rlc_mult, Rotation(rot_into_prev_branch))
+                * meta.query_advice(accs.key.mult, Rotation(rot_into_prev_branch))
                 + is_first_storage_level.clone();
             // key_rlc_prev_level = 0 if is_first_storage_level
             let key_rlc_prev_level = (one.clone() - is_first_storage_level)
-                * meta.query_advice(key_rlc, Rotation(rot_into_prev_branch));
+                * meta.query_advice(accs.key.rlc, Rotation(rot_into_prev_branch));
 
             let rlc_prev = meta.query_advice(denoter.sel1, Rotation::cur());
             let mult_prev = meta.query_advice(denoter.sel2, Rotation::cur());
@@ -576,7 +574,7 @@ impl<F: FieldExt> LeafKeyChip<F> {
             key_rlc_acc_short =
                 key_rlc_acc_short + c_rlp1.clone() * key_mult.clone() * r_table[30].clone();
 
-            let key_rlc = meta.query_advice(key_rlc, Rotation::cur());
+            let key_rlc = meta.query_advice(accs.key.rlc, Rotation::cur());
 
             // No need to distinguish between sel1 and sel2 here as it was already
             // when computing key_rlc_acc_short.

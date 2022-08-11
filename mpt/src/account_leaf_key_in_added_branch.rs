@@ -38,8 +38,6 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchChip<F> {
         s_mod_node_hash_rlc: Column<Advice>,
         c_mod_node_hash_rlc: Column<Advice>, 
         accs: AccumulatorCols, // accs.acc_c contains mult_diff_nonce, initially key_rlc was used for mult_diff_nonce, but it caused PoisonedConstraint in extension_node_key
-        key_rlc: Column<Advice>,
-        key_rlc_mult: Column<Advice>,
         mult_diff: Column<Advice>,
         drifted_pos: Column<Advice>,
         denoter: DenoteCols,
@@ -190,7 +188,7 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchChip<F> {
             // for both - extension nodes and branches. That's because branch key RLC is
             // stored in extension node row when there is NO extension node (the
             // constraint is in extension_node_key).
-            let key_rlc_cur = meta.query_advice(key_rlc, Rotation(-ACCOUNT_DRIFTED_LEAF_IND-1));
+            let key_rlc_cur = meta.query_advice(accs.key.rlc, Rotation(-ACCOUNT_DRIFTED_LEAF_IND-1));
             // Note: key_rlc_cur means key RLC at added branch, we now need to add the bytes stored in drifted leaf key.
 
             // sel1 and sel2 determines whether drifted_pos needs to be
@@ -228,8 +226,8 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchChip<F> {
 
             let mult_diff = meta.query_advice(mult_diff, Rotation(rot_branch_init + 1)); 
 
-            let leaf_key_s_rlc = meta.query_advice(key_rlc, Rotation(-(ACCOUNT_DRIFTED_LEAF_IND - ACCOUNT_LEAF_KEY_S_IND)));
-            let leaf_key_c_rlc = meta.query_advice(key_rlc, Rotation(-(ACCOUNT_DRIFTED_LEAF_IND - ACCOUNT_LEAF_KEY_C_IND)));
+            let leaf_key_s_rlc = meta.query_advice(accs.key.rlc, Rotation(-(ACCOUNT_DRIFTED_LEAF_IND - ACCOUNT_LEAF_KEY_S_IND)));
+            let leaf_key_c_rlc = meta.query_advice(accs.key.rlc, Rotation(-(ACCOUNT_DRIFTED_LEAF_IND - ACCOUNT_LEAF_KEY_C_IND)));
 
             let is_one_nibble = get_is_extension_node_one_nibble(meta, s_main.bytes, rot_branch_init);
 
@@ -376,7 +374,7 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchChip<F> {
             let s_rlp2_storage = meta.query_advice(s_main.rlp2, Rotation(storage_codehash_rot));
             let c_rlp2_storage = meta.query_advice(c_main.rlp2, Rotation(storage_codehash_rot));
 
-            let mult_diff_balance = meta.query_advice(key_rlc_mult, Rotation(nonce_rot));
+            let mult_diff_balance = meta.query_advice(accs.key.mult, Rotation(nonce_rot));
             curr_r = curr_r * mult_diff_balance;
             rlc = rlc + s_rlp2_storage * curr_r.clone();
 

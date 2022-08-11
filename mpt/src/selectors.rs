@@ -43,7 +43,7 @@ impl<F: FieldExt> SelectorsChip<F> {
             let is_leaf_s_key = meta.query_advice(storage_leaf.is_s_key, Rotation::cur());
             let is_leaf_s_value = meta.query_advice(storage_leaf.is_s_value, Rotation::cur());
             let is_leaf_c_key = meta.query_advice(storage_leaf.is_c_key, Rotation::cur());
-            let is_leaf_c_value = meta.query_advice(storage_leaf.is__c_value, Rotation::cur());
+            let is_leaf_c_value = meta.query_advice(storage_leaf.is_c_value, Rotation::cur());
 
             let is_account_leaf_key_s = meta.query_advice(account_leaf.is_key_s, Rotation::cur());
             let is_account_leaf_key_c = meta.query_advice(account_leaf.is_key_c, Rotation::cur());
@@ -215,8 +215,8 @@ impl<F: FieldExt> SelectorsChip<F> {
                 let is_leaf_s_value_cur = meta.query_advice(storage_leaf.is_s_value, Rotation::cur());
                 let is_leaf_c_key_prev = meta.query_advice(storage_leaf.is_c_key, Rotation::prev());
                 let is_leaf_c_key_cur = meta.query_advice(storage_leaf.is_c_key, Rotation::cur());
-                let is_leaf_c_value_prev = meta.query_advice(storage_leaf.is__c_value, Rotation::prev());
-                let is_leaf_c_value_cur = meta.query_advice(storage_leaf.is__c_value, Rotation::cur());
+                let is_leaf_c_value_prev = meta.query_advice(storage_leaf.is_c_value, Rotation::prev());
+                let is_leaf_c_value_cur = meta.query_advice(storage_leaf.is_c_value, Rotation::cur());
                 let is_leaf_in_added_branch_prev =
                     meta.query_advice(storage_leaf.is_in_added_branch, Rotation::prev());
                 let is_leaf_in_added_branch_cur =

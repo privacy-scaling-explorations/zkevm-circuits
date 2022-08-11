@@ -11,7 +11,7 @@ use std::marker::PhantomData;
 
 use crate::{
     helpers::{compute_rlc, range_lookups, key_len_lookup, get_is_extension_node},
-    mpt::{FixedTableTag, MainCols, BranchCols},
+    mpt::{FixedTableTag, MainCols, BranchCols, AccumulatorPair},
     param::{
         HASH_WIDTH,
         RLP_NUM, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS, IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS, IS_EXT_LONG_ODD_C16_POS, IS_EXT_LONG_ODD_C1_POS, EXTENSION_ROWS_NUM, BRANCH_ROWS_NUM,
@@ -61,8 +61,7 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
         is_account_leaf_in_added_branch: Column<Advice>,
         s_main: MainCols,
         c_main: MainCols,
-        key_rlc: Column<Advice>, // used first for account address, then for storage key
-        key_rlc_mult: Column<Advice>,
+        acc_pair: AccumulatorPair, // used first for account address, then for storage key
         mult_diff: Column<Advice>,
         fixed_table: [Column<Fixed>; 3],
         r_table: Vec<Expression<F>>,
@@ -150,20 +149,20 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
             let modified_node_cur =
                 meta.query_advice(branch.modified_node, Rotation(-2));
             
-            let key_rlc_prev = meta.query_advice(key_rlc, Rotation::prev());
-            let key_rlc_prev_level = meta.query_advice(key_rlc, Rotation(rot_into_prev_branch));
-            let key_rlc_cur = meta.query_advice(key_rlc, Rotation::cur());
+            let key_rlc_prev = meta.query_advice(acc_pair.rlc, Rotation::prev());
+            let key_rlc_prev_level = meta.query_advice(acc_pair.rlc, Rotation(rot_into_prev_branch));
+            let key_rlc_cur = meta.query_advice(acc_pair.rlc, Rotation::cur());
 
             let mult_diff_cur = meta.query_advice(mult_diff, Rotation::cur());
             let mult_diff_prev = meta.query_advice(mult_diff, Rotation::prev());
 
-            let key_rlc_mult_prev = meta.query_advice(key_rlc_mult, Rotation::prev());
-            let key_rlc_mult_prev_level = meta.query_advice(key_rlc_mult, Rotation(rot_into_prev_branch));
-            let key_rlc_mult_cur = meta.query_advice(key_rlc_mult, Rotation::cur());
+            let key_rlc_mult_prev = meta.query_advice(acc_pair.mult, Rotation::prev());
+            let key_rlc_mult_prev_level = meta.query_advice(acc_pair.mult, Rotation(rot_into_prev_branch));
+            let key_rlc_mult_cur = meta.query_advice(acc_pair.mult, Rotation::cur());
 
             // Any rotation into branch children can be used:
-            let key_rlc_branch = meta.query_advice(key_rlc, Rotation(rot_into_branch_init+1));
-            let key_rlc_mult_branch = meta.query_advice(key_rlc_mult, Rotation(rot_into_branch_init+1));
+            let key_rlc_branch = meta.query_advice(acc_pair.rlc, Rotation(rot_into_branch_init+1));
+            let key_rlc_mult_branch = meta.query_advice(acc_pair.mult, Rotation(rot_into_branch_init+1));
             let mult_diff = meta.query_advice(mult_diff, Rotation(rot_into_branch_init+1));
 
             constraints.push((

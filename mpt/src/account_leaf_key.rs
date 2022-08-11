@@ -64,8 +64,6 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
         s_main: MainCols,
         c_main: MainCols,
         accs: AccumulatorCols, // acc_c contains key_rlc_prev & key_rlc_mult_prev
-        key_rlc: Column<Advice>,
-        key_rlc_mult: Column<Advice>,
         r_table: Vec<Expression<F>>,
         fixed_table: [Column<Fixed>; 3],
         address_rlc: Column<Advice>,
@@ -202,9 +200,9 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
                     one.clone() - meta.query_advice(not_first_level, Rotation::cur());
                     
                 let key_rlc_acc_start =
-                    meta.query_advice(key_rlc, Rotation(rot_into_first_branch_child));
+                    meta.query_advice(accs.key.rlc, Rotation(rot_into_first_branch_child));
                 let key_mult_start =
-                    meta.query_advice(key_rlc_mult, Rotation(rot_into_first_branch_child));
+                    meta.query_advice(accs.key.mult, Rotation(rot_into_first_branch_child));
 
                 // sel1, sel2 is in init branch
                 let sel1 = meta.query_advice(
@@ -339,11 +337,11 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
 
             // key_rlc_mult_prev_level = 1 if no_prev_key_rlc
             let key_rlc_mult_prev_level = (one.clone() - is_branch_in_first_level.clone())
-                * meta.query_advice(key_rlc_mult, Rotation(rot_into_prev_branch))
+                * meta.query_advice(accs.key.mult, Rotation(rot_into_prev_branch))
                 + is_branch_in_first_level.clone();
             // key_rlc_prev_level = 0 if no_prev_key_rlc
             let key_rlc_prev_level = (one.clone() - is_branch_in_first_level.clone())
-                * meta.query_advice(key_rlc, Rotation(rot_into_prev_branch));
+                * meta.query_advice(accs.key.rlc, Rotation(rot_into_prev_branch));
 
             let rlc_prev = meta.query_advice(accs.acc_c.rlc, Rotation::cur());
             let mult_prev = meta.query_advice(accs.acc_c.mult, Rotation::cur());
@@ -489,7 +487,7 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
             key_rlc_acc = key_rlc_acc + c_rlp1 * key_mult.clone() * r_table[29].clone();
             key_rlc_acc = key_rlc_acc + c_rlp2 * key_mult * r_table[30].clone();
 
-            let key_rlc = meta.query_advice(key_rlc, Rotation::cur());
+            let key_rlc = meta.query_advice(accs.key.rlc, Rotation::cur());
 
             // Key RLC is to be checked to verify that the proper key is used.
             constraints.push((

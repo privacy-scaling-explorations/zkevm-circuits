@@ -8,7 +8,7 @@ use std::marker::PhantomData;
 
 use crate::{
     helpers::{compute_rlc, key_len_lookup, mult_diff_lookup, range_lookups},
-    mpt::{FixedTableTag, MainCols},
+    mpt::{FixedTableTag, MainCols, AccumulatorCols},
     param::{
         HASH_WIDTH, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, RLP_NUM, ACCOUNT_NON_EXISTING_IND, BRANCH_ROWS_NUM,
     },
@@ -39,9 +39,7 @@ impl<F: FieldExt> AccountNonExistingChip<F> {
         not_first_level: Column<Advice>,
         s_main: MainCols,
         c_main: MainCols,
-        key_rlc: Column<Advice>,
-        key_rlc_mult: Column<Advice>,
-        acc_s: Column<Advice>,
+        accs: AccumulatorCols,
         sel1: Column<Advice>, // should be the same as sel2 as both parallel proofs are the same for non_existing_account_proof
         r_table: Vec<Expression<F>>,
         fixed_table: [Column<Fixed>; 3],
@@ -63,9 +61,9 @@ impl<F: FieldExt> AccountNonExistingChip<F> {
             c_rlp2_cur: Expression<F>,
             correct_level: Expression<F>,
             is_wrong_leaf: Expression<F> | {
-                let sum = meta.query_advice(key_rlc, Rotation::cur());
-                let sum_prev = meta.query_advice(key_rlc_mult, Rotation::cur());
-                let diff_inv = meta.query_advice(acc_s, Rotation::cur());
+                let sum = meta.query_advice(accs.key.rlc, Rotation::cur());
+                let sum_prev = meta.query_advice(accs.key.mult, Rotation::cur());
+                let diff_inv = meta.query_advice(accs.acc_s.rlc, Rotation::cur());
 
                 let c_rlp1_prev = meta.query_advice(c_main.rlp1, Rotation::prev());
                 let c_rlp2_prev = meta.query_advice(c_main.rlp2, Rotation::prev());
@@ -131,9 +129,9 @@ impl<F: FieldExt> AccountNonExistingChip<F> {
                 // is true only when non_existing_account).
 
                 let key_rlc_acc_start =
-                    meta.query_advice(key_rlc, Rotation(rot_into_first_branch_child));
+                    meta.query_advice(accs.key.rlc, Rotation(rot_into_first_branch_child));
                 let key_mult_start =
-                    meta.query_advice(key_rlc_mult, Rotation(rot_into_first_branch_child));
+                    meta.query_advice(accs.key.mult, Rotation(rot_into_first_branch_child));
 
                 // sel1, sel2 is in init branch
                 let c16 = meta.query_advice(

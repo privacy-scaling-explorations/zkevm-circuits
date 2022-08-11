@@ -216,7 +216,7 @@ impl<F: FieldExt> StorageRootChip<F> {
                 if !is_s {
                     rot_into_storage_root = -LEAF_VALUE_C_IND - (ACCOUNT_LEAF_ROWS - ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND);
                     rot_into_last_account_row = -LEAF_VALUE_C_IND - 1;
-                    is_leaf = meta.query_advice(storage_leaf.is__c_value, Rotation::cur());
+                    is_leaf = meta.query_advice(storage_leaf.is_c_value, Rotation::cur());
                 }
 
                 // Note: if leaf is a placeholder, the root in account leaf needs to be hash of empty trie
@@ -272,7 +272,7 @@ impl<F: FieldExt> StorageRootChip<F> {
             if !is_s {
                 rot_into_storage_root = -LEAF_VALUE_C_IND - (ACCOUNT_LEAF_ROWS - ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND);
                 rot_into_last_account_row = -LEAF_VALUE_C_IND - 1;
-                is_leaf = meta.query_advice(storage_leaf.is__c_value, Rotation::cur());
+                is_leaf = meta.query_advice(storage_leaf.is_c_value, Rotation::cur());
             }
             let is_placeholder = meta.query_advice(sel, Rotation::cur());
             
@@ -320,7 +320,7 @@ impl<F: FieldExt> StorageRootChip<F> {
                 rot_into_storage_root = -LEAF_VALUE_C_IND - (ACCOUNT_LEAF_ROWS - ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND) - BRANCH_ROWS_NUM;
                 rot_into_last_account_row = -LEAF_VALUE_C_IND - 1;
                 rot_into_last_account_row_placeholder = -LEAF_VALUE_C_IND - 1 - BRANCH_ROWS_NUM;
-                is_leaf = meta.query_advice(storage_leaf.is__c_value, Rotation::cur());
+                is_leaf = meta.query_advice(storage_leaf.is_c_value, Rotation::cur());
                 rot_into_branch_init = -LEAF_VALUE_C_IND - BRANCH_ROWS_NUM;
                 is_branch_placeholder = meta.query_advice(
                     s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
