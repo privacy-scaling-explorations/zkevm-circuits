@@ -592,7 +592,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
 
         // First row
         rpi_rlc_acc *= rand_rpi;
-        rpi_rlc_acc += raw_pi_vals[offset];
+        rpi_rlc_acc += raw_pi_vals[0];
         let rpi_rlc =
             region.assign_advice(|| "rpi_rlc_acc", self.rpi_rlc_acc, 0, || Ok(rpi_rlc_acc))?;
         let rpi_rand = region.assign_advice(|| "rand_rpi", self.rand_rpi, 0, || Ok(rand_rpi))?;
