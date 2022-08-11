@@ -8,7 +8,7 @@ use std::marker::PhantomData;
 
 use crate::{
     helpers::get_is_extension_node,
-    param::{KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH, IS_BRANCH_S_PLACEHOLDER_POS, RLP_NUM, IS_BRANCH_C_PLACEHOLDER_POS, IS_S_BRANCH_HASHED_POS, IS_C_BRANCH_HASHED_POS}, mpt::{MainCols, AccumulatorPair},
+    param::{KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH, IS_BRANCH_S_PLACEHOLDER_POS, RLP_NUM, IS_BRANCH_C_PLACEHOLDER_POS, IS_S_BRANCH_NON_HASHED_POS, IS_C_BRANCH_NON_HASHED_POS}, mpt::{MainCols, AccumulatorPair},
 };
 
 #[derive(Clone, Debug)]
@@ -117,13 +117,13 @@ impl<F: FieldExt> BranchHashInParentChip<F> {
                 );
             }
 
-            let mut is_branch_hashed = meta.query_advice(
-                s_main.bytes[IS_S_BRANCH_HASHED_POS - RLP_NUM],
+            let mut is_branch_non_hashed = meta.query_advice(
+                s_main.bytes[IS_S_BRANCH_NON_HASHED_POS - RLP_NUM],
                 Rotation(-16),
             );
             if !is_s {
-                is_branch_hashed = meta.query_advice(
-                s_main.bytes[IS_C_BRANCH_HASHED_POS - RLP_NUM],
+                is_branch_non_hashed = meta.query_advice(
+                s_main.bytes[IS_C_BRANCH_NON_HASHED_POS - RLP_NUM],
                 Rotation(-16),
                 );
             }
@@ -136,18 +136,13 @@ impl<F: FieldExt> BranchHashInParentChip<F> {
             let mult = meta.query_advice(acc_pair.mult, Rotation::cur());
             let branch_acc = acc + c128 * mult;
 
-            let is_branch_placeholder_c = meta.query_advice(
-                s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
-                Rotation::prev(),
-            );
-
             let mut constraints = vec![];
             constraints.push((
                 not_first_level.clone()
                     * is_last_branch_child.clone()
                     * (one.clone() - is_account_leaf_in_added_branch_prev.clone()) // we don't check this in the first storage level
                     * (one.clone() - is_branch_placeholder.clone())
-                    * is_branch_hashed.clone()
+                    * (one.clone() - is_branch_non_hashed.clone())
                     * (one.clone() - is_extension_node.clone())
                     * branch_acc, // TODO: replace with acc once ValueNode is added
                 meta.query_fixed(keccak_table[0], Rotation::cur()),
@@ -161,7 +156,7 @@ impl<F: FieldExt> BranchHashInParentChip<F> {
                         * (one.clone()
                             - is_account_leaf_in_added_branch_prev.clone()) // we don't check this in the first storage level
                         * (one.clone() - is_branch_placeholder.clone())
-                        * is_branch_hashed.clone()
+                        * (one.clone() - is_branch_non_hashed.clone())
                         * (one.clone() - is_extension_node.clone())
                         * mod_node_hash_rlc_cur,
                 keccak_table_i,
@@ -193,13 +188,13 @@ impl<F: FieldExt> BranchHashInParentChip<F> {
                 );
             }
 
-            let mut is_branch_hashed = meta.query_advice(
-                s_main.bytes[IS_S_BRANCH_HASHED_POS - RLP_NUM],
+            let mut is_branch_non_hashed = meta.query_advice(
+                s_main.bytes[IS_S_BRANCH_NON_HASHED_POS - RLP_NUM],
                 Rotation(-16),
             );
             if !is_s {
-                is_branch_hashed = meta.query_advice(
-                s_main.bytes[IS_C_BRANCH_HASHED_POS - RLP_NUM],
+                is_branch_non_hashed = meta.query_advice(
+                s_main.bytes[IS_C_BRANCH_NON_HASHED_POS - RLP_NUM],
                 Rotation(-16),
                 );
             }
@@ -223,7 +218,7 @@ impl<F: FieldExt> BranchHashInParentChip<F> {
                     * (one.clone()
                         - is_account_leaf_in_added_branch_prev.clone()) // we don't check this in the first storage level
                     * (one.clone() - is_branch_placeholder.clone())
-                    * (one.clone() - is_branch_hashed.clone())
+                    * is_branch_non_hashed.clone()
                     * (one.clone() - is_extension_node.clone())
                     * (mod_node_hash_rlc_cur - branch_acc),
                 ));

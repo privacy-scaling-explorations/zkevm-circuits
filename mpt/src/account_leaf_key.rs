@@ -224,9 +224,11 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
                 let mut key_mult = key_mult_start.clone() * r_table[0].clone() * sel1;
                 key_mult = key_mult + key_mult_start.clone() * sel2.clone(); // set to key_mult_start if sel2, stays key_mult if sel1
 
-                // If sel2 = 1, we have 32 in s_main.bytes[0].
+                /*
+                If there is an even number of nibbles in the leaf, `s_main.bytes[1]` need to be 32.
+                */
                 constraints.push((
-                    "Account leaf key acc s_advice1",
+                    "Account leaf key with even nibbles: s_main.bytes[1] = 32",
                     q_enable.clone()
                         * (one.clone() - is_branch_placeholder.clone())
                         * (one.clone() - is_leaf_in_first_level.clone())
@@ -247,17 +249,52 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
                 key_rlc_acc = key_rlc_acc + c_rlp1 * key_mult.clone() * r_table[29].clone();
                 key_rlc_acc = key_rlc_acc + c_rlp2 * key_mult * r_table[30].clone();
 
+                let key_rlc = meta.query_advice(accs.key.rlc, Rotation::cur());
                 let address_rlc = meta.query_advice(address_rlc, Rotation::cur());
 
                 let is_non_existing_account_proof =
                     meta.query_advice(proof_type.is_non_existing_account_proof, Rotation::cur());
+
+                
+                /*
+                Account leaf contains the remaining nibbles of the account address. Combining the path 
+                of the leaf in the trie and these remaining nibbles needs to be the same as the account
+                address which is given in the `address_rlc` column that is to be used by a lookup (see the
+                constraint below).
+
+                Address RLC needs to be computed properly - we need to take into account the path of the leaf 
+                in the trie and the remaining nibbles in the account leaf.
+
+                The intermediate RLC is retrieved from the last branch above the account leaf - this
+                presents the RLC after the path to the leaf is considered. After this, the bytes (nibbles
+                in a compacted form) in the leaf have to be added to the RLC.
+                */
+                constraints.push((
+                    "Account address RLC",
+                    q_enable.clone()
+                        * (one.clone() - is_branch_placeholder.clone())
+                        * (one.clone() - is_leaf_in_first_level.clone())
+                        * (key_rlc_acc.clone() - key_rlc.clone()),
+                ));
+
+                let is_non_existing_account_proof =
+                    meta.query_advice(proof_type.is_non_existing_account_proof, Rotation::cur());
+
+                /*
+                The computed key RLC needs to be the same as the value in `address_rlc` column.
+                This seems to be redundant (we could write one constraint instead of two:
+                `key_rlc_acc - address_rlc = 0`), but note that `key_rlc` is used in
+                `account_leaf_key_in_added_branch` and in cases when there is a placeholder branch
+                we have `key_rlc - address_rlc != 0` because `key_rlc` is computed for the branch
+                that is parallel to the placeholder branch.
+                */
                 constraints.push((
                     "Computed account address RLC same as value in address_rlc column",
                     q_enable
                         * (one.clone() - is_branch_placeholder.clone())
                         * (one.clone() - is_leaf_in_first_level.clone())
                         * (one.clone() - is_non_existing_account_proof.clone())
-                        * (key_rlc_acc.clone() - address_rlc.clone()),
+                        * (key_rlc.clone() - address_rlc.clone()),
                 ));
 
                 constraints
@@ -281,7 +318,7 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
             let mut key_rlc_acc = Expression::Constant(F::zero());
 
             constraints.push((
-                "Account leaf key acc s_advice1",
+                "Account leaf key s_main.bytes[1] = 32",
                 q_enable.clone() * (s_advice1 - c32) * is_leaf_in_first_level.clone(),
             ));
 
@@ -298,7 +335,19 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
             key_rlc_acc = key_rlc_acc + c_rlp1 * r_table[29].clone();
             key_rlc_acc = key_rlc_acc + c_rlp2 * r_table[30].clone();
 
+            let key_rlc = meta.query_advice(accs.key.rlc, Rotation::cur());
             let address_rlc = meta.query_advice(address_rlc, Rotation::cur());
+
+            /*
+            As above for the cases when the account is not in the first level. However, here we do not
+            fetch for the intermediate RLC from the branch above as there is no branch above.
+            */
+            constraints.push((
+                "Account address RLC",
+                q_enable.clone()
+                    * is_leaf_in_first_level.clone()
+                    * (key_rlc_acc.clone() - key_rlc.clone()),
+            ));
 
             let is_non_existing_account_proof =
                 meta.query_advice(proof_type.is_non_existing_account_proof, Rotation::cur());
@@ -307,14 +356,20 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
                 q_enable
                 * is_leaf_in_first_level.clone()
                 * (one.clone() - is_non_existing_account_proof.clone())
-                * (key_rlc_acc.clone() - address_rlc.clone()),
+                * (key_rlc.clone() - address_rlc.clone()),
             ));
 
             constraints
         });
 
-        // Check that key_rlc_prev stores key_rlc from the previous branch
-        // (needed when after the placeholder).
+        /*
+        When there is an account leaf after a placeholder branch, the intermediate key RLC needs to be
+        fetched from the branch above the placeholder branch. That would require a rotation over two
+        levels which leads into ConstrainedPoisoned because we are accessing the rows before 0 in
+        some cases. For this reason, we copy previous key RLC to the current branch so that we have
+        in each branch a current and previous key RLC at our disposal. This way we do not need to
+        rotate over two levels.
+        */
         meta.create_gate("Previous level address RLC", |meta| {
             let q_enable = q_enable(meta);
             let mut constraints = vec![];
@@ -346,13 +401,28 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
             let rlc_prev = meta.query_advice(accs.acc_c.rlc, Rotation::cur());
             let mult_prev = meta.query_advice(accs.acc_c.mult, Rotation::cur());
 
+            /*
+            We need to ensure that the key RLC from the branch above the placeholder branch is copied
+            to `accs.acc_c.rlc`. This enables us to compute the address RLC after a branch placeholder
+            (see the constraint below) by not using rotations over two levels (we have the intermediate
+            RLC in the current row).
+            */
             constraints.push((
                 "Previous key RLC",
-                q_enable.clone() * (one.clone() - is_account_in_first_level.clone()) * (rlc_prev - key_rlc_prev_level),
+                q_enable.clone()
+                    * (one.clone() - is_account_in_first_level.clone())
+                    * (rlc_prev - key_rlc_prev_level),
             ));
+
+            /*
+            We need to ensure that the key RLC mult from the branch above the placeholder branch is copied
+            to `accs.acc_c.mult`.
+            */
             constraints.push((
                 "Previous key RLC mult",
-                q_enable * (one.clone() - is_account_in_first_level) * (mult_prev - key_rlc_mult_prev_level),
+                q_enable
+                    * (one.clone() - is_account_in_first_level)
+                    * (mult_prev - key_rlc_mult_prev_level),
             ));
 
             constraints
@@ -464,7 +534,7 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
             let mut key_mult = key_mult_start.clone() * r_table[0].clone() * sel1;
             key_mult = key_mult + key_mult_start.clone() * sel2.clone(); // set to key_mult_start if sel2, stays key_mult if sel1
 
-            // If sel2 = 1, we have 32 in s_main.bytes[0].
+            // If sel2 = 1, we have 32 in s_main.bytes[1].
             constraints.push((
                 "Account leaf key acc s_advice1",
                 q_enable.clone()
@@ -489,16 +559,20 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
 
             let key_rlc = meta.query_advice(accs.key.rlc, Rotation::cur());
 
-            // Key RLC is to be checked to verify that the proper key is used.
+            /*
+            Although `key_rlc` is not compared to `address_rlc` in the case when the leaf
+            is below placeholder branch (`address_rlc` is compared to the parallel leaf `key_rlc`), 
+            we still need properly computed `key_rlc` to reuse it in `account_leaf_key_in_added_branch`.
+
+            Note: `key_rlc - address_rlc != 0` when placeholder branch.
+            */
             constraints.push((
-                "Account address RLC",
+                "Account address RLC after branch placeholder",
                 q_enable.clone()
                     * is_branch_placeholder.clone()
                     * (one.clone() - is_leaf_in_first_level.clone())
                     * (key_rlc_acc.clone() - key_rlc.clone()),
             ));
-
-            // Note: key_rlc - address_rlc != 0 when placeholder branch
 
             constraints
         });

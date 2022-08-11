@@ -2589,8 +2589,6 @@ impl<F: FieldExt> MPTConfig<F> {
                                     key_rlc_new = pv.key_rlc_prev;
                                     key_rlc_mult_new = pv.key_rlc_mult_prev;
                                 }
-                                // The following computation and assignment is redundant as we can compare
-                                // the address_rlc directly to the computed key RLC in account_leaf_key.rs:
                                 compute_key_rlc(&mut key_rlc_new, &mut key_rlc_mult_new, S_START);
                                 region.assign_advice(
                                     || "assign key_rlc".to_string(),
@@ -3081,7 +3079,7 @@ mod tests {
                 }
 
                 println!("{:?}", path);
-                let prover = MockProver::<Fp>::run(11, &circuit, vec![pub_root]).unwrap();
+                let prover = MockProver::<Fp>::run(9, &circuit, vec![pub_root]).unwrap();
                 assert_eq!(prover.verify(), Ok(()));
 
                 /*
