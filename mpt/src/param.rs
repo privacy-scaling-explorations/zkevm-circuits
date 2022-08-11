@@ -56,10 +56,8 @@ pub const IS_EXT_LONG_ODD_C1_POS: usize = 26;
 pub const IS_S_EXT_LONGER_THAN_55_POS: usize = 27;
 pub const IS_C_EXT_LONGER_THAN_55_POS: usize = 28;
 
-// whether branch (in S proof) in the extension node is hashed or not (means whether branch is longer than 31 bytes)
-pub const IS_S_BRANCH_IN_EXT_HASHED_POS: usize = 29;
-// whether branch (in C proof) in the extension node is hashed or not
-pub const IS_C_BRANCH_IN_EXT_HASHED_POS: usize = 30;
+pub const IS_S_BRANCH_HASHED_POS: usize = 29;
+pub const IS_C_BRANCH_HASHED_POS: usize = 30;
 
 // First level means the rows of the first node in a proof (it can be branch or account leaf).
 // Note that if there are multiple proofs chained (the previous C root corresponds to the current S root),

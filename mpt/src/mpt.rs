@@ -565,11 +565,11 @@ impl<F: FieldExt> MPTConfig<F> {
             q_not_first,
             account_leaf.is_in_added_branch,
             branch.is_last_child,
-            s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM], // TODO: remove
             s_main.clone(),
             s_mod_node_hash_rlc,
             acc_s.clone(),
             keccak_table,
+            true,
         );
 
         BranchHashInParentChip::<F>::configure(
@@ -579,11 +579,11 @@ impl<F: FieldExt> MPTConfig<F> {
             q_not_first,
             account_leaf.is_in_added_branch,
             branch.is_last_child,
-            s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM], // TODO: remove
             s_main.clone(),
             c_mod_node_hash_rlc,
             acc_c,
             keccak_table,
+            false,
         );
 
         ExtensionNodeChip::<F>::configure(
@@ -3081,7 +3081,7 @@ mod tests {
                 }
 
                 println!("{:?}", path);
-                let prover = MockProver::<Fp>::run(9, &circuit, vec![pub_root]).unwrap();
+                let prover = MockProver::<Fp>::run(11, &circuit, vec![pub_root]).unwrap();
                 assert_eq!(prover.verify(), Ok(()));
 
                 /*

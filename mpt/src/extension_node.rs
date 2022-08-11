@@ -13,7 +13,7 @@ use crate::{
         IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, IS_BRANCH_C_PLACEHOLDER_POS,
         IS_BRANCH_S_PLACEHOLDER_POS, IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS,
         IS_EXT_LONG_ODD_C16_POS, IS_EXT_LONG_ODD_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS,
-        KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH, RLP_NUM, IS_S_EXT_LONGER_THAN_55_POS, IS_C_EXT_LONGER_THAN_55_POS, IS_S_BRANCH_IN_EXT_HASHED_POS, IS_C_BRANCH_IN_EXT_HASHED_POS,
+        KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH, RLP_NUM, IS_S_EXT_LONGER_THAN_55_POS, IS_C_EXT_LONGER_THAN_55_POS,
     }, mpt::{MainCols, AccumulatorCols},
 };
 
@@ -332,8 +332,6 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
 
                 let c_rlp2 = meta.query_advice(c_main.rlp2, Rotation::cur());
                 let is_branch_hashed = c_rlp2 * c160_inv.clone();
-
-                // If extension node
 
                 // RLP:
                 // If only one nibble

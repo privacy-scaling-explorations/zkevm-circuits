@@ -8,7 +8,7 @@ use std::marker::PhantomData;
 
 use crate::{
     helpers::get_is_extension_node,
-    param::{KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH}, mpt::{MainCols, AccumulatorPair},
+    param::{KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH, IS_BRANCH_S_PLACEHOLDER_POS, RLP_NUM, IS_BRANCH_C_PLACEHOLDER_POS, IS_S_BRANCH_HASHED_POS, IS_C_BRANCH_HASHED_POS}, mpt::{MainCols, AccumulatorPair},
 };
 
 #[derive(Clone, Debug)]
@@ -27,11 +27,11 @@ impl<F: FieldExt> BranchHashInParentChip<F> {
         q_not_first: Column<Fixed>,
         is_account_leaf_in_added_branch: Column<Advice>,
         is_last_branch_child: Column<Advice>,
-        is_branch_placeholder: Column<Advice>,
         s_main: MainCols,
         mod_node_hash_rlc: Column<Advice>,
         acc_pair: AccumulatorPair,
         keccak_table: [Column<Fixed>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
+        is_s: bool,
     ) -> BranchHashInParentConfig {
         let config = BranchHashInParentConfig {};
         let one = Expression::Constant(F::from(1_u64));
@@ -45,7 +45,18 @@ impl<F: FieldExt> BranchHashInParentChip<F> {
                 let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
 
                 let is_last_branch_child = meta.query_advice(is_last_branch_child, Rotation::cur());
-                let is_branch_placeholder = meta.query_advice(is_branch_placeholder, Rotation(-16));
+
+                let mut is_branch_placeholder = meta.query_advice(
+                    s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM],
+                    Rotation(-16),
+                );
+                if !is_s {
+                    is_branch_placeholder = meta.query_advice(
+                    s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
+                    Rotation(-16),
+                    );
+                }
+
                 let is_extension_node = get_is_extension_node(meta, s_main.bytes, -16);
 
                 // TODO: acc currently doesn't have branch ValueNode info (which 128 if nil)
@@ -80,11 +91,11 @@ impl<F: FieldExt> BranchHashInParentChip<F> {
             },
         );
 
-        // Check whether hash of a branch is in parent branch.
-        // Check if (accumulated_s(c)_rlc, hash1, hash2, hash3, hash4) is in keccak
-        // table, where hash1, hash2, hash3, hash4 are stored in the previous
-        // branch and accumulated_s(c)_rlc presents the branch RLC.
-        meta.lookup_any("branch_hash_in_parent", |meta| {
+        /*
+        Check whether hash of a branch is in parent branch:
+        (branch RLC, mod_node_hash_rlc retrieved from the previous branch) needs to be in keccak tabel
+        */
+        meta.lookup_any("Branch hash in parent", |meta| {
             let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
 
             // -17 because we are in the last branch child (-16 takes us to branch init)
@@ -95,7 +106,27 @@ impl<F: FieldExt> BranchHashInParentChip<F> {
             let is_last_branch_child = meta.query_advice(is_last_branch_child, Rotation::cur());
 
             // When placeholder branch, we don't check its hash in a parent.
-            let is_branch_placeholder = meta.query_advice(is_branch_placeholder, Rotation(-16));
+            let mut is_branch_placeholder = meta.query_advice(
+                s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM],
+                Rotation(-16),
+            );
+            if !is_s {
+                is_branch_placeholder = meta.query_advice(
+                s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
+                Rotation(-16),
+                );
+            }
+
+            let mut is_branch_hashed = meta.query_advice(
+                s_main.bytes[IS_S_BRANCH_HASHED_POS - RLP_NUM],
+                Rotation(-16),
+            );
+            if !is_s {
+                is_branch_hashed = meta.query_advice(
+                s_main.bytes[IS_C_BRANCH_HASHED_POS - RLP_NUM],
+                Rotation(-16),
+                );
+            }
 
             let is_extension_node = get_is_extension_node(meta, s_main.bytes, -16);
 
@@ -105,12 +136,18 @@ impl<F: FieldExt> BranchHashInParentChip<F> {
             let mult = meta.query_advice(acc_pair.mult, Rotation::cur());
             let branch_acc = acc + c128 * mult;
 
+            let is_branch_placeholder_c = meta.query_advice(
+                s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
+                Rotation::prev(),
+            );
+
             let mut constraints = vec![];
             constraints.push((
                 not_first_level.clone()
                     * is_last_branch_child.clone()
                     * (one.clone() - is_account_leaf_in_added_branch_prev.clone()) // we don't check this in the first storage level
                     * (one.clone() - is_branch_placeholder.clone())
+                    * is_branch_hashed.clone()
                     * (one.clone() - is_extension_node.clone())
                     * branch_acc, // TODO: replace with acc once ValueNode is added
                 meta.query_fixed(keccak_table[0], Rotation::cur()),
@@ -124,10 +161,72 @@ impl<F: FieldExt> BranchHashInParentChip<F> {
                         * (one.clone()
                             - is_account_leaf_in_added_branch_prev.clone()) // we don't check this in the first storage level
                         * (one.clone() - is_branch_placeholder.clone())
+                        * is_branch_hashed.clone()
                         * (one.clone() - is_extension_node.clone())
                         * mod_node_hash_rlc_cur,
                 keccak_table_i,
             ));
+
+            constraints
+        });
+
+        meta.create_gate("NON-HASHED branch hash in parent", |meta| {
+            let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
+            let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
+
+            // -17 because we are in the last branch child (-16 takes us to branch init)
+            let is_account_leaf_in_added_branch_prev =
+                meta.query_advice(is_account_leaf_in_added_branch, Rotation(-17));
+
+            // We need to do the lookup only if we are in the last branch child.
+            let is_last_branch_child = meta.query_advice(is_last_branch_child, Rotation::cur());
+
+            // When placeholder branch, we don't check its hash in a parent.
+            let mut is_branch_placeholder = meta.query_advice(
+                s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM],
+                Rotation(-16),
+            );
+            if !is_s {
+                is_branch_placeholder = meta.query_advice(
+                s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
+                Rotation(-16),
+                );
+            }
+
+            let mut is_branch_hashed = meta.query_advice(
+                s_main.bytes[IS_S_BRANCH_HASHED_POS - RLP_NUM],
+                Rotation(-16),
+            );
+            if !is_s {
+                is_branch_hashed = meta.query_advice(
+                s_main.bytes[IS_C_BRANCH_HASHED_POS - RLP_NUM],
+                Rotation(-16),
+                );
+            }
+
+            let is_extension_node = get_is_extension_node(meta, s_main.bytes, -16);
+
+            // TODO: acc currently doesn't have branch ValueNode info (which 128 if nil)
+            let acc = meta.query_advice(acc_pair.rlc, Rotation::cur());
+            let c128 = Expression::Constant(F::from(128));
+            let mult = meta.query_advice(acc_pair.mult, Rotation::cur());
+            let branch_acc = acc + c128 * mult;
+
+            let mut constraints = vec![];
+
+            let mod_node_hash_rlc_cur = meta.query_advice(mod_node_hash_rlc, Rotation(-19));
+            constraints.push((
+                "Non-hashed branch in branch",
+                q_not_first
+                    * not_first_level.clone()
+                    * is_last_branch_child.clone()
+                    * (one.clone()
+                        - is_account_leaf_in_added_branch_prev.clone()) // we don't check this in the first storage level
+                    * (one.clone() - is_branch_placeholder.clone())
+                    * (one.clone() - is_branch_hashed.clone())
+                    * (one.clone() - is_extension_node.clone())
+                    * (mod_node_hash_rlc_cur - branch_acc),
+                ));
 
             constraints
         });
