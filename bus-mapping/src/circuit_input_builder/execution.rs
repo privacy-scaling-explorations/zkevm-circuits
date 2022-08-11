@@ -74,13 +74,9 @@ impl ExecStep {
 
     /// Returns `true` if `error` is oog and stack related..
     pub fn oog_or_stack_error(&self) -> bool {
-        if self.error.is_none() {
-            return false;
-        }
-
         matches!(
-            self.error.clone().unwrap(),
-            ExecError::OutOfGas(_) | ExecError::StackOverflow | ExecError::StackUnderflow
+            self.error,
+            Some(ExecError::OutOfGas(_) | ExecError::StackOverflow | ExecError::StackUnderflow)
         )
     }
 }
