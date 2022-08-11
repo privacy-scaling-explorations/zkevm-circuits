@@ -403,7 +403,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
         // zero row
         region.assign_advice(|| "zero", self.block_value, offset, || Ok(F::zero()))?;
         region.assign_advice(
-            || "coinbase",
+            || "zero",
             self.raw_public_inputs,
             offset,
             || Ok(F::zero()),
