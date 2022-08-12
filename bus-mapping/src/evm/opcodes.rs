@@ -283,7 +283,9 @@ pub fn gen_associated_ops(
         );
 
         exec_step.error = Some(exec_error);
-        if geth_step.op.is_call_or_create() {
+        // for `oog_or_stack_error` error message will be returned by geth_step error
+        // field, when this kind of error happens, no more proceeding
+        if geth_step.op.is_call_or_create() && !exec_step.oog_or_stack_error() {
             let call = state.parse_call(geth_step)?;
             // Switch to callee's call context
             state.push_call(call);
