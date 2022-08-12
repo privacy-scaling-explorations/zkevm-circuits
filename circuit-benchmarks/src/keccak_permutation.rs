@@ -31,7 +31,7 @@ impl<F: Field> Circuit<F> for KeccakRoundTestCircuit<F> {
 
     fn synthesize(
         &self,
-        config: Self::Config,
+        mut config: Self::Config,
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
         // Load the table
@@ -82,11 +82,7 @@ mod tests {
     };
     use itertools::Itertools;
     use keccak256::common::PERMUTATION;
-    use keccak256::{
-        arith_helpers::*,
-        common::{State, ROUND_CONSTANTS},
-        gate_helpers::biguint_to_f,
-    };
+    use keccak256::{arith_helpers::*, common::State, gate_helpers::biguint_to_f};
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
     use std::env::var;
@@ -129,16 +125,6 @@ mod tests {
         // Generate out_state as `[Fr;25]`
         let out_state_non_mix: [Fr; 25] = state_bigint_to_field(out_state_non_mix);
 
-        let constants_b13: Vec<Fr> = ROUND_CONSTANTS
-            .iter()
-            .map(|num| biguint_to_f(&convert_b2_to_b13(*num)))
-            .collect();
-
-        let constants_b9: Vec<Fr> = ROUND_CONSTANTS
-            .iter()
-            .map(|num| biguint_to_f(&convert_b2_to_b9(*num)))
-            .collect();
-
         // Build the circuit
         let circuit = KeccakRoundTestCircuit::<Fr> {
             in_state: in_state_fp,
@@ -172,15 +158,7 @@ mod tests {
         // Bench proof generation time
         let proof_message = format!("Keccak Proof generation with {} degree", degree);
         let start2 = start_timer!(|| proof_message);
-        create_proof(
-            &general_params,
-            &pk,
-            &[circuit],
-            &[&[constants_b9.as_slice(), constants_b13.as_slice()]],
-            rng,
-            &mut transcript,
-        )
-        .unwrap();
+        create_proof(&general_params, &pk, &[circuit], &[], rng, &mut transcript).unwrap();
         let proof = transcript.finalize();
         end_timer!(start2);
 
@@ -196,7 +174,7 @@ mod tests {
             &verifier_params,
             pk.get_vk(),
             strategy,
-            &[&[constants_b9.as_slice(), constants_b13.as_slice()]],
+            &[],
             &mut verifier_transcript,
         )
         .unwrap();
