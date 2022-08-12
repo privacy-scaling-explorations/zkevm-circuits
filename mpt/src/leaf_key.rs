@@ -513,10 +513,10 @@ impl<F: FieldExt> LeafKeyChip<F> {
                 meta.query_advice(is_account_leaf_in_added_branch, Rotation(rot_into_account));
 
             let mut is_branch_placeholder =
-                meta.query_advice(s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM], Rotation(rot - 1));
+                meta.query_advice(s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM], Rotation(rot_into_init));
             if !is_s {
                 is_branch_placeholder =
-                    meta.query_advice(s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM], Rotation(rot - 1));
+                    meta.query_advice(s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM], Rotation(rot_into_init));
 
             }
 
