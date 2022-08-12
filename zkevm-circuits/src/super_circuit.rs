@@ -49,6 +49,7 @@
 //!   - [ ] MPT Circuit
 
 use crate::copy_circuit::CopyCircuit;
+use crate::state_circuit::StateCircuitConfig;
 use crate::tx_circuit::{self, TxCircuit, TxCircuitConfig};
 
 use crate::bytecode_circuit::bytecode_unroller::{
@@ -74,6 +75,7 @@ pub struct SuperCircuitConfig<F: Field, const MAX_TXS: usize, const MAX_CALLDATA
     keccak_table: KeccakTable,
     copy_table: CopyTable,
     evm_circuit: EvmCircuit<F>,
+    state_circuit: StateCircuitConfig<F>,
     tx_circuit: TxCircuitConfig<F>,
     bytecode_circuit: BytecodeConfig<F>,
     copy_circuit: CopyCircuit<F>,
@@ -133,6 +135,11 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
             &copy_table,
             &keccak_table,
         );
+        let state_circuit = StateCircuitConfig::configure(
+            meta,
+            power_of_randomness[..31].to_vec().try_into().unwrap(),
+            &rw_table,
+        );
 
         Self::Config {
             tx_table: tx_table.clone(),
@@ -142,6 +149,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
             keccak_table: keccak_table.clone(),
             copy_table,
             evm_circuit,
+            state_circuit,
             copy_circuit: CopyCircuit::configure(
                 meta,
                 &tx_table,
@@ -176,9 +184,13 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
             .evm_circuit
             .load_fixed_table(&mut layouter, self.fixed_table_tags.clone())?;
         config.evm_circuit.load_byte_table(&mut layouter)?;
-        config
-            .rw_table
-            .load(&mut layouter, &self.block.rws, self.block.randomness)?;
+        config.rw_table.load(
+            &mut layouter,
+            &self.block.rws.table_assignments(),
+            self.block.state_circuit_pad_to,
+            self.block.randomness,
+        )?;
+        config.state_circuit.load(&mut layouter)?;
         config
             .block_table
             .load(&mut layouter, &self.block.context, self.block.randomness)?;
@@ -188,6 +200,12 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
         config
             .evm_circuit
             .assign_block(&mut layouter, &self.block)?;
+        config.state_circuit.assign(
+            &mut layouter,
+            &self.block.rws.table_assignments(),
+            self.block.state_circuit_pad_to,
+            self.block.randomness,
+        )?;
         // --- Tx Circuit ---
         self.tx_circuit.assign(&config.tx_circuit, &mut layouter)?;
         // --- Bytecode Circuit ---
@@ -317,7 +335,7 @@ mod super_circuit_tests {
         let k = k.max(log2_ceil(64 + bytecodes_len));
         let k = k.max(log2_ceil(64 + num_rows_required_for_steps));
         let k = k + 1;
-        log::debug!("evm circuit uses k = {}", k);
+        log::debug!("super circuit uses k = {}", k);
 
         let mut instance: Vec<Vec<F>> = (1..POW_RAND_SIZE + 1)
             .map(|exp| vec![block.randomness.pow(&[exp as u64, 0, 0, 0]); (1 << k) - 64])

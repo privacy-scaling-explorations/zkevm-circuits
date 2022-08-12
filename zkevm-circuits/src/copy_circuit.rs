@@ -770,9 +770,12 @@ mod tests {
             config
                 .tx_table
                 .load(&mut layouter, &self.block.txs, self.randomness)?;
-            config
-                .rw_table
-                .load(&mut layouter, &self.block.rws, self.randomness)?;
+            config.rw_table.load(
+                &mut layouter,
+                &self.block.rws.table_assignments(),
+                self.block.state_circuit_pad_to,
+                self.randomness,
+            )?;
             config.bytecode_table.load(
                 &mut layouter,
                 self.block.bytecodes.values(),
