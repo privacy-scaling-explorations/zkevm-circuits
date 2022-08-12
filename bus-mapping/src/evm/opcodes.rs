@@ -285,7 +285,9 @@ pub fn gen_associated_ops(
         );
 
         exec_step.error = Some(exec_error);
-        if geth_step.op.is_call_or_create() {
+        // for `oog_or_stack_error` error message will be returned by geth_step error
+        // field, when this kind of error happens, no more proceeding
+        if geth_step.op.is_call_or_create() && !exec_step.oog_or_stack_error() {
             let call = state.parse_call(geth_step)?;
             // Switch to callee's call context
             state.push_call(call);
@@ -624,16 +626,21 @@ fn dummy_gen_selfdestruct_ops(
         },
     )?;
 
-    let (found, receiver_account) = state.sdb.get_account(&receiver);
+    let (found, _) = state.sdb.get_account(&receiver);
     if !found {
         return Err(Error::AccountNotFound(receiver));
     }
-    let value = receiver_account.balance;
+    let (found, sender_account) = state.sdb.get_account(&sender);
+    if !found {
+        return Err(Error::AccountNotFound(sender));
+    }
+    let value = sender_account.balance;
     state.transfer(&mut exec_step, sender, receiver, value)?;
 
     if state.call()?.is_persistent {
         state.sdb.destruct_account(sender);
     }
 
+    state.handle_return(geth_step)?;
     Ok(vec![exec_step])
 }

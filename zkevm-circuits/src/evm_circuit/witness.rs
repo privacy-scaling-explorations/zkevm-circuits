@@ -40,6 +40,8 @@ pub struct Block<F> {
     pub context: BlockContext,
     /// Copy events for the EVM circuit's copy table.
     pub copy_events: Vec<CopyEvent>,
+    /// Length to rw table rows in state circuit
+    pub state_circuit_pad_to: usize,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -377,7 +379,62 @@ impl std::ops::Index<(RwTableTag, usize)> for RwMap {
         &self.0.get(&tag).unwrap()[idx]
     }
 }
-
+impl RwMap {
+    /// Check rw_counter is continuous and starting from 1
+    pub fn check_rw_counter_sanity(&self) {
+        for (idx, rw_counter) in self
+            .0
+            .values()
+            .flatten()
+            .map(|r| r.rw_counter())
+            .sorted()
+            .enumerate()
+        {
+            debug_assert_eq!(idx, rw_counter - 1);
+        }
+    }
+    /// Calculates the number of Rw::Start rows needed.
+    /// `target_len` is allowed to be 0 as an "auto" mode,
+    /// then only 1 Rw::Start row will be prepadded.
+    pub(crate) fn padding_len(rows: &[Rw], target_len: usize) -> usize {
+        if target_len > rows.len() {
+            target_len - rows.len()
+        } else {
+            if target_len != 0 {
+                log::error!(
+                    "RwMap::padding_len overflow, target_len: {}, rows.len(): {}",
+                    target_len,
+                    rows.len()
+                );
+            }
+            1
+        }
+    }
+    /// Prepad Rw::Start rows to target length
+    pub fn table_assignments_prepad(rows: &[Rw], target_len: usize) -> (Vec<Rw>, usize) {
+        let padding_length = Self::padding_len(rows, target_len);
+        let padding = (1..=padding_length).map(|rw_counter| Rw::Start { rw_counter });
+        (
+            padding.chain(rows.iter().cloned()).collect(),
+            padding_length,
+        )
+    }
+    /// Build Rws for assignment
+    pub fn table_assignments(&self) -> Vec<Rw> {
+        let mut rows: Vec<Rw> = self.0.values().flatten().cloned().collect();
+        rows.sort_by_key(|row| {
+            (
+                row.tag() as u64,
+                row.id().unwrap_or_default(),
+                row.address().unwrap_or_default(),
+                row.field_tag().unwrap_or_default(),
+                row.storage_key().unwrap_or_default(),
+                row.rw_counter(),
+            )
+        });
+        rows
+    }
+}
 #[derive(Clone, Copy, Debug)]
 pub enum Rw {
     Start {
@@ -476,37 +533,19 @@ pub enum Rw {
         value: u64,
     },
 }
-#[derive(Default, Clone, Copy)]
-pub struct RwRow<F: FieldExt> {
+#[derive(Default, Clone, Copy, Debug)]
+pub struct RwRow<F> {
     pub rw_counter: F,
     pub is_write: F,
     pub tag: F,
-    pub key1: F,
-    pub key2: F,
-    pub key3: F,
-    pub key4: F,
+    pub id: F,
+    pub address: F,
+    pub field_tag: F,
+    pub storage_key: F,
     pub value: F,
     pub value_prev: F,
     pub aux1: F,
     pub aux2: F,
-}
-
-impl<F: FieldExt> From<[F; 11]> for RwRow<F> {
-    fn from(row: [F; 11]) -> Self {
-        Self {
-            rw_counter: row[0],
-            is_write: row[1],
-            tag: row[2],
-            key1: row[3],
-            key2: row[4],
-            key3: row[5],
-            key4: row[6],
-            value: row[7],
-            value_prev: row[8],
-            aux1: row[9],
-            aux2: row[10],
-        }
-    }
 }
 
 impl Rw {
@@ -608,10 +647,10 @@ impl Rw {
             rw_counter: F::from(self.rw_counter() as u64),
             is_write: F::from(self.is_write() as u64),
             tag: F::from(self.tag() as u64),
-            key1: F::from(self.id().unwrap_or_default() as u64),
-            key2: self.address().unwrap_or_default().to_scalar().unwrap(),
-            key3: F::from(self.field_tag().unwrap_or_default() as u64),
-            key4: RandomLinearCombination::random_linear_combine(
+            id: F::from(self.id().unwrap_or_default() as u64),
+            address: self.address().unwrap_or_default().to_scalar().unwrap(),
+            field_tag: F::from(self.field_tag().unwrap_or_default() as u64),
+            storage_key: RandomLinearCombination::random_linear_combine(
                 self.storage_key().unwrap_or_default().to_le_bytes(),
                 randomness,
             ),
@@ -1384,5 +1423,6 @@ pub fn block_convert(
             })
             .collect(),
         copy_events: block.copy_events.clone(),
+        ..Default::default()
     }
 }
