@@ -175,6 +175,10 @@ pub fn convert_b9_lane_to_b2(x: Lane9) -> u64 {
         .unwrap_or(0)
 }
 
+pub fn convert_b9_lane_to_b2_biguint(x: Lane9) -> BigUint {
+    convert_lane(x, B9, 2, convert_b9_coef)
+}
+
 pub fn convert_b9_lane_to_b2_normal(x: Lane9) -> u64 {
     convert_lane(x, B9, 2, |y| y)
         .iter_u64_digits()
