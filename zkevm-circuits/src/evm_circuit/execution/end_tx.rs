@@ -282,9 +282,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::evm_circuit::{
-        test::run_test_circuit_incomplete_fixed_table, witness::block_convert,
-    };
+    use crate::evm_circuit::{test::run_test_circuit, witness::block_convert};
     use eth_types::{self, bytecode, geth_types::GethData};
     use mock::{eth, test_ctx::helpers::account_0_code_account_1_no_code, TestContext};
 
@@ -296,7 +294,7 @@ mod test {
             .unwrap();
         let block = block_convert(&builder.block, &builder.code_db);
 
-        assert_eq!(run_test_circuit_incomplete_fixed_table(block), Ok(()));
+        assert_eq!(run_test_circuit(block), Ok(()));
     }
 
     #[test]
