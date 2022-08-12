@@ -1,4 +1,4 @@
-use super::{StateCircuit, StateConfig};
+use super::{StateCircuit, StateCircuitConfig};
 use crate::{
     evm_circuit::witness::{Rw, RwMap},
     table::{AccountFieldTag, CallContextFieldTag, RwTableTag, TxLogFieldTag, TxReceiptFieldTag},
@@ -9,7 +9,7 @@ use bus_mapping::operation::{
 use eth_types::{
     address,
     evm_types::{MemoryAddress, StackAddress},
-    Address, ToAddress, Word, U256,
+    Address, Field, ToAddress, Word, U256,
 };
 use gadgets::binary_number::AsBits;
 use halo2_proofs::poly::commitment::Params;
@@ -24,7 +24,7 @@ use strum::IntoEnumIterator;
 
 const N_ROWS: usize = 1 << 16;
 
-#[derive(Hash, Eq, PartialEq)]
+#[derive(Hash, Eq, PartialEq, Clone, Debug)]
 pub enum AdviceColumn {
     IsWrite,
     Address,
@@ -37,6 +37,7 @@ pub enum AdviceColumn {
     RwCounter,
     RwCounterLimb0,
     RwCounterLimb1,
+    Tag,
     TagBit0,
     TagBit1,
     TagBit2,
@@ -50,19 +51,20 @@ pub enum AdviceColumn {
 }
 
 impl AdviceColumn {
-    pub fn value(&self, config: &StateConfig) -> Column<Advice> {
+    pub fn value<F: Field>(&self, config: &StateCircuitConfig<F>) -> Column<Advice> {
         match self {
-            Self::IsWrite => config.is_write,
-            Self::Address => config.sort_keys.address.value,
+            Self::IsWrite => config.rw_table.is_write,
+            Self::Address => config.rw_table.address,
             Self::AddressLimb0 => config.sort_keys.address.limbs[0],
             Self::AddressLimb1 => config.sort_keys.address.limbs[1],
-            Self::StorageKey => config.sort_keys.storage_key.encoded,
+            Self::StorageKey => config.rw_table.storage_key,
             Self::StorageKeyByte0 => config.sort_keys.storage_key.bytes[0],
             Self::StorageKeyByte1 => config.sort_keys.storage_key.bytes[1],
-            Self::Value => config.value,
-            Self::RwCounter => config.sort_keys.rw_counter.value,
+            Self::Value => config.rw_table.value,
+            Self::RwCounter => config.rw_table.rw_counter,
             Self::RwCounterLimb0 => config.sort_keys.rw_counter.limbs[0],
             Self::RwCounterLimb1 => config.sort_keys.rw_counter.limbs[1],
+            Self::Tag => config.rw_table.tag,
             Self::TagBit0 => config.sort_keys.tag.bits[0],
             Self::TagBit1 => config.sort_keys.tag.bits[1],
             Self::TagBit2 => config.sort_keys.tag.bits[2],
@@ -868,6 +870,7 @@ fn invalid_tags() {
             ((AdviceColumn::TagBit1, first_row_offset), bits[1]),
             ((AdviceColumn::TagBit2, first_row_offset), bits[2]),
             ((AdviceColumn::TagBit3, first_row_offset), bits[3]),
+            ((AdviceColumn::Tag, first_row_offset), Fr::from(i as u64)),
         ]);
 
         let result = prover(vec![], overrides).verify_at_rows(0..1, 0..1);

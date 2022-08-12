@@ -1,8 +1,9 @@
+use super::lookups;
 use super::{N_LIMBS_ACCOUNT_ADDRESS, N_LIMBS_RW_COUNTER};
 use crate::util::Expr;
-use eth_types::{Address, Field, ToScalar};
+use eth_types::{Address, Field};
 use halo2_proofs::{
-    circuit::{AssignedCell, Layouter, Region},
+    circuit::{Layouter, Region},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
@@ -34,7 +35,6 @@ pub struct Config<T, const N: usize>
 where
     T: ToLimbs<N>,
 {
-    pub value: Column<Advice>,
     // TODO: we can save a column here by not storing the lsb, and then checking that
     // value - value_from_limbs(limbs.prepend(0)) fits into a limb.
     // Does this apply for RLC's too?
@@ -44,8 +44,6 @@ where
 
 #[derive(Clone)]
 pub struct Queries<F: Field, const N: usize> {
-    pub value: Expression<F>,
-    pub value_prev: Expression<F>, // move this up, as it's not always needed.
     pub limbs: [Expression<F>; N],
     pub limbs_prev: [Expression<F>; N],
 }
@@ -53,8 +51,6 @@ pub struct Queries<F: Field, const N: usize> {
 impl<F: Field, const N: usize> Queries<F, N> {
     pub fn new<T: ToLimbs<N>>(meta: &mut VirtualCells<'_, F>, c: Config<T, N>) -> Self {
         Self {
-            value: meta.query_advice(c.value, Rotation::cur()),
-            value_prev: meta.query_advice(c.value, Rotation::prev()),
             limbs: c.limbs.map(|limb| meta.query_advice(limb, Rotation::cur())),
             limbs_prev: c
                 .limbs
@@ -69,7 +65,7 @@ impl Config<Address, N_LIMBS_ACCOUNT_ADDRESS> {
         region: &mut Region<'_, F>,
         offset: usize,
         value: Address,
-    ) -> Result<AssignedCell<F, F>, Error> {
+    ) -> Result<(), Error> {
         for (i, &limb) in value.to_limbs().iter().enumerate() {
             region.assign_advice(
                 || format!("limb[{}] in address mpi", i),
@@ -78,12 +74,7 @@ impl Config<Address, N_LIMBS_ACCOUNT_ADDRESS> {
                 || Ok(F::from(limb as u64)),
             )?;
         }
-        region.assign_advice(
-            || "value in u32 mpi",
-            self.value,
-            offset,
-            || Ok(value.to_scalar().unwrap()), // do this better
-        )
+        Ok(())
     }
 }
 
@@ -93,7 +84,7 @@ impl Config<u32, N_LIMBS_RW_COUNTER> {
         region: &mut Region<'_, F>,
         offset: usize,
         value: u32,
-    ) -> Result<AssignedCell<F, F>, Error> {
+    ) -> Result<(), Error> {
         for (i, &limb) in value.to_limbs().iter().enumerate() {
             region.assign_advice(
                 || format!("limb[{}] in u32 mpi", i),
@@ -102,12 +93,7 @@ impl Config<u32, N_LIMBS_RW_COUNTER> {
                 || Ok(F::from(limb as u64)),
             )?;
         }
-        region.assign_advice(
-            || "value in u32 mpi",
-            self.value,
-            offset,
-            || Ok(F::from(value as u64)),
-        )
+        Ok(())
     }
 }
 
@@ -133,17 +119,14 @@ where
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         selector: Column<Fixed>,
-        u16_range: Column<Fixed>,
+        value: Column<Advice>,
+        lookup: lookups::Config,
     ) -> Config<T, N> {
-        let value = meta.advice_column();
         let limbs = [0; N].map(|_| meta.advice_column());
 
         for &limb in &limbs {
-            meta.lookup_any("mpi limb fits into u16", |meta| {
-                vec![(
-                    meta.query_advice(limb, Rotation::cur()),
-                    meta.query_fixed(u16_range, Rotation::cur()),
-                )]
+            lookup.range_check_u16(meta, "mpi limb fits into u16", |meta| {
+                meta.query_advice(limb, Rotation::cur())
             });
         }
         meta.create_gate("mpi value matches claimed limbs", |meta| {
@@ -154,7 +137,6 @@ where
         });
 
         Config {
-            value,
             limbs,
             _marker: PhantomData,
         }

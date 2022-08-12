@@ -799,7 +799,7 @@ impl<'a> CircuitInputStateRef<'a> {
         let call_ctx = self.call_ctx()?;
 
         // Store deployed code if it's a successful create
-        if call.is_create() && call.is_success {
+        if call.is_create() && call.is_success && step.op == OpcodeId::RETURN {
             let offset = step.stack.nth_last(0)?;
             let length = step.stack.nth_last(1)?;
             let code = call_ctx
@@ -924,10 +924,13 @@ impl<'a> CircuitInputStateRef<'a> {
         // is unexpected.
         if step.depth == next_depth + 1
             && next_result != Word::zero()
-            && !matches!(step.op, OpcodeId::RETURN | OpcodeId::STOP)
+            && !matches!(
+                step.op,
+                OpcodeId::RETURN | OpcodeId::STOP | OpcodeId::SELFDESTRUCT
+            )
         {
             return Err(Error::UnexpectedExecStepError(
-                "success result without {RETURN, STOP}",
+                "success result without {RETURN, STOP, SELFDESTRUCT}",
                 step.clone(),
             ));
         }

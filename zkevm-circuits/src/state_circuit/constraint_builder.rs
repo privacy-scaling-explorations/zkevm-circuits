@@ -14,20 +14,33 @@ use halo2_proofs::plonk::Expression;
 use strum::IntoEnumIterator;
 
 #[derive(Clone)]
-pub struct Queries<F: Field> {
-    pub selector: Expression<F>,
-    pub lexicographic_ordering_selector: Expression<F>,
-    pub rw_counter: MpiQueries<F, N_LIMBS_RW_COUNTER>,
+pub struct RwTableQueries<F: Field> {
+    pub rw_counter: Expression<F>,
+    pub prev_rw_counter: Expression<F>,
     pub is_write: Expression<F>,
     pub tag: Expression<F>,
+    pub id: Expression<F>,
+    pub prev_id: Expression<F>,
+    pub address: Expression<F>,
+    pub prev_address: Expression<F>,
+    pub field_tag: Expression<F>,
+    pub storage_key: Expression<F>,
+    pub value: Expression<F>,
+    pub value_prev: Expression<F>,
+    // TODO: aux1 and aux2
+}
+
+#[derive(Clone)]
+pub struct Queries<F: Field> {
+    pub selector: Expression<F>,
+    pub rw_table: RwTableQueries<F>,
+    pub lexicographic_ordering_selector: Expression<F>,
+    pub rw_counter: MpiQueries<F, N_LIMBS_RW_COUNTER>,
     pub tag_bits: [Expression<F>; 4],
     pub id: MpiQueries<F, N_LIMBS_ID>,
     pub is_tag_and_id_unchanged: Expression<F>,
     pub address: MpiQueries<F, N_LIMBS_ACCOUNT_ADDRESS>,
-    pub field_tag: Expression<F>,
     pub storage_key: RlcQueries<F, N_BYTES_WORD>,
-    pub value: Expression<F>,
-    pub value_prev: Expression<F>,
     pub initial_value: Expression<F>,
     pub initial_value_prev: Expression<F>,
     pub lookups: LookupsQueries<F>,
@@ -113,7 +126,7 @@ impl<F: Field> ConstraintBuilder<F> {
         self.condition(q.first_access(), |cb| {
             cb.require_zero(
                 "first access reads don't change value",
-                q.is_read() * (q.value.clone() - q.initial_value()),
+                q.is_read() * (q.rw_table.value.clone() - q.initial_value()),
             );
         });
 
@@ -121,7 +134,7 @@ impl<F: Field> ConstraintBuilder<F> {
         self.condition(q.not_first_access.clone(), |cb| {
             cb.require_zero(
                 "non-first access reads don't change value",
-                q.is_read() * (q.value.clone() - q.value_prev.clone()),
+                q.is_read() * (q.rw_table.value.clone() - q.rw_table.value_prev.clone()),
             );
             cb.require_zero(
                 "initial value doesn't change in an access group",
@@ -132,9 +145,9 @@ impl<F: Field> ConstraintBuilder<F> {
 
     fn build_start_constraints(&mut self, q: &Queries<F>) {
         self.require_zero("field_tag is 0 for Start", q.field_tag());
-        self.require_zero("address is 0 for Start", q.address.value.clone());
+        self.require_zero("address is 0 for Start", q.rw_table.address.clone());
         self.require_zero("id is 0 for Start", q.id());
-        self.require_zero("storage_key is 0 for Start", q.storage_key.encoded.clone());
+        self.require_zero("storage_key is 0 for Start", q.rw_table.storage_key.clone());
         self.require_zero(
             "rw_counter increases by 1 for every non-first row",
             q.lexicographic_ordering_selector.clone() * (q.rw_counter_change() - 1.expr()),
@@ -145,7 +158,10 @@ impl<F: Field> ConstraintBuilder<F> {
 
     fn build_memory_constraints(&mut self, q: &Queries<F>) {
         self.require_zero("field_tag is 0 for Memory", q.field_tag());
-        self.require_zero("storage_key is 0 for Memory", q.storage_key.encoded.clone());
+        self.require_zero(
+            "storage_key is 0 for Memory",
+            q.rw_table.storage_key.clone(),
+        );
         // could do this more efficiently by just asserting address = limb0 + 2^16 *
         // limb1?
         for limb in &q.address.limbs[2..] {
@@ -153,21 +169,21 @@ impl<F: Field> ConstraintBuilder<F> {
         }
         self.add_lookup(
             "memory value is a byte",
-            (q.value.clone(), q.lookups.u8.clone()),
+            (q.rw_table.value.clone(), q.lookups.u8.clone()),
         );
         self.require_zero("initial Memory value is 0", q.initial_value());
     }
 
     fn build_stack_constraints(&mut self, q: &Queries<F>) {
         self.require_zero("field_tag is 0 for Stack", q.field_tag());
-        self.require_zero("storage_key is 0 for Stack", q.storage_key.encoded.clone());
+        self.require_zero("storage_key is 0 for Stack", q.rw_table.storage_key.clone());
         self.require_zero(
             "first access to new stack address is a write",
             q.first_access() * (1.expr() - q.is_write()),
         );
         self.add_lookup(
             "stack address fits into 10 bits",
-            (q.address.value.clone(), q.lookups.u10.clone()),
+            (q.rw_table.address.clone(), q.lookups.u10.clone()),
         );
         self.condition(q.is_tag_and_id_unchanged.clone(), |cb| {
             cb.require_boolean(
@@ -190,7 +206,7 @@ impl<F: Field> ConstraintBuilder<F> {
         self.require_zero("field_tag is 0 for TxAccessListAccount", q.field_tag());
         self.require_zero(
             "storage_key is 0 for TxAccessListAccount",
-            q.storage_key.encoded.clone(),
+            q.rw_table.storage_key.clone(),
         );
         self.require_boolean("TxAccessListAccount value is boolean", q.value());
         self.require_zero(
@@ -212,11 +228,11 @@ impl<F: Field> ConstraintBuilder<F> {
     }
 
     fn build_tx_refund_constraints(&mut self, q: &Queries<F>) {
-        self.require_zero("address is 0 for TxRefund", q.address.value.clone());
+        self.require_zero("address is 0 for TxRefund", q.rw_table.address.clone());
         self.require_zero("field_tag is 0 for TxRefund", q.field_tag());
         self.require_zero(
             "storage_key is 0 for TxRefund",
-            q.storage_key.encoded.clone(),
+            q.rw_table.storage_key.clone(),
         );
         self.require_zero("initial TxRefund value is 0", q.initial_value());
     }
@@ -225,7 +241,7 @@ impl<F: Field> ConstraintBuilder<F> {
         self.require_zero("id is 0 for Account", q.id());
         self.require_zero(
             "storage_key is 0 for Account",
-            q.storage_key.encoded.clone(),
+            q.rw_table.storage_key.clone(),
         );
         self.require_in_set(
             "field_tag in AccountFieldTag range",
@@ -242,16 +258,16 @@ impl<F: Field> ConstraintBuilder<F> {
         self.require_zero("field_tag is 0 for AccountDestructed", q.field_tag());
         self.require_zero(
             "storage_key is 0 for AccountDestructed",
-            q.storage_key.encoded.clone(),
+            q.rw_table.storage_key.clone(),
         );
         // TODO: Missing constraints
     }
 
     fn build_call_context_constraints(&mut self, q: &Queries<F>) {
-        self.require_zero("address is 0 for CallContext", q.address.value.clone());
+        self.require_zero("address is 0 for CallContext", q.rw_table.address.clone());
         self.require_zero(
             "storage_key is 0 for CallContext",
-            q.storage_key.encoded.clone(),
+            q.rw_table.storage_key.clone(),
         );
         self.add_lookup(
             "field_tag in CallContextFieldTag range",
@@ -263,7 +279,7 @@ impl<F: Field> ConstraintBuilder<F> {
     fn build_tx_log_constraints(&mut self, q: &Queries<F>) {
         self.require_equal(
             "is_write is always true for TxLog",
-            q.is_write.clone(),
+            q.rw_table.is_write.clone(),
             1.expr(),
         );
         self.require_zero("initial TxLog value is 0", q.initial_value());
@@ -380,35 +396,35 @@ impl<F: Field> Queries<F> {
     }
 
     fn is_write(&self) -> Expression<F> {
-        self.is_write.clone()
+        self.rw_table.is_write.clone()
     }
 
     fn is_read(&self) -> Expression<F> {
-        not::expr(&self.is_write)
+        not::expr(self.is_write())
     }
 
     fn tag(&self) -> Expression<F> {
-        self.tag.clone()
+        self.rw_table.tag.clone()
     }
 
     fn id(&self) -> Expression<F> {
-        self.id.value.clone()
+        self.rw_table.id.clone()
     }
 
     fn id_change(&self) -> Expression<F> {
-        self.id() - self.id.value_prev.clone()
+        self.id() - self.rw_table.prev_id.clone()
     }
 
     fn field_tag(&self) -> Expression<F> {
-        self.field_tag.clone()
+        self.rw_table.field_tag.clone()
     }
 
     fn value(&self) -> Expression<F> {
-        self.value.clone()
+        self.rw_table.value.clone()
     }
 
     fn value_prev(&self) -> Expression<F> {
-        self.value_prev.clone()
+        self.rw_table.value_prev.clone()
     }
 
     fn initial_value(&self) -> Expression<F> {
@@ -428,11 +444,11 @@ impl<F: Field> Queries<F> {
     }
 
     fn address_change(&self) -> Expression<F> {
-        self.address.value.clone() - self.address.value_prev.clone()
+        self.rw_table.address.clone() - self.rw_table.prev_address.clone()
     }
 
     fn rw_counter_change(&self) -> Expression<F> {
-        self.rw_counter.value.clone() - self.rw_counter.value_prev.clone()
+        self.rw_table.rw_counter.clone() - self.rw_table.prev_rw_counter.clone()
     }
 
     fn tx_log_index(&self) -> Expression<F> {

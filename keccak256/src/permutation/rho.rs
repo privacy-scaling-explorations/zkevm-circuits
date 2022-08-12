@@ -1,99 +1,77 @@
+use crate::common::ROTATION_CONSTANTS;
+use crate::gate_helpers::{biguint_to_f, f_to_biguint};
 use crate::permutation::{
     generic::GenericConfig,
-    rho_checks::LaneRotateConversionConfig,
+    rho_helpers::{slice_lane, RhoLane},
     tables::{Base13toBase9TableConfig, StackableTable},
 };
-
 use eth_types::Field;
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter},
-    plonk::{Advice, Column, ConstraintSystem, Error, Fixed},
+    plonk::Error,
 };
+use itertools::Itertools;
 
-#[derive(Debug, Clone)]
-pub struct RhoConfig<F> {
-    lane_config: LaneRotateConversionConfig<F>,
-    base13_to_9_table: Base13toBase9TableConfig<F>,
-    stackable: StackableTable<F>,
-    generic: GenericConfig<F>,
-}
+pub fn assign_rho<F: Field>(
+    layouter: &mut impl Layouter<F>,
+    base13to9_config: &Base13toBase9TableConfig<F>,
+    generic: &GenericConfig<F>,
+    stackable: &StackableTable<F>,
+    state: &[AssignedCell<F, F>; 25],
+) -> Result<[AssignedCell<F, F>; 25], Error> {
+    let mut next_state = vec![];
+    let mut step2_od_join = vec![];
+    let mut step3_od_join = vec![];
+    for (lane_idx, lane) in state.iter().enumerate() {
+        let rotation = {
+            let x = lane_idx / 5;
+            let y = lane_idx % 5;
+            ROTATION_CONSTANTS[x][y]
+        };
+        let (conversions, special) =
+            RhoLane::new(f_to_biguint(*lane.value().unwrap_or(&F::zero())), rotation)
+                .get_full_witness();
+        let slices = slice_lane(rotation);
 
-impl<F: Field> RhoConfig<F> {
-    pub fn configure(
-        meta: &mut ConstraintSystem<F>,
-        state: [Column<Advice>; 25],
-        fixed: Column<Fixed>,
-        generic: GenericConfig<F>,
-        stackable: StackableTable<F>,
-    ) -> Self {
-        state.iter().for_each(|col| meta.enable_equality(*col));
-        let base13_to_9_table = Base13toBase9TableConfig::configure(meta);
+        let (input_coefs, mut output_coefs, step2_od, step3_od) =
+            base13to9_config.assign_region(layouter, &slices, &conversions)?;
 
-        let lane_config = LaneRotateConversionConfig::configure(
-            meta,
-            &base13_to_9_table,
-            state[0..3].try_into().unwrap(),
-            fixed,
-            generic.clone(),
-            stackable.clone(),
-        );
-        Self {
-            lane_config,
-            base13_to_9_table,
-            stackable,
-            generic,
-        }
-    }
-    pub fn assign_rotation_checks(
-        &self,
-        layouter: &mut impl Layouter<F>,
-        state: &[AssignedCell<F, F>; 25],
-    ) -> Result<[AssignedCell<F, F>; 25], Error> {
-        type R<F> = (
-            AssignedCell<F, F>,
-            Vec<AssignedCell<F, F>>,
-            Vec<AssignedCell<F, F>>,
-        );
-        let lane_and_ods: Result<Vec<R<F>>, Error> = state
+        let input_pobs = conversions
             .iter()
-            .enumerate()
-            .map(|(idx, lane)| -> Result<R<F>, Error> {
-                let (out_lane, step2_od, step3_od) =
-                    self.lane_config
-                        .assign_region(layouter, lane.clone(), idx)?;
-                Ok((out_lane, step2_od, step3_od))
-            })
-            .into_iter()
-            .collect();
-        let lane_and_ods = lane_and_ods?;
-        let lane_and_ods: [R<F>; 25] = lane_and_ods.try_into().unwrap();
-        let next_state = lane_and_ods.clone().map(|(out_lane, _, _)| out_lane);
+            .map(|c| biguint_to_f::<F>(&c.input.power_of_base))
+            .collect_vec();
 
-        let step2_od_join = lane_and_ods
+        let mut output_pobs = conversions
             .iter()
-            .flat_map(|(_, step2_od, _)| step2_od.clone())
-            .collect::<Vec<_>>();
-        let step3_od_join = lane_and_ods
-            .iter()
-            .flat_map(|(_, _, step3_od)| step3_od.clone())
-            .collect::<Vec<_>>();
-        let step2_sum = self.generic.running_sum(layouter, step2_od_join, None)?;
-        let step3_sum = self.generic.running_sum(layouter, step3_od_join, None)?;
-        self.stackable.lookup_range_12(layouter, &[step2_sum])?;
-        self.stackable.lookup_range_169(layouter, &[step3_sum])?;
-        Ok(next_state)
-    }
+            .map(|c| biguint_to_f::<F>(&c.output.power_of_base))
+            .collect_vec();
+        // Final output power of base
+        output_pobs.push(biguint_to_f::<F>(&special.output_pob));
 
-    pub fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
-        self.base13_to_9_table.load(layouter)?;
-        Ok(())
+        let input_from_chunks =
+            generic.linear_combine_consts(layouter, input_coefs, input_pobs, None)?;
+        let diff = generic.sub_advice(layouter, lane.clone(), input_from_chunks)?;
+
+        let final_output_coef = stackable.lookup_special_chunks(layouter, &diff)?;
+        output_coefs.push(final_output_coef);
+
+        let output_lane =
+            generic.linear_combine_consts(layouter, output_coefs, output_pobs, None)?;
+        next_state.push(output_lane);
+        step2_od_join.extend(step2_od);
+        step3_od_join.extend(step3_od);
     }
+    let step2_sum = generic.running_sum(layouter, step2_od_join, None)?;
+    let step3_sum = generic.running_sum(layouter, step3_od_join, None)?;
+    stackable.lookup_range_12(layouter, &[step2_sum])?;
+    stackable.lookup_range_169(layouter, &[step3_sum])?;
+    Ok(next_state.try_into().unwrap())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::arith_helpers::*;
+    use crate::arith_helpers::{convert_b2_to_b13, StateBigInt};
     use crate::common::*;
     use crate::gate_helpers::biguint_to_f;
     use crate::keccak_arith::*;
@@ -101,11 +79,9 @@ mod tests {
         circuit::{Layouter, SimpleFloorPlanner},
         dev::MockProver,
         pairing::bn256::Fr as Fp,
-        plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Selector, TableColumn},
-        poly::Rotation,
+        plonk::{Advice, Circuit, Column, ConstraintSystem, Error, TableColumn},
     };
     use itertools::Itertools;
-
     #[test]
     fn test_rho_gate() {
         #[derive(Default)]
@@ -116,10 +92,10 @@ mod tests {
 
         #[derive(Clone)]
         struct MyConfig<F> {
-            q_enable: Selector,
-            rho_config: RhoConfig<F>,
+            advice: Column<Advice>,
+            generic: GenericConfig<F>,
             stackable: StackableTable<F>,
-            state: [Column<Advice>; 25],
+            base13to9_config: Base13toBase9TableConfig<F>,
         }
         impl<F: Field> Circuit<F> for MyCircuit<F> {
             type Config = MyConfig<F>;
@@ -130,106 +106,71 @@ mod tests {
             }
 
             fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-                let state: [Column<Advice>; 25] = (0..25)
+                let advices: [Column<Advice>; 3] = (0..3)
                     .map(|_| meta.advice_column())
                     .collect::<Vec<_>>()
                     .try_into()
                     .unwrap();
 
                 let fixed = meta.fixed_column();
-                let table_cols: [TableColumn; 3] = (0..3)
+                let stackable_cols: [TableColumn; 3] = (0..3)
                     .map(|_| meta.lookup_table_column())
                     .collect_vec()
                     .try_into()
                     .unwrap();
-                let stackable =
-                    StackableTable::configure(meta, state[0..3].try_into().unwrap(), table_cols);
-                let generic =
-                    GenericConfig::configure(meta, state[0..3].try_into().unwrap(), fixed);
+                let base13to9_cols: [TableColumn; 3] = (0..3)
+                    .map(|_| meta.lookup_table_column())
+                    .collect_vec()
+                    .try_into()
+                    .unwrap();
+                let stackable = StackableTable::configure(meta, advices, stackable_cols);
+                let generic = GenericConfig::configure(meta, advices, fixed);
+                let base13to9_config =
+                    Base13toBase9TableConfig::configure(meta, advices, base13to9_cols);
 
-                let rho_config =
-                    RhoConfig::configure(meta, state, fixed, generic, stackable.clone());
-
-                let q_enable = meta.selector();
-                meta.create_gate("Check states", |meta| {
-                    let q_enable = meta.query_selector(q_enable);
-                    state
-                        .iter()
-                        .map(|col| {
-                            let final_state = meta.query_advice(*col, Rotation::cur());
-                            let expected_final_state = meta.query_advice(*col, Rotation::next());
-                            q_enable.clone() * (final_state - expected_final_state)
-                        })
-                        .collect::<Vec<_>>()
-                });
-
-                MyConfig {
-                    q_enable,
-                    rho_config,
+                Self::Config {
+                    advice: advices[0],
+                    generic,
                     stackable,
-                    state,
+                    base13to9_config,
                 }
             }
 
             fn synthesize(
                 &self,
-                config: Self::Config,
+                mut config: Self::Config,
                 mut layouter: impl Layouter<F>,
             ) -> Result<(), Error> {
-                config.rho_config.load(&mut layouter)?;
+                config.base13to9_config.load(&mut layouter)?;
                 config.stackable.load(&mut layouter)?;
                 let state = layouter.assign_region(
                     || "assign input state",
                     |mut region| {
-                        let offset = 0;
-                        let state: [AssignedCell<F, F>; 25] = self
+                        let state = self
                             .in_state
                             .iter()
                             .enumerate()
-                            .map(|(idx, &value)| {
-                                region
-                                    .assign_advice(
-                                        || format!("lane {}", idx),
-                                        config.state[idx],
-                                        offset,
-                                        || Ok(value),
-                                    )
-                                    .unwrap()
+                            .map(|(offset, &value)| {
+                                region.assign_advice(|| "lane", config.advice, offset, || Ok(value))
                             })
-                            .collect::<Vec<_>>()
-                            .try_into()
-                            .unwrap();
-                        Ok(state)
+                            .collect::<Result<Vec<AssignedCell<F, F>>, Error>>()?;
+
+                        Ok(state.try_into().unwrap())
                     },
                 )?;
-                let out_state = config
-                    .rho_config
-                    .assign_rotation_checks(&mut layouter, &state)?;
+                let out_state = assign_rho(
+                    &mut layouter,
+                    &config.base13to9_config,
+                    &config.generic,
+                    &config.stackable,
+                    &state,
+                )?;
                 layouter.assign_region(
                     || "check final states",
                     |mut region| {
-                        config.q_enable.enable(&mut region, 0)?;
-                        out_state.iter().enumerate().for_each(|(idx, cell)| {
-                            cell.copy_advice(
-                                || "out_state obtained",
-                                &mut region,
-                                config.state[idx],
-                                0,
-                            )
-                            .unwrap();
-                        });
-
-                        self.out_state.iter().enumerate().for_each(|(idx, &value)| {
-                            region
-                                .assign_advice(
-                                    || format!("lane {}", idx),
-                                    config.state[idx],
-                                    1,
-                                    || Ok(value),
-                                )
-                                .unwrap();
-                        });
-
+                        for (assigned, value) in out_state.iter().zip(self.out_state.iter()) {
+                            region.constrain_constant(assigned.cell(), value)?;
+                        }
                         Ok(())
                     },
                 )?;
