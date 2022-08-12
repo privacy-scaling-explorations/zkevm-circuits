@@ -214,6 +214,22 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
                     Rotation(rot_into_first_branch_child - 1),
                 );
 
+                /*
+                sel1/sel2 hold the information whether there is even or odd number of nibbles in the leaf.
+
+                Let us observe a case with even number of nibbles first:
+                `[248,106,161,32,252,237,52,8,133,130,180,167,143,97,28,115,102,25,94,62,148,249,8,6,55,244,16,75,187,208,208,127,251,120,61,73,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]`
+                In this case we have 32 in `s_main.bytes[1]`. The nibbles start in `s_main.bytes[2]`,
+                eacy byte presents two nibbles. We can simply add the bytes to the intermediate RLC:
+                `rlc = intermediate_rlc + s_main.bytes[2] * mult_prev + s_main.bytes[3] * mult_prev * r + ... `
+
+                Let us observe a case with odd number of nibbles now:
+                `[248,106,161,51,25,...]`
+                In this case we have 51 in `s_main.bytes[1]`, this presents the first nibble: `3 = 51 - 48`.
+                From `s_main.bytes[2]` it is as in the even number case. We compute the RLC as:
+                `rlc = intermediate_rlc + (s_main.bytes[1] - 48) * mult_prev + s_main.bytes[2] * mult_prev * r + ... `
+                */
+
                 let c32 = Expression::Constant(F::from(32));
                 let c48 = Expression::Constant(F::from(48));
 
@@ -252,10 +268,6 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
                 let key_rlc = meta.query_advice(accs.key.rlc, Rotation::cur());
                 let address_rlc = meta.query_advice(address_rlc, Rotation::cur());
 
-                let is_non_existing_account_proof =
-                    meta.query_advice(proof_type.is_non_existing_account_proof, Rotation::cur());
-
-                
                 /*
                 Account leaf contains the remaining nibbles of the account address. Combining the path 
                 of the leaf in the trie and these remaining nibbles needs to be the same as the account
@@ -428,6 +440,17 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
             constraints
         });
 
+        /*
+        The example layout for a branch placeholder looks like (placeholder could be in `C` proof too):
+            Branch 1S               || Branch 1C
+            Branch 2S (placeholder) || Branch 2C
+            Leaf S
+            Leaf C
+
+        Using `Previous key RLC` constraint we ensured that we copied the key RLC from Branch 1S
+        to Leaf S `accs.acc_c.rlc` column. So when add nibbles to compute the key RLC (address RLC)
+        of the account, we start with `accs.acc_c.rlc` value from the current row.
+        */
         meta.create_gate("Account leaf address RLC (after placeholder)", |meta| {
             let q_enable = q_enable(meta);
             let mut constraints = vec![];
@@ -460,13 +483,12 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
             let c48 = Expression::Constant(F::from(48));
  
             /*
-            Branch 1S || Branch 1C
-            Branch 2S (placeholder) || Branch 2C
-            Leaf S
-            Leaf C
+            sel1/sel2 tells us whether there is an even or odd number of nibbles in the leaf.
+            sel1/sel2 info is need for the computation of the key RLC (see below), in case of a leaf
+            after branch placeholder, sel1/sel2 can be computed as follows.
 
-            We need to know sel1/sel2 for Branch S to compute key RLC of a Leaf S. The rotation
-            back into Branch 1S causes PoisonedConstraint in extension_node_key.
+            Note that we cannot rotate back into Branch 1S because we get PoisonedConstraint
+            in extension_node_key.
 
             Instead, we can rotate into branch parallel to the placeholder branch and compute sel1/sel2 with info from there.
             Let's denote sel1/sel2 from this branch by sel1p/sel2p.
@@ -561,7 +583,7 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
 
             /*
             Although `key_rlc` is not compared to `address_rlc` in the case when the leaf
-            is below placeholder branch (`address_rlc` is compared to the parallel leaf `key_rlc`), 
+            is below the placeholder branch (`address_rlc` is compared to the parallel leaf `key_rlc`), 
             we still need properly computed `key_rlc` to reuse it in `account_leaf_key_in_added_branch`.
 
             Note: `key_rlc - address_rlc != 0` when placeholder branch.
@@ -579,14 +601,20 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
 
         if !is_s {
             meta.create_gate("Account delete", |meta| {
-                // We need to make sure there is no leaf when account is deleted. Two possible cases:
-                // 1. Account leaf is deleted and there is a nil object in branch. In this case we have 
-                //    a placeholder leaf.
-                // 2. Account leaf is deleted from a branch with two leaves, the remaining leaf moves one level up
-                //    and replaces the branch. In this case we have a branch placeholder.
+                /*
+                We need to make sure there is no leaf when account is deleted. Two possible cases:
+                1. Account leaf is deleted and there is a nil object in branch. In this case we have 
+                   a placeholder leaf.
+                2. Account leaf is deleted from a branch with two leaves, the remaining leaf moves one level up
+                   and replaces the branch. In this case we have a branch placeholder.
 
-                // Note: there will always be at least two leaves (the genesis account) when account will be deleted,
-                // so there will always be a branch / extension node (and thus placeholder branch).
+                So we need to check there is a placeholder branch when we have the second case.
+
+                Note: we do not need to cover the case when the (only) branch dissapears and only one
+                leaf remains in the trie because there will always be at least two leaves
+                (the genesis account) when account will be deleted,
+                so there will always be a branch / extension node (and thus placeholder branch).
+                */
                 let mut constraints = vec![];
                 let q_enable = q_enable(meta);
                 // is_leaf_placeholder is stored in branch children: sel1 for S, sel2 for C.
@@ -611,6 +639,10 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
             });
         }
 
+        /*
+        Range lookups ensure that `s_main`, `c_main.rlp1`, `c_main.rlp2` columns are all bytes (between 0 - 255).
+        Note that `c_main.bytes` columns are not used.
+         */
         range_lookups(
             meta,
             q_enable,
