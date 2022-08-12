@@ -8,8 +8,8 @@ use crate::{
         iota::IotaConstants,
         mixing::MixingConfig,
         pi::pi_gate_permutation,
-        rho::RhoConfig,
-        tables::{FromBase9TableConfig, StackableTable},
+        rho::assign_rho,
+        tables::{Base13toBase9TableConfig, FromBase9TableConfig, StackableTable},
         theta::ThetaConfig,
         xi::XiConfig,
     },
@@ -26,8 +26,8 @@ pub struct KeccakFConfig<F: Field> {
     generic: GenericConfig<F>,
     stackable: StackableTable<F>,
     theta_config: ThetaConfig<F>,
-    rho_config: RhoConfig<F>,
     xi_config: XiConfig<F>,
+    base13to9_config: Base13toBase9TableConfig<F>,
     from_b9_table: FromBase9TableConfig<F>,
     base_conversion_config: BaseConversionConfig<F>,
     mixing_config: MixingConfig<F>,
@@ -51,19 +51,26 @@ impl<F: Field> KeccakFConfig<F> {
 
         let fixed = meta.fixed_column();
         let generic = GenericConfig::configure(meta, state[0..3].try_into().unwrap(), fixed);
-        let table_cols: [TableColumn; 3] = (0..3)
+        let stackable_cols: [TableColumn; 3] = (0..3)
+            .map(|_| meta.lookup_table_column())
+            .collect_vec()
+            .try_into()
+            .unwrap();
+        let base13to9_cols: [TableColumn; 3] = (0..3)
             .map(|_| meta.lookup_table_column())
             .collect_vec()
             .try_into()
             .unwrap();
         let stackable =
-            StackableTable::configure(meta, state[0..3].try_into().unwrap(), table_cols);
+            StackableTable::configure(meta, state[0..3].try_into().unwrap(), stackable_cols);
+        let base13to9_config = Base13toBase9TableConfig::configure(
+            meta,
+            state[0..3].try_into().unwrap(),
+            base13to9_cols,
+        );
 
         // theta
         let theta_config = ThetaConfig::configure(meta.selector(), meta, state);
-        // rho
-        let rho_config =
-            RhoConfig::configure(meta, state, fixed, generic.clone(), stackable.clone());
         // xi
         let xi_config = XiConfig::configure(meta.selector(), meta, state);
 
@@ -112,8 +119,8 @@ impl<F: Field> KeccakFConfig<F> {
             generic,
             stackable,
             theta_config,
-            rho_config,
             xi_config,
+            base13to9_config,
             from_b9_table,
             base_conversion_config,
             mixing_config,
@@ -123,9 +130,9 @@ impl<F: Field> KeccakFConfig<F> {
         }
     }
 
-    pub fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
+    pub fn load(&mut self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
         self.stackable.load(layouter)?;
-        self.rho_config.load(layouter)?;
+        self.base13to9_config.load(layouter)?;
         self.from_b9_table.load(layouter)
     }
 
@@ -154,7 +161,13 @@ impl<F: Field> KeccakFConfig<F> {
             };
 
             // rho
-            state = self.rho_config.assign_rotation_checks(layouter, &state)?;
+            state = assign_rho(
+                layouter,
+                &self.base13to9_config,
+                &self.generic,
+                &self.stackable,
+                &state,
+            )?;
             // Outputs in base-9 which is what Pi requires
 
             // Apply Pi permutation
@@ -318,7 +331,7 @@ mod tests {
 
             fn synthesize(
                 &self,
-                config: Self::Config,
+                mut config: Self::Config,
                 mut layouter: impl Layouter<F>,
             ) -> Result<(), Error> {
                 // Load the table

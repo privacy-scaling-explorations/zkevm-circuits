@@ -297,7 +297,7 @@ mod tests {
 
             fn synthesize(
                 &self,
-                config: Self::Config,
+                mut config: Self::Config,
                 mut layouter: impl Layouter<F>,
             ) -> Result<(), Error> {
                 // Load the table
