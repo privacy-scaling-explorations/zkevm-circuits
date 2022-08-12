@@ -1,16 +1,16 @@
 use halo2_proofs::{
     plonk::{Advice, Column, ConstraintSystem, Expression, Fixed, VirtualCells},
-    poly::Rotation,
+    poly::Rotation, circuit::Region,
 };
 use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
 use crate::{
     helpers::{compute_rlc, key_len_lookup, mult_diff_lookup, range_lookups},
-    mpt::{FixedTableTag, MainCols, ProofTypeCols, AccumulatorCols},
+    mpt::{FixedTableTag, MainCols, ProofTypeCols, AccumulatorCols, MPTConfig, ProofVariables},
     param::{
         HASH_WIDTH, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS, IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS, IS_EXT_LONG_ODD_C16_POS, IS_EXT_LONG_ODD_C1_POS, 
-        IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS, RLP_NUM, R_TABLE_LEN,
+        IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS, RLP_NUM, R_TABLE_LEN, S_START,
     },
 };
 
@@ -660,6 +660,69 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
         );
 
         config
+    }
+
+    pub fn assign(
+        &self,
+        region: &mut Region<'_, F>,
+        mpt_config: &MPTConfig<F>,
+        pv: &mut ProofVariables<F>,
+        row: &Vec<u8>,
+        offset: usize,
+    ) {
+        // account leaf key S & C
+        let mut acc = F::zero();
+        let mut acc_mult = F::one();
+        // 35 = 2 (leaf rlp) + 1 (key rlp) + key_len
+        let key_len = (row[2] - 128) as usize;
+        for b in row.iter().take(3 + key_len) {
+            acc += F::from(*b as u64) * acc_mult;
+            acc_mult *= mpt_config.acc_r;
+        }
+        // Assigning acc_s, acc_mult_s below together with acc_c
+        // (key_rlc_prev) and acc_c_mult
+        // (key_rlc_mult_prev).
+
+        if row[row.len() - 1] == 6 {
+            pv.acc_account_s = acc;
+            pv.acc_mult_account_s = acc_mult
+        } else {
+            pv.acc_account_c = acc;
+            pv.acc_mult_account_c = acc_mult
+        }
+
+        // For leaf S and leaf C we need to start with the same rlc.
+        let mut key_rlc_new = pv.key_rlc;
+        let mut key_rlc_mult_new = pv.key_rlc_mult;
+        if (pv.is_branch_s_placeholder && row[row.len() - 1] == 6)
+            || (pv.is_branch_c_placeholder && row[row.len() - 1] == 4)
+        {
+            key_rlc_new = pv.key_rlc_prev;
+            key_rlc_mult_new = pv.key_rlc_mult_prev;
+        }
+
+        mpt_config.compute_key_rlc(row, &mut key_rlc_new, &mut key_rlc_mult_new, S_START);
+        region.assign_advice(
+            || "assign key_rlc".to_string(),
+            mpt_config.accumulators.key.rlc,
+            offset,
+            || Ok(key_rlc_new),
+        ).ok();
+
+        // Assign previous key RLC and mult in acc_c and acc_c_mult - don't
+        // use sel1/sel2 here (as in storage leaf case) as sel1/sel2 is
+        // used for whether nonce/balance is short/long (in nonce balance
+        // row, see offset - 1).
+        // Constraints for previous key RLC are in account_leaf_key.
+        mpt_config.assign_acc(
+            region,
+            acc,
+            acc_mult,
+            pv.key_rlc_prev,
+            pv.key_rlc_mult_prev,
+            offset,
+        ).ok();
+
     }
 }
 

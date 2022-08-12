@@ -237,6 +237,8 @@ pub struct MPTConfig<F> {
                                   * enable lookup for storage key/value (to have address RLC in
                                   * the same row as storage key/value). */
     counter: Column<Advice>,
+    account_leaf_key_s: AccountLeafKeyConfig<F>,
+    account_leaf_key_c: AccountLeafKeyConfig<F>,
     account_leaf_nonce_balance_s: AccountLeafNonceBalanceConfig<F>,
     account_leaf_nonce_balance_c: AccountLeafNonceBalanceConfig<F>,
     account_leaf_storage_codehash_s: AccountLeafStorageCodehashConfig<F>,
@@ -832,7 +834,7 @@ impl<F: FieldExt> MPTConfig<F> {
             fixed_table.clone(),
         );
 
-        AccountLeafKeyConfig::<F>::configure(
+        let account_leaf_key_s = AccountLeafKeyConfig::<F>::configure(
             meta,
             proof_type.clone(),
             |meta| {
@@ -853,7 +855,7 @@ impl<F: FieldExt> MPTConfig<F> {
             true,
         );
 
-        AccountLeafKeyConfig::<F>::configure(
+        let account_leaf_key_c = AccountLeafKeyConfig::<F>::configure(
             meta,
             proof_type.clone(),
             |meta| {
@@ -1022,6 +1024,8 @@ impl<F: FieldExt> MPTConfig<F> {
             fixed_table,
             address_rlc,
             counter,
+            account_leaf_key_s,
+            account_leaf_key_c,
             account_leaf_nonce_balance_s,
             account_leaf_nonce_balance_c,
             account_leaf_storage_codehash_s,
@@ -1431,6 +1435,37 @@ impl<F: FieldExt> MPTConfig<F> {
         )?;
 
         Ok(())
+    }
+
+    pub(crate) fn compute_key_rlc(
+        &self,
+        row: &Vec<u8>, key_rlc: &mut F, key_rlc_mult: &mut F, start: usize) {
+        let even_num_of_nibbles = row[start + 1] == 32;
+        // If odd number of nibbles, we have nibble+48 in s_advices[0].
+        if !even_num_of_nibbles {
+            *key_rlc +=
+                F::from((row[start + 1] - 48) as u64) * *key_rlc_mult;
+            *key_rlc_mult *= self.acc_r;
+
+            let len = row[start] as usize - 128;
+            self.compute_acc_and_mult(
+                row,
+                key_rlc,
+                key_rlc_mult,
+                start + 2,
+                len - 1, // -1 because one byte was already considered
+            );
+        } else {
+            let len = row[start] as usize - 128;
+            self.compute_acc_and_mult(
+                row,
+                key_rlc,
+                key_rlc_mult,
+                start + 2,
+                len - 1, /* -1 because the first byte doesn't
+                            * contain any key byte (it's just 32) */
+            );
+        }
     }
 
     pub(crate) fn compute_acc_and_mult(
@@ -2271,36 +2306,6 @@ impl<F: FieldExt> MPTConfig<F> {
                                     .ok();
                             };
 
-                            let compute_key_rlc =
-                                |key_rlc: &mut F, key_rlc_mult: &mut F, start: usize| {
-                                    let even_num_of_nibbles = row[start + 1] == 32;
-                                    // If odd number of nibbles, we have nibble+48 in s_advices[0].
-                                    if !even_num_of_nibbles {
-                                        *key_rlc +=
-                                            F::from((row[start + 1] - 48) as u64) * *key_rlc_mult;
-                                        *key_rlc_mult *= self.acc_r;
-
-                                        let len = row[start] as usize - 128;
-                                        self.compute_acc_and_mult(
-                                            row,
-                                            key_rlc,
-                                            key_rlc_mult,
-                                            start + 2,
-                                            len - 1, // -1 because one byte was already considered
-                                        );
-                                    } else {
-                                        let len = row[start] as usize - 128;
-                                        self.compute_acc_and_mult(
-                                            row,
-                                            key_rlc,
-                                            key_rlc_mult,
-                                            start + 2,
-                                            len - 1, /* -1 because the first byte doesn't
-                                                      * contain any key byte (it's just 32) */
-                                        );
-                                    }
-                                };
-
                             // Storage leaf key
                             if row[row.len() - 1] == 2 || row[row.len() - 1] == 3 {
                                 /*
@@ -2391,7 +2396,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                 if typ != "last_level" && typ != "one_nibble" {
                                     // If in last level or having only one nibble,
                                     // the key RLC is already computed using the first two bytes above.
-                                    compute_key_rlc(&mut key_rlc_new, &mut key_rlc_mult_new, start);
+                                    self.compute_key_rlc(row, &mut key_rlc_new, &mut key_rlc_mult_new, start);
                                 }
                                 region.assign_advice(
                                     || "assign key_rlc".to_string(),
@@ -2553,58 +2558,10 @@ impl<F: FieldExt> MPTConfig<F> {
                                 )?;
                             }
 
-                            if row[row.len() - 1] == 6 || row[row.len() - 1] == 4 {
-                                // account leaf key S & C
-                                let mut acc = F::zero();
-                                let mut acc_mult = F::one();
-                                // 35 = 2 (leaf rlp) + 1 (key rlp) + key_len
-                                let key_len = (row[2] - 128) as usize;
-                                for b in row.iter().take(3 + key_len) {
-                                    acc += F::from(*b as u64) * acc_mult;
-                                    acc_mult *= self.acc_r;
-                                }
-                                // Assigning acc_s, acc_mult_s below together with acc_c
-                                // (key_rlc_prev) and acc_c_mult
-                                // (key_rlc_mult_prev).
-
-                                if row[row.len() - 1] == 6 {
-                                    pv.acc_account_s = acc;
-                                    pv.acc_mult_account_s = acc_mult
-                                } else {
-                                    pv.acc_account_c = acc;
-                                    pv.acc_mult_account_c = acc_mult
-                                }
-
-                                // For leaf S and leaf C we need to start with the same rlc.
-                                let mut key_rlc_new = pv.key_rlc;
-                                let mut key_rlc_mult_new = pv.key_rlc_mult;
-                                if (pv.is_branch_s_placeholder && row[row.len() - 1] == 6)
-                                    || (pv.is_branch_c_placeholder && row[row.len() - 1] == 4)
-                                {
-                                    key_rlc_new = pv.key_rlc_prev;
-                                    key_rlc_mult_new = pv.key_rlc_mult_prev;
-                                }
-                                compute_key_rlc(&mut key_rlc_new, &mut key_rlc_mult_new, S_START);
-                                region.assign_advice(
-                                    || "assign key_rlc".to_string(),
-                                    self.accumulators.key.rlc,
-                                    offset,
-                                    || Ok(key_rlc_new),
-                                )?;
-
-                                // Assign previous key RLC and mult in acc_c and acc_c_mult - don't
-                                // use sel1/sel2 here (as in storage leaf case) as sel1/sel2 is
-                                // used for whether nonce/balance is short/long (in nonce balance
-                                // row, see offset - 1).
-                                // Constraints for previous key RLC are in account_leaf_key.
-                                self.assign_acc(
-                                    &mut region,
-                                    acc,
-                                    acc_mult,
-                                    pv.key_rlc_prev,
-                                    pv.key_rlc_mult_prev,
-                                    offset,
-                                )?;
+                            if row[row.len() - 1] == 6 {
+                                self.account_leaf_key_s.assign(&mut region, self, &mut pv, row, offset);
+                            } else if row[row.len() - 1] == 4 {
+                                self.account_leaf_key_c.assign(&mut region, self, &mut pv, row, offset);
                             } else if row[row.len() - 1] == 7 {
                                 self.account_leaf_nonce_balance_s.assign(&mut region, self, &mut pv, row, offset);
                             } else if row[row.len() - 1] == 8 {
