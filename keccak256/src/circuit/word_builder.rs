@@ -1,17 +1,46 @@
 // Added until this is used by another component
 #![allow(dead_code)]
 use super::BYTES_PER_WORD;
-use crate::permutation::tables::RangeCheckConfig;
 use eth_types::Field;
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter},
-    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
+    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector, TableColumn},
     poly::Rotation,
 };
+use std::marker::PhantomData;
 
 pub type Byte = u8;
 pub type AssignedByte<F> = AssignedCell<F, F>;
 pub type AssignedWord<F> = AssignedCell<F, F>;
+
+#[derive(Debug, Clone)]
+pub struct RangeCheckConfig<F, const K: u64> {
+    pub range: TableColumn,
+    _marker: PhantomData<F>,
+}
+
+impl<F: Field, const K: u64> RangeCheckConfig<F, K> {
+    pub(crate) fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
+        layouter.assign_table(
+            || "range",
+            |mut table| {
+                for i in 0..=K {
+                    table.assign_cell(|| "range", self.range, i as usize, || Ok(F::from(i)))?;
+                }
+                Ok(())
+            },
+        )
+    }
+    // dead_code reason: WordBuilderConfig is using it. We defer the decision to
+    // remove this after WordBuilderConfig is complete
+    #[allow(dead_code)]
+    pub(crate) fn configure(meta: &mut ConstraintSystem<F>) -> Self {
+        Self {
+            range: meta.lookup_table_column(),
+            _marker: PhantomData,
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 /// Gets 8 Advice columns with the 8bytes to form the word + the final word

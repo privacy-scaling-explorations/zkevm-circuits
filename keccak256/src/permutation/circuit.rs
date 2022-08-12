@@ -1,9 +1,6 @@
 use crate::{
     common::{NEXT_INPUTS_LANES, PERMUTATION},
-    permutation::{
-        generic::GenericConfig,
-        tables::{Base13toBase9TableConfig, FromBase9TableConfig, StackableTable},
-    },
+    permutation::{generic::GenericConfig, tables::LookupConfig},
 };
 use eth_types::Field;
 use halo2_proofs::{
@@ -12,28 +9,22 @@ use halo2_proofs::{
 };
 use itertools::Itertools;
 
-use super::{
-    components::{
-        assign_next_input, assign_rho, assign_theta, assign_xi, convert_from_b9_to_b13,
-        convert_to_b9_mul_a4, pi_gate_permutation, IotaConstants,
-    },
-    tables::FromBinaryTableConfig,
+use super::components::{
+    assign_next_input, assign_rho, assign_theta, assign_xi, convert_from_b9_to_b13,
+    convert_to_b9_mul_a4, pi_gate_permutation, IotaConstants,
 };
 
 #[derive(Clone, Debug)]
 pub struct KeccakFConfig<F: Field> {
     generic: GenericConfig<F>,
-    stackable: StackableTable<F>,
-    base13to9_config: Base13toBase9TableConfig<F>,
-    from_b9_table: FromBase9TableConfig<F>,
-    from_b2_table: FromBinaryTableConfig<F>,
+    lookup_config: LookupConfig<F>,
     pub advice: Column<Advice>,
 }
 
 impl<F: Field> KeccakFConfig<F> {
     // We assume state is received in base-9.
     pub fn configure(meta: &mut ConstraintSystem<F>) -> Self {
-        let advices: [Column<Advice>; 3] = (0..3)
+        let advices: [Column<Advice>; 4] = (0..4)
             .map(|_| {
                 let column = meta.advice_column();
                 meta.enable_equality(column);
@@ -44,47 +35,23 @@ impl<F: Field> KeccakFConfig<F> {
             .unwrap();
 
         let fixed = meta.fixed_column();
-        let generic = GenericConfig::configure(meta, advices, fixed);
-        let stackable_cols: [TableColumn; 3] = (0..3)
+        let generic = GenericConfig::configure(meta, advices[0..3].try_into().unwrap(), fixed);
+        let lookup_cols: [TableColumn; 4] = (0..4)
             .map(|_| meta.lookup_table_column())
             .collect_vec()
             .try_into()
             .unwrap();
-        let base13to9_cols: [TableColumn; 3] = (0..3)
-            .map(|_| meta.lookup_table_column())
-            .collect_vec()
-            .try_into()
-            .unwrap();
-        let from_base9_cols: [TableColumn; 3] = (0..3)
-            .map(|_| meta.lookup_table_column())
-            .collect_vec()
-            .try_into()
-            .unwrap();
-        let from_base2_cols: [TableColumn; 3] = (0..3)
-            .map(|_| meta.lookup_table_column())
-            .collect_vec()
-            .try_into()
-            .unwrap();
-        let stackable = StackableTable::configure(meta, advices, stackable_cols);
-        let base13to9_config = Base13toBase9TableConfig::configure(meta, advices, base13to9_cols);
-        let from_b9_table = FromBase9TableConfig::configure(meta, advices, from_base9_cols);
-        let from_b2_table = FromBinaryTableConfig::configure(meta, advices, from_base2_cols);
+        let lookup_config = LookupConfig::configure(meta, advices, lookup_cols);
 
         Self {
             generic,
-            stackable,
-            base13to9_config,
-            from_b9_table,
-            from_b2_table,
+            lookup_config,
             advice: advices[0],
         }
     }
 
     pub fn load(&mut self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
-        self.stackable.load(layouter)?;
-        self.base13to9_config.load(layouter)?;
-        self.from_b9_table.load(layouter)?;
-        self.from_b2_table.load(layouter)
+        self.lookup_config.load(layouter)
     }
 
     // Result b13 state for next round, b2 state for end result
@@ -101,13 +68,7 @@ impl<F: Field> KeccakFConfig<F> {
         for round_idx in 0..PERMUTATION {
             // State in base-13
             state = assign_theta(&self.generic, layouter, &state)?;
-            state = assign_rho(
-                layouter,
-                &self.base13to9_config,
-                &self.generic,
-                &self.stackable,
-                &state,
-            )?;
+            state = assign_rho(layouter, &self.lookup_config, &self.generic, &state)?;
             // Outputs in base-9 which is what Pi requires
             state = pi_gate_permutation(&state);
             state = assign_xi(&self.generic, layouter, &state)?;
@@ -127,11 +88,11 @@ impl<F: Field> KeccakFConfig<F> {
             // base_13 which is what Theta requires again at the
             // start of the loop.
             state =
-                convert_from_b9_to_b13(layouter, &self.from_b9_table, &self.generic, state, false)?
+                convert_from_b9_to_b13(layouter, &self.lookup_config, &self.generic, state, false)?
                     .0;
         }
         let (f_mix, f_no_mix) = self
-            .stackable
+            .lookup_config
             .assign_boolean_flag(layouter, next_mixing.is_some())?;
         state[0] = self.generic.conditional_add_const(
             layouter,
@@ -143,7 +104,7 @@ impl<F: Field> KeccakFConfig<F> {
 
         // Convert to base 9 and multiply by A4
         let next_input =
-            convert_to_b9_mul_a4(layouter, &self.from_b2_table, &self.generic, &next_input)?;
+            convert_to_b9_mul_a4(layouter, &self.lookup_config, &self.generic, &next_input)?;
 
         for (i, input) in next_input.iter().enumerate() {
             state[i] = self
@@ -151,7 +112,7 @@ impl<F: Field> KeccakFConfig<F> {
                 .conditional_add_advice(layouter, &state[i], &f_mix, input)?;
         }
         let (mut state_b13, state_b2) =
-            convert_from_b9_to_b13(layouter, &self.from_b9_table, &self.generic, state, true)?;
+            convert_from_b9_to_b13(layouter, &self.lookup_config, &self.generic, state, true)?;
         let state_b2 = state_b2.unwrap();
         state_b13[0] = self.generic.conditional_add_const(
             layouter,
@@ -304,6 +265,7 @@ mod tests {
         // Generate next_input as `[Fp;NEXT_INPUTS_LANES]`
         let next_input_fp: [Fp; NEXT_INPUTS_LANES] =
             state_bigint_to_field(StateBigInt::from(next_input));
+        let k = 18;
 
         // When we pass no `mixing_inputs`, we perform the full keccak round
         // ending with Mixing executing IotaB9
@@ -316,7 +278,7 @@ mod tests {
                 next_mixing: None,
             };
 
-            let prover = MockProver::<Fp>::run(17, &circuit, vec![]).unwrap();
+            let prover = MockProver::<Fp>::run(k, &circuit, vec![]).unwrap();
 
             assert_eq!(prover.verify(), Ok(()), "is_mixing: false");
 
@@ -327,7 +289,7 @@ mod tests {
                 out_state: out_state_non_mix,
                 next_mixing: None,
             };
-            let k = 17;
+
             let prover = MockProver::<Fp>::run(k, &circuit, vec![]).unwrap();
 
             #[cfg(feature = "dev-graph")]
@@ -354,7 +316,7 @@ mod tests {
                 next_mixing: Some(next_input_fp),
             };
 
-            let prover = MockProver::<Fp>::run(17, &circuit, vec![]).unwrap();
+            let prover = MockProver::<Fp>::run(k, &circuit, vec![]).unwrap();
 
             assert_eq!(prover.verify(), Ok(()), "is_mixing: true");
 
@@ -366,7 +328,7 @@ mod tests {
                 next_mixing: Some(next_input_fp),
             };
 
-            let prover = MockProver::<Fp>::run(17, &circuit, vec![]).unwrap();
+            let prover = MockProver::<Fp>::run(k, &circuit, vec![]).unwrap();
 
             assert!(prover.verify().is_err());
         }

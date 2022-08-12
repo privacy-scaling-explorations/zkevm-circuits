@@ -10,7 +10,6 @@ use halo2_proofs::{
 };
 use itertools::Itertools;
 use std::collections::HashMap;
-use std::marker::PhantomData;
 use strum_macros::{Display, EnumIter};
 
 use super::rho_helpers::{Conversion, STEP2_RANGE, STEP3_RANGE};
@@ -22,20 +21,36 @@ pub const NUM_OF_B9_CHUNKS_PER_SLICE: usize = 5;
 /// is ceil(`MAX_CHUNKS`/ `NUM_OF_B9_CHUNKS_PER_SLICE`) = 13
 pub const NUM_OF_B9_SLICES: usize = 13;
 
-#[derive(Debug, Clone)]
-struct ThreeColumnsLookup<F> {
-    q_enable: Selector,
-    pub(crate) cols: [(Column<Advice>, TableColumn); 3],
-    _marker: PhantomData<F>,
+#[derive(EnumIter, Display, Clone, Copy)]
+enum TableTags {
+    Range12 = 0,
+    Range169,
+    SpecialChunk,
+    BooleanFlag,
+    FromBase13,
+    FromBase9,
+    FromBase2,
 }
-impl<F: Field> ThreeColumnsLookup<F> {
+
+#[derive(Debug, Clone)]
+pub struct LookupConfig<F> {
+    q_enable: Selector,
+    pub(crate) cols: [(Column<Advice>, TableColumn); 4],
+    special_chunks_map: HashMap<[u8; 32], F>,
+    /// mapping from base13 input to base9 output and overflow detector
+    base13_map: HashMap<[u8; 32], (F, F)>,
+    /// mapping from base9 input to base13 and base2 output
+    base9_map: HashMap<[u8; 32], (F, F)>,
+    /// mapping from base2 input to base9 and base13 output
+    base2_map: HashMap<[u8; 32], (F, F)>,
+}
+impl<F: Field> LookupConfig<F> {
     pub(crate) fn configure(
         meta: &mut ConstraintSystem<F>,
-        adv_cols: [Column<Advice>; 3],
-        table_cols: [TableColumn; 3],
-        name: &'static str,
+        adv_cols: [Column<Advice>; 4],
+        table_cols: [TableColumn; 4],
     ) -> Self {
-        let cols: [(Column<Advice>, TableColumn); 3] = adv_cols
+        let cols: [(Column<Advice>, TableColumn); 4] = adv_cols
             .iter()
             .cloned()
             .zip(table_cols.iter().cloned())
@@ -43,55 +58,46 @@ impl<F: Field> ThreeColumnsLookup<F> {
             .try_into()
             .unwrap();
         let q_enable = meta.complex_selector();
-        meta.lookup(name, |meta| {
+        meta.lookup("keccak", |meta| {
             let q_enable = meta.query_selector(q_enable);
             let col0_adv = meta.query_advice(cols[0].0, Rotation::cur());
             let col1_adv = meta.query_advice(cols[1].0, Rotation::cur());
             let col2_adv = meta.query_advice(cols[2].0, Rotation::cur());
+            let col3_adv = meta.query_advice(cols[3].0, Rotation::cur());
 
             vec![
                 (q_enable.clone() * col0_adv, cols[0].1),
                 (q_enable.clone() * col1_adv, cols[1].1),
-                (q_enable * col2_adv, cols[2].1),
+                (q_enable.clone() * col2_adv, cols[2].1),
+                (q_enable * col3_adv, cols[3].1),
             ]
         });
+        let special_chunks_map = HashMap::new();
+        let base13_map = HashMap::new();
+        let base9_map = HashMap::new();
+        let base2_map = HashMap::new();
         Self {
             q_enable,
             cols,
-            _marker: PhantomData,
+            special_chunks_map,
+            base13_map,
+            base9_map,
+            base2_map,
         }
     }
-}
 
-#[derive(EnumIter, Display, Clone, Copy)]
-enum TableTags {
-    Range12 = 0,
-    Range169,
-    SpecialChunk,
-    BooleanFlag,
-}
-
-#[derive(Debug, Clone)]
-pub struct StackableTable<F> {
-    lookup_config: ThreeColumnsLookup<F>,
-    special_chunks_map: HashMap<[u8; 32], F>,
-}
-
-impl<F: Field> StackableTable<F> {
-    /// We use col0 for tag that restricts the lookup into certain rows
-    /// we use col1 and col2 for different purposes depend on the tag
-    pub(crate) fn configure(
-        meta: &mut ConstraintSystem<F>,
-        adv_cols: [Column<Advice>; 3],
-        table_cols: [TableColumn; 3],
-    ) -> Self {
-        let lookup_config =
-            ThreeColumnsLookup::configure(meta, adv_cols, table_cols, "stackable lookup");
-        let special_chunks_map = HashMap::new();
-        Self {
-            lookup_config,
-            special_chunks_map,
+    fn assign_table_row(
+        &self,
+        table: &mut Table<F>,
+        offset: usize,
+        tag: TableTags,
+        values: [F; 3],
+    ) -> Result<(), Error> {
+        table.assign_cell(|| "tag", self.cols[0].1, offset, || Ok(F::from(tag as u64)))?;
+        for (col, value) in self.cols[1..4].iter().zip(values.iter()) {
+            table.assign_cell(|| "cell", col.1, offset, || Ok(value))?;
         }
+        Ok(())
     }
 
     fn load_range(
@@ -103,24 +109,7 @@ impl<F: Field> StackableTable<F> {
     ) -> Result<usize, Error> {
         let mut offset = offset;
         for i in 0..=k {
-            table.assign_cell(
-                || format!("tag range{}", tag),
-                self.lookup_config.cols[0].1,
-                offset,
-                || Ok(F::from(tag as u64)),
-            )?;
-            table.assign_cell(
-                || format!("range{}", tag),
-                self.lookup_config.cols[1].1,
-                offset,
-                || Ok(F::from(i)),
-            )?;
-            table.assign_cell(
-                || format!("dummy col range{}", tag),
-                self.lookup_config.cols[2].1,
-                offset,
-                || Ok(F::zero()),
-            )?;
+            self.assign_table_row(table, offset, tag, [F::from(i), F::zero(), F::zero()])?;
             offset += 1;
         }
         Ok(offset)
@@ -138,23 +127,11 @@ impl<F: Field> StackableTable<F> {
                 let output_coef = F::from(convert_b13_coef(low + high) as u64);
                 self.special_chunks_map
                     .insert(last_chunk.to_repr(), output_coef);
-                table.assign_cell(
-                    || "tag special chunks",
-                    self.lookup_config.cols[0].1,
+                self.assign_table_row(
+                    table,
                     offset,
-                    || Ok(F::from(TableTags::SpecialChunk as u64)),
-                )?;
-                table.assign_cell(
-                    || "last chunk",
-                    self.lookup_config.cols[1].1,
-                    offset,
-                    || Ok(last_chunk),
-                )?;
-                table.assign_cell(
-                    || "output coef",
-                    self.lookup_config.cols[2].1,
-                    offset,
-                    || Ok(output_coef),
+                    TableTags::SpecialChunk,
+                    [last_chunk, output_coef, F::zero()],
                 )?;
                 offset += 1;
             }
@@ -165,23 +142,11 @@ impl<F: Field> StackableTable<F> {
     fn load_boolean_flag(&self, table: &mut Table<F>, offset: usize) -> Result<usize, Error> {
         let mut offset = offset;
         for (left, right) in [(true, false), (false, true)] {
-            table.assign_cell(
-                || "tag boolean flag",
-                self.lookup_config.cols[0].1,
+            self.assign_table_row(
+                table,
                 offset,
-                || Ok(F::from(TableTags::BooleanFlag as u64)),
-            )?;
-            table.assign_cell(
-                || "left",
-                self.lookup_config.cols[1].1,
-                offset,
-                || Ok(F::from(left)),
-            )?;
-            table.assign_cell(
-                || "right",
-                self.lookup_config.cols[2].1,
-                offset,
-                || Ok(F::from(right)),
+                TableTags::BooleanFlag,
+                [F::from(left), F::from(right), F::zero()],
             )?;
             offset += 1;
         }
@@ -201,7 +166,10 @@ impl<F: Field> StackableTable<F> {
                     offset = self.load_range(&mut table, offset, tag, k)?;
                 }
                 offset = self.load_special_chunks(&mut table, offset)?;
-                self.load_boolean_flag(&mut table, offset)?;
+                offset = self.load_boolean_flag(&mut table, offset)?;
+                offset = self.load_base13(&mut table, offset)?;
+                offset = self.load_base9(&mut table, offset)?;
+                self.load_base2(&mut table, offset)?;
                 Ok(())
             },
         )
@@ -216,24 +184,24 @@ impl<F: Field> StackableTable<F> {
         layouter.assign_region(
             || format!("lookup for {}", tag),
             |mut region| {
-                let tag = F::from(tag as u64);
                 for (offset, v) in values.iter().enumerate() {
-                    self.lookup_config.q_enable.enable(&mut region, offset)?;
+                    self.q_enable.enable(&mut region, offset)?;
                     region.assign_advice_from_constant(
                         || "tag",
-                        self.lookup_config.cols[0].0,
+                        self.cols[0].0,
                         offset,
-                        tag,
+                        F::from(tag as u64),
                     )?;
-                    v.copy_advice(
-                        || "value",
-                        &mut region,
-                        self.lookup_config.cols[1].0,
+                    v.copy_advice(|| "v", &mut region, self.cols[1].0, offset)?;
+                    region.assign_advice_from_constant(
+                        || "0",
+                        self.cols[2].0,
                         offset,
+                        F::zero(),
                     )?;
                     region.assign_advice_from_constant(
-                        || "dummy",
-                        self.lookup_config.cols[2].0,
+                        || "0",
+                        self.cols[3].0,
                         offset,
                         F::zero(),
                     )?;
@@ -267,22 +235,12 @@ impl<F: Field> StackableTable<F> {
             |mut region| {
                 let offset = 0;
                 let tag = F::from(TableTags::SpecialChunk as u64);
-                self.lookup_config.q_enable.enable(&mut region, offset)?;
-                region.assign_advice_from_constant(
-                    || "tag",
-                    self.lookup_config.cols[0].0,
-                    offset,
-                    tag,
-                )?;
-                last_chunk.copy_advice(
-                    || "last chunk",
-                    &mut region,
-                    self.lookup_config.cols[1].0,
-                    offset,
-                )?;
-                region.assign_advice(
+                self.q_enable.enable(&mut region, offset)?;
+                region.assign_advice_from_constant(|| "tag", self.cols[0].0, offset, tag)?;
+                last_chunk.copy_advice(|| "last chunk", &mut region, self.cols[1].0, offset)?;
+                let output_coef = region.assign_advice(
                     || "output coef",
-                    self.lookup_config.cols[2].0,
+                    self.cols[2].0,
                     offset,
                     || {
                         last_chunk
@@ -291,7 +249,9 @@ impl<F: Field> StackableTable<F> {
                             .map(|v| v.to_owned())
                             .ok_or(Error::Synthesis)
                     },
-                )
+                )?;
+                region.assign_advice_from_constant(|| "0", self.cols[3].0, offset, F::zero())?;
+                Ok(output_coef)
             },
         )
     }
@@ -306,131 +266,67 @@ impl<F: Field> StackableTable<F> {
             || "lookup for boolean flag",
             |mut region| {
                 let offset = 0;
-                self.lookup_config.q_enable.enable(&mut region, offset)?;
+                self.q_enable.enable(&mut region, offset)?;
                 region.assign_advice_from_constant(
                     || "tag",
-                    self.lookup_config.cols[0].0,
+                    self.cols[0].0,
                     offset,
                     F::from(TableTags::BooleanFlag as u64),
                 )?;
                 let left = region.assign_advice(
                     || "left",
-                    self.lookup_config.cols[1].0,
+                    self.cols[1].0,
                     offset,
                     || Ok(F::from(is_left)),
                 )?;
                 let right = region.assign_advice(
                     || "right",
-                    self.lookup_config.cols[2].0,
+                    self.cols[2].0,
                     offset,
                     || Ok(F::from(!is_left)),
                 )?;
+                region.assign_advice_from_constant(|| "0", self.cols[3].0, offset, F::zero())?;
                 Ok((left, right))
             },
         )
     }
-}
 
-#[derive(Debug, Clone)]
-pub struct RangeCheckConfig<F, const K: u64> {
-    pub range: TableColumn,
-    _marker: PhantomData<F>,
-}
+    pub(crate) fn load_base13(
+        &mut self,
+        table: &mut Table<F>,
+        offset: usize,
+    ) -> Result<usize, Error> {
+        let mut offset = offset;
+        // Iterate over all possible 13-ary values of size 4
+        for b13_chunks in (0..BASE_NUM_OF_CHUNKS)
+            .map(|_| 0..B13)
+            .multi_cartesian_product()
+        {
+            let input_b13 = f_from_radix_be::<F>(&b13_chunks, B13);
+            let output_b9 = f_from_radix_be::<F>(
+                &b13_chunks
+                    .iter()
+                    .map(|&x| convert_b13_coef(x))
+                    .collect_vec(),
+                B9,
+            );
+            let overflow_detector =
+                F::from(get_overflow_detector(b13_chunks.clone().try_into().unwrap()) as u64);
 
-impl<F: Field, const K: u64> RangeCheckConfig<F, K> {
-    pub(crate) fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
-        layouter.assign_table(
-            || "range",
-            |mut table| {
-                for i in 0..=K {
-                    table.assign_cell(|| "range", self.range, i as usize, || Ok(F::from(i)))?;
-                }
-                Ok(())
-            },
-        )
-    }
-    // dead_code reason: WordBuilderConfig is using it. We defer the decision to
-    // remove this after WordBuilderConfig is complete
-    #[allow(dead_code)]
-    pub(crate) fn configure(meta: &mut ConstraintSystem<F>) -> Self {
-        Self {
-            range: meta.lookup_table_column(),
-            _marker: PhantomData,
+            self.base13_map
+                .insert(input_b13.to_repr(), (output_b9, overflow_detector));
+
+            self.assign_table_row(
+                table,
+                offset,
+                TableTags::FromBase13,
+                [input_b13, output_b9, overflow_detector],
+            )?;
+            offset += 1;
         }
+        Ok(offset)
     }
-}
-
-#[derive(Debug, Clone)]
-pub struct Base13toBase9TableConfig<F> {
-    lookup_config: ThreeColumnsLookup<F>,
-    // mapping from base13 input to base9 output and overflow detector
-    map: HashMap<[u8; 32], (F, F)>,
-}
-
-impl<F: Field> Base13toBase9TableConfig<F> {
-    pub(crate) fn load(&mut self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
-        layouter.assign_table(
-            || "13 -> 9",
-            |mut table| {
-                // Iterate over all possible 13-ary values of size 4
-                for (i, b13_chunks) in (0..BASE_NUM_OF_CHUNKS)
-                    .map(|_| 0..B13)
-                    .multi_cartesian_product()
-                    .enumerate()
-                {
-                    let input_b13 = f_from_radix_be::<F>(&b13_chunks, B13);
-                    let output_b9 = f_from_radix_be::<F>(
-                        &b13_chunks
-                            .iter()
-                            .map(|&x| convert_b13_coef(x))
-                            .collect_vec(),
-                        B9,
-                    );
-                    let overflow_detector = F::from(get_overflow_detector(
-                        b13_chunks.clone().try_into().unwrap(),
-                    ) as u64);
-
-                    self.map
-                        .insert(input_b13.to_repr(), (output_b9, overflow_detector));
-                    table.assign_cell(
-                        || "base 13",
-                        self.lookup_config.cols[0].1,
-                        i,
-                        || Ok(input_b13),
-                    )?;
-
-                    table.assign_cell(
-                        || "base 9",
-                        self.lookup_config.cols[1].1,
-                        i,
-                        || Ok(output_b9),
-                    )?;
-                    table.assign_cell(
-                        || "overflow_detector",
-                        self.lookup_config.cols[2].1,
-                        i,
-                        || Ok(overflow_detector),
-                    )?;
-                }
-                Ok(())
-            },
-        )
-    }
-
-    /// We use col0 for base 13 input
-    /// we use col1 for base 9 output
-    /// we use col2 for overflow detector
-    pub(crate) fn configure(
-        meta: &mut ConstraintSystem<F>,
-        adv_cols: [Column<Advice>; 3],
-        table_cols: [TableColumn; 3],
-    ) -> Self {
-        let lookup_config =
-            ThreeColumnsLookup::configure(meta, adv_cols, table_cols, "from base 13");
-        let map = HashMap::new();
-        Self { lookup_config, map }
-    }
-    pub(crate) fn assign_region(
+    pub(crate) fn assign_base13(
         &self,
         layouter: &mut impl Layouter<F>,
         slices: &[(u32, u32)],
@@ -454,12 +350,18 @@ impl<F: Field> Base13toBase9TableConfig<F> {
                 for (offset, (&(_, step), conv)) in
                     slices.iter().zip(conversions.iter()).enumerate()
                 {
-                    self.lookup_config.q_enable.enable(&mut region, offset)?;
+                    self.q_enable.enable(&mut region, offset)?;
                     let input = biguint_to_f::<F>(&conv.input.coef);
-                    let outputs = self.map.get(&input.to_repr());
+                    let outputs = self.base13_map.get(&input.to_repr());
+                    region.assign_advice_from_constant(
+                        || "tag",
+                        self.cols[0].0,
+                        offset,
+                        F::from(TableTags::FromBase13 as u64),
+                    )?;
                     let input_coef = region.assign_advice(
                         || "Input Coef",
-                        self.lookup_config.cols[0].0,
+                        self.cols[1].0,
                         offset,
                         || Ok(input),
                     )?;
@@ -467,7 +369,7 @@ impl<F: Field> Base13toBase9TableConfig<F> {
 
                     let output_coef = region.assign_advice(
                         || "Output Coef",
-                        self.lookup_config.cols[1].0,
+                        self.cols[2].0,
                         offset,
                         || outputs.map(|o| o.0).ok_or(Error::Synthesis),
                     )?;
@@ -475,7 +377,7 @@ impl<F: Field> Base13toBase9TableConfig<F> {
 
                     let od = region.assign_advice(
                         || "Overflow detector",
-                        self.lookup_config.cols[2].0,
+                        self.cols[3].0,
                         offset,
                         || outputs.map(|o| o.1).ok_or(Error::Synthesis),
                     )?;
@@ -492,95 +394,61 @@ impl<F: Field> Base13toBase9TableConfig<F> {
             },
         )
     }
-}
 
-fn compute_input_coefs<F: Field, const SLICES: usize>(
-    input: Option<&F>,
-    base: u8,
-    num_chunks: usize,
-) -> [Option<F>; SLICES] {
-    input.map_or([None; SLICES], |&input| {
-        // big-endian
-        let input_chunks: Vec<u8> = {
-            let raw = f_to_biguint(input);
-            let mut v = raw.to_radix_le(base.into());
-            debug_assert!(v.len() <= MAX_CHUNKS);
-            // fill 0 to max chunks
-            v.resize(MAX_CHUNKS, 0);
-            // v is big-endian now
-            v.reverse();
-            v
-        };
-        // Use rchunks + rev so that the remainder chunks stay at the big-endian
-        // side
-        let input_coefs = input_chunks
-            .rchunks(num_chunks)
-            .rev()
-            .map(|chunks| Some(f_from_radix_be(chunks, base)))
-            .collect_vec();
-        input_coefs.try_into().unwrap()
-    })
-}
-
-#[derive(Debug, Clone)]
-pub struct FromBase9TableConfig<F> {
-    lookup_config: ThreeColumnsLookup<F>,
-    // mapping from base9 input to base13 and base2 output
-    map: HashMap<[u8; 32], (F, F)>,
-}
-
-impl<F: Field> FromBase9TableConfig<F> {
-    pub fn load(&mut self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
-        layouter.assign_table(
-            || "9 -> (2 and 13)",
-            |mut table| {
-                // Iterate over all possible base 9 values of size 5
-                for (i, b9_chunks) in (0..NUM_OF_B9_CHUNKS_PER_SLICE)
-                    .map(|_| 0..B9)
-                    .multi_cartesian_product()
-                    .enumerate()
-                {
-                    let input_b9 = f_from_radix_be::<F>(&b9_chunks, B9);
-                    let converted_chunks: Vec<u8> =
-                        b9_chunks.iter().map(|&x| convert_b9_coef(x)).collect_vec();
-                    let output_b13 = f_from_radix_be::<F>(&converted_chunks, B13);
-                    let output_b2 = f_from_radix_be::<F>(&converted_chunks, B2);
-                    self.map.insert(input_b9.to_repr(), (output_b13, output_b2));
-                    table.assign_cell(
-                        || "base 9",
-                        self.lookup_config.cols[0].1,
-                        i,
-                        || Ok(input_b9),
-                    )?;
-
-                    table.assign_cell(
-                        || "base 13",
-                        self.lookup_config.cols[1].1,
-                        i,
-                        || Ok(output_b13),
-                    )?;
-                    table.assign_cell(
-                        || "base 2",
-                        self.lookup_config.cols[2].1,
-                        i,
-                        || Ok(output_b2),
-                    )?;
-                }
-                Ok(())
-            },
-        )
+    fn compute_input_coefs<const SLICES: usize>(
+        input: Option<&F>,
+        base: u8,
+        num_chunks: usize,
+    ) -> [Option<F>; SLICES] {
+        input.map_or([None; SLICES], |&input| {
+            // big-endian
+            let input_chunks: Vec<u8> = {
+                let raw = f_to_biguint(input);
+                let mut v = raw.to_radix_le(base.into());
+                debug_assert!(v.len() <= MAX_CHUNKS);
+                // fill 0 to max chunks
+                v.resize(MAX_CHUNKS, 0);
+                // v is big-endian now
+                v.reverse();
+                v
+            };
+            // Use rchunks + rev so that the remainder chunks stay at the big-endian
+            // side
+            let input_coefs = input_chunks
+                .rchunks(num_chunks)
+                .rev()
+                .map(|chunks| Some(f_from_radix_be(chunks, base)))
+                .collect_vec();
+            input_coefs.try_into().unwrap()
+        })
     }
 
-    pub fn configure(
-        meta: &mut ConstraintSystem<F>,
-        adv_cols: [Column<Advice>; 3],
-        table_cols: [TableColumn; 3],
-    ) -> Self {
-        let lookup_config = ThreeColumnsLookup::configure(meta, adv_cols, table_cols, "from base9");
-        let map = HashMap::new();
-        Self { lookup_config, map }
+    pub fn load_base9(&mut self, table: &mut Table<F>, offset: usize) -> Result<usize, Error> {
+        let mut offset = offset;
+        // Iterate over all possible base 9 values of size 5
+        for b9_chunks in (0..NUM_OF_B9_CHUNKS_PER_SLICE)
+            .map(|_| 0..B9)
+            .multi_cartesian_product()
+        {
+            let input_b9 = f_from_radix_be::<F>(&b9_chunks, B9);
+            let converted_chunks: Vec<u8> =
+                b9_chunks.iter().map(|&x| convert_b9_coef(x)).collect_vec();
+            let output_b13 = f_from_radix_be::<F>(&converted_chunks, B13);
+            let output_b2 = f_from_radix_be::<F>(&converted_chunks, B2);
+            self.base9_map
+                .insert(input_b9.to_repr(), (output_b13, output_b2));
+            self.assign_table_row(
+                table,
+                offset,
+                TableTags::FromBase9,
+                [input_b9, output_b13, output_b2],
+            )?;
+            offset += 1;
+        }
+        Ok(offset)
     }
-    pub fn assign_region(
+
+    pub fn assign_base9(
         &self,
         layouter: &mut impl Layouter<F>,
         input: &AssignedCell<F, F>,
@@ -592,7 +460,7 @@ impl<F: Field> FromBase9TableConfig<F> {
         ),
         Error,
     > {
-        let input_coefs = compute_input_coefs::<F, NUM_OF_B9_SLICES>(
+        let input_coefs = Self::compute_input_coefs::<NUM_OF_B9_SLICES>(
             input.value(),
             B9,
             NUM_OF_B9_CHUNKS_PER_SLICE,
@@ -604,26 +472,32 @@ impl<F: Field> FromBase9TableConfig<F> {
                 let mut output_b13_cells = vec![];
                 let mut output_b2_cells = vec![];
                 for (offset, input_coef) in input_coefs.iter().enumerate() {
-                    self.lookup_config.q_enable.enable(&mut region, offset)?;
+                    self.q_enable.enable(&mut region, offset)?;
+                    region.assign_advice_from_constant(
+                        || "tag",
+                        self.cols[0].0,
+                        offset,
+                        F::from(TableTags::FromBase9 as u64),
+                    )?;
                     let input = region.assign_advice(
                         || "base 9",
-                        self.lookup_config.cols[0].0,
+                        self.cols[1].0,
                         offset,
                         || input_coef.ok_or(Error::Synthesis),
                     )?;
                     input_cells.push(input.clone());
-                    let output = input_coef.and_then(|v| self.map.get(&v.to_repr()));
+                    let output = input_coef.and_then(|v| self.base9_map.get(&v.to_repr()));
 
                     let output_b13 = region.assign_advice(
                         || "base 13",
-                        self.lookup_config.cols[1].0,
+                        self.cols[2].0,
                         offset,
                         || output.map(|v| v.0).ok_or(Error::Synthesis),
                     )?;
                     output_b13_cells.push(output_b13);
                     let output_b2 = region.assign_advice(
                         || "base 2",
-                        self.lookup_config.cols[2].0,
+                        self.cols[3].0,
                         offset,
                         || output.map(|v| v.1).ok_or(Error::Synthesis),
                     )?;
@@ -633,67 +507,31 @@ impl<F: Field> FromBase9TableConfig<F> {
             },
         )
     }
-}
 
-#[derive(Debug, Clone)]
-pub struct FromBinaryTableConfig<F> {
-    lookup_config: ThreeColumnsLookup<F>,
-    /// mapping from base2 input to base9 and base13 output
-    map: HashMap<[u8; 32], (F, F)>,
-}
+    pub fn load_base2(&mut self, table: &mut Table<F>, offset: usize) -> Result<usize, Error> {
+        let mut offset = offset;
+        for b2_chunks in (0..NUM_OF_BINARY_CHUNKS_PER_SLICE)
+            .map(|_| 0..B2)
+            .multi_cartesian_product()
+        {
+            let input_b2 = f_from_radix_be::<F>(&b2_chunks, B2);
+            let output_b9 = f_from_radix_be::<F>(&b2_chunks, B9);
+            let output_b13 = f_from_radix_be::<F>(&b2_chunks, B13);
 
-impl<F: Field> FromBinaryTableConfig<F> {
-    pub fn load(&mut self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
-        layouter.assign_table(
-            || "2 -> (9 and 13)",
-            |mut table| {
-                for (i, b2_chunks) in (0..NUM_OF_BINARY_CHUNKS_PER_SLICE)
-                    .map(|_| 0..B2)
-                    .multi_cartesian_product()
-                    .enumerate()
-                {
-                    let input_b2 = f_from_radix_be::<F>(&b2_chunks, B2);
-                    let output_b9 = f_from_radix_be::<F>(&b2_chunks, B9);
-                    let output_b13 = f_from_radix_be::<F>(&b2_chunks, B13);
-
-                    self.map.insert(input_b2.to_repr(), (output_b9, output_b13));
-                    // Iterate over all possible binary values of size 16
-
-                    table.assign_cell(
-                        || "base 2",
-                        self.lookup_config.cols[0].1,
-                        i,
-                        || Ok(input_b2),
-                    )?;
-
-                    table.assign_cell(
-                        || "base 9",
-                        self.lookup_config.cols[1].1,
-                        i,
-                        || Ok(output_b9),
-                    )?;
-                    table.assign_cell(
-                        || "base 13",
-                        self.lookup_config.cols[2].1,
-                        i,
-                        || Ok(output_b13),
-                    )?;
-                }
-                Ok(())
-            },
-        )
+            self.base2_map
+                .insert(input_b2.to_repr(), (output_b9, output_b13));
+            self.assign_table_row(
+                table,
+                offset,
+                TableTags::FromBase2,
+                [input_b2, output_b9, output_b13],
+            )?;
+            offset += 1;
+        }
+        Ok(offset)
     }
 
-    pub fn configure(
-        meta: &mut ConstraintSystem<F>,
-        adv_cols: [Column<Advice>; 3],
-        table_cols: [TableColumn; 3],
-    ) -> Self {
-        let lookup_config = ThreeColumnsLookup::configure(meta, adv_cols, table_cols, "from base9");
-        let map = HashMap::new();
-        Self { lookup_config, map }
-    }
-    pub fn assign_region(
+    pub fn assign_base2(
         &self,
         layouter: &mut impl Layouter<F>,
         input: &AssignedCell<F, F>,
@@ -705,7 +543,7 @@ impl<F: Field> FromBinaryTableConfig<F> {
         ),
         Error,
     > {
-        let input_coefs = compute_input_coefs::<F, NUM_OF_BINARY_SLICES>(
+        let input_coefs = Self::compute_input_coefs::<NUM_OF_BINARY_SLICES>(
             input.value(),
             B2,
             NUM_OF_BINARY_CHUNKS_PER_SLICE,
@@ -717,27 +555,33 @@ impl<F: Field> FromBinaryTableConfig<F> {
                 let mut output_b9_cells = vec![];
                 let mut output_b13_cells = vec![];
                 for (offset, input_coef) in input_coefs.iter().enumerate() {
-                    self.lookup_config.q_enable.enable(&mut region, offset)?;
+                    self.q_enable.enable(&mut region, offset)?;
+                    region.assign_advice_from_constant(
+                        || "tag",
+                        self.cols[0].0,
+                        offset,
+                        F::from(TableTags::FromBase2 as u64),
+                    )?;
                     let input = region.assign_advice(
                         || "base 2",
-                        self.lookup_config.cols[0].0,
+                        self.cols[1].0,
                         offset,
                         || input_coef.ok_or(Error::Synthesis),
                     )?;
                     input_cells.push(input.clone());
 
-                    let output = input_coef.and_then(|v| self.map.get(&v.to_repr()));
+                    let output = input_coef.and_then(|v| self.base2_map.get(&v.to_repr()));
 
                     let output_b9 = region.assign_advice(
                         || "base 9",
-                        self.lookup_config.cols[1].0,
+                        self.cols[2].0,
                         offset,
                         || output.map(|v| v.0).ok_or(Error::Synthesis),
                     )?;
                     output_b9_cells.push(output_b9);
                     let output_b13 = region.assign_advice(
                         || "base 13",
-                        self.lookup_config.cols[2].0,
+                        self.cols[3].0,
                         offset,
                         || output.map(|v| v.1).ok_or(Error::Synthesis),
                     )?;
