@@ -122,9 +122,24 @@ pub mod sha3_tests {
     pub fn gen_sha3_code(offset: usize, size: usize, mem_kind: MemoryKind) -> (Bytecode, Vec<u8>) {
         let mut rng = rand::thread_rng();
         let data_len = match mem_kind {
-            MemoryKind::LessThanSize => offset + rng.gen_range(0..size),
+            MemoryKind::LessThanSize => {
+                offset
+                    + if size.gt(&0) {
+                        rng.gen_range(0..size)
+                    } else {
+                        0
+                    }
+            }
             MemoryKind::EqualToSize => offset + size,
-            MemoryKind::MoreThanSize => offset + size + rng.gen_range(0..size),
+            MemoryKind::MoreThanSize => {
+                offset
+                    + size
+                    + if size.gt(&0) {
+                        rng.gen_range(0..size)
+                    } else {
+                        0
+                    }
+            }
             MemoryKind::Empty => 0,
         };
         let data = rand_bytes(data_len);
