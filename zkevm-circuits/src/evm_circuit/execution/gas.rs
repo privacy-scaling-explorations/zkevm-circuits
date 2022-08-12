@@ -158,6 +158,6 @@ mod test {
         assert_eq!(block.txs.len(), 1);
         assert_eq!(block.txs[0].steps.len(), 5);
         block.txs[0].steps[2].gas_left -= 1;
-        assert!(run_test_circuit(block, config.evm_circuit_lookup_tags).is_err());
+        assert!(run_test_circuit(block).is_err());
     }
 }
