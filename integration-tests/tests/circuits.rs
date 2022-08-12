@@ -7,9 +7,7 @@ use integration_tests::{get_client, log_init, GenDataOutput};
 use lazy_static::lazy_static;
 use log::trace;
 use zkevm_circuits::evm_circuit::witness::RwMap;
-use zkevm_circuits::evm_circuit::{
-    test::run_test_circuit_complete_fixed_table, witness::block_convert,
-};
+use zkevm_circuits::evm_circuit::{test::run_test_circuit, witness::block_convert};
 use zkevm_circuits::state_circuit::StateCircuit;
 
 lazy_static! {
@@ -23,7 +21,7 @@ async fn test_evm_circuit_block(block_num: u64) {
     let builder = cli.gen_inputs(block_num).await.unwrap();
 
     let block = block_convert(&builder.block, &builder.code_db);
-    run_test_circuit_complete_fixed_table(block).expect("evm_circuit verification failed");
+    run_test_circuit(block).expect("evm_circuit verification failed");
 }
 
 async fn test_state_circuit_block(block_num: u64) {
