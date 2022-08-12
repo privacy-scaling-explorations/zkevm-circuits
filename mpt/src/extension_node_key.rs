@@ -480,10 +480,26 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
             ));
             constraints.push((
                 "short sel2 branch mult",
-                    short
+                    short.clone()
                     * sel2.clone()
                     * (key_rlc_mult_branch.clone() - key_rlc_mult_prev_level.clone() * r_table[0].clone())
             ));
+
+            let is_extension_s_row =
+                meta.query_advice(branch.is_extension_node_s, Rotation::cur());
+            // We need to ensure `s_main.bytes` are all 0 when short - the only nibble is in `s_main.rlp2`.
+            // For long version, the constraints to have 0s after nibbles end in `s_main.bytes` are
+            // below using `key_len_lookup`.
+            for ind in 0..HASH_WIDTH {
+                let s = meta.query_advice(s_main.bytes[ind], Rotation::cur());
+                constraints.push((
+                    "s_main.bytes[i] = 0 for short",
+                        q_not_first.clone()
+                        * is_extension_s_row.clone()
+                        * (is_ext_short_c1.clone() + is_ext_short_c16.clone())
+                        * s,
+                ));
+            }
 
             constraints
         });
@@ -681,22 +697,6 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
             });
         }
 
-        let sel_short = |meta: &mut VirtualCells<F>| {
-            let is_extension_s_row =
-                meta.query_advice(branch.is_extension_node_s, Rotation::cur());
-            let is_ext_short_c16 = meta.query_advice(
-                s_main.bytes[IS_EXT_SHORT_C16_POS - RLP_NUM],
-                Rotation(rot_into_branch_init),
-            );
-            let is_ext_short_c1 = meta.query_advice(
-                s_main.bytes[IS_EXT_SHORT_C1_POS - RLP_NUM],
-                Rotation(rot_into_branch_init),
-            );
-            let is_short = is_ext_short_c16.clone()
-                + is_ext_short_c1.clone();
-
-            is_extension_s_row * is_short
-        };
         let sel_long = |meta: &mut VirtualCells<F>| {
             let is_extension_s_row =
                 meta.query_advice(branch.is_extension_node_s, Rotation::cur());
@@ -725,20 +725,11 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
             is_extension_s_row * is_long
         };
 
-        // There are 0s after key length.
         /*
-        for ind in 0..HASH_WIDTH {
-            key_len_lookup(
-                meta,
-                sel_short,
-                ind + 1,
-                s_main.rlp2,
-                s_main.bytes[ind],
-                128,
-                fixed_table,
-            )
-        }
-
+        There are 0s after key length. Note that for a short version (only one nibble), all
+        `s_main.bytes` need to be 0 (the only nibble is in `s_main.rlp2`).
+        */
+        /*
         for ind in 1..HASH_WIDTH {
             key_len_lookup(
                 meta,

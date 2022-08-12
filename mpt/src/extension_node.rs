@@ -306,19 +306,9 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
                 let s_rlp1 = meta.query_advice(s_main.rlp1, Rotation::cur());
                 let s_advices0 = meta.query_advice(s_main.bytes[0], Rotation::cur());
 
-                let is_one_nibble = is_ext_short_c16.clone() + is_ext_short_c1.clone();
+                let is_short = is_ext_short_c16.clone() + is_ext_short_c1.clone();
                 let is_even_nibbles = is_ext_long_even_c16.clone() + is_ext_long_even_c1.clone();
                 let is_long_odd_nibbles = is_ext_long_odd_c16.clone()+ is_ext_long_odd_c1.clone();
-
-                // This prevents setting to short when it's not short (s_rlp1 > 226 in that
-                // case):
-                constraints.push((
-                    "short implies s_rlp1 = 226",
-                    q_not_first.clone()
-                        * q_enable.clone()
-                        * is_one_nibble.clone()
-                        * (s_rlp1.clone() - c226),
-                ));
 
                 // This prevents setting to even when it's not even,
                 // because when it's not even s_advices0 != 0 (hexToCompact adds 16).
@@ -333,15 +323,17 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
                 let c_rlp2 = meta.query_advice(c_main.rlp2, Rotation::cur());
                 let is_branch_hashed = c_rlp2 * c160_inv.clone();
 
-                // RLP:
-                // If only one nibble
+                // RLP
+                // If only one nibble:
                 // [226,16,160,172,105,12...
+                // One nibble with non-hashed branch:
+                // [223,16,221,198,132,32,0,0,0,1,198,132,32,0,0,0,1,128,128,128,128,128,128,128,128,128,128,128,128,128,128,128]
                 constraints.push((
                     "One nibble & HASHED branch & ext not longer than 55 RLP",
                     q_not_first.clone()
                         * q_enable.clone()
                         * (one.clone() - is_ext_longer_than_55.clone())
-                        * is_one_nibble.clone()
+                        * is_short.clone()
                         * is_branch_hashed.clone()
                         * (s_rlp1.clone() - c192.clone() - c33.clone() - one.clone()),
                 ));
@@ -353,7 +345,7 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
                     q_not_first.clone()
                         * q_enable.clone()
                         * (one.clone() - is_ext_longer_than_55.clone())
-                        * is_one_nibble.clone()
+                        * is_short.clone()
                         * (one.clone() - is_branch_hashed.clone())
                         * (s_rlp1.clone() - c192.clone() - one.clone() - (c_advices0.clone() - c192.clone()) - one.clone()),
                 ));

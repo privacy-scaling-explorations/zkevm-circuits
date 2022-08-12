@@ -165,6 +165,10 @@ impl<F: FieldExt> BranchHashInParentChip<F> {
             constraints
         });
 
+        /*
+        Similar as the gate above, but here the branch is not hashed. That means its RLC needs to
+        be the same as RLC of the node in the parent branch at `modified_node` position.
+        */
         meta.create_gate("NON-HASHED branch hash in parent", |meta| {
             let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
             let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
