@@ -192,7 +192,10 @@ pub mod test {
             tx.steps.iter().any(|step| {
                 matches!(
                     step.opcode,
-                    Some(OpcodeId::AND) | Some(OpcodeId::OR) | Some(OpcodeId::XOR)
+                    Some(OpcodeId::AND)
+                        | Some(OpcodeId::OR)
+                        | Some(OpcodeId::XOR)
+                        | Some(OpcodeId::NOT)
                 )
             })
         });
