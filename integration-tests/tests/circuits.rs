@@ -108,10 +108,7 @@ async fn test_tx_circuit_block(block_num: u64) {
         chain_id: CHAIN_ID,
     };
 
-    let prover = match MockProver::run(DEGREE, &circuit, instance) {
-        Ok(prover) => prover,
-        Err(e) => panic!("{:#?}", e),
-    };
+    let prover = MockProver::run(DEGREE, &circuit, instance).unwrap();
 
     prover.verify().expect("tx_circuit verification failed");
 }
