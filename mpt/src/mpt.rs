@@ -24,8 +24,7 @@ use crate::{
     leaf_key_in_added_branch::LeafKeyInAddedBranchChip,
     leaf_value::LeafValueChip,
     param::{
-        COUNTER_WITNESS_LEN, IS_BALANCE_MOD_POS,
-        IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, IS_EXT_LONG_EVEN_C16_POS,
+        COUNTER_WITNESS_LEN, IS_BALANCE_MOD_POS, IS_EXT_LONG_EVEN_C16_POS,
         IS_EXT_LONG_EVEN_C1_POS, IS_EXT_LONG_ODD_C16_POS, IS_EXT_LONG_ODD_C1_POS,
         IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS, IS_NONCE_MOD_POS, IS_STORAGE_MOD_POS,
         RLP_NUM, NOT_FIRST_LEVEL_POS, IS_ACCOUNT_DELETE_MOD_POS, IS_NON_EXISTING_ACCOUNT_POS,
@@ -528,8 +527,6 @@ impl<F: FieldExt> MPTConfig<F> {
             branch.clone(),
             account_leaf.is_in_added_branch,
             s_main.clone(),
-            s_main.bytes[IS_BRANCH_C16_POS - RLP_NUM], // TODO: remove
-            s_main.bytes[IS_BRANCH_C1_POS - RLP_NUM], // TODO: remove
             accumulators.key.clone(),
             acc_r,
         );
@@ -741,7 +738,6 @@ impl<F: FieldExt> MPTConfig<F> {
             c_mod_node_hash_rlc,
             accumulators.clone(),
             denoter.clone(),
-            s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM], // TODO: remove
             account_leaf.is_in_added_branch,
             r_table.clone(),
             fixed_table.clone(),
@@ -768,7 +764,6 @@ impl<F: FieldExt> MPTConfig<F> {
             c_mod_node_hash_rlc,
             accumulators.clone(),
             denoter.clone(),
-            s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM], // TODO: remove
             account_leaf.is_in_added_branch,
             r_table.clone(),
             fixed_table.clone(),

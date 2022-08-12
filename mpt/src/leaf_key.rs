@@ -8,10 +8,10 @@ use std::marker::PhantomData;
 
 use crate::{
     helpers::{compute_rlc, get_bool_constraint, key_len_lookup, mult_diff_lookup, range_lookups},
-    mpt::{FixedTableTag, MainCols, AccumulatorPair, DenoteCols, AccumulatorCols},
+    mpt::{FixedTableTag, MainCols, DenoteCols, AccumulatorCols},
     param::{
         BRANCH_ROWS_NUM, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, RLP_NUM,
-        R_TABLE_LEN, HASH_WIDTH,
+        R_TABLE_LEN, HASH_WIDTH, IS_BRANCH_S_PLACEHOLDER_POS, IS_BRANCH_C_PLACEHOLDER_POS,
     },
 };
 
@@ -37,7 +37,6 @@ impl<F: FieldExt> LeafKeyChip<F> {
         c_mod_node_hash_rlc: Column<Advice>,
         accs: AccumulatorCols,
         denoter: DenoteCols, // sel1 stores key_rlc_prev, sel2 stores key_rlc_mult_prev
-        is_branch_placeholder: Column<Advice>,
         is_account_leaf_in_added_branch: Column<Advice>,
         r_table: Vec<Expression<F>>,
         fixed_table: [Column<Fixed>; 3],
@@ -213,8 +212,13 @@ impl<F: FieldExt> LeafKeyChip<F> {
                     Rotation(rot - 1),
                 );
 
-                let is_branch_placeholder =
-                    meta.query_advice(is_branch_placeholder, Rotation(rot - 1));
+                let mut is_branch_placeholder =
+                    meta.query_advice(s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM], Rotation(rot - 1));
+                if !is_s {
+                    is_branch_placeholder =
+                        meta.query_advice(s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM], Rotation(rot - 1));
+
+                }
 
                 // If the last branch is placeholder (the placeholder branch is the same as its
                 // parallel counterpart), there is a branch modified_index nibble already
@@ -508,8 +512,13 @@ impl<F: FieldExt> LeafKeyChip<F> {
             let is_leaf_in_first_level =
                 meta.query_advice(is_account_leaf_in_added_branch, Rotation(rot_into_account));
 
-            let is_branch_placeholder =
-                meta.query_advice(is_branch_placeholder, Rotation(rot_into_init));
+            let mut is_branch_placeholder =
+                meta.query_advice(s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM], Rotation(rot - 1));
+            if !is_s {
+                is_branch_placeholder =
+                    meta.query_advice(s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM], Rotation(rot - 1));
+
+            }
 
             // Previous key RLC:
             /*

@@ -8,7 +8,7 @@ use std::marker::PhantomData;
 
 use crate::{param::{
     IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS, IS_EXT_LONG_ODD_C16_POS,
-    IS_EXT_LONG_ODD_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS, RLP_NUM,
+    IS_EXT_LONG_ODD_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS, RLP_NUM, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS,
 }, mpt::{MainCols, BranchCols, AccumulatorPair}};
 
 #[derive(Clone, Debug)]
@@ -31,8 +31,6 @@ impl<F: FieldExt> BranchKeyChip<F> {
         branch: BranchCols,
         is_account_leaf_in_added_branch: Column<Advice>,
         s_main: MainCols,
-        c16_col: Column<Advice>,
-        c1_col: Column<Advice>,
         acc_pair: AccumulatorPair, // used first for account address, then for storage key
         acc_r: F,
     ) -> BranchKeyConfig {
@@ -99,10 +97,10 @@ impl<F: FieldExt> BranchKeyChip<F> {
             // If sel2 = 1, then modified_node is multiplied by 1.
             // NOTE: modified_node presents nibbles: n0, n1, ...
             // key_rlc = (n0 * 16 + n1) + (n2 * 16 + n3) * r + (n4 * 16 + n5) * r^2 + ...
-            let sel1_prev = meta.query_advice(c16_col, Rotation(-20));
+            let sel1_prev = meta.query_advice(s_main.bytes[IS_BRANCH_C16_POS - RLP_NUM], Rotation(-20));
             // Rotation(-20) lands into previous branch init.
-            let sel1_cur = meta.query_advice(c16_col, Rotation::prev());
-            let sel2_cur = meta.query_advice(c1_col, Rotation::prev());
+            let sel1_cur = meta.query_advice(s_main.bytes[IS_BRANCH_C16_POS - RLP_NUM], Rotation::prev());
+            let sel2_cur = meta.query_advice(s_main.bytes[IS_BRANCH_C1_POS - RLP_NUM], Rotation::prev());
 
             let key_rlc_prev = meta.query_advice(acc_pair.rlc, Rotation(-19));
             let key_rlc_cur = meta.query_advice(acc_pair.rlc, Rotation::cur());
