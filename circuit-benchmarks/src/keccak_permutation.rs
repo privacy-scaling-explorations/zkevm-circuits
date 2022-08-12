@@ -5,16 +5,12 @@ use halo2_proofs::{
     circuit::{AssignedCell, Layouter, SimpleFloorPlanner},
     plonk::{Circuit, ConstraintSystem, Error},
 };
-use keccak256::{
-    common::NEXT_INPUTS_LANES, keccak_arith::KeccakFArith, permutation::circuit::KeccakFConfig,
-};
+use keccak256::{common::NEXT_INPUTS_LANES, permutation::circuit::KeccakFConfig};
 
 #[derive(Default, Clone)]
 struct KeccakRoundTestCircuit<F> {
     in_state: [F; 25],
-    out_state: [F; 25],
     next_mixing: Option<[F; NEXT_INPUTS_LANES]>,
-    is_mixing: bool,
 }
 
 impl<F: Field> Circuit<F> for KeccakRoundTestCircuit<F> {
@@ -44,12 +40,12 @@ impl<F: Field> Circuit<F> for KeccakRoundTestCircuit<F> {
                 // Witness `state`
                 let in_state: [AssignedCell<F, F>; 25] = {
                     let mut state: Vec<AssignedCell<F, F>> = Vec::with_capacity(25);
-                    for (idx, val) in self.in_state.iter().enumerate() {
+                    for &val in self.in_state.iter() {
                         let cell = region.assign_advice(
                             || "witness input state",
-                            config.state[idx],
+                            config.advice,
                             offset,
-                            || Ok(*val),
+                            || Ok(val),
                         )?;
                         state.push(cell)
                     }
@@ -59,13 +55,7 @@ impl<F: Field> Circuit<F> for KeccakRoundTestCircuit<F> {
             },
         )?;
 
-        config.assign_all(
-            &mut layouter,
-            in_state,
-            self.out_state,
-            self.is_mixing,
-            self.next_mixing,
-        )?;
+        config.assign_all(&mut layouter, in_state, self.next_mixing)?;
         Ok(())
     }
 }
@@ -97,14 +87,6 @@ mod tests {
             [0, 0, 0, 0, 0],
         ];
 
-        let next_input: State = [
-            [2, 0, 0, 0, 0],
-            [0, 0, 0, 0, 0],
-            [0, 0, 0, 0, 0],
-            [0, 0, 0, 0, 0],
-            [0, 0, 0, 0, 0],
-        ];
-
         let mut in_state_biguint = StateBigInt::default();
 
         // Generate in_state as `[Fr;25]`
@@ -114,23 +96,10 @@ mod tests {
             in_state_biguint[(x, y)] = convert_b2_to_b13(in_state[x][y]);
         }
 
-        // Compute out_state_mix
-        let mut out_state_mix = in_state_biguint.clone();
-        KeccakFArith::permute_and_absorb(&mut out_state_mix, Some(&next_input));
-
-        // Compute out_state_non_mix
-        let mut out_state_non_mix = in_state_biguint.clone();
-        KeccakFArith::permute_and_absorb(&mut out_state_non_mix, None);
-
-        // Generate out_state as `[Fr;25]`
-        let out_state_non_mix: [Fr; 25] = state_bigint_to_field(out_state_non_mix);
-
         // Build the circuit
         let circuit = KeccakRoundTestCircuit::<Fr> {
             in_state: in_state_fp,
-            out_state: out_state_non_mix,
             next_mixing: None,
-            is_mixing: false,
         };
 
         let degree: u32 = var("DEGREE")
