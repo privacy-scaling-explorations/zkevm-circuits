@@ -31,6 +31,8 @@ use random_linear_combination::{Chip as RlcChip, Config as RlcConfig, Queries as
 use std::collections::HashMap;
 use std::iter::once;
 
+use self::constraint_builder::RwTableQueries;
+
 const N_LIMBS_RW_COUNTER: usize = 2;
 const N_LIMBS_ACCOUNT_ADDRESS: usize = 10;
 const N_LIMBS_ID: usize = 2;
@@ -148,7 +150,7 @@ impl<F: Field> StateCircuitConfig<F> {
 
         for (offset, (row, prev_row)) in rows.zip(prev_rows).enumerate() {
             if offset >= padding_length {
-                log::trace!("state citcuit assign offset:{} row:{:#?}", offset, row);
+                log::trace!("state circuit assign offset:{} row:{:#?}", offset, row);
             }
 
             region.assign_fixed(|| "selector", self.selector, offset, || Ok(F::one()))?;
@@ -215,9 +217,9 @@ type Lookup<F> = (&'static str, Expression<F>, Expression<F>);
 /// State Circuit for proving RwTable is valid
 #[derive(Default, Clone)]
 pub struct StateCircuit<F> {
-    pub(crate) randomness: F,
     pub(crate) rows: Vec<Rw>,
     pub(crate) n_rows: usize,
+    pub(crate) randomness: F,
     #[cfg(test)]
     overrides: HashMap<(test::AdviceColumn, isize), F>,
 }
@@ -276,8 +278,8 @@ where
                 config.rw_table.load_with_region(
                     &mut region,
                     &self.rows,
-                    self.randomness,
                     self.n_rows,
+                    self.randomness,
                 )?;
 
                 config.assign_with_region(&mut region, &self.rows, self.n_rows, self.randomness)?;
@@ -306,11 +308,25 @@ fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: &StateCircuitConfig<F>) 
 
     Queries {
         selector: meta.query_fixed(c.selector, Rotation::cur()),
+        rw_table: RwTableQueries {
+            rw_counter: meta.query_advice(c.rw_table.rw_counter, Rotation::cur()),
+            prev_rw_counter: meta.query_advice(c.rw_table.rw_counter, Rotation::prev()),
+            is_write: meta.query_advice(c.rw_table.is_write, Rotation::cur()),
+            tag: meta.query_advice(c.rw_table.tag, Rotation::cur()),
+            id: meta.query_advice(c.rw_table.id, Rotation::cur()),
+            prev_id: meta.query_advice(c.rw_table.id, Rotation::prev()),
+            address: meta.query_advice(c.rw_table.address, Rotation::cur()),
+            prev_address: meta.query_advice(c.rw_table.address, Rotation::prev()),
+            field_tag: meta.query_advice(c.rw_table.field_tag, Rotation::cur()),
+            storage_key: meta.query_advice(c.rw_table.storage_key, Rotation::cur()),
+            value: meta.query_advice(c.rw_table.value, Rotation::cur()),
+            // TODO: we should constain value.prev() <-> value_prev.cur() later
+            // see https://github.com/privacy-scaling-explorations/zkevm-specs/issues/202 for more details
+            value_prev: meta.query_advice(c.rw_table.value, Rotation::prev()),
+        },
         lexicographic_ordering_selector: meta
             .query_fixed(c.lexicographic_ordering.selector, Rotation::cur()),
         rw_counter: MpiQueries::new(meta, c.sort_keys.rw_counter),
-        is_write: meta.query_advice(c.rw_table.is_write, Rotation::cur()),
-        tag: c.sort_keys.tag.value(Rotation::cur())(meta),
         tag_bits: c
             .sort_keys
             .tag
@@ -327,10 +343,7 @@ fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: &StateCircuitConfig<F>) 
                 + meta.query_advice(first_different_limb.bits[2], Rotation::cur()))
             + final_bits_sum.clone() * (1.expr() - final_bits_sum),
         address: MpiQueries::new(meta, c.sort_keys.address),
-        field_tag: meta.query_advice(c.sort_keys.field_tag, Rotation::cur()),
         storage_key: RlcQueries::new(meta, c.sort_keys.storage_key),
-        value: meta.query_advice(c.rw_table.value, Rotation::cur()),
-        value_prev: meta.query_advice(c.rw_table.value, Rotation::prev()),
         initial_value: meta.query_advice(c.initial_value, Rotation::cur()),
         initial_value_prev: meta.query_advice(c.initial_value, Rotation::prev()),
         lookups: LookupsQueries::new(meta, c.lookups),

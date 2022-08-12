@@ -268,8 +268,8 @@ pub mod test {
             config.rw_table.load(
                 &mut layouter,
                 &self.block.rws.table_assignments(),
-                self.block.randomness,
                 self.block.state_circuit_pad_to,
+                self.block.randomness,
             )?;
             config.bytecode_table.load(
                 &mut layouter,

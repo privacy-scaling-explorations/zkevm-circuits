@@ -35,7 +35,6 @@ pub struct Config<T, const N: usize>
 where
     T: ToLimbs<N>,
 {
-    pub value: Column<Advice>,
     // TODO: we can save a column here by not storing the lsb, and then checking that
     // value - value_from_limbs(limbs.prepend(0)) fits into a limb.
     // Does this apply for RLC's too?
@@ -45,8 +44,6 @@ where
 
 #[derive(Clone)]
 pub struct Queries<F: Field, const N: usize> {
-    pub value: Expression<F>,
-    pub value_prev: Expression<F>, // move this up, as it's not always needed.
     pub limbs: [Expression<F>; N],
     pub limbs_prev: [Expression<F>; N],
 }
@@ -54,8 +51,6 @@ pub struct Queries<F: Field, const N: usize> {
 impl<F: Field, const N: usize> Queries<F, N> {
     pub fn new<T: ToLimbs<N>>(meta: &mut VirtualCells<'_, F>, c: Config<T, N>) -> Self {
         Self {
-            value: meta.query_advice(c.value, Rotation::cur()),
-            value_prev: meta.query_advice(c.value, Rotation::prev()),
             limbs: c.limbs.map(|limb| meta.query_advice(limb, Rotation::cur())),
             limbs_prev: c
                 .limbs
@@ -142,7 +137,6 @@ where
         });
 
         Config {
-            value,
             limbs,
             _marker: PhantomData,
         }

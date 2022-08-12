@@ -219,7 +219,6 @@ impl Config {
         BinaryNumberChip::construct(self.first_different_limb).assign(region, offset, &index)?;
 
         let limb_difference = F::from(*cur_limb as u64) - F::from(*prev_limb as u64);
-        //assert!(limb_difference < F::from(1 << 16));
         region.assign_advice(
             || "limb_difference",
             self.limb_difference,

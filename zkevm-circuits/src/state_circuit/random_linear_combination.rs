@@ -11,23 +11,18 @@ use super::lookups;
 
 #[derive(Clone, Debug, Copy)]
 pub struct Config<const N: usize> {
-    pub encoded: Column<Advice>,
     // bytes are little endian
     pub bytes: [Column<Advice>; N],
 }
 
 #[derive(Clone)]
 pub struct Queries<F: Field, const N: usize> {
-    pub encoded: Expression<F>,
-    pub encoded_prev: Expression<F>,
     pub bytes: [Expression<F>; N],
 }
 
 impl<F: Field, const N: usize> Queries<F, N> {
     pub fn new(meta: &mut VirtualCells<'_, F>, c: Config<N>) -> Self {
         Self {
-            encoded: meta.query_advice(c.encoded, Rotation::cur()),
-            encoded_prev: meta.query_advice(c.encoded, Rotation::prev()),
             bytes: c.bytes.map(|byte| meta.query_advice(byte, Rotation::cur())),
         }
     }
@@ -89,7 +84,7 @@ impl<F: Field, const N: usize> Chip<F, N> {
             vec![selector * (encoded - rlc::expr(&bytes, &power_of_randomness))]
         });
 
-        Config { encoded, bytes }
+        Config { bytes }
     }
 
     pub fn load(&self, _layouter: &mut impl Layouter<F>) -> Result<(), Error> {

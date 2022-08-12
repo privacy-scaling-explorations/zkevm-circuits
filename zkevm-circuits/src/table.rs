@@ -396,12 +396,12 @@ impl RwTable {
         &self,
         layouter: &mut impl Layouter<F>,
         rws: &[Rw],
-        randomness: F,
         n_rows: usize,
+        randomness: F,
     ) -> Result<(), Error> {
         layouter.assign_region(
             || "rw table",
-            |mut region| self.load_with_region(&mut region, rws, randomness, n_rows),
+            |mut region| self.load_with_region(&mut region, rws, n_rows, randomness),
         )
     }
 
@@ -409,8 +409,8 @@ impl RwTable {
         &self,
         region: &mut Region<'_, F>,
         rws: &[Rw],
-        randomness: F,
         n_rows: usize,
+        randomness: F,
     ) -> Result<(), Error> {
         let (rows, _) = RwMap::table_assignments_prepad(rws, n_rows);
         for (offset, row) in rows.iter().enumerate() {

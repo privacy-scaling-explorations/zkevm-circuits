@@ -54,14 +54,14 @@ impl AdviceColumn {
     pub fn value<F: Field>(&self, config: &StateCircuitConfig<F>) -> Column<Advice> {
         match self {
             Self::IsWrite => config.rw_table.is_write,
-            Self::Address => config.sort_keys.address.value,
+            Self::Address => config.rw_table.address,
             Self::AddressLimb0 => config.sort_keys.address.limbs[0],
             Self::AddressLimb1 => config.sort_keys.address.limbs[1],
-            Self::StorageKey => config.sort_keys.storage_key.encoded,
+            Self::StorageKey => config.rw_table.storage_key,
             Self::StorageKeyByte0 => config.sort_keys.storage_key.bytes[0],
             Self::StorageKeyByte1 => config.sort_keys.storage_key.bytes[1],
             Self::Value => config.rw_table.value,
-            Self::RwCounter => config.sort_keys.rw_counter.value,
+            Self::RwCounter => config.rw_table.rw_counter,
             Self::RwCounterLimb0 => config.sort_keys.rw_counter.limbs[0],
             Self::RwCounterLimb1 => config.sort_keys.rw_counter.limbs[1],
             Self::Tag => config.rw_table.tag,
