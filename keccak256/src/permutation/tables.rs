@@ -633,7 +633,7 @@ impl<F: Field> FromBase9TableConfig<F> {
 #[derive(Debug, Clone)]
 pub struct FromBinaryTableConfig<F> {
     lookup_config: ThreeColumnsLookup<F>,
-    // mapping from base9 input to base13 and base2 output
+    /// mapping from base2 input to base9 and base13 output
     map: HashMap<[u8; 32], (F, F)>,
 }
 
