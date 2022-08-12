@@ -264,9 +264,13 @@ pub mod test {
             config
                 .tx_table
                 .load(&mut layouter, &self.block.txs, self.block.randomness)?;
-            config
-                .rw_table
-                .load(&mut layouter, &self.block.rws, self.block.randomness)?;
+            self.block.rws.check_rw_counter_sanity();
+            config.rw_table.load(
+                &mut layouter,
+                &self.block.rws.table_assignments(),
+                self.block.state_circuit_pad_to,
+                self.block.randomness,
+            )?;
             config.bytecode_table.load(
                 &mut layouter,
                 self.block.bytecodes.values(),
