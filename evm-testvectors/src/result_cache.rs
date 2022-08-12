@@ -1,8 +1,11 @@
 use anyhow::Result;
+use prettytable::Row;
 use std::collections::HashMap;
 use std::io::Read;
 use std::io::Write;
 use std::path::PathBuf;
+use std::collections::HashSet;
+use prettytable::Table;
 
 pub struct ResultCache {
     entries: HashMap<String, String>,
@@ -11,16 +14,71 @@ pub struct ResultCache {
 
 impl ResultCache {
     pub fn report(&self) -> String {
+        let mut folders = HashSet::new();
+        let mut results = HashSet::new();
+        let mut count_by_folder_status : HashMap<String,usize>= HashMap::new();
+        let mut count_by_result : HashMap<String,usize>= HashMap::new();
+        for (path_id,status) in &self.entries {
+            let id = path_id.rsplit_terminator("/").next().unwrap();
+            let full_path = &path_id[..path_id.len()-id.len()-1];
+            let name = full_path.rsplit_terminator("/").next().unwrap();
+            let folder = &full_path[..full_path.len()-name.len()-1];
+
+            let result = &status[..6];
+
+            folders.insert(folder);
+            results.insert(result.to_string());
+
+            let key = format!("{}_{}", folder, result);
+            *count_by_folder_status.entry(key).or_default() += 1;
+            *count_by_result.entry(status.to_string()).or_default() += 1;
+        }
+
+        let mut folders : Vec<_> = folders.iter().collect();
+        folders.sort();
+        let mut results : Vec<_> = results.iter().collect();
+        results.sort();
+
+        let mut table = Table::new();
+        let mut header = vec![String::from("path")];
+        header.append(&mut results.iter().map(|v| v.to_string()).collect());
+        table.add_row(Row::from_iter(header));
+
+        let mut totals = vec![0usize;results.len()];
+    
+        for folder in folders {
+            let mut row = Vec::new();
+            for i in 0..results.len() {
+                let key = format!("{}_{}", folder, results[i]);
+                let value = *count_by_folder_status.get(&key).unwrap_or(&0usize); 
+                row.push(value);
+                totals[i] += value;
+            }
+            let sum : usize = row.iter().sum();
+            let mut cells = vec![folder.to_string()];
+            cells.append(&mut row.iter().map(|n| format!("{} ({}%)",n,(100*n)/sum)).collect());
+            table.add_row(Row::from_iter(cells));
+        }
+            
+        let sum : usize = totals.iter().sum();
+        let mut cells = vec!["TOTAL".to_string()];
+        cells.append(&mut totals.iter().map(|n| format!("{} ({}%)",n,(100*n)/sum)).collect());
+        table.add_row(Row::from_iter(cells));
+
+        let mut output = String::from("");
+        output.push_str(&format!("{}",table));
+        output.push_str("\n");
+
         let mut info : Vec<String> = Vec::new();
-        let mut rev : HashMap<String, usize>= HashMap::new();
-        for (_,v) in &self.entries {
-            *rev.entry(v.clone()).or_default() += 1;
-        }
-        for (v,count) in rev {
-            info.push(format!("{:04} => {}",count,v)); 
-        }
-        info.sort();
-        info.join("\n")
+        for (result,count) in  count_by_result {
+            info.push(format!("{:04} => {}",count, result));
+            }
+        info.sort_by(|a, b| b.cmp(a));
+        output.push_str("Top 25 results");
+        info.iter().take(25).for_each(|s| output.push_str(&format!("{}\n",s)));
+
+
+        output
     }
 
     pub fn new(path: PathBuf) -> Result<Self> {

@@ -109,8 +109,9 @@ fn run_test_suite(tcs: Vec<StateTest>, config: StateTestConfig) -> Result<()> {
 
     // for each test
     tcs.into_par_iter().for_each(|tc| {
-        let id = tc.id.clone();
-        if TEST_IGNORE_LIST.iter().any(|t| id.as_str().contains(t)) {
+        let id = format!("{}/{}",tc.path,tc.id);
+
+        if TEST_IGNORE_LIST.iter().any(|t| tc.id.as_str().contains(t)) {
             return;
         }
         if results.read().unwrap().contains(id.as_str()) {
