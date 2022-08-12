@@ -25,9 +25,7 @@ pub const NUM_OF_B9_SLICES: usize = 13;
 #[derive(Debug, Clone)]
 struct ThreeColumnsLookup<F> {
     q_enable: Selector,
-    pub(crate) col0: (Column<Advice>, TableColumn),
-    pub(crate) col1: (Column<Advice>, TableColumn),
-    pub(crate) col2: (Column<Advice>, TableColumn),
+    pub(crate) cols: [(Column<Advice>, TableColumn); 3],
     _marker: PhantomData<F>,
 }
 impl<F: Field> ThreeColumnsLookup<F> {
@@ -37,27 +35,29 @@ impl<F: Field> ThreeColumnsLookup<F> {
         table_cols: [TableColumn; 3],
         name: &'static str,
     ) -> Self {
-        let col0 = (adv_cols[0], table_cols[0]);
-        let col1 = (adv_cols[1], table_cols[1]);
-        let col2 = (adv_cols[2], table_cols[2]);
+        let cols: [(Column<Advice>, TableColumn); 3] = adv_cols
+            .iter()
+            .cloned()
+            .zip(table_cols.iter().cloned())
+            .collect_vec()
+            .try_into()
+            .unwrap();
         let q_enable = meta.complex_selector();
         meta.lookup(name, |meta| {
             let q_enable = meta.query_selector(q_enable);
-            let col0_adv = meta.query_advice(col0.0, Rotation::cur());
-            let col1_adv = meta.query_advice(col1.0, Rotation::cur());
-            let col2_adv = meta.query_advice(col2.0, Rotation::cur());
+            let col0_adv = meta.query_advice(cols[0].0, Rotation::cur());
+            let col1_adv = meta.query_advice(cols[1].0, Rotation::cur());
+            let col2_adv = meta.query_advice(cols[2].0, Rotation::cur());
 
             vec![
-                (q_enable.clone() * col0_adv, col0.1),
-                (q_enable.clone() * col1_adv, col1.1),
-                (q_enable * col2_adv, col2.1),
+                (q_enable.clone() * col0_adv, cols[0].1),
+                (q_enable.clone() * col1_adv, cols[1].1),
+                (q_enable * col2_adv, cols[2].1),
             ]
         });
         Self {
             q_enable,
-            col0,
-            col1,
-            col2,
+            cols,
             _marker: PhantomData,
         }
     }
@@ -105,19 +105,19 @@ impl<F: Field> StackableTable<F> {
         for i in 0..=k {
             table.assign_cell(
                 || format!("tag range{}", tag),
-                self.lookup_config.col0.1,
+                self.lookup_config.cols[0].1,
                 offset,
                 || Ok(F::from(tag as u64)),
             )?;
             table.assign_cell(
                 || format!("range{}", tag),
-                self.lookup_config.col1.1,
+                self.lookup_config.cols[1].1,
                 offset,
                 || Ok(F::from(i)),
             )?;
             table.assign_cell(
                 || format!("dummy col range{}", tag),
-                self.lookup_config.col2.1,
+                self.lookup_config.cols[2].1,
                 offset,
                 || Ok(F::zero()),
             )?;
@@ -140,19 +140,19 @@ impl<F: Field> StackableTable<F> {
                     .insert(last_chunk.to_repr(), output_coef);
                 table.assign_cell(
                     || "tag special chunks",
-                    self.lookup_config.col0.1,
+                    self.lookup_config.cols[0].1,
                     offset,
                     || Ok(F::from(TableTags::SpecialChunk as u64)),
                 )?;
                 table.assign_cell(
                     || "last chunk",
-                    self.lookup_config.col1.1,
+                    self.lookup_config.cols[1].1,
                     offset,
                     || Ok(last_chunk),
                 )?;
                 table.assign_cell(
                     || "output coef",
-                    self.lookup_config.col2.1,
+                    self.lookup_config.cols[2].1,
                     offset,
                     || Ok(output_coef),
                 )?;
@@ -167,19 +167,19 @@ impl<F: Field> StackableTable<F> {
         for (left, right) in [(true, false), (false, true)] {
             table.assign_cell(
                 || "tag boolean flag",
-                self.lookup_config.col0.1,
+                self.lookup_config.cols[0].1,
                 offset,
                 || Ok(F::from(TableTags::BooleanFlag as u64)),
             )?;
             table.assign_cell(
                 || "left",
-                self.lookup_config.col1.1,
+                self.lookup_config.cols[1].1,
                 offset,
                 || Ok(F::from(left)),
             )?;
             table.assign_cell(
                 || "right",
-                self.lookup_config.col2.1,
+                self.lookup_config.cols[2].1,
                 offset,
                 || Ok(F::from(right)),
             )?;
@@ -221,14 +221,19 @@ impl<F: Field> StackableTable<F> {
                     self.lookup_config.q_enable.enable(&mut region, offset)?;
                     region.assign_advice_from_constant(
                         || "tag",
-                        self.lookup_config.col0.0,
+                        self.lookup_config.cols[0].0,
                         offset,
                         tag,
                     )?;
-                    v.copy_advice(|| "value", &mut region, self.lookup_config.col1.0, offset)?;
+                    v.copy_advice(
+                        || "value",
+                        &mut region,
+                        self.lookup_config.cols[1].0,
+                        offset,
+                    )?;
                     region.assign_advice_from_constant(
                         || "dummy",
-                        self.lookup_config.col2.0,
+                        self.lookup_config.cols[2].0,
                         offset,
                         F::zero(),
                     )?;
@@ -265,19 +270,19 @@ impl<F: Field> StackableTable<F> {
                 self.lookup_config.q_enable.enable(&mut region, offset)?;
                 region.assign_advice_from_constant(
                     || "tag",
-                    self.lookup_config.col0.0,
+                    self.lookup_config.cols[0].0,
                     offset,
                     tag,
                 )?;
                 last_chunk.copy_advice(
                     || "last chunk",
                     &mut region,
-                    self.lookup_config.col1.0,
+                    self.lookup_config.cols[1].0,
                     offset,
                 )?;
                 region.assign_advice(
                     || "output coef",
-                    self.lookup_config.col2.0,
+                    self.lookup_config.cols[2].0,
                     offset,
                     || {
                         last_chunk
@@ -304,19 +309,19 @@ impl<F: Field> StackableTable<F> {
                 self.lookup_config.q_enable.enable(&mut region, offset)?;
                 region.assign_advice_from_constant(
                     || "tag",
-                    self.lookup_config.col0.0,
+                    self.lookup_config.cols[0].0,
                     offset,
                     F::from(TableTags::BooleanFlag as u64),
                 )?;
                 let left = region.assign_advice(
                     || "left",
-                    self.lookup_config.col1.0,
+                    self.lookup_config.cols[1].0,
                     offset,
                     || Ok(F::from(is_left)),
                 )?;
                 let right = region.assign_advice(
                     || "right",
-                    self.lookup_config.col2.0,
+                    self.lookup_config.cols[2].0,
                     offset,
                     || Ok(F::from(!is_left)),
                 )?;
@@ -389,20 +394,20 @@ impl<F: Field> Base13toBase9TableConfig<F> {
                         .insert(input_b13.to_repr(), (output_b9, overflow_detector));
                     table.assign_cell(
                         || "base 13",
-                        self.lookup_config.col0.1,
+                        self.lookup_config.cols[0].1,
                         i,
                         || Ok(input_b13),
                     )?;
 
                     table.assign_cell(
                         || "base 9",
-                        self.lookup_config.col1.1,
+                        self.lookup_config.cols[1].1,
                         i,
                         || Ok(output_b9),
                     )?;
                     table.assign_cell(
                         || "overflow_detector",
-                        self.lookup_config.col2.1,
+                        self.lookup_config.cols[2].1,
                         i,
                         || Ok(overflow_detector),
                     )?;
@@ -454,7 +459,7 @@ impl<F: Field> Base13toBase9TableConfig<F> {
                     let outputs = self.map.get(&input.to_repr());
                     let input_coef = region.assign_advice(
                         || "Input Coef",
-                        self.lookup_config.col0.0,
+                        self.lookup_config.cols[0].0,
                         offset,
                         || Ok(input),
                     )?;
@@ -462,7 +467,7 @@ impl<F: Field> Base13toBase9TableConfig<F> {
 
                     let output_coef = region.assign_advice(
                         || "Output Coef",
-                        self.lookup_config.col1.0,
+                        self.lookup_config.cols[1].0,
                         offset,
                         || outputs.map(|o| o.0).ok_or(Error::Synthesis),
                     )?;
@@ -470,7 +475,7 @@ impl<F: Field> Base13toBase9TableConfig<F> {
 
                     let od = region.assign_advice(
                         || "Overflow detector",
-                        self.lookup_config.col2.0,
+                        self.lookup_config.cols[2].0,
                         offset,
                         || outputs.map(|o| o.1).ok_or(Error::Synthesis),
                     )?;
@@ -543,20 +548,20 @@ impl<F: Field> FromBase9TableConfig<F> {
                     self.map.insert(input_b9.to_repr(), (output_b13, output_b2));
                     table.assign_cell(
                         || "base 9",
-                        self.lookup_config.col0.1,
+                        self.lookup_config.cols[0].1,
                         i,
                         || Ok(input_b9),
                     )?;
 
                     table.assign_cell(
                         || "base 13",
-                        self.lookup_config.col1.1,
+                        self.lookup_config.cols[1].1,
                         i,
                         || Ok(output_b13),
                     )?;
                     table.assign_cell(
                         || "base 2",
-                        self.lookup_config.col2.1,
+                        self.lookup_config.cols[2].1,
                         i,
                         || Ok(output_b2),
                     )?;
@@ -602,7 +607,7 @@ impl<F: Field> FromBase9TableConfig<F> {
                     self.lookup_config.q_enable.enable(&mut region, offset)?;
                     let input = region.assign_advice(
                         || "base 9",
-                        self.lookup_config.col0.0,
+                        self.lookup_config.cols[0].0,
                         offset,
                         || input_coef.ok_or(Error::Synthesis),
                     )?;
@@ -611,14 +616,14 @@ impl<F: Field> FromBase9TableConfig<F> {
 
                     let output_b13 = region.assign_advice(
                         || "base 13",
-                        self.lookup_config.col1.0,
+                        self.lookup_config.cols[1].0,
                         offset,
                         || output.map(|v| v.0).ok_or(Error::Synthesis),
                     )?;
                     output_b13_cells.push(output_b13);
                     let output_b2 = region.assign_advice(
                         || "base 2",
-                        self.lookup_config.col2.0,
+                        self.lookup_config.cols[2].0,
                         offset,
                         || output.map(|v| v.1).ok_or(Error::Synthesis),
                     )?;
@@ -656,20 +661,20 @@ impl<F: Field> FromBinaryTableConfig<F> {
 
                     table.assign_cell(
                         || "base 2",
-                        self.lookup_config.col0.1,
+                        self.lookup_config.cols[0].1,
                         i,
                         || Ok(input_b2),
                     )?;
 
                     table.assign_cell(
                         || "base 9",
-                        self.lookup_config.col1.1,
+                        self.lookup_config.cols[1].1,
                         i,
                         || Ok(output_b9),
                     )?;
                     table.assign_cell(
                         || "base 13",
-                        self.lookup_config.col2.1,
+                        self.lookup_config.cols[2].1,
                         i,
                         || Ok(output_b13),
                     )?;
@@ -715,7 +720,7 @@ impl<F: Field> FromBinaryTableConfig<F> {
                     self.lookup_config.q_enable.enable(&mut region, offset)?;
                     let input = region.assign_advice(
                         || "base 2",
-                        self.lookup_config.col0.0,
+                        self.lookup_config.cols[0].0,
                         offset,
                         || input_coef.ok_or(Error::Synthesis),
                     )?;
@@ -725,14 +730,14 @@ impl<F: Field> FromBinaryTableConfig<F> {
 
                     let output_b9 = region.assign_advice(
                         || "base 9",
-                        self.lookup_config.col1.0,
+                        self.lookup_config.cols[1].0,
                         offset,
                         || output.map(|v| v.0).ok_or(Error::Synthesis),
                     )?;
                     output_b9_cells.push(output_b9);
                     let output_b13 = region.assign_advice(
                         || "base 13",
-                        self.lookup_config.col2.0,
+                        self.lookup_config.cols[2].0,
                         offset,
                         || output.map(|v| v.1).ok_or(Error::Synthesis),
                     )?;
