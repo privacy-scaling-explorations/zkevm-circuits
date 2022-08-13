@@ -543,7 +543,7 @@ fn combine_sub_parts_value(input: Vec<PartValue>, part_size: usize) -> Vec<PartV
                 target_sizes[counter]
             );
 
-            let factor = 8u64.pow(input_part.num_bits as u32);
+            let factor = BIT_SIZE.pow(input_part.num_bits as u32);
             let value = input_part.value + extra_part.value * factor;
 
             parts.push(PartValue {
@@ -621,7 +621,7 @@ impl<F: Field> KeccakPackedConfig<F> {
 
         let mut squeeze_from = 0u64.expr();
         let mut squeeze_from_prev = vec![0u64.expr(); NUM_WORDS_TO_SQUEEZE];
-        meta.create_gate("Query absorb data", |meta| {
+        meta.create_gate("Query squeeze data", |meta| {
             squeeze_from = meta.query_advice(squeeze_packed, Rotation::cur());
             for (idx, squeeze_from) in squeeze_from_prev.iter_mut().enumerate() {
                 *squeeze_from = meta.query_advice(squeeze_packed, Rotation(-(idx as i32) - 1));
@@ -982,8 +982,6 @@ impl<F: Field> KeccakPackedConfig<F> {
         println!("- Post squeeze:");
         println!("Lookups: {}", lookup_counter);
         println!("Columns: {}", cell_values.len());
-        println!("num_parts_pre: {}", num_parts_pre);
-        println!("num_parts_post: {}", num_parts_post);
         total_lookup_counter += lookup_counter;
 
         println!("Degree: {}", meta.degree());
