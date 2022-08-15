@@ -290,7 +290,7 @@ mod super_circuit_tests {
     };
     use ethers_signers::{LocalWallet, Signer};
     use group::{Curve, Group};
-    use halo2_proofs::arithmetic::{CurveAffine, Field as Halo2Field};
+    use halo2_proofs::arithmetic::CurveAffine;
     use halo2_proofs::dev::{MockProver, VerifyFailure};
     use halo2_proofs::pairing::bn256::Fr;
     use mock::{TestContext, MOCK_CHAIN_ID};

@@ -20,7 +20,7 @@ use bus_mapping::{
 use eth_types::{evm_types::OpcodeId, ToWord};
 use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word};
 use eth_types::{ToAddress, U256};
-use halo2_proofs::arithmetic::{BaseExt, FieldExt};
+use halo2_proofs::arithmetic::FieldExt;
 use halo2_proofs::pairing::bn256::Fr;
 use itertools::Itertools;
 use sha3::{Digest, Keccak256};

@@ -7,7 +7,7 @@ mod tests {
     use env_logger::Env;
     use eth_types::{address, geth_types::Transaction, word, Bytes};
     use group::{Curve, Group};
-    use halo2_proofs::arithmetic::{BaseExt, CurveAffine, Field};
+    use halo2_proofs::arithmetic::{BaseExt, CurveAffine};
     use halo2_proofs::plonk::{create_proof, keygen_pk, keygen_vk, verify_proof, SingleVerifier};
     use halo2_proofs::{
         pairing::bn256::{Bn256, Fr, G1Affine},
