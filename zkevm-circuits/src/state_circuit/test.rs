@@ -14,7 +14,6 @@ use eth_types::{
 use gadgets::binary_number::AsBits;
 use halo2_proofs::poly::commitment::Params;
 use halo2_proofs::{
-    arithmetic::BaseExt,
     dev::{MockProver, VerifyFailure},
     pairing::bn256::{Bn256, Fr, G1Affine},
     plonk::{keygen_vk, Advice, Circuit, Column, ConstraintSystem},
