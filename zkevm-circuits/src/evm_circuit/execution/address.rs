@@ -14,7 +14,7 @@ use crate::{
     util::Expr,
 };
 use bus_mapping::evm::OpcodeId;
-use eth_types::{Field, ToLittleEndian};
+use eth_types::{Field, ToAddress, ToLittleEndian};
 use halo2_proofs::plonk::Error;
 use std::convert::TryInto;
 
