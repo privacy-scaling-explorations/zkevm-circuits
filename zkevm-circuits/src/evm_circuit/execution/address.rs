@@ -70,7 +70,9 @@ impl<F: Field> ExecutionGadget<F> for AddressGadget<F> {
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
+        // you will need `use eth_types::ToAddress;` trait
         let address = block.rws[step.rw_indices[1]].stack_value();
+        debug_assert_eq!(call.callee_address, address.to_address());
 
         self.address.assign(
             region,
