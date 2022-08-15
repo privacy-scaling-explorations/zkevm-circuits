@@ -1398,7 +1398,7 @@ pub fn block_convert(
     code_db: &bus_mapping::state_db::CodeDB,
 ) -> Block<Fr> {
     Block {
-        randomness: Fr::rand(),
+        randomness: Fr::from(0xcafeu64),
         context: block.into(),
         rws: RwMap::from(&block.container),
         txs: block

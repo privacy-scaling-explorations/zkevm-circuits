@@ -426,7 +426,7 @@ mod super_circuit_tests {
             .handle_block(&block.eth_block, &block.geth_traces)
             .expect("could not handle block tx");
         let mut block = block_convert(&builder.block, &builder.code_db);
-        block.randomness = Fr::random(&mut rng);
+        block.randomness = Fr::from(0xcafeu64);
 
         let aux_generator =
             <Secp256k1Affine as CurveAffine>::CurveExt::random(&mut rng).to_affine();

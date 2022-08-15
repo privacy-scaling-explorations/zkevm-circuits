@@ -59,7 +59,7 @@ mod tests {
             s: word!("0x61159fa4664b698ea7d518526c96cd94cf4d8adf418000754be106a3a133f866"),
         }];
 
-        let randomness = Fr::random(&mut rng);
+        let randomness = Fr::from(0xcafeu64);
         let mut instance: Vec<Vec<Fr>> = (1..POW_RAND_SIZE + 1)
             .map(|exp| vec![randomness.pow(&[exp as u64, 0, 0, 0]); MAX_TXS * VERIF_HEIGHT])
             .collect();
