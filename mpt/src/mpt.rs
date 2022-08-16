@@ -177,7 +177,11 @@ pub(crate) struct AccumulatorPair {
 pub(crate) struct AccumulatorCols {
     pub(crate) acc_s: AccumulatorPair, // accumulating RLC for a node in S proof
     pub(crate) acc_c: AccumulatorPair, // accumulating RLC for a node in C proof
+    // key.rlc & key.mult used for account address, for storage key,
+    // for mult_diff_nonce/mult_diff_balance in account_leaf_nonce_balance
     pub(crate) key: AccumulatorPair, // accumulating RLC for address or key
+    pub(crate) node_mult_diff_s: Column<Advice>, // used when accumulating branch RLC for non-hashed nodes in a branch
+    pub(crate) node_mult_diff_c: Column<Advice>, // used when accumulating branch RLC for non-hashed nodes in a branch
 }
 
 // TODO: check whether sel1, sel2 are sometimes used for accumulated values and fix it.
@@ -224,12 +228,8 @@ pub struct MPTConfig<F> {
     pub(crate) c_mod_node_hash_rlc: Column<Advice>, /* modified node c_advices RLC when c_advices present
                                           * hash (used also for leaf long/short) */
     pub(crate) acc_r: F,
-    pub(crate) node_mult_diff_s: Column<Advice>,
-    pub(crate) node_mult_diff_c: Column<Advice>,
     r_table: Vec<Expression<F>>,
-    // key_rlc & key_rlc_mult used for account address, for storage key,
-    // and for mult_diff_nonce/mult_diff_balance in account_leaf_nonce_balance
-    pub(crate) mult_diff: Column<Advice>,
+    pub(crate) mult_diff: Column<Advice>, // power of randomness r: multiplier_curr = multiplier_prev * mult_diff (used for example for diff due to extension node nibbles)
     keccak_table: [Column<Fixed>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
     fixed_table: [Column<Fixed>; 3],
     pub(crate) address_rlc: Column<Advice>, /* The same in all rows of a modification. The same as
@@ -461,6 +461,8 @@ impl<F: FieldExt> MPTConfig<F> {
             acc_s: acc_s.clone(),
             acc_c: acc_c.clone(),
             key: key.clone(),
+            node_mult_diff_s: meta.advice_column(),
+            node_mult_diff_c: meta.advice_column(),
         };
 
         let denoter = DenoteCols {
@@ -469,9 +471,6 @@ impl<F: FieldExt> MPTConfig<F> {
             is_node_hashed_s: meta.advice_column(),
             is_node_hashed_c: meta.advice_column(),
         };
-
-        let node_mult_diff_s = meta.advice_column();
-        let node_mult_diff_c = meta.advice_column();
 
         // NOTE: acc_mult_s and acc_mult_c wouldn't be needed if we would have
         // big endian instead of little endian. However, then it would be much more
@@ -699,7 +698,7 @@ impl<F: FieldExt> MPTConfig<F> {
             s_main.clone(),
             accumulators.acc_s.clone(),
             denoter.is_node_hashed_s,
-            node_mult_diff_s,
+            accumulators.node_mult_diff_s,
             r_table.clone(),
             fixed_table,
         );
@@ -715,7 +714,7 @@ impl<F: FieldExt> MPTConfig<F> {
             c_main.clone(),
             accumulators.acc_c.clone(),
             denoter.is_node_hashed_c,
-            node_mult_diff_c,
+            accumulators.node_mult_diff_c,
             r_table.clone(),
             fixed_table,
         );
@@ -1016,8 +1015,6 @@ impl<F: FieldExt> MPTConfig<F> {
             accumulators,
             acc_r,
             denoter,
-            node_mult_diff_s,
-            node_mult_diff_c,
             r_table,
             mult_diff,
             keccak_table,
@@ -1871,13 +1868,13 @@ impl<F: FieldExt> MPTConfig<F> {
 
                             region.assign_advice(
                                 || "node_mult_diff_s".to_string(),
-                                self.node_mult_diff_s,
+                                self.accumulators.node_mult_diff_s,
                                 offset,
                                 || Ok(node_mult_diff_s),
                             )?;
                             region.assign_advice(
                                 || "node_mult_diff_c".to_string(),
-                                self.node_mult_diff_c,
+                                self.accumulators.node_mult_diff_c,
                                 offset,
                                 || Ok(node_mult_diff_c),
                             )?;
