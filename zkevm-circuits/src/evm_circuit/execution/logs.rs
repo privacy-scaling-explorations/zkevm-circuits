@@ -131,7 +131,7 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
         let dst_addr = (1u64 << 32).expr() * TxLogFieldTag::Data.expr()
             + (1u64 << 48).expr() * (cb.curr.state.log_id.expr() + 1.expr());
         let cond = memory_address.has_length() * is_persistent.expr();
-        cb.condition(cond.clone(), |cb| {
+        cb.condition(cond, |cb| {
             cb.copy_table_lookup(
                 cb.curr.state.call_id.expr(),
                 CopyDataType::Memory.expr(),
