@@ -18,6 +18,7 @@ use log::warn;
 #[cfg(any(feature = "test", test))]
 pub use sha3::sha3_tests::{gen_sha3_code, MemoryKind};
 
+mod address;
 mod balance;
 mod call;
 mod calldatacopy;
@@ -52,6 +53,7 @@ mod swap;
 #[cfg(test)]
 mod memory_expansion_test;
 
+use address::Address;
 use balance::Balance;
 use call::Call;
 use calldatacopy::Calldatacopy;
@@ -146,7 +148,7 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         OpcodeId::SHR => StackOnlyOpcode::<2, 1>::gen_associated_ops,
         OpcodeId::SAR => StackOnlyOpcode::<2, 1>::gen_associated_ops,
         OpcodeId::SHA3 => Sha3::gen_associated_ops,
-        OpcodeId::ADDRESS => StackOnlyOpcode::<0, 1>::gen_associated_ops,
+        OpcodeId::ADDRESS => Address::gen_associated_ops,
         OpcodeId::BALANCE => Balance::gen_associated_ops,
         OpcodeId::ORIGIN => Origin::gen_associated_ops,
         OpcodeId::CALLER => Caller::gen_associated_ops,

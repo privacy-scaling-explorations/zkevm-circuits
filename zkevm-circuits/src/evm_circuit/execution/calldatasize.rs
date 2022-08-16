@@ -89,7 +89,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataSizeGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::evm_circuit::{
-        test::{rand_bytes, run_test_circuit_incomplete_fixed_table},
+        test::{rand_bytes, run_test_circuit},
         witness::block_convert,
     };
     use eth_types::{address, bytecode, Word};
@@ -171,7 +171,7 @@ mod test {
             .handle_block(&block_data.eth_block, &block_data.geth_traces)
             .unwrap();
         let block = block_convert(&builder.block, &builder.code_db);
-        assert_eq!(run_test_circuit_incomplete_fixed_table(block), Ok(()));
+        assert_eq!(run_test_circuit(block), Ok(()));
     }
 
     #[test]
