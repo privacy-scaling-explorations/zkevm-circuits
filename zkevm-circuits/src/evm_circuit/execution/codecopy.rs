@@ -1,5 +1,5 @@
 use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId};
-use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar};
+use eth_types::{evm_types::GasCost, Field, ToLittleEndian};
 use halo2_proofs::plonk::Error;
 
 use crate::{
@@ -11,7 +11,7 @@ use crate::{
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition},
             from_bytes,
             memory_gadget::{MemoryAddressGadget, MemoryCopierGasGadget, MemoryExpansionGadget},
-            not, CachedRegion, Cell, MemoryAddress,
+            CachedRegion, Cell, MemoryAddress,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },

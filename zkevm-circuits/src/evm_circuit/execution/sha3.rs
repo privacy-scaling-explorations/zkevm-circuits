@@ -1,5 +1,5 @@
 use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId};
-use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar};
+use eth_types::{evm_types::GasCost, Field, ToLittleEndian};
 use gadgets::util::{not, Expr};
 use halo2_proofs::plonk::Error;
 
