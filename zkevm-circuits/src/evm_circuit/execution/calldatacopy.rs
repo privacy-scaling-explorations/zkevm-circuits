@@ -209,20 +209,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
 
         // rw_counter increase from copy lookup is `length` memory writes + a variable
         // number of memory reads.
-        let copy_rwc_inc = length
-            + if call.is_root {
-                // no memory reads when reading from tx call data.
-                0
-            } else {
-                // memory reads when reading from memory of caller is capped by call_data_length
-                // - data_offset.
-                min(
-                    length.low_u64(),
-                    call_data_length
-                        .checked_sub(data_offset.low_u64())
-                        .unwrap_or_default(),
-                )
-            };
+        let copy_rwc_inc = length;
         self.copy_rwc_inc
             .assign(region, offset, copy_rwc_inc.to_scalar())?;
 
