@@ -71,7 +71,12 @@ impl<'a> CircuitInputStateRef<'a> {
             .expect("steps should have at least one BeginTx step");
         ExecStep {
             exec_state: ExecState::EndTx,
-            gas_left: Gas(prev_step.gas_left.0 - prev_step.gas_cost.0),
+            gas_left: if prev_step.error.is_none() {
+                Gas(prev_step.gas_left.0 - prev_step.gas_cost.0)
+            } else {
+                // consume all remaining gas when non revert err happens
+                Gas(0)
+            },
             rwc: self.block_ctx.rwc,
             // For tx without code execution
             reversible_write_counter: if let Some(call_ctx) = self.tx_ctx.calls().last() {
@@ -794,7 +799,7 @@ impl<'a> CircuitInputStateRef<'a> {
         let call_ctx = self.call_ctx()?;
 
         // Store deployed code if it's a successful create
-        if call.is_create() && call.is_success {
+        if call.is_create() && call.is_success && step.op == OpcodeId::RETURN {
             let offset = step.stack.nth_last(0)?;
             let length = step.stack.nth_last(1)?;
             let code = call_ctx
@@ -919,10 +924,13 @@ impl<'a> CircuitInputStateRef<'a> {
         // is unexpected.
         if step.depth == next_depth + 1
             && next_result != Word::zero()
-            && !matches!(step.op, OpcodeId::RETURN | OpcodeId::STOP)
+            && !matches!(
+                step.op,
+                OpcodeId::RETURN | OpcodeId::STOP | OpcodeId::SELFDESTRUCT
+            )
         {
             return Err(Error::UnexpectedExecStepError(
-                "success result without {RETURN, STOP}",
+                "success result without {RETURN, STOP, SELFDESTRUCT}",
                 step.clone(),
             ));
         }

@@ -1,7 +1,7 @@
 //! Table definitions used cross-circuits
 
 use crate::copy_circuit::number_or_hash_to_field;
-use crate::evm_circuit::witness::RwRow;
+use crate::evm_circuit::witness::{Rw, RwRow};
 use crate::evm_circuit::{
     util::{rlc, RandomLinearCombination},
     witness::{Block, BlockContext, Bytecode, RwMap, Transaction},
@@ -305,7 +305,7 @@ impl_expr!(CallContextFieldTag);
 
 /// The RwTable shared between EVM Circuit and State Circuit, which contains
 /// traces of the EVM state operations.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct RwTable {
     /// Read Write Counter
     pub rw_counter: Column<Advice>,
@@ -314,20 +314,20 @@ pub struct RwTable {
     /// Tag
     pub tag: Column<Advice>,
     /// Key1 (Id)
-    pub key1: Column<Advice>,
+    pub id: Column<Advice>,
     /// Key2 (Address)
-    pub key2: Column<Advice>,
+    pub address: Column<Advice>,
     /// Key3 (FieldTag)
-    pub key3: Column<Advice>,
+    pub field_tag: Column<Advice>,
     /// Key3 (StorageKey)
-    pub key4: Column<Advice>,
+    pub storage_key: Column<Advice>,
     /// Value
     pub value: Column<Advice>,
     /// Value Previous
     pub value_prev: Column<Advice>,
-    /// Aux1 (Committed Value)
+    /// Aux1
     pub aux1: Column<Advice>,
-    /// Aux2
+    /// Aux2 (Committed Value)
     pub aux2: Column<Advice>,
 }
 
@@ -337,10 +337,10 @@ impl DynamicTableColumns for RwTable {
             self.rw_counter,
             self.is_write,
             self.tag,
-            self.key1,
-            self.key2,
-            self.key3,
-            self.key4,
+            self.id,
+            self.address,
+            self.field_tag,
+            self.storage_key,
             self.value,
             self.value_prev,
             self.aux1,
@@ -355,10 +355,10 @@ impl RwTable {
             rw_counter: meta.advice_column(),
             is_write: meta.advice_column(),
             tag: meta.advice_column(),
-            key1: meta.advice_column(),
-            key2: meta.advice_column(),
-            key3: meta.advice_column(),
-            key4: meta.advice_column(),
+            id: meta.advice_column(),
+            address: meta.advice_column(),
+            field_tag: meta.advice_column(),
+            storage_key: meta.advice_column(),
             value: meta.advice_column(),
             value_prev: meta.advice_column(),
             aux1: meta.advice_column(),
@@ -366,7 +366,7 @@ impl RwTable {
         }
     }
     /// Assign a `RwRow` at offset into the `RwTable`
-    pub fn assign<F: FieldExt>(
+    pub fn assign<F: Field>(
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
@@ -376,10 +376,10 @@ impl RwTable {
             (self.rw_counter, row.rw_counter),
             (self.is_write, row.is_write),
             (self.tag, row.tag),
-            (self.key1, row.key1),
-            (self.key2, row.key2),
-            (self.key3, row.key3),
-            (self.key4, row.key4),
+            (self.id, row.id),
+            (self.address, row.address),
+            (self.field_tag, row.field_tag),
+            (self.storage_key, row.storage_key),
             (self.value, row.value),
             (self.value_prev, row.value_prev),
             (self.aux1, row.aux1),
@@ -395,34 +395,28 @@ impl RwTable {
     pub fn load<F: Field>(
         &self,
         layouter: &mut impl Layouter<F>,
-        rws: &RwMap,
+        rws: &[Rw],
+        n_rows: usize,
         randomness: F,
     ) -> Result<(), Error> {
         layouter.assign_region(
             || "rw table",
-            |mut region| {
-                let mut offset = 0;
-                self.assign(&mut region, offset, &Default::default())?;
-                offset += 1;
-
-                let mut rows = rws
-                    .0
-                    .values()
-                    .flat_map(|rws| rws.iter())
-                    .collect::<Vec<_>>();
-
-                rows.sort_by_key(|a| a.rw_counter());
-                let mut expected_rw_counter = 1;
-                for rw in rows {
-                    assert!(rw.rw_counter() == expected_rw_counter);
-                    expected_rw_counter += 1;
-
-                    self.assign(&mut region, offset, &rw.table_assignment(randomness))?;
-                    offset += 1;
-                }
-                Ok(())
-            },
+            |mut region| self.load_with_region(&mut region, rws, n_rows, randomness),
         )
+    }
+
+    pub(crate) fn load_with_region<F: Field>(
+        &self,
+        region: &mut Region<'_, F>,
+        rws: &[Rw],
+        n_rows: usize,
+        randomness: F,
+    ) -> Result<(), Error> {
+        let (rows, _) = RwMap::table_assignments_prepad(rws, n_rows);
+        for (offset, row) in rows.iter().enumerate() {
+            self.assign(region, offset, &row.table_assignment(randomness))?;
+        }
+        Ok(())
     }
 }
 
@@ -655,10 +649,10 @@ impl KeccakTable {
     // layed out via the pattern `acc[i] = acc[i-1] * r + value[i]`.
     /// Assign the `KeccakTable` from a list hashing inputs, followig the same
     /// table layout that the Keccak Circuit uses.
-    pub fn load<'a, F: Field>(
+    pub fn load<F: Field>(
         &self,
         layouter: &mut impl Layouter<F>,
-        inputs: impl IntoIterator<Item = &'a [u8]> + Clone,
+        inputs: impl IntoIterator<Item = Vec<u8>> + Clone,
         randomness: F,
     ) -> Result<(), Error> {
         layouter.assign_region(
@@ -677,7 +671,7 @@ impl KeccakTable {
 
                 let keccak_table_columns = self.columns();
                 for input in inputs.clone() {
-                    for row in Self::assignments(input, randomness) {
+                    for row in Self::assignments(&input, randomness) {
                         // let mut column_index = 0;
                         for (column, value) in keccak_table_columns.iter().zip_eq(row) {
                             region.assign_advice(
@@ -727,6 +721,11 @@ pub struct CopyTable {
     pub src_addr_end: Column<Advice>,
     /// The number of bytes left to be copied.
     pub bytes_left: Column<Advice>,
+    /// An accumulator value in the RLC representation. This is used for
+    /// specific purposes, for instance, when `tag == CopyDataType::RlcAcc`.
+    /// Having an additional column for the `rlc_acc` simplifies the lookup
+    /// to copy table.
+    pub rlc_acc: Column<Advice>,
     /// The associated read-write counter for this row.
     pub rw_counter: Column<Advice>,
     /// Decrementing counter denoting reverse read-write counter.
@@ -743,10 +742,11 @@ impl CopyTable {
         Self {
             is_first: meta.advice_column(),
             id: meta.advice_column(),
-            tag: BinaryNumberChip::configure(meta, q_enable),
+            tag: BinaryNumberChip::configure(meta, q_enable, None),
             addr: meta.advice_column(),
             src_addr_end: meta.advice_column(),
             bytes_left: meta.advice_column(),
+            rlc_acc: meta.advice_column(),
             rw_counter: meta.advice_column(),
             rwc_inc_left: meta.advice_column(),
         }
@@ -756,8 +756,19 @@ impl CopyTable {
     pub fn assignments<F: Field>(
         copy_event: &CopyEvent,
         randomness: F,
-    ) -> Vec<(CopyDataType, [F; 7])> {
+    ) -> Vec<(CopyDataType, [F; 8])> {
         let mut assignments = Vec::new();
+        let rlc_acc = if copy_event.dst_type == CopyDataType::RlcAcc {
+            let values = copy_event
+                .steps
+                .iter()
+                .filter(|s| s.rw.is_write())
+                .map(|s| s.value)
+                .collect::<Vec<u8>>();
+            rlc::value(values.iter().rev(), randomness)
+        } else {
+            F::zero()
+        };
         for (step_idx, copy_step) in copy_event.steps.iter().enumerate() {
             // is_first
             let is_first = if step_idx == 0 { F::one() } else { F::zero() };
@@ -789,6 +800,7 @@ impl CopyTable {
                     addr,
                     F::from(copy_event.src_addr_end), // src_addr_end
                     F::from(copy_event.length - step_idx as u64 / 2), // bytes_left
+                    rlc_acc,                          // rlc_acc
                     F::from(copy_step.rwc.0 as u64),  // rw_counter
                     F::from(copy_step.rwc_inc_left),  // rw_inc_left
                 ],
@@ -820,7 +832,7 @@ impl CopyTable {
 
                 let tag_chip = BinaryNumberChip::construct(self.tag);
                 let copy_table_columns = self.columns();
-                for copy_event in block.copy_events.values() {
+                for copy_event in block.copy_events.iter() {
                     for (tag, row) in Self::assignments(copy_event, randomness) {
                         for (column, value) in copy_table_columns.iter().zip_eq(row) {
                             region.assign_advice(
@@ -849,6 +861,7 @@ impl CopyTable {
             self.addr,
             self.src_addr_end,
             self.bytes_left,
+            self.rlc_acc,
             self.rw_counter,
             self.rwc_inc_left,
         ]
@@ -867,6 +880,7 @@ impl<F: Field> LookupTable<F> for CopyTable {
             meta.query_advice(self.src_addr_end, Rotation::cur()), // src_addr_end
             meta.query_advice(self.addr, Rotation::next()), // dst_addr
             meta.query_advice(self.bytes_left, Rotation::cur()), // length
+            meta.query_advice(self.rlc_acc, Rotation::cur()), // rlc_acc
             meta.query_advice(self.rw_counter, Rotation::cur()), // rw_counter
             meta.query_advice(self.rwc_inc_left, Rotation::cur()), // rwc_inc_left
         ]

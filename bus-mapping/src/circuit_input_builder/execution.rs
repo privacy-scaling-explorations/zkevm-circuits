@@ -71,6 +71,14 @@ impl ExecStep {
             error: None,
         }
     }
+
+    /// Returns `true` if `error` is oog and stack related..
+    pub fn oog_or_stack_error(&self) -> bool {
+        matches!(
+            self.error,
+            Some(ExecError::OutOfGas(_) | ExecError::StackOverflow | ExecError::StackUnderflow)
+        )
+    }
 }
 
 impl Default for ExecStep {
@@ -153,6 +161,10 @@ pub enum CopyDataType {
     TxCalldata,
     /// When the destination for the copy event is tx's log.
     TxLog,
+    /// When the destination rows are not directly for copying but for a special
+    /// scenario where we wish to accumulate the value (RLC) over all rows.
+    /// This is used for Copy Lookup from SHA3 opcode verification.
+    RlcAcc,
 }
 
 impl From<CopyDataType> for usize {
@@ -228,10 +240,4 @@ pub struct CopyEvent {
     pub length: u64,
     /// Represents the list of copy steps in this copy event.
     pub steps: Vec<CopyStep>,
-    /// Helper field for witness generation.
-    pub tx_id: usize,
-    /// Helper field for witness generation.
-    pub call_id: usize,
-    /// Helper field for witness generation.
-    pub pc: ProgramCounter,
 }

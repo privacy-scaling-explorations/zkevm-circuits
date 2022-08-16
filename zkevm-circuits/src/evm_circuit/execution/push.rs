@@ -232,4 +232,37 @@ mod test {
             test_ok(opcode, &rand_bytes(idx + 1));
         }
     }
+
+    #[test]
+    fn stack_overflow_simple() {
+        test_stack_overflow(OpcodeId::PUSH1, &[1]);
+    }
+
+    fn test_stack_overflow(opcode: OpcodeId, bytes: &[u8]) {
+        assert!(bytes.len() as u8 == opcode.as_u8() - OpcodeId::PUSH1.as_u8() + 1,);
+
+        let mut bytecode = bytecode! {
+            .write_op(opcode)
+        };
+        for b in bytes {
+            bytecode.write(*b, false);
+        }
+        // still add 1024 causes stack overflow
+        for _ in 0..1025 {
+            bytecode.write_op(opcode);
+            for b in bytes {
+                bytecode.write(*b, false);
+            }
+        }
+        // append final stop op code
+        bytecode.write_op(OpcodeId::STOP);
+
+        assert_eq!(
+            run_test_circuits(
+                TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+                None
+            ),
+            Ok(())
+        );
+    }
 }
