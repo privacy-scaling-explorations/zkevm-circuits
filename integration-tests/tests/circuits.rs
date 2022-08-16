@@ -20,9 +20,7 @@ use std::marker::PhantomData;
 use zkevm_circuits::bytecode_circuit::dev::test_bytecode_circuit;
 use zkevm_circuits::copy_circuit::dev::test_copy_circuit;
 use zkevm_circuits::evm_circuit::witness::RwMap;
-use zkevm_circuits::evm_circuit::{
-    test::run_test_circuit_complete_fixed_table, witness::block_convert,
-};
+use zkevm_circuits::evm_circuit::{test::run_test_circuit, witness::block_convert};
 use zkevm_circuits::state_circuit::StateCircuit;
 use zkevm_circuits::tx_circuit::{
     sign_verify::SignVerifyChip, Secp256k1Affine, TxCircuit, POW_RAND_SIZE, VERIF_HEIGHT,
@@ -39,10 +37,12 @@ async fn test_evm_circuit_block(block_num: u64) {
     let (builder, _) = cli.gen_inputs(block_num).await.unwrap();
 
     let block = block_convert(&builder.block, &builder.code_db);
-    run_test_circuit_complete_fixed_table(block).expect("evm_circuit verification failed");
+    run_test_circuit(block).expect("evm_circuit verification failed");
 }
 
 async fn test_state_circuit_block(block_num: u64) {
+    use halo2_proofs::pairing::bn256::Fr;
+    
     log::info!("test state circuit, block number: {}", block_num);
     let cli = get_client();
     let cli = BuilderClient::new(cli).await.unwrap();
@@ -65,7 +65,7 @@ async fn test_state_circuit_block(block_num: u64) {
         ..Default::default()
     });
 
-    let randomness = Fr::rand();
+    let randomness = Fr::from(0xcafeu64);
     let circuit = StateCircuit::<Fr>::new(randomness, rw_map, 1 << 16);
     let power_of_randomness = circuit.instance();
 
