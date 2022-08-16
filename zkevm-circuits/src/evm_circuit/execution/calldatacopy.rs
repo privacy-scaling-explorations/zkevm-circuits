@@ -116,7 +116,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
         let n_copy_reads = MinMaxGadget::construct(
             cb,
             memory_address.length(),
-            data_offset_lt_length.expr()
+            data_offset_lt_call_data_length.expr()
                 * (call_data_length.expr() - from_bytes::expr(&data_offset.cells)),
         );
         // rw_counter increase from copy lookup is `length` memory writes + a variable
