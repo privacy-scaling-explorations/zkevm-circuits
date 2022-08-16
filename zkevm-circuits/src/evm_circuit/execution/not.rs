@@ -88,10 +88,7 @@ impl<F: Field> ExecutionGadget<F> for NotGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::{
-        evm_circuit::test::rand_word,
-        test_util::{get_fixed_table, run_test_circuits, BytecodeTestConfig, FixedTableConfig},
-    };
+    use crate::{evm_circuit::test::rand_word, test_util::run_test_circuits};
     use eth_types::{bytecode, Word};
     use mock::TestContext;
 
@@ -101,15 +98,11 @@ mod test {
             NOT
             STOP
         };
-        let test_config = BytecodeTestConfig {
-            evm_circuit_lookup_tags: get_fixed_table(FixedTableConfig::Complete),
-            ..Default::default()
-        };
 
         assert_eq!(
             run_test_circuits(
                 TestContext::<1, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
-                Some(test_config)
+                None
             ),
             Ok(())
         );

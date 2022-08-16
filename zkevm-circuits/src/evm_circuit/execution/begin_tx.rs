@@ -277,7 +277,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::evm_circuit::{
-        test::{rand_bytes, run_test_circuit_incomplete_fixed_table},
+        test::{rand_bytes, run_test_circuit},
         witness::block_convert,
     };
     use bus_mapping::{evm::OpcodeId, mock::BlockData};
@@ -336,7 +336,7 @@ mod test {
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
         let block = block_convert(&builder.block, &builder.code_db);
-        assert_eq!(run_test_circuit_incomplete_fixed_table(block), Ok(()));
+        assert_eq!(run_test_circuit(block), Ok(()));
     }
 
     fn mock_tx(value: Word, gas_price: Word, calldata: Vec<u8>) -> eth_types::Transaction {
@@ -402,7 +402,7 @@ mod test {
             .unwrap();
         let block = block_convert(&builder.block, &builder.code_db);
 
-        assert_eq!(run_test_circuit_incomplete_fixed_table(block), Ok(()));
+        assert_eq!(run_test_circuit(block), Ok(()));
     }
 
     #[test]
