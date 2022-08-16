@@ -36,9 +36,6 @@ pub(crate) struct CodeCopyGadget<F> {
     /// Opcode CODECOPY needs to copy code bytes into memory. We account for
     /// the copying costs using the memory copier gas gadget.
     memory_copier_gas: MemoryCopierGasGadget<F, { GasCost::COPY }>,
-    /// RW inverse counter from the copy table at the start of related copy
-    /// steps.
-    copy_rwc_inc: Cell<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
@@ -82,7 +79,6 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
             memory_expansion.gas_cost(),
         );
 
-        let copy_rwc_inc = cb.query_cell();
         cb.condition(dst_memory_addr.has_length(), |cb| {
             cb.copy_table_lookup(
                 code_hash.expr(),
@@ -90,24 +86,19 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
                 cb.curr.state.call_id.expr(),
                 CopyDataType::Memory.expr(),
                 from_bytes::expr(&code_offset.cells),
-                code_size.expr(),
+                code_size.expr(), // TODO: this seems sus
                 dst_memory_addr.offset(),
                 dst_memory_addr.length(),
                 0.expr(), // for CODECOPY, rlc_acc is 0
                 cb.curr.state.rw_counter.expr() + cb.rw_counter_offset().expr(),
-                copy_rwc_inc.expr(),
-            );
-        });
-        cb.condition(not::expr(dst_memory_addr.has_length()), |cb| {
-            cb.require_zero(
-                "if no bytes to copy, copy table rwc inc == 0",
-                copy_rwc_inc.expr(),
+                dst_memory_addr.length(), /* rw_counter increase from copy table lookup is
+                                           * number of bytes copied. */
             );
         });
 
         // Expected state transition.
         let step_state_transition = StepStateTransition {
-            rw_counter: Transition::Delta(cb.rw_counter_offset() + copy_rwc_inc.expr()),
+            rw_counter: Transition::Delta(cb.rw_counter_offset() + dst_memory_addr.length()),
             program_counter: Transition::Delta(1.expr()),
             stack_pointer: Transition::Delta(3.expr()),
             memory_word_size: Transition::To(memory_expansion.next_memory_word_size()),
@@ -125,7 +116,6 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
             dst_memory_addr,
             memory_expansion,
             memory_copier_gas,
-            copy_rwc_inc,
         }
     }
 
@@ -181,8 +171,6 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
         )?;
         self.memory_copier_gas
             .assign(region, offset, size.as_u64(), memory_expansion_cost)?;
-        // rw_counter increase from copy table lookup is number of bytes copied.
-        self.copy_rwc_inc.assign(region, offset, size.to_scalar())?;
 
         Ok(())
     }

@@ -35,7 +35,6 @@ pub(crate) struct LogGadget<F> {
     is_static_call: Cell<F>,
     is_persistent: Cell<F>,
     tx_id: Cell<F>,
-    copy_rwc_inc: Cell<F>,
     memory_expansion: MemoryExpansionGadget<F, 1, N_BYTES_MEMORY_WORD_SIZE>,
 }
 
@@ -125,7 +124,10 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
             [memory_address.address()],
         );
 
-        let copy_rwc_inc = cb.query_cell();
+        // rw_counter increase from copy table lookup is `msize` memory reads + `msize`
+        // log writes.
+        let copy_rwc_inc =
+            is_persistent.expr() * (memory_address.length() + memory_address.length());
         let dst_addr = (1u64 << 32).expr() * TxLogFieldTag::Data.expr()
             + (1u64 << 48).expr() * (cb.curr.state.log_id.expr() + 1.expr());
         let cond = memory_address.has_length() * is_persistent.expr();
@@ -141,13 +143,7 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
                 memory_address.length(),
                 0.expr(), // for LOGN, rlc_acc is 0
                 cb.curr.state.rw_counter.expr() + cb.rw_counter_offset().expr(),
-                copy_rwc_inc.expr(),
-            );
-        });
-        cb.condition(not::expr(cond), |cb| {
-            cb.require_zero(
-                "if length is 0 or tx is not persistent, copy table rwc inc == 0",
-                copy_rwc_inc.expr(),
+                copy_rwc_inc.clone(),
             );
         });
 
@@ -158,7 +154,7 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
         // State transition
 
         let step_state_transition = StepStateTransition {
-            rw_counter: Delta(cb.rw_counter_offset() + copy_rwc_inc.expr()),
+            rw_counter: Delta(cb.rw_counter_offset() + copy_rwc_inc),
             program_counter: Delta(1.expr()),
             stack_pointer: Delta(2.expr() + topic_count),
             memory_word_size: To(memory_expansion.next_memory_word_size()),
@@ -178,7 +174,6 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
             is_static_call,
             is_persistent,
             tx_id,
-            copy_rwc_inc,
             memory_expansion,
         }
     }
@@ -241,10 +236,6 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
             .assign(region, offset, Some(F::from(is_persistent)))?;
         self.tx_id
             .assign(region, offset, Some(F::from(tx.id as u64)))?;
-        // rw_counter increase from copy table lookup is `msize` memory reads + `msize`
-        // log writes.
-        self.copy_rwc_inc
-            .assign(region, offset, (msize + msize).to_scalar())?;
 
         Ok(())
     }

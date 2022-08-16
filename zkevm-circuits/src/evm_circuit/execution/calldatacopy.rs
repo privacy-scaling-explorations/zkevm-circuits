@@ -10,6 +10,7 @@ use crate::{
                 Transition::{Delta, To},
             },
             from_bytes,
+            math_gadget::{LtGadget, MinMaxGadget},
             memory_gadget::{MemoryAddressGadget, MemoryCopierGasGadget, MemoryExpansionGadget},
             not, select, CachedRegion, Cell, MemoryAddress,
         },
@@ -32,7 +33,8 @@ pub(crate) struct CallDataCopyGadget<F> {
     src_id: Cell<F>,
     call_data_length: Cell<F>,
     call_data_offset: Cell<F>, // Only used in the internal call
-    copy_rwc_inc: Cell<F>,
+    data_offset_lt_length: LtGadget<F, N_BYTES_MEMORY_ADDRESS>,
+    n_copy_reads: MinMaxGadget<F, N_BYTES_MEMORY_ADDRESS>,
     memory_expansion: MemoryExpansionGadget<F, 1, N_BYTES_MEMORY_WORD_SIZE>,
     memory_copier_gas: MemoryCopierGasGadget<F, { GasCost::COPY }>,
 }
@@ -108,7 +110,19 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
             memory_expansion.gas_cost(),
         );
 
-        let copy_rwc_inc = cb.query_cell();
+        let data_offset_lt_length = LtGadget::construct(
+            cb,
+            from_bytes::expr(&data_offset.cells),
+            call_data_length.expr(),
+        );
+        let n_copy_reads = MinMaxGadget::construct(
+            cb,
+            memory_address.length(),
+            data_offset_lt_length.expr()
+                * (call_data_length.expr() - from_bytes::expr(&data_offset.cells)),
+        );
+        let copy_rwc_inc =
+            memory_address.length() + not::expr(cb.curr.state.is_root.expr()) * n_copy_reads.min();
         let src_tag = select::expr(
             cb.curr.state.is_root.expr(),
             CopyDataType::TxCalldata.expr(),
@@ -126,20 +140,18 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
                 memory_address.length(),
                 0.expr(), // for CALLDATACOPY rlc_acc is 0
                 cb.curr.state.rw_counter.expr() + cb.rw_counter_offset().expr(),
-                copy_rwc_inc.expr(),
+                copy_rwc_inc.clone(),
             );
         });
+
         cb.condition(not::expr(memory_address.has_length()), |cb| {
-            cb.require_zero(
-                "if no bytes to copy, copy table rwc inc == 0",
-                copy_rwc_inc.expr(),
-            );
+            cb.require_zero("asldkfja;lwkjfas;dlfas", copy_rwc_inc.expr())
         });
 
         // State transition
         let step_state_transition = StepStateTransition {
             // 1 tx id lookup + 3 stack pop + option(calldatalength lookup)
-            rw_counter: Delta(cb.rw_counter_offset() + copy_rwc_inc.expr()),
+            rw_counter: Delta(cb.rw_counter_offset() + copy_rwc_inc),
             program_counter: Delta(1.expr()),
             stack_pointer: Delta(3.expr()),
             gas_left: Delta(
@@ -157,7 +169,8 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
             src_id,
             call_data_length,
             call_data_offset,
-            copy_rwc_inc,
+            data_offset_lt_length,
+            n_copy_reads,
             memory_expansion,
             memory_copier_gas,
         }
@@ -207,24 +220,21 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
         self.call_data_offset
             .assign(region, offset, Some(F::from(call_data_offset)))?;
 
-        // rw_counter increase from copy lookup is `length` memory writes + a variable
-        // number of memory reads.
-        let copy_rwc_inc = length
-            + if call.is_root {
-                // no memory reads when reading from tx call data.
-                0
-            } else {
-                // memory reads when reading from memory of caller is capped by call_data_length
-                // - data_offset.
-                min(
-                    length.low_u64(),
-                    call_data_length
-                        .checked_sub(data_offset.low_u64())
-                        .unwrap_or_default(),
-                )
-            };
-        self.copy_rwc_inc
-            .assign(region, offset, copy_rwc_inc.to_scalar())?;
+        dbg!(data_offset, call_data_length);
+        self.data_offset_lt_length.assign(
+            region,
+            offset,
+            data_offset.to_scalar().unwrap(),
+            F::from(call_data_length),
+        )?;
+        self.n_copy_reads.assign(
+            region,
+            offset,
+            length.to_scalar().unwrap(),
+            F::from(call_data_length.checked_sub(data_offset.low_u64()).unwrap()),
+        )?;
+
+        dbg!(length, data_offset, call_data_length);
 
         // Memory expansion
         let (_, memory_expansion_gas_cost) = self.memory_expansion.assign(

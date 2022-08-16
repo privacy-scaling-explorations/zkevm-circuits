@@ -22,7 +22,6 @@ pub(crate) struct Sha3Gadget<F> {
     same_context: SameContextGadget<F>,
     memory_address: MemoryAddressGadget<F>,
     sha3_rlc: Word<F>,
-    copy_rwc_inc: Cell<F>,
     rlc_acc: Cell<F>,
     memory_expansion: MemoryExpansionGadget<F, 1, N_BYTES_MEMORY_WORD_SIZE>,
     memory_copier_gas: MemoryCopierGasGadget<F, { GasCost::COPY_SHA3 }>,
@@ -46,7 +45,6 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
 
         let memory_address = MemoryAddressGadget::construct(cb, offset, size);
 
-        let copy_rwc_inc = cb.query_cell();
         let rlc_acc = cb.query_cell();
         cb.condition(memory_address.has_length(), |cb| {
             cb.copy_table_lookup(
@@ -60,11 +58,10 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
                 memory_address.length(),
                 rlc_acc.expr(),
                 cb.curr.state.rw_counter.expr() + cb.rw_counter_offset(),
-                copy_rwc_inc.expr(),
+                memory_address.length(),
             );
         });
         cb.condition(not::expr(memory_address.has_length()), |cb| {
-            cb.require_zero("copy_rwc_inc == 0 for size = 0", copy_rwc_inc.expr());
             cb.require_zero("rlc_acc == 0 for size = 0", rlc_acc.expr());
         });
         cb.keccak_table_lookup(rlc_acc.expr(), memory_address.length(), sha3_rlc.expr());
@@ -81,7 +78,7 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
         );
 
         let step_state_transition = StepStateTransition {
-            rw_counter: Transition::Delta(cb.rw_counter_offset() + copy_rwc_inc.expr()),
+            rw_counter: Transition::Delta(cb.rw_counter_offset() + memory_address.length()),
             program_counter: Transition::Delta(1.expr()),
             stack_pointer: Transition::Delta(1.expr()),
             memory_word_size: Transition::To(memory_expansion.next_memory_word_size()),
@@ -96,7 +93,6 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
             same_context,
             memory_address,
             sha3_rlc,
-            copy_rwc_inc,
             rlc_acc,
             memory_expansion,
             memory_copier_gas,
@@ -122,8 +118,6 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
                 .assign(region, offset, memory_offset, size, block.randomness)?;
         self.sha3_rlc
             .assign(region, offset, Some(sha3_output.to_le_bytes()))?;
-
-        self.copy_rwc_inc.assign(region, offset, size.to_scalar())?;
 
         let values: Vec<u8> = (3..3 + (size.low_u64() as usize))
             .map(|i| block.rws[step.rw_indices[i]].memory_value())
