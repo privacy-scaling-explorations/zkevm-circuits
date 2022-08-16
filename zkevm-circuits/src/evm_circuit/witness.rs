@@ -548,6 +548,31 @@ pub struct RwRow<F> {
     pub aux2: F,
 }
 
+impl<F: Field> RwRow<F> {
+    pub fn values(&self) -> [F; 11] {
+        [
+            self.rw_counter,
+            self.is_write,
+            self.tag,
+            self.id,
+            self.address,
+            self.field_tag,
+            self.storage_key,
+            self.value,
+            self.value_prev,
+            self.aux1,
+            self.aux2,
+        ]
+    }
+    pub fn rlc(&self, randomness: F) -> F {
+        let values = self.values();
+        values
+            .iter()
+            .rev()
+            .fold(F::zero(), |acc, value| acc * randomness + value)
+    }
+}
+
 impl Rw {
     pub fn tx_access_list_value_pair(&self) -> (bool, bool) {
         match self {
@@ -1212,6 +1237,7 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                 match op {
                     OpcodeId::ADD | OpcodeId::SUB => ExecutionState::ADD_SUB,
                     OpcodeId::ADDMOD => ExecutionState::ADDMOD,
+                    OpcodeId::ADDRESS => ExecutionState::ADDRESS,
                     OpcodeId::MUL | OpcodeId::DIV | OpcodeId::MOD => ExecutionState::MUL_DIV_MOD,
                     OpcodeId::MULMOD => ExecutionState::MULMOD,
                     OpcodeId::SDIV | OpcodeId::SMOD => ExecutionState::SDIV_SMOD,
@@ -1260,7 +1286,6 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::CODESIZE => ExecutionState::CODESIZE,
                     OpcodeId::RETURN | OpcodeId::REVERT => ExecutionState::RETURN,
                     // dummy ops
-                    OpcodeId::ADDRESS => dummy!(ExecutionState::ADDRESS),
                     OpcodeId::BALANCE => dummy!(ExecutionState::BALANCE),
                     OpcodeId::BLOCKHASH => dummy!(ExecutionState::BLOCKHASH),
                     OpcodeId::EXP => dummy!(ExecutionState::EXP),
