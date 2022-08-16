@@ -31,7 +31,7 @@ pub(crate) struct CallDataCopyGadget<F> {
     src_id: Cell<F>,
     call_data_length: Cell<F>,
     call_data_offset: Cell<F>, // Only used in the internal call
-    data_offset_lt_length: LtGadget<F, N_BYTES_MEMORY_ADDRESS>,
+    data_offset_lt_call_data_length: LtGadget<F, N_BYTES_MEMORY_ADDRESS>,
     n_copy_reads: MinMaxGadget<F, N_BYTES_MEMORY_ADDRESS>,
     memory_expansion: MemoryExpansionGadget<F, 1, N_BYTES_MEMORY_WORD_SIZE>,
     memory_copier_gas: MemoryCopierGasGadget<F, { GasCost::COPY }>,
@@ -108,7 +108,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
             memory_expansion.gas_cost(),
         );
 
-        let data_offset_lt_length = LtGadget::construct(
+        let data_offset_lt_call_data_length = LtGadget::construct(
             cb,
             from_bytes::expr(&data_offset.cells),
             call_data_length.expr(),
@@ -119,6 +119,11 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
             data_offset_lt_length.expr()
                 * (call_data_length.expr() - from_bytes::expr(&data_offset.cells)),
         );
+        // rw_counter increase from copy lookup is `length` memory writes + a variable
+        // number of memory reads:
+        //  - for a root call, no memory reads when reading from tx call data.
+        //  - memory reads when reading from memory of caller is min(length, max(0,
+        //    call_data_length - data_offset)).
         let copy_rwc_inc =
             memory_address.length() + not::expr(cb.curr.state.is_root.expr()) * n_copy_reads.min();
         let src_tag = select::expr(
@@ -142,10 +147,6 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
             );
         });
 
-        cb.condition(not::expr(memory_address.has_length()), |cb| {
-            cb.require_zero("asldkfja;lwkjfas;dlfas", copy_rwc_inc.expr())
-        });
-
         // State transition
         let step_state_transition = StepStateTransition {
             // 1 tx id lookup + 3 stack pop + option(calldatalength lookup)
@@ -167,7 +168,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
             src_id,
             call_data_length,
             call_data_offset,
-            data_offset_lt_length,
+            data_offset_lt_call_data_length,
             n_copy_reads,
             memory_expansion,
             memory_copier_gas,
@@ -218,8 +219,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
         self.call_data_offset
             .assign(region, offset, Some(F::from(call_data_offset)))?;
 
-        dbg!(data_offset, call_data_length);
-        self.data_offset_lt_length.assign(
+        self.data_offset_lt_call_data_length.assign(
             region,
             offset,
             data_offset.to_scalar().unwrap(),
@@ -231,8 +231,6 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
             length.to_scalar().unwrap(),
             F::from(call_data_length.checked_sub(data_offset.low_u64()).unwrap()),
         )?;
-
-        dbg!(length, data_offset, call_data_length);
 
         // Memory expansion
         let (_, memory_expansion_gas_cost) = self.memory_expansion.assign(

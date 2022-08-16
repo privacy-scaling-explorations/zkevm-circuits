@@ -86,7 +86,7 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
                 cb.curr.state.call_id.expr(),
                 CopyDataType::Memory.expr(),
                 from_bytes::expr(&code_offset.cells),
-                code_size.expr(), // TODO: this seems sus
+                code_size.expr(),
                 dst_memory_addr.offset(),
                 dst_memory_addr.length(),
                 0.expr(), // for CODECOPY, rlc_acc is 0
