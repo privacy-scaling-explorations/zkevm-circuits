@@ -13,7 +13,7 @@ use crate::{
         IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, IS_BRANCH_C_PLACEHOLDER_POS,
         IS_BRANCH_S_PLACEHOLDER_POS, IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS,
         IS_EXT_LONG_ODD_C16_POS, IS_EXT_LONG_ODD_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS,
-        KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH, RLP_NUM, IS_S_EXT_LONGER_THAN_55_POS, IS_C_EXT_LONGER_THAN_55_POS,
+        KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH, RLP_NUM, IS_S_EXT_LONGER_THAN_55_POS, IS_C_EXT_LONGER_THAN_55_POS, IS_S_EXT_NODE_NON_HASHED_POS, IS_C_EXT_NODE_NON_HASHED_POS,
     }, mpt::{MainCols, AccumulatorCols},
 };
 
@@ -688,7 +688,7 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
 
         // Check whether extension node hash is in parent branch.
         // Don't check if it's first storage level (see storage_root_in_account_leaf).
-        meta.lookup_any("extension_node extension in parent branch", |meta| {
+        meta.lookup_any("Extension node hash in parent branch", |meta| {
             let q_enable = q_enable(meta);
             let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
 
@@ -705,6 +705,13 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
             let is_branch_placeholder =
                 meta.query_advice(is_branch_placeholder, Rotation(rot_into_branch_init));
 
+            let mut is_ext_node_non_hashed = s_main.bytes[IS_S_EXT_NODE_NON_HASHED_POS - RLP_NUM];
+            if !is_s {
+                is_ext_node_non_hashed = s_main.bytes[IS_C_EXT_NODE_NON_HASHED_POS - RLP_NUM];
+            }
+            let is_ext_node_non_hashed =
+                meta.query_advice(is_ext_node_non_hashed, Rotation(rot_into_branch_init));
+
             let mut constraints = vec![];
 
             let acc_c = meta.query_advice(accs.acc_c.rlc, Rotation::cur());
@@ -713,6 +720,7 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
                     * q_enable.clone()
                     * (one.clone() - is_account_leaf_in_added_branch.clone())
                     * (one.clone() - is_branch_placeholder.clone())
+                    * (one.clone() - is_ext_node_non_hashed.clone())
                     * acc_c,
                 meta.query_fixed(keccak_table[0], Rotation::cur()),
             ));
@@ -725,8 +733,53 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
                     * q_enable.clone()
                     * (one.clone() - is_account_leaf_in_added_branch.clone())
                     * (one.clone() - is_branch_placeholder.clone())
+                    * (one.clone() - is_ext_node_non_hashed)
                     * mod_node_hash_rlc_cur,
                 keccak_table_i,
+            ));
+
+            constraints
+        });
+
+        meta.create_gate("Extension node in parent branch (NON-HASHED extension node)", |meta| {
+            let q_enable = q_enable(meta);
+            let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
+            let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
+
+            let is_account_leaf_in_added_branch = meta.query_advice(
+                is_account_leaf_in_added_branch,
+                Rotation(rot_into_branch_init - 1),
+            );
+
+            // When placeholder extension, we don't check its hash in a parent.
+            let mut is_branch_placeholder = s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM];
+            if !is_s {
+                is_branch_placeholder = s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM];
+            }
+            let is_branch_placeholder =
+                meta.query_advice(is_branch_placeholder, Rotation(rot_into_branch_init));
+
+            let mut is_ext_node_non_hashed = s_main.bytes[IS_S_EXT_NODE_NON_HASHED_POS - RLP_NUM];
+            if !is_s {
+                is_ext_node_non_hashed = s_main.bytes[IS_C_EXT_NODE_NON_HASHED_POS - RLP_NUM];
+            }
+            let is_ext_node_non_hashed =
+                meta.query_advice(is_ext_node_non_hashed, Rotation(rot_into_branch_init));
+
+            let mut constraints = vec![];
+
+            let acc_c = meta.query_advice(accs.acc_c.rlc, Rotation::cur());
+            let mod_node_hash_rlc_cur = meta.query_advice(mod_node_hash_rlc, Rotation(-21));
+            
+            constraints.push((
+                "Non-hashed extension node in parent branch",
+                    q_not_first.clone()
+                    * not_first_level.clone()
+                    * q_enable.clone()
+                    * (one.clone() - is_account_leaf_in_added_branch.clone())
+                    * (one.clone() - is_branch_placeholder.clone())
+                    * is_ext_node_non_hashed
+                    * (mod_node_hash_rlc_cur - acc_c),
             ));
 
             constraints

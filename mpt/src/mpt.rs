@@ -3026,7 +3026,7 @@ mod tests {
                 }
 
                 println!("{:?}", path);
-                let prover = MockProver::<Fp>::run(9, &circuit, vec![pub_root]).unwrap();
+                let prover = MockProver::<Fp>::run(11, &circuit, vec![pub_root]).unwrap();
                 assert_eq!(prover.verify(), Ok(()));
 
                 /*
