@@ -1,13 +1,9 @@
-use crate::{
-    evm_circuit::{table::FixedTableTag, witness::Block},
-    state_circuit::StateCircuit,
-};
+use crate::{evm_circuit::witness::Block, state_circuit::StateCircuit};
 use bus_mapping::mock::BlockData;
 use eth_types::geth_types::GethData;
 use halo2_proofs::dev::{MockProver, VerifyFailure};
 use halo2_proofs::pairing::bn256::Fr;
 use mock::TestContext;
-use strum::IntoEnumIterator;
 
 #[cfg(test)]
 #[ctor::ctor]
@@ -15,36 +11,10 @@ fn init_env_logger() {
     // Enable RUST_LOG during tests
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("error")).init();
 }
-pub enum FixedTableConfig {
-    Incomplete,
-    Complete,
-}
-
-pub fn get_fixed_table(conf: FixedTableConfig) -> Vec<FixedTableTag> {
-    match conf {
-        FixedTableConfig::Incomplete => {
-            vec![
-                FixedTableTag::Zero,
-                FixedTableTag::Range5,
-                FixedTableTag::Range16,
-                FixedTableTag::Range32,
-                FixedTableTag::Range64,
-                FixedTableTag::Range256,
-                FixedTableTag::Range512,
-                FixedTableTag::Range1024,
-                FixedTableTag::SignByte,
-                FixedTableTag::ResponsibleOpcode,
-                FixedTableTag::Pow2,
-            ]
-        }
-        FixedTableConfig::Complete => FixedTableTag::iter().collect(),
-    }
-}
 
 #[derive(Debug, Clone)]
 pub struct BytecodeTestConfig {
     pub enable_evm_circuit_test: bool,
-    pub evm_circuit_lookup_tags: Vec<FixedTableTag>,
     pub enable_state_circuit_test: bool,
     pub gas_limit: u64,
 }
@@ -55,7 +25,6 @@ impl Default for BytecodeTestConfig {
             enable_evm_circuit_test: true,
             enable_state_circuit_test: true,
             gas_limit: 1_000_000u64,
-            evm_circuit_lookup_tags: get_fixed_table(FixedTableConfig::Incomplete),
         }
     }
 }
@@ -83,7 +52,7 @@ pub fn test_circuits_using_witness_block(
 ) -> Result<(), Vec<VerifyFailure>> {
     // run evm circuit test
     if config.enable_evm_circuit_test {
-        crate::evm_circuit::test::run_test_circuit(block.clone(), config.evm_circuit_lookup_tags)?;
+        crate::evm_circuit::test::run_test_circuit(block.clone())?;
     }
 
     // run state circuit test

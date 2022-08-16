@@ -1237,6 +1237,7 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                 match op {
                     OpcodeId::ADD | OpcodeId::SUB => ExecutionState::ADD_SUB,
                     OpcodeId::ADDMOD => ExecutionState::ADDMOD,
+                    OpcodeId::ADDRESS => ExecutionState::ADDRESS,
                     OpcodeId::MUL | OpcodeId::DIV | OpcodeId::MOD => ExecutionState::MUL_DIV_MOD,
                     OpcodeId::MULMOD => ExecutionState::MULMOD,
                     OpcodeId::SDIV | OpcodeId::SMOD => ExecutionState::SDIV_SMOD,
@@ -1285,7 +1286,6 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::CODESIZE => ExecutionState::CODESIZE,
                     OpcodeId::RETURN | OpcodeId::REVERT => ExecutionState::RETURN,
                     // dummy ops
-                    OpcodeId::ADDRESS => dummy!(ExecutionState::ADDRESS),
                     OpcodeId::BALANCE => dummy!(ExecutionState::BALANCE),
                     OpcodeId::BLOCKHASH => dummy!(ExecutionState::BLOCKHASH),
                     OpcodeId::EXP => dummy!(ExecutionState::EXP),
