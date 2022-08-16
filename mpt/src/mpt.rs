@@ -182,6 +182,7 @@ pub(crate) struct AccumulatorCols {
     pub(crate) key: AccumulatorPair, // accumulating RLC for address or key
     pub(crate) node_mult_diff_s: Column<Advice>, // used when accumulating branch RLC for non-hashed nodes in a branch
     pub(crate) node_mult_diff_c: Column<Advice>, // used when accumulating branch RLC for non-hashed nodes in a branch
+    pub(crate) mult_diff: Column<Advice>, // power of randomness r: multiplier_curr = multiplier_prev * mult_diff (used for example for diff due to extension node nibbles)
 }
 
 // TODO: check whether sel1, sel2 are sometimes used for accumulated values and fix it.
@@ -229,7 +230,6 @@ pub struct MPTConfig<F> {
                                           * hash (used also for leaf long/short) */
     pub(crate) acc_r: F,
     r_table: Vec<Expression<F>>,
-    pub(crate) mult_diff: Column<Advice>, // power of randomness r: multiplier_curr = multiplier_prev * mult_diff (used for example for diff due to extension node nibbles)
     keccak_table: [Column<Fixed>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
     fixed_table: [Column<Fixed>; 3],
     pub(crate) address_rlc: Column<Advice>, /* The same in all rows of a modification. The same as
@@ -463,7 +463,15 @@ impl<F: FieldExt> MPTConfig<F> {
             key: key.clone(),
             node_mult_diff_s: meta.advice_column(),
             node_mult_diff_c: meta.advice_column(),
+            mult_diff: meta.advice_column()
         };
+
+        // NOTE: acc_s.mult and acc_c.mult wouldn't be needed if we would have
+        // big endian instead of little endian. However, then it would be much more
+        // difficult to handle the accumulator when we iterate over the row.
+        // For example, big endian would mean to compute acc = acc * mult_r + row[i],
+        // but we don't want acc to be multiplied by mult_r when row[i] = 0 where
+        // the stream already ended and 0s are only to fulfill the row.
 
         let denoter = DenoteCols {
             sel1: meta.advice_column(),
@@ -471,15 +479,6 @@ impl<F: FieldExt> MPTConfig<F> {
             is_node_hashed_s: meta.advice_column(),
             is_node_hashed_c: meta.advice_column(),
         };
-
-        // NOTE: acc_mult_s and acc_mult_c wouldn't be needed if we would have
-        // big endian instead of little endian. However, then it would be much more
-        // difficult to handle the accumulator when we iterate over the row.
-        // For example, big endian would mean to compute acc = acc * mult_r + row[i],
-        // but we don't want acc to be multiplied by mult_r when row[i] = 0 where
-        // the stream already ended and 0s are only to fulfill the row.
-
-        let mult_diff = meta.advice_column();
  
         let address_rlc = meta.advice_column();
         let counter = meta.advice_column();
@@ -640,8 +639,7 @@ impl<F: FieldExt> MPTConfig<F> {
             account_leaf.is_in_added_branch,
             s_main.clone(),
             c_main.clone(),
-            accumulators.key.clone(),
-            mult_diff,
+            accumulators.clone(),
             fixed_table.clone(),
             r_table.clone(),
         );
@@ -785,7 +783,6 @@ impl<F: FieldExt> MPTConfig<F> {
             s_mod_node_hash_rlc,
             c_mod_node_hash_rlc,
             accumulators.clone(),
-            mult_diff,
             branch.drifted_pos,
             account_leaf.is_in_added_branch,
             r_table.clone(),
@@ -805,7 +802,6 @@ impl<F: FieldExt> MPTConfig<F> {
             keccak_table,
             accumulators.clone(),
             denoter.clone(),
-            mult_diff,
             account_leaf.is_in_added_branch,
             s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM],
             true,
@@ -825,7 +821,6 @@ impl<F: FieldExt> MPTConfig<F> {
             keccak_table,
             accumulators.clone(),
             denoter.clone(),
-            mult_diff,
             account_leaf.is_in_added_branch,
             s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
             false,
@@ -990,7 +985,6 @@ impl<F: FieldExt> MPTConfig<F> {
             s_mod_node_hash_rlc,
             c_mod_node_hash_rlc,
             accumulators.clone(),
-            mult_diff,
             branch.drifted_pos,
             denoter.clone(),
             r_table.clone(),
@@ -1016,7 +1010,6 @@ impl<F: FieldExt> MPTConfig<F> {
             acc_r,
             denoter,
             r_table,
-            mult_diff,
             keccak_table,
             fixed_table,
             address_rlc,
@@ -1147,7 +1140,7 @@ impl<F: FieldExt> MPTConfig<F> {
 
         region.assign_advice(
             || "assign mult diff".to_string(),
-            self.mult_diff,
+            self.accumulators.mult_diff,
             offset,
             || Ok(F::zero()),
         )?;
@@ -1403,7 +1396,7 @@ impl<F: FieldExt> MPTConfig<F> {
             offset,
             || Ok(key_rlc_mult),
         )?;
-        region.assign_advice(|| "mult diff", self.mult_diff, offset, || Ok(mult_diff))?;
+        region.assign_advice(|| "mult diff", self.accumulators.mult_diff, offset, || Ok(mult_diff))?;
 
         region.assign_advice(
             || "s_rlp1",
@@ -2518,7 +2511,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                     )?;
                                     region.assign_advice(
                                         || "assign leaf value S into mult_diff".to_string(),
-                                        self.mult_diff,
+                                        self.accumulators.mult_diff,
                                         offset,
                                         || Ok(pv.rlc1),
                                     )?;

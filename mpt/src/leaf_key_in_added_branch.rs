@@ -37,7 +37,6 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
         s_mod_node_hash_rlc: Column<Advice>,
         c_mod_node_hash_rlc: Column<Advice>,
         accs: AccumulatorCols,
-        mult_diff: Column<Advice>,
         drifted_pos: Column<Advice>,
         is_account_leaf_in_added_branch: Column<Advice>,
         r_table: Vec<Expression<F>>,
@@ -265,7 +264,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
             // Note: previous key_rlc in sel1/sel2 could be queried instead.
             let branch_rlc_mult = meta.query_advice(accs.key.mult, Rotation(-30));
 
-            let mult_diff = meta.query_advice(mult_diff, Rotation(rot_branch_init + 1));
+            let mult_diff = meta.query_advice(accs.mult_diff, Rotation(rot_branch_init + 1));
 
             let flag1 = meta.query_advice(s_mod_node_hash_rlc, Rotation::cur());
             let flag2 = meta.query_advice(c_mod_node_hash_rlc, Rotation::cur());

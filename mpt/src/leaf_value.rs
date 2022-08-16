@@ -33,10 +33,13 @@ impl<F: FieldExt> LeafValueChip<F> {
         s_mod_node_hash_rlc: Column<Advice>,
         c_mod_node_hash_rlc: Column<Advice>,
         keccak_table: [Column<Fixed>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
-        accs: AccumulatorCols, // key_rlc_mult (accs.key.mult) to store key_rlc from previous row (to enable lookup)
+        /*
+        - key_rlc_mult (accs.key.mult) to store key_rlc from previous row (to enable lookup)
+        - mult_diff to store leaf value S RLC from two rows above (to enable lookup)
+        TODO: check whether some other column can be used instead of mult_diff
+        */
+        accs: AccumulatorCols,
         denoter: DenoteCols,
-        mult_diff: Column<Advice>,    /* to store leaf value S RLC from two rows above (to
-                                       * enable lookup) */
         is_account_leaf_in_added_branch: Column<Advice>,
         is_branch_placeholder: Column<Advice>,
         is_s: bool,
@@ -144,7 +147,7 @@ impl<F: FieldExt> LeafValueChip<F> {
                 let key_c_rlc_from_prev = meta.query_advice(accs.key.rlc, Rotation(-1));
                 let key_c_rlc_from_cur = meta.query_advice(accs.key.mult, Rotation::cur());
                 let leaf_value_s_rlc_from_prev = meta.query_advice(accs.acc_c.rlc, Rotation(-2));
-                let leaf_value_s_rlc_from_cur = meta.query_advice(mult_diff, Rotation::cur());
+                let leaf_value_s_rlc_from_cur = meta.query_advice(accs.mult_diff, Rotation::cur());
                 constraints.push((
                     "key C RLC",
                     q_enable.clone() * (key_c_rlc_from_prev - key_c_rlc_from_cur),

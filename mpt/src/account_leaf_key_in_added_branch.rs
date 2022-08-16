@@ -38,7 +38,6 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchChip<F> {
         s_mod_node_hash_rlc: Column<Advice>,
         c_mod_node_hash_rlc: Column<Advice>, 
         accs: AccumulatorCols, // accs.acc_c contains mult_diff_nonce, initially key_rlc was used for mult_diff_nonce, but it caused PoisonedConstraint in extension_node_key
-        mult_diff: Column<Advice>,
         drifted_pos: Column<Advice>,
         denoter: DenoteCols,
         r_table: Vec<Expression<F>>,
@@ -224,7 +223,7 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchChip<F> {
             // leaf row stores this value too (the constraints for this are in account_leaf_key).
             let branch_rlc_mult = meta.query_advice(accs.acc_c.mult, Rotation(-(ACCOUNT_DRIFTED_LEAF_IND - ACCOUNT_LEAF_KEY_S_IND)));
 
-            let mult_diff = meta.query_advice(mult_diff, Rotation(rot_branch_init + 1)); 
+            let mult_diff = meta.query_advice(accs.mult_diff, Rotation(rot_branch_init + 1)); 
 
             let leaf_key_s_rlc = meta.query_advice(accs.key.rlc, Rotation(-(ACCOUNT_DRIFTED_LEAF_IND - ACCOUNT_LEAF_KEY_S_IND)));
             let leaf_key_c_rlc = meta.query_advice(accs.key.rlc, Rotation(-(ACCOUNT_DRIFTED_LEAF_IND - ACCOUNT_LEAF_KEY_C_IND)));
