@@ -25,6 +25,7 @@ use strum::IntoEnumIterator;
 
 mod add_sub;
 mod addmod;
+mod address;
 mod begin_tx;
 mod bitwise;
 mod block_ctx;
@@ -77,6 +78,7 @@ mod swap;
 use self::sha3::Sha3Gadget;
 use add_sub::AddSubGadget;
 use addmod::AddModGadget;
+use address::AddressGadget;
 use begin_tx::BeginTxGadget;
 use bitwise::BitwiseGadget;
 use block_ctx::{BlockCtxU160Gadget, BlockCtxU256Gadget, BlockCtxU64Gadget};
@@ -161,6 +163,7 @@ pub(crate) struct ExecutionConfig<F> {
     // opcode gadgets
     add_sub_gadget: AddSubGadget<F>,
     addmod_gadget: AddModGadget<F>,
+    address_gadget: AddressGadget<F>,
     bitwise_gadget: BitwiseGadget<F>,
     byte_gadget: ByteGadget<F>,
     call_gadget: CallGadget<F>,
@@ -196,7 +199,6 @@ pub(crate) struct ExecutionConfig<F> {
     selfbalance_gadget: SelfbalanceGadget<F>,
     sha3_gadget: Sha3Gadget<F>,
     shr_gadget: ShrGadget<F>,
-    address_gadget: DummyGadget<F, 0, 1, { ExecutionState::ADDRESS }>,
     balance_gadget: DummyGadget<F, 1, 1, { ExecutionState::BALANCE }>,
     blockhash_gadget: DummyGadget<F, 1, 1, { ExecutionState::BLOCKHASH }>,
     exp_gadget: DummyGadget<F, 2, 1, { ExecutionState::EXP }>,
@@ -886,6 +888,7 @@ impl<F: Field> ExecutionConfig<F> {
             // opcode
             ExecutionState::ADD_SUB => assign_exec_step!(self.add_sub_gadget),
             ExecutionState::ADDMOD => assign_exec_step!(self.addmod_gadget),
+            ExecutionState::ADDRESS => assign_exec_step!(self.address_gadget),
             ExecutionState::BITWISE => assign_exec_step!(self.bitwise_gadget),
             ExecutionState::BYTE => assign_exec_step!(self.byte_gadget),
             ExecutionState::CALL => assign_exec_step!(self.call_gadget),
@@ -924,7 +927,6 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::BLOCKCTXU256 => assign_exec_step!(self.block_ctx_u256_gadget),
             ExecutionState::SELFBALANCE => assign_exec_step!(self.selfbalance_gadget),
             // dummy gadgets
-            ExecutionState::ADDRESS => assign_exec_step!(self.address_gadget),
             ExecutionState::BALANCE => assign_exec_step!(self.balance_gadget),
             ExecutionState::BLOCKHASH => assign_exec_step!(self.blockhash_gadget),
             ExecutionState::EXP => assign_exec_step!(self.exp_gadget),
