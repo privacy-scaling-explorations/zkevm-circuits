@@ -69,6 +69,7 @@ mod sdiv_smod;
 mod selfbalance;
 mod sha3;
 mod shr;
+mod sar;
 mod signed_comparator;
 mod signextend;
 mod sload;
@@ -121,6 +122,7 @@ use r#return::ReturnGadget;
 use sdiv_smod::SignedDivModGadget;
 use selfbalance::SelfbalanceGadget;
 use shr::ShrGadget;
+use sar::SarGadget;
 use signed_comparator::SignedComparatorGadget;
 use signextend::SignextendGadget;
 use sload::SloadGadget;
@@ -201,10 +203,10 @@ pub(crate) struct ExecutionConfig<F> {
     selfbalance_gadget: SelfbalanceGadget<F>,
     sha3_gadget: Sha3Gadget<F>,
     shr_gadget: ShrGadget<F>,
+    sar_gadget: SarGadget<F>,
     balance_gadget: DummyGadget<F, 1, 1, { ExecutionState::BALANCE }>,
     exp_gadget: DummyGadget<F, 2, 1, { ExecutionState::EXP }>,
     shl_gadget: DummyGadget<F, 2, 1, { ExecutionState::SHL }>,
-    sar_gadget: DummyGadget<F, 2, 1, { ExecutionState::SAR }>,
     extcodesize_gadget: DummyGadget<F, 1, 1, { ExecutionState::EXTCODESIZE }>,
     extcodecopy_gadget: DummyGadget<F, 4, 0, { ExecutionState::EXTCODECOPY }>,
     returndatasize_gadget: DummyGadget<F, 0, 1, { ExecutionState::RETURNDATASIZE }>,
