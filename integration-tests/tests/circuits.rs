@@ -41,8 +41,6 @@ async fn test_evm_circuit_block(block_num: u64) {
 }
 
 async fn test_state_circuit_block(block_num: u64) {
-    use halo2_proofs::pairing::bn256::Fr;
-    
     log::info!("test state circuit, block number: {}", block_num);
     let cli = get_client();
     let cli = BuilderClient::new(cli).await.unwrap();
