@@ -229,7 +229,11 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
             region,
             offset,
             length.to_scalar().unwrap(),
-            F::from(call_data_length.checked_sub(data_offset.low_u64()).unwrap()),
+            F::from(
+                call_data_length
+                    .checked_sub(data_offset.low_u64())
+                    .unwrap_or_default(),
+            ),
         )?;
 
         // Memory expansion
