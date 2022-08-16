@@ -25,7 +25,6 @@ async fn test_evm_circuit_block(block_num: u64) {
 }
 
 async fn test_state_circuit_block(block_num: u64) {
-    use halo2_proofs::arithmetic::BaseExt;
     use halo2_proofs::pairing::bn256::Fr;
 
     log::info!("test state circuit, block number: {}", block_num);
@@ -50,7 +49,7 @@ async fn test_state_circuit_block(block_num: u64) {
         ..Default::default()
     });
 
-    let randomness = Fr::rand();
+    let randomness = Fr::from(0xcafeu64);
     let circuit = StateCircuit::<Fr>::new(randomness, rw_map, 1 << 16);
     let power_of_randomness = circuit.instance();
 
