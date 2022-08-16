@@ -1042,14 +1042,66 @@ impl<F: Field> ExecutionConfig<F> {
         }
 
         // Fill in the witness values for stored expressions
+        let assigned_stored_expressions = self.assign_stored_expressions(region, offset, step)?;
+
+        Self::check_rw_lookup(&assigned_stored_expressions, step, block);
+        Ok(())
+    }
+
+    fn assign_stored_expressions(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+        step: &ExecStep,
+    ) -> Result<Vec<(String, F)>, Error> {
+        let mut assigned_stored_expressions = Vec::new();
         for stored_expression in self
             .stored_expressions_map
             .get(&step.execution_state)
             .unwrap_or_else(|| panic!("Execution state unknown: {:?}", step.execution_state))
         {
-            stored_expression.assign(region, offset)?;
+            let assigned = stored_expression.assign(region, offset)?;
+            if let Some(v) = assigned.value() {
+                let name = stored_expression.name.clone();
+                assigned_stored_expressions.push((name, *v))
+            }
+        }
+        Ok(assigned_stored_expressions)
+    }
+
+    fn check_rw_lookup(
+        assigned_stored_expressions: &[(String, F)],
+        step: &ExecStep,
+        block: &Block<F>,
+    ) {
+        let mut assigned_rw_values = Vec::new();
+        // Reversion lookup expressions have different ordering compared to rw table,
+        // making it a bit complex to check,
+        // so we skip checking reversion lookups.
+        for (name, v) in assigned_stored_expressions {
+            if name.starts_with("rw lookup ")
+                && !name.contains(" with reversion")
+                && !v.is_zero_vartime()
+                && !assigned_rw_values.contains(&(name.clone(), *v))
+            {
+                assigned_rw_values.push((name.clone(), *v));
+            }
         }
 
-        Ok(())
+        for (idx, assigned_rw_value) in assigned_rw_values.iter().enumerate() {
+            let rw_idx = step.rw_indices[idx];
+            let rw = block.rws[rw_idx];
+            let table_assignments = rw.table_assignment(block.randomness);
+            let rlc = table_assignments.rlc(block.randomness);
+            if rlc != assigned_rw_value.1 {
+                log::error!(
+                    "incorrect rw witness. lookup input name: \"{}\". rw: {:?}, rw index: {:?}, {}th rw of step {:?}",
+                    assigned_rw_value.0,
+                    rw,
+                    rw_idx,
+                    idx,
+                    step.execution_state);
+            }
+        }
     }
 }

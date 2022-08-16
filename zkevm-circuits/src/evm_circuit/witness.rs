@@ -20,7 +20,7 @@ use bus_mapping::{
 use eth_types::{evm_types::OpcodeId, ToWord};
 use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word};
 use eth_types::{ToAddress, U256};
-use halo2_proofs::arithmetic::{BaseExt, FieldExt};
+use halo2_proofs::arithmetic::FieldExt;
 use halo2_proofs::pairing::bn256::Fr;
 use itertools::Itertools;
 use sha3::{Digest, Keccak256};
@@ -546,6 +546,31 @@ pub struct RwRow<F> {
     pub value_prev: F,
     pub aux1: F,
     pub aux2: F,
+}
+
+impl<F: Field> RwRow<F> {
+    pub fn values(&self) -> [F; 11] {
+        [
+            self.rw_counter,
+            self.is_write,
+            self.tag,
+            self.id,
+            self.address,
+            self.field_tag,
+            self.storage_key,
+            self.value,
+            self.value_prev,
+            self.aux1,
+            self.aux2,
+        ]
+    }
+    pub fn rlc(&self, randomness: F) -> F {
+        let values = self.values();
+        values
+            .iter()
+            .rev()
+            .fold(F::zero(), |acc, value| acc * randomness + value)
+    }
 }
 
 impl Rw {
@@ -1398,7 +1423,7 @@ pub fn block_convert(
     code_db: &bus_mapping::state_db::CodeDB,
 ) -> Block<Fr> {
     Block {
-        randomness: Fr::rand(),
+        randomness: Fr::from(0xcafeu64),
         context: block.into(),
         rws: RwMap::from(&block.container),
         txs: block
