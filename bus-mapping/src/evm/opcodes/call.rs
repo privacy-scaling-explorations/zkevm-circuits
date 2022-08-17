@@ -4,6 +4,7 @@ use crate::{
     operation::{AccountField, CallContextField, TxAccessListAccountOp, RW},
     Error,
 };
+
 use eth_types::{
     evm_types::{
         gas_utils::{eip150_gas, memory_expansion_gas_cost},
@@ -18,20 +19,19 @@ use std::cmp::max;
 /// Placeholder structure used to implement [`Opcode`] trait over it
 /// corresponding to the `OpcodeId::CALL` `OpcodeId`.
 #[derive(Debug, Copy, Clone)]
-pub(crate) struct Call;
+pub(crate) struct Call<const N_ARGS: usize>;
 
-impl Opcode for Call {
+impl<const N_ARGS: usize> Opcode for Call<N_ARGS> {
     fn gen_associated_ops(
         state: &mut CircuitInputStateRef,
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];
         let mut exec_step = state.new_step(geth_step)?;
-
-        let args_offset = geth_step.stack.nth_last(3)?.as_usize();
-        let args_length = geth_step.stack.nth_last(4)?.as_usize();
-        let ret_offset = geth_step.stack.nth_last(5)?.as_usize();
-        let ret_length = geth_step.stack.nth_last(6)?.as_usize();
+        let args_offset = geth_step.stack.nth_last(N_ARGS - 4)?.as_usize();
+        let args_length = geth_step.stack.nth_last(N_ARGS - 3)?.as_usize();
+        let ret_offset = geth_step.stack.nth_last(N_ARGS - 2)?.as_usize();
+        let ret_length = geth_step.stack.nth_last(N_ARGS - 1)?.as_usize();
 
         // we need to keep the memory until parse_call complete
         let call_ctx = state.call_ctx_mut()?;
@@ -77,7 +77,7 @@ impl Opcode for Call {
             state.call_context_read(&mut exec_step, current_call.call_id, field, value);
         }
 
-        for i in 0..7 {
+        for i in 0..N_ARGS {
             state.stack_read(
                 &mut exec_step,
                 geth_step.stack.nth_last_filled(i),
@@ -87,7 +87,7 @@ impl Opcode for Call {
 
         state.stack_write(
             &mut exec_step,
-            geth_step.stack.nth_last_filled(6),
+            geth_step.stack.nth_last_filled(N_ARGS - 1),
             (call.is_success as u64).into(),
         )?;
 
