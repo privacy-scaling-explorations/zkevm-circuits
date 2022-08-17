@@ -66,8 +66,6 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
         c_main: MainCols,
         accs: AccumulatorCols, // accs.acc_c.rlc contains mult_diff_nonce; accs.key.mult for mult_diff_balance
         r_table: Vec<Expression<F>>,
-        s_mod_node_hash_rlc: Column<Advice>,
-        c_mod_node_hash_rlc: Column<Advice>,
         denoter: DenoteCols,
         fixed_table: [Column<Fixed>; 3],
         is_s: bool,
@@ -248,7 +246,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
             let nonce_rlc = (s_advices0_cur.clone() + nonce_value_long_rlc.clone() * r_table[0].clone()) * is_nonce_long.clone()
                 + s_advices0_cur.clone() * (one.clone() - is_nonce_long.clone());
 
-            let nonce_stored = meta.query_advice(s_mod_node_hash_rlc, Rotation::cur());
+            let nonce_stored = meta.query_advice(accs.s_mod_node_rlc, Rotation::cur());
             /*
             Besides having nonce (its bytes) stored in `s_main.bytes`, we also have the RLC
             of nonce bytes stored in `s_mod_node_hash_rlc` column. The value in this column
@@ -273,7 +271,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
 
             let c_advices0_cur = meta.query_advice(c_main.bytes[0], Rotation::cur());
             let c_advices1_cur = meta.query_advice(c_main.bytes[1], Rotation::cur());
-            let balance_stored = meta.query_advice(c_mod_node_hash_rlc, Rotation::cur());
+            let balance_stored = meta.query_advice(accs.c_mod_node_rlc, Rotation::cur());
             let balance_value_long_rlc = c_advices1_cur.clone()
                 + compute_rlc(
                     meta,
@@ -310,9 +308,9 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
             ));
 
             if !is_s {
-                let nonce_s_from_prev = meta.query_advice(s_mod_node_hash_rlc, Rotation::prev());
+                let nonce_s_from_prev = meta.query_advice(accs.s_mod_node_rlc, Rotation::prev());
                 let nonce_s_from_cur = meta.query_advice(denoter.sel1, Rotation::cur());
-                let balance_s_from_prev = meta.query_advice(c_mod_node_hash_rlc, Rotation::prev());
+                let balance_s_from_prev = meta.query_advice(accs.c_mod_node_rlc, Rotation::prev());
                 let balance_s_from_cur = meta.query_advice(denoter.sel2, Rotation::cur());
 
                 // Note: when nonce or balance is 0, the actual value in the RLP encoding is 128!

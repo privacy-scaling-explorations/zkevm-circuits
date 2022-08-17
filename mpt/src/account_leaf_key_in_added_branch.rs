@@ -8,7 +8,7 @@ use std::marker::PhantomData;
 
 use crate::{
     helpers::{
-        compute_rlc, get_bool_constraint, get_is_extension_node_one_nibble, key_len_lookup,
+        compute_rlc, get_is_extension_node_one_nibble, key_len_lookup,
         mult_diff_lookup, range_lookups,
     },
     mpt::{FixedTableTag, MainCols, AccumulatorCols, DenoteCols},
@@ -35,8 +35,6 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchChip<F> {
         not_first_level: Column<Advice>,
         s_main: MainCols,
         c_main: MainCols,
-        s_mod_node_hash_rlc: Column<Advice>,
-        c_mod_node_hash_rlc: Column<Advice>, 
         accs: AccumulatorCols, // accs.acc_c contains mult_diff_nonce, initially key_rlc was used for mult_diff_nonce, but it caused PoisonedConstraint in extension_node_key
         drifted_pos: Column<Advice>,
         denoter: DenoteCols,
@@ -46,7 +44,9 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchChip<F> {
     ) -> AccountLeafKeyInAddedBranchConfig {
         let config = AccountLeafKeyInAddedBranchConfig {};
 
-        // Note: q_enable switches off first level, so no need for checks for first level below.
+        // Note: q_enable switches off the first level, there is no need for checks
+        // for the first level because when the leaf appears in an added branch, it is at least
+        // in the second level (added branch being above it).
 
         let one = Expression::Constant(F::one());
         let c16 = Expression::Constant(F::from(16_u64));
@@ -68,7 +68,7 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchChip<F> {
         // while the gate below checks the key RLC accumulated in
         // branches/extensions + leaf key).
 
-        meta.create_gate("account drifted leaf: leaf RLC after key", |meta| {
+        meta.create_gate("Account drifted leaf: leaf RLC after key", |meta| {
             let q_enable = q_enable(meta);
             let mut constraints = vec![];
 
@@ -155,6 +155,7 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchChip<F> {
         /*
         Leaf key S
         Leaf key C
+        Account non existing
         Nonce balance S
         Nonce balance C
         Storage codehash S
@@ -358,13 +359,13 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchChip<F> {
             }
 
             let s_advices0_nonce = meta.query_advice(s_main.bytes[0], Rotation(nonce_rot));
-            let nonce_stored = meta.query_advice(s_mod_node_hash_rlc, Rotation(nonce_rot));
+            let nonce_stored = meta.query_advice(accs.s_mod_node_rlc, Rotation(nonce_rot));
             let nonce_rlc = (s_advices0_nonce.clone() + nonce_stored.clone() * r_table[0].clone()) * is_nonce_long.clone()
                 + nonce_stored.clone() * (one.clone() - is_nonce_long.clone()); 
             rlc = rlc + nonce_rlc * r_table[rind].clone() * acc_mult.clone();
 
             let c_advices0_nonce = meta.query_advice(c_main.bytes[0], Rotation(nonce_rot));
-            let balance_stored = meta.query_advice(c_mod_node_hash_rlc, Rotation(nonce_rot));
+            let balance_stored = meta.query_advice(accs.c_mod_node_rlc, Rotation(nonce_rot));
             let balance_rlc = (c_advices0_nonce.clone() + balance_stored.clone() * r_table[0].clone()) * is_balance_long.clone()
                 + balance_stored.clone() * (one.clone() - is_balance_long.clone()); 
             let mut curr_r = mult_diff_nonce.clone() * acc_mult.clone();
@@ -377,14 +378,14 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchChip<F> {
             curr_r = curr_r * mult_diff_balance;
             rlc = rlc + s_rlp2_storage * curr_r.clone();
 
-            let storage_root_stored = meta.query_advice(s_mod_node_hash_rlc, Rotation(storage_codehash_rot));
+            let storage_root_stored = meta.query_advice(accs.s_mod_node_rlc, Rotation(storage_codehash_rot));
             curr_r = curr_r * r_table[0].clone();
             rlc = rlc + storage_root_stored * curr_r.clone();
 
             curr_r = curr_r * r_table[31].clone();
             rlc = rlc + c_rlp2_storage * curr_r.clone();
 
-            let codehash_stored = meta.query_advice(c_mod_node_hash_rlc, Rotation(storage_codehash_rot));
+            let codehash_stored = meta.query_advice(accs.c_mod_node_rlc, Rotation(storage_codehash_rot));
             rlc = rlc + codehash_stored * curr_r.clone() * r_table[0].clone();
 
             // Any rotation that lands into branch children can be used.
@@ -410,9 +411,9 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchChip<F> {
             // s(c)_mod_node_hash_rlc in placeholder branch contains hash of a drifted leaf
             // (that this value corresponds to the value in the non-placeholder branch at drifted_pos
             // is checked in branch_parallel)
-            let mut mod_node_hash_rlc = meta.query_advice(s_mod_node_hash_rlc, Rotation(rot));
+            let mut mod_node_hash_rlc = meta.query_advice(accs.s_mod_node_rlc, Rotation(rot));
             if !is_s {
-                mod_node_hash_rlc = meta.query_advice(c_mod_node_hash_rlc, Rotation(rot));
+                mod_node_hash_rlc = meta.query_advice(accs.c_mod_node_rlc, Rotation(rot));
             }
             let keccak_table_i = meta.query_fixed(keccak_table[1], Rotation::cur());
             constraints.push((

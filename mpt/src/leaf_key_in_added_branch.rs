@@ -34,8 +34,6 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
         q_enable: impl Fn(&mut VirtualCells<'_, F>) -> Expression<F> + Copy,
         s_main: MainCols,
         c_main: MainCols,
-        s_mod_node_hash_rlc: Column<Advice>,
-        c_mod_node_hash_rlc: Column<Advice>,
         accs: AccumulatorCols,
         drifted_pos: Column<Advice>,
         is_account_leaf_in_added_branch: Column<Advice>,
@@ -70,8 +68,8 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
             let c248 = Expression::Constant(F::from(248));
             let s_rlp1 = meta.query_advice(s_main.rlp1, Rotation::cur());
 
-            let flag1 = meta.query_advice(s_mod_node_hash_rlc, Rotation::cur());
-            let flag2 = meta.query_advice(c_mod_node_hash_rlc, Rotation::cur());
+            let flag1 = meta.query_advice(accs.s_mod_node_rlc, Rotation::cur());
+            let flag2 = meta.query_advice(accs.c_mod_node_rlc, Rotation::cur());
             let last_level = flag1.clone() * flag2.clone();
             let is_long = flag1.clone() * (one.clone() - flag2.clone());
             let is_short = (one.clone() - flag1.clone()) * flag2.clone();
@@ -152,8 +150,8 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
             let is_leaf_in_first_storage_level =
                 meta.query_advice(is_account_leaf_in_added_branch, Rotation(rot_into_account));
 
-            let flag1 = meta.query_advice(s_mod_node_hash_rlc, Rotation::cur());
-            let flag2 = meta.query_advice(c_mod_node_hash_rlc, Rotation::cur());
+            let flag1 = meta.query_advice(accs.s_mod_node_rlc, Rotation::cur());
+            let flag2 = meta.query_advice(accs.c_mod_node_rlc, Rotation::cur());
             let is_short = (one.clone() - flag1.clone()) * flag2.clone();
 
             q_enable * is_short * (is_branch_s_placeholder + is_branch_c_placeholder)
@@ -172,8 +170,8 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
             let is_leaf_in_first_storage_level =
                 meta.query_advice(is_account_leaf_in_added_branch, Rotation(rot_into_account));
 
-            let flag1 = meta.query_advice(s_mod_node_hash_rlc, Rotation::cur());
-            let flag2 = meta.query_advice(c_mod_node_hash_rlc, Rotation::cur());
+            let flag1 = meta.query_advice(accs.s_mod_node_rlc, Rotation::cur());
+            let flag2 = meta.query_advice(accs.c_mod_node_rlc, Rotation::cur());
             let is_long = flag1.clone() * (one.clone() - flag2.clone());
 
             q_enable * is_long * (is_branch_s_placeholder + is_branch_c_placeholder)
@@ -266,8 +264,8 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
 
             let mult_diff = meta.query_advice(accs.mult_diff, Rotation(rot_branch_init + 1));
 
-            let flag1 = meta.query_advice(s_mod_node_hash_rlc, Rotation::cur());
-            let flag2 = meta.query_advice(c_mod_node_hash_rlc, Rotation::cur());
+            let flag1 = meta.query_advice(accs.s_mod_node_rlc, Rotation::cur());
+            let flag2 = meta.query_advice(accs.c_mod_node_rlc, Rotation::cur());
             let last_level = flag1.clone() * flag2.clone();
             let is_long = flag1.clone() * (one.clone() - flag2.clone());
             let is_short = (one.clone() - flag1.clone()) * flag2.clone();
@@ -518,7 +516,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
             // s_mod_node_hash_rlc in placeholder branch contains hash of a drifted leaf
             // (that this value corresponds to the value in the non-placeholder branch at drifted_pos
             // is checked in branch_parallel)
-            let s_mod_node_hash_rlc = meta.query_advice(s_mod_node_hash_rlc, Rotation(rot));
+            let s_mod_node_hash_rlc = meta.query_advice(accs.s_mod_node_rlc, Rotation(rot));
             let keccak_table_i = meta.query_fixed(keccak_table[1], Rotation::cur());
             constraints.push((
                 q_enable.clone()
@@ -579,7 +577,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
             // c_mod_node_hash_rlc in placeholder branch contains hash of a drifted leaf
             // (that this value corresponds to the value in the non-placeholder branch at drifted_pos
             // is checked in branch_parallel)
-            let c_mod_node_hash_rlc = meta.query_advice(c_mod_node_hash_rlc, Rotation(rot));
+            let c_mod_node_hash_rlc = meta.query_advice(accs.c_mod_node_rlc, Rotation(rot));
             let keccak_table_i = meta.query_fixed(keccak_table[1], Rotation::cur());
             constraints.push((
                 q_enable.clone()

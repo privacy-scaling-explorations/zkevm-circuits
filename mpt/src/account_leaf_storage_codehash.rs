@@ -7,7 +7,7 @@ use std::marker::PhantomData;
 
 use crate::{
     helpers::range_lookups,
-    mpt::{FixedTableTag, MainCols, ProofTypeCols, AccumulatorPair, MPTConfig, ProofVariables, DenoteCols},
+    mpt::{FixedTableTag, MainCols, ProofTypeCols, MPTConfig, ProofVariables, DenoteCols, AccumulatorCols},
     param::{
         ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND, ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND, BRANCH_ROWS_NUM,
         EXTENSION_ROWS_NUM, IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS,
@@ -70,10 +70,8 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
         s_main: MainCols,
         c_main: MainCols,
         acc_r: F,
-        acc_pair: AccumulatorPair,
+        accs: AccumulatorCols,
         fixed_table: [Column<Fixed>; 3],
-        s_mod_node_hash_rlc: Column<Advice>,
-        c_mod_node_hash_rlc: Column<Advice>,
         denoter: DenoteCols,
         keccak_table: [Column<Fixed>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
         is_s: bool,
@@ -123,8 +121,8 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
 
             let c160 = Expression::Constant(F::from(160));
             let rot = -2;
-            let acc_prev = meta.query_advice(acc_pair.rlc, Rotation(rot));
-            let acc_mult_prev = meta.query_advice(acc_pair.mult, Rotation(rot));
+            let acc_prev = meta.query_advice(accs.acc_s.rlc, Rotation(rot));
+            let acc_mult_prev = meta.query_advice(accs.acc_s.mult, Rotation(rot));
             let s_rlp2 = meta.query_advice(s_main.rlp2, Rotation::cur());
             let c_rlp2 = meta.query_advice(c_main.rlp2, Rotation::cur());
 
@@ -159,7 +157,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
                 storage_root_rlc = storage_root_rlc + s * curr_r.clone();
                 curr_r = curr_r * acc_r;
             }
-            let storage_root_stored = meta.query_advice(s_mod_node_hash_rlc, Rotation::cur());
+            let storage_root_stored = meta.query_advice(accs.s_mod_node_rlc, Rotation::cur());
 
             /*
             `s_main.bytes` contain storage root hash, but to simplify lookups we need to have
@@ -186,7 +184,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
                 codehash_rlc = codehash_rlc + c * curr_r.clone();
                 curr_r = curr_r * acc_r;
             }
-            let codehash_stored = meta.query_advice(c_mod_node_hash_rlc, Rotation::cur());
+            let codehash_stored = meta.query_advice(accs.c_mod_node_rlc, Rotation::cur());
 
             /*
             `c_main.bytes` contain codehash, but to simplify lookups we need to have
@@ -201,7 +199,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
 
             if !is_s {
                 let storage_root_s_from_prev =
-                    meta.query_advice(s_mod_node_hash_rlc, Rotation::prev());
+                    meta.query_advice(accs.s_mod_node_rlc, Rotation::prev());
                 let storage_root_s_from_cur = meta.query_advice(denoter.sel1, Rotation::cur());
                 let codehash_s_from_cur = meta.query_advice(denoter.sel2, Rotation::cur());
 
@@ -254,7 +252,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
 
             expr = expr + codehash_rlc * old_curr_r;
 
-            let acc = meta.query_advice(acc_pair.rlc, Rotation::cur());
+            let acc = meta.query_advice(accs.acc_s.rlc, Rotation::cur());
 
             /*
             The RLC of the account leaf needs to be properly computed. We take the intermediate RLC
@@ -286,7 +284,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
                 let is_account_leaf_storage_codehash =
                     meta.query_advice(is_account_leaf_storage_codehash, Rotation::cur());
 
-                let rlc = meta.query_advice(acc_pair.rlc, Rotation::cur());
+                let rlc = meta.query_advice(accs.acc_s.rlc, Rotation::cur());
                 let root = meta.query_advice(inter_root, Rotation::cur());
 
                 constraints.push((
@@ -348,7 +346,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
             }
 
             // Note: accumulated in s (not in c) for c:
-            let acc_s = meta.query_advice(acc_pair.rlc, Rotation::cur());
+            let acc_s = meta.query_advice(accs.acc_s.rlc, Rotation::cur());
 
             let mut constraints = vec![];
             constraints.push((
@@ -360,9 +358,9 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
                 meta.query_fixed(keccak_table[0], Rotation::cur()),
             ));
             // Any rotation that lands into branch can be used instead of -17.
-            let mut mod_node_hash_rlc_cur = meta.query_advice(s_mod_node_hash_rlc, Rotation(-17));
+            let mut mod_node_hash_rlc_cur = meta.query_advice(accs.s_mod_node_rlc, Rotation(-17));
             if !is_s {
-                mod_node_hash_rlc_cur = meta.query_advice(c_mod_node_hash_rlc, Rotation(-17));
+                mod_node_hash_rlc_cur = meta.query_advice(accs.c_mod_node_rlc, Rotation(-17));
             }
             let keccak_table_i = meta.query_fixed(keccak_table[1], Rotation::cur());
             constraints.push((
@@ -409,7 +407,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
                 }
 
                 // Note: accumulated in s (not in c) for c:
-                let acc_s = meta.query_advice(acc_pair.rlc, Rotation::cur());
+                let acc_s = meta.query_advice(accs.acc_s.rlc, Rotation::cur());
 
                 let mut constraints = vec![];
                 constraints.push((
@@ -422,10 +420,10 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
                 ));
                 // Any rotation that lands into branch can be used instead of -17.
                 let mut mod_node_hash_rlc_cur_prev =
-                    meta.query_advice(s_mod_node_hash_rlc, Rotation(-17 - BRANCH_ROWS_NUM));
+                    meta.query_advice(accs.s_mod_node_rlc, Rotation(-17 - BRANCH_ROWS_NUM));
                 if !is_s {
                     mod_node_hash_rlc_cur_prev =
-                        meta.query_advice(c_mod_node_hash_rlc, Rotation(-17 - BRANCH_ROWS_NUM));
+                        meta.query_advice(accs.c_mod_node_rlc, Rotation(-17 - BRANCH_ROWS_NUM));
                 }
                 let keccak_table_i = meta.query_fixed(keccak_table[1], Rotation::cur());
                 constraints.push((
@@ -470,7 +468,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
                 }
 
                 // Note: accumulated in s (not in c) for c:
-                let acc_s = meta.query_advice(acc_pair.rlc, Rotation::cur());
+                let acc_s = meta.query_advice(accs.acc_s.rlc, Rotation::cur());
 
                 let mut constraints = vec![];
                 constraints.push((

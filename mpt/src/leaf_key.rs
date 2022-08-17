@@ -33,8 +33,6 @@ impl<F: FieldExt> LeafKeyChip<F> {
         q_enable: impl Fn(&mut VirtualCells<'_, F>) -> Expression<F> + Copy,
         s_main: MainCols,
         c_main: MainCols,
-        s_mod_node_hash_rlc: Column<Advice>,
-        c_mod_node_hash_rlc: Column<Advice>,
         accs: AccumulatorCols,
         denoter: DenoteCols, // sel1 stores key_rlc_prev, sel2 stores key_rlc_mult_prev
         is_account_leaf_in_added_branch: Column<Advice>,
@@ -68,8 +66,8 @@ impl<F: FieldExt> LeafKeyChip<F> {
             let c248 = Expression::Constant(F::from(248));
             let s_rlp1 = meta.query_advice(s_main.rlp1, Rotation::cur());
             let s_rlp2 = meta.query_advice(s_main.rlp2, Rotation::cur());
-            let flag1 = meta.query_advice(s_mod_node_hash_rlc, Rotation::cur());
-            let flag2 = meta.query_advice(c_mod_node_hash_rlc, Rotation::cur());
+            let flag1 = meta.query_advice(accs.s_mod_node_rlc, Rotation::cur());
+            let flag2 = meta.query_advice(accs.c_mod_node_rlc, Rotation::cur());
 
             let last_level = flag1.clone() * flag2.clone();
             let is_long = flag1.clone() * (one.clone() - flag2.clone());
@@ -121,16 +119,16 @@ impl<F: FieldExt> LeafKeyChip<F> {
 
         let sel_short = |meta: &mut VirtualCells<F>| {
             let q_enable = q_enable(meta);
-            let flag1 = meta.query_advice(s_mod_node_hash_rlc, Rotation::cur());
-            let flag2 = meta.query_advice(c_mod_node_hash_rlc, Rotation::cur());
+            let flag1 = meta.query_advice(accs.s_mod_node_rlc, Rotation::cur());
+            let flag2 = meta.query_advice(accs.c_mod_node_rlc, Rotation::cur());
             let is_short = (one.clone() - flag1.clone()) * flag2.clone();
 
             q_enable * is_short
         };
         let sel_long = |meta: &mut VirtualCells<F>| {
             let q_enable = q_enable(meta);
-            let flag1 = meta.query_advice(s_mod_node_hash_rlc, Rotation::cur());
-            let flag2 = meta.query_advice(c_mod_node_hash_rlc, Rotation::cur());
+            let flag1 = meta.query_advice(accs.s_mod_node_rlc, Rotation::cur());
+            let flag2 = meta.query_advice(accs.c_mod_node_rlc, Rotation::cur());
             let is_long = flag1.clone() * (one.clone() - flag2.clone());
 
             q_enable * is_long
@@ -182,8 +180,8 @@ impl<F: FieldExt> LeafKeyChip<F> {
                 let q_enable = q_enable(meta);
                 let mut constraints = vec![];
 
-                let flag1 = meta.query_advice(s_mod_node_hash_rlc, Rotation::cur());
-                let flag2 = meta.query_advice(c_mod_node_hash_rlc, Rotation::cur());
+                let flag1 = meta.query_advice(accs.s_mod_node_rlc, Rotation::cur());
+                let flag2 = meta.query_advice(accs.c_mod_node_rlc, Rotation::cur());
 
                 let last_level = flag1.clone() * flag2.clone();
                 let is_long = flag1.clone() * (one.clone() - flag2.clone());
@@ -340,8 +338,8 @@ impl<F: FieldExt> LeafKeyChip<F> {
             let q_enable = q_enable(meta);
             let mut constraints = vec![];
 
-            let is_long = meta.query_advice(s_mod_node_hash_rlc, Rotation::cur());
-            let is_short = meta.query_advice(c_mod_node_hash_rlc, Rotation::cur());
+            let is_long = meta.query_advice(accs.s_mod_node_rlc, Rotation::cur());
+            let is_short = meta.query_advice(accs.c_mod_node_rlc, Rotation::cur());
             let is_leaf_in_first_level =
                 meta.query_advice(is_account_leaf_in_added_branch, Rotation(rot_into_account));
 
@@ -500,8 +498,8 @@ impl<F: FieldExt> LeafKeyChip<F> {
             let q_enable = q_enable(meta);
             let mut constraints = vec![];
 
-            let is_long = meta.query_advice(s_mod_node_hash_rlc, Rotation::cur());
-            let is_short = meta.query_advice(c_mod_node_hash_rlc, Rotation::cur());
+            let is_long = meta.query_advice(accs.s_mod_node_rlc, Rotation::cur());
+            let is_short = meta.query_advice(accs.c_mod_node_rlc, Rotation::cur());
 
             // Note: key rlc is in the first branch node (not branch init).
             let rot_level_above = rot_into_init + 1 - BRANCH_ROWS_NUM;

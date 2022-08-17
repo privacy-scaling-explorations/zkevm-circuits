@@ -30,8 +30,6 @@ impl<F: FieldExt> LeafValueChip<F> {
         not_first_level: Column<Advice>,
         is_leaf_value: Column<Advice>,
         s_main: MainCols,
-        s_mod_node_hash_rlc: Column<Advice>,
-        c_mod_node_hash_rlc: Column<Advice>,
         keccak_table: [Column<Fixed>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
         /*
         - key_rlc_mult (accs.key.mult) to store key_rlc from previous row (to enable lookup)
@@ -74,10 +72,10 @@ impl<F: FieldExt> LeafValueChip<F> {
 
             let c128 = Expression::Constant(F::from(128));
             let c192 = Expression::Constant(F::from(192));
-            let is_long = meta.query_advice(s_mod_node_hash_rlc, Rotation::cur());
-            let is_short = meta.query_advice(c_mod_node_hash_rlc, Rotation::cur());
-            let flag1 = meta.query_advice(s_mod_node_hash_rlc, Rotation::prev());
-            let flag2 = meta.query_advice(c_mod_node_hash_rlc, Rotation::prev());
+            let is_long = meta.query_advice(accs.s_mod_node_rlc, Rotation::cur());
+            let is_short = meta.query_advice(accs.c_mod_node_rlc, Rotation::cur());
+            let flag1 = meta.query_advice(accs.s_mod_node_rlc, Rotation::prev());
+            let flag2 = meta.query_advice(accs.c_mod_node_rlc, Rotation::prev());
             let last_level = flag1.clone() * flag2.clone();
             let is_leaf_long = flag1.clone() * (one.clone() - flag2.clone());
             let is_leaf_short = (one.clone() - flag1.clone()) * flag2.clone();
@@ -322,9 +320,9 @@ impl<F: FieldExt> LeafValueChip<F> {
                     * (one.clone() - is_branch_placeholder.clone()),
                 meta.query_fixed(keccak_table[0], Rotation::cur()),
             ));
-            let mut mod_node_hash_rlc_cur = meta.query_advice(s_mod_node_hash_rlc, Rotation(rot));
+            let mut mod_node_hash_rlc_cur = meta.query_advice(accs.s_mod_node_rlc, Rotation(rot));
             if !is_s {
-                mod_node_hash_rlc_cur = meta.query_advice(c_mod_node_hash_rlc, Rotation(rot));
+                mod_node_hash_rlc_cur = meta.query_advice(accs.c_mod_node_rlc, Rotation(rot));
             }
             let keccak_table_i = meta.query_fixed(keccak_table[1], Rotation::cur());
             constraints.push((
@@ -369,9 +367,9 @@ impl<F: FieldExt> LeafValueChip<F> {
             let is_leaf_without_branch =
                 meta.query_advice(is_account_leaf_in_added_branch, Rotation(rot_into_account));
 
-            let mut mod_node_hash_rlc_cur = meta.query_advice(s_mod_node_hash_rlc, Rotation(rot));
+            let mut mod_node_hash_rlc_cur = meta.query_advice(accs.s_mod_node_rlc, Rotation(rot));
             if !is_s {
-                mod_node_hash_rlc_cur = meta.query_advice(c_mod_node_hash_rlc, Rotation(rot));
+                mod_node_hash_rlc_cur = meta.query_advice(accs.c_mod_node_rlc, Rotation(rot));
             }
 
             let mut constraints = vec![];
@@ -445,14 +443,14 @@ impl<F: FieldExt> LeafValueChip<F> {
                 meta.query_fixed(keccak_table[0], Rotation::cur()),
             ));
             let mut mod_node_hash_rlc = meta.query_advice(
-                s_mod_node_hash_rlc,
+                accs.s_mod_node_rlc,
                 Rotation(rot_into_init - 3), /* -3 to get from init branch into the previous
                                               * branch (last row), note that -2 is needed
                                               * because of extension nodes */
             );
             if !is_s {
                 mod_node_hash_rlc =
-                    meta.query_advice(c_mod_node_hash_rlc, Rotation(rot_into_init - 3));
+                    meta.query_advice(accs.c_mod_node_rlc, Rotation(rot_into_init - 3));
             }
 
             let keccak_table_i = meta.query_fixed(keccak_table[1], Rotation::cur());

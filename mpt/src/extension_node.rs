@@ -112,7 +112,6 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
         c_main: MainCols,
         accs: AccumulatorCols,
         keccak_table: [Column<Fixed>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
-        mod_node_hash_rlc: Column<Advice>,
         r_table: Vec<Expression<F>>,
         is_s: bool,
         acc_r: F,
@@ -726,7 +725,11 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
             ));
 
             // Any rotation that lands into branch can be used instead of -21.
-            let mod_node_hash_rlc_cur = meta.query_advice(mod_node_hash_rlc, Rotation(-21));
+            let mut mod_node_hash_rlc_cur = meta.query_advice(accs.s_mod_node_rlc, Rotation(-21));
+            if !is_s {
+                mod_node_hash_rlc_cur = meta.query_advice(accs.c_mod_node_rlc, Rotation(-21));
+            }
+
             let keccak_table_i = meta.query_fixed(keccak_table[1], Rotation::cur());
             constraints.push((
                 not_first_level.clone()
@@ -769,7 +772,10 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
             let mut constraints = vec![];
 
             let acc_c = meta.query_advice(accs.acc_c.rlc, Rotation::cur());
-            let mod_node_hash_rlc_cur = meta.query_advice(mod_node_hash_rlc, Rotation(-21));
+            let mut mod_node_hash_rlc_cur = meta.query_advice(accs.s_mod_node_rlc, Rotation(-21));
+            if !is_s {
+                mod_node_hash_rlc_cur = meta.query_advice(accs.c_mod_node_rlc, Rotation(-21));
+            }
             
             constraints.push((
                 "Non-hashed extension node in parent branch",
