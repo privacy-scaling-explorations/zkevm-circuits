@@ -6,8 +6,8 @@ use hyper::Request;
 use hyper::Uri;
 
 use serde::de::DeserializeOwned;
-use serde::Serialize;
 use serde::Deserialize;
+use serde::Serialize;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct JsonRpcError {
