@@ -64,7 +64,6 @@ mod tests {
         let (_, circuit, instance) =
             SuperCircuit::<_, 1, 32>::build(block, ChaChaRng::seed_from_u64(2));
         let instance_refs: Vec<&[Fr]> = instance.iter().map(|v| &v[..]).collect();
-        println!("k={}", k);
 
         // Bench setup generation
         let setup_message = format!("Setup generation with degree = {}", DEGREE);

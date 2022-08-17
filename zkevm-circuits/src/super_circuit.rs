@@ -25,7 +25,7 @@
 //! - [ ] Rw Table
 //!   - [ ] State Circuit
 //!   - [ ] EVM Circuit
-//!   - [x] Copy Circuit
+//!   - [ ] Copy Circuit
 //! - [x] Tx Table
 //!   - [x] Tx Circuit
 //!   - [x] EVM Circuit
