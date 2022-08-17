@@ -252,6 +252,7 @@ impl<F: Field> CopyCircuit<F> {
                     meta.query_advice(value, Rotation::cur()),
                 ]),
             );
+            // This constraint should fail, but the test cases don't cover it?
             cb.require_equal(
                 "is_pad == 1 - (src_addr < src_addr_end) for read row",
                 1.expr() - addr_lt_addr_end.is_lt(meta, None),
