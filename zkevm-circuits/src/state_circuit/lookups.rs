@@ -8,14 +8,50 @@ use halo2_proofs::{
 use std::marker::PhantomData;
 use strum::IntoEnumIterator;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct Config {
     // Can these be TableColumn's?
     // https://github.com/zcash/halo2/blob/642efc1536d3ea2566b04814bd60a00c4745ae22/halo2_proofs/src/plonk/circuit.rs#L266
-    pub u8: Column<Fixed>,
-    pub u10: Column<Fixed>,
-    pub u16: Column<Fixed>,
+    u8: Column<Fixed>,
+    u10: Column<Fixed>,
+    u16: Column<Fixed>,
     pub call_context_field_tag: Column<Fixed>,
+}
+
+impl Config {
+    pub fn range_check_u8<F: Field>(
+        &self,
+        meta: &mut ConstraintSystem<F>,
+        msg: &'static str,
+        exp_fn: impl FnOnce(&mut VirtualCells<'_, F>) -> Expression<F>,
+    ) {
+        meta.lookup_any(msg, |meta| {
+            let exp = exp_fn(meta);
+            vec![(exp, meta.query_fixed(self.u8, Rotation::cur()))]
+        });
+    }
+    pub fn range_check_u10<F: Field>(
+        &self,
+        meta: &mut ConstraintSystem<F>,
+        msg: &'static str,
+        exp_fn: impl FnOnce(&mut VirtualCells<'_, F>) -> Expression<F>,
+    ) {
+        meta.lookup_any(msg, |meta| {
+            let exp = exp_fn(meta);
+            vec![(exp, meta.query_fixed(self.u10, Rotation::cur()))]
+        });
+    }
+    pub fn range_check_u16<F: Field>(
+        &self,
+        meta: &mut ConstraintSystem<F>,
+        msg: &'static str,
+        exp_fn: impl FnOnce(&mut VirtualCells<'_, F>) -> Expression<F>,
+    ) {
+        meta.lookup_any(msg, |meta| {
+            let exp = exp_fn(meta);
+            vec![(exp, meta.query_fixed(self.u16, Rotation::cur()))]
+        });
+    }
 }
 
 #[derive(Clone)]

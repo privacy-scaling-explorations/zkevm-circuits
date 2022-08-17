@@ -486,10 +486,7 @@ impl<F: Field> ExecutionGadget<F> for CallGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::evm_circuit::{
-        test::{run_test_circuit_complete_fixed_table, run_test_circuit_incomplete_fixed_table},
-        witness::block_convert,
-    };
+    use crate::evm_circuit::{test::run_test_circuit, witness::block_convert};
     use eth_types::{address, bytecode};
     use eth_types::{bytecode::Bytecode, evm_types::OpcodeId, geth_types::Account};
     use eth_types::{Address, ToWord, Word};
@@ -580,7 +577,7 @@ mod test {
         }
     }
 
-    fn test_ok(caller: Account, callee: Account, use_complete_fixed_table: bool) {
+    fn test_ok(caller: Account, callee: Account) {
         let block = TestContext::<3, 1>::new(
             None,
             |accs| {
@@ -614,14 +611,44 @@ mod test {
             .handle_block(&block_data.eth_block, &block_data.geth_traces)
             .unwrap();
         let block = block_convert(&builder.block, &builder.code_db);
-        assert_eq!(
-            if use_complete_fixed_table {
-                run_test_circuit_complete_fixed_table(block)
-            } else {
-                run_test_circuit_incomplete_fixed_table(block)
+        assert_eq!(run_test_circuit(block), Ok(()));
+    }
+
+    fn test_oog(caller: Account, callee: Account) {
+        let block = TestContext::<3, 1>::new(
+            None,
+            |accs| {
+                accs[0]
+                    .address(address!("0x000000000000000000000000000000000000cafe"))
+                    .balance(Word::from(10u64.pow(19)));
+                accs[1]
+                    .address(caller.address)
+                    .code(caller.code)
+                    .nonce(caller.nonce)
+                    .balance(caller.balance);
+                accs[2]
+                    .address(callee.address)
+                    .code(callee.code)
+                    .nonce(callee.nonce)
+                    .balance(callee.balance);
             },
-            Ok(())
-        );
+            |mut txs, accs| {
+                txs[0]
+                    .from(accs[0].address)
+                    .to(accs[1].address)
+                    .gas(21100.into());
+            },
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap()
+        .into();
+        let block_data = bus_mapping::mock::BlockData::new_from_geth_data(block);
+        let mut builder = block_data.new_circuit_input_builder();
+        builder
+            .handle_block(&block_data.eth_block, &block_data.geth_traces)
+            .unwrap();
+        let block = block_convert(&builder.block, &builder.code_db);
+        assert_eq!(run_test_circuit(block), Ok(()));
     }
 
     #[test]
@@ -668,7 +695,7 @@ mod test {
         ];
         let callees = vec![callee(bytecode! {}), callee(bytecode! { STOP })];
         for (stack, callee) in stacks.into_iter().cartesian_product(callees.into_iter()) {
-            test_ok(caller(stack, true), callee, false);
+            test_ok(caller(stack, true), callee);
         }
     }
 
@@ -681,7 +708,32 @@ mod test {
         }];
         let callees = vec![callee(bytecode! {}), callee(bytecode! { STOP })];
         for (stack, callee) in stacks.into_iter().cartesian_product(callees.into_iter()) {
-            test_ok(caller_for_insufficient_balance(stack), callee, false);
+            test_ok(caller_for_insufficient_balance(stack), callee);
+        }
+    }
+
+    #[test]
+    fn call_with_oog() {
+        let stacks = vec![
+            // With gas and memory expansion
+            Stack {
+                gas: 100,
+                cd_offset: 64,
+                cd_length: 320,
+                rd_offset: 0,
+                rd_length: 32,
+                ..Default::default()
+            },
+        ];
+
+        let bytecode = bytecode! {
+            PUSH32(Word::from(0))
+            PUSH32(Word::from(0))
+            STOP
+        };
+        let callees = vec![callee(bytecode)];
+        for (stack, callee) in stacks.into_iter().cartesian_product(callees.into_iter()) {
+            test_oog(caller(stack, true), callee);
         }
     }
 
@@ -711,7 +763,7 @@ mod test {
         ];
 
         for (caller, callee) in callers.into_iter().cartesian_product(callees.into_iter()) {
-            test_ok(caller, callee, false);
+            test_ok(caller, callee);
         }
     }
 
@@ -769,7 +821,6 @@ mod test {
                 JUMPDEST // 56
                 STOP
             }),
-            true,
         );
     }
 }
