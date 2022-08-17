@@ -2,7 +2,7 @@ name: CI checks
 
 on:
   pull_request:
-    types: [synchronize, opened, reopened, ready_for_review, labeled]
+    types: [synchronize, opened, reopened, ready_for_review]
   push:
     branches:
       - main
@@ -11,50 +11,20 @@ on:
 ## `rust-toolchain` is always used and the only source of truth.
 
 jobs:
-  # Disallows PRs from forks to run on the self-hosted runner,
-  # except if the label `allow-ci` is attached to the PR.
-  permission:
-    if: |
-      github.event.pull_request.draft == false &&
-      (
-        github.repository == 'privacy-scaling-explorations/zkevm-circuits' ||
-        (
-          github.event_name == 'pull_request' &&
-          github.event.action == 'labeled' &&
-          github.event.label.name == 'allow-ci'
-        )
-      )
-    runs-on: ubuntu-latest
-    steps:
-      - run: true
-
-  consecutiveness:
-    needs: [permission]
-    runs-on: ubuntu-latest
-    steps:
-    - uses: mktcode/consecutive-workflow-action@v1
-      with:
-        token: ${{ secrets.GITHUB_TOKEN }}
-
-  wakeuprunner:
-    needs: [consecutiveness]
-    name: Wake up self-hosted runner
-    runs-on: pse-runner
-
-    steps:
-      - uses: actions/checkout@v2
-      - run: |
-          .github/ciChecksScripts/wakeUpRunner.sh
+  runner:
+    if: github.event.pull_request.draft == false
+    uses: ./.github/workflows/select-runner.yml
 
   test:
-    needs: [wakeuprunner]
     name: Test
+    needs: [runner]
     runs-on: ${{ matrix.os }}
+    concurrency: ${{ needs.runner.outputs.concurrency-group }}
     strategy:
       matrix:
         # We don't need to test across multiple platforms yet
         # os: [ubuntu-latest, windows-latest, macOS-latest]
-        os: [ci-checks-runner]
+        os: ${{ fromJSON(needs.runner.outputs.runner-matrix) }}
 
     steps:
       - uses: actions/checkout@v2
