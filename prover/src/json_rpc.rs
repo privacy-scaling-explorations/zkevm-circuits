@@ -7,29 +7,30 @@ use hyper::Uri;
 
 use serde::de::DeserializeOwned;
 use serde::Serialize;
+use serde::Deserialize;
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct JsonRpcError {
     pub code: i32,
     pub message: String,
 }
 
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, Serialize)]
 pub struct JsonRpcResponseError {
     pub jsonrpc: String,
     pub id: serde_json::Value,
     pub error: JsonRpcError,
 }
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct JsonRpcResponse<T> {
     pub jsonrpc: String,
     pub id: serde_json::Value,
     pub result: Option<T>,
 }
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
-pub struct JsonRpcRequest<T: serde::Serialize> {
+#[derive(Debug, Serialize, Deserialize)]
+pub struct JsonRpcRequest<T: Serialize> {
     pub jsonrpc: String,
     pub id: serde_json::Value,
     pub method: String,
@@ -45,7 +46,7 @@ pub async fn jsonrpc_request_client<T: Serialize + Send + Sync, R: DeserializeOw
     method: &str,
     params: T,
 ) -> Result<R, String> {
-    #[derive(Debug, serde::Deserialize)]
+    #[derive(Debug, Deserialize)]
     struct JsonRpcResponseInternal<T> {
         result: Option<T>,
         error: Option<JsonRpcError>,
