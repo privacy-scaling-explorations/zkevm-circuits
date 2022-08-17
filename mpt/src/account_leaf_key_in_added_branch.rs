@@ -1,5 +1,4 @@
 use halo2_proofs::{
-    circuit::Chip,
     plonk::{Advice, Column, ConstraintSystem, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
@@ -21,14 +20,11 @@ use crate::param::{
 };
 
 #[derive(Clone, Debug)]
-pub(crate) struct AccountLeafKeyInAddedBranchConfig {}
-
-pub(crate) struct AccountLeafKeyInAddedBranchChip<F> {
-    config: AccountLeafKeyInAddedBranchConfig,
+pub(crate) struct AccountLeafKeyInAddedBranchConfig<F> {
     _marker: PhantomData<F>,
 }
 
-impl<F: FieldExt> AccountLeafKeyInAddedBranchChip<F> {
+impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         q_enable: impl Fn(&mut VirtualCells<'_, F>) -> Expression<F> + Copy,
@@ -41,8 +37,8 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchChip<F> {
         r_table: Vec<Expression<F>>,
         fixed_table: [Column<Fixed>; 3],
         keccak_table: [Column<Fixed>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
-    ) -> AccountLeafKeyInAddedBranchConfig {
-        let config = AccountLeafKeyInAddedBranchConfig {};
+    ) -> Self {
+        let config = AccountLeafKeyInAddedBranchConfig { _marker: PhantomData };
 
         // Note: q_enable switches off the first level, there is no need for checks
         // for the first level because when the leaf appears in an added branch, it is at least
@@ -53,22 +49,8 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchChip<F> {
         let c32 = Expression::Constant(F::from(32_u64));
         let c48 = Expression::Constant(F::from(48_u64));
         let rot_branch_init = -ACCOUNT_DRIFTED_LEAF_IND - BRANCH_ROWS_NUM;
-
-        // NOTE: the nonce/balance & storage root / codehash values are not stored in
-        // this row, it needs to be the same
-        // as for the leaf before it drifted down to the new branch, thus, it is
-        // retrieved from the row of a leaf before a drift - to check that the hash
-        // of a drifted leaf is in the new branch.
-
-        // Checking leaf RLC is ok - RLC is then taken and nonce/balance & storage root
-        // / codehash values are added to RLC, finally lookup is used to check
-        // the hash that corresponds to this RLC is in the parent branch at
-        // drifted_pos position. This is not to be confused with key RLC checked
-        // in another gate (the gate here checks the RLC of all leaf bytes,
-        // while the gate below checks the key RLC accumulated in
-        // branches/extensions + leaf key).
-
-        meta.create_gate("Account drifted leaf: leaf RLC after key", |meta| {
+ 
+        meta.create_gate("Account drifted leaf: intermediate leaf RLC after key", |meta| {
             let q_enable = q_enable(meta);
             let mut constraints = vec![];
 
@@ -83,8 +65,12 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchChip<F> {
 
             let c248 = Expression::Constant(F::from(248));
             let s_rlp1 = meta.query_advice(s_main.rlp1, Rotation::cur());
+
+            /*
+            `s_rlp1` is always 248 because the account leaf is always longer than 55 bytes.
+            */
             constraints.push((
-                "account leaf key s_rlp1 = 248",
+                "Account leaf key s_rlp1 = 248",
                 q_enable.clone()
                     * (is_branch_s_placeholder.clone() + is_branch_c_placeholder.clone()) // drifted leaf appears only when there is a placeholder branch
                     * (s_rlp1.clone() - c248),
@@ -112,7 +98,19 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchChip<F> {
 
             let acc = meta.query_advice(accs.acc_s.rlc, Rotation::cur());
 
-            constraints.push(("leaf key acc", q_enable.clone()
+            /*
+            We check that the leaf RLC is properly computed. RLC is then taken and
+            nonce/balance & storage root / codehash values are added to the RLC (note that nonce/balance
+            & storage root / codehash are not stored for the drifted leaf because these values stay
+            the same as in the leaf before drift).
+            Finally, the lookup is used to check the hash that corresponds to this RLC is
+            in the parent branch at `drifted_pos` position.
+            This is not to be confused with the key RLC
+            checked in another gate (the gate here checks the RLC of all leaf bytes,
+            while the gate below checks the key RLC accumulated in
+            branches/extensions and leaf key).
+            */
+            constraints.push(("Leaf key intermediate RLC", q_enable.clone()
                 * (is_branch_s_placeholder + is_branch_c_placeholder) // drifted leaf appears only when there is a placeholder branch
                 * (expr - acc)));
 
@@ -134,6 +132,14 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchChip<F> {
         };
 
         /*
+        /*
+        Similarly as in account_leaf_key.rs,
+        key RLC is computed over `s_main.bytes[1]`, ..., `s_main.bytes[31]` because we do not know
+        the key length in advance. To prevent changing the key and setting `s_main.bytes[i]` for
+        `i > nonce_len + 1` to get the desired nonce RLC, we need to ensure that
+        `s_main.bytes[i] = 0` for `i > key_len + 1`.
+        The key can also appear in `c_main.rlp1` and `c_main.rlp2`, so we need to check these two columns too.
+        */
         for ind in 1..HASH_WIDTH {
             key_len_lookup(
                 meta,
@@ -149,7 +155,20 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchChip<F> {
         key_len_lookup(meta, sel, 33, s_main.bytes[0], c_rlp2, 128, fixed_table);
         */
 
-        // acc_mult corresponds to key length:
+        /*
+        When the full account RLC is computed (see add_constraints below), we need to know
+        the intermediate RLC and the randomness multiplier (`r` to some power) from the key row.
+        The power of randomness `r` is determined by the key length - the intermediate RLC in the current row
+        is computed as (key starts in `s_main.bytes[1]`):
+        `rlc = s_main.rlp1 + s_main.rlp2 * r + s_main.bytes[0] * r^2 + key_bytes[0] * r^3 + ... + key_bytes[key_len-1] * r^{key_len + 2}`
+        So the multiplier to be used in the next row is `r^{key_len + 2}`. 
+
+        `mult_diff` needs to correspond to the key length + 2 RLP bytes + 1 byte for byte that contains the key length.
+        That means `mult_diff` needs to be `r^{key_len+1}` where `key_len = s_main.bytes[0] - 128`.
+
+        Note that the key length is different than the on of the leaf before it drifted (by one nibble
+        if a branch is added, by multiple nibbles if extension node is added).
+        */
         mult_diff_lookup(meta, sel, 3, s_main.bytes[0], accs.acc_s.mult, 128, fixed_table);
 
         /*
@@ -271,18 +290,30 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchChip<F> {
 
             key_mult = key_mult * r_table[0].clone();
             let c_rlp1 = meta.query_advice(c_main.rlp1, Rotation::cur());
-            key_rlc = key_rlc + c_rlp1.clone() * key_mult;
+            key_rlc = key_rlc + c_rlp1.clone() * key_mult.clone();
 
-            // No need to distinguish between sel1 and sel2 here as it was already
-            // when computing key_rlc.
+            let c_rlp2 = meta.query_advice(c_main.rlp2, Rotation::cur());
+            key_rlc = key_rlc + c_rlp2.clone() * key_mult * r_table[0].clone();
+
+            /*
+            Note: no need to distinguish between sel1 and sel2 here as it was already
+            when computing key_rlc.
+            */
+
+            /*
+            The key RLC of the drifted leaf needs to be the same as the key RLC of the leaf before
+            the drift - the nibbles are the same in both cases, the difference is that before the
+            drift some nibbles are stored in the leaf key, while after the drift these nibbles are used as 
+            position in a branch or/and nibbles of the extension node.
+            */
             constraints.push((
-                "Drifted leaf key placeholder S",
+                "Drifted leaf key RLC same as the RLC of the leaf before drift (placeholder S)",
                 q_enable.clone()
                     * is_branch_s_placeholder.clone()
                     * (leaf_key_s_rlc.clone() - key_rlc.clone()),
             ));
             constraints.push((
-                "Drifted leaf key placeholder C",
+                "Drifted leaf key RLC same as the RLC of the leaf before drift (placeholder C)",
                 q_enable.clone()
                     * is_branch_c_placeholder.clone()
                     * (leaf_key_c_rlc.clone() - key_rlc.clone()),
@@ -424,18 +455,27 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchChip<F> {
             ));
             };
 
-        meta.lookup_any("account_leaf_key_in_added_branch: drifted leaf hash in the branch (S)", |meta| {
+        /*
+        We take the leaf RLC computed in the key row, we then add nonce/balance and storage root/codehash
+        to get the final RLC of the drifted leaf. We then check whether the drifted leaf is at
+        the `drifted_pos` in the parent branch - we use a lookup to check that the hash that
+        corresponds to this RLC is in the parent branch at `drifted_pos` position.
+        */
+        meta.lookup_any("Account leaf key in added branch: drifted leaf hash in the parent branch (S)", |meta| {
             let mut constraints = vec![];
             add_constraints(meta, &mut constraints, true);
             constraints
         });
-
-        meta.lookup_any("account_leaf_key_in_added_branch: drifted leaf hash in the branch (C)", |meta| {
+        meta.lookup_any("Account leaf key in added branch: drifted leaf hash in the parent branch (C)", |meta| {
             let mut constraints = vec![];
             add_constraints(meta, &mut constraints, false);
             constraints
         });
 
+        /*
+        Range lookups ensure that the value in the columns are all bytes (between 0 - 255).
+        Note that `c_main.bytes` columns are not used.
+        */
         range_lookups(
             meta,
             q_enable,
@@ -453,24 +493,6 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchChip<F> {
 
         config
     }
-
-    pub fn construct(config: AccountLeafKeyInAddedBranchConfig) -> Self {
-        Self {
-            config,
-            _marker: PhantomData,
-        }
-    }
+    
 }
 
-impl<F: FieldExt> Chip<F> for AccountLeafKeyInAddedBranchChip<F> {
-    type Config = AccountLeafKeyInAddedBranchConfig;
-    type Loaded = ();
-
-    fn config(&self) -> &Self::Config {
-        &self.config
-    }
-
-    fn loaded(&self) -> &Self::Loaded {
-        &()
-    }
-}

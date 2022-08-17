@@ -9,7 +9,7 @@ use std::convert::TryInto;
 
 use crate::{
     account_leaf_key::AccountLeafKeyConfig,
-    account_leaf_key_in_added_branch::AccountLeafKeyInAddedBranchChip,
+    account_leaf_key_in_added_branch::AccountLeafKeyInAddedBranchConfig,
     account_leaf_nonce_balance::AccountLeafNonceBalanceConfig,
     account_leaf_storage_codehash::AccountLeafStorageCodehashConfig,
     branch::BranchChip,
@@ -946,7 +946,7 @@ impl<F: FieldExt> MPTConfig<F> {
             false,
         );
 
-        AccountLeafKeyInAddedBranchChip::<F>::configure(
+        AccountLeafKeyInAddedBranchConfig::<F>::configure(
             meta,
             |meta| {
                 let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
@@ -1776,7 +1776,6 @@ impl<F: FieldExt> MPTConfig<F> {
                                 offset,
                             )?;
 
-                            // Note that if the last branch is placeholder,
                             pv.is_even = witness[offset][IS_EXT_LONG_EVEN_C16_POS]
                                 + witness[offset][IS_EXT_LONG_EVEN_C1_POS]
                                 == 1;
@@ -1794,7 +1793,6 @@ impl<F: FieldExt> MPTConfig<F> {
                                 + witness[offset][IS_EXT_LONG_ODD_C1_POS]
                                 == 1;
                             pv.is_extension_node = pv.is_even == true || pv.is_odd == true;
-                            // end of extension node
 
                             offset += 1;
                         } else if row[row.len() - 1] == 1 {

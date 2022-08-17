@@ -140,7 +140,7 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
         /*
         Key RLC is computed over `s_main.bytes[1]`, ..., `s_main.bytes[31]` because we do not know
         the key length in advance. To prevent changing the key and setting `s_main.bytes[i]` for
-        `i > nonce_len + 1` to get the correct nonce RLC, we need to ensure that
+        `i > nonce_len + 1` to get the desired nonce RLC, we need to ensure that
         `s_main.bytes[i] = 0` for `i > key_len + 1`.
         The key can also appear in `c_main.rlp1` and `c_main.rlp2`, so we need to check these two columns too.
         
@@ -166,7 +166,7 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
         */
 
         /*
-        When the account intermediate RLC needs to be computed in the next row (nonce balance row), we need
+        When the account intermediate RLC is computed in the next row (nonce balance row), we need
         to know the intermediate RLC from the current row and the randomness multiplier (`r` to some power).
         The power of randomness `r` is determined by the key length - the intermediate RLC in the current row
         is computed as (key starts in `s_main.bytes[1]`):
@@ -642,7 +642,7 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
         /*
         Range lookups ensure that `s_main`, `c_main.rlp1`, `c_main.rlp2` columns are all bytes (between 0 - 255).
         Note that `c_main.bytes` columns are not used.
-         */
+        */
         range_lookups(
             meta,
             q_enable,

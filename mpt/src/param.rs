@@ -62,6 +62,8 @@ pub const IS_C_BRANCH_NON_HASHED_POS: usize = 30;
 pub const IS_S_EXT_NODE_NON_HASHED_POS: usize = 31;
 pub const IS_C_EXT_NODE_NON_HASHED_POS: usize = 32;
 
+pub const NIBBLES_COUNTER_POS: usize = 33;
+
 // First level means the rows of the first node in a proof (it can be branch or account leaf).
 // Note that if there are multiple proofs chained (the previous C root corresponds to the current S root),
 // the first level appear at the beginning of each of the chained proofs.

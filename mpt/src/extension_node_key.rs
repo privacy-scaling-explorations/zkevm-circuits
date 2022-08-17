@@ -11,7 +11,7 @@ use std::marker::PhantomData;
 
 use crate::{
     helpers::{compute_rlc, range_lookups, key_len_lookup, get_is_extension_node},
-    mpt::{FixedTableTag, MainCols, BranchCols, AccumulatorPair, AccumulatorCols},
+    mpt::{FixedTableTag, MainCols, BranchCols, AccumulatorCols},
     param::{
         HASH_WIDTH,
         RLP_NUM, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS, IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS, IS_EXT_LONG_ODD_C16_POS, IS_EXT_LONG_ODD_C1_POS, EXTENSION_ROWS_NUM, BRANCH_ROWS_NUM,
