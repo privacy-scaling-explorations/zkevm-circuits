@@ -2,7 +2,7 @@ use crate::evm_circuit::util::{not, rlc};
 use crate::{evm_circuit::util::constraint_builder::BaseConstraintBuilder, util::Expr};
 use eth_types::Word;
 use eth_types::{Field, ToScalar};
-use gadgets::util::select;
+use gadgets::util::{select, sum};
 use halo2_proofs::{
     circuit::{Layouter, Region, SimpleFloorPlanner},
     plonk::{
@@ -13,7 +13,10 @@ use halo2_proofs::{
 use itertools::Itertools;
 use std::{convert::TryInto, env::var, marker::PhantomData, vec};
 
+const MAX_DEGREE: usize = 3;
+
 const KECCAK_WIDTH: usize = 25;
+const NUM_ROUNDS: usize = 24;
 const NUM_WORDS_TO_ABSORB: usize = 17;
 const NUM_WORDS_TO_SQUEEZE: usize = 4;
 
@@ -138,11 +141,15 @@ pub(crate) struct SqueezeData {
 /// KeccakRow
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct KeccakRow<F: Field> {
+    q_padding: bool,
+    q_padding_last: bool,
     state: [F; KECCAK_WIDTH],
     absorb_data: AbsorbData,
     squeeze_data: SqueezeData,
     cell_values: Vec<F>,
     is_final: u64,
+    length: usize,
+    data_rlc: F,
     hash_rlc: F,
 }
 
@@ -164,12 +171,16 @@ pub(crate) struct PartValue {
 /// KeccakConfig
 #[derive(Clone, Debug)]
 pub struct KeccakPackedConfig<F> {
-    q_enable: Selector,
-    q_first: Selector,
+    q_enable: Column<Fixed>,
+    q_first: Column<Fixed>,
     q_round: Column<Fixed>,
     q_absorb: Column<Fixed>,
     q_round_end: Selector,
+    q_padding: Column<Fixed>,
+    q_padding_last: Column<Fixed>,
     is_final: Column<Advice>,
+    length: Column<Advice>,
+    data_rlc: Column<Advice>,
     hash_rlc: Column<Advice>,
     state: [Column<Advice>; KECCAK_WIDTH],
     cell_values: Vec<Column<Advice>>,
@@ -561,12 +572,16 @@ fn combine_sub_parts_value(input: Vec<PartValue>, part_size: usize) -> Vec<PartV
 
 impl<F: Field> KeccakPackedConfig<F> {
     pub(crate) fn configure(meta: &mut ConstraintSystem<F>, r: F) -> Self {
-        let q_enable = meta.selector();
-        let q_first = meta.selector();
+        let q_enable = meta.fixed_column();
+        let q_first = meta.fixed_column();
         let q_round = meta.fixed_column();
         let q_absorb = meta.fixed_column();
         let q_round_end = meta.selector();
+        let q_padding = meta.fixed_column();
+        let q_padding_last = meta.fixed_column();
         let is_final = meta.advice_column();
+        let length = meta.advice_column();
+        let data_rlc = meta.advice_column();
         let hash_rlc = meta.advice_column();
         let state = array_init::array_init(|_| meta.advice_column());
         let absorb_from = meta.advice_column();
@@ -629,7 +644,7 @@ impl<F: Field> KeccakPackedConfig<F> {
             vec![0u64.expr()]
         });
 
-        let mut cb = BaseConstraintBuilder::new(3);
+        let mut cb = BaseConstraintBuilder::new(MAX_DEGREE);
         let mut total_lookup_counter = 0;
 
         let pre_s = s.clone();
@@ -637,7 +652,7 @@ impl<F: Field> KeccakPackedConfig<F> {
         // Absorb
         let mut lookup_counter = 0;
         let part_size = get_num_bits_per_absorb_lookup();
-        let input = absorb_from_expr + absorb_data_expr;
+        let input = absorb_from_expr + absorb_data_expr.clone();
         let absorb_fat = split(meta, &mut cell_values, &mut cb, input, 0, part_size, false);
         let absorb_res = transform(
             "absorb",
@@ -649,6 +664,58 @@ impl<F: Field> KeccakPackedConfig<F> {
         );
         cb.require_equal("absorb result", decode(absorb_res), absorb_result_expr);
         println!("- Post absorb:");
+        println!("Lookups: {}", lookup_counter);
+        println!("Columns: {}", cell_values.len());
+        total_lookup_counter += lookup_counter;
+
+        // Padding
+        let mut lookup_counter = 0;
+        // Unpack a single word into bytes (for the absorption)
+        // Potential optimization: could potentially do multiple bytes per lookup
+        let packed = split(
+            meta,
+            &mut cell_values,
+            &mut cb,
+            absorb_data_expr,
+            0,
+            8,
+            false,
+        );
+        let input_bytes = transform(
+            "squeeze unpack",
+            meta,
+            &mut cell_values,
+            &mut lookup_counter,
+            packed,
+            pack_unpack_table
+                .into_iter()
+                .rev()
+                .collect::<Vec<_>>()
+                .try_into()
+                .unwrap(),
+        );
+        let mut is_padding_columns = Vec::new();
+        let mut data_rlc_columns = Vec::new();
+        for _ in input_bytes.iter() {
+            let cell_column = meta.advice_column();
+            is_padding_columns.push(cell_column);
+            cell_values.push(cell_column);
+            let cell_column = meta.advice_column();
+            data_rlc_columns.push(cell_column);
+            cell_values.push(cell_column);
+        }
+        let mut is_paddings = Vec::new();
+        let mut data_rlcs = Vec::new();
+        meta.create_gate("Query padding data", |meta| {
+            for (is_padding_column, data_rlc_column) in
+                is_padding_columns.iter().zip(data_rlc_columns.iter())
+            {
+                is_paddings.push(meta.query_advice(*is_padding_column, Rotation::cur()));
+                data_rlcs.push(meta.query_advice(*data_rlc_column, Rotation::cur()));
+            }
+            vec![0u64.expr()]
+        });
+        println!("- Post padding:");
         println!("Lookups: {}", lookup_counter);
         println!("Columns: {}", cell_values.len());
         total_lookup_counter += lookup_counter;
@@ -868,22 +935,22 @@ impl<F: Field> KeccakPackedConfig<F> {
         );
 
         meta.create_gate("input checks", |meta| {
-            let mut cb = BaseConstraintBuilder::new(5);
+            let mut cb = BaseConstraintBuilder::new(MAX_DEGREE);
             cb.require_boolean(
                 "boolean is_final",
                 meta.query_advice(is_final, Rotation::cur()),
             );
-            cb.gate(meta.query_selector(q_enable))
+            cb.gate(meta.query_fixed(q_enable, Rotation::cur()))
         });
 
         meta.create_gate("first row", |meta| {
-            let mut cb = BaseConstraintBuilder::new(5);
+            let mut cb = BaseConstraintBuilder::new(MAX_DEGREE);
             cb.require_equal(
                 "is_final needs to be enabled on the first row",
                 meta.query_advice(is_final, Rotation::cur()),
                 1.expr(),
             );
-            cb.gate(meta.query_selector(q_first))
+            cb.gate(meta.query_fixed(q_first, Rotation::cur()))
         });
 
         meta.create_gate("round", |meta| {
@@ -893,7 +960,7 @@ impl<F: Field> KeccakPackedConfig<F> {
         s = pre_s;
 
         meta.create_gate("absorb", |meta| {
-            let mut cb = BaseConstraintBuilder::new(3);
+            let mut cb = BaseConstraintBuilder::new(MAX_DEGREE);
 
             let is_not_final = not::expr(meta.query_advice(is_final, Rotation::cur()));
 
@@ -933,7 +1000,7 @@ impl<F: Field> KeccakPackedConfig<F> {
         });
 
         meta.create_gate("squeeze", |meta| {
-            let mut cb = BaseConstraintBuilder::new(3);
+            let mut cb = BaseConstraintBuilder::new(MAX_DEGREE);
 
             let is_final = meta.query_advice(is_final, Rotation::cur());
 
@@ -984,6 +1051,165 @@ impl<F: Field> KeccakPackedConfig<F> {
         println!("Columns: {}", cell_values.len());
         total_lookup_counter += lookup_counter;
 
+        meta.create_gate("is final", |meta| {
+            let mut cb = BaseConstraintBuilder::new(MAX_DEGREE);
+            let last_is_padding_in_block = meta.query_advice(
+                *is_padding_columns.last().unwrap(),
+                Rotation(-((NUM_ROUNDS + 1 - NUM_WORDS_TO_ABSORB) as i32)),
+            );
+            cb.require_equal(
+                "is_final needs to be the same as the last is_padding in the block",
+                meta.query_advice(is_final, Rotation::cur()),
+                last_is_padding_in_block.expr(),
+            );
+            cb.gate(
+                meta.query_fixed(q_absorb, Rotation::cur())
+                    * not::expr(meta.query_fixed(q_first, Rotation::cur())),
+            )
+        });
+
+        // May be cleaner to do this padding logic in the byte conversion lookup but
+        // currently easier to do it like this.
+        meta.create_gate("padding", |meta| {
+            let mut cb = BaseConstraintBuilder::new(MAX_DEGREE);
+
+            let prev_is_padding =
+                meta.query_advice(*is_padding_columns.last().unwrap(), Rotation::prev());
+            let q_padding = meta.query_fixed(q_padding, Rotation::cur());
+            let q_padding_last = meta.query_fixed(q_padding_last, Rotation::cur());
+
+            // All padding selectors need to be boolean
+            for is_padding in is_paddings.iter() {
+                cb.condition(meta.query_fixed(q_enable, Rotation::cur()), |cb| {
+                    cb.require_boolean("is_padding boolean", is_padding.expr());
+                });
+            }
+
+            // This last padding selector will be used on the first round row
+            cb.condition(meta.query_fixed(q_absorb, Rotation::cur()), |cb| {
+                cb.require_zero(
+                    "last is_padding should be zero on absorb rows",
+                    is_paddings.last().unwrap().expr(),
+                );
+            });
+
+            for idx in 0..is_paddings.len() {
+                // Previous padding selector can be on the previous row
+                let is_padding_prev = if idx == 0 {
+                    prev_is_padding.expr()
+                } else {
+                    is_paddings[idx - 1].expr()
+                };
+                let is_first_padding = is_paddings[idx].expr() - is_padding_prev.clone();
+
+                // Check padding transition 0 -> 1 done only once
+                cb.condition(q_padding.expr(), |cb| {
+                    cb.require_boolean("padding step boolean", is_first_padding.clone());
+                });
+
+                // Padding start/intermediate/end byte checks
+                if idx == is_paddings.len() - 1 {
+                    // These can be combined in the future, but currently would increase the degree
+                    // by one Padding start/intermediate byte
+                    cb.condition(
+                        (q_padding.expr() - q_padding_last.expr()) * is_paddings[idx].expr(),
+                        |cb| {
+                            cb.require_equal(
+                                "padding start/intermediate byte last byte",
+                                input_bytes[idx].expr.clone(),
+                                is_first_padding.expr(),
+                            );
+                        },
+                    );
+                    // Padding start/end byte
+                    cb.condition(q_padding_last.expr() * is_paddings[idx].expr(), |cb| {
+                        cb.require_equal(
+                            "padding start/end byte",
+                            input_bytes[idx].expr.clone(),
+                            is_first_padding.expr() + 128.expr(),
+                        );
+                    });
+                } else {
+                    // Padding start/intermediate byte
+                    cb.condition(q_padding.expr() * is_paddings[idx].expr(), |cb| {
+                        cb.require_equal(
+                            "padding start/intermediate byte",
+                            input_bytes[idx].expr.clone(),
+                            is_first_padding.expr(),
+                        );
+                    });
+                }
+            }
+
+            cb.gate(1.expr())
+        });
+
+        meta.create_gate("length and data rlc", |meta| {
+            let mut cb = BaseConstraintBuilder::new(MAX_DEGREE);
+
+            let q_padding = meta.query_fixed(q_padding, Rotation::cur());
+            let is_final_prev = meta.query_advice(is_final, Rotation::prev());
+            let length_prev = meta.query_advice(length, Rotation::prev());
+            let length = meta.query_advice(length, Rotation::cur());
+            let data_rlc_prev = meta.query_advice(data_rlc, Rotation::prev());
+            let data_rlc = meta.query_advice(data_rlc, Rotation::cur());
+
+            // Update the length/data_rlc on rows where we absorb data
+            cb.condition(q_padding.expr(), |cb| {
+                // Length increases by the number of bytes that aren't padding
+                cb.require_equal(
+                    "update length",
+                    length.clone(),
+                    length_prev.clone() * not::expr(is_final_prev.expr())
+                        + sum::expr(
+                            is_paddings
+                                .iter()
+                                .map(|is_padding| not::expr(is_padding.expr())),
+                        ),
+                );
+
+                // Use intermediate cells to keep the degree low
+                let mut new_data_rlc = data_rlc_prev.clone() * not::expr(is_final_prev.expr());
+                cb.require_equal("initial data rlc", data_rlcs[0].expr(), new_data_rlc);
+                new_data_rlc = data_rlcs[0].expr();
+                for (idx, (byte, is_padding)) in
+                    input_bytes.iter().zip(is_paddings.iter()).enumerate()
+                {
+                    new_data_rlc = select::expr(
+                        is_padding.expr(),
+                        new_data_rlc.clone(),
+                        new_data_rlc.clone() * r + byte.expr.clone(),
+                    );
+                    if idx < data_rlcs.len() - 1 {
+                        cb.require_equal(
+                            "intermediate data rlc",
+                            data_rlcs[idx + 1].expr(),
+                            new_data_rlc,
+                        );
+                        new_data_rlc = data_rlcs[idx + 1].expr();
+                    }
+                }
+                cb.require_equal("update data rlc", data_rlc.clone(), new_data_rlc);
+            });
+
+            // Keep length/data_rlc the same on rows where we don't absorb data
+            cb.condition(
+                (meta.query_fixed(q_enable, Rotation::cur())
+                    - meta.query_fixed(q_first, Rotation::cur()))
+                    * not::expr(q_padding),
+                |cb| {
+                    cb.require_equal("length equality check", length.clone(), length_prev.clone());
+                    cb.require_equal(
+                        "data_rlc equality check",
+                        data_rlc.clone(),
+                        data_rlc_prev.clone(),
+                    );
+                },
+            );
+
+            cb.gate(1.expr())
+        });
+
         println!("Degree: {}", meta.degree());
         println!("Minimum rows: {}", meta.minimum_rows());
         println!("Lookups: {}", total_lookup_counter);
@@ -1009,7 +1235,11 @@ impl<F: Field> KeccakPackedConfig<F> {
             q_round,
             q_absorb,
             q_round_end,
+            q_padding,
+            q_padding_last,
             is_final,
+            length,
+            data_rlc,
             hash_rlc,
             state,
             cell_values,
@@ -1038,43 +1268,35 @@ impl<F: Field> KeccakPackedConfig<F> {
             || "assign keccak rows",
             |mut region| {
                 for (offset, keccak_row) in witness.iter().enumerate() {
-                    self.set_row(
-                        &mut region,
-                        offset,
-                        keccak_row.is_final,
-                        keccak_row.hash_rlc,
-                        keccak_row.state,
-                        keccak_row.absorb_data.clone(),
-                        keccak_row.squeeze_data.clone(),
-                        keccak_row.cell_values.clone(),
-                    )?;
+                    self.set_row(&mut region, offset, keccak_row)?;
                 }
                 Ok(())
             },
         )
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn set_row(
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
-        is_final: u64,
-        hash_rlc: F,
-        state: [F; KECCAK_WIDTH],
-        absorb_data: AbsorbData,
-        squeeze_data: SqueezeData,
-        cell_values: Vec<F>,
+        row: &KeccakRow<F>,
     ) -> Result<(), Error> {
         let round = (offset + 24) % 25;
 
-        self.q_enable.enable(region, offset)?;
-
+        // q_enable
+        region.assign_fixed(
+            || format!("assign q_enable {}", offset),
+            self.q_enable,
+            offset,
+            || Ok(F::from(true)),
+        )?;
         // q_first
-        if offset == 0 {
-            self.q_first.enable(region, offset)?;
-        }
-
+        region.assign_fixed(
+            || format!("assign q_first {}", offset),
+            self.q_first,
+            offset,
+            || Ok(F::from(offset == 0)),
+        )?;
         // q_round
         region.assign_fixed(
             || format!("assign q_round {}", offset),
@@ -1093,23 +1315,51 @@ impl<F: Field> KeccakPackedConfig<F> {
         if offset > 0 && round == 24 {
             self.q_round_end.enable(region, offset)?;
         }
+        // q_padding
+        region.assign_fixed(
+            || format!("assign q_padding {}", offset),
+            self.q_padding,
+            offset,
+            || Ok(F::from(row.q_padding as u64)),
+        )?;
+        // q_padding_last
+        region.assign_fixed(
+            || format!("assign q_padding_last {}", offset),
+            self.q_padding_last,
+            offset,
+            || Ok(F::from(row.q_padding_last as u64)),
+        )?;
         // is_final
         region.assign_advice(
             || format!("assign is_final {}", offset),
             self.is_final,
             offset,
-            || Ok(F::from(is_final)),
+            || Ok(F::from(row.is_final)),
+        )?;
+        // length
+        region.assign_advice(
+            || format!("assign length {}", offset),
+            self.length,
+            offset,
+            || Ok(F::from(row.length as u64)),
+        )?;
+        // data_rlc
+        region.assign_advice(
+            || format!("assign data_rlc {}", offset),
+            self.data_rlc,
+            offset,
+            || Ok(row.data_rlc),
         )?;
         // hash_rlc
         region.assign_advice(
             || format!("assign hash_rlc {}", offset),
             self.hash_rlc,
             offset,
-            || Ok(hash_rlc),
+            || Ok(row.hash_rlc),
         )?;
 
         // State bits
-        for (idx, (bit, column)) in state.iter().zip(self.state.iter()).enumerate() {
+        for (idx, (bit, column)) in row.state.iter().zip(self.state.iter()).enumerate() {
             region.assign_advice(
                 || format!("assign state bit {} {}", idx, offset),
                 *column,
@@ -1123,21 +1373,21 @@ impl<F: Field> KeccakPackedConfig<F> {
             || format!("assign absorb frmo {}", offset),
             self.absorb_from,
             offset,
-            || Ok(absorb_data.from.to_scalar().unwrap()),
+            || Ok(row.absorb_data.from.to_scalar().unwrap()),
         )?;
         // Absorb data
         region.assign_advice(
             || format!("assign absorb data {}", offset),
             self.absorb_data,
             offset,
-            || Ok(absorb_data.absorb.to_scalar().unwrap()),
+            || Ok(row.absorb_data.absorb.to_scalar().unwrap()),
         )?;
         // Absorb result
         region.assign_advice(
             || format!("assign absorb result {}", offset),
             self.absorb_result,
             offset,
-            || Ok(absorb_data.result.to_scalar().unwrap()),
+            || Ok(row.absorb_data.result.to_scalar().unwrap()),
         )?;
 
         // Squeeze packed
@@ -1145,11 +1395,16 @@ impl<F: Field> KeccakPackedConfig<F> {
             || format!("assign squeeze packed {}", offset),
             self.squeeze_packed,
             offset,
-            || Ok(squeeze_data.packed.to_scalar().unwrap()),
+            || Ok(row.squeeze_data.packed.to_scalar().unwrap()),
         )?;
 
         // Cell values
-        for (idx, (bit, column)) in cell_values.iter().zip(self.cell_values.iter()).enumerate() {
+        for (idx, (bit, column)) in row
+            .cell_values
+            .iter()
+            .zip(self.cell_values.iter())
+            .enumerate()
+        {
             region.assign_advice(
                 || format!("assign lookup value {} {}", idx, offset),
                 *column,
@@ -1400,6 +1655,8 @@ fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: Vec<u8>, r: F) {
     let all_threes = pack(&[3u8; 64]);
     let all_fives = pack(&[5u8; 64]);
 
+    let num_bytes_in_last_block = bytes.len() % (rate / 8);
+
     // Padding
     bits.push(1);
     while (bits.len() + 1) % rate != 0 {
@@ -1407,9 +1664,13 @@ fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: Vec<u8>, r: F) {
     }
     bits.push(1);
 
+    let mut length = 0usize;
+    let mut data_rlc = F::zero();
     let chunks = bits.chunks(rate);
     let num_chunks = chunks.len();
     for (idx, chunk) in chunks.enumerate() {
+        let is_final_block = idx == num_chunks - 1;
+
         let mut absorb_rows = Vec::new();
         // Absorb
         for (idx, &(i, j)) in absorb_positions.iter().enumerate() {
@@ -1447,6 +1708,65 @@ fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: Vec<u8>, r: F) {
             let absorb_fat = split_value::<F>(&mut cell_values, input, 0, part_size, false);
             let _absorb_result =
                 transform_value(&mut cell_values, absorb_fat.clone(), true, |v| v & 1);
+
+            // Padding
+            // Unpack a single word into bytes (for the absorption)
+            // Potential optimization: could potentially do multiple bytes per lookup
+            let packed = split_value::<F>(&mut cell_values, absorb_data.absorb, 0, 8, false);
+            let input_bytes = transform_value(&mut cell_values, packed, false, |v| *v);
+            let mut is_paddings = Vec::new();
+            let mut data_rlcs = Vec::new();
+            for _ in input_bytes.iter() {
+                is_paddings.push(cell_values.len());
+                data_rlcs.push(cell_values.len() + 1);
+                cell_values.push(F::zero());
+                cell_values.push(F::zero());
+            }
+
+            /*if round < NUM_WORDS_TO_ABSORB {
+                for byte in input_bytes.iter() {
+                    println!("{} - byte: {}", round, byte.value.as_u32())
+                }
+            }*/
+
+            let mut paddings = Vec::new();
+            for (padding_idx, is_padding) in is_paddings.iter_mut().enumerate() {
+                let padding = if is_final_block && round < NUM_WORDS_TO_ABSORB {
+                    let byte_idx = round * 8 + padding_idx;
+                    if byte_idx < num_bytes_in_last_block {
+                        length += 1;
+                        false
+                    } else {
+                        true
+                    }
+                } else {
+                    if round < NUM_WORDS_TO_ABSORB {
+                        length += 1;
+                    }
+                    false
+                };
+
+                paddings.push(padding);
+                cell_values[*is_padding] = F::from(padding as u64);
+            }
+
+            if round < NUM_WORDS_TO_ABSORB {
+                cell_values[data_rlcs[0]] = data_rlc;
+                for (idx, (byte, padding)) in input_bytes.iter().zip(paddings.iter()).enumerate() {
+                    if !*padding {
+                        let byte_value: F = byte.value.to_scalar().unwrap();
+                        data_rlc = data_rlc * r + byte_value;
+                    }
+                    if idx < data_rlcs.len() - 1 {
+                        cell_values[data_rlcs[idx + 1]] = data_rlc;
+                    }
+                }
+            }
+
+            if is_final_block && round == 24 {
+                println!("length: {}", length);
+                println!("data_rlc: {:x?}", data_rlc);
+            }
 
             // Theta
             let part_size_c = get_num_bits_per_theta_c_lookup();
@@ -1563,7 +1883,7 @@ fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: Vec<u8>, r: F) {
                 b = pre_b;
             }
 
-            let is_final = round == 24 && idx == num_chunks - 1;
+            let is_final = is_final_block && round == 24;
 
             // The words to squeeze out
             hash_words = pre_b.into_iter().take(4).map(|a| a[0]).take(4).collect();
@@ -1581,10 +1901,14 @@ fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: Vec<u8>, r: F) {
             }
 
             rows.push(KeccakRow {
+                q_padding: round < NUM_WORDS_TO_ABSORB,
+                q_padding_last: round == NUM_WORDS_TO_ABSORB - 1,
                 state,
                 absorb_data,
                 squeeze_data: SqueezeData::default(),
                 is_final: is_final as u64,
+                length,
+                data_rlc,
                 hash_rlc,
                 cell_values,
             });
@@ -1613,6 +1937,8 @@ fn multi_keccak<F: Field>(bytes: Vec<Vec<u8>>, r: F) -> Vec<KeccakRow<F>> {
     // Dummy first row so that the initial data is absorbed
     // The initial data doesn't really matter, `is_final` just needs to be enabled.
     let mut rows: Vec<KeccakRow<F>> = vec![KeccakRow {
+        q_padding: false,
+        q_padding_last: false,
         state: [F::zero(); KECCAK_WIDTH],
         absorb_data: AbsorbData {
             from: Word::zero(),
@@ -1623,6 +1949,8 @@ fn multi_keccak<F: Field>(bytes: Vec<Vec<u8>>, r: F) -> Vec<KeccakRow<F>> {
             packed: Word::zero(),
         },
         is_final: 1u64,
+        length: 0usize,
+        data_rlc: F::zero(),
         hash_rlc: F::zero(),
         cell_values: Vec::new(),
     }];
