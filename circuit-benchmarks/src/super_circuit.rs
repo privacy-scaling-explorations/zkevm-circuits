@@ -61,7 +61,7 @@ mod tests {
 
         block.sign(&wallets);
 
-        let (k, circuit, instance) =
+        let (_, circuit, instance) =
             SuperCircuit::<_, 1, 32>::build(block, ChaChaRng::seed_from_u64(2));
         let instance_refs: Vec<&[Fr]> = instance.iter().map(|v| &v[..]).collect();
         println!("k={}", k);

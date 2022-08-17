@@ -235,7 +235,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
         // --- Copy Circuit ---
         config
             .copy_circuit
-            .assign_block(&mut layouter, &self.block, F::from(0xcafeu64))?;
+            .assign_block(&mut layouter, &self.block, self.block.randomness)?;
 
         // --- Keccak Table ---
         let mut keccak_inputs = Vec::new();
@@ -261,7 +261,11 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
 }
 
 impl<const MAX_TXS: usize, const MAX_CALLDATA: usize> SuperCircuit<Fr, MAX_TXS, MAX_CALLDATA> {
-    /// TODO
+    /// From the witness data, generate a SuperCircuit instance with all of the
+    /// sub-circuits filled with their corresponding witnesses.
+    ///
+    /// Also, return with it the minimum required SRS degree for the circuit and
+    /// the Public Inputs needed.
     pub fn build(geth_data: GethData, rng: impl RngCore + Clone) -> (u32, Self, Vec<Vec<Fr>>) {
         let txs = geth_data
             .eth_block
