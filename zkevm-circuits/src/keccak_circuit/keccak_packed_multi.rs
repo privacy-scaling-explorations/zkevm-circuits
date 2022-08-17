@@ -2,7 +2,7 @@ use crate::evm_circuit::util::{not, rlc};
 use crate::{evm_circuit::util::constraint_builder::BaseConstraintBuilder, util::Expr};
 use eth_types::Word;
 use eth_types::{Field, ToScalar};
-use gadgets::util::{select, sum};
+use gadgets::util::{and, select, sum};
 use halo2_proofs::arithmetic::FieldExt;
 use halo2_proofs::plonk::{Selector, VirtualCells};
 use halo2_proofs::{
@@ -125,11 +125,11 @@ pub(crate) struct KeccakRow<F: Field> {
     q_enable: bool,
     q_round: bool,
     q_absorb: bool,
-    q_round_end: bool,
+    q_round_last: bool,
     q_padding: bool,
     q_padding_last: bool,
     round_cst: F,
-    is_final: u64,
+    is_final: bool,
     cell_values: Vec<F>,
     length: usize,
     data_rlc: F,
@@ -372,7 +372,7 @@ pub struct KeccakPackedConfig<F> {
     q_first: Column<Fixed>,
     q_round: Column<Fixed>,
     q_absorb: Column<Fixed>,
-    q_round_end: Selector,
+    q_round_last: Selector,
     q_padding: Column<Fixed>,
     q_padding_last: Column<Fixed>,
     is_final: Column<Advice>,
@@ -935,7 +935,7 @@ impl<F: Field> KeccakPackedConfig<F> {
         let q_first = meta.fixed_column();
         let q_round = meta.fixed_column();
         let q_absorb = meta.fixed_column();
-        let q_round_end = meta.selector();
+        let q_round_last = meta.selector();
         let q_padding = meta.fixed_column();
         let q_padding_last = meta.fixed_column();
         let is_final = meta.advice_column();
@@ -1439,7 +1439,7 @@ impl<F: Field> KeccakPackedConfig<F> {
                 );
             });
 
-            cb.gate(meta.query_selector(q_round_end))
+            cb.gate(meta.query_selector(q_round_last))
         });
 
         meta.create_gate("input checks", |meta| {
@@ -1472,9 +1472,10 @@ impl<F: Field> KeccakPackedConfig<F> {
                 meta.query_advice(is_final, Rotation::cur()),
                 last_is_padding_in_block.expr(),
             );
+            // All absorb rows except the first row
             cb.gate(
                 meta.query_fixed(q_absorb, Rotation::cur())
-                    * not::expr(meta.query_fixed(q_first, Rotation::cur())),
+                    - meta.query_fixed(q_first, Rotation::cur()),
             )
         });
 
@@ -1486,7 +1487,6 @@ impl<F: Field> KeccakPackedConfig<F> {
             .at_offset(meta, -(get_num_rows_per_round() as i32));
         meta.create_gate("padding", |meta| {
             let mut cb = BaseConstraintBuilder::new(MAX_DEGREE);
-
             let q_padding = meta.query_fixed(q_padding, Rotation::cur());
             let q_padding_last = meta.query_fixed(q_padding_last, Rotation::cur());
 
@@ -1496,8 +1496,8 @@ impl<F: Field> KeccakPackedConfig<F> {
                     cb.require_boolean("is_padding boolean", is_padding.expr());
                 });
             }
-
-            // This last padding selector will be used on the first round row
+            // This last padding selector will be used on the first round row so needs to be
+            // zero
             cb.condition(meta.query_fixed(q_absorb, Rotation::cur()), |cb| {
                 cb.require_zero(
                     "last is_padding should be zero on absorb rows",
@@ -1521,11 +1521,16 @@ impl<F: Field> KeccakPackedConfig<F> {
 
                 // Padding start/intermediate/end byte checks
                 if idx == is_paddings.len() - 1 {
-                    // These can be combined in the future, but currently would increase the degree
-                    // by one Padding start/intermediate byte
+                    // These can be combined in the future, but currently this would increase the
+                    // degree by one Padding start/intermediate byte, all
+                    // padding rows except the last one
                     cb.condition(
-                        (q_padding.expr() - q_padding_last.expr()) * is_paddings[idx].expr(),
+                        and::expr([
+                            q_padding.expr() - q_padding_last.expr(),
+                            is_paddings[idx].expr(),
+                        ]),
                         |cb| {
+                            // Input bytes need to be zero, or one if this is the first padding byte
                             cb.require_equal(
                                 "padding start/intermediate byte last byte",
                                 input_bytes[idx].expr.clone(),
@@ -1533,23 +1538,32 @@ impl<F: Field> KeccakPackedConfig<F> {
                             );
                         },
                     );
-                    // Padding start/end byte
-                    cb.condition(q_padding_last.expr() * is_paddings[idx].expr(), |cb| {
-                        cb.require_equal(
-                            "padding start/end byte",
-                            input_bytes[idx].expr.clone(),
-                            is_first_padding.expr() + 128.expr(),
-                        );
-                    });
+                    // Padding start/end byte, only on the last padding row
+                    cb.condition(
+                        and::expr([q_padding_last.expr(), is_paddings[idx].expr()]),
+                        |cb| {
+                            // The input byte needs to be 128, unless it's also the first padding
+                            // byte and then it's 129
+                            cb.require_equal(
+                                "padding start/end byte",
+                                input_bytes[idx].expr.clone(),
+                                is_first_padding.expr() + 128.expr(),
+                            );
+                        },
+                    );
                 } else {
                     // Padding start/intermediate byte
-                    cb.condition(q_padding.expr() * is_paddings[idx].expr(), |cb| {
-                        cb.require_equal(
-                            "padding start/intermediate byte",
-                            input_bytes[idx].expr.clone(),
-                            is_first_padding.expr(),
-                        );
-                    });
+                    cb.condition(
+                        and::expr([q_padding.expr(), is_paddings[idx].expr()]),
+                        |cb| {
+                            // Input bytes need to be zero, or one if this is the first padding byte
+                            cb.require_equal(
+                                "padding start/intermediate byte",
+                                input_bytes[idx].expr.clone(),
+                                is_first_padding.expr(),
+                            );
+                        },
+                    );
                 }
             }
 
@@ -1609,9 +1623,11 @@ impl<F: Field> KeccakPackedConfig<F> {
 
             // Keep length/data_rlc the same on rows where we don't absorb data
             cb.condition(
-                (meta.query_fixed(q_enable, Rotation::cur())
-                    - meta.query_fixed(q_first, Rotation::cur()))
-                    * not::expr(q_padding),
+                and::expr([
+                    meta.query_fixed(q_enable, Rotation::cur())
+                        - meta.query_fixed(q_first, Rotation::cur()),
+                    not::expr(q_padding),
+                ]),
                 |cb| {
                     cb.require_equal("length equality check", length.clone(), length_prev.clone());
                     cb.require_equal(
@@ -1649,7 +1665,7 @@ impl<F: Field> KeccakPackedConfig<F> {
             q_first,
             q_round,
             q_absorb,
-            q_round_end,
+            q_round_last,
             q_padding,
             q_padding_last,
             is_final,
@@ -1718,9 +1734,9 @@ impl<F: Field> KeccakPackedConfig<F> {
             offset,
             || Ok(F::from(row.q_absorb)),
         )?;
-        // q_round_end
-        if row.q_round_end {
-            self.q_round_end.enable(region, offset)?;
+        // q_round_last
+        if row.q_round_last {
+            self.q_round_last.enable(region, offset)?;
         }
         // q_padding
         region.assign_fixed(
@@ -2073,7 +2089,7 @@ fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: Vec<u8>, r: F) {
             // Padding
             cell_manager.start_region();
             // Unpack a single word into bytes (for the absorption)
-            // Potential optimization: could potentially do multiple bytes per lookup
+            // Potential optimization: could do multiple bytes per lookup
             let packed = split_value::<F>(
                 &mut cell_manager,
                 &mut region,
@@ -2093,55 +2109,20 @@ fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: Vec<u8>, r: F) {
                 is_paddings.push(cell_manager.query_cell_value());
                 data_rlcs.push(cell_manager.query_cell_value());
             }
-
-            /*if round < NUM_WORDS_TO_ABSORB {
-                for byte in input_bytes.iter() {
-                    println!("{} - byte: {}", round, byte.value.as_u32())
-                }
-            }*/
-
-            let mut paddings = Vec::new();
-            for (padding_idx, is_padding) in is_paddings.iter_mut().enumerate() {
-                let padding = if is_final_block && round < NUM_WORDS_TO_ABSORB {
+            if round < NUM_WORDS_TO_ABSORB {
+                let mut paddings = Vec::new();
+                for (padding_idx, is_padding) in is_paddings.iter_mut().enumerate() {
                     let byte_idx = round * 8 + padding_idx;
-                    if byte_idx < num_bytes_in_last_block {
+                    let padding = if is_final_block && byte_idx >= num_bytes_in_last_block {
+                        true
+                    } else {
                         length += 1;
                         false
-                    } else {
-                        true
-                    }
-                } else {
-                    if round < NUM_WORDS_TO_ABSORB {
-                        length += 1;
-                    }
-                    false
-                };
-                //println!("padding {}-{}: {}", idx, round, padding);
-                paddings.push(padding);
-                is_padding.assign(&mut region, 0, if padding { F::one() } else { F::zero() });
-            }
+                    };
+                    paddings.push(padding);
+                    is_padding.assign(&mut region, 0, if padding { F::one() } else { F::zero() });
+                }
 
-            cell_manager.start_region();
-
-            let is_final = is_final_block && round == 24;
-
-            // The words to squeeze out
-            hash_words = b.into_iter().take(4).map(|a| a[0]).take(4).collect();
-
-            if is_final {
-                let hash_bytes = b
-                    .into_iter()
-                    .take(4)
-                    .map(|a| to_bytes(&unpack(a[0])))
-                    .take(4)
-                    .concat();
-                hash_rlc = rlc::value(&hash_bytes, r);
-                println!("RLC: {:x?}", hash_rlc);
-            }
-            //println!("length: {}", length);
-            round_lengths.push(length);
-
-            if round < NUM_WORDS_TO_ABSORB {
                 data_rlcs[0].assign(&mut region, 0, data_rlc);
                 for (idx, (byte, padding)) in input_bytes.iter().zip(paddings.iter()).enumerate() {
                     if !*padding {
@@ -2153,7 +2134,23 @@ fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: Vec<u8>, r: F) {
                     }
                 }
             }
+            cell_manager.start_region();
 
+            let is_final = is_final_block && round == 24;
+            if is_final {
+                let hash_bytes = b
+                    .into_iter()
+                    .take(4)
+                    .map(|a| to_bytes(&unpack(a[0])))
+                    .take(4)
+                    .concat();
+                hash_rlc = rlc::value(&hash_bytes, r);
+                println!("RLC: {:x?}", hash_rlc);
+            }
+
+            // The words to squeeze out
+            hash_words = b.into_iter().take(4).map(|a| a[0]).take(4).collect();
+            round_lengths.push(length);
             round_data_rlcs.push(data_rlc);
 
             if round != 24 {
@@ -2332,10 +2329,6 @@ fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: Vec<u8>, r: F) {
             transform_value(cell_manager, region, packed, false, |v| *v, true);
         }
 
-        if is_final_block {
-            println!("data_rlc: {:x?}", round_data_rlcs[24]);
-        }
-
         for round in 0..25 {
             let is_final = is_final_block && round == 24;
             let round_cst = if round < 24 {
@@ -2349,11 +2342,11 @@ fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: Vec<u8>, r: F) {
                     q_enable: row_idx == 0,
                     q_round: row_idx == 0 && round < 24,
                     q_absorb: row_idx == 0 && round == 24,
-                    q_round_end: row_idx == 0 && round == 24,
+                    q_round_last: row_idx == 0 && round == 24,
                     q_padding: row_idx == 0 && round < NUM_WORDS_TO_ABSORB,
                     q_padding_last: row_idx == 0 && round == NUM_WORDS_TO_ABSORB - 1,
                     round_cst,
-                    is_final: is_final as u64,
+                    is_final,
                     length: round_lengths[round],
                     data_rlc: round_data_rlcs[round],
                     hash_rlc,
@@ -2380,11 +2373,11 @@ fn multi_keccak<F: Field>(bytes: Vec<Vec<u8>>, r: F) -> Vec<KeccakRow<F>> {
             q_enable: idx == 0,
             q_round: false,
             q_absorb: idx == 0,
-            q_round_end: false,
+            q_round_last: false,
             q_padding: false,
             q_padding_last: false,
             round_cst: F::zero(),
-            is_final: 1u64,
+            is_final: true,
             length: 0usize,
             data_rlc: F::zero(),
             hash_rlc: F::zero(),
