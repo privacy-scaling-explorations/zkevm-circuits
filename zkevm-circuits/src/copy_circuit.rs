@@ -696,11 +696,14 @@ mod tests {
         dev::{MockProver, VerifyFailure},
         plonk::{Circuit, ConstraintSystem},
     };
-    use mock::TestContext;
+    use mock::{test_ctx::helpers::account_0_code_account_1_no_code, TestContext};
     use rand::{prelude::SliceRandom, Rng};
 
     use crate::{
-        evm_circuit::witness::{block_convert, Block},
+        evm_circuit::{
+            test::rand_bytes,
+            witness::{block_convert, Block},
+        },
         table::{BytecodeTable, RwTable, TxTable},
         util::power_of_randomness_from_instance,
     };
@@ -798,7 +801,11 @@ mod tests {
         const NUM_BLINDING_ROWS: usize = 7 - 1;
         let instance = vec![vec![randomness; num_rows - NUM_BLINDING_ROWS]];
         let prover = MockProver::<F>::run(k, &circuit, instance).unwrap();
-        prover.verify()
+        let res = prover.verify();
+        if let Err(ref e) = res {
+            dbg!(e);
+        }
+        res
     }
 
     fn gen_calldatacopy_data() -> CircuitInputBuilder {
@@ -809,7 +816,19 @@ mod tests {
             CALLDATACOPY
             STOP
         };
-        let test_ctx = TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap();
+        let call_data = rand_bytes(0x20);
+        let test_ctx = TestContext::<2, 1>::new(
+            None,
+            account_0_code_account_1_no_code(code),
+            |mut txs, accs| {
+                txs[0]
+                    .from(accs[1].address)
+                    .to(accs[0].address)
+                    .input(call_data.into());
+            },
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap();
         let block: GethData = test_ctx.into();
         let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
         builder
