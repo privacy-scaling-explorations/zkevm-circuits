@@ -2,10 +2,11 @@ use crate::evm_circuit::util::memory_gadget::MemoryAddressGadget;
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
+        param::N_BYTES_MEMORY_ADDRESS,
         step::ExecutionState,
         util::{
-            common_gadget::RestoreContextGadget, constraint_builder::ConstraintBuilder, not,
-            CachedRegion, Cell,
+            common_gadget::RestoreContextGadget, constraint_builder::ConstraintBuilder,
+            math_gadget::MinMaxGadget, not, CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -15,8 +16,6 @@ use crate::{
 use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId};
 use eth_types::{Field, ToScalar};
 use halo2_proofs::plonk::Error;
-
-use std::cmp::min;
 
 #[derive(Clone, Debug)]
 pub(crate) struct ReturnGadget<F> {
@@ -29,14 +28,14 @@ pub(crate) struct ReturnGadget<F> {
     is_success: Cell<F>,
     restore_context: RestoreContextGadget<F>,
 
-    copy_length: Cell<F>, // TODO: this needs more constraints.
+    nonroot_copy_length: MinMaxGadget<F, N_BYTES_MEMORY_ADDRESS>,
 
     caller_id: Cell<F>, // can you get this out of restore_context?
     return_data_offset: Cell<F>,
     return_data_length: Cell<F>,
 }
 
-// This will handle reverts too?
+// TODO: rename this is reflect the fact that is handles REVERT as well.
 impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
     const NAME: &'static str = "RETURN";
 
@@ -73,14 +72,16 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
             cb.require_next_state(ExecutionState::EndTx);
         });
 
-        let copy_length = cb.query_cell();
+        let nonroot_copy_length =
+            MinMaxGadget::construct(cb, return_data_length.expr(), range.length());
+        let copy_length = not::expr(is_root.expr()) * nonroot_copy_length.min();
 
         let restore_context = cb.condition(not::expr(is_root.expr()), |cb| {
             cb.require_next_state_not(ExecutionState::EndTx);
             RestoreContextGadget::construct(
                 cb,
                 is_success.expr(),
-                copy_length.expr() + copy_length.expr(),
+                copy_length.clone() + copy_length.clone(),
                 range.offset(),
                 range.length(),
             )
@@ -90,17 +91,17 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
             not::expr(is_create.expr()) * not::expr(is_root.expr()) * range.has_length(),
             |cb| {
                 cb.copy_table_lookup(
-                    cb.curr.state.call_id.expr(),        // source id
-                    CopyDataType::Memory.expr(),         // source tag
-                    caller_id.expr(),                    // destination id
-                    CopyDataType::Memory.expr(),         // destination tag
-                    range.offset(),                      // source address
-                    range.offset() + copy_length.expr(), //
-                    return_data_offset.expr(),           // destination address
-                    copy_length.expr(),                  // length
+                    cb.curr.state.call_id.expr(),
+                    CopyDataType::Memory.expr(),
+                    caller_id.expr(),
+                    CopyDataType::Memory.expr(),
+                    range.offset(),
+                    range.offset() + copy_length.clone(),
+                    return_data_offset.expr(),
+                    copy_length.clone(),
                     0.expr(),
                     cb.curr.state.rw_counter.expr() + cb.rw_counter_offset().expr(),
-                    copy_length.expr() + copy_length.expr(),
+                    copy_length.clone() + copy_length,
                 );
             },
         );
@@ -131,7 +132,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
             is_create,
             is_success,
             caller_id,
-            copy_length,
+            nonroot_copy_length,
             return_data_offset,
             return_data_length,
             restore_context,
@@ -181,13 +182,12 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
                 .assign(region, offset, block, call, step, 8)?;
         }
 
-        let copy_length = if call.is_root {
-            0
-        } else {
-            min(call.return_data_length, length.as_u64())
-        };
-        self.copy_length
-            .assign(region, offset, Some(F::from(copy_length)))?;
+        self.nonroot_copy_length.assign(
+            region,
+            offset,
+            F::from(call.return_data_length),
+            F::from(length.as_u64()),
+        )?;
 
         Ok(())
     }
