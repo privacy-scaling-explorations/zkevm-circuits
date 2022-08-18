@@ -102,7 +102,8 @@ pub fn keccak_inputs(txs: &[Transaction], chain_id: u64) -> Result<Vec<Vec<u8>>,
     Ok(inputs)
 }
 
-fn tx_to_sign_data(tx: &Transaction, chain_id: u64) -> Result<SignData, Error> {
+/// Doc this
+pub(crate) fn tx_to_sign_data(tx: &Transaction, chain_id: u64) -> Result<SignData, Error> {
     let sig_r_le = tx.r.to_le_bytes();
     let sig_s_le = tx.s.to_le_bytes();
     let sig_r =
@@ -420,12 +421,8 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
 #[cfg(test)]
 mod tx_circuit_tests {
     use super::*;
+    use crate::test_util::rand_tx;
     use eth_types::{address, word, Bytes};
-    use ethers_core::{
-        types::{NameOrAddress, TransactionRequest},
-        utils::keccak256,
-    };
-    use ethers_signers::{LocalWallet, Signer};
     use group::{Curve, Group};
     use halo2_proofs::{
         arithmetic::CurveAffine,
@@ -433,7 +430,7 @@ mod tx_circuit_tests {
         pairing::bn256::Fr,
     };
     use pretty_assertions::assert_eq;
-    use rand::{CryptoRng, Rng, SeedableRng};
+    use rand::SeedableRng;
     use rand_chacha::ChaCha20Rng;
 
     fn run<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>(
@@ -467,42 +464,6 @@ mod tx_circuit_tests {
             Err(e) => panic!("{:#?}", e),
         };
         prover.verify()
-    }
-
-    fn rand_tx<R: Rng + CryptoRng>(mut rng: R, chain_id: u64) -> Transaction {
-        let wallet0 = LocalWallet::new(&mut rng).with_chain_id(chain_id);
-        let wallet1 = LocalWallet::new(&mut rng).with_chain_id(chain_id);
-        let from = wallet0.address();
-        let to = wallet1.address();
-        let data = b"hello";
-        let tx = TransactionRequest::new()
-            .from(from)
-            .to(to)
-            .nonce(3)
-            .value(1000)
-            .data(data)
-            .gas(500_000)
-            .gas_price(1234);
-        let tx_rlp = tx.rlp(chain_id);
-        let sighash = keccak256(tx_rlp.as_ref()).into();
-        let sig = wallet0.sign_hash(sighash, true);
-        let to = tx.to.map(|to| match to {
-            NameOrAddress::Address(a) => a,
-            _ => unreachable!(),
-        });
-        Transaction {
-            from: tx.from.unwrap(),
-            to,
-            gas_limit: tx.gas.unwrap(),
-            gas_price: tx.gas_price.unwrap(),
-            value: tx.value.unwrap(),
-            call_data: tx.data.unwrap(),
-            nonce: tx.nonce.unwrap(),
-            v: sig.v,
-            r: sig.r,
-            s: sig.s,
-            ..Transaction::default()
-        }
     }
 
     // High memory usage test.  Run in serial with:
