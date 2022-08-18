@@ -64,18 +64,19 @@ impl Opcode for Return {
         let offset = offset.as_usize();
         let length = length.as_usize();
         if call.is_create() && call.is_success {
-            // is this always the case?
             assert!(offset + length <= memory.0.len());
             let code = memory.0[offset..offset + length].to_vec();
+            // TODO: is this already handled by state.handle_return(step) below?
             state.code_db.insert(code);
+            // Warning: this isn't covered in any test!
             if length > 0 {
                 handle_create(
                     state,
                     &mut exec_step,
                     Source {
                         id: call.call_id,
-                        offset: offset.try_into().unwrap(),
-                        length: length.try_into().unwrap(),
+                        offset,
+                        length,
                     },
                 )?;
             }
@@ -96,8 +97,8 @@ impl Opcode for Return {
                     &mut exec_step,
                     Source {
                         id: call.call_id,
-                        offset: offset.try_into().unwrap(),
-                        length: length.try_into().unwrap(),
+                        offset,
+                        length,
                     },
                     Destination {
                         id: call.caller_id,
@@ -182,12 +183,12 @@ fn handle_copy(
 
     state.push_copy(CopyEvent {
         src_type: CopyDataType::Memory,
-        src_id: NumberOrHash::Number(source.id.try_into().unwrap()),
-        src_addr: 0, // not used
+        src_id: NumberOrHash::Number(source.id),
+        src_addr: source.offset.try_into().unwrap(),
         src_addr_end: (source.offset + copy_length).try_into().unwrap(),
         dst_type: CopyDataType::Memory,
-        dst_id: NumberOrHash::Number(destination.id.try_into().unwrap()),
-        dst_addr: 0, // not used
+        dst_id: NumberOrHash::Number(destination.id),
+        dst_addr: destination.offset.try_into().unwrap(),
         length: copy_length.try_into().unwrap(),
         log_id: None,
         steps: copy_steps,
@@ -214,7 +215,7 @@ fn handle_create(
                     tag: CopyDataType::Memory,
                     rw: RW::READ,
                     value: byte,
-                    is_code: None, // does this matter?
+                    is_code: None,
                     is_pad: false,
                     rwc: (initial_rw_counter + i).into(),
                     rwc_inc_left: (source.length - i).try_into().unwrap(),
@@ -236,7 +237,7 @@ fn handle_create(
 
     state.push_copy(CopyEvent {
         src_type: CopyDataType::Memory,
-        src_id: NumberOrHash::Number(source.id.try_into().unwrap()),
+        src_id: NumberOrHash::Number(source.id),
         src_addr: 0, // not used
         src_addr_end: (source.offset + source.length).try_into().unwrap(),
         dst_type: CopyDataType::Bytecode,
