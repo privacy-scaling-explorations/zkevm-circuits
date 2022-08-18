@@ -392,7 +392,7 @@ pub struct KeccakPackedConfig<F> {
 /// KeccakPackedCircuit
 #[derive(Default)]
 pub struct KeccakPackedCircuit<F: Field> {
-    inputs: Vec<KeccakRow<F>>,
+    witness: Vec<KeccakRow<F>>,
     size: usize,
     _marker: PhantomData<F>,
 }
@@ -421,8 +421,35 @@ impl<F: Field> Circuit<F> for KeccakPackedCircuit<F> {
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
         config.load(&mut layouter)?;
-        config.assign(layouter, self.size, &self.inputs)?;
+        config.assign(layouter, self.size, &self.witness)?;
         Ok(())
+    }
+}
+
+impl<F: Field> KeccakPackedCircuit<F> {
+    /// Creates a new circuit instance
+    pub fn new(size: usize) -> Self {
+        KeccakPackedCircuit {
+            witness: Vec::new(),
+            size,
+            _marker: PhantomData,
+        }
+    }
+
+    /// The number of keccak_f's that can be done in this circuit
+    pub fn capacity(&self) -> usize {
+        // Subtract one for unusable rows
+        self.size/((NUM_ROUNDS + 1) * get_num_rows_per_round()) - 1
+    }
+
+    /// Sets the witness using the data to be hashed
+    pub fn generate_witness(&mut self, inputs: &[Vec<u8>]) {
+        self.witness = multi_keccak(inputs, KeccakPackedCircuit::r());
+    }
+
+    /// Sets the witness using the witness data directly
+    fn set_witness(&mut self, witness: &[KeccakRow<F>]) {
+        self.witness = witness.to_vec();
     }
 }
 
@@ -1989,10 +2016,7 @@ fn get_absorb_positions() -> Vec<(usize, usize)> {
     absorb_positions
 }
 
-fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: Vec<u8>, r: F) {
-    let data_rlc_target = rlc::value(&bytes.clone().into_iter().rev().collect::<Vec<_>>(), r);
-    println!("data_rlc_target: {:x?}", data_rlc_target);
-
+fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: &[u8], r: F) {
     let mut bits = to_bits(&bytes);
     let rate: usize = 136 * 8;
 
@@ -2356,15 +2380,15 @@ fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: Vec<u8>, r: F) {
         }
     }
 
-    let hash_bytes = b
+    /*let hash_bytes = b
         .into_iter()
         .take(4)
         .map(|a| from_bits(&unpack(a[0])).as_u64().to_le_bytes())
         .collect::<Vec<_>>();
-    println!("Hash: {:x?}", &(hash_bytes[0..4].concat()));
+    println!("Hash: {:x?}", &(hash_bytes[0..4].concat()));*/
 }
 
-fn multi_keccak<F: Field>(bytes: Vec<Vec<u8>>, r: F) -> Vec<KeccakRow<F>> {
+fn multi_keccak<F: Field>(bytes: &[Vec<u8>], r: F) -> Vec<KeccakRow<F>> {
     let mut rows: Vec<KeccakRow<F>> = Vec::new();
     // Dummy first row so that the initial data is absorbed
     // The initial data doesn't really matter, `is_final` just needs to be enabled.
@@ -2466,17 +2490,12 @@ fn compose_rlc<F: Field>(expressions: &[Expression<F>], r: F) -> Expression<F> {
 
 #[cfg(test)]
 mod tests {
-    use std::marker::PhantomData;
-
     use super::*;
     use halo2_proofs::{dev::MockProver, pairing::bn256::Fr};
 
-    fn verify<F: Field>(k: u32, inputs: Vec<KeccakRow<F>>, success: bool) {
-        let circuit = KeccakPackedCircuit::<F> {
-            inputs,
-            size: 2usize.pow(k),
-            _marker: PhantomData,
-        };
+    fn verify<F: Field>(k: u32, inputs: Vec<Vec<u8>>, success: bool) {
+        let mut circuit = KeccakPackedCircuit::new(2usize.pow(k));
+        circuit.generate_witness(&inputs);
 
         let prover = MockProver::<F>::run(k, &circuit, vec![]).unwrap();
         let err = prover.verify();
@@ -2493,19 +2512,16 @@ mod tests {
     }
 
     #[test]
-    fn packed_multi_keccak_simple() {
-        let k = 10;
-        let r = KeccakPackedCircuit::r();
-        let inputs = multi_keccak(
+    fn packed_keccak_simple() {
+        let k = 9;
+        let inputs =
             vec![
                 vec![],
                 (0u8..1).collect::<Vec<_>>(),
                 (0u8..135).collect::<Vec<_>>(),
                 (0u8..136).collect::<Vec<_>>(),
                 (0u8..200).collect::<Vec<_>>(),
-            ],
-            r,
-        );
+            ];
         verify::<Fr>(k, inputs, true);
     }
 }

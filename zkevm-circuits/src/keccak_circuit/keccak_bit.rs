@@ -122,7 +122,7 @@ pub struct KeccakBitConfig<F> {
 /// KeccakBitCircuit
 #[derive(Default)]
 pub struct KeccakBitCircuit<F: Field> {
-    inputs: Vec<KeccakRow<F>>,
+    witness: Vec<KeccakRow<F>>,
     size: usize,
     _marker: PhantomData<F>,
 }
@@ -151,8 +151,35 @@ impl<F: Field> Circuit<F> for KeccakBitCircuit<F> {
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
         config.load(&mut layouter)?;
-        config.assign(layouter, self.size, &self.inputs)?;
+        config.assign(layouter, self.size, &self.witness)?;
         Ok(())
+    }
+}
+
+impl<F: Field> KeccakBitCircuit<F> {
+    /// Creates a new circuit instance
+    pub fn new(size: usize) -> Self {
+        KeccakBitCircuit {
+            witness: Vec::new(),
+            size,
+            _marker: PhantomData,
+        }
+    }
+
+    /// The number of keccak_f's that can be done in this circuit
+    pub fn capacity(&self) -> usize {
+        // Subtract one for unusable rows
+        self.size/(NUM_ROUNDS + 1) - 1
+    }
+
+    /// Sets the witness using the data to be hashed
+    pub fn generate_witness(&mut self, inputs: &[Vec<u8>]) {
+        self.witness = multi_keccak(inputs, KeccakBitCircuit::r());
+    }
+
+    /// Sets the witness using the witness data directly
+    fn set_witness(&mut self, witness: &[KeccakRow<F>]) {
+        self.witness = witness.to_vec();
     }
 }
 
@@ -788,8 +815,8 @@ fn get_absorb_positions() -> Vec<(usize, usize)> {
     absorb_positions
 }
 
-fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: Vec<u8>, r: F) {
-    let mut bits = into_bits(&bytes);
+fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: &[u8], r: F) {
+    let mut bits = into_bits(bytes);
     let mut s = [[[0u8; NUM_BITS_PER_WORD]; 5]; 5];
     let absorb_positions = get_absorb_positions();
     let num_bytes_in_last_block = bytes.len() % RATE;
@@ -835,17 +862,16 @@ fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: Vec<u8>, r: F) {
                 let ni = (i + 1) % 5;
                 for (k, c) in c.iter_mut().enumerate() {
                     let pk = (64 + k - 1) % 64;
-                    *c = (s[pi][0][k]
-                        + s[pi][1][k]
-                        + s[pi][2][k]
-                        + s[pi][3][k]
-                        + s[pi][4][k]
-                        + s[ni][1][pk]
-                        + s[ni][0][pk]
-                        + s[ni][2][pk]
-                        + s[ni][3][pk]
-                        + s[ni][4][pk])
-                        & 1;
+                    *c = s[pi][0][k]
+                        ^ s[pi][1][k]
+                        ^ s[pi][2][k]
+                        ^ s[pi][3][k]
+                        ^ s[pi][4][k]
+                        ^ s[ni][1][pk]
+                        ^ s[ni][0][pk]
+                        ^ s[ni][2][pk]
+                        ^ s[ni][3][pk]
+                        ^ s[ni][4][pk];
                 }
             }
 
@@ -969,16 +995,16 @@ fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: Vec<u8>, r: F) {
             }
         }
     }
-    let hash_bytes = s
+    /*let hash_bytes = s
         .into_iter()
         .take(4)
         .map(|a| to_bytes(&a[0]))
         .take(4)
         .concat();
-    println!("Hash: {:x?}", &hash_bytes);
+    println!("Hash: {:x?}", &hash_bytes);*/
 }
 
-fn multi_keccak<F: Field>(bytes: Vec<Vec<u8>>, r: F) -> Vec<KeccakRow<F>> {
+fn multi_keccak<F: Field>(bytes: &[Vec<u8>], r: F) -> Vec<KeccakRow<F>> {
     // Dummy first row so that the initial data can be absorbed
     // The initial data doesn't really matter, `is_final` just needs to be enabled.
     let mut rows: Vec<KeccakRow<F>> = vec![KeccakRow {
@@ -1066,17 +1092,12 @@ fn compose_rlc<F: Field>(expressions: &[Expression<F>], r: F) -> Expression<F> {
 
 #[cfg(test)]
 mod tests {
-    use std::marker::PhantomData;
-
     use super::*;
     use halo2_proofs::{dev::MockProver, pairing::bn256::Fr};
 
-    fn verify<F: Field>(k: u32, inputs: Vec<KeccakRow<F>>, success: bool) {
-        let circuit = KeccakBitCircuit::<F> {
-            inputs,
-            size: 2usize.pow(k),
-            _marker: PhantomData,
-        };
+    fn verify<F: Field>(k: u32, inputs: Vec<Vec<u8>>, success: bool) {
+        let mut circuit = KeccakBitCircuit::new(2usize.pow(k));
+        circuit.generate_witness(&inputs);
 
         let prover = MockProver::<F>::run(k, &circuit, vec![]).unwrap();
         let err = prover.verify();
@@ -1095,17 +1116,14 @@ mod tests {
     #[test]
     fn bit_keccak_simple() {
         let k = 8;
-        let r = KeccakBitCircuit::r();
-        let inputs = multi_keccak(
+        let inputs =
             vec![
                 vec![],
                 (0u8..1).collect::<Vec<_>>(),
                 (0u8..135).collect::<Vec<_>>(),
                 (0u8..136).collect::<Vec<_>>(),
                 (0u8..200).collect::<Vec<_>>(),
-            ],
-            r,
-        );
+            ];
         verify::<Fr>(k, inputs, true);
     }
 }

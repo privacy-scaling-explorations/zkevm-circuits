@@ -5,7 +5,7 @@ mod tests {
     use ark_std::{end_timer, start_timer};
     use halo2_proofs::plonk::{create_proof, keygen_pk, keygen_vk, verify_proof, SingleVerifier};
     use halo2_proofs::{
-        pairing::bn256::{Bn256, Fr, G1Affine},
+        pairing::bn256::{Bn256, G1Affine},
         poly::commitment::{Params, ParamsVerifier},
         transcript::{Blake2bRead, Blake2bWrite, Challenge255},
     };
@@ -22,7 +22,12 @@ mod tests {
             .parse()
             .expect("Cannot parse DEGREE env var as u32");
 
-        let empty_circuit = KeccakPackedCircuit::<Fr>::default();
+        // Create the circuit
+        let mut circuit = KeccakPackedCircuit::new(2usize.pow(degree));
+
+        // Use the complete circuit
+        let inputs = vec![(0u8..135).collect::<Vec<_>>(); circuit.capacity()];
+        circuit.generate_witness(&inputs);
 
         // Initialize the polynomial commitment parameters
         let rng = XorShiftRng::from_seed([
@@ -39,8 +44,8 @@ mod tests {
         end_timer!(start1);
 
         // Initialize the proving key
-        let vk = keygen_vk(&general_params, &empty_circuit).expect("keygen_vk should not fail");
-        let pk = keygen_pk(&general_params, vk, &empty_circuit).expect("keygen_pk should not fail");
+        let vk = keygen_vk(&general_params, &circuit).expect("keygen_vk should not fail");
+        let pk = keygen_pk(&general_params, vk, &circuit).expect("keygen_pk should not fail");
         // Create a proof
         let mut transcript = Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
 
@@ -50,7 +55,7 @@ mod tests {
         create_proof(
             &general_params,
             &pk,
-            &[empty_circuit],
+            &[circuit],
             &[&[]],
             rng,
             &mut transcript,
