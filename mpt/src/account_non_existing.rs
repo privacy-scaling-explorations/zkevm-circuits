@@ -7,32 +7,62 @@ use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
 use crate::{
-    helpers::{compute_rlc, key_len_lookup, mult_diff_lookup, range_lookups},
+    helpers::{key_len_lookup, range_lookups},
     mpt::{FixedTableTag, MainCols, AccumulatorCols},
     param::{
         HASH_WIDTH, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, RLP_NUM, ACCOUNT_NON_EXISTING_IND, BRANCH_ROWS_NUM,
     },
 };
 
-#[derive(Clone, Debug)]
-pub(crate) struct AccountNonExistingConfig {}
-
 /*
-Checks that the address does not exist. There are two versions of proof:
-    1. A leaf is returned by getProof that is not at the required address (we call this a wrong leaf).
-    2. A branch is the last element of getProof and there is nil object at address position.
-       Placeholder account leaf is added in this case.
+An account leaf occupies 8 rows.
+Contrary as in the branch rows, the `S` and `C` leaves are not positioned parallel to each other.
+The rows are the following:
+ACCOUNT_LEAF_KEY_S
+ACCOUNT_LEAF_KEY_C
+ACCOUNT_NON_EXISTING
+ACCOUNT_LEAF_NONCE_BALANCE_S
+ACCOUNT_LEAF_NONCE_BALANCE_C
+ACCOUNT_LEAF_STORAGE_CODEHASH_S
+ACCOUNT_LEAF_STORAGE_CODEHASH_C
+ACCOUNT_DRIFTED_LEAF
 
-1. In case of a wrong leaf, non_existing_account_row contains the nibbles of the address that was enquired
-while account_leaf_key contains the nibbles of the wrong leaf. We need to prove that the difference is nonzero.
-2. In case of nil object, we need to prove that the branch contains nil object (128) at the enquired address.
+The constraints in this file apply to ACCOUNT_NON_EXISTING.
+
+For example, the row might be:
+[0,0,0,32,252,237,52,8,133,130,180,167,143,97,28,115,102,25,94,62,148,249,8,6,55,244,16,75,187,208,208,127,251,120,61,73,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+
+We are proving that there is no account at the specified address. There are two versions of proof:
+    1. A leaf is returned by getProof that is not at the required address (we call this a wrong leaf).
+    In this case, the `ACCOUNT_NON_EXISTING` row contains the nibbles of the address that was enquired
+    while `ACCOUNT_LEAF_KEY` row contains the nibbles of the wrong leaf. We need to prove that
+    the difference is nonzero. This way we prove that there exists some account which has some
+    number of the starting nibbles the same as the enquired address (the path through branches
+    above the leaf), but at the same time the whole address is not the same.
+    // TODO: we need to ensure that the enquired address next nibble is the same as position of the
+    wrong leaf in the last branch.
+    2. A branch is the last element of the getProof response and there is a nil object
+    at the address position. Placeholder account leaf is added in this case.
+    In this case, the `ACCOUNT_NON_EXISTING` row contains just zeros as it is not needed.
+    We just need to prove that the branch contains nil object (128) at the enquired address.
+
+The whole account leaf looks like:
+[248,106,161,32,252,237,52,8,133,130,180,167,143,97,28,115,102,25,94,62,148,249,8,6,55,244,16,75,187,208,208,127,251,120,61,73,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+[248,106,161,32,252,237,52,8,133,130,180,167,143,97,28,115,102,25,94,62,148,249,8,6,55,244,16,75,187,208,208,127,251,120,61,73,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+[0,0,0,32,252,237,52,8,133,130,180,167,143,97,28,115,102,25,94,62,148,249,8,6,55,244,16,75,187,208,208,127,251,120,61,73,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+[184,70,128,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,248,68,128,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+[184,70,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,248,68,128,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+[0,160,86,232,31,23,27,204,85,166,255,131,69,230,146,192,248,110,91,72,224,27,153,108,173,192,1,98,47,181,227,99,180,33,0,160,197,210,70,1,134,247,35,60,146,126,125,178,220,199,3,192,229,0,182,83,202,130,39,59,123,250,216,4,93,133,164,122]
+[0,160,86,232,31,23,27,204,85,166,255,131,69,230,146,192,248,110,91,72,224,27,153,108,173,192,1,98,47,181,227,99,180,33,0,160,197,210,70,1,134,247,35,60,146,126,125,178,220,199,3,192,229,0,182,83,202,130,39,59,123,250,216,4,93,133,164,122]
+[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
 */
-pub(crate) struct AccountNonExistingChip<F> {
-    config: AccountNonExistingConfig,
+
+#[derive(Clone, Debug)]
+pub(crate) struct AccountNonExistingConfig<F> {
     _marker: PhantomData<F>,
 }
 
-impl<F: FieldExt> AccountNonExistingChip<F> {
+impl<F: FieldExt> AccountNonExistingConfig<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         q_enable: impl Fn(&mut VirtualCells<'_, F>) -> Expression<F> + Copy,
@@ -44,8 +74,8 @@ impl<F: FieldExt> AccountNonExistingChip<F> {
         r_table: Vec<Expression<F>>,
         fixed_table: [Column<Fixed>; 3],
         address_rlc: Column<Advice>,
-    ) -> AccountNonExistingConfig {
-        let config = AccountNonExistingConfig {};
+    ) -> Self {
+        let config = AccountNonExistingConfig { _marker: PhantomData };
         let one = Expression::Constant(F::one());
         let c32 = Expression::Constant(F::from(32));
         // key rlc is in the first branch node
@@ -277,25 +307,5 @@ impl<F: FieldExt> AccountNonExistingChip<F> {
         );
 
         config
-    }
-
-    pub fn construct(config: AccountNonExistingConfig) -> Self {
-        Self {
-            config,
-            _marker: PhantomData,
-        }
-    }
-}
-
-impl<F: FieldExt> Chip<F> for AccountNonExistingChip<F> {
-    type Config = AccountNonExistingConfig;
-    type Loaded = ();
-
-    fn config(&self) -> &Self::Config {
-        &self.config
-    }
-
-    fn loaded(&self) -> &Self::Loaded {
-        &()
     }
 }

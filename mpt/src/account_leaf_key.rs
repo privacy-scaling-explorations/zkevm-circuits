@@ -48,6 +48,24 @@ The whole account leaf looks like:
 [0,160,86,232,31,23,27,204,85,166,255,131,69,230,146,192,248,110,91,72,224,27,153,108,173,192,1,98,47,181,227,99,180,33,0,160,197,210,70,1,134,247,35,60,146,126,125,178,220,199,3,192,229,0,182,83,202,130,39,59,123,250,216,4,93,133,164,122]
 [0,160,86,232,31,23,27,204,85,166,255,131,69,230,146,192,248,110,91,72,224,27,153,108,173,192,1,98,47,181,227,99,180,33,0,160,197,210,70,1,134,247,35,60,146,126,125,178,220,199,3,192,229,0,182,83,202,130,39,59,123,250,216,4,93,133,164,122]
 [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+
+
+There are two main scenarios when an account is added to the trie:
+ 1. There exists an account which has the same address to the some point. There are 64
+ nibbles, if any number of the starting nibbles are the same for both addresses, a branch
+ will be added to trie. The existing account will drift down one level to the branch. The newly
+ added account will also appear in this branch. For example, let us say we have the account `A`
+ with nibbles `[3, 12, 3]` in the trie. We then add the account `A1` with nibbles `[3, 12, 5]`
+ to the trie. The branch will appear (at position `[3, 12]`) which will have `A` at position 3
+ and `A1` at position 5. That means there will be an additional branch in `C` proof (or in `S`
+ proof when the situation is reversed - we are deleting the leaf instead of adding) and
+ a placeholder branch will be used to maintain the circuit layout (more details below).
+
+ 2. There does not exist an account which has the same address to the some point. That means
+ there exists a branch with `nil` child where the account will be added. In this case,
+ the `getProof` response does not end with a leaf, but with a branch. To maintain the layout,
+ a placeholder account leaf is added.
+
 */
 
 #[derive(Clone, Debug)]

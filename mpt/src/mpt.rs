@@ -30,7 +30,7 @@ use crate::{
         RLP_NUM, NOT_FIRST_LEVEL_POS, IS_ACCOUNT_DELETE_MOD_POS, IS_NON_EXISTING_ACCOUNT_POS,
     },
     roots::RootsChip,
-    storage_root_in_account_leaf::StorageRootChip, account_non_existing::AccountNonExistingChip,
+    storage_root_in_account_leaf::StorageRootChip, account_non_existing::AccountNonExistingConfig,
 };
 use crate::{branch_key::BranchKeyChip, param::WITNESS_ROW_WIDTH};
 use crate::{
@@ -856,7 +856,7 @@ impl<F: FieldExt> MPTConfig<F> {
             false,
         );
 
-        AccountNonExistingChip::<F>::configure(
+        AccountNonExistingConfig::<F>::configure(
             meta,
             |meta| {
                 let q_enable = meta.query_fixed(q_enable, Rotation::cur());
