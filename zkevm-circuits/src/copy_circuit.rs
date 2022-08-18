@@ -791,11 +791,7 @@ pub mod dev {
         const NUM_BLINDING_ROWS: usize = 7 - 1;
         let instance = vec![vec![randomness; num_rows - NUM_BLINDING_ROWS]];
         let prover = MockProver::<F>::run(k, &circuit, instance).unwrap();
-        let res = prover.verify();
-        if let Err(ref e) = res {
-            dbg!(e);
-        }
-        res
+        prover.verify()
     }
 }
 
@@ -817,7 +813,7 @@ mod tests {
     use crate::evm_circuit::witness::block_convert;
 
     fn gen_calldatacopy_data() -> CircuitInputBuilder {
-        let length: usize = rand::thread_rng().gen_range(0x00..0x0fff);
+        let length = 0x0fffusize;
         let code = bytecode! {
             PUSH32(Word::from(length))
             PUSH32(Word::from(0x00))
@@ -878,21 +874,21 @@ mod tests {
     fn copy_circuit_valid_calldatacopy() {
         let builder = gen_calldatacopy_data();
         let block = block_convert(&builder.block, &builder.code_db);
-        assert!(test_copy_circuit(13, block).is_ok());
+        assert_eq!(test_copy_circuit(13, block), Ok(()));
     }
 
     #[test]
     fn copy_circuit_valid_codecopy() {
         let builder = gen_codecopy_data();
         let block = block_convert(&builder.block, &builder.code_db);
-        assert!(test_copy_circuit(10, block).is_ok());
+        assert_eq!(test_copy_circuit(10, block), Ok(()));
     }
 
     #[test]
     fn copy_circuit_valid_sha3() {
         let builder = gen_sha3_data();
         let block = block_convert(&builder.block, &builder.code_db);
-        assert!(test_copy_circuit(20, block).is_ok());
+        assert_eq!(test_copy_circuit(20, block), Ok(()));
     }
 
     fn perturb_tag(block: &mut bus_mapping::circuit_input_builder::Block, tag: CopyDataType) {
