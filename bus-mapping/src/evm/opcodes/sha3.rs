@@ -91,7 +91,6 @@ impl Opcode for Sha3 {
             dst_type: CopyDataType::RlcAcc,
             dst_id: NumberOrHash::Number(call_id),
             log_id: None,
-            length: size.as_u64(),
             steps,
         });
 

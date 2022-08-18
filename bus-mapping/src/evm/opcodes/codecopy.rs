@@ -157,7 +157,6 @@ fn gen_copy_event(
         dst_id: NumberOrHash::Number(state.call()?.call_id),
         dst_addr: dst_offset,
         log_id: None,
-        length,
         steps: copy_steps,
     })
 }
@@ -280,7 +279,6 @@ mod codecopy_tests {
         assert_eq!(copy_events[0].dst_addr as usize, dst_offset);
         assert_eq!(copy_events[0].dst_type, CopyDataType::Memory);
         assert!(copy_events[0].log_id.is_none());
-        assert_eq!(copy_events[0].length as usize, size);
 
         let mut rwc = RWCounter(step.rwc.0 + 3);
         for (idx, copy_rw_pair) in copy_events[0].steps.chunks(2).enumerate() {

@@ -465,7 +465,7 @@ impl<F: Field> CopyCircuit<F> {
         } else {
             &copy_event.dst_id
         };
-        let bytes_left = copy_event.length - step_idx as u64 / 2;
+        let bytes_left = u64::try_from(copy_event.steps.len() - step_idx).unwrap() / 2;
 
         // is_first
         region.assign_advice(
@@ -534,7 +534,8 @@ impl<F: Field> CopyCircuit<F> {
             || Ok(copy_step.is_code.map_or(F::zero(), |v| F::from(v))),
         )?;
         // is_pad
-        // let is_pad = copy_step.rw != RW::WRITE && copy_step.addr < copy_event.src_addr_end;
+        // let is_pad = copy_step.rw != RW::WRITE && copy_step.addr <
+        // copy_event.src_addr_end;
         let is_pad = if copy_step.rw == RW::WRITE {
             false
         } else {

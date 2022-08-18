@@ -205,7 +205,6 @@ fn gen_copy_event(
         dst_id: NumberOrHash::Number(state.tx_ctx.id()),
         dst_addr: 0,
         log_id: Some(state.tx_ctx.log_id as u64 + 1),
-        length: msize as u64,
         steps,
     })
 }
@@ -465,7 +464,6 @@ mod log_tests {
         assert_eq!(copy_events[0].dst_type, CopyDataType::TxLog);
         assert_eq!(copy_events[0].dst_id, NumberOrHash::Number(1)); // tx_id
         assert_eq!(copy_events[0].dst_addr as usize, 0);
-        assert_eq!(copy_events[0].length as usize, msize);
         assert_eq!(copy_events[0].log_id, Some(step.log_id as u64 + 1));
 
         let mut rwc = RWCounter(

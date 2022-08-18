@@ -407,7 +407,6 @@ mod calldatacopy_tests {
             copy_events[0].dst_id,
             NumberOrHash::Number(expected_call_id)
         );
-        assert_eq!(copy_events[0].length, copy_size as u64);
         assert!(copy_events[0].log_id.is_none());
         assert_eq!(copy_events[0].src_addr as usize, offset + call_data_offset);
         assert_eq!(

@@ -799,7 +799,7 @@ impl CopyTable {
                     id,
                     addr,
                     F::from(copy_event.src_addr_end), // src_addr_end
-                    F::from(copy_event.length - step_idx as u64 / 2), // bytes_left
+                    F::from(u64::try_from(copy_event.steps.len() - step_idx).unwrap() / 2), // bytes_left
                     rlc_acc,                          // rlc_acc
                     F::from(copy_step.rwc.0 as u64),  // rw_counter
                     F::from(copy_step.rwc_inc_left),  // rw_inc_left
