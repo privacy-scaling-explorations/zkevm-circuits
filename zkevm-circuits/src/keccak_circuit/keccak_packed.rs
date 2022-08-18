@@ -1,4 +1,5 @@
 use crate::evm_circuit::util::{not, rlc};
+use crate::keccak_circuit::util::{compose_rlc, from_bits, scatter, to_bytes, unpack};
 use crate::{evm_circuit::util::constraint_builder::BaseConstraintBuilder, util::Expr};
 use eth_types::Word;
 use eth_types::{Field, ToScalar};
@@ -11,10 +12,13 @@ use halo2_proofs::{
 use itertools::Itertools;
 use std::{convert::TryInto, env::var, marker::PhantomData, vec};
 
+use super::util::{get_absorb_positions, into_bits, pack, pack_u64, BIT_SIZE};
+
 const MAX_DEGREE: usize = 3;
 
 const NUM_BITS_PER_BYTE: usize = 8;
 const NUM_BYTES_PER_WORD: usize = 8;
+const NUM_BITS_PER_WORD: usize = NUM_BYTES_PER_WORD * NUM_BITS_PER_BYTE;
 const KECCAK_WIDTH: usize = 25;
 const NUM_ROUNDS: usize = 24;
 const NUM_WORDS_TO_ABSORB: usize = 17;
@@ -62,9 +66,6 @@ const THETA_T_LOOKUP_RANGE: usize = 3;
 const RHO_PI_LOOKUP_RANGE: usize = 3;
 const CHI_BASE_LOOKUP_RANGE: usize = 5;
 const CHI_EXT_LOOKUP_RANGE: usize = 7;
-
-const BIT_COUNT: usize = 3;
-const BIT_SIZE: usize = 2usize.pow(BIT_COUNT as u32);
 
 // `a ^ ((~b) & c)` is calculated by doing `lookup[3 - 2*a + b - c]`
 const CHI_BASE_LOOKUP_TABLE: [u8; 5] = [0, 1, 1, 0, 0];
@@ -265,7 +266,7 @@ impl<F: Field> KeccakPackedCircuit<F> {
     /// The number of keccak_f's that can be done in this circuit
     pub fn capacity(&self) -> usize {
         // Subtract one for unusable rows
-        self.size/(NUM_ROUNDS + 1) - 1
+        self.size / (NUM_ROUNDS + 1) - 1
     }
 
     /// Sets the witness using the data to be hashed
@@ -282,7 +283,7 @@ impl<F: Field> KeccakPackedCircuit<F> {
 /// Splits a word into parts
 mod split {
     use super::{decode, get_word_parts, Part, PartValue};
-    use crate::keccak_circuit::keccak_packed::{pack, unpack, BIT_SIZE};
+    use crate::keccak_circuit::util::{pack, unpack, BIT_SIZE};
     use crate::{evm_circuit::util::constraint_builder::BaseConstraintBuilder, util::Expr};
     use eth_types::Field;
     use eth_types::Word;
@@ -362,7 +363,7 @@ mod split {
 /// Recombines parts back together
 mod decode {
     use super::{Part, PartValue};
-    use crate::keccak_circuit::keccak_packed::BIT_SIZE;
+    use crate::keccak_circuit::util::BIT_SIZE;
     use crate::util::Expr;
     use eth_types::Field;
     use eth_types::Word;
@@ -421,8 +422,8 @@ mod rotate {
 
 /// Transforms data using a lookup
 mod transform {
-    use super::{to_bytes, Part, PartValue};
-    use crate::keccak_circuit::keccak_packed::{pack, unpack};
+    use super::{Part, PartValue};
+    use crate::keccak_circuit::util::{pack, to_bytes, unpack};
     use crate::util::Expr;
     use eth_types::Field;
     use eth_types::{ToScalar, Word};
@@ -478,7 +479,7 @@ mod transform {
             let value = if do_packing {
                 pack(&output_bits)
             } else {
-                Word::from(to_bytes(&output_bits)[0])
+                Word::from(to_bytes::value(&output_bits)[0])
             };
 
             cell_values.push(value.to_scalar().unwrap());
@@ -495,7 +496,7 @@ mod transform {
 /// Combines parts
 mod combine {
     use super::{target_part_sizes, Part, PartValue};
-    use crate::keccak_circuit::keccak_packed::BIT_SIZE;
+    use crate::keccak_circuit::util::BIT_SIZE;
     use eth_types::Field;
     use halo2_proofs::plonk::ConstraintSystem;
     use halo2_proofs::plonk::TableColumn;
@@ -574,16 +575,6 @@ mod combine {
         }
         parts
     }
-}
-
-fn pack_bit<F: Field>(value: usize, count: usize) -> Expression<F> {
-    let mut packed = F::zero();
-    let mut factor = F::one();
-    for _ in 0..count {
-        packed += F::from(value as u64) * factor;
-        factor *= F::from(BIT_SIZE as u64);
-    }
-    Expression::Constant(packed)
 }
 
 fn target_part_sizes(part_size: usize) -> Vec<usize> {
@@ -913,7 +904,7 @@ impl<F: Field> KeccakPackedConfig<F> {
         for i in 0..5 {
             for j in 0..5 {
                 if i == 0 && j == 0 {
-                    let input = pack_bit(5, 64) + s[(i + 2) % 5][j].clone()
+                    let input = scatter::expr(5, NUM_BITS_PER_WORD) + s[(i + 2) % 5][j].clone()
                         - 2.expr() * s[i][j].clone()
                         - s[(i + 1) % 5][j].clone()
                         - 2.expr() * round_cst_expr.clone();
@@ -943,7 +934,7 @@ impl<F: Field> KeccakPackedConfig<F> {
                             .zip(os_parts[(i + 1) % 5][j].iter())
                             .zip(os_parts[(i + 2) % 5][j].iter())
                         {
-                            let expr = pack_bit(3, part_size_base) + part_b.expr.clone()
+                            let expr = scatter::expr(3, part_size_base) + part_b.expr.clone()
                                 - 2.expr() * part_a.expr.clone()
                                 - part_c.expr.clone();
                             fat.push(Part {
@@ -953,7 +944,7 @@ impl<F: Field> KeccakPackedConfig<F> {
                             });
                         }
                     } else {
-                        let input = pack_bit(3, 64) + s[(i + 1) % 5][j].clone()
+                        let input = scatter::expr(3, NUM_BITS_PER_WORD) + s[(i + 1) % 5][j].clone()
                             - 2.expr() * s[i][j].clone()
                             - s[(i + 2) % 5][j].clone();
                         fat = split::expr(
@@ -1103,7 +1094,7 @@ impl<F: Field> KeccakPackedConfig<F> {
                     ));
                 }
             }
-            let rlc = compose_rlc(&hash_bytes, r);
+            let rlc = compose_rlc::expr(&hash_bytes, r);
             cb.condition(is_final, |cb| {
                 cb.require_equal(
                     "hash rlc check",
@@ -1379,11 +1370,11 @@ impl<F: Field> KeccakPackedConfig<F> {
                 F::from(offset > 0 && round == 24),
             ),
             ("q_absorb", self.q_absorb, F::from(round == 24)),
-            ("q_padding", self.q_padding, F::from(row.q_padding as u64)),
+            ("q_padding", self.q_padding, F::from(row.q_padding)),
             (
                 "q_padding_last",
                 self.q_padding_last,
-                F::from(row.q_padding_last as u64),
+                F::from(row.q_padding_last),
             ),
         ] {
             region.assign_fixed(
@@ -1659,7 +1650,7 @@ impl<F: Field> KeccakPackedConfig<F> {
                         || Ok(F::from(idx)),
                     )?;
 
-                    let packed: F = pack(&to_bits(&[idx as u8])).to_scalar().unwrap();
+                    let packed: F = pack(&into_bits(&[idx as u8])).to_scalar().unwrap();
                     table.assign_cell(
                         || "packed",
                         self.pack_unpack_table[1],
@@ -1673,20 +1664,8 @@ impl<F: Field> KeccakPackedConfig<F> {
     }
 }
 
-fn get_absorb_positions() -> Vec<(usize, usize)> {
-    let mut absorb_positions = Vec::new();
-    for j in 0..5 {
-        for i in 0..5 {
-            if i + j * 5 < NUM_WORDS_TO_ABSORB {
-                absorb_positions.push((i, j));
-            }
-        }
-    }
-    absorb_positions
-}
-
 fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: &[u8], r: F) {
-    let mut bits = to_bits(&bytes);
+    let mut bits = into_bits(bytes);
     let mut s = [[Word::zero(); 5]; 5];
     let absorb_positions = get_absorb_positions();
     let num_bytes_in_last_block = bytes.len() % RATE;
@@ -1915,7 +1894,7 @@ fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: &[u8], r: F) {
                 let hash_bytes = s
                     .into_iter()
                     .take(4)
-                    .map(|a| to_bytes(&unpack(a[0])))
+                    .map(|a| to_bytes::value(&unpack(a[0])))
                     .take(4)
                     .concat();
                 rlc::value(&hash_bytes, r)
@@ -1947,13 +1926,14 @@ fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: &[u8], r: F) {
         }
     }
 
-    /*let hash_bytes = s
+    let hash_bytes = s
         .into_iter()
         .take(4)
         .map(|a| from_bits(&unpack(a[0])).as_u64().to_le_bytes().to_vec())
         .take(4)
         .concat();
-    println!("Hash: {:x?}", &hash_bytes);*/
+    println!("hash: {:x?}", &hash_bytes);
+    println!("data rlc: {:x?}", data_rlc);
 }
 
 fn multi_keccak<F: Field>(bytes: &[Vec<u8>], r: F) -> Vec<KeccakRow<F>> {
@@ -1984,94 +1964,6 @@ fn multi_keccak<F: Field>(bytes: &[Vec<u8>], r: F) -> Vec<KeccakRow<F>> {
     rows
 }
 
-fn to_bits(bytes: &[u8]) -> Vec<u8> {
-    let num_bits = bytes.len() * 8;
-    let mut bits: Vec<u8> = vec![0; num_bits];
-
-    let mut counter = 0;
-    for byte in bytes {
-        for idx in 0u64..8 {
-            bits[counter] = (*byte >> idx) & 1;
-            counter += 1;
-        }
-    }
-
-    bits
-}
-
-fn from_bits(bits: &[u8]) -> Word {
-    let mut value = Word::zero();
-    for (idx, bit) in bits.iter().enumerate() {
-        value += Word::from(*bit as u64) << idx;
-    }
-    value
-}
-
-fn pack(bits: &[u8]) -> Word {
-    let mut packed = Word::zero();
-    let mut factor = Word::from(1u64);
-    for bit in bits {
-        packed += Word::from(*bit as u64) * factor;
-        factor *= BIT_SIZE;
-    }
-    packed
-}
-
-fn unpack(packed: Word) -> [u8; 64] {
-    let mut bits = [0; 64];
-    for (idx, bit) in bits.iter_mut().enumerate() {
-        *bit = ((packed >> (idx * BIT_COUNT)) & Word::from(BIT_SIZE - 1)).as_u32() as u8;
-    }
-    assert_eq!(pack(&bits), packed);
-    bits
-}
-
-fn pack_u64(value: u64) -> Word {
-    pack(
-        &((0..64)
-            .map(|i| ((value >> i) & 1) as u8)
-            .collect::<Vec<_>>()),
-    )
-}
-
-fn normalize(bits: &[u8]) -> [u8; 64] {
-    let mut normalized = [0; 64];
-    for (normalized, bit) in normalized.iter_mut().zip(bits.iter()) {
-        *normalized = *bit & 1;
-    }
-    normalized
-}
-
-fn rotate_left(bits: &[u8], count: usize) -> [u8; 64] {
-    let mut rotated = bits.to_vec();
-    rotated.rotate_left(count);
-    rotated.try_into().unwrap()
-}
-
-fn to_bytes(bits: &[u8]) -> Vec<u8> {
-    debug_assert!(bits.len() % 8 == 0, "bits not a multiple of 8");
-
-    let mut bytes = Vec::new();
-    for byte_bits in bits.chunks(8) {
-        let mut value = 0u8;
-        for (idx, bit) in byte_bits.iter().enumerate() {
-            value += *bit << idx;
-        }
-        bytes.push(value);
-    }
-    bytes
-}
-
-fn compose_rlc<F: Field>(expressions: &[Expression<F>], r: F) -> Expression<F> {
-    let mut rlc = expressions[0].clone();
-    let mut multiplier = r;
-    for expression in expressions[1..].iter() {
-        rlc = rlc + expression.clone() * multiplier;
-        multiplier *= r;
-    }
-    rlc
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2098,14 +1990,13 @@ mod tests {
     #[test]
     fn packed_keccak_simple() {
         let k = 9;
-        let inputs =
-            vec![
-                vec![],
-                (0u8..1).collect::<Vec<_>>(),
-                (0u8..135).collect::<Vec<_>>(),
-                (0u8..136).collect::<Vec<_>>(),
-                (0u8..200).collect::<Vec<_>>(),
-            ];
+        let inputs = vec![
+            vec![],
+            (0u8..1).collect::<Vec<_>>(),
+            (0u8..135).collect::<Vec<_>>(),
+            (0u8..136).collect::<Vec<_>>(),
+            (0u8..200).collect::<Vec<_>>(),
+        ];
         verify::<Fr>(k, inputs, true);
     }
 }

@@ -1,12 +1,13 @@
 use crate::{
     evm_circuit::util::{constraint_builder::BaseConstraintBuilder, not, rlc},
+    keccak_circuit::util::{compose_rlc, from_bits, get_absorb_positions, into_bits, to_bytes},
     util::Expr,
 };
-use eth_types::{Field, ToScalar, Word};
+use eth_types::{Field, ToScalar};
 use gadgets::util::{and, select, sum, xor};
 use halo2_proofs::{
     circuit::{Layouter, Region, SimpleFloorPlanner},
-    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, TableColumn},
+    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Fixed, TableColumn},
     poly::Rotation,
 };
 use itertools::Itertools;
@@ -169,7 +170,7 @@ impl<F: Field> KeccakBitCircuit<F> {
     /// The number of keccak_f's that can be done in this circuit
     pub fn capacity(&self) -> usize {
         // Subtract one for unusable rows
-        self.size/(NUM_ROUNDS + 1) - 1
+        self.size / (NUM_ROUNDS + 1) - 1
     }
 
     /// Sets the witness using the data to be hashed
@@ -406,10 +407,10 @@ impl<F: Field> KeccakBitConfig<F> {
             let hash_bytes = s
                 .into_iter()
                 .take(4)
-                .map(|a| to_bytes_expr(&a[0]))
+                .map(|a| to_bytes::expr(&a[0]))
                 .take(4)
                 .concat();
-            let rlc = compose_rlc(&hash_bytes, r);
+            let rlc = compose_rlc::expr(&hash_bytes, r);
             cb.condition(meta.query_advice(is_final, Rotation::cur()), |cb| {
                 cb.require_equal(
                     "hash rlc check",
@@ -445,7 +446,7 @@ impl<F: Field> KeccakBitConfig<F> {
                 .iter()
                 .map(|c| meta.query_advice(*c, Rotation::cur()))
                 .collect::<Vec<_>>();
-            input_bytes = to_bytes_expr(&input_bits);
+            input_bytes = to_bytes::expr(&input_bits);
             vec![0u64.expr()]
         });
 
@@ -665,11 +666,11 @@ impl<F: Field> KeccakBitConfig<F> {
             ("q_first", self.q_first, F::from(offset == 0)),
             ("q_round", self.q_round, F::from(round != 24)),
             ("q_absorb", self.q_absorb, F::from(round == 24)),
-            ("q_padding", self.q_padding, F::from(row.q_padding as u64)),
+            ("q_padding", self.q_padding, F::from(row.q_padding)),
             (
                 "q_padding_last",
                 self.q_padding_last,
-                F::from(row.q_padding_last as u64),
+                F::from(row.q_padding_last),
             ),
         ] {
             region.assign_fixed(
@@ -803,18 +804,6 @@ impl<F: Field> KeccakBitConfig<F> {
     }
 }
 
-fn get_absorb_positions() -> Vec<(usize, usize)> {
-    let mut absorb_positions = Vec::new();
-    for j in 0..5 {
-        for i in 0..5 {
-            if i + j * 5 < 17 {
-                absorb_positions.push((i, j));
-            }
-        }
-    }
-    absorb_positions
-}
-
 fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: &[u8], r: F) {
     let mut bits = into_bits(bytes);
     let mut s = [[[0u8; NUM_BITS_PER_WORD]; 5]; 5];
@@ -933,7 +922,7 @@ fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: &[u8], r: F) {
                 let hash_bytes = s
                     .into_iter()
                     .take(4)
-                    .map(|a| to_bytes(&a[0]))
+                    .map(|a| to_bytes::value(&a[0]))
                     .take(4)
                     .concat();
                 rlc::value(&hash_bytes, r)
@@ -995,13 +984,14 @@ fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: &[u8], r: F) {
             }
         }
     }
-    /*let hash_bytes = s
+    let hash_bytes = s
         .into_iter()
         .take(4)
-        .map(|a| to_bytes(&a[0]))
+        .map(|a| to_bytes::value(&a[0]))
         .take(4)
         .concat();
-    println!("Hash: {:x?}", &hash_bytes);*/
+    println!("hash: {:x?}", &hash_bytes);
+    println!("data rlc: {:x?}", data_rlc);
 }
 
 fn multi_keccak<F: Field>(bytes: &[Vec<u8>], r: F) -> Vec<KeccakRow<F>> {
@@ -1025,69 +1015,6 @@ fn multi_keccak<F: Field>(bytes: &[Vec<u8>], r: F) -> Vec<KeccakRow<F>> {
         keccak(&mut rows, bytes, r);
     }
     rows
-}
-
-fn into_bits(bytes: &[u8]) -> Vec<u8> {
-    let num_bits = bytes.len() * 8;
-    let mut bits: Vec<u8> = vec![0; num_bits];
-
-    let mut counter = 0;
-    for byte in bytes {
-        for idx in 0u64..8 {
-            bits[counter] = (*byte >> idx) & 1;
-            counter += 1;
-        }
-    }
-
-    bits
-}
-
-fn from_bits(bits: &[u8]) -> Word {
-    let mut value = Word::zero();
-    for (idx, bit) in bits.iter().enumerate() {
-        value += Word::from(*bit as u64) << idx;
-    }
-    value
-}
-
-fn to_bytes(bits: &[u8]) -> Vec<u8> {
-    debug_assert!(bits.len() % 8 == 0, "bits not a multiple of 8");
-
-    let mut bytes = Vec::new();
-    for byte_bits in bits.chunks(8) {
-        let mut value = 0u8;
-        for (idx, bit) in byte_bits.iter().enumerate() {
-            value += *bit << idx;
-        }
-        bytes.push(value);
-    }
-    bytes
-}
-
-fn to_bytes_expr<F: Field>(bits: &[Expression<F>]) -> Vec<Expression<F>> {
-    debug_assert!(bits.len() % 8 == 0, "bits not a multiple of 8");
-
-    let mut bytes = Vec::new();
-    for byte_bits in bits.chunks(8) {
-        let mut value = 0.expr();
-        let mut multiplier = F::one();
-        for byte in byte_bits.iter() {
-            value = value + byte.expr() * multiplier;
-            multiplier *= F::from(2);
-        }
-        bytes.push(value);
-    }
-    bytes
-}
-
-fn compose_rlc<F: Field>(expressions: &[Expression<F>], r: F) -> Expression<F> {
-    let mut rlc = expressions[0].clone();
-    let mut multiplier = r;
-    for expression in expressions[1..].iter() {
-        rlc = rlc + expression.clone() * multiplier;
-        multiplier *= r;
-    }
-    rlc
 }
 
 #[cfg(test)]
@@ -1116,14 +1043,13 @@ mod tests {
     #[test]
     fn bit_keccak_simple() {
         let k = 8;
-        let inputs =
-            vec![
-                vec![],
-                (0u8..1).collect::<Vec<_>>(),
-                (0u8..135).collect::<Vec<_>>(),
-                (0u8..136).collect::<Vec<_>>(),
-                (0u8..200).collect::<Vec<_>>(),
-            ];
+        let inputs = vec![
+            vec![],
+            (0u8..1).collect::<Vec<_>>(),
+            (0u8..135).collect::<Vec<_>>(),
+            (0u8..136).collect::<Vec<_>>(),
+            (0u8..200).collect::<Vec<_>>(),
+        ];
         verify::<Fr>(k, inputs, true);
     }
 }

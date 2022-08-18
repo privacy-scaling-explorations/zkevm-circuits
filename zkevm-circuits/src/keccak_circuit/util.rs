@@ -2,6 +2,9 @@
 
 use eth_types::Word;
 
+pub(crate) const BIT_COUNT: usize = 3;
+pub(crate) const BIT_SIZE: usize = 2usize.pow(BIT_COUNT as u32);
+
 /// Packs bits into bytes
 pub mod to_bytes {
     use eth_types::Field;
@@ -24,7 +27,7 @@ pub mod to_bytes {
         bytes
     }
 
-    pub(crate) fn value<F: Field>(bits: &[u8]) -> Vec<u8> {
+    pub(crate) fn value(bits: &[u8]) -> Vec<u8> {
         debug_assert!(bits.len() % 8 == 0, "bits not a multiple of 8");
 
         let mut bytes = Vec::new();
@@ -52,6 +55,23 @@ pub mod compose_rlc {
             multiplier *= r;
         }
         rlc
+    }
+}
+
+/// Scatters a value into a packed word constant
+pub mod scatter {
+    use super::BIT_SIZE;
+    use eth_types::Field;
+    use halo2_proofs::plonk::Expression;
+
+    pub(crate) fn expr<F: Field>(value: usize, count: usize) -> Expression<F> {
+        let mut packed = F::zero();
+        let mut factor = F::one();
+        for _ in 0..count {
+            packed += F::from(value as u64) * factor;
+            factor *= F::from(BIT_SIZE as u64);
+        }
+        Expression::Constant(packed)
     }
 }
 
@@ -93,4 +113,48 @@ pub fn from_bits(bits: &[u8]) -> Word {
     value
 }
 
+/// Pack bits into a word
+pub fn pack(bits: &[u8]) -> Word {
+    let mut packed = Word::zero();
+    let mut factor = Word::from(1u64);
+    for bit in bits {
+        packed += Word::from(*bit as u64) * factor;
+        factor *= BIT_SIZE;
+    }
+    packed
+}
 
+/// Unpack a word into bits
+pub fn unpack(packed: Word) -> [u8; 64] {
+    let mut bits = [0; 64];
+    for (idx, bit) in bits.iter_mut().enumerate() {
+        *bit = ((packed >> (idx * BIT_COUNT)) & Word::from(BIT_SIZE - 1)).as_u32() as u8;
+    }
+    assert_eq!(pack(&bits), packed);
+    bits
+}
+
+/// Pack bits stored in a u64 value into a word
+pub fn pack_u64(value: u64) -> Word {
+    pack(
+        &((0..64)
+            .map(|i| ((value >> i) & 1) as u8)
+            .collect::<Vec<_>>()),
+    )
+}
+
+/// Normalize bits
+pub fn normalize(bits: &[u8]) -> [u8; 64] {
+    let mut normalized = [0; 64];
+    for (normalized, bit) in normalized.iter_mut().zip(bits.iter()) {
+        *normalized = *bit & 1;
+    }
+    normalized
+}
+
+/// Rotates bits left
+pub fn rotate_left(bits: &[u8], count: usize) -> [u8; 64] {
+    let mut rotated = bits.to_vec();
+    rotated.rotate_left(count);
+    rotated.try_into().unwrap()
+}
