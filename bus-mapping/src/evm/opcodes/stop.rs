@@ -4,7 +4,7 @@ use crate::{
     operation::CallContextField,
     Error,
 };
-use eth_types::{GethExecStep, ToWord, Word};
+use eth_types::{GethExecStep, ToWord};
 
 /// Placeholder structure used to implement [`Opcode`] trait over it
 /// corresponding to the [`OpcodeId::STOP`](crate::evm::OpcodeId::STOP)
@@ -21,7 +21,6 @@ impl Opcode for Stop {
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];
-
         let mut exec_step = state.new_step(geth_step)?;
 
         let call = state.call()?.clone();
@@ -40,7 +39,18 @@ impl Opcode for Stop {
             call.is_success.to_word(),
         );
 
-        if !call.is_root {
+        if call.is_root {
+            // state.call_context_read(
+            //     &mut exec_step,
+            //     call.call_id,
+            //     CallContextField::IsPersistent,
+            //     1.into(),
+            // );
+        } else {
+            // The following part corresponds to
+            // Instruction.step_state_transition_to_restored_context
+            // in python spec, and should be reusable among all expected halting opcodes or
+            // exceptions. TODO: Refactor it as a helper function.
             let caller = state.caller()?.clone();
             state.call_context_read(
                 &mut exec_step,
@@ -50,6 +60,7 @@ impl Opcode for Stop {
             );
 
             let geth_step_next = &geth_steps[1];
+            let caller_ctx = state.caller_ctx()?;
             let caller_gas_left = geth_step_next.gas.0 - geth_step.gas.0;
             for (field, value) in [
                 (CallContextField::IsRoot, (caller.is_root as u64).into()),
@@ -66,7 +77,7 @@ impl Opcode for Stop {
                 (CallContextField::GasLeft, caller_gas_left.into()),
                 (
                     CallContextField::MemorySize,
-                    geth_step_next.memory.word_size().into(),
+                    caller_ctx.memory.word_size().into(),
                 ),
                 (
                     CallContextField::ReversibleWriteCounter,
@@ -76,32 +87,16 @@ impl Opcode for Stop {
                 state.call_context_read(&mut exec_step, caller.call_id, field, value);
             }
 
-            // let [last_callee_return_data_offset, last_callee_return_data_length] =
-            //     match geth_step.op {
-            //         OpcodeId::STOP => [Word::zero(); 2],
-            //         OpcodeId::REVERT | OpcodeId::RETURN => {
-            //             // TODO: move this back into the return bus mapping.
-            //             let offset = geth_step.stack.nth_last(0)?;
-            //             let length = geth_step.stack.nth_last(1)?;
-            //             [offset, length]
-            //         }
-            //         _ => unreachable!(),
-            //     };
-            //
-            // dbg!(
-            //     last_callee_return_data_offset,
-            //     last_callee_return_data_length
-            // );
             for (field, value) in [
                 (CallContextField::LastCalleeId, call.call_id.into()),
-                (CallContextField::LastCalleeReturnDataOffset, Word::zero()),
-                (CallContextField::LastCalleeReturnDataLength, Word::zero()),
+                (CallContextField::LastCalleeReturnDataOffset, 0.into()),
+                (CallContextField::LastCalleeReturnDataLength, 0.into()),
             ] {
                 state.call_context_write(&mut exec_step, caller.call_id, field, value);
             }
         }
 
-        state.handle_return(&geth_steps[0])?;
+        state.handle_return(geth_step)?;
 
         Ok(vec![exec_step])
     }

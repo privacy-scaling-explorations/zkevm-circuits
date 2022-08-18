@@ -12,9 +12,8 @@ use crate::{
     table::CallContextFieldTag,
     util::Expr,
 };
-use bus_mapping::circuit_input_builder::CopyDataType;
-use bus_mapping::evm::OpcodeId;
-use eth_types::Field;
+use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId};
+use eth_types::{Field, ToScalar};
 use halo2_proofs::plonk::Error;
 
 use std::cmp::min;
@@ -49,8 +48,8 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
 
         let offset = cb.query_cell();
         let length = cb.query_rlc();
-        cb.stack_pop(offset.expr()); // +1
-        cb.stack_pop(length.expr()); // +2
+        cb.stack_pop(offset.expr());
+        cb.stack_pop(length.expr());
         let range = MemoryAddressGadget::construct(cb, offset, length);
 
         let [is_root, is_create, is_success, caller_id, return_data_offset, return_data_length] = [
@@ -63,20 +62,12 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
         ]
         .map(|field_tag| cb.call_context(None, field_tag));
 
-        cb.condition(is_success.expr(), |cb| {
-            cb.require_equal(
-                "Opcode should be RETURN",
-                opcode.expr(),
-                OpcodeId::RETURN.expr(),
-            )
-        });
-        cb.condition(not::expr(is_success.expr()), |cb| {
-            cb.require_equal(
-                "Opcode should be REVERT",
-                opcode.expr(),
-                OpcodeId::REVERT.expr(),
-            )
-        });
+        cb.require_equal(
+            "if is_success, opcode is RETURN. if not, opcode is REVERT",
+            opcode.expr(),
+            is_success.expr() * OpcodeId::RETURN.expr()
+                + not::expr(is_success.expr()) * OpcodeId::REVERT.expr(),
+        );
 
         cb.condition(is_root.expr(), |cb| {
             cb.require_next_state(ExecutionState::EndTx);
@@ -172,24 +163,19 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
         self.range
             .assign(region, offset, memory_offset, length, block.randomness)?;
 
-        self.is_root.assign(
-            region,
-            offset,
-            Some(if call.is_root { F::one() } else { F::zero() }),
-        )?;
-        self.is_create.assign(
-            region,
-            offset,
-            Some(if call.is_create { F::one() } else { F::zero() }),
-        )?;
-        self.is_success.assign(
-            region,
-            offset,
-            Some(if call.is_success { F::one() } else { F::zero() }),
-        )?;
+        for (cell, value) in [
+            (&self.is_root, call.is_root),
+            (&self.is_create, call.is_create),
+            (&self.is_success, call.is_success),
+        ] {
+            cell.assign(region, offset, value.to_scalar())?;
+        }
 
         for (cell, value) in [
-            (&self.caller_id, F::from(call.caller_id as u64)),
+            (
+                &self.caller_id,
+                F::from(u64::try_from(call.caller_id).unwrap()),
+            ),
             (&self.return_data_length, call.return_data_length.into()),
             (&self.return_data_offset, call.return_data_offset.into()),
         ] {
@@ -215,7 +201,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::evm_circuit::test::run_test_circuit_incomplete_fixed_table;
+    use crate::evm_circuit::test::run_test_circuit;
     use crate::evm_circuit::witness::block_convert;
     use crate::test_util::run_test_circuits;
     use eth_types::geth_types::Account;
@@ -314,10 +300,7 @@ mod test {
             .unwrap();
 
         assert_eq!(
-            run_test_circuit_incomplete_fixed_table(block_convert(
-                &builder.block,
-                &builder.code_db
-            )),
+            run_test_circuit(block_convert(&builder.block, &builder.code_db)),
             Ok(())
         );
     }
