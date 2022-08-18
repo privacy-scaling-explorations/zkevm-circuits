@@ -3,6 +3,7 @@
 //! etc.
 
 use bus_mapping::circuit_input_builder::{CopyDataType, CopyEvent, CopyStep, NumberOrHash};
+use bus_mapping::operation::RW;
 use eth_types::{Field, ToAddress, ToScalar, U256};
 use gadgets::{
     binary_number::BinaryNumberChip,
@@ -533,11 +534,17 @@ impl<F: Field> CopyCircuit<F> {
             || Ok(copy_step.is_code.map_or(F::zero(), |v| F::from(v))),
         )?;
         // is_pad
+        // let is_pad = copy_step.rw != RW::WRITE && copy_step.addr < copy_event.src_addr_end;
+        let is_pad = if copy_step.rw == RW::WRITE {
+            false
+        } else {
+            copy_step.addr >= copy_event.src_addr_end
+        };
         region.assign_advice(
             || format!("assign is_pad {}", offset),
             self.is_pad,
             offset,
-            || Ok(F::from(copy_step.is_pad)),
+            || Ok(F::from(is_pad)),
         )?;
         // rw_counter
         region.assign_advice(

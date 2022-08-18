@@ -62,7 +62,6 @@ impl Opcode for Sha3 {
                 rw: RW::READ,
                 value: *byte,
                 is_code: None,
-                is_pad: false,
                 rwc: state.block_ctx.rwc,
                 rwc_inc_left: 0,
             });
@@ -74,7 +73,6 @@ impl Opcode for Sha3 {
                 rw: RW::WRITE,
                 value: *byte,
                 is_code: None,
-                is_pad: false,
                 rwc: state.block_ctx.rwc,
                 rwc_inc_left: 0,
             })
@@ -285,7 +283,6 @@ pub mod sha3_tests {
                     rw: RW::READ,
                     value,
                     is_code: None,
-                    is_pad: false,
                     rwc: rwc.inc_pre(),
                     rwc_inc_left: (size - idx) as u64,
                 }
@@ -300,7 +297,6 @@ pub mod sha3_tests {
                     rw: RW::WRITE,
                     value,
                     is_code: None,
-                    is_pad: false,
                     rwc,
                     rwc_inc_left: (size - idx - 1) as u64,
                 }

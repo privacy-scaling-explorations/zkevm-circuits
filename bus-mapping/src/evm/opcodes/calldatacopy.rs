@@ -146,7 +146,6 @@ fn gen_copy_steps(
             rw: RW::READ,
             value,
             is_code: None,
-            is_pad,
             rwc,
             rwc_inc_left: 0,
         });
@@ -157,7 +156,6 @@ fn gen_copy_steps(
             rw: RW::WRITE,
             value,
             is_code: None,
-            is_pad: false,
             rwc: state.block_ctx.rwc,
             rwc_inc_left: 0,
         });
@@ -212,7 +210,6 @@ fn gen_copy_event(
         dst_id: NumberOrHash::Number(state.call()?.call_id),
         dst_addr: memory_offset,
         log_id: None,
-        length,
         steps: copy_steps,
     })
 }
@@ -437,7 +434,6 @@ mod calldatacopy_tests {
                     rw: RW::READ,
                     is_code: None,
                     value,
-                    is_pad,
                     rwc: if !is_pad { rwc.inc_pre() } else { rwc },
                     rwc_inc_left: rwc_inc,
                 }
@@ -455,7 +451,6 @@ mod calldatacopy_tests {
                     rw: RW::WRITE,
                     is_code: None,
                     value,
-                    is_pad: false,
                     rwc: rwc.inc_pre(),
                     rwc_inc_left: rwc_inc,
                 }
@@ -668,7 +663,6 @@ mod calldatacopy_tests {
                     rw: RW::READ,
                     value,
                     is_code: None,
-                    is_pad,
                     rwc,
                     rwc_inc_left: (size - idx) as u64,
                 }
@@ -683,7 +677,6 @@ mod calldatacopy_tests {
                     rw: RW::WRITE,
                     value,
                     is_code: None,
-                    is_pad: false,
                     rwc: rwc.inc_pre(),
                     rwc_inc_left: (size - idx) as u64,
                 }

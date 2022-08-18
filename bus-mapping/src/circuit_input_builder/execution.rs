@@ -196,8 +196,6 @@ pub struct CopyStep {
     /// Optional field which is enabled only for the source being `bytecode`,
     /// and represents whether or not the byte is an opcode.
     pub is_code: Option<bool>,
-    /// Represents whether or not the copy step is a padding row.
-    pub is_pad: bool,
     /// Represents the current RW counter at this copy step.
     pub rwc: RWCounter,
     /// A decrementing value representing the RW counters left in the copy event

@@ -107,7 +107,6 @@ fn gen_copy_steps(
             rw: RW::READ,
             value,
             is_code,
-            is_pad,
             rwc: state.block_ctx.rwc,
             rwc_inc_left: bytes_left - idx,
         });
@@ -118,7 +117,6 @@ fn gen_copy_steps(
             rw: RW::WRITE,
             value,
             is_code: None,
-            is_pad: false,
             rwc: state.block_ctx.rwc,
             rwc_inc_left: bytes_left - idx,
         });
@@ -300,7 +298,6 @@ mod codecopy_tests {
                     rw: RW::READ,
                     value,
                     is_code,
-                    is_pad,
                     rwc,
                     rwc_inc_left: (size - idx) as u64,
                 }
@@ -315,7 +312,6 @@ mod codecopy_tests {
                     rw: RW::WRITE,
                     value,
                     is_code: None,
-                    is_pad: false,
                     rwc: rwc.inc_pre(),
                     rwc_inc_left: (size - idx) as u64,
                 }

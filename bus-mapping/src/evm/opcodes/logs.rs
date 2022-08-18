@@ -151,7 +151,6 @@ fn gen_copy_steps(
             rw: RW::READ,
             value: *byte,
             is_code: None,
-            is_pad: false,
             rwc: state.block_ctx.rwc,
             rwc_inc_left: 0,
         });
@@ -164,7 +163,6 @@ fn gen_copy_steps(
             rw: RW::WRITE,
             value: *byte,
             is_code: None,
-            is_pad: false,
             rwc: state.block_ctx.rwc,
             rwc_inc_left: 0,
         });
@@ -494,7 +492,6 @@ mod log_tests {
                     tag: CopyDataType::Memory,
                     value,
                     is_code: None,
-                    is_pad,
                     rwc: if !is_pad { rwc.inc_pre() } else { rwc },
                     rwc_inc_left: rwc_inc,
                 }
@@ -512,7 +509,6 @@ mod log_tests {
                     tag: CopyDataType::TxLog,
                     value,
                     is_code: None,
-                    is_pad: false,
                     rwc: rwc.inc_pre(),
                     rwc_inc_left: rwc_inc,
                 }
