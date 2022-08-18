@@ -722,7 +722,6 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
             pv.key_rlc_mult_prev,
             offset,
         ).ok();
-
     }
 }
 

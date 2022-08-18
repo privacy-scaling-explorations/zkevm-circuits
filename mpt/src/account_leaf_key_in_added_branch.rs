@@ -1,6 +1,6 @@
 use halo2_proofs::{
     plonk::{Advice, Column, ConstraintSystem, Expression, Fixed, VirtualCells},
-    poly::Rotation,
+    poly::Rotation, circuit::Region,
 };
 use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
@@ -10,7 +10,7 @@ use crate::{
         compute_rlc, get_is_extension_node_one_nibble, key_len_lookup,
         mult_diff_lookup, range_lookups,
     },
-    mpt::{FixedTableTag, MainCols, AccumulatorCols, DenoteCols},
+    mpt::{FixedTableTag, MainCols, AccumulatorCols, DenoteCols, MPTConfig, ProofVariables},
     param::{IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, ACCOUNT_DRIFTED_LEAF_IND, BRANCH_ROWS_NUM, ACCOUNT_LEAF_KEY_S_IND, ACCOUNT_LEAF_KEY_C_IND, ACCOUNT_LEAF_NONCE_BALANCE_S_IND, ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND, ACCOUNT_LEAF_NONCE_BALANCE_C_IND, ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND},
 };
 
@@ -493,6 +493,34 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
 
         config
     }
-    
+
+    pub fn assign(
+        &self,
+        region: &mut Region<'_, F>,
+        mpt_config: &MPTConfig<F>,
+        pv: &mut ProofVariables<F>,
+        row: &Vec<u8>,
+        offset: usize,
+    ) {
+        pv.acc_s = F::zero();
+        pv.acc_mult_s = F::one();
+        let len = (row[2] - 128) as usize + 3;
+        mpt_config.compute_acc_and_mult(
+            row,
+            &mut pv.acc_s,
+            &mut pv.acc_mult_s,
+            0,
+            len,
+        );
+
+        mpt_config.assign_acc(
+            region,
+            pv.acc_s,
+            pv.acc_mult_s,
+            F::zero(),
+            F::zero(),
+            offset,
+        ).ok();
+    }
 }
 
