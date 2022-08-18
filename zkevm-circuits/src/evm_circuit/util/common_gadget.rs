@@ -135,13 +135,12 @@ impl<F: Field> RestoreContextGadget<F> {
         }
 
         // Consume all gas_left if call halts in exception
-        // this probably also needs to be run_test_circuit_incomplete_fixed_table
         let gas_left = if cb.execution_state().halts_in_exception() {
             caller_gas_left.expr()
         } else {
             caller_gas_left.expr() + cb.curr.state.gas_left.expr()
         };
-        // also need to handle gas cost of mememory access in returns?
+        // TODO: check that memory expansion cost for return/revert is accounted for.
 
         // Accumulate reversible_write_counter in case this call stack reverts in the
         // future even it itself succeeds. Note that when sub-call halts in
