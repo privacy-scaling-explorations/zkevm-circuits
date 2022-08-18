@@ -65,7 +65,12 @@ impl<F: Field> ExecutionGadget<F> for StopGadget<F> {
         // When it's a root call
         cb.condition(cb.curr.state.is_root.expr(), |cb| {
             // When a transaction ends with STOP, this call must be persistent
-            cb.call_context_lookup(false.expr(), None, CallContextFieldTag::IsSuccess, 1.expr());
+            cb.call_context_lookup(
+                false.expr(),
+                None,
+                CallContextFieldTag::IsPersistent,
+                1.expr(),
+            );
 
             // Do step state transition
             cb.require_step_state_transition(StepStateTransition {

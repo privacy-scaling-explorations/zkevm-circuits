@@ -31,21 +31,14 @@ impl Opcode for Stop {
             CallContextField::IsSuccess,
             1.into(),
         );
-        // need to move this into handle_restore_context.
-        state.call_context_read(
-            &mut exec_step,
-            call.call_id,
-            CallContextField::IsSuccess,
-            call.is_success.to_word(),
-        );
 
         if call.is_root {
-            // state.call_context_read(
-            //     &mut exec_step,
-            //     call.call_id,
-            //     CallContextField::IsPersistent,
-            //     1.into(),
-            // );
+            state.call_context_read(
+                &mut exec_step,
+                call.call_id,
+                CallContextField::IsPersistent,
+                1.into(),
+            );
         } else {
             // The following part corresponds to
             // Instruction.step_state_transition_to_restored_context

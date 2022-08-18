@@ -42,7 +42,7 @@ impl Opcode for Return {
         for (field, value) in [
             (CallContextField::IsRoot, is_root.to_word()),
             (CallContextField::IsCreate, call.is_create().to_word()),
-            (CallContextField::IsSuccess, call.is_success.to_word()), // done in handle stop
+            (CallContextField::IsSuccess, call.is_success.to_word()),
             (CallContextField::CallerId, call.caller_id.into()),
             (
                 CallContextField::ReturnDataOffset,
@@ -55,14 +55,6 @@ impl Opcode for Return {
         ] {
             state.call_context_read(&mut exec_step, call.call_id, field, value);
         }
-
-        // move this into handle_restore_context?
-        state.call_context_read(
-            &mut exec_step,
-            call.call_id,
-            CallContextField::IsSuccess,
-            call.is_success.to_word(),
-        );
 
         if !is_root {
             state.handle_restore_context(steps, &mut exec_step)?;

@@ -71,12 +71,6 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
 
         cb.condition(is_root.expr(), |cb| {
             cb.require_next_state(ExecutionState::EndTx);
-            cb.call_context_lookup(
-                0.expr(),
-                None,
-                CallContextFieldTag::IsSuccess,
-                is_success.expr(),
-            );
         });
 
         let copy_length = cb.query_cell();

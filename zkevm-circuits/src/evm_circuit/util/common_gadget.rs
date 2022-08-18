@@ -31,7 +31,7 @@ pub(crate) struct SameContextGadget<F> {
 impl<F: Field> SameContextGadget<F> {
     pub(crate) fn construct(
         cb: &mut ConstraintBuilder<F>,
-        opcode: Cell<F>, // this doesn't need to be a cell?
+        opcode: Cell<F>,
         step_state_transition: StepStateTransition<F>,
     ) -> Self {
         cb.opcode_lookup(opcode.expr(), 1.expr());
@@ -82,7 +82,6 @@ impl<F: Field> SameContextGadget<F> {
 /// Construction of step state transition that restores caller's state.
 #[derive(Clone, Debug)]
 pub(crate) struct RestoreContextGadget<F> {
-    is_success: Cell<F>,
     caller_id: Cell<F>,
     caller_is_root: Cell<F>,
     caller_is_create: Cell<F>,
@@ -102,8 +101,6 @@ impl<F: Field> RestoreContextGadget<F> {
         return_data_offset: Expression<F>,
         return_data_length: Expression<F>,
     ) -> Self {
-        let x = cb.call_context(None, CallContextFieldTag::IsSuccess);
-
         // Read caller's context for restore
         let caller_id = cb.call_context(None, CallContextFieldTag::CallerId);
         let [caller_is_root, caller_is_create, caller_code_hash, caller_program_counter, caller_stack_pointer, caller_gas_left, caller_memory_word_size, caller_reversible_write_counter] =
@@ -173,7 +170,6 @@ impl<F: Field> RestoreContextGadget<F> {
         });
 
         Self {
-            is_success: x,
             caller_id,
             caller_is_root,
             caller_is_create,
@@ -195,17 +191,11 @@ impl<F: Field> RestoreContextGadget<F> {
         step: &ExecStep,
         rw_offset: usize,
     ) -> Result<(), Error> {
-        self.is_success.assign(
-            region,
-            offset,
-            Some(if call.is_success { F::one() } else { F::zero() }),
-        )?;
-
         let [caller_id, caller_is_root, caller_is_create, caller_code_hash, caller_program_counter, caller_stack_pointer, caller_gas_left, caller_memory_word_size, caller_reversible_write_counter] =
             if call.is_root {
                 [U256::zero(); 9]
             } else {
-                [1, 2, 3, 4, 5, 6, 7, 8, 9]
+                [0, 1, 2, 3, 4, 5, 6, 7, 8]
                     .map(|i| step.rw_indices[i + rw_offset])
                     .map(|idx| block.rws[idx].call_context_value())
             };
