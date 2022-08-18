@@ -8,7 +8,6 @@ use halo2_proofs::dev::{MockProver, VerifyFailure};
 use halo2_proofs::pairing::bn256::Fr;
 use mock::TestContext;
 use rand::{CryptoRng, Rng};
-use strum::IntoEnumIterator;
 
 #[cfg(test)]
 #[ctor::ctor]

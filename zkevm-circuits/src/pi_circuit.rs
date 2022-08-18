@@ -13,8 +13,9 @@ use ethers_core::types::Block;
 use halo2_proofs::arithmetic::BaseExt;
 use halo2_proofs::plonk::Instance;
 
+use crate::table::TxFieldTag;
 use crate::tx_circuit::sign_verify::SignData;
-use crate::tx_circuit::{tx_to_sign_data, TxFieldTag};
+use crate::tx_circuit::tx_to_sign_data;
 use crate::util::random_linear_combine_word as rlc;
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter, Region, SimpleFloorPlanner},
@@ -334,7 +335,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
         tag: TxFieldTag,
         index: usize,
         tx_value: F,
-        raw_pi_vals: &mut Vec<F>,
+        raw_pi_vals: &mut [F],
     ) -> Result<(), Error> {
         let tx_id = F::from(tx_id as u64);
         let tag = F::from(tag as u64);
@@ -393,7 +394,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
         region: &mut Region<'_, F>,
         block_values: BlockValues,
         randomness: F,
-        raw_pi_vals: &mut Vec<F>,
+        raw_pi_vals: &mut [F],
     ) -> Result<AssignedCell<F, F>, Error> {
         let mut offset = 0;
         for i in 0..BLOCK_LEN + 1 {
@@ -402,12 +403,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
 
         // zero row
         region.assign_advice(|| "zero", self.block_value, offset, || Ok(F::zero()))?;
-        region.assign_advice(
-            || "zero",
-            self.raw_public_inputs,
-            offset,
-            || Ok(F::zero()),
-        )?;
+        region.assign_advice(|| "zero", self.raw_public_inputs, offset, || Ok(F::zero()))?;
         raw_pi_vals[offset] = F::zero();
         offset += 1;
 
@@ -516,7 +512,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
         region: &mut Region<'_, F>,
         extra: ExtraValues,
         randomness: F,
-        raw_pi_vals: &mut Vec<F>,
+        raw_pi_vals: &mut [F],
     ) -> Result<[AssignedCell<F, F>; 2], Error> {
         let mut offset = BLOCK_LEN + 1;
         // block hash
