@@ -874,7 +874,7 @@ mod tests {
     fn copy_circuit_valid_calldatacopy() {
         let builder = gen_calldatacopy_data();
         let block = block_convert(&builder.block, &builder.code_db);
-        assert_eq!(test_copy_circuit(13, block), Ok(()));
+        assert_eq!(test_copy_circuit(14, block), Ok(()));
     }
 
     #[test]
@@ -920,7 +920,7 @@ mod tests {
             false => perturb_tag(&mut builder.block, CopyDataType::TxCalldata),
         }
         let block = block_convert(&builder.block, &builder.code_db);
-        assert!(test_copy_circuit(13, block).is_err());
+        assert!(test_copy_circuit(14, block).is_err());
     }
 
     #[test]
