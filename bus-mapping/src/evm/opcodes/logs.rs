@@ -147,7 +147,6 @@ fn gen_copy_steps(
         // Read memory
         copy_steps.push(CopyStep {
             addr,
-            tag: CopyDataType::Memory,
             rw: RW::READ,
             value: *byte,
             is_code: None,
@@ -159,7 +158,6 @@ fn gen_copy_steps(
         // Write log
         copy_steps.push(CopyStep {
             addr: idx as u64,
-            tag: CopyDataType::TxLog,
             rw: RW::WRITE,
             value: *byte,
             is_code: None,
@@ -487,7 +485,6 @@ mod log_tests {
                 CopyStep {
                     addr: (mstart + idx) as u64,
                     rw: RW::READ,
-                    tag: CopyDataType::Memory,
                     value,
                     is_code: None,
                     rwc: if !is_pad { rwc.inc_pre() } else { rwc },
@@ -504,7 +501,6 @@ mod log_tests {
                 CopyStep {
                     addr: idx as u64,
                     rw: RW::WRITE,
-                    tag: CopyDataType::TxLog,
                     value,
                     is_code: None,
                     rwc: rwc.inc_pre(),

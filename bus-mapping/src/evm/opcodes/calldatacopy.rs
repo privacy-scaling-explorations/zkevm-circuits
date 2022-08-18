@@ -142,7 +142,6 @@ fn gen_copy_steps(
         // Read
         copy_steps.push(CopyStep {
             addr,
-            tag,
             rw: RW::READ,
             value,
             is_code: None,
@@ -152,7 +151,6 @@ fn gen_copy_steps(
         // Write
         copy_steps.push(CopyStep {
             addr: dst_addr + idx,
-            tag: CopyDataType::Memory,
             rw: RW::WRITE,
             value,
             is_code: None,
@@ -429,7 +427,6 @@ mod calldatacopy_tests {
                 read_step,
                 CopyStep {
                     addr: (offset + call_data_offset + idx) as u64,
-                    tag: CopyDataType::Memory,
                     rw: RW::READ,
                     is_code: None,
                     value,
@@ -446,7 +443,6 @@ mod calldatacopy_tests {
                 write_step,
                 CopyStep {
                     addr: (dst_offset + idx) as u64,
-                    tag: CopyDataType::Memory,
                     rw: RW::WRITE,
                     is_code: None,
                     value,
@@ -658,7 +654,6 @@ mod calldatacopy_tests {
                 read_step,
                 CopyStep {
                     addr: (offset + idx) as u64,
-                    tag: CopyDataType::TxCalldata,
                     rw: RW::READ,
                     value,
                     is_code: None,
@@ -672,7 +667,6 @@ mod calldatacopy_tests {
                 write_step,
                 CopyStep {
                     addr: (dst_offset + idx) as u64,
-                    tag: CopyDataType::Memory,
                     rw: RW::WRITE,
                     value,
                     is_code: None,

@@ -495,22 +495,21 @@ impl<F: Field> CopyCircuit<F> {
             || Ok(number_or_hash_to_field(id, randomness)),
         )?;
         // addr
+        let addr = if copy_step.rw.is_read() && copy_event.dst_type == CopyDataType::TxLog {
+            (U256::from(copy_step.addr)
+                + (U256::from(TxLogFieldTag::Data as u64) << 32)
+                + (U256::from(copy_event.log_id.unwrap()) << 48))
+                .to_address()
+                .to_scalar()
+                .unwrap()
+        } else {
+            F::from(copy_step.addr)
+        };
         region.assign_advice(
             || format!("assign addr {}", offset),
             self.copy_table.addr,
             offset,
-            || {
-                Ok(match copy_step.tag {
-                    CopyDataType::TxLog => {
-                        let addr = (U256::from(copy_step.addr)
-                            + (U256::from(TxLogFieldTag::Data as u64) << 32)
-                            + (U256::from(copy_event.log_id.unwrap()) << 48))
-                            .to_address();
-                        addr.to_scalar().unwrap()
-                    }
-                    _ => F::from(copy_step.addr),
-                })
-            },
+            || Ok(addr),
         )?;
         // value
         region.assign_advice(
@@ -562,7 +561,12 @@ impl<F: Field> CopyCircuit<F> {
             || Ok(F::from(copy_step.rwc_inc_left)),
         )?;
         // tag binary number chip
-        tag_chip.assign(region, offset, &copy_step.tag)?;
+        let tag = if copy_step.rw.is_read() {
+            copy_event.src_type
+        } else {
+            copy_event.dst_type
+        };
+        tag_chip.assign(region, offset, &tag)?;
         // assignment for read steps
         if copy_step.rw.is_read() {
             // src_addr_end
@@ -889,19 +893,20 @@ mod tests {
         debug_assert!(!block.copy_events[0].steps.is_empty());
 
         let mut rng = rand::thread_rng();
-        let idxs = block.copy_events[0]
-            .steps
-            .iter()
-            .enumerate()
-            .filter(|(_i, step)| step.tag == tag)
-            .map(|(i, _step)| i)
-            .collect::<Vec<usize>>();
+        let copy_event = &mut block.copy_events[0];
+        let idxs: Vec<_> = if tag == copy_event.src_type {
+            (0..copy_event.steps.len()).step_by(2).collect()
+        } else if tag == copy_event.dst_type {
+            (0..copy_event.steps.len()).skip(1).step_by(2).collect()
+        } else {
+            panic!("no tags of type {:?} found", tag)
+        };
         let rand_idx = idxs.choose(&mut rng).unwrap();
         match rng.gen::<f32>() {
-            f if f < 0.25 => block.copy_events[0].steps[*rand_idx].addr = rng.gen(),
-            f if f < 0.5 => block.copy_events[0].steps[*rand_idx].value = rng.gen(),
-            f if f < 0.75 => block.copy_events[0].steps[*rand_idx].rwc = RWCounter(rng.gen()),
-            _ => block.copy_events[0].steps[*rand_idx].rwc_inc_left = rng.gen(),
+            f if f < 0.25 => copy_event.steps[*rand_idx].addr = rng.gen(),
+            f if f < 0.5 => copy_event.steps[*rand_idx].value = rng.gen(),
+            f if f < 0.75 => copy_event.steps[*rand_idx].rwc = RWCounter(rng.gen()),
+            _ => copy_event.steps[*rand_idx].rwc_inc_left = rng.gen(),
         }
     }
 

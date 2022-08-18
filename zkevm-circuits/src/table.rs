@@ -782,18 +782,24 @@ impl CopyTable {
                 number_or_hash_to_field(id, randomness)
             };
             // addr
-            let addr = match copy_step.tag {
-                CopyDataType::TxLog => {
-                    let addr = (U256::from(copy_step.addr)
-                        + (U256::from(TxLogFieldTag::Data as u64) << 32)
-                        + (U256::from(copy_event.log_id.unwrap()) << 48))
-                        .to_address();
-                    addr.to_scalar().unwrap()
-                }
-                _ => F::from(copy_step.addr),
+            let tag = if copy_step.rw.is_read() {
+                copy_event.src_type
+            } else {
+                copy_event.dst_type
             };
+            let addr = if tag == CopyDataType::TxLog {
+                (U256::from(copy_step.addr)
+                    + (U256::from(TxLogFieldTag::Data as u64) << 32)
+                    + (U256::from(copy_event.log_id.unwrap()) << 48))
+                    .to_address()
+                    .to_scalar()
+                    .unwrap()
+            } else {
+                F::from(copy_step.addr)
+            };
+
             assignments.push((
-                copy_step.tag,
+                tag,
                 [
                     is_first,
                     id,
