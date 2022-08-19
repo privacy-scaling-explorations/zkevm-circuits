@@ -1,6 +1,9 @@
 use crate::{
     evm_circuit::util::{constraint_builder::BaseConstraintBuilder, not, rlc},
-    keccak_circuit::util::{compose_rlc, from_bits, get_absorb_positions, into_bits, to_bytes},
+    keccak_circuit::util::{
+        compose_rlc, from_bits, get_absorb_positions, into_bits, to_bytes, NUM_BITS_PER_WORD,
+        NUM_WORDS_TO_ABSORB, RATE, RATE_IN_BITS, RHOM,
+    },
     util::Expr,
 };
 use eth_types::{Field, ToScalar};
@@ -13,57 +16,13 @@ use halo2_proofs::{
 use itertools::Itertools;
 use std::{env::var, marker::PhantomData, vec};
 
+use super::util::{
+    ABSORB_WIDTH_PER_ROW, ABSORB_WIDTH_PER_ROW_BYTES, KECCAK_WIDTH_IN_BITS, NUM_ROUNDS, ROUND_CST,
+    ROUND_CST_BIT_POS, THETA_C_WIDTH,
+};
+
 const MAX_DEGREE: usize = 5;
 
-const NUM_BITS_PER_BYTE: usize = 8;
-const NUM_BYTES_PER_WORD: usize = 8;
-const NUM_BITS_PER_WORD: usize = NUM_BYTES_PER_WORD * NUM_BITS_PER_BYTE;
-const KECCAK_WIDTH: usize = 5 * 5;
-const KECCAK_WIDTH_IN_BITS: usize = KECCAK_WIDTH * NUM_BITS_PER_WORD;
-const NUM_ROUNDS: usize = 24;
-const NUM_WORDS_TO_ABSORB: usize = 17;
-const NUM_WORDS_TO_SQUEEZE: usize = 4;
-const ABSORB_WIDTH_PER_ROW: usize = NUM_BITS_PER_WORD;
-const ABSORB_WIDTH_PER_ROW_BYTES: usize = ABSORB_WIDTH_PER_ROW / NUM_BITS_PER_BYTE;
-const RATE: usize = NUM_WORDS_TO_ABSORB * NUM_BYTES_PER_WORD;
-const RATE_IN_BITS: usize = RATE * NUM_BITS_PER_BYTE;
-const C_WIDTH: usize = 5 * NUM_BITS_PER_WORD;
-const RHOM: [[usize; 5]; 5] = [
-    [0, 36, 3, 41, 18],
-    [1, 44, 10, 45, 2],
-    [62, 6, 43, 15, 61],
-    [28, 55, 25, 21, 56],
-    [27, 20, 39, 8, 14],
-];
-const IOTA_ROUND_CST: [u64; NUM_ROUNDS + 1] = [
-    0x0000000000000001,
-    0x0000000000008082,
-    0x800000000000808a,
-    0x8000000080008000,
-    0x000000000000808b,
-    0x0000000080000001,
-    0x8000000080008081,
-    0x8000000000008009,
-    0x000000000000008a,
-    0x0000000000000088,
-    0x0000000080008009,
-    0x000000008000000a,
-    0x000000008000808b,
-    0x800000000000008b,
-    0x8000000000008089,
-    0x8000000000008003,
-    0x8000000000008002,
-    0x8000000000000080,
-    0x000000000000800a,
-    0x800000008000000a,
-    0x8000000080008081,
-    0x8000000000008080,
-    0x0000000080000001,
-    0x8000000080008008,
-    0x0000000000000000, // absorb round
-];
-// Bit positions that have a non-zero value in `IOTA_ROUND_CST`.
-const ROUND_CST_BIT_POS: [usize; 7] = [0, 1, 3, 7, 15, 31, 63];
 const MAX_INPUT_THETA_LOOKUP: u64 = 5;
 
 fn get_degree() -> usize {
@@ -87,7 +46,7 @@ struct KeccakRow<F> {
     q_padding: bool,
     q_padding_last: bool,
     state: [u8; KECCAK_WIDTH_IN_BITS],
-    theta_c: [u8; C_WIDTH],
+    theta_c: [u8; THETA_C_WIDTH],
     input: [u8; ABSORB_WIDTH_PER_ROW],
     is_paddings: [bool; ABSORB_WIDTH_PER_ROW_BYTES],
     data_rlcs: [F; ABSORB_WIDTH_PER_ROW_BYTES],
@@ -111,7 +70,7 @@ pub struct KeccakBitConfig<F> {
     data_rlc: Column<Advice>,
     hash_rlc: Column<Advice>,
     state: [Column<Advice>; KECCAK_WIDTH_IN_BITS],
-    theta_c: [Column<Advice>; C_WIDTH],
+    theta_c: [Column<Advice>; THETA_C_WIDTH],
     input: [Column<Advice>; ABSORB_WIDTH_PER_ROW],
     is_paddings: [Column<Advice>; ABSORB_WIDTH_PER_ROW_BYTES],
     data_rlcs: [Column<Advice>; ABSORB_WIDTH_PER_ROW_BYTES],
@@ -664,8 +623,8 @@ impl<F: Field> KeccakBitConfig<F> {
         for (name, column, value) in &[
             ("q_enable", self.q_enable, F::from(true)),
             ("q_first", self.q_first, F::from(offset == 0)),
-            ("q_round", self.q_round, F::from(round != 24)),
-            ("q_absorb", self.q_absorb, F::from(round == 24)),
+            ("q_round", self.q_round, F::from(round != NUM_ROUNDS)),
+            ("q_absorb", self.q_absorb, F::from(round == NUM_ROUNDS)),
             ("q_padding", self.q_padding, F::from(row.q_padding)),
             (
                 "q_padding_last",
@@ -753,15 +712,13 @@ impl<F: Field> KeccakBitConfig<F> {
         }
 
         // Round constant columns
-        if round < 24 {
-            for (pos, column) in ROUND_CST_BIT_POS.iter().zip(self.round_cst.iter()) {
-                region.assign_fixed(
-                    || format!("assign round constant bit {} {}", *pos, offset),
-                    *column,
-                    offset,
-                    || Ok(F::from(((IOTA_ROUND_CST[round] >> *pos) & 1) as u64)),
-                )?;
-            }
+        for (pos, column) in ROUND_CST_BIT_POS.iter().zip(self.round_cst.iter()) {
+            region.assign_fixed(
+                || format!("assign round constant bit {} {}", *pos, offset),
+                *column,
+                offset,
+                || Ok(F::from(((ROUND_CST[round] >> *pos) & 1) as u64)),
+            )?;
         }
 
         Ok(())
@@ -835,7 +792,7 @@ fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: &[u8], r: F) {
         }
 
         let mut counter = 0;
-        for (round, round_cst) in IOTA_ROUND_CST.iter().enumerate() {
+        for (round, round_cst) in ROUND_CST.iter().enumerate() {
             let mut input = [0u8; 64];
             if counter < RATE_IN_BITS {
                 for bit in input.iter_mut() {
@@ -878,7 +835,7 @@ fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: &[u8], r: F) {
 
             // Flatten bits
             let mut counter = 0;
-            let mut theta_c = [0u8; C_WIDTH];
+            let mut theta_c = [0u8; THETA_C_WIDTH];
             for c in c {
                 for c in c {
                     theta_c[counter] = c;
@@ -915,7 +872,7 @@ fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: &[u8], r: F) {
             }
 
             // Last row for this keccak hash
-            let is_final = is_final_block && round == 24;
+            let is_final = is_final_block && round == NUM_ROUNDS;
 
             // Squeeze
             let hash_rlc = if is_final {
@@ -944,7 +901,7 @@ fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: &[u8], r: F) {
                 hash_rlc,
             });
 
-            if round < 24 {
+            if round < NUM_ROUNDS {
                 // Theta
                 for i in 0..5 {
                     for j in 0..5 {
@@ -1001,7 +958,7 @@ fn multi_keccak<F: Field>(bytes: &[Vec<u8>], r: F) -> Vec<KeccakRow<F>> {
         q_padding: false,
         q_padding_last: false,
         state: [0u8; KECCAK_WIDTH_IN_BITS],
-        theta_c: [0u8; C_WIDTH],
+        theta_c: [0u8; THETA_C_WIDTH],
         input: [0u8; ABSORB_WIDTH_PER_ROW],
         is_paddings: [false; ABSORB_WIDTH_PER_ROW_BYTES],
         data_rlcs: [F::zero(); ABSORB_WIDTH_PER_ROW_BYTES],
@@ -1027,17 +984,15 @@ mod tests {
         circuit.generate_witness(&inputs);
 
         let prover = MockProver::<F>::run(k, &circuit, vec![]).unwrap();
-        let err = prover.verify();
-        let print_failures = true;
-        if err.is_err() && print_failures {
-            for e in err.err().iter() {
+        let verify_result = prover.verify();
+        if verify_result.is_ok() != success {
+            for e in verify_result.err().iter() {
                 for s in e.iter() {
                     println!("{}", s);
                 }
             }
+            panic!();
         }
-        let err = prover.verify();
-        assert_eq!(err.is_ok(), success);
     }
 
     #[test]

@@ -1,7 +1,9 @@
+use super::util::{PartInfo, CHI_BASE_LOOKUP_TABLE, NUM_ROUNDS};
 use crate::evm_circuit::util::{not, rlc};
 use crate::keccak_circuit::util::{
     compose_rlc, from_bits, get_absorb_positions, into_bits, pack, pack_u64, rotate, scatter,
-    target_part_sizes, to_bytes, unpack,
+    target_part_sizes, to_bytes, unpack, BIT_SIZE, NUM_WORDS_TO_ABSORB, NUM_WORDS_TO_SQUEEZE, RATE,
+    RATE_IN_BITS, RHOM, ROUND_CST,
 };
 use crate::{evm_circuit::util::constraint_builder::BaseConstraintBuilder, util::Expr};
 use eth_types::Word;
@@ -17,59 +19,12 @@ use halo2_proofs::{
 use itertools::Itertools;
 use std::{env::var, marker::PhantomData, vec};
 
-use super::util::PartInfo;
-
 const MAX_DEGREE: usize = 3;
-
-const KECCAK_WIDTH: usize = 25;
-const NUM_ROUNDS: usize = 24;
-const NUM_WORDS_TO_ABSORB: usize = 17;
-const NUM_WORDS_TO_SQUEEZE: usize = 4;
-
-const RHOM: [[usize; 5]; 5] = [
-    [0, 36, 3, 41, 18],
-    [1, 44, 10, 45, 2],
-    [62, 6, 43, 15, 61],
-    [28, 55, 25, 21, 56],
-    [27, 20, 39, 8, 14],
-];
-const ROUND_CST: [u64; 24] = [
-    0x0000000000000001,
-    0x0000000000008082,
-    0x800000000000808a,
-    0x8000000080008000,
-    0x000000000000808b,
-    0x0000000080000001,
-    0x8000000080008081,
-    0x8000000000008009,
-    0x000000000000008a,
-    0x0000000000000088,
-    0x0000000080008009,
-    0x000000008000000a,
-    0x000000008000808b,
-    0x800000000000008b,
-    0x8000000000008089,
-    0x8000000000008003,
-    0x8000000000008002,
-    0x8000000000000080,
-    0x000000000000800a,
-    0x800000008000000a,
-    0x8000000080008081,
-    0x8000000000008080,
-    0x0000000080000001,
-    0x8000000080008008,
-];
 
 const ABSORB_LOOKUP_RANGE: usize = 3;
 const THETA_C_LOOKUP_RANGE: usize = 6;
 const RHO_PI_LOOKUP_RANGE: usize = 4;
 const CHI_BASE_LOOKUP_RANGE: usize = 5;
-
-const BIT_COUNT: usize = 3;
-const BIT_SIZE: usize = 2usize.pow(BIT_COUNT as u32);
-
-// `a ^ ((~b) & c)` is calculated by doing `lookup[3 - 2*a + b - c]`
-const CHI_BASE_LOOKUP_TABLE: [u8; 5] = [0, 1, 1, 0, 0];
 
 fn get_degree() -> usize {
     var("DEGREE")
@@ -473,7 +428,7 @@ mod decode {
         let mut factor = F::from(1u64);
         for part in parts {
             value = value + part.expr.clone() * factor;
-            factor *= F::from(BIT_SIZE as u64).pow(&[part.num_bits as u64, 0, 0, 0]);
+            factor *= F::from(BIT_SIZE as u64).pow_vartime(&[part.num_bits as u64, 0, 0, 0]);
         }
         value
     }
@@ -481,9 +436,10 @@ mod decode {
     pub(crate) fn value(parts: Vec<PartValue>) -> Word {
         let mut value = Word::zero();
         let mut factor = Word::one();
+        let base = Word::from(BIT_SIZE as u64);
         for part in parts {
             value += part.value * factor;
-            factor *= Word::from(BIT_SIZE as u64).pow(Word::from(part.num_bits));
+            factor *= base.pow(Word::from(part.num_bits));
         }
         value
     }
@@ -571,7 +527,7 @@ mod split {
 mod split_uniform {
     use super::{decode, target_part_sizes, Cell, CellManager, KeccakRegion, Part, PartValue};
     use crate::keccak_circuit::keccak_packed_multi::{decode_part, BIT_SIZE};
-    use crate::keccak_circuit::util::{get_word_parts, pack, r_rotate, rotate, unpack};
+    use crate::keccak_circuit::util::{get_word_parts, pack, rotate, rotate_rev, unpack};
     use crate::{evm_circuit::util::constraint_builder::BaseConstraintBuilder, util::Expr};
     use eth_types::Field;
     use eth_types::Word;
@@ -620,7 +576,8 @@ mod split_uniform {
                 let part_b = cell_manager.query_cell(meta);
 
                 // Make sure the parts combined equal the value in the uniform output
-                let factor = F::from(BIT_SIZE as u64).pow(&[word_part.bits.len() as u64, 0, 0, 0]);
+                let factor =
+                    F::from(BIT_SIZE as u64).pow_vartime(&[word_part.bits.len() as u64, 0, 0, 0]);
                 let expr = part_a.expr() + part_b.expr() * factor;
                 cb.require_equal("rot part", expr, output_cells[counter].expr());
 
@@ -649,7 +606,7 @@ mod split_uniform {
             }
         }
 
-        let input_parts = r_rotate(input_parts, rot, target_part_size);
+        let input_parts = rotate_rev(input_parts, rot, target_part_size);
 
         // Input parts need to equal original input expression
         cb.require_equal("split", decode::expr(input_parts), input);
@@ -738,7 +695,7 @@ mod split_uniform {
             }
         }
 
-        let input_parts = r_rotate(input_parts, rot, target_part_size);
+        let input_parts = rotate_rev(input_parts, rot, target_part_size);
 
         assert_eq!(decode::value(input_parts), input);
 
@@ -1904,24 +1861,20 @@ impl<F: Field> KeccakPackedConfig<F> {
 
 fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: &[u8], r: F) {
     let mut bits = into_bits(bytes);
-    let rate: usize = 136 * 8;
-
     let mut s = [[Word::zero(); 5]; 5];
-
     let absorb_positions = get_absorb_positions();
-
-    let num_bytes_in_last_block = bytes.len() % (rate / 8);
+    let num_bytes_in_last_block = bytes.len() % RATE;
 
     // Padding
     bits.push(1);
-    while (bits.len() + 1) % rate != 0 {
+    while (bits.len() + 1) % RATE_IN_BITS != 0 {
         bits.push(0);
     }
     bits.push(1);
 
     let mut length = 0usize;
     let mut data_rlc = F::zero();
-    let chunks = bits.chunks(rate);
+    let chunks = bits.chunks(RATE_IN_BITS);
     let num_chunks = chunks.len();
     for (idx, chunk) in chunks.enumerate() {
         let is_final_block = idx == num_chunks - 1;
@@ -1947,12 +1900,12 @@ fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: &[u8], r: F) {
         let mut hash_rlc = F::zero();
         let mut round_lengths = Vec::new();
         let mut round_data_rlcs = Vec::new();
-        for round in 0..25 {
+        for round in 0..NUM_ROUNDS + 1 {
             let mut cell_manager = CellManager::new(get_num_rows_per_round());
             let mut region = KeccakRegion::new();
 
             let mut absorb_row = AbsorbData::default();
-            if round < rate / 64 {
+            if round < NUM_WORDS_TO_ABSORB {
                 absorb_row = absorb_rows[round].clone();
             }
 
@@ -2046,7 +1999,7 @@ fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: &[u8], r: F) {
             }
             cell_manager.start_region();
 
-            let is_final = is_final_block && round == 24;
+            let is_final = is_final_block && round == NUM_ROUNDS;
 
             hash_rlc = if is_final {
                 let hash_bytes = s
@@ -2065,7 +2018,7 @@ fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: &[u8], r: F) {
             round_lengths.push(length);
             round_data_rlcs.push(data_rlc);
 
-            if round != 24 {
+            if round != NUM_ROUNDS {
                 // Theta
                 let part_size = get_num_bits_per_theta_c_lookup();
                 let mut bcf = Vec::new();
@@ -2193,7 +2146,7 @@ fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: &[u8], r: F) {
 
                 // iota
                 let part_size = get_num_bits_per_absorb_lookup();
-                let input = s[0][0] + pack_u64(if round < 24 { ROUND_CST[round] } else { 0 });
+                let input = s[0][0] + pack_u64(ROUND_CST[round]);
                 let iota_fat = split::value::<F>(
                     &mut cell_manager,
                     &mut region,
@@ -2234,20 +2187,16 @@ fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: &[u8], r: F) {
             transform::value(cell_manager, region, packed, false, |v| *v, true);
         }
 
-        for round in 0..25 {
-            let is_final = is_final_block && round == 24;
-            let round_cst = if round < 24 {
-                pack_u64(ROUND_CST[round]).to_scalar().unwrap()
-            } else {
-                F::zero()
-            };
+        for round in 0..NUM_ROUNDS + 1 {
+            let is_final = is_final_block && round == NUM_ROUNDS;
+            let round_cst = pack_u64(ROUND_CST[round]).to_scalar().unwrap();
 
             for row_idx in 0..get_num_rows_per_round() {
                 rows.push(KeccakRow {
                     q_enable: row_idx == 0,
-                    q_round: row_idx == 0 && round < 24,
-                    q_absorb: row_idx == 0 && round == 24,
-                    q_round_last: row_idx == 0 && round == 24,
+                    q_round: row_idx == 0 && round < NUM_ROUNDS,
+                    q_absorb: row_idx == 0 && round == NUM_ROUNDS,
+                    q_round_last: row_idx == 0 && round == NUM_ROUNDS,
                     q_padding: row_idx == 0 && round < NUM_WORDS_TO_ABSORB,
                     q_padding_last: row_idx == 0 && round == NUM_WORDS_TO_ABSORB - 1,
                     round_cst,
@@ -2306,17 +2255,15 @@ mod tests {
         circuit.generate_witness(&inputs);
 
         let prover = MockProver::<F>::run(k, &circuit, vec![]).unwrap();
-        let err = prover.verify();
-        let print_failures = true;
-        if err.is_err() && print_failures {
-            for e in err.err().iter() {
+        let verify_result = prover.verify();
+        if verify_result.is_ok() != success {
+            for e in verify_result.err().iter() {
                 for s in e.iter() {
                     println!("{}", s);
                 }
             }
+            panic!();
         }
-        let err = prover.verify();
-        assert_eq!(err.is_ok(), success);
     }
 
     #[test]
