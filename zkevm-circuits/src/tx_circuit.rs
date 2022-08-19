@@ -429,6 +429,7 @@ mod tx_circuit_tests {
         dev::{MockProver, VerifyFailure},
         pairing::bn256::Fr,
     };
+    use mock::{AddrOrWallet, MockTransaction};
     use pretty_assertions::assert_eq;
     use rand::SeedableRng;
     use rand_chacha::ChaCha20Rng;
@@ -479,7 +480,17 @@ mod tx_circuit_tests {
         let chain_id: u64 = 1337;
         let mut txs = Vec::new();
         for _ in 0..NUM_TXS {
-            txs.push(rand_tx(&mut rng, chain_id));
+            txs.push(
+                MockTransaction::default()
+                    .from(AddrOrWallet::random(&mut rng))
+                    .to(address!("0x701653d7ae8ddaa5c8cee1ee056849f271827926"))
+                    .nonce(word!("0x3"))
+                    .value(word!("0x3e8"))
+                    .gas_price(word!("0x4d2"))
+                    .input(Bytes::from(b"hello"))
+                    .build()
+                    .into(),
+            );
         }
 
         let k = 19;
@@ -495,23 +506,16 @@ mod tx_circuit_tests {
         const MAX_CALLDATA: usize = 32;
 
         let chain_id: u64 = 1337;
-        // Transaction generated with `rand_tx` using `rng =
-        // ChaCha20Rng::seed_from_u64(42)`
-        let tx = Transaction {
-            from: address!("0x5f9b7e36af4ff81688f712fb738bbbc1b7348aae"),
-            to: Some(address!("0x701653d7ae8ddaa5c8cee1ee056849f271827926")),
-            nonce: word!("0x3"),
-            gas_limit: word!("0x7a120"),
-            value: word!("0x3e8"),
-            gas_price: word!("0x4d2"),
-            gas_fee_cap: word!("0x0"),
-            gas_tip_cap: word!("0x0"),
-            call_data: Bytes::from(b"hello"),
-            access_list: None,
-            v: 2710,
-            r: word!("0xaf180d27f90b2b20808bc7670ce0aca862bc2b5fa39c195ab7b1a96225ee14d7"),
-            s: word!("0x61159fa4664b698ea7d518526c96cd94cf4d8adf418000754be106a3a133f866"),
-        };
+
+        let tx: Transaction = MockTransaction::default()
+            .from(AddrOrWallet::random(&mut ChaCha20Rng::seed_from_u64(2)))
+            .to(address!("0x701653d7ae8ddaa5c8cee1ee056849f271827926"))
+            .nonce(word!("0x3"))
+            .value(word!("0x3e8"))
+            .gas_price(word!("0x4d2"))
+            .input(Bytes::from(b"hello"))
+            .build()
+            .into();
 
         let k = 19;
         assert_eq!(
