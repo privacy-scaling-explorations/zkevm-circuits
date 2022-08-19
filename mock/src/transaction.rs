@@ -38,18 +38,18 @@ impl AddrOrWallet {
 }
 
 impl AddrOrWallet {
+    /// Returns the underlying address associated to the `AddrOrWallet` enum.
     fn address(&self) -> Address {
         match self {
-            Self::Addr(addr) => addr.clone(),
+            Self::Addr(addr) => *addr,
             Self::Wallet(wallet) => wallet.address(),
         }
     }
 
-    fn is_wallet(&self) -> bool {
-        match self {
-            Self::Wallet(_) => true,
-            _ => false,
-        }
+    /// Returns true if the enum variant of `self` corresponds to a
+    /// [`LocalWallet`] structure and not simply and [`Address`].
+    const fn is_wallet(&self) -> bool {
+        matches!(self, Self::Wallet(_))
     }
 
     /// Returns the underlying wallet stored in the enum.
@@ -293,14 +293,13 @@ impl MockTransaction {
                 // We already set some signature params. We just compute the hash in case it's
                 // not already set.
                 if self.hash.is_none() {
-                    self.hash(Hash::from(sighash));
+                    self.hash(sighash);
                 }
             }
             (None, None, None) => {
                 // Compute sig params and set them in case we have a wallet as `from` attr.
                 if self.from.is_wallet() && self.hash.is_none() {
-                    let wallet = LocalWallet::from(self.from.as_wallet());
-                    let sig = wallet.sign_hash(sighash, true);
+                    let sig = self.from.as_wallet().sign_hash(sighash, true);
                     // Set sig parameters
                     self.sig_data((sig.v, sig.s, sig.r));
                     // Compute tx hash in case is not already set
