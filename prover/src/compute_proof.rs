@@ -34,7 +34,7 @@ pub async fn compute_proof(
     let url = Http::from_str(rpc_url)?;
     let geth_client = GethClient::new(url);
     let builder = BuilderClient::new(geth_client).await?;
-    let builder = builder.gen_inputs(*block_num).await?;
+    let (builder, _) = builder.gen_inputs(*block_num).await?;
 
     // TODO: only {evm,state}_proof are implemented right now
     let evm_proof;
@@ -66,7 +66,7 @@ pub async fn compute_proof(
     {
         // generate state_circuit proof
         const N_ROWS: usize = 1 << 16;
-        let circuit = StateCircuit::<Fr, N_ROWS>::new(block.randomness, block.rws);
+        let circuit = StateCircuit::<Fr>::new(block.randomness, block.rws, N_ROWS);
 
         // TODO: same quest like in the first scope
         let vk = keygen_vk(params, &circuit)?;
@@ -80,7 +80,16 @@ pub async fn compute_proof(
 
         // create a proof
         let mut transcript = Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
-        create_proof(params, &pk, &[circuit], &[], rng, &mut transcript)?;
+        let instance = circuit.instance();
+        let instances: Vec<&[Fr]> = instance.iter().map(|v| v.as_slice()).collect();
+        create_proof(
+            params,
+            &pk,
+            &[circuit],
+            &[instances.as_slice()],
+            rng,
+            &mut transcript,
+        )?;
         state_proof = transcript.finalize();
     }
 

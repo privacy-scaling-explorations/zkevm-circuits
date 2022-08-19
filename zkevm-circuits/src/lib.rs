@@ -19,9 +19,11 @@
 pub mod bytecode_circuit;
 pub mod copy_circuit;
 pub mod evm_circuit;
+pub mod pi_circuit;
 pub mod keccak_circuit;
-pub mod rw_table;
 pub mod state_circuit;
+pub mod super_circuit;
+pub mod table;
 #[cfg(test)]
 pub mod test_util;
 pub mod tx_circuit;

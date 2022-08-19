@@ -137,7 +137,7 @@ pub fn convert_b13_lane_to_b9(x: Lane13, rot: u32) -> Lane9 {
     let mut chunks = x.to_radix_le(B13.into());
     chunks.resize(65, 0);
     // 0 and 64 was separated in Theta, we now combined them together
-    let special = chunks.get(0).unwrap() + chunks.get(64).unwrap();
+    let special = chunks.first().unwrap() + chunks.get(64).unwrap();
     // middle 63 chunks
     let middle = chunks.get(1..64).unwrap();
     // split at offset
@@ -173,6 +173,10 @@ pub fn convert_b9_lane_to_b2(x: Lane9) -> u64 {
         .take(1)
         .next()
         .unwrap_or(0)
+}
+
+pub fn convert_b9_lane_to_b2_biguint(x: Lane9) -> BigUint {
+    convert_lane(x, B9, 2, convert_b9_coef)
 }
 
 pub fn convert_b9_lane_to_b2_normal(x: Lane9) -> u64 {

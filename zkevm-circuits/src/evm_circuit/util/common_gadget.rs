@@ -2,7 +2,7 @@ use super::CachedRegion;
 use crate::{
     evm_circuit::{
         param::N_BYTES_GAS,
-        table::{AccountFieldTag, CallContextFieldTag, FixedTableTag, Lookup},
+        table::{FixedTableTag, Lookup},
         util::{
             constraint_builder::{
                 ConstraintBuilder, ReversionInfo, StepStateTransition,
@@ -13,11 +13,11 @@ use crate::{
         },
         witness::{Block, Call, ExecStep},
     },
+    table::{AccountFieldTag, CallContextFieldTag},
     util::Expr,
 };
 use eth_types::{Field, ToLittleEndian, ToScalar, U256};
 use halo2_proofs::plonk::{Error, Expression};
-use std::convert::TryInto;
 
 /// Construction of execution state that stays in the same call context, which
 /// lookups the opcode and verifies the execution state is responsible for it,

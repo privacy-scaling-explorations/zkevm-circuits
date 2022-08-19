@@ -1,13 +1,13 @@
-use crate::{
-    evm_circuit::{table::FixedTableTag, witness::Block},
-    state_circuit::StateCircuit,
-};
+use crate::{evm_circuit::witness::Block, state_circuit::StateCircuit};
 use bus_mapping::mock::BlockData;
-use eth_types::geth_types::GethData;
+use eth_types::geth_types::{GethData, Transaction};
+use ethers_core::types::{NameOrAddress, TransactionRequest};
+use ethers_core::utils::keccak256;
+use ethers_signers::{LocalWallet, Signer};
 use halo2_proofs::dev::{MockProver, VerifyFailure};
 use halo2_proofs::pairing::bn256::Fr;
 use mock::TestContext;
-use strum::IntoEnumIterator;
+use rand::{CryptoRng, Rng};
 
 #[cfg(test)]
 #[ctor::ctor]
@@ -15,36 +15,10 @@ fn init_env_logger() {
     // Enable RUST_LOG during tests
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("error")).init();
 }
-pub enum FixedTableConfig {
-    Incomplete,
-    Complete,
-}
-
-pub fn get_fixed_table(conf: FixedTableConfig) -> Vec<FixedTableTag> {
-    match conf {
-        FixedTableConfig::Incomplete => {
-            vec![
-                FixedTableTag::Zero,
-                FixedTableTag::Range5,
-                FixedTableTag::Range16,
-                FixedTableTag::Range32,
-                FixedTableTag::Range64,
-                FixedTableTag::Range256,
-                FixedTableTag::Range512,
-                FixedTableTag::Range1024,
-                FixedTableTag::SignByte,
-                FixedTableTag::ResponsibleOpcode,
-                FixedTableTag::Pow2,
-            ]
-        }
-        FixedTableConfig::Complete => FixedTableTag::iter().collect(),
-    }
-}
 
 #[derive(Debug, Clone)]
 pub struct BytecodeTestConfig {
     pub enable_evm_circuit_test: bool,
-    pub evm_circuit_lookup_tags: Vec<FixedTableTag>,
     pub enable_state_circuit_test: bool,
     pub gas_limit: u64,
 }
@@ -55,7 +29,6 @@ impl Default for BytecodeTestConfig {
             enable_evm_circuit_test: true,
             enable_state_circuit_test: true,
             gas_limit: 1_000_000u64,
-            evm_circuit_lookup_tags: get_fixed_table(FixedTableConfig::Incomplete),
         }
     }
 }
@@ -83,7 +56,7 @@ pub fn test_circuits_using_witness_block(
 ) -> Result<(), Vec<VerifyFailure>> {
     // run evm circuit test
     if config.enable_evm_circuit_test {
-        crate::evm_circuit::test::run_test_circuit(block.clone(), config.evm_circuit_lookup_tags)?;
+        crate::evm_circuit::test::run_test_circuit(block.clone())?;
     }
 
     // run state circuit test
@@ -91,7 +64,7 @@ pub fn test_circuits_using_witness_block(
     // state circuit and evm circuit must be same
     if config.enable_state_circuit_test {
         const N_ROWS: usize = 1 << 16;
-        let state_circuit = StateCircuit::<Fr, N_ROWS>::new(block.randomness, block.rws);
+        let state_circuit = StateCircuit::<Fr>::new(block.randomness, block.rws, N_ROWS);
         let power_of_randomness = state_circuit.instance();
         let prover = MockProver::<Fr>::run(18, &state_circuit, power_of_randomness).unwrap();
         prover.verify_at_rows(
@@ -101,4 +74,40 @@ pub fn test_circuits_using_witness_block(
     }
 
     Ok(())
+}
+
+pub fn rand_tx<R: Rng + CryptoRng>(mut rng: R, chain_id: u64) -> Transaction {
+    let wallet0 = LocalWallet::new(&mut rng).with_chain_id(chain_id);
+    let wallet1 = LocalWallet::new(&mut rng).with_chain_id(chain_id);
+    let from = wallet0.address();
+    let to = wallet1.address();
+    let data = b"hello";
+    let tx = TransactionRequest::new()
+        .from(from)
+        .to(to)
+        .nonce(3)
+        .value(1000)
+        .data(data)
+        .gas(500_000)
+        .gas_price(1234);
+    let tx_rlp = tx.rlp(chain_id);
+    let sighash = keccak256(tx_rlp.as_ref()).into();
+    let sig = wallet0.sign_hash(sighash, true);
+    let to = tx.to.map(|to| match to {
+        NameOrAddress::Address(a) => a,
+        _ => unreachable!(),
+    });
+    Transaction {
+        from: tx.from.unwrap(),
+        to,
+        gas_limit: tx.gas.unwrap(),
+        gas_price: tx.gas_price.unwrap(),
+        value: tx.value.unwrap(),
+        call_data: tx.data.unwrap(),
+        nonce: tx.nonce.unwrap(),
+        v: sig.v,
+        r: sig.r,
+        s: sig.s,
+        ..Transaction::default()
+    }
 }

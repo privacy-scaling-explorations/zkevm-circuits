@@ -11,22 +11,30 @@ on:
 ## `rust-toolchain` is always used and the only source of truth.
 
 jobs:
-  test:
+  runner:
     if: github.event.pull_request.draft == false
+    uses: ./.github/workflows/select-runner.yml
 
-    name: Test on ${{ matrix.os }}
+  test:
+    name: Test
+    needs: [runner]
     runs-on: ${{ matrix.os }}
+    concurrency: ${{ needs.runner.outputs.concurrency-group }}
     strategy:
       matrix:
         # We don't need to test across multiple platforms yet
         # os: [ubuntu-latest, windows-latest, macOS-latest]
-        os: [ubuntu-latest]
+        os: ${{ fromJSON(needs.runner.outputs.runner-matrix) }}
 
     steps:
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
         with:
           override: false
+      - name: Setup golang
+        uses: actions/setup-go@v3
+        with:
+          go-version: ~1.18
       # Go cache for building geth-utils
       - name: Go cache
         uses: actions/cache@v3

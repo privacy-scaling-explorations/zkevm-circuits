@@ -18,6 +18,10 @@ pub mod tx_circuit;
 
 #[cfg(test)]
 #[cfg(feature = "benches")]
+pub mod super_circuit;
+
+#[cfg(test)]
+#[cfg(feature = "benches")]
 pub mod bit_keccak;
 
 #[cfg(test)]

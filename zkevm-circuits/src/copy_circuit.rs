@@ -5,21 +5,43 @@
 use bus_mapping::circuit_input_builder::{CopyDataType, CopyEvent, CopyStep, NumberOrHash};
 use eth_types::{Field, ToAddress, ToScalar, U256};
 use gadgets::{
-    binary_number::{BinaryNumberChip, BinaryNumberConfig},
+    binary_number::BinaryNumberChip,
     less_than::{LtChip, LtConfig, LtInstruction},
     util::{and, not, or, Expr},
 };
 use halo2_proofs::{
     circuit::{Layouter, Region},
-    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, Selector, VirtualCells},
+    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, Selector},
     poly::Rotation,
 };
 
-use crate::evm_circuit::{
-    table::{BytecodeFieldTag, LookupTable, RwTableTag, TxContextFieldTag, TxLogFieldTag},
-    util::{constraint_builder::BaseConstraintBuilder, RandomLinearCombination},
-    witness::Block,
+use crate::{
+    evm_circuit::{
+        util::{constraint_builder::BaseConstraintBuilder, rlc, RandomLinearCombination},
+        witness::Block,
+    },
+    table::{
+        BytecodeFieldTag, CopyTable, LookupTable, RwTableTag, TxContextFieldTag, TxLogFieldTag,
+    },
 };
+
+/// Encode the type `NumberOrHash` into a field element
+pub fn number_or_hash_to_field<F: Field>(v: &NumberOrHash, randomness: F) -> F {
+    match v {
+        NumberOrHash::Number(n) => F::from(*n as u64),
+        NumberOrHash::Hash(h) => {
+            // since code hash in the bytecode table is represented in
+            // the little-endian form, we reverse the big-endian bytes
+            // of H256.
+            let le_bytes = {
+                let mut b = h.to_fixed_bytes();
+                b.reverse();
+                b
+            };
+            RandomLinearCombination::random_linear_combine(le_bytes, randomness)
+        }
+    }
+}
 
 /// The rw table shared between evm circuit and state circuit
 #[derive(Clone, Copy, Debug)]
@@ -29,22 +51,11 @@ pub struct CopyCircuit<F> {
     /// Whether this row denotes a step. A read row is a step and a write row is
     /// not.
     pub q_step: Selector,
-    /// Whether the row is the first read-write pair for a copy event.
-    pub is_first: Column<Advice>,
     /// Whether the row is the last read-write pair for a copy event.
     pub is_last: Column<Advice>,
-    /// The relevant ID for the read-write row, represented as a random linear
-    /// combination. The ID may be one of the below:
-    /// 1. Call ID/Caller ID for CopyDataType::Memory
-    /// 2. RLC encoding of bytecode hash for CopyDataType::Bytecode
-    /// 3. Transaction ID for CopyDataType::TxCalldata, CopyDataType::TxLog
-    pub id: Column<Advice>,
-    /// The source/destination address for this copy step.
-    pub addr: Column<Advice>,
-    /// The end of the source buffer for the copy event.
-    pub src_addr_end: Column<Advice>,
-    /// The number of bytes left to be copied.
-    pub bytes_left: Column<Advice>,
+    /// The Copy Table contains the columns that are exposed via the lookup
+    /// expressions
+    pub copy_table: CopyTable,
     /// The value copied in this copy step.
     pub value: Column<Advice>,
     /// In case of a bytecode tag, this denotes whether or not the copied byte
@@ -52,36 +63,10 @@ pub struct CopyCircuit<F> {
     pub is_code: Column<Advice>,
     /// Whether the row is padding.
     pub is_pad: Column<Advice>,
-    /// The associated read-write counter for this row.
-    pub rw_counter: Column<Advice>,
-    /// Decrementing counter denoting reverse read-write counter.
-    pub rwc_inc_left: Column<Advice>,
-    /// Binary chip to constrain the copy table conditionally depending on the
-    /// current row's tag, whether it is Bytecode, Memory, TxCalldata or
-    /// TxLog.
-    pub tag: BinaryNumberConfig<CopyDataType, 3>,
     /// Lt chip to check: src_addr < src_addr_end.
     /// Since `src_addr` and `src_addr_end` are u64, 8 bytes are sufficient for
     /// the Lt chip.
     pub addr_lt_addr_end: LtConfig<F, 8>,
-}
-
-impl<F: Field> LookupTable<F> for CopyCircuit<F> {
-    fn table_exprs(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>> {
-        vec![
-            meta.query_advice(self.is_first, Rotation::cur()),
-            meta.query_advice(self.id, Rotation::cur()), // src_id
-            self.tag.value(Rotation::cur())(meta),       // src_tag
-            meta.query_advice(self.id, Rotation::next()), // dst_id
-            self.tag.value(Rotation::next())(meta),      // dst_tag
-            meta.query_advice(self.addr, Rotation::cur()), // src_addr
-            meta.query_advice(self.src_addr_end, Rotation::cur()), // src_addr_end
-            meta.query_advice(self.addr, Rotation::next()), // dst_addr
-            meta.query_advice(self.bytes_left, Rotation::cur()), // length
-            meta.query_advice(self.rw_counter, Rotation::cur()), // rw_counter
-            meta.query_advice(self.rwc_inc_left, Rotation::cur()), // rwc_inc_left
-        ]
-    }
 }
 
 impl<F: Field> CopyCircuit<F> {
@@ -92,22 +77,24 @@ impl<F: Field> CopyCircuit<F> {
         tx_table: &dyn LookupTable<F>,
         rw_table: &dyn LookupTable<F>,
         bytecode_table: &dyn LookupTable<F>,
+        copy_table: CopyTable,
+        q_enable: Column<Fixed>,
+        randomness: Expression<F>,
     ) -> Self {
-        let q_enable = meta.fixed_column();
         let q_step = meta.complex_selector();
-        let is_first = meta.advice_column();
         let is_last = meta.advice_column();
-        let id = meta.advice_column();
-        let addr = meta.advice_column();
-        let src_addr_end = meta.advice_column();
-        let bytes_left = meta.advice_column();
         let value = meta.advice_column();
         let is_code = meta.advice_column();
         let is_pad = meta.advice_column();
-        let rw_counter = meta.advice_column();
-        let rwc_inc_left = meta.advice_column();
-
-        let tag = BinaryNumberChip::configure(meta, q_enable);
+        let is_first = copy_table.is_first;
+        let id = copy_table.id;
+        let addr = copy_table.addr;
+        let src_addr_end = copy_table.src_addr_end;
+        let bytes_left = copy_table.bytes_left;
+        let rlc_acc = copy_table.rlc_acc;
+        let rw_counter = copy_table.rw_counter;
+        let rwc_inc_left = copy_table.rwc_inc_left;
+        let tag = copy_table.tag;
 
         let addr_lt_addr_end = LtChip::configure(
             meta,
@@ -188,6 +175,11 @@ impl<F: Field> CopyCircuit<F> {
                         meta.query_advice(rwc_inc_left, Rotation::cur()) - rw_diff.clone(),
                         meta.query_advice(rwc_inc_left, Rotation::next()),
                     );
+                    cb.require_equal(
+                        "rows[0].rlc_acc == rows[1].rlc_acc",
+                        meta.query_advice(rlc_acc, Rotation::cur()),
+                        meta.query_advice(rlc_acc, Rotation::next()),
+                    );
                 },
             );
             cb.condition(meta.query_advice(is_last, Rotation::cur()), |cb| {
@@ -197,11 +189,24 @@ impl<F: Field> CopyCircuit<F> {
                     rw_diff,
                 );
             });
+            cb.condition(
+                and::expr([
+                    meta.query_advice(is_last, Rotation::cur()),
+                    tag.value_equals(CopyDataType::RlcAcc, Rotation::cur())(meta),
+                ]),
+                |cb| {
+                    cb.require_equal(
+                        "value == rlc_acc at the last row for RlcAcc",
+                        meta.query_advice(value, Rotation::cur()),
+                        meta.query_advice(rlc_acc, Rotation::cur()),
+                    );
+                },
+            );
 
             cb.gate(meta.query_fixed(q_enable, Rotation::cur()))
         });
 
-        meta.create_gate("verify step", |meta| {
+        meta.create_gate("verify step (q_step == 1)", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
             cb.require_zero(
@@ -221,11 +226,25 @@ impl<F: Field> CopyCircuit<F> {
                     );
                 },
             );
-            cb.require_equal(
-                "write value == read value",
-                meta.query_advice(value, Rotation::cur()),
-                meta.query_advice(value, Rotation::next()),
+            cb.condition(
+                not::expr(tag.value_equals(CopyDataType::RlcAcc, Rotation::next())(
+                    meta,
+                )),
+                |cb| {
+                    cb.require_equal(
+                        "write value == read value (if not rlc acc)",
+                        meta.query_advice(value, Rotation::cur()),
+                        meta.query_advice(value, Rotation::next()),
+                    );
+                },
             );
+            cb.condition(meta.query_advice(is_first, Rotation::cur()), |cb| {
+                cb.require_equal(
+                    "write value == read value (is_first == 1)",
+                    meta.query_advice(value, Rotation::cur()),
+                    meta.query_advice(value, Rotation::next()),
+                );
+            });
             cb.require_zero(
                 "value == 0 when is_pad == 1 for read",
                 and::expr([
@@ -244,6 +263,25 @@ impl<F: Field> CopyCircuit<F> {
             );
 
             cb.gate(meta.query_selector(q_step))
+        });
+
+        meta.create_gate("verify_step (q_step == 0)", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
+
+            cb.require_equal(
+                "rows[2].value == rows[0].value * r + rows[1].value",
+                meta.query_advice(value, Rotation(2)),
+                meta.query_advice(value, Rotation::cur()) * randomness
+                    + meta.query_advice(value, Rotation::next()),
+            );
+
+            cb.gate(and::expr([
+                meta.query_fixed(q_enable, Rotation::cur()),
+                not::expr(meta.query_selector(q_step)),
+                not::expr(meta.query_advice(is_last, Rotation::cur())),
+                tag.value_equals(CopyDataType::RlcAcc, Rotation::cur())(meta),
+                not::expr(meta.query_advice(is_pad, Rotation::cur())),
+            ]))
         });
 
         meta.lookup_any("Memory lookup", |meta| {
@@ -327,19 +365,12 @@ impl<F: Field> CopyCircuit<F> {
         Self {
             q_enable,
             q_step,
-            is_first,
             is_last,
-            id,
-            addr,
-            src_addr_end,
-            bytes_left,
             value,
             is_code,
             is_pad,
-            rw_counter,
-            rwc_inc_left,
-            tag,
             addr_lt_addr_end,
+            copy_table,
         }
     }
 
@@ -348,23 +379,49 @@ impl<F: Field> CopyCircuit<F> {
         &self,
         layouter: &mut impl Layouter<F>,
         block: &Block<F>,
+        randomness: F,
     ) -> Result<(), Error> {
-        let tag_chip = BinaryNumberChip::construct(self.tag);
+        let tag_chip = BinaryNumberChip::construct(self.copy_table.tag);
         let lt_chip = LtChip::construct(self.addr_lt_addr_end);
 
         layouter.assign_region(
             || "assign copy table",
             |mut region| {
                 let mut offset = 0;
-                for copy_event in block.copy_events.values() {
+                for copy_event in block.copy_events.iter() {
+                    let rlc_acc = if copy_event.dst_type == CopyDataType::RlcAcc {
+                        let values = copy_event
+                            .steps
+                            .iter()
+                            .filter(|s| s.rw.is_write())
+                            .map(|s| s.value)
+                            .collect::<Vec<u8>>();
+                        rlc::value(values.iter().rev(), randomness)
+                    } else {
+                        F::zero()
+                    };
+                    let mut value_acc = F::zero();
                     for (step_idx, copy_step) in copy_event.steps.iter().enumerate() {
+                        let value = if copy_event.dst_type == CopyDataType::RlcAcc {
+                            if copy_step.rw.is_read() {
+                                F::from(copy_step.value as u64)
+                            } else {
+                                value_acc =
+                                    value_acc * randomness + F::from(copy_step.value as u64);
+                                value_acc
+                            }
+                        } else {
+                            F::from(copy_step.value as u64)
+                        };
                         self.assign_step(
                             &mut region,
                             offset,
-                            block.randomness,
+                            randomness,
                             copy_event,
                             step_idx,
                             copy_step,
+                            value,
+                            rlc_acc,
                             &tag_chip,
                             &lt_chip,
                         )?;
@@ -390,6 +447,8 @@ impl<F: Field> CopyCircuit<F> {
         copy_event: &CopyEvent,
         step_idx: usize,
         copy_step: &CopyStep,
+        value: F,
+        rlc_acc: F,
         tag_chip: &BinaryNumberChip<F, CopyDataType, 3>,
         lt_chip: &LtChip<F, 8>,
     ) -> Result<(), Error> {
@@ -410,7 +469,7 @@ impl<F: Field> CopyCircuit<F> {
         // is_first
         region.assign_advice(
             || format!("assign is_first {}", offset),
-            self.is_first,
+            self.copy_table.is_first,
             offset,
             || Ok(if step_idx == 0 { F::one() } else { F::zero() }),
         )?;
@@ -430,29 +489,14 @@ impl<F: Field> CopyCircuit<F> {
         // id
         region.assign_advice(
             || format!("assign id {}", offset),
-            self.id,
+            self.copy_table.id,
             offset,
-            || {
-                Ok(match id {
-                    NumberOrHash::Number(n) => F::from(*n as u64),
-                    NumberOrHash::Hash(h) => {
-                        // since code hash in the bytecode table is represented in
-                        // the little-endian form, we reverse the big-endian bytes
-                        // of H256.
-                        let le_bytes = {
-                            let mut b = h.to_fixed_bytes();
-                            b.reverse();
-                            b
-                        };
-                        RandomLinearCombination::random_linear_combine(le_bytes, randomness)
-                    }
-                })
-            },
+            || Ok(number_or_hash_to_field(id, randomness)),
         )?;
         // addr
         region.assign_advice(
             || format!("assign addr {}", offset),
-            self.addr,
+            self.copy_table.addr,
             offset,
             || {
                 Ok(match copy_step.tag {
@@ -472,7 +516,14 @@ impl<F: Field> CopyCircuit<F> {
             || format!("assign value {}", offset),
             self.value,
             offset,
-            || Ok(F::from(copy_step.value as u64)),
+            || Ok(value),
+        )?;
+        // rlc_acc
+        region.assign_advice(
+            || format!("assign rlc_acc {}", offset),
+            self.copy_table.rlc_acc,
+            offset,
+            || Ok(rlc_acc),
         )?;
         // is_code
         region.assign_advice(
@@ -491,14 +542,14 @@ impl<F: Field> CopyCircuit<F> {
         // rw_counter
         region.assign_advice(
             || format!("assign rw_counter {}", offset),
-            self.rw_counter,
+            self.copy_table.rw_counter,
             offset,
             || Ok(F::from(copy_step.rwc.0 as u64)),
         )?;
         // rwc_inc_left
         region.assign_advice(
             || format!("assign rwc_inc_left {}", offset),
-            self.rwc_inc_left,
+            self.copy_table.rwc_inc_left,
             offset,
             || Ok(F::from(copy_step.rwc_inc_left)),
         )?;
@@ -509,14 +560,14 @@ impl<F: Field> CopyCircuit<F> {
             // src_addr_end
             region.assign_advice(
                 || format!("assign src_addr_end {}", offset),
-                self.src_addr_end,
+                self.copy_table.src_addr_end,
                 offset,
                 || Ok(F::from(copy_event.src_addr_end)),
             )?;
             // bytes_left
             region.assign_advice(
                 || format!("assign bytes_left {}", offset),
-                self.bytes_left,
+                self.copy_table.bytes_left,
                 offset,
                 || Ok(F::from(bytes_left)),
             )?;
@@ -542,7 +593,7 @@ impl<F: Field> CopyCircuit<F> {
         // is_first
         region.assign_advice(
             || format!("assign is_first {}", offset),
-            self.is_first,
+            self.copy_table.is_first,
             offset,
             || Ok(F::zero()),
         )?;
@@ -556,28 +607,28 @@ impl<F: Field> CopyCircuit<F> {
         // id
         region.assign_advice(
             || format!("assign id {}", offset),
-            self.id,
+            self.copy_table.id,
             offset,
             || Ok(F::zero()),
         )?;
         // addr
         region.assign_advice(
             || format!("assign addr {}", offset),
-            self.addr,
+            self.copy_table.addr,
             offset,
             || Ok(F::zero()),
         )?;
         // src_addr_end
         region.assign_advice(
             || format!("assign src_addr_end {}", offset),
-            self.src_addr_end,
+            self.copy_table.src_addr_end,
             offset,
             || Ok(F::zero()),
         )?;
         // bytes_left
         region.assign_advice(
             || format!("assign bytes_left {}", offset),
-            self.bytes_left,
+            self.copy_table.bytes_left,
             offset,
             || Ok(F::zero()),
         )?;
@@ -585,6 +636,13 @@ impl<F: Field> CopyCircuit<F> {
         region.assign_advice(
             || format!("assign value {}", offset),
             self.value,
+            offset,
+            || Ok(F::zero()),
+        )?;
+        // rlc_acc
+        region.assign_advice(
+            || format!("assign rlc_acc {}", offset),
+            self.copy_table.rlc_acc,
             offset,
             || Ok(F::zero()),
         )?;
@@ -605,14 +663,14 @@ impl<F: Field> CopyCircuit<F> {
         // rw_counter
         region.assign_advice(
             || format!("assign rw_counter {}", offset),
-            self.rw_counter,
+            self.copy_table.rw_counter,
             offset,
             || Ok(F::zero()),
         )?;
         // rwc_inc_left
         region.assign_advice(
             || format!("assign rwc_inc_left {}", offset),
-            self.rwc_inc_left,
+            self.copy_table.rwc_inc_left,
             offset,
             || Ok(F::zero()),
         )?;
@@ -622,167 +680,52 @@ impl<F: Field> CopyCircuit<F> {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use bus_mapping::{
-        circuit_input_builder::{CircuitInputBuilder, CopyDataType},
-        mock::BlockData,
-        operation::RWCounter,
-    };
-    use eth_types::{bytecode, geth_types::GethData, Field, Word};
+#[cfg(feature = "dev")]
+/// Dev helpers
+pub mod dev {
+    use super::*;
+    use eth_types::Field;
     use halo2_proofs::{
         circuit::{Layouter, SimpleFloorPlanner},
         dev::{MockProver, VerifyFailure},
-        plonk::{Advice, Circuit, Column, ConstraintSystem, Error},
+        plonk::{Circuit, ConstraintSystem},
     };
-    use itertools::Itertools;
-    use mock::TestContext;
-    use rand::{prelude::SliceRandom, Rng};
 
     use crate::{
-        evm_circuit::witness::{block_convert, Block, Bytecode, RwMap, Transaction},
-        rw_table::RwTable,
+        evm_circuit::witness::Block,
+        table::{BytecodeTable, RwTable, TxTable},
+        util::power_of_randomness_from_instance,
     };
 
-    use super::CopyCircuit;
-
     #[derive(Clone)]
-    struct MyConfig<F> {
-        tx_table: [Column<Advice>; 4],
+    struct CopyCircuitTesterConfig<F> {
+        tx_table: TxTable,
         rw_table: RwTable,
-        bytecode_table: [Column<Advice>; 5],
-        copy_table: CopyCircuit<F>,
-    }
-
-    impl<F: Field> MyConfig<F> {
-        fn load_txs(
-            &self,
-            layouter: &mut impl Layouter<F>,
-            txs: &[Transaction],
-            randomness: F,
-        ) -> Result<(), Error> {
-            layouter.assign_region(
-                || "tx table",
-                |mut region| {
-                    let mut offset = 0;
-                    for column in self.tx_table {
-                        region.assign_advice(
-                            || "tx table all-zero row",
-                            column,
-                            offset,
-                            || Ok(F::zero()),
-                        )?;
-                    }
-                    offset += 1;
-
-                    for tx in txs.iter() {
-                        for row in tx.table_assignments(randomness) {
-                            for (column, value) in self.tx_table.iter().zip_eq(row) {
-                                region.assign_advice(
-                                    || format!("tx table row {}", offset),
-                                    *column,
-                                    offset,
-                                    || Ok(value),
-                                )?;
-                            }
-                            offset += 1;
-                        }
-                    }
-                    Ok(())
-                },
-            )
-        }
-
-        fn load_rws(
-            &self,
-            layouter: &mut impl Layouter<F>,
-            rws: &RwMap,
-            randomness: F,
-        ) -> Result<(), Error> {
-            layouter.assign_region(
-                || "rw table",
-                |mut region| {
-                    let mut offset = 0;
-                    self.rw_table
-                        .assign(&mut region, offset, &Default::default())?;
-                    offset += 1;
-
-                    let mut rows = rws
-                        .0
-                        .values()
-                        .flat_map(|rws| rws.iter())
-                        .collect::<Vec<_>>();
-
-                    rows.sort_by_key(|a| a.rw_counter());
-                    let mut expected_rw_counter = 1;
-                    for rw in rows {
-                        assert!(rw.rw_counter() == expected_rw_counter);
-                        expected_rw_counter += 1;
-
-                        self.rw_table.assign(
-                            &mut region,
-                            offset,
-                            &rw.table_assignment(randomness),
-                        )?;
-                        offset += 1;
-                    }
-                    Ok(())
-                },
-            )
-        }
-
-        fn load_bytecodes<'a>(
-            &self,
-            layouter: &mut impl Layouter<F>,
-            bytecodes: impl IntoIterator<Item = &'a Bytecode> + Clone,
-            randomness: F,
-        ) -> Result<(), Error> {
-            layouter.assign_region(
-                || "bytecode table",
-                |mut region| {
-                    let mut offset = 0;
-                    for column in self.bytecode_table {
-                        region.assign_advice(
-                            || "bytecode table all-zero row",
-                            column,
-                            offset,
-                            || Ok(F::zero()),
-                        )?;
-                    }
-                    offset += 1;
-
-                    for bytecode in bytecodes.clone() {
-                        for row in bytecode.table_assignments(randomness) {
-                            for (column, value) in self.bytecode_table.iter().zip_eq(row) {
-                                region.assign_advice(
-                                    || format!("bytecode table row {}", offset),
-                                    *column,
-                                    offset,
-                                    || Ok(value),
-                                )?;
-                            }
-                            offset += 1;
-                        }
-                    }
-                    Ok(())
-                },
-            )
-        }
+        bytecode_table: BytecodeTable,
+        copy_circuit: CopyCircuit<F>,
     }
 
     #[derive(Default)]
-    struct MyCircuit<F> {
+    struct CopyCircuitTester<F> {
         block: Block<F>,
+        randomness: F,
     }
 
-    impl<F> MyCircuit<F> {
-        pub fn new(block: Block<F>) -> Self {
-            Self { block }
+    impl<F: Field> CopyCircuitTester<F> {
+        fn get_randomness() -> F {
+            F::random(rand::thread_rng())
+        }
+
+        pub fn new(block: Block<F>, randomness: F) -> Self {
+            Self { block, randomness }
+        }
+        pub fn r() -> Expression<F> {
+            123456u64.expr()
         }
     }
 
-    impl<F: Field> Circuit<F> for MyCircuit<F> {
-        type Config = MyConfig<F>;
+    impl<F: Field> Circuit<F> for CopyCircuitTester<F> {
+        type Config = CopyCircuitTesterConfig<F>;
         type FloorPlanner = SimpleFloorPlanner;
 
         fn without_witnesses(&self) -> Self {
@@ -790,16 +733,28 @@ mod tests {
         }
 
         fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-            let tx_table = [(); 4].map(|_| meta.advice_column());
+            let tx_table = TxTable::construct(meta);
             let rw_table = RwTable::construct(meta);
-            let bytecode_table = [(); 5].map(|_| meta.advice_column());
-            let copy_table = CopyCircuit::configure(meta, &tx_table, &rw_table, &bytecode_table);
+            let bytecode_table = BytecodeTable::construct(meta);
+            let q_enable = meta.fixed_column();
 
-            MyConfig {
+            let randomness = power_of_randomness_from_instance::<_, 1>(meta);
+            let copy_table = CopyTable::construct(meta, q_enable);
+            let copy_circuit = CopyCircuit::configure(
+                meta,
+                &tx_table,
+                &rw_table,
+                &bytecode_table,
+                copy_table,
+                q_enable,
+                randomness[0].clone(),
+            );
+
+            CopyCircuitTesterConfig {
                 tx_table,
                 rw_table,
                 bytecode_table,
-                copy_table,
+                copy_circuit,
             }
         }
 
@@ -808,32 +763,77 @@ mod tests {
             config: Self::Config,
             mut layouter: impl Layouter<F>,
         ) -> Result<(), halo2_proofs::plonk::Error> {
-            config.load_txs(&mut layouter, &self.block.txs, self.block.randomness)?;
-            config.load_rws(&mut layouter, &self.block.rws, self.block.randomness)?;
-            config.load_bytecodes(
+            config
+                .tx_table
+                .load(&mut layouter, &self.block.txs, self.randomness)?;
+            config.rw_table.load(
+                &mut layouter,
+                &self.block.rws.table_assignments(),
+                self.block.state_circuit_pad_to,
+                self.randomness,
+            )?;
+            config.bytecode_table.load(
                 &mut layouter,
                 self.block.bytecodes.values(),
-                self.block.randomness,
+                self.randomness,
             )?;
-            config.copy_table.assign_block(&mut layouter, &self.block)
+            config
+                .copy_circuit
+                .assign_block(&mut layouter, &self.block, self.randomness)
         }
     }
 
-    fn run_circuit<F: Field>(k: u32, block: Block<F>) -> Result<(), Vec<VerifyFailure>> {
-        let circuit = MyCircuit::<F>::new(block);
-        let prover = MockProver::<F>::run(k, &circuit, vec![]).unwrap();
+    /// Test copy circuit with the provided block witness
+    pub fn test_copy_circuit<F: Field>(k: u32, block: Block<F>) -> Result<(), Vec<VerifyFailure>> {
+        let randomness = CopyCircuitTester::<F>::get_randomness();
+        let circuit = CopyCircuitTester::<F>::new(block, randomness);
+        let num_rows = 1 << k;
+        const NUM_BLINDING_ROWS: usize = 7 - 1;
+        let instance = vec![vec![randomness; num_rows - NUM_BLINDING_ROWS]];
+        let prover = MockProver::<F>::run(k, &circuit, instance).unwrap();
         prover.verify()
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::dev::test_copy_circuit;
+    use bus_mapping::evm::{gen_sha3_code, MemoryKind};
+    use bus_mapping::{
+        circuit_input_builder::{CircuitInputBuilder, CopyDataType},
+        mock::BlockData,
+        operation::RWCounter,
+    };
+    use eth_types::{bytecode, geth_types::GethData, Word};
+    use mock::test_ctx::helpers::account_0_code_account_1_no_code;
+    use mock::TestContext;
+    use rand::{prelude::SliceRandom, Rng};
+
+    use crate::evm_circuit::test::rand_bytes;
+    use crate::evm_circuit::witness::block_convert;
 
     fn gen_calldatacopy_data() -> CircuitInputBuilder {
+        let length = 0x0fffusize;
         let code = bytecode! {
-            PUSH32(Word::from(0x20))
+            PUSH32(Word::from(length))
             PUSH32(Word::from(0x00))
             PUSH32(Word::from(0x00))
             CALLDATACOPY
             STOP
         };
-        let test_ctx = TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap();
+        let calldata = rand_bytes(length);
+        let test_ctx = TestContext::<2, 1>::new(
+            None,
+            account_0_code_account_1_no_code(code),
+            |mut txs, accs| {
+                txs[0]
+                    .from(accs[1].address)
+                    .to(accs[0].address)
+                    .input(calldata.into());
+            },
+            |block, _txs| block.number(0xcafeu64),
+        )
+        .unwrap();
         let block: GethData = test_ctx.into();
         let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
         builder
@@ -859,18 +859,36 @@ mod tests {
         builder
     }
 
+    fn gen_sha3_data() -> CircuitInputBuilder {
+        let (code, _) = gen_sha3_code(0x20, 0x200, MemoryKind::EqualToSize);
+        let test_ctx = TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap();
+        let block: GethData = test_ctx.into();
+        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+        builder
+            .handle_block(&block.eth_block, &block.geth_traces)
+            .unwrap();
+        builder
+    }
+
     #[test]
     fn copy_circuit_valid_calldatacopy() {
         let builder = gen_calldatacopy_data();
         let block = block_convert(&builder.block, &builder.code_db);
-        assert!(run_circuit(10, block).is_ok());
+        assert_eq!(test_copy_circuit(14, block), Ok(()));
     }
 
     #[test]
     fn copy_circuit_valid_codecopy() {
         let builder = gen_codecopy_data();
         let block = block_convert(&builder.block, &builder.code_db);
-        assert!(run_circuit(10, block).is_ok());
+        assert_eq!(test_copy_circuit(10, block), Ok(()));
+    }
+
+    #[test]
+    fn copy_circuit_valid_sha3() {
+        let builder = gen_sha3_data();
+        let block = block_convert(&builder.block, &builder.code_db);
+        assert_eq!(test_copy_circuit(20, block), Ok(()));
     }
 
     fn perturb_tag(block: &mut bus_mapping::circuit_input_builder::Block, tag: CopyDataType) {
@@ -902,7 +920,7 @@ mod tests {
             false => perturb_tag(&mut builder.block, CopyDataType::TxCalldata),
         }
         let block = block_convert(&builder.block, &builder.code_db);
-        assert!(run_circuit(10, block).is_err());
+        assert!(test_copy_circuit(14, block).is_err());
     }
 
     #[test]
@@ -913,6 +931,17 @@ mod tests {
             false => perturb_tag(&mut builder.block, CopyDataType::Bytecode),
         }
         let block = block_convert(&builder.block, &builder.code_db);
-        assert!(run_circuit(10, block).is_err());
+        assert!(test_copy_circuit(10, block).is_err());
+    }
+
+    #[test]
+    fn copy_circuit_invalid_sha3() {
+        let mut builder = gen_sha3_data();
+        match rand::thread_rng().gen_bool(0.5) {
+            true => perturb_tag(&mut builder.block, CopyDataType::Memory),
+            false => perturb_tag(&mut builder.block, CopyDataType::RlcAcc),
+        }
+        let block = block_convert(&builder.block, &builder.code_db);
+        assert!(test_copy_circuit(20, block).is_err());
     }
 }

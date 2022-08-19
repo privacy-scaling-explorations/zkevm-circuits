@@ -5,7 +5,6 @@ use crate::{
 use itertools::Itertools;
 use num_bigint::BigUint;
 use num_traits::Zero;
-use std::convert::TryInto;
 
 pub const BASE_NUM_OF_CHUNKS: u32 = 4;
 
@@ -102,11 +101,13 @@ pub struct Conversion {
     pub overflow_detector: OverflowDetector,
 }
 
+#[derive(Debug, Clone)]
 pub struct Special {
     pub input: BigUint,
     pub output_acc_pre: BigUint,
     pub output_acc_post: BigUint,
     pub output_coef: u8,
+    pub output_pob: BigUint,
 }
 
 const RHO_LANE_SIZE: usize = 65;
@@ -134,7 +135,7 @@ impl RhoLane {
         chunks.resize(RHO_LANE_SIZE, 0);
         let chunks: [u8; RHO_LANE_SIZE] = chunks.try_into().unwrap();
         let special_high = *chunks.get(64).unwrap();
-        let special_low = *chunks.get(0).unwrap();
+        let special_low = *chunks.first().unwrap();
         debug_assert!(special_high + special_low < B13, "invalid Rho input lane");
         let output = convert_b13_lane_to_b9(input.clone(), rotation);
 
@@ -217,13 +218,14 @@ impl RhoLane {
             let input = input_acc;
             let output_acc_pre = output_acc;
             let output_coef = convert_b13_coef(self.special_high + self.special_low);
-            let output_acc_post =
-                &output_acc_pre + output_coef * BigUint::from(B9 as u64).pow(self.rotation);
+            let output_pob = BigUint::from(B9 as u64).pow(self.rotation);
+            let output_acc_post = &output_acc_pre + output_coef * output_pob.clone();
             Special {
                 input,
                 output_acc_pre,
                 output_acc_post,
                 output_coef,
+                output_pob,
             }
         };
         (conversions, special)

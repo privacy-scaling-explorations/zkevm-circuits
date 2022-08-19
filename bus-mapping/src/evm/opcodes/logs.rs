@@ -22,6 +22,18 @@ impl Opcode for Log {
             state.push_copy(copy_event);
             state.tx_ctx.log_id += 1;
         }
+
+        // reconstruction
+        let offset = geth_step.stack.nth_last(0)?.as_usize();
+        let length = geth_step.stack.nth_last(1)?.as_usize();
+
+        if length != 0 {
+            state
+                .call_ctx_mut()?
+                .memory
+                .extend_at_least(offset + length);
+        }
+
         Ok(vec![exec_step])
     }
 }
@@ -89,7 +101,7 @@ fn gen_log_step(
     // generates topic operation dynamically
     let topic_count = match exec_step.exec_state {
         ExecState::Op(op_id) => (op_id.as_u8() - OpcodeId::LOG0.as_u8()) as usize,
-        _ => panic!("currently only handle succeful log state"),
+        _ => panic!("currently only handle successful log state"),
     };
 
     for i in 0..topic_count {
@@ -118,45 +130,39 @@ fn gen_log_step(
 
 fn gen_copy_steps(
     state: &mut CircuitInputStateRef,
-    geth_step: &GethExecStep,
     exec_step: &mut ExecStep,
     src_addr: u64,
-    src_addr_end: u64,
     bytes_left: usize,
-    data_start_index: usize,
 ) -> Result<Vec<CopyStep>, Error> {
     // Get memory data
-    let mem = geth_step
+    let mem = state
+        .call_ctx()?
         .memory
         .read_chunk(src_addr.into(), bytes_left.into());
+
     let mut copy_steps = Vec::with_capacity(2 * bytes_left);
     for (idx, byte) in mem.iter().enumerate() {
         let addr = src_addr + idx as u64;
-        let rwc = state.block_ctx.rwc;
-        let (value, is_pad) = if addr < src_addr_end {
-            state.memory_read(exec_step, (addr as usize).into(), *byte)?;
-            (*byte, false)
-        } else {
-            (0, true)
-        };
 
-        // Read
+        // Read memory
         copy_steps.push(CopyStep {
             addr,
             tag: CopyDataType::Memory,
             rw: RW::READ,
-            value,
+            value: *byte,
             is_code: None,
-            is_pad,
-            rwc,
+            is_pad: false,
+            rwc: state.block_ctx.rwc,
             rwc_inc_left: 0,
         });
-        // Write
+        state.memory_read(exec_step, (addr as usize).into(), *byte)?;
+
+        // Write log
         copy_steps.push(CopyStep {
-            addr: (data_start_index + idx) as u64,
+            addr: idx as u64,
             tag: CopyDataType::TxLog,
             rw: RW::WRITE,
-            value,
+            value: *byte,
             is_code: None,
             is_pad: false,
             rwc: state.block_ctx.rwc,
@@ -167,8 +173,8 @@ fn gen_copy_steps(
             state.tx_ctx.id(),
             state.tx_ctx.log_id + 1,
             TxLogField::Data,
-            data_start_index + idx,
-            Word::from(value),
+            idx,
+            Word::from(*byte),
         )?;
     }
 
@@ -186,15 +192,7 @@ fn gen_copy_event(
 
     let (src_addr, src_addr_end) = (memory_start, memory_start + msize as u64);
 
-    let mut steps = gen_copy_steps(
-        state,
-        geth_step,
-        exec_step,
-        src_addr,
-        src_addr_end,
-        msize,
-        0,
-    )?;
+    let mut steps = gen_copy_steps(state, exec_step, src_addr, msize)?;
 
     for cs in steps.iter_mut() {
         cs.rwc_inc_left = state.block_ctx.rwc.0 as u64 - cs.rwc.0 as u64;
@@ -211,9 +209,6 @@ fn gen_copy_event(
         log_id: Some(state.tx_ctx.log_id as u64 + 1),
         length: msize as u64,
         steps,
-        tx_id: state.tx_ctx.id(),
-        call_id: state.call()?.call_id,
-        pc: exec_step.pc,
     })
 }
 

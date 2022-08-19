@@ -12,12 +12,13 @@ mod tests {
     };
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
+    use zkevm_circuits::evm_circuit::witness::RwMap;
     use zkevm_circuits::state_circuit::StateCircuit;
 
     #[cfg_attr(not(feature = "benches"), ignore)]
     #[test]
     fn bench_state_circuit_prover() {
-        let empty_circuit = StateCircuit::<Fr, { 1 << 16 }>::default();
+        let empty_circuit = StateCircuit::<Fr>::new(Fr::default(), RwMap::default(), 1 << 16);
 
         // Initialize the polynomial commitment parameters
         let rng = XorShiftRng::from_seed([
@@ -39,6 +40,8 @@ mod tests {
         // Create a proof
         let mut transcript = Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
 
+        let instance = empty_circuit.instance();
+        let instances: Vec<&[Fr]> = instance.iter().map(|v| v.as_slice()).collect();
         // Bench proof generation time
         let proof_message = format!("State Proof generation with {} degree", DEGREE);
         let start2 = start_timer!(|| proof_message);
@@ -46,7 +49,7 @@ mod tests {
             &general_params,
             &pk,
             &[empty_circuit],
-            &[&[]],
+            &[instances.as_slice()],
             rng,
             &mut transcript,
         )
@@ -63,7 +66,7 @@ mod tests {
             &verifier_params,
             pk.get_vk(),
             strategy,
-            &[&[]],
+            &[instances.as_slice()],
             &mut verifier_transcript,
         )
         .expect("failed to verify bench circuit");

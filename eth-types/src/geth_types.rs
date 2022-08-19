@@ -3,6 +3,9 @@
 use crate::{
     AccessList, Address, Block, Bytes, Error, GethExecTrace, Hash, ToBigEndian, Word, U64,
 };
+use ethers_core::types::TransactionRequest;
+use ethers_core::utils::keccak256;
+use ethers_signers::{LocalWallet, Signer};
 use serde::{Serialize, Serializer};
 use std::collections::HashMap;
 
@@ -156,4 +159,28 @@ pub struct GethData {
     pub geth_traces: Vec<GethExecTrace>,
     /// Accounts
     pub accounts: Vec<Account>,
+}
+
+impl GethData {
+    /// Signs transactions with selected wallets
+    pub fn sign(&mut self, wallets: &HashMap<Address, LocalWallet>) {
+        for tx in self.eth_block.transactions.iter_mut() {
+            let wallet = wallets.get(&tx.from).unwrap();
+            assert_eq!(Word::from(wallet.chain_id()), self.chain_id);
+            let req = TransactionRequest::new()
+                .from(tx.from)
+                .to(tx.to.unwrap())
+                .nonce(tx.nonce)
+                .value(tx.value)
+                .data(tx.input.clone())
+                .gas(tx.gas)
+                .gas_price(tx.gas_price.unwrap());
+            let tx_rlp = req.rlp(self.chain_id.as_u64());
+            let sighash = keccak256(tx_rlp.as_ref()).into();
+            let sig = wallet.sign_hash(sighash, true);
+            tx.v = U64::from(sig.v);
+            tx.r = sig.r;
+            tx.s = sig.s;
+        }
+    }
 }
