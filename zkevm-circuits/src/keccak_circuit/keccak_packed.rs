@@ -1,5 +1,7 @@
 use crate::evm_circuit::util::{not, rlc};
-use crate::keccak_circuit::util::{compose_rlc, from_bits, scatter, to_bytes, unpack};
+use crate::keccak_circuit::util::{
+    compose_rlc, from_bits, rotate, scatter, target_part_sizes, to_bytes, unpack,
+};
 use crate::{evm_circuit::util::constraint_builder::BaseConstraintBuilder, util::Expr};
 use eth_types::Word;
 use eth_types::{Field, ToScalar};
@@ -173,19 +175,6 @@ pub(crate) struct PartValue {
     num_bits: usize,
 }
 
-/// PartInfo
-#[derive(Clone, Debug)]
-pub(crate) struct PartInfo {
-    bits: Vec<usize>,
-}
-
-/// WordParts
-#[derive(Clone, Debug)]
-pub(crate) struct WordParts {
-    parts: Vec<PartInfo>,
-    rot_idx: usize,
-}
-
 /// KeccakConfig
 #[derive(Clone, Debug)]
 pub struct KeccakPackedConfig<F> {
@@ -282,8 +271,8 @@ impl<F: Field> KeccakPackedCircuit<F> {
 
 /// Splits a word into parts
 mod split {
-    use super::{decode, get_word_parts, Part, PartValue};
-    use crate::keccak_circuit::util::{pack, unpack, BIT_SIZE};
+    use super::{decode, Part, PartValue};
+    use crate::keccak_circuit::util::{get_word_parts, pack, unpack, BIT_SIZE};
     use crate::{evm_circuit::util::constraint_builder::BaseConstraintBuilder, util::Expr};
     use eth_types::Field;
     use eth_types::Word;
@@ -390,36 +379,6 @@ mod decode {
     }
 }
 
-/// Rotates a word that was split into parts
-mod rotate {
-    use super::{Part, PartValue};
-    use eth_types::Field;
-
-    pub(crate) fn get_rotate_count(count: usize, part_size: usize) -> usize {
-        (count + part_size - 1) / part_size
-    }
-
-    pub(crate) fn expr<F: Field>(
-        parts: Vec<Part<F>>,
-        count: usize,
-        part_size: usize,
-    ) -> Vec<Part<F>> {
-        let mut rotated_parts = parts;
-        rotated_parts.rotate_right(get_rotate_count(count, part_size));
-        rotated_parts
-    }
-
-    pub(crate) fn value<F: Field>(
-        parts: Vec<PartValue>,
-        count: usize,
-        part_size: usize,
-    ) -> Vec<PartValue> {
-        let mut rotated_parts = parts;
-        rotated_parts.rotate_right(get_rotate_count(count, part_size));
-        rotated_parts
-    }
-}
-
 /// Transforms data using a lookup
 mod transform {
     use super::{Part, PartValue};
@@ -495,7 +454,8 @@ mod transform {
 
 /// Combines parts
 mod combine {
-    use super::{target_part_sizes, Part, PartValue};
+    use super::{Part, PartValue};
+    use crate::keccak_circuit::util::target_part_sizes;
     use crate::keccak_circuit::util::BIT_SIZE;
     use eth_types::Field;
     use halo2_proofs::plonk::ConstraintSystem;
@@ -575,68 +535,6 @@ mod combine {
         }
         parts
     }
-}
-
-fn target_part_sizes(part_size: usize) -> Vec<usize> {
-    let num_full_chunks = 64 / part_size;
-    let partial_chunk_size = 64 % part_size;
-    let mut part_sizes = vec![part_size; num_full_chunks];
-    if partial_chunk_size > 0 {
-        part_sizes.push(partial_chunk_size);
-    }
-    part_sizes
-}
-
-fn get_word_parts(part_size: usize, rot: usize, normalize: bool) -> WordParts {
-    let mut bits = (0usize..64).collect::<Vec<_>>();
-    bits.rotate_right(rot);
-
-    let mut parts = Vec::new();
-    let mut rot_idx = 0;
-
-    let mut idx = 0;
-    let target_sizes = if normalize {
-        target_part_sizes(part_size)
-    } else {
-        let num_parts_a = rot / part_size;
-        let partial_part_a = rot % part_size;
-        let num_parts_b = (64 - rot) / part_size;
-        let partial_part_b = (64 - rot) % part_size;
-        let mut part_sizes = vec![part_size; num_parts_a];
-        if partial_part_a > 0 {
-            part_sizes.push(partial_part_a);
-        }
-        part_sizes.extend(vec![part_size; num_parts_b]);
-        if partial_part_b > 0 {
-            part_sizes.push(partial_part_b);
-        }
-        part_sizes
-    };
-
-    for part_size in target_sizes {
-        let mut num_consumed = 0;
-        while num_consumed < part_size {
-            let mut part_bits: Vec<usize> = Vec::new();
-            while num_consumed < part_size {
-                if !part_bits.is_empty() && bits[idx] == 0 {
-                    break;
-                }
-                if bits[idx] == 0 {
-                    rot_idx = parts.len();
-                }
-                part_bits.push(bits[idx]);
-                idx += 1;
-                num_consumed += 1;
-            }
-            parts.push(PartInfo { bits: part_bits });
-        }
-    }
-    assert_eq!(rotate::get_rotate_count(rot, part_size), rot_idx);
-
-    parts.rotate_left(rot_idx);
-    assert_eq!(parts[0].bits[0], 0);
-
-    WordParts { parts, rot_idx }
 }
 
 impl<F: Field> KeccakPackedConfig<F> {
@@ -816,13 +714,13 @@ impl<F: Field> KeccakPackedConfig<F> {
         for i in 0..5 {
             if get_mode() {
                 let t = decode::expr(bc[(i + 4) % 5].clone())
-                    + decode::expr(rotate::expr(bc[(i + 1) % 5].clone(), 1, part_size_c));
+                    + decode::expr(rotate(bc[(i + 1) % 5].clone(), 1, part_size_c));
                 for j in 0..5 {
                     os[i][j] = s[i][j].clone() + t.clone();
                 }
             } else {
                 let t = decode::expr(bc[(i + 4) % 5].clone())
-                    + decode::expr(rotate::expr(bc[(i + 1) % 5].clone(), 1, part_size_c));
+                    + decode::expr(rotate(bc[(i + 1) % 5].clone(), 1, part_size_c));
                 let t_fat = split::expr(meta, &mut cell_values, &mut cb, t, 0, part_size_t, false);
                 let t_thin = decode::expr(transform::expr(
                     "theta t",
@@ -852,7 +750,7 @@ impl<F: Field> KeccakPackedConfig<F> {
         let mut num_parts_post = 0;
         for i in 0..5 {
             for j in 0..5 {
-                let s_fat = rotate::expr(
+                let s_fat = rotate(
                     split::expr(
                         meta,
                         &mut cell_values,
@@ -1778,21 +1676,13 @@ fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: &[u8], r: F) {
             for i in 0..5 {
                 if get_mode() {
                     let t = decode::value::<F>(bc[(i + 4) % 5].clone())
-                        + decode::value::<F>(rotate::value::<F>(
-                            bc[(i + 1) % 5].clone(),
-                            1,
-                            part_size_c,
-                        ));
+                        + decode::value::<F>(rotate(bc[(i + 1) % 5].clone(), 1, part_size_c));
                     for j in 0..5 {
                         os[i][j] = s[i][j] + t;
                     }
                 } else {
                     let t = decode::value::<F>(bc[(i + 4) % 5].clone())
-                        + decode::value::<F>(rotate::value::<F>(
-                            bc[(i + 1) % 5].clone(),
-                            1,
-                            part_size_c,
-                        ));
+                        + decode::value::<F>(rotate(bc[(i + 1) % 5].clone(), 1, part_size_c));
                     let t_fat = split::value(&mut cell_values, t, 0, part_size_t, false);
                     let t_thin = decode::value::<F>(transform::value(
                         &mut cell_values,
@@ -1814,7 +1704,7 @@ fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: &[u8], r: F) {
                 array_init::array_init(|_| array_init::array_init(|_| Vec::new()));
             for i in 0..5 {
                 for j in 0..5 {
-                    let b_fat = rotate::value::<F>(
+                    let b_fat = rotate(
                         split::value(&mut cell_values, s[i][j], RHOM[i][j], part_size, true),
                         RHOM[i][j],
                         part_size,

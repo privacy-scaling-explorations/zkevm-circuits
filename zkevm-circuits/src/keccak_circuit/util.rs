@@ -5,6 +5,20 @@ use eth_types::Word;
 pub(crate) const BIT_COUNT: usize = 3;
 pub(crate) const BIT_SIZE: usize = 2usize.pow(BIT_COUNT as u32);
 
+/// PartInfo
+#[derive(Clone, Debug)]
+pub struct PartInfo {
+    /// The bits of the part
+    pub bits: Vec<usize>,
+}
+
+/// WordParts
+#[derive(Clone, Debug)]
+pub struct WordParts {
+    /// The parts of the word
+    pub parts: Vec<PartInfo>,
+}
+
 /// Packs bits into bytes
 pub mod to_bytes {
     use eth_types::Field;
@@ -40,6 +54,20 @@ pub mod to_bytes {
         }
         bytes
     }
+}
+
+/// Rotates a word that was split into parts to the right
+pub fn rotate<T>(parts: Vec<T>, count: usize, part_size: usize) -> Vec<T> {
+    let mut rotated_parts = parts;
+    rotated_parts.rotate_right(get_rotate_count(count, part_size));
+    rotated_parts
+}
+
+/// Rotates a word that was split into parts to the left
+pub fn r_rotate<T>(parts: Vec<T>, count: usize, part_size: usize) -> Vec<T> {
+    let mut rotated_parts = parts;
+    rotated_parts.rotate_left(get_rotate_count(count, part_size));
+    rotated_parts
 }
 
 /// Encodes the data using rlc
@@ -157,4 +185,81 @@ pub fn rotate_left(bits: &[u8], count: usize) -> [u8; 64] {
     let mut rotated = bits.to_vec();
     rotated.rotate_left(count);
     rotated.try_into().unwrap()
+}
+
+/// Gets the target part sizes
+pub fn target_part_sizes(part_size: usize) -> Vec<usize> {
+    let num_full_chunks = 64 / part_size;
+    let partial_chunk_size = 64 % part_size;
+    let mut part_sizes = vec![part_size; num_full_chunks];
+    if partial_chunk_size > 0 {
+        part_sizes.push(partial_chunk_size);
+    }
+    part_sizes
+}
+
+/// Gets the rotation count in parts
+pub fn get_rotate_count(count: usize, part_size: usize) -> usize {
+    (count + part_size - 1) / part_size
+}
+
+/// Gets the word parts
+pub fn get_word_parts(part_size: usize, rot: usize, normalize: bool) -> WordParts {
+    let mut bits = (0usize..64).collect::<Vec<_>>();
+    bits.rotate_right(rot);
+
+    let mut parts = Vec::new();
+    let mut rot_idx = 0;
+
+    let mut idx = 0;
+    let target_sizes = if normalize {
+        // After the rotation we want the parts of all the words to be at the same
+        // positions
+        target_part_sizes(part_size)
+    } else {
+        // Here we only care about minimizing the number of parts
+        let num_parts_a = rot / part_size;
+        let partial_part_a = rot % part_size;
+
+        let num_parts_b = (64 - rot) / part_size;
+        let partial_part_b = (64 - rot) % part_size;
+
+        let mut part_sizes = vec![part_size; num_parts_a];
+        if partial_part_a > 0 {
+            part_sizes.push(partial_part_a);
+        }
+
+        part_sizes.extend(vec![part_size; num_parts_b]);
+        if partial_part_b > 0 {
+            part_sizes.push(partial_part_b);
+        }
+
+        part_sizes
+    };
+    // Split into parts bit by bit
+    for part_size in target_sizes {
+        let mut num_consumed = 0;
+        while num_consumed < part_size {
+            let mut part_bits: Vec<usize> = Vec::new();
+            while num_consumed < part_size {
+                if !part_bits.is_empty() && bits[idx] == 0 {
+                    break;
+                }
+                if bits[idx] == 0 {
+                    rot_idx = parts.len();
+                }
+                part_bits.push(bits[idx]);
+                idx += 1;
+                num_consumed += 1;
+            }
+            parts.push(PartInfo { bits: part_bits });
+        }
+    }
+
+    assert_eq!(get_rotate_count(rot, part_size), rot_idx);
+
+    parts.rotate_left(rot_idx);
+    assert_eq!(parts[0].bits[0], 0);
+
+    WordParts { parts }
 }
