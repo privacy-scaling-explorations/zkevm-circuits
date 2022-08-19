@@ -805,20 +805,35 @@ mod tests {
         operation::RWCounter,
     };
     use eth_types::{bytecode, geth_types::GethData, Word};
+    use mock::test_ctx::helpers::account_0_code_account_1_no_code;
     use mock::TestContext;
     use rand::{prelude::SliceRandom, Rng};
 
+    use crate::evm_circuit::test::rand_bytes;
     use crate::evm_circuit::witness::block_convert;
 
     fn gen_calldatacopy_data() -> CircuitInputBuilder {
+        let length = 0x0fffusize;
         let code = bytecode! {
-            PUSH32(Word::from(0x20))
+            PUSH32(Word::from(length))
             PUSH32(Word::from(0x00))
             PUSH32(Word::from(0x00))
             CALLDATACOPY
             STOP
         };
-        let test_ctx = TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap();
+        let calldata = rand_bytes(length);
+        let test_ctx = TestContext::<2, 1>::new(
+            None,
+            account_0_code_account_1_no_code(code),
+            |mut txs, accs| {
+                txs[0]
+                    .from(accs[1].address)
+                    .to(accs[0].address)
+                    .input(calldata.into());
+            },
+            |block, _txs| block.number(0xcafeu64),
+        )
+        .unwrap();
         let block: GethData = test_ctx.into();
         let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
         builder
@@ -859,21 +874,21 @@ mod tests {
     fn copy_circuit_valid_calldatacopy() {
         let builder = gen_calldatacopy_data();
         let block = block_convert(&builder.block, &builder.code_db);
-        assert!(test_copy_circuit(10, block).is_ok());
+        assert_eq!(test_copy_circuit(14, block), Ok(()));
     }
 
     #[test]
     fn copy_circuit_valid_codecopy() {
         let builder = gen_codecopy_data();
         let block = block_convert(&builder.block, &builder.code_db);
-        assert!(test_copy_circuit(10, block).is_ok());
+        assert_eq!(test_copy_circuit(10, block), Ok(()));
     }
 
     #[test]
     fn copy_circuit_valid_sha3() {
         let builder = gen_sha3_data();
         let block = block_convert(&builder.block, &builder.code_db);
-        assert!(test_copy_circuit(20, block).is_ok());
+        assert_eq!(test_copy_circuit(20, block), Ok(()));
     }
 
     fn perturb_tag(block: &mut bus_mapping::circuit_input_builder::Block, tag: CopyDataType) {
@@ -905,7 +920,7 @@ mod tests {
             false => perturb_tag(&mut builder.block, CopyDataType::TxCalldata),
         }
         let block = block_convert(&builder.block, &builder.code_db);
-        assert!(test_copy_circuit(10, block).is_err());
+        assert!(test_copy_circuit(14, block).is_err());
     }
 
     #[test]
