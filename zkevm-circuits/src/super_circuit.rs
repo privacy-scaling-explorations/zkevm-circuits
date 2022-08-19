@@ -56,7 +56,7 @@ use crate::evm_circuit::{table::FixedTableTag, EvmCircuit};
 use crate::keccak_circuit::keccak_packed_multi::KeccakPackedConfig as KeccakConfig;
 use crate::pi_circuit::{PiCircuit, PiCircuitConfig, PublicData};
 use crate::state_circuit::StateCircuitConfig;
-use crate::table::{BlockTable, BytecodeTable, CopyTable, MptTable, RwTable, TxTable};
+use crate::table::{BlockTable, BytecodeTable, CopyTable, ExpTable, MptTable, RwTable, TxTable};
 use crate::tx_circuit::{TxCircuit, TxCircuitConfig};
 use crate::util::Challenges;
 use crate::witness::{block_convert, Block, MptUpdates};
@@ -170,6 +170,8 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: u
         let block_table = BlockTable::construct(meta);
         let q_copy_table = meta.fixed_column();
         let copy_table = CopyTable::construct(meta, q_copy_table);
+        let q_exp_table = meta.complex_selector();
+        let exp_table = ExpTable::construct(meta, q_exp_table);
 
         let power_of_randomness = array::from_fn(|i| {
             Expression::Constant(F::from(MOCK_RANDOMNESS).pow(&[1 + i as u64, 0, 0, 0]))
@@ -187,6 +189,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: u
             &block_table,
             &copy_table,
             &keccak_table,
+            &exp_table,
         );
         let state_circuit =
             StateCircuitConfig::configure(meta, power_of_randomness.clone(), &rw_table, &mpt_table);

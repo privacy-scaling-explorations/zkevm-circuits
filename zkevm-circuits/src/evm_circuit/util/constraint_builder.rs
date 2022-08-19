@@ -515,6 +515,18 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         );
     }
 
+    pub(crate) fn pow2_lookup(&mut self, exponent: Expression<F>) -> Cell<F> {
+        let exponentiation = self.query_cell();
+        self.add_lookup(
+            "pow2 lookup",
+            Lookup::Fixed {
+                tag: FixedTableTag::Pow2.expr(),
+                values: [exponent, exponentiation.expr(), 0.expr()],
+            },
+        );
+        exponentiation
+    }
+
     // Opcode
 
     pub(crate) fn opcode_lookup(&mut self, opcode: Expression<F>, is_code: Expression<F>) {
@@ -1174,6 +1186,28 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
             },
         );
         self.rw_counter_offset = self.rw_counter_offset.clone() + self.condition_expr() * rwc_inc;
+    }
+
+    // Exponentiation Table
+
+    pub(crate) fn exp_table_lookup(
+        &mut self,
+        a_limbs: [Expression<F>; 4],
+        b_limbs: [Expression<F>; 4],
+        c_lo: Expression<F>,
+        c_hi: Expression<F>,
+        d_lo: Expression<F>,
+        d_hi: Expression<F>,
+    ) {
+        self.add_lookup(
+            "exponentiation lookup",
+            Lookup::ExpTable {
+                a_limbs,
+                b_limbs,
+                c_lo_hi: [c_lo, c_hi],
+                d_lo_hi: [d_lo, d_hi],
+            },
+        );
     }
 
     // Keccak Table
