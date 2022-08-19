@@ -170,8 +170,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: u
         let block_table = BlockTable::construct(meta);
         let q_copy_table = meta.fixed_column();
         let copy_table = CopyTable::construct(meta, q_copy_table);
-        let q_exp_table = meta.complex_selector();
-        let exp_table = ExpTable::construct(meta, q_exp_table);
+        let exp_table = ExpTable::construct(meta);
 
         let power_of_randomness = array::from_fn(|i| {
             Expression::Constant(F::from(MOCK_RANDOMNESS).pow(&[1 + i as u64, 0, 0, 0]))
