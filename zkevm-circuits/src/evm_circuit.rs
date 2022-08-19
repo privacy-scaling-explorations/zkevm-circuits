@@ -153,7 +153,7 @@ pub mod test {
         table::{BlockTable, BytecodeTable, CopyTable, KeccakTable, RwTable, TxTable},
         util::power_of_randomness_from_instance,
     };
-    use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId};
+    use bus_mapping::evm::OpcodeId;
     use eth_types::{Field, Word};
     use halo2_proofs::{
         circuit::{Layouter, SimpleFloorPlanner},
@@ -309,17 +309,7 @@ pub mod test {
                 .load(&mut layouter, &self.block, self.block.randomness)?;
             config.keccak_table.load(
                 &mut layouter,
-                self.block
-                    .copy_events
-                    .iter()
-                    .filter(|ce| ce.dst_type == CopyDataType::RlcAcc)
-                    .map(|ce| {
-                        ce.steps
-                            .iter()
-                            .filter(|s| s.rw.is_write())
-                            .map(|s| s.value)
-                            .collect::<Vec<u8>>()
-                    }),
+                &self.block.sha3_inputs,
                 self.block.randomness,
             )?;
             config

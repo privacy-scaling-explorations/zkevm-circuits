@@ -1,12 +1,18 @@
 //! Types needed for generating Ethereum traces
 
 use crate::{
-    AccessList, Address, Block, Bytes, Error, GethExecTrace, Hash, ToBigEndian, Word, U64,
+    sign_types::{biguint_to_32bytes_le, ct_option_ok_or, recover_pk, SignData, SECP256K1_Q},
+    AccessList, Address, Block, Bytes, Error, GethExecTrace, Hash, ToBigEndian, ToLittleEndian,
+    Word, U64,
 };
 use ethers_core::types::TransactionRequest;
 use ethers_core::utils::keccak256;
 use ethers_signers::{LocalWallet, Signer};
+use ff::PrimeField;
+use num::Integer;
+use num_bigint::BigUint;
 use serde::{Serialize, Serializer};
+use sha3::{Digest, Keccak256};
 use std::collections::HashMap;
 
 /// Definition of all of the data related to an account.
@@ -165,8 +171,8 @@ impl From<&crate::Transaction> for Transaction {
     }
 }
 
-impl From<Transaction> for ethers_core::types::TransactionRequest {
-    fn from(tx: Transaction) -> ethers_core::types::TransactionRequest {
+impl From<&Transaction> for TransactionRequest {
+    fn from(tx: &Transaction) -> TransactionRequest {
         TransactionRequest::new()
             .from(tx.from)
             .to(tx.to.unwrap())
@@ -175,6 +181,45 @@ impl From<Transaction> for ethers_core::types::TransactionRequest {
             .data(tx.call_data.clone())
             .gas(tx.gas_limit)
             .gas_price(tx.gas_price)
+    }
+}
+
+impl Transaction {
+    /// Return the SignData associated with this Transaction.
+    pub fn sign_data(&self, chain_id: u64) -> Result<SignData, Error> {
+        let sig_r_le = self.r.to_le_bytes();
+        let sig_s_le = self.s.to_le_bytes();
+        let sig_r = ct_option_ok_or(
+            secp256k1::Fq::from_repr(sig_r_le),
+            Error::Signature(libsecp256k1::Error::InvalidSignature),
+        )?;
+        let sig_s = ct_option_ok_or(
+            secp256k1::Fq::from_repr(sig_s_le),
+            Error::Signature(libsecp256k1::Error::InvalidSignature),
+        )?;
+        // msg = rlp([nonce, gasPrice, gas, to, value, data, sig_v, r, s])
+        let req: TransactionRequest = self.into();
+        let msg = req.rlp(chain_id);
+        let msg_hash: [u8; 32] = Keccak256::digest(&msg)
+            .as_slice()
+            .to_vec()
+            .try_into()
+            .expect("hash length isn't 32 bytes");
+        let v = (self.v - 35 - chain_id * 2) as u8;
+        let pk = recover_pk(v, &self.r, &self.s, &msg_hash)?;
+        // msg_hash = msg_hash % q
+        let msg_hash = BigUint::from_bytes_be(msg_hash.as_slice());
+        let msg_hash = msg_hash.mod_floor(&*SECP256K1_Q);
+        let msg_hash_le = biguint_to_32bytes_le(msg_hash);
+        let msg_hash = ct_option_ok_or(
+            secp256k1::Fq::from_repr(msg_hash_le),
+            libsecp256k1::Error::InvalidMessage,
+        )?;
+        Ok(SignData {
+            signature: (sig_r, sig_s),
+            pk,
+            msg_hash,
+        })
     }
 }
 
@@ -200,14 +245,8 @@ impl GethData {
         for tx in self.eth_block.transactions.iter_mut() {
             let wallet = wallets.get(&tx.from).unwrap();
             assert_eq!(Word::from(wallet.chain_id()), self.chain_id);
-            let req = TransactionRequest::new()
-                .from(tx.from)
-                .to(tx.to.unwrap())
-                .nonce(tx.nonce)
-                .value(tx.value)
-                .data(tx.input.clone())
-                .gas(tx.gas)
-                .gas_price(tx.gas_price.unwrap());
+            let geth_tx: Transaction = (&*tx).into();
+            let req: TransactionRequest = (&geth_tx).into();
             let tx_rlp = req.rlp(self.chain_id.as_u64());
             let sighash = keccak256(tx_rlp.as_ref()).into();
             let sig = wallet.sign_hash(sighash, true);

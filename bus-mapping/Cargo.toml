@@ -22,6 +22,15 @@ serde = {version = "1.0.130", features = ["derive"] }
 serde_json = "1.0.66"
 strum = "0.24"
 strum_macros = "0.24"
+ff = "0.11"
+num = "0.4"
+group = "0.11"
+num-bigint = { version = "0.4" }
+rlp = "0.5"
+libsecp256k1 = "0.7"
+subtle = "2.4"
+sha3 = "0.10"
+secp256k1 = { git = "https://github.com/privacy-scaling-explorations/halo2wrong", tag = "v2022_06_03", features = ["kzg"] }
 
 [dev-dependencies]
 hex = "0.4.3"
