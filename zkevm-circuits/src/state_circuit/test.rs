@@ -14,7 +14,6 @@ use eth_types::{
 use gadgets::binary_number::AsBits;
 use halo2_proofs::poly::commitment::Params;
 use halo2_proofs::{
-    arithmetic::BaseExt,
     dev::{MockProver, VerifyFailure},
     pairing::bn256::{Bn256, Fr, G1Affine},
     plonk::{keygen_vk, Advice, Circuit, Column, ConstraintSystem},
@@ -91,7 +90,7 @@ fn test_state_circuit_ok(
         ..Default::default()
     });
 
-    let randomness = Fr::rand();
+    let randomness = Fr::from(0xcafeu64);
     let circuit = StateCircuit::<Fr>::new(randomness, rw_map, N_ROWS);
     let power_of_randomness = circuit.instance();
 
@@ -109,7 +108,7 @@ fn degree() {
 
 #[test]
 fn verifying_key_independent_of_rw_length() {
-    let randomness = Fr::rand();
+    let randomness = Fr::from(0xcafeu64);
     let degree = 17;
     let params = Params::<G1Affine>::unsafe_setup::<Bn256>(degree);
 
@@ -981,7 +980,7 @@ fn bad_initial_tx_receipt_value() {
 }
 
 fn prover(rows: Vec<Rw>, overrides: HashMap<(AdviceColumn, isize), Fr>) -> MockProver<Fr> {
-    let randomness = Fr::rand();
+    let randomness = Fr::from(0xcafeu64);
     let circuit = StateCircuit::<Fr> {
         randomness,
         rows,
