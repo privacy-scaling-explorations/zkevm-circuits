@@ -10,7 +10,7 @@ mod transaction;
 pub(crate) use account::MockAccount;
 pub(crate) use block::MockBlock;
 pub use test_ctx::TestContext;
-pub(crate) use transaction::MockTransaction;
+pub use transaction::{AddrOrWallet, MockTransaction};
 
 lazy_static! {
     /// Mock coinbase value
