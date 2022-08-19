@@ -5,7 +5,9 @@ use halo2_proofs::{
 };
 use keccak256::plain::Keccak;
 use pairing::arithmetic::FieldExt;
-use std::convert::TryInto;
+
+use std::convert::{TryInto, TryFrom};
+use num_enum::TryFromPrimitive;
 
 use crate::{
     account_leaf_key::AccountLeafKeyConfig,
@@ -209,6 +211,113 @@ pub(crate) struct DenoteCols {
     pub(crate) sel2: Column<Advice>,
     pub(crate) is_node_hashed_s: Column<Advice>,
     pub(crate) is_node_hashed_c: Column<Advice>,
+}
+
+#[derive(Eq, PartialEq, TryFromPrimitive)]
+#[repr(u8)]
+pub enum MptWitnessRowType {
+    InitBranch = 0,
+    BranchChild = 1,
+    StorageLeafSKey = 2,
+    StorageLeafCKey = 3,
+    HashToBeComputed = 5,
+    AccountLeafKeyS = 6,
+    AccountLeafKeyC = 4,
+    AccountLeafNonceBalanceS = 7,
+    AccountLeafNonceBalanceC = 8,
+    AccountLeafRootCodehashS = 9,
+    AccountLeafNeighbouringLeaf = 10,
+    AccountLeafRootCodehashC = 11,
+    StorageLeafSValue = 13,
+    StorageLeafCValue = 14,
+    NeighbouringStorageLeaf = 15, 
+    ExtensionNodeS = 16,
+    ExtensionNodeC = 17,
+    AccountNonExisting = 18
+}
+
+pub struct MptWitnessRow(pub Vec<u8>);
+impl MptWitnessRow {
+    pub fn get_type(&self) -> MptWitnessRowType {
+        MptWitnessRowType::try_from(self.get_byte_rev(1)).unwrap()
+    }
+
+    fn get_byte_rev(&self, rev_index: usize) -> u8 {
+        self.0[self.0.len() - rev_index]
+    }
+
+    fn get_byte(&self, index: usize) -> u8 {
+        self.0[index]
+    }
+
+    fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn not_first_level(&self) -> u8 {
+        self.get_byte_rev(NOT_FIRST_LEVEL_POS)
+    }
+
+    pub fn is_storage_mod(&self) -> u8 {
+        self.get_byte_rev(IS_STORAGE_MOD_POS)
+    }
+
+    pub fn s_root_bytes(&self) -> &[u8] { 
+        &self.0[self.0.len()
+            - 4 * HASH_WIDTH
+            - COUNTER_WITNESS_LEN
+            - IS_NON_EXISTING_ACCOUNT_POS
+            .. self.0.len() - 4 * HASH_WIDTH
+                - COUNTER_WITNESS_LEN
+                - IS_NON_EXISTING_ACCOUNT_POS
+                + HASH_WIDTH]
+    }
+
+    pub fn c_root_bytes(&self) -> &[u8] { 
+        &self.0[self.0.len()
+            - 3 * HASH_WIDTH
+            - COUNTER_WITNESS_LEN
+            - IS_NON_EXISTING_ACCOUNT_POS
+            .. self.0.len() - 3 * HASH_WIDTH
+                - COUNTER_WITNESS_LEN
+                - IS_NON_EXISTING_ACCOUNT_POS
+                + HASH_WIDTH]
+    }
+
+    pub fn address_bytes(&self) -> &[u8] { 
+        &self.0[self.0.len()
+            - 2 * HASH_WIDTH
+            - COUNTER_WITNESS_LEN
+            - IS_NON_EXISTING_ACCOUNT_POS
+            .. self.0.len() - 2 * HASH_WIDTH
+                - COUNTER_WITNESS_LEN
+                - IS_NON_EXISTING_ACCOUNT_POS
+                + HASH_WIDTH]
+    }
+
+    pub fn counter_bytes(&self) -> &[u8] { 
+        &self.0[self.0.len()
+            - HASH_WIDTH
+            - COUNTER_WITNESS_LEN
+            - IS_NON_EXISTING_ACCOUNT_POS
+            .. self.0.len() - HASH_WIDTH
+                - COUNTER_WITNESS_LEN
+                - IS_NON_EXISTING_ACCOUNT_POS
+                + COUNTER_WITNESS_LEN]
+    }
+
+    pub fn s_hash_bytes(&self) -> &[u8] { 
+        &self.0[S_START..S_START + HASH_WIDTH]
+    } 
+
+    pub fn c_hash_bytes(&self) -> &[u8] { 
+        &self.0[C_START..C_START + HASH_WIDTH]
+    }
+
+    pub fn main(&self) -> &[u8] { 
+        &self.0[0..self.0.len() - 1]
+    }
+
 }
 
 #[derive(Clone, Debug)]
@@ -1521,7 +1630,7 @@ impl<F: FieldExt> MPTConfig<F> {
     }
 
     // TODO: split assign
-    pub(crate) fn assign(&self, mut layouter: impl Layouter<F>, witness: &[Vec<u8>]) {
+    pub(crate) fn assign(&self, mut layouter: impl Layouter<F>, witness: &[MptWitnessRow]) {
         layouter
             .assign_region(
                 || "MPT",
@@ -1530,17 +1639,16 @@ impl<F: FieldExt> MPTConfig<F> {
                     let mut pv = ProofVariables::new();
 
                     // filter out rows that are just to be hashed
-                    for (ind, row) in witness.iter().filter(|r| r[r.len() - 1] != 5).enumerate() {
+                    for (ind, row) in witness.iter().filter(|r| r.get_type() != MptWitnessRowType::HashToBeComputed).enumerate() {
                         if offset > 0 {
                             let row_prev = &witness[offset - 1];
-                            let not_first_level_prev =
-                                row_prev[row_prev.len() - NOT_FIRST_LEVEL_POS];
-                            let not_first_level_cur = row[row.len() - NOT_FIRST_LEVEL_POS];
+                            let not_first_level_prev = row_prev.get_byte_rev(NOT_FIRST_LEVEL_POS);
+                            let not_first_level_cur = row.get_byte_rev(NOT_FIRST_LEVEL_POS);
                             if not_first_level_cur == 0 && not_first_level_prev == 1 {
                                 pv = ProofVariables::new();
                             }
                         }
-                        if row[row.len() - 1] == 6 {
+                        if row.get_type() == MptWitnessRowType::AccountLeafKeyS {
                             // account leaf key
                             pv.before_account_leaf = false;
                         }
@@ -1557,22 +1665,13 @@ impl<F: FieldExt> MPTConfig<F> {
                             || "not first level",
                             self.not_first_level,
                             offset,
-                            || Ok(F::from(row[row.len() - NOT_FIRST_LEVEL_POS] as u64)),
+                            || Ok(F::from(row.get_byte_rev(NOT_FIRST_LEVEL_POS) as u64)),
                         )?;
 
                         let l = row.len();
-                        let s_root_rlc = bytes_into_rlc(
-                            &row[l - 4 * HASH_WIDTH - COUNTER_WITNESS_LEN - IS_NON_EXISTING_ACCOUNT_POS
-                                ..l - 4 * HASH_WIDTH - COUNTER_WITNESS_LEN - IS_NON_EXISTING_ACCOUNT_POS
-                                    + HASH_WIDTH],
-                            self.acc_r,
-                        );
-                        let c_root_rlc = bytes_into_rlc(
-                            &row[l - 3 * HASH_WIDTH - COUNTER_WITNESS_LEN - IS_NON_EXISTING_ACCOUNT_POS
-                                ..l - 3 * HASH_WIDTH - COUNTER_WITNESS_LEN - IS_NON_EXISTING_ACCOUNT_POS
-                                    + HASH_WIDTH],
-                            self.acc_r,
-                        );
+                        let s_root_rlc = bytes_into_rlc(row.s_root_bytes(), self.acc_r,);
+                        let c_root_rlc = bytes_into_rlc(row.c_root_bytes(), self.acc_r,);
+
                         region.assign_advice(
                             || "inter start root",
                             self.inter_start_root,
@@ -1597,14 +1696,8 @@ impl<F: FieldExt> MPTConfig<F> {
                             // address_rlc can be set only in account leaf row - this is to
                             // prevent omitting account proof (and having only storage proof
                             // with the appropriate address_rlc)
-                            let address_rlc = bytes_into_rlc(
-                                &row[l - 2 * HASH_WIDTH - COUNTER_WITNESS_LEN - IS_NON_EXISTING_ACCOUNT_POS
-                                    ..l - 2 * HASH_WIDTH
-                                        - COUNTER_WITNESS_LEN
-                                        - IS_NON_EXISTING_ACCOUNT_POS
-                                        + HASH_WIDTH],
-                                self.acc_r,
-                            );
+                            let address_rlc = bytes_into_rlc(row.address_bytes(), self.acc_r,);
+
                             region.assign_advice(
                                 || "address RLC",
                                 self.address_rlc,
@@ -1612,11 +1705,9 @@ impl<F: FieldExt> MPTConfig<F> {
                                 || Ok(address_rlc),
                             )?;
                         }
-
+                        
                         let counter_u32: u32 = u32::from_be_bytes(
-                            row[l - HASH_WIDTH - COUNTER_WITNESS_LEN - IS_NON_EXISTING_ACCOUNT_POS
-                                ..l - HASH_WIDTH - COUNTER_WITNESS_LEN - IS_NON_EXISTING_ACCOUNT_POS
-                                    + COUNTER_WITNESS_LEN]
+                                row.counter_bytes()
                                 .try_into()
                                 .expect("slice of incorrect length"),
                         );
@@ -1631,65 +1722,57 @@ impl<F: FieldExt> MPTConfig<F> {
                             || "is_storage_mod",
                             self.proof_type.is_storage_mod,
                             offset,
-                            || Ok(F::from(row[row.len() - IS_STORAGE_MOD_POS] as u64)),
+                            || Ok(F::from(row.get_byte_rev(IS_STORAGE_MOD_POS) as u64)),
                         )?;
                         region.assign_advice(
                             || "is_nonce_mod",
                             self.proof_type.is_nonce_mod,
                             offset,
-                            || Ok(F::from(row[row.len() - IS_NONCE_MOD_POS] as u64)),
+                            || Ok(F::from(row.get_byte_rev(IS_NONCE_MOD_POS) as u64)),
                         )?;
                         region.assign_advice(
                             || "is_balance_mod",
                             self.proof_type.is_balance_mod,
                             offset,
-                            || Ok(F::from(row[row.len() - IS_BALANCE_MOD_POS] as u64)),
+                            || Ok(F::from(row.get_byte_rev(IS_BALANCE_MOD_POS) as u64)),
                         )?;
                         region.assign_advice(
                             || "is_account_delete_mod",
                             self.proof_type.is_account_delete_mod,
                             offset,
-                            || Ok(F::from(row[row.len() - IS_ACCOUNT_DELETE_MOD_POS] as u64)),
+                            || Ok(F::from(row.get_byte_rev(IS_ACCOUNT_DELETE_MOD_POS) as u64)),
                         )?;
                         region.assign_advice(
                             || "is_non_existing_account",
                             self.proof_type.is_non_existing_account_proof,
                             offset,
-                            || Ok(F::from(row[row.len() - IS_NON_EXISTING_ACCOUNT_POS] as u64)),
+                            || Ok(F::from(row.get_byte_rev(IS_NON_EXISTING_ACCOUNT_POS) as u64)),
                         )?;
 
-                        if row[row.len() - 1] == 0 {
+                        if row.get_type() == MptWitnessRowType::InitBranch {
                             // branch init
-                            pv.modified_node = row[BRANCH_0_KEY_POS];
+                            pv.modified_node = row.get_byte(BRANCH_0_KEY_POS);
                             pv.node_index = 0;
-                            pv.drifted_pos = row[DRIFTED_POS];
+                            pv.drifted_pos = row.get_byte(DRIFTED_POS);
 
                             // Get the child that is being changed and convert it to words to enable
                             // lookups:
-                            let mut s_hash = witness[ind + 1 + pv.modified_node as usize]
-                                [S_START..S_START + HASH_WIDTH]
-                                .to_vec();
-                            let mut c_hash = witness[ind + 1 + pv.modified_node as usize]
-                                [C_START..C_START + HASH_WIDTH]
-                                .to_vec();
+                            let mut s_hash = witness[ind + 1 + pv.modified_node as usize].s_hash_bytes().to_vec();
+                            let mut c_hash = witness[ind + 1 + pv.modified_node as usize].c_hash_bytes().to_vec();
                             pv.s_mod_node_hash_rlc = bytes_into_rlc(&s_hash, self.acc_r);
                             pv.c_mod_node_hash_rlc = bytes_into_rlc(&c_hash, self.acc_r);
 
-                            if row[IS_BRANCH_S_PLACEHOLDER_POS] == 1 {
+                            if row.get_byte(IS_BRANCH_S_PLACEHOLDER_POS) == 1 {
                                 // We put hash of a node that moved down to the added branch.
                                 // This is needed to check the hash of leaf_in_added_branch.
-                                s_hash = witness[ind + 1 + pv.drifted_pos as usize]
-                                    [S_START..S_START + HASH_WIDTH]
-                                    .to_vec();
+                                s_hash = witness[ind + 1 + pv.drifted_pos as usize].s_hash_bytes().to_vec();
                                 pv.s_mod_node_hash_rlc = bytes_into_rlc(&s_hash, self.acc_r);
                                 pv.is_branch_s_placeholder = true
                             } else {
                                 pv.is_branch_s_placeholder = false
                             }
-                            if row[IS_BRANCH_C_PLACEHOLDER_POS] == 1 {
-                                c_hash = witness[ind + 1 + pv.drifted_pos as usize]
-                                    [C_START..C_START + HASH_WIDTH]
-                                    .to_vec();
+                            if row.get_byte(IS_BRANCH_C_PLACEHOLDER_POS) == 1 {
+                                c_hash = witness[ind + 1 + pv.drifted_pos as usize].c_hash_bytes().to_vec();
                                 pv.c_mod_node_hash_rlc = bytes_into_rlc(&c_hash, self.acc_r);
                                 pv.is_branch_c_placeholder = true
                             } else {
@@ -1699,8 +1782,8 @@ impl<F: FieldExt> MPTConfig<F> {
                             // is needed just to make some other constraints (s_mod_node_hash_rlc
                             // and c_mod_node_hash_rlc correspond to the proper node) easier to
                             // write.
-                            if row[IS_BRANCH_S_PLACEHOLDER_POS] == 0
-                                && row[IS_BRANCH_C_PLACEHOLDER_POS] == 0
+                            if row.get_byte(IS_BRANCH_S_PLACEHOLDER_POS) == 0
+                                && row.get_byte(IS_BRANCH_C_PLACEHOLDER_POS) == 0
                             {
                                 pv.drifted_pos = pv.modified_node
                             }
@@ -1714,7 +1797,7 @@ impl<F: FieldExt> MPTConfig<F> {
 
                             self.assign_branch_init(
                                 &mut region,
-                                &row[0..row.len() - 1].to_vec(),
+                                &row.main().to_vec(),
                                 offset,
                             )?;
 
@@ -1727,46 +1810,46 @@ impl<F: FieldExt> MPTConfig<F> {
                             // Branch (length 340) with three bytes of RLP meta data
                             // [249,1,81,128,16,...
 
-                            pv.acc_s = F::from(row[BRANCH_0_S_START] as u64);
+                            pv.acc_s = F::from(row.get_byte(BRANCH_0_S_START) as u64);
                             pv.acc_mult_s = self.acc_r;
 
-                            if row[BRANCH_0_S_START] == 249 {
-                                pv.acc_s += F::from(row[BRANCH_0_S_START + 1] as u64) * pv.acc_mult_s; 
+                            if row.get_byte(BRANCH_0_S_START) == 249 {
+                                pv.acc_s += F::from(row.get_byte(BRANCH_0_S_START + 1) as u64) * pv.acc_mult_s; 
                                 pv.acc_mult_s *= self.acc_r;
                                 pv.acc_s +=
-                                    F::from(row[BRANCH_0_S_START + 2] as u64) * pv.acc_mult_s;
+                                    F::from(row.get_byte(BRANCH_0_S_START + 2) as u64) * pv.acc_mult_s;
                                 pv.acc_mult_s *= self.acc_r;
 
-                                pv.rlp_len_rem_s = row[BRANCH_0_S_START + 1] as i32 * 256
-                                    + row[BRANCH_0_S_START + 2] as i32;
-                            } else if row[BRANCH_0_S_START] == 248 {
-                                pv.acc_s += F::from(row[BRANCH_0_S_START + 1] as u64) * pv.acc_mult_s; 
+                                pv.rlp_len_rem_s = row.get_byte(BRANCH_0_S_START + 1) as i32 * 256
+                                    + row.get_byte(BRANCH_0_S_START + 2) as i32;
+                            } else if row.get_byte(BRANCH_0_S_START) == 248 {
+                                pv.acc_s += F::from(row.get_byte(BRANCH_0_S_START + 1) as u64) * pv.acc_mult_s; 
                                 pv.acc_mult_s *= self.acc_r;
 
-                                pv.rlp_len_rem_s = row[BRANCH_0_S_START + 1] as i32;
+                                pv.rlp_len_rem_s = row.get_byte(BRANCH_0_S_START + 1) as i32;
                             } else {
-                                pv.rlp_len_rem_s = row[BRANCH_0_S_START] as i32 - 192;
+                                pv.rlp_len_rem_s = row.get_byte(BRANCH_0_S_START) as i32 - 192;
                             }
 
-                            pv.acc_c = F::from(row[BRANCH_0_C_START] as u64);
+                            pv.acc_c = F::from(row.get_byte(BRANCH_0_C_START) as u64);
                             pv.acc_mult_c = self.acc_r;
 
-                            if row[BRANCH_0_C_START] == 249 {
-                                pv.acc_c += F::from(row[BRANCH_0_C_START + 1] as u64) * pv.acc_mult_c;
+                            if row.get_byte(BRANCH_0_C_START) == 249 {
+                                pv.acc_c += F::from(row.get_byte(BRANCH_0_C_START + 1) as u64) * pv.acc_mult_c;
                                 pv.acc_mult_c *= self.acc_r;
                                 pv.acc_c +=
-                                    F::from(row[BRANCH_0_C_START + 2] as u64) * pv.acc_mult_c;
+                                    F::from(row.get_byte(BRANCH_0_C_START + 2) as u64) * pv.acc_mult_c;
                                 pv.acc_mult_c *= self.acc_r;
 
-                                pv.rlp_len_rem_c = row[BRANCH_0_C_START + 1] as i32 * 256
-                                    + row[BRANCH_0_C_START + 2] as i32;
-                            } else if row[BRANCH_0_C_START] == 248 {
-                                pv.acc_c += F::from(row[BRANCH_0_C_START + 1] as u64) * pv.acc_mult_c;
+                                pv.rlp_len_rem_c = row.get_byte(BRANCH_0_C_START + 1) as i32 * 256
+                                    + row.get_byte(BRANCH_0_C_START + 2) as i32;
+                            } else if row.get_byte(BRANCH_0_C_START) == 248 {
+                                pv.acc_c += F::from(row.get_byte(BRANCH_0_C_START + 1) as u64) * pv.acc_mult_c;
                                 pv.acc_mult_c *= self.acc_r;
 
-                                pv.rlp_len_rem_c = row[BRANCH_0_C_START + 1] as i32;
+                                pv.rlp_len_rem_c = row.get_byte(BRANCH_0_C_START + 1) as i32;
                             } else {
-                                pv.rlp_len_rem_c = row[BRANCH_0_C_START] as i32 - 192;
+                                pv.rlp_len_rem_c = row.get_byte(BRANCH_0_C_START) as i32 - 192;
                             }
 
                             self.assign_acc(
@@ -1778,26 +1861,26 @@ impl<F: FieldExt> MPTConfig<F> {
                                 offset,
                             )?;
 
-                            pv.is_even = witness[offset][IS_EXT_LONG_EVEN_C16_POS]
-                                + witness[offset][IS_EXT_LONG_EVEN_C1_POS]
+                            pv.is_even = row.get_byte(IS_EXT_LONG_EVEN_C16_POS)
+                                + row.get_byte(IS_EXT_LONG_EVEN_C1_POS)
                                 == 1;
-                            pv.is_odd = witness[offset][IS_EXT_LONG_ODD_C16_POS]
-                                + witness[offset][IS_EXT_LONG_ODD_C1_POS]
-                                + witness[offset][IS_EXT_SHORT_C16_POS]
-                                + witness[offset][IS_EXT_SHORT_C1_POS]
+                            pv.is_odd = row.get_byte(IS_EXT_LONG_ODD_C16_POS)
+                                + row.get_byte(IS_EXT_LONG_ODD_C1_POS)
+                                + row.get_byte(IS_EXT_SHORT_C16_POS)
+                                + row.get_byte(IS_EXT_SHORT_C1_POS)
                                 == 1;
-                            pv.is_short = witness[offset][IS_EXT_SHORT_C16_POS]
-                                + witness[offset][IS_EXT_SHORT_C1_POS]
+                            pv.is_short = row.get_byte(IS_EXT_SHORT_C16_POS)
+                                + row.get_byte(IS_EXT_SHORT_C1_POS)
                                 == 1;
-                            pv.is_long = witness[offset][IS_EXT_LONG_EVEN_C16_POS]
-                                + witness[offset][IS_EXT_LONG_EVEN_C1_POS]
-                                + witness[offset][IS_EXT_LONG_ODD_C16_POS]
-                                + witness[offset][IS_EXT_LONG_ODD_C1_POS]
+                            pv.is_long = row.get_byte(IS_EXT_LONG_EVEN_C16_POS)
+                                + row.get_byte(IS_EXT_LONG_EVEN_C1_POS)
+                                + row.get_byte(IS_EXT_LONG_ODD_C16_POS)
+                                + row.get_byte(IS_EXT_LONG_ODD_C1_POS)
                                 == 1;
                             pv.is_extension_node = pv.is_even == true || pv.is_odd == true;
 
                             offset += 1;
-                        } else if row[row.len() - 1] == 1 {
+                        } else if row.get_type() == MptWitnessRowType::BranchChild {
                             // branch child
                             region.assign_fixed(
                                 || "q_enable",
@@ -1809,26 +1892,26 @@ impl<F: FieldExt> MPTConfig<F> {
                             let mut node_mult_diff_s = F::one();
                             let mut node_mult_diff_c = F::one();
                             
-                            if row[S_RLP_START + 1] == 160 {
+                            if row.get_byte(S_RLP_START + 1) == 160 {
                                 pv.rlp_len_rem_s -= 33;
-                            } else if row[S_RLP_START + 1] == 0 && row[S_START] > 192 {
-                                let len = row[S_START] as i32 - 192;
+                            } else if row.get_byte(S_RLP_START + 1) == 0 && row.get_byte(S_START) > 192 {
+                                let len = row.get_byte(S_START) as i32 - 192;
                                 pv.rlp_len_rem_s -= len + 1;
                                 for _ in 0..len {
                                     node_mult_diff_s *= self.acc_r;
                                 }
-                            } else if row[S_RLP_START + 1] == 0 {
+                            } else if row.get_byte(S_RLP_START + 1) == 0 {
                                 pv.rlp_len_rem_s -= 1;
                             }
-                            if row[C_RLP_START + 1] == 160 {
+                            if row.get_byte(C_RLP_START + 1) == 160 {
                                 pv.rlp_len_rem_c -= 33;
-                            } else if row[C_RLP_START + 1] == 0 && row[C_START] > 192 {
-                                let len = row[C_START] as i32 - 192;
+                            } else if row.get_byte(C_RLP_START + 1) == 0 && row.get_byte(C_START) > 192 {
+                                let len = row.get_byte(C_START) as i32 - 192;
                                 pv.rlp_len_rem_c -= len + 1;
                                 for _ in 0..len {
                                     node_mult_diff_c *= self.acc_r;
                                 }
-                            } else if row[C_RLP_START + 1] == 0 {
+                            } else if row.get_byte(C_RLP_START + 1) == 0 {
                                 pv.rlp_len_rem_c -= 1;
                             }
 
@@ -1862,7 +1945,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                     // witness[offset + 16]
                                     let ext_row = &witness[ind + 16];
                                     let mut key_len_pos = 1;
-                                    if ext_row[0] == 248 {
+                                    if ext_row.get_byte(0) == 248 {
                                         key_len_pos = 2;
                                     }
 
@@ -1870,9 +1953,9 @@ impl<F: FieldExt> MPTConfig<F> {
                                         // Note: it can't be is_even = 1 && is_short = 1.
                                         if pv.is_even && pv.is_long {
                                             // extension node part:
-                                            let key_len = ext_row[key_len_pos] as usize - 128 - 1; // -1 because the first byte is 0 (is_even)
+                                            let key_len = ext_row.get_byte(key_len_pos) as usize - 128 - 1; // -1 because the first byte is 0 (is_even)
                                             self.compute_acc_and_mult(
-                                                ext_row,
+                                                &ext_row.0,
                                                 &mut pv.extension_node_rlc,
                                                 &mut pv.key_rlc_mult,
                                                 key_len_pos + 2, /* first position behind key_len_pos
@@ -1894,21 +1977,21 @@ impl<F: FieldExt> MPTConfig<F> {
                                         } else if pv.is_odd && pv.is_long {
                                             // extension node part:
                                             pv.extension_node_rlc +=
-                                                F::from((ext_row[key_len_pos + 1] - 16) as u64)
+                                                F::from((ext_row.get_byte(key_len_pos + 1) - 16) as u64)
                                                     * F::from(16)
                                                     * pv.key_rlc_mult;
 
                                             let ext_row_c = &witness[ind + 17];
-                                            let key_len = ext_row[key_len_pos] as usize - 128;
+                                            let key_len = ext_row.get_byte(key_len_pos) as usize - 128;
 
                                             pv.mult_diff = F::one();
                                             for k in 0..key_len-1 {
-                                                let second_nibble = ext_row_c[S_START + k];
+                                                let second_nibble = ext_row_c.get_byte(S_START + k);
                                                 let first_nibble =
-                                                    (ext_row[key_len_pos + 2 + k] - second_nibble) / 16;
+                                                    (ext_row.get_byte(key_len_pos + 2 + k) - second_nibble) / 16;
                                                 assert_eq!(
                                                     first_nibble * 16 + second_nibble,
-                                                    ext_row[key_len_pos + 2 + k],
+                                                    ext_row.get_byte(key_len_pos + 2 + k),
                                                 );
                                                 pv.extension_node_rlc +=
                                                     F::from(first_nibble as u64) * pv.key_rlc_mult;
@@ -1929,7 +2012,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                             pv.key_rlc_mult *= self.acc_r;
                                         } else if pv.is_short {
                                             pv.extension_node_rlc +=
-                                                F::from((ext_row[1] - 16) as u64)
+                                                F::from((ext_row.get_byte(1) - 16) as u64)
                                                     * F::from(16)
                                                     * pv.key_rlc_mult;
                                             pv.key_rlc = pv.extension_node_rlc;
@@ -1943,16 +2026,16 @@ impl<F: FieldExt> MPTConfig<F> {
                                         if pv.is_even && pv.is_long {
                                             // extension node part:
                                             let ext_row_c = &witness[ind + 17];
-                                            let key_len = ext_row[key_len_pos] as usize - 128 - 1; // -1 because the first byte is 0 (is_even)
+                                            let key_len = ext_row.get_byte(key_len_pos) as usize - 128 - 1; // -1 because the first byte is 0 (is_even)
 
                                             pv.mult_diff = F::one();
                                             for k in 0..key_len {
-                                                let second_nibble = ext_row_c[S_START + k];
+                                                let second_nibble = ext_row_c.get_byte(S_START + k);
                                                 let first_nibble =
-                                                    (ext_row[key_len_pos + 2 + k] - second_nibble) / 16;
+                                                    (ext_row.get_byte(key_len_pos + 2 + k) - second_nibble) / 16;
                                                 assert_eq!(
                                                     first_nibble * 16 + second_nibble,
-                                                    ext_row[key_len_pos + 2 + k],
+                                                    ext_row.get_byte(key_len_pos + 2 + k),
                                                 );
                                                 pv.extension_node_rlc +=
                                                     F::from(first_nibble as u64) * pv.key_rlc_mult;
@@ -1973,14 +2056,14 @@ impl<F: FieldExt> MPTConfig<F> {
                                             pv.key_rlc_sel = !pv.key_rlc_sel;
                                         } else if pv.is_odd && pv.is_long {
                                             pv.extension_node_rlc +=
-                                                F::from((ext_row[key_len_pos + 1] - 16) as u64) * pv.key_rlc_mult;
+                                                F::from((ext_row.get_byte(key_len_pos + 1) - 16) as u64) * pv.key_rlc_mult;
 
                                             pv.key_rlc_mult *= self.acc_r;
 
-                                            let key_len = ext_row[key_len_pos] as usize - 128;
+                                            let key_len = ext_row.get_byte(key_len_pos) as usize - 128;
 
                                             self.compute_acc_and_mult(
-                                                ext_row,
+                                                &ext_row.0,
                                                 &mut pv.extension_node_rlc,
                                                 &mut pv.key_rlc_mult,
                                                 key_len_pos + 2, /* the first position after key_len_pos
@@ -2001,7 +2084,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                             // key_rlc_mult stays the same
                                         } else if pv.is_short {
                                             pv.extension_node_rlc +=
-                                                F::from((ext_row[1] - 16) as u64) * pv.key_rlc_mult;
+                                                F::from((ext_row.get_byte(1) - 16) as u64) * pv.key_rlc_mult;
 
                                             pv.key_rlc = pv.extension_node_rlc;
 
@@ -2033,7 +2116,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                     pv.key_rlc,
                                     pv.key_rlc_mult,
                                     pv.mult_diff,
-                                    &row[0..row.len() - 1].to_vec(),
+                                    row.main(),
                                     pv.s_mod_node_hash_rlc,
                                     pv.c_mod_node_hash_rlc,
                                     pv.drifted_pos,
@@ -2052,7 +2135,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                     pv.key_rlc,
                                     pv.key_rlc_mult,
                                     pv.mult_diff,
-                                    &row[0..row.len() - 1].to_vec(),
+                                    row.main(),
                                     pv.s_mod_node_hash_rlc,
                                     pv.c_mod_node_hash_rlc,
                                     pv.drifted_pos,
@@ -2109,24 +2192,24 @@ impl<F: FieldExt> MPTConfig<F> {
                                  branch_mult: &mut F,
                                  rlp_start: usize,
                                  start: usize| {
-                                    if row[rlp_start + 1] == 0 && row[start] == 128 {
+                                    if row.get_byte(rlp_start + 1) == 0 && row.get_byte(start) == 128 {
                                         *branch_acc += c128 * *branch_mult;
                                         *branch_mult *= self.acc_r;
-                                    } else if row[rlp_start + 1] == 160 {
+                                    } else if row.get_byte(rlp_start + 1) == 160 {
                                         *branch_acc += c160 * *branch_mult;
                                         *branch_mult *= self.acc_r;
                                         for i in 0..HASH_WIDTH {
                                             *branch_acc +=
-                                                F::from(row[start + i] as u64) * *branch_mult;
+                                                F::from(row.get_byte(start + i) as u64) * *branch_mult;
                                             *branch_mult *= self.acc_r;
                                         }
                                     } else {
-                                        *branch_acc += F::from(row[start] as u64) * *branch_mult;
+                                        *branch_acc += F::from(row.get_byte(start) as u64) * *branch_mult;
                                         *branch_mult *= self.acc_r;
-                                        let len = row[start] as usize - 192;
+                                        let len = row.get_byte(start) as usize - 192;
                                         for i in 0..len {
                                             *branch_acc +=
-                                                F::from(row[start + 1 + i] as u64) * *branch_mult;
+                                                F::from(row.get_byte(start + 1 + i) as u64) * *branch_mult;
                                             *branch_mult *= self.acc_r;
                                         }
                                     }
@@ -2184,23 +2267,23 @@ impl<F: FieldExt> MPTConfig<F> {
                             let mut storage_leaf = StorageLeaf::default();
                             let mut branch = Branch::default();
 
-                            if row[row.len() - 1] == 2 {
+                            if row.get_type() == MptWitnessRowType::StorageLeafSKey {
                                 storage_leaf.is_s_key = true;
-                            } else if row[row.len() - 1] == 3 {
+                            } else if row.get_type() == MptWitnessRowType::StorageLeafCKey {
                                 storage_leaf.is_c_key = true;
-                            } else if row[row.len() - 1] == 6 {
+                            } else if row.get_type() == MptWitnessRowType::AccountLeafKeyS {
                                 account_leaf.is_key_s = true;
-                            } else if row[row.len() - 1] == 4 {
+                            } else if row.get_type() == MptWitnessRowType::AccountLeafKeyC {
                                 account_leaf.is_key_c = true;
-                            } else if row[row.len() - 1] == 7 {
+                            } else if row.get_type() == MptWitnessRowType::AccountLeafNonceBalanceS {
                                 account_leaf.is_nonce_balance_s = true;
-                            } else if row[row.len() - 1] == 8 {
+                            } else if row.get_type() == MptWitnessRowType::AccountLeafNonceBalanceC {
                                 account_leaf.is_nonce_balance_c = true;
-                            } else if row[row.len() - 1] == 9 {
+                            } else if row.get_type() == MptWitnessRowType::AccountLeafRootCodehashS {
                                 account_leaf.is_storage_codehash_s = true;
-                            } else if row[row.len() - 1] == 11 {
+                            } else if row.get_type() == MptWitnessRowType::AccountLeafRootCodehashC {
                                 account_leaf.is_storage_codehash_c = true;
-                            } else if row[row.len() - 1] == 10 {
+                            } else if row.get_type() == MptWitnessRowType::AccountLeafNeighbouringLeaf {
                                 account_leaf.is_in_added_branch = true;
                                 pv.key_rlc = F::zero(); // account address until here, storage key from here on
                                 pv.key_rlc_mult = F::one();
@@ -2208,23 +2291,23 @@ impl<F: FieldExt> MPTConfig<F> {
                                 pv.key_rlc_mult_prev = F::one();
                                 pv.key_rlc_sel = true;
                                 // TODO: check whether all constraints are implemented (extension_node_rlc ...)
-                            } else if row[row.len() - 1] == 13 {
+                            } else if row.get_type() == MptWitnessRowType::StorageLeafSValue {
                                 storage_leaf.is_s_value = true;
-                            } else if row[row.len() - 1] == 14 {
+                            } else if row.get_type() == MptWitnessRowType::StorageLeafCValue {
                                 storage_leaf.is_c_value = true;
-                            } else if row[row.len() - 1] == 15 {
+                            } else if row.get_type() == MptWitnessRowType::NeighbouringStorageLeaf {
                                 storage_leaf.is_in_added_branch = true;
-                            } else if row[row.len() - 1] == 16 {
+                            } else if row.get_type() == MptWitnessRowType::ExtensionNodeS {
                                 branch.is_extension_node_s = true;
-                            } else if row[row.len() - 1] == 17 {
+                            } else if row.get_type() == MptWitnessRowType::ExtensionNodeC {
                                 branch.is_extension_node_c = true;
-                            } else if row[row.len() - 1] == 18 {
+                            } else if row.get_type() == MptWitnessRowType::AccountNonExisting {
                                 account_leaf.is_non_existing_account_row = true;
                             }
 
                             self.assign_row(
                                 &mut region,
-                                &row[0..row.len() - 1].to_vec(),
+                                row.main(),
                                 account_leaf,
                                 storage_leaf,
                                 branch,
@@ -2270,7 +2353,8 @@ impl<F: FieldExt> MPTConfig<F> {
                             };
 
                             // Storage leaf key
-                            if row[row.len() - 1] == 2 || row[row.len() - 1] == 3 {
+                            if row.get_type() == MptWitnessRowType::StorageLeafSKey ||
+                                row.get_type() == MptWitnessRowType::StorageLeafCKey {
                                 /*
                                 getProof storage leaf examples:
                                   short (one RLP byte > 128: 160):
@@ -2292,11 +2376,11 @@ impl<F: FieldExt> MPTConfig<F> {
                                 // Long means the key length is at position 2.
                                 // Short means the key length is at position 1.
                                 let mut typ = "short";
-                                if witness[ind][0] == 248 {
+                                if row.get_byte(0) == 248 {
                                     typ = "long";
-                                } else if witness[ind][1] == 32 {
+                                } else if row.get_byte(1) == 32 {
                                     typ = "last_level";
-                                } else if witness[ind][1] < 128 {
+                                } else if row.get_byte(1) < 128 {
                                     typ = "one_nibble";
                                 }
                                 assign_long_short(&mut region, typ);
@@ -2305,15 +2389,15 @@ impl<F: FieldExt> MPTConfig<F> {
                                 pv.acc_mult_s = F::one();
                                 let len: usize;
                                 if typ == "long" {
-                                    len = (row[2] - 128) as usize + 3;
+                                    len = (row.get_byte(2) - 128) as usize + 3;
                                 } else if typ == "short" {
-                                    len = (row[1] - 128) as usize + 2;
+                                    len = (row.get_byte(1) - 128) as usize + 2;
                                 } else {
                                     // last_level or one_nibble
                                     len = 2
                                 }
                                 self.compute_acc_and_mult(
-                                    row,
+                                    &row.0,
                                     &mut pv.acc_s,
                                     &mut pv.acc_mult_s,
                                     0,
@@ -2330,7 +2414,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                 )?;
 
                                 // note that this assignment needs to be after assign_acc call
-                                if row[0] < 223 { // when shorter than 32 bytes, the node doesn't get hashed
+                                if row.get_byte(0) < 223 { // when shorter than 32 bytes, the node doesn't get hashed
                                     // not_hashed
                                     region.assign_advice(
                                         || "assign not_hashed".to_string(),
@@ -2342,7 +2426,7 @@ impl<F: FieldExt> MPTConfig<F> {
 
                                 // TODO: handle if branch or extension node is added
                                 let mut start = S_START - 1;
-                                if row[0] == 248 {
+                                if row.get_byte(0) == 248 {
                                     // long RLP
                                     start = S_START;
                                 }
@@ -2350,8 +2434,8 @@ impl<F: FieldExt> MPTConfig<F> {
                                 // For leaf S and leaf C we need to start with the same rlc.
                                 let mut key_rlc_new = pv.key_rlc;
                                 let mut key_rlc_mult_new = pv.key_rlc_mult;
-                                if (pv.is_branch_s_placeholder && row[row.len() - 1] == 2)
-                                    || (pv.is_branch_c_placeholder && row[row.len() - 1] == 3)
+                                if (pv.is_branch_s_placeholder && row.get_type() == MptWitnessRowType::StorageLeafSKey)
+                                    || (pv.is_branch_c_placeholder && row.get_type() == MptWitnessRowType::StorageLeafCKey)
                                 {
                                     key_rlc_new = pv.key_rlc_prev;
                                     key_rlc_mult_new = pv.key_rlc_mult_prev;
@@ -2359,7 +2443,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                 if typ != "last_level" && typ != "one_nibble" {
                                     // If in last level or having only one nibble,
                                     // the key RLC is already computed using the first two bytes above.
-                                    self.compute_key_rlc(row, &mut key_rlc_new, &mut key_rlc_mult_new, start);
+                                    self.compute_key_rlc(&row.0, &mut key_rlc_new, &mut key_rlc_mult_new, start);
                                 }
                                 region.assign_advice(
                                     || "assign key_rlc".to_string(),
@@ -2389,25 +2473,26 @@ impl<F: FieldExt> MPTConfig<F> {
                                 )?;
                             }
 
-                            if row[row.len() - 1] == 13 || row[row.len() - 1] == 14 {
+                            if row.get_type() == MptWitnessRowType::StorageLeafSValue
+                                || row.get_type() == MptWitnessRowType::StorageLeafCValue {
                                 // Info whether leaf value is 1 byte or more:
                                 let mut is_long = false;
                                 let row_prev = &witness[ind - 1];
-                                if row_prev[0] == 248 {
+                                if row_prev.get_byte(0) == 248 {
                                     // whole leaf is in long format (3 RLP meta bytes)
-                                    let key_len = row_prev[2] - 128;
-                                    if row_prev[1] - key_len - 1 > 1 {
+                                    let key_len = row_prev.get_byte(2) - 128;
+                                    if row_prev.get_byte(1) - key_len - 1 > 1 {
                                         is_long = true;
                                     }
-                                } else if row_prev[1] < 128 {
+                                } else if row_prev.get_byte(1) < 128 {
                                     // last_level or one_nibble
-                                    let leaf_len = row_prev[0] - 192;
+                                    let leaf_len = row_prev.get_byte(0) - 192;
                                     if leaf_len - 1 > 1 {
                                         is_long = true;
                                     }
                                 } else {
-                                    let leaf_len = row_prev[0] - 192;
-                                    let key_len = row_prev[1] - 128;
+                                    let leaf_len = row_prev.get_byte(0) - 192;
+                                    let key_len = row_prev.get_byte(1) - 128;
                                     if leaf_len - key_len - 1 > 1 {
                                         is_long = true;
                                     }
@@ -2423,7 +2508,7 @@ impl<F: FieldExt> MPTConfig<F> {
 
                                 // Leaf RLC
                                 self.compute_acc_and_mult(
-                                    row,
+                                    &row.0,
                                     &mut pv.acc_s,
                                     &mut pv.acc_mult_s,
                                     0,
@@ -2438,7 +2523,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                     start = 2;
                                 }
                                 self.compute_acc_and_mult(
-                                    row,
+                                    &row.0,
                                     &mut pv.acc_c,
                                     &mut pv.acc_mult_c,
                                     start,
@@ -2450,7 +2535,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                     248, 110, 91, 72, 224, 27, 153, 108, 173, 192, 1, 98, 47, 181,
                                     227, 99, 180, 33,
                                 ];
-                                if row[row.len() - 1] == 13 {
+                                if row.get_type() == MptWitnessRowType::StorageLeafSValue {
                                     // Store leaf value RLC into rlc1 to be later set in
                                     // leaf value C row (to enable lookups):
                                     pv.rlc1 = pv.acc_c;
@@ -2463,9 +2548,8 @@ impl<F: FieldExt> MPTConfig<F> {
                                     // leaf key C
                                     // leaf value C
                                     let row_prev = &witness[offset - 4];
-                                    if row_prev[row_prev.len() - 1] == 9
-                                        && row_prev[S_START..S_START + HASH_WIDTH]
-                                            == empty_trie_hash
+                                    if row_prev.get_type() == MptWitnessRowType::AccountLeafRootCodehashS
+                                        && row_prev.s_hash_bytes() == empty_trie_hash
                                     {
                                         // Leaf is without branch and it is just a placeholder.
                                         region.assign_advice(
@@ -2475,7 +2559,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                             || Ok(F::one()),
                                         )?;
                                     }
-                                } else if row[row.len() - 1] == 14 {
+                                } else if row.get_type() == MptWitnessRowType::StorageLeafCValue {
                                     region.assign_advice(
                                         || "assign key_rlc into key_rlc_mult".to_string(),
                                         self.accumulators.key.mult,
@@ -2497,9 +2581,8 @@ impl<F: FieldExt> MPTConfig<F> {
                                     // leaf key C
                                     // leaf value C <- we are here
                                     let row_prev = &witness[offset - 5];
-                                    if row_prev[row_prev.len() - 1] == 11
-                                        && row_prev[S_START..S_START + HASH_WIDTH]
-                                            == empty_trie_hash
+                                    if row_prev.get_type() == MptWitnessRowType::AccountLeafRootCodehashC
+                                        && row_prev.s_hash_bytes() == empty_trie_hash
                                     {
                                         // Leaf is without branch and it is just a placeholder.
                                         region.assign_advice(
@@ -2521,26 +2604,26 @@ impl<F: FieldExt> MPTConfig<F> {
                                 )?;
                             }
 
-                            if row[row.len() - 1] == 6 {
-                                self.account_leaf_key_s.assign(&mut region, self, &mut pv, row, offset);
-                            } else if row[row.len() - 1] == 4 {
-                                self.account_leaf_key_c.assign(&mut region, self, &mut pv, row, offset);
-                            } else if row[row.len() - 1] == 7 {
-                                self.account_leaf_nonce_balance_s.assign(&mut region, self, &mut pv, row, offset);
-                            } else if row[row.len() - 1] == 8 {
-                                self.account_leaf_nonce_balance_c.assign(&mut region, self, &mut pv, row, offset);
-                            } else if row[row.len() - 1] == 9 {
-                                self.account_leaf_storage_codehash_s.assign(&mut region, self, &mut pv, row, offset);
-                            } else if row[row.len() - 1] == 11 {
-                                self.account_leaf_storage_codehash_c.assign(&mut region, self, &mut pv, row, offset);
-                            } else if row[row.len() - 1] == 15 && row[1] != 0 {
+                            if row.get_type() == MptWitnessRowType::AccountLeafKeyS {
+                                self.account_leaf_key_s.assign(&mut region, self, &mut pv, &row.0, offset);
+                            } else if row.get_type() == MptWitnessRowType::AccountLeafKeyC {
+                                self.account_leaf_key_c.assign(&mut region, self, &mut pv, &row.0, offset);
+                            } else if row.get_type() == MptWitnessRowType::AccountLeafNonceBalanceS {
+                                self.account_leaf_nonce_balance_s.assign(&mut region, self, &mut pv, &row.0, offset);
+                            } else if row.get_type() == MptWitnessRowType::AccountLeafNonceBalanceC {
+                                self.account_leaf_nonce_balance_c.assign(&mut region, self, &mut pv, &row.0, offset);
+                            } else if row.get_type() == MptWitnessRowType::AccountLeafRootCodehashS {
+                                self.account_leaf_storage_codehash_s.assign(&mut region, self, &mut pv, &row.0, offset);
+                            } else if row.get_type() == MptWitnessRowType::AccountLeafRootCodehashC {
+                                self.account_leaf_storage_codehash_c.assign(&mut region, self, &mut pv, &row.0, offset);
+                            } else if row.get_type() == MptWitnessRowType::NeighbouringStorageLeaf && row.get_byte(1) != 0 {
                                 // row[1] != 0 just to avoid usize problems below (when row doesn't
                                 // need to be assigned) Info whether
                                 // leaf rlp is long or short.
                                 let mut typ = "short";
-                                if witness[ind][0] == 248 {
+                                if row.get_byte(0) == 248 {
                                     typ = "long";
-                                } else if witness[ind][1] == 32 {
+                                } else if row.get_byte(1) == 32 {
                                     typ = "last_level";
                                 }
                                 assign_long_short(&mut region, typ);
@@ -2548,13 +2631,13 @@ impl<F: FieldExt> MPTConfig<F> {
                                 pv.acc_s = F::zero();
                                 pv.acc_mult_s = F::one();
                                 let len: usize;
-                                if row[0] == 248 {
-                                    len = (row[2] - 128) as usize + 3;
+                                if row.get_byte(0) == 248 {
+                                    len = (row.get_byte(2) - 128) as usize + 3;
                                 } else {
-                                    len = (row[1] - 128) as usize + 2;
+                                    len = (row.get_byte(1) - 128) as usize + 2;
                                 }
                                 self.compute_acc_and_mult(
-                                    row,
+                                    &row.0,
                                     &mut pv.acc_s,
                                     &mut pv.acc_mult_s,
                                     0,
@@ -2569,7 +2652,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                     F::zero(),
                                     offset,
                                 )?;
-                            } else if row[row.len() - 1] == 16 {
+                            } else if row.get_type() == MptWitnessRowType::ExtensionNodeS {
                                 if pv.is_extension_node {
                                   	// [228,130,0,149,160,114,253,150,133,18,192,156,19,241,162,51,210,24,1,151,16,48,7,177,42,60,49,34,230,254,242,79,132,165,90,75,249]
 
@@ -2586,16 +2669,16 @@ impl<F: FieldExt> MPTConfig<F> {
                                     pv.acc_s = F::zero();
                                     pv.acc_mult_s = F::one();
                                     let len: usize;
-                                    if row[1] <= 32 {
+                                    if row.get_byte(1) <= 32 {
                                         // key length is 1
                                         len = 2 // [length byte, key]
-                                    } else if row[0] < 248 {
-                                        len = (row[1] - 128) as usize + 2;
+                                    } else if row.get_byte(0) < 248 {
+                                        len = (row.get_byte(1) - 128) as usize + 2;
                                     } else {
-                                        len = (row[2] - 128) as usize + 3;
+                                        len = (row.get_byte(2) - 128) as usize + 3;
                                     }
                                     self.compute_acc_and_mult(
-                                        row,
+                                        &row.0,
                                         &mut pv.acc_s,
                                         &mut pv.acc_mult_s,
                                         0,
@@ -2607,13 +2690,13 @@ impl<F: FieldExt> MPTConfig<F> {
                                     pv.acc_mult_c = pv.acc_mult_s;
                                     let mut start = C_RLP_START + 1;
                                     let mut len = HASH_WIDTH + 1;
-                                    if row[C_RLP_START + 1] == 0 {
+                                    if row.get_byte(C_RLP_START + 1) == 0 {
                                         // non-hashed branch in extension node
                                         start = C_START;
                                         len = HASH_WIDTH;
                                     }
                                     self.compute_acc_and_mult(
-                                        row,
+                                        &row.0,
                                         &mut pv.acc_c,
                                         &mut pv.acc_mult_c,
                                         start,
@@ -2635,7 +2718,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                     offset,
                                     || Ok(pv.extension_node_rlc),
                                 )?;
-                            } else if row[row.len() - 1] == 17 {
+                            } else if row.get_type() == MptWitnessRowType::ExtensionNodeC {
                                 if pv.is_extension_node {
                                     // We use intermediate value from previous row (because
                                     // up to acc_s it's about key and this is the same
@@ -2644,13 +2727,13 @@ impl<F: FieldExt> MPTConfig<F> {
                                     pv.acc_mult_c = pv.acc_mult_s;
                                     let mut start = C_RLP_START + 1;
                                     let mut len = HASH_WIDTH + 1;
-                                    if row[C_RLP_START + 1] == 0 {
+                                    if row.get_byte(C_RLP_START + 1) == 0 {
                                         // non-hashed branch in extension node
                                         start = C_START;
                                         len = HASH_WIDTH;
                                     }
                                     self.compute_acc_and_mult(
-                                        row,
+                                        &row.0,
                                         &mut pv.acc_c,
                                         &mut pv.acc_mult_c,
                                         start,
@@ -2673,19 +2756,19 @@ impl<F: FieldExt> MPTConfig<F> {
                                     offset,
                                     || Ok(pv.extension_node_rlc),
                                 )?;
-                            } else if row[row.len() - 1] == 10 && row[1] != 0 {
+                            } else if row.get_byte(row.len() - 1) == 10 && row.get_byte(1) != 0 {
                                 // row[1] != 0 just to avoid usize problems below (when row doesn't
                                 // need to be assigned).
-                                self.account_leaf_key_in_added_branch.assign(&mut region, self, &mut pv, row, offset);
-                            } else if row[row.len() - 1] == 18 { 
-                                let key_len = witness[offset-1][2] as usize - 128;
+                                self.account_leaf_key_in_added_branch.assign(&mut region, self, &mut pv, &row.0, offset);
+                            } else if row.get_byte(row.len() - 1) == 18 { 
+                                let key_len = witness[offset-1].get_byte(2) as usize - 128;
                                 let row_prev = &witness[offset - 1];
                                 let mut sum = F::zero();
                                 let mut sum_prev = F::zero();
                                 let mut mult = self.acc_r;
                                 for i in 0..key_len {
-                                    sum += F::from(row[3+i] as u64) * mult ;
-                                    sum_prev += F::from(row_prev[3+i] as u64) * mult;
+                                    sum += F::from(row.get_byte(3+i) as u64) * mult ;
+                                    sum_prev += F::from(row_prev.get_byte(3+i) as u64) * mult;
                                     mult *= self.acc_r;
                                 }
                                 let mut diff_inv = F::zero();
@@ -2929,14 +3012,18 @@ mod tests {
             ) -> Result<(), Error> {
                 let mut to_be_hashed = vec![];
 
+                let mut witness_rows = vec![];
                 for row in self.witness.iter() {
                     if row[row.len() - 1] == 5 {
                         to_be_hashed.push(row[0..row.len() - 1].to_vec());
+                    } else {
+                        let row = MptWitnessRow(row[0..row.len()].to_vec());
+                        witness_rows.push(row);
                     }
                 }
 
                 config.load(&mut layouter, to_be_hashed)?;
-                config.assign(layouter, &self.witness);
+                config.assign(layouter, &witness_rows);
 
                 Ok(())
             }
