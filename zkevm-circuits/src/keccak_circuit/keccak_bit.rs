@@ -1,3 +1,7 @@
+use super::util::{
+    ABSORB_WIDTH_PER_ROW, ABSORB_WIDTH_PER_ROW_BYTES, KECCAK_WIDTH_IN_BITS, NUM_ROUNDS, ROUND_CST,
+    ROUND_CST_BIT_POS, THETA_C_WIDTH,
+};
 use crate::{
     evm_circuit::util::{constraint_builder::BaseConstraintBuilder, not, rlc},
     keccak_circuit::util::{
@@ -14,15 +18,10 @@ use halo2_proofs::{
     poly::Rotation,
 };
 use itertools::Itertools;
+use log::{debug, info};
 use std::{env::var, marker::PhantomData, vec};
 
-use super::util::{
-    ABSORB_WIDTH_PER_ROW, ABSORB_WIDTH_PER_ROW_BYTES, KECCAK_WIDTH_IN_BITS, NUM_ROUNDS, ROUND_CST,
-    ROUND_CST_BIT_POS, THETA_C_WIDTH,
-};
-
 const MAX_DEGREE: usize = 5;
-
 const MAX_INPUT_THETA_LOOKUP: u64 = 5;
 
 fn get_degree() -> usize {
@@ -146,7 +145,7 @@ impl<F: Field> KeccakBitCircuit<F> {
 impl<F: Field> KeccakBitConfig<F> {
     pub(crate) fn configure(meta: &mut ConstraintSystem<F>, r: F) -> Self {
         let num_bits_per_theta_lookup = get_num_bits_per_theta_lookup();
-        println!("num_bits_per_theta_lookup: {}", num_bits_per_theta_lookup);
+        info!("num_bits_per_theta_lookup: {}", num_bits_per_theta_lookup);
 
         let q_enable = meta.fixed_column();
         let q_first = meta.fixed_column();
@@ -244,7 +243,7 @@ impl<F: Field> KeccakBitConfig<F> {
             });
             lookup_counter += 1;
         }
-        println!("Lookups: {}", lookup_counter);
+        info!("Lookups: {}", lookup_counter);
 
         meta.create_gate("input checks", |meta| {
             let mut cb = BaseConstraintBuilder::new(MAX_DEGREE);
@@ -570,7 +569,7 @@ impl<F: Field> KeccakBitConfig<F> {
             cb.gate(1.expr())
         });
 
-        println!("degree: {}", meta.degree());
+        info!("degree: {}", meta.degree());
 
         KeccakBitConfig {
             q_enable,
@@ -947,8 +946,8 @@ fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: &[u8], r: F) {
         .map(|a| to_bytes::value(&a[0]))
         .take(4)
         .concat();
-    println!("hash: {:x?}", &hash_bytes);
-    println!("data rlc: {:x?}", data_rlc);
+    debug!("hash: {:x?}", &hash_bytes);
+    debug!("data rlc: {:x?}", data_rlc);
 }
 
 fn multi_keccak<F: Field>(bytes: &[Vec<u8>], r: F) -> Vec<KeccakRow<F>> {
@@ -986,9 +985,9 @@ mod tests {
         let prover = MockProver::<F>::run(k, &circuit, vec![]).unwrap();
         let verify_result = prover.verify();
         if verify_result.is_ok() != success {
-            for e in verify_result.err().iter() {
-                for s in e.iter() {
-                    println!("{}", s);
+            if let Some(errors) = verify_result.err() {
+                for error in errors.iter() {
+                    println!("{}", error);
                 }
             }
             panic!();

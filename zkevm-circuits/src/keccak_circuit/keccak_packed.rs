@@ -17,10 +17,10 @@ use halo2_proofs::{
     poly::Rotation,
 };
 use itertools::Itertools;
+use log::{debug, info};
 use std::{convert::TryInto, env::var, marker::PhantomData, vec};
 
 const MAX_DEGREE: usize = 3;
-
 const ABSORB_LOOKUP_RANGE: usize = 3;
 const THETA_C_LOOKUP_RANGE: usize = 6;
 const THETA_T_LOOKUP_RANGE: usize = 3;
@@ -441,8 +441,7 @@ mod combine {
                 let factor = F::from(8u64).pow_vartime(&[input_part.num_bits as u64, 0, 0, 0]);
                 let expr = input_part.expr.clone() + extra_part.expr.clone() * factor;
                 // Could do a couple of these together when the parts are small to save some
-                // lookups println!("{} + {}", input_part.num_bits,
-                // extra_part.num_bits);
+                // lookups
                 if range_check {
                     for part in [input_part, extra_part] {
                         meta.lookup(name, |_| vec![(part.expr.clone(), range_check_table)]);
@@ -589,9 +588,9 @@ impl<F: Field> KeccakPackedConfig<F> {
             decode::expr(absorb_res),
             absorb_result_expr,
         );
-        println!("- Post absorb:");
-        println!("Lookups: {}", lookup_counter);
-        println!("Columns: {}", cell_values.len());
+        info!("- Post absorb:");
+        info!("Lookups: {}", lookup_counter);
+        info!("Columns: {}", cell_values.len());
         total_lookup_counter += lookup_counter;
 
         // Padding
@@ -641,9 +640,9 @@ impl<F: Field> KeccakPackedConfig<F> {
             }
             vec![0u64.expr()]
         });
-        println!("- Post padding:");
-        println!("Lookups: {}", lookup_counter);
-        println!("Columns: {}", cell_values.len());
+        info!("- Post padding:");
+        info!("Lookups: {}", lookup_counter);
+        info!("Columns: {}", cell_values.len());
         total_lookup_counter += lookup_counter;
 
         // Theta
@@ -690,9 +689,9 @@ impl<F: Field> KeccakPackedConfig<F> {
             }
         }
         s = os.clone();
-        println!("- Post theta:");
-        println!("Lookups: {}", lookup_counter);
-        println!("Columns: {}", cell_values.len());
+        info!("- Post theta:");
+        info!("Lookups: {}", lookup_counter);
+        info!("Columns: {}", cell_values.len());
         total_lookup_counter += lookup_counter;
 
         // Rho/Pi
@@ -743,9 +742,9 @@ impl<F: Field> KeccakPackedConfig<F> {
             }
         }
         s = os.clone();
-        println!("- Post rho/pi:");
-        println!("Lookups: {}", lookup_counter);
-        println!("Columns: {}", cell_values.len());
+        info!("- Post rho/pi:");
+        info!("Lookups: {}", lookup_counter);
+        info!("Columns: {}", cell_values.len());
         total_lookup_counter += lookup_counter;
 
         // Chi
@@ -821,11 +820,11 @@ impl<F: Field> KeccakPackedConfig<F> {
                 }
             }
         }
-        println!("- Post chi:");
-        println!("Lookups: {}", lookup_counter);
-        println!("Columns: {}", cell_values.len());
-        println!("num_parts_pre: {}", num_parts_pre);
-        println!("num_parts_post: {}", num_parts_post);
+        info!("- Post chi:");
+        info!("Lookups: {}", lookup_counter);
+        info!("Columns: {}", cell_values.len());
+        info!("num_parts_pre: {}", num_parts_pre);
+        info!("num_parts_post: {}", num_parts_post);
         total_lookup_counter += lookup_counter;
 
         // Unpack a single word into bytes (for the squeeze)
@@ -956,9 +955,9 @@ impl<F: Field> KeccakPackedConfig<F> {
             });
             cb.gate(meta.query_fixed(q_round_last, Rotation::cur()))
         });
-        println!("- Post squeeze:");
-        println!("Lookups: {}", lookup_counter);
-        println!("Columns: {}", cell_values.len());
+        info!("- Post squeeze:");
+        info!("Lookups: {}", lookup_counter);
+        info!("Columns: {}", cell_values.len());
         total_lookup_counter += lookup_counter;
 
         meta.create_gate("is final", |meta| {
@@ -1138,21 +1137,21 @@ impl<F: Field> KeccakPackedConfig<F> {
             cb.gate(1.expr())
         });
 
-        println!("Degree: {}", meta.degree());
-        println!("Minimum rows: {}", meta.minimum_rows());
-        println!("Lookups: {}", total_lookup_counter);
-        println!("Columns: {}", cell_values.len());
-        println!("part_size absorb: {}", get_num_bits_per_absorb_lookup());
-        println!("part_size theta: {}", get_num_bits_per_theta_c_lookup());
-        println!(
+        info!("Degree: {}", meta.degree());
+        info!("Minimum rows: {}", meta.minimum_rows());
+        info!("Lookups: {}", total_lookup_counter);
+        info!("Columns: {}", cell_values.len());
+        info!("part_size absorb: {}", get_num_bits_per_absorb_lookup());
+        info!("part_size theta: {}", get_num_bits_per_theta_c_lookup());
+        info!(
             "part_size theta c: {}",
             get_num_bits_per_lookup(THETA_C_LOOKUP_RANGE)
         );
-        println!("part_size theta t: {}", get_num_bits_per_lookup(4));
-        println!("part_size rho/pi: {}", get_num_bits_per_rho_pi_lookup());
-        println!("part_size chi base: {}", get_num_bits_per_base_chi_lookup());
-        println!("part_size chi ext: {}", get_num_bits_per_ext_chi_lookup());
-        println!(
+        info!("part_size theta t: {}", get_num_bits_per_lookup(4));
+        info!("part_size rho/pi: {}", get_num_bits_per_rho_pi_lookup());
+        info!("part_size chi base: {}", get_num_bits_per_base_chi_lookup());
+        info!("part_size chi ext: {}", get_num_bits_per_ext_chi_lookup());
+        info!(
             "uniform part sizes: {:?}",
             target_part_sizes(get_num_bits_per_theta_c_lookup())
         );
@@ -1773,8 +1772,8 @@ fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: &[u8], r: F) {
         .map(|a| from_bits(&unpack(a[0])).as_u64().to_le_bytes().to_vec())
         .take(4)
         .concat();
-    println!("hash: {:x?}", &hash_bytes);
-    println!("data rlc: {:x?}", data_rlc);
+    debug!("hash: {:x?}", &hash_bytes);
+    debug!("data rlc: {:x?}", data_rlc);
 }
 
 fn multi_keccak<F: Field>(bytes: &[Vec<u8>], r: F) -> Vec<KeccakRow<F>> {
@@ -1817,9 +1816,9 @@ mod tests {
         let prover = MockProver::<F>::run(k, &circuit, vec![]).unwrap();
         let verify_result = prover.verify();
         if verify_result.is_ok() != success {
-            for e in verify_result.err().iter() {
-                for s in e.iter() {
-                    println!("{}", s);
+            if let Some(errors) = verify_result.err() {
+                for error in errors.iter() {
+                    println!("{}", error);
                 }
             }
             panic!();
