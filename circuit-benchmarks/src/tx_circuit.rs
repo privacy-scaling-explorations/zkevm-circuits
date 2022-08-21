@@ -5,7 +5,6 @@ mod tests {
     use crate::bench_params::DEGREE;
     use ark_std::{end_timer, start_timer};
     use env_logger::Env;
-    use eth_types::{address, word, Bytes};
     use group::{Curve, Group};
     use halo2_proofs::arithmetic::{BaseExt, CurveAffine};
     use halo2_proofs::plonk::{create_proof, keygen_pk, keygen_vk, verify_proof, SingleVerifier};
@@ -14,7 +13,6 @@ mod tests {
         poly::commitment::{Params, ParamsVerifier},
         transcript::{Blake2bRead, Blake2bWrite, Challenge255},
     };
-    use mock::{AddrOrWallet, MockTransaction};
     use rand::SeedableRng;
     use rand_chacha::ChaCha20Rng;
     use secp256k1::Secp256k1Affine;
@@ -40,15 +38,7 @@ mod tests {
             <Secp256k1Affine as CurveAffine>::CurveExt::random(&mut rng).to_affine();
         let chain_id: u64 = 1337;
 
-        let txs = vec![MockTransaction::default()
-            .from(AddrOrWallet::random(&mut rng))
-            .to(address!("0x701653d7ae8ddaa5c8cee1ee056849f271827926"))
-            .nonce(word!("0x3"))
-            .value(word!("0x3e8"))
-            .gas_price(word!("0x4d2"))
-            .input(Bytes::from(b"hello"))
-            .build()
-            .into()];
+        let txs = vec![mock::CORRECT_MOCK_TXS[0].clone().into()];
 
         let randomness = Fr::from(0xcafeu64);
         let mut instance: Vec<Vec<Fr>> = (1..POW_RAND_SIZE + 1)
