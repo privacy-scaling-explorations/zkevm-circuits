@@ -1,6 +1,7 @@
 //! Mock Transaction definition and builder related methods.
 
 use super::{MOCK_ACCOUNTS, MOCK_CHAIN_ID, MOCK_GASPRICE};
+use eth_types::word;
 use eth_types::{
     geth_types::Transaction as GethTransaction, AccessList, Address, Bytes, Hash, Transaction,
     Word, U64,
@@ -11,6 +12,42 @@ use ethers_core::{
     utils::keccak256,
 };
 use ethers_signers::{LocalWallet, Signer};
+use lazy_static::lazy_static;
+use rand::SeedableRng;
+use rand_chacha::ChaCha20Rng;
+
+lazy_static! {
+    /// Collection of correctly hashed and signed Transactions which can be used to test circuits or opcodes that have to check integrity of the Tx itself.
+    /// Some of the parameters of the Tx are hardcoded such as `nonce`, `value`, `gas_price` etc...
+    pub static ref CORRECT_MOCK_TXS: Vec<MockTransaction> = {
+        let mut rng = ChaCha20Rng::seed_from_u64(2u64);
+
+        vec![MockTransaction::default()
+            .from(AddrOrWallet::random(&mut rng))
+            .to(MOCK_ACCOUNTS[0])
+            .nonce(word!("0x3"))
+            .value(word!("0x3e8"))
+            .gas_price(word!("0x4d2"))
+            .input(Bytes::from(b"hello"))
+            .build(),
+            MockTransaction::default()
+            .from(AddrOrWallet::random(&mut rng))
+            .to(MOCK_ACCOUNTS[1])
+            .nonce(word!("0x3"))
+            .value(word!("0x3e8"))
+            .gas_price(word!("0x4d2"))
+            .input(Bytes::from(b"hello"))
+            .build(),
+            MockTransaction::default()
+            .from(AddrOrWallet::random(&mut rng))
+            .to(MOCK_ACCOUNTS[2])
+            .nonce(word!("0x3"))
+            .value(word!("0x3e8"))
+            .gas_price(word!("0x4d2"))
+            .input(Bytes::from(b"hello"))
+            .build()]
+    };
+}
 
 #[derive(Debug, Clone)]
 pub enum AddrOrWallet {
@@ -93,7 +130,7 @@ pub struct MockTransaction {
 impl Default for MockTransaction {
     fn default() -> Self {
         MockTransaction {
-            hash: Some(Hash::zero()),
+            hash: None,
             nonce: Word::zero(),
             block_hash: Hash::zero(),
             block_number: U64::zero(),
@@ -169,7 +206,7 @@ impl From<MockTransaction> for GethTransaction {
 }
 
 impl MockTransaction {
-    /// TODO: This should be computed based on the fields of the Tx by
+    /// Tx Hash computed based on the fields of the Tx by
     /// default unless `Some(hash)` is specified on build process.
     pub fn hash(&mut self, hash: Hash) -> &mut Self {
         self.hash = Some(hash);
@@ -289,27 +326,25 @@ impl MockTransaction {
         let tx_rlp = tx.rlp(self.chain_id.low_u64());
         let sighash = keccak256(tx_rlp.as_ref()).into();
         match (self.v, self.r, self.s) {
-            (Some(_), Some(_), Some(_)) => {
-                // We already set some signature params. We just compute the hash in case it's
-                // not already set.
-                if self.hash.is_none() {
-                    self.hash(sighash);
-                }
-            }
             (None, None, None) => {
                 // Compute sig params and set them in case we have a wallet as `from` attr.
                 if self.from.is_wallet() && self.hash.is_none() {
-                    let sig = self.from.as_wallet().sign_hash(sighash, true);
+                    let sig = self
+                        .from
+                        .as_wallet()
+                        .with_chain_id(self.chain_id.low_u64())
+                        .sign_hash(sighash, true);
                     // Set sig parameters
                     self.sig_data((sig.v, sig.s, sig.r));
-                    // Compute tx hash in case is not already set
-                    if self.hash.is_none() {
-                        let tmp_tx = Transaction::from(self.to_owned());
-                        self.hash(tmp_tx.hash());
-                    }
                 }
             }
             _ => unimplemented!(),
+        }
+
+        // Compute tx hash in case is not already set
+        if self.hash.is_none() {
+            let tmp_tx = Transaction::from(self.to_owned());
+            self.hash(tmp_tx.hash());
         }
 
         self.to_owned()
