@@ -2444,6 +2444,8 @@ dependencies = [
  "external-tracer",
  "itertools",
  "lazy_static",
+ "rand",
+ "rand_chacha",
 ]
 
 [[package]]
