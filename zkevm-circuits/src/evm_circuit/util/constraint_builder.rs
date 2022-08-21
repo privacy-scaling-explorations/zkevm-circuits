@@ -515,8 +515,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         );
     }
 
-    pub(crate) fn pow2_lookup(&mut self, exponent: Expression<F>) -> Cell<F> {
-        let exponentiation = self.query_cell();
+    pub(crate) fn pow2_lookup(&mut self, exponent: Expression<F>, exponentiation: Cell<F>) {
         self.add_lookup(
             "pow2 lookup",
             Lookup::Fixed {
@@ -524,7 +523,6 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
                 values: [exponent, exponentiation.expr(), 0.expr()],
             },
         );
-        exponentiation
     }
 
     // Opcode

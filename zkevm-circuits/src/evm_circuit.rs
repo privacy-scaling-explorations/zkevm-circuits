@@ -220,6 +220,7 @@ pub mod test {
         block_table: BlockTable,
         copy_table: CopyTable,
         keccak_table: KeccakTable,
+        exp_table: ExpTable,
         pub evm_circuit: EvmCircuit<F>,
     }
 
@@ -276,6 +277,7 @@ pub mod test {
                 block_table,
                 copy_table,
                 keccak_table,
+                exp_table,
                 evm_circuit,
             }
         }
@@ -315,10 +317,10 @@ pub mod test {
             config
                 .copy_table
                 .load(&mut layouter, &self.block, self.block.randomness)?;
-
             config
                 .keccak_table
                 .dev_load(&mut layouter, &self.block.sha3_inputs, &challenges)?;
+            config.exp_table.load(&mut layouter, &self.block)?;
 
             config.evm_circuit.assign_block(&mut layouter, &self.block)
         }
