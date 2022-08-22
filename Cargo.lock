@@ -4413,7 +4413,6 @@ dependencies = [
  "rand",
  "rand_chacha",
  "rand_xorshift",
- "rlp",
  "secp256k1",
  "serde_json",
  "sha3 0.10.1",

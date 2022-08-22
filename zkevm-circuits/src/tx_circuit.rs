@@ -23,8 +23,6 @@ use libsecp256k1;
 use log::error;
 use num::Integer;
 use num_bigint::BigUint;
-// use rand_core::RngCore;
-use rlp::RlpStream;
 use sha3::{Digest, Keccak256};
 use sign_verify::{pk_bytes_swap_endianness, SignData, SignVerifyChip, SignVerifyConfig};
 use std::marker::PhantomData;

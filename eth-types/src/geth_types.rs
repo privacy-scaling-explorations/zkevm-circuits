@@ -124,22 +124,22 @@ pub struct Transaction {
     pub s: Word,
 }
 
-impl Into<crate::Transaction> for &Transaction {
-    fn into(self) -> crate::Transaction {
+impl From<&Transaction> for crate::Transaction {
+    fn from(tx: &Transaction) -> crate::Transaction {
         crate::Transaction {
-            from: self.from,
-            to: self.to,
-            nonce: self.nonce,
-            gas: self.gas_limit,
-            value: self.value,
-            gas_price: Some(self.gas_price),
-            max_priority_fee_per_gas: Some(self.gas_fee_cap),
-            max_fee_per_gas: Some(self.gas_tip_cap),
-            input: self.call_data.clone(),
-            access_list: self.access_list.clone(),
-            v: self.v.into(),
-            r: self.r,
-            s: self.s,
+            from: tx.from,
+            to: tx.to,
+            nonce: tx.nonce,
+            gas: tx.gas_limit,
+            value: tx.value,
+            gas_price: Some(tx.gas_price),
+            max_priority_fee_per_gas: Some(tx.gas_fee_cap),
+            max_fee_per_gas: Some(tx.gas_tip_cap),
+            input: tx.call_data.clone(),
+            access_list: tx.access_list.clone(),
+            v: tx.v.into(),
+            r: tx.r,
+            s: tx.s,
             ..Default::default()
         }
     }
