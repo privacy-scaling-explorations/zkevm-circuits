@@ -181,27 +181,7 @@ impl From<MockTransaction> for Transaction {
 
 impl From<MockTransaction> for GethTransaction {
     fn from(mock: MockTransaction) -> Self {
-        GethTransaction::from_eth_tx(&Transaction {
-            hash: mock.hash.unwrap_or_default(),
-            nonce: mock.nonce,
-            block_hash: Some(mock.block_hash),
-            block_number: Some(mock.block_number),
-            transaction_index: Some(mock.transaction_index),
-            from: mock.from.address(),
-            to: mock.to.map(|addr| addr.address()),
-            value: mock.value,
-            gas_price: Some(mock.gas_price),
-            gas: mock.gas,
-            input: mock.input,
-            v: mock.v.unwrap_or_default(),
-            r: mock.r.unwrap_or_default(),
-            s: mock.s.unwrap_or_default(),
-            transaction_type: Some(mock.transaction_type),
-            access_list: Some(mock.access_list),
-            max_priority_fee_per_gas: Some(mock.max_priority_fee_per_gas),
-            max_fee_per_gas: Some(mock.max_fee_per_gas),
-            chain_id: Some(mock.chain_id),
-        })
+        GethTransaction::from(Transaction::from(mock))
     }
 }
 
