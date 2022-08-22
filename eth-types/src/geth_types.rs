@@ -145,23 +145,15 @@ impl From<&Transaction> for crate::Transaction {
     }
 }
 
-impl From<Transaction> for ethers_core::types::TransactionRequest {
-    fn from(tx: Transaction) -> ethers_core::types::TransactionRequest {
-        TransactionRequest::new()
-            .from(tx.from)
-            .to(tx.to.unwrap())
-            .nonce(tx.nonce)
-            .value(tx.value)
-            .data(tx.call_data.clone())
-            .gas(tx.gas_limit)
-            .gas_price(tx.gas_price)
+impl From<Transaction> for crate::Transaction {
+    fn from(tx: Transaction) -> crate::Transaction {
+        crate::Transaction::from(&tx)
     }
 }
 
-impl Transaction {
-    /// Create Self from a web3 transaction
-    pub fn from_eth_tx(tx: &crate::Transaction) -> Self {
-        Self {
+impl From<&crate::Transaction> for Transaction {
+    fn from(tx: &crate::Transaction) -> Transaction {
+        Transaction {
             from: tx.from,
             to: tx.to,
             nonce: tx.nonce,
@@ -176,6 +168,25 @@ impl Transaction {
             r: tx.r,
             s: tx.s,
         }
+    }
+}
+
+impl From<crate::Transaction> for Transaction {
+    fn from(tx: crate::Transaction) -> Transaction {
+        Transaction::from(&tx)
+    }
+}
+
+impl From<Transaction> for ethers_core::types::TransactionRequest {
+    fn from(tx: Transaction) -> ethers_core::types::TransactionRequest {
+        TransactionRequest::new()
+            .from(tx.from)
+            .to(tx.to.unwrap())
+            .nonce(tx.nonce)
+            .value(tx.value)
+            .data(tx.call_data.clone())
+            .gas(tx.gas_limit)
+            .gas_price(tx.gas_price)
     }
 }
 
