@@ -1296,7 +1296,7 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::SAR => dummy!(ExecutionState::SAR),
                     OpcodeId::EXTCODESIZE => dummy!(ExecutionState::EXTCODESIZE),
                     OpcodeId::EXTCODECOPY => dummy!(ExecutionState::EXTCODECOPY),
-                    OpcodeId::RETURNDATASIZE => dummy!(ExecutionState::RETURNDATASIZE),
+                    OpcodeId::RETURNDATASIZE => ExecutionState::RETURNDATASIZE,
                     OpcodeId::RETURNDATACOPY => dummy!(ExecutionState::RETURNDATACOPY),
                     OpcodeId::CREATE => dummy!(ExecutionState::CREATE),
                     OpcodeId::CALLCODE => dummy!(ExecutionState::CALLCODE),
