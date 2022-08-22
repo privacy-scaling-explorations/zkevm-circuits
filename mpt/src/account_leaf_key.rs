@@ -156,11 +156,11 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
  
         /*
         /*
-        Key RLC is computed over `s_main.bytes[1]`, ..., `s_main.bytes[31]` because we do not know
-        the key length in advance. To prevent changing the key and setting `s_main.bytes[i]` for
-        `i > nonce_len + 1` to get the desired nonce RLC, we need to ensure that
+        Key RLC is computed over all of `s_main.bytes[1], ..., s_main.bytes[31], c_main.rlp1, c_main.rlp2`
+        because we do not know the key length in advance.
+        To prevent changing the key and setting `s_main.bytes[i]` (or `c_main.rlp1/c_main.rlp2`) for
+        `i > key_len + 1` to get the desired key RLC, we need to ensure that
         `s_main.bytes[i] = 0` for `i > key_len + 1`.
-        The key can also appear in `c_main.rlp1` and `c_main.rlp2`, so we need to check these two columns too.
         
         Note: the key length is always in s_main.bytes[0] here as opposed to storage
         key leaf where it can appear in s_rlp2 too. This is because the account

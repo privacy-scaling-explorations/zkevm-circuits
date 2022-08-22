@@ -1,11 +1,11 @@
 use halo2_proofs::{
-    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
-    poly::{Rotation}, circuit::Region,
+    plonk::{Advice, Column, ConstraintSystem, Expression, Fixed, VirtualCells},
+    poly::{Rotation},
 };
 use pairing::arithmetic::FieldExt;
 
 use crate::{
-    mpt::{FixedTableTag, ProofVariables, MPTConfig},
+    mpt::{FixedTableTag},
     param::{
         HASH_WIDTH, IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS, IS_EXT_LONG_ODD_C16_POS,
         IS_EXT_LONG_ODD_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS, RLP_NUM,
@@ -107,13 +107,29 @@ pub fn key_len_lookup<F: FieldExt>(
     len_offset: usize,
     fixed_table: [Column<Fixed>; 3],
 ) {
+   key_len_lookup_rot_len(meta, q_enable, ind, key_len_col, column, len_offset, 0, fixed_table);
+}
+
+/*
+Like key_len_lookup, but rotates to retrieve the length of the stream.
+*/
+pub fn key_len_lookup_rot_len<F: FieldExt>(
+    meta: &mut ConstraintSystem<F>,
+    q_enable: impl Fn(&mut VirtualCells<'_, F>) -> Expression<F>,
+    ind: usize,
+    key_len_col: Column<Advice>,
+    column: Column<Advice>,
+    len_offset: usize,
+    rot_len: i32,
+    fixed_table: [Column<Fixed>; 3],
+) {
     meta.lookup_any("key_len_lookup", |meta| {
         let mut constraints = vec![];
         let q_enable = q_enable(meta);
 
         let s = meta.query_advice(column, Rotation::cur());
         let offset = Expression::Constant(F::from(len_offset as u64));
-        let key_len = meta.query_advice(key_len_col, Rotation::cur()) - offset;
+        let key_len = meta.query_advice(key_len_col, Rotation(rot_len)) - offset;
         let key_len_rem = key_len - Expression::Constant(F::from(ind as u64));
         constraints.push((
             Expression::Constant(F::from(FixedTableTag::RangeKeyLen256 as u64)),

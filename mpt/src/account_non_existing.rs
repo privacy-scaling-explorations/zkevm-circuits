@@ -6,7 +6,7 @@ use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
 use crate::{
-    helpers::{key_len_lookup, range_lookups},
+    helpers::{key_len_lookup_rot_len, range_lookups},
     mpt::{FixedTableTag, MainCols, AccumulatorCols},
     param::{
         HASH_WIDTH, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, RLP_NUM, ACCOUNT_NON_EXISTING_IND, BRANCH_ROWS_NUM,
@@ -99,8 +99,6 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
         let c32 = Expression::Constant(F::from(32));
         // key rlc is in the first branch node
         let rot_into_first_branch_child = -(ACCOUNT_NON_EXISTING_IND - 1 + BRANCH_ROWS_NUM);
-
-        // TODO: zeros after key_len in non_existing_account row
 
         let add_wrong_leaf_constraints =
             |meta: &mut VirtualCells<F>,
@@ -321,6 +319,39 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
 
             constraints
         });
+
+        /*
+        /*
+        Key RLC is computed over all of `s_main.bytes[1], ..., s_main.bytes[31], c_main.rlp1, c_main.rlp2`
+        because we do not know the key length in advance.
+        To prevent changing the key and setting `s_main.bytes[i]` (or `c_main.rlp1/c_main.rlp2`) for
+        `i > key_len + 1` to get the desired key RLC, we need to ensure that
+        `s_main.bytes[i] = 0` for `i > key_len + 1`.
+
+        Note that the number of the key bytes in the ACCOUNT_NON_EXISTING row needs to be the same as
+        the number of the key bytes in the ACCOUNT_LEAF_KEY row.
+        
+        Note: the key length is always in s_main.bytes[0] here as opposed to storage
+        key leaf where it can appear in s_rlp2 too. This is because the account
+        leaf contains nonce, balance, ... which makes it always longer than 55 bytes,
+        which makes a RLP to start with 248 (s_rlp1) and having one byte (in s_rlp2)
+        for the length of the remaining stream.
+        */
+        for ind in 1..HASH_WIDTH {
+            key_len_lookup_rot_len(
+                meta,
+                q_enable,
+                ind,
+                s_main.bytes[0],
+                s_main.bytes[ind],
+                128,
+                -2,
+                fixed_table,
+            )
+        }
+        key_len_lookup_rot_len(meta, q_enable, 32, s_main.bytes[0], c_main.rlp1, 128, -2, fixed_table);
+        key_len_lookup_rot_len(meta, q_enable, 33, s_main.bytes[0], c_main.rlp2, 128, -2, fixed_table);
+        */
 
         range_lookups(
             meta,
