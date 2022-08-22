@@ -122,7 +122,6 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
         let c128 = Expression::Constant(F::from(128));
         let c160_inv = Expression::Constant(F::from(160_u64).invert().unwrap());
         let c192 = Expression::Constant(F::from(192));
-        let c226 = Expression::Constant(F::from(226));
         let c248 = Expression::Constant(F::from(248));
         let mut rot_into_branch_init = -17;
         if !is_s {

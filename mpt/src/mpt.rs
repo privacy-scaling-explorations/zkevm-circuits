@@ -29,7 +29,7 @@ use crate::{
         COUNTER_WITNESS_LEN, IS_BALANCE_MOD_POS, IS_EXT_LONG_EVEN_C16_POS,
         IS_EXT_LONG_EVEN_C1_POS, IS_EXT_LONG_ODD_C16_POS, IS_EXT_LONG_ODD_C1_POS,
         IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS, IS_NONCE_MOD_POS, IS_STORAGE_MOD_POS,
-        RLP_NUM, NOT_FIRST_LEVEL_POS, IS_ACCOUNT_DELETE_MOD_POS, IS_NON_EXISTING_ACCOUNT_POS,
+        RLP_NUM, NOT_FIRST_LEVEL_POS, IS_ACCOUNT_DELETE_MOD_POS, IS_NON_EXISTING_ACCOUNT_POS, NIBBLES_COUNTER_POS, BRANCH_ROWS_NUM,
     },
     roots::RootsChip,
     storage_root_in_account_leaf::StorageRootChip, account_non_existing::AccountNonExistingConfig,
@@ -1539,7 +1539,44 @@ impl<F: FieldExt> MPTConfig<F> {
             + row.get_byte(IS_EXT_LONG_ODD_C1_POS)
             == 1;
         pv.is_extension_node = pv.is_even == true || pv.is_odd == true;
+ 
+        // Assign how many nibbles have been used in the previous extension node + branch.
+        let mut num_nibbles = 1; // one nibble is used for position in branch
+        if pv.is_extension_node {
+            // Get into extension node S
+            let row_ext = &witness[ind + BRANCH_ROWS_NUM as usize - 2];
+            let ext_nibbles: usize;
+            if row_ext.get_byte(1) <= 32 {
+                ext_nibbles = 1
+            } else if row_ext.get_byte(0) < 248 {
+                if row_ext.get_byte(2) == 0 { // even number of nibbles
+                    ext_nibbles = ((row_ext.get_byte(1) - 128) as usize - 1) * 2;
+                } else {
+                    ext_nibbles = (row_ext.get_byte(1) - 128) as usize * 2 - 1;
+                }
+            } else {
+                if row_ext.get_byte(3) == 0 { // even number of nibbles
+                    ext_nibbles = ((row_ext.get_byte(2) - 128) as usize - 1) * 2;
+                } else {
+                    ext_nibbles = (row_ext.get_byte(2) - 128) as usize * 2 - 1;
+                }
+            }
 
+            // TODO: num_nibbles to be stored in witness
+            let mut num_nibbles_prev = 0;
+            if row.not_first_level() == 1 {
+                let branch_init_prev = &witness[ind - BRANCH_ROWS_NUM as usize];
+                num_nibbles_prev = branch_init_prev.get_byte(NIBBLES_COUNTER_POS);
+            }
+            num_nibbles += ext_nibbles + num_nibbles_prev as usize;
+        }
+        region.assign_advice(
+            || "assign number of nibbles".to_string(),
+            self.s_main.bytes[NIBBLES_COUNTER_POS - RLP_NUM],
+            offset,
+            || Ok(F::from(num_nibbles as u64)),
+        )?; 
+ 
         Ok(())
     }
 
@@ -1759,8 +1796,8 @@ impl<F: FieldExt> MPTConfig<F> {
                     for (ind, row) in witness.iter().filter(|r| r.get_type() != MptWitnessRowType::HashToBeComputed).enumerate() {
                         if offset > 0 {
                             let row_prev = &witness[offset - 1];
-                            let not_first_level_prev = row_prev.get_byte_rev(NOT_FIRST_LEVEL_POS);
-                            let not_first_level_cur = row.get_byte_rev(NOT_FIRST_LEVEL_POS);
+                            let not_first_level_prev = row_prev.not_first_level();
+                            let not_first_level_cur = row.not_first_level();
                             if not_first_level_cur == 0 && not_first_level_prev == 1 {
                                 pv = ProofVariables::new();
                             }
@@ -1790,7 +1827,7 @@ impl<F: FieldExt> MPTConfig<F> {
                             || "not first level",
                             self.not_first_level,
                             offset,
-                            || Ok(F::from(row.get_byte_rev(NOT_FIRST_LEVEL_POS) as u64)),
+                            || Ok(F::from(row.not_first_level() as u64)),
                         )?;
 
                         let l = row.len();
