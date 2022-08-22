@@ -1,13 +1,13 @@
 use halo2_proofs::{
     plonk::{Advice, Column, ConstraintSystem, Expression, Fixed, VirtualCells},
-    poly::Rotation,
+    poly::Rotation, circuit::Region,
 };
 use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
 use crate::{
     helpers::{key_len_lookup_rot_len, range_lookups},
-    mpt::{FixedTableTag, MainCols, AccumulatorCols},
+    mpt::{FixedTableTag, MainCols, AccumulatorCols, MptWitnessRow, ProofVariables, MPTConfig},
     param::{
         HASH_WIDTH, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, RLP_NUM, ACCOUNT_NON_EXISTING_IND, BRANCH_ROWS_NUM,
     },
@@ -394,5 +394,48 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
         );
 
         config
+    }
+
+    pub fn assign(
+        &self,
+        region: &mut Region<'_, F>,
+        mpt_config: &MPTConfig<F>,
+        witness: &[MptWitnessRow],
+        offset: usize,
+    ) {
+        let row_prev = &witness[offset - 1];
+        let row = &witness[offset];
+        let key_len = row_prev.get_byte(2) as usize - 128;
+        let mut sum = F::zero();
+        let mut sum_prev = F::zero();
+        let mut mult = mpt_config.acc_r;
+        for i in 0..key_len {
+            sum += F::from(row.get_byte(3+i) as u64) * mult ;
+            sum_prev += F::from(row_prev.get_byte(3+i) as u64) * mult;
+            mult *= mpt_config.acc_r;
+        }
+        let mut diff_inv = F::zero();
+        if sum != sum_prev {
+            diff_inv = F::invert(&(sum - sum_prev)).unwrap();
+        }
+
+        region.assign_advice(
+            || "assign sum".to_string(),
+            mpt_config.accumulators.key.rlc,
+            offset,
+            || Ok(sum),
+        ).ok();
+        region.assign_advice(
+            || "assign sum prev".to_string(),
+            mpt_config.accumulators.key.mult,
+            offset,
+            || Ok(sum_prev),
+        ).ok();
+        region.assign_advice(
+            || "assign diff inv".to_string(),
+            mpt_config.accumulators.acc_s.rlc,
+            offset,
+            || Ok(diff_inv),
+        ).ok();
     }
 }

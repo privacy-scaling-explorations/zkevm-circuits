@@ -246,7 +246,7 @@ impl MptWitnessRow {
         self.0[self.0.len() - rev_index]
     }
 
-    fn get_byte(&self, index: usize) -> u8 {
+    pub(crate) fn get_byte(&self, index: usize) -> u8 {
         self.0[index]
     }
 
@@ -351,6 +351,7 @@ pub struct MPTConfig<F> {
     account_leaf_storage_codehash_s: AccountLeafStorageCodehashConfig<F>,
     account_leaf_storage_codehash_c: AccountLeafStorageCodehashConfig<F>,
     account_leaf_key_in_added_branch: AccountLeafKeyInAddedBranchConfig<F>,
+    account_non_existing: AccountNonExistingConfig<F>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -965,7 +966,7 @@ impl<F: FieldExt> MPTConfig<F> {
             false,
         );
 
-        AccountNonExistingConfig::<F>::configure(
+        let account_non_existing = AccountNonExistingConfig::<F>::configure(
             meta,
             |meta| {
                 let q_enable = meta.query_fixed(q_enable, Rotation::cur());
@@ -1104,6 +1105,7 @@ impl<F: FieldExt> MPTConfig<F> {
             account_leaf_storage_codehash_s,
             account_leaf_storage_codehash_c,
             account_leaf_key_in_added_branch,
+            account_non_existing,
         }
     }
 
@@ -2783,44 +2785,12 @@ impl<F: FieldExt> MPTConfig<F> {
                                     offset,
                                     || Ok(pv.extension_node_rlc),
                                 )?;
-                            } else if row.get_byte(row.len() - 1) == 10 && row.get_byte(1) != 0 {
+                            } else if row.get_type() == MptWitnessRowType::AccountLeafNeighbouringLeaf && row.get_byte(1) != 0 {
                                 // row[1] != 0 just to avoid usize problems below (when row doesn't
                                 // need to be assigned).
                                 self.account_leaf_key_in_added_branch.assign(&mut region, self, &mut pv, &row.0, offset);
-                            } else if row.get_byte(row.len() - 1) == 18 { 
-                                let key_len = witness[offset-1].get_byte(2) as usize - 128;
-                                let row_prev = &witness[offset - 1];
-                                let mut sum = F::zero();
-                                let mut sum_prev = F::zero();
-                                let mut mult = self.acc_r;
-                                for i in 0..key_len {
-                                    sum += F::from(row.get_byte(3+i) as u64) * mult ;
-                                    sum_prev += F::from(row_prev.get_byte(3+i) as u64) * mult;
-                                    mult *= self.acc_r;
-                                }
-                                let mut diff_inv = F::zero();
-                                if sum != sum_prev {
-                                    diff_inv = F::invert(&(sum - sum_prev)).unwrap();
-                                }
-
-                                region.assign_advice(
-                                    || "assign sum".to_string(),
-                                    self.accumulators.key.rlc,
-                                    offset,
-                                    || Ok(sum),
-                                )?;
-                                region.assign_advice(
-                                    || "assign sum prev".to_string(),
-                                    self.accumulators.key.mult,
-                                    offset,
-                                    || Ok(sum_prev),
-                                )?;
-                                region.assign_advice(
-                                    || "assign diff inv".to_string(),
-                                    self.accumulators.acc_s.rlc,
-                                    offset,
-                                    || Ok(diff_inv),
-                                )?;
+                            } else if row.get_type() == MptWitnessRowType::AccountNonExisting { 
+                               self.account_non_existing.assign(&mut region, self, &witness, offset);
                             }
 
                             offset += 1;
