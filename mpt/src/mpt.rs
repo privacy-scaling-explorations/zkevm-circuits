@@ -1406,9 +1406,50 @@ impl<F: FieldExt> MPTConfig<F> {
     fn assign_branch_init(
         &self,
         region: &mut Region<'_, F>,
-        row: &Vec<u8>,
+        witness: &[MptWitnessRow],
+        ind: usize, 
+        pv: &mut ProofVariables<F>,
         offset: usize,
     ) -> Result<(), Error> {
+        let row = &witness[ind];
+
+        pv.modified_node = row.get_byte(BRANCH_0_KEY_POS);
+        pv.node_index = 0;
+        pv.drifted_pos = row.get_byte(DRIFTED_POS);
+
+        // Get the child that is being changed and convert it to words to enable
+        // lookups:
+        let mut s_hash = witness[ind + 1 + pv.modified_node as usize].s_hash_bytes().to_vec();
+        let mut c_hash = witness[ind + 1 + pv.modified_node as usize].c_hash_bytes().to_vec();
+        pv.s_mod_node_hash_rlc = bytes_into_rlc(&s_hash, self.acc_r);
+        pv.c_mod_node_hash_rlc = bytes_into_rlc(&c_hash, self.acc_r);
+
+        if row.get_byte(IS_BRANCH_S_PLACEHOLDER_POS) == 1 {
+            // We put hash of a node that moved down to the added branch.
+            // This is needed to check the hash of leaf_in_added_branch.
+            s_hash = witness[ind + 1 + pv.drifted_pos as usize].s_hash_bytes().to_vec();
+            pv.s_mod_node_hash_rlc = bytes_into_rlc(&s_hash, self.acc_r);
+            pv.is_branch_s_placeholder = true
+        } else {
+            pv.is_branch_s_placeholder = false
+        }
+        if row.get_byte(IS_BRANCH_C_PLACEHOLDER_POS) == 1 {
+            c_hash = witness[ind + 1 + pv.drifted_pos as usize].c_hash_bytes().to_vec();
+            pv.c_mod_node_hash_rlc = bytes_into_rlc(&c_hash, self.acc_r);
+            pv.is_branch_c_placeholder = true
+        } else {
+            pv.is_branch_c_placeholder = false
+        }
+        // If no placeholder branch, we set drifted_pos = modified_node. This
+        // is needed just to make some other constraints (s_mod_node_hash_rlc
+        // and c_mod_node_hash_rlc correspond to the proper node) easier to
+        // write.
+        if row.get_byte(IS_BRANCH_S_PLACEHOLDER_POS) == 0
+            && row.get_byte(IS_BRANCH_C_PLACEHOLDER_POS) == 0
+        {
+            pv.drifted_pos = pv.modified_node
+        }
+
         let account_leaf = AccountLeaf::default();
         let storage_leaf = StorageLeaf::default();
         let mut branch = Branch::default();
@@ -1416,12 +1457,88 @@ impl<F: FieldExt> MPTConfig<F> {
 
         self.assign_row(
             region,
-            row,
+            &row.main().to_vec(),
             account_leaf,
             storage_leaf, 
             branch,
             offset,
         )?;
+
+        // reassign (it was assigned to 0 in assign_row) branch_acc and
+        // branch_mult to proper values
+
+        // Branch (length 83) with two bytes of RLP meta data
+        // [248,81,128,128,...
+
+        // Branch (length 340) with three bytes of RLP meta data
+        // [249,1,81,128,16,...
+
+        let s_len = [0, 1, 2].map(|i| row.get_byte(BRANCH_0_S_START + i) as u64);
+        pv.acc_s = F::from(s_len[0]);
+        pv.acc_mult_s = self.acc_r;
+
+        if s_len[0] == 249 {
+            pv.acc_s += F::from(s_len[1]) * pv.acc_mult_s; 
+            pv.acc_mult_s *= self.acc_r;
+            pv.acc_s += F::from(s_len[2]) * pv.acc_mult_s;
+            pv.acc_mult_s *= self.acc_r;
+
+            pv.rlp_len_rem_s = s_len[1] as i32 * 256 + s_len[2] as i32;
+        } else if s_len[0] == 248 {
+            pv.acc_s += F::from(s_len[1]) * pv.acc_mult_s; 
+            pv.acc_mult_s *= self.acc_r;
+
+            pv.rlp_len_rem_s = s_len[1] as i32;
+        } else {
+            pv.rlp_len_rem_s = s_len[0] as i32 - 192;
+        }
+
+        let c_len = [0, 1, 2].map(|i| row.get_byte(BRANCH_0_C_START + i) as u64);
+        pv.acc_c = F::from(c_len[0]);
+        pv.acc_mult_c = self.acc_r;
+
+        if c_len[0] == 249 {
+            pv.acc_c += F::from(c_len[1]) * pv.acc_mult_c;
+            pv.acc_mult_c *= self.acc_r;
+            pv.acc_c += F::from(c_len[2]) * pv.acc_mult_c;
+            pv.acc_mult_c *= self.acc_r;
+
+            pv.rlp_len_rem_c = c_len[1] as i32 * 256 + c_len[2] as i32;
+        } else if c_len[0] == 248 {
+            pv.acc_c += F::from(c_len[1]) * pv.acc_mult_c;
+            pv.acc_mult_c *= self.acc_r;
+
+            pv.rlp_len_rem_c = c_len[1] as i32;
+        } else {
+            pv.rlp_len_rem_c = c_len[0] as i32 - 192;
+        }
+
+        self.assign_acc(
+            region,
+            pv.acc_s,
+            pv.acc_mult_s,
+            pv.acc_c,
+            pv.acc_mult_c,
+            offset,
+        )?;
+
+        pv.is_even = row.get_byte(IS_EXT_LONG_EVEN_C16_POS)
+            + row.get_byte(IS_EXT_LONG_EVEN_C1_POS)
+            == 1;
+        pv.is_odd = row.get_byte(IS_EXT_LONG_ODD_C16_POS)
+            + row.get_byte(IS_EXT_LONG_ODD_C1_POS)
+            + row.get_byte(IS_EXT_SHORT_C16_POS)
+            + row.get_byte(IS_EXT_SHORT_C1_POS)
+            == 1;
+        pv.is_short = row.get_byte(IS_EXT_SHORT_C16_POS)
+            + row.get_byte(IS_EXT_SHORT_C1_POS)
+            == 1;
+        pv.is_long = row.get_byte(IS_EXT_LONG_EVEN_C16_POS)
+            + row.get_byte(IS_EXT_LONG_EVEN_C1_POS)
+            + row.get_byte(IS_EXT_LONG_ODD_C16_POS)
+            + row.get_byte(IS_EXT_LONG_ODD_C1_POS)
+            == 1;
+        pv.is_extension_node = pv.is_even == true || pv.is_odd == true;
 
         Ok(())
     }
@@ -1648,6 +1765,14 @@ impl<F: FieldExt> MPTConfig<F> {
                                 pv = ProofVariables::new();
                             }
                         }
+
+                        region.assign_fixed(
+                            || "q_enable",
+                            self.q_enable,
+                            offset,
+                            || Ok(F::one()),
+                        )?;
+
                         if row.get_type() == MptWitnessRowType::AccountLeafKeyS {
                             // account leaf key
                             pv.before_account_leaf = false;
@@ -1750,143 +1875,17 @@ impl<F: FieldExt> MPTConfig<F> {
                         )?;
 
                         if row.get_type() == MptWitnessRowType::InitBranch {
-                            // branch init
-                            pv.modified_node = row.get_byte(BRANCH_0_KEY_POS);
-                            pv.node_index = 0;
-                            pv.drifted_pos = row.get_byte(DRIFTED_POS);
-
-                            // Get the child that is being changed and convert it to words to enable
-                            // lookups:
-                            let mut s_hash = witness[ind + 1 + pv.modified_node as usize].s_hash_bytes().to_vec();
-                            let mut c_hash = witness[ind + 1 + pv.modified_node as usize].c_hash_bytes().to_vec();
-                            pv.s_mod_node_hash_rlc = bytes_into_rlc(&s_hash, self.acc_r);
-                            pv.c_mod_node_hash_rlc = bytes_into_rlc(&c_hash, self.acc_r);
-
-                            if row.get_byte(IS_BRANCH_S_PLACEHOLDER_POS) == 1 {
-                                // We put hash of a node that moved down to the added branch.
-                                // This is needed to check the hash of leaf_in_added_branch.
-                                s_hash = witness[ind + 1 + pv.drifted_pos as usize].s_hash_bytes().to_vec();
-                                pv.s_mod_node_hash_rlc = bytes_into_rlc(&s_hash, self.acc_r);
-                                pv.is_branch_s_placeholder = true
-                            } else {
-                                pv.is_branch_s_placeholder = false
-                            }
-                            if row.get_byte(IS_BRANCH_C_PLACEHOLDER_POS) == 1 {
-                                c_hash = witness[ind + 1 + pv.drifted_pos as usize].c_hash_bytes().to_vec();
-                                pv.c_mod_node_hash_rlc = bytes_into_rlc(&c_hash, self.acc_r);
-                                pv.is_branch_c_placeholder = true
-                            } else {
-                                pv.is_branch_c_placeholder = false
-                            }
-                            // If no placeholder branch, we set drifted_pos = modified_node. This
-                            // is needed just to make some other constraints (s_mod_node_hash_rlc
-                            // and c_mod_node_hash_rlc correspond to the proper node) easier to
-                            // write.
-                            if row.get_byte(IS_BRANCH_S_PLACEHOLDER_POS) == 0
-                                && row.get_byte(IS_BRANCH_C_PLACEHOLDER_POS) == 0
-                            {
-                                pv.drifted_pos = pv.modified_node
-                            }
-
-                            region.assign_fixed(
-                                || "q_enable",
-                                self.q_enable,
-                                offset,
-                                || Ok(F::one()),
-                            )?;
-
                             self.assign_branch_init(
                                 &mut region,
-                                &row.main().to_vec(),
+                                witness,
+                                ind,
+                                &mut pv,
                                 offset,
                             )?;
-
-                            // reassign (it was assigned to 0 in assign_row) branch_acc and
-                            // branch_mult to proper values
-
-                            // Branch (length 83) with two bytes of RLP meta data
-                            // [248,81,128,128,...
-
-                            // Branch (length 340) with three bytes of RLP meta data
-                            // [249,1,81,128,16,...
-
-                            let s_len = [0, 1, 2].map(|i| row.get_byte(BRANCH_0_S_START + i) as u64);
-                            pv.acc_s = F::from(s_len[0]);
-                            pv.acc_mult_s = self.acc_r;
-
-                            if s_len[0] == 249 {
-                                pv.acc_s += F::from(s_len[1]) * pv.acc_mult_s; 
-                                pv.acc_mult_s *= self.acc_r;
-                                pv.acc_s += F::from(s_len[2]) * pv.acc_mult_s;
-                                pv.acc_mult_s *= self.acc_r;
-
-                                pv.rlp_len_rem_s = s_len[1] as i32 * 256 + s_len[2] as i32;
-                            } else if s_len[0] == 248 {
-                                pv.acc_s += F::from(s_len[1]) * pv.acc_mult_s; 
-                                pv.acc_mult_s *= self.acc_r;
-
-                                pv.rlp_len_rem_s = s_len[1] as i32;
-                            } else {
-                                pv.rlp_len_rem_s = s_len[0] as i32 - 192;
-                            }
-
-                            let c_len = [0, 1, 2].map(|i| row.get_byte(BRANCH_0_C_START + i) as u64);
-                            pv.acc_c = F::from(c_len[0]);
-                            pv.acc_mult_c = self.acc_r;
-
-                            if c_len[0] == 249 {
-                                pv.acc_c += F::from(c_len[1]) * pv.acc_mult_c;
-                                pv.acc_mult_c *= self.acc_r;
-                                pv.acc_c += F::from(c_len[2]) * pv.acc_mult_c;
-                                pv.acc_mult_c *= self.acc_r;
-
-                                pv.rlp_len_rem_c = c_len[1] as i32 * 256 + c_len[2] as i32;
-                            } else if c_len[0] == 248 {
-                                pv.acc_c += F::from(c_len[1]) * pv.acc_mult_c;
-                                pv.acc_mult_c *= self.acc_r;
-
-                                pv.rlp_len_rem_c = c_len[1] as i32;
-                            } else {
-                                pv.rlp_len_rem_c = c_len[0] as i32 - 192;
-                            }
-
-                            self.assign_acc(
-                                &mut region,
-                                pv.acc_s,
-                                pv.acc_mult_s,
-                                pv.acc_c,
-                                pv.acc_mult_c,
-                                offset,
-                            )?;
-
-                            pv.is_even = row.get_byte(IS_EXT_LONG_EVEN_C16_POS)
-                                + row.get_byte(IS_EXT_LONG_EVEN_C1_POS)
-                                == 1;
-                            pv.is_odd = row.get_byte(IS_EXT_LONG_ODD_C16_POS)
-                                + row.get_byte(IS_EXT_LONG_ODD_C1_POS)
-                                + row.get_byte(IS_EXT_SHORT_C16_POS)
-                                + row.get_byte(IS_EXT_SHORT_C1_POS)
-                                == 1;
-                            pv.is_short = row.get_byte(IS_EXT_SHORT_C16_POS)
-                                + row.get_byte(IS_EXT_SHORT_C1_POS)
-                                == 1;
-                            pv.is_long = row.get_byte(IS_EXT_LONG_EVEN_C16_POS)
-                                + row.get_byte(IS_EXT_LONG_EVEN_C1_POS)
-                                + row.get_byte(IS_EXT_LONG_ODD_C16_POS)
-                                + row.get_byte(IS_EXT_LONG_ODD_C1_POS)
-                                == 1;
-                            pv.is_extension_node = pv.is_even == true || pv.is_odd == true;
-
+                            
                             offset += 1;
                         } else if row.get_type() == MptWitnessRowType::BranchChild {
                             // branch child
-                            region.assign_fixed(
-                                || "q_enable",
-                                self.q_enable,
-                                offset,
-                                || Ok(F::one()),
-                            )?;
-
                             let mut node_mult_diff_s = F::one();
                             let mut node_mult_diff_c = F::one();
                             
@@ -2253,14 +2252,7 @@ impl<F: FieldExt> MPTConfig<F> {
                             offset += 1;
                             pv.node_index += 1;
                         } else {
-                            // leaf s or leaf c or leaf key s or leaf key c
-                            region.assign_fixed(
-                                || "q_enable",
-                                self.q_enable,
-                                offset,
-                                || Ok(F::one()),
-                            )?;
-                            
+                            // leaf s or leaf c or leaf key s or leaf key c 
                             let mut account_leaf = AccountLeaf::default();
                             let mut storage_leaf = StorageLeaf::default();
                             let mut branch = Branch::default();
