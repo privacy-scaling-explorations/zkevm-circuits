@@ -8,7 +8,6 @@ pub mod sign_verify;
 
 use crate::table::{KeccakTable, TxFieldTag, TxTable};
 use crate::util::{power_of_randomness_from_instance, random_linear_combine_word as rlc};
-use eth_types::geth_types;
 use eth_types::{
     geth_types::Transaction, Address, Field, ToBigEndian, ToLittleEndian, ToScalar, Word,
 };
@@ -116,9 +115,7 @@ pub(crate) fn tx_to_sign_data(tx: &Transaction, chain_id: u64) -> Result<SignDat
             e
         })?;
     // msg = rlp([nonce, gasPrice, gas, to, value, data, sig_v, r, s])
-    let geth_tx: geth_types::Transaction =
-        Into::<eth_types::geth_types::Transaction>::into(tx.clone());
-    let msg = Into::<ethers_core::types::TransactionRequest>::into(geth_tx).rlp(chain_id);
+    let msg = Into::<ethers_core::types::TransactionRequest>::into(tx.clone()).rlp(chain_id);
     let msg_hash: [u8; 32] = Keccak256::digest(&msg)
         .as_slice()
         .to_vec()

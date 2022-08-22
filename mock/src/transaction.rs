@@ -25,7 +25,7 @@ lazy_static! {
         vec![MockTransaction::default()
             .from(AddrOrWallet::random(&mut rng))
             .to(MOCK_ACCOUNTS[0])
-            .nonce(word!("0x3"))
+            .nonce(word!("0x103"))
             .value(word!("0x3e8"))
             .gas_price(word!("0x4d2"))
             .input(Bytes::from(b"hello"))
@@ -33,7 +33,7 @@ lazy_static! {
             MockTransaction::default()
             .from(AddrOrWallet::random(&mut rng))
             .to(MOCK_ACCOUNTS[1])
-            .nonce(word!("0x4"))
+            .nonce(word!("0x104"))
             .value(word!("0x3e8"))
             .gas_price(word!("0x4d2"))
             .input(Bytes::from(b"hello"))
@@ -41,7 +41,7 @@ lazy_static! {
             MockTransaction::default()
             .from(AddrOrWallet::random(&mut rng))
             .to(MOCK_ACCOUNTS[2])
-            .nonce(word!("0x5"))
+            .nonce(word!("0x105"))
             .value(word!("0x3e8"))
             .gas_price(word!("0x4d2"))
             .input(Bytes::from(b"hello"))
@@ -53,6 +53,12 @@ lazy_static! {
 pub enum AddrOrWallet {
     Addr(Address),
     Wallet(LocalWallet),
+}
+
+impl Default for AddrOrWallet {
+    fn default() -> Self {
+        AddrOrWallet::Addr(Address::default())
+    }
 }
 
 impl From<Address> for AddrOrWallet {
@@ -296,7 +302,7 @@ impl MockTransaction {
     pub fn build(&mut self) -> Self {
         let tx = TransactionRequest::new()
             .from(self.from.address())
-            .to(self.to.clone().unwrap().address())
+            .to(self.to.clone().unwrap_or_default().address())
             .nonce(self.nonce)
             .value(self.value)
             .data(self.input.clone())
