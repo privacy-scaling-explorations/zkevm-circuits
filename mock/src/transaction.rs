@@ -33,7 +33,7 @@ lazy_static! {
             MockTransaction::default()
             .from(AddrOrWallet::random(&mut rng))
             .to(MOCK_ACCOUNTS[1])
-            .nonce(word!("0x3"))
+            .nonce(word!("0x4"))
             .value(word!("0x3e8"))
             .gas_price(word!("0x4d2"))
             .input(Bytes::from(b"hello"))
@@ -41,7 +41,7 @@ lazy_static! {
             MockTransaction::default()
             .from(AddrOrWallet::random(&mut rng))
             .to(MOCK_ACCOUNTS[2])
-            .nonce(word!("0x3"))
+            .nonce(word!("0x5"))
             .value(word!("0x3e8"))
             .gas_price(word!("0x4d2"))
             .input(Bytes::from(b"hello"))
@@ -76,7 +76,7 @@ impl AddrOrWallet {
 
 impl AddrOrWallet {
     /// Returns the underlying address associated to the `AddrOrWallet` enum.
-    fn address(&self) -> Address {
+    pub fn address(&self) -> Address {
         match self {
             Self::Addr(addr) => *addr,
             Self::Wallet(wallet) => wallet.address(),
@@ -93,7 +93,7 @@ impl AddrOrWallet {
     /// # Panics
     /// This function will panic if the enum does not contain a [`LocalWallet`]
     /// and instead contains the [`Address`] variant.
-    fn as_wallet(&self) -> LocalWallet {
+    pub fn as_wallet(&self) -> LocalWallet {
         match self {
             Self::Wallet(wallet) => wallet.to_owned(),
             _ => panic!("Broken AddrOrWallet invariant"),
@@ -106,25 +106,25 @@ impl AddrOrWallet {
 /// It contains all the builder-pattern methods required to be able to specify
 /// any of it's details.
 pub struct MockTransaction {
-    hash: Option<Hash>,
-    nonce: Word,
-    block_hash: Hash,
-    block_number: U64,
-    transaction_index: U64,
-    from: AddrOrWallet,
-    to: Option<AddrOrWallet>,
-    value: Word,
-    gas_price: Word,
-    gas: Word,
-    input: Bytes,
-    v: Option<U64>,
-    r: Option<Word>,
-    s: Option<Word>,
-    transaction_type: U64,
-    access_list: AccessList,
-    max_priority_fee_per_gas: Word,
-    max_fee_per_gas: Word,
-    chain_id: Word,
+    pub hash: Option<Hash>,
+    pub nonce: Word,
+    pub block_hash: Hash,
+    pub block_number: U64,
+    pub transaction_index: U64,
+    pub from: AddrOrWallet,
+    pub to: Option<AddrOrWallet>,
+    pub value: Word,
+    pub gas_price: Word,
+    pub gas: Word,
+    pub input: Bytes,
+    pub v: Option<U64>,
+    pub r: Option<Word>,
+    pub s: Option<Word>,
+    pub transaction_type: U64,
+    pub access_list: AccessList,
+    pub max_priority_fee_per_gas: Word,
+    pub max_fee_per_gas: Word,
+    pub chain_id: Word,
 }
 
 impl Default for MockTransaction {
@@ -325,6 +325,7 @@ impl MockTransaction {
 
         let tx_rlp = tx.rlp(self.chain_id.low_u64());
         let sighash = keccak256(tx_rlp.as_ref()).into();
+
         match (self.v, self.r, self.s) {
             (None, None, None) => {
                 // Compute sig params and set them in case we have a wallet as `from` attr.
@@ -335,7 +336,7 @@ impl MockTransaction {
                         .with_chain_id(self.chain_id.low_u64())
                         .sign_hash(sighash, true);
                     // Set sig parameters
-                    self.sig_data((sig.v, sig.s, sig.r));
+                    self.sig_data((sig.v, sig.r, sig.s));
                 }
             }
             _ => unimplemented!(),
