@@ -145,6 +145,19 @@ impl From<&Transaction> for crate::Transaction {
     }
 }
 
+impl From<Transaction> for ethers_core::types::TransactionRequest {
+    fn from(tx: Transaction) -> ethers_core::types::TransactionRequest {
+        TransactionRequest::new()
+            .from(tx.from)
+            .to(tx.to.clone().unwrap())
+            .nonce(tx.nonce)
+            .value(tx.value)
+            .data(tx.call_data.clone())
+            .gas(tx.gas_limit)
+            .gas_price(tx.gas_price)
+    }
+}
+
 impl Transaction {
     /// Create Self from a web3 transaction
     pub fn from_eth_tx(tx: &crate::Transaction) -> Self {
