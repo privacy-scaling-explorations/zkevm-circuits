@@ -129,22 +129,34 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
                 sum_check = sum_check + c_rlp2_cur * mult.clone();
                 sum_prev_check = sum_prev_check + c_rlp2_prev * mult.clone();
 
+                /*
+                We compute the RLC of the key bytes in the ACCOUNT_NON_EXISTING row. We check whether the computed
+                value is the same as the one stored in `accs.key.mult` column.
+                */
                 constraints.push((
-                    "wrong leaf sum check",
+                    "Wrong leaf sum check",
                     q_enable.clone()
                         * correct_level.clone()
                         * is_wrong_leaf.clone()
                         * (sum.clone() - sum_check.clone()),
                 ));
 
+                /*
+                We compute the RLC of the key bytes in the ACCOUNT_LEAF_KEY row. We check whether the computed
+                value is the same as the one stored in `accs.key.rlc` column.
+                */
                 constraints.push((
-                    "wrong leaf sum_prev check",
+                    "Wrong leaf sum_prev check",
                     q_enable.clone()
                         * correct_level.clone()
                         * is_wrong_leaf.clone()
                         * (sum_prev.clone() - sum_prev_check.clone()),
                 ));
 
+                /*
+                The address in the ACCOUNT_LEAF_KEY row and the address in the ACCOUNT_NON_EXISTING row
+                are indeed different.
+                */
                 constraints.push((
                     "Address of a leaf is different than address being inquired (corresponding to address_rlc)",
                     q_enable.clone()
@@ -152,13 +164,14 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
                         * is_wrong_leaf.clone()
                         * (one.clone() - (sum - sum_prev) * diff_inv),
                 ));
-
             };
 
-        // Checks that account_non_existing_row contains the nibbles that give address_rlc (after considering
-        // modified_node in branches/extension nodes above).
-        // Note: currently, for non_existing_account proof S and C proofs are the same, thus there is never
-        // a placeholder branch.
+        /*
+        Checks that account_non_existing_row contains the nibbles that give address_rlc (after considering
+        modified_node in branches/extension nodes above).
+        Note: currently, for non_existing_account proof S and C proofs are the same, thus there is never
+        a placeholder branch.
+        */
         meta.create_gate(
             "Non existing account proof leaf address RLC (leaf not in first level, branch not placeholder)",
             |meta| {
@@ -225,15 +238,15 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
                 let address_rlc = meta.query_advice(address_rlc, Rotation::cur());
 
                 /*
-                Differently as for the other proofs, account-non-existing proof compares `address_rlc` with the address
-                stored in `ACCOUNT_NON_EXISTING` row, not in `ACCOUNT_LEAF_KEY` row.
+                Differently as for the other proofs, the account-non-existing proof compares `address_rlc`
+                with the address stored in `ACCOUNT_NON_EXISTING` row, not in `ACCOUNT_LEAF_KEY` row.
 
                 The crucial thing is that we have a wrong leaf at the address (not exactly the same, just some starting
                 set of nibbles is the same) where we are proving there is no account.
                 If there would be an account at the specified address, it would be positioned in the branch where
-                the wrong account is positioned. Note that position is determined by the starting set of nibbles.
+                the wrong account is positioned. Note that the position is determined by the starting set of nibbles.
                 Once we add the remaining nibbles to the starting ones, we need to obtain the enquired address.
-                There is a constraint below which makes sure the remaining nibbles are different for wrong leaf
+                There is a complementary constraint which makes sure the remaining nibbles are different for wrong leaf
                 and the non-existing account (in the case of wrong leaf, while the case with nil being in branch
                 is different).
                 */
@@ -249,6 +262,13 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
                     c_rlp2_cur, one.clone() - is_leaf_in_first_level.clone(), is_wrong_leaf.clone());
  
                 let is_nil_object = meta.query_advice(sel1, Rotation(rot_into_first_branch_child));
+
+                /*
+                In case when there is no wrong leaf, we need to check there is a nil object in the parent branch.
+                Note that the constraints in `branch.rs` ensure that `sel1` is 1 if and only if there is a nil object
+                at `modified_node` position. We check that in case of no wrong leaf in
+                the non-existing-account proof, `sel1` is 1.
+                */
                 constraints.push((
                     "Nil object in parent branch",
                     q_enable.clone()
@@ -261,12 +281,13 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
             },
         );
 
-        // Proving that some account doesn't exist when there is only one account in the state trie.
-        // Note 1: the hash of the only account is checked to be state root in account_leaf_storage_codehash.
-        // Note 2: there is no nil_object case checked in this gate, because it is covered in the gate
-        // above. That's because when there is a branch (with nil object) in the first level,
-        // the account placeholder will be added below it and thus the account level won't be
-        // in the first level.
+        /*
+        Ensuring that the account does not exist when there is only one account in the state trie.
+        Note 1: The hash of the only account is checked to be the state root in account_leaf_storage_codehash.rs.
+        Note 2: There is no nil_object case checked in this gate, because it is covered in the gate
+        above. That is because when there is a branch (with nil object) in the first level,
+        it automatically means the account leaf is not in the first level.
+        */
         meta.create_gate("Non existing account proof leaf address RLC (leaf in first level)", |meta| {
             let q_enable = q_enable(meta);
             let mut constraints = vec![];
@@ -328,13 +349,13 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
         `i > key_len + 1` to get the desired key RLC, we need to ensure that
         `s_main.bytes[i] = 0` for `i > key_len + 1`.
 
-        Note that the number of the key bytes in the ACCOUNT_NON_EXISTING row needs to be the same as
-        the number of the key bytes in the ACCOUNT_LEAF_KEY row.
-        
+        Note that the number of the key bytes in the `ACCOUNT_NON_EXISTING` row needs to be the same as
+        the number of the key bytes in the `ACCOUNT_LEAF_KEY` row.
+
         Note: the key length is always in s_main.bytes[0] here as opposed to storage
-        key leaf where it can appear in s_rlp2 too. This is because the account
+        key leaf where it can appear in `s_rlp2` too. This is because the account
         leaf contains nonce, balance, ... which makes it always longer than 55 bytes,
-        which makes a RLP to start with 248 (s_rlp1) and having one byte (in s_rlp2)
+        which makes a RLP to start with 248 (`s_rlp1`) and having one byte (in `s_rlp2`)
         for the length of the remaining stream.
         */
         for ind in 1..HASH_WIDTH {
@@ -353,6 +374,10 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
         key_len_lookup_rot_len(meta, q_enable, 33, s_main.bytes[0], c_main.rlp2, 128, -2, fixed_table);
         */
 
+        /*
+        Range lookups ensure that `s_main`, `c_main.rlp1`, `c_main.rlp2` columns are all bytes (between 0 - 255).
+        Note that `c_main.bytes` columns are not used.
+        */
         range_lookups(
             meta,
             q_enable,
