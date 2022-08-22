@@ -1810,46 +1810,44 @@ impl<F: FieldExt> MPTConfig<F> {
                             // Branch (length 340) with three bytes of RLP meta data
                             // [249,1,81,128,16,...
 
-                            pv.acc_s = F::from(row.get_byte(BRANCH_0_S_START) as u64);
+                            let s_len = [0, 1, 2].map(|i| row.get_byte(BRANCH_0_S_START + i) as u64);
+                            pv.acc_s = F::from(s_len[0]);
                             pv.acc_mult_s = self.acc_r;
 
-                            if row.get_byte(BRANCH_0_S_START) == 249 {
-                                pv.acc_s += F::from(row.get_byte(BRANCH_0_S_START + 1) as u64) * pv.acc_mult_s; 
+                            if s_len[0] == 249 {
+                                pv.acc_s += F::from(s_len[1]) * pv.acc_mult_s; 
                                 pv.acc_mult_s *= self.acc_r;
-                                pv.acc_s +=
-                                    F::from(row.get_byte(BRANCH_0_S_START + 2) as u64) * pv.acc_mult_s;
-                                pv.acc_mult_s *= self.acc_r;
-
-                                pv.rlp_len_rem_s = row.get_byte(BRANCH_0_S_START + 1) as i32 * 256
-                                    + row.get_byte(BRANCH_0_S_START + 2) as i32;
-                            } else if row.get_byte(BRANCH_0_S_START) == 248 {
-                                pv.acc_s += F::from(row.get_byte(BRANCH_0_S_START + 1) as u64) * pv.acc_mult_s; 
+                                pv.acc_s += F::from(s_len[2]) * pv.acc_mult_s;
                                 pv.acc_mult_s *= self.acc_r;
 
-                                pv.rlp_len_rem_s = row.get_byte(BRANCH_0_S_START + 1) as i32;
+                                pv.rlp_len_rem_s = s_len[1] as i32 * 256 + s_len[2] as i32;
+                            } else if s_len[0] == 248 {
+                                pv.acc_s += F::from(s_len[1]) * pv.acc_mult_s; 
+                                pv.acc_mult_s *= self.acc_r;
+
+                                pv.rlp_len_rem_s = s_len[1] as i32;
                             } else {
-                                pv.rlp_len_rem_s = row.get_byte(BRANCH_0_S_START) as i32 - 192;
+                                pv.rlp_len_rem_s = s_len[0] as i32 - 192;
                             }
 
-                            pv.acc_c = F::from(row.get_byte(BRANCH_0_C_START) as u64);
+                            let c_len = [0, 1, 2].map(|i| row.get_byte(BRANCH_0_C_START + i) as u64);
+                            pv.acc_c = F::from(c_len[0]);
                             pv.acc_mult_c = self.acc_r;
 
-                            if row.get_byte(BRANCH_0_C_START) == 249 {
-                                pv.acc_c += F::from(row.get_byte(BRANCH_0_C_START + 1) as u64) * pv.acc_mult_c;
+                            if c_len[0] == 249 {
+                                pv.acc_c += F::from(c_len[1]) * pv.acc_mult_c;
                                 pv.acc_mult_c *= self.acc_r;
-                                pv.acc_c +=
-                                    F::from(row.get_byte(BRANCH_0_C_START + 2) as u64) * pv.acc_mult_c;
-                                pv.acc_mult_c *= self.acc_r;
-
-                                pv.rlp_len_rem_c = row.get_byte(BRANCH_0_C_START + 1) as i32 * 256
-                                    + row.get_byte(BRANCH_0_C_START + 2) as i32;
-                            } else if row.get_byte(BRANCH_0_C_START) == 248 {
-                                pv.acc_c += F::from(row.get_byte(BRANCH_0_C_START + 1) as u64) * pv.acc_mult_c;
+                                pv.acc_c += F::from(c_len[2]) * pv.acc_mult_c;
                                 pv.acc_mult_c *= self.acc_r;
 
-                                pv.rlp_len_rem_c = row.get_byte(BRANCH_0_C_START + 1) as i32;
+                                pv.rlp_len_rem_c = c_len[1] as i32 * 256 + c_len[2] as i32;
+                            } else if c_len[0] == 248 {
+                                pv.acc_c += F::from(c_len[1]) * pv.acc_mult_c;
+                                pv.acc_mult_c *= self.acc_r;
+
+                                pv.rlp_len_rem_c = c_len[1] as i32;
                             } else {
-                                pv.rlp_len_rem_c = row.get_byte(BRANCH_0_C_START) as i32 - 192;
+                                pv.rlp_len_rem_c = c_len[0] as i32 - 192;
                             }
 
                             self.assign_acc(
