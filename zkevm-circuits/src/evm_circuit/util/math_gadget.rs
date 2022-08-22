@@ -1630,6 +1630,7 @@ impl<F: Field> SarWordsGadget<F> {
         let p_top = cb.query_cell();
         let is_neg = LtGadget::construct(cb, 127.expr(), a.cells[31].expr());
         let shf_lt256 = IsZeroGadget::construct(cb, sum::expr(&shift.cells[1..32]));
+        let max_u64 = 0xFFFFFFFFFFFFFFFFu64;
         for idx in 0..4 {
             let offset = idx * N_BYTES_U64;
 
@@ -1643,7 +1644,7 @@ impl<F: Field> SarWordsGadget<F> {
             // b64s constraint
             cb.require_equal(
                 "b64s[idx] * shf_lt256 + is_neg * (1 - shf_lt256) * 0xFFFFFFFFFFFFFFFF == from_bytes(b[8 * idx..8 * (idx + 1)])",
-                b64s[idx].expr() * shf_lt256.expr(),
+                b64s[idx].expr() * shf_lt256.expr() + is_neg.expr() * (1.expr() - shf_lt256.expr()) * max_u64.expr(),
                 from_bytes::expr(&b.cells[offset..offset + N_BYTES_U64]),
             );
             cb.require_equal(
@@ -1674,7 +1675,7 @@ impl<F: Field> SarWordsGadget<F> {
                 + (a64s_hi[2].expr() + a64s_lo[3].expr() * p_hi.expr()) * shf_div64_eq2.expr()
                 + (a64s_hi[3].expr() + p_top.expr()) * shf_div64_eq3.expr()
                 + is_neg.expr()
-                    * 0xFFFFFFFFFFFFFFFF.expr()
+                    * max_u64.expr()
                     * (1.expr()
                         - shf_div64_eq0.expr()
                         - shf_div64_eq1.expr()
@@ -1688,7 +1689,7 @@ impl<F: Field> SarWordsGadget<F> {
                 + (a64s_hi[2].expr() + a64s_lo[3].expr() * p_hi.expr()) * shf_div64_eq1.expr()
                 + (a64s_hi[3].expr() + p_top.expr()) * shf_div64_eq2.expr()
                 + is_neg.expr()
-                    * 0xFFFFFFFFFFFFFFFF.expr()
+                    * max_u64.expr()
                     * (1.expr()
                         - shf_div64_eq0.expr()
                         - shf_div64_eq1.expr()
@@ -1700,14 +1701,14 @@ impl<F: Field> SarWordsGadget<F> {
             (a64s_hi[2].expr() + a64s_lo[3].expr() * p_hi.expr()) * shf_div64_eq0.expr()
                 + (a64s_hi[3].expr() + p_top.expr()) * shf_div64_eq1.expr()
                 + is_neg.expr()
-                    * 0xFFFFFFFFFFFFFFFF.expr()
+                    * max_u64.expr()
                     * (1.expr() - shf_div64_eq0.expr() - shf_div64_eq1.expr()),
         );
         cb.require_equal(
             "Constrain b64s[3]",
             b64s[3].expr(),
             (a64s_hi[3].expr() + p_top.expr()) * shf_div64_eq0.expr()
-                + is_neg.expr() * 0xFFFFFFFFFFFFFFFF.expr() * (1.expr() - shf_div64_eq0.expr()),
+                + is_neg.expr() * max_u64.expr() * (1.expr() - shf_div64_eq0.expr()),
         );
 
         // shift constraint
