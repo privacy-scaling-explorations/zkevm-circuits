@@ -117,18 +117,7 @@ pub(crate) fn tx_to_sign_data(tx: &Transaction, chain_id: u64) -> Result<SignDat
             e
         })?;
     // msg = rlp([nonce, gasPrice, gas, to, value, data, sig_v, r, s])
-    let mut stream = RlpStream::new_list(9);
-    stream
-        .append(&tx.nonce)
-        .append(&tx.gas_price)
-        .append(&tx.gas_limit)
-        .append(&tx.to.unwrap_or_else(Address::zero))
-        .append(&tx.value)
-        .append(&tx.call_data.0)
-        .append(&chain_id)
-        .append(&0u32)
-        .append(&0u32);
-    let msg = stream.out();
+    let msg = Into::<eth_types::Transaction>::into(tx).rlp();
     let msg_hash: [u8; 32] = Keccak256::digest(&msg)
         .as_slice()
         .to_vec()
@@ -261,6 +250,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
                 })
             })
             .try_collect()?;
+
         let assigned_sig_verifs =
             self.sign_verify
                 .assign(&config.sign_verify, layouter, self.randomness, &sign_datas)?;
@@ -281,6 +271,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
                     } else {
                         &tx_default
                     };
+
                     let address_cell = assigned_sig_verif.address.cell();
                     let msg_hash_rlc_cell = assigned_sig_verif.msg_hash_rlc.cell();
                     let msg_hash_rlc_value = assigned_sig_verif.msg_hash_rlc.value();
@@ -428,6 +419,7 @@ mod tx_circuit_tests {
         dev::{MockProver, VerifyFailure},
         pairing::bn256::Fr,
     };
+    use mock::AddrOrWallet;
     use pretty_assertions::assert_eq;
     use rand::SeedableRng;
     use rand_chacha::ChaCha20Rng;
@@ -478,11 +470,11 @@ mod tx_circuit_tests {
         assert_eq!(
             run::<Fr, MAX_TXS, MAX_CALLDATA>(
                 k,
-                mock::CORRECT_MOCK_TXS
+                mock::CORRECT_MOCK_TXS[..NUM_TXS]
                     .iter()
                     .map(|tx| Transaction::from(tx.clone()))
                     .collect_vec(),
-                1
+                mock::MOCK_CHAIN_ID.as_u64()
             ),
             Ok(())
         );
@@ -496,7 +488,7 @@ mod tx_circuit_tests {
         const MAX_TXS: usize = 1;
         const MAX_CALLDATA: usize = 32;
 
-        let chain_id: u64 = 1337;
+        let chain_id: u64 = mock::MOCK_CHAIN_ID.as_u64();
 
         let tx: Transaction = mock::CORRECT_MOCK_TXS[0].clone().into();
 
@@ -517,9 +509,12 @@ mod tx_circuit_tests {
 
         let mut tx = mock::CORRECT_MOCK_TXS[0].clone();
         // This address doesn't correspond to the account that signed this tx.
-        tx.from(address!("0x1230000000000000000000000000000000000456"));
+        tx.from = AddrOrWallet::from(address!("0x1230000000000000000000000000000000000456"));
 
         let k = 19;
-        assert!(run::<Fr, MAX_TXS, MAX_CALLDATA>(k, vec![tx.into()], 1).is_err(),);
+        assert!(
+            run::<Fr, MAX_TXS, MAX_CALLDATA>(k, vec![tx.into()], mock::MOCK_CHAIN_ID.as_u64())
+                .is_err(),
+        );
     }
 }
