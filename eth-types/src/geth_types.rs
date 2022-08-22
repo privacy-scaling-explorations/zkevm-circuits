@@ -149,7 +149,7 @@ impl From<Transaction> for ethers_core::types::TransactionRequest {
     fn from(tx: Transaction) -> ethers_core::types::TransactionRequest {
         TransactionRequest::new()
             .from(tx.from)
-            .to(tx.to.clone().unwrap())
+            .to(tx.to.unwrap())
             .nonce(tx.nonce)
             .value(tx.value)
             .data(tx.call_data.clone())
