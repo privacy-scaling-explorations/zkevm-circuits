@@ -124,6 +124,27 @@ pub struct Transaction {
     pub s: Word,
 }
 
+impl Into<crate::Transaction> for &Transaction {
+    fn into(self) -> crate::Transaction {
+        crate::Transaction {
+            from: self.from,
+            to: self.to,
+            nonce: self.nonce,
+            gas: self.gas_limit,
+            value: self.value,
+            gas_price: Some(self.gas_price),
+            max_priority_fee_per_gas: Some(self.gas_fee_cap),
+            max_fee_per_gas: Some(self.gas_tip_cap),
+            input: self.call_data.clone(),
+            access_list: self.access_list.clone(),
+            v: self.v.into(),
+            r: self.r,
+            s: self.s,
+            ..Default::default()
+        }
+    }
+}
+
 impl Transaction {
     /// Create Self from a web3 transaction
     pub fn from_eth_tx(tx: &crate::Transaction) -> Self {
