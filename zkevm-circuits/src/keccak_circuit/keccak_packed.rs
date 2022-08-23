@@ -5,7 +5,8 @@ use super::util::{
 use crate::evm_circuit::util::{not, rlc};
 use crate::keccak_circuit::util::{
     compose_rlc, from_bits, rotate, scatter, target_part_sizes, to_bytes, unpack,
-    NUM_BITS_PER_WORD, NUM_WORDS_TO_ABSORB, NUM_WORDS_TO_SQUEEZE, RATE, RATE_IN_BITS, RHOM,
+    NUM_BITS_PER_BYTE, NUM_BITS_PER_WORD, NUM_WORDS_TO_ABSORB, NUM_WORDS_TO_SQUEEZE, RATE,
+    RATE_IN_BITS, RHOM,
 };
 use crate::{evm_circuit::util::constraint_builder::BaseConstraintBuilder, util::Expr};
 use eth_types::Word;
@@ -333,7 +334,7 @@ mod decode {
     }
 }
 
-/// Transforms data using a lookup
+/// Transforms data using lookups
 mod transform {
     use super::{Part, PartValue};
     use crate::keccak_circuit::util::{pack, to_bytes, unpack};
@@ -406,7 +407,7 @@ mod transform {
     }
 }
 
-/// Combines parts
+/// Combines smaller parts when possible
 mod combine {
     use super::{Part, PartValue};
     use crate::keccak_circuit::util::target_part_sizes;
@@ -431,9 +432,12 @@ mod combine {
         let mut input_iter = input.iter();
         while let Some(input_part) = input_iter.next() {
             if input_part.num_bits == target_sizes[counter] {
+                // No merging to be done, part is already the target size
                 parts.push(input_part.clone());
                 counter += 1;
             } else if let Some(extra_part) = input_iter.next() {
+                // Combine the current and next part
+                // The size of this new part needs to match the target size exactly
                 assert_eq!(
                     input_part.num_bits + extra_part.num_bits,
                     target_sizes[counter]
@@ -571,10 +575,24 @@ impl<F: Field> KeccakPackedConfig<F> {
         let pre_s = s.clone();
 
         // Absorb
+        // The absorption happening at the start of the 24 rounds is done spread out
+        // over those 24 rounds. In a single round (in 17 of the 24 rounds) a
+        // single word is absorbed so the work is spread out. The absorption is
+        // done simply by doing state + data and then normalizing the result to [0,1].
+        // We also need to convert the input data into bytes to calculate the input data
+        // rlc.
         let mut lookup_counter = 0;
         let part_size = get_num_bits_per_absorb_lookup();
-        let input = absorb_from_expr + absorb_data_expr.clone();
-        let absorb_fat = split::expr(meta, &mut cell_values, &mut cb, input, 0, part_size, false);
+        let absorbed = absorb_from_expr + absorb_data_expr.clone();
+        let absorb_fat = split::expr(
+            meta,
+            &mut cell_values,
+            &mut cb,
+            absorbed,
+            0,
+            part_size,
+            false,
+        );
         let absorb_res = transform::expr(
             "absorb",
             meta,
@@ -593,25 +611,25 @@ impl<F: Field> KeccakPackedConfig<F> {
         info!("Columns: {}", cell_values.len());
         total_lookup_counter += lookup_counter;
 
-        // Padding
+        // Absorb data in bytes
+        // Now make the input data available as bytes
         let mut lookup_counter = 0;
-        // Unpack a single word into bytes (for the absorption)
-        // Potential optimization: could potentially do multiple bytes per lookup
-        let packed = split::expr(
+        // Potential optimization: could do multiple bytes per lookup
+        let packed_parts = split::expr(
             meta,
             &mut cell_values,
             &mut cb,
             absorb_data_expr,
             0,
-            8,
+            NUM_BITS_PER_BYTE,
             false,
         );
         let input_bytes = transform::expr(
-            "squeeze unpack",
+            "absorb unpack",
             meta,
             &mut cell_values,
             &mut lookup_counter,
-            packed,
+            packed_parts,
             pack_unpack_table
                 .into_iter()
                 .rev()
@@ -619,15 +637,15 @@ impl<F: Field> KeccakPackedConfig<F> {
                 .try_into()
                 .unwrap(),
         );
+
+        // Padding data
         let mut is_padding_columns = Vec::new();
         let mut data_rlc_columns = Vec::new();
         for _ in input_bytes.iter() {
-            let cell_column = meta.advice_column();
-            is_padding_columns.push(cell_column);
-            cell_values.push(cell_column);
-            let cell_column = meta.advice_column();
-            data_rlc_columns.push(cell_column);
-            cell_values.push(cell_column);
+            cell_values.push(meta.advice_column());
+            is_padding_columns.push(*cell_values.last().unwrap());
+            cell_values.push(meta.advice_column());
+            data_rlc_columns.push(*cell_values.last().unwrap());
         }
         let mut is_paddings = Vec::new();
         let mut data_rlcs = Vec::new();
@@ -646,14 +664,22 @@ impl<F: Field> KeccakPackedConfig<F> {
         total_lookup_counter += lookup_counter;
 
         // Theta
+        // Calculate
+        // - `c[i] = b[i][0] + b[i][1] + b[i][2] + b[i][3] + b[i][4]`
+        // - `bc[i] = normalize(c)`.
+        // - `t[i] = bc[(i + 4) % 5] + rot(bc[(i + 1)% 5], 1)`
+        // This is done by splitting the bc values in parts in a way
+        // that allows us to also calculate the rotated value "for free".
         let mut lookup_counter = 0;
         let part_size_c = get_num_bits_per_theta_c_lookup();
         let part_size_t = get_num_bits_per_theta_t_lookup();
         let mut bc = Vec::new();
         for b in s.iter() {
+            // Calculate `c`
             let c = b[0].clone() + b[1].clone() + b[2].clone() + b[3].clone() + b[4].clone();
+            // Calculate `bc` by normalizing `c` by first splitting it into parts
             let bc_fat = split::expr(meta, &mut cell_values, &mut cb, c, 1, part_size_c, false);
-            let bc_thin = transform::expr(
+            let bc_norm = transform::expr(
                 "theta c",
                 meta,
                 &mut cell_values,
@@ -661,30 +687,37 @@ impl<F: Field> KeccakPackedConfig<F> {
                 bc_fat.clone(),
                 normalize_6,
             );
-            bc.push(bc_thin);
+            bc.push(bc_norm);
         }
+        // Now do `t[i] = bc[(i + 4) % 5] + rot(bc[(i + 1) % 5], 1)` and add it to the
+        // state.
         let mut os = vec![vec![0u64.expr(); 5]; 5];
         for i in 0..5 {
+            let t = decode::expr(bc[(i + 4) % 5].clone())
+                + decode::expr(rotate(bc[(i + 1) % 5].clone(), 1, part_size_c));
             if get_mode() {
-                let t = decode::expr(bc[(i + 4) % 5].clone())
-                    + decode::expr(rotate(bc[(i + 1) % 5].clone(), 1, part_size_c));
+                // We don't normalize the result here. We do it as part of the rho/pi step, even
+                // though we would only have to normalize 5 values instead of 25, because of the
+                // way the rho/pi and chi steps can be combined it's more efficient to
+                // do it there (the max value for chi is 4 already so that's the
+                // limiting factor).
                 for j in 0..5 {
                     os[i][j] = s[i][j].clone() + t.clone();
                 }
             } else {
-                let t = decode::expr(bc[(i + 4) % 5].clone())
-                    + decode::expr(rotate(bc[(i + 1) % 5].clone(), 1, part_size_c));
-                let t_fat = split::expr(meta, &mut cell_values, &mut cb, t, 0, part_size_t, false);
-                let t_thin = decode::expr(transform::expr(
+                // Do normalize `t` here already.
+                let t_parts =
+                    split::expr(meta, &mut cell_values, &mut cb, t, 0, part_size_t, false);
+                let t_norm = decode::expr(transform::expr(
                     "theta t",
                     meta,
                     &mut cell_values,
                     &mut lookup_counter,
-                    t_fat.clone(),
+                    t_parts.clone(),
                     normalize_3,
                 ));
                 for j in 0..5 {
-                    os[i][j] = s[i][j].clone() + t_thin.clone();
+                    os[i][j] = s[i][j].clone() + t_norm.clone();
                 }
             }
         }
@@ -695,15 +728,20 @@ impl<F: Field> KeccakPackedConfig<F> {
         total_lookup_counter += lookup_counter;
 
         // Rho/Pi
+        // For the rotation of rho/pi we split up the words like expected, but in a way
+        // that allows reusing the same parts in an optimal way for the chi step.
+        // We can save quite a few columns by not recombining the parts after rho/pi and
+        // re-splitting the words again before chi. Instead we do chi directly
+        // on the output parts of rho/pi. For rho/pi specically we do
+        // `s[j][2 * i + 3 * j) % 5] = normalize(rot(s[i][j], RHOM[i][j]))`.
         let mut lookup_counter = 0;
         let part_size = get_num_bits_per_base_chi_lookup();
         let mut os = vec![vec![0u64.expr(); 5]; 5];
         let mut os_parts = vec![vec![Vec::new(); 5]; 5];
-        let mut num_parts_pre = 0;
-        let mut num_parts_post = 0;
         for i in 0..5 {
             for j in 0..5 {
-                let s_fat = rotate(
+                // Split s into parts and rotate
+                let s_parts = rotate(
                     split::expr(
                         meta,
                         &mut cell_values,
@@ -716,29 +754,27 @@ impl<F: Field> KeccakPackedConfig<F> {
                     RHOM[i][j],
                     part_size,
                 );
-                let s_fat = combine::expr(
-                    "combine",
+                // Combine smaller parts that can be transformed together
+                let s_parts = combine::expr(
+                    "rho/pi combine",
                     meta,
                     &mut lookup_counter,
-                    s_fat.clone(),
+                    s_parts.clone(),
                     part_size,
                     normalize_4[0],
                     true,
                 );
-                let b_thin = transform::expr(
-                    "rho/pi",
+                // Normalize the result
+                let s_parts = transform::expr(
+                    "rho/pi normalize",
                     meta,
                     &mut cell_values,
                     &mut lookup_counter,
-                    s_fat.clone(),
+                    s_parts.clone(),
                     if get_mode() { normalize_4 } else { normalize_3 },
                 );
-                if get_mode() {
-                    num_parts_pre += b_thin.len();
-                    os_parts[j][(2 * i + 3 * j) % 5] = b_thin.clone();
-                    num_parts_post += os_parts[j][(2 * i + 3 * j) % 5].len();
-                }
-                os[j][(2 * i + 3 * j) % 5] = decode::expr(b_thin.clone());
+                os_parts[j][(2 * i + 3 * j) % 5] = s_parts.clone();
+                os[j][(2 * i + 3 * j) % 5] = decode::expr(s_parts.clone());
             }
         }
         s = os.clone();
@@ -748,6 +784,10 @@ impl<F: Field> KeccakPackedConfig<F> {
         total_lookup_counter += lookup_counter;
 
         // Chi
+        // Calculate `b[i][j] = b[i][j] ^ ((~b[(i+1)%5][j]) & b[(i+2)%5][j])`, except
+        // for `b[0][0]` where we have to calculate `b[i][j] = b[i][j] ^
+        // ((~b[(i+1)%5][j]) & b[(i+2)%5][j]) ^ round_cst`. This is calculated
+        // by making use of `CHI_BASE_LOOKUP_TABLE` and `CHI_EXT_LOOKUP_TABLE`.
         let mut lookup_counter = 0;
         let part_size_base = get_num_bits_per_base_chi_lookup();
         let part_size_ext = get_num_bits_per_ext_chi_lookup();
@@ -755,50 +795,61 @@ impl<F: Field> KeccakPackedConfig<F> {
         for i in 0..5 {
             for j in 0..5 {
                 if i == 0 && j == 0 {
-                    let input = scatter::expr(5, NUM_BITS_PER_WORD) + s[(i + 2) % 5][j].clone()
+                    // Calculate `a ^ ((~b) & c) ^ d` by doing `lookup[5 - 2*a - b + c - 2*d]`
+                    let next_s = scatter::expr(5, NUM_BITS_PER_WORD)
                         - 2.expr() * s[i][j].clone()
                         - s[(i + 1) % 5][j].clone()
+                        + s[(i + 2) % 5][j].clone()
                         - 2.expr() * round_cst_expr.clone();
-                    let fat = split::expr(
+                    // Split into parts
+                    let next_s_parts = split::expr(
                         meta,
                         &mut cell_values,
                         &mut cb,
-                        input,
+                        next_s,
                         0,
                         part_size_ext,
                         false,
                     );
+                    // Normalize the data and decode the result
                     os[i][j] = decode::expr(transform::expr(
                         "chi ext",
                         meta,
                         &mut cell_values,
                         &mut lookup_counter,
-                        fat.clone(),
+                        next_s_parts.clone(),
                         chi_ext_table,
                     ));
+                    // Make sure the state stored the next row is updated like expected
                     cb.require_equal("next row check", os[i][j].clone(), s_next[i][j].clone());
                 } else {
-                    let mut fat = Vec::new();
-                    if get_mode() {
+                    // Calculate `a ^ ((~b) & c)` by doing `lookup[3 - 2*a + b - c]`
+                    let s_parts = if get_mode() {
+                        // Work directly on the Rho/Pi parts
+                        let mut s_parts = Vec::new();
                         for ((part_a, part_b), part_c) in os_parts[i][j]
                             .iter()
                             .zip(os_parts[(i + 1) % 5][j].iter())
                             .zip(os_parts[(i + 2) % 5][j].iter())
                         {
-                            let expr = scatter::expr(3, part_size_base) + part_b.expr.clone()
+                            let expr = scatter::expr(3, part_size_base)
                                 - 2.expr() * part_a.expr.clone()
+                                + part_b.expr.clone()
                                 - part_c.expr.clone();
-                            fat.push(Part {
+                            s_parts.push(Part {
                                 num_bits: part_size_base,
                                 expr: expr.clone(),
                                 parts: vec![expr.clone()],
                             });
                         }
+                        s_parts
                     } else {
-                        let input = scatter::expr(3, NUM_BITS_PER_WORD) + s[(i + 1) % 5][j].clone()
+                        // Work on complete words at a time, and then split in parts again
+                        let input = scatter::expr(3, NUM_BITS_PER_WORD)
                             - 2.expr() * s[i][j].clone()
+                            + s[(i + 1) % 5][j].clone()
                             - s[(i + 2) % 5][j].clone();
-                        fat = split::expr(
+                        split::expr(
                             meta,
                             &mut cell_values,
                             &mut cb,
@@ -806,16 +857,18 @@ impl<F: Field> KeccakPackedConfig<F> {
                             0,
                             part_size_base,
                             false,
-                        );
-                    }
+                        )
+                    };
+                    // Normalize the parts and reconstruct the word
                     os[i][j] = decode::expr(transform::expr(
                         "chi base",
                         meta,
                         &mut cell_values,
                         &mut lookup_counter,
-                        fat.clone(),
+                        s_parts.clone(),
                         chi_base_table,
                     ));
+                    // Make sure the state stored the next row is updated like expected
                     cb.require_equal("next row check", os[i][j].clone(), s_next[i][j].clone());
                 }
             }
@@ -823,19 +876,20 @@ impl<F: Field> KeccakPackedConfig<F> {
         info!("- Post chi:");
         info!("Lookups: {}", lookup_counter);
         info!("Columns: {}", cell_values.len());
-        info!("num_parts_pre: {}", num_parts_pre);
-        info!("num_parts_post: {}", num_parts_post);
         total_lookup_counter += lookup_counter;
 
-        // Unpack a single word into bytes (for the squeeze)
-        // Potential optimization: could potentially do multiple bytes per lookup
+        // Squeeze
+        // The squeeze happening at the end of the 24 rounds is done spread out
+        // over those 24 rounds. In a single round (in 4 of the 24 rounds) a
+        // single word is converted to bytes.
+        // Potential optimization: could do multiple bytes per lookup
         let packed = split::expr(
             meta,
             &mut cell_values,
             &mut cb,
             squeeze_from.clone(),
             0,
-            8,
+            NUM_BITS_PER_BYTE,
             false,
         );
         transform::expr(
@@ -852,10 +906,12 @@ impl<F: Field> KeccakPackedConfig<F> {
                 .unwrap(),
         );
 
+        // The round constraints that we've been building up till now
         meta.create_gate("round", |meta| {
             cb.gate(meta.query_fixed(q_round, Rotation::cur()))
         });
 
+        // Some general input checks
         meta.create_gate("input checks", |meta| {
             let mut cb = BaseConstraintBuilder::new(MAX_DEGREE);
             cb.require_boolean(
@@ -865,6 +921,7 @@ impl<F: Field> KeccakPackedConfig<F> {
             cb.gate(meta.query_fixed(q_enable, Rotation::cur()))
         });
 
+        // Enforce fixed values on the first row
         meta.create_gate("first row", |meta| {
             let mut cb = BaseConstraintBuilder::new(MAX_DEGREE);
             cb.require_equal(
@@ -877,6 +934,7 @@ impl<F: Field> KeccakPackedConfig<F> {
 
         s = pre_s;
 
+        // Absorb
         meta.create_gate("absorb", |meta| {
             let mut cb = BaseConstraintBuilder::new(MAX_DEGREE);
             let is_not_final = not::expr(meta.query_advice(is_final, Rotation::cur()));
@@ -911,10 +969,10 @@ impl<F: Field> KeccakPackedConfig<F> {
                     }
                 }
             }
-
             cb.gate(meta.query_fixed(q_absorb, Rotation::cur()))
         });
 
+        // Squeeze
         meta.create_gate("squeeze", |meta| {
             let mut cb = BaseConstraintBuilder::new(MAX_DEGREE);
             let is_final = meta.query_advice(is_final, Rotation::cur());
@@ -960,6 +1018,7 @@ impl<F: Field> KeccakPackedConfig<F> {
         info!("Columns: {}", cell_values.len());
         total_lookup_counter += lookup_counter;
 
+        // Enforce logic for when this block is the last block for a hash
         meta.create_gate("is final", |meta| {
             let mut cb = BaseConstraintBuilder::new(MAX_DEGREE);
             let last_is_padding_in_block = meta.query_advice(
@@ -978,6 +1037,7 @@ impl<F: Field> KeccakPackedConfig<F> {
             )
         });
 
+        // Padding
         // May be cleaner to do this padding logic in the byte conversion lookup but
         // currently easier to do it like this.
         meta.create_gate("padding", |meta| {
@@ -1067,6 +1127,7 @@ impl<F: Field> KeccakPackedConfig<F> {
             cb.gate(1.expr())
         });
 
+        // Length and input data rlc
         meta.create_gate("length and data rlc", |meta| {
             let mut cb = BaseConstraintBuilder::new(MAX_DEGREE);
 
@@ -1573,11 +1634,17 @@ fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: &[u8], r: F) {
             let _absorb_result =
                 transform::value(&mut cell_values, absorb_fat.clone(), true, |v| v & 1);
 
-            // Padding
-            // Unpack a single word into bytes (for the absorption)
-            // Potential optimization: could do multiple bytes per lookup
-            let packed = split::value(&mut cell_values, absorb_data.absorb, 0, 8, false);
+            // Absorb data in bytes
+            let packed = split::value(
+                &mut cell_values,
+                absorb_data.absorb,
+                0,
+                NUM_BITS_PER_BYTE,
+                false,
+            );
             let input_bytes = transform::value(&mut cell_values, packed, false, |v| *v);
+
+            // Padding
             let mut is_paddings = Vec::new();
             let mut data_rlcs = Vec::new();
             for _ in input_bytes.iter() {
@@ -1620,29 +1687,27 @@ fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: &[u8], r: F) {
             for s in s.iter() {
                 let c = s[0] + s[1] + s[2] + s[3] + s[4];
                 let bc_fat = split::value(&mut cell_values, c, 1, part_size_c, false);
-                let bc_thin = transform::value(&mut cell_values, bc_fat.clone(), true, |v| v & 1);
-                bc.push(bc_thin);
+                let bc_norm = transform::value(&mut cell_values, bc_fat.clone(), true, |v| v & 1);
+                bc.push(bc_norm);
             }
             let mut os = [[Word::zero(); 5]; 5];
             for i in 0..5 {
+                let t = decode::value::<F>(bc[(i + 4) % 5].clone())
+                    + decode::value::<F>(rotate(bc[(i + 1) % 5].clone(), 1, part_size_c));
                 if get_mode() {
-                    let t = decode::value::<F>(bc[(i + 4) % 5].clone())
-                        + decode::value::<F>(rotate(bc[(i + 1) % 5].clone(), 1, part_size_c));
                     for j in 0..5 {
                         os[i][j] = s[i][j] + t;
                     }
                 } else {
-                    let t = decode::value::<F>(bc[(i + 4) % 5].clone())
-                        + decode::value::<F>(rotate(bc[(i + 1) % 5].clone(), 1, part_size_c));
-                    let t_fat = split::value(&mut cell_values, t, 0, part_size_t, false);
-                    let t_thin = decode::value::<F>(transform::value(
+                    let t_parts = split::value(&mut cell_values, t, 0, part_size_t, false);
+                    let t_norm = decode::value::<F>(transform::value(
                         &mut cell_values,
-                        t_fat.clone(),
+                        t_parts.clone(),
                         true,
                         |v| v & 1,
                     ));
                     for j in 0..5 {
-                        os[i][j] = s[i][j] + t_thin;
+                        os[i][j] = s[i][j] + t_norm;
                     }
                 }
             }
@@ -1655,17 +1720,18 @@ fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: &[u8], r: F) {
                 array_init::array_init(|_| array_init::array_init(|_| Vec::new()));
             for i in 0..5 {
                 for j in 0..5 {
-                    let b_fat = rotate(
+                    let s_parts = rotate(
                         split::value(&mut cell_values, s[i][j], RHOM[i][j], part_size, true),
                         RHOM[i][j],
                         part_size,
                     );
-                    let b_fat = combine::value::<F>(b_fat.clone(), part_size);
-                    let b_thin = transform::value(&mut cell_values, b_fat.clone(), true, |v| v & 1);
+                    let s_parts = combine::value::<F>(s_parts.clone(), part_size);
+                    let s_parts =
+                        transform::value(&mut cell_values, s_parts.clone(), true, |v| v & 1);
                     if get_mode() {
-                        os_parts[j][(2 * i + 3 * j) % 5] = b_thin.clone();
+                        os_parts[j][(2 * i + 3 * j) % 5] = s_parts.clone();
                     }
-                    os[j][(2 * i + 3 * j) % 5] = decode::value::<F>(b_thin);
+                    os[j][(2 * i + 3 * j) % 5] = decode::value::<F>(s_parts);
                 }
             }
             s = os;
@@ -1677,20 +1743,21 @@ fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: &[u8], r: F) {
             for i in 0..5 {
                 for j in 0..5 {
                     if i == 0 && j == 0 {
-                        let input = all_fives + s[(i + 2) % 5][j]
+                        let next_s = all_fives + s[(i + 2) % 5][j]
                             - Word::from(2u64) * s[i][j]
                             - s[(i + 1) % 5][j]
                             - Word::from(2u64) * pack_u64(ROUND_CST[round]);
-                        let fat = split::value(&mut cell_values, input, 0, part_size_ext, false);
+                        let next_s_parts =
+                            split::value(&mut cell_values, next_s, 0, part_size_ext, false);
                         os[i][j] = decode::value::<F>(transform::value(
                             &mut cell_values,
-                            fat.clone(),
+                            next_s_parts.clone(),
                             true,
                             |v| CHI_EXT_LOOKUP_TABLE[*v as usize],
                         ));
                     } else {
-                        let mut fat = Vec::new();
-                        if get_mode() {
+                        let s_parts = if get_mode() {
+                            let mut s_parts = Vec::new();
                             for ((part_a, part_b), part_c) in os_parts[i][j]
                                 .iter()
                                 .zip(os_parts[(i + 1) % 5][j].iter())
@@ -1699,20 +1766,21 @@ fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: &[u8], r: F) {
                                 let value = pack(&vec![3u8; part_size_base]) + part_b.value
                                     - Word::from(2u64) * part_a.value
                                     - part_c.value;
-                                fat.push(PartValue {
+                                s_parts.push(PartValue {
                                     num_bits: part_size_base,
                                     value,
                                 });
                             }
+                            s_parts
                         } else {
                             let input = all_threes + s[(i + 1) % 5][j]
                                 - Word::from(2u64) * s[i][j]
                                 - s[(i + 2) % 5][j];
-                            fat = split::value(&mut cell_values, input, 0, part_size_base, false);
-                        }
+                            split::value(&mut cell_values, input, 0, part_size_base, false)
+                        };
                         os[i][j] = decode::value::<F>(transform::value(
                             &mut cell_values,
-                            fat.clone(),
+                            s_parts,
                             true,
                             |v| CHI_BASE_LOOKUP_TABLE[*v as usize],
                         ));
@@ -1756,6 +1824,7 @@ fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: &[u8], r: F) {
             });
         }
 
+        // Squeeze
         // Now that we know the state at the end of the rounds, set the squeeze data
         let num_rows = rows.len();
         for (idx, word) in hash_words.iter().enumerate() {

@@ -259,6 +259,7 @@ impl<F: Field> KeccakBitConfig<F> {
             cb.gate(meta.query_fixed(q_enable, Rotation::cur()))
         });
 
+        // Enforce fixed values on the first row
         meta.create_gate("first row", |meta| {
             let mut cb = BaseConstraintBuilder::new(MAX_DEGREE);
             // is_final needs to be true
@@ -270,6 +271,7 @@ impl<F: Field> KeccakBitConfig<F> {
             cb.gate(meta.query_fixed(q_first, Rotation::cur()))
         });
 
+        // The round constraints
         meta.create_gate("round", |meta| {
             let mut cb = BaseConstraintBuilder::new(MAX_DEGREE);
             let mut s = s.clone();
@@ -326,6 +328,7 @@ impl<F: Field> KeccakBitConfig<F> {
             cb.gate(meta.query_fixed(q_round, Rotation::cur()))
         });
 
+        // Absorb
         meta.create_gate("absorb", |meta| {
             let mut cb = BaseConstraintBuilder::new(MAX_DEGREE);
             let is_not_final = not::expr(meta.query_advice(is_final, Rotation::cur()));
@@ -359,6 +362,7 @@ impl<F: Field> KeccakBitConfig<F> {
             cb.gate(meta.query_fixed(q_absorb, Rotation::cur()))
         });
 
+        // Squeeze
         meta.create_gate("squeeze", |meta| {
             let mut cb = BaseConstraintBuilder::new(MAX_DEGREE);
             // Squeeze out the hash
@@ -379,6 +383,7 @@ impl<F: Field> KeccakBitConfig<F> {
             cb.gate(meta.query_fixed(q_enable, Rotation::cur()))
         });
 
+        // Enforce logic for when this block is the last block for a hash
         meta.create_gate("is final", |meta| {
             let mut cb = BaseConstraintBuilder::new(MAX_DEGREE);
             let last_is_padding_in_block = meta.query_advice(
@@ -408,6 +413,7 @@ impl<F: Field> KeccakBitConfig<F> {
             vec![0u64.expr()]
         });
 
+        // Padding
         // May be cleaner to do this padding logic in the byte conversion lookup but
         // currently easier to do it like this.
         meta.create_gate("padding", |meta| {
@@ -496,6 +502,7 @@ impl<F: Field> KeccakBitConfig<F> {
             cb.gate(1.expr())
         });
 
+        // Length and input data rlc
         meta.create_gate("length and data rlc", |meta| {
             let mut cb = BaseConstraintBuilder::new(MAX_DEGREE);
 

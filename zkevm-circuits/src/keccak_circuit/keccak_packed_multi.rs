@@ -944,12 +944,14 @@ impl<F: Field> KeccakPackedConfig<F> {
         info!("Columns: {}", cell_manager.get_width());
         total_lookup_counter += lookup_counter;
 
-        // Padding
+        // Squeeze
+        // The squeezing happening at the end of the 24 rounds is done spread out
+        // over those 24 rounds. In a single round (in 4 of the 24 rounds) a
+        // single word is converted to bytes.
         cell_manager.start_region();
         let mut lookup_counter = 0;
-        // Unpack a single word into bytes (for the absorption)
-        // Potential optimization: could potentially do multiple bytes per lookup
-        let packed = split::expr(
+        // Potential optimization: could do multiple bytes per lookup
+        let packed_parts = split::expr(
             meta,
             &mut cell_manager,
             &mut cb,
@@ -965,7 +967,7 @@ impl<F: Field> KeccakPackedConfig<F> {
             meta,
             &mut cell_manager,
             &mut lookup_counter,
-            packed,
+            packed_parts,
             pack_unpack_table
                 .into_iter()
                 .rev()
@@ -974,6 +976,8 @@ impl<F: Field> KeccakPackedConfig<F> {
                 .unwrap(),
             true,
         );
+
+        // Padding data
         cell_manager.start_region();
         let mut is_paddings = Vec::new();
         let mut data_rlcs = Vec::new();
@@ -987,17 +991,20 @@ impl<F: Field> KeccakPackedConfig<F> {
         total_lookup_counter += lookup_counter;
 
         // Theta
-        // We calculate `bc[i] = normalize(b[i][0] + b[i][1] + b[i][2] + b[i][3] +
-        // b[i][4])`. This is done by splitting the bc values in parts a way
-        // that allows us to also calculate the rotated value "for free":
-        //`bc[(i + 4) % 5] + rot(bc[(i + 1)% 5], 1)`
+        // Calculate
+        // - `c[i] = b[i][0] + b[i][1] + b[i][2] + b[i][3] + b[i][4]`
+        // - `bc[i] = normalize(c)`.
+        // - `t[i] = bc[(i + 4) % 5] + rot(bc[(i + 1)% 5], 1)`
+        // This is done by splitting the bc values in parts in a way
+        // that allows us to also calculate the rotated value "for free".
         cell_manager.start_region();
         let mut lookup_counter = 0;
         let part_size_c = get_num_bits_per_theta_c_lookup();
-        let mut bcf = Vec::new();
+        let mut c_parts = Vec::new();
         for b in b.iter() {
+            // Calculate c and split into parts
             let c = b[0].clone() + b[1].clone() + b[2].clone() + b[3].clone() + b[4].clone();
-            let bc_fat = split::expr(
+            c_parts.push(split::expr(
                 meta,
                 &mut cell_manager,
                 &mut cb,
@@ -1006,24 +1013,23 @@ impl<F: Field> KeccakPackedConfig<F> {
                 part_size_c,
                 false,
                 None,
-            );
-            bcf.push(bc_fat);
+            ));
         }
+        // Now calculate `bc` by normalizing `c`
         cell_manager.start_region();
         let mut bc = Vec::new();
-        for bc_fat in bcf {
-            let bc_thin = transform::expr(
+        for c in c_parts {
+            // Normalize c
+            bc.push(transform::expr(
                 "theta c",
                 meta,
                 &mut cell_manager,
                 &mut lookup_counter,
-                bc_fat.clone(),
+                c,
                 normalize_6,
                 true,
-            );
-            bc.push(bc_thin);
+            ));
         }
-
         // Now do `bc[(i + 4) % 5] + rot(bc[(i + 1) % 5], 1)` using just expressions.
         // We don't normalize the result here. We do it as part of the rho/pi step, even
         // though we would only have to normalize 5 values instead of 25, because of the
@@ -1054,7 +1060,6 @@ impl<F: Field> KeccakPackedConfig<F> {
         cell_manager.start_region();
         let mut lookup_counter = 0;
         let part_size = get_num_bits_per_base_chi_lookup();
-
         // To combine the rho/pi/chi steps we have to ensure a specific layout so
         // query those cells here first.
         // For chi we have to do `b[i][j] ^ ((~b[(i+1)%5][j]) & b[(i+2)%5][j])`. `j`
@@ -1088,7 +1093,6 @@ impl<F: Field> KeccakPackedConfig<F> {
                 }
             }
         }
-
         // Do the transformation, resulting in the word parts also being normalized.
         let pi_region_start = cell_manager.start_region();
         let mut ob_parts = vec![vec![Vec::new(); 5]; 5];
@@ -1119,7 +1123,6 @@ impl<F: Field> KeccakPackedConfig<F> {
             }
         }
         let pi_region_end = cell_manager.start_region();
-
         // Pi parts range checks
         // To make the uniform stuff work we had to combine some parts together
         // in a new cell. Here we make sure those parts are range checked.
@@ -1131,7 +1134,6 @@ impl<F: Field> KeccakPackedConfig<F> {
             });
             lookup_counter += 1;
         }
-
         info!("- Post rho/pi:");
         info!("Lookups: {}", lookup_counter);
         info!("Columns: {}", cell_manager.get_width());
@@ -1213,14 +1215,12 @@ impl<F: Field> KeccakPackedConfig<F> {
             normalize_3,
             true,
         ));
-
         // Final results stored in the next row
         for i in 0..5 {
             for j in 0..5 {
                 cb.require_equal("next row check", b[i][j].clone(), b_next[i][j].clone());
             }
         }
-
         info!("- Post chi:");
         info!("Lookups: {}", lookup_counter);
         info!("Columns: {}", cell_manager.get_width());
@@ -1239,7 +1239,7 @@ impl<F: Field> KeccakPackedConfig<F> {
 
         cell_manager.start_region();
         // Unpack a single word into bytes (for the squeeze)
-        // Potential optimization: could potentially do multiple bytes per lookup
+        // Potential optimization: could do multiple bytes per lookup
         let packed = split::expr(
             meta,
             &mut cell_manager,
@@ -1265,16 +1265,17 @@ impl<F: Field> KeccakPackedConfig<F> {
                 .unwrap(),
             true,
         );
-
         info!("- Post squeeze:");
         info!("Lookups: {}", lookup_counter);
         info!("Columns: {}", cell_manager.get_width());
         total_lookup_counter += lookup_counter;
 
+        // The round constraints that we've been building up till now
         meta.create_gate("round", |meta| {
             cb.gate(meta.query_fixed(q_round, Rotation::cur()))
         });
 
+        // Absorb
         meta.create_gate("absorb", |meta| {
             let mut cb = BaseConstraintBuilder::new(MAX_DEGREE);
 
@@ -1325,6 +1326,7 @@ impl<F: Field> KeccakPackedConfig<F> {
             }
         }
 
+        // Squeeze
         meta.create_gate("squeeze", |meta| {
             let mut cb = BaseConstraintBuilder::new(MAX_DEGREE);
 
@@ -1362,6 +1364,7 @@ impl<F: Field> KeccakPackedConfig<F> {
             cb.gate(meta.query_fixed(q_round_last, Rotation::cur()))
         });
 
+        // Some general input checks
         meta.create_gate("input checks", |meta| {
             let mut cb = BaseConstraintBuilder::new(MAX_DEGREE);
             cb.require_boolean(
@@ -1371,6 +1374,7 @@ impl<F: Field> KeccakPackedConfig<F> {
             cb.gate(meta.query_fixed(q_enable, Rotation::cur()))
         });
 
+        // Enforce fixed values on the first row
         meta.create_gate("first row", |meta| {
             let mut cb = BaseConstraintBuilder::new(MAX_DEGREE);
             cb.require_equal(
@@ -1381,6 +1385,7 @@ impl<F: Field> KeccakPackedConfig<F> {
             cb.gate(meta.query_fixed(q_first, Rotation::cur()))
         });
 
+        // Enforce logic for when this block is the last block for a hash
         let last_is_padding_in_block = is_paddings.last().unwrap().at_offset(
             meta,
             -(((NUM_ROUNDS + 1 - NUM_WORDS_TO_ABSORB) * get_num_rows_per_round()) as i32),
@@ -1399,6 +1404,7 @@ impl<F: Field> KeccakPackedConfig<F> {
             )
         });
 
+        // Padding
         // May be cleaner to do this padding logic in the byte conversion lookup but
         // currently easier to do it like this.
         let prev_is_padding = is_paddings
@@ -1490,6 +1496,7 @@ impl<F: Field> KeccakPackedConfig<F> {
             cb.gate(1.expr())
         });
 
+        // Length and input data rlc
         meta.create_gate("length and data rlc", |meta| {
             let mut cb = BaseConstraintBuilder::new(MAX_DEGREE);
 
