@@ -1,9 +1,6 @@
 pub mod account_leaf;
 pub mod branch;
 pub mod helpers;
-pub mod leaf_key;
-pub mod leaf_key_in_added_branch;
-pub mod leaf_value;
 pub mod mpt;
 pub mod param;
 pub mod roots;

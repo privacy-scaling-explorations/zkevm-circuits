@@ -6,6 +6,8 @@ use halo2_proofs::{
 use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
+// TODO: split across account_leaf, branch, storage_leaf folders
+
 use crate::{
     helpers::{get_is_extension_node, bytes_expr_into_rlc},
     param::{
