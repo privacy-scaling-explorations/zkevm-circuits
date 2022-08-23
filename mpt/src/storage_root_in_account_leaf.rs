@@ -11,7 +11,7 @@ use crate::{
     param::{
         IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS, KECCAK_INPUT_WIDTH,
         KECCAK_OUTPUT_WIDTH, RLP_NUM, ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND, ACCOUNT_LEAF_ROWS, ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND, LEAF_VALUE_S_IND, LEAF_VALUE_C_IND, BRANCH_ROWS_NUM,
-    }, mpt::{MainCols, StorageLeafCols, AccumulatorCols},
+    }, mpt::{MainCols, AccumulatorCols}, storage_leaf::StorageLeafCols,
 };
 
 #[derive(Clone, Debug)]
@@ -28,7 +28,7 @@ impl<F: FieldExt> StorageRootChip<F> {
         q_enable: Column<Fixed>,
         not_first_level: Column<Advice>,
         is_account_leaf_in_added_branch: Column<Advice>,
-        storage_leaf: StorageLeafCols,
+        storage_leaf: StorageLeafCols<F>,
         is_last_branch_child: Column<Advice>,
         s_main: MainCols,
         accs: AccumulatorCols,

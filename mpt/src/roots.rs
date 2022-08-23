@@ -6,7 +6,7 @@ use halo2_proofs::{
 use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
-use crate::mpt::StorageLeafCols;
+use crate::storage_leaf::StorageLeafCols;
 
 #[derive(Clone, Debug)]
 pub(crate) struct RootsConfig {}
@@ -27,7 +27,7 @@ impl<F: FieldExt> RootsChip<F> {
         not_first_level: Column<Advice>,
         is_branch_init: Column<Advice>,
         is_account_leaf_key_s: Column<Advice>,
-        storage_leaf: StorageLeafCols,
+        storage_leaf: StorageLeafCols<F>,
         inter_start_root: Column<Advice>,
         inter_final_root: Column<Advice>,
         address_rlc: Column<Advice>,

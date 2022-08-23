@@ -32,7 +32,7 @@ use crate::{
         RLP_NUM, NOT_FIRST_LEVEL_POS, IS_ACCOUNT_DELETE_MOD_POS, IS_NON_EXISTING_ACCOUNT_POS, NIBBLES_COUNTER_POS, BRANCH_ROWS_NUM,
     },
     roots::RootsChip,
-    storage_root_in_account_leaf::StorageRootChip, account_non_existing::AccountNonExistingConfig, account_leaf::{AccountLeafCols, AccountLeaf},
+    storage_root_in_account_leaf::StorageRootChip, account_non_existing::AccountNonExistingConfig, account_leaf::{AccountLeafCols, AccountLeaf}, storage_leaf::{StorageLeafCols, StorageLeaf},
 };
 use crate::{branch_key::BranchKeyChip, param::WITNESS_ROW_WIDTH};
 use crate::{
@@ -87,30 +87,6 @@ pub(crate) struct MainCols { // Main as opposed to other columns which are selec
     pub(crate) rlp1: Column<Advice>,
     pub(crate) rlp2: Column<Advice>,
     pub(crate) bytes: [Column<Advice>; HASH_WIDTH],
-}
-
-#[derive(Clone, Debug)]
-pub(crate) struct StorageLeafCols {
-    pub(crate) is_s_key: Column<Advice>,
-    pub(crate) is_s_value: Column<Advice>,
-    pub(crate) is_c_key: Column<Advice>,
-    pub(crate) is_c_value: Column<Advice>,
-    /** it is at drifted_pos position in added branch,
-    * note that this row could be omitted when there
-    * is no added branch but then it would open a
-    * vulnerability because the attacker could omit
-    * these row in cases when it is needed too (and
-    * constraints happen in this row) */
-    pub(crate) is_in_added_branch: Column<Advice>,
-}
-
-#[derive(Default)]
-struct StorageLeaf {
-    is_s_key: bool,
-    is_s_value: bool,
-    is_c_key: bool,
-    is_c_value: bool,
-    is_in_added_branch: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -309,7 +285,7 @@ pub struct MPTConfig<F> {
     pub(crate) s_main: MainCols,
     pub(crate) c_main: MainCols,
     pub(crate) account_leaf: AccountLeafCols<F>,
-    pub(crate) storage_leaf: StorageLeafCols,
+    pub(crate) storage_leaf: StorageLeafCols<F>,
     pub(crate) denoter: DenoteCols,
     pub(crate) acc_r: F,
     r_table: Vec<Expression<F>>,
@@ -452,13 +428,7 @@ impl<F: FieldExt> MPTConfig<F> {
 
         let account_leaf = AccountLeafCols::new(meta);
 
-        let storage_leaf = StorageLeafCols {
-            is_s_key : meta.advice_column(),
-            is_s_value : meta.advice_column(),
-            is_c_key : meta.advice_column(),
-            is_c_value : meta.advice_column(),
-            is_in_added_branch : meta.advice_column(),
-        };
+        let storage_leaf = StorageLeafCols::new(meta);
 
         let branch = BranchCols {
             is_init: meta.advice_column(),
