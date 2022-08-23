@@ -1,6 +1,5 @@
 use halo2_proofs::{
-    circuit::Chip,
-    plonk::{Advice, Column, ConstraintSystem, Expression, VirtualCells},
+    plonk::{ConstraintSystem, Expression, VirtualCells},
     poly::Rotation,
 };
 use pairing::arithmetic::FieldExt;
@@ -8,26 +7,23 @@ use std::marker::PhantomData;
 
 use crate::{helpers::get_bool_constraint, mpt::{MainCols, AccumulatorCols}};
 
-#[derive(Clone, Debug)]
-pub(crate) struct BranchRLCInitConfig {}
-
 // BranchRLCInitChip verifies the random linear combination for the branch init
 // row. The rest of random linear combination is checked in branch_acc, the
 // whole RLC is used to check the hash of a branch.
-pub(crate) struct BranchRLCInitChip<F> {
-    config: BranchRLCInitConfig,
+#[derive(Clone, Debug)]
+pub(crate) struct BranchRLCInitConfig<F> {
     _marker: PhantomData<F>,
 }
 
-impl<F: FieldExt> BranchRLCInitChip<F> {
+impl<F: FieldExt> BranchRLCInitConfig<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         q_enable: impl FnOnce(&mut VirtualCells<'_, F>) -> Expression<F>,
         s_main: MainCols,
         accs: AccumulatorCols,
         acc_r: F,
-    ) -> BranchRLCInitConfig {
-        let config = BranchRLCInitConfig {};
+    ) -> Self {
+        let config = BranchRLCInitConfig { _marker: PhantomData };
         let one = Expression::Constant(F::one());
 
         // TODO: constraints for branch init (also byte range lookups)
@@ -160,24 +156,5 @@ impl<F: FieldExt> BranchRLCInitChip<F> {
 
         config
     }
-
-    pub fn construct(config: BranchRLCInitConfig) -> Self {
-        Self {
-            config,
-            _marker: PhantomData,
-        }
-    }
 }
 
-impl<F: FieldExt> Chip<F> for BranchRLCInitChip<F> {
-    type Config = BranchRLCInitConfig;
-    type Loaded = ();
-
-    fn config(&self) -> &Self::Config {
-        &self.config
-    }
-
-    fn loaded(&self) -> &Self::Loaded {
-        &()
-    }
-}

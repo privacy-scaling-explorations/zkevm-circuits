@@ -10,7 +10,7 @@ use std::convert::{TryInto, TryFrom};
 use num_enum::TryFromPrimitive;
 
 use crate::{
-    branch::{BranchChip, branch_hash_in_parent::BranchHashInParentChip, branch_parallel::BranchParallelChip, branch_key::BranchKeyChip, branch_rlc::BranchRLCChip, branch_rlc_init::BranchRLCInitChip, extension_node::ExtensionNodeChip, extension_node_key::ExtensionNodeKeyChip},
+    branch::{BranchChip, branch_hash_in_parent::BranchHashInParentConfig, branch_parallel::BranchParallelChip, branch_key::BranchKeyConfig, branch_rlc::BranchRLCConfig, branch_rlc_init::BranchRLCInitConfig, extension_node::ExtensionNodeChip, extension_node_key::ExtensionNodeKeyChip},
     helpers::{get_is_extension_node, bytes_into_rlc},
     param::{
         COUNTER_WITNESS_LEN, IS_BALANCE_MOD_POS, IS_EXT_LONG_EVEN_C16_POS,
@@ -553,7 +553,7 @@ impl<F: FieldExt> MPTConfig<F> {
             fixed_table.clone(),
         );
 
-        BranchKeyChip::<F>::configure(
+        BranchKeyConfig::<F>::configure(
             meta,
             q_not_first,
             not_first_level,
@@ -588,7 +588,7 @@ impl<F: FieldExt> MPTConfig<F> {
             acc_r,
         );
 
-        BranchHashInParentChip::<F>::configure(
+        BranchHashInParentConfig::<F>::configure(
             meta,
             inter_start_root,
             not_first_level,
@@ -602,7 +602,7 @@ impl<F: FieldExt> MPTConfig<F> {
             true,
         );
 
-        BranchHashInParentChip::<F>::configure(
+        BranchHashInParentConfig::<F>::configure(
             meta,
             inter_final_root,
             not_first_level,
@@ -705,7 +705,7 @@ impl<F: FieldExt> MPTConfig<F> {
             false,
         );
 
-        BranchRLCInitChip::<F>::configure(
+        BranchRLCInitConfig::<F>::configure(
             meta,
             |meta| {
                 meta.query_advice(branch.is_init, Rotation::cur())
@@ -716,7 +716,7 @@ impl<F: FieldExt> MPTConfig<F> {
             acc_r,
         );
 
-        BranchRLCChip::<F>::configure(
+        BranchRLCConfig::<F>::configure(
             meta,
             |meta| {
                 let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
@@ -732,7 +732,7 @@ impl<F: FieldExt> MPTConfig<F> {
             fixed_table,
         );
 
-        BranchRLCChip::<F>::configure(
+        BranchRLCConfig::<F>::configure(
             meta,
             |meta| {
                 let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());

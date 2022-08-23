@@ -1,5 +1,4 @@
 use halo2_proofs::{
-    circuit::Chip,
     plonk::{Advice, Column, ConstraintSystem, Expression, Fixed},
     poly::Rotation,
 };
@@ -12,17 +11,15 @@ use crate::{param::{
 }, mpt::{MainCols, BranchCols, AccumulatorPair}};
 
 #[derive(Clone, Debug)]
-pub(crate) struct BranchKeyConfig {}
+pub(crate) struct BranchKeyConfig<F> {
+    _marker: PhantomData<F>,
+}
 
 // Checks whether the key is being properly build using modified_node -
 // modified_node presents a nibble in a key. Storage key is composed of
 // (modified_node_prev * 16 + modified_node) bytes and key bytes in a leaf.
-pub(crate) struct BranchKeyChip<F> {
-    config: BranchKeyConfig,
-    _marker: PhantomData<F>,
-}
 
-impl<F: FieldExt> BranchKeyChip<F> {
+impl<F: FieldExt> BranchKeyConfig<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         q_not_first: Column<Fixed>,
@@ -33,8 +30,8 @@ impl<F: FieldExt> BranchKeyChip<F> {
         s_main: MainCols,
         acc_pair: AccumulatorPair, // used first for account address, then for storage key
         acc_r: F,
-    ) -> BranchKeyConfig {
-        let config = BranchKeyConfig {};
+    ) -> Self {
+        let config = BranchKeyConfig { _marker: PhantomData };
         let one = Expression::Constant(F::one());
 
         meta.create_gate("branch key", |meta| {
@@ -307,25 +304,5 @@ impl<F: FieldExt> BranchKeyChip<F> {
         });
 
         config
-    }
-
-    pub fn construct(config: BranchKeyConfig) -> Self {
-        Self {
-            config,
-            _marker: PhantomData,
-        }
-    }
-}
-
-impl<F: FieldExt> Chip<F> for BranchKeyChip<F> {
-    type Config = BranchKeyConfig;
-    type Loaded = ();
-
-    fn config(&self) -> &Self::Config {
-        &self.config
-    }
-
-    fn loaded(&self) -> &Self::Loaded {
-        &()
     }
 }

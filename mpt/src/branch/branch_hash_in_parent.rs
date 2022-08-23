@@ -1,5 +1,4 @@
 use halo2_proofs::{
-    circuit::Chip,
     plonk::{Advice, Column, ConstraintSystem, Expression, Fixed},
     poly::Rotation,
 };
@@ -12,14 +11,11 @@ use crate::{
 };
 
 #[derive(Clone, Debug)]
-pub(crate) struct BranchHashInParentConfig {}
-
-pub(crate) struct BranchHashInParentChip<F> {
-    config: BranchHashInParentConfig,
+pub(crate) struct BranchHashInParentConfig<F> {
     _marker: PhantomData<F>,
 }
 
-impl<F: FieldExt> BranchHashInParentChip<F> {
+impl<F: FieldExt> BranchHashInParentConfig<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         inter_root: Column<Advice>,
@@ -32,8 +28,8 @@ impl<F: FieldExt> BranchHashInParentChip<F> {
         acc_pair: AccumulatorPair,
         keccak_table: [Column<Fixed>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
         is_s: bool,
-    ) -> BranchHashInParentConfig {
-        let config = BranchHashInParentConfig {};
+    ) -> Self {
+        let config = BranchHashInParentConfig { _marker: PhantomData };
         let one = Expression::Constant(F::from(1_u64));
 
         // Note: branch in the first level cannot be shorter than 32 bytes (it is always hashed).
@@ -231,25 +227,5 @@ impl<F: FieldExt> BranchHashInParentChip<F> {
         });
 
         config
-    }
-
-    pub fn construct(config: BranchHashInParentConfig) -> Self {
-        Self {
-            config,
-            _marker: PhantomData,
-        }
-    }
-}
-
-impl<F: FieldExt> Chip<F> for BranchHashInParentChip<F> {
-    type Config = BranchHashInParentConfig;
-    type Loaded = ();
-
-    fn config(&self) -> &Self::Config {
-        &self.config
-    }
-
-    fn loaded(&self) -> &Self::Loaded {
-        &()
     }
 }

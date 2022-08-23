@@ -1,5 +1,4 @@
 use halo2_proofs::{
-    circuit::Chip,
     plonk::{Advice, Column, ConstraintSystem, Expression, VirtualCells, Fixed},
     poly::Rotation,
 };
@@ -8,17 +7,14 @@ use std::marker::PhantomData;
 
 use crate::{param::{HASH_WIDTH, R_TABLE_LEN}, helpers::{mult_diff_lookup, key_len_lookup}, mpt::{MainCols, AccumulatorPair}};
 
-#[derive(Clone, Debug)]
-pub(crate) struct BranchRLCConfig {}
-
 // BranchRLCChip verifies the random linear combination for the branch which is
 // then used to check the hash of a branch.
-pub(crate) struct BranchRLCChip<F> {
-    config: BranchRLCConfig,
+#[derive(Clone, Debug)]
+pub(crate) struct BranchRLCConfig<F> {
     _marker: PhantomData<F>,
 }
 
-impl<F: FieldExt> BranchRLCChip<F> {
+impl<F: FieldExt> BranchRLCConfig<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         q_enable: impl Fn(&mut VirtualCells<'_, F>) -> Expression<F>,
@@ -28,8 +24,8 @@ impl<F: FieldExt> BranchRLCChip<F> {
         node_mult_diff: Column<Advice>,
         r_table: Vec<Expression<F>>,
         fixed_table: [Column<Fixed>; 3],
-    ) -> BranchRLCConfig {
-        let config = BranchRLCConfig {};
+    ) -> Self {
+        let config = BranchRLCConfig { _marker: PhantomData };
         let c128 = Expression::Constant(F::from(128_u64));
 
         meta.create_gate("branch acc", |meta| {
@@ -137,25 +133,5 @@ impl<F: FieldExt> BranchRLCChip<F> {
         */
 
         config
-    }
-
-    pub fn construct(config: BranchRLCConfig) -> Self {
-        Self {
-            config,
-            _marker: PhantomData,
-        }
-    }
-}
-
-impl<F: FieldExt> Chip<F> for BranchRLCChip<F> {
-    type Config = BranchRLCConfig;
-    type Loaded = ();
-
-    fn config(&self) -> &Self::Config {
-        &self.config
-    }
-
-    fn loaded(&self) -> &Self::Loaded {
-        &()
     }
 }
