@@ -1,3 +1,11 @@
+pub mod branch_hash_in_parent;
+pub mod branch_key;
+pub mod branch_parallel;
+pub mod branch_rlc;
+pub mod branch_rlc_init;
+pub mod extension_node;
+pub mod extension_node_key;
+
 use halo2_proofs::{
     circuit::Chip,
     plonk::{Column, ConstraintSystem, Expression, Fixed, VirtualCells},
