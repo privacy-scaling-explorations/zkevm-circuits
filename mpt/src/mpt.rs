@@ -32,7 +32,7 @@ use crate::{
         RLP_NUM, NOT_FIRST_LEVEL_POS, IS_ACCOUNT_DELETE_MOD_POS, IS_NON_EXISTING_ACCOUNT_POS, NIBBLES_COUNTER_POS, BRANCH_ROWS_NUM,
     },
     roots::RootsChip,
-    storage_root_in_account_leaf::StorageRootChip, account_non_existing::AccountNonExistingConfig,
+    storage_root_in_account_leaf::StorageRootChip, account_non_existing::AccountNonExistingConfig, account_leaf::{AccountLeafCols, AccountLeaf},
 };
 use crate::{branch_key::BranchKeyChip, param::WITNESS_ROW_WIDTH};
 use crate::{
@@ -87,30 +87,6 @@ pub(crate) struct MainCols { // Main as opposed to other columns which are selec
     pub(crate) rlp1: Column<Advice>,
     pub(crate) rlp2: Column<Advice>,
     pub(crate) bytes: [Column<Advice>; HASH_WIDTH],
-}
-
-#[derive(Clone, Debug)]
-pub(crate) struct AccountLeafCols {
-    pub(crate) is_key_s: Column<Advice>,
-    pub(crate) is_key_c: Column<Advice>,
-    pub(crate) is_non_existing_account_row: Column<Advice>,
-    pub(crate) is_nonce_balance_s: Column<Advice>,
-    pub(crate) is_nonce_balance_c: Column<Advice>,
-    pub(crate) is_storage_codehash_s: Column<Advice>,
-    pub(crate) is_storage_codehash_c: Column<Advice>,
-    pub(crate) is_in_added_branch: Column<Advice>,
-}
-
-#[derive(Default)]
-struct AccountLeaf {
-    is_key_s: bool,
-    is_key_c: bool,
-    is_non_existing_account_row: bool,
-    is_nonce_balance_s: bool,
-    is_nonce_balance_c: bool,
-    is_storage_codehash_s: bool,
-    is_storage_codehash_c: bool,
-    is_in_added_branch: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -332,7 +308,7 @@ pub struct MPTConfig<F> {
     pub(crate) branch: BranchCols,
     pub(crate) s_main: MainCols,
     pub(crate) c_main: MainCols,
-    pub(crate) account_leaf: AccountLeafCols,
+    pub(crate) account_leaf: AccountLeafCols<F>,
     pub(crate) storage_leaf: StorageLeafCols,
     pub(crate) denoter: DenoteCols,
     pub(crate) acc_r: F,
@@ -474,16 +450,7 @@ impl<F: FieldExt> MPTConfig<F> {
             is_non_existing_account_proof: meta.advice_column(),
         };
 
-        let account_leaf = AccountLeafCols {
-            is_key_s : meta.advice_column(),
-            is_key_c : meta.advice_column(),
-            is_non_existing_account_row : meta.advice_column(),
-            is_nonce_balance_s : meta.advice_column(),
-            is_nonce_balance_c : meta.advice_column(),
-            is_storage_codehash_s : meta.advice_column(),
-            is_storage_codehash_c : meta.advice_column(),
-            is_in_added_branch : meta.advice_column(),
-        };
+        let account_leaf = AccountLeafCols::new(meta);
 
         let storage_leaf = StorageLeafCols {
             is_s_key : meta.advice_column(),

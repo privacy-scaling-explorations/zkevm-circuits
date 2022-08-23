@@ -6,7 +6,7 @@ use halo2_proofs::{
 use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
-use crate::{helpers::get_bool_constraint, mpt::{ProofTypeCols, AccountLeafCols, StorageLeafCols, BranchCols, DenoteCols}};
+use crate::{helpers::get_bool_constraint, mpt::{ProofTypeCols, StorageLeafCols, BranchCols, DenoteCols}, account_leaf::AccountLeafCols};
 
 #[derive(Clone, Debug)]
 pub(crate) struct SelectorsConfig {}
@@ -25,7 +25,7 @@ impl<F: FieldExt> SelectorsChip<F> {
         q_not_first: Column<Fixed>,
         not_first_level: Column<Advice>,
         branch: BranchCols,
-        account_leaf: AccountLeafCols,
+        account_leaf: AccountLeafCols<F>,
         storage_leaf: StorageLeafCols,
         denoter: DenoteCols,
     ) -> SelectorsConfig {
