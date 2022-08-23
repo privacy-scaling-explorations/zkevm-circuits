@@ -187,7 +187,7 @@ impl From<MockTransaction> for Transaction {
 
 impl From<MockTransaction> for GethTransaction {
     fn from(mock: MockTransaction) -> Self {
-        GethTransaction::from(Transaction::from(mock))
+        GethTransaction::from(&Transaction::from(mock))
     }
 }
 
@@ -325,7 +325,7 @@ impl MockTransaction {
                     self.sig_data((sig.v, sig.r, sig.s));
                 }
             }
-            _ => unimplemented!(),
+            _ => panic!("Either all or none of the SigData params have to be set"),
         }
 
         // Compute tx hash in case is not already set

@@ -145,12 +145,6 @@ impl From<&Transaction> for crate::Transaction {
     }
 }
 
-impl From<Transaction> for crate::Transaction {
-    fn from(tx: Transaction) -> crate::Transaction {
-        crate::Transaction::from(&tx)
-    }
-}
-
 impl From<&crate::Transaction> for Transaction {
     fn from(tx: &crate::Transaction) -> Transaction {
         Transaction {
@@ -168,12 +162,6 @@ impl From<&crate::Transaction> for Transaction {
             r: tx.r,
             s: tx.s,
         }
-    }
-}
-
-impl From<crate::Transaction> for Transaction {
-    fn from(tx: crate::Transaction) -> Transaction {
-        Transaction::from(&tx)
     }
 }
 

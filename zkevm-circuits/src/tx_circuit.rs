@@ -459,7 +459,7 @@ mod tx_circuit_tests {
     // `cargo test [...] serial_ -- --ignored --test-threads 1`
     #[ignore]
     #[test]
-    fn serial_test_tx_circuit_rng() {
+    fn serial_test_tx_circuit_2tx() {
         const NUM_TXS: usize = 2;
         const MAX_TXS: usize = 2;
         const MAX_CALLDATA: usize = 32;
@@ -482,7 +482,7 @@ mod tx_circuit_tests {
     // `cargo test [...] serial_ -- --ignored --test-threads 1`
     #[ignore]
     #[test]
-    fn serial_test_tx_circuit_fixed() {
+    fn serial_test_tx_circuit_1tx() {
         const MAX_TXS: usize = 1;
         const MAX_CALLDATA: usize = 32;
 

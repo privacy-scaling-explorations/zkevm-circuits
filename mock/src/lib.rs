@@ -33,13 +33,11 @@ lazy_static! {
     ];
     /// Mock wallets used to generate correctly signed and hashed Transactions.
     pub static ref MOCK_WALLETS: Vec<LocalWallet> = {
-        let mut rng1 = ChaCha20Rng::seed_from_u64(0xcafe0u64);
-        let mut rng2 = ChaCha20Rng::seed_from_u64(0xcafe1u64);
-        let mut rng3 = ChaCha20Rng::seed_from_u64(0xcafe2u64);
+        let mut rng = ChaCha20Rng::seed_from_u64(2u64);
         vec![
-            LocalWallet::new(&mut rng1),
-            LocalWallet::new(&mut rng2),
-            LocalWallet::new(&mut rng3),
+            LocalWallet::new(&mut rng),
+            LocalWallet::new(&mut rng),
+            LocalWallet::new(&mut rng),
     ]
     };
 }
