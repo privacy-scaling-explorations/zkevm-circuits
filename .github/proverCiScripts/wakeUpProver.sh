@@ -3,7 +3,7 @@
 #set -x
 
 profile="cirunner"
-provers_vpc_id="vpc-09fb44da782f32abb"
+provers_vpc_id="vpc-1176d875"
 dns_ipaddr=$(dig prover.cirunners.internal +short)
 zone_id=$(aws route53 --profile $profile list-hosted-zones --query 'HostedZones[?Name==`cirunners.internal.`].[Id]' --output text | awk -F \/ '{ print $3 }')
 route53_dir=".github/proverCiScripts/misc"
