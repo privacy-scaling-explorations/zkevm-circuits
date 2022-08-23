@@ -325,6 +325,7 @@ impl MockTransaction {
                     self.sig_data((sig.v, sig.r, sig.s));
                 }
             }
+            (Some(_), Some(_), Some(_)) => (),
             _ => panic!("Either all or none of the SigData params have to be set"),
         }
 
