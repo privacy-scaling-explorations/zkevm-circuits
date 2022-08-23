@@ -361,6 +361,7 @@ pub(crate) struct ProofVariables<F> {
     pub(crate) nonce_value_s: F,
     pub(crate) balance_value_s: F,
     pub(crate) before_account_leaf: bool,
+    pub(crate) nibbles_num: usize,
 }
 
 impl<F: FieldExt> ProofVariables<F> {
@@ -1476,7 +1477,7 @@ impl<F: FieldExt> MPTConfig<F> {
         pv.is_extension_node = pv.is_even == true || pv.is_odd == true;
  
         // Assign how many nibbles have been used in the previous extension node + branch.
-        let mut num_nibbles = 1; // one nibble is used for position in branch
+        let mut num_nibbles = pv.nibbles_num + 1; // one nibble is used for position in branch
         if pv.is_extension_node {
             // Get into extension node S
             let row_ext = &witness[ind + BRANCH_ROWS_NUM as usize - 2];
@@ -1497,13 +1498,8 @@ impl<F: FieldExt> MPTConfig<F> {
                 }
             }
 
-            // TODO: num_nibbles to be stored in witness
-            let mut num_nibbles_prev = 0;
-            if row.not_first_level() == 1 {
-                let branch_init_prev = &witness[ind - BRANCH_ROWS_NUM as usize];
-                num_nibbles_prev = branch_init_prev.get_byte(NIBBLES_COUNTER_POS);
-            }
-            num_nibbles += ext_nibbles + num_nibbles_prev as usize;
+            num_nibbles += ext_nibbles;
+            pv.nibbles_num += ext_nibbles + 1; // +1 is for branch position
         }
         region.assign_advice(
             || "assign number of nibbles".to_string(),

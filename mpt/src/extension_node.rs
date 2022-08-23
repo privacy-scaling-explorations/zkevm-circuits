@@ -790,6 +790,35 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
             constraints
         });
 
+        /* 
+        We need to make sure the total number of nibbles is 64. This constraint ensures the number
+        of nibbles used (stored in branch init) is correctly computed. Once in a leaf, the remaining
+        nibbles stored in a leaf need to be added to the count.
+        */
+        /*
+        meta.create_gate("Number of nibbles", |meta| {
+            let mut constraints = vec![];
+            let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
+            let q_enable = q_enable(meta);
+        
+            // TODO: for regular branches, the constraint should be in branch.rs
+
+            // we don't need to check for the first level
+
+            // we need to get the number of nibbles in the extension node (num_nibbles)
+            // we need to get the count in the previous init branch (nibbles_count_prev)
+
+            constraints.push((
+                "nibbles_num",
+                q_not_first
+                    * q_enable
+                    * (nibbles_count_cur - nibbles_count_prev - num_nibbles - one.clone()), // - 1 is for branch position
+            ));
+
+            constraints
+        });
+        */
+
         // Note: range_lookups are in extension_node_key.
 
         config
