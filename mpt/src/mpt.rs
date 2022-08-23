@@ -10,10 +10,6 @@ use std::convert::{TryInto, TryFrom};
 use num_enum::TryFromPrimitive;
 
 use crate::{
-    account_leaf_key::AccountLeafKeyConfig,
-    account_leaf_key_in_added_branch::AccountLeafKeyInAddedBranchConfig,
-    account_leaf_nonce_balance::AccountLeafNonceBalanceConfig,
-    account_leaf_storage_codehash::AccountLeafStorageCodehashConfig,
     branch::BranchChip,
     branch_hash_in_parent::BranchHashInParentChip,
     branch_parallel::BranchParallelChip,
@@ -32,7 +28,7 @@ use crate::{
         RLP_NUM, NOT_FIRST_LEVEL_POS, IS_ACCOUNT_DELETE_MOD_POS, IS_NON_EXISTING_ACCOUNT_POS, NIBBLES_COUNTER_POS, BRANCH_ROWS_NUM,
     },
     roots::RootsChip,
-    storage_root_in_account_leaf::StorageRootChip, account_non_existing::AccountNonExistingConfig, account_leaf::{AccountLeafCols, AccountLeaf}, storage_leaf::{StorageLeafCols, StorageLeaf},
+    storage_root_in_account_leaf::StorageRootChip, account_leaf::{AccountLeafCols, AccountLeaf, account_leaf_key_in_added_branch::AccountLeafKeyInAddedBranchConfig, account_leaf_key::AccountLeafKeyConfig, account_leaf_nonce_balance::AccountLeafNonceBalanceConfig, account_leaf_storage_codehash::AccountLeafStorageCodehashConfig, account_non_existing::AccountNonExistingConfig}, storage_leaf::{StorageLeafCols, StorageLeaf},
 };
 use crate::{branch_key::BranchKeyChip, param::WITNESS_ROW_WIDTH};
 use crate::{
