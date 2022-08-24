@@ -1,14 +1,14 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::{N_BYTES_U64, N_BYTES_WORD},
+        param::N_BYTES_U64,
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
             from_bytes,
-            math_gadget::{IsEqualGadget, LtGadget},
-            CachedRegion, Cell, RandomLinearCombination,
+            math_gadget::LtGadget,
+            CachedRegion, Cell, RandomLinearCombination, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -25,10 +25,9 @@ pub(crate) struct BlockHashGadget<F> {
     same_context: SameContextGadget<F>,
     block_number: RandomLinearCombination<F, N_BYTES_U64>,
     current_block_number: Cell<F>,
-    block_hash: RandomLinearCombination<F, N_BYTES_WORD>,
+    block_hash: Word<F>,
     block_lt: LtGadget<F, N_BYTES_U64>,
     diff_lt: LtGadget<F, 2>,
-    is_valid: IsEqualGadget<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for BlockHashGadget<F> {
@@ -59,17 +58,15 @@ impl<F: Field> ExecutionGadget<F> for BlockHashGadget<F> {
             256.expr() + from_bytes::expr(&block_number.cells),
         );
 
-        let is_valid = IsEqualGadget::construct(cb, 1.expr(), block_lt.expr() * diff_lt.expr());
-
         let block_hash = cb.query_rlc();
-        cb.condition(is_valid.expr(), |cb| {
+        cb.condition(block_lt.expr() * diff_lt.expr(), |cb| {
             cb.block_lookup(
                 BlockContextFieldTag::BlockHash.expr(),
                 Some(from_bytes::expr(&block_number.cells)),
                 block_hash.expr(),
             );
         });
-        cb.condition(not::expr(is_valid.expr()), |cb| {
+        cb.condition(not::expr(block_lt.expr() * diff_lt.expr()), |cb| {
             cb.require_zero("invalid range", block_hash.expr());
         });
 
@@ -91,7 +88,6 @@ impl<F: Field> ExecutionGadget<F> for BlockHashGadget<F> {
             block_hash,
             block_lt,
             diff_lt,
-            is_valid,
         }
     }
 
@@ -128,22 +124,20 @@ impl<F: Field> ExecutionGadget<F> for BlockHashGadget<F> {
             Some(block.rws[step.rw_indices[1]].stack_value().to_le_bytes()),
         )?;
 
-        let (block_lt, _) = self.block_lt.assign(
+        self.block_lt.assign(
             region,
             offset,
             block_number,
             current_block_number.to_scalar().unwrap(),
         )?;
 
-        let (diff_lt, _) = self.diff_lt.assign(
+        self.diff_lt.assign(
             region,
             offset,
             current_block_number.to_scalar().unwrap(),
             block_number + F::from(256),
         )?;
 
-        self.is_valid
-            .assign(region, offset, F::one(), block_lt * diff_lt)?;
         Ok(())
     }
 }
