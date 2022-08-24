@@ -111,7 +111,9 @@ impl<F: Field> ExecutionGadget<F> for BlockHashGadget<F> {
             region,
             offset,
             Some(
-                block_number.to_le_bytes()[..N_BYTES_U64].try_into().unwrap()
+                block_number.to_le_bytes()[..N_BYTES_U64]
+                    .try_into()
+                    .unwrap(),
             ),
         )?;
         let block_number: F = block_number.to_scalar().unwrap();
@@ -156,14 +158,15 @@ mod test {
     use eth_types::{bytecode, geth_types::GethData, Bytecode, U256};
     use mock::test_ctx::{helpers::*, TestContext};
 
-    fn test_ok(block_number: u64, current_block_number: u64) {
+    fn test_ok(block_number: usize, current_block_number: u64) {
         let mut code = Bytecode::default();
-
         code.append(&bytecode! {
-            PUSH8(block_number)
+            PUSH32(block_number)
             BLOCKHASH
             STOP
         });
+
+        // simple U256 values for history hashes
         let mut history_hashes = Vec::new();
         if current_block_number < 256 {
             for number in 0..current_block_number {
@@ -196,6 +199,9 @@ mod test {
     }
     #[test]
     fn blockhash_gadget_test() {
+        test_ok(6, 5);
         test_ok(2, 5);
+        // error
+        // test_ok(3, 5);
     }
 }
