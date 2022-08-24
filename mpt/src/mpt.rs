@@ -438,6 +438,7 @@ impl<F: FieldExt> MPTConfig<F> {
             meta,
             q_enable,
             q_not_first,
+            not_first_level,
             s_main.clone(),
             c_main.clone(),
             branch.clone(),
@@ -1360,7 +1361,7 @@ impl<F: FieldExt> MPTConfig<F> {
         pv.is_extension_node = pv.is_even == true || pv.is_odd == true;
  
         // Assign how many nibbles have been used in the previous extension node + branch.
-        let mut num_nibbles = pv.nibbles_num + 1; // one nibble is used for position in branch
+        pv.nibbles_num = pv.nibbles_num + 1; // one nibble is used for position in branch
         if pv.is_extension_node {
             // Get into extension node S
             let row_ext = &witness[ind + BRANCH_ROWS_NUM as usize - 2];
@@ -1381,14 +1382,13 @@ impl<F: FieldExt> MPTConfig<F> {
                 }
             }
 
-            num_nibbles += ext_nibbles;
-            pv.nibbles_num += ext_nibbles + 1; // +1 is for branch position
+            pv.nibbles_num += ext_nibbles;
         }
         region.assign_advice(
             || "assign number of nibbles".to_string(),
             self.s_main.bytes[NIBBLES_COUNTER_POS - RLP_NUM],
             offset,
-            || Ok(F::from(num_nibbles as u64)),
+            || Ok(F::from(pv.nibbles_num as u64)),
         )?; 
  
         Ok(())

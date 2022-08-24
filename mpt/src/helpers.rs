@@ -195,37 +195,13 @@ pub fn get_is_extension_node<F: FieldExt>(
     // To reduce the expression degree, we pack together multiple information.
     // Constraints on selectors are in extension_node.
     // NOTE: even and odd refers to number of nibbles that are compactly encoded.
-    let is_ext_short_c16 = meta.query_advice(
-        s_advices[IS_EXT_SHORT_C16_POS - RLP_NUM],
-        Rotation(rot),
-    );
-    let is_ext_short_c1 = meta.query_advice(
-        s_advices[IS_EXT_SHORT_C1_POS - RLP_NUM],
-        Rotation(rot),
-    );
-    let is_ext_long_even_c16 = meta.query_advice(
-        s_advices[IS_EXT_LONG_EVEN_C16_POS - RLP_NUM],
-        Rotation(rot),
-    );
-    let is_ext_long_even_c1 = meta.query_advice(
-        s_advices[IS_EXT_LONG_EVEN_C1_POS - RLP_NUM],
-        Rotation(rot),
-    );
-    let is_ext_long_odd_c16 = meta.query_advice(
-        s_advices[IS_EXT_LONG_ODD_C16_POS - RLP_NUM],
-        Rotation(rot),
-    );
-    let is_ext_long_odd_c1 = meta.query_advice(
-        s_advices[IS_EXT_LONG_ODD_C1_POS - RLP_NUM],
-        Rotation(rot),
-    );
+    let is_ext_short = get_is_extension_node_one_nibble(meta, s_advices, rot);
+    let is_ext_node_even_nibbles = get_is_extension_node_even_nibbles(meta, s_advices, rot);
+    let is_ext_node_long_odd_nibbles = get_is_extension_node_long_odd_nibbles(meta, s_advices, rot);
 
-    is_ext_short_c16
-        + is_ext_short_c1
-        + is_ext_long_even_c16
-        + is_ext_long_even_c1
-        + is_ext_long_odd_c16
-        + is_ext_long_odd_c1
+    is_ext_short
+        + is_ext_node_even_nibbles
+        + is_ext_node_long_odd_nibbles
 }
 
 pub fn get_is_extension_node_one_nibble<F: FieldExt>(
@@ -243,6 +219,40 @@ pub fn get_is_extension_node_one_nibble<F: FieldExt>(
     );
 
     is_ext_short_c16 + is_ext_short_c1
+}
+
+pub fn get_is_extension_node_even_nibbles<F: FieldExt>(
+    meta: &mut VirtualCells<F>,
+    s_advices: [Column<Advice>; HASH_WIDTH],
+    rot: i32,
+) -> Expression<F> {
+    let is_ext_long_even_c16 = meta.query_advice(
+        s_advices[IS_EXT_LONG_EVEN_C16_POS - RLP_NUM],
+        Rotation(rot),
+    );
+    let is_ext_long_even_c1 = meta.query_advice(
+        s_advices[IS_EXT_LONG_EVEN_C1_POS - RLP_NUM],
+        Rotation(rot),
+    );
+
+    is_ext_long_even_c16 + is_ext_long_even_c1
+}
+
+pub fn get_is_extension_node_long_odd_nibbles<F: FieldExt>(
+    meta: &mut VirtualCells<F>,
+    s_advices: [Column<Advice>; HASH_WIDTH],
+    rot: i32,
+) -> Expression<F> {
+    let is_ext_long_odd_c16 = meta.query_advice(
+        s_advices[IS_EXT_LONG_ODD_C16_POS - RLP_NUM],
+        Rotation(rot),
+    );
+    let is_ext_long_odd_c1 = meta.query_advice(
+        s_advices[IS_EXT_LONG_ODD_C1_POS - RLP_NUM],
+        Rotation(rot),
+    );
+
+    is_ext_long_odd_c16 + is_ext_long_odd_c1
 }
 
 pub(crate) fn bytes_into_rlc<F: FieldExt>(message: &[u8], r: F) -> F {

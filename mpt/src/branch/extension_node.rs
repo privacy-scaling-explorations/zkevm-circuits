@@ -8,12 +8,12 @@ use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
 use crate::{
-    helpers::{compute_rlc, get_bool_constraint, bytes_expr_into_rlc, key_len_lookup},
+    helpers::{compute_rlc, get_bool_constraint, bytes_expr_into_rlc, key_len_lookup, get_is_extension_node_one_nibble, get_is_extension_node_even_nibbles, get_is_extension_node_long_odd_nibbles},
     param::{
         IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, IS_BRANCH_C_PLACEHOLDER_POS,
         IS_BRANCH_S_PLACEHOLDER_POS, IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS,
         IS_EXT_LONG_ODD_C16_POS, IS_EXT_LONG_ODD_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS,
-        KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH, RLP_NUM, IS_S_EXT_LONGER_THAN_55_POS, IS_C_EXT_LONGER_THAN_55_POS, IS_S_EXT_NODE_NON_HASHED_POS, IS_C_EXT_NODE_NON_HASHED_POS,
+        KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH, RLP_NUM, IS_S_EXT_LONGER_THAN_55_POS, IS_C_EXT_LONGER_THAN_55_POS, IS_S_EXT_NODE_NON_HASHED_POS, IS_C_EXT_NODE_NON_HASHED_POS, NIBBLES_COUNTER_POS, BRANCH_ROWS_NUM,
     }, mpt::{MainCols, AccumulatorCols},
 };
 
@@ -327,10 +327,10 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
                 // One nibble with non-hashed branch:
                 // [223,16,221,198,132,32,0,0,0,1,198,132,32,0,0,0,1,128,128,128,128,128,128,128,128,128,128,128,128,128,128,128]
                 constraints.push((
-                    "One nibble & HASHED branch & ext not longer than 55 RLP",
+                    "One nibble & HASHED branch",
                     q_not_first.clone()
                         * q_enable.clone()
-                        * (one.clone() - is_ext_longer_than_55.clone())
+                        // when one nibble, extension node cannot be longer that 55
                         * is_short.clone()
                         * is_branch_hashed.clone()
                         * (s_rlp1.clone() - c192.clone() - c33.clone() - one.clone()),
@@ -339,10 +339,10 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
                 let c_advices0 = meta.query_advice(c_main.bytes[0], Rotation::cur());
                 // TODO: prepare test
                 constraints.push((
-                    "One nibble & NON-HASHED branch & ext not longer than 55 RLP",
+                    "One nibble & NON-HASHED branch",
                     q_not_first.clone()
                         * q_enable.clone()
-                        * (one.clone() - is_ext_longer_than_55.clone())
+                        // when one nibble, extension node cannot be longer that 55
                         * is_short.clone()
                         * (one.clone() - is_branch_hashed.clone())
                         * (s_rlp1.clone() - c192.clone() - one.clone() - (c_advices0.clone() - c192.clone()) - one.clone()),
@@ -510,7 +510,7 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
                 mult = meta.query_advice(accs.acc_c.mult, Rotation(-2));
             }
             // TODO: acc currently doesn't have branch ValueNode info (which 128 if nil)
-            let branch_acc = acc + c128 * mult;
+            let branch_acc = acc + c128.clone() * mult;
 
             let mut branch_in_ext = vec![];
             // Note: extension node has branch hash always in c_advices.
@@ -795,29 +795,178 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
         of nibbles used (stored in branch init) is correctly computed. Once in a leaf, the remaining
         nibbles stored in a leaf need to be added to the count.
         */
-        /*
-        meta.create_gate("Number of nibbles", |meta| {
-            let mut constraints = vec![];
-            let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
-            let q_enable = q_enable(meta);
-        
-            // TODO: for regular branches, the constraint should be in branch.rs
+        // TODO: reset to 0 after account leaf
+        if is_s {
+            meta.create_gate("Extension node number of nibbles (not first level)", |meta| {
+                let mut constraints = vec![];
+                let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
+                let q_enable = q_enable(meta);
+                let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
 
-            // we don't need to check for the first level
+                let is_ext_longer_than_55 = meta.query_advice(
+                    s_main.bytes[IS_S_EXT_LONGER_THAN_55_POS - RLP_NUM],
+                    Rotation(rot_into_branch_init),
+                );
 
-            // we need to get the number of nibbles in the extension node (num_nibbles)
-            // we need to get the count in the previous init branch (nibbles_count_prev)
+                let is_short = get_is_extension_node_one_nibble(meta, s_main.bytes, rot_into_branch_init);
+                let is_even_nibbles = get_is_extension_node_even_nibbles(meta, s_main.bytes, rot_into_branch_init);
+                let is_long_odd_nibbles = get_is_extension_node_long_odd_nibbles(meta, s_main.bytes, rot_into_branch_init);
 
-            constraints.push((
-                "nibbles_num",
-                q_not_first
-                    * q_enable
-                    * (nibbles_count_cur - nibbles_count_prev - num_nibbles - one.clone()), // - 1 is for branch position
-            ));
+                // Note: for regular branches, the constraint that `nibbles_count` increases
+                // by 1 is in branch.rs.
 
-            constraints
-        });
-        */
+                let nibbles_count_cur = meta.query_advice(
+                    s_main.bytes[NIBBLES_COUNTER_POS - RLP_NUM],
+                    Rotation(rot_into_branch_init),
+                );
+                let nibbles_count_prev = meta.query_advice(
+                    s_main.bytes[NIBBLES_COUNTER_POS - RLP_NUM],
+                    Rotation(rot_into_branch_init - BRANCH_ROWS_NUM),
+                );
+
+                constraints.push((
+                    "Nibbles num when one nibbles",
+                    q_not_first.clone()
+                        * q_enable.clone()
+                        * not_first_level.clone()
+                        * is_short.clone()
+                        * (nibbles_count_cur.clone() - nibbles_count_prev.clone() - one.clone() - one.clone()), // -1 for nibble, - 1 is for branch position
+                ));
+
+                let s_rlp2 = meta.query_advice(s_main.rlp2, Rotation::cur());
+                let mut num_nibbles = (s_rlp2.clone() - c128.clone() - one.clone()) * (one.clone() + one.clone());
+                // [228,130,0,149,160,114,253...
+                constraints.push((
+                    "Nibbles num when even number of nibbles & ext not longer than 55",
+                    q_not_first.clone()
+                        * q_enable.clone()
+                        * not_first_level.clone()
+                        * is_even_nibbles.clone()
+                        * (one.clone() - is_ext_longer_than_55.clone())
+                        * (nibbles_count_cur.clone() - nibbles_count_prev.clone() - num_nibbles.clone() - one.clone()), // - 1 is for branch position
+                ));
+
+                num_nibbles = (s_rlp2 - c128.clone()) * (one.clone() + one.clone()) - one.clone();
+                constraints.push((
+                    "Nibbles num when odd number (>1) of nibbles & ext not longer than 55",
+                    q_not_first.clone()
+                        * q_enable.clone()
+                        * not_first_level.clone()
+                        * is_long_odd_nibbles.clone()
+                        * (one.clone() - is_ext_longer_than_55.clone())
+                        * (nibbles_count_cur.clone() - nibbles_count_prev.clone() - num_nibbles.clone() - one.clone()), // - 1 is for branch position
+                ));
+
+                // [248,58,159,16,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,217,128,196,130,32,0,1,128,196,130,32,0,1,128,128,128,128,128,128,128,128,128,128,128,128,128]
+                let s_advices0 = meta.query_advice(s_main.bytes[0], Rotation::cur());
+                num_nibbles = (s_advices0.clone() - c128.clone() - one.clone()) * (one.clone() + one.clone());
+                constraints.push((
+                    "Nibbles num when even number of nibbles & ext not longer than 55",
+                    q_not_first.clone()
+                        * q_enable.clone()
+                        * not_first_level.clone()
+                        * is_even_nibbles.clone()
+                        * is_ext_longer_than_55.clone()
+                        * (nibbles_count_cur.clone() - nibbles_count_prev.clone() - num_nibbles.clone() - one.clone()), // - 1 is for branch position
+                ));
+
+                num_nibbles = (s_advices0 - c128.clone()) * (one.clone() + one.clone()) - one.clone();
+                constraints.push((
+                    "Nibbles num when odd number (>1) of nibbles & ext not longer than 55",
+                    q_not_first.clone()
+                        * q_enable.clone()
+                        * not_first_level.clone()
+                        * is_long_odd_nibbles.clone()
+                        * is_ext_longer_than_55.clone()
+                        * (nibbles_count_cur - nibbles_count_prev - num_nibbles - one.clone()), // - 1 is for branch position
+                ));
+
+                constraints
+            });
+
+            meta.create_gate("Extension node number of nibbles (first level)", |meta| {
+                let mut constraints = vec![];
+                let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
+                let q_enable = q_enable(meta);
+                let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
+
+                let is_ext_longer_than_55 = meta.query_advice(
+                    s_main.bytes[IS_S_EXT_LONGER_THAN_55_POS - RLP_NUM],
+                    Rotation(rot_into_branch_init),
+                );
+
+                let is_short = get_is_extension_node_one_nibble(meta, s_main.bytes, rot_into_branch_init);
+                let is_even_nibbles = get_is_extension_node_even_nibbles(meta, s_main.bytes, rot_into_branch_init);
+                let is_long_odd_nibbles = get_is_extension_node_long_odd_nibbles(meta, s_main.bytes, rot_into_branch_init);
+
+                // Note: for regular branches, the constraint that `nibbles_count` increases
+                // by 1 is in branch.rs.
+
+                let nibbles_count_cur = meta.query_advice(
+                    s_main.bytes[NIBBLES_COUNTER_POS - RLP_NUM],
+                    Rotation(rot_into_branch_init),
+                );
+
+                constraints.push((
+                    "Nibbles num when one nibbles",
+                    q_not_first.clone()
+                        * q_enable.clone()
+                        * (one.clone() - not_first_level.clone())
+                        * is_short.clone()
+                        * (nibbles_count_cur.clone() - one.clone() - one.clone()), // -1 for nibble, - 1 is for branch position
+                ));
+
+                let s_rlp2 = meta.query_advice(s_main.rlp2, Rotation::cur());
+                let mut num_nibbles = (s_rlp2.clone() - c128.clone() - one.clone()) * (one.clone() + one.clone());
+                // [228,130,0,149,160,114,253...
+                constraints.push((
+                    "Nibbles num when even number of nibbles & ext not longer than 55",
+                    q_not_first.clone()
+                        * q_enable.clone()
+                        * (one.clone() - not_first_level.clone())
+                        * is_even_nibbles.clone()
+                        * (one.clone() - is_ext_longer_than_55.clone())
+                        * (nibbles_count_cur.clone() - num_nibbles.clone() - one.clone()), // - 1 is for branch position
+                ));
+
+                num_nibbles = (s_rlp2 - c128.clone()) * (one.clone() + one.clone()) - one.clone();
+                constraints.push((
+                    "Nibbles num when odd number (>1) of nibbles & ext not longer than 55",
+                    q_not_first.clone()
+                        * q_enable.clone()
+                        * (one.clone() - not_first_level.clone())
+                        * is_long_odd_nibbles.clone()
+                        * (one.clone() - is_ext_longer_than_55.clone())
+                        * (nibbles_count_cur.clone() - num_nibbles.clone() - one.clone()), // - 1 is for branch position
+                ));
+
+                // [248,58,159,16,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,217,128,196,130,32,0,1,128,196,130,32,0,1,128,128,128,128,128,128,128,128,128,128,128,128,128]
+                let s_advices0 = meta.query_advice(s_main.bytes[0], Rotation::cur());
+                num_nibbles = (s_advices0.clone() - c128.clone() - one.clone()) * (one.clone() + one.clone());
+                constraints.push((
+                    "Nibbles num when even number of nibbles & ext not longer than 55",
+                    q_not_first.clone()
+                        * q_enable.clone()
+                        * (one.clone() - not_first_level.clone())
+                        * is_even_nibbles.clone()
+                        * is_ext_longer_than_55.clone()
+                        * (nibbles_count_cur.clone() - num_nibbles.clone() - one.clone()), // - 1 is for branch position
+                ));
+
+                num_nibbles = (s_advices0 - c128.clone()) * (one.clone() + one.clone()) - one.clone();
+                constraints.push((
+                    "Nibbles num when odd number (>1) of nibbles & ext not longer than 55",
+                    q_not_first.clone()
+                        * q_enable.clone()
+                        * (one.clone() - not_first_level.clone())
+                        * is_long_odd_nibbles.clone()
+                        * is_ext_longer_than_55.clone()
+                        * (nibbles_count_cur - num_nibbles - one.clone()), // - 1 is for branch position
+                ));
+
+                constraints
+            });
+        }
 
         // Note: range_lookups are in extension_node_key.
 

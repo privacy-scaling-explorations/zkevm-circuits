@@ -8,18 +8,18 @@ pub mod extension_node_key;
 
 use halo2_proofs::{
     circuit::Chip,
-    plonk::{Column, ConstraintSystem, Expression, Fixed, VirtualCells},
+    plonk::{Column, ConstraintSystem, Expression, Fixed, VirtualCells, Advice},
     poly::Rotation,
 };
 use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
 use crate::{
-    helpers::{get_bool_constraint, range_lookups},
+    helpers::{get_bool_constraint, range_lookups, get_is_extension_node},
     mpt::{FixedTableTag, MainCols, BranchCols, DenoteCols},
     param::{
         BRANCH_0_C_START, BRANCH_0_S_START, IS_BRANCH_C_PLACEHOLDER_POS,
-        IS_BRANCH_S_PLACEHOLDER_POS, RLP_NUM,
+        IS_BRANCH_S_PLACEHOLDER_POS, RLP_NUM, NIBBLES_COUNTER_POS, BRANCH_ROWS_NUM,
     },
 };
 
@@ -36,6 +36,7 @@ impl<F: FieldExt> BranchChip<F> {
         meta: &mut ConstraintSystem<F>,
         q_enable: Column<Fixed>,
         q_not_first: Column<Fixed>,
+        not_first_level: Column<Advice>,
         s_main: MainCols,
         c_main: MainCols,
         branch: BranchCols,
@@ -532,6 +533,61 @@ impl<F: FieldExt> BranchChip<F> {
 
             constraints
         });
+
+        /* 
+        // TODO: reset to 0 after account leaf
+        meta.create_gate("Branch number of nibbles (not first level)", |meta| {
+            let mut constraints = vec![];
+            let q_enable = meta.query_fixed(q_enable, Rotation::cur());
+            let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
+            let is_branch_init_cur = meta.query_advice(branch.is_init, Rotation::cur());
+            let is_extension_node = get_is_extension_node(meta, s_main.bytes, 0);
+
+            let nibbles_count_cur = meta.query_advice(
+                s_main.bytes[NIBBLES_COUNTER_POS - RLP_NUM],
+                Rotation::cur(),
+            );
+            let nibbles_count_prev = meta.query_advice(
+                s_main.bytes[NIBBLES_COUNTER_POS - RLP_NUM],
+                Rotation(- BRANCH_ROWS_NUM),
+            );
+
+            constraints.push((
+                "nibbles_count",
+                q_enable.clone()
+                    * is_branch_init_cur.clone()
+                    * (one.clone() - is_extension_node.clone()) // extension node counterpart constraint is in extension_node.rs
+                    * not_first_level.clone()
+                    * (nibbles_count_cur.clone() - nibbles_count_prev.clone() - one.clone()),
+            ));
+
+            constraints
+        });
+
+        meta.create_gate("Branch number of nibbles (first level)", |meta| {
+            let mut constraints = vec![];
+            let q_enable = meta.query_fixed(q_enable, Rotation::cur());
+            let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
+            let is_branch_init_cur = meta.query_advice(branch.is_init, Rotation::cur());
+            let is_extension_node = get_is_extension_node(meta, s_main.bytes, 0);
+
+            let nibbles_count_cur = meta.query_advice(
+                s_main.bytes[NIBBLES_COUNTER_POS - RLP_NUM],
+                Rotation::cur(),
+            );
+
+            constraints.push((
+                "nibbles_count",
+                q_enable.clone()
+                    * is_branch_init_cur.clone()
+                    * (one.clone() - is_extension_node.clone()) // extension node counterpart constraint is in extension_node.rs
+                    * (one.clone() - not_first_level.clone())
+                    * (nibbles_count_cur.clone() - one.clone()),
+            ));
+
+            constraints
+        });
+        */
 
         config
     }
