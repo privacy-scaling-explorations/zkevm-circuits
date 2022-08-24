@@ -6,7 +6,7 @@ use crate::{
     evm_circuit::util::{constraint_builder::BaseConstraintBuilder, not, rlc},
     keccak_circuit::util::{
         compose_rlc, from_bits, get_absorb_positions, into_bits, to_bytes, NUM_BITS_PER_WORD,
-        NUM_WORDS_TO_ABSORB, RATE, RATE_IN_BITS, RHOM,
+        NUM_WORDS_TO_ABSORB, RATE, RATE_IN_BITS, RHO_MATRIX,
     },
     util::Expr,
 };
@@ -288,10 +288,10 @@ impl<F: Field> KeccakBitConfig<F> {
             s = os.clone();
 
             // Rho/Pi
-            for (i, b) in s.iter().enumerate() {
-                for (j, b) in b.iter().enumerate() {
+            for (i, s) in s.iter().enumerate() {
+                for (j, s) in s.iter().enumerate() {
                     for k in 0..64 {
-                        os[j][(2 * i + 3 * j) % 5][k] = b[(64 + k - RHOM[i][j]) % 64].clone();
+                        os[j][(2 * i + 3 * j) % 5][k] = s[(64 + k - RHO_MATRIX[i][j]) % 64].clone();
                     }
                 }
             }
@@ -421,7 +421,6 @@ impl<F: Field> KeccakBitConfig<F> {
             let prev_is_padding = meta.query_advice(*is_paddings.last().unwrap(), Rotation::prev());
             let q_padding = meta.query_fixed(q_padding, Rotation::cur());
             let q_padding_last = meta.query_fixed(q_padding_last, Rotation::cur());
-
             // All padding selectors need to be boolean
             for is_padding in is_paddings.iter() {
                 let is_padding = meta.query_advice(*is_padding, Rotation::cur());
@@ -429,7 +428,6 @@ impl<F: Field> KeccakBitConfig<F> {
                     cb.require_boolean("is_padding boolean", is_padding);
                 });
             }
-
             // This last padding selector will be used on the first round row so needs to be
             // zero
             cb.condition(meta.query_fixed(q_absorb, Rotation::cur()), |cb| {
@@ -438,7 +436,7 @@ impl<F: Field> KeccakBitConfig<F> {
                     meta.query_advice(*is_paddings.last().unwrap(), Rotation::cur()),
                 );
             });
-
+            // Now for each padding selector
             for idx in 0..is_paddings.len() {
                 // Previous padding selector can be on the previous row
                 let is_padding_prev = if idx == 0 {
@@ -478,7 +476,7 @@ impl<F: Field> KeccakBitConfig<F> {
                         and::expr([q_padding_last.expr(), is_padding.expr()]),
                         |cb| {
                             // The input byte needs to be 128, unless it's also the first padding
-                            // byte and then it's 129
+                            // byte then it's 129
                             cb.require_equal(
                                 "padding start/end byte",
                                 input_bytes[idx].clone(),
@@ -733,7 +731,7 @@ impl<F: Field> KeccakBitConfig<F> {
     pub(crate) fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
         let num_bits_per_theta_lookup = get_num_bits_per_theta_lookup();
         layouter.assign_table(
-            || "c table",
+            || "theta c table",
             |mut table| {
                 for (offset, perm) in (0..num_bits_per_theta_lookup)
                     .map(|_| 0..=MAX_INPUT_THETA_LOOKUP)
@@ -919,10 +917,10 @@ fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: &[u8], r: F) {
 
                 // Rho/Pi
                 let mut os = s;
-                for (i, b) in s.iter().enumerate() {
-                    for (j, b) in b.iter().enumerate() {
+                for (i, s) in s.iter().enumerate() {
+                    for (j, s) in s.iter().enumerate() {
                         for k in 0..64 {
-                            os[j][(2 * i + 3 * j) % 5][k] = b[(64 + k - RHOM[i][j]) % 64]
+                            os[j][(2 * i + 3 * j) % 5][k] = s[(64 + k - RHO_MATRIX[i][j]) % 64]
                         }
                     }
                 }
