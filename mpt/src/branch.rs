@@ -2,12 +2,11 @@ pub mod branch_hash_in_parent;
 pub mod branch_key;
 pub mod branch_parallel;
 pub mod branch_rlc;
-pub mod branch_rlc_init;
+pub mod branch_init;
 pub mod extension_node;
 pub mod extension_node_key;
 
 use halo2_proofs::{
-    circuit::Chip,
     plonk::{Column, ConstraintSystem, Expression, Fixed, VirtualCells, Advice},
     poly::Rotation,
 };
@@ -23,15 +22,47 @@ use crate::{
     },
 };
 
-#[derive(Clone, Debug)]
-pub(crate) struct BranchConfig {}
+/*
+A branch occupies 19 rows:
+BRANCH.IS_INIT
+BRANCH.IS_CHILD 0
+...
+BRANCH.IS_CHILD 15
+BRANCH.IS_EXTENSION_NODE_S
+BRANCH.IS_EXTENSION_NODE_C
 
-pub(crate) struct BranchChip<F> {
-    config: BranchConfig,
+Example:
+
+[1 0 1 0 248 241 0 248 241 0 1 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0]
+[0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1]
+[0 160 164 92 78 34 81 137 173 236 78 208 145 118 128 60 46 5 176 8 229 165 42 222 110 4 252 228 93 243 26 160 241 85 0 160 95 174 59 239 229 74 221 53 227 115 207 137 94 29 119 126 56 209 55 198 212 179 38 213 219 36 111 62 46 43 176 168 1]
+[0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1]
+[0 160 60 157 212 182 167 69 206 32 151 2 14 23 149 67 58 187 84 249 195 159 106 68 203 199 199 65 194 33 215 102 71 138 0 160 60 157 212 182 167 69 206 32 151 2 14 23 149 67 58 187 84 249 195 159 106 68 203 199 199 65 194 33 215 102 71 138 1]
+[0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1]
+[0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1]
+[0 160 21 230 18 20 253 84 192 151 178 53 157 0 9 105 229 121 222 71 120 109 159 109 9 218 254 1 50 139 117 216 194 252 0 160 21 230 18 20 253 84 192 151 178 53 157 0 9 105 229 121 222 71 120 109 159 109 9 218 254 1 50 139 117 216 194 252 1]
+[0 160 229 29 220 149 183 173 68 40 11 103 39 76 251 20 162 242 21 49 103 245 160 99 143 218 74 196 2 61 51 34 105 123 0 160 229 29 220 149 183 173 68 40 11 103 39 76 251 20 162 242 21 49 103 245 160 99 143 218 74 196 2 61 51 34 105 123 1]
+[0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1]
+[0 160 0 140 67 252 58 164 68 143 34 163 138 133 54 27 218 38 80 20 142 115 221 100 73 161 165 75 83 53 8 58 236 1 0 160 0 140 67 252 58 164 68 143 34 163 138 133 54 27 218 38 80 20 142 115 221 100 73 161 165 75 83 53 8 58 236 1 1]
+[0 160 149 169 206 0 129 86 168 48 42 127 100 73 109 90 171 56 216 28 132 44 167 14 46 189 224 213 37 0 234 165 140 236 0 160 149 169 206 0 129 86 168 48 42 127 100 73 109 90 171 56 216 28 132 44 167 14 46 189 224 213 37 0 234 165 140 236 1]
+[0 160 42 63 45 28 165 209 201 220 231 99 153 208 48 174 250 66 196 18 123 250 55 107 64 178 159 49 190 84 159 179 138 235 0 160 42 63 45 28 165 209 201 220 231 99 153 208 48 174 250 66 196 18 123 250 55 107 64 178 159 49 190 84 159 179 138 235 1]
+[0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1]
+[0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1]
+[0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1]
+[0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1]
+[0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 16]
+[0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 17]
+
+Note that when `BRANCH.IS_CHILD` row presents a nil node, there is only one byte non-zero:
+128 at `s_main.bytes[0] / c_main.bytes[0]`.
+*/
+
+#[derive(Clone, Debug)]
+pub(crate) struct BranchConfig<F> {
     _marker: PhantomData<F>,
 }
 
-impl<F: FieldExt> BranchChip<F> {
+impl<F: FieldExt> BranchConfig<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         q_enable: Column<Fixed>,
@@ -42,44 +73,17 @@ impl<F: FieldExt> BranchChip<F> {
         branch: BranchCols,
         denoter: DenoteCols,
         fixed_table: [Column<Fixed>; 3],
-    ) -> BranchConfig {
-        let config = BranchConfig {};
+    ) -> Self {
+        let config = BranchConfig { _marker: PhantomData };
         let one = Expression::Constant(F::one());
 
-        let sel = |meta: &mut VirtualCells<F>| {
-            let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
-            let is_branch_init = meta.query_advice(branch.is_init, Rotation::cur());
-
-            q_not_first * (one.clone() - is_branch_init)
-        };
-
-        // Note: branch init row contains selectors related to drifted_pos,
-        // modified_node, branch placeholders, extension node selectors.
-        // There is no need for drifted_pos / modified_node constraints there as
-        // these are just read from there and then selectors in branch node rows are set
-        // and restricted there. Branch placeholder needs to be checked if boolean
-        // (however, if 1 is set instead of 0 or the other way around, the
-        // constraints related to address/ key RLC will fail).
-        // Extension node related selectors are checked in extension node chips.
-
-        // Range check for s_advices and c_advices being bytes.
-        range_lookups(
-            meta,
-            sel,
-            s_main.bytes.to_vec(),
-            FixedTableTag::Range256,
-            fixed_table,
-        );
-        range_lookups(
-            meta,
-            sel,
-            c_main.bytes.to_vec(),
-            FixedTableTag::Range256,
-            fixed_table,
-        );
-
+        /*
+        The gate `Branch S and C equal at NON modified_node position` ensures that the only change in
+        `S` and `C` proof occur at `modified_node` (denoting which child of the branch is changed) position.
+        This is needed because the circuit allows only one change at at time.
+        */
         meta.create_gate(
-            "branch S and C equal at NON modified_node position",
+            "Branch S and C equal at NON modified_node position",
             |meta| {
                 let q_enable = meta.query_fixed(q_enable, Rotation::cur());
                 let mut constraints = vec![];
@@ -93,10 +97,15 @@ impl<F: FieldExt> BranchChip<F> {
                 let s_rlp2 = meta.query_advice(s_main.rlp2, Rotation::cur());
                 let c_rlp2 = meta.query_advice(c_main.rlp2, Rotation::cur());
 
-                // We do not compare s_rlp1 = c_rlp1 because there is stored
-                // info about S and C RLP length.
+                /*
+                We check `s_main.rlp2 = c_main.rlp2` everywhere except at `modified_node`.
+
+                Note: We do not compare `s_main.rlp1 = c_main.rlp1` because there is no information
+                about branch. We use `rlp1` to store information about `S` branch and
+                `C` branch RLP length (see the gate below).
+                */
                 constraints.push((
-                    "rlp 2",
+                    "rlp2",
                     q_enable.clone()
                         * is_branch_child_cur.clone()
                         * (s_rlp2 - c_rlp2)
@@ -106,6 +115,11 @@ impl<F: FieldExt> BranchChip<F> {
                 for (ind, col) in s_main.bytes.iter().enumerate() {
                     let s = meta.query_advice(*col, Rotation::cur());
                     let c = meta.query_advice(c_main.bytes[ind], Rotation::cur());
+
+                    /*
+                    Similarly as above for `rlp2` we check here that `s_main.bytes[i] = c_main.bytes[i]`
+                    except at `modified_node`.
+                    */
                     constraints.push((
                         "s = c when NOT is_modified",
                         q_enable.clone()
@@ -114,19 +128,21 @@ impl<F: FieldExt> BranchChip<F> {
                             * (node_index_cur.clone() - modified_node.clone()),
                     ));
 
-                    // When it's NOT placeholder branch, is_modified = is_at_drifted_pos.
-                    // When it's placeholder branch, is_modified != is_at_drifted_pos.
-                    // This is used instead of having is_branch_s_placeholder and
-                    // is_branch_c_placeholder columns - we only have this info in
-                    // branch init where we don't need additional columns.
-                    // When there is a placeholder branch, there are only two nodes - one at
-                    // is_modified and one at is_at_drifted_pos - at other
-                    // positions there need to be nil nodes.
+                    /*
+                    When it is NOT a placeholder branch, is_modified = is_at_drifted_pos.
+                    When it is a placeholder branch, is_modified != is_at_drifted_pos.
+                    This is used instead of having is_branch_s_placeholder and
+                    is_branch_c_placeholder columns - we only have this info in
+                    branch init where we do not need additional columns.
+                    When there is a placeholder branch, there are only two nodes - one at
+                    is_modified and one at is_at_drifted_pos - at other
+                    positions there need to be nil nodes.
 
-                    // TODO: This might be optimized once the check for branch is added - check
-                    // that when s_rlp2 = 0, it needs to be s = 0 and c = 0, except the first byte
-                    // is 128. So, only s_rlp2 could be checked here instead of all
-                    // s and c.
+                    TODO: This might be optimized once the check for branch is added - check
+                    that when s_rlp2 = 0, it needs to be s = 0 and c = 0, except the first byte
+                    is 128. So, only s_rlp2 could be checked here instead of all
+                    s and c.
+                    */
                     constraints.push((
                         "s = 0 when placeholder and is neither is_modified or is_at_drifted_pos",
                         q_enable.clone()
@@ -588,27 +604,38 @@ impl<F: FieldExt> BranchChip<F> {
             constraints
         });
         */
+        
+        /*
+        Range lookups ensure that `s_main.bytes` and `c_main.bytes` columns are all bytes (between 0 - 255).
+
+        Note: We do not check this for branch init row here.
+        Branch init row contains selectors related to drifted_pos,
+        modified_node, branch placeholders, extension node selectors. The constraints for these
+        selectors are in `branch_init.rs`.
+        Range lookups for extension node rows are in `extension_node_key.rs`.
+        */
+        let sel = |meta: &mut VirtualCells<F>| {
+            let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
+            let is_branch_init = meta.query_advice(branch.is_init, Rotation::cur());
+            let is_branch_init = meta.query_advice(branch.is_child, Rotation::cur());
+
+            q_not_first * (one.clone() - is_branch_init)
+        }; 
+        range_lookups(
+            meta,
+            sel,
+            s_main.bytes.to_vec(),
+            FixedTableTag::Range256,
+            fixed_table,
+        );
+        range_lookups(
+            meta,
+            sel,
+            c_main.bytes.to_vec(),
+            FixedTableTag::Range256,
+            fixed_table,
+        );
 
         config
-    }
-
-    pub fn construct(config: BranchConfig) -> Self {
-        Self {
-            config,
-            _marker: PhantomData,
-        }
-    }
-}
-
-impl<F: FieldExt> Chip<F> for BranchChip<F> {
-    type Config = BranchConfig;
-    type Loaded = ();
-
-    fn config(&self) -> &Self::Config {
-        &self.config
-    }
-
-    fn loaded(&self) -> &Self::Loaded {
-        &()
     }
 }

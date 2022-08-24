@@ -11,11 +11,11 @@ use crate::{helpers::get_bool_constraint, mpt::{MainCols, AccumulatorCols}};
 // row. The rest of random linear combination is checked in branch_acc, the
 // whole RLC is used to check the hash of a branch.
 #[derive(Clone, Debug)]
-pub(crate) struct BranchRLCInitConfig<F> {
+pub(crate) struct BranchInitConfig<F> {
     _marker: PhantomData<F>,
 }
 
-impl<F: FieldExt> BranchRLCInitConfig<F> {
+impl<F: FieldExt> BranchInitConfig<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         q_enable: impl FnOnce(&mut VirtualCells<'_, F>) -> Expression<F>,
@@ -23,7 +23,7 @@ impl<F: FieldExt> BranchRLCInitConfig<F> {
         accs: AccumulatorCols,
         acc_r: F,
     ) -> Self {
-        let config = BranchRLCInitConfig { _marker: PhantomData };
+        let config = BranchInitConfig { _marker: PhantomData };
         let one = Expression::Constant(F::one());
 
         // TODO: constraints for branch init (also byte range lookups)

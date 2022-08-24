@@ -9,7 +9,7 @@ use pairing::arithmetic::FieldExt;
 use std::convert::{TryInto};
 
 use crate::{
-    branch::{BranchChip, branch_hash_in_parent::BranchHashInParentConfig, branch_parallel::BranchParallelChip, branch_key::BranchKeyConfig, branch_rlc::BranchRLCConfig, branch_rlc_init::BranchRLCInitConfig, extension_node::ExtensionNodeChip, extension_node_key::ExtensionNodeKeyChip},
+    branch::{BranchConfig, branch_hash_in_parent::BranchHashInParentConfig, branch_parallel::BranchParallelChip, branch_key::BranchKeyConfig, branch_rlc::BranchRLCConfig, branch_init::BranchInitConfig, extension_node::ExtensionNodeChip, extension_node_key::ExtensionNodeKeyChip},
     helpers::{get_is_extension_node, bytes_into_rlc},
     param::{
         IS_BALANCE_MOD_POS, IS_EXT_LONG_EVEN_C16_POS,
@@ -434,7 +434,7 @@ impl<F: FieldExt> MPTConfig<F> {
             counter,
         );
 
-        BranchChip::<F>::configure(
+        BranchConfig::<F>::configure(
             meta,
             q_enable,
             q_not_first,
@@ -598,7 +598,7 @@ impl<F: FieldExt> MPTConfig<F> {
             false,
         );
 
-        BranchRLCInitConfig::<F>::configure(
+        BranchInitConfig::<F>::configure(
             meta,
             |meta| {
                 meta.query_advice(branch.is_init, Rotation::cur())
