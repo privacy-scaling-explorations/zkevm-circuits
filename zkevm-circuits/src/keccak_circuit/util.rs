@@ -230,7 +230,7 @@ pub fn pack_u64(value: u64) -> Word {
     )
 }
 
-/// Normalize bits with values in [0,BIT_SIZE[ to [0,1]
+/// Normalize bits with values in [0,BIT_SIZE[ to binary
 pub fn normalize(bits: &[u8]) -> [u8; NUM_BITS_PER_WORD] {
     let mut normalized = [0; NUM_BITS_PER_WORD];
     for (normalized, bit) in normalized.iter_mut().zip(bits.iter()) {
