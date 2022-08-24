@@ -152,6 +152,9 @@ impl<F: Field> ExpCircuit<F> {
             let remainder_expr = meta.query_advice(remainder, Rotation::cur());
             cb.require_boolean("remainder is 0 or 1", remainder_expr.clone());
 
+            // TODO(rohit): validate that remainder is correct
+            // i.e. remainder == intermediate_exponent % 2
+
             // remainder == 1 => odd
             cb.condition(
                 and::expr([
