@@ -3,7 +3,7 @@
 use eth_types::{Field, ToScalar, U256};
 use gadgets::{
     mul_add::{MulAddChip, MulAddConfig},
-    util::{and, not, Expr},
+    util::{and, not, or, Expr},
 };
 use halo2_proofs::{
     circuit::Layouter,
@@ -42,7 +42,7 @@ impl<F: Field> ExpCircuit<F> {
         let remainder = meta.advice_column();
         let mul_gadget = MulAddChip::configure(meta, q_step);
 
-        meta.create_gate("base limbs check", |meta| {
+        meta.create_gate("verify all but last steps", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
             // base limbs MUST be the same across all steps. Since each step consumes 7 rows
@@ -56,13 +56,42 @@ impl<F: Field> ExpCircuit<F> {
                 );
             }
 
+            // We want to verify that the multiplication result from each step (of
+            // exponentiation by squaring) is passed on as the first
+            // multiplicand to the next step. Since the steps are assigned in
+            // the reverse order, we have: a::cur == d::next.
+            //
+            // multiplier <- 2^64
+            let multiplier: F = U256::from_dec_str("18446744073709551616")
+                .unwrap()
+                .to_scalar()
+                .unwrap();
+            let (a_limb0, a_limb1, a_limb2, a_limb3) = (
+                meta.query_advice(mul_gadget.col0, Rotation::cur()),
+                meta.query_advice(mul_gadget.col1, Rotation::cur()),
+                meta.query_advice(mul_gadget.col2, Rotation::cur()),
+                meta.query_advice(mul_gadget.col3, Rotation::cur()),
+            );
+            let a_lo = a_limb0 + (a_limb1 * multiplier);
+            let a_hi = a_limb2 + (a_limb3 * multiplier);
+            cb.require_equal(
+                "multiplication gadget => a::cur == d::next (lo)",
+                a_lo,
+                meta.query_advice(mul_gadget.col2, Rotation(9)),
+            );
+            cb.require_equal(
+                "multiplication gadget => a::cur == d::next (hi)",
+                a_hi,
+                meta.query_advice(mul_gadget.col3, Rotation(9)),
+            );
+
             cb.gate(and::expr([
                 meta.query_selector(q_step),
                 not::expr(meta.query_advice(is_last, Rotation::cur())),
             ]))
         });
 
-        meta.create_gate("exp circuit", |meta| {
+        meta.create_gate("verify all steps", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
             // We don't use the exp circuit for exponentiation by 0 or 1, so the first
@@ -109,7 +138,7 @@ impl<F: Field> ExpCircuit<F> {
             // b + c == d` applied ONLY for multiplication.
             cb.require_zero(
                 "mul_gadget.c == 0",
-                and::expr([
+                or::expr([
                     meta.query_advice(mul_gadget.col0, Rotation(2)),
                     meta.query_advice(mul_gadget.col1, Rotation(2)),
                 ]),
@@ -285,6 +314,21 @@ impl<F: Field> ExpCircuit<F> {
                 let mut all_columns = self.exp_table.columns();
                 all_columns.extend_from_slice(&[self.is_last, self.idx, self.remainder]);
                 for column in all_columns {
+                    for i in 0..OFFSET_INCREMENT {
+                        region.assign_advice(
+                            || format!("padding steps: {}", offset + i),
+                            column,
+                            offset + i,
+                            || Ok(F::zero()),
+                        )?;
+                    }
+                }
+                for column in [
+                    self.mul_gadget.col0,
+                    self.mul_gadget.col1,
+                    self.mul_gadget.col2,
+                    self.mul_gadget.col3,
+                ] {
                     for i in 0..OFFSET_INCREMENT {
                         region.assign_advice(
                             || format!("padding steps: {}", offset + i),
