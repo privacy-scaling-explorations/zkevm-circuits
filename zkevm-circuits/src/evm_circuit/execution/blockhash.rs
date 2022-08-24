@@ -149,27 +149,25 @@ mod test {
         test_util::{test_circuits_using_witness_block, BytecodeTestConfig},
     };
     use bus_mapping::mock::BlockData;
-    use eth_types::{bytecode, geth_types::GethData, Bytecode, U256};
+    use eth_types::{bytecode, geth_types::GethData, U256};
     use mock::test_ctx::{helpers::*, TestContext};
 
     fn test_ok(block_number: usize, current_block_number: u64) {
-        let mut code = Bytecode::default();
-        code.append(&bytecode! {
+        let code = bytecode! {
             PUSH32(block_number)
             BLOCKHASH
             STOP
-        });
+        };
 
         // simple U256 values for history hashes
         let mut history_hashes = Vec::new();
-        if current_block_number < 256 {
-            for number in 0..current_block_number {
-                history_hashes.push(U256::from(number));
-            }
+        let range = if current_block_number < 256 {
+            0..current_block_number
         } else {
-            for number in (current_block_number - 256)..current_block_number {
-                history_hashes.push(U256::from(number));
-            }
+            current_block_number - 256..current_block_number
+        };
+        for number in range {
+            history_hashes.push(U256::from(number));
         }
         let block: GethData = TestContext::<2, 1>::new(
             Some(history_hashes),
