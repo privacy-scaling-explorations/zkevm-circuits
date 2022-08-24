@@ -19,12 +19,19 @@ use super::ExecutionGadget;
 
 #[derive(Clone, Debug)]
 pub(crate) struct ExponentiationGadget<F> {
+    /// Gadget to check that we stay within the same context.
     same_context: SameContextGadget<F>,
+    /// RLC-encoded integer base that will be exponentiated.
     base: Word<F>,
+    /// RLC-encoded exponent for the exponentiation operation.
     exponent: Word<F>,
+    /// RLC-encoded result of the exponentiation.
     exponentiation: Word<F>,
+    /// Gadget to check if exponent is zero or not.
     exponent_is_zero: IsZeroGadget<F>,
+    /// Gadget to check if exponent is one or not.
     exponent_is_one: IsEqualGadget<F>,
+    /// Gadget to check the byte-size of exponent.
     exponent_byte_size: ByteSizeGadget<F>,
 }
 
@@ -115,14 +122,10 @@ impl<F: Field> ExecutionGadget<F> for ExponentiationGadget<F> {
                     from_bytes::expr(&base_rlc.cells[0x10..0x18]),
                     from_bytes::expr(&base_rlc.cells[0x18..0x20]),
                 ];
-                let exponentiation_lo_hi = [
-                    from_bytes::expr(&exponentiation_rlc.cells[0x00..0x10]),
-                    from_bytes::expr(&exponentiation_rlc.cells[0x10..0x20]),
-                ];
                 cb.exp_table_lookup(
                     base_limbs,
                     [exponent_lo.clone(), exponent_hi.clone()],
-                    exponentiation_lo_hi,
+                    [exponentiation_lo.clone(), exponentiation_hi.clone()],
                 );
             },
         );
