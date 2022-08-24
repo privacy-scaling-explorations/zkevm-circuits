@@ -6,20 +6,19 @@ use halo2_proofs::{
 use keccak256::plain::Keccak;
 use pairing::arithmetic::FieldExt;
 
-use std::convert::{TryInto, TryFrom};
-use num_enum::TryFromPrimitive;
+use std::convert::{TryInto};
 
 use crate::{
     branch::{BranchChip, branch_hash_in_parent::BranchHashInParentConfig, branch_parallel::BranchParallelChip, branch_key::BranchKeyConfig, branch_rlc::BranchRLCConfig, branch_rlc_init::BranchRLCInitConfig, extension_node::ExtensionNodeChip, extension_node_key::ExtensionNodeKeyChip},
     helpers::{get_is_extension_node, bytes_into_rlc},
     param::{
-        COUNTER_WITNESS_LEN, IS_BALANCE_MOD_POS, IS_EXT_LONG_EVEN_C16_POS,
+        IS_BALANCE_MOD_POS, IS_EXT_LONG_EVEN_C16_POS,
         IS_EXT_LONG_EVEN_C1_POS, IS_EXT_LONG_ODD_C16_POS, IS_EXT_LONG_ODD_C1_POS,
         IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS, IS_NONCE_MOD_POS, IS_STORAGE_MOD_POS,
-        RLP_NUM, NOT_FIRST_LEVEL_POS, IS_ACCOUNT_DELETE_MOD_POS, IS_NON_EXISTING_ACCOUNT_POS, NIBBLES_COUNTER_POS, BRANCH_ROWS_NUM,
+        RLP_NUM, IS_ACCOUNT_DELETE_MOD_POS, IS_NON_EXISTING_ACCOUNT_POS, NIBBLES_COUNTER_POS, BRANCH_ROWS_NUM,
     },
     roots::RootsChip,
-    storage_root_in_account_leaf::StorageRootChip, account_leaf::{AccountLeafCols, AccountLeaf, account_leaf_key_in_added_branch::AccountLeafKeyInAddedBranchConfig, account_leaf_key::AccountLeafKeyConfig, account_leaf_nonce_balance::AccountLeafNonceBalanceConfig, account_leaf_storage_codehash::AccountLeafStorageCodehashConfig, account_non_existing::AccountNonExistingConfig}, storage_leaf::{StorageLeafCols, StorageLeaf, leaf_key_in_added_branch::LeafKeyInAddedBranchChip, leaf_key::LeafKeyChip, leaf_value::LeafValueChip},
+    storage_root_in_account_leaf::StorageRootChip, account_leaf::{AccountLeafCols, AccountLeaf, account_leaf_key_in_added_branch::AccountLeafKeyInAddedBranchConfig, account_leaf_key::AccountLeafKeyConfig, account_leaf_nonce_balance::AccountLeafNonceBalanceConfig, account_leaf_storage_codehash::AccountLeafStorageCodehashConfig, account_non_existing::AccountNonExistingConfig}, storage_leaf::{StorageLeafCols, StorageLeaf, leaf_key_in_added_branch::LeafKeyInAddedBranchChip, leaf_key::LeafKeyChip, leaf_value::LeafValueChip}, witness_row::{MptWitnessRow, MptWitnessRowType},
 };
 use crate::{param::WITNESS_ROW_WIDTH};
 use crate::{
@@ -150,113 +149,6 @@ pub(crate) struct DenoteCols {
     pub(crate) sel2: Column<Advice>,
     pub(crate) is_node_hashed_s: Column<Advice>,
     pub(crate) is_node_hashed_c: Column<Advice>,
-}
-
-#[derive(Eq, PartialEq, TryFromPrimitive)]
-#[repr(u8)]
-pub enum MptWitnessRowType {
-    InitBranch = 0,
-    BranchChild = 1,
-    StorageLeafSKey = 2,
-    StorageLeafCKey = 3,
-    HashToBeComputed = 5,
-    AccountLeafKeyS = 6,
-    AccountLeafKeyC = 4,
-    AccountLeafNonceBalanceS = 7,
-    AccountLeafNonceBalanceC = 8,
-    AccountLeafRootCodehashS = 9,
-    AccountLeafNeighbouringLeaf = 10,
-    AccountLeafRootCodehashC = 11,
-    StorageLeafSValue = 13,
-    StorageLeafCValue = 14,
-    NeighbouringStorageLeaf = 15, 
-    ExtensionNodeS = 16,
-    ExtensionNodeC = 17,
-    AccountNonExisting = 18
-}
-
-pub struct MptWitnessRow(pub Vec<u8>);
-impl MptWitnessRow {
-    pub fn get_type(&self) -> MptWitnessRowType {
-        MptWitnessRowType::try_from(self.get_byte_rev(1)).unwrap()
-    }
-
-    fn get_byte_rev(&self, rev_index: usize) -> u8 {
-        self.0[self.0.len() - rev_index]
-    }
-
-    pub(crate) fn get_byte(&self, index: usize) -> u8 {
-        self.0[index]
-    }
-
-    fn len(&self) -> usize {
-        self.0.len()
-    }
-
-    pub fn not_first_level(&self) -> u8 {
-        self.get_byte_rev(NOT_FIRST_LEVEL_POS)
-    }
-
-    pub fn is_storage_mod(&self) -> u8 {
-        self.get_byte_rev(IS_STORAGE_MOD_POS)
-    }
-
-    pub fn s_root_bytes(&self) -> &[u8] { 
-        &self.0[self.0.len()
-            - 4 * HASH_WIDTH
-            - COUNTER_WITNESS_LEN
-            - IS_NON_EXISTING_ACCOUNT_POS
-            .. self.0.len() - 4 * HASH_WIDTH
-                - COUNTER_WITNESS_LEN
-                - IS_NON_EXISTING_ACCOUNT_POS
-                + HASH_WIDTH]
-    }
-
-    pub fn c_root_bytes(&self) -> &[u8] { 
-        &self.0[self.0.len()
-            - 3 * HASH_WIDTH
-            - COUNTER_WITNESS_LEN
-            - IS_NON_EXISTING_ACCOUNT_POS
-            .. self.0.len() - 3 * HASH_WIDTH
-                - COUNTER_WITNESS_LEN
-                - IS_NON_EXISTING_ACCOUNT_POS
-                + HASH_WIDTH]
-    }
-
-    pub fn address_bytes(&self) -> &[u8] { 
-        &self.0[self.0.len()
-            - 2 * HASH_WIDTH
-            - COUNTER_WITNESS_LEN
-            - IS_NON_EXISTING_ACCOUNT_POS
-            .. self.0.len() - 2 * HASH_WIDTH
-                - COUNTER_WITNESS_LEN
-                - IS_NON_EXISTING_ACCOUNT_POS
-                + HASH_WIDTH]
-    }
-
-    pub fn counter_bytes(&self) -> &[u8] { 
-        &self.0[self.0.len()
-            - HASH_WIDTH
-            - COUNTER_WITNESS_LEN
-            - IS_NON_EXISTING_ACCOUNT_POS
-            .. self.0.len() - HASH_WIDTH
-                - COUNTER_WITNESS_LEN
-                - IS_NON_EXISTING_ACCOUNT_POS
-                + COUNTER_WITNESS_LEN]
-    }
-
-    pub fn s_hash_bytes(&self) -> &[u8] { 
-        &self.0[S_START..S_START + HASH_WIDTH]
-    } 
-
-    pub fn c_hash_bytes(&self) -> &[u8] { 
-        &self.0[C_START..C_START + HASH_WIDTH]
-    }
-
-    pub fn main(&self) -> &[u8] { 
-        &self.0[0..self.0.len() - 1]
-    }
-
 }
 
 #[derive(Clone, Debug)]

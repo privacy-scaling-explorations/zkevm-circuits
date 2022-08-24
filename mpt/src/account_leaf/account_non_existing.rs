@@ -7,10 +7,10 @@ use std::marker::PhantomData;
 
 use crate::{
     helpers::{key_len_lookup_rot_len, range_lookups},
-    mpt::{FixedTableTag, MainCols, AccumulatorCols, MptWitnessRow, ProofVariables, MPTConfig},
+    mpt::{FixedTableTag, MainCols, AccumulatorCols, MPTConfig},
     param::{
         HASH_WIDTH, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, RLP_NUM, ACCOUNT_NON_EXISTING_IND, BRANCH_ROWS_NUM,
-    },
+    }, witness_row::MptWitnessRow,
 };
 
 /*

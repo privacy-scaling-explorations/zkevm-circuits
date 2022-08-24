@@ -7,3 +7,4 @@ pub mod roots;
 pub mod selectors;
 pub mod storage_root_in_account_leaf;
 pub mod storage_leaf;
+pub mod witness_row;
