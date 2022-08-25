@@ -265,7 +265,7 @@ impl<const MAX_TXS: usize, const MAX_CALLDATA: usize> SuperCircuit<Fr, MAX_TXS, 
     /// the Public Inputs needed.
     pub fn build(
         geth_data: GethData,
-        rng: impl RngCore + Clone,
+        rng: &mut (impl RngCore + Clone),
     ) -> Result<(u32, Self, Vec<Vec<Fr>>), bus_mapping::Error> {
         let txs = geth_data
             .eth_block
@@ -390,7 +390,7 @@ mod super_circuit_tests {
         block.sign(&wallets);
 
         let (k, circuit, instance) =
-            SuperCircuit::<_, 1, 32>::build(block, ChaCha20Rng::seed_from_u64(2)).unwrap();
+            SuperCircuit::<_, 1, 32>::build(block, &mut ChaCha20Rng::seed_from_u64(2)).unwrap();
         let prover = MockProver::run(k, &circuit, instance).unwrap();
         let res = prover.verify();
         if let Err(err) = res {

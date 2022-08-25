@@ -1,6 +1,7 @@
 //! secp256k1 signature types and helper functions.
 
 use crate::{ToBigEndian, Word};
+use ff::PrimeField;
 use group::{ff::Field as GroupField, prime::PrimeCurveAffine, Curve, GroupEncoding};
 use halo2_proofs::arithmetic::{BaseExt, Coordinates, CurveAffine};
 use lazy_static::lazy_static;
@@ -108,12 +109,7 @@ pub fn recover_pk(
 lazy_static! {
     /// Secp256k1 Curve Scalar.  Referece: Section 2.4.1 (parameter `n`) in "SEC 2: Recommended
     /// Elliptic Curve Domain Parameters" document at http://www.secg.org/sec2-v2.pdf
-    pub static ref SECP256K1_Q: BigUint = BigUint::from_slice(&[
-        0xd0364141, 0xbfd25e8c,
-        0xaf48a03b, 0xbaaedce6,
-        0xfffffffe, 0xffffffff,
-        0xffffffff, 0xffffffff,
-    ]);
+    pub static ref SECP256K1_Q: BigUint = BigUint::from_bytes_le(&(secp256k1::Fq::zero() - secp256k1::Fq::one()).to_repr()) + 1u64;
 }
 
 /// Helper function to convert a `CtOption` into an `Result`.  Similar to
