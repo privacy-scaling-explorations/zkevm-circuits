@@ -803,6 +803,12 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
                 let q_enable = q_enable(meta);
                 let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
 
+                // Only check if there is an account above the branch.
+                let is_account_leaf_in_added_branch = meta.query_advice(
+                    is_account_leaf_in_added_branch,
+                    Rotation(rot_into_branch_init - 1),
+                );
+
                 let is_ext_longer_than_55 = meta.query_advice(
                     s_main.bytes[IS_S_EXT_LONGER_THAN_55_POS - RLP_NUM],
                     Rotation(rot_into_branch_init),
@@ -828,6 +834,7 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
                     "Nibbles num when one nibbles",
                     q_not_first.clone()
                         * q_enable.clone()
+                        * (one.clone() - is_account_leaf_in_added_branch.clone())
                         * not_first_level.clone()
                         * is_short.clone()
                         * (nibbles_count_cur.clone() - nibbles_count_prev.clone() - one.clone() - one.clone()), // -1 for nibble, - 1 is for branch position
@@ -840,6 +847,7 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
                     "Nibbles num when even number of nibbles & ext not longer than 55",
                     q_not_first.clone()
                         * q_enable.clone()
+                        * (one.clone() - is_account_leaf_in_added_branch.clone())
                         * not_first_level.clone()
                         * is_even_nibbles.clone()
                         * (one.clone() - is_ext_longer_than_55.clone())
@@ -851,6 +859,7 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
                     "Nibbles num when odd number (>1) of nibbles & ext not longer than 55",
                     q_not_first.clone()
                         * q_enable.clone()
+                        * (one.clone() - is_account_leaf_in_added_branch.clone())
                         * not_first_level.clone()
                         * is_long_odd_nibbles.clone()
                         * (one.clone() - is_ext_longer_than_55.clone())
@@ -864,6 +873,7 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
                     "Nibbles num when even number of nibbles & ext not longer than 55",
                     q_not_first.clone()
                         * q_enable.clone()
+                        * (one.clone() - is_account_leaf_in_added_branch.clone())
                         * not_first_level.clone()
                         * is_even_nibbles.clone()
                         * is_ext_longer_than_55.clone()
@@ -875,6 +885,7 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
                     "Nibbles num when odd number (>1) of nibbles & ext not longer than 55",
                     q_not_first.clone()
                         * q_enable.clone()
+                        * (one.clone() - is_account_leaf_in_added_branch)
                         * not_first_level.clone()
                         * is_long_odd_nibbles.clone()
                         * is_ext_longer_than_55.clone()
@@ -889,6 +900,12 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
                 let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
                 let q_enable = q_enable(meta);
                 let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
+
+                // Only check if there is an account above the branch.
+                let is_account_leaf_in_added_branch = meta.query_advice(
+                    is_account_leaf_in_added_branch,
+                    Rotation(rot_into_branch_init - 1),
+                );
 
                 let is_ext_longer_than_55 = meta.query_advice(
                     s_main.bytes[IS_S_EXT_LONGER_THAN_55_POS - RLP_NUM],
@@ -908,10 +925,18 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
                 );
 
                 constraints.push((
-                    "Nibbles num when one nibbles",
+                    "Nibbles num when one nibbles (first level account)",
                     q_not_first.clone()
                         * q_enable.clone()
                         * (one.clone() - not_first_level.clone())
+                        * is_short.clone()
+                        * (nibbles_count_cur.clone() - one.clone() - one.clone()), // -1 for nibble, - 1 is for branch position
+                ));
+                constraints.push((
+                    "Nibbles num when one nibbles (first level storage)",
+                    q_not_first.clone()
+                        * q_enable.clone()
+                        * is_account_leaf_in_added_branch.clone()
                         * is_short.clone()
                         * (nibbles_count_cur.clone() - one.clone() - one.clone()), // -1 for nibble, - 1 is for branch position
                 ));
@@ -920,7 +945,7 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
                 let mut num_nibbles = (s_rlp2.clone() - c128.clone() - one.clone()) * (one.clone() + one.clone());
                 // [228,130,0,149,160,114,253...
                 constraints.push((
-                    "Nibbles num when even number of nibbles & ext not longer than 55",
+                    "Nibbles num when even number of nibbles & ext not longer than 55 (first level account)",
                     q_not_first.clone()
                         * q_enable.clone()
                         * (one.clone() - not_first_level.clone())
@@ -928,13 +953,31 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
                         * (one.clone() - is_ext_longer_than_55.clone())
                         * (nibbles_count_cur.clone() - num_nibbles.clone() - one.clone()), // - 1 is for branch position
                 ));
+                constraints.push((
+                    "Nibbles num when even number of nibbles & ext not longer than 55 (first level storage)",
+                    q_not_first.clone()
+                        * q_enable.clone()
+                        * is_account_leaf_in_added_branch.clone()
+                        * is_even_nibbles.clone()
+                        * (one.clone() - is_ext_longer_than_55.clone())
+                        * (nibbles_count_cur.clone() - num_nibbles.clone() - one.clone()), // - 1 is for branch position
+                ));
 
                 num_nibbles = (s_rlp2 - c128.clone()) * (one.clone() + one.clone()) - one.clone();
                 constraints.push((
-                    "Nibbles num when odd number (>1) of nibbles & ext not longer than 55",
+                    "Nibbles num when odd number (>1) of nibbles & ext not longer than 55 (first level account)",
                     q_not_first.clone()
                         * q_enable.clone()
                         * (one.clone() - not_first_level.clone())
+                        * is_long_odd_nibbles.clone()
+                        * (one.clone() - is_ext_longer_than_55.clone())
+                        * (nibbles_count_cur.clone() - num_nibbles.clone() - one.clone()), // - 1 is for branch position
+                ));
+                constraints.push((
+                    "Nibbles num when odd number (>1) of nibbles & ext not longer than 55 (first level storage)",
+                    q_not_first.clone()
+                        * q_enable.clone()
+                        * is_account_leaf_in_added_branch.clone()
                         * is_long_odd_nibbles.clone()
                         * (one.clone() - is_ext_longer_than_55.clone())
                         * (nibbles_count_cur.clone() - num_nibbles.clone() - one.clone()), // - 1 is for branch position
@@ -944,7 +987,7 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
                 let s_advices0 = meta.query_advice(s_main.bytes[0], Rotation::cur());
                 num_nibbles = (s_advices0.clone() - c128.clone() - one.clone()) * (one.clone() + one.clone());
                 constraints.push((
-                    "Nibbles num when even number of nibbles & ext not longer than 55",
+                    "Nibbles num when even number of nibbles & ext not longer than 55 (first level account)",
                     q_not_first.clone()
                         * q_enable.clone()
                         * (one.clone() - not_first_level.clone())
@@ -952,13 +995,31 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
                         * is_ext_longer_than_55.clone()
                         * (nibbles_count_cur.clone() - num_nibbles.clone() - one.clone()), // - 1 is for branch position
                 ));
+                constraints.push((
+                    "Nibbles num when even number of nibbles & ext not longer than 55 (first level storage)",
+                    q_not_first.clone()
+                        * q_enable.clone()
+                        * is_account_leaf_in_added_branch.clone()
+                        * is_even_nibbles.clone()
+                        * is_ext_longer_than_55.clone()
+                        * (nibbles_count_cur.clone() - num_nibbles.clone() - one.clone()), // - 1 is for branch position
+                ));
 
                 num_nibbles = (s_advices0 - c128.clone()) * (one.clone() + one.clone()) - one.clone();
                 constraints.push((
-                    "Nibbles num when odd number (>1) of nibbles & ext not longer than 55",
+                    "Nibbles num when odd number (>1) of nibbles & ext not longer than 55 (first level account)",
                     q_not_first.clone()
                         * q_enable.clone()
                         * (one.clone() - not_first_level.clone())
+                        * is_long_odd_nibbles.clone()
+                        * is_ext_longer_than_55.clone()
+                        * (nibbles_count_cur.clone() - num_nibbles.clone() - one.clone()), // - 1 is for branch position
+                ));
+                constraints.push((
+                    "Nibbles num when odd number (>1) of nibbles & ext not longer than 55 (first level storage)",
+                    q_not_first.clone()
+                        * q_enable.clone()
+                        * is_account_leaf_in_added_branch.clone()
                         * is_long_odd_nibbles.clone()
                         * is_ext_longer_than_55.clone()
                         * (nibbles_count_cur - num_nibbles - one.clone()), // - 1 is for branch position

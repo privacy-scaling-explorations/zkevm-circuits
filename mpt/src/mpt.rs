@@ -424,6 +424,7 @@ impl<F: FieldExt> MPTConfig<F> {
             q_enable,
             q_not_first,
             not_first_level,
+            account_leaf.is_in_added_branch,
             s_main.clone(),
             c_main.clone(),
             branch.clone(),
@@ -1547,7 +1548,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                 self,
                                 &mut pv,
                                 offset,
-                            );
+                            ).ok();
                             
                             offset += 1;
                         } else if row.get_type() == MptWitnessRowType::BranchChild {
@@ -1557,7 +1558,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                 self,
                                 &mut pv,
                                 offset,
-                            );
+                            ).ok();
 
                             offset += 1;
                         } else {
@@ -1589,6 +1590,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                 pv.key_rlc_prev = F::zero();
                                 pv.key_rlc_mult_prev = F::one();
                                 pv.key_rlc_sel = true;
+                                pv.nibbles_num = 0;
                                 // TODO: check whether all constraints are implemented (extension_node_rlc ...)
                             } else if row.get_type() == MptWitnessRowType::StorageLeafSValue {
                                 storage_leaf.is_s_value = true;

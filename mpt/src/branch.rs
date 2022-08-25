@@ -82,6 +82,7 @@ impl<F: FieldExt> BranchConfig<F> {
         q_enable: Column<Fixed>,
         q_not_first: Column<Fixed>,
         not_first_level: Column<Advice>,
+        is_account_leaf_in_added_branch: Column<Advice>,
         s_main: MainCols,
         c_main: MainCols,
         branch: BranchCols,
@@ -564,7 +565,6 @@ impl<F: FieldExt> BranchConfig<F> {
             constraints
         });
 
-        /* 
         // TODO: reset to 0 after account leaf
         meta.create_gate("Branch number of nibbles (not first level)", |meta| {
             let mut constraints = vec![];
@@ -572,6 +572,12 @@ impl<F: FieldExt> BranchConfig<F> {
             let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
             let is_branch_init_cur = meta.query_advice(branch.is_init, Rotation::cur());
             let is_extension_node = get_is_extension_node(meta, s_main.bytes, 0);
+
+            // Only check if there is an account above the branch.
+            let is_account_leaf_in_added_branch = meta.query_advice(
+                is_account_leaf_in_added_branch,
+                Rotation(-1),
+            );
 
             let nibbles_count_cur = meta.query_advice(
                 s_main.bytes[NIBBLES_COUNTER_POS - RLP_NUM],
@@ -587,6 +593,7 @@ impl<F: FieldExt> BranchConfig<F> {
                 q_enable.clone()
                     * is_branch_init_cur.clone()
                     * (one.clone() - is_extension_node.clone()) // extension node counterpart constraint is in extension_node.rs
+                    * (one.clone() - is_account_leaf_in_added_branch)
                     * not_first_level.clone()
                     * (nibbles_count_cur.clone() - nibbles_count_prev.clone() - one.clone()),
             ));
@@ -601,13 +608,19 @@ impl<F: FieldExt> BranchConfig<F> {
             let is_branch_init_cur = meta.query_advice(branch.is_init, Rotation::cur());
             let is_extension_node = get_is_extension_node(meta, s_main.bytes, 0);
 
+            // Only check if there is an account above the branch.
+            let is_account_leaf_in_added_branch = meta.query_advice(
+                is_account_leaf_in_added_branch,
+                Rotation(-1),
+            );
+
             let nibbles_count_cur = meta.query_advice(
                 s_main.bytes[NIBBLES_COUNTER_POS - RLP_NUM],
                 Rotation::cur(),
             );
 
             constraints.push((
-                "nibbles_count",
+                "nibbles_count first level account",
                 q_enable.clone()
                     * is_branch_init_cur.clone()
                     * (one.clone() - is_extension_node.clone()) // extension node counterpart constraint is in extension_node.rs
@@ -615,9 +628,17 @@ impl<F: FieldExt> BranchConfig<F> {
                     * (nibbles_count_cur.clone() - one.clone()),
             ));
 
+            constraints.push((
+                "nibbles_count first level storage",
+                q_enable.clone()
+                    * is_branch_init_cur.clone()
+                    * (one.clone() - is_extension_node.clone()) // extension node counterpart constraint is in extension_node.rs
+                    * is_account_leaf_in_added_branch
+                    * (nibbles_count_cur.clone() - one.clone()),
+            ));
+
             constraints
         });
-        */
         
         /*
         Range lookups ensure that `s_main.bytes` and `c_main.bytes` columns are all bytes (between 0 - 255).
@@ -631,9 +652,9 @@ impl<F: FieldExt> BranchConfig<F> {
         let sel = |meta: &mut VirtualCells<F>| {
             let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
             let is_branch_init = meta.query_advice(branch.is_init, Rotation::cur());
-            let is_branch_init = meta.query_advice(branch.is_child, Rotation::cur());
+            let is_branch_child = meta.query_advice(branch.is_child, Rotation::cur());
 
-            q_not_first * (one.clone() - is_branch_init)
+            q_not_first * (one.clone() - is_branch_init) * is_branch_child
         }; 
         range_lookups(
             meta,
