@@ -91,6 +91,7 @@ impl<F: FieldExt> BranchConfig<F> {
     ) -> Self {
         let config = BranchConfig { _marker: PhantomData };
         let one = Expression::Constant(F::one());
+        let c320 = Expression::Constant(F::from(320));
 
         /*
         The gate `Branch S and C equal at NON modified_node position` ensures that the only change in
@@ -98,7 +99,7 @@ impl<F: FieldExt> BranchConfig<F> {
         This is needed because the circuit allows only one change at at time.
         */
         meta.create_gate(
-            "Branch S and C equal at NON modified_node position",
+            "Branch S and C equal at NON modified_node position & only two non-nil nodes when placeholder",
             |meta| {
                 let q_enable = meta.query_fixed(q_enable, Rotation::cur());
                 let mut constraints = vec![];
@@ -106,8 +107,6 @@ impl<F: FieldExt> BranchConfig<F> {
                 let is_branch_child_cur = meta.query_advice(branch.is_child, Rotation::cur());
                 let node_index_cur = meta.query_advice(branch.node_index, Rotation::cur());
                 let modified_node = meta.query_advice(branch.modified_node, Rotation::cur());
-                let is_modified = meta.query_advice(branch.is_modified, Rotation::cur());
-                let is_at_drifted_pos = meta.query_advice(branch.is_at_drifted_pos, Rotation::cur());
 
                 let s_rlp2 = meta.query_advice(s_main.rlp2, Rotation::cur());
                 let c_rlp2 = meta.query_advice(c_main.rlp2, Rotation::cur());
@@ -142,41 +141,58 @@ impl<F: FieldExt> BranchConfig<F> {
                             * (s.clone() - c.clone())
                             * (node_index_cur.clone() - modified_node.clone()),
                     ));
-
-                    /*
-                    When it is NOT a placeholder branch, is_modified = is_at_drifted_pos.
-                    When it is a placeholder branch, is_modified != is_at_drifted_pos.
-                    This is used instead of having is_branch_s_placeholder and
-                    is_branch_c_placeholder columns - we only have this info in
-                    branch init where we do not need additional columns.
-                    When there is a placeholder branch, there are only two nodes - one at
-                    is_modified and one at is_at_drifted_pos - at other
-                    positions there need to be nil nodes.
-
-                    TODO: This might be optimized once the check for branch is added - check
-                    that when s_rlp2 = 0, it needs to be s = 0 and c = 0, except the first byte
-                    is 128. So, only s_rlp2 could be checked here instead of all
-                    s and c.
-                    */
-                    constraints.push((
-                        "s = 0 when placeholder and is neither is_modified or is_at_drifted_pos",
-                        q_enable.clone()
-                        * is_branch_child_cur.clone()
-                        * (is_modified.clone() - is_at_drifted_pos.clone()) // this is 0 when NOT placeholder
-                        * (one.clone() - is_modified.clone())
-                        * (one.clone() - is_at_drifted_pos.clone())
-                        * s,
-                    ));
-                    constraints.push((
-                        "c = 0 when placeholder and is neither is_modified or is_at_drifted_pos",
-                        q_enable.clone()
-                        * is_branch_child_cur.clone()
-                        * (is_modified.clone() - is_at_drifted_pos.clone()) // this is 0 when NOT placeholder
-                        * (one.clone() - is_modified.clone())
-                        * (one.clone() - is_at_drifted_pos.clone())
-                        * c,
-                    ));
                 }
+
+                let mut sum_rlp2_s = Expression::Constant(F::zero());
+                let mut sum_rlp2_c = Expression::Constant(F::zero());
+                /*
+                So many rotation is not optimal, but most of these rotations are used elsewhere, so
+                it should not be much of an overhead. Alternative approach would be to have a column
+                specifying whether there is a placeholder branch or not (we currently have this info
+                only in branch init). Another alternative would be to have a column where we add
+                `rlp2` value from the current row in each of the 16 rows. Both alternative would
+                require additional column.
+                */
+                for ind in 0..16 {
+                    let s_rlp2 = meta.query_advice(s_main.rlp2, Rotation(-ind));
+                    let c_rlp2 = meta.query_advice(c_main.rlp2, Rotation(-ind)); 
+                    sum_rlp2_s = sum_rlp2_s.clone() + s_rlp2;
+                    sum_rlp2_c = sum_rlp2_c.clone() + c_rlp2;
+                }
+ 
+                let is_last_child = meta.query_advice(branch.is_last_child, Rotation::cur());
+                let is_branch_placeholder_s =
+                    meta.query_advice(s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM], Rotation(-16));
+                let is_branch_placeholder_c =
+                    meta.query_advice(s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM], Rotation(-16));
+
+                /*
+                This constraint applies for when we have a placeholder branch.
+                In this case, both branches are the same - the placeholder branch and its
+                parallel counterpart, which is not a placeholder, but a regular branch (newly added branch).
+                The regular branch has only two non-nil nodes, because the placeholder branch
+                appears only when an existing leaf drifts down into a newly added branch.
+                Besides an existing leaf, we have a leaf that was being added and that caused
+                a new branch to be added. So we need to check that there are exactly two non-nil nodes
+                (otherwise the attacker could add two or more new leaves at the same time).
+
+                The non-nil nodes need to be at `is_modified` and `is_at_drifted_pos`, elsewhere
+                there have to be zeros. When there is no placeholder branch, this constraint is ignored.
+                */
+                constraints.push((
+                    "Only two nil-nodes when placeholder branch S",
+                    q_enable.clone()
+                    * is_last_child.clone()
+                    * is_branch_placeholder_c.clone() // C is correct here
+                    * (sum_rlp2_s - c320.clone()) // There are constraints which ensure there is only 0 or 160 at rlp2 for branch children.
+                ));
+                constraints.push((
+                    "Only two nil-nodes when placeholder branch C",
+                    q_enable.clone()
+                    * is_last_child.clone()
+                    * is_branch_placeholder_s // S is correct here
+                    * (sum_rlp2_c - c320)
+                ));
 
                 constraints
             },
