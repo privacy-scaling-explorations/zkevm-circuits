@@ -7,19 +7,19 @@ pub mod extension_node;
 pub mod extension_node_key;
 
 use halo2_proofs::{
-    plonk::{Column, ConstraintSystem, Expression, Fixed, VirtualCells, Advice},
-    poly::Rotation,
+    plonk::{Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells, Advice},
+    poly::Rotation, circuit::Region,
 };
 use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
 use crate::{
-    helpers::{get_bool_constraint, range_lookups, get_is_extension_node},
-    mpt::{FixedTableTag, MainCols, BranchCols, DenoteCols},
+    helpers::{get_bool_constraint, range_lookups, get_is_extension_node, bytes_into_rlc},
+    mpt::{FixedTableTag, MainCols, BranchCols, DenoteCols, MPTConfig, ProofVariables},
     param::{
         BRANCH_0_C_START, BRANCH_0_S_START, IS_BRANCH_C_PLACEHOLDER_POS,
-        IS_BRANCH_S_PLACEHOLDER_POS, RLP_NUM, NIBBLES_COUNTER_POS, BRANCH_ROWS_NUM,
-    },
+        IS_BRANCH_S_PLACEHOLDER_POS, RLP_NUM, NIBBLES_COUNTER_POS, BRANCH_ROWS_NUM, BRANCH_0_KEY_POS, DRIFTED_POS, IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS, IS_EXT_LONG_ODD_C16_POS, IS_EXT_LONG_ODD_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS,
+    }, witness_row::MptWitnessRow, storage_leaf::StorageLeaf, account_leaf::AccountLeaf,
 };
 
 /*
@@ -56,6 +56,20 @@ Example:
 Note that when `BRANCH.IS_CHILD` row presents a nil node, there is only one byte non-zero:
 128 at `s_main.bytes[0] / c_main.bytes[0]`.
 */
+
+#[derive(Default)]
+pub(crate) struct Branch {
+    pub(crate) is_branch_init: bool,
+    pub(crate) is_branch_child: bool,
+    pub(crate) is_last_branch_child: bool,
+    pub(crate) node_index: u8,
+    pub(crate) is_modified: bool, 
+    pub(crate) modified_node: u8,
+    pub(crate) is_at_drifted_pos: bool,
+    pub(crate) drifted_pos: u8,
+    pub(crate) is_extension_node_s: bool,
+    pub(crate) is_extension_node_c: bool,
+}
 
 #[derive(Clone, Debug)]
 pub(crate) struct BranchConfig<F> {
@@ -637,5 +651,188 @@ impl<F: FieldExt> BranchConfig<F> {
         );
 
         config
+    }
+
+    pub fn assign(
+        &self,
+        region: &mut Region<'_, F>,
+        witness: &[MptWitnessRow],
+        mpt_config: &MPTConfig<F>,
+        pv: &mut ProofVariables<F>,
+        offset: usize,
+    ) {
+        self.assign_branch_init(region, witness, mpt_config, offset, pv, offset).ok();
+    }
+
+    fn assign_branch_init(
+        &self,
+        region: &mut Region<'_, F>,
+        witness: &[MptWitnessRow],
+        mpt_config: &MPTConfig<F>,
+        ind: usize, 
+        pv: &mut ProofVariables<F>,
+        offset: usize,
+    ) -> Result<(), Error> {
+        let row = &witness[ind];
+
+        pv.modified_node = row.get_byte(BRANCH_0_KEY_POS);
+        pv.node_index = 0;
+        pv.drifted_pos = row.get_byte(DRIFTED_POS);
+
+        // Get the child that is being changed and convert it to words to enable
+        // lookups:
+        let mut s_hash = witness[ind + 1 + pv.modified_node as usize].s_hash_bytes().to_vec();
+        let mut c_hash = witness[ind + 1 + pv.modified_node as usize].c_hash_bytes().to_vec();
+        pv.s_mod_node_hash_rlc = bytes_into_rlc(&s_hash, mpt_config.acc_r);
+        pv.c_mod_node_hash_rlc = bytes_into_rlc(&c_hash, mpt_config.acc_r);
+
+        if row.get_byte(IS_BRANCH_S_PLACEHOLDER_POS) == 1 {
+            // We put hash of a node that moved down to the added branch.
+            // This is needed to check the hash of leaf_in_added_branch.
+            s_hash = witness[ind + 1 + pv.drifted_pos as usize].s_hash_bytes().to_vec();
+            pv.s_mod_node_hash_rlc = bytes_into_rlc(&s_hash, mpt_config.acc_r);
+            pv.is_branch_s_placeholder = true
+        } else {
+            pv.is_branch_s_placeholder = false
+        }
+        if row.get_byte(IS_BRANCH_C_PLACEHOLDER_POS) == 1 {
+            c_hash = witness[ind + 1 + pv.drifted_pos as usize].c_hash_bytes().to_vec();
+            pv.c_mod_node_hash_rlc = bytes_into_rlc(&c_hash, mpt_config.acc_r);
+            pv.is_branch_c_placeholder = true
+        } else {
+            pv.is_branch_c_placeholder = false
+        }
+        // If no placeholder branch, we set drifted_pos = modified_node. This
+        // is needed just to make some other constraints (s_mod_node_hash_rlc
+        // and c_mod_node_hash_rlc correspond to the proper node) easier to
+        // write.
+        if row.get_byte(IS_BRANCH_S_PLACEHOLDER_POS) == 0
+            && row.get_byte(IS_BRANCH_C_PLACEHOLDER_POS) == 0
+        {
+            pv.drifted_pos = pv.modified_node
+        }
+
+        let account_leaf = AccountLeaf::default();
+        let storage_leaf = StorageLeaf::default();
+        let mut branch = Branch::default();
+        branch.is_branch_init = true;
+
+        mpt_config.assign_row(
+            region,
+            &row.main().to_vec(),
+            account_leaf,
+            storage_leaf, 
+            branch,
+            offset,
+        )?;
+
+        // reassign (it was assigned to 0 in assign_row) branch_acc and
+        // branch_mult to proper values
+
+        // Branch (length 83) with two bytes of RLP meta data
+        // [248,81,128,128,...
+
+        // Branch (length 340) with three bytes of RLP meta data
+        // [249,1,81,128,16,...
+
+        let s_len = [0, 1, 2].map(|i| row.get_byte(BRANCH_0_S_START + i) as u64);
+        pv.acc_s = F::from(s_len[0]);
+        pv.acc_mult_s = mpt_config.acc_r;
+
+        if s_len[0] == 249 {
+            pv.acc_s += F::from(s_len[1]) * pv.acc_mult_s; 
+            pv.acc_mult_s *= mpt_config.acc_r;
+            pv.acc_s += F::from(s_len[2]) * pv.acc_mult_s;
+            pv.acc_mult_s *= mpt_config.acc_r;
+
+            pv.rlp_len_rem_s = s_len[1] as i32 * 256 + s_len[2] as i32;
+        } else if s_len[0] == 248 {
+            pv.acc_s += F::from(s_len[1]) * pv.acc_mult_s; 
+            pv.acc_mult_s *= mpt_config.acc_r;
+
+            pv.rlp_len_rem_s = s_len[1] as i32;
+        } else {
+            pv.rlp_len_rem_s = s_len[0] as i32 - 192;
+        }
+
+        let c_len = [0, 1, 2].map(|i| row.get_byte(BRANCH_0_C_START + i) as u64);
+        pv.acc_c = F::from(c_len[0]);
+        pv.acc_mult_c = mpt_config.acc_r;
+
+        if c_len[0] == 249 {
+            pv.acc_c += F::from(c_len[1]) * pv.acc_mult_c;
+            pv.acc_mult_c *= mpt_config.acc_r;
+            pv.acc_c += F::from(c_len[2]) * pv.acc_mult_c;
+            pv.acc_mult_c *= mpt_config.acc_r;
+
+            pv.rlp_len_rem_c = c_len[1] as i32 * 256 + c_len[2] as i32;
+        } else if c_len[0] == 248 {
+            pv.acc_c += F::from(c_len[1]) * pv.acc_mult_c;
+            pv.acc_mult_c *= mpt_config.acc_r;
+
+            pv.rlp_len_rem_c = c_len[1] as i32;
+        } else {
+            pv.rlp_len_rem_c = c_len[0] as i32 - 192;
+        }
+
+        mpt_config.assign_acc(
+            region,
+            pv.acc_s,
+            pv.acc_mult_s,
+            pv.acc_c,
+            pv.acc_mult_c,
+            offset,
+        )?;
+
+        pv.is_even = row.get_byte(IS_EXT_LONG_EVEN_C16_POS)
+            + row.get_byte(IS_EXT_LONG_EVEN_C1_POS)
+            == 1;
+        pv.is_odd = row.get_byte(IS_EXT_LONG_ODD_C16_POS)
+            + row.get_byte(IS_EXT_LONG_ODD_C1_POS)
+            + row.get_byte(IS_EXT_SHORT_C16_POS)
+            + row.get_byte(IS_EXT_SHORT_C1_POS)
+            == 1;
+        pv.is_short = row.get_byte(IS_EXT_SHORT_C16_POS)
+            + row.get_byte(IS_EXT_SHORT_C1_POS)
+            == 1;
+        pv.is_long = row.get_byte(IS_EXT_LONG_EVEN_C16_POS)
+            + row.get_byte(IS_EXT_LONG_EVEN_C1_POS)
+            + row.get_byte(IS_EXT_LONG_ODD_C16_POS)
+            + row.get_byte(IS_EXT_LONG_ODD_C1_POS)
+            == 1;
+        pv.is_extension_node = pv.is_even == true || pv.is_odd == true;
+ 
+        // Assign how many nibbles have been used in the previous extension node + branch.
+        pv.nibbles_num = pv.nibbles_num + 1; // one nibble is used for position in branch
+        if pv.is_extension_node {
+            // Get into extension node S
+            let row_ext = &witness[ind + BRANCH_ROWS_NUM as usize - 2];
+            let ext_nibbles: usize;
+            if row_ext.get_byte(1) <= 32 {
+                ext_nibbles = 1
+            } else if row_ext.get_byte(0) < 248 {
+                if row_ext.get_byte(2) == 0 { // even number of nibbles
+                    ext_nibbles = ((row_ext.get_byte(1) - 128) as usize - 1) * 2;
+                } else {
+                    ext_nibbles = (row_ext.get_byte(1) - 128) as usize * 2 - 1;
+                }
+            } else {
+                if row_ext.get_byte(3) == 0 { // even number of nibbles
+                    ext_nibbles = ((row_ext.get_byte(2) - 128) as usize - 1) * 2;
+                } else {
+                    ext_nibbles = (row_ext.get_byte(2) - 128) as usize * 2 - 1;
+                }
+            }
+
+            pv.nibbles_num += ext_nibbles;
+        }
+        region.assign_advice(
+            || "assign number of nibbles".to_string(),
+            mpt_config.s_main.bytes[NIBBLES_COUNTER_POS - RLP_NUM],
+            offset,
+            || Ok(F::from(pv.nibbles_num as u64)),
+        )?; 
+ 
+        Ok(())
     }
 }
