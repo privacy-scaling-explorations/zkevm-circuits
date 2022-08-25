@@ -25,8 +25,9 @@ pub struct ExpCircuit<F> {
     pub idx: Column<Advice>,
     /// Whether this row is the last row in the circuit.
     pub is_last: Column<Advice>,
-    /// Boolean value to check whether intermediate_exponent is odd or even.
-    pub remainder: Column<Advice>,
+    /// Multiplication gadget to check that the reducing exponent's division by
+    /// 2 was done correctly.
+    pub exp_div: MulAddConfig<F>,
     /// The Exponentiation circuit's table.
     pub exp_table: ExpTable,
     /// Multiplication gadget for verification of each step.
@@ -39,7 +40,7 @@ impl<F: Field> ExpCircuit<F> {
         let q_step = meta.complex_selector();
         let idx = meta.advice_column();
         let is_last = meta.advice_column();
-        let remainder = meta.advice_column();
+        let exp_div = MulAddChip::configure(meta, q_step);
         let mul_gadget = MulAddChip::configure(meta, q_step);
 
         meta.create_gate("verify all but last steps", |meta| {
@@ -149,17 +150,42 @@ impl<F: Field> ExpCircuit<F> {
             // For every intermediate step, the intermediate exponent is reduced:
             // 1. intermediate_exponent::next == intermediate_exponent::cur - 1, if odd.
             // 2. intermediate_exponent::next == intermediate_exponent::cur/2, if even.
-            let remainder_expr = meta.query_advice(remainder, Rotation::cur());
-            cb.require_boolean("remainder is 0 or 1", remainder_expr.clone());
+            let remainder = meta.query_advice(exp_div.col0, Rotation(2));
+            cb.require_zero("remainder_hi == 0", meta.query_advice(exp_div.col1, Rotation(2)));
+            cb.require_boolean("remainder_lo is 0 or 1", remainder.clone());
 
-            // TODO(rohit): validate that remainder is correct
-            // i.e. remainder == intermediate_exponent % 2
+            // verify that denominator == 2
+            cb.require_zero(
+                "denominator_limb[1], [2] and [3] == 0",
+                or::expr([
+                    meta.query_advice(exp_div.col1, Rotation(1)),
+                    meta.query_advice(exp_div.col2, Rotation(1)),
+                    meta.query_advice(exp_div.col3, Rotation(1)),
+                ]),
+            );
+            cb.require_equal(
+                "denominator_limbs[0] == 2",
+                meta.query_advice(exp_div.col0, Rotation(1)),
+                2.expr(),
+            );
 
-            // remainder == 1 => odd
+            // verify that `exponent` value was divided by 2.
+            for ((column1, rot1), (column2, rot2)) in [
+                ((exp_div.col2, Rotation(2)), (exp_table.intermediate_exponent_lo_hi, Rotation(0))),
+                ((exp_div.col3, Rotation(2)), (exp_table.intermediate_exponent_lo_hi, Rotation(1))),
+            ] {
+                cb.require_equal(
+                    "intermediate exponent == numerator from exponent division gadget",
+                    meta.query_advice(column1, rot1),
+                    meta.query_advice(column2, rot2),
+                );
+            }
+
+            // remainder == 1 => exponent is odd
             cb.condition(
                 and::expr([
                     not::expr(meta.query_advice(is_last, Rotation::cur())),
-                    remainder_expr.clone(),
+                    remainder.clone(),
                 ]), |cb| {
                 cb.require_equal(
                     "intermediate_exponent::next == intermediate_exponent::cur - 1 (lo::next == lo::cur - 1)",
@@ -172,11 +198,11 @@ impl<F: Field> ExpCircuit<F> {
                     meta.query_advice(exp_table.intermediate_exponent_lo_hi, Rotation(1)),
                 );
             });
-            // remainder == 0 => even
+            // remainder == 0 => exponent is even
             cb.condition(
                 and::expr([
                     not::expr(meta.query_advice(is_last, Rotation::cur())),
-                    not::expr(remainder_expr),
+                    not::expr(remainder),
                 ]), |cb| {
                 cb.require_equal(
                     "intermediate_exponent::next == intermediate_exponent::cur / 2",
@@ -212,7 +238,7 @@ impl<F: Field> ExpCircuit<F> {
             q_step,
             idx,
             is_last,
-            remainder,
+            exp_div,
             exp_table,
             mul_gadget,
         }
@@ -227,6 +253,7 @@ impl<F: Field> ExpCircuit<F> {
         const OFFSET_INCREMENT: usize = 7usize;
         const ROWS_PER_STEP: usize = 4usize;
 
+        let exp_div_chip = MulAddChip::construct(self.exp_div.clone());
         let mul_chip = MulAddChip::construct(self.mul_gadget.clone());
 
         layouter.assign_region(
@@ -234,6 +261,7 @@ impl<F: Field> ExpCircuit<F> {
             |mut region| {
                 // assign everything except the exp table.
                 let mut offset = 0;
+                let two = U256::from(2);
                 for exp_event in block.exp_events.iter() {
                     let mut exponent = exp_event.exponent;
                     for (idx, step) in exp_event.steps.iter().rev().enumerate() {
@@ -243,13 +271,6 @@ impl<F: Field> ExpCircuit<F> {
                             F::zero()
                         };
                         let (exponent_div2, remainder) = exponent.div_mod(2.into());
-                        if remainder.is_zero() {
-                            // exponent is even
-                            exponent = exponent_div2;
-                        } else {
-                            // exponent is odd
-                            exponent = exponent - 1;
-                        }
 
                         self.q_step.enable(&mut region, offset)?;
                         region.assign_advice(
@@ -264,17 +285,25 @@ impl<F: Field> ExpCircuit<F> {
                             offset,
                             || Ok(is_last),
                         )?;
-                        region.assign_advice(
-                            || format!("remainder: {}", offset),
-                            self.remainder,
+                        exp_div_chip.assign(
+                            &mut region,
                             offset,
-                            || Ok(remainder.to_scalar().unwrap()),
+                            [exponent_div2, two, remainder, exponent],
                         )?;
                         mul_chip.assign(
                             &mut region,
                             offset,
                             [step.a, step.b, U256::zero(), step.d],
                         )?;
+
+                        // update reducing exponent
+                        if remainder.is_zero() {
+                            // exponent is even
+                            exponent = exponent_div2;
+                        } else {
+                            // exponent is odd
+                            exponent = exponent - 1;
+                        }
 
                         // mul_chip has 7 rows, exp_table has 4 rows. So we increment the offset by
                         // the maximum number of rows taken up by any gadget within the
@@ -315,7 +344,14 @@ impl<F: Field> ExpCircuit<F> {
 
                 // assign a zero step, analogous to padding.
                 let mut all_columns = self.exp_table.columns();
-                all_columns.extend_from_slice(&[self.is_last, self.idx, self.remainder]);
+                all_columns.extend_from_slice(&[
+                    self.is_last,
+                    self.idx,
+                    self.exp_div.col0,
+                    self.exp_div.col1,
+                    self.exp_div.col2,
+                    self.exp_div.col3,
+                ]);
                 for column in all_columns {
                     for i in 0..OFFSET_INCREMENT {
                         region.assign_advice(
@@ -447,5 +483,6 @@ mod tests {
         test_ok(11.into(), 17.into());
         test_ok(13.into(), 23.into());
         test_ok(29.into(), 43.into());
+        test_ok(41.into(), 259.into());
     }
 }
