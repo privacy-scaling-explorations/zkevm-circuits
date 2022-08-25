@@ -18,7 +18,7 @@ use crate::{
     mpt::{FixedTableTag, MainCols, BranchCols, DenoteCols, MPTConfig, ProofVariables},
     param::{
         BRANCH_0_C_START, BRANCH_0_S_START, IS_BRANCH_C_PLACEHOLDER_POS,
-        IS_BRANCH_S_PLACEHOLDER_POS, RLP_NUM, NIBBLES_COUNTER_POS, BRANCH_ROWS_NUM, BRANCH_0_KEY_POS, DRIFTED_POS, IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS, IS_EXT_LONG_ODD_C16_POS, IS_EXT_LONG_ODD_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS,
+        IS_BRANCH_S_PLACEHOLDER_POS, RLP_NUM, NIBBLES_COUNTER_POS, BRANCH_ROWS_NUM, BRANCH_0_KEY_POS, DRIFTED_POS, IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS, IS_EXT_LONG_ODD_C16_POS, IS_EXT_LONG_ODD_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS, S_RLP_START, S_START, C_RLP_START, C_START, HASH_WIDTH,
     }, witness_row::MptWitnessRow, storage_leaf::StorageLeaf, account_leaf::AccountLeaf,
 };
 
@@ -653,27 +653,15 @@ impl<F: FieldExt> BranchConfig<F> {
         config
     }
 
-    pub fn assign(
+    pub(crate) fn assign_branch_init(
         &self,
         region: &mut Region<'_, F>,
         witness: &[MptWitnessRow],
         mpt_config: &MPTConfig<F>,
-        pv: &mut ProofVariables<F>,
-        offset: usize,
-    ) {
-        self.assign_branch_init(region, witness, mpt_config, offset, pv, offset).ok();
-    }
-
-    fn assign_branch_init(
-        &self,
-        region: &mut Region<'_, F>,
-        witness: &[MptWitnessRow],
-        mpt_config: &MPTConfig<F>,
-        ind: usize, 
         pv: &mut ProofVariables<F>,
         offset: usize,
     ) -> Result<(), Error> {
-        let row = &witness[ind];
+        let row = &witness[offset];
 
         pv.modified_node = row.get_byte(BRANCH_0_KEY_POS);
         pv.node_index = 0;
@@ -681,22 +669,22 @@ impl<F: FieldExt> BranchConfig<F> {
 
         // Get the child that is being changed and convert it to words to enable
         // lookups:
-        let mut s_hash = witness[ind + 1 + pv.modified_node as usize].s_hash_bytes().to_vec();
-        let mut c_hash = witness[ind + 1 + pv.modified_node as usize].c_hash_bytes().to_vec();
+        let mut s_hash = witness[offset + 1 + pv.modified_node as usize].s_hash_bytes().to_vec();
+        let mut c_hash = witness[offset + 1 + pv.modified_node as usize].c_hash_bytes().to_vec();
         pv.s_mod_node_hash_rlc = bytes_into_rlc(&s_hash, mpt_config.acc_r);
         pv.c_mod_node_hash_rlc = bytes_into_rlc(&c_hash, mpt_config.acc_r);
 
         if row.get_byte(IS_BRANCH_S_PLACEHOLDER_POS) == 1 {
             // We put hash of a node that moved down to the added branch.
             // This is needed to check the hash of leaf_in_added_branch.
-            s_hash = witness[ind + 1 + pv.drifted_pos as usize].s_hash_bytes().to_vec();
+            s_hash = witness[offset + 1 + pv.drifted_pos as usize].s_hash_bytes().to_vec();
             pv.s_mod_node_hash_rlc = bytes_into_rlc(&s_hash, mpt_config.acc_r);
             pv.is_branch_s_placeholder = true
         } else {
             pv.is_branch_s_placeholder = false
         }
         if row.get_byte(IS_BRANCH_C_PLACEHOLDER_POS) == 1 {
-            c_hash = witness[ind + 1 + pv.drifted_pos as usize].c_hash_bytes().to_vec();
+            c_hash = witness[offset + 1 + pv.drifted_pos as usize].c_hash_bytes().to_vec();
             pv.c_mod_node_hash_rlc = bytes_into_rlc(&c_hash, mpt_config.acc_r);
             pv.is_branch_c_placeholder = true
         } else {
@@ -806,7 +794,7 @@ impl<F: FieldExt> BranchConfig<F> {
         pv.nibbles_num = pv.nibbles_num + 1; // one nibble is used for position in branch
         if pv.is_extension_node {
             // Get into extension node S
-            let row_ext = &witness[ind + BRANCH_ROWS_NUM as usize - 2];
+            let row_ext = &witness[offset + BRANCH_ROWS_NUM as usize - 2];
             let ext_nibbles: usize;
             if row_ext.get_byte(1) <= 32 {
                 ext_nibbles = 1
@@ -833,6 +821,384 @@ impl<F: FieldExt> BranchConfig<F> {
             || Ok(F::from(pv.nibbles_num as u64)),
         )?; 
  
+        Ok(())
+    }
+
+    pub(crate) fn assign_branch_child(
+        &self,
+        region: &mut Region<'_, F>,
+        witness: &[MptWitnessRow],
+        mpt_config: &MPTConfig<F>,
+        pv: &mut ProofVariables<F>,
+        offset: usize,
+    ) -> Result<(), Error> {
+        let row = &witness[offset];
+
+        let mut node_mult_diff_s = F::one();
+        let mut node_mult_diff_c = F::one();
+        
+        if row.get_byte(S_RLP_START + 1) == 160 {
+            pv.rlp_len_rem_s -= 33;
+        } else if row.get_byte(S_RLP_START + 1) == 0 && row.get_byte(S_START) > 192 {
+            let len = row.get_byte(S_START) as i32 - 192;
+            pv.rlp_len_rem_s -= len + 1;
+            for _ in 0..len {
+                node_mult_diff_s *= mpt_config.acc_r;
+            }
+        } else if row.get_byte(S_RLP_START + 1) == 0 {
+            pv.rlp_len_rem_s -= 1;
+        }
+        if row.get_byte(C_RLP_START + 1) == 160 {
+            pv.rlp_len_rem_c -= 33;
+        } else if row.get_byte(C_RLP_START + 1) == 0 && row.get_byte(C_START) > 192 {
+            let len = row.get_byte(C_START) as i32 - 192;
+            pv.rlp_len_rem_c -= len + 1;
+            for _ in 0..len {
+                node_mult_diff_c *= mpt_config.acc_r;
+            }
+        } else if row.get_byte(C_RLP_START + 1) == 0 {
+            pv.rlp_len_rem_c -= 1;
+        }
+
+        region.assign_advice(
+            || "node_mult_diff_s".to_string(),
+            mpt_config.accumulators.node_mult_diff_s,
+            offset,
+            || Ok(node_mult_diff_s),
+        )?;
+        region.assign_advice(
+            || "node_mult_diff_c".to_string(),
+            mpt_config.accumulators.node_mult_diff_c,
+            offset,
+            || Ok(node_mult_diff_c),
+        )?;
+
+        if pv.node_index == 0 {
+            // If it's not extension node, rlc and rlc_mult in extension row
+            // will be the same as for branch rlc.
+            pv.extension_node_rlc = pv.key_rlc;
+
+            pv.key_rlc_prev = pv.key_rlc;
+            pv.key_rlc_mult_prev = pv.key_rlc_mult;
+
+            if pv.is_extension_node
+            // Extension node
+            // We need nibbles here to be able to compute key RLC
+            {
+                // For key RLC, we need to first take into account
+                // extension node key.
+                // witness[offset + 16]
+                let ext_row = &witness[offset + 16];
+                let mut key_len_pos = 1;
+                if ext_row.get_byte(0) == 248 {
+                    key_len_pos = 2;
+                }
+
+                if pv.key_rlc_sel {
+                    // Note: it can't be is_even = 1 && is_short = 1.
+                    if pv.is_even && pv.is_long {
+                        // extension node part:
+                        let key_len = ext_row.get_byte(key_len_pos) as usize - 128 - 1; // -1 because the first byte is 0 (is_even)
+                        mpt_config.compute_acc_and_mult(
+                            &ext_row.0,
+                            &mut pv.extension_node_rlc,
+                            &mut pv.key_rlc_mult,
+                            key_len_pos + 2, /* first position behind key_len_pos
+                                * is 0 (because is_even), we start
+                                * with the next one */
+                            key_len,
+                        );
+                        pv.mult_diff = F::one();
+                        for _ in 0..key_len {
+                            pv.mult_diff *= mpt_config.acc_r;
+                        }
+                        pv.key_rlc = pv.extension_node_rlc;
+                        // branch part:
+                        pv.key_rlc += F::from(pv.modified_node as u64)
+                            * F::from(16)
+                            * pv.key_rlc_mult;
+                        // key_rlc_mult stays the same
+                        pv.key_rlc_sel = !pv.key_rlc_sel;
+                    } else if pv.is_odd && pv.is_long {
+                        // extension node part:
+                        pv.extension_node_rlc +=
+                            F::from((ext_row.get_byte(key_len_pos + 1) - 16) as u64)
+                                * F::from(16)
+                                * pv.key_rlc_mult;
+
+                        let ext_row_c = &witness[offset + 17];
+                        let key_len = ext_row.get_byte(key_len_pos) as usize - 128;
+
+                        pv.mult_diff = F::one();
+                        for k in 0..key_len-1 {
+                            let second_nibble = ext_row_c.get_byte(S_START + k);
+                            let first_nibble =
+                                (ext_row.get_byte(key_len_pos + 2 + k) - second_nibble) / 16;
+                            assert_eq!(
+                                first_nibble * 16 + second_nibble,
+                                ext_row.get_byte(key_len_pos + 2 + k),
+                            );
+                            pv.extension_node_rlc +=
+                                F::from(first_nibble as u64) * pv.key_rlc_mult;
+
+                            pv.key_rlc_mult *= mpt_config.acc_r;
+                            pv.mult_diff *= mpt_config.acc_r;
+
+                            pv.extension_node_rlc +=
+                                F::from(second_nibble as u64)
+                                    * F::from(16)
+                                    * pv.key_rlc_mult;
+                        }
+
+                        pv.key_rlc = pv.extension_node_rlc;
+                        // branch part:
+                        pv.key_rlc +=
+                            F::from(pv.modified_node as u64) * pv.key_rlc_mult;
+                        pv.key_rlc_mult *= mpt_config.acc_r;
+                    } else if pv.is_short {
+                        pv.extension_node_rlc +=
+                            F::from((ext_row.get_byte(1) - 16) as u64)
+                                * F::from(16)
+                                * pv.key_rlc_mult;
+                        pv.key_rlc = pv.extension_node_rlc;
+                        // branch part:
+                        pv.key_rlc +=
+                            F::from(pv.modified_node as u64) * pv.key_rlc_mult;
+                        pv.key_rlc_mult *= mpt_config.acc_r;
+                        pv.mult_diff = mpt_config.acc_r;
+                    }
+                } else {
+                    if pv.is_even && pv.is_long {
+                        // extension node part:
+                        let ext_row_c = &witness[offset + 17];
+                        let key_len = ext_row.get_byte(key_len_pos) as usize - 128 - 1; // -1 because the first byte is 0 (is_even)
+
+                        pv.mult_diff = F::one();
+                        for k in 0..key_len {
+                            let second_nibble = ext_row_c.get_byte(S_START + k);
+                            let first_nibble =
+                                (ext_row.get_byte(key_len_pos + 2 + k) - second_nibble) / 16;
+                            assert_eq!(
+                                first_nibble * 16 + second_nibble,
+                                ext_row.get_byte(key_len_pos + 2 + k),
+                            );
+                            pv.extension_node_rlc +=
+                                F::from(first_nibble as u64) * pv.key_rlc_mult;
+
+                            pv.key_rlc_mult *= mpt_config.acc_r;
+                            pv.mult_diff *= mpt_config.acc_r;
+
+                            pv.extension_node_rlc += F::from(16)
+                                * F::from(second_nibble as u64)
+                                * pv.key_rlc_mult;
+                        }
+
+                        pv.key_rlc = pv.extension_node_rlc;
+                        // branch part:
+                        pv.key_rlc +=
+                            F::from(pv.modified_node as u64) * pv.key_rlc_mult;
+                        pv.key_rlc_mult *= mpt_config.acc_r;
+                        pv.key_rlc_sel = !pv.key_rlc_sel;
+                    } else if pv.is_odd && pv.is_long {
+                        pv.extension_node_rlc +=
+                            F::from((ext_row.get_byte(key_len_pos + 1) - 16) as u64) * pv.key_rlc_mult;
+
+                        pv.key_rlc_mult *= mpt_config.acc_r;
+
+                        let key_len = ext_row.get_byte(key_len_pos) as usize - 128;
+
+                        mpt_config.compute_acc_and_mult(
+                            &ext_row.0,
+                            &mut pv.extension_node_rlc,
+                            &mut pv.key_rlc_mult,
+                            key_len_pos + 2, /* the first position after key_len_pos
+                                * is single nibble which is taken into
+                                * account above, we start
+                                * with fourth */
+                            key_len - 1, // one byte is occupied by single nibble
+                        );
+                        pv.mult_diff = F::one();
+                        for _ in 0..key_len {
+                            pv.mult_diff *= mpt_config.acc_r;
+                        }
+                        pv.key_rlc = pv.extension_node_rlc;
+                        // branch part:
+                        pv.key_rlc += F::from(pv.modified_node as u64)
+                            * F::from(16)
+                            * pv.key_rlc_mult;
+                        // key_rlc_mult stays the same
+                    } else if pv.is_short {
+                        pv.extension_node_rlc +=
+                            F::from((ext_row.get_byte(1) - 16) as u64) * pv.key_rlc_mult;
+
+                        pv.key_rlc = pv.extension_node_rlc;
+
+                        pv.key_rlc_mult *= mpt_config.acc_r;
+                        // branch part:
+                        pv.key_rlc += F::from(pv.modified_node as u64)
+                            * F::from(16)
+                            * pv.key_rlc_mult;
+                        pv.mult_diff = mpt_config.acc_r;
+                    }
+                }
+            } else {
+                if pv.key_rlc_sel {
+                    pv.key_rlc += F::from(pv.modified_node as u64)
+                        * F::from(16)
+                        * pv.key_rlc_mult;
+                    // key_rlc_mult stays the same
+                } else {
+                    pv.key_rlc +=
+                        F::from(pv.modified_node as u64) * pv.key_rlc_mult;
+                    pv.key_rlc_mult *= mpt_config.acc_r;
+                }
+                pv.key_rlc_sel = !pv.key_rlc_sel;
+            }
+            mpt_config.assign_branch_row(
+                region,
+                pv.node_index,
+                pv.modified_node,
+                pv.key_rlc,
+                pv.key_rlc_mult,
+                pv.mult_diff,
+                row.main(),
+                pv.s_mod_node_hash_rlc,
+                pv.c_mod_node_hash_rlc,
+                pv.drifted_pos,
+                pv.rlp_len_rem_s,
+                pv.rlp_len_rem_c,
+                offset,
+            )?;
+        } else {
+            // Note that key_rlc and key_rlc_mult are set the same in all
+            // branch children to avoid some rotations - constraint for this
+            // equality is in extension_node_key.
+            mpt_config.assign_branch_row(
+                region,
+                pv.node_index,
+                pv.modified_node,
+                pv.key_rlc,
+                pv.key_rlc_mult,
+                pv.mult_diff,
+                row.main(),
+                pv.s_mod_node_hash_rlc,
+                pv.c_mod_node_hash_rlc,
+                pv.drifted_pos,
+                pv.rlp_len_rem_s,
+                pv.rlp_len_rem_c,
+                offset,
+            )?;
+        }
+        // sel1 is to distinguish whether the S node is empty.
+        // sel2 is to distinguish whether the C node is empty.
+        // Note that 128 comes from the RLP byte denoting empty leaf.
+        // Having 128 for *_mod_node_hash_rlc means there is no node at
+        // this position in branch - for example,
+        // s_mode_node_hash_rlc = 128 and c_words is some other value
+        // when new value is added to the trie
+        // (as opposed to just updating the value).
+        // Note that there is a potential attack if a leaf node
+        // is found with hash [128, 0, ..., 0],
+        // but the probability is negligible.
+        let mut sel1 = F::zero();
+        let mut sel2 = F::zero();
+        if pv.s_mod_node_hash_rlc == F::from(128 as u64) {
+            sel1 = F::one();
+        }
+        if pv.c_mod_node_hash_rlc == F::from(128 as u64) {
+            sel2 = F::one();
+        }
+
+        region.assign_advice(
+            || "assign sel1".to_string(),
+            mpt_config.denoter.sel1,
+            offset,
+            || Ok(sel1),
+        )?;
+        region.assign_advice(
+            || "assign sel2".to_string(),
+            mpt_config.denoter.sel2,
+            offset,
+            || Ok(sel2),
+        )?;
+
+        // reassign (it was assigned to 0 in assign_row) branch_acc and
+        // branch_mult to proper values
+
+        // We need to distinguish between empty and non-empty node:
+        // empty node at position 1: 0
+        // non-empty node at position 1: 160
+
+        let c128 = F::from(128_u64);
+        let c160 = F::from(160_u64);
+
+        let compute_branch_acc_and_mult =
+            |branch_acc: &mut F,
+                branch_mult: &mut F,
+                rlp_start: usize,
+                start: usize| {
+                if row.get_byte(rlp_start + 1) == 0 && row.get_byte(start) == 128 {
+                    *branch_acc += c128 * *branch_mult;
+                    *branch_mult *= mpt_config.acc_r;
+                } else if row.get_byte(rlp_start + 1) == 160 {
+                    *branch_acc += c160 * *branch_mult;
+                    *branch_mult *= mpt_config.acc_r;
+                    for i in 0..HASH_WIDTH {
+                        *branch_acc +=
+                            F::from(row.get_byte(start + i) as u64) * *branch_mult;
+                        *branch_mult *= mpt_config.acc_r;
+                    }
+                } else {
+                    *branch_acc += F::from(row.get_byte(start) as u64) * *branch_mult;
+                    *branch_mult *= mpt_config.acc_r;
+                    let len = row.get_byte(start) as usize - 192;
+                    for i in 0..len {
+                        *branch_acc +=
+                            F::from(row.get_byte(start + 1 + i) as u64) * *branch_mult;
+                        *branch_mult *= mpt_config.acc_r;
+                    }
+                }
+            };
+
+        // TODO: add branch ValueNode info
+
+        compute_branch_acc_and_mult(
+            &mut pv.acc_s,
+            &mut pv.acc_mult_s,
+            S_RLP_START,
+            S_START,
+        );
+        compute_branch_acc_and_mult(
+            &mut pv.acc_c,
+            &mut pv.acc_mult_c,
+            C_RLP_START,
+            C_START,
+        );
+        mpt_config.assign_acc(
+            region,
+            pv.acc_s,
+            pv.acc_mult_s,
+            pv.acc_c,
+            pv.acc_mult_c,
+            offset,
+        )?;
+
+        // This is to avoid Poisoned Constraint in extension_node_key.
+        region.assign_advice(
+            || "assign key_rlc".to_string(),
+            mpt_config.accumulators.key.rlc,
+            offset,
+            || Ok(pv.key_rlc),
+        )?;
+        region.assign_advice(
+            || "assign key_rlc_mult".to_string(),
+            mpt_config.accumulators.key.mult,
+            offset,
+            || Ok(pv.key_rlc_mult),
+        )?;
+
+        pv.node_index += 1;
+
         Ok(())
     }
 }
