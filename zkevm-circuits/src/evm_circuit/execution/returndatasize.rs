@@ -92,95 +92,71 @@ mod test {
         test::{rand_bytes, run_test_circuit},
         witness::block_convert,
     };
-    use eth_types::{address, bytecode, Word};
+    use crate::{test_util::run_test_circuits};
+    use eth_types::{address, bytecode, ToWord, Word};
     use itertools::Itertools;
-    use mock::TestContext;
+    use mock::test_ctx::{helpers::*, TestContext};
 
-    fn test_ok(return_data_size: usize, is_root: bool) {
-        let bytecode = bytecode! {
-            RETURNDATASIZE
+    fn test_internal_ok() {
+        let (addr_a, addr_b) = (mock::MOCK_ACCOUNTS[0], mock::MOCK_ACCOUNTS[1]);
+
+        // code B gets called by code A, so the call is an internal call.
+        let pushdata = rand_bytes(8);
+
+        let code_b = bytecode! {
+            PUSH32(Word::from_big_endian(&pushdata))  // size
+            PUSH1(0x00) // offset
+            MSTORE
+
+            PUSH1(0x02)
+            PUSH1(0x00)
+
+            RETURN
+
             STOP
         };
 
-        let block_data = if is_root {
-            bus_mapping::mock::BlockData::new_from_geth_data(
-                TestContext::<2, 1>::new(
-                    None,
-                    |accs| {
-                        accs[0]
-                            .address(address!("0x0000000000000000000000000000000000000000"))
-                            .balance(Word::from(1u64 << 30));
-                        accs[1]
-                            .address(address!("0x0000000000000000000000000000000000000010"))
-                            .balance(Word::from(1u64 << 20))
-                            .code(bytecode);
-                    },
-                    |mut txs, accs| {
-                        txs[0]
-                            .from(accs[0].address)
-                            .to(accs[1].address)
-                            .input(rand_bytes(32).into())
-                            .gas(Word::from(40000));
-                    },
-                    |block, _tx| block.number(0xcafeu64),
-                )
-                .unwrap()
-                .into(),
-            )
-        } else {
-            bus_mapping::mock::BlockData::new_from_geth_data(
-                TestContext::<3, 1>::new(
-                    None,
-                    |accs| {
-                        accs[0]
-                            .address(address!("0x0000000000000000000000000000000000000000"))
-                            .balance(Word::from(1u64 << 30));
-                        accs[1]
-                            .address(address!("0x0000000000000000000000000000000000000010"))
-                            .balance(Word::from(1u64 << 20))
-                            .code(bytecode! {
-                                PUSH1(0)
-                                PUSH1(0)
-                                PUSH32(return_data_size)
-                                PUSH1(0)
-                                PUSH1(0)
-                                PUSH1(0x20)
-                                GAS
-                                CALL
-                                STOP
-                            });
-                        accs[2]
-                            .address(address!("0x0000000000000000000000000000000000000020"))
-                            .balance(Word::from(1u64 << 20))
-                            .code(bytecode);
-                    },
-                    |mut txs, accs| {
-                        txs[0]
-                            .from(accs[0].address)
-                            .to(accs[1].address)
-                            .gas(Word::from(30000));
-                    },
-                    |block, _tx| block.number(0xcafeu64),
-                )
-                .unwrap()
-                .into(),
-            )
+        // code A calls code B.
+        let code_a = bytecode! {
+            // call ADDR_B.
+            PUSH1(0x02) // retLength
+            PUSH1(0x00) // retOffset
+            PUSH1(0x00) // argsLength
+            PUSH1(0x00) // argsOffset
+            PUSH1(0x00) // value
+            PUSH32(addr_b.to_word()) // addr
+            PUSH32(400000) // gas
+
+            CALL
+
+            RETURNDATASIZE
+
+            STOP
         };
-        let mut builder = block_data.new_circuit_input_builder();
-        builder
-            .handle_block(&block_data.eth_block, &block_data.geth_traces)
-            .unwrap();
-        let block = block_convert(&builder.block, &builder.code_db);
-        assert_eq!(run_test_circuit(block), Ok(()));
+
+        let ctx = TestContext::<3, 1>::new(
+            None,
+            |accs| {
+                accs[0].address(addr_b).balance(Word::from(1u64 << 30)).code(code_b);
+                accs[1].address(addr_a).balance(Word::from(1u64 << 30)).code(code_a);
+                accs[2]
+                    .address(mock::MOCK_ACCOUNTS[2])
+                    .balance(Word::from(1u64 << 30));
+            },
+            |mut txs, accs| {
+                txs[0].to(accs[1].address).from(accs[2].address);
+            },
+            |block, _tx| block,
+        )
+        .unwrap();
+
+        assert_eq!(run_test_circuits(ctx, None), Ok(()));
+
     }
 
     #[test]
-    fn return_datasize_gadget_root() {
-        for (return_data_size, is_root) in vec![32, 64, 96, 128, 256, 512, 1024]
-            .into_iter()
-            .cartesian_product([true, false])
-        {
-            test_ok(return_data_size, is_root);
-        }
+    fn return_datasize() {
+        test_internal_ok()
     }
+
 }
