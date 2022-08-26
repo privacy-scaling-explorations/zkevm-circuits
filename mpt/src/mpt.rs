@@ -1078,7 +1078,6 @@ impl<F: FieldExt> MPTConfig<F> {
                             || Ok(F::from(row.not_first_level() as u64)),
                         )?;
 
-                        let l = row.len();
                         let s_root_rlc = bytes_into_rlc(row.s_root_bytes(), self.acc_r,);
                         let c_root_rlc = bytes_into_rlc(row.c_root_bytes(), self.acc_r,);
 

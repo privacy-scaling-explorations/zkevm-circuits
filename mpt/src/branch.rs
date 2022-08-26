@@ -201,47 +201,51 @@ impl<F: FieldExt> BranchConfig<F> {
         /*
         We need to check that the length of the branch corresponds to the bytes at the beginning of
         the RLP stream that specify the length of the RLP stream. There are three possible scenarios:
+        1. Branch (length 21 = 213 - 192) with one byte of RLP meta data
+           [213,128,194,32,1,128,194,32,1,128,128,128,128,128,128,128,128,128,128,128,128,128]
 
-        Branch (length 21 = 213 - 192) with one byte of RLP meta data
-        [213,128,194,32,1,128,194,32,1,128,128,128,128,128,128,128,128,128,128,128,128,128]
+        2. Branch (length 83) with two bytes of RLP meta data
+           [248,81,128,128,...
 
-        Branch (length 83) with two bytes of RLP meta data
-        [248,81,128,128,...
+        3. Branch (length 340) with three bytes of RLP meta data
+           [249,1,81,128,16,...
 
-        Branch (length 340) with three bytes of RLP meta data
-        [249,1,81,128,16,...
-
-        For which 
+        We specify which of the scenarios is in the current row as (note that `S` branch and
+            `C` branch could be of different length. `s_rlp1, s_rlp2` is used for `S` and
+           `s_main.bytes[0], s_main.bytes[1]` is used for `C`):
+           rlp1, rlp2: 1, 1 means 1 RLP byte
+           rlp1, rlp2: 1, 0 means 2 RLP bytes
+           rlp1, rlp2: 0, 1 means 3 RLP bytes
         */
         meta.create_gate("RLP length", |meta| {
             let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
             let mut constraints = vec![];
 
             let is_branch_init_prev = meta.query_advice(branch.is_init, Rotation::prev());
-            /*
-            rlp1, rlp2: 1, 1 means 1 RLP byte
-            rlp1, rlp2: 1, 0 means 2 RLP bytes
-            rlp1, rlp2: 0, 1 means 3 RLP bytes
-            */
 
             let s1 = meta.query_advice(s_main.rlp1, Rotation::prev());
             let s2 = meta.query_advice(s_main.rlp2, Rotation::prev());
             let c1 = meta.query_advice(s_main.bytes[0], Rotation::prev());
             let c2 = meta.query_advice(s_main.bytes[1], Rotation::prev());
 
-            // There should never be:
-            // rlp1, rlp2: 0, 0
+            /*
+            There should never be `rlp1, rlp2: 0, 0` for `S` (we only have three cases, there is no case with
+            both being 0).
+            */
             constraints.push((
-                "not both zeros: rlp1, rlp2",
+                "Not both zeros: rlp1, rlp2",
                 q_not_first.clone()
                     * is_branch_init_prev.clone()
                     * (one.clone() - s1.clone())
                     * (one.clone() - s2.clone()),
             ));
-            // There should never be:
-            // s_advices[0], s_advices[1]: 0, 0
+
+            /*
+            There should never be `rlp1, rlp2: 0, 0` for `C` (we only have three cases, there is no case with
+            both being 0).
+            */
             constraints.push((
-                "not both zeros: s_advices[0], s_advices[1]",
+                "Not both zeros: s_advices[0], s_advices[1]",
                 q_not_first.clone()
                     * is_branch_init_prev.clone()
                     * (one.clone() - c1.clone())
@@ -283,11 +287,14 @@ impl<F: FieldExt> BranchConfig<F> {
             let s_advices0_cur = meta.query_advice(s_main.bytes[0], Rotation::cur());
             let c_advices0_cur = meta.query_advice(c_main.bytes[0], Rotation::cur());
 
-            // s bytes in this row:
-            // If empty, then s_rlp2 = 0:
-            // s_rlp2 * c160_inv * c32 + 1 = 1
-            // If non-empty, then s_rlp2 = 160:
-            // s_rlp2 * c160_inv * c32 + 1 = 33
+            /*
+            [0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1]
+            [0 160 164 92 78 34 81 137 173 236 78 208 145 118 128 60 46 5 176 8 229 165 42 222 110 4 252 228 93 243 26 160 241 85 0 160 95 174 59 239 229 74 221 53 227 115 207 137 94 29 119 126 56 209 55 198 212 179 38 213 219 36 111 62 46 43 176 168 1]
+
+            There is `s_rlp2 = 0` when there is a nil node and `s_rlp2 = 160` when non-nil node.
+            The expression `s_rlp2 * c160_inv * c32 + 1` gives us the number of bytes used
+            in a row (1 or 33 for nil node or non-nil node respectively).
+            */
 
             let is_node_hashed_s = meta.query_advice(denoter.is_node_hashed_s, Rotation::cur());
             let is_node_hashed_c = meta.query_advice(denoter.is_node_hashed_c, Rotation::cur());
@@ -302,52 +309,59 @@ impl<F: FieldExt> BranchConfig<F> {
             bytes_num_in_row_c = is_node_hashed_c.clone() * (c_advices0_cur.clone() - c192.clone() + one.clone())
                 + (one.clone() - is_node_hashed_c.clone()) * bytes_num_in_row_c.clone();
 
-            // One RLP byte:
-            // [1,1,1,1,217,0,0,217,0,0,1,...
-            // Two RLP bytes:
-            // [1,0,1,0,248,81,0,248,81,0,3,0,0,0,...
-            // Three RLP bytes:
-            // [0,1,0,1,249,2,17,249,2,17,7,0,0,0,...
+            /*
+            One RLP byte:
+            [1,1,1,1,217,0,0,217,0,0,1,...
+            Two RLP bytes:
+            [1,0,1,0,248,81,0,248,81,0,3,0,0,0,...
+            Three RLP bytes:
+            [0,1,0,1,249,2,17,249,2,17,7,0,0,0,...
+            */
 
-            // Note: s_rlp1 stores the number of the remaining bytes in the branch. If there
-            // are 81 bytes in the branch, and the first branch children contains 33 bytes,
-            // then s_rlp1 in this row will have s_rlp1 = 81 - 33.
+            /*
+            Note: `s_rlp1` stores the number of the remaining bytes in the branch. If there
+            are 81 bytes in the branch, and the first branch children contains 33 bytes,
+            then `s_rlp1` in this row will have `s_rlp1 = 81 - 33`.
+            */
 
-            // is_branch_child with node_index = 0
-            // rlp_byte1_s stores the number of bytes in the branch (81 in the example with two RLP bytes) 
-
+            /* 
+            We check that the first branch children has properly stored the number of the remaining
+            bytes. For example, if there are 81 bytes in the branch and the first branch child
+            contains 1 byte, then it needs to store the value `80 = 81 - 1`.
+            */
             constraints.push((
-                "first branch children one RLP meta byte S",
+                "First branch children RLP length (one RLP meta byte S)",
                 q_not_first.clone()
                     * is_branch_init_prev.clone()
                     * one_rlp_byte_s
                     * (rlp_byte0_s.clone() - c192.clone() - bytes_num_in_row_s.clone() - s_rlp1_cur.clone()),
             ));
             constraints.push((
-                "first branch children one RLP meta byte C",
+                "First branch children RLP length (one RLP meta byte C)",
                 q_not_first.clone()
                     * is_branch_init_prev.clone()
                     * one_rlp_byte_c
                     * (rlp_byte0_c.clone() - c192.clone() - bytes_num_in_row_c.clone() - c_rlp1_cur.clone()),
             ));
-
+            
+            
             constraints.push((
-                "first branch children two RLP meta bytes S",
+                "First branch children RLP length (two RLP meta bytes S)",
                 q_not_first.clone()
                     * is_branch_init_prev.clone()
                     * two_rlp_bytes_s
                     * (rlp_byte1_s.clone() - bytes_num_in_row_s.clone() - s_rlp1_cur.clone()),
             ));
             constraints.push((
-                "first branch children two RLP meta bytes C",
+                "First branch children RLP length (two RLP meta bytes C)",
                 q_not_first.clone()
                     * is_branch_init_prev.clone()
                     * two_rlp_bytes_c
                     * (rlp_byte1_c.clone() - bytes_num_in_row_c.clone() - c_rlp1_cur.clone()),
             ));
-
+ 
             constraints.push((
-                "first branch children three RLP meta bytes S",
+                "First branch children RLP length (three RLP meta bytes S)",
                 q_not_first.clone()
                     * is_branch_init_prev.clone()
                     * three_rlp_bytes_s
@@ -356,7 +370,7 @@ impl<F: FieldExt> BranchConfig<F> {
                         - s_rlp1_cur.clone()),
             ));
             constraints.push((
-                "first branch children three RLP meta bytes C",
+                "First branch children RLP length (three RLP meta bytes C)",
                 q_not_first.clone()
                     * is_branch_init_prev.clone()
                     * three_rlp_bytes_c
@@ -367,40 +381,49 @@ impl<F: FieldExt> BranchConfig<F> {
             let is_branch_child_cur = meta.query_advice(branch.is_child, Rotation::cur());
             let s_rlp1_prev = meta.query_advice(s_main.rlp1, Rotation::prev());
             let c_rlp1_prev = meta.query_advice(c_main.rlp1, Rotation::prev());
+            
+            /* 
+            We check that the non-first branch children has properly stored the number of the remaining
+            bytes. For example, if there are 81 bytes in the branch, the first branch child
+            contains 1 byte, the second child contains 33 bytes, then the third child
+            needs to store the value `81 - 1 - 33`.
+            */
             constraints.push((
-                "branch children (node_index > 0) S",
+                "Branch children node_index > 0 RLP S",
                 q_not_first.clone()
                     * is_branch_child_cur.clone()
                     * (one.clone() - is_branch_init_prev.clone())
                     * (s_rlp1_prev - bytes_num_in_row_s.clone() - s_rlp1_cur.clone()),
             ));
             constraints.push((
-                "branch children (node_index > 0) C",
+                "Branch children node_index > 0 RLP C",
                 q_not_first.clone()
                     * is_branch_child_cur.clone()
                     * (one.clone() - is_branch_init_prev.clone())
                     * (c_rlp1_prev - bytes_num_in_row_c.clone() - c_rlp1_cur.clone()),
             ));
 
-            // In final branch child s_rlp1 and c_rlp1 need to be 1 (because RLP length
-            // specifies also ValueNode which occupies 1 byte).
+            /*
+            In the final branch child `s_rlp1` and `c_rlp1` need to be 1 (because RLP length
+            specifies also ValueNode which occupies 1 byte).
+            */
             // TODO: ValueNode
             let is_last_branch_child = meta.query_advice(branch.is_last_child, Rotation::cur());
             constraints.push((
-                "branch last child S",
+                "Branch last child RLP length S",
                 q_not_first.clone()
                     * is_last_branch_child.clone()
                     * (s_rlp1_cur.clone() - one.clone()),
             ));
             constraints.push((
-                "branch last child C",
+                "Branch last child RLP length C",
                 q_not_first.clone() * is_last_branch_child.clone() * (c_rlp1_cur.clone() - one),
             ));
 
             constraints
         });
 
-        meta.create_gate("branch children selectors", |meta| {
+        meta.create_gate("Branch children selectors", |meta| {
             let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
 
             let mut constraints = vec![];
@@ -596,7 +619,6 @@ impl<F: FieldExt> BranchConfig<F> {
             constraints
         });
 
-        // TODO: reset to 0 after account leaf
         meta.create_gate("Branch number of nibbles (not first level)", |meta| {
             let mut constraints = vec![];
             let q_enable = meta.query_fixed(q_enable, Rotation::cur());
