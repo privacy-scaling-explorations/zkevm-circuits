@@ -2,7 +2,7 @@ use std::{convert::{TryFrom}, marker::PhantomData};
 use halo2_proofs::{circuit::Region, plonk::Error, arithmetic::FieldExt};
 use num_enum::TryFromPrimitive;
 
-use crate::{param::{NOT_FIRST_LEVEL_POS, IS_NON_EXISTING_ACCOUNT_POS, COUNTER_WITNESS_LEN, HASH_WIDTH, IS_STORAGE_MOD_POS, S_START, C_START, RLP_NUM, WITNESS_ROW_WIDTH}, account_leaf::AccountLeaf, storage_leaf::StorageLeaf, branch::Branch, mpt::MPTConfig};
+use crate::{param::{NOT_FIRST_LEVEL_POS, IS_NON_EXISTING_ACCOUNT_POS, COUNTER_WITNESS_LEN, HASH_WIDTH, IS_STORAGE_MOD_POS, S_START, C_START, RLP_NUM, WITNESS_ROW_WIDTH, S_RLP_START, C_RLP_START}, account_leaf::AccountLeaf, storage_leaf::StorageLeaf, branch::Branch, mpt::MPTConfig};
 
 #[derive(Eq, PartialEq, TryFromPrimitive)]
 #[repr(u8)]
@@ -120,7 +120,7 @@ impl<F: FieldExt> MptWitnessRow<F> {
         &self.bytes[0..self.bytes.len() - 1]
     }
 
-    pub(crate) fn assign_row(
+    pub(crate) fn assign(
         &self,
         region: &mut Region<'_, F>,
         mpt_config: &MPTConfig<F>,
@@ -417,5 +417,93 @@ impl<F: FieldExt> MptWitnessRow<F> {
         }
         Ok(())
     } 
+
+    pub(crate) fn assign_branch_row(
+        &self,
+        region: &mut Region<'_, F>,
+        mpt_config: &MPTConfig<F>,
+        node_index: u8,
+        key: u8,
+        key_rlc: F,
+        key_rlc_mult: F,
+        mult_diff: F,
+        s_mod_node_hash_rlc: F,
+        c_mod_node_hash_rlc: F,
+        drifted_pos: u8,
+        s_rlp1: i32,
+        c_rlp1: i32,
+        offset: usize,
+    ) -> Result<(), Error> {
+        let row = self.main();
+
+        let account_leaf = AccountLeaf::default();
+        let storage_leaf = StorageLeaf::default();
+        let mut branch = Branch::default();
+        branch.is_branch_child = true;
+        branch.is_last_branch_child = node_index == 15;
+        branch.node_index = node_index;
+        branch.modified_node = key;
+        branch.drifted_pos = drifted_pos;
+
+        self.assign(
+            region,
+            mpt_config,
+            account_leaf,
+            storage_leaf,
+            branch,
+            offset,
+        )?;
+
+        region.assign_advice(
+            || "s_mod_node_hash_rlc",
+            mpt_config.accumulators.s_mod_node_rlc,
+            offset,
+            || Ok(s_mod_node_hash_rlc),
+        )?;
+        region.assign_advice(
+            || "c_mod_node_hash_rlc",
+            mpt_config.accumulators.c_mod_node_rlc,
+            offset,
+            || Ok(c_mod_node_hash_rlc),
+        )?;
+
+        region.assign_advice(|| "key rlc", mpt_config.accumulators.key.rlc, offset, || Ok(key_rlc))?;
+        region.assign_advice(
+            || "key rlc mult",
+            mpt_config.accumulators.key.mult,
+            offset,
+            || Ok(key_rlc_mult),
+        )?;
+        region.assign_advice(|| "mult diff", mpt_config.accumulators.mult_diff, offset, || Ok(mult_diff))?;
+
+        region.assign_advice(
+            || "s_rlp1",
+            mpt_config.s_main.rlp1,
+            offset,
+            || Ok(F::from(s_rlp1 as u64)),
+        )?;
+        region.assign_advice(
+            || "c_rlp1",
+            mpt_config.c_main.rlp1,
+            offset,
+            || Ok(F::from(c_rlp1 as u64)),
+        )?;
+
+        region.assign_advice(
+            || "is_node_hashed_s",
+            mpt_config.denoter.is_node_hashed_s,
+            offset,
+            || Ok(F::from((row[S_RLP_START + 1] == 0 && row[S_START] > 192) as u64)),
+        )?;
+        region.assign_advice(
+            || "is_node_hashed_c",
+            mpt_config.denoter.is_node_hashed_c,
+            offset,
+            || Ok(F::from((row[C_RLP_START + 1] == 0 && row[C_START] > 192) as u64)),
+        )?;
+
+        Ok(())
+    }
+
 
 }

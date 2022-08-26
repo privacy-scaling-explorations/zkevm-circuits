@@ -912,94 +912,7 @@ impl<F: FieldExt> MPTConfig<F> {
             branch_config,
         }
     } 
-
-    pub(crate) fn assign_branch_row(
-        &self,
-        region: &mut Region<'_, F>,
-        node_index: u8,
-        key: u8,
-        key_rlc: F,
-        key_rlc_mult: F,
-        mult_diff: F,
-        witness_row: &MptWitnessRow<F>,
-        s_mod_node_hash_rlc: F,
-        c_mod_node_hash_rlc: F,
-        drifted_pos: u8,
-        s_rlp1: i32,
-        c_rlp1: i32,
-        offset: usize,
-    ) -> Result<(), Error> {
-        let row = witness_row.main();
-
-        let account_leaf = AccountLeaf::default();
-        let storage_leaf = StorageLeaf::default();
-        let mut branch = Branch::default();
-        branch.is_branch_child = true;
-        branch.is_last_branch_child = node_index == 15;
-        branch.node_index = node_index;
-        branch.modified_node = key;
-        branch.drifted_pos = drifted_pos;
-
-        witness_row.assign_row(
-            region,
-            self,
-            account_leaf,
-            storage_leaf,
-            branch,
-            offset,
-        )?;
-
-        region.assign_advice(
-            || "s_mod_node_hash_rlc",
-            self.accumulators.s_mod_node_rlc,
-            offset,
-            || Ok(s_mod_node_hash_rlc),
-        )?;
-        region.assign_advice(
-            || "c_mod_node_hash_rlc",
-            self.accumulators.c_mod_node_rlc,
-            offset,
-            || Ok(c_mod_node_hash_rlc),
-        )?;
-
-        region.assign_advice(|| "key rlc", self.accumulators.key.rlc, offset, || Ok(key_rlc))?;
-        region.assign_advice(
-            || "key rlc mult",
-            self.accumulators.key.mult,
-            offset,
-            || Ok(key_rlc_mult),
-        )?;
-        region.assign_advice(|| "mult diff", self.accumulators.mult_diff, offset, || Ok(mult_diff))?;
-
-        region.assign_advice(
-            || "s_rlp1",
-            self.s_main.rlp1,
-            offset,
-            || Ok(F::from(s_rlp1 as u64)),
-        )?;
-        region.assign_advice(
-            || "c_rlp1",
-            self.c_main.rlp1,
-            offset,
-            || Ok(F::from(c_rlp1 as u64)),
-        )?;
-
-        region.assign_advice(
-            || "is_node_hashed_s",
-            self.denoter.is_node_hashed_s,
-            offset,
-            || Ok(F::from((row[S_RLP_START + 1] == 0 && row[S_START] > 192) as u64)),
-        )?;
-        region.assign_advice(
-            || "is_node_hashed_c",
-            self.denoter.is_node_hashed_c,
-            offset,
-            || Ok(F::from((row[C_RLP_START + 1] == 0 && row[C_START] > 192) as u64)),
-        )?;
-
-        Ok(())
-    }
-
+ 
     pub(crate) fn compute_key_rlc(
         &self,
         row: &Vec<u8>, key_rlc: &mut F, key_rlc_mult: &mut F, start: usize) {
@@ -1311,7 +1224,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                 account_leaf.is_non_existing_account_row = true;
                             }
 
-                            row.assign_row(
+                            row.assign(
                                 &mut region,
                                 self,
                                 account_leaf,

@@ -757,7 +757,7 @@ impl<F: FieldExt> BranchConfig<F> {
         let mut branch = Branch::default();
         branch.is_branch_init = true;
 
-        row.assign_row(
+        row.assign(
             region,
             mpt_config,
             account_leaf,
@@ -1106,14 +1106,14 @@ impl<F: FieldExt> BranchConfig<F> {
                 }
                 pv.key_rlc_sel = !pv.key_rlc_sel;
             }
-            mpt_config.assign_branch_row(
+            row.assign_branch_row(
                 region,
+                mpt_config,
                 pv.node_index,
                 pv.modified_node,
                 pv.key_rlc,
                 pv.key_rlc_mult,
                 pv.mult_diff,
-                row,
                 pv.s_mod_node_hash_rlc,
                 pv.c_mod_node_hash_rlc,
                 pv.drifted_pos,
@@ -1125,14 +1125,14 @@ impl<F: FieldExt> BranchConfig<F> {
             // Note that key_rlc and key_rlc_mult are set the same in all
             // branch children to avoid some rotations - constraint for this
             // equality is in extension_node_key.
-            mpt_config.assign_branch_row(
+            row.assign_branch_row(
                 region,
+                mpt_config,
                 pv.node_index,
                 pv.modified_node,
                 pv.key_rlc,
                 pv.key_rlc_mult,
                 pv.mult_diff,
-                row,
                 pv.s_mod_node_hash_rlc,
                 pv.c_mod_node_hash_rlc,
                 pv.drifted_pos,
