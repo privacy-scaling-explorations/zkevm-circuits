@@ -316,8 +316,7 @@ pub mod test {
                     .map(|ce| {
                         ce.steps
                             .iter()
-                            .filter(|s| s.rw.is_write())
-                            .map(|s| s.value)
+                            .map(|(_read_step, write_step)| write_step.value)
                             .collect::<Vec<u8>>()
                     }),
                 self.block.randomness,

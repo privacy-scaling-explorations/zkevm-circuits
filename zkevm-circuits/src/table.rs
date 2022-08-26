@@ -18,6 +18,7 @@ use halo2_proofs::{
 use halo2_proofs::{circuit::Layouter, plonk::*, poly::Rotation};
 use itertools::Itertools;
 use keccak256::plain::Keccak;
+use std::iter::once;
 use strum_macros::{EnumCount, EnumIter};
 
 /// Trait used for dynamic tables.  Used to get an automatic implementation of
@@ -762,14 +763,18 @@ impl CopyTable {
             let values = copy_event
                 .steps
                 .iter()
-                .filter(|s| s.rw.is_write())
-                .map(|s| s.value)
+                .map(|(read_step, write_step)| write_step.value)
                 .collect::<Vec<u8>>();
             rlc::value(values.iter().rev(), randomness)
         } else {
             F::zero()
         };
-        for (step_idx, copy_step) in copy_event.steps.iter().enumerate() {
+        for (step_idx, copy_step) in copy_event
+            .steps
+            .iter()
+            .flat_map(|(read_step, write_step)| once(read_step).chain(once(write_step)))
+            .enumerate()
+        {
             // is_first
             let is_first = if step_idx == 0 { F::one() } else { F::zero() };
             // id
@@ -805,7 +810,7 @@ impl CopyTable {
                     id,
                     addr,
                     F::from(copy_event.src_addr_end), // src_addr_end
-                    F::from(u64::try_from(copy_event.steps.len() - step_idx).unwrap() / 2), // bytes_left
+                    F::from(u64::try_from(copy_event.steps.len() * 2 - step_idx).unwrap() / 2), // bytes_left
                     rlc_acc,                          // rlc_acc
                     F::from(copy_step.rwc.0 as u64),  // rw_counter
                     F::from(copy_step.rwc_inc_left),  // rw_inc_left

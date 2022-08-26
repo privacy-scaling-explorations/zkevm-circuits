@@ -233,5 +233,5 @@ pub struct CopyEvent {
     /// TxLog.
     pub log_id: Option<u64>,
     /// Represents the list of copy steps in this copy event.
-    pub steps: Vec<CopyStep>,
+    pub steps: Vec<(CopyStep, CopyStep)>,
 }

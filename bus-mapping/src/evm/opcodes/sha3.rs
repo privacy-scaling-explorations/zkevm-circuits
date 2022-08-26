@@ -53,30 +53,33 @@ impl Opcode for Sha3 {
         )?;
 
         // Memory read operations
-        let mut steps = Vec::with_capacity(2 * size.as_usize());
+        let mut steps = Vec::with_capacity(size.as_usize());
         for (i, byte) in memory.iter().enumerate() {
             // Read step
-            steps.push(CopyStep {
-                addr: offset.as_u64() + (i as u64),
-                rw: RW::READ,
-                value: *byte,
-                is_code: None,
-                rwc: state.block_ctx.rwc,
-                rwc_inc_left: 0,
-            });
+            let read_rwc = state.block_ctx.rwc;
             state.memory_read(&mut exec_step, (offset.as_usize() + i).into(), *byte)?;
-            // Write step
-            steps.push(CopyStep {
-                addr: i as u64,
-                rw: RW::WRITE,
-                value: *byte,
-                is_code: None,
-                rwc: state.block_ctx.rwc,
-                rwc_inc_left: 0,
-            })
+            steps.push((
+                CopyStep {
+                    addr: offset.as_u64() + (i as u64),
+                    rw: RW::READ,
+                    value: *byte,
+                    is_code: None,
+                    rwc: read_rwc,
+                    rwc_inc_left: 0,
+                },
+                CopyStep {
+                    addr: i as u64,
+                    rw: RW::WRITE,
+                    value: *byte,
+                    is_code: None,
+                    rwc: state.block_ctx.rwc,
+                    rwc_inc_left: 0,
+                },
+            ));
         }
-        for cs in steps.iter_mut() {
-            cs.rwc_inc_left = state.block_ctx.rwc.0 as u64 - cs.rwc.0 as u64;
+        for (read_step, write_step) in steps.iter_mut() {
+            read_step.rwc_inc_left = state.block_ctx.rwc.0 as u64 - read_step.rwc.0 as u64;
+            write_step.rwc_inc_left = state.block_ctx.rwc.0 as u64 - write_step.rwc.0 as u64;
         }
 
         let call_id = state.call()?.call_id;
@@ -264,17 +267,15 @@ pub mod sha3_tests {
 
         // single copy event with `size` reads and `size` writes.
         assert_eq!(copy_events.len(), 1);
-        assert_eq!(copy_events[0].steps.len(), 2 * size);
+        assert_eq!(copy_events[0].steps.len(), size);
 
         let mut rwc = RWCounter(step.rwc.0 + 3); // 2 stack reads and 1 stack write.
-        for (idx, copy_rw_pair) in copy_events[0].steps.chunks(2).enumerate() {
-            assert_eq!(copy_rw_pair.len(), 2);
+        for (idx, (read_step, write_step)) in copy_events[0].steps.iter().enumerate() {
             let value = memory_view[idx];
             // read
-            let read_step = copy_rw_pair[0].clone();
             assert_eq!(
                 read_step,
-                CopyStep {
+                &CopyStep {
                     addr: (offset + idx) as u64,
                     rw: RW::READ,
                     value,
@@ -284,10 +285,9 @@ pub mod sha3_tests {
                 }
             );
             // write
-            let write_step = copy_rw_pair[1].clone();
             assert_eq!(
                 write_step,
-                CopyStep {
+                &CopyStep {
                     addr: idx as u64,
                     rw: RW::WRITE,
                     value,

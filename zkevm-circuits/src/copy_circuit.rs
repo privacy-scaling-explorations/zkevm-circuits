@@ -15,6 +15,7 @@ use halo2_proofs::{
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, Selector},
     poly::Rotation,
 };
+use std::iter::once;
 
 use crate::{
     evm_circuit::{
@@ -394,15 +395,19 @@ impl<F: Field> CopyCircuit<F> {
                         let values = copy_event
                             .steps
                             .iter()
-                            .filter(|s| s.rw.is_write())
-                            .map(|s| s.value)
+                            .map(|(read_step, write_step)| write_step.value)
                             .collect::<Vec<u8>>();
                         rlc::value(values.iter().rev(), randomness)
                     } else {
                         F::zero()
                     };
                     let mut value_acc = F::zero();
-                    for (step_idx, copy_step) in copy_event.steps.iter().enumerate() {
+                    for (step_idx, copy_step) in copy_event
+                        .steps
+                        .iter()
+                        .flat_map(|(read_step, write_step)| once(read_step).chain(once(write_step)))
+                        .enumerate()
+                    {
                         let value = if copy_event.dst_type == CopyDataType::RlcAcc {
                             if copy_step.rw.is_read() {
                                 F::from(copy_step.value as u64)
@@ -465,7 +470,7 @@ impl<F: Field> CopyCircuit<F> {
         } else {
             &copy_event.dst_id
         };
-        let bytes_left = u64::try_from(copy_event.steps.len() - step_idx).unwrap() / 2;
+        let bytes_left = u64::try_from(copy_event.steps.len() - step_idx / 2).unwrap();
 
         // is_first
         region.assign_advice(
@@ -480,7 +485,7 @@ impl<F: Field> CopyCircuit<F> {
             self.is_last,
             offset,
             || {
-                Ok(if step_idx == copy_event.steps.len() - 1 {
+                Ok(if step_idx == copy_event.steps.len() * 2 - 1 {
                     F::one()
                 } else {
                     F::zero()
@@ -818,7 +823,10 @@ mod tests {
     };
     use eth_types::{bytecode, geth_types::GethData, Word};
     use mock::TestContext;
-    use rand::{prelude::SliceRandom, Rng};
+    use rand::{
+        prelude::{IteratorRandom, SliceRandom},
+        Rng,
+    };
 
     use crate::evm_circuit::witness::block_convert;
 
@@ -888,35 +896,35 @@ mod tests {
         assert!(test_copy_circuit(20, block).is_ok());
     }
 
-    fn perturb_tag(block: &mut bus_mapping::circuit_input_builder::Block, tag: CopyDataType) {
+    fn perturb_tag(block: &mut bus_mapping::circuit_input_builder::Block) {
         debug_assert!(!block.copy_events.is_empty());
         debug_assert!(!block.copy_events[0].steps.is_empty());
 
-        let mut rng = rand::thread_rng();
         let copy_event = &mut block.copy_events[0];
-        let idxs: Vec<_> = if tag == copy_event.src_type {
-            (0..copy_event.steps.len()).step_by(2).collect()
-        } else if tag == copy_event.dst_type {
-            (0..copy_event.steps.len()).skip(1).step_by(2).collect()
-        } else {
-            panic!("no tags of type {:?} found", tag)
+        let mut rng = rand::thread_rng();
+        let rand_idx = (0..copy_event.steps.len()).choose(&mut rng).unwrap();
+        let (is_read_step, mut perturbed_step) = match rng.gen::<f32>() {
+            f if f < 0.5 => (true, copy_event.steps[rand_idx].0.clone()),
+            _ => (false, copy_event.steps[rand_idx].1.clone()),
         };
-        let rand_idx = idxs.choose(&mut rng).unwrap();
         match rng.gen::<f32>() {
-            f if f < 0.25 => copy_event.steps[*rand_idx].addr = rng.gen(),
-            f if f < 0.5 => copy_event.steps[*rand_idx].value = rng.gen(),
-            f if f < 0.75 => copy_event.steps[*rand_idx].rwc = RWCounter(rng.gen()),
-            _ => copy_event.steps[*rand_idx].rwc_inc_left = rng.gen(),
+            f if f < 0.25 => perturbed_step.addr = rng.gen(),
+            f if f < 0.5 => perturbed_step.value = rng.gen(),
+            f if f < 0.75 => perturbed_step.rwc = RWCounter(rng.gen()),
+            _ => perturbed_step.rwc_inc_left = rng.gen(),
+        }
+
+        if is_read_step {
+            copy_event.steps[rand_idx].0 = perturbed_step;
+        } else {
+            copy_event.steps[rand_idx].1 = perturbed_step;
         }
     }
 
     #[test]
     fn copy_circuit_invalid_calldatacopy() {
         let mut builder = gen_calldatacopy_data();
-        match rand::thread_rng().gen_bool(0.5) {
-            true => perturb_tag(&mut builder.block, CopyDataType::Memory),
-            false => perturb_tag(&mut builder.block, CopyDataType::TxCalldata),
-        }
+        perturb_tag(&mut builder.block);
         let block = block_convert(&builder.block, &builder.code_db);
         assert!(test_copy_circuit(10, block).is_err());
     }
@@ -924,10 +932,7 @@ mod tests {
     #[test]
     fn copy_circuit_invalid_codecopy() {
         let mut builder = gen_codecopy_data();
-        match rand::thread_rng().gen_bool(0.5) {
-            true => perturb_tag(&mut builder.block, CopyDataType::Memory),
-            false => perturb_tag(&mut builder.block, CopyDataType::Bytecode),
-        }
+        perturb_tag(&mut builder.block);
         let block = block_convert(&builder.block, &builder.code_db);
         assert!(test_copy_circuit(10, block).is_err());
     }
@@ -935,10 +940,7 @@ mod tests {
     #[test]
     fn copy_circuit_invalid_sha3() {
         let mut builder = gen_sha3_data();
-        match rand::thread_rng().gen_bool(0.5) {
-            true => perturb_tag(&mut builder.block, CopyDataType::Memory),
-            false => perturb_tag(&mut builder.block, CopyDataType::RlcAcc),
-        }
+        perturb_tag(&mut builder.block);
         let block = block_convert(&builder.block, &builder.code_db);
         assert!(test_copy_circuit(20, block).is_err());
     }

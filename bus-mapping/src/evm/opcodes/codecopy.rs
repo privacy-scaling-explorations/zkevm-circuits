@@ -89,8 +89,8 @@ fn gen_copy_steps(
     bytes_left: u64,
     src_addr_end: u64,
     bytecode: &Bytecode,
-) -> Result<Vec<CopyStep>, Error> {
-    let mut steps = Vec::with_capacity(2 * bytes_left as usize);
+) -> Result<Vec<(CopyStep, CopyStep)>, Error> {
+    let mut steps = Vec::with_capacity(bytes_left as usize);
     for idx in 0..bytes_left {
         let addr = src_addr + idx;
         let (value, is_code, is_pad) = if addr < src_addr_end {
@@ -101,23 +101,24 @@ fn gen_copy_steps(
             (0, None, true)
         };
         // Read
-        steps.push(CopyStep {
-            addr,
-            rw: RW::READ,
-            value,
-            is_code,
-            rwc: state.block_ctx.rwc,
-            rwc_inc_left: bytes_left - idx,
-        });
-        // Write
-        steps.push(CopyStep {
-            addr: dst_addr + idx,
-            rw: RW::WRITE,
-            value,
-            is_code: None,
-            rwc: state.block_ctx.rwc,
-            rwc_inc_left: bytes_left - idx,
-        });
+        steps.push((
+            CopyStep {
+                addr,
+                rw: RW::READ,
+                value,
+                is_code,
+                rwc: state.block_ctx.rwc,
+                rwc_inc_left: bytes_left - idx,
+            },
+            CopyStep {
+                addr: dst_addr + idx,
+                rw: RW::WRITE,
+                value,
+                is_code: None,
+                rwc: state.block_ctx.rwc,
+                rwc_inc_left: bytes_left - idx,
+            },
+        ));
         state.memory_write(exec_step, (dst_addr + idx).into(), value)?;
     }
     Ok(steps)
@@ -262,7 +263,7 @@ mod codecopy_tests {
 
         let copy_events = builder.block.copy_events.clone();
         assert_eq!(copy_events.len(), 1);
-        assert_eq!(copy_events[0].steps.len(), 2 * size);
+        assert_eq!(copy_events[0].steps.len(), size);
         assert_eq!(
             copy_events[0].src_id,
             NumberOrHash::Hash(H256(keccak256(&code.to_vec())))
@@ -279,16 +280,14 @@ mod codecopy_tests {
         assert!(copy_events[0].log_id.is_none());
 
         let mut rwc = RWCounter(step.rwc.0 + 3);
-        for (idx, copy_rw_pair) in copy_events[0].steps.chunks(2).enumerate() {
-            assert_eq!(copy_rw_pair.len(), 2);
+        for (idx, (read_step, write_step)) in copy_events[0].steps.iter().enumerate() {
             let (value, is_code, is_pad) = code
                 .get(code_offset + idx)
                 .map_or((0, None, true), |e| (e.value, Some(e.is_code), false));
             // Read
-            let read_step = copy_rw_pair[0].clone();
             assert_eq!(
                 read_step,
-                CopyStep {
+                &CopyStep {
                     addr: (code_offset + idx) as u64,
                     rw: RW::READ,
                     value,
@@ -298,10 +297,9 @@ mod codecopy_tests {
                 }
             );
             // Write
-            let write_step = copy_rw_pair[1].clone();
             assert_eq!(
                 write_step,
-                CopyStep {
+                &CopyStep {
                     addr: (dst_offset + idx) as u64,
                     rw: RW::WRITE,
                     value,

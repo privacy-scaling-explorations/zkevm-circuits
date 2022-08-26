@@ -133,37 +133,41 @@ fn gen_copy_steps(
     exec_step: &mut ExecStep,
     src_addr: u64,
     bytes_left: usize,
-) -> Result<Vec<CopyStep>, Error> {
+) -> Result<Vec<(CopyStep, CopyStep)>, Error> {
     // Get memory data
     let mem = state
         .call_ctx()?
         .memory
         .read_chunk(src_addr.into(), bytes_left.into());
 
-    let mut copy_steps = Vec::with_capacity(2 * bytes_left);
+    let mut copy_steps = Vec::with_capacity(bytes_left);
     for (idx, byte) in mem.iter().enumerate() {
         let addr = src_addr + idx as u64;
 
         // Read memory
-        copy_steps.push(CopyStep {
-            addr,
-            rw: RW::READ,
-            value: *byte,
-            is_code: None,
-            rwc: state.block_ctx.rwc,
-            rwc_inc_left: 0,
-        });
+        let rwc = state.block_ctx.rwc;
         state.memory_read(exec_step, (addr as usize).into(), *byte)?;
 
+        copy_steps.push((
+            CopyStep {
+                addr,
+                rw: RW::READ,
+                value: *byte,
+                is_code: None,
+                rwc,
+                rwc_inc_left: 0,
+            },
+            CopyStep {
+                addr: idx as u64,
+                rw: RW::WRITE,
+                value: *byte,
+                is_code: None,
+                rwc: state.block_ctx.rwc,
+                rwc_inc_left: 0,
+            },
+        ));
+
         // Write log
-        copy_steps.push(CopyStep {
-            addr: idx as u64,
-            rw: RW::WRITE,
-            value: *byte,
-            is_code: None,
-            rwc: state.block_ctx.rwc,
-            rwc_inc_left: 0,
-        });
         state.tx_log_write(
             exec_step,
             state.tx_ctx.id(),
@@ -172,6 +176,11 @@ fn gen_copy_steps(
             idx,
             Word::from(*byte),
         )?;
+    }
+
+    for (read_step, write_step) in copy_steps.iter_mut() {
+        read_step.rwc_inc_left = state.block_ctx.rwc.0 as u64 - read_step.rwc.0 as u64;
+        write_step.rwc_inc_left = state.block_ctx.rwc.0 as u64 - write_step.rwc.0 as u64;
     }
 
     Ok(copy_steps)
@@ -188,11 +197,7 @@ fn gen_copy_event(
 
     let (src_addr, src_addr_end) = (memory_start, memory_start + msize as u64);
 
-    let mut steps = gen_copy_steps(state, exec_step, src_addr, msize)?;
-
-    for cs in steps.iter_mut() {
-        cs.rwc_inc_left = state.block_ctx.rwc.0 as u64 - cs.rwc.0 as u64;
-    }
+    let steps = gen_copy_steps(state, exec_step, src_addr, msize)?;
 
     Ok(CopyEvent {
         src_type: CopyDataType::Memory,
@@ -451,7 +456,7 @@ mod log_tests {
 
         let copy_events = builder.block.copy_events.clone();
         assert_eq!(copy_events.len(), 1);
-        assert_eq!(copy_events[0].steps.len(), 2 * msize);
+        assert_eq!(copy_events[0].steps.len(), msize);
         assert_eq!(copy_events[0].src_type, CopyDataType::Memory);
         assert_eq!(
             copy_events[0].src_id,
@@ -471,18 +476,16 @@ mod log_tests {
             topic_count + // stack read for topics
             topic_count,
         ); // TxLogField::Topic write
-        let mut rwc_inc = copy_events[0].steps.first().unwrap().rwc_inc_left;
-        for (idx, copy_rw_pair) in copy_events[0].steps.chunks(2).enumerate() {
-            assert_eq!(copy_rw_pair.len(), 2);
+        let mut rwc_inc = copy_events[0].steps.first().unwrap().0.rwc_inc_left;
+        for (idx, (read_step, write_step)) in copy_events[0].steps.iter().enumerate() {
             let (value, is_pad) = memory_data
                 .get(mstart + idx)
                 .cloned()
                 .map_or((0, true), |v| (v, false));
             // Read
-            let read_step = copy_rw_pair[0].clone();
             assert_eq!(
                 read_step,
-                CopyStep {
+                &CopyStep {
                     addr: (mstart + idx) as u64,
                     rw: RW::READ,
                     value,
@@ -495,10 +498,9 @@ mod log_tests {
                 rwc_inc -= 1;
             }
             // Write
-            let write_step = copy_rw_pair[1].clone();
             assert_eq!(
                 write_step,
-                CopyStep {
+                &CopyStep {
                     addr: idx as u64,
                     rw: RW::WRITE,
                     value,
