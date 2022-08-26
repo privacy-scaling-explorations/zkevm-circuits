@@ -400,7 +400,7 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
         &self,
         region: &mut Region<'_, F>,
         mpt_config: &MPTConfig<F>,
-        witness: &[MptWitnessRow],
+        witness: &[MptWitnessRow<F>],
         offset: usize,
     ) {
         let row_prev = &witness[offset - 1];

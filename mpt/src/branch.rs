@@ -198,6 +198,21 @@ impl<F: FieldExt> BranchConfig<F> {
             },
         );
 
+        /*
+        We need to check that the length of the branch corresponds to the bytes at the beginning of
+        the RLP stream that specify the length of the RLP stream. There are three possible scenarios:
+
+        Branch (length 21 = 213 - 192) with one byte of RLP meta data
+        [213,128,194,32,1,128,194,32,1,128,128,128,128,128,128,128,128,128,128,128,128,128]
+
+        Branch (length 83) with two bytes of RLP meta data
+        [248,81,128,128,...
+
+        Branch (length 340) with three bytes of RLP meta data
+        [249,1,81,128,16,...
+
+        For which 
+        */
         meta.create_gate("RLP length", |meta| {
             let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
             let mut constraints = vec![];
@@ -693,7 +708,7 @@ impl<F: FieldExt> BranchConfig<F> {
     pub(crate) fn assign_branch_init(
         &self,
         region: &mut Region<'_, F>,
-        witness: &[MptWitnessRow],
+        witness: &[MptWitnessRow<F>],
         mpt_config: &MPTConfig<F>,
         pv: &mut ProofVariables<F>,
         offset: usize,
@@ -742,9 +757,9 @@ impl<F: FieldExt> BranchConfig<F> {
         let mut branch = Branch::default();
         branch.is_branch_init = true;
 
-        mpt_config.assign_row(
+        row.assign_row(
             region,
-            &row.main().to_vec(),
+            mpt_config,
             account_leaf,
             storage_leaf, 
             branch,
@@ -864,7 +879,7 @@ impl<F: FieldExt> BranchConfig<F> {
     pub(crate) fn assign_branch_child(
         &self,
         region: &mut Region<'_, F>,
-        witness: &[MptWitnessRow],
+        witness: &[MptWitnessRow<F>],
         mpt_config: &MPTConfig<F>,
         pv: &mut ProofVariables<F>,
         offset: usize,
@@ -937,7 +952,7 @@ impl<F: FieldExt> BranchConfig<F> {
                         // extension node part:
                         let key_len = ext_row.get_byte(key_len_pos) as usize - 128 - 1; // -1 because the first byte is 0 (is_even)
                         mpt_config.compute_acc_and_mult(
-                            &ext_row.0,
+                            &ext_row.bytes,
                             &mut pv.extension_node_rlc,
                             &mut pv.key_rlc_mult,
                             key_len_pos + 2, /* first position behind key_len_pos
@@ -1045,7 +1060,7 @@ impl<F: FieldExt> BranchConfig<F> {
                         let key_len = ext_row.get_byte(key_len_pos) as usize - 128;
 
                         mpt_config.compute_acc_and_mult(
-                            &ext_row.0,
+                            &ext_row.bytes,
                             &mut pv.extension_node_rlc,
                             &mut pv.key_rlc_mult,
                             key_len_pos + 2, /* the first position after key_len_pos
@@ -1098,7 +1113,7 @@ impl<F: FieldExt> BranchConfig<F> {
                 pv.key_rlc,
                 pv.key_rlc_mult,
                 pv.mult_diff,
-                row.main(),
+                row,
                 pv.s_mod_node_hash_rlc,
                 pv.c_mod_node_hash_rlc,
                 pv.drifted_pos,
@@ -1117,7 +1132,7 @@ impl<F: FieldExt> BranchConfig<F> {
                 pv.key_rlc,
                 pv.key_rlc_mult,
                 pv.mult_diff,
-                row.main(),
+                row,
                 pv.s_mod_node_hash_rlc,
                 pv.c_mod_node_hash_rlc,
                 pv.drifted_pos,
