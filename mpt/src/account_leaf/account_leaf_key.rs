@@ -10,7 +10,7 @@ use crate::{
     mpt::{FixedTableTag, MainCols, ProofTypeCols, AccumulatorCols, MPTConfig, ProofVariables},
     param::{
         HASH_WIDTH, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS, IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS, IS_EXT_LONG_ODD_C16_POS, IS_EXT_LONG_ODD_C1_POS, 
-        IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS, RLP_NUM, R_TABLE_LEN, S_START,
+        IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS, RLP_NUM, R_TABLE_LEN, S_START, NIBBLES_COUNTER_POS, BRANCH_ROWS_NUM,
     },
 };
 
@@ -92,6 +92,8 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
     ) -> Self {
         let config = AccountLeafKeyConfig { _marker: PhantomData };
         let one = Expression::Constant(F::one());
+        let c64 = Expression::Constant(F::from(64));
+        let c128 = Expression::Constant(F::from(128));
         // key rlc is in the first branch node
         let mut rot_into_first_branch_child = -18;
         if !is_s {
@@ -257,7 +259,7 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
                 let s_advice1 = meta.query_advice(s_main.bytes[1], Rotation::cur());
                 let mut key_rlc_acc = key_rlc_acc_start.clone()
                     + (s_advice1.clone() - c48) * key_mult_start.clone() * sel1.clone();
-                let mut key_mult = key_mult_start.clone() * r_table[0].clone() * sel1;
+                let mut key_mult = key_mult_start.clone() * r_table[0].clone() * sel1.clone();
                 key_mult = key_mult + key_mult_start.clone() * sel2.clone(); // set to key_mult_start if sel2, stays key_mult if sel1
 
                 /*
@@ -269,7 +271,7 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
                         * (one.clone() - is_branch_placeholder.clone())
                         * (one.clone() - is_leaf_in_first_level.clone())
                         * (s_advice1 - c32)
-                        * sel2,
+                        * sel2.clone(),
                 ));
 
                 let s_advices2 = meta.query_advice(s_main.bytes[2], Rotation::cur());
@@ -322,11 +324,35 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
                 */
                 constraints.push((
                     "Computed account address RLC same as value in address_rlc column",
-                    q_enable
+                    q_enable.clone()
                         * (one.clone() - is_branch_placeholder.clone())
                         * (one.clone() - is_leaf_in_first_level.clone())
                         * (one.clone() - is_non_existing_account_proof.clone())
                         * (key_rlc.clone() - address_rlc.clone()),
+                ));
+
+                let s_advice0 = meta.query_advice(s_main.bytes[0], Rotation::cur());
+                let leaf_nibbles = ((s_advice0.clone() - c128.clone() - one.clone()) * (one.clone() + one.clone())) * sel2.clone() +
+                    ((s_advice0.clone() - c128.clone()) * (one.clone() + one.clone()) - one.clone()) * sel1.clone();
+
+                let nibbles_count = meta.query_advice(
+                    s_main.bytes[NIBBLES_COUNTER_POS - RLP_NUM],
+                    Rotation(rot_into_init),
+                );
+
+                /* 
+                Checking the total number of nibbles is to prevent having short addresses
+                which could lead to a root node which would be shorter than 32 bytes and thus not hashed. That
+                means the trie could be manipulated to reach a desired root.
+                */
+                constraints.push((
+                    "Total number of account address nibbles is 64 (not first level, not branch placeholder)",
+                    q_enable
+                        * (one.clone() - is_branch_placeholder.clone())
+                        * (one.clone() - is_leaf_in_first_level.clone())
+                        // Note: we need to check the number of nibbles being 64 for non_existing_account_proof too
+                        // (even if the address being checked here might is the address of the wrong leaf)
+                        * (nibbles_count.clone() + leaf_nibbles.clone() - c64.clone()),
                 ));
 
                 constraints
@@ -385,10 +411,28 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
                 meta.query_advice(proof_type.is_non_existing_account_proof, Rotation::cur());
             constraints.push((
                 "Computed account address RLC same as value in address_rlc column",
-                q_enable
+                q_enable.clone()
                 * is_leaf_in_first_level.clone()
                 * (one.clone() - is_non_existing_account_proof.clone())
                 * (key_rlc.clone() - address_rlc.clone()),
+            ));
+
+            let s_advice0 = meta.query_advice(s_main.bytes[0], Rotation::cur());
+            let leaf_nibbles =
+                (s_advice0.clone() - c128.clone() - one.clone()) * (one.clone() + one.clone());
+
+            /* 
+            Checking the total number of nibbles is to prevent having short addresses
+            which could lead to a root node which would be shorter than 32 bytes and thus not hashed. That
+            means the trie could be manipulated to reach a desired root.
+            */
+            constraints.push((
+                "Total number of account address nibbles is 64 (first level)",
+                q_enable
+                    // Note: we need to check the number of nibbles being 64 for non_existing_account_proof too
+                    // (even if the address being checked here might is the address of the wrong leaf)
+                    * is_leaf_in_first_level.clone()
+                    * (leaf_nibbles.clone() - c64.clone()),
             ));
 
             constraints
@@ -573,7 +617,7 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
             let s_advice1 = meta.query_advice(s_main.bytes[1], Rotation::cur());
             let mut key_rlc_acc = key_rlc_acc_start.clone()
                 + (s_advice1.clone() - c48) * key_mult_start.clone() * sel1.clone();
-            let mut key_mult = key_mult_start.clone() * r_table[0].clone() * sel1;
+            let mut key_mult = key_mult_start.clone() * r_table[0].clone() * sel1.clone();
             key_mult = key_mult + key_mult_start.clone() * sel2.clone(); // set to key_mult_start if sel2, stays key_mult if sel1
 
             // If sel2 = 1, we have 32 in s_main.bytes[1].
@@ -581,7 +625,7 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
                 "Account leaf key acc s_advice1",
                 q_enable.clone()
                     * (s_advice1 - c32)
-                    * sel2
+                    * sel2.clone()
                     * is_branch_placeholder.clone()
                     * (one.clone() - is_leaf_in_first_level.clone()),
             ));
@@ -614,6 +658,23 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
                     * is_branch_placeholder.clone()
                     * (one.clone() - is_leaf_in_first_level.clone())
                     * (key_rlc_acc.clone() - key_rlc.clone()),
+            ));
+
+            let s_advice0 = meta.query_advice(s_main.bytes[0], Rotation::cur());
+            let leaf_nibbles = ((s_advice0.clone() - c128.clone() - one.clone()) * (one.clone() + one.clone())) * sel2.clone() +
+                ((s_advice0.clone() - c128.clone()) * (one.clone() + one.clone()) - one.clone()) * sel1.clone();
+
+            let nibbles_count = meta.query_advice(
+                s_main.bytes[NIBBLES_COUNTER_POS - RLP_NUM],
+                Rotation(rot_into_init - BRANCH_ROWS_NUM),
+            );
+
+            constraints.push((
+                "Total number of account address nibbles is 64 (after placeholder)",
+                q_enable
+                    * is_branch_placeholder.clone()
+                    * (one.clone() - is_leaf_in_first_level.clone())
+                    * (nibbles_count.clone() + leaf_nibbles.clone() - c64.clone()),
             ));
 
             constraints

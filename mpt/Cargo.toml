@@ -14,4 +14,4 @@ keccak256 = { path = "../keccak256"}
 pairing = { git = 'https://github.com/appliedzkp/pairing', package = "pairing_bn256" }
 rand_xorshift = "0.3"
 ark-std = { version = "0.3", features = ["print-trace"] }
-
+num_enum = "0.5.7"

@@ -22,7 +22,7 @@ use crate::{
     param::{
         C_RLP_START, C_START,
         HASH_WIDTH, IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS, KECCAK_INPUT_WIDTH,
-        KECCAK_OUTPUT_WIDTH, S_RLP_START, S_START,
+        KECCAK_OUTPUT_WIDTH, S_START,
     },
     selectors::SelectorsChip,
 };

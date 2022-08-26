@@ -6,7 +6,7 @@ use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
 use crate::{
-    helpers::{key_len_lookup_rot_len, range_lookups},
+    helpers::{key_len_lookup, range_lookups},
     mpt::{FixedTableTag, MainCols, AccumulatorCols, MPTConfig},
     param::{
         HASH_WIDTH, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, RLP_NUM, ACCOUNT_NON_EXISTING_IND, BRANCH_ROWS_NUM,
@@ -62,7 +62,7 @@ For the example of non-existing account proof account leaf see below:
 
 [248 102 157 55 236 125 29 155 142 209 241 75 145 144 143 254 65 81 209 56 13 192 157 236 195 213 73 132 11 251 149 241 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 6]
 [248 102 157 55 236 125 29 155 142 209 241 75 145 144 143 254 65 81 209 56 13 192 157 236 195 213 73 132 11 251 149 241 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 4]
-[1 0 0 56 133 130 180 167 143 97 28 115 102 25 94 62 148 249 8 6 55 244 16 75 187 208 208 127 251 120 61 73 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 18]
+[1 0 157 56 133 130 180 167 143 97 28 115 102 25 94 62 148 249 8 6 55 244 16 75 187 208 208 127 251 120 61 73 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 18]
 [184 70 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 248 68 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 7]
 [184 70 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 248 68 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 8]
 [0 160 112 158 181 221 162 20 124 79 184 25 162 13 167 162 146 25 237 242 59 120 184 154 118 137 92 181 187 152 115 82 223 48 0 160 7 190 1 231 231 32 111 227 30 206 233 26 215 93 173 166 90 214 186 67 58 230 71 161 185 51 4 105 247 198 103 124 0 9]
@@ -341,6 +341,28 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
             constraints
         });
 
+        meta.create_gate("Address of wrong leaf and the enquired address are of the same length", |meta| {
+            let q_enable = q_enable(meta);
+            let mut constraints = vec![];
+
+            let is_wrong_leaf = meta.query_advice(s_main.rlp1, Rotation::cur());
+            let s_advice0_prev = meta.query_advice(s_main.bytes[0], Rotation::prev());
+            let s_advice0_cur = meta.query_advice(s_main.bytes[0], Rotation::cur());
+
+            /*
+            This constraint is to prevent the attacker to prove that some account does not exist by setting
+            some arbitrary number of nibbles in the account leaf which would lead to a desired RLC.
+            */
+            constraints.push((
+                "The number of nibbles in the wrong leaf and the enquired address are the same",
+                q_enable.clone()
+                * is_wrong_leaf
+                * (s_advice0_cur - s_advice0_prev),
+            ));
+
+            constraints
+        });
+         
         /*
         /*
         Key RLC is computed over all of `s_main.bytes[1], ..., s_main.bytes[31], c_main.rlp1, c_main.rlp2`
@@ -359,19 +381,18 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
         for the length of the remaining stream.
         */
         for ind in 1..HASH_WIDTH {
-            key_len_lookup_rot_len(
+            key_len_lookup(
                 meta,
                 q_enable,
                 ind,
                 s_main.bytes[0],
                 s_main.bytes[ind],
                 128,
-                -2,
                 fixed_table,
             )
         }
-        key_len_lookup_rot_len(meta, q_enable, 32, s_main.bytes[0], c_main.rlp1, 128, -2, fixed_table);
-        key_len_lookup_rot_len(meta, q_enable, 33, s_main.bytes[0], c_main.rlp2, 128, -2, fixed_table);
+        key_len_lookup(meta, q_enable, 32, s_main.bytes[0], c_main.rlp1, 128, fixed_table);
+        key_len_lookup(meta, q_enable, 33, s_main.bytes[0], c_main.rlp2, 128, fixed_table);
         */
 
         /*
