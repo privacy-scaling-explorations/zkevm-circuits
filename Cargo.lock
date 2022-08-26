@@ -2985,26 +2985,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "prover"
-version = "0.1.0"
-dependencies = [
- "bus-mapping",
- "env_logger",
- "eth-types",
- "ethers-providers",
- "halo2_proofs 0.1.0-beta.1",
- "hyper",
- "log",
- "rand",
- "rand_xorshift",
- "serde",
- "serde_json",
- "strum",
- "tokio",
- "zkevm-circuits",
-]
-
-[[package]]
 name = "quote"
 version = "1.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
