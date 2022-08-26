@@ -151,7 +151,6 @@ fn gen_copy_steps(
         copy_steps.push((
             CopyStep {
                 addr,
-                rw: RW::READ,
                 value: *byte,
                 is_code: None,
                 rwc,
@@ -159,7 +158,6 @@ fn gen_copy_steps(
             },
             CopyStep {
                 addr: idx as u64,
-                rw: RW::WRITE,
                 value: *byte,
                 is_code: None,
                 rwc: state.block_ctx.rwc,
@@ -487,7 +485,6 @@ mod log_tests {
                 read_step,
                 &CopyStep {
                     addr: (mstart + idx) as u64,
-                    rw: RW::READ,
                     value,
                     is_code: None,
                     rwc: if !is_pad { rwc.inc_pre() } else { rwc },
@@ -502,7 +499,6 @@ mod log_tests {
                 write_step,
                 &CopyStep {
                     addr: idx as u64,
-                    rw: RW::WRITE,
                     value,
                     is_code: None,
                     rwc: rwc.inc_pre(),

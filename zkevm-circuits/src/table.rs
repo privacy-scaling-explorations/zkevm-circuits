@@ -769,17 +769,19 @@ impl CopyTable {
         } else {
             F::zero()
         };
-        for (step_idx, copy_step) in copy_event
+        for (step_idx, (copy_step, is_read_step)) in copy_event
             .steps
             .iter()
-            .flat_map(|(read_step, write_step)| once(read_step).chain(once(write_step)))
+            .flat_map(|(read_step, write_step)| {
+                once((read_step, true)).chain(once((write_step, false)))
+            })
             .enumerate()
         {
             // is_first
             let is_first = if step_idx == 0 { F::one() } else { F::zero() };
             // id
             let id = {
-                let id = if copy_step.rw.is_read() {
+                let id = if is_read_step {
                     &copy_event.src_id
                 } else {
                     &copy_event.dst_id
@@ -787,7 +789,7 @@ impl CopyTable {
                 number_or_hash_to_field(id, randomness)
             };
             // addr
-            let tag = if copy_step.rw.is_read() {
+            let tag = if is_read_step {
                 copy_event.src_type
             } else {
                 copy_event.dst_type

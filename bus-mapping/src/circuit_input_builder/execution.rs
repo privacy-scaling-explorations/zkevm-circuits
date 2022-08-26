@@ -187,8 +187,6 @@ impl_expr!(CopyDataType);
 pub struct CopyStep {
     /// Address (source/destination) for the copy step.
     pub addr: u64,
-    /// Whether this step is a read or write step.
-    pub rw: RW,
     /// Byte value copied in this step.
     pub value: u8,
     /// Optional field which is enabled only for the source being `bytecode`,

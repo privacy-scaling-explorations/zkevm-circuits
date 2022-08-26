@@ -402,14 +402,16 @@ impl<F: Field> CopyCircuit<F> {
                         F::zero()
                     };
                     let mut value_acc = F::zero();
-                    for (step_idx, copy_step) in copy_event
+                    for (step_idx, (is_read_step, copy_step)) in copy_event
                         .steps
                         .iter()
-                        .flat_map(|(read_step, write_step)| once(read_step).chain(once(write_step)))
+                        .flat_map(|(read_step, write_step)| {
+                            once((true, read_step)).chain(once((false, write_step)))
+                        })
                         .enumerate()
                     {
                         let value = if copy_event.dst_type == CopyDataType::RlcAcc {
-                            if copy_step.rw.is_read() {
+                            if is_read_step {
                                 F::from(copy_step.value as u64)
                             } else {
                                 value_acc =
@@ -461,11 +463,12 @@ impl<F: Field> CopyCircuit<F> {
         // q_enable
         region.assign_fixed(|| "q_enable", self.q_enable, offset, || Ok(F::one()))?;
         // enable q_step on the Read step
-        if copy_step.rw.is_read() {
+        let is_read = step_idx % 2 == 0;
+        if is_read {
             self.q_step.enable(region, offset)?;
         }
 
-        let id = if copy_step.rw.is_read() {
+        let id = if is_read {
             &copy_event.src_id
         } else {
             &copy_event.dst_id
@@ -500,7 +503,7 @@ impl<F: Field> CopyCircuit<F> {
             || Ok(number_or_hash_to_field(id, randomness)),
         )?;
         // addr
-        let addr = if copy_step.rw.is_read() && copy_event.dst_type == CopyDataType::TxLog {
+        let addr = if is_read && copy_event.dst_type == CopyDataType::TxLog {
             (U256::from(copy_step.addr)
                 + (U256::from(TxLogFieldTag::Data as u64) << 32)
                 + (U256::from(copy_event.log_id.unwrap()) << 48))
@@ -540,11 +543,7 @@ impl<F: Field> CopyCircuit<F> {
         // is_pad
         // let is_pad = copy_step.rw != RW::WRITE && copy_step.addr <
         // copy_event.src_addr_end;
-        let is_pad = if copy_step.rw == RW::WRITE {
-            false
-        } else {
-            copy_step.addr >= copy_event.src_addr_end
-        };
+        let is_pad = is_read && copy_step.addr >= copy_event.src_addr_end;
         region.assign_advice(
             || format!("assign is_pad {}", offset),
             self.is_pad,
@@ -566,14 +565,14 @@ impl<F: Field> CopyCircuit<F> {
             || Ok(F::from(copy_step.rwc_inc_left)),
         )?;
         // tag binary number chip
-        let tag = if copy_step.rw.is_read() {
+        let tag = if is_read {
             copy_event.src_type
         } else {
             copy_event.dst_type
         };
         tag_chip.assign(region, offset, &tag)?;
         // assignment for read steps
-        if copy_step.rw.is_read() {
+        if is_read {
             // src_addr_end
             region.assign_advice(
                 || format!("assign src_addr_end {}", offset),

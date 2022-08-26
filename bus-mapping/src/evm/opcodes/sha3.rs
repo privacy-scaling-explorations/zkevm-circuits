@@ -61,7 +61,6 @@ impl Opcode for Sha3 {
             steps.push((
                 CopyStep {
                     addr: offset.as_u64() + (i as u64),
-                    rw: RW::READ,
                     value: *byte,
                     is_code: None,
                     rwc: read_rwc,
@@ -69,7 +68,6 @@ impl Opcode for Sha3 {
                 },
                 CopyStep {
                     addr: i as u64,
-                    rw: RW::WRITE,
                     value: *byte,
                     is_code: None,
                     rwc: state.block_ctx.rwc,
@@ -277,7 +275,6 @@ pub mod sha3_tests {
                 read_step,
                 &CopyStep {
                     addr: (offset + idx) as u64,
-                    rw: RW::READ,
                     value,
                     is_code: None,
                     rwc: rwc.inc_pre(),
@@ -289,7 +286,6 @@ pub mod sha3_tests {
                 write_step,
                 &CopyStep {
                     addr: idx as u64,
-                    rw: RW::WRITE,
                     value,
                     is_code: None,
                     rwc,
