@@ -185,8 +185,6 @@ impl_expr!(CopyDataType);
 /// source/destination row in the copy table.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CopyStep {
-    /// Address (source/destination) for the copy step.
-    pub addr: u64,
     /// Byte value copied in this step.
     pub value: u8,
     /// Optional field which is enabled only for the source being `bytecode`,

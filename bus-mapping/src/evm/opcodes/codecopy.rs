@@ -103,14 +103,12 @@ fn gen_copy_steps(
         // Read
         steps.push((
             CopyStep {
-                addr,
                 value,
                 is_code,
                 rwc: state.block_ctx.rwc,
                 rwc_inc_left: bytes_left - idx,
             },
             CopyStep {
-                addr: dst_addr + idx,
                 value,
                 is_code: None,
                 rwc: state.block_ctx.rwc,
@@ -286,7 +284,6 @@ mod codecopy_tests {
             assert_eq!(
                 read_step,
                 &CopyStep {
-                    addr: (code_offset + idx) as u64,
                     value,
                     is_code,
                     rwc,
@@ -297,7 +294,6 @@ mod codecopy_tests {
             assert_eq!(
                 write_step,
                 &CopyStep {
-                    addr: (dst_offset + idx) as u64,
                     value,
                     is_code: None,
                     rwc: rwc.inc_pre(),

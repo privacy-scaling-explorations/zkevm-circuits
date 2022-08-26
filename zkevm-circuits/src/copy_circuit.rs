@@ -503,15 +503,22 @@ impl<F: Field> CopyCircuit<F> {
             || Ok(number_or_hash_to_field(id, randomness)),
         )?;
         // addr
+        let copy_step_addr: u64 =
+            if is_read {
+                copy_event.src_addr
+            } else {
+                copy_event.dst_addr
+            } + (u64::try_from(step_idx).unwrap() - if is_read { 0 } else { 1 }) / 2u64;
+
         let addr = if is_read && copy_event.dst_type == CopyDataType::TxLog {
-            (U256::from(copy_step.addr)
+            (U256::from(copy_step_addr)
                 + (U256::from(TxLogFieldTag::Data as u64) << 32)
                 + (U256::from(copy_event.log_id.unwrap()) << 48))
                 .to_address()
                 .to_scalar()
                 .unwrap()
         } else {
-            F::from(copy_step.addr)
+            F::from(copy_step_addr)
         };
         region.assign_advice(
             || format!("assign addr {}", offset),
@@ -543,7 +550,7 @@ impl<F: Field> CopyCircuit<F> {
         // is_pad
         // let is_pad = copy_step.rw != RW::WRITE && copy_step.addr <
         // copy_event.src_addr_end;
-        let is_pad = is_read && copy_step.addr >= copy_event.src_addr_end;
+        let is_pad = is_read && copy_step_addr >= copy_event.src_addr_end;
         region.assign_advice(
             || format!("assign is_pad {}", offset),
             self.is_pad,
@@ -591,7 +598,7 @@ impl<F: Field> CopyCircuit<F> {
             lt_chip.assign(
                 region,
                 offset,
-                F::from(copy_step.addr),
+                F::from(copy_step_addr),
                 F::from(copy_event.src_addr_end),
             )?;
         }
@@ -895,6 +902,7 @@ mod tests {
         assert!(test_copy_circuit(20, block).is_ok());
     }
 
+    // TODO: replace these with deterministic failure tests
     fn perturb_tag(block: &mut bus_mapping::circuit_input_builder::Block) {
         debug_assert!(!block.copy_events.is_empty());
         debug_assert!(!block.copy_events[0].steps.is_empty());
@@ -907,7 +915,7 @@ mod tests {
             _ => (false, copy_event.steps[rand_idx].1.clone()),
         };
         match rng.gen::<f32>() {
-            f if f < 0.25 => perturbed_step.addr = rng.gen(),
+            // f if f < 0.25 => perturbed_step.addr = rng.gen(),
             f if f < 0.5 => perturbed_step.value = rng.gen(),
             f if f < 0.75 => perturbed_step.rwc = RWCounter(rng.gen()),
             _ => perturbed_step.rwc_inc_left = rng.gen(),

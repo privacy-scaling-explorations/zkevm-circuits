@@ -794,15 +794,21 @@ impl CopyTable {
             } else {
                 copy_event.dst_type
             };
+            let copy_step_addr: u64 =
+                if is_read_step {
+                    copy_event.src_addr
+                } else {
+                    copy_event.dst_addr
+                } + (u64::try_from(step_idx).unwrap() - if is_read_step { 0 } else { 1 }) / 2u64;
             let addr = if tag == CopyDataType::TxLog {
-                (U256::from(copy_step.addr)
+                (U256::from(copy_step_addr)
                     + (U256::from(TxLogFieldTag::Data as u64) << 32)
                     + (U256::from(copy_event.log_id.unwrap()) << 48))
                     .to_address()
                     .to_scalar()
                     .unwrap()
             } else {
-                F::from(copy_step.addr)
+                F::from(copy_step_addr)
             };
 
             assignments.push((
