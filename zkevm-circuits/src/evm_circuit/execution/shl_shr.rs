@@ -20,8 +20,8 @@ use eth_types::{Field, ToLittleEndian, U256};
 use halo2_proofs::plonk::Error;
 
 /// ShlShrGadget verifies opcode SHL and SHR.
-/// For SHL, verify pop1 * (2^pop2) == push;
-/// For SHR, verify pop1 / (2^pop2) = push;
+/// For SHL, verify pop1 * (2^pop2) % 2^256 == push;
+/// For SHR, verify pop1 / (2^pop2) % 2^256 == push;
 /// when pop1, pop2, push are 256-bit words.
 #[derive(Clone, Debug)]
 pub(crate) struct ShlShrGadget<F> {
