@@ -97,8 +97,6 @@ mod returndatasize_tests {
             PUSH2 (0xFFFF)
             CALL
 
-            PUSH1 (0x20)
-            PUSH1 (0)
             RETURNDATASIZE
 
             STOP
@@ -148,7 +146,7 @@ mod returndatasize_tests {
             },
             (
                 RW::WRITE,
-                &StackOp::new(call_id, StackAddress::from(1019), Word::from(return_data_size))
+                &StackOp::new(call_id, StackAddress::from(1021), Word::from(return_data_size))
             )
         );
     }
