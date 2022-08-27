@@ -76,7 +76,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataSizeGadget<F> {
             Some(
                 return_data_size.to_le_bytes()[..N_BYTES_MEMORY_ADDRESS]
                     .try_into()
-                    .unwrap(),
+                    .expect("could not encode return_data_size as byte array in little endian"),
             ),
         )?;
 
