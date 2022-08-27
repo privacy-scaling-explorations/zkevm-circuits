@@ -1,5 +1,6 @@
 use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
 use crate::evm::Opcode;
+use crate::operation::CallContextField;
 use crate::Error;
 use eth_types::GethExecStep;
 
@@ -12,7 +13,7 @@ impl Opcode for Return {
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];
-        let exec_step = state.new_step(geth_step)?;
+        let mut exec_step = state.new_step(geth_step)?;
 
         let current_call = state.call()?.clone();
         let offset = geth_step.stack.nth_last(0)?.as_usize();
@@ -43,6 +44,27 @@ impl Opcode for Return {
                 state.code_db.insert(code);
             }
         }
+
+        state.call_context_write(
+            &mut exec_step,
+            state.call()?.call_id,
+            CallContextField::LastCalleeId,
+            state.call()?.call_id.into(),
+        );
+
+        state.call_context_write(
+            &mut exec_step,
+            state.caller()?.call_id,
+            CallContextField::LastCalleeReturnDataOffset,
+            offset.into(),
+        );
+
+        state.call_context_write(
+            &mut exec_step,
+            state.caller()?.call_id,
+            CallContextField::LastCalleeReturnDataLength,
+            length.into(),
+        );
 
         state.handle_return(&geth_steps[0])?;
         Ok(vec![exec_step])
