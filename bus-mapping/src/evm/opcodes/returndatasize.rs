@@ -47,18 +47,62 @@ mod returndatasize_tests {
         bytecode,
         evm_types::{OpcodeId, StackAddress},
         geth_types::GethData,
+        word,
+        Word
     };
 
     use mock::test_ctx::{helpers::*, TestContext};
     use pretty_assertions::assert_eq;
 
     #[test]
-    fn returndatasize_opcode_impl() {
+    fn test_ok() {
+        let return_data_size = 0x20;
+
+        // // deployed contract
+        // PUSH1 0x20
+        // PUSH1 0
+        // PUSH1 0
+        // CALLDATACOPY
+        // PUSH1 0x20
+        // PUSH1 0
+        // RETURN
+        //
+        // bytecode: 0x6020600060003760206000F3
+        //
+        // // constructor
+        // PUSH12 0x6020600060003760206000F3
+        // PUSH1 0
+        // MSTORE
+        // PUSH1 0xC
+        // PUSH1 0x14
+        // RETURN
+        //
+        // bytecode: 0x6B6020600060003760206000F3600052600C6014F3
         let code = bytecode! {
+            PUSH21(word!("6B6020600060003760206000F3600052600C6014F3"))
+            PUSH1(0)
+            MSTORE
+
+            PUSH1 (0x15)
+            PUSH1 (0xB)
+            PUSH1 (0)
+            CREATE
+
+            PUSH1 (0x20)
+            PUSH1 (0x20)
+            PUSH1 (0x20)
+            PUSH1 (0)
+            PUSH1 (0)
+            DUP6
+            PUSH2 (0xFFFF)
+            CALL
+
+            PUSH1 (0x20)
+            PUSH1 (0)
             RETURNDATASIZE
+
             STOP
         };
-
         // Get the execution steps from the external tracer
         let block: GethData = TestContext::<2, 1>::new(
             None,
@@ -81,7 +125,6 @@ mod returndatasize_tests {
             .unwrap();
 
         let call_id = builder.block.txs()[0].calls()[0].call_id;
-        let return_data_size = block.eth_block.transactions[0].input.as_ref().len().into();
         assert_eq!(
             {
                 let operation =
@@ -93,7 +136,7 @@ mod returndatasize_tests {
                 &CallContextOp {
                     call_id,
                     field: CallContextField::LastCalleeReturnDataLength,
-                    value: return_data_size,
+                    value: Word::from(return_data_size),
                 }
             )
         );
@@ -105,7 +148,7 @@ mod returndatasize_tests {
             },
             (
                 RW::WRITE,
-                &StackOp::new(1, StackAddress::from(1023), return_data_size)
+                &StackOp::new(call_id, StackAddress::from(1019), Word::from(return_data_size))
             )
         );
     }
