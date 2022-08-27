@@ -450,9 +450,7 @@ impl<F: Field> ExecutionConfig<F> {
             sar_gadget: configure_gadget!(),
             extcodesize_gadget: configure_gadget!(),
             extcodecopy_gadget: configure_gadget!(),
-
             returndatasize_gadget: configure_gadget!(),
-
             returndatacopy_gadget: configure_gadget!(),
             create_gadget: configure_gadget!(),
             callcode_gadget: configure_gadget!(),
