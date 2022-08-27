@@ -69,9 +69,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataSizeGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
-
         let return_data_size = block.rws[step.rw_indices[1]].stack_value();
-
         self.return_data_size.assign(
             region,
             offset,
@@ -88,57 +86,49 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataSizeGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::evm_circuit::{
-        test::{rand_bytes, run_test_circuit},
-        witness::block_convert,
-    };
+    use crate::evm_circuit::{test::{rand_bytes}};
     use crate::{test_util::run_test_circuits};
-    use eth_types::{address, bytecode, ToWord, Word};
-    use itertools::Itertools;
-    use mock::test_ctx::{helpers::*, TestContext};
+    use eth_types::{bytecode, ToWord, Word};
+    use mock::test_ctx::{TestContext};
 
-    fn test_internal_ok() {
+    fn test_ok_internal(
+        return_data_offset: usize,
+        return_data_size: usize,
+    ) {
         let (addr_a, addr_b) = (mock::MOCK_ACCOUNTS[0], mock::MOCK_ACCOUNTS[1]);
 
-        // code B gets called by code A, so the call is an internal call.
-        let pushdata = rand_bytes(8);
-
+        let pushdata = rand_bytes(32);
         let code_b = bytecode! {
-            PUSH32(Word::from_big_endian(&pushdata))  // size
-            PUSH1(0x00) // offset
+            PUSH32(Word::from_big_endian(&pushdata))
+            PUSH1(0)
             MSTORE
 
-            PUSH1(0x02)
-            PUSH1(0x00)
-
+            PUSH32(return_data_size)
+            PUSH1(return_data_offset)
             RETURN
-
             STOP
         };
 
         // code A calls code B.
         let code_a = bytecode! {
             // call ADDR_B.
-            PUSH1(0x02) // retLength
-            PUSH1(0x00) // retOffset
+            PUSH32(return_data_size) // retLength
+            PUSH1(return_data_offset) // retOffset
             PUSH1(0x00) // argsLength
             PUSH1(0x00) // argsOffset
             PUSH1(0x00) // value
             PUSH32(addr_b.to_word()) // addr
-            PUSH32(400000) // gas
-
+            PUSH32(0x1_0000) // gas
             CALL
-
             RETURNDATASIZE
-
             STOP
         };
 
         let ctx = TestContext::<3, 1>::new(
             None,
             |accs| {
-                accs[0].address(addr_b).balance(Word::from(1u64 << 30)).code(code_b);
-                accs[1].address(addr_a).balance(Word::from(1u64 << 30)).code(code_a);
+                accs[0].address(addr_b).code(code_b);
+                accs[1].address(addr_a).code(code_a);
                 accs[2]
                     .address(mock::MOCK_ACCOUNTS[2])
                     .balance(Word::from(1u64 << 30));
@@ -151,12 +141,27 @@ mod test {
         .unwrap();
 
         assert_eq!(run_test_circuits(ctx, None), Ok(()));
-
     }
 
     #[test]
-    fn return_datasize() {
-        test_internal_ok()
+    fn returndatasize_gadget_simple() {
+        test_ok_internal(0x00, 0x02);
+    }
+
+    #[test]
+    fn returndatasize_gadget_large() {
+        test_ok_internal(0x00, 0x20);
+    }
+
+    #[test]
+    #[should_panic]
+    fn returndatasize_gadget_out_of_bound() {
+        test_ok_internal(0x00, 0x0101);
+    }
+
+    #[test]
+    fn returndatasize_gadget_zero_length() {
+        test_ok_internal(0x00, 0x00);
     }
 
 }
