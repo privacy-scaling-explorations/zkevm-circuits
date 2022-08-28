@@ -144,21 +144,14 @@ fn gen_copy_steps(
                 value,
                 is_code: None,
                 rwc,
-                rwc_inc_left: 0,
             },
             CopyStep {
                 value,
                 is_code: None,
                 rwc: state.block_ctx.rwc,
-                rwc_inc_left: 0,
             },
         ));
         state.memory_write(exec_step, (dst_addr + idx).into(), value)?;
-    }
-
-    for (read_step, write_step) in copy_steps.iter_mut() {
-        read_step.rwc_inc_left = state.block_ctx.rwc.0 as u64 - read_step.rwc.0 as u64;
-        write_step.rwc_inc_left = state.block_ctx.rwc.0 as u64 - write_step.rwc.0 as u64;
     }
 
     Ok(copy_steps)
@@ -411,7 +404,6 @@ mod calldatacopy_tests {
         assert_eq!(copy_events[0].dst_addr as usize, dst_offset);
 
         let mut rwc = RWCounter(step.rwc.0 + 6);
-        let mut rwc_inc = copy_events[0].steps.first().unwrap().0.rwc_inc_left;
         for (idx, (read_step, write_step)) in copy_events[0].steps.iter().enumerate() {
             let (value, is_pad) = memory_a
                 .get(offset + call_data_offset + idx)
@@ -424,12 +416,8 @@ mod calldatacopy_tests {
                     is_code: None,
                     value,
                     rwc: if !is_pad { rwc.inc_pre() } else { rwc },
-                    rwc_inc_left: rwc_inc,
                 }
             );
-            if !is_pad {
-                rwc_inc -= 1;
-            }
             // Write
             assert_eq!(
                 write_step,
@@ -437,10 +425,8 @@ mod calldatacopy_tests {
                     is_code: None,
                     value,
                     rwc: rwc.inc_pre(),
-                    rwc_inc_left: rwc_inc,
                 }
             );
-            rwc_inc -= 1;
         }
     }
 
@@ -644,7 +630,6 @@ mod calldatacopy_tests {
                     value,
                     is_code: None,
                     rwc,
-                    rwc_inc_left: (size - idx) as u64,
                 }
             );
             // write
@@ -654,7 +639,6 @@ mod calldatacopy_tests {
                     value,
                     is_code: None,
                     rwc: rwc.inc_pre(),
-                    rwc_inc_left: (size - idx) as u64,
                 }
             );
         }

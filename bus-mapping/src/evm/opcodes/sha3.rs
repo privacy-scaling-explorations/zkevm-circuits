@@ -63,19 +63,13 @@ impl Opcode for Sha3 {
                     value: *byte,
                     is_code: None,
                     rwc: read_rwc,
-                    rwc_inc_left: 0,
                 },
                 CopyStep {
                     value: *byte,
                     is_code: None,
                     rwc: state.block_ctx.rwc,
-                    rwc_inc_left: 0,
                 },
             ));
-        }
-        for (read_step, write_step) in steps.iter_mut() {
-            read_step.rwc_inc_left = state.block_ctx.rwc.0 as u64 - read_step.rwc.0 as u64;
-            write_step.rwc_inc_left = state.block_ctx.rwc.0 as u64 - write_step.rwc.0 as u64;
         }
 
         let call_id = state.call()?.call_id;
@@ -275,7 +269,6 @@ pub mod sha3_tests {
                     value,
                     is_code: None,
                     rwc: rwc.inc_pre(),
-                    rwc_inc_left: (size - idx) as u64,
                 }
             );
             // write
@@ -285,7 +278,6 @@ pub mod sha3_tests {
                     value,
                     is_code: None,
                     rwc,
-                    rwc_inc_left: (size - idx - 1) as u64,
                 }
             );
         }

@@ -565,11 +565,31 @@ impl<F: Field> CopyCircuit<F> {
             || Ok(F::from(copy_step.rwc.0 as u64)),
         )?;
         // rwc_inc_left
+        let source_rw_increase = match copy_event.src_type {
+            CopyDataType::Bytecode | CopyDataType::TxCalldata => 0,
+            CopyDataType::Memory => {
+                if is_pad {
+                    copy_event.src_addr_end - copy_event.src_addr
+                } else {
+                    u64::try_from(step_idx + 1).unwrap() / 2
+                }
+            }
+            CopyDataType::TxLog | CopyDataType::RlcAcc => unreachable!(),
+        };
+        let destination_rw_increase = match copy_event.dst_type {
+            CopyDataType::TxLog | CopyDataType::Memory => u64::try_from(step_idx).unwrap() / 2,
+            CopyDataType::RlcAcc => 0,
+            CopyDataType::Bytecode | CopyDataType::TxCalldata => unreachable!(),
+        };
+        let rwc_inc_left = u64::try_from(copy_event.rw_counter_increase()).unwrap()
+            - source_rw_increase
+            - destination_rw_increase;
+
         region.assign_advice(
             || format!("assign rwc_inc_left {}", offset),
             self.copy_table.rwc_inc_left,
             offset,
-            || Ok(F::from(copy_step.rwc_inc_left)),
+            || Ok(F::from(rwc_inc_left)),
         )?;
         // tag binary number chip
         let tag = if is_read {
@@ -917,8 +937,7 @@ mod tests {
         match rng.gen::<f32>() {
             // f if f < 0.25 => perturbed_step.addr = rng.gen(),
             f if f < 0.5 => perturbed_step.value = rng.gen(),
-            f if f < 0.75 => perturbed_step.rwc = RWCounter(rng.gen()),
-            _ => perturbed_step.rwc_inc_left = rng.gen(),
+            _ => perturbed_step.rwc = RWCounter(rng.gen()),
         }
 
         if is_read_step {

@@ -192,9 +192,6 @@ pub struct CopyStep {
     pub is_code: Option<bool>,
     /// Represents the current RW counter at this copy step.
     pub rwc: RWCounter,
-    /// A decrementing value representing the RW counters left in the copy event
-    /// including the current step's RW counter.
-    pub rwc_inc_left: u64,
 }
 
 /// Defines an enum type that can hold either a number or a hash value.
@@ -230,4 +227,27 @@ pub struct CopyEvent {
     pub log_id: Option<u64>,
     /// Represents the list of copy steps in this copy event.
     pub steps: Vec<(CopyStep, CopyStep)>,
+}
+
+impl CopyEvent {
+    /// increase in the rw counter as a result of this copy event
+    pub fn rw_counter_increase(&self) -> usize {
+        match (self.src_type, self.dst_type) {
+            (CopyDataType::Bytecode, CopyDataType::Memory) => self.steps.len(),
+            (CopyDataType::Memory, CopyDataType::TxLog) => 2 * self.steps.len(),
+            (CopyDataType::Memory, CopyDataType::RlcAcc) => self.steps.len(),
+            (CopyDataType::TxCalldata, CopyDataType::Memory) => self.steps.len(),
+            (CopyDataType::Memory, CopyDataType::Memory) => {
+                std::cmp::min(
+                    self.steps.len(),
+                    self.src_addr_end
+                        .checked_sub(self.src_addr)
+                        .unwrap_or_default()
+                        .try_into()
+                        .unwrap(),
+                ) + self.steps.len()
+            }
+            _ => unreachable!(),
+        }
+    }
 }

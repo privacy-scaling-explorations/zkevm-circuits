@@ -153,13 +153,11 @@ fn gen_copy_steps(
                 value: *byte,
                 is_code: None,
                 rwc,
-                rwc_inc_left: 0,
             },
             CopyStep {
                 value: *byte,
                 is_code: None,
                 rwc: state.block_ctx.rwc,
-                rwc_inc_left: 0,
             },
         ));
 
@@ -172,11 +170,6 @@ fn gen_copy_steps(
             idx,
             Word::from(*byte),
         )?;
-    }
-
-    for (read_step, write_step) in copy_steps.iter_mut() {
-        read_step.rwc_inc_left = state.block_ctx.rwc.0 as u64 - read_step.rwc.0 as u64;
-        write_step.rwc_inc_left = state.block_ctx.rwc.0 as u64 - write_step.rwc.0 as u64;
     }
 
     Ok(copy_steps)
@@ -472,7 +465,6 @@ mod log_tests {
             topic_count + // stack read for topics
             topic_count,
         ); // TxLogField::Topic write
-        let mut rwc_inc = copy_events[0].steps.first().unwrap().0.rwc_inc_left;
         for (idx, (read_step, write_step)) in copy_events[0].steps.iter().enumerate() {
             let (value, is_pad) = memory_data
                 .get(mstart + idx)
@@ -485,12 +477,8 @@ mod log_tests {
                     value,
                     is_code: None,
                     rwc: if !is_pad { rwc.inc_pre() } else { rwc },
-                    rwc_inc_left: rwc_inc,
                 }
             );
-            if !is_pad {
-                rwc_inc -= 1;
-            }
             // Write
             assert_eq!(
                 write_step,
@@ -498,10 +486,8 @@ mod log_tests {
                     value,
                     is_code: None,
                     rwc: rwc.inc_pre(),
-                    rwc_inc_left: rwc_inc,
                 }
             );
-            rwc_inc -= 1;
         }
     }
 }

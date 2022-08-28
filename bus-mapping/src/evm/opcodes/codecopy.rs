@@ -106,13 +106,11 @@ fn gen_copy_steps(
                 value,
                 is_code,
                 rwc: state.block_ctx.rwc,
-                rwc_inc_left: bytes_left - idx,
             },
             CopyStep {
                 value,
                 is_code: None,
                 rwc: state.block_ctx.rwc,
-                rwc_inc_left: bytes_left - idx,
             },
         ));
         state.memory_write(exec_step, (dst_addr + idx).into(), value)?;
@@ -287,7 +285,6 @@ mod codecopy_tests {
                     value,
                     is_code,
                     rwc,
-                    rwc_inc_left: (size - idx) as u64,
                 }
             );
             // Write
@@ -297,7 +294,6 @@ mod codecopy_tests {
                     value,
                     is_code: None,
                     rwc: rwc.inc_pre(),
-                    rwc_inc_left: (size - idx) as u64,
                 }
             );
         }
