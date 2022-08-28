@@ -102,15 +102,10 @@ fn gen_copy_steps(
         };
         // Read
         steps.push((
-            CopyStep {
-                value,
-                is_code,
-                rwc: state.block_ctx.rwc,
-            },
+            CopyStep { value, is_code },
             CopyStep {
                 value,
                 is_code: None,
-                rwc: state.block_ctx.rwc,
             },
         ));
         state.memory_write(exec_step, (dst_addr + idx).into(), value)?;
@@ -122,6 +117,8 @@ fn gen_copy_event(
     state: &mut CircuitInputStateRef,
     geth_step: &GethExecStep,
 ) -> Result<CopyEvent, Error> {
+    let rw_counter_start = state.block_ctx.rwc;
+
     let dst_offset = geth_step.stack.nth_last(0)?.as_u64();
     let code_offset = geth_step.stack.nth_last(1)?.as_u64();
     let length = geth_step.stack.nth_last(2)?.as_u64();
@@ -150,6 +147,7 @@ fn gen_copy_event(
         dst_id: NumberOrHash::Number(state.call()?.call_id),
         dst_addr: dst_offset,
         log_id: None,
+        rw_counter_start,
         steps: copy_steps,
     })
 }
@@ -273,27 +271,18 @@ mod codecopy_tests {
         assert_eq!(copy_events[0].dst_type, CopyDataType::Memory);
         assert!(copy_events[0].log_id.is_none());
 
-        let mut rwc = RWCounter(step.rwc.0 + 3);
         for (idx, (read_step, write_step)) in copy_events[0].steps.iter().enumerate() {
             let (value, is_code, is_pad) = code
                 .get(code_offset + idx)
                 .map_or((0, None, true), |e| (e.value, Some(e.is_code), false));
             // Read
-            assert_eq!(
-                read_step,
-                &CopyStep {
-                    value,
-                    is_code,
-                    rwc,
-                }
-            );
+            assert_eq!(read_step, &CopyStep { value, is_code });
             // Write
             assert_eq!(
                 write_step,
                 &CopyStep {
                     value,
                     is_code: None,
-                    rwc: rwc.inc_pre(),
                 }
             );
         }

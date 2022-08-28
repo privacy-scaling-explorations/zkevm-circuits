@@ -53,21 +53,19 @@ impl Opcode for Sha3 {
         )?;
 
         // Memory read operations
+        let rw_counter_start = state.block_ctx.rwc;
         let mut steps = Vec::with_capacity(size.as_usize());
         for (i, byte) in memory.iter().enumerate() {
             // Read step
-            let read_rwc = state.block_ctx.rwc;
             state.memory_read(&mut exec_step, (offset.as_usize() + i).into(), *byte)?;
             steps.push((
                 CopyStep {
                     value: *byte,
                     is_code: None,
-                    rwc: read_rwc,
                 },
                 CopyStep {
                     value: *byte,
                     is_code: None,
-                    rwc: state.block_ctx.rwc,
                 },
             ));
         }
@@ -82,6 +80,7 @@ impl Opcode for Sha3 {
             dst_type: CopyDataType::RlcAcc,
             dst_id: NumberOrHash::Number(call_id),
             log_id: None,
+            rw_counter_start,
             steps,
         });
 
@@ -259,7 +258,6 @@ pub mod sha3_tests {
         assert_eq!(copy_events.len(), 1);
         assert_eq!(copy_events[0].steps.len(), size);
 
-        let mut rwc = RWCounter(step.rwc.0 + 3); // 2 stack reads and 1 stack write.
         for (idx, (read_step, write_step)) in copy_events[0].steps.iter().enumerate() {
             let value = memory_view[idx];
             // read
@@ -268,7 +266,6 @@ pub mod sha3_tests {
                 &CopyStep {
                     value,
                     is_code: None,
-                    rwc: rwc.inc_pre(),
                 }
             );
             // write
@@ -277,7 +274,6 @@ pub mod sha3_tests {
                 &CopyStep {
                     value,
                     is_code: None,
-                    rwc,
                 }
             );
         }

@@ -145,19 +145,16 @@ fn gen_copy_steps(
         let addr = src_addr + idx as u64;
 
         // Read memory
-        let rwc = state.block_ctx.rwc;
         state.memory_read(exec_step, (addr as usize).into(), *byte)?;
 
         copy_steps.push((
             CopyStep {
                 value: *byte,
                 is_code: None,
-                rwc,
             },
             CopyStep {
                 value: *byte,
                 is_code: None,
-                rwc: state.block_ctx.rwc,
             },
         ));
 
@@ -180,6 +177,8 @@ fn gen_copy_event(
     geth_step: &GethExecStep,
     exec_step: &mut ExecStep,
 ) -> Result<CopyEvent, Error> {
+    let rw_counter_start = state.block_ctx.rwc;
+
     assert!(state.call()?.is_persistent, "Error: Call is not persistent");
     let memory_start = geth_step.stack.nth_last(0)?.as_u64();
     let msize = geth_step.stack.nth_last(1)?.as_usize();
@@ -197,6 +196,7 @@ fn gen_copy_event(
         dst_id: NumberOrHash::Number(state.tx_ctx.id()),
         dst_addr: 0,
         log_id: Some(state.tx_ctx.log_id as u64 + 1),
+        rw_counter_start,
         steps,
     })
 }
@@ -458,13 +458,6 @@ mod log_tests {
         assert_eq!(copy_events[0].dst_addr as usize, 0);
         assert_eq!(copy_events[0].log_id, Some(step.log_id as u64 + 1));
 
-        let mut rwc = RWCounter(
-            step.rwc.0 + // start of rwc
-            6 + // 2 stack reads + 4 call context reads
-            1 + // TxLogField::Address write
-            topic_count + // stack read for topics
-            topic_count,
-        ); // TxLogField::Topic write
         for (idx, (read_step, write_step)) in copy_events[0].steps.iter().enumerate() {
             let (value, is_pad) = memory_data
                 .get(mstart + idx)
@@ -476,7 +469,6 @@ mod log_tests {
                 &CopyStep {
                     value,
                     is_code: None,
-                    rwc: if !is_pad { rwc.inc_pre() } else { rwc },
                 }
             );
             // Write
@@ -485,7 +477,6 @@ mod log_tests {
                 &CopyStep {
                     value,
                     is_code: None,
-                    rwc: rwc.inc_pre(),
                 }
             );
         }

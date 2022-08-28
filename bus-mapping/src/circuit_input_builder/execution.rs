@@ -190,8 +190,6 @@ pub struct CopyStep {
     /// Optional field which is enabled only for the source being `bytecode`,
     /// and represents whether or not the byte is an opcode.
     pub is_code: Option<bool>,
-    /// Represents the current RW counter at this copy step.
-    pub rwc: RWCounter,
 }
 
 /// Defines an enum type that can hold either a number or a hash value.
@@ -225,6 +223,8 @@ pub struct CopyEvent {
     /// An optional field to hold the log ID in case of the destination being
     /// TxLog.
     pub log_id: Option<u64>,
+    /// Value of rw counter at start of this copy event
+    pub rw_counter_start: RWCounter,
     /// Represents the list of copy steps in this copy event.
     pub steps: Vec<(CopyStep, CopyStep)>,
 }

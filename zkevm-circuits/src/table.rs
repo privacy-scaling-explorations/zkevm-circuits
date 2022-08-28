@@ -827,6 +827,9 @@ impl CopyTable {
                 CopyDataType::RlcAcc => 0,
                 CopyDataType::Bytecode | CopyDataType::TxCalldata => unreachable!(),
             };
+            let rw_counter = u64::try_from(copy_event.rw_counter_start.0).unwrap()
+                + source_rw_increase
+                + destination_rw_increase;
             let rwc_inc_left = u64::try_from(copy_event.rw_counter_increase()).unwrap()
                 - source_rw_increase
                 - destination_rw_increase;
@@ -836,11 +839,11 @@ impl CopyTable {
                     is_first,
                     id,
                     addr,
-                    F::from(copy_event.src_addr_end), // src_addr_end
+                    F::from(copy_event.src_addr_end),
                     F::from(u64::try_from(copy_event.steps.len() * 2 - step_idx).unwrap() / 2), // bytes_left
-                    rlc_acc,                          // rlc_acc
-                    F::from(copy_step.rwc.0 as u64),  // rw_counter
-                    F::from(u64::try_from(rwc_inc_left).unwrap()),  // rw_inc_left
+                    rlc_acc,
+                    F::from(rw_counter),
+                    F::from(rwc_inc_left),  // rw_inc_left
                 ],
             ));
         }

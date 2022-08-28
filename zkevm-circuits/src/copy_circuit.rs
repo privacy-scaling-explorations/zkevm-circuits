@@ -558,13 +558,6 @@ impl<F: Field> CopyCircuit<F> {
             || Ok(F::from(is_pad)),
         )?;
         // rw_counter
-        region.assign_advice(
-            || format!("assign rw_counter {}", offset),
-            self.copy_table.rw_counter,
-            offset,
-            || Ok(F::from(copy_step.rwc.0 as u64)),
-        )?;
-        // rwc_inc_left
         let source_rw_increase = match copy_event.src_type {
             CopyDataType::Bytecode | CopyDataType::TxCalldata => 0,
             CopyDataType::Memory => {
@@ -581,6 +574,16 @@ impl<F: Field> CopyCircuit<F> {
             CopyDataType::RlcAcc => 0,
             CopyDataType::Bytecode | CopyDataType::TxCalldata => unreachable!(),
         };
+        let rw_counter = u64::try_from(copy_event.rw_counter_start.0).unwrap()
+            + source_rw_increase
+            + destination_rw_increase;
+        region.assign_advice(
+            || format!("assign rw_counter {}", offset),
+            self.copy_table.rw_counter,
+            offset,
+            || Ok(F::from(rw_counter)),
+        )?;
+        // rwc_inc_left
         let rwc_inc_left = u64::try_from(copy_event.rw_counter_increase()).unwrap()
             - source_rw_increase
             - destination_rw_increase;
@@ -935,9 +938,7 @@ mod tests {
             _ => (false, copy_event.steps[rand_idx].1.clone()),
         };
         match rng.gen::<f32>() {
-            // f if f < 0.25 => perturbed_step.addr = rng.gen(),
-            f if f < 0.5 => perturbed_step.value = rng.gen(),
-            _ => perturbed_step.rwc = RWCounter(rng.gen()),
+            _ => perturbed_step.value = rng.gen(),
         }
 
         if is_read_step {

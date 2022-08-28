@@ -117,7 +117,6 @@ fn gen_copy_steps(
     let mut copy_steps = Vec::with_capacity(bytes_left as usize);
     for idx in 0..bytes_left {
         let addr = src_addr + idx;
-        let rwc = state.block_ctx.rwc;
         let (value, is_pad) = if addr < src_addr_end {
             let byte =
                 state.call_ctx()?.call_data[(addr - state.call()?.call_data_offset) as usize];
@@ -143,12 +142,10 @@ fn gen_copy_steps(
             CopyStep {
                 value,
                 is_code: None,
-                rwc,
             },
             CopyStep {
                 value,
                 is_code: None,
-                rwc: state.block_ctx.rwc,
             },
         ));
         state.memory_write(exec_step, (dst_addr + idx).into(), value)?;
@@ -161,6 +158,7 @@ fn gen_copy_event(
     state: &mut CircuitInputStateRef,
     geth_step: &GethExecStep,
 ) -> Result<CopyEvent, Error> {
+    let rw_counter_start = state.block_ctx.rwc;
     let memory_offset = geth_step.stack.nth_last(0)?.as_u64();
     let data_offset = geth_step.stack.nth_last(1)?.as_u64();
     let length = geth_step.stack.nth_last(2)?.as_u64();
@@ -198,6 +196,7 @@ fn gen_copy_event(
         dst_id: NumberOrHash::Number(state.call()?.call_id),
         dst_addr: memory_offset,
         log_id: None,
+        rw_counter_start,
         steps: copy_steps,
     })
 }
@@ -403,7 +402,6 @@ mod calldatacopy_tests {
         );
         assert_eq!(copy_events[0].dst_addr as usize, dst_offset);
 
-        let mut rwc = RWCounter(step.rwc.0 + 6);
         for (idx, (read_step, write_step)) in copy_events[0].steps.iter().enumerate() {
             let (value, is_pad) = memory_a
                 .get(offset + call_data_offset + idx)
@@ -415,7 +413,6 @@ mod calldatacopy_tests {
                 &CopyStep {
                     is_code: None,
                     value,
-                    rwc: if !is_pad { rwc.inc_pre() } else { rwc },
                 }
             );
             // Write
@@ -424,7 +421,6 @@ mod calldatacopy_tests {
                 &CopyStep {
                     is_code: None,
                     value,
-                    rwc: rwc.inc_pre(),
                 }
             );
         }
@@ -617,7 +613,6 @@ mod calldatacopy_tests {
         assert_eq!(copy_events.len(), 1);
         assert_eq!(copy_events[0].steps.len(), size);
 
-        let mut rwc = RWCounter(step.rwc.0 + 5);
         for (idx, (read_step, write_step)) in copy_events[0].steps.iter().enumerate() {
             let (value, is_pad) = calldata
                 .get(offset as usize + idx)
@@ -629,7 +624,6 @@ mod calldatacopy_tests {
                 &CopyStep {
                     value,
                     is_code: None,
-                    rwc,
                 }
             );
             // write
@@ -638,7 +632,6 @@ mod calldatacopy_tests {
                 &CopyStep {
                     value,
                     is_code: None,
-                    rwc: rwc.inc_pre(),
                 }
             );
         }
