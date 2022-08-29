@@ -115,6 +115,7 @@ impl BlockContext {
             ],
             self.history_hashes
                 .iter()
+                .rev()
                 .enumerate()
                 .map(|(idx, hash)| {
                     [
@@ -126,7 +127,6 @@ impl BlockContext {
                         ),
                     ]
                 })
-                .rev()
                 .collect(),
         ]
         .concat()

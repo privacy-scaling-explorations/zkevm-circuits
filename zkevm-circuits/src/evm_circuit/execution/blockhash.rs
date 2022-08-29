@@ -166,8 +166,8 @@ mod test {
         } else {
             current_block_number - 256..current_block_number
         };
-        for _ in range {
-            history_hashes.push(U256::from(0xcafeu64));
+        for i in range {
+            history_hashes.push(U256::from(0xbeefcafeu64 + i));
         }
         let block: GethData = TestContext::<2, 1>::new(
             Some(history_hashes),
@@ -189,16 +189,24 @@ mod test {
         )
         .unwrap();
     }
+
     #[test]
-    fn blockhash_gadget_test() {
-        // valid range with small number
+    fn blockhash_gadget_simple() {
+        test_ok(0, 5);
+        test_ok(1, 5);
         test_ok(2, 5);
         test_ok(3, 5);
-        // invalid range with small number
+        test_ok(4, 5);
+        test_ok(5, 5);
         test_ok(6, 5);
-        // valid range with large number
+    }
+
+    #[test]
+    fn blockhash_gadget_large() {
+        test_ok(0xcafe - 256, 0xcafeu64);
+        test_ok(0xcafe - 255, 0xcafeu64);
         test_ok(0xcafe - 1, 0xcafeu64);
-        // invalid range with large number
+        test_ok(0xcafe, 0xcafeu64);
         test_ok(0xcafe + 1, 0xcafeu64);
     }
 }
