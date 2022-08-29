@@ -27,7 +27,7 @@ pub(crate) struct BlockHashGadget<F> {
     current_block_number: Cell<F>,
     block_hash: Word<F>,
     block_lt: LtGadget<F, N_BYTES_U64>,
-    diff_lt: LtGadget<F, 2>,
+    diff_lt: LtGadget<F, N_BYTES_U64>,
 }
 
 impl<F: Field> ExecutionGadget<F> for BlockHashGadget<F> {
@@ -55,7 +55,7 @@ impl<F: Field> ExecutionGadget<F> for BlockHashGadget<F> {
         let diff_lt = LtGadget::construct(
             cb,
             current_block_number.expr(),
-            256.expr() + from_bytes::expr(&block_number.cells),
+            257.expr() + from_bytes::expr(&block_number.cells),
         );
 
         let block_hash = cb.query_rlc();
@@ -117,6 +117,7 @@ impl<F: Field> ExecutionGadget<F> for BlockHashGadget<F> {
         let current_block_number = block.context.number;
         self.current_block_number
             .assign(region, offset, current_block_number.to_scalar())?;
+        let current_block_number: F = current_block_number.to_scalar().unwrap();
 
         self.block_hash.assign(
             region,
@@ -124,18 +125,14 @@ impl<F: Field> ExecutionGadget<F> for BlockHashGadget<F> {
             Some(block.rws[step.rw_indices[1]].stack_value().to_le_bytes()),
         )?;
 
-        self.block_lt.assign(
-            region,
-            offset,
-            block_number,
-            current_block_number.to_scalar().unwrap(),
-        )?;
+        self.block_lt
+            .assign(region, offset, block_number, current_block_number)?;
 
         self.diff_lt.assign(
             region,
             offset,
-            current_block_number.to_scalar().unwrap(),
-            block_number + F::from(256),
+            current_block_number,
+            block_number + F::from(257),
         )?;
 
         Ok(())
@@ -203,8 +200,8 @@ mod test {
 
     #[test]
     fn blockhash_gadget_large() {
+        test_ok(0xcafe - 257, 0xcafeu64);
         test_ok(0xcafe - 256, 0xcafeu64);
-        test_ok(0xcafe - 255, 0xcafeu64);
         test_ok(0xcafe - 1, 0xcafeu64);
         test_ok(0xcafe, 0xcafeu64);
         test_ok(0xcafe + 1, 0xcafeu64);
