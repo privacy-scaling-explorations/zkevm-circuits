@@ -29,6 +29,7 @@ mod address;
 mod begin_tx;
 mod bitwise;
 mod block_ctx;
+mod blockhash;
 mod byte;
 mod call;
 mod calldatacopy;
@@ -82,6 +83,7 @@ use address::AddressGadget;
 use begin_tx::BeginTxGadget;
 use bitwise::BitwiseGadget;
 use block_ctx::{BlockCtxU160Gadget, BlockCtxU256Gadget, BlockCtxU64Gadget};
+use blockhash::BlockHashGadget;
 use byte::ByteGadget;
 use call::CallGadget;
 use calldatacopy::CallDataCopyGadget;
@@ -200,7 +202,6 @@ pub(crate) struct ExecutionConfig<F> {
     sha3_gadget: Sha3Gadget<F>,
     shr_gadget: ShrGadget<F>,
     balance_gadget: DummyGadget<F, 1, 1, { ExecutionState::BALANCE }>,
-    blockhash_gadget: DummyGadget<F, 1, 1, { ExecutionState::BLOCKHASH }>,
     exp_gadget: DummyGadget<F, 2, 1, { ExecutionState::EXP }>,
     shl_gadget: DummyGadget<F, 2, 1, { ExecutionState::SHL }>,
     sar_gadget: DummyGadget<F, 2, 1, { ExecutionState::SAR }>,
@@ -220,6 +221,7 @@ pub(crate) struct ExecutionConfig<F> {
     sstore_gadget: SstoreGadget<F>,
     stop_gadget: StopGadget<F>,
     swap_gadget: SwapGadget<F>,
+    blockhash_gadget: BlockHashGadget<F>,
     block_ctx_u64_gadget: BlockCtxU64Gadget<F>,
     block_ctx_u160_gadget: BlockCtxU160Gadget<F>,
     block_ctx_u256_gadget: BlockCtxU256Gadget<F>,
@@ -925,10 +927,10 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::BLOCKCTXU64 => assign_exec_step!(self.block_ctx_u64_gadget),
             ExecutionState::BLOCKCTXU160 => assign_exec_step!(self.block_ctx_u160_gadget),
             ExecutionState::BLOCKCTXU256 => assign_exec_step!(self.block_ctx_u256_gadget),
+            ExecutionState::BLOCKHASH => assign_exec_step!(self.blockhash_gadget),
             ExecutionState::SELFBALANCE => assign_exec_step!(self.selfbalance_gadget),
             // dummy gadgets
             ExecutionState::BALANCE => assign_exec_step!(self.balance_gadget),
-            ExecutionState::BLOCKHASH => assign_exec_step!(self.blockhash_gadget),
             ExecutionState::EXP => assign_exec_step!(self.exp_gadget),
             ExecutionState::SHL => assign_exec_step!(self.shl_gadget),
             ExecutionState::SAR => assign_exec_step!(self.sar_gadget),
