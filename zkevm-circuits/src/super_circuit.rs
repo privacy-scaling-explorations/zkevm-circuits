@@ -49,7 +49,7 @@
 //!   - [ ] MPT Circuit
 
 use crate::state_circuit::StateCircuitConfig;
-use crate::tx_circuit::{self, TxCircuit, TxCircuitConfig};
+use crate::tx_circuit::{TxCircuit, TxCircuitConfig};
 
 use crate::bytecode_circuit::bytecode_unroller::{
     unroll, Config as BytecodeConfig, UnrolledBytecode,
@@ -98,6 +98,8 @@ pub struct SuperCircuit<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usiz
     /// Block witness. Usually derived via
     /// `evm_circuit::witness::block_convert`.
     pub block: Block<F>,
+    /// Inputs for the keccak circuit
+    pub keccak_inputs: Vec<Vec<u8>>,
     /// Passed down to the evm_circuit. Usually that will be
     /// `FixedTableTag::iter().collect()`.
     pub fixed_table_tags: Vec<FixedTableTag>,
@@ -244,20 +246,9 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
             .assign_block(&mut layouter, &self.block, self.block.randomness)?;
 
         // --- Keccak Table ---
-        let mut keccak_inputs = Vec::new();
-        // Lookups from TxCircuit
-        keccak_inputs.extend_from_slice(&tx_circuit::keccak_inputs(
-            &self.tx_circuit.txs,
-            self.block.context.chain_id.as_u64(),
-        )?);
-        // Lookups from BytecodeCircuit
-        for bytecode in self.block.bytecodes.values() {
-            keccak_inputs.push(bytecode.bytes.clone());
-        }
-        // Load Keccak Table
         config
             .keccak_table
-            .load(&mut layouter, keccak_inputs, self.block.randomness)?;
+            .load(&mut layouter, &self.keccak_inputs, self.block.randomness)?;
         // --- Copy Circuit ---
         config
             .copy_circuit
@@ -272,7 +263,10 @@ impl<const MAX_TXS: usize, const MAX_CALLDATA: usize> SuperCircuit<Fr, MAX_TXS, 
     ///
     /// Also, return with it the minimum required SRS degree for the circuit and
     /// the Public Inputs needed.
-    pub fn build(geth_data: GethData, rng: impl RngCore + Clone) -> (u32, Self, Vec<Vec<Fr>>) {
+    pub fn build(
+        geth_data: GethData,
+        rng: &mut (impl RngCore + Clone),
+    ) -> Result<(u32, Self, Vec<Vec<Fr>>), bus_mapping::Error> {
         let txs = geth_data
             .eth_block
             .transactions
@@ -286,6 +280,7 @@ impl<const MAX_TXS: usize, const MAX_CALLDATA: usize> SuperCircuit<Fr, MAX_TXS, 
         builder
             .handle_block(&geth_data.eth_block, &geth_data.geth_traces)
             .expect("could not handle block tx");
+        let keccak_inputs = builder.keccak_inputs()?;
         let mut block = block_convert(&builder.block, &builder.code_db);
 
         block.randomness = Fr::random(rng.clone());
@@ -326,12 +321,13 @@ impl<const MAX_TXS: usize, const MAX_CALLDATA: usize> SuperCircuit<Fr, MAX_TXS, 
             block,
             fixed_table_tags,
             tx_circuit,
+            keccak_inputs,
             // Instead of using 1 << k - NUM_BLINDING_ROWS, we use a much smaller number of enabled
             // rows for the Bytecode Circuit because otherwise it penalizes significantly the
             // MockProver verification time.
             bytecode_size: bytecodes_len + 64,
         };
-        (k, circuit, instance)
+        Ok((k, circuit, instance))
     }
 }
 
@@ -394,7 +390,7 @@ mod super_circuit_tests {
         block.sign(&wallets);
 
         let (k, circuit, instance) =
-            SuperCircuit::<_, 1, 32>::build(block, ChaCha20Rng::seed_from_u64(2));
+            SuperCircuit::<_, 1, 32>::build(block, &mut ChaCha20Rng::seed_from_u64(2)).unwrap();
         let prover = MockProver::run(k, &circuit, instance).unwrap();
         let res = prover.verify();
         if let Err(err) = res {

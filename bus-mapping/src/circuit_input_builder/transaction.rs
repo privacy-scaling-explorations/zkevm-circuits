@@ -3,7 +3,8 @@
 use std::collections::BTreeMap;
 
 use eth_types::evm_types::Memory;
-use eth_types::{Address, GethExecTrace, Word};
+use eth_types::Signature;
+use eth_types::{geth_types, Address, GethExecTrace, Word};
 use ethers_core::utils::get_contract_address;
 
 use crate::{
@@ -194,10 +195,30 @@ pub struct Transaction {
     pub value: Word,
     /// Input / Call Data
     pub input: Vec<u8>,
+    /// Signature
+    pub signature: Signature,
     /// Calls made in the transaction
     calls: Vec<Call>,
     /// Execution steps
     steps: Vec<ExecStep>,
+}
+
+impl From<&Transaction> for geth_types::Transaction {
+    fn from(tx: &Transaction) -> geth_types::Transaction {
+        geth_types::Transaction {
+            from: tx.from,
+            to: Some(tx.to),
+            nonce: Word::from(tx.nonce),
+            gas_limit: Word::from(tx.gas),
+            value: tx.value,
+            gas_price: tx.gas_price,
+            call_data: tx.input.clone().into(),
+            v: tx.signature.v,
+            r: tx.signature.r,
+            s: tx.signature.s,
+            ..Default::default()
+        }
+    }
 }
 
 impl Transaction {
@@ -265,6 +286,11 @@ impl Transaction {
             input: eth_tx.input.to_vec(),
             calls: vec![call],
             steps: Vec::new(),
+            signature: Signature {
+                v: eth_tx.v.as_u64(),
+                r: eth_tx.r,
+                s: eth_tx.s,
+            },
         })
     }
 

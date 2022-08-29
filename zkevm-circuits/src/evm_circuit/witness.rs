@@ -42,6 +42,8 @@ pub struct Block<F> {
     pub copy_events: Vec<CopyEvent>,
     /// Length to rw table rows in state circuit
     pub state_circuit_pad_to: usize,
+    /// Inputs to the SHA3 opcode
+    pub sha3_inputs: Vec<Vec<u8>>,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -1449,6 +1451,7 @@ pub fn block_convert(
             })
             .collect(),
         copy_events: block.copy_events.clone(),
+        sha3_inputs: block.sha3_inputs.clone(),
         ..Default::default()
     }
 }

@@ -187,16 +187,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2dabbe35f96fb9507f7330793dc490461b2962659ac5d427181e451a623751d1"
 
 [[package]]
-name = "bigint"
-version = "4.4.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c0e8c8a600052b52482eff2cf4d810e462fdff1f656ac1ecb6232132a1ed7def"
-dependencies = [
- "byteorder",
- "crunchy 0.1.6",
-]
-
-[[package]]
 name = "bincode"
 version = "1.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -454,12 +444,9 @@ dependencies = [
 
 [[package]]
 name = "cast"
-version = "0.2.7"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4c24dab4283a142afa2fdca129b80ad2c6284e073930f964c3a1293c225ee39a"
-dependencies = [
- "rustc_version 0.4.0",
-]
+checksum = "37b2a672a2cb129a2e41c10b1224bb368f9f37a2b16b612598138befd7b37eb5"
 
 [[package]]
 name = "cc"
@@ -713,9 +700,9 @@ dependencies = [
 
 [[package]]
 name = "criterion"
-version = "0.3.5"
+version = "0.3.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1604dafd25fba2fe2d5895a9da139f8dc9b319a5fe5354ca137cbbce4e178d10"
+checksum = "b01d6de93b2b6c65e17c634a26653a29d107b3c98c607c765bf38d041531cd8f"
 dependencies = [
  "atty",
  "cast",
@@ -739,9 +726,9 @@ dependencies = [
 
 [[package]]
 name = "criterion-plot"
-version = "0.4.4"
+version = "0.4.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d00996de9f2f7559f7f4dc286073197f83e92256a59ed395f9aac01fe717da57"
+checksum = "2673cc8207403546f45f5fd319a974b1e6983ad1a3ee7e6041650013be041876"
 dependencies = [
  "cast",
  "itertools",
@@ -791,12 +778,6 @@ dependencies = [
  "cfg-if 1.0.0",
  "lazy_static",
 ]
-
-[[package]]
-name = "crunchy"
-version = "0.1.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a2f4a431c5c9f662e1200b7c7f02c34e91361150e382089a8f2dec3ba680cbda"
 
 [[package]]
 name = "crunchy"
@@ -1192,15 +1173,22 @@ name = "eth-types"
 version = "0.1.0"
 dependencies = [
  "ethers-core",
- "ethers-providers",
  "ethers-signers",
+ "ff 0.11.1",
+ "group 0.11.0",
  "halo2_proofs 0.1.0-beta.1",
  "hex",
  "itertools",
  "lazy_static",
+ "libsecp256k1",
+ "num",
+ "num-bigint",
  "regex",
+ "secp256k1",
  "serde",
  "serde_json",
+ "sha3 0.10.1",
+ "subtle",
  "uint",
 ]
 
@@ -1226,7 +1214,7 @@ version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bfb684ac8fa8f6c5759f788862bb22ec6fe3cb392f6bfd08e3c64b603661e3f8"
 dependencies = [
- "crunchy 0.2.2",
+ "crunchy",
  "fixed-hash",
  "impl-rlp",
  "impl-serde",
@@ -1720,16 +1708,13 @@ dependencies = [
 name = "gadgets"
 version = "0.1.0"
 dependencies = [
- "array-init",
  "digest 0.7.6",
  "eth-types",
- "ff 0.11.1",
  "halo2_proofs 0.1.0-beta.1",
  "rand",
  "rand_xorshift",
  "sha3 0.7.3",
  "strum",
- "strum_macros",
 ]
 
 [[package]]
@@ -2306,7 +2291,7 @@ version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5be9b9bb642d8522a44d533eab56c16c738301965504753b03ad1de3425d5451"
 dependencies = [
- "crunchy 0.2.2",
+ "crunchy",
  "digest 0.9.0",
  "subtle",
 ]
@@ -3779,7 +3764,7 @@ version = "2.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2c9d3793400a45f954c52e73d068316d76b6f4e36977e3fcebb13a2721e80237"
 dependencies = [
- "crunchy 0.2.2",
+ "crunchy",
 ]
 
 [[package]]
@@ -4023,7 +4008,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "12f03af7ccf01dd611cc450a0d10dbc9b745770d096473e2faf0ca6e2d66d1e0"
 dependencies = [
  "byteorder",
- "crunchy 0.2.2",
+ "crunchy",
  "hex",
  "static_assertions",
 ]
@@ -4362,18 +4347,15 @@ name = "zkevm-circuits"
 version = "0.1.0"
 dependencies = [
  "array-init",
- "bigint",
  "bus-mapping",
  "criterion",
  "ctor",
- "digest 0.7.6",
  "ecc",
  "ecdsa 0.1.0",
  "env_logger",
  "eth-types",
  "ethers-core",
  "ethers-signers",
- "ff 0.11.1",
  "gadgets",
  "group 0.11.0",
  "halo2_proofs 0.1.0-beta.1",
@@ -4382,21 +4364,15 @@ dependencies = [
  "itertools",
  "keccak256",
  "lazy_static",
- "libsecp256k1",
  "log",
  "maingate",
  "mock",
- "num",
- "num-bigint",
- "paste",
  "pretty_assertions",
  "rand",
  "rand_chacha",
  "rand_xorshift",
  "secp256k1",
- "serde_json",
  "sha3 0.10.1",
  "strum",
  "strum_macros",
- "subtle",
 ]
