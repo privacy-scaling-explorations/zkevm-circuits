@@ -47,8 +47,7 @@ mod returndatasize_tests {
         bytecode,
         evm_types::{OpcodeId, StackAddress},
         geth_types::GethData,
-        word,
-        Word
+        word, Word,
     };
 
     use mock::test_ctx::{helpers::*, TestContext};
@@ -146,7 +145,11 @@ mod returndatasize_tests {
             },
             (
                 RW::WRITE,
-                &StackOp::new(call_id, StackAddress::from(1021), Word::from(return_data_size))
+                &StackOp::new(
+                    call_id,
+                    StackAddress::from(1021),
+                    Word::from(return_data_size)
+                )
             )
         );
     }

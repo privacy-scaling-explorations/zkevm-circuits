@@ -86,15 +86,12 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataSizeGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::evm_circuit::{test::{rand_bytes}};
-    use crate::{test_util::run_test_circuits};
+    use crate::evm_circuit::test::rand_bytes;
+    use crate::test_util::run_test_circuits;
     use eth_types::{bytecode, ToWord, Word};
-    use mock::test_ctx::{TestContext};
+    use mock::test_ctx::TestContext;
 
-    fn test_ok_internal(
-        return_data_offset: usize,
-        return_data_size: usize,
-    ) {
+    fn test_ok_internal(return_data_offset: usize, return_data_size: usize) {
         let (addr_a, addr_b) = (mock::MOCK_ACCOUNTS[0], mock::MOCK_ACCOUNTS[1]);
 
         let pushdata = rand_bytes(32);
