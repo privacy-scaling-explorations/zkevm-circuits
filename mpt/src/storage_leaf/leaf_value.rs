@@ -8,8 +8,8 @@ use std::marker::PhantomData;
 
 use crate::{
     helpers::{get_bool_constraint, key_len_lookup, range_lookups},
-    mpt::{FixedTableTag, MainCols, AccumulatorCols, DenoteCols},
-    param::{BRANCH_ROWS_NUM, KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH},
+    mpt::{FixedTableTag, AccumulatorCols, DenoteCols},
+    param::{BRANCH_ROWS_NUM, KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH}, columns::MainCols,
 };
 
 #[derive(Clone, Debug)]
@@ -29,7 +29,7 @@ impl<F: FieldExt> LeafValueChip<F> {
         q_not_first: Column<Fixed>,
         not_first_level: Column<Advice>,
         is_leaf_value: Column<Advice>,
-        s_main: MainCols,
+        s_main: MainCols<F>,
         keccak_table: [Column<Fixed>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
         /*
         - key_rlc_mult (accs.key.mult) to store key_rlc from previous row (to enable lookup)

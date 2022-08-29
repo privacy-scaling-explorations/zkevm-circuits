@@ -11,11 +11,11 @@ use std::marker::PhantomData;
 
 use crate::{
     helpers::{compute_rlc, range_lookups, key_len_lookup, get_is_extension_node},
-    mpt::{FixedTableTag, MainCols, AccumulatorCols},
+    mpt::{FixedTableTag, AccumulatorCols},
     param::{
         HASH_WIDTH,
         RLP_NUM, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS, IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS, IS_EXT_LONG_ODD_C16_POS, IS_EXT_LONG_ODD_C1_POS, EXTENSION_ROWS_NUM, BRANCH_ROWS_NUM,
-    },
+    }, columns::MainCols,
 };
 
 use super::BranchCols;
@@ -61,8 +61,8 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
         not_first_level: Column<Advice>, // to avoid rotating back when in the first branch (for key rlc)
         branch: BranchCols<F>,
         is_account_leaf_in_added_branch: Column<Advice>,
-        s_main: MainCols,
-        c_main: MainCols,
+        s_main: MainCols<F>,
+        c_main: MainCols<F>,
         accs: AccumulatorCols, // accs.key used first for account address, then for storage key
         fixed_table: [Column<Fixed>; 3],
         r_table: Vec<Expression<F>>,

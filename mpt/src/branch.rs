@@ -15,11 +15,11 @@ use std::marker::PhantomData;
 
 use crate::{
     helpers::{get_bool_constraint, range_lookups, get_is_extension_node, bytes_into_rlc},
-    mpt::{FixedTableTag, MainCols, DenoteCols, MPTConfig, ProofVariables},
+    mpt::{FixedTableTag, DenoteCols, MPTConfig, ProofVariables},
     param::{
         BRANCH_0_C_START, BRANCH_0_S_START, IS_BRANCH_C_PLACEHOLDER_POS,
         IS_BRANCH_S_PLACEHOLDER_POS, RLP_NUM, NIBBLES_COUNTER_POS, BRANCH_ROWS_NUM, BRANCH_0_KEY_POS, DRIFTED_POS, IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS, IS_EXT_LONG_ODD_C16_POS, IS_EXT_LONG_ODD_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS, S_RLP_START, S_START, C_RLP_START, C_START, HASH_WIDTH,
-    }, witness_row::MptWitnessRow, storage_leaf::StorageLeaf, account_leaf::AccountLeaf,
+    }, witness_row::MptWitnessRow, storage_leaf::StorageLeaf, account_leaf::AccountLeaf, columns::MainCols,
 };
 
 /*
@@ -119,8 +119,8 @@ impl<F: FieldExt> BranchConfig<F> {
         q_not_first: Column<Fixed>,
         not_first_level: Column<Advice>,
         is_account_leaf_in_added_branch: Column<Advice>,
-        s_main: MainCols,
-        c_main: MainCols,
+        s_main: MainCols<F>,
+        c_main: MainCols<F>,
         branch: BranchCols<F>,
         denoter: DenoteCols,
         fixed_table: [Column<Fixed>; 3],

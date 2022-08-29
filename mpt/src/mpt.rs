@@ -16,7 +16,7 @@ use crate::{
         RLP_NUM, IS_ACCOUNT_DELETE_MOD_POS, IS_NON_EXISTING_ACCOUNT_POS,
     },
     roots::RootsChip,
-    storage_root_in_account_leaf::StorageRootChip, account_leaf::{AccountLeafCols, AccountLeaf, account_leaf_key_in_added_branch::AccountLeafKeyInAddedBranchConfig, account_leaf_key::AccountLeafKeyConfig, account_leaf_nonce_balance::AccountLeafNonceBalanceConfig, account_leaf_storage_codehash::AccountLeafStorageCodehashConfig, account_non_existing::AccountNonExistingConfig}, storage_leaf::{StorageLeafCols, StorageLeaf, leaf_key_in_added_branch::LeafKeyInAddedBranchChip, leaf_key::LeafKeyChip, leaf_value::LeafValueChip}, witness_row::{MptWitnessRow, MptWitnessRowType}, columns::ProofTypeCols,
+    storage_root_in_account_leaf::StorageRootChip, account_leaf::{AccountLeafCols, AccountLeaf, account_leaf_key_in_added_branch::AccountLeafKeyInAddedBranchConfig, account_leaf_key::AccountLeafKeyConfig, account_leaf_nonce_balance::AccountLeafNonceBalanceConfig, account_leaf_storage_codehash::AccountLeafStorageCodehashConfig, account_non_existing::AccountNonExistingConfig}, storage_leaf::{StorageLeafCols, StorageLeaf, leaf_key_in_added_branch::LeafKeyInAddedBranchChip, leaf_key::LeafKeyChip, leaf_value::LeafValueChip}, witness_row::{MptWitnessRow, MptWitnessRowType}, columns::{ProofTypeCols, MainCols},
 };
 use crate::{
     param::{
@@ -55,13 +55,6 @@ use crate::{
 */
 
 // TODO: constraints for the length of key and address RLC to be 32 bytes long
-
-#[derive(Clone, Debug)]
-pub(crate) struct MainCols { // Main as opposed to other columns which are selectors and RLC accumulators.
-    pub(crate) rlp1: Column<Advice>,
-    pub(crate) rlp2: Column<Advice>,
-    pub(crate) bytes: [Column<Advice>; HASH_WIDTH],
-}
 
 #[derive(Clone, Debug)]
 pub(crate) struct AccumulatorPair {
@@ -118,8 +111,8 @@ pub struct MPTConfig<F> {
     pub(crate) inter_final_root: Column<Advice>,
     pub(crate) accumulators: AccumulatorCols,
     pub(crate) branch: BranchCols<F>,
-    pub(crate) s_main: MainCols,
-    pub(crate) c_main: MainCols,
+    pub(crate) s_main: MainCols<F>,
+    pub(crate) c_main: MainCols<F>,
     pub(crate) account_leaf: AccountLeafCols<F>,
     pub(crate) storage_leaf: StorageLeafCols<F>,
     pub(crate) denoter: DenoteCols,
@@ -261,24 +254,8 @@ impl<F: FieldExt> MPTConfig<F> {
         let storage_leaf = StorageLeafCols::new(meta);
         let branch = BranchCols::new(meta);
             
-        let s_main = MainCols {
-            rlp1: meta.advice_column(),
-            rlp2: meta.advice_column(),
-            bytes: (0..HASH_WIDTH)
-                .map(|_| meta.advice_column())
-                .collect::<Vec<_>>()
-                .try_into()
-                .unwrap(),
-        };
-        let c_main = MainCols {
-            rlp1: meta.advice_column(),
-            rlp2: meta.advice_column(),
-            bytes: (0..HASH_WIDTH)
-                .map(|_| meta.advice_column())
-                .collect::<Vec<_>>()
-                .try_into()
-                .unwrap(),
-        };
+        let s_main = MainCols::new(meta);
+        let c_main = MainCols::new(meta);
 
         let keccak_table: [Column<Fixed>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH] = (0
             ..KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH)

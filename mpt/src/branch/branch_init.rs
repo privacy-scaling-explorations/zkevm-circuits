@@ -5,7 +5,7 @@ use halo2_proofs::{
 use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
-use crate::{helpers::get_bool_constraint, mpt::{MainCols, AccumulatorCols}};
+use crate::{helpers::get_bool_constraint, mpt::{AccumulatorCols}, columns::MainCols};
 
 // BranchRLCInitChip verifies the random linear combination for the branch init
 // row. The rest of random linear combination is checked in branch_acc, the
@@ -19,7 +19,7 @@ impl<F: FieldExt> BranchInitConfig<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         q_enable: impl FnOnce(&mut VirtualCells<'_, F>) -> Expression<F>,
-        s_main: MainCols,
+        s_main: MainCols<F>,
         accs: AccumulatorCols,
         acc_r: F,
     ) -> Self {

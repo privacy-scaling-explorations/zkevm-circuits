@@ -11,8 +11,8 @@ use crate::{
         compute_rlc, get_bool_constraint, get_is_extension_node_one_nibble, key_len_lookup,
         mult_diff_lookup, range_lookups,
     },
-    mpt::{FixedTableTag, MainCols, AccumulatorPair, AccumulatorCols},
-    param::{IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, LEAF_DRIFTED_IND, BRANCH_ROWS_NUM, LEAF_KEY_S_IND, LEAF_KEY_C_IND},
+    mpt::{FixedTableTag, AccumulatorCols},
+    param::{IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, LEAF_DRIFTED_IND, BRANCH_ROWS_NUM, LEAF_KEY_S_IND, LEAF_KEY_C_IND}, columns::MainCols,
 };
 
 use crate::param::{
@@ -32,8 +32,8 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         q_enable: impl Fn(&mut VirtualCells<'_, F>) -> Expression<F> + Copy,
-        s_main: MainCols,
-        c_main: MainCols,
+        s_main: MainCols<F>,
+        c_main: MainCols<F>,
         accs: AccumulatorCols,
         drifted_pos: Column<Advice>,
         is_account_leaf_in_added_branch: Column<Advice>,

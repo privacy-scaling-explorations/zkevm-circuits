@@ -1,6 +1,7 @@
-use std::{convert::{TryFrom}, marker::PhantomData};
-use halo2_proofs::{circuit::Region, plonk::{Error, Advice, Column, ConstraintSystem}, arithmetic::FieldExt};
-use num_enum::TryFromPrimitive;
+use std::{marker::PhantomData, convert::TryInto};
+use halo2_proofs::{plonk::{Advice, Column, ConstraintSystem}, arithmetic::FieldExt};
+
+use crate::param::HASH_WIDTH;
 
 // This file contains columns that are not specific to any of account leaf, storage leaf, branch, or
 // extension node.
@@ -28,3 +29,25 @@ impl<F: FieldExt> ProofTypeCols<F> {
     }
 }
 
+#[derive(Clone, Debug)]
+pub(crate) struct MainCols<F> { // Main as opposed to other columns which are selectors and RLC accumulators.
+    pub(crate) rlp1: Column<Advice>,
+    pub(crate) rlp2: Column<Advice>,
+    pub(crate) bytes: [Column<Advice>; HASH_WIDTH],
+    _marker: PhantomData<F>,
+}
+
+impl<F: FieldExt> MainCols<F> {
+    pub(crate) fn new(meta: &mut ConstraintSystem<F>) -> Self {
+        Self {
+            rlp1: meta.advice_column(),
+            rlp2: meta.advice_column(),
+            bytes: (0..HASH_WIDTH)
+                .map(|_| meta.advice_column())
+                .collect::<Vec<_>>()
+                .try_into()
+                .unwrap(),
+            _marker: PhantomData,
+        }
+    }
+}

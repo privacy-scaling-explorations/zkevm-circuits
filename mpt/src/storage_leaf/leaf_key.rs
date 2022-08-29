@@ -8,11 +8,11 @@ use std::marker::PhantomData;
 
 use crate::{
     helpers::{compute_rlc, get_bool_constraint, key_len_lookup, mult_diff_lookup, range_lookups},
-    mpt::{FixedTableTag, MainCols, DenoteCols, AccumulatorCols},
+    mpt::{FixedTableTag, DenoteCols, AccumulatorCols},
     param::{
         BRANCH_ROWS_NUM, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, RLP_NUM,
         R_TABLE_LEN, HASH_WIDTH, IS_BRANCH_S_PLACEHOLDER_POS, IS_BRANCH_C_PLACEHOLDER_POS,
-    },
+    }, columns::MainCols,
 };
 
 #[derive(Clone, Debug)]
@@ -31,8 +31,8 @@ impl<F: FieldExt> LeafKeyChip<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         q_enable: impl Fn(&mut VirtualCells<'_, F>) -> Expression<F> + Copy,
-        s_main: MainCols,
-        c_main: MainCols,
+        s_main: MainCols<F>,
+        c_main: MainCols<F>,
         accs: AccumulatorCols,
         denoter: DenoteCols, // sel1 stores key_rlc_prev, sel2 stores key_rlc_mult_prev
         is_account_leaf_in_added_branch: Column<Advice>,

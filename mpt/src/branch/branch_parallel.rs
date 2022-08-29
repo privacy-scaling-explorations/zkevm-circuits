@@ -6,7 +6,7 @@ use halo2_proofs::{
 use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
-use crate::{helpers::{bytes_expr_into_rlc, key_len_lookup}, mpt::{MainCols}};
+use crate::{helpers::{bytes_expr_into_rlc, key_len_lookup}, columns::MainCols};
 
 use super::BranchCols;
 
@@ -27,7 +27,7 @@ impl<F: FieldExt> BranchParallelChip<F> {
         q_not_first: Column<Fixed>,
         branch: BranchCols<F>,
         mod_node_hash_rlc: Column<Advice>,
-        main: MainCols,
+        main: MainCols<F>,
         sel: Column<Advice>,
         is_node_hashed: Column<Advice>,
         acc_r: F,

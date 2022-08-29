@@ -5,7 +5,7 @@ use halo2_proofs::{
 use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
-use crate::{param::{HASH_WIDTH, R_TABLE_LEN}, helpers::{mult_diff_lookup, key_len_lookup}, mpt::{MainCols, AccumulatorPair}};
+use crate::{param::{HASH_WIDTH, R_TABLE_LEN}, helpers::{mult_diff_lookup, key_len_lookup}, mpt::{AccumulatorPair}, columns::MainCols};
 
 // BranchRLCChip verifies the random linear combination for the branch which is
 // then used to check the hash of a branch.
@@ -18,7 +18,7 @@ impl<F: FieldExt> BranchRLCConfig<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         q_enable: impl Fn(&mut VirtualCells<'_, F>) -> Expression<F>,
-        main: MainCols,
+        main: MainCols<F>,
         branch_acc: AccumulatorPair,
         is_node_hashed: Column<Advice>,
         node_mult_diff: Column<Advice>,
