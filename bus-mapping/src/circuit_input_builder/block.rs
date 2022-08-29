@@ -65,6 +65,8 @@ pub struct Block {
     pub txs: Vec<Transaction>,
     /// Copy events in this block.
     pub copy_events: Vec<CopyEvent>,
+    /// Inputs to the SHA3 opcode
+    pub sha3_inputs: Vec<Vec<u8>>,
     code: HashMap<Hash, Vec<u8>>,
 }
 
@@ -99,6 +101,7 @@ impl Block {
             txs: Vec::new(),
             copy_events: Vec::new(),
             code: HashMap::new(),
+            sha3_inputs: Vec::new(),
         })
     }
 

@@ -227,6 +227,10 @@ impl<F: Field> BaseConstraintBuilder<F> {
             .clone()
             .into_iter()
             .map(|(name, constraint)| (name, selector.clone() * constraint))
+            .filter(|(name, constraint)| {
+                self.validate_degree(constraint.degree(), name);
+                true
+            })
             .collect()
     }
 }

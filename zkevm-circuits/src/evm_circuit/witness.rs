@@ -42,6 +42,8 @@ pub struct Block<F> {
     pub copy_events: Vec<CopyEvent>,
     /// Length to rw table rows in state circuit
     pub state_circuit_pad_to: usize,
+    /// Inputs to the SHA3 opcode
+    pub sha3_inputs: Vec<Vec<u8>>,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -115,6 +117,7 @@ impl BlockContext {
             ],
             self.history_hashes
                 .iter()
+                .rev()
                 .enumerate()
                 .map(|(idx, hash)| {
                     [
@@ -1264,6 +1267,7 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::CALLER => ExecutionState::CALLER,
                     OpcodeId::CALLVALUE => ExecutionState::CALLVALUE,
                     OpcodeId::EXTCODEHASH => ExecutionState::EXTCODEHASH,
+                    OpcodeId::BLOCKHASH => ExecutionState::BLOCKHASH,
                     OpcodeId::TIMESTAMP | OpcodeId::NUMBER | OpcodeId::GASLIMIT => {
                         ExecutionState::BLOCKCTXU64
                     }
@@ -1287,7 +1291,6 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::RETURN | OpcodeId::REVERT => ExecutionState::RETURN,
                     // dummy ops
                     OpcodeId::BALANCE => dummy!(ExecutionState::BALANCE),
-                    OpcodeId::BLOCKHASH => dummy!(ExecutionState::BLOCKHASH),
                     OpcodeId::EXP => dummy!(ExecutionState::EXP),
                     OpcodeId::SHL => dummy!(ExecutionState::SHL),
                     OpcodeId::SAR => dummy!(ExecutionState::SAR),
@@ -1448,6 +1451,7 @@ pub fn block_convert(
             })
             .collect(),
         copy_events: block.copy_events.clone(),
+        sha3_inputs: block.sha3_inputs.clone(),
         ..Default::default()
     }
 }
