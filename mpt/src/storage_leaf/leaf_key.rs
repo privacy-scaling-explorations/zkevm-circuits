@@ -11,7 +11,7 @@ use crate::{
     mpt::{FixedTableTag},
     param::{
         BRANCH_ROWS_NUM, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, RLP_NUM,
-        R_TABLE_LEN, HASH_WIDTH, IS_BRANCH_S_PLACEHOLDER_POS, IS_BRANCH_C_PLACEHOLDER_POS,
+        R_TABLE_LEN, HASH_WIDTH, IS_BRANCH_S_PLACEHOLDER_POS, IS_BRANCH_C_PLACEHOLDER_POS, NIBBLES_COUNTER_POS,
     }, columns::{MainCols, AccumulatorCols, DenoteCols},
 };
 
@@ -44,6 +44,8 @@ impl<F: FieldExt> LeafKeyChip<F> {
         let one = Expression::Constant(F::one());
         let c32 = Expression::Constant(F::from(32));
         let c48 = Expression::Constant(F::from(48));
+        let c64 = Expression::Constant(F::from(64));
+        let c128 = Expression::Constant(F::from(128));
 
         let mut rot_into_init = -19;
         let mut rot_into_account = -1;
@@ -109,6 +111,10 @@ impl<F: FieldExt> LeafKeyChip<F> {
                 * (is_short + is_long) // activate if is_short or is_long
                 * (rlc - acc.clone())));
             
+            /*
+            `last_level` and `one_nibble` cases have one RLP byte (`s_rlp1`) and one byte (`s_rlp2`)
+            where it is 32 (for `last_level`) or `48 + last_nibble` (for `one_nibble`).
+            */
             constraints.push(("Leaf key acc last level or one nibble",
                 q_enable
                 * (last_level + one_nibble)
@@ -175,7 +181,7 @@ impl<F: FieldExt> LeafKeyChip<F> {
         // can check the key (where value in trie is being set at key) RLC is
         // the same as in key_rlc column.
         meta.create_gate(
-            "Storage leaf key RLC (leaf not in first level, branch not placeholder) ",
+            "Storage leaf key RLC & nibbles count (leaf not in first level, branch not placeholder) ",
             |meta| {
                 let q_enable = q_enable(meta);
                 let mut constraints = vec![];
@@ -261,6 +267,9 @@ impl<F: FieldExt> LeafKeyChip<F> {
 
                 // No need to distinguish between sel1 and sel2 here as it was already
                 // when computing key_rlc_acc_short.
+
+                // Short example:
+                // [226,160,59,138,106,70,105,186,37,13,38[227,32,161,160,187,239,170,18,88,1,56,188,38,60,149,117,120,38,223,78,36,235,129,201,170,170,170,170,170,170,170,170,170,170,170,170]
                 constraints.push((
                     "Key RLC short",
                     q_enable.clone()
@@ -308,6 +317,9 @@ impl<F: FieldExt> LeafKeyChip<F> {
 
                 // No need to distinguish between sel1 and sel2 here as it was already
                 // when computing key_rlc_acc_long.
+
+         		// Long example:
+                // [248,67,160,59,138,106,70,105,186,37,13,38,205,122,69,158,202,157,33,95,131,7,227,58,235,229,3,121,188,90,54,23,236,52,68,161,160,...
                 constraints.push((
                     "Key RLC long",
                     q_enable.clone()
@@ -317,13 +329,55 @@ impl<F: FieldExt> LeafKeyChip<F> {
                         * is_long.clone(),
                 ));
 
+                // Last level example:
+		        // [227,32,161,160,187,239,170,18,88,1,56,188,38,60,149,117,120,38,223,78,36,235,129,201,170,170,170,170,170,170,170,170,170,170,170,170]
                 constraints.push((
                     "Key RLC last level or one nibble",
                     q_enable.clone()
                         * (key_rlc_acc_start - key_rlc.clone()) // key_rlc has already been computed
                         * (one.clone() - is_branch_placeholder.clone())
                         * (one.clone() - is_leaf_in_first_level.clone())
-                        * (last_level + one_nibble),
+                        * (last_level.clone() + one_nibble.clone()),
+                ));
+
+                // One nibble example short:
+                // [194,48,1]
+
+                // One nibble example long:
+                // [227,48,161,160,187,239,170,18,88,1,56,188,38,60,149,117,120,38,223,78,36,235,129,201,170,170,170,170,170,170,170,170,170,170,170,170]
+
+                // Nibbles count:
+                let nibbles_count = meta.query_advice(
+                    s_main.bytes[NIBBLES_COUNTER_POS - RLP_NUM],
+                    Rotation(rot - 1),
+                );
+
+                let s_rlp2 = meta.query_advice(s_main.rlp2, Rotation::cur());
+                let leaf_nibbles_long = ((s_advice0.clone() - c128.clone() - one.clone()) * (one.clone() + one.clone())) * sel2.clone() +
+                    ((s_advice0.clone() - c128.clone()) * (one.clone() + one.clone()) - one.clone()) * sel1.clone();
+                let leaf_nibbles_short = ((s_rlp2.clone() - c128.clone() - one.clone()) * (one.clone() + one.clone())) * sel2.clone() +
+                    ((s_rlp2.clone() - c128.clone()) * (one.clone() + one.clone()) - one.clone()) * sel1.clone();
+                let leaf_nibbles_last_level = Expression::Constant(F::zero()); 
+                let leaf_nibbles_one_nibble = one.clone(); 
+
+                let mut leaf_nibbles = leaf_nibbles_long * is_long + leaf_nibbles_short * is_short
+                    + leaf_nibbles_last_level * last_level + leaf_nibbles_one_nibble * one_nibble;
+
+                // leaf_nibbles = leaf_nibbles - one.clone();
+
+                 /* 
+                Checking the total number of nibbles is to prevent having short addresses
+                which could lead to a root node which would be shorter than 32 bytes and thus not hashed. That
+                means the trie could be manipulated to reach a desired root.
+                */
+                constraints.push((
+                    "Total number of storage address nibbles is 64 (not first level, not branch placeholder)",
+                    q_enable
+                        * (one.clone() - is_branch_placeholder.clone())
+                        * (one.clone() - is_leaf_in_first_level.clone())
+                        // Note: we need to check the number of nibbles being 64 for non_existing_account_proof too
+                        // (even if the address being checked here might is the address of the wrong leaf)
+                        * (nibbles_count.clone() + leaf_nibbles.clone() - c64.clone()),
                 ));
 
                 constraints
