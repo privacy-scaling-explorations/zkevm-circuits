@@ -212,7 +212,9 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
                 let mut key_mult = key_mult_start.clone() * r_table[0].clone() * c16;
                 key_mult = key_mult + key_mult_start.clone() * c1.clone(); // set to key_mult_start if sel2, stays key_mult if sel1
 
-                // If c1 = 1, we have 32 in s_main.bytes[0].
+                /*
+                If there is an even number of nibbles stored in a leaf, `s_advice1` needs to be 32.
+                */
                 constraints.push((
                     "Account leaf key acc s_advice1",
                     q_enable.clone()

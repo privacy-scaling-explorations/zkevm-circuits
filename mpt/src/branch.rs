@@ -470,33 +470,38 @@ impl<F: FieldExt> BranchConfig<F> {
                 meta.query_advice(branch.is_last_child, Rotation::prev());
             let is_last_branch_child_cur = meta.query_advice(branch.is_last_child, Rotation::cur());
 
-            // If we have branch child, we can only have branch child or branch init in the
-            // previous row.
+            /*
+            If we have  branch child, we can only have branch child or branch init in the previous row.
+            */
             constraints.push((
-                "before branch children",
+                "Before branch child",
                 q_not_first.clone()
                     * is_branch_child_cur.clone()
                     * (is_branch_child_prev.clone() - one.clone())
                     * (is_branch_init_prev.clone() - one.clone()),
             ));
 
-            // If we have is_branch_init in the previous row, we have
-            // is_branch_child = 1 in the current row.
+            /*
+            If we have `is_branch_init` in the previous row, we have `is_branch_child = 1` in the current row.
+            */
             constraints.push((
-                "first branch children 1",
+                "is_branch_child branch is_branch_init",
                 q_not_first.clone()
                     * is_branch_init_prev.clone()
                     * (is_branch_child_cur.clone() - one.clone()), // is_branch_child has to be 1
             ));
-            // We could have only one constraint using sum, but then we would need
-            // to limit node_index (to prevent values like -1). Now, node_index is
-            // limited by ensuring its first value is 0, its last value is 15,
-            // and it's increasing by 1.
-            // If we have is_branch_init in the previous row, we have
-            // node_index = 0 in the current row.
+
+            /*
+            We could have only one constraint using sum, but then we would need
+            to limit `node_index` (to prevent values like -1). Now, `node_index` is
+            limited by ensuring its first value is 0, its last value is 15,
+            and it is being increased by 1.
+            If we have `is_branch_init` in the previous row, we have
+            `node_index = 0` in the current row.
+            */
             let node_index_cur = meta.query_advice(branch.node_index, Rotation::cur());
             constraints.push((
-                "first branch children 2",
+                "node_index = 0 after is_branch_init",
                 q_not_first.clone()
                     * is_branch_init_prev.clone()
                     * node_index_cur.clone(), // node_index has to be 0

@@ -84,7 +84,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
         // Note: differently as in storage leaf value (see empty_trie there), the placeholder
         // leaf never appears in the first level here, because there is always
         // at least a genesis account.
-        meta.create_gate("account leaf storage codehash", |meta| {
+        meta.create_gate("Account leaf storage codehash", |meta| {
             let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
             let q_enable = q_not_first.clone()
                 * meta.query_advice(is_account_leaf_storage_codehash, Rotation::cur());

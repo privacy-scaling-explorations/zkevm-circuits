@@ -203,7 +203,7 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
         //  Note: there is no need to check key_rlc_mult as it is not used after this row.
 
         meta.create_gate(
-            "Account leaf address RLC (leaf not in first level, branch not placeholder)",
+            "Account leaf address RLC & nibbles count (leaf not in first level, branch not placeholder)",
             |meta| {
                 let q_enable = q_enable(meta);
                 let mut constraints = vec![];
@@ -359,7 +359,7 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
             },
         );
 
-        meta.create_gate("Account leaf address RLC (leaf in first level)", |meta| {
+        meta.create_gate("Account leaf address RLC & nibbles count (leaf in first level)", |meta| {
             let q_enable = q_enable(meta);
             let mut constraints = vec![];
 
@@ -515,7 +515,7 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
         to Leaf S `accs.acc_c.rlc` column. So when add nibbles to compute the key RLC (address RLC)
         of the account, we start with `accs.acc_c.rlc` value from the current row.
         */
-        meta.create_gate("Account leaf address RLC (after placeholder)", |meta| {
+        meta.create_gate("Account leaf address RLC & nibbles count (after placeholder)", |meta| {
             let q_enable = q_enable(meta);
             let mut constraints = vec![];
 

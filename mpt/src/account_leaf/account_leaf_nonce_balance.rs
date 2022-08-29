@@ -293,7 +293,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
             balance is long.
             */
             constraints.push((
-                "balance RLC long",
+                "Balance RLC long",
                 q_enable.clone() * is_balance_long.clone() * (balance_value_long_rlc.clone() - balance_stored.clone()),
             ));
 
@@ -303,7 +303,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
             balance is short.
             */
             constraints.push((
-                "balance RLC short",
+                "Balance RLC short",
                 q_enable.clone() * (one.clone() - is_balance_long.clone()) * (c_advices0_cur.clone() - balance_stored.clone()),
             ));
 
@@ -369,7 +369,13 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
             expr = expr + balance_rlc * acc_mult_after_nonce.clone();
 
             let acc = meta.query_advice(accs.acc_s.rlc, Rotation::cur());
-            constraints.push(("leaf nonce balance acc", q_enable.clone() * (expr - acc)));
+            /*
+            Computed RLC after nonce balance row is the same as the stored RLC value. 
+            */
+            constraints.push((
+                "Leaf nonce balance RLC",
+                q_enable.clone() * (expr - acc)
+            ));
 
             let acc_mult_final = meta.query_advice(accs.acc_s.mult, Rotation::cur());
 
@@ -413,7 +419,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
             `rlc_after_nonce + 135 * mult_tmp * mult_diff_nonce + 28 + mult_tmp * mult_diff_nonce * r + ... `
             */
             constraints.push((
-                "Leaf nonce acc mult (nonce long)",
+                "Leaf nonce RLC mult (nonce long)",
                 q_enable.clone()
                     * is_nonce_long.clone()
                     * (acc_mult_after_nonce.clone()
@@ -427,7 +433,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
             to be taken into account.
             */
             constraints.push((
-                "Leaf nonce acc mult (nonce short)",
+                "Leaf nonce RLC mult (nonce short)",
                 q_enable.clone()
                     * (one.clone() - is_nonce_long.clone())
                     * (acc_mult_after_nonce.clone() - acc_mult_prev.clone() * r_table[4].clone()), // r_table[4] because of s_rlp1, s_rlp2, c_rlp1, c_rlp2, and 1 for nonce_len = 1
@@ -446,7 +452,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
             the next row (this is why there is `r^l` instead of `r^{l-1}`).
             */
             constraints.push((
-                "Leaf balance acc mult (balance long)",
+                "Leaf balance RLC mult (balance long)",
                 q_enable.clone()
                     * is_balance_long.clone()
                     * (acc_mult_final.clone()
@@ -458,7 +464,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
             multiplier changes only by factor `r`.
             */
             constraints.push((
-                "Leaf balance acc mult (balance short)",
+                "Leaf balance RLC mult (balance short)",
                 q_enable.clone()
                     * (one.clone() - is_balance_long.clone())
                     * (acc_mult_final.clone()

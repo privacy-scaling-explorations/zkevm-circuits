@@ -110,7 +110,7 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
             while the gate below checks the key RLC accumulated in
             branches/extensions and leaf key).
             */
-            constraints.push(("Leaf key intermediate RLC", q_enable.clone()
+            constraints.push(("Account leaf key intermediate RLC", q_enable.clone()
                 * (is_branch_s_placeholder + is_branch_c_placeholder) // drifted leaf appears only when there is a placeholder branch
                 * (expr - acc)));
 
