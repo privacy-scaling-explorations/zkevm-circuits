@@ -100,3 +100,38 @@ impl<F: FieldExt> AccumulatorCols<F> {
         }
     }
 }
+
+/*
+Columns that denote what kind of a row it is. These columns are used in different columns for
+different purposes (as opposed to for example branch.is_child - having dedicated columns simplifies
+ensuring the order of rows is corrrect, like branch.is_init appears only once and is followed
+by branch.is_child ... ). For example, columns sel1, sel2 are used for denoting whether
+the branch child is at modified node or whether the storage leaf is in short or long RLP format.
+*/
+#[derive(Clone, Debug)]
+pub(crate) struct DenoteCols<F> {
+    // sel1 and sel2 in branch children: denote whether there is no leaf at is_modified (when value
+    // is added or deleted from trie - but no branch is added or turned into leaf)
+    // sel1 and sel2 in storage leaf key: key_rlc_prev and key_rlc_mult_prev
+    // sel1 and sel2 in storage leaf value (only when leaf without branch as otherwise this info is
+    // in the branch above): whether leaf is just a placeholder
+    // sel1 and sel2 in account leaf key specifies whether nonce / balance are short / long (check
+    // nonce balance row: offset - 1)
+    pub(crate) sel1: Column<Advice>, // TODO: check LeafKeyChip where sel1 stores key_rlc_prev, sel2 stores key_rlc_mult_prev
+    pub(crate) sel2: Column<Advice>,
+    pub(crate) is_node_hashed_s: Column<Advice>,
+    pub(crate) is_node_hashed_c: Column<Advice>,
+    _marker: PhantomData<F>,
+}
+
+impl<F: FieldExt> DenoteCols<F> {
+    pub(crate) fn new(meta: &mut ConstraintSystem<F>) -> Self {
+        Self {
+            sel1: meta.advice_column(),
+            sel2: meta.advice_column(),
+            is_node_hashed_s: meta.advice_column(),
+            is_node_hashed_c: meta.advice_column(),
+            _marker: PhantomData,
+        }
+    }
+}

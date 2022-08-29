@@ -9,11 +9,11 @@ use std::marker::PhantomData;
 
 use crate::{
     helpers::{compute_rlc, get_bool_constraint, key_len_lookup, mult_diff_lookup, range_lookups},
-    mpt::{FixedTableTag, ProofVariables, MPTConfig, DenoteCols},
+    mpt::{FixedTableTag, ProofVariables, MPTConfig},
     param::{
         ACCOUNT_LEAF_KEY_C_IND, ACCOUNT_LEAF_KEY_S_IND, ACCOUNT_LEAF_NONCE_BALANCE_C_IND,
         ACCOUNT_LEAF_NONCE_BALANCE_S_IND, HASH_WIDTH, ACCOUNT_NON_EXISTING_IND, S_START, C_START,
-    }, columns::{ProofTypeCols, MainCols, AccumulatorCols},
+    }, columns::{ProofTypeCols, MainCols, AccumulatorCols, DenoteCols},
 };
 
 /*
@@ -66,7 +66,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
         c_main: MainCols<F>,
         accs: AccumulatorCols<F>, // accs.acc_c.rlc contains mult_diff_nonce; accs.key.mult for mult_diff_balance
         r_table: Vec<Expression<F>>,
-        denoter: DenoteCols,
+        denoter: DenoteCols<F>,
         fixed_table: [Column<Fixed>; 3],
         is_s: bool,
     ) -> Self {

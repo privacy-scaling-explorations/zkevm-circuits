@@ -8,8 +8,8 @@ use std::marker::PhantomData;
 
 use crate::{
     helpers::{get_bool_constraint, key_len_lookup, range_lookups},
-    mpt::{FixedTableTag, DenoteCols},
-    param::{BRANCH_ROWS_NUM, KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH}, columns::{MainCols, AccumulatorCols},
+    mpt::{FixedTableTag},
+    param::{BRANCH_ROWS_NUM, KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH}, columns::{MainCols, AccumulatorCols, DenoteCols},
 };
 
 #[derive(Clone, Debug)]
@@ -37,7 +37,7 @@ impl<F: FieldExt> LeafValueChip<F> {
         TODO: check whether some other column can be used instead of mult_diff
         */
         accs: AccumulatorCols<F>,
-        denoter: DenoteCols,
+        denoter: DenoteCols<F>,
         is_account_leaf_in_added_branch: Column<Advice>,
         is_branch_placeholder: Column<Advice>,
         is_s: bool,

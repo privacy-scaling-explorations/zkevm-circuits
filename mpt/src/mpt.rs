@@ -16,7 +16,7 @@ use crate::{
         RLP_NUM, IS_ACCOUNT_DELETE_MOD_POS, IS_NON_EXISTING_ACCOUNT_POS,
     },
     roots::RootsChip,
-    storage_root_in_account_leaf::StorageRootChip, account_leaf::{AccountLeafCols, AccountLeaf, account_leaf_key_in_added_branch::AccountLeafKeyInAddedBranchConfig, account_leaf_key::AccountLeafKeyConfig, account_leaf_nonce_balance::AccountLeafNonceBalanceConfig, account_leaf_storage_codehash::AccountLeafStorageCodehashConfig, account_non_existing::AccountNonExistingConfig}, storage_leaf::{StorageLeafCols, StorageLeaf, leaf_key_in_added_branch::LeafKeyInAddedBranchChip, leaf_key::LeafKeyChip, leaf_value::LeafValueChip}, witness_row::{MptWitnessRow, MptWitnessRowType}, columns::{ProofTypeCols, MainCols, AccumulatorCols},
+    storage_root_in_account_leaf::StorageRootChip, account_leaf::{AccountLeafCols, AccountLeaf, account_leaf_key_in_added_branch::AccountLeafKeyInAddedBranchConfig, account_leaf_key::AccountLeafKeyConfig, account_leaf_nonce_balance::AccountLeafNonceBalanceConfig, account_leaf_storage_codehash::AccountLeafStorageCodehashConfig, account_non_existing::AccountNonExistingConfig}, storage_leaf::{StorageLeafCols, StorageLeaf, leaf_key_in_added_branch::LeafKeyInAddedBranchChip, leaf_key::LeafKeyChip, leaf_value::LeafValueChip}, witness_row::{MptWitnessRow, MptWitnessRowType}, columns::{ProofTypeCols, MainCols, AccumulatorCols, DenoteCols},
 };
 use crate::{
     param::{
@@ -58,28 +58,6 @@ use crate::{
 
 // TODO: check whether sel1, sel2 are sometimes used for accumulated values and fix it.
 
-/*
-Columns that denote what kind of a row it is. These columns are used in different columns for
-different purposes (as opposed to for example branch.is_child - having dedicated columns simplifies
-ensuring the order of rows is corrrect, like branch.is_init appears only once and is followed
-by branch.is_child ... ). For example, columns sel1, sel2 are used for denoting whether
-the branch child is at modified node or whether the storage leaf is in short or long RLP format.
-*/
-#[derive(Clone, Debug)]
-pub(crate) struct DenoteCols {
-    // sel1 and sel2 in branch children: denote whether there is no leaf at is_modified (when value
-    // is added or deleted from trie - but no branch is added or turned into leaf)
-    // sel1 and sel2 in storage leaf key: key_rlc_prev and key_rlc_mult_prev
-    // sel1 and sel2 in storage leaf value (only when leaf without branch as otherwise this info is
-    // in the branch above): whether leaf is just a placeholder
-    // sel1 and sel2 in account leaf key specifies whether nonce / balance are short / long (check
-    // nonce balance row: offset - 1)
-    pub(crate) sel1: Column<Advice>, // TODO: check LeafKeyChip where sel1 stores key_rlc_prev, sel2 stores key_rlc_mult_prev
-    pub(crate) sel2: Column<Advice>,
-    pub(crate) is_node_hashed_s: Column<Advice>,
-    pub(crate) is_node_hashed_c: Column<Advice>,
-}
-
 #[derive(Clone, Debug)]
 pub struct MPTConfig<F> {
     pub(crate) proof_type: ProofTypeCols<F>,
@@ -94,7 +72,7 @@ pub struct MPTConfig<F> {
     pub(crate) c_main: MainCols<F>,
     pub(crate) account_leaf: AccountLeafCols<F>,
     pub(crate) storage_leaf: StorageLeafCols<F>,
-    pub(crate) denoter: DenoteCols,
+    pub(crate) denoter: DenoteCols<F>,
     pub(crate) acc_r: F,
     r_table: Vec<Expression<F>>,
     keccak_table: [Column<Fixed>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
@@ -270,12 +248,7 @@ impl<F: FieldExt> MPTConfig<F> {
         // but we don't want acc to be multiplied by mult_r when row[i] = 0 where
         // the stream already ended and 0s are only to fulfill the row.
 
-        let denoter = DenoteCols {
-            sel1: meta.advice_column(),
-            sel2: meta.advice_column(),
-            is_node_hashed_s: meta.advice_column(),
-            is_node_hashed_c: meta.advice_column(),
-        };
+        let denoter = DenoteCols::new(meta);
  
         let address_rlc = meta.advice_column();
         let counter = meta.advice_column();
