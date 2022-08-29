@@ -294,7 +294,7 @@ impl Transaction {
         })
     }
 
-    /// Wether this [`Transaction`] is a create one
+    /// Whether this [`Transaction`] is a create one
     pub fn is_create(&self) -> bool {
         self.calls[0].is_create()
     }
