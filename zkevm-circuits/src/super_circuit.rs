@@ -240,11 +240,6 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
             &bytecodes,
             self.block.randomness,
         )?;
-        // --- Copy Circuit ---
-        config
-            .copy_circuit
-            .assign_block(&mut layouter, &self.block, self.block.randomness)?;
-
         // --- Keccak Table ---
         config
             .keccak_table
