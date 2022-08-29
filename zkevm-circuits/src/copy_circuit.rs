@@ -537,21 +537,21 @@ impl<F: Field> CopyCircuit<F> {
             || format!("assign is_pad {}", offset),
             self.is_pad,
             offset,
-            || Ok(F::from(copy_step.is_pad)),
+            || Value::known(F::from(copy_step.is_pad)),
         )?;
         // rw_counter
         region.assign_advice(
             || format!("assign rw_counter {}", offset),
             self.copy_table.rw_counter,
             offset,
-            || Ok(F::from(copy_step.rwc.0 as u64)),
+            || Value::known(F::from(copy_step.rwc.0 as u64)),
         )?;
         // rwc_inc_left
         region.assign_advice(
             || format!("assign rwc_inc_left {}", offset),
             self.copy_table.rwc_inc_left,
             offset,
-            || Ok(F::from(copy_step.rwc_inc_left)),
+            || Value::known(F::from(copy_step.rwc_inc_left)),
         )?;
         // tag binary number chip
         tag_chip.assign(region, offset, &copy_step.tag)?;
@@ -562,14 +562,14 @@ impl<F: Field> CopyCircuit<F> {
                 || format!("assign src_addr_end {}", offset),
                 self.copy_table.src_addr_end,
                 offset,
-                || Ok(F::from(copy_event.src_addr_end)),
+                || Value::known(F::from(copy_event.src_addr_end)),
             )?;
             // bytes_left
             region.assign_advice(
                 || format!("assign bytes_left {}", offset),
                 self.copy_table.bytes_left,
                 offset,
-                || Ok(F::from(bytes_left)),
+                || Value::known(F::from(bytes_left)),
             )?;
             // lt chip
             lt_chip.assign(

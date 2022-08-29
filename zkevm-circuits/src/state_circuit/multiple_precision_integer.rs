@@ -71,7 +71,7 @@ impl Config<Address, N_LIMBS_ACCOUNT_ADDRESS> {
                 || format!("limb[{}] in address mpi", i),
                 self.limbs[i],
                 offset,
-                || Ok(F::from(limb as u64)),
+                || Value::known(F::from(limb as u64)),
             )?;
         }
         Ok(())
@@ -90,7 +90,7 @@ impl Config<u32, N_LIMBS_RW_COUNTER> {
                 || format!("limb[{}] in u32 mpi", i),
                 self.limbs[i],
                 offset,
-                || Ok(F::from(limb as u64)),
+                || Value::known(F::from(limb as u64)),
             )?;
         }
         Ok(())

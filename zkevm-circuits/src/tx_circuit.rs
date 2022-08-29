@@ -29,7 +29,7 @@ use std::marker::PhantomData;
 use subtle::CtOption;
 
 pub use group::{Curve, Group};
-pub use secp256k1::Secp256k1Affine;
+pub use halo2_proofs::halo2_curves::secp256::Secp256k1Affine;
 pub use sign_verify::{POW_RAND_SIZE, VERIF_HEIGHT};
 
 lazy_static! {
@@ -189,9 +189,24 @@ impl<F: Field> TxCircuitConfig<F> {
         index: usize,
         value: F,
     ) -> Result<AssignedCell<F, F>, Error> {
-        region.assign_advice(|| "tx_id", self.tx_id, offset, || Ok(F::from(tx_id as u64)))?;
-        region.assign_advice(|| "tag", self.tag, offset, || Ok(F::from(tag as u64)))?;
-        region.assign_advice(|| "index", self.index, offset, || Ok(F::from(index as u64)))?;
+        region.assign_advice(
+            || "tx_id",
+            self.tx_id,
+            offset,
+            || Value::known(F::from(tx_id as u64)),
+        )?;
+        region.assign_advice(
+            || "tag",
+            self.tag,
+            offset,
+            || Value::known(F::from(tag as u64)),
+        )?;
+        region.assign_advice(
+            || "index",
+            self.index,
+            offset,
+            || Value::known(F::from(index as u64)),
+        )?;
         region.assign_advice(|| "value", self.value, offset, || Ok(value))
     }
 }

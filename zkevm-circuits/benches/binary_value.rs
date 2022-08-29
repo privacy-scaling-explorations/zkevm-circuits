@@ -120,7 +120,7 @@ impl<F: FieldExt, const LOOKUP: bool> Config<F, LOOKUP> {
                         || "binary table",
                         self.binary_table,
                         idx,
-                        || Ok(F::from(idx as u64)),
+                        || Value::known(F::from(idx as u64)),
                     )?;
                 }
                 Ok(())

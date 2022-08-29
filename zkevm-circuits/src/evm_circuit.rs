@@ -94,7 +94,7 @@ impl<F: Field> EvmCircuit<F> {
                         || "",
                         self.byte_table[0],
                         offset,
-                        || Ok(F::from(offset as u64)),
+                        || Value::known(F::from(offset as u64)),
                     )?;
                 }
 

@@ -521,7 +521,7 @@ impl<F: Field, const MAX_VERIF: usize> SignVerifyChip<F, MAX_VERIF> {
                 || format!("pk x byte {}", i),
                 config.pk[0][i],
                 offset,
-                || Ok(F::from(*byte as u64)),
+                || Value::known(F::from(*byte as u64)),
             )?;
         }
         for (i, byte) in pk_le[32..].iter().enumerate() {
@@ -529,7 +529,7 @@ impl<F: Field, const MAX_VERIF: usize> SignVerifyChip<F, MAX_VERIF> {
                 || format!("pk y byte {}", i),
                 config.pk[1][i],
                 offset,
-                || Ok(F::from(*byte as u64)),
+                || Value::known(F::from(*byte as u64)),
             )?;
         }
 
@@ -546,7 +546,7 @@ impl<F: Field, const MAX_VERIF: usize> SignVerifyChip<F, MAX_VERIF> {
                 || format!("pk_hash byte {}", i),
                 config.pk_hash[i],
                 offset,
-                || Ok(F::from(*byte as u64)),
+                || Value::known(F::from(*byte as u64)),
             )?;
         }
 
@@ -562,7 +562,7 @@ impl<F: Field, const MAX_VERIF: usize> SignVerifyChip<F, MAX_VERIF> {
                 || format!("msg_hash byte {}", i),
                 config.msg_hash[i],
                 offset,
-                || Ok(F::from(*byte as u64)),
+                || Value::known(F::from(*byte as u64)),
             )?;
         }
 

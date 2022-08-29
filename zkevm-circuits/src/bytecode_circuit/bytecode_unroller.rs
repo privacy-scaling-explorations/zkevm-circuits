@@ -505,7 +505,7 @@ impl<F: Field> Config<F> {
             || format!("assign q_enable {}", offset),
             self.q_enable,
             offset,
-            || Ok(F::from(enable as u64)),
+            || Value::known(F::from(enable as u64)),
         )?;
 
         // q_first
@@ -513,7 +513,7 @@ impl<F: Field> Config<F> {
             || format!("assign q_first {}", offset),
             self.q_first,
             offset,
-            || Ok(F::from((offset == 0) as u64)),
+            || Value::known(F::from((offset == 0) as u64)),
         )?;
 
         // q_last
@@ -571,7 +571,7 @@ impl<F: Field> Config<F> {
                             || format!("Push table assign {} {}", name, byte),
                             *column,
                             byte,
-                            || Ok(F::from(*value)),
+                            || Value::known(F::from(*value)),
                         )?;
                     }
                 }

@@ -665,7 +665,7 @@ impl<F: Field> KeccakBitConfig<F> {
                 || format!("assign state bit {} {}", idx, offset),
                 *column,
                 offset,
-                || Ok(F::from(*bit as u64)),
+                || Value::known(F::from(*bit as u64)),
             )?;
         }
 
@@ -675,7 +675,7 @@ impl<F: Field> KeccakBitConfig<F> {
                 || format!("assign theta c bit {} {}", idx, offset),
                 *column,
                 offset,
-                || Ok(F::from(*bit as u64)),
+                || Value::known(F::from(*bit as u64)),
             )?;
         }
 
@@ -685,7 +685,7 @@ impl<F: Field> KeccakBitConfig<F> {
                 || format!("assign absorb bits {} {}", idx, offset),
                 *column,
                 offset,
-                || Ok(F::from(*bit as u64)),
+                || Value::known(F::from(*bit as u64)),
             )?;
         }
 
@@ -700,7 +700,7 @@ impl<F: Field> KeccakBitConfig<F> {
                 || format!("assign padding selector {} {}", idx, offset),
                 *column,
                 offset,
-                || Ok(F::from(*is_padding as u64)),
+                || Value::known(F::from(*is_padding as u64)),
             )?;
         }
 
@@ -721,7 +721,7 @@ impl<F: Field> KeccakBitConfig<F> {
                 || format!("assign round constant bit {} {}", *pos, offset),
                 *column,
                 offset,
-                || Ok(F::from(((ROUND_CST[round] >> *pos) & 1) as u64)),
+                || Value::known(F::from(((ROUND_CST[round] >> *pos) & 1) as u64)),
             )?;
         }
 
@@ -748,7 +748,7 @@ impl<F: Field> KeccakBitConfig<F> {
                             || "theta c output",
                             self.theta_c_table[idx + 1],
                             offset,
-                            || Ok(F::from(*input & 1)),
+                            || Value::known(F::from(*input & 1)),
                         )?;
                     }
 
@@ -756,7 +756,7 @@ impl<F: Field> KeccakBitConfig<F> {
                         || "theta c input",
                         self.theta_c_table[0],
                         offset,
-                        || Ok(F::from(compressed_value)),
+                        || Value::known(F::from(compressed_value)),
                     )?;
                 }
                 Ok(())

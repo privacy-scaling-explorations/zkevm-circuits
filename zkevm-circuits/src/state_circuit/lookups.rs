@@ -109,7 +109,7 @@ impl<F: Field> Chip<F> {
                             || format!("assign {} in u{} fixed column", i, exponent),
                             column,
                             i,
-                            || Ok(F::from(i as u64)),
+                            || Value::known(F::from(i as u64)),
                         )?;
                     }
                     Ok(())
@@ -129,7 +129,7 @@ impl<F: Field> Chip<F> {
                         },
                         self.config.call_context_field_tag,
                         field_tag as usize,
-                        || Ok(F::from(field_tag as u64)),
+                        || Value::known(F::from(field_tag as u64)),
                     )?;
                 }
                 Ok(())

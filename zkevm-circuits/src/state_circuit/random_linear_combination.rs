@@ -42,7 +42,7 @@ impl<const N: usize> Config<N> {
                 || format!("byte[{}] in rlc", i),
                 self.bytes[i],
                 offset,
-                || Ok(F::from(byte as u64)),
+                || Value::known(F::from(byte as u64)),
             )?;
         }
         Ok(())
