@@ -66,27 +66,6 @@ impl Opcode for Return {
             );
         }
 
-        state.call_context_write(
-            &mut exec_step,
-            state.call()?.call_id,
-            CallContextField::LastCalleeId,
-            state.call()?.call_id.into(),
-        );
-
-        state.call_context_write(
-            &mut exec_step,
-            state.caller()?.call_id,
-            CallContextField::LastCalleeReturnDataOffset,
-            offset.into(),
-        );
-
-        state.call_context_write(
-            &mut exec_step,
-            state.caller()?.call_id,
-            CallContextField::LastCalleeReturnDataLength,
-            length.into(),
-        );
-
         state.handle_return(&geth_steps[0])?;
         Ok(vec![exec_step])
     }
