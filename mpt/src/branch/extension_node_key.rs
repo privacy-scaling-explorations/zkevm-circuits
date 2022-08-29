@@ -11,12 +11,14 @@ use std::marker::PhantomData;
 
 use crate::{
     helpers::{compute_rlc, range_lookups, key_len_lookup, get_is_extension_node},
-    mpt::{FixedTableTag, MainCols, BranchCols, AccumulatorCols},
+    mpt::{FixedTableTag, MainCols, AccumulatorCols},
     param::{
         HASH_WIDTH,
         RLP_NUM, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS, IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS, IS_EXT_LONG_ODD_C16_POS, IS_EXT_LONG_ODD_C1_POS, EXTENSION_ROWS_NUM, BRANCH_ROWS_NUM,
     },
 };
+
+use super::BranchCols;
 
 #[derive(Clone, Debug)]
 pub(crate) struct ExtensionNodeKeyConfig {}
@@ -57,7 +59,7 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
         meta: &mut ConstraintSystem<F>,
         q_not_first: Column<Fixed>,
         not_first_level: Column<Advice>, // to avoid rotating back when in the first branch (for key rlc)
-        branch: BranchCols,
+        branch: BranchCols<F>,
         is_account_leaf_in_added_branch: Column<Advice>,
         s_main: MainCols,
         c_main: MainCols,

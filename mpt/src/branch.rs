@@ -15,7 +15,7 @@ use std::marker::PhantomData;
 
 use crate::{
     helpers::{get_bool_constraint, range_lookups, get_is_extension_node, bytes_into_rlc},
-    mpt::{FixedTableTag, MainCols, BranchCols, DenoteCols, MPTConfig, ProofVariables},
+    mpt::{FixedTableTag, MainCols, DenoteCols, MPTConfig, ProofVariables},
     param::{
         BRANCH_0_C_START, BRANCH_0_S_START, IS_BRANCH_C_PLACEHOLDER_POS,
         IS_BRANCH_S_PLACEHOLDER_POS, RLP_NUM, NIBBLES_COUNTER_POS, BRANCH_ROWS_NUM, BRANCH_0_KEY_POS, DRIFTED_POS, IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS, IS_EXT_LONG_ODD_C16_POS, IS_EXT_LONG_ODD_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS, S_RLP_START, S_START, C_RLP_START, C_START, HASH_WIDTH,
@@ -72,6 +72,42 @@ pub(crate) struct Branch {
 }
 
 #[derive(Clone, Debug)]
+pub(crate) struct BranchCols<F> {
+    pub(crate) is_init: Column<Advice>,
+    pub(crate) is_child: Column<Advice>,
+    pub(crate) is_last_child: Column<Advice>,
+    pub(crate) node_index: Column<Advice>,
+    pub(crate) is_modified: Column<Advice>,   // whether this branch node is modified
+    pub(crate) modified_node: Column<Advice>, // index of the modified node
+    pub(crate) is_at_drifted_pos: Column<Advice>, // needed when leaf is turned into branch
+    pub(crate) drifted_pos: Column<Advice>,   /* needed when leaf is turned into branch - first nibble of
+                                    * the key stored in a leaf (because the existing leaf will
+                                    * jump to this position in added branch) */
+    pub(crate) is_extension_node_s: Column<Advice>, /* contains extension node key (s_advices) and hash of
+                                          * the branch (c_advices) */
+    pub(crate) is_extension_node_c: Column<Advice>,
+    _marker: PhantomData<F>,
+}
+
+impl<F: FieldExt> BranchCols<F> {
+    pub(crate) fn new(meta: &mut ConstraintSystem<F>) -> Self {
+        Self {
+            is_init : meta.advice_column(),
+            is_child : meta.advice_column(),
+            is_last_child : meta.advice_column(),
+            node_index : meta.advice_column(),
+            is_modified : meta.advice_column(),
+            modified_node : meta.advice_column(),
+            is_at_drifted_pos : meta.advice_column(),
+            drifted_pos : meta.advice_column(),
+            is_extension_node_s : meta.advice_column(),
+            is_extension_node_c : meta.advice_column(),
+            _marker: PhantomData,
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
 pub(crate) struct BranchConfig<F> {
     _marker: PhantomData<F>,
 }
@@ -85,7 +121,7 @@ impl<F: FieldExt> BranchConfig<F> {
         is_account_leaf_in_added_branch: Column<Advice>,
         s_main: MainCols,
         c_main: MainCols,
-        branch: BranchCols,
+        branch: BranchCols<F>,
         denoter: DenoteCols,
         fixed_table: [Column<Fixed>; 3],
     ) -> Self {

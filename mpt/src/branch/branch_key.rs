@@ -8,7 +8,9 @@ use std::marker::PhantomData;
 use crate::{param::{
     IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS, IS_EXT_LONG_ODD_C16_POS,
     IS_EXT_LONG_ODD_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS, RLP_NUM, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS,
-}, mpt::{MainCols, BranchCols, AccumulatorPair}};
+}, mpt::{MainCols, AccumulatorPair}};
+
+use super::BranchCols;
 
 #[derive(Clone, Debug)]
 pub(crate) struct BranchKeyConfig<F> {
@@ -25,7 +27,7 @@ impl<F: FieldExt> BranchKeyConfig<F> {
         q_not_first: Column<Fixed>,
         not_first_level: Column<Advice>, /* to avoid rotating back when in the first branch (for
                                           * key rlc) */
-        branch: BranchCols,
+        branch: BranchCols<F>,
         is_account_leaf_in_added_branch: Column<Advice>,
         s_main: MainCols,
         acc_pair: AccumulatorPair, // used first for account address, then for storage key

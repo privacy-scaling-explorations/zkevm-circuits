@@ -9,11 +9,11 @@ use std::marker::PhantomData;
 
 use crate::{
     helpers::{compute_rlc, get_bool_constraint, key_len_lookup, mult_diff_lookup, range_lookups},
-    mpt::{FixedTableTag, MainCols, ProofTypeCols, ProofVariables, MPTConfig, AccumulatorCols, DenoteCols},
+    mpt::{FixedTableTag, MainCols, ProofVariables, MPTConfig, AccumulatorCols, DenoteCols},
     param::{
         ACCOUNT_LEAF_KEY_C_IND, ACCOUNT_LEAF_KEY_S_IND, ACCOUNT_LEAF_NONCE_BALANCE_C_IND,
         ACCOUNT_LEAF_NONCE_BALANCE_S_IND, HASH_WIDTH, ACCOUNT_NON_EXISTING_IND, S_START, C_START,
-    },
+    }, columns::ProofTypeCols,
 };
 
 /*
@@ -60,7 +60,7 @@ pub(crate) struct AccountLeafNonceBalanceConfig<F> {
 impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
-        proof_type: ProofTypeCols,
+        proof_type: ProofTypeCols<F>,
         q_enable: impl Fn(&mut VirtualCells<'_, F>) -> Expression<F> + Copy,
         s_main: MainCols,
         c_main: MainCols,

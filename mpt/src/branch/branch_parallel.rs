@@ -6,7 +6,9 @@ use halo2_proofs::{
 use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
-use crate::{helpers::{bytes_expr_into_rlc, key_len_lookup}, mpt::{MainCols, BranchCols}};
+use crate::{helpers::{bytes_expr_into_rlc, key_len_lookup}, mpt::{MainCols}};
+
+use super::BranchCols;
 
 #[derive(Clone, Debug)]
 pub(crate) struct BranchParallelConfig {}
@@ -23,7 +25,7 @@ impl<F: FieldExt> BranchParallelChip<F> {
         meta: &mut ConstraintSystem<F>,
         q_enable: Column<Fixed>,
         q_not_first: Column<Fixed>,
-        branch: BranchCols,
+        branch: BranchCols<F>,
         mod_node_hash_rlc: Column<Advice>,
         main: MainCols,
         sel: Column<Advice>,

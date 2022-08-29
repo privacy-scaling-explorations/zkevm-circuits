@@ -7,12 +7,12 @@ use std::marker::PhantomData;
 
 use crate::{
     helpers::range_lookups,
-    mpt::{FixedTableTag, MainCols, ProofTypeCols, MPTConfig, ProofVariables, DenoteCols, AccumulatorCols},
+    mpt::{FixedTableTag, MainCols, MPTConfig, ProofVariables, DenoteCols, AccumulatorCols},
     param::{
         ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND, ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND, BRANCH_ROWS_NUM,
         EXTENSION_ROWS_NUM, IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS,
         KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH, RLP_NUM, ACCOUNT_NON_EXISTING_IND, S_START, C_START, HASH_WIDTH,
-    },
+    }, columns::ProofTypeCols,
 };
 
 /*
@@ -62,7 +62,7 @@ pub(crate) struct AccountLeafStorageCodehashConfig<F> {
 impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
-        proof_type: ProofTypeCols,
+        proof_type: ProofTypeCols<F>,
         inter_root: Column<Advice>,
         q_not_first: Column<Fixed>,
         not_first_level: Column<Advice>,

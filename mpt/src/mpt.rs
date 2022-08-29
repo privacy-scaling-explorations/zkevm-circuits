@@ -9,14 +9,14 @@ use pairing::arithmetic::FieldExt;
 use std::convert::{TryInto};
 
 use crate::{
-    branch::{BranchConfig, branch_hash_in_parent::BranchHashInParentConfig, branch_parallel::BranchParallelChip, branch_key::BranchKeyConfig, branch_rlc::BranchRLCConfig, branch_init::BranchInitConfig, extension_node::ExtensionNodeChip, extension_node_key::ExtensionNodeKeyChip, Branch},
+    branch::{BranchConfig, branch_hash_in_parent::BranchHashInParentConfig, branch_parallel::BranchParallelChip, branch_key::BranchKeyConfig, branch_rlc::BranchRLCConfig, branch_init::BranchInitConfig, extension_node::ExtensionNodeChip, extension_node_key::ExtensionNodeKeyChip, Branch, BranchCols},
     helpers::{get_is_extension_node, bytes_into_rlc},
     param::{
         IS_BALANCE_MOD_POS, IS_NONCE_MOD_POS, IS_STORAGE_MOD_POS,
         RLP_NUM, IS_ACCOUNT_DELETE_MOD_POS, IS_NON_EXISTING_ACCOUNT_POS,
     },
     roots::RootsChip,
-    storage_root_in_account_leaf::StorageRootChip, account_leaf::{AccountLeafCols, AccountLeaf, account_leaf_key_in_added_branch::AccountLeafKeyInAddedBranchConfig, account_leaf_key::AccountLeafKeyConfig, account_leaf_nonce_balance::AccountLeafNonceBalanceConfig, account_leaf_storage_codehash::AccountLeafStorageCodehashConfig, account_non_existing::AccountNonExistingConfig}, storage_leaf::{StorageLeafCols, StorageLeaf, leaf_key_in_added_branch::LeafKeyInAddedBranchChip, leaf_key::LeafKeyChip, leaf_value::LeafValueChip}, witness_row::{MptWitnessRow, MptWitnessRowType},
+    storage_root_in_account_leaf::StorageRootChip, account_leaf::{AccountLeafCols, AccountLeaf, account_leaf_key_in_added_branch::AccountLeafKeyInAddedBranchConfig, account_leaf_key::AccountLeafKeyConfig, account_leaf_nonce_balance::AccountLeafNonceBalanceConfig, account_leaf_storage_codehash::AccountLeafStorageCodehashConfig, account_non_existing::AccountNonExistingConfig}, storage_leaf::{StorageLeafCols, StorageLeaf, leaf_key_in_added_branch::LeafKeyInAddedBranchChip, leaf_key::LeafKeyChip, leaf_value::LeafValueChip}, witness_row::{MptWitnessRow, MptWitnessRowType}, columns::ProofTypeCols,
 };
 use crate::{
     param::{
@@ -57,36 +57,10 @@ use crate::{
 // TODO: constraints for the length of key and address RLC to be 32 bytes long
 
 #[derive(Clone, Debug)]
-pub(crate) struct ProofTypeCols {
-    pub(crate) is_storage_mod: Column<Advice>,
-    pub(crate) is_nonce_mod: Column<Advice>,
-    pub(crate) is_balance_mod: Column<Advice>,
-    pub(crate) is_account_delete_mod: Column<Advice>,
-    pub(crate) is_non_existing_account_proof: Column<Advice>,
-}
-
-#[derive(Clone, Debug)]
 pub(crate) struct MainCols { // Main as opposed to other columns which are selectors and RLC accumulators.
     pub(crate) rlp1: Column<Advice>,
     pub(crate) rlp2: Column<Advice>,
     pub(crate) bytes: [Column<Advice>; HASH_WIDTH],
-}
-
-#[derive(Clone, Debug)]
-pub(crate) struct BranchCols {
-    pub(crate) is_init: Column<Advice>,
-    pub(crate) is_child: Column<Advice>,
-    pub(crate) is_last_child: Column<Advice>,
-    pub(crate) node_index: Column<Advice>,
-    pub(crate) is_modified: Column<Advice>,   // whether this branch node is modified
-    pub(crate) modified_node: Column<Advice>, // index of the modified node
-    pub(crate) is_at_drifted_pos: Column<Advice>, // needed when leaf is turned into branch
-    pub(crate) drifted_pos: Column<Advice>,   /* needed when leaf is turned into branch - first nibble of
-                                    * the key stored in a leaf (because the existing leaf will
-                                    * jump to this position in added branch) */
-    pub(crate) is_extension_node_s: Column<Advice>, /* contains extension node key (s_advices) and hash of
-                                          * the branch (c_advices) */
-    pub(crate) is_extension_node_c: Column<Advice>,
 }
 
 #[derive(Clone, Debug)]
@@ -136,14 +110,14 @@ pub(crate) struct DenoteCols {
 
 #[derive(Clone, Debug)]
 pub struct MPTConfig<F> {
-    pub(crate) proof_type: ProofTypeCols,
+    pub(crate) proof_type: ProofTypeCols<F>,
     pub(crate) q_enable: Column<Fixed>,
     pub(crate) q_not_first: Column<Fixed>, // not first row
     pub(crate) not_first_level: Column<Advice>,
     pub(crate) inter_start_root: Column<Advice>,
     pub(crate) inter_final_root: Column<Advice>,
     pub(crate) accumulators: AccumulatorCols,
-    pub(crate) branch: BranchCols,
+    pub(crate) branch: BranchCols<F>,
     pub(crate) s_main: MainCols,
     pub(crate) c_main: MainCols,
     pub(crate) account_leaf: AccountLeafCols<F>,
@@ -282,31 +256,11 @@ impl<F: FieldExt> MPTConfig<F> {
         // s_mod_node_hash_rlc and c_mod_node_hash_rlc), so we can choose the
         // rotations smartly to have at least as possible of them
 
-        let proof_type = ProofTypeCols {
-            is_storage_mod: meta.advice_column(),
-            is_nonce_mod: meta.advice_column(),
-            is_balance_mod: meta.advice_column(),
-            is_account_delete_mod: meta.advice_column(),
-            is_non_existing_account_proof: meta.advice_column(),
-        };
-
+        let proof_type = ProofTypeCols::new(meta);
         let account_leaf = AccountLeafCols::new(meta);
-
         let storage_leaf = StorageLeafCols::new(meta);
-
-        let branch = BranchCols {
-            is_init: meta.advice_column(),
-            is_child: meta.advice_column(),
-            is_last_child: meta.advice_column(),
-            node_index: meta.advice_column(),
-            is_modified: meta.advice_column(),
-            modified_node: meta.advice_column(),
-            is_at_drifted_pos: meta.advice_column(),
-            drifted_pos: meta.advice_column(),
-            is_extension_node_s: meta.advice_column(),
-            is_extension_node_c: meta.advice_column(),
-        };
-
+        let branch = BranchCols::new(meta);
+            
         let s_main = MainCols {
             rlp1: meta.advice_column(),
             rlp2: meta.advice_column(),
