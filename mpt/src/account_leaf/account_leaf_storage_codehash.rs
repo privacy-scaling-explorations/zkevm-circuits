@@ -7,12 +7,12 @@ use std::marker::PhantomData;
 
 use crate::{
     helpers::range_lookups,
-    mpt::{FixedTableTag, MPTConfig, ProofVariables, DenoteCols, AccumulatorCols},
+    mpt::{FixedTableTag, MPTConfig, ProofVariables, DenoteCols},
     param::{
         ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND, ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND, BRANCH_ROWS_NUM,
         EXTENSION_ROWS_NUM, IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS,
         KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH, RLP_NUM, ACCOUNT_NON_EXISTING_IND, S_START, C_START, HASH_WIDTH,
-    }, columns::{ProofTypeCols, MainCols},
+    }, columns::{ProofTypeCols, MainCols, AccumulatorCols},
 };
 
 /*
@@ -70,7 +70,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
         s_main: MainCols<F>,
         c_main: MainCols<F>,
         acc_r: F,
-        accs: AccumulatorCols,
+        accs: AccumulatorCols<F>,
         fixed_table: [Column<Fixed>; 3],
         denoter: DenoteCols,
         keccak_table: [Column<Fixed>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],

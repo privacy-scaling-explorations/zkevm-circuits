@@ -7,11 +7,11 @@ use std::marker::PhantomData;
 
 use crate::{
     helpers::{compute_rlc, key_len_lookup, mult_diff_lookup, range_lookups},
-    mpt::{FixedTableTag, AccumulatorCols, MPTConfig, ProofVariables},
+    mpt::{FixedTableTag, MPTConfig, ProofVariables},
     param::{
         HASH_WIDTH, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS, IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS, IS_EXT_LONG_ODD_C16_POS, IS_EXT_LONG_ODD_C1_POS, 
         IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS, RLP_NUM, R_TABLE_LEN, S_START, NIBBLES_COUNTER_POS, BRANCH_ROWS_NUM,
-    }, columns::{ProofTypeCols, MainCols},
+    }, columns::{ProofTypeCols, MainCols, AccumulatorCols},
 };
 
 /*
@@ -83,7 +83,7 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
         not_first_level: Column<Advice>,
         s_main: MainCols<F>,
         c_main: MainCols<F>,
-        accs: AccumulatorCols, // acc_c contains key_rlc_prev & key_rlc_mult_prev
+        accs: AccumulatorCols<F>, // acc_c contains key_rlc_prev & key_rlc_mult_prev
         r_table: Vec<Expression<F>>,
         fixed_table: [Column<Fixed>; 3],
         address_rlc: Column<Advice>,

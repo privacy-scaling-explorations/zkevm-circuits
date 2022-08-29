@@ -1,6 +1,6 @@
 use halo2_proofs::{
     circuit::Region,
-    plonk::{Advice, Column, ConstraintSystem, Expression, Fixed, VirtualCells},
+    plonk::{Column, ConstraintSystem, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
 use itertools::Itertools;
@@ -9,11 +9,11 @@ use std::marker::PhantomData;
 
 use crate::{
     helpers::{compute_rlc, get_bool_constraint, key_len_lookup, mult_diff_lookup, range_lookups},
-    mpt::{FixedTableTag, ProofVariables, MPTConfig, AccumulatorCols, DenoteCols},
+    mpt::{FixedTableTag, ProofVariables, MPTConfig, DenoteCols},
     param::{
         ACCOUNT_LEAF_KEY_C_IND, ACCOUNT_LEAF_KEY_S_IND, ACCOUNT_LEAF_NONCE_BALANCE_C_IND,
         ACCOUNT_LEAF_NONCE_BALANCE_S_IND, HASH_WIDTH, ACCOUNT_NON_EXISTING_IND, S_START, C_START,
-    }, columns::{ProofTypeCols, MainCols},
+    }, columns::{ProofTypeCols, MainCols, AccumulatorCols},
 };
 
 /*
@@ -64,7 +64,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
         q_enable: impl Fn(&mut VirtualCells<'_, F>) -> Expression<F> + Copy,
         s_main: MainCols<F>,
         c_main: MainCols<F>,
-        accs: AccumulatorCols, // accs.acc_c.rlc contains mult_diff_nonce; accs.key.mult for mult_diff_balance
+        accs: AccumulatorCols<F>, // accs.acc_c.rlc contains mult_diff_nonce; accs.key.mult for mult_diff_balance
         r_table: Vec<Expression<F>>,
         denoter: DenoteCols,
         fixed_table: [Column<Fixed>; 3],

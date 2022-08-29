@@ -16,7 +16,7 @@ use crate::{
         RLP_NUM, IS_ACCOUNT_DELETE_MOD_POS, IS_NON_EXISTING_ACCOUNT_POS,
     },
     roots::RootsChip,
-    storage_root_in_account_leaf::StorageRootChip, account_leaf::{AccountLeafCols, AccountLeaf, account_leaf_key_in_added_branch::AccountLeafKeyInAddedBranchConfig, account_leaf_key::AccountLeafKeyConfig, account_leaf_nonce_balance::AccountLeafNonceBalanceConfig, account_leaf_storage_codehash::AccountLeafStorageCodehashConfig, account_non_existing::AccountNonExistingConfig}, storage_leaf::{StorageLeafCols, StorageLeaf, leaf_key_in_added_branch::LeafKeyInAddedBranchChip, leaf_key::LeafKeyChip, leaf_value::LeafValueChip}, witness_row::{MptWitnessRow, MptWitnessRowType}, columns::{ProofTypeCols, MainCols},
+    storage_root_in_account_leaf::StorageRootChip, account_leaf::{AccountLeafCols, AccountLeaf, account_leaf_key_in_added_branch::AccountLeafKeyInAddedBranchConfig, account_leaf_key::AccountLeafKeyConfig, account_leaf_nonce_balance::AccountLeafNonceBalanceConfig, account_leaf_storage_codehash::AccountLeafStorageCodehashConfig, account_non_existing::AccountNonExistingConfig}, storage_leaf::{StorageLeafCols, StorageLeaf, leaf_key_in_added_branch::LeafKeyInAddedBranchChip, leaf_key::LeafKeyChip, leaf_value::LeafValueChip}, witness_row::{MptWitnessRow, MptWitnessRowType}, columns::{ProofTypeCols, MainCols, AccumulatorCols},
 };
 use crate::{
     param::{
@@ -56,27 +56,6 @@ use crate::{
 
 // TODO: constraints for the length of key and address RLC to be 32 bytes long
 
-#[derive(Clone, Debug)]
-pub(crate) struct AccumulatorPair {
-    pub(crate) rlc: Column<Advice>,
-    pub(crate) mult: Column<Advice>,
-}
-
-// Columns that store values that are being accumulated across multiple rows.
-#[derive(Clone, Debug)]
-pub(crate) struct AccumulatorCols {
-    pub(crate) acc_s: AccumulatorPair, // accumulating RLC for a node in S proof
-    pub(crate) acc_c: AccumulatorPair, // accumulating RLC for a node in C proof
-    // key.rlc & key.mult used for account address, for storage key,
-    // for mult_diff_nonce/mult_diff_balance in account_leaf_nonce_balance
-    pub(crate) key: AccumulatorPair, // accumulating RLC for address or key
-    pub(crate) node_mult_diff_s: Column<Advice>, // used when accumulating branch RLC for non-hashed nodes in a branch
-    pub(crate) node_mult_diff_c: Column<Advice>, // used when accumulating branch RLC for non-hashed nodes in a branch
-    pub(crate) mult_diff: Column<Advice>, // power of randomness r: multiplier_curr = multiplier_prev * mult_diff (used for example for diff due to extension node nibbles)
-    pub(crate) s_mod_node_rlc: Column<Advice>, // modified node s_advices RLC, TODO: used also for leaf long/short, check whether some DenoteCol could be used
-    pub(crate) c_mod_node_rlc: Column<Advice>, // modified node c_advices RLC, TODO: used also for leaf long/short, check whether some DenoteCol could be used
-}
-
 // TODO: check whether sel1, sel2 are sometimes used for accumulated values and fix it.
 
 /*
@@ -109,7 +88,7 @@ pub struct MPTConfig<F> {
     pub(crate) not_first_level: Column<Advice>,
     pub(crate) inter_start_root: Column<Advice>,
     pub(crate) inter_final_root: Column<Advice>,
-    pub(crate) accumulators: AccumulatorCols,
+    pub(crate) accumulators: AccumulatorCols<F>,
     pub(crate) branch: BranchCols<F>,
     pub(crate) s_main: MainCols<F>,
     pub(crate) c_main: MainCols<F>,
@@ -270,19 +249,6 @@ impl<F: FieldExt> MPTConfig<F> {
             .try_into()
             .unwrap();
 
-        let acc_s = AccumulatorPair {
-            rlc : meta.advice_column(),
-            mult : meta.advice_column(),
-        };
-        let acc_c = AccumulatorPair {
-            rlc : meta.advice_column(),
-            mult : meta.advice_column(),
-        };
-        let key = AccumulatorPair {
-            rlc : meta.advice_column(),
-            mult : meta.advice_column(),
-        };
-
         // NOTE: key_rlc_mult wouldn't be needed if we would have
         // big endian instead of little endian. However, then it would be much more
         // difficult to handle the accumulator when we iterate over the key.
@@ -295,16 +261,7 @@ impl<F: FieldExt> MPTConfig<F> {
         // rlc = rlc * acc_r + row[i],
         // the rlc would be multiplied by acc_r when row[i] = 0.
 
-        let accumulators = AccumulatorCols {
-            acc_s: acc_s.clone(),
-            acc_c: acc_c.clone(),
-            key: key.clone(),
-            node_mult_diff_s: meta.advice_column(),
-            node_mult_diff_c: meta.advice_column(),
-            mult_diff: meta.advice_column(),
-            s_mod_node_rlc: meta.advice_column(),
-            c_mod_node_rlc: meta.advice_column(),
-        };
+        let accumulators = AccumulatorCols::new(meta);
 
         // NOTE: acc_s.mult and acc_c.mult wouldn't be needed if we would have
         // big endian instead of little endian. However, then it would be much more
@@ -406,7 +363,7 @@ impl<F: FieldExt> MPTConfig<F> {
             branch.is_last_child,
             s_main.clone(),
             accumulators.s_mod_node_rlc,
-            acc_s.clone(),
+            accumulators.acc_s.clone(),
             keccak_table,
             true,
         );
@@ -420,7 +377,7 @@ impl<F: FieldExt> MPTConfig<F> {
             branch.is_last_child,
             s_main.clone(),
             accumulators.c_mod_node_rlc,
-            acc_c,
+            accumulators.acc_c.clone(),
             keccak_table,
             false,
         );

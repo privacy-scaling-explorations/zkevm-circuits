@@ -7,7 +7,7 @@ use std::marker::PhantomData;
 
 use crate::{
     helpers::get_is_extension_node,
-    param::{KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH, IS_BRANCH_S_PLACEHOLDER_POS, RLP_NUM, IS_BRANCH_C_PLACEHOLDER_POS, IS_S_BRANCH_NON_HASHED_POS, IS_C_BRANCH_NON_HASHED_POS}, mpt::{AccumulatorPair}, columns::MainCols,
+    param::{KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH, IS_BRANCH_S_PLACEHOLDER_POS, RLP_NUM, IS_BRANCH_C_PLACEHOLDER_POS, IS_S_BRANCH_NON_HASHED_POS, IS_C_BRANCH_NON_HASHED_POS}, columns::{MainCols, AccumulatorPair},
 };
 
 #[derive(Clone, Debug)]
@@ -25,7 +25,7 @@ impl<F: FieldExt> BranchHashInParentConfig<F> {
         is_last_branch_child: Column<Advice>,
         s_main: MainCols<F>,
         mod_node_hash_rlc: Column<Advice>,
-        acc_pair: AccumulatorPair,
+        acc_pair: AccumulatorPair<F>,
         keccak_table: [Column<Fixed>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
         is_s: bool,
     ) -> Self {

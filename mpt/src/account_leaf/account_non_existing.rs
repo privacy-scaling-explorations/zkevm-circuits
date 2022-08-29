@@ -7,10 +7,10 @@ use std::marker::PhantomData;
 
 use crate::{
     helpers::{key_len_lookup, range_lookups},
-    mpt::{FixedTableTag, AccumulatorCols, MPTConfig},
+    mpt::{FixedTableTag, MPTConfig},
     param::{
         HASH_WIDTH, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, RLP_NUM, ACCOUNT_NON_EXISTING_IND, BRANCH_ROWS_NUM,
-    }, witness_row::MptWitnessRow, columns::MainCols,
+    }, witness_row::MptWitnessRow, columns::{MainCols, AccumulatorCols},
 };
 
 /*
@@ -88,7 +88,7 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
         not_first_level: Column<Advice>,
         s_main: MainCols<F>,
         c_main: MainCols<F>,
-        accs: AccumulatorCols,
+        accs: AccumulatorCols<F>,
         sel1: Column<Advice>, // should be the same as sel2 as both parallel proofs are the same for non_existing_account_proof
         r_table: Vec<Expression<F>>,
         fixed_table: [Column<Fixed>; 3],

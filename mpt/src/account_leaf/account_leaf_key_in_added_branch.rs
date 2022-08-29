@@ -10,8 +10,8 @@ use crate::{
         compute_rlc, get_is_extension_node_one_nibble, key_len_lookup,
         mult_diff_lookup, range_lookups,
     },
-    mpt::{FixedTableTag, AccumulatorCols, DenoteCols, MPTConfig, ProofVariables},
-    param::{IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, ACCOUNT_DRIFTED_LEAF_IND, BRANCH_ROWS_NUM, ACCOUNT_LEAF_KEY_S_IND, ACCOUNT_LEAF_KEY_C_IND, ACCOUNT_LEAF_NONCE_BALANCE_S_IND, ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND, ACCOUNT_LEAF_NONCE_BALANCE_C_IND, ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND}, columns::MainCols,
+    mpt::{FixedTableTag, DenoteCols, MPTConfig, ProofVariables},
+    param::{IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, ACCOUNT_DRIFTED_LEAF_IND, BRANCH_ROWS_NUM, ACCOUNT_LEAF_KEY_S_IND, ACCOUNT_LEAF_KEY_C_IND, ACCOUNT_LEAF_NONCE_BALANCE_S_IND, ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND, ACCOUNT_LEAF_NONCE_BALANCE_C_IND, ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND}, columns::{MainCols, AccumulatorCols},
 };
 
 use crate::param::{
@@ -31,7 +31,7 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
         not_first_level: Column<Advice>,
         s_main: MainCols<F>,
         c_main: MainCols<F>,
-        accs: AccumulatorCols, // accs.acc_c contains mult_diff_nonce, initially key_rlc was used for mult_diff_nonce, but it caused PoisonedConstraint in extension_node_key
+        accs: AccumulatorCols<F>, // accs.acc_c contains mult_diff_nonce, initially key_rlc was used for mult_diff_nonce, but it caused PoisonedConstraint in extension_node_key
         drifted_pos: Column<Advice>,
         denoter: DenoteCols,
         r_table: Vec<Expression<F>>,

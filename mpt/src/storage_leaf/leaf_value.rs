@@ -8,8 +8,8 @@ use std::marker::PhantomData;
 
 use crate::{
     helpers::{get_bool_constraint, key_len_lookup, range_lookups},
-    mpt::{FixedTableTag, AccumulatorCols, DenoteCols},
-    param::{BRANCH_ROWS_NUM, KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH}, columns::MainCols,
+    mpt::{FixedTableTag, DenoteCols},
+    param::{BRANCH_ROWS_NUM, KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH}, columns::{MainCols, AccumulatorCols},
 };
 
 #[derive(Clone, Debug)]
@@ -36,7 +36,7 @@ impl<F: FieldExt> LeafValueChip<F> {
         - mult_diff to store leaf value S RLC from two rows above (to enable lookup)
         TODO: check whether some other column can be used instead of mult_diff
         */
-        accs: AccumulatorCols,
+        accs: AccumulatorCols<F>,
         denoter: DenoteCols,
         is_account_leaf_in_added_branch: Column<Advice>,
         is_branch_placeholder: Column<Advice>,

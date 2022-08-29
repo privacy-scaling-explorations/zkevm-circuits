@@ -14,7 +14,7 @@ use crate::{
         IS_BRANCH_S_PLACEHOLDER_POS, IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS,
         IS_EXT_LONG_ODD_C16_POS, IS_EXT_LONG_ODD_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS,
         KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH, RLP_NUM, IS_S_EXT_LONGER_THAN_55_POS, IS_C_EXT_LONGER_THAN_55_POS, IS_S_EXT_NODE_NON_HASHED_POS, IS_C_EXT_NODE_NON_HASHED_POS, NIBBLES_COUNTER_POS, BRANCH_ROWS_NUM,
-    }, mpt::{AccumulatorCols}, columns::MainCols,
+    }, columns::{MainCols, AccumulatorCols},
 };
 
 #[derive(Clone, Debug)]
@@ -110,7 +110,7 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
                                          * rotation lands < 0) */
         s_main: MainCols<F>,
         c_main: MainCols<F>,
-        accs: AccumulatorCols,
+        accs: AccumulatorCols<F>,
         keccak_table: [Column<Fixed>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
         r_table: Vec<Expression<F>>,
         is_s: bool,
