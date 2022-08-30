@@ -16,8 +16,9 @@ use keccak256::EMPTY_HASH;
 use log::warn;
 
 #[cfg(any(feature = "test", test))]
-pub use sha3::sha3_tests::{gen_sha3_code, MemoryKind};
+pub use self::sha3::sha3_tests::{gen_sha3_code, MemoryKind};
 
+mod address;
 mod balance;
 mod call;
 mod calldatacopy;
@@ -52,6 +53,8 @@ mod swap;
 #[cfg(test)]
 mod memory_expansion_test;
 
+use self::sha3::Sha3;
+use address::Address;
 use balance::Balance;
 use call::Call;
 use calldatacopy::Calldatacopy;
@@ -74,7 +77,6 @@ use origin::Origin;
 use r#return::Return;
 use returndatacopy::Returndatacopy;
 use selfbalance::Selfbalance;
-use sha3::Sha3;
 use sload::Sload;
 use sstore::Sstore;
 use stackonlyop::StackOnlyOpcode;
@@ -146,7 +148,7 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         OpcodeId::SHR => StackOnlyOpcode::<2, 1>::gen_associated_ops,
         OpcodeId::SAR => StackOnlyOpcode::<2, 1>::gen_associated_ops,
         OpcodeId::SHA3 => Sha3::gen_associated_ops,
-        OpcodeId::ADDRESS => StackOnlyOpcode::<0, 1>::gen_associated_ops,
+        OpcodeId::ADDRESS => Address::gen_associated_ops,
         OpcodeId::BALANCE => Balance::gen_associated_ops,
         OpcodeId::ORIGIN => Origin::gen_associated_ops,
         OpcodeId::CALLER => Caller::gen_associated_ops,

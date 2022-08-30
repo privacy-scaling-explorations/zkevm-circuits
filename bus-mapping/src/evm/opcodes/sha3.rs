@@ -82,6 +82,7 @@ impl Opcode for Sha3 {
         for cs in steps.iter_mut() {
             cs.rwc_inc_left = state.block_ctx.rwc.0 as u64 - cs.rwc.0 as u64;
         }
+        state.block.sha3_inputs.push(memory);
 
         let call_id = state.call()?.call_id;
         state.push_copy(CopyEvent {

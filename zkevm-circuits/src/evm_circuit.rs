@@ -151,7 +151,7 @@ pub mod test {
         table::{BlockTable, BytecodeTable, CopyTable, KeccakTable, RwTable, TxTable},
         util::power_of_randomness_from_instance,
     };
-    use bus_mapping::circuit_input_builder::CopyDataType;
+    use bus_mapping::evm::OpcodeId;
     use eth_types::{Field, Word};
     use halo2_proofs::{
         circuit::{Layouter, SimpleFloorPlanner},
@@ -182,6 +182,31 @@ pub mod test {
 
     pub(crate) fn rand_word() -> Word {
         Word::from_big_endian(&rand_bytes_array::<32>())
+    }
+
+    /// create fixed_table_tags needed given witness block
+    pub(crate) fn detect_fixed_table_tags<F: Field>(block: &Block<F>) -> Vec<FixedTableTag> {
+        let need_bitwise_lookup = block.txs.iter().any(|tx| {
+            tx.steps.iter().any(|step| {
+                matches!(
+                    step.opcode,
+                    Some(OpcodeId::AND)
+                        | Some(OpcodeId::OR)
+                        | Some(OpcodeId::XOR)
+                        | Some(OpcodeId::NOT)
+                )
+            })
+        });
+        FixedTableTag::iter()
+            .filter(|t| {
+                !matches!(
+                    t,
+                    FixedTableTag::BitwiseAnd
+                        | FixedTableTag::BitwiseOr
+                        | FixedTableTag::BitwiseXor
+                ) || need_bitwise_lookup
+            })
+            .collect()
     }
 
     #[derive(Clone)]
@@ -282,17 +307,7 @@ pub mod test {
                 .load(&mut layouter, &self.block, self.block.randomness)?;
             config.keccak_table.load(
                 &mut layouter,
-                self.block
-                    .copy_events
-                    .iter()
-                    .filter(|ce| ce.dst_type == CopyDataType::RlcAcc)
-                    .map(|ce| {
-                        ce.steps
-                            .iter()
-                            .filter(|s| s.rw.is_write())
-                            .map(|s| s.value)
-                            .collect::<Vec<u8>>()
-                    }),
+                &self.block.sha3_inputs,
                 self.block.randomness,
             )?;
             config
@@ -315,10 +330,8 @@ pub mod test {
         }
     }
 
-    pub fn run_test_circuit<F: Field>(
-        block: Block<F>,
-        fixed_table_tags: Vec<FixedTableTag>,
-    ) -> Result<(), Vec<VerifyFailure>> {
+    pub fn run_test_circuit<F: Field>(block: Block<F>) -> Result<(), Vec<VerifyFailure>> {
+        let fixed_table_tags = detect_fixed_table_tags(&block);
         let log2_ceil = |n| u32::BITS - (n as u32).leading_zeros() - (n & (n - 1) == 0) as u32;
 
         let num_rows_required_for_steps = TestCircuit::get_num_rows_required(&block);
@@ -346,33 +359,6 @@ pub mod test {
         let circuit = TestCircuit::<F>::new(block, fixed_table_tags);
         let prover = MockProver::<F>::run(k, &circuit, power_of_randomness).unwrap();
         prover.verify_at_rows(active_gate_rows.into_iter(), active_lookup_rows.into_iter())
-    }
-
-    pub fn run_test_circuit_incomplete_fixed_table<F: Field>(
-        block: Block<F>,
-    ) -> Result<(), Vec<VerifyFailure>> {
-        run_test_circuit(
-            block,
-            vec![
-                FixedTableTag::Zero,
-                FixedTableTag::Range5,
-                FixedTableTag::Range16,
-                FixedTableTag::Range32,
-                FixedTableTag::Range64,
-                FixedTableTag::Range256,
-                FixedTableTag::Range512,
-                FixedTableTag::Range1024,
-                FixedTableTag::SignByte,
-                FixedTableTag::ResponsibleOpcode,
-                FixedTableTag::Pow2,
-            ],
-        )
-    }
-
-    pub fn run_test_circuit_complete_fixed_table<F: Field>(
-        block: Block<F>,
-    ) -> Result<(), Vec<VerifyFailure>> {
-        run_test_circuit(block, FixedTableTag::iter().collect())
     }
 }
 
