@@ -988,36 +988,7 @@ impl<F: FieldExt> MPTConfig<F> {
                             || Ok(F::from(counter_u32 as u64)),
                         )?;
 
-                        region.assign_advice(
-                            || "is_storage_mod",
-                            self.proof_type.is_storage_mod,
-                            offset,
-                            || Ok(F::from(row.get_byte_rev(IS_STORAGE_MOD_POS) as u64)),
-                        )?;
-                        region.assign_advice(
-                            || "is_nonce_mod",
-                            self.proof_type.is_nonce_mod,
-                            offset,
-                            || Ok(F::from(row.get_byte_rev(IS_NONCE_MOD_POS) as u64)),
-                        )?;
-                        region.assign_advice(
-                            || "is_balance_mod",
-                            self.proof_type.is_balance_mod,
-                            offset,
-                            || Ok(F::from(row.get_byte_rev(IS_BALANCE_MOD_POS) as u64)),
-                        )?;
-                        region.assign_advice(
-                            || "is_account_delete_mod",
-                            self.proof_type.is_account_delete_mod,
-                            offset,
-                            || Ok(F::from(row.get_byte_rev(IS_ACCOUNT_DELETE_MOD_POS) as u64)),
-                        )?;
-                        region.assign_advice(
-                            || "is_non_existing_account",
-                            self.proof_type.is_non_existing_account_proof,
-                            offset,
-                            || Ok(F::from(row.get_byte_rev(IS_NON_EXISTING_ACCOUNT_POS) as u64)),
-                        )?;
+                        row.assign_proof_type(&mut region, self, offset)?;
 
                         if row.get_type() == MptWitnessRowType::InitBranch {
                             self.branch_config.assign_branch_init(
