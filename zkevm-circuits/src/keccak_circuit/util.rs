@@ -2,7 +2,7 @@
 
 use eth_types::{Field, ToScalar, Word};
 use halo2_proofs::{
-    circuit::Layouter,
+    circuit::{Layouter, Value},
     plonk::{Error, TableColumn},
 };
 use itertools::Itertools;
@@ -404,7 +404,7 @@ pub fn load_pack_table<F: Field>(
                     || Value::known(F::from(idx)),
                 )?;
                 let packed: F = pack(&into_bits(&[idx as u8])).to_scalar().unwrap();
-                table.assign_cell(|| "packed", tables[1], offset, || Ok(packed))?;
+                table.assign_cell(|| "packed", tables[1], offset, || Value::known(packed))?;
             }
             Ok(())
         },

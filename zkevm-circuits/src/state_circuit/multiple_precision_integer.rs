@@ -3,7 +3,7 @@ use super::{N_LIMBS_ACCOUNT_ADDRESS, N_LIMBS_RW_COUNTER};
 use crate::util::Expr;
 use eth_types::{Address, Field};
 use halo2_proofs::{
-    circuit::{Layouter, Region},
+    circuit::{Layouter, Region, Value},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };

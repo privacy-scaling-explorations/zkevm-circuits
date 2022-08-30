@@ -14,7 +14,7 @@ use crate::{
 };
 use bus_mapping::evm::OpcodeId;
 use eth_types::{Field, ToLittleEndian};
-use halo2_proofs::plonk::Error;
+use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct GasPriceGadget<F> {
@@ -75,12 +75,12 @@ impl<F: Field> ExecutionGadget<F> for GasPriceGadget<F> {
         let gas_price = block.rws[step.rw_indices[1]].stack_value();
 
         self.tx_id
-            .assign(region, offset, Some(F::from(tx.id as u64)))?;
+            .assign(region, offset, Value::known(F::from(tx.id as u64)))?;
 
         self.gas_price.assign(
             region,
             offset,
-            Some(Word::random_linear_combine(
+            Value::known(Word::random_linear_combine(
                 gas_price.to_le_bytes(),
                 block.randomness,
             )),

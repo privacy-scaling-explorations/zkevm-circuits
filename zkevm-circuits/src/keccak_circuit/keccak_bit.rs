@@ -13,7 +13,7 @@ use crate::{
 use eth_types::{Field, ToScalar};
 use gadgets::util::{and, select, sum, xor};
 use halo2_proofs::{
-    circuit::{Layouter, Region, SimpleFloorPlanner},
+    circuit::{Layouter, Region, SimpleFloorPlanner, Value},
     plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Fixed, TableColumn},
     poly::Rotation,
 };
@@ -640,7 +640,7 @@ impl<F: Field> KeccakBitConfig<F> {
                 || format!("assign {} {}", name, offset),
                 *column,
                 offset,
-                || Ok(*value),
+                || Value::known(*value),
             )?;
         }
 
@@ -655,7 +655,7 @@ impl<F: Field> KeccakBitConfig<F> {
                 || format!("assign {} {}", name, offset),
                 *column,
                 offset,
-                || Ok(*value),
+                || Value::known(*value),
             )?;
         }
 
@@ -711,7 +711,7 @@ impl<F: Field> KeccakBitConfig<F> {
                 || format!("assign padding selector {} {}", idx, offset),
                 *column,
                 offset,
-                || Ok(*data_rlc),
+                || Value::known(*data_rlc),
             )?;
         }
 
@@ -981,7 +981,7 @@ fn multi_keccak<F: Field>(bytes: &[Vec<u8>], r: F) -> Vec<KeccakRow<F>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use halo2_proofs::{dev::MockProver, pairing::bn256::Fr};
+    use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
 
     fn verify<F: Field>(k: u32, inputs: Vec<Vec<u8>>, success: bool) {
         let mut circuit = KeccakBitCircuit::new(2usize.pow(k));

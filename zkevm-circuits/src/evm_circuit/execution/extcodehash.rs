@@ -18,7 +18,7 @@ use crate::{
     util::Expr,
 };
 use eth_types::{evm_types::GasCost, Field, ToAddress, ToScalar, U256};
-use halo2_proofs::plonk::Error;
+use halo2_proofs::{circuit::Value, plonk::Error};
 use keccak256::EMPTY_HASH_LE;
 
 #[derive(Clone, Debug)]
@@ -137,8 +137,15 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
         self.external_address
             .assign(region, offset, Some(le_bytes))?;
 
-        self.tx_id
-            .assign(region, offset, U256::from(tx.id).to_scalar())?;
+        self.tx_id.assign(
+            region,
+            offset,
+            Value::known(
+                U256::from(tx.id)
+                    .to_scalar()
+                    .expect("unexpected Address -> Scalar conversion failure"),
+            ),
+        )?;
         self.reversion_info.assign(
             region,
             offset,
@@ -152,7 +159,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
             _ => unreachable!(),
         };
         self.is_warm
-            .assign(region, offset, Some(F::from(is_warm)))?;
+            .assign(region, offset, Value::known(F::from(is_warm)))?;
 
         let [nonce, balance, code_hash] = [5, 6, 7].map(|i| {
             block.rws[step.rw_indices[i]]
@@ -160,9 +167,10 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
                 .value
         });
 
-        self.nonce.assign(region, offset, Some(nonce))?;
-        self.balance.assign(region, offset, Some(balance))?;
-        self.code_hash.assign(region, offset, Some(code_hash))?;
+        self.nonce.assign(region, offset, Value::known(nonce))?;
+        self.balance.assign(region, offset, Value::known(balance))?;
+        self.code_hash
+            .assign(region, offset, Value::known(code_hash))?;
 
         let empty_code_hash_rlc = Word::random_linear_combine(*EMPTY_HASH_LE, block.randomness);
         self.is_empty.assign(

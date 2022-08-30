@@ -11,10 +11,9 @@ use crate::util::{power_of_randomness_from_instance, random_linear_combine_word 
 use eth_types::{
     geth_types::Transaction, Address, Field, ToBigEndian, ToLittleEndian, ToScalar, Word,
 };
-use ff::PrimeField;
-use group::GroupEncoding;
+
 use halo2_proofs::{
-    circuit::{AssignedCell, Layouter, Region, SimpleFloorPlanner},
+    circuit::{AssignedCell, Layouter, Region, SimpleFloorPlanner, Value},
     plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Expression},
 };
 use itertools::Itertools;
@@ -28,8 +27,14 @@ use sign_verify::{pk_bytes_swap_endianness, SignData, SignVerifyChip, SignVerify
 use std::marker::PhantomData;
 use subtle::CtOption;
 
-pub use group::{Curve, Group};
-pub use halo2_proofs::halo2_curves::secp256::Secp256k1Affine;
+pub use halo2_proofs::halo2curves::{
+    group::{
+        ff::{Field as GroupField, PrimeField},
+        prime::PrimeCurveAffine,
+        Curve, Group, GroupEncoding,
+    },
+    secp256k1::{self, Secp256k1Affine, Secp256k1Compressed},
+};
 pub use sign_verify::{POW_RAND_SIZE, VERIF_HEIGHT};
 
 lazy_static! {
@@ -65,7 +70,7 @@ fn recover_pk(v: u8, r: &Word, s: &Word, msg_hash: &[u8; 32]) -> Result<Secp256k
     })?;
     let pk_be = pk.serialize();
     let pk_le = pk_bytes_swap_endianness(&pk_be[1..]);
-    let mut pk_bytes = secp256k1::Serialized::default();
+    let mut pk_bytes: Secp256k1Compressed = Default::default();
     pk_bytes.as_mut().copy_from_slice(&pk_le[..]);
     let pk = Secp256k1Affine::from_bytes(&pk_bytes);
     ct_option_ok_or(pk, Error::Synthesis).map_err(|e| {
@@ -207,7 +212,7 @@ impl<F: Field> TxCircuitConfig<F> {
             offset,
             || Value::known(F::from(index as u64)),
         )?;
-        region.assign_advice(|| "value", self.value, offset, || Ok(value))
+        region.assign_advice(|| "value", self.value, offset, || Value::known(value))
     }
 }
 
@@ -287,7 +292,11 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
 
                     let address_cell = assigned_sig_verif.address.cell();
                     let msg_hash_rlc_cell = assigned_sig_verif.msg_hash_rlc.cell();
-                    let msg_hash_rlc_value = assigned_sig_verif.msg_hash_rlc.value();
+                    let mut msg_hash_rlc_value = F::zero();
+                    assigned_sig_verif.msg_hash_rlc.value().map(|f| {
+                        msg_hash_rlc_value = *f;
+                        f
+                    });
                     for (tag, value) in &[
                         (
                             TxFieldTag::Nonce,
@@ -327,10 +336,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
                                     .fold(0, |acc, byte| acc + if *byte == 0 { 4 } else { 16 }),
                             ),
                         ),
-                        (
-                            TxFieldTag::TxSignHash,
-                            *msg_hash_rlc_value.unwrap_or(&F::zero()),
-                        ),
+                        (TxFieldTag::TxSignHash, msg_hash_rlc_value),
                     ] {
                         let assigned_cell =
                             config.assign_row(&mut region, offset, i + 1, *tag, 0, *value)?;
@@ -426,11 +432,10 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
 mod tx_circuit_tests {
     use super::*;
     use eth_types::address;
-    use group::{Curve, Group};
     use halo2_proofs::{
         arithmetic::CurveAffine,
         dev::{MockProver, VerifyFailure},
-        pairing::bn256::Fr,
+        halo2curves::{bn256::Fr, group::Group},
     };
     use mock::AddrOrWallet;
     use pretty_assertions::assert_eq;

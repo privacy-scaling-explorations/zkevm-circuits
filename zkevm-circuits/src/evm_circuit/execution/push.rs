@@ -13,7 +13,7 @@ use crate::{
 };
 use array_init::array_init;
 use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian};
-use halo2_proofs::plonk::Error;
+use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct PushGadget<F> {
@@ -134,7 +134,7 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
             selector.assign(
                 region,
                 offset,
-                Some(F::from((idx < num_additional_pushed) as u64)),
+                Value::known(F::from((idx < num_additional_pushed) as u64)),
             )?;
         }
 

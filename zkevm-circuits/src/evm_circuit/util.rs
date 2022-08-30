@@ -8,7 +8,7 @@ use crate::{
 use eth_types::U256;
 use halo2_proofs::{
     arithmetic::FieldExt,
-    circuit::{AssignedCell, Region},
+    circuit::{AssignedCell, Region, Value},
     plonk::{Advice, Assigned, Column, ConstraintSystem, Error, Expression, VirtualCells},
     poly::Rotation,
 };
@@ -43,7 +43,7 @@ impl<F: FieldExt> Cell<F> {
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        value: Option<F>,
+        value: Value<F>,
     ) -> Result<AssignedCell<F, F>, Error> {
         region.assign_advice(
             || {
@@ -54,7 +54,7 @@ impl<F: FieldExt> Cell<F> {
             },
             self.column,
             offset + self.rotation,
-            || value.ok_or(Error::Synthesis),
+            || value,
         )
     }
 }
@@ -107,7 +107,7 @@ impl<'r, 'b, F: FieldExt> CachedRegion<'r, 'b, F> {
         to: V,
     ) -> Result<AssignedCell<VR, F>, Error>
     where
-        V: FnMut() -> Result<VR, Error> + 'v,
+        V: FnMut() -> Value<VR> + 'v,
         for<'vr> Assigned<F>: From<&'vr VR>,
         A: Fn() -> AR,
         AR: Into<String>,
@@ -116,11 +116,10 @@ impl<'r, 'b, F: FieldExt> CachedRegion<'r, 'b, F> {
         let res = self.region.assign_advice(annotation, column, offset, to);
         // Cache the value
         if let Result::Ok(cell) = &res {
-            let call_value = cell.value_field();
-            if let Some(value) = call_value {
+            cell.value_field().map(|f| {
                 self.advice[column.index() - self.width_start][offset - self.height_start] =
-                    value.evaluate();
-            }
+                    f.evaluate();
+            });
         }
         res
     }
@@ -157,15 +156,25 @@ impl<F: FieldExt> StoredExpression<F> {
         let value = self.expr.evaluate(
             &|scalar| scalar,
             &|_| unimplemented!("selector column"),
-            &|_, column_index, rotation| region.get_fixed(offset, column_index, rotation),
-            &|_, column_index, rotation| region.get_advice(offset, column_index, rotation),
-            &|_, column_index, rotation| region.get_instance(offset, column_index, rotation),
+            &|fixed_query| {
+                region.get_fixed(offset, fixed_query.column_index(), fixed_query.rotation())
+            },
+            &|advide_query| {
+                region.get_advice(offset, advide_query.column_index(), advide_query.rotation())
+            },
+            &|instance_query| {
+                region.get_instance(
+                    offset,
+                    instance_query.column_index(),
+                    instance_query.rotation(),
+                )
+            },
             &|a| -a,
             &|a, b| a + b,
             &|a, b| a * b,
             &|a, scalar| a * scalar,
         );
-        self.cell.assign(region, offset, Some(value))
+        self.cell.assign(region, offset, Value::known(value))
     }
 }
 
@@ -340,7 +349,9 @@ impl<F: FieldExt, const N: usize> RandomLinearCombination<F, N> {
             self.cells
                 .iter()
                 .zip(bytes.iter())
-                .map(|(cell, byte)| cell.assign(region, offset, Some(F::from(*byte as u64))))
+                .map(|(cell, byte)| {
+                    cell.assign(region, offset, Value::known(F::from(*byte as u64)))
+                })
                 .collect()
         })
     }

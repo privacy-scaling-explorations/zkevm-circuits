@@ -12,9 +12,12 @@ use crate::{
     util::Expr,
 };
 use eth_types::Field;
-use halo2_proofs::plonk::{
-    Error,
-    Expression::{self, Constant},
+use halo2_proofs::{
+    circuit::Value,
+    plonk::{
+        Error,
+        Expression::{self, Constant},
+    },
 };
 
 use super::{rlc, CachedRegion, CellType, StoredExpression};
@@ -126,10 +129,10 @@ impl<F: Field> ReversionInfo<F> {
         self.rw_counter_end_of_reversion.assign(
             region,
             offset,
-            Some(F::from(rw_counter_end_of_reversion as u64)),
+            Value::known(F::from(rw_counter_end_of_reversion as u64)),
         )?;
         self.is_persistent
-            .assign(region, offset, Some(F::from(is_persistent as u64)))?;
+            .assign(region, offset, Value::known(F::from(is_persistent as u64)))?;
         Ok(())
     }
 }

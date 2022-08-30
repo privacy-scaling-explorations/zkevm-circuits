@@ -51,10 +51,6 @@ pretty_assertions = "1.0.0"
 ethers-signers = "0.6"
 rand_chacha = "0.3"
 
-[[bench]]
-name = "binary_value"
-harness = false
-
 [features]
 default = []
 test = [ "dev" ]

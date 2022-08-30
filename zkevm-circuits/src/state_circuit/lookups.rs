@@ -1,7 +1,7 @@
 use crate::table::CallContextFieldTag;
 use eth_types::Field;
 use halo2_proofs::{
-    circuit::Layouter,
+    circuit::{Layouter, Value},
     plonk::{Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
