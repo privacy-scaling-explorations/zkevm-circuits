@@ -160,5 +160,4 @@ mod test {
     fn returndatasize_gadget_zero_length() {
         test_ok_internal(0x00, 0x00);
     }
-
 }
