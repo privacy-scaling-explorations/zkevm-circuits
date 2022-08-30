@@ -209,18 +209,18 @@ impl<F: FieldExt> LeafKeyChip<F> {
                 // sel1 and sel2 are in init branch
                 let sel1 = meta.query_advice(
                     s_main.bytes[IS_BRANCH_C16_POS - RLP_NUM],
-                    Rotation(rot - 1),
+                    Rotation(rot_into_init),
                 );
                 let sel2 = meta.query_advice(
                     s_main.bytes[IS_BRANCH_C1_POS - RLP_NUM],
-                    Rotation(rot - 1),
+                    Rotation(rot_into_init),
                 );
 
                 let mut is_branch_placeholder =
-                    meta.query_advice(s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM], Rotation(rot - 1));
+                    meta.query_advice(s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM], Rotation(rot_into_init));
                 if !is_s {
                     is_branch_placeholder =
-                        meta.query_advice(s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM], Rotation(rot - 1));
+                        meta.query_advice(s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM], Rotation(rot_into_init));
 
                 }
 
@@ -349,7 +349,7 @@ impl<F: FieldExt> LeafKeyChip<F> {
                 // Nibbles count:
                 let nibbles_count = meta.query_advice(
                     s_main.bytes[NIBBLES_COUNTER_POS - RLP_NUM],
-                    Rotation(rot - 1),
+                    Rotation(rot_into_init),
                 );
 
                 let s_rlp2 = meta.query_advice(s_main.rlp2, Rotation::cur());
@@ -360,10 +360,8 @@ impl<F: FieldExt> LeafKeyChip<F> {
                 let leaf_nibbles_last_level = Expression::Constant(F::zero()); 
                 let leaf_nibbles_one_nibble = one.clone(); 
 
-                let mut leaf_nibbles = leaf_nibbles_long * is_long + leaf_nibbles_short * is_short
+                let leaf_nibbles = leaf_nibbles_long * is_long + leaf_nibbles_short * is_short
                     + leaf_nibbles_last_level * last_level + leaf_nibbles_one_nibble * one_nibble;
-
-                // leaf_nibbles = leaf_nibbles - one.clone();
 
                  /* 
                 Checking the total number of nibbles is to prevent having short addresses
@@ -475,6 +473,26 @@ impl<F: FieldExt> LeafKeyChip<F> {
                     * is_long.clone(),
             ));
 
+            // When in first level, it is always even number of nibbles (`sel2 = 1`).
+            let s_rlp2 = meta.query_advice(s_main.rlp2, Rotation::cur());
+            let leaf_nibbles_long = (s_advice0.clone() - c128.clone() - one.clone()) * (one.clone() + one.clone());
+            let leaf_nibbles_short = (s_rlp2.clone() - c128.clone() - one.clone()) * (one.clone() + one.clone());
+            let leaf_nibbles = leaf_nibbles_long * is_long + leaf_nibbles_short * is_short;
+
+            /* 
+            Checking the total number of nibbles is to prevent having short addresses
+            which could lead to a root node which would be shorter than 32 bytes and thus not hashed. That
+            means the trie could be manipulated to reach a desired root.
+            */
+            constraints.push((
+                "Total number of account address nibbles is 64 (first level)",
+                q_enable
+                    // Note: we need to check the number of nibbles being 64 for non_existing_account_proof too
+                    // (even if the address being checked here might is the address of the wrong leaf)
+                    * is_leaf_in_first_level.clone()
+                    * (leaf_nibbles.clone() - c64.clone()),
+            ));
+
             constraints
         });
 
@@ -552,8 +570,11 @@ impl<F: FieldExt> LeafKeyChip<F> {
             let q_enable = q_enable(meta);
             let mut constraints = vec![];
 
-            let is_long = meta.query_advice(accs.s_mod_node_rlc, Rotation::cur());
-            let is_short = meta.query_advice(accs.c_mod_node_rlc, Rotation::cur());
+            let flag1 = meta.query_advice(accs.s_mod_node_rlc, Rotation::cur());
+            let flag2 = meta.query_advice(accs.c_mod_node_rlc, Rotation::cur());
+            let is_long = flag1.clone() * (one.clone() - flag2.clone());
+            let is_short = (one.clone() - flag1.clone()) * flag2.clone();
+            let one_nibble = (one.clone() - flag1.clone()) * (one.clone() - flag2.clone());
 
             // Note: key rlc is in the first branch node (not branch init).
             let rot_level_above = rot_into_init + 1 - BRANCH_ROWS_NUM;
@@ -569,7 +590,6 @@ impl<F: FieldExt> LeafKeyChip<F> {
             if !is_s {
                 is_branch_placeholder =
                     meta.query_advice(s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM], Rotation(rot_into_init));
-
             }
 
             // Previous key RLC:
@@ -690,6 +710,39 @@ impl<F: FieldExt> LeafKeyChip<F> {
                     * is_branch_placeholder.clone()
                     * (one.clone() - is_leaf_in_first_level.clone())
                     * is_long.clone(),
+            ));
+
+            /*
+            Note: When the leaf is after the placeholder branch, it cannot be in the last level
+            otherwise it would not be possible to add a branch placeholder.
+            */
+
+            let s_rlp2 = meta.query_advice(s_main.rlp2, Rotation::cur());
+            let leaf_nibbles_long = ((s_advice0.clone() - c128.clone() - one.clone()) * (one.clone() + one.clone())) * sel2.clone() +
+                ((s_advice0.clone() - c128.clone()) * (one.clone() + one.clone()) - one.clone()) * sel1.clone();
+            let leaf_nibbles_short = ((s_rlp2.clone() - c128.clone() - one.clone()) * (one.clone() + one.clone())) * sel2.clone() +
+                ((s_rlp2.clone() - c128.clone()) * (one.clone() + one.clone()) - one.clone()) * sel1.clone();
+            let leaf_nibbles_one_nibble = one.clone(); 
+
+            let leaf_nibbles = leaf_nibbles_long * is_long + leaf_nibbles_short * is_short
+                + leaf_nibbles_one_nibble * one_nibble;
+
+            /*
+            Note that when the leaf is in the first storage level (but positioned after the placeholder
+            in the circuit), there is no branch above the placeholder branch from where
+            `nibbles_count` is to be retrieved. In that case `nibbles_count = 0`.
+            */
+            let nibbles_count = meta.query_advice(
+                s_main.bytes[NIBBLES_COUNTER_POS - RLP_NUM],
+                Rotation(rot_into_init - BRANCH_ROWS_NUM),
+            ) * (one.clone() - is_first_storage_level.clone());
+
+            constraints.push((
+                "Total number of account address nibbles is 64 (after placeholder)",
+                q_enable
+                    * is_branch_placeholder.clone()
+                    * (one.clone() - is_leaf_in_first_level.clone())
+                    * (nibbles_count.clone() + leaf_nibbles.clone() - c64.clone()),
             ));
 
             constraints

@@ -663,11 +663,19 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
             let s_advice0 = meta.query_advice(s_main.bytes[0], Rotation::cur());
             let leaf_nibbles = ((s_advice0.clone() - c128.clone() - one.clone()) * (one.clone() + one.clone())) * sel2.clone() +
                 ((s_advice0.clone() - c128.clone()) * (one.clone() + one.clone()) - one.clone()) * sel1.clone();
+                
+            let is_branch_in_first_level = one.clone()
+                - meta.query_advice(not_first_level, Rotation(rot_into_first_branch_child));
 
+            /*
+            Note that when the leaf is in the first level (but positioned after the placeholder
+            in the circuit), there is no branch above the placeholder branch from where
+            `nibbles_count` is to be retrieved. In that case `nibbles_count = 0`.
+            */
             let nibbles_count = meta.query_advice(
                 s_main.bytes[NIBBLES_COUNTER_POS - RLP_NUM],
                 Rotation(rot_into_init - BRANCH_ROWS_NUM),
-            );
+            ) * (one.clone() - is_branch_in_first_level);
 
             constraints.push((
                 "Total number of account address nibbles is 64 (after placeholder)",
