@@ -16,7 +16,7 @@ use keccak256::EMPTY_HASH;
 use log::warn;
 
 #[cfg(any(feature = "test", test))]
-pub use sha3::sha3_tests::{gen_sha3_code, MemoryKind};
+pub use self::sha3::sha3_tests::{gen_sha3_code, MemoryKind};
 
 mod address;
 mod balance;
@@ -53,6 +53,7 @@ mod swap;
 #[cfg(test)]
 mod memory_expansion_test;
 
+use self::sha3::Sha3;
 use address::Address;
 use balance::Balance;
 use call::Call;
@@ -76,7 +77,6 @@ use origin::Origin;
 use r#return::Return;
 use returndatacopy::Returndatacopy;
 use selfbalance::Selfbalance;
-use sha3::Sha3;
 use sload::Sload;
 use sstore::Sstore;
 use stackonlyop::StackOnlyOpcode;

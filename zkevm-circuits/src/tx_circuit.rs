@@ -8,136 +8,23 @@ pub mod sign_verify;
 
 use crate::table::{KeccakTable, TxFieldTag, TxTable};
 use crate::util::{power_of_randomness_from_instance, random_linear_combine_word as rlc};
+use bus_mapping::circuit_input_builder::keccak_inputs_tx_circuit;
 use eth_types::{
-    geth_types::Transaction, Address, Field, ToBigEndian, ToLittleEndian, ToScalar, Word,
+    sign_types::SignData,
+    {geth_types::Transaction, Address, Field, ToLittleEndian, ToScalar},
 };
-use ff::PrimeField;
-use group::GroupEncoding;
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter, Region, SimpleFloorPlanner},
     plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Expression},
 };
 use itertools::Itertools;
-use lazy_static::lazy_static;
-use libsecp256k1;
 use log::error;
-use num::Integer;
-use num_bigint::BigUint;
-use sha3::{Digest, Keccak256};
-use sign_verify::{pk_bytes_swap_endianness, SignData, SignVerifyChip, SignVerifyConfig};
+use sign_verify::{SignVerifyChip, SignVerifyConfig};
 use std::marker::PhantomData;
-use subtle::CtOption;
 
 pub use group::{Curve, Group};
 pub use secp256k1::Secp256k1Affine;
 pub use sign_verify::{POW_RAND_SIZE, VERIF_HEIGHT};
-
-lazy_static! {
-    // Curve Scalar.  Referece: Section 2.4.1 (parameter `n`) in "SEC 2: Recommended Elliptic Curve
-    // Domain Parameters" document at http://www.secg.org/sec2-v2.pdf
-    static ref SECP256K1_Q: BigUint = BigUint::from_slice(&[
-        0xd0364141, 0xbfd25e8c,
-        0xaf48a03b, 0xbaaedce6,
-        0xfffffffe, 0xffffffff,
-        0xffffffff, 0xffffffff,
-    ]);
-}
-
-fn recover_pk(v: u8, r: &Word, s: &Word, msg_hash: &[u8; 32]) -> Result<Secp256k1Affine, Error> {
-    let mut sig_bytes = [0u8; 64];
-    sig_bytes[..32].copy_from_slice(&r.to_be_bytes());
-    sig_bytes[32..].copy_from_slice(&s.to_be_bytes());
-    let signature = libsecp256k1::Signature::parse_standard(&sig_bytes).map_err(|e| {
-        error!("Failed parsing signature from (r, s): {:?}", e);
-        Error::Synthesis
-    })?;
-    let msg_hash = libsecp256k1::Message::parse_slice(msg_hash.as_slice()).map_err(|e| {
-        error!("Message hash parsing from slice failed: {:?}", e);
-        Error::Synthesis
-    })?;
-    let recovery_id = libsecp256k1::RecoveryId::parse(v).map_err(|e| {
-        error!("secp256k1::RecoveriId::parse error: {:?}", e);
-        Error::Synthesis
-    })?;
-    let pk = libsecp256k1::recover(&msg_hash, &signature, &recovery_id).map_err(|e| {
-        error!("Public key recovery failed: {:?}", e);
-        Error::Synthesis
-    })?;
-    let pk_be = pk.serialize();
-    let pk_le = pk_bytes_swap_endianness(&pk_be[1..]);
-    let mut pk_bytes = secp256k1::Serialized::default();
-    pk_bytes.as_mut().copy_from_slice(&pk_le[..]);
-    let pk = Secp256k1Affine::from_bytes(&pk_bytes);
-    ct_option_ok_or(pk, Error::Synthesis).map_err(|e| {
-        error!("Invalid public key little endian bytes");
-        e
-    })
-}
-
-fn biguint_to_32bytes_le(v: BigUint) -> [u8; 32] {
-    let mut res = [0u8; 32];
-    let v_le = v.to_bytes_le();
-    res[..v_le.len()].copy_from_slice(&v_le);
-    res
-}
-
-fn ct_option_ok_or<T, E>(v: CtOption<T>, err: E) -> Result<T, E> {
-    Option::<T>::from(v).ok_or(err)
-}
-
-/// Return all the keccak inputs that the Tx Circuit requires.
-pub fn keccak_inputs(txs: &[Transaction], chain_id: u64) -> Result<Vec<Vec<u8>>, Error> {
-    let mut inputs = Vec::new();
-    let sign_datas: Vec<SignData> = txs
-        .iter()
-        .map(|tx| tx_to_sign_data(tx, chain_id))
-        .try_collect()?;
-    // Keccak inputs from SignVerify Chip
-    let sign_verify_inputs = sign_verify::keccak_inputs(&sign_datas);
-    inputs.extend_from_slice(&sign_verify_inputs);
-    // NOTE: We don't verify the Tx Hash in the circuit yet, so we don't have more
-    // hash inputs.
-    Ok(inputs)
-}
-
-/// Doc this
-pub(crate) fn tx_to_sign_data(tx: &Transaction, chain_id: u64) -> Result<SignData, Error> {
-    let sig_r_le = tx.r.to_le_bytes();
-    let sig_s_le = tx.s.to_le_bytes();
-    let sig_r =
-        ct_option_ok_or(secp256k1::Fq::from_repr(sig_r_le), Error::Synthesis).map_err(|e| {
-            error!("Invalid 'r' signature value");
-            e
-        })?;
-    let sig_s =
-        ct_option_ok_or(secp256k1::Fq::from_repr(sig_s_le), Error::Synthesis).map_err(|e| {
-            error!("Invalid 's' signature value");
-            e
-        })?;
-    // msg = rlp([nonce, gasPrice, gas, to, value, data, sig_v, r, s])
-    let msg = Into::<ethers_core::types::TransactionRequest>::into(tx.clone()).rlp(chain_id);
-    let msg_hash: [u8; 32] = Keccak256::digest(&msg)
-        .as_slice()
-        .to_vec()
-        .try_into()
-        .expect("hash length isn't 32 bytes");
-    let v = (tx.v - 35 - chain_id * 2) as u8;
-    let pk = recover_pk(v, &tx.r, &tx.s, &msg_hash)?;
-    // msg_hash = msg_hash % q
-    let msg_hash = BigUint::from_bytes_be(msg_hash.as_slice());
-    let msg_hash = msg_hash.mod_floor(&*SECP256K1_Q);
-    let msg_hash_le = biguint_to_32bytes_le(msg_hash);
-    let msg_hash = ct_option_ok_or(secp256k1::Fq::from_repr(msg_hash_le), Error::Synthesis)
-        .map_err(|e| {
-            error!("Invalid msg hash value");
-            e
-        })?;
-    Ok(SignData {
-        signature: (sig_r, sig_s),
-        pk,
-        msg_hash,
-    })
-}
 
 /// Config for TxCircuit
 #[derive(Clone, Debug)]
@@ -242,9 +129,9 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
             .txs
             .iter()
             .map(|tx| {
-                tx_to_sign_data(tx, self.chain_id).map_err(|e| {
-                    error!("tx_to_sign_data error for tx {:?}", tx);
-                    e
+                tx.sign_data(self.chain_id).map_err(|e| {
+                    error!("tx_to_sign_data error for tx {:?}", e);
+                    Error::Synthesis
                 })
             })
             .try_collect()?;
@@ -401,7 +288,10 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
         self.assign(&config, &mut layouter)?;
         config.keccak_table.load(
             &mut layouter,
-            keccak_inputs(&self.txs, self.chain_id)?,
+            &keccak_inputs_tx_circuit(&self.txs[..], self.chain_id).map_err(|e| {
+                error!("keccak_inputs_tx_circuit error: {:?}", e);
+                Error::Synthesis
+            })?,
             self.randomness,
         )
     }

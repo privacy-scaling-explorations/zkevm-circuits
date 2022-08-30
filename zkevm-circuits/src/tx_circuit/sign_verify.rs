@@ -11,11 +11,11 @@ use crate::{
 };
 use ecc::{EccConfig, GeneralEccChip};
 use ecdsa::ecdsa::{AssignedEcdsaSig, AssignedPublicKey, EcdsaChip};
+use eth_types::sign_types::{pk_bytes_le, pk_bytes_swap_endianness, SignData};
 use eth_types::{self, Field};
 use gadgets::is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction};
-use group::{ff::Field as GroupField, prime::PrimeCurveAffine, Curve};
 use halo2_proofs::{
-    arithmetic::{BaseExt, Coordinates, CurveAffine},
+    arithmetic::BaseExt,
     circuit::{AssignedCell, Layouter, Region},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
     poly::Rotation,
@@ -26,7 +26,6 @@ use integer::{
 };
 use itertools::Itertools;
 use keccak256::plain::Keccak;
-use lazy_static::lazy_static;
 use log::error;
 use maingate::{
     Assigned, AssignedValue, MainGate, MainGateConfig, MainGateInstructions, RangeChip,
@@ -56,45 +55,6 @@ pub struct SignVerifyChip<F: Field, const MAX_VERIF: usize> {
 
 const NUMBER_OF_LIMBS: usize = 4;
 const BIT_LEN_LIMB: usize = 72;
-
-/// Return a copy of the serialized public key with swapped Endianness.
-pub(crate) fn pk_bytes_swap_endianness<T: Clone>(pk: &[T]) -> [T; 64] {
-    assert_eq!(pk.len(), 64);
-    let mut pk_swap = <&[T; 64]>::try_from(pk)
-        .map(|r| r.clone())
-        .expect("pk.len() != 64");
-    pk_swap[..32].reverse();
-    pk_swap[32..].reverse();
-    pk_swap
-}
-
-pub(crate) fn pk_bytes_le(pk: &Secp256k1Affine) -> [u8; 64] {
-    let pk_coord = Option::<Coordinates<_>>::from(pk.coordinates()).expect("point is the identity");
-    let mut pk_le = [0u8; 64];
-    pk_coord
-        .x()
-        .write(&mut Cursor::new(&mut pk_le[..32]))
-        .expect("cannot write bytes to array");
-    pk_coord
-        .y()
-        .write(&mut Cursor::new(&mut pk_le[32..]))
-        .expect("cannot write bytes to array");
-    pk_le
-}
-
-pub(crate) fn keccak_inputs(sigs: &[SignData]) -> Vec<Vec<u8>> {
-    let mut inputs = Vec::new();
-    for sig in sigs {
-        let pk_le = pk_bytes_le(&sig.pk);
-        let pk_be = pk_bytes_swap_endianness(&pk_le);
-        inputs.push(pk_be.to_vec());
-    }
-    // Padding signature
-    let pk_le = pk_bytes_le(&SignData::default().pk);
-    let pk_be = pk_bytes_swap_endianness(&pk_le);
-    inputs.push(pk_be.to_vec());
-    inputs
-}
 
 /// Return an expression that builds an integer element in the field from the
 /// `bytes` in big endian.
@@ -675,67 +635,6 @@ impl<F: Field, const MAX_VERIF: usize> SignVerifyChip<F, MAX_VERIF> {
     }
 }
 
-#[derive(Clone, Debug)]
-pub(crate) struct SignData {
-    pub(crate) signature: (secp256k1::Fq, secp256k1::Fq),
-    pub(crate) pk: Secp256k1Affine,
-    pub(crate) msg_hash: secp256k1::Fq,
-}
-
-// Returns (r, s)
-fn sign(
-    randomness: secp256k1::Fq,
-    sk: secp256k1::Fq,
-    msg_hash: secp256k1::Fq,
-) -> (secp256k1::Fq, secp256k1::Fq) {
-    let randomness_inv =
-        Option::<secp256k1::Fq>::from(randomness.invert()).expect("cannot invert randomness");
-    let generator = Secp256k1Affine::generator();
-    let sig_point = generator * randomness;
-    let x = *Option::<Coordinates<_>>::from(sig_point.to_affine().coordinates())
-        .expect("point is the identity")
-        .x();
-
-    let x_repr = &mut Vec::with_capacity(32);
-    x.write(x_repr).expect("cannot write bytes to array");
-
-    let mut x_bytes = [0u8; 64];
-    x_bytes[..32].copy_from_slice(&x_repr[..]);
-
-    let sig_r = secp256k1::Fq::from_bytes_wide(&x_bytes); // get x cordinate (E::Base) on E::Scalar
-    let sig_s = randomness_inv * (msg_hash + sig_r * sk);
-    (sig_r, sig_s)
-}
-
-lazy_static! {
-    static ref SIGN_DATA_DEFAULT: SignData = {
-        let generator = Secp256k1Affine::generator();
-        let sk = secp256k1::Fq::one();
-        let pk = generator * sk;
-        let pk = pk.to_affine();
-        let msg_hash = secp256k1::Fq::one();
-        let randomness = secp256k1::Fq::one();
-        let (sig_r, sig_s) = sign(randomness, sk, msg_hash);
-
-        SignData {
-            signature: (sig_r, sig_s),
-            pk,
-            msg_hash,
-        }
-    };
-}
-
-impl Default for SignData {
-    fn default() -> Self {
-        // Hardcoded valid signature corresponding to a hardcoded private key and
-        // message hash generated from "nothing up my sleeve" values to make the
-        // ECDSA chip pass the constraints, to be use for padding signature
-        // verifications (where the constraints pass, but we don't care about the
-        // message hash and public key).
-        SIGN_DATA_DEFAULT.clone()
-    }
-}
-
 fn pub_key_hash_to_address<F: Field>(pk_hash: &[u8]) -> F {
     pk_hash[32 - 20..]
         .iter()
@@ -746,9 +645,12 @@ fn pub_key_hash_to_address<F: Field>(pk_hash: &[u8]) -> F {
 mod sign_verify_tests {
     use super::*;
     use crate::util::power_of_randomness_from_instance;
-    use group::Group;
+    use bus_mapping::circuit_input_builder::keccak_inputs_sign_verify;
+    use eth_types::sign_types::sign;
+    use group::{ff::Field as GroupField, prime::PrimeCurveAffine, Curve, Group};
     use halo2_proofs::{
-        circuit::SimpleFloorPlanner, dev::MockProver, pairing::bn256::Fr, plonk::Circuit,
+        arithmetic::CurveAffine, circuit::SimpleFloorPlanner, dev::MockProver, pairing::bn256::Fr,
+        plonk::Circuit,
     };
     use pretty_assertions::assert_eq;
     use rand::{RngCore, SeedableRng};
@@ -801,7 +703,7 @@ mod sign_verify_tests {
             )?;
             config.sign_verify.keccak_table.load(
                 &mut layouter,
-                keccak_inputs(&self.signatures),
+                &keccak_inputs_sign_verify(&self.signatures),
                 self.randomness,
             )?;
             Ok(())

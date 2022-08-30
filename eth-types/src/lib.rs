@@ -20,6 +20,7 @@ pub mod error;
 pub mod bytecode;
 pub mod evm_types;
 pub mod geth_types;
+pub mod sign_types;
 
 pub use bytecode::Bytecode;
 pub use error::Error;
@@ -37,7 +38,7 @@ pub use ethers_core::abi::ethereum_types::U512;
 use ethers_core::types;
 pub use ethers_core::types::{
     transaction::{eip2930::AccessList, response::Transaction},
-    Address, Block, Bytes, H160, H256, U256, U64,
+    Address, Block, Bytes, Signature, H160, H256, U256, U64,
 };
 
 use serde::{de, Deserialize, Serialize};
