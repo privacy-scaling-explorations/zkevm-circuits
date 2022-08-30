@@ -327,8 +327,10 @@ impl ExecutionState {
 /// possible targets using N/2 + 1 cells.
 #[derive(Clone, Debug)]
 pub(crate) struct DynamicSelectorHalf<F> {
-    /// Whether the target is even.  `target % 2 == 0`.
-    pub(crate) target_even: Cell<F>,
+    /// N value: how many possible targets this selector supports.
+    count: usize,
+    /// Whether the target is odd.  `target % 2 == 1`.
+    pub(crate) target_odd: Cell<F>,
     /// Whether the target belongs to each consecutive pair of targets.
     /// `in [0, 1], in [2, 3], in [4, 5], ...`
     pub(crate) target_pairs: Vec<Cell<F>>,
@@ -337,10 +339,11 @@ pub(crate) struct DynamicSelectorHalf<F> {
 impl<F: FieldExt> DynamicSelectorHalf<F> {
     pub(crate) fn new(cell_manager: &mut CellManager<F>, count: usize) -> Self {
         let target_pairs = cell_manager.query_cells(CellType::Storage, (count + 1) / 2);
-        let target_even = cell_manager.query_cell(CellType::Storage);
+        let target_odd = cell_manager.query_cell(CellType::Storage);
         Self {
+            count,
             target_pairs,
-            target_even,
+            target_odd,
         }
     }
 
@@ -353,28 +356,38 @@ impl<F: FieldExt> DynamicSelectorHalf<F> {
                 .iter()
                 .fold(1u64.expr(), |acc, cell| acc - cell.expr()),
         );
-        // Cells representation for target_pairs and target_even should be bool.
-        let bool_checks = iter::once(&self.target_even)
+        // Cells representation for target_pairs and target_odd should be bool.
+        let bool_checks = iter::once(&self.target_odd)
             .chain(&self.target_pairs)
             .map(|cell| {
                 (
-                    "Representation for target_pairs and target_even should be bool",
+                    "Representation for target_pairs and target_odd should be bool",
                     cell.expr() * (1u64.expr() - cell.expr()),
                 )
             });
-        iter::once(sum_to_one).chain(bool_checks).collect()
+        let mut constraints: Vec<(&'static str, Expression<F>)> =
+            iter::once(sum_to_one).chain(bool_checks).collect();
+        // In case count is odd, we must forbid selecting N+1 with (odd = 1,
+        // target_pairs[-1] = 1)
+        if self.count % 2 == 1 {
+            constraints.push((
+                "Forbid N+1 target when N is odd",
+                self.target_odd.expr() * self.target_pairs[self.count / 2].expr(),
+            ));
+        }
+        constraints
     }
 
     pub(crate) fn selector(&self, targets: impl IntoIterator<Item = usize>) -> Expression<F> {
         targets
             .into_iter()
             .map(|target| {
-                let even = target % 2 == 0;
+                let odd = target % 2 == 1;
                 let pair_index = target / 2;
-                (if even {
-                    self.target_even.expr()
+                (if odd {
+                    self.target_odd.expr()
                 } else {
-                    1.expr() - self.target_even.expr()
+                    1.expr() - self.target_odd.expr()
                 }) * self.target_pairs[pair_index].expr()
             })
             .reduce(|acc, expr| acc + expr)
@@ -387,13 +400,10 @@ impl<F: FieldExt> DynamicSelectorHalf<F> {
         offset: usize,
         target: usize,
     ) -> Result<(), Error> {
-        let even = target % 2 == 0;
+        let odd = target % 2 == 1;
         let pair_index = target / 2;
-        self.target_even.assign(
-            region,
-            offset,
-            Some(if even { F::one() } else { F::zero() }),
-        )?;
+        self.target_odd
+            .assign(region, offset, Some(if odd { F::one() } else { F::zero() }))?;
         for (index, cell) in self.target_pairs.iter().enumerate() {
             cell.assign(
                 region,
