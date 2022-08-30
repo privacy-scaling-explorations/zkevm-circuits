@@ -97,24 +97,28 @@ mod test {
 
     #[test]
     fn sar_gadget_simple() {
-        test_ok(OpcodeId::SAR, 0x02FF.into(), 0x1.into());
+        test_ok(OpcodeId::SAR, 0xABCD.into(), 8.into());
+        test_ok(OpcodeId::SAR, 0x1234.into(), 7.into());
+        test_ok(OpcodeId::SAR, 0x8765.into(), 17.into());
+        test_ok(OpcodeId::SAR, 0x4321.into(), 0.into());
+        test_ok(OpcodeId::SAR, rand_word(), 127.into());
+        test_ok(OpcodeId::SAR, rand_word(), 129.into());
+        let rand_shift = rand::thread_rng().gen_range(0..=255);
+        test_ok(OpcodeId::SAR, rand_word(), rand_shift.into());
+    }
+
+    #[test]
+    fn sar_gadget_rand_overflow_shift() {
+        test_ok(OpcodeId::SAR, rand_word(), 256.into());
+        test_ok(OpcodeId::SAR, rand_word(), 0x1234.into());
         test_ok(
             OpcodeId::SAR,
-            Word::from_big_endian(&[255u8; 32]),
-            0x73.into(),
+            rand_word(),
+            Word::from_big_endian(&[255_u8; 32]),
         );
     }
 
-    #[test]
-    fn sar_gadget_rand() {
-        let a = rand_word();
-        let mut rng = rand::thread_rng();
-        let shift = rng.gen_range(0..=255);
-        test_ok(OpcodeId::SAR, a, shift.into());
-    }
-
-    //this testcase manage to check the split is correct.
-    #[test]
+    // This case validates if the split is correct.
     fn sar_gadget_constant_shift() {
         let a = rand_word();
         test_ok(OpcodeId::SAR, a, 8.into());
