@@ -14,12 +14,12 @@ use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
 use crate::{
-    helpers::{get_bool_constraint, range_lookups, get_is_extension_node, bytes_into_rlc},
+    helpers::{get_bool_constraint, range_lookups, get_is_extension_node, bytes_into_rlc, bytes_expr_into_rlc},
     mpt::{FixedTableTag, MPTConfig, ProofVariables},
     param::{
         BRANCH_0_C_START, BRANCH_0_S_START, IS_BRANCH_C_PLACEHOLDER_POS,
         IS_BRANCH_S_PLACEHOLDER_POS, RLP_NUM, NIBBLES_COUNTER_POS, BRANCH_ROWS_NUM, BRANCH_0_KEY_POS, DRIFTED_POS, IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS, IS_EXT_LONG_ODD_C16_POS, IS_EXT_LONG_ODD_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS, S_RLP_START, S_START, C_RLP_START, C_START, HASH_WIDTH,
-    }, witness_row::MptWitnessRow, storage_leaf::StorageLeaf, account_leaf::AccountLeaf, columns::{MainCols, DenoteCols},
+    }, witness_row::MptWitnessRow, storage_leaf::StorageLeaf, account_leaf::AccountLeaf, columns::{MainCols, DenoteCols, AccumulatorCols},
 };
 
 /*
@@ -121,9 +121,11 @@ impl<F: FieldExt> BranchConfig<F> {
         is_account_leaf_in_added_branch: Column<Advice>,
         s_main: MainCols<F>,
         c_main: MainCols<F>,
+        accs: AccumulatorCols<F>,
         branch: BranchCols<F>,
         denoter: DenoteCols<F>,
         fixed_table: [Column<Fixed>; 3],
+        acc_r: F,
     ) -> Self {
         let config = BranchConfig { _marker: PhantomData };
         let one = Expression::Constant(F::one());
@@ -507,10 +509,10 @@ impl<F: FieldExt> BranchConfig<F> {
                     * node_index_cur.clone(), // node_index has to be 0
             ));
 
-            // When is_branch_child changes back to 0, previous node_index has to be 15.
+            // When `is_branch_child` changes back to 0, previous `node_index` needs to be 15.
             let node_index_prev = meta.query_advice(branch.node_index, Rotation::prev());
             constraints.push((
-                "last branch children",
+                "Last branch child node_index",
                 q_not_first.clone()
                     * (one.clone() - is_branch_init_prev.clone()) // ignore if previous row was is_branch_init (here is_branch_child changes too)
                     * (is_branch_child_prev.clone()
@@ -519,17 +521,18 @@ impl<F: FieldExt> BranchConfig<F> {
                         - Expression::Constant(F::from(15_u64))), // node_index has to be 15
             ));
 
-            // When node_index is not 15, is_last_branch_child needs to be 0.
+            // When `node_index` is not 15, `is_last_child` needs to be 0.
             constraints.push((
-                "is last branch child 1",
+                "is_last_child index",
                 q_not_first.clone()
                     * is_last_branch_child_cur
                     * (node_index_cur.clone() // for this to work properly is_last_branch_child needs to have value 1 only when is_branch_child
                         - Expression::Constant(F::from(15_u64))),
             ));
-            // When node_index is 15, is_last_branch_child needs to be 1.
+
+            // When node_index is 15, is_last_child needs to be 1.
             constraints.push((
-                "is last branch child 2",
+                "is_last_child when node_index = 15",
                 q_not_first.clone()
                     * (one.clone() - is_branch_init_prev.clone()) // ignore if previous row was is_branch_init (here is_branch_child changes too)
                     * (is_last_branch_child_prev - one.clone())
@@ -540,21 +543,25 @@ impl<F: FieldExt> BranchConfig<F> {
                                                          * ... = 1 */
             ));
 
-            // node_index is increasing by 1 for is_branch_child
+            // `node_index` is increased by 1 for each is_branch_child node.
             let node_index_prev = meta.query_advice(branch.node_index, Rotation::prev());
             constraints.push((
-                "node index increasing for branch children",
+                "node_index increasing for branch children",
                 q_not_first.clone()
                     * is_branch_child_cur.clone()
                     * node_index_cur.clone() // ignore if node_index = 0
                     * (node_index_cur.clone() - node_index_prev - one.clone()),
             ));
-
-            // modified_node needs to be the same for all branch nodes
+ 
             let modified_node_prev = meta.query_advice(branch.modified_node, Rotation::prev());
             let modified_node_cur = meta.query_advice(branch.modified_node, Rotation::cur());
+
+            /*
+            `modified_node` (the index of the branch child that is modified)
+            needs to be the same for all branch nodes.
+            */
             constraints.push((
-                "modified node the same for all branch children",
+                "modified_node the same for all branch children",
                 q_not_first.clone()
                     * is_branch_child_cur
                     * node_index_cur // ignore if node_index = 0
@@ -576,8 +583,10 @@ impl<F: FieldExt> BranchConfig<F> {
                 s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
                 Rotation::prev(),
             );
+
+            // TODO: not needed anymore
             constraints.push((
-                "drifted_pos = modified_node in node_index = 0 when NOT placeholder",
+                "drifted_pos = modified_node for node_index = 0 when NOT placeholder",
                 q_not_first.clone()
                     * (one.clone()
                         - is_branch_placeholder_s.clone()
@@ -585,8 +594,60 @@ impl<F: FieldExt> BranchConfig<F> {
                     * is_branch_init_prev
                     * (drifted_pos_cur.clone() - modified_node_cur.clone()),
             ));
+             
+            /* 
+            TODO
+            // This might be optimized by having is_branch_placeholder column.
+            for ind in 0..16 {
+                let is_branch_placeholder_s = meta.query_advice(
+                    s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM],
+                    Rotation(-ind - 1),
+                );
+                let is_branch_placeholder_c = meta.query_advice(
+                    s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
+                    Rotation(-ind - 1),
+                );
+                let mut s_hash = vec![];
+                let mut c_hash = vec![];
+                for column in s_main.bytes.iter() {
+                    s_hash.push(meta.query_advice(*column, Rotation::cur()));
+                }
+                for column in c_main.bytes.iter() {
+                    c_hash.push(meta.query_advice(*column, Rotation::cur()));
+                }
+                let s_hash_rlc = bytes_expr_into_rlc(&s_hash, acc_r);
+                let c_hash_rlc = bytes_expr_into_rlc(&c_hash, acc_r);
+
+                let is_modified = meta.query_advice(branch.is_modified, Rotation::cur());
+                let is_at_drifted_pos = meta.query_advice(branch.is_at_drifted_pos, Rotation::cur());
+                let s_mod_node_hash_rlc_cur = meta.query_advice(accs.s_mod_node_rlc, Rotation::cur());
+                let c_mod_node_hash_rlc_cur = meta.query_advice(accs.c_mod_node_rlc, Rotation::cur());
+
+                constraints.push((
+                    "mod_node_hash_rlc correspond to advices at the modified index",
+                    q_not_first.clone()
+                            * is_branch_child_cur.clone()
+                            * is_branch_placeholder_s.clone()
+                            * is_modified.clone()
+                            * (s_hash_rlc.clone() - s_mod_node_hash_rlc_cur),
+                ));
+
+                constraints.push((
+                    "mod_node_hash_rlc correspond to advices at the modified index",
+                    q_not_first.clone()
+                            * is_branch_child_cur.clone()
+                            * is_branch_placeholder_s.clone()
+                            * is_at_drifted_pos.clone()
+                            * is_modified.clone()
+                            * (hash_rlc.clone() - mod_node_hash_rlc_cur),
+                ));
+            }
+            */
+
+
+
             constraints.push((
-                "drifted_pos_prev = drifted_pos_cur in node_index > 0 when NOT placeholder",
+                "drifted_pos_prev = drifted_pos_cur for node_index > 0 when NOT placeholder",
                 q_not_first.clone()
                     * (one.clone()
                         - is_branch_placeholder_s.clone()

@@ -124,6 +124,8 @@ pub(crate) struct DenoteCols<F> {
     _marker: PhantomData<F>,
 }
 
+// TODO: check whether sel1, sel2 are sometimes used for accumulated values and fix it.
+
 impl<F: FieldExt> DenoteCols<F> {
     pub(crate) fn new(meta: &mut ConstraintSystem<F>) -> Self {
         Self {

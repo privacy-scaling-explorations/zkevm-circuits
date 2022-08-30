@@ -53,10 +53,6 @@ use crate::{
     nodes) down to the leaf.
 */
 
-// TODO: constraints for the length of key and address RLC to be 32 bytes long
-
-// TODO: check whether sel1, sel2 are sometimes used for accumulated values and fix it.
-
 #[derive(Clone, Debug)]
 pub struct MPTConfig<F> {
     pub(crate) proof_type: ProofTypeCols<F>,
@@ -286,9 +282,11 @@ impl<F: FieldExt> MPTConfig<F> {
             account_leaf.is_in_added_branch,
             s_main.clone(),
             c_main.clone(),
+            accumulators.clone(),
             branch.clone(),
             denoter.clone(),
             fixed_table.clone(),
+            acc_r,
         );
 
         BranchKeyConfig::<F>::configure(

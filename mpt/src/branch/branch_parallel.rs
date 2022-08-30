@@ -141,7 +141,6 @@ impl<F: FieldExt> BranchParallelChip<F> {
             // branch init where we don't need additional columns.
 
             let mut sc_hash = vec![];
-            // Note: storage root is always in s_advices!
             for column in main.bytes.iter() {
                 sc_hash.push(meta.query_advice(*column, Rotation::cur()));
             }
@@ -156,6 +155,8 @@ impl<F: FieldExt> BranchParallelChip<F> {
             // the first nibble (and extension node nibbles if extension node) would fail.
             let mod_node_hash_rlc_cur = meta.query_advice(mod_node_hash_rlc, Rotation::cur());
             // Needs to correspond when is_modified or is_at_drifted_pos.
+            /*
+            TODO: to be removed
             constraints.push((
                 "mod_node_hash_rlc correspond to advices at the modified index",
                 q_not_first.clone()
@@ -164,6 +165,7 @@ impl<F: FieldExt> BranchParallelChip<F> {
                         * is_modified.clone()
                         * (hash_rlc.clone() - mod_node_hash_rlc_cur),
             ));
+            */
 
             // sel - denoting whether leaf is empty at modified_node.
             // When sel = 1, *_advices need to be [128, 0, ..., 0].
