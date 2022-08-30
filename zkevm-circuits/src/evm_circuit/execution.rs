@@ -736,6 +736,34 @@ impl<F: Field> ExecutionConfig<F> {
                 let mut offset = 0;
 
                 self.q_step_first.enable(&mut region, offset)?;
+                // handle empty block conditions
+                if block.txs.is_empty() {
+                    // if enable padding to fix length in the future, just change `end_row` to
+                    // target length
+                    let num_rows = 2;
+
+                    for i in 0..num_rows {
+                        self.q_usable.enable(&mut region, i)?;
+
+                        for column in iter::empty()
+                            .chain([
+                                self.q_step,
+                                self.num_rows_until_next_step,
+                                self.num_rows_inv,
+                            ])
+                            .chain(self.advices)
+                        {
+                            region
+                                .assign_advice(|| "assign advice rows", column, i, || Ok(F::zero()))
+                                .unwrap();
+                        }
+                    }
+
+                    //adjust q_step_last to 1
+                    self.q_step_last.enable(&mut region, num_rows - 1)?;
+
+                    return Ok(());
+                }
 
                 // Collect all steps
                 let mut steps = block
