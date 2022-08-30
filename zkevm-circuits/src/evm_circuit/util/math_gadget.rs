@@ -1845,6 +1845,8 @@ impl<F: Field> SarWordsGadget<F> {
             .assign(region, offset, F::from(shf_div64 as u64), F::from(1))?;
         self.shf_div64_eq2
             .assign(region, offset, F::from(shf_div64 as u64), F::from(2))?;
+        self.shf_div64_eq3
+            .assign(region, offset, F::from(shf_div64 as u64), F::from(3))?;
         self.a64s_lo_lt_p_lo
             .iter()
             .zip(a64s_lo.iter())
