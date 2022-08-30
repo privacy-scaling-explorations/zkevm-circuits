@@ -560,6 +560,24 @@ fn dummy_gen_call_ops(
     let geth_step = &geth_steps[0];
     let mut exec_step = state.new_step(geth_step)?;
 
+    let (args_offset, args_length, ret_offset, ret_length) = {
+        // CALLCODE    (gas, addr, value, argsOffset, argsLength, retOffset, retLength)
+        // DELEGATECALL(gas, addr,        argsOffset, argsLength, retOffset, retLength)
+        // STATICCALL  (gas, addr,        argsOffset, argsLength, retOffset, retLength)
+        let pos = match geth_step.op {
+            OpcodeId::CALLCODE => (3, 4, 5, 6),
+            OpcodeId::DELEGATECALL | OpcodeId::STATICCALL => (2, 3, 4, 5),
+            _ => unreachable!("opcode is not of call type"),
+        };
+        (
+            geth_step.stack.nth_last(pos.0)?.as_usize(),
+            geth_step.stack.nth_last(pos.1)?.as_usize(),
+            geth_step.stack.nth_last(pos.2)?.as_usize(),
+            geth_step.stack.nth_last(pos.3)?.as_usize(),
+        )
+    };
+    state.call_expand_memory(args_offset, args_length, ret_offset, ret_length)?;
+
     let tx_id = state.tx_ctx.id();
     let call = state.parse_call(geth_step)?;
 

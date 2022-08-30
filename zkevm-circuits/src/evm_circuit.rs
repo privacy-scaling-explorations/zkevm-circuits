@@ -26,7 +26,7 @@ use witness::Block;
 pub struct EvmCircuit<F> {
     fixed_table: [Column<Fixed>; 4],
     byte_table: [Column<Fixed>; 1],
-    execution: Box<ExecutionConfig<F>>,
+    pub(crate) execution: Box<ExecutionConfig<F>>,
 }
 
 impl<F: Field> EvmCircuit<F> {
@@ -388,7 +388,7 @@ mod evm_circuit_stats {
 
     /// This function prints to stdout a table with all the implemented states
     /// and their responsible opcodes with the following stats:
-    /// - height: number of rows used by the execution state
+    /// - height: number of rows in the EVM circuit used by the execution state
     /// - gas: gas value used for the opcode execution
     /// - height/gas: ratio between circuit cost and gas cost
     ///
