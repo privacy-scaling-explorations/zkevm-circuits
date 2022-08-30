@@ -1,8 +1,8 @@
-use std::{convert::{TryFrom}, marker::PhantomData};
+use std::{convert::{TryFrom, TryInto}, marker::PhantomData};
 use halo2_proofs::{circuit::Region, plonk::Error, arithmetic::FieldExt};
 use num_enum::TryFromPrimitive;
 
-use crate::{param::{NOT_FIRST_LEVEL_POS, IS_NON_EXISTING_ACCOUNT_POS, COUNTER_WITNESS_LEN, HASH_WIDTH, IS_STORAGE_MOD_POS, S_START, C_START, RLP_NUM, WITNESS_ROW_WIDTH, S_RLP_START, C_RLP_START, IS_NONCE_MOD_POS, IS_BALANCE_MOD_POS, IS_ACCOUNT_DELETE_MOD_POS}, account_leaf::AccountLeaf, storage_leaf::StorageLeaf, branch::Branch, mpt::MPTConfig, columns::ProofTypeCols};
+use crate::{param::{NOT_FIRST_LEVEL_POS, IS_NON_EXISTING_ACCOUNT_POS, COUNTER_WITNESS_LEN, HASH_WIDTH, IS_STORAGE_MOD_POS, S_START, C_START, RLP_NUM, WITNESS_ROW_WIDTH, S_RLP_START, C_RLP_START, IS_NONCE_MOD_POS, IS_BALANCE_MOD_POS, IS_ACCOUNT_DELETE_MOD_POS}, account_leaf::AccountLeaf, storage_leaf::StorageLeaf, branch::Branch, mpt::{MPTConfig, ProofVariables}, columns::ProofTypeCols, helpers::bytes_into_rlc};
 
 #[derive(Eq, PartialEq, TryFromPrimitive)]
 #[repr(u8)]
@@ -505,13 +505,65 @@ impl<F: FieldExt> MptWitnessRow<F> {
         Ok(())
     }
 
-    pub(crate) fn assign_proof_type(
+    /*
+    Assignment of the columns that are used for all lookups. There are other columns used for
+    lookups which are lookup-specific (for example requiring old and new nonce value).
+    */
+    pub(crate) fn assign_lookup_columns(
         &self,
         region: &mut Region<'_, F>,
         mpt_config: &MPTConfig<F>,
+        pv: &ProofVariables<F>,
         offset: usize,
     ) -> Result<(), Error> {
-        let row = self.main();
+        let s_root_rlc = bytes_into_rlc(self.s_root_bytes(), mpt_config.acc_r,);
+        let c_root_rlc = bytes_into_rlc(self.c_root_bytes(), mpt_config.acc_r,);
+
+        region.assign_advice(
+            || "inter start root",
+            mpt_config.inter_start_root,
+            offset,
+            || Ok(s_root_rlc),
+        )?;
+        region.assign_advice(
+            || "inter final root",
+            mpt_config.inter_final_root,
+            offset,
+            || Ok(c_root_rlc),
+        )?;
+
+        if pv.before_account_leaf {
+            region.assign_advice(
+                || "address RLC",
+                mpt_config.address_rlc,
+                offset,
+                || Ok(F::zero()),
+            )?;
+        } else {
+            // address_rlc can be set only in account leaf row - this is to
+            // prevent omitting account proof (and having only storage proof
+            // with the appropriate address_rlc)
+            let address_rlc = bytes_into_rlc(self.address_bytes(), mpt_config.acc_r,);
+
+            region.assign_advice(
+                || "address RLC",
+                mpt_config.address_rlc,
+                offset,
+                || Ok(address_rlc),
+            )?;
+        }
+        
+        let counter_u32: u32 = u32::from_be_bytes(
+                self.counter_bytes()
+                .try_into()
+                .expect("slice of incorrect length"),
+        );
+        region.assign_advice(
+            || "counter",
+            mpt_config.counter,
+            offset,
+            || Ok(F::from(counter_u32 as u64)),
+        )?;
 
         region.assign_advice(
             || "is_storage_mod",

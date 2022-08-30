@@ -12,8 +12,7 @@ use crate::{
     branch::{BranchConfig, branch_hash_in_parent::BranchHashInParentConfig, branch_parallel::BranchParallelChip, branch_key::BranchKeyConfig, branch_rlc::BranchRLCConfig, branch_init::BranchInitConfig, extension_node::ExtensionNodeChip, extension_node_key::ExtensionNodeKeyChip, Branch, BranchCols},
     helpers::{get_is_extension_node, bytes_into_rlc},
     param::{
-        IS_BALANCE_MOD_POS, IS_NONCE_MOD_POS, IS_STORAGE_MOD_POS,
-        RLP_NUM, IS_ACCOUNT_DELETE_MOD_POS, IS_NON_EXISTING_ACCOUNT_POS,
+        RLP_NUM,
     },
     roots::RootsChip,
     storage_root_in_account_leaf::StorageRootChip, account_leaf::{AccountLeafCols, AccountLeaf, account_leaf_key_in_added_branch::AccountLeafKeyInAddedBranchConfig, account_leaf_key::AccountLeafKeyConfig, account_leaf_nonce_balance::AccountLeafNonceBalanceConfig, account_leaf_storage_codehash::AccountLeafStorageCodehashConfig, account_non_existing::AccountNonExistingConfig}, storage_leaf::{StorageLeafCols, StorageLeaf, leaf_key_in_added_branch::LeafKeyInAddedBranchChip, leaf_key::LeafKeyChip, leaf_value::LeafValueChip}, witness_row::{MptWitnessRow, MptWitnessRowType}, columns::{ProofTypeCols, MainCols, AccumulatorCols, DenoteCols},
@@ -81,7 +80,7 @@ pub struct MPTConfig<F> {
                                   * address_rlc computed in the account leaf key row. Needed to
                                   * enable lookup for storage key/value (to have address RLC in
                                   * the same row as storage key/value). */
-    counter: Column<Advice>,
+    pub(crate) counter: Column<Advice>,
     account_leaf_key_s: AccountLeafKeyConfig<F>,
     account_leaf_key_c: AccountLeafKeyConfig<F>,
     account_leaf_nonce_balance_s: AccountLeafNonceBalanceConfig<F>,
@@ -937,58 +936,9 @@ impl<F: FieldExt> MPTConfig<F> {
                             self.not_first_level,
                             offset,
                             || Ok(F::from(row.not_first_level() as u64)),
-                        )?;
+                        )?; 
 
-                        let s_root_rlc = bytes_into_rlc(row.s_root_bytes(), self.acc_r,);
-                        let c_root_rlc = bytes_into_rlc(row.c_root_bytes(), self.acc_r,);
-
-                        region.assign_advice(
-                            || "inter start root",
-                            self.inter_start_root,
-                            offset,
-                            || Ok(s_root_rlc),
-                        )?;
-                        region.assign_advice(
-                            || "inter final root",
-                            self.inter_final_root,
-                            offset,
-                            || Ok(c_root_rlc),
-                        )?;
-
-                        if pv.before_account_leaf {
-                            region.assign_advice(
-                                || "address RLC",
-                                self.address_rlc,
-                                offset,
-                                || Ok(F::zero()),
-                            )?;
-                        } else {
-                            // address_rlc can be set only in account leaf row - this is to
-                            // prevent omitting account proof (and having only storage proof
-                            // with the appropriate address_rlc)
-                            let address_rlc = bytes_into_rlc(row.address_bytes(), self.acc_r,);
-
-                            region.assign_advice(
-                                || "address RLC",
-                                self.address_rlc,
-                                offset,
-                                || Ok(address_rlc),
-                            )?;
-                        }
-                        
-                        let counter_u32: u32 = u32::from_be_bytes(
-                                row.counter_bytes()
-                                .try_into()
-                                .expect("slice of incorrect length"),
-                        );
-                        region.assign_advice(
-                            || "counter",
-                            self.counter,
-                            offset,
-                            || Ok(F::from(counter_u32 as u64)),
-                        )?;
-
-                        row.assign_proof_type(&mut region, self, offset)?;
+                        row.assign_lookup_columns(&mut region, self, &pv, offset)?;
 
                         if row.get_type() == MptWitnessRowType::InitBranch {
                             self.branch_config.assign_branch_init(
