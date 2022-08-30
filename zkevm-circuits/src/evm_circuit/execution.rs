@@ -740,9 +740,9 @@ impl<F: Field> ExecutionConfig<F> {
                 if block.txs.is_empty() {
                     // if enable padding to fix length in the future, just change `end_row` to
                     // target length
-                    let end_row = 2;
+                    let num_rows = 2;
 
-                    for i in 0..end_row {
+                    for i in 0..num_rows {
                         self.q_usable.enable(&mut region, i)?;
 
                         for column in iter::empty()
@@ -760,7 +760,7 @@ impl<F: Field> ExecutionConfig<F> {
                     }
 
                     //adjust q_step_last to 1
-                    self.q_step_last.enable(&mut region, end_row - 1)?;
+                    self.q_step_last.enable(&mut region, num_rows - 1)?;
 
                     return Ok(());
                 }
