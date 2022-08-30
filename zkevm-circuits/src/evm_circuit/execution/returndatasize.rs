@@ -160,4 +160,27 @@ mod test {
     fn returndatasize_gadget_zero_length() {
         test_ok_internal(0x00, 0x00);
     }
+
+    #[test]
+    fn test_simple() {
+        let (addr_a, addr_b) = (mock::MOCK_ACCOUNTS[0], mock::MOCK_ACCOUNTS[1]);
+        let code = bytecode! {
+            RETURNDATASIZE
+            STOP
+        };
+        let ctx = TestContext::<2, 1>::new(
+            None,
+            |accs| {
+                accs[0].address(addr_b).code(code);
+                accs[1].address(addr_a).balance(Word::from(1u64 << 30));
+            },
+            |mut txs, accs| {
+                txs[0].to(accs[0].address).from(accs[1].address);
+            },
+            |block, _tx| block,
+        )
+        .unwrap();
+
+        assert_eq!(run_test_circuits(ctx, None), Ok(()));
+    }
 }
