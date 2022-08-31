@@ -30,7 +30,7 @@ pub fn sign(
         .expect("point is the identity")
         .x();
 
-    let x_repr = &mut Vec::with_capacity(32);
+    let x_repr = &mut vec![0u8; 32];
     x_repr.copy_from_slice(x.to_bytes().as_slice());
 
     let mut x_bytes = [0u8; 64];

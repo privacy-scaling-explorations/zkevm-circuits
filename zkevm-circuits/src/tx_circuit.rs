@@ -145,6 +145,8 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
         config: &TxCircuitConfig<F>,
         layouter: &mut impl Layouter<F>,
     ) -> Result<(), Error> {
+        // Load Sign Verify config tables.
+        config.sign_verify.load_range(layouter)?;
         assert!(self.txs.len() <= MAX_TXS);
         let sign_datas: Vec<SignData> = self
             .txs
@@ -307,6 +309,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
         config: Self::Config,
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
+        config.sign_verify.load_range(&mut layouter)?;
         self.assign(&config, &mut layouter)?;
         config.keccak_table.load(
             &mut layouter,
