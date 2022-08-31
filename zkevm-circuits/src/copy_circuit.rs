@@ -795,6 +795,7 @@ pub mod dev {
     }
 }
 
+#[cfg(feature = "dev")]
 #[cfg(test)]
 mod tests {
     use super::dev::test_copy_circuit;
