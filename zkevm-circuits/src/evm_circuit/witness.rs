@@ -1276,7 +1276,7 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::GAS => ExecutionState::GAS,
                     OpcodeId::SELFBALANCE => ExecutionState::SELFBALANCE,
                     OpcodeId::SHA3 => ExecutionState::SHA3,
-                    OpcodeId::SHR => ExecutionState::SHR,
+                    OpcodeId::SHL | OpcodeId::SHR => ExecutionState::SHL_SHR,
                     OpcodeId::SLOAD => ExecutionState::SLOAD,
                     OpcodeId::SSTORE => ExecutionState::SSTORE,
                     OpcodeId::CALLDATASIZE => ExecutionState::CALLDATASIZE,
@@ -1292,7 +1292,6 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     // dummy ops
                     OpcodeId::BALANCE => dummy!(ExecutionState::BALANCE),
                     OpcodeId::EXP => dummy!(ExecutionState::EXP),
-                    OpcodeId::SHL => dummy!(ExecutionState::SHL),
                     OpcodeId::SAR => dummy!(ExecutionState::SAR),
                     OpcodeId::EXTCODESIZE => dummy!(ExecutionState::EXTCODESIZE),
                     OpcodeId::EXTCODECOPY => dummy!(ExecutionState::EXTCODECOPY),
