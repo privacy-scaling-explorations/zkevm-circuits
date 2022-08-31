@@ -305,11 +305,11 @@ impl<F: FieldExt> MPTConfig<F> {
             q_enable,
             q_not_first,
             branch.clone(),
-            accumulators.s_mod_node_rlc,
+            accumulators.clone(),
             s_main.clone(),
             denoter.sel1,
             denoter.is_node_hashed_s,
-            acc_r,
+            true,
         );
 
         BranchParallelChip::<F>::configure(
@@ -317,11 +317,11 @@ impl<F: FieldExt> MPTConfig<F> {
             q_enable,
             q_not_first,
             branch.clone(),
-            accumulators.c_mod_node_rlc,
+            accumulators.clone(),
             c_main.clone(),
             denoter.sel2,
             denoter.is_node_hashed_c,
-            acc_r,
+            false,
         );
 
         BranchHashInParentConfig::<F>::configure(

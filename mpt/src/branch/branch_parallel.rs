@@ -6,7 +6,7 @@ use halo2_proofs::{
 use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
-use crate::{helpers::{bytes_expr_into_rlc, key_len_lookup}, columns::MainCols};
+use crate::{helpers::{bytes_expr_into_rlc, key_len_lookup}, columns::{MainCols, AccumulatorCols}};
 
 use super::BranchCols;
 
@@ -26,11 +26,11 @@ impl<F: FieldExt> BranchParallelChip<F> {
         q_enable: Column<Fixed>,
         q_not_first: Column<Fixed>,
         branch: BranchCols<F>,
-        mod_node_hash_rlc: Column<Advice>,
+        accs: AccumulatorCols<F>,
         main: MainCols<F>,
         sel: Column<Advice>,
         is_node_hashed: Column<Advice>,
-        acc_r: F,
+        is_s: bool,
     ) -> BranchParallelConfig {
         let config = BranchParallelConfig {};
             
@@ -119,6 +119,12 @@ impl<F: FieldExt> BranchParallelChip<F> {
             // children rows and we get mod_node_hash_rlc there (otherwise we
             // would need iterate over all branch children rows (many rotations) and check
             // that at is_modified the value corresponds).
+
+            let mut mod_node_hash_rlc = accs.s_mod_node_rlc;
+            if !is_s {
+                mod_node_hash_rlc = accs.c_mod_node_rlc;
+            }
+
             let mod_node_hash_rlc_prev = meta.query_advice(mod_node_hash_rlc, Rotation::prev());
             let mod_node_hash_cur = meta.query_advice(mod_node_hash_rlc, Rotation::cur());
             constraints.push((
@@ -132,40 +138,6 @@ impl<F: FieldExt> BranchParallelChip<F> {
             // s_mod_node_hash_rlc and c_mode_node_hash_rlc correspond to RLC of s_advices
             // and c_advices at the modified index
             let is_modified = meta.query_advice(branch.is_modified, Rotation::cur());
-            let is_at_drifted_pos = meta.query_advice(branch.is_at_drifted_pos, Rotation::cur());
-
-            // When it's NOT placeholder branch, is_modified = is_at_drifted_pos.
-            // When it's placeholder branch, is_modified != is_at_drifted_pos.
-            // This is used instead of having is_branch_s_placeholder and
-            // is_branch_c_placeholder columns - we only have this info in
-            // branch init where we don't need additional columns.
-
-            let mut sc_hash = vec![];
-            for column in main.bytes.iter() {
-                sc_hash.push(meta.query_advice(*column, Rotation::cur()));
-            }
-            let hash_rlc = bytes_expr_into_rlc(&sc_hash, acc_r);
-
-            // In placeholder branch (when is_modified != is_at_drifted_pos) the following
-            // constraint could be satisfied by the attacker by putting hash of is_modified
-            // (while it should be is_at_drifted_pos), but then the attacker
-            // would need to use is_modified node for leaf_key_in_added_branch
-            // (hash of it is in keccak at is_at_drifted_pos), but then the
-            // constraint of leaf_in_added_branch having the same key except for
-            // the first nibble (and extension node nibbles if extension node) would fail.
-            let mod_node_hash_rlc_cur = meta.query_advice(mod_node_hash_rlc, Rotation::cur());
-            // Needs to correspond when is_modified or is_at_drifted_pos.
-            /*
-            TODO: to be removed
-            constraints.push((
-                "mod_node_hash_rlc correspond to advices at the modified index",
-                q_not_first.clone()
-                        * is_branch_child_cur.clone()
-                        * is_at_drifted_pos.clone() // is_at_drifted_pos = is_modified when NOT placeholder
-                        * is_modified.clone()
-                        * (hash_rlc.clone() - mod_node_hash_rlc_cur),
-            ));
-            */
 
             // sel - denoting whether leaf is empty at modified_node.
             // When sel = 1, *_advices need to be [128, 0, ..., 0].

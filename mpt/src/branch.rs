@@ -563,7 +563,7 @@ impl<F: FieldExt> BranchConfig<F> {
             constraints.push((
                 "modified_node the same for all branch children",
                 q_not_first.clone()
-                    * is_branch_child_cur
+                    * is_branch_child_cur.clone()
                     * node_index_cur // ignore if node_index = 0
                     * (modified_node_cur.clone() - modified_node_prev),
             ));
@@ -595,56 +595,70 @@ impl<F: FieldExt> BranchConfig<F> {
                     * (drifted_pos_cur.clone() - modified_node_cur.clone()),
             ));
              
-            /* 
-            TODO
-            // This might be optimized by having is_branch_placeholder column.
+            let is_last_branch_child = meta.query_advice(branch.is_last_child, Rotation::cur());
+            let is_branch_placeholder_s_from_last = meta.query_advice(
+                s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM],
+                Rotation(-16),
+            );
+            let is_branch_placeholder_c_from_last = meta.query_advice(
+                s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
+                Rotation(-16),
+            );
+            // Rotations could be avoided but we would need is_branch_placeholder column.
             for ind in 0..16 {
-                let is_branch_placeholder_s = meta.query_advice(
-                    s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM],
-                    Rotation(-ind - 1),
-                );
-                let is_branch_placeholder_c = meta.query_advice(
-                    s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
-                    Rotation(-ind - 1),
-                );
+                
                 let mut s_hash = vec![];
                 let mut c_hash = vec![];
                 for column in s_main.bytes.iter() {
-                    s_hash.push(meta.query_advice(*column, Rotation::cur()));
+                    s_hash.push(meta.query_advice(*column, Rotation(-15+ind)));
                 }
                 for column in c_main.bytes.iter() {
-                    c_hash.push(meta.query_advice(*column, Rotation::cur()));
+                    c_hash.push(meta.query_advice(*column, Rotation(-15+ind)));
                 }
                 let s_hash_rlc = bytes_expr_into_rlc(&s_hash, acc_r);
                 let c_hash_rlc = bytes_expr_into_rlc(&c_hash, acc_r);
 
-                let is_modified = meta.query_advice(branch.is_modified, Rotation::cur());
-                let is_at_drifted_pos = meta.query_advice(branch.is_at_drifted_pos, Rotation::cur());
-                let s_mod_node_hash_rlc_cur = meta.query_advice(accs.s_mod_node_rlc, Rotation::cur());
-                let c_mod_node_hash_rlc_cur = meta.query_advice(accs.c_mod_node_rlc, Rotation::cur());
+                let is_modified = meta.query_advice(branch.is_modified, Rotation(-15+ind));
+                let is_at_drifted_pos = meta.query_advice(branch.is_at_drifted_pos, Rotation(-15+ind));
+                let s_mod_node_hash_rlc_cur = meta.query_advice(accs.s_mod_node_rlc, Rotation(-15+ind));
+                let c_mod_node_hash_rlc_cur = meta.query_advice(accs.c_mod_node_rlc, Rotation(-15+ind));
 
                 constraints.push((
-                    "mod_node_hash_rlc correspond to advices at the modified index",
+                    "NOT is_branch_placeholder_s: s_mod_node_hash_rlc corresponds to s_main.bytes at modified pos",
                     q_not_first.clone()
-                            * is_branch_child_cur.clone()
-                            * is_branch_placeholder_s.clone()
+                            * is_last_branch_child.clone()
+                            * (one.clone() - is_branch_placeholder_s_from_last.clone())
                             * is_modified.clone()
-                            * (s_hash_rlc.clone() - s_mod_node_hash_rlc_cur),
+                            * (s_hash_rlc.clone() - s_mod_node_hash_rlc_cur.clone()),
                 ));
 
                 constraints.push((
-                    "mod_node_hash_rlc correspond to advices at the modified index",
+                    "is_branch_placeholder_s: s_mod_node_hash_rlc corresponds to s_main.bytes at drifted pos",
                     q_not_first.clone()
-                            * is_branch_child_cur.clone()
-                            * is_branch_placeholder_s.clone()
+                            * is_last_branch_child.clone()
+                            * is_branch_placeholder_s_from_last.clone()
                             * is_at_drifted_pos.clone()
+                            * (c_hash_rlc.clone() - s_mod_node_hash_rlc_cur), // c_hash_rlc is correct
+                ));
+
+                constraints.push((
+                    "NOT is_branch_placeholder_c: c_mod_node_hash_rlc corresponds to c_main.bytes at modified pos",
+                    q_not_first.clone()
+                            * is_last_branch_child.clone()
+                            * (one.clone() - is_branch_placeholder_c_from_last.clone())
                             * is_modified.clone()
-                            * (hash_rlc.clone() - mod_node_hash_rlc_cur),
+                            * (c_hash_rlc.clone() - c_mod_node_hash_rlc_cur.clone()),
+                ));
+
+                constraints.push((
+                    "is_branch_placeholder_c: c_mod_node_hash_rlc corresponds to c_main.bytes at drifted pos",
+                    q_not_first.clone()
+                            * is_last_branch_child.clone()
+                            * is_branch_placeholder_c_from_last.clone()
+                            * is_at_drifted_pos.clone()
+                            * (s_hash_rlc.clone() - c_mod_node_hash_rlc_cur), // s_hash_rlc is correct
                 ));
             }
-            */
-
-
 
             constraints.push((
                 "drifted_pos_prev = drifted_pos_cur for node_index > 0 when NOT placeholder",
