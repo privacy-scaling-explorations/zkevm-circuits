@@ -9,7 +9,7 @@ members = [
     "circuit-benchmarks",
     "eth-types",
     "external-tracer",
-    "mock",
+    "mock"
 ]
 
 [patch.crates-io]

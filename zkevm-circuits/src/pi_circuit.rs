@@ -4,6 +4,7 @@ use std::marker::PhantomData;
 
 use eth_types::geth_types::BlockConstants;
 use eth_types::geth_types::GethData;
+use eth_types::sign_types::SignData;
 use eth_types::H256;
 use eth_types::{
     geth_types::Transaction, Address, Field, ToBigEndian, ToLittleEndian, ToScalar, Word,
@@ -12,8 +13,6 @@ use ethers_core::types::Block;
 use halo2_proofs::plonk::Instance;
 
 use crate::table::TxFieldTag;
-use crate::tx_circuit::sign_verify::SignData;
-use crate::tx_circuit::tx_to_sign_data;
 use crate::util::random_linear_combine_word as rlc;
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter, Region, SimpleFloorPlanner, Value},
@@ -123,8 +122,9 @@ impl PublicData {
             .expect("Error converting chain_id to u64");
         let mut tx_vals = vec![];
         for tx in &self.txs {
-            let sign_data: SignData =
-                tx_to_sign_data(tx, chain_id).expect("Error computing tx_sign_hash");
+            let sign_data: SignData = tx
+                .sign_data(chain_id)
+                .expect("Error computing tx_sign_hash");
             let mut msg_hash_le = [0u8; 32];
             msg_hash_le.copy_from_slice(sign_data.msg_hash.to_bytes().as_slice());
             tx_vals.push(TxValues {

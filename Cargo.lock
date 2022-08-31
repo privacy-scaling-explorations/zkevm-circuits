@@ -196,16 +196,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2dabbe35f96fb9507f7330793dc490461b2962659ac5d427181e451a623751d1"
 
 [[package]]
-name = "bigint"
-version = "4.4.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c0e8c8a600052b52482eff2cf4d810e462fdff1f656ac1ecb6232132a1ed7def"
-dependencies = [
- "byteorder",
- "crunchy 0.1.6",
-]
-
-[[package]]
 name = "bincode"
 version = "1.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -801,12 +791,6 @@ dependencies = [
 
 [[package]]
 name = "crunchy"
-version = "0.1.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a2f4a431c5c9f662e1200b7c7f02c34e91361150e382089a8f2dec3ba680cbda"
-
-[[package]]
-name = "crunchy"
 version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7a81dae078cea95a014a339291cec439d2f232ebe854a9d672b796c6afafa9b7"
@@ -1204,15 +1188,20 @@ name = "eth-types"
 version = "0.1.0"
 dependencies = [
  "ethers-core",
- "ethers-providers",
  "ethers-signers",
  "halo2_proofs 0.2.0",
  "hex",
  "itertools",
  "lazy_static",
+ "libsecp256k1",
+ "num",
+ "num-bigint",
  "regex",
+ "secp256k1",
  "serde",
  "serde_json",
+ "sha3 0.10.1",
+ "subtle",
  "uint",
 ]
 
@@ -1238,7 +1227,7 @@ version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bfb684ac8fa8f6c5759f788862bb22ec6fe3cb392f6bfd08e3c64b603661e3f8"
 dependencies = [
- "crunchy 0.2.2",
+ "crunchy",
  "fixed-hash",
  "impl-rlp",
  "impl-serde",
@@ -1739,7 +1728,6 @@ dependencies = [
 name = "gadgets"
 version = "0.1.0"
 dependencies = [
- "array-init",
  "digest 0.7.6",
  "eth-types",
  "ff 0.11.1",
@@ -1748,7 +1736,6 @@ dependencies = [
  "rand_xorshift",
  "sha3 0.7.3",
  "strum",
- "strum_macros",
 ]
 
 [[package]]
@@ -2355,7 +2342,7 @@ version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5be9b9bb642d8522a44d533eab56c16c738301965504753b03ad1de3425d5451"
 dependencies = [
- "crunchy 0.2.2",
+ "crunchy",
  "digest 0.9.0",
  "subtle",
 ]
@@ -3756,7 +3743,7 @@ version = "2.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2c9d3793400a45f954c52e73d068316d76b6f4e36977e3fcebb13a2721e80237"
 dependencies = [
- "crunchy 0.2.2",
+ "crunchy",
 ]
 
 [[package]]
@@ -4001,7 +3988,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "12f03af7ccf01dd611cc450a0d10dbc9b745770d096473e2faf0ca6e2d66d1e0"
 dependencies = [
  "byteorder",
- "crunchy 0.2.2",
+ "crunchy",
  "hex",
  "static_assertions",
 ]
@@ -4404,18 +4391,15 @@ name = "zkevm-circuits"
 version = "0.1.0"
 dependencies = [
  "array-init",
- "bigint",
  "bus-mapping",
  "criterion",
  "ctor",
- "digest 0.7.6",
  "ecc",
  "ecdsa 0.1.0",
  "env_logger",
  "eth-types",
  "ethers-core",
  "ethers-signers",
- "ff 0.11.1",
  "gadgets",
  "halo2_proofs 0.2.0",
  "hex",
@@ -4423,13 +4407,9 @@ dependencies = [
  "itertools",
  "keccak256",
  "lazy_static",
- "libsecp256k1",
  "log",
  "maingate",
  "mock",
- "num",
- "num-bigint",
- "paste",
  "pretty_assertions",
  "rand",
  "rand_chacha",
@@ -4438,5 +4418,4 @@ dependencies = [
  "sha3 0.10.2",
  "strum",
  "strum_macros",
- "subtle",
 ]

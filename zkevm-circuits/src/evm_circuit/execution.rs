@@ -29,6 +29,7 @@ mod address;
 mod begin_tx;
 mod bitwise;
 mod block_ctx;
+mod blockhash;
 mod byte;
 mod call;
 mod calldatacopy;
@@ -67,7 +68,7 @@ mod r#return;
 mod sdiv_smod;
 mod selfbalance;
 mod sha3;
-mod shr;
+mod shl_shr;
 mod signed_comparator;
 mod signextend;
 mod sload;
@@ -82,6 +83,7 @@ use address::AddressGadget;
 use begin_tx::BeginTxGadget;
 use bitwise::BitwiseGadget;
 use block_ctx::{BlockCtxU160Gadget, BlockCtxU256Gadget, BlockCtxU64Gadget};
+use blockhash::BlockHashGadget;
 use byte::ByteGadget;
 use call::CallGadget;
 use calldatacopy::CallDataCopyGadget;
@@ -118,7 +120,7 @@ use push::PushGadget;
 use r#return::ReturnGadget;
 use sdiv_smod::SignedDivModGadget;
 use selfbalance::SelfbalanceGadget;
-use shr::ShrGadget;
+use shl_shr::ShlShrGadget;
 use signed_comparator::SignedComparatorGadget;
 use signextend::SignextendGadget;
 use sload::SloadGadget;
@@ -198,11 +200,9 @@ pub(crate) struct ExecutionConfig<F> {
     sdiv_smod_gadget: SignedDivModGadget<F>,
     selfbalance_gadget: SelfbalanceGadget<F>,
     sha3_gadget: Sha3Gadget<F>,
-    shr_gadget: ShrGadget<F>,
+    shl_shr_gadget: ShlShrGadget<F>,
     balance_gadget: DummyGadget<F, 1, 1, { ExecutionState::BALANCE }>,
-    blockhash_gadget: DummyGadget<F, 1, 1, { ExecutionState::BLOCKHASH }>,
     exp_gadget: DummyGadget<F, 2, 1, { ExecutionState::EXP }>,
-    shl_gadget: DummyGadget<F, 2, 1, { ExecutionState::SHL }>,
     sar_gadget: DummyGadget<F, 2, 1, { ExecutionState::SAR }>,
     extcodesize_gadget: DummyGadget<F, 1, 1, { ExecutionState::EXTCODESIZE }>,
     extcodecopy_gadget: DummyGadget<F, 4, 0, { ExecutionState::EXTCODECOPY }>,
@@ -220,6 +220,7 @@ pub(crate) struct ExecutionConfig<F> {
     sstore_gadget: SstoreGadget<F>,
     stop_gadget: StopGadget<F>,
     swap_gadget: SwapGadget<F>,
+    blockhash_gadget: BlockHashGadget<F>,
     block_ctx_u64_gadget: BlockCtxU64Gadget<F>,
     block_ctx_u160_gadget: BlockCtxU160Gadget<F>,
     block_ctx_u256_gadget: BlockCtxU256Gadget<F>,
@@ -444,7 +445,6 @@ impl<F: Field> ExecutionConfig<F> {
             balance_gadget: configure_gadget!(),
             blockhash_gadget: configure_gadget!(),
             exp_gadget: configure_gadget!(),
-            shl_gadget: configure_gadget!(),
             sar_gadget: configure_gadget!(),
             extcodesize_gadget: configure_gadget!(),
             extcodecopy_gadget: configure_gadget!(),
@@ -456,7 +456,7 @@ impl<F: Field> ExecutionConfig<F> {
             create2_gadget: configure_gadget!(),
             staticcall_gadget: configure_gadget!(),
             selfdestruct_gadget: configure_gadget!(),
-            shr_gadget: configure_gadget!(),
+            shl_shr_gadget: configure_gadget!(),
             signed_comparator_gadget: configure_gadget!(),
             signextend_gadget: configure_gadget!(),
             sload_gadget: configure_gadget!(),
@@ -734,6 +734,34 @@ impl<F: Field> ExecutionConfig<F> {
                 let mut offset = 0;
 
                 self.q_step_first.enable(&mut region, offset)?;
+                // handle empty block conditions
+                if block.txs.is_empty() {
+                    // if enable padding to fix length in the future, just change `end_row` to
+                    // target length
+                    let num_rows = 2;
+
+                    for i in 0..num_rows {
+                        self.q_usable.enable(&mut region, i)?;
+
+                        for column in iter::empty()
+                            .chain([
+                                self.q_step,
+                                self.num_rows_until_next_step,
+                                self.num_rows_inv,
+                            ])
+                            .chain(self.advices)
+                        {
+                            region
+                                .assign_advice(|| "assign advice rows", column, i, || Ok(F::zero()))
+                                .unwrap();
+                        }
+                    }
+
+                    //adjust q_step_last to 1
+                    self.q_step_last.enable(&mut region, num_rows - 1)?;
+
+                    return Ok(());
+                }
 
                 // Collect all steps
                 let mut steps = block
@@ -925,12 +953,11 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::BLOCKCTXU64 => assign_exec_step!(self.block_ctx_u64_gadget),
             ExecutionState::BLOCKCTXU160 => assign_exec_step!(self.block_ctx_u160_gadget),
             ExecutionState::BLOCKCTXU256 => assign_exec_step!(self.block_ctx_u256_gadget),
+            ExecutionState::BLOCKHASH => assign_exec_step!(self.blockhash_gadget),
             ExecutionState::SELFBALANCE => assign_exec_step!(self.selfbalance_gadget),
             // dummy gadgets
             ExecutionState::BALANCE => assign_exec_step!(self.balance_gadget),
-            ExecutionState::BLOCKHASH => assign_exec_step!(self.blockhash_gadget),
             ExecutionState::EXP => assign_exec_step!(self.exp_gadget),
-            ExecutionState::SHL => assign_exec_step!(self.shl_gadget),
             ExecutionState::SAR => assign_exec_step!(self.sar_gadget),
             ExecutionState::EXTCODESIZE => assign_exec_step!(self.extcodesize_gadget),
             ExecutionState::EXTCODECOPY => assign_exec_step!(self.extcodecopy_gadget),
@@ -944,7 +971,7 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::SELFDESTRUCT => assign_exec_step!(self.selfdestruct_gadget),
             // end of dummy gadgets
             ExecutionState::SHA3 => assign_exec_step!(self.sha3_gadget),
-            ExecutionState::SHR => assign_exec_step!(self.shr_gadget),
+            ExecutionState::SHL_SHR => assign_exec_step!(self.shl_shr_gadget),
             ExecutionState::SIGNEXTEND => assign_exec_step!(self.signextend_gadget),
             ExecutionState::SLOAD => assign_exec_step!(self.sload_gadget),
             ExecutionState::SSTORE => assign_exec_step!(self.sstore_gadget),

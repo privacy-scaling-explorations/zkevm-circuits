@@ -20,10 +20,12 @@ pub use access::{Access, AccessSet, AccessValue, CodeSource};
 pub use block::{Block, BlockContext};
 pub use call::{Call, CallContext, CallKind};
 use core::fmt::Debug;
-use eth_types::{self, Address, GethExecStep, GethExecTrace, Word};
+use eth_types::sign_types::{pk_bytes_le, pk_bytes_swap_endianness, SignData};
+use eth_types::{self, geth_types, Address, GethExecStep, GethExecTrace, Word};
 use ethers_providers::JsonRpcClient;
 pub use execution::{CopyDataType, CopyEvent, CopyStep, ExecState, ExecStep, NumberOrHash};
 pub use input_state_ref::CircuitInputStateRef;
+use itertools::Itertools;
 use std::collections::HashMap;
 pub use transaction::{Transaction, TransactionContext};
 
@@ -190,6 +192,58 @@ impl<'a> CircuitInputBuilder {
 
         Ok(())
     }
+
+    /// Return all the keccak inputs used during the processing of the current
+    /// block.
+    pub fn keccak_inputs(&self) -> Result<Vec<Vec<u8>>, Error> {
+        let mut keccak_inputs = Vec::new();
+        // Tx Circuit
+        let txs: Vec<geth_types::Transaction> = self.block.txs.iter().map(|tx| tx.into()).collect();
+        keccak_inputs.extend_from_slice(&keccak_inputs_tx_circuit(
+            &txs,
+            self.block.chain_id.as_u64(),
+        )?);
+        // Bytecode Circuit
+        for bytecode in self.code_db.0.values() {
+            keccak_inputs.push(bytecode.clone());
+        }
+        // EVM Circuit
+        keccak_inputs.extend_from_slice(&self.block.sha3_inputs);
+        // MPT Circuit
+        // TODO https://github.com/privacy-scaling-explorations/zkevm-circuits/issues/696
+        Ok(keccak_inputs)
+    }
+}
+
+/// Generate the keccak inputs required by the SignVerify Chip from the
+/// signature datas.
+pub fn keccak_inputs_sign_verify(sigs: &[SignData]) -> Vec<Vec<u8>> {
+    let mut inputs = Vec::new();
+    for sig in sigs {
+        let pk_le = pk_bytes_le(&sig.pk);
+        let pk_be = pk_bytes_swap_endianness(&pk_le);
+        inputs.push(pk_be.to_vec());
+    }
+    // Padding signature
+    let pk_le = pk_bytes_le(&SignData::default().pk);
+    let pk_be = pk_bytes_swap_endianness(&pk_le);
+    inputs.push(pk_be.to_vec());
+    inputs
+}
+
+/// Generate the keccak inputs required by the Tx Circuit from the transactions.
+pub fn keccak_inputs_tx_circuit(
+    txs: &[geth_types::Transaction],
+    chain_id: u64,
+) -> Result<Vec<Vec<u8>>, Error> {
+    let mut inputs = Vec::new();
+    let sign_datas: Vec<SignData> = txs.iter().map(|tx| tx.sign_data(chain_id)).try_collect()?;
+    // Keccak inputs from SignVerify Chip
+    let sign_verify_inputs = keccak_inputs_sign_verify(&sign_datas);
+    inputs.extend_from_slice(&sign_verify_inputs);
+    // NOTE: We don't verify the Tx Hash in the circuit yet, so we don't have more
+    // hash inputs.
+    Ok(inputs)
 }
 
 /// Retrieve the init_code from memory for {CREATE, CREATE2}
