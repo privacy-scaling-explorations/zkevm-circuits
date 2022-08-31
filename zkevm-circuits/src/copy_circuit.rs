@@ -680,7 +680,6 @@ impl<F: Field> CopyCircuit<F> {
     }
 }
 
-#[cfg(test)]
 /// Dev helpers
 pub mod dev {
     use super::*;
