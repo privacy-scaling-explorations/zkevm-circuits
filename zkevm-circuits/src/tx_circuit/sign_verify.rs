@@ -383,12 +383,10 @@ struct ChipsRef<'a, F: Field, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: 
 impl<F: Field, const MAX_VERIF: usize> SignVerifyChip<F, MAX_VERIF> {
     fn assign_aux(
         &self,
-        region: &mut Region<'_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         ecc_chip: &mut GeneralEccChip<Secp256k1Affine, F, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<(), Error> {
         let ctx_offset = &mut 0;
-        let mut region = region.clone();
-        let ctx = &mut RegionCtx::new(region, *ctx_offset);
 
         ecc_chip.assign_aux_generator(ctx, Value::known(self.aux_generator))?;
         ecc_chip.assign_aux(ctx, self.window_size, 1)?;
@@ -611,7 +609,7 @@ impl<F: Field, const MAX_VERIF: usize> SignVerifyChip<F, MAX_VERIF> {
 
         layouter.assign_region(
             || "ecc chip aux",
-            |mut region| self.assign_aux(&mut region, &mut ecc_chip),
+            |region| self.assign_aux(&mut RegionCtx::new(region, 0), &mut ecc_chip),
         )?;
 
         let ecdsa_chip = EcdsaChip::new(ecc_chip.clone());
