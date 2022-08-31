@@ -17,6 +17,7 @@ use crate::table::TxFieldTag;
 use crate::tx_circuit::sign_verify::SignData;
 use crate::tx_circuit::tx_to_sign_data;
 use crate::util::random_linear_combine_word as rlc;
+use gadgets::util;
 use gadgets::util::Expr;
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter, Region, SimpleFloorPlanner},
@@ -53,6 +54,7 @@ pub struct TxValues {
     is_create: u64,
     value: Word,
     call_data_len: u64,
+    call_data_gas_cost: u64,
     tx_sign_hash: [u8; 32],
 }
 
@@ -142,6 +144,11 @@ impl PublicData {
                 is_create: (tx.to.is_none() as u64),
                 value: tx.value,
                 call_data_len: tx.call_data.0.len() as u64,
+                call_data_gas_cost: tx
+                    .call_data
+                    .0
+                    .iter()
+                    .fold(0, |acc, byte| acc + if *byte == 0 { 4 } else { 16 }),
                 tx_sign_hash: msg_hash_le,
             });
         }
@@ -171,6 +178,9 @@ pub struct PiCircuitConfig<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: u
     tag: Column<Fixed>,
     index: Column<Advice>,
     tx_value: Column<Advice>,
+    tx_value_inv: Column<Advice>,
+    calldata_gas_cost: Column<Advice>,
+    is_final: Column<Advice>,
 
     raw_public_inputs: Column<Advice>,
     rpi_rlc_acc: Column<Advice>,
@@ -200,6 +210,9 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
         let index = meta.advice_column();
         let tx_value = meta.advice_column();
         let tx_id_inv = meta.advice_column();
+        let tx_value_inv = meta.advice_column();
+        let calldata_gas_cost = meta.advice_column();
+        let is_final = meta.advice_column();
 
         let raw_public_inputs = meta.advice_column();
         let rpi_rlc_acc = meta.advice_column();
@@ -313,10 +326,18 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
             let tx_idx_inv_next = meta.query_advice(tx_id_inv, Rotation::next());
             let idx = meta.query_advice(index, Rotation::cur());
             let idx_next = meta.query_advice(index, Rotation::next());
+            let value = meta.query_advice(tx_value, Rotation::cur());
+            let value_inv = meta.query_advice(tx_value_inv, Rotation::cur());
+            let gas_cost = meta.query_advice(calldata_gas_cost, Rotation::cur());
+            let gas_cost_next = meta.query_advice(calldata_gas_cost, Rotation::next());
+            let is_final = meta.query_advice(is_final, Rotation::cur());
+
             let is_tx_id_zero = 1.expr() - tx_idx.clone() * tx_idx_inv.clone();
             let is_tx_id_nonzero = tx_idx.clone() * tx_idx_inv.clone();
             let is_tx_id_next_zero = 1.expr() - tx_idx_next.clone() * tx_idx_inv_next.clone();
             let is_tx_id_next_nonzero = tx_idx_next.clone() * tx_idx_inv_next.clone();
+            let is_value_zero = 1.expr() - value.clone() * value_inv.clone();
+            let is_value_nonzero = value.clone() * value_inv.clone();
 
             // inv constraint
             // tx_id * (1 - tx_id * tx_id_inv) = 0
@@ -327,6 +348,8 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
             // if tx_id == 0 then idx == 0, tx_id_next == 0
             let default_calldata_row_constraint1 = is_tx_id_zero.clone() * idx.clone();
             let default_calldata_row_constraint2 = is_tx_id_zero.clone() * tx_idx_next.clone();
+            let default_calldata_row_constraint3 = is_tx_id_zero.clone() * is_final.clone();
+            let default_calldata_row_constraint4 = is_tx_id_zero.clone() * gas_cost.clone();
 
             // if tx_id != 0 then
             //    1. tx_id_next == tx_id: idx_next == idx + 1
@@ -343,15 +366,39 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
                 * (tx_idx_next.clone() - tx_idx.clone())
                 * idx_next.clone();
 
+            // gas = value == 0 ? 4 : 16
+            let tx_value_constraint = value.clone() * is_value_zero.clone();
+            let gas = 4.expr() * is_value_zero + 16.expr() * is_value_nonzero.clone();
+            let gas_cost_of_same_tx_constraint = is_tx_id_next_nonzero.clone()
+                * (tx_idx_next.clone() - tx_idx.clone() - 1.expr())
+                * (gas_cost_next.clone() - gas_cost.clone() - gas.clone());
+            let gas_cost_of_next_tx_constraint = is_tx_id_next_nonzero.clone()
+                * (tx_idx_next.clone() - tx_idx.clone())
+                * (gas_cost_next.clone() - gas.clone());
+            let is_final_of_same_tx_constraint = is_tx_id_next_nonzero.clone()
+                * (tx_idx_next.clone() - tx_idx.clone() - 1.expr())
+                * is_final.clone();
+            let is_final_of_next_tx_constraint = is_tx_id_next_nonzero.clone()
+                * (tx_idx_next.clone() - tx_idx.clone())
+                * (is_final.clone() - 1.expr());
+
             vec![
                 q_is_calldata.clone() * tx_id_inv_constraint,
-                q_is_calldata.clone() * is_tx_id_zero.clone() * default_calldata_row_constraint1,
-                q_is_calldata.clone() * is_tx_id_zero.clone() * default_calldata_row_constraint2,
+                q_is_calldata.clone() * default_calldata_row_constraint1,
+                q_is_calldata.clone() * default_calldata_row_constraint2,
+                q_is_calldata.clone() * default_calldata_row_constraint3,
+                q_is_calldata.clone() * default_calldata_row_constraint4,
                 q_is_calldata.clone() * is_tx_id_nonzero.clone() * tx_id_constraint,
                 q_is_calldata.clone() * is_tx_id_nonzero.clone() * calldata_of_same_tx_constraint,
                 q_is_calldata.clone() * is_tx_id_nonzero.clone() * calldata_of_next_tx_constraint,
+                q_is_calldata.clone() * tx_value_constraint,
+                q_is_calldata.clone() * is_tx_id_nonzero.clone() * gas_cost_of_same_tx_constraint,
+                q_is_calldata.clone() * is_tx_id_nonzero.clone() * gas_cost_of_next_tx_constraint,
+                q_is_calldata.clone() * is_tx_id_nonzero.clone() * is_final_of_same_tx_constraint,
+                q_is_calldata.clone() * is_tx_id_nonzero.clone() * is_final_of_next_tx_constraint,
             ]
         });
+
         Self {
             q_block_table,
             block_value,
@@ -362,6 +409,9 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
             tag,
             index,
             tx_value,
+            tx_value_inv,
+            calldata_gas_cost,
+            is_final,
             raw_public_inputs,
             rpi_rlc_acc,
             rand_rpi,
@@ -390,6 +440,19 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
         )?;
         region.assign_advice(|| "index", self.index, offset, || Ok(F::zero()))?;
         region.assign_advice(|| "tx_value", self.tx_value, offset, || Ok(F::zero()))?;
+        region.assign_advice(
+            || "tx_value_inv",
+            self.tx_value_inv,
+            offset,
+            || Ok(F::zero()),
+        )?;
+        region.assign_advice(|| "is_final", self.is_final, offset, || Ok(F::zero()))?;
+        region.assign_advice(
+            || "gas_cost",
+            self.calldata_gas_cost,
+            offset,
+            || Ok(F::zero()),
+        )?;
         Ok(())
     }
     /// Assigns a tx_table row and stores the values in a vec for the
@@ -465,6 +528,8 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
         tx_id: usize,
         index: usize,
         tx_value: F,
+        is_final: bool,
+        gas_cost: F,
         raw_pi_vals: &mut [F],
     ) -> Result<(), Error> {
         let tx_id = F::from(tx_id as u64);
@@ -472,6 +537,8 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
         let tag = F::from(TxFieldTag::CallData as u64);
         let index = F::from(index as u64);
         let tx_value = tx_value;
+        let tx_value_inv = tx_value.invert().unwrap_or(F::zero());
+        let is_final = if is_final { F::one() } else { F::zero() };
 
         self.q_tx_calldata.enable(region, offset)?;
 
@@ -481,6 +548,19 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
         region.assign_fixed(|| "tag", self.tag, offset, || Ok(tag))?;
         region.assign_advice(|| "index", self.index, offset, || Ok(index))?;
         region.assign_advice(|| "tx_value", self.tx_value, offset, || Ok(tx_value))?;
+        region.assign_advice(
+            || "tx_value_inv",
+            self.tx_value_inv,
+            offset,
+            || Ok(tx_value_inv),
+        )?;
+        region.assign_advice(|| "is_final", self.is_final, offset, || Ok(is_final))?;
+        region.assign_advice(
+            || "gas_cost",
+            self.calldata_gas_cost,
+            offset,
+            || Ok(gas_cost),
+        )?;
 
         // Assign vals to raw_public_inputs column
         let tx_table_len = TX_LEN * MAX_TXS + 1;
@@ -832,14 +912,28 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
                 // Tx Table CallData
                 let mut calldata_count = 0;
                 for (i, tx) in self.public_data.txs.iter().enumerate() {
+                    let call_data_length = tx.call_data.0.len();
+                    let mut gas_cost = F::zero();
                     for (index, byte) in tx.call_data.0.iter().enumerate() {
                         assert!(calldata_count < MAX_CALLDATA);
+                        let is_final = if index == call_data_length - 1 {
+                            true
+                        } else {
+                            false
+                        };
+                        gas_cost += if *byte == 0 {
+                            F::from(4_u64)
+                        } else {
+                            F::from(16_u64)
+                        };
                         config.assign_tx_calldata_row(
                             &mut region,
                             offset,
                             i + 1,
                             index,
                             F::from(*byte as u64),
+                            is_final,
+                            gas_cost,
                             &mut raw_pi_vals,
                         )?;
                         offset += 1;
@@ -852,6 +946,8 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
                         offset,
                         0, // tx_id
                         0,
+                        F::zero(),
+                        false,
                         F::zero(),
                         &mut raw_pi_vals,
                     )?;
