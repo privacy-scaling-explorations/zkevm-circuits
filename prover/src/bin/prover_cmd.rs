@@ -1,6 +1,8 @@
 use env_logger::Env;
-use halo2_proofs::pairing::bn256::G1Affine;
+use halo2_proofs::halo2curves::bn256::Bn256;
+use halo2_proofs::halo2curves::bn256::G1Affine;
 use halo2_proofs::poly::commitment::Params;
+use halo2_proofs::poly::kzg::commitment::ParamsKZG;
 use std::env::var;
 use std::fs::File;
 use std::io::BufReader;
@@ -31,7 +33,7 @@ async fn main() {
 
     // load polynomial commitment parameters
     let params_fs = File::open(&params_path).expect("couldn't open params");
-    let params: Params<G1Affine> =
+    let params: ParamsKZG<Bn256> =
         Params::read::<_>(&mut BufReader::new(params_fs)).expect("Failed to read params");
 
     let result = compute_proof(&params, &block_num, &rpc_url)

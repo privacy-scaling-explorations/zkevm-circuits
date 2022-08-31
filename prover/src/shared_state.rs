@@ -1,5 +1,6 @@
-use halo2_proofs::pairing::bn256::G1Affine;
+use halo2_proofs::halo2curves::bn256::{Bn256, G1Affine};
 use halo2_proofs::poly::commitment::Params;
+use halo2_proofs::poly::kzg::commitment::ParamsKZG;
 
 use std::collections::HashMap;
 use std::env::var;
@@ -27,7 +28,7 @@ pub struct RoState {
 
 pub struct RwState {
     pub tasks: Vec<ProofRequest>,
-    pub params_cache: HashMap<String, Arc<Params<G1Affine>>>,
+    pub params_cache: HashMap<String, Arc<ParamsKZG<Bn256>>>,
     /// The current active task this instance wants to obtain or is working on.
     pub pending: Option<ProofRequestOptions>,
     /// `true` if this instance started working on `pending`
@@ -279,7 +280,7 @@ impl SharedState {
         Ok(true)
     }
 
-    async fn load_param(&self, params_path: &str) -> Arc<Params<G1Affine>> {
+    async fn load_param(&self, params_path: &str) -> Arc<ParamsKZG<Bn256>> {
         let mut rw = self.rw.lock().await;
 
         if !rw.params_cache.contains_key(params_path) {
@@ -288,7 +289,7 @@ impl SharedState {
 
             // load polynomial commitment parameters
             let params_fs = File::open(params_path).expect("couldn't open params");
-            let params: Arc<Params<G1Affine>> = Arc::new(
+            let params: Arc<ParamsKZG<Bn256>> = Arc::new(
                 Params::read::<_>(&mut std::io::BufReader::new(params_fs))
                     .expect("Failed to read params"),
             );

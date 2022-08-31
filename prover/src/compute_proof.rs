@@ -2,10 +2,16 @@ use bus_mapping::circuit_input_builder::BuilderClient;
 use bus_mapping::rpc::GethClient;
 use ethers_providers::Http;
 use halo2_proofs::{
-    pairing::bn256::{Fr, G1Affine},
+    halo2curves::bn256::{Bn256, Fr, G1Affine, G1},
     plonk::*,
-    poly::commitment::Params,
-    transcript::{Blake2bWrite, Challenge255},
+    poly::{
+        commitment::Params,
+        kzg::{
+            commitment::{KZGCommitmentScheme, ParamsKZG},
+            multiopen::ProverSHPLONK,
+        },
+    },
+    transcript::{Blake2bWrite, Challenge255, TranscriptReadBuffer, TranscriptWriterBuffer},
 };
 use rand::SeedableRng;
 use rand_xorshift::XorShiftRng;
@@ -25,7 +31,7 @@ use crate::structs::Proofs;
 /// created via the `gen_params` tool.
 /// Expects a go-ethereum node with debug & archive capabilities on `rpc_url`.
 pub async fn compute_proof(
-    params: &Params<G1Affine>,
+    params: &ParamsKZG<Bn256>,
     block_num: &u64,
     rpc_url: &str,
 ) -> Result<Proofs, Box<dyn std::error::Error>> {
@@ -58,8 +64,15 @@ pub async fn compute_proof(
         ]);
 
         // create a proof
-        let mut transcript = Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
-        create_proof(params, &pk, &[circuit], &[], rng, &mut transcript)?;
+        let mut transcript = Blake2bWrite::<_, G1Affine, Challenge255<_>>::init(vec![]);
+        create_proof::<
+            KZGCommitmentScheme<Bn256>,
+            ProverSHPLONK<'_, Bn256>,
+            Challenge255<G1Affine>,
+            XorShiftRng,
+            Blake2bWrite<Vec<u8>, G1Affine, Challenge255<G1Affine>>,
+            TestCircuit<Fr>,
+        >(params, &pk, &[circuit], &[], rng, &mut transcript)?;
         evm_proof = transcript.finalize();
     }
 
@@ -79,10 +92,17 @@ pub async fn compute_proof(
         ]);
 
         // create a proof
-        let mut transcript = Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
+        let mut transcript = Blake2bWrite::<Vec<u8>, G1Affine, Challenge255<_>>::init(vec![]);
         let instance = circuit.instance();
         let instances: Vec<&[Fr]> = instance.iter().map(|v| v.as_slice()).collect();
-        create_proof(
+        create_proof::<
+            KZGCommitmentScheme<Bn256>,
+            ProverSHPLONK<'_, Bn256>,
+            Challenge255<G1Affine>,
+            XorShiftRng,
+            Blake2bWrite<Vec<u8>, G1Affine, Challenge255<G1Affine>>,
+            StateCircuit<Fr>,
+        >(
             params,
             &pk,
             &[circuit],
