@@ -28,6 +28,7 @@ pub enum ExecutionState {
     ADD_SUB,     // ADD, SUB
     MUL_DIV_MOD, // MUL, DIV, MOD
     SDIV_SMOD,   // SDIV, SMOD
+    SHL_SHR,     // SHL, SHR
     ADDMOD,
     MULMOD,
     EXP,
@@ -38,8 +39,6 @@ pub enum ExecutionState {
     BITWISE, // AND, OR, XOR
     NOT,
     BYTE,
-    SHL,
-    SHR,
     SAR,
     SHA3,
     ADDRESS,
@@ -183,6 +182,7 @@ impl ExecutionState {
             Self::ADD_SUB => vec![OpcodeId::ADD, OpcodeId::SUB],
             Self::MUL_DIV_MOD => vec![OpcodeId::MUL, OpcodeId::DIV, OpcodeId::MOD],
             Self::SDIV_SMOD => vec![OpcodeId::SDIV, OpcodeId::SMOD],
+            Self::SHL_SHR => vec![OpcodeId::SHL, OpcodeId::SHR],
             Self::ADDMOD => vec![OpcodeId::ADDMOD],
             Self::MULMOD => vec![OpcodeId::MULMOD],
             Self::EXP => vec![OpcodeId::EXP],
@@ -193,8 +193,6 @@ impl ExecutionState {
             Self::BITWISE => vec![OpcodeId::AND, OpcodeId::OR, OpcodeId::XOR],
             Self::NOT => vec![OpcodeId::NOT],
             Self::BYTE => vec![OpcodeId::BYTE],
-            Self::SHL => vec![OpcodeId::SHL],
-            Self::SHR => vec![OpcodeId::SHR],
             Self::SAR => vec![OpcodeId::SAR],
             Self::SHA3 => vec![OpcodeId::SHA3],
             Self::ADDRESS => vec![OpcodeId::ADDRESS],
