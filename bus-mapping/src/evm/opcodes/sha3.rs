@@ -58,16 +58,7 @@ impl Opcode for Sha3 {
         for (i, byte) in memory.iter().enumerate() {
             // Read step
             state.memory_read(&mut exec_step, (offset.as_usize() + i).into(), *byte)?;
-            steps.push((
-                CopyStep {
-                    value: *byte,
-                    is_code: None,
-                },
-                CopyStep {
-                    value: *byte,
-                    is_code: None,
-                },
-            ));
+            steps.push((*byte, false));
         }
 
         let call_id = state.call()?.call_id;
@@ -81,7 +72,7 @@ impl Opcode for Sha3 {
             dst_id: NumberOrHash::Number(call_id),
             log_id: None,
             rw_counter_start,
-            steps,
+            bytes: steps,
         });
 
         Ok(vec![exec_step])
@@ -256,26 +247,11 @@ pub mod sha3_tests {
 
         // single copy event with `size` reads and `size` writes.
         assert_eq!(copy_events.len(), 1);
-        assert_eq!(copy_events[0].steps.len(), size);
+        assert_eq!(copy_events[0].bytes.len(), size);
 
-        for (idx, (read_step, write_step)) in copy_events[0].steps.iter().enumerate() {
-            let value = memory_view[idx];
-            // read
-            assert_eq!(
-                read_step,
-                &CopyStep {
-                    value,
-                    is_code: None,
-                }
-            );
-            // write
-            assert_eq!(
-                write_step,
-                &CopyStep {
-                    value,
-                    is_code: None,
-                }
-            );
+        for (idx, (value, is_code)) in copy_events[0].bytes.iter().enumerate() {
+            assert_eq!(Some(value), memory_view.get(idx));
+            assert!(!is_code);
         }
     }
 

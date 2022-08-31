@@ -133,7 +133,7 @@ fn gen_copy_steps(
     exec_step: &mut ExecStep,
     src_addr: u64,
     bytes_left: usize,
-) -> Result<Vec<(CopyStep, CopyStep)>, Error> {
+) -> Result<Vec<(u8, bool)>, Error> {
     // Get memory data
     let mem = state
         .call_ctx()?
@@ -147,16 +147,7 @@ fn gen_copy_steps(
         // Read memory
         state.memory_read(exec_step, (addr as usize).into(), *byte)?;
 
-        copy_steps.push((
-            CopyStep {
-                value: *byte,
-                is_code: None,
-            },
-            CopyStep {
-                value: *byte,
-                is_code: None,
-            },
-        ));
+        copy_steps.push((*byte, false));
 
         // Write log
         state.tx_log_write(
@@ -197,7 +188,7 @@ fn gen_copy_event(
         dst_addr: 0,
         log_id: Some(state.tx_ctx.log_id as u64 + 1),
         rw_counter_start,
-        steps,
+        bytes: steps,
     })
 }
 
@@ -445,7 +436,7 @@ mod log_tests {
 
         let copy_events = builder.block.copy_events.clone();
         assert_eq!(copy_events.len(), 1);
-        assert_eq!(copy_events[0].steps.len(), msize);
+        assert_eq!(copy_events[0].bytes.len(), msize);
         assert_eq!(copy_events[0].src_type, CopyDataType::Memory);
         assert_eq!(
             copy_events[0].src_id,
@@ -458,27 +449,9 @@ mod log_tests {
         assert_eq!(copy_events[0].dst_addr as usize, 0);
         assert_eq!(copy_events[0].log_id, Some(step.log_id as u64 + 1));
 
-        for (idx, (read_step, write_step)) in copy_events[0].steps.iter().enumerate() {
-            let (value, is_pad) = memory_data
-                .get(mstart + idx)
-                .cloned()
-                .map_or((0, true), |v| (v, false));
-            // Read
-            assert_eq!(
-                read_step,
-                &CopyStep {
-                    value,
-                    is_code: None,
-                }
-            );
-            // Write
-            assert_eq!(
-                write_step,
-                &CopyStep {
-                    value,
-                    is_code: None,
-                }
-            );
+        for (idx, (byte, is_code)) in copy_events[0].bytes.iter().enumerate() {
+            assert_eq!(Some(byte), memory_data.get(mstart + idx));
+            assert!(!*is_code);
         }
     }
 }

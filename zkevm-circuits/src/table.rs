@@ -7,7 +7,7 @@ use crate::evm_circuit::{
     witness::{Block, BlockContext, Bytecode, RwMap, Transaction},
 };
 use crate::impl_expr;
-use bus_mapping::circuit_input_builder::{CopyDataType, CopyEvent};
+use bus_mapping::circuit_input_builder::{CopyDataType, CopyEvent, CopyStep};
 use eth_types::{Field, ToAddress, ToLittleEndian, ToScalar, Word, U256};
 use gadgets::binary_number::{BinaryNumberChip, BinaryNumberConfig};
 use halo2_proofs::{
@@ -761,18 +761,34 @@ impl CopyTable {
         let mut assignments = Vec::new();
         let rlc_acc = if copy_event.dst_type == CopyDataType::RlcAcc {
             let values = copy_event
-                .steps
+                .bytes
                 .iter()
-                .map(|(read_step, write_step)| write_step.value)
+                .map(|(value, _)| *value)
                 .collect::<Vec<u8>>();
             rlc::value(values.iter().rev(), randomness)
         } else {
             F::zero()
         };
         for (step_idx, (copy_step, is_read_step)) in copy_event
-            .steps
+            .bytes
             .iter()
-            .flat_map(|(read_step, write_step)| {
+            .flat_map(|(value, is_code)| {
+                let read_step = CopyStep {
+                    value: *value,
+                    is_code: if copy_event.src_type == CopyDataType::Bytecode {
+                        Some(*is_code)
+                    } else {
+                        None
+                    },
+                };
+                let write_step = CopyStep {
+                    value: *value,
+                    is_code: if copy_event.dst_type == CopyDataType::Bytecode {
+                        Some(*is_code)
+                    } else {
+                        None
+                    },
+                };
                 once((read_step, true)).chain(once((write_step, false)))
             })
             .enumerate()
@@ -840,7 +856,7 @@ impl CopyTable {
                     id,
                     addr,
                     F::from(copy_event.src_addr_end),
-                    F::from(u64::try_from(copy_event.steps.len() * 2 - step_idx).unwrap() / 2), // bytes_left
+                    F::from(u64::try_from(copy_event.bytes.len() * 2 - step_idx).unwrap() / 2), // bytes_left
                     rlc_acc,
                     F::from(rw_counter),
                     F::from(rwc_inc_left),  // rw_inc_left

@@ -89,26 +89,13 @@ fn gen_copy_steps(
     bytes_left: u64,
     src_addr_end: u64,
     bytecode: &Bytecode,
-) -> Result<Vec<(CopyStep, CopyStep)>, Error> {
+) -> Result<Vec<(u8, bool)>, Error> {
     let mut steps = Vec::with_capacity(bytes_left as usize);
     for idx in 0..bytes_left {
         let addr = src_addr + idx;
-        let (value, is_code, is_pad) = if addr < src_addr_end {
-            bytecode
-                .get(addr as usize)
-                .map_or((0, None, true), |e| (e.value, Some(e.is_code), false))
-        } else {
-            (0, None, true)
-        };
-        // Read
-        steps.push((
-            CopyStep { value, is_code },
-            CopyStep {
-                value,
-                is_code: None,
-            },
-        ));
-        state.memory_write(exec_step, (dst_addr + idx).into(), value)?;
+        let bytecode_element = bytecode.get(addr as usize).unwrap_or_default();
+        steps.push((bytecode_element.value, bytecode_element.is_code));
+        state.memory_write(exec_step, (dst_addr + idx).into(), bytecode_element.value)?;
     }
     Ok(steps)
 }
@@ -148,7 +135,7 @@ fn gen_copy_event(
         dst_addr: dst_offset,
         log_id: None,
         rw_counter_start,
-        steps: copy_steps,
+        bytes: copy_steps,
     })
 }
 
@@ -255,7 +242,7 @@ mod codecopy_tests {
 
         let copy_events = builder.block.copy_events.clone();
         assert_eq!(copy_events.len(), 1);
-        assert_eq!(copy_events[0].steps.len(), size);
+        assert_eq!(copy_events[0].bytes.len(), size);
         assert_eq!(
             copy_events[0].src_id,
             NumberOrHash::Hash(H256(keccak256(&code.to_vec())))
@@ -271,20 +258,10 @@ mod codecopy_tests {
         assert_eq!(copy_events[0].dst_type, CopyDataType::Memory);
         assert!(copy_events[0].log_id.is_none());
 
-        for (idx, (read_step, write_step)) in copy_events[0].steps.iter().enumerate() {
-            let (value, is_code, is_pad) = code
-                .get(code_offset + idx)
-                .map_or((0, None, true), |e| (e.value, Some(e.is_code), false));
-            // Read
-            assert_eq!(read_step, &CopyStep { value, is_code });
-            // Write
-            assert_eq!(
-                write_step,
-                &CopyStep {
-                    value,
-                    is_code: None,
-                }
-            );
+        for (idx, (value, is_code)) in copy_events[0].bytes.iter().enumerate() {
+            let bytecode_element = code.get(code_offset + idx).unwrap_or_default();
+            assert_eq!(*value, bytecode_element.value);
+            assert_eq!(*is_code, bytecode_element.is_code);
         }
     }
 }

@@ -113,7 +113,7 @@ fn gen_copy_steps(
     src_addr_end: u64,
     bytes_left: u64,
     is_root: bool,
-) -> Result<Vec<(CopyStep, CopyStep)>, Error> {
+) -> Result<Vec<(u8, bool)>, Error> {
     let mut copy_steps = Vec::with_capacity(bytes_left as usize);
     for idx in 0..bytes_left {
         let addr = src_addr + idx;
@@ -138,16 +138,7 @@ fn gen_copy_steps(
         } else {
             CopyDataType::Memory
         };
-        copy_steps.push((
-            CopyStep {
-                value,
-                is_code: None,
-            },
-            CopyStep {
-                value,
-                is_code: None,
-            },
-        ));
+        copy_steps.push((value, false));
         state.memory_write(exec_step, (dst_addr + idx).into(), value)?;
     }
 
@@ -197,14 +188,14 @@ fn gen_copy_event(
         dst_addr: memory_offset,
         log_id: None,
         rw_counter_start,
-        steps: copy_steps,
+        bytes: copy_steps,
     })
 }
 
 #[cfg(test)]
 mod calldatacopy_tests {
     use crate::{
-        circuit_input_builder::{CopyDataType, CopyStep, ExecState, NumberOrHash},
+        circuit_input_builder::{CopyDataType, ExecState, NumberOrHash},
         mock::BlockData,
         operation::{CallContextField, CallContextOp, MemoryOp, RWCounter, StackOp, RW},
     };
@@ -388,7 +379,7 @@ mod calldatacopy_tests {
 
         let copy_events = builder.block.copy_events.clone();
         assert_eq!(copy_events.len(), 1);
-        assert_eq!(copy_events[0].steps.len(), copy_size);
+        assert_eq!(copy_events[0].bytes.len(), copy_size);
         assert_eq!(copy_events[0].src_id, NumberOrHash::Number(caller_id));
         assert_eq!(
             copy_events[0].dst_id,
@@ -402,27 +393,9 @@ mod calldatacopy_tests {
         );
         assert_eq!(copy_events[0].dst_addr as usize, dst_offset);
 
-        for (idx, (read_step, write_step)) in copy_events[0].steps.iter().enumerate() {
-            let (value, is_pad) = memory_a
-                .get(offset + call_data_offset + idx)
-                .cloned()
-                .map_or((0, true), |v| (v, false));
-            // Read
-            assert_eq!(
-                read_step,
-                &CopyStep {
-                    is_code: None,
-                    value,
-                }
-            );
-            // Write
-            assert_eq!(
-                write_step,
-                &CopyStep {
-                    is_code: None,
-                    value,
-                }
-            );
+        for (idx, (value, is_code)) in copy_events[0].bytes.iter().enumerate() {
+            assert_eq!(Some(value), memory_a.get(offset + call_data_offset + idx));
+            assert!(!is_code);
         }
     }
 
@@ -611,29 +584,11 @@ mod calldatacopy_tests {
 
         // single copy event with `size` reads and `size` writes.
         assert_eq!(copy_events.len(), 1);
-        assert_eq!(copy_events[0].steps.len(), size);
+        assert_eq!(copy_events[0].bytes.len(), size);
 
-        for (idx, (read_step, write_step)) in copy_events[0].steps.iter().enumerate() {
-            let (value, is_pad) = calldata
-                .get(offset as usize + idx)
-                .cloned()
-                .map_or((0, true), |v| (v, false));
-            // read
-            assert_eq!(
-                read_step,
-                &CopyStep {
-                    value,
-                    is_code: None,
-                }
-            );
-            // write
-            assert_eq!(
-                write_step,
-                &CopyStep {
-                    value,
-                    is_code: None,
-                }
-            );
+        for (idx, (value, is_code)) in copy_events[0].bytes.iter().enumerate() {
+            assert_eq!(value, calldata.get(offset as usize + idx).unwrap_or(&0));
+            assert!(!is_code);
         }
     }
 }

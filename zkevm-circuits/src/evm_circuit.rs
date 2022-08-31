@@ -314,9 +314,9 @@ pub mod test {
                     .iter()
                     .filter(|ce| ce.dst_type == CopyDataType::RlcAcc)
                     .map(|ce| {
-                        ce.steps
+                        ce.bytes
                             .iter()
-                            .map(|(_read_step, write_step)| write_step.value)
+                            .map(|(value, _)| *value)
                             .collect::<Vec<u8>>()
                     }),
                 self.block.randomness,

@@ -225,8 +225,8 @@ pub struct CopyEvent {
     pub log_id: Option<u64>,
     /// Value of rw counter at start of this copy event
     pub rw_counter_start: RWCounter,
-    /// Represents the list of copy steps in this copy event.
-    pub steps: Vec<(CopyStep, CopyStep)>,
+    /// Represents the list of (bytes, is_code) copied during this copy event
+    pub bytes: Vec<(u8, bool)>,
 }
 
 impl CopyEvent {
@@ -235,7 +235,7 @@ impl CopyEvent {
         let source_rw_increase = match self.src_type {
             CopyDataType::Bytecode | CopyDataType::TxCalldata => 0,
             CopyDataType::Memory => std::cmp::min(
-                self.steps.len(),
+                self.bytes.len(),
                 self.src_addr_end
                     .checked_sub(self.src_addr)
                     .unwrap_or_default()
@@ -246,7 +246,7 @@ impl CopyEvent {
         };
         let destination_rw_increase = match self.dst_type {
             CopyDataType::RlcAcc => 0,
-            CopyDataType::TxLog | CopyDataType::Memory => self.steps.len(),
+            CopyDataType::TxLog | CopyDataType::Memory => self.bytes.len(),
             CopyDataType::Bytecode | CopyDataType::TxCalldata => unreachable!(),
         };
         source_rw_increase + destination_rw_increase
