@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 use crate::{evm_circuit::witness::Block, state_circuit::StateCircuit};
 use bus_mapping::mock::BlockData;
 use eth_types::geth_types::{GethData, Transaction};
@@ -16,13 +18,10 @@ fn init_env_logger() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("error")).init();
 }
 
-/// Configuration for the bytecode test
 #[derive(Debug, Clone)]
 pub struct BytecodeTestConfig {
-    /// Enable evm circuit test
     pub enable_evm_circuit_test: bool,
     pub enable_state_circuit_test: bool,
-    /// Gas limit
     pub gas_limit: u64,
 }
 
@@ -36,7 +35,6 @@ impl Default for BytecodeTestConfig {
     }
 }
 
-/// Run test circuits
 pub fn run_test_circuits<const NACC: usize, const NTX: usize>(
     test_ctx: TestContext<NACC, NTX>,
     config: Option<BytecodeTestConfig>,
@@ -54,7 +52,6 @@ pub fn run_test_circuits<const NACC: usize, const NTX: usize>(
     test_circuits_using_witness_block(block, config.unwrap_or_default())
 }
 
-/// Test circuits using witness block
 pub fn test_circuits_using_witness_block(
     block: Block<Fr>,
     config: BytecodeTestConfig,

@@ -1,10 +1,16 @@
-use crate::utils::{config_bytecode_test_config, OPCODES_UNIMPLEMENTED};
+mod json;
+mod suite;
+mod yaml;
+
+pub use json::JsonStateTestBuilder;
+pub use suite::{load_statetests_suite, run_statetests_suite};
+pub use yaml::YamlStateTestBuilder;
+
+use crate::config::Config;
 use anyhow::Context;
 use bus_mapping::circuit_input_builder::CircuitInputBuilder;
 use bus_mapping::mock::BlockData;
-use eth_types::{
-    evm_types::Gas, geth_types, geth_types::Account, Address, Bytes, GethExecTrace, H256, U256, U64,
-};
+use eth_types::{geth_types, geth_types::Account, Address, Bytes, GethExecTrace, H256, U256, U64};
 use ethers_core::{types::TransactionRequest, utils::keccak256};
 use ethers_signers::LocalWallet;
 use external_tracer::TraceConfig;
@@ -42,18 +48,24 @@ pub enum StateTestError {
 
 #[derive(Debug, Clone)]
 pub struct StateTestConfig {
-    pub max_steps: usize,
-    pub max_gas: Gas,
     pub run_circuit: bool,
     pub bytecode_test_config: BytecodeTestConfig,
+    pub config: Config,
 }
+
 impl Default for StateTestConfig {
     fn default() -> Self {
         Self {
-            max_gas: Gas(1000000),
-            max_steps: 2048,
             run_circuit: true,
             bytecode_test_config: BytecodeTestConfig::default(),
+            config: Config {
+                max_gas: 1000000,
+                max_steps: 2048,
+                allow_errors: Vec::new(),
+                unimplemented_opcodes: Vec::new(),
+                skip_path: Vec::new(),
+                skip_test: Vec::new(),
+            },
         }
     }
 }
@@ -335,20 +347,20 @@ impl StateTest {
         Ok(geth_traces.remove(0))
     }
 
-    pub fn run(self, mut config: StateTestConfig) -> Result<(), StateTestError> {
+    pub fn run(self, config: StateTestConfig) -> Result<(), StateTestError> {
         // get the geth traces
         let (_, trace_config, post) = self.clone().into_traceconfig();
 
         if self.to.is_none() {
-            return Err(StateTestError::SkipUnimplemented(format!(
-                "TransactionCreation"
-            )));
+            return Err(StateTestError::SkipUnimplemented(
+                "TransactionCreation".to_string(),
+            ));
         }
 
         let geth_traces = external_tracer::trace(&trace_config)
             .map_err(|err| StateTestError::CircuitInput(err.to_string()))?;
 
-        if geth_traces[0].struct_logs.len() > config.max_steps {
+        if geth_traces[0].struct_logs.len() as u64 > config.config.max_steps {
             return Err(StateTestError::SkipTestMaxSteps(
                 geth_traces[0].struct_logs.len(),
             ));
@@ -360,7 +372,7 @@ impl StateTest {
         if let Some(step) = geth_traces[0]
             .struct_logs
             .iter()
-            .find(|step| OPCODES_UNIMPLEMENTED.contains(&step.op))
+            .find(|step| config.config.unimplemented_opcodes.contains(&step.op))
         {
             return Err(StateTestError::SkipUnimplemented(format!(
                 "OPCODE {:?}",
@@ -378,23 +390,21 @@ impl StateTest {
             }
         }
 
-        if geth_traces[0].gas > config.max_gas {
+        if geth_traces[0].gas.0 > config.config.max_gas {
             return Err(StateTestError::SkipTestMaxGasLimit(geth_traces[0].gas.0));
         }
 
         if let Some(acc) = self.pre.get(&self.to.unwrap()) {
             if acc.code.0.is_empty() {
-                return Err(StateTestError::SkipUnimplemented("Calling to empty accounts unimplemented (1)".to_string()));
+                return Err(StateTestError::SkipUnimplemented(
+                    "Calling to empty accounts unimplemented (1)".to_string(),
+                ));
             }
         } else {
-            return Err(StateTestError::SkipUnimplemented("Calling to empty accounts unimplemented (2)".to_string()));
+            return Err(StateTestError::SkipUnimplemented(
+                "Calling to empty accounts unimplemented (2)".to_string(),
+            ));
         }
-        
-
-        config_bytecode_test_config(
-            &mut config.bytecode_test_config,
-            geth_traces[0].struct_logs.iter().map(|step| step.op),
-        );
 
         let builder = Self::create_input_builder(trace_config, geth_traces)?;
 

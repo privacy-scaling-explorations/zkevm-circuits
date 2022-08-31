@@ -32,11 +32,17 @@ impl From<Bytecode> for Bytes {
 
 impl Bytecode {
     /// Build not checked bytecode
-    pub unsafe fn from_raw_unsafe(input: Vec<u8>) -> Self {
+    pub fn from_raw_unsafe(input: Vec<u8>) -> Self {
         Self {
-            code: input.iter().map(|b| BytecodeElement{ value: *b, is_code:true} ).collect(),
+            code: input
+                .iter()
+                .map(|b| BytecodeElement {
+                    value: *b,
+                    is_code: true,
+                })
+                .collect(),
             markers: HashMap::new(),
-            num_opcodes: 0
+            num_opcodes: 0,
         }
     }
 
@@ -329,7 +335,6 @@ impl From<Vec<u8>> for Bytecode {
 
         code
     }
-
 }
 
 /// EVM code macro

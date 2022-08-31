@@ -29,6 +29,7 @@ rayon = "1.5"
 prettytable-rs = "0.8"
 clap = { version = "3.1", features = ["derive"] }
 ethers-signers = "0.6"
+toml = "0.5"
 
 [features]
 ignore-test-docker = []

@@ -1,6 +1,7 @@
-use super::compiler::Compiler;
+use super::{AccountMatch, Env, StateTest};
 use crate::abi;
-use crate::statetest::{AccountMatch, Env, StateTest};
+use crate::utils::MainnetFork;
+use crate::Compiler;
 use anyhow::{bail, Context, Result};
 use eth_types::evm_types::OpcodeId;
 use eth_types::{geth_types::Account, Address, Bytes, H256, U256};
@@ -10,7 +11,6 @@ use std::collections::HashMap;
 use std::convert::TryInto;
 use std::str::FromStr;
 use yaml_rust::Yaml;
-use crate::utils::MainnetFork;
 
 type Label = String;
 
@@ -50,7 +50,7 @@ impl<'a> YamlStateTestBuilder<'a> {
     }
 
     /// generates `StateTest` vectors from a ethereum yaml test specification
-    pub fn from_yaml(&mut self, path: &str, source: &str) -> Result<Vec<StateTest>> {
+    pub fn load_yaml(&mut self, path: &str, source: &str) -> Result<Vec<StateTest>> {
         // get the yaml root element
         let doc = yaml_rust::YamlLoader::load_from_str(source)?
             .into_iter()
@@ -119,11 +119,15 @@ impl<'a> YamlStateTestBuilder<'a> {
             // parse expects (account states before executing the transaction)
             let mut expects = Vec::new();
             for expect in yaml_test["expect"].as_vec().context("as_vec")?.iter() {
-                let networks : Vec<_> = expect["network"]
+                let networks: Vec<_> = expect["network"]
                     .as_vec()
                     .expect("cannot convert network into vec<string>")
                     .iter()
-                    .map(|n| n.as_str().expect("cannot convert network into string").to_string())
+                    .map(|n| {
+                        n.as_str()
+                            .expect("cannot convert network into string")
+                            .to_string()
+                    })
                     .collect();
 
                 let data_refs = Self::parse_refs(&expect["indexes"]["data"])?;
@@ -504,7 +508,8 @@ impl<'a> YamlStateTestBuilder<'a> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::statetest::{StateTestConfig, StateTestError};
+    use crate::statetest::StateTestConfig;
+    use crate::statetest::StateTestError;
     use eth_types::address;
 
     const TEMPLATE: &str = r#"
@@ -622,7 +627,7 @@ arith:
     #[test]
     fn combinations() -> Result<()> {
         let tcs = YamlStateTestBuilder::new(&mut Compiler::default())
-            .from_yaml("", &Template::default().to_string())?
+            .load_yaml("", &Template::default().to_string())?
             .into_iter()
             .map(|v| (v.id.clone(), v))
             .collect::<HashMap<_, _>>();
@@ -649,7 +654,7 @@ arith:
     #[test]
     fn parse() -> Result<()> {
         let mut tc = YamlStateTestBuilder::new(&mut Compiler::default())
-            .from_yaml("", &Template::default().to_string())?;
+            .load_yaml("", &Template::default().to_string())?;
         let current = tc.remove(0);
 
         let a94f5 = address!("a94f5374fce5edbc8e2a8697c15331677e6ebf0b");
@@ -723,14 +728,14 @@ arith:
         env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
         let mut tc = YamlStateTestBuilder::new(&mut Compiler::default())
-            .from_yaml("", &Template::default().to_string())?;
+            .load_yaml("", &Template::default().to_string())?;
         let t1 = tc.remove(0);
         t1.run(StateTestConfig::default())?;
         Ok(())
     }
     #[test]
     fn test_result_bad_storage() -> Result<()> {
-        let mut tc = YamlStateTestBuilder::new(&mut Compiler::default()).from_yaml(
+        let mut tc = YamlStateTestBuilder::new(&mut Compiler::default()).load_yaml(
             "",
             &Template {
                 res_storage: "2".into(),
@@ -751,7 +756,7 @@ arith:
     }
     #[test]
     fn bad_balance() -> Result<()> {
-        let mut tc = YamlStateTestBuilder::new(&mut Compiler::default()).from_yaml(
+        let mut tc = YamlStateTestBuilder::new(&mut Compiler::default()).load_yaml(
             "",
             &Template {
                 res_balance: "1000000000002".into(),
@@ -772,7 +777,7 @@ arith:
 
     #[test]
     fn bad_code() -> Result<()> {
-        let mut tc = YamlStateTestBuilder::new(&mut Compiler::default()).from_yaml(
+        let mut tc = YamlStateTestBuilder::new(&mut Compiler::default()).load_yaml(
             "",
             &Template {
                 res_code: ":raw 0x600200".into(),
@@ -793,7 +798,7 @@ arith:
 
     #[test]
     fn bad_nonce() -> Result<()> {
-        let mut tc = YamlStateTestBuilder::new(&mut Compiler::default()).from_yaml(
+        let mut tc = YamlStateTestBuilder::new(&mut Compiler::default()).load_yaml(
             "",
             &Template {
                 res_nonce: "2".into(),
@@ -815,7 +820,7 @@ arith:
 
     #[test]
     fn sstore() -> Result<()> {
-        let mut tc = YamlStateTestBuilder::new(&mut Compiler::default()).from_yaml(
+        let mut tc = YamlStateTestBuilder::new(&mut Compiler::default()).load_yaml(
             "",
             &Template {
                 pre_code: ":raw 0x607760005500".into(),
@@ -834,7 +839,7 @@ arith:
 
     #[test]
     fn fail_bad_code() -> Result<()> {
-        let mut tc = YamlStateTestBuilder::new(&mut Compiler::default()).from_yaml(
+        let mut tc = YamlStateTestBuilder::new(&mut Compiler::default()).load_yaml(
             "",
             &Template {
                 pre_code: ":raw 0xF4".into(),

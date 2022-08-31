@@ -1,8 +1,8 @@
 #![allow(dead_code, unused_imports)]
 
-use super::compiler::Compiler;
+use super::{AccountMatch, Env, StateTest};
 use crate::abi;
-use crate::statetest::{AccountMatch, Env, StateTest};
+use crate::compiler::Compiler;
 use crate::utils::MainnetFork;
 use anyhow::{bail, Context, Result};
 use eth_types::evm_types::OpcodeId;
@@ -105,7 +105,7 @@ impl<'a> JsonStateTestBuilder<'a> {
     }
 
     /// generates `StateTest` vectors from a ethereum josn test specification
-    pub fn from_json(&mut self, path: &str, source: &str) -> Result<Vec<StateTest>> {
+    pub fn load_json(&mut self, path: &str, source: &str) -> Result<Vec<StateTest>> {
         let mut state_tests = Vec::new();
         let tests: HashMap<String, JsonStateTest> = serde_json::from_str(source)?;
 
@@ -539,7 +539,7 @@ mod test {
     fn test_json_parse() -> Result<()> {
         let mut compiler = Compiler::new(true, None)?;
         let mut builder = JsonStateTestBuilder::new(&mut compiler);
-        let test = builder.from_json("test_path", JSON)?.remove(0);
+        let test = builder.load_json("test_path", JSON)?.remove(0);
 
         let acc095e = Address::from_str("0x095e7baea6a6c7c4c2dfeb977efac326af552d87")?;
 

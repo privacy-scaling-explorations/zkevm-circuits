@@ -1,37 +1,10 @@
 use std::str::FromStr;
 
 use anyhow::{bail, Result};
-use eth_types::{evm_types::OpcodeId, GethExecTrace, U256};
+use eth_types::{GethExecTrace, U256};
 use prettytable::Table;
-use zkevm_circuits::test_util::{get_fixed_table, BytecodeTestConfig, FixedTableConfig};
 
-const OPCODES_NEED_FULL_FIXED_TABLE: [OpcodeId; 4] = [OpcodeId::AND, OpcodeId::OR, OpcodeId::XOR, OpcodeId::NOT];
-
-// see https://github.com/appliedzkp/zkevm-circuits/issues/477
-pub const OPCODES_UNIMPLEMENTED: [OpcodeId; 20] = [
-    OpcodeId::EXP,
-    OpcodeId::SHL,
-    OpcodeId::SHR,
-    OpcodeId::SAR,
-    OpcodeId::RETURN,
-    OpcodeId::REVERT,
-    OpcodeId::SHA3,
-    OpcodeId::ADDRESS,
-    OpcodeId::BALANCE,
-    OpcodeId::EXTCODESIZE,
-    OpcodeId::EXTCODECOPY,
-    OpcodeId::RETURNDATASIZE,
-    OpcodeId::RETURNDATACOPY,
-    OpcodeId::BLOCKHASH,
-    OpcodeId::CREATE,
-    OpcodeId::CREATE2,
-    OpcodeId::CALLCODE,
-    OpcodeId::DELEGATECALL,
-    OpcodeId::STATICCALL,
-    OpcodeId::SELFDESTRUCT,
-];
-
-#[derive(Debug, PartialEq, PartialOrd)]
+#[derive(Debug, Eq, PartialEq, PartialOrd)]
 pub enum MainnetFork {
     Merge = 14,
     GrayGlacier = 13,
@@ -86,27 +59,14 @@ impl MainnetFork {
                     if crate::utils::TEST_FORK >= crate::utils::MainnetFork::from_str(network)? {
                         in_network = true;
                     }
-                } else {
-                    if crate::utils::TEST_FORK == crate::utils::MainnetFork::from_str(&network)? {
-                        in_network = true;
-                    }
+                } else if crate::utils::TEST_FORK == crate::utils::MainnetFork::from_str(network)? {
+                    in_network = true;
                 }
             }
             in_network
         };
 
         Ok(in_network)
-    }
-}
-
-pub fn config_bytecode_test_config<OPS: Iterator<Item = OpcodeId>>(
-    cfg: &mut BytecodeTestConfig,
-    mut ops: OPS,
-) {
-    let needs_complete_fixed_table = ops.any(|op| OPCODES_NEED_FULL_FIXED_TABLE.contains(&op));
-
-    if needs_complete_fixed_table {
-        cfg.evm_circuit_lookup_tags = get_fixed_table(FixedTableConfig::Complete);
     }
 }
 
@@ -186,8 +146,8 @@ pub fn print_trace(trace: GethExecTrace) -> Result<()> {
 mod test {
     use super::*;
     #[test]
-    fn networks() { 
-        assert!(MainnetFork::in_network_range(&[String::from(">=Istanbul")]).expect("can parse network"));
+    fn networks() {
+        assert!(MainnetFork::in_network_range(&[String::from(">=Istanbul")])
+            .expect("can parse network"));
     }
-
 }

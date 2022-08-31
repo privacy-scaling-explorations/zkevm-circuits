@@ -1,0 +1,178 @@
+max_gas = 500000
+max_steps = 1000
+allow_errors = [
+	"SkipUnimplemented(Calling to empty accounts unimplemented",
+	"SkipUnimplemented(Error gas uint64 overflow",
+	"SkipUnimplemented(Error out of gas",
+	"SkipUnimplemented(Error stack underflow",
+	"SkipUnimplemented(OPCODE",	
+	"SkipUnimplemented(TransactionCreation)",
+	"SkipTesstMaxGasLimit"
+]
+
+unimplemented_opcodes = [
+    "EXP",
+    "SHL",
+    "SHR",
+    "SAR",
+    "RETURN",
+    "REVERT",
+    "SHA3",
+    "ADDRESS",
+    "BALANCE",
+    "EXTCODESIZE",
+    "EXTCODECOPY",
+    "RETURNDATASIZE",
+    "RETURNDATACOPY",
+    "CREATE",
+    "CREATE2",
+    "CALLCODE",
+    "DELEGATECALL",
+    "STATICCALL",
+    "SELFDESTRUCT"
+]
+
+[[skip_path]]
+desc = "unimplemented"
+paths = [
+    "EIP1559",
+	"EIP2930",
+    "stPreCompiledContracts",
+    "stZeroKnowledge"
+]
+
+[[skip_path]]
+desc = "too big"
+paths = [
+    "stTimeConsuming",
+	"stExample",
+    "stQuadraticComplexityTest",
+    "50000"
+]
+
+[[skip_path]]	
+desc = "makes panic"
+paths = [
+    "randomStatetest",  # crashes geth?
+    "bufferFiller.yml"  # we are using U256::as_xxx() that panics
+]
+
+[[skip_path]]
+desc = "defines asm"
+paths = [ 
+    "stackLimitGas_1023Filler.json",
+    "stackLimitGas_1024Filler.json",
+    "stackLimitGas_1025Filler.json",
+    "stackLimitPush31_1023Filler.json",
+    "stackLimitPush31_1024Filler.json",
+    "stackLimitPush31_1025Filler.json",
+    "stackLimitPush32_1023Filler.json",
+    "stackLimitPush32_1024Filler.json",
+    "stackLimitPush32_1025Filler.json",
+    "sloadGasCostFiller.json",
+    "selfBalanceCallTypesFiller.json",
+    "selfBalanceGasCostFiller.json",
+    "selfBalanceUpdateFiller.json",
+    "chainIdGasCostFiller.json"
+]
+
+[[skip_path]]
+desc = "bad json"
+paths = [
+    "Opcodes_TransactionInitFiller",
+    "static_CallContractToCreateContractAndCallItOOGFiller.json", 
+    "dummyFiller.json",
+    "codesizeOOGInvalidSizeFiller.json",
+    "codesizeValidFiller.json",
+    "create2callPrecompilesFiller.json",
+    "callToNonExistentFiller.json",
+    "tackDepthLimitSECFiller.json",
+    "ValueOverflowFiller" # weird 0x:biginteger 0x...
+]
+
+[[skip_path]]
+desc = "uses :solidity"
+paths = [
+    "RevertRemoteSubCallStorageOOGFiller.yml",
+    "loopMulFiller.yml",
+    "loopExpFiller.yml",
+    "performanceTesterFiller.yml", 
+    "SelfDestructFiller.yml",
+    "RevertRemoteSubCallStorageOOGFiller.yml",
+    "solidityExampleFiller.yml"
+]
+
+[[skip_test]]
+desc = "needs to be solved, using the block number"
+ids = ["blockInfo_d3(number)_g0_v0"]
+
+[[skip_test]]
+desc = ""
+ids = ["envInfo_d3(codecopy_neg_offset)_g0_v0"]
+
+[[skip_test]]
+desc = ""
+ids=["random_d3(random3)_g0_v0","random_d4(random4)_g0_v0"]
+
+[[skip_test]]
+desc = ""
+ids = ["invalidAddr_d31(ok)_g0_v0"]
+
+[[skip_test]]
+desc = ""
+ids= ["callWithHighValue_d0_g0_v0"]
+
+
+[[skip_test]]
+ids = [
+    "bufferSrcOffset_d10(ok)_g0_v0",
+	"bufferSrcOffset_d12(ok)_g0_v0",
+	"bufferSrcOffset_d13(ok)_g0_v0",
+	"bufferSrcOffset_d14(ok)_g0_v0",
+	"bufferSrcOffset_d2(ok)_g0_v0",
+	"bufferSrcOffset_d20(ok)_g0_v0",
+	"bufferSrcOffset_d21(ok)_g0_v0",
+	"bufferSrcOffset_d22(ok)_g0_v0",
+	"bufferSrcOffset_d23(ok)_g0_v0",
+	"bufferSrcOffset_d26(ok)_g0_v0",
+	"bufferSrcOffset_d30(ok)_g0_v0",
+	"bufferSrcOffset_d34(ok)_g0_v0",
+	"bufferSrcOffset_d36(ok)_g0_v0",
+	"bufferSrcOffset_d37(ok)_g0_v0",
+	"bufferSrcOffset_d38(ok)_g0_v0",
+	"bufferSrcOffset_d44(ok)_g0_v0",
+	"bufferSrcOffset_d45(ok)_g0_v0",
+	"bufferSrcOffset_d46(ok)_g0_v0",
+	"bufferSrcOffset_d47(ok)_g0_v0",
+	"bufferSrcOffset_d6(ok)_g0_v0"
+]
+
+[[skip_test]]
+desc = ""
+ids = ["callDataCopyOffset_d0_g0_v0"]
+
+[[skip_test]]
+desc = ""
+ids = ["calldatacopy_dejavu2_d0_g0_v0"]
+
+[[skip_test]]
+desc = ""
+ids = ["codeCopyOffset_d0_g0_v0"]
+
+[[skip_test]]
+desc = ""
+ids = ["codecopy_dejavu2_d0_g0_v0"]
+
+[[skip_test]]
+desc = ""
+ids = ["oog_d2(success)_g0_v0"]
+
+[[skip_test]]
+desc = ""
+ids = ["oog_d4(success)_g0_v0"]
+
+[[skip_test]]
+desc = ""
+ids = ["push32withoutByte_d0_g0_v0"]
+
+

@@ -3,11 +3,11 @@ mod test {
     use eth_types::geth_types::GethData;
     use eth_types::{address, bytecode, Word};
     use mock::TestContext;
-    use zkevm_circuits::evm_circuit::test::run_test_circuit_incomplete_fixed_table;
     use zkevm_circuits::evm_circuit::witness::block_convert;
+    use zkevm_circuits::test_util::BytecodeTestConfig;
 
     #[test]
-    fn testme(){
+    fn testme() {
         let addr0 = address!("0x00000000000000000000000000000000000cafe0");
         let addr1 = address!("0x00000000000000000000000000000000000cafe1");
         let addr2 = address!("0x00000000000000000000000000000000000cafe2");
@@ -50,6 +50,8 @@ mod test {
             .handle_block(&block_data.eth_block, &block_data.geth_traces)
             .unwrap();
         let block = block_convert(&builder.block, &builder.code_db);
-        run_test_circuit_incomplete_fixed_table(block).expect("should work")
+        let bytecode_test_config = BytecodeTestConfig::default();
+        zkevm_circuits::test_util::test_circuits_using_witness_block(block, bytecode_test_config)
+            .expect("should work")
     }
 }

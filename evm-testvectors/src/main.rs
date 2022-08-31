@@ -1,27 +1,19 @@
 mod abi;
 mod compiler;
-mod json;
+mod config;
 mod result_cache;
 mod statetest;
 mod testme;
 mod utils;
-mod yaml;
 
 use anyhow::{bail, Result};
 use clap::Parser;
 use compiler::Compiler;
-use eth_types::evm_types::Gas;
-use json::JsonStateTestBuilder;
-use rayon::prelude::*;
+use config::Config;
 use result_cache::ResultCache;
-use statetest::{StateTest, StateTestConfig, StateTestError};
+use statetest::{load_statetests_suite, run_statetests_suite, StateTest, StateTestConfig};
 use std::path::PathBuf;
-use std::sync::Arc;
-use std::sync::RwLock;
-use yaml::YamlStateTestBuilder;
 use zkevm_circuits::test_util::BytecodeTestConfig;
-
-use crate::utils::config_bytecode_test_config;
 
 #[macro_use]
 extern crate prettytable;
@@ -49,144 +41,31 @@ struct Args {
     /// Raw execute bytecode
     #[clap(short, long)]
     raw: Option<String>,
-}
 
-const TEST_IGNORE_LIST: [&str; 0] = [];
-const FILE_IGNORE_LIST: [&str; 33] = [
-    // unimplemented
-    "EIP1559",
-    "EIP2930",
-    "stPreCompiledContracts",
-    "stZeroKnowledge",
-    // too big
-    "stTimeConsuming",
-    "stExample",
-    "stQuadraticComplexityTest",
-    "50000",
-    // makes panic
-    "randomStatetest",  // crashes geth?
-    "bufferFiller.yml", // we are using U256::as_xxx() that panics
-    // defines asm
-    "stackLimitGas_1023Filler.json",
-    "stackLimitGas_1024Filler.json",
-    "stackLimitGas_1025Filler.json",
-    "stackLimitPush31_1023Filler.json",
-    "stackLimitPush31_1024Filler.json",
-    "stackLimitPush31_1025Filler.json",
-    "stackLimitPush32_1023Filler.json",
-    "stackLimitPush32_1024Filler.json",
-    "stackLimitPush32_1025Filler.json",
-    "sloadGasCostFiller.json",
-    "selfBalanceCallTypesFiller.json",
-    "selfBalanceGasCostFiller.json",
-    "selfBalanceUpdateFiller.json",
-    "chainIdGasCostFiller.json",
-    // bad json
-    "Opcodes_TransactionInitFiller",
-    "static_CallContractToCreateContractAndCallItOOGFiller.json", // bad json
-    "dummyFiller.json",
-    "codesizeOOGInvalidSizeFiller.json",
-    "codesizeValidFiller.json",
-    "create2callPrecompilesFiller.json",
-    "callToNonExistentFiller.json",
-    "tackDepthLimitSECFiller.json",
-    "ValueOverflowFiller", // weird 0x:biginteger 0x...
-];
+    /// cache
+    #[clap(short, long)]
+    cache: bool,
+}
 
 /// This crate helps to execute the common ethereum tests located in https://github.com/ethereum/tests
 
 const RESULT_CACHE: &str = "result.cache";
 
-fn run_test_suite(tcs: Vec<StateTest>, config: StateTestConfig) -> Result<()> {
-    let results = ResultCache::new(PathBuf::from(RESULT_CACHE))?;
-
-    let tcs: Vec<StateTest> = tcs
-        .into_iter()
-        .filter(|t| !results.contains(&t.id))
-        .collect();
-
-    let results = Arc::new(RwLock::from(results));
-
-    // for each test
-    tcs.into_par_iter().for_each(|tc| {
-        let id = format!("{}/{}",tc.path,tc.id);
-
-        if TEST_IGNORE_LIST.iter().any(|t| tc.id.as_str().contains(t)) {
-            return;
-        }
-        if results.read().unwrap().contains(id.as_str()) {
-            return;
-        }
-
-        std::panic::set_hook(Box::new(|_info| {}));
-
-        log::info!(target: "vmvectests", "running test {}...",id);
-        let result = std::panic::catch_unwind(|| tc.run(config.clone()));
-
-        // handle panic
-        let result = match result {
-            Ok(res) => res,
-            Err(_) => {
-                log::error!(target: "vmvectests", "PANIKED test {}",id);
-                results.write().unwrap().insert(&id, "00PANIK").unwrap();
-                return;
-            }
-        };
-
-        // handle known error
-        if let Err(err) = result {
-            match err {
-                StateTestError::SkipUnimplemented(_)
-                | StateTestError::SkipTestMaxSteps(_)
-                | StateTestError::SkipTestMaxGasLimit(_) => {
-                    log::warn!(target: "vmvectests", "SKIPPED test {} : {:?}",id, err);
-                    results
-                        .write()
-                        .unwrap()
-                        .insert(&id, &format!("03SKIPPED {}", err))
-                        .unwrap();
-                }
-                _ => {
-                    log::error!(target: "vmvectests", "FAILED test {} : {:?}",id, err);
-                    results
-                        .write()
-                        .unwrap()
-                        .insert(&id, &format!("01FAILED {:?}", err))
-                        .unwrap();
-                }
-            }
-            return;
-        }
-
-        let results = std::sync::Arc::clone(&results);
-        results.write().unwrap().insert(&id, "04success").unwrap();
-        log::info!(target: "vmvectests", "04SUCCESS test {}",id)
-    });
-
-    Ok(())
-}
-
-fn run_single_test(test: StateTest, mut config: StateTestConfig) -> Result<()> {
+fn run_single_test(test: StateTest, config: StateTestConfig) -> Result<()> {
     println!("{}", &test);
 
     let trace = test.clone().geth_trace()?;
-    config_bytecode_test_config(
-        &mut config.bytecode_test_config,
-        trace.struct_logs.iter().map(|step| step.op),
-    );
     crate::utils::print_trace(trace)?;
     println!("result={:?}", test.run(config));
 
     Ok(())
 }
 
-fn run_bytecode(code: &str, mut bytecode_test_config: BytecodeTestConfig) -> Result<()> {
+fn run_bytecode(code: &str, bytecode_test_config: BytecodeTestConfig) -> Result<()> {
     use eth_types::bytecode;
     use mock::TestContext;
     use std::str::FromStr;
     use zkevm_circuits::test_util::run_test_circuits;
-
-    let mut unsafe_code = false;
 
     let bytecode = if let Ok(bytes) = hex::decode(code) {
         match bytecode::Bytecode::try_from(bytes.clone()) {
@@ -198,8 +77,7 @@ fn run_bytecode(code: &str, mut bytecode_test_config: BytecodeTestConfig) -> Res
             }
             Err(err) => {
                 println!("Failed to parse bytecode {:?}", err);
-                unsafe_code = true;
-                unsafe { bytecode::Bytecode::from_raw_unsafe(bytes) }
+                bytecode::Bytecode::from_raw_unsafe(bytes)
             }
         }
     } else {
@@ -211,15 +89,6 @@ fn run_bytecode(code: &str, mut bytecode_test_config: BytecodeTestConfig) -> Res
         println!("{}\n", hex::encode(bytecode.code()));
         bytecode
     };
-
-    if !unsafe_code {
-        config_bytecode_test_config(
-            &mut bytecode_test_config,
-            bytecode.iter().map(|op| op.opcode()),
-        );
-    } else {
-        config_bytecode_test_config(&mut bytecode_test_config, std::iter::empty());
-    }
 
     let result = run_test_circuits(
         TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode)?,
@@ -235,6 +104,7 @@ fn main() -> Result<()> {
     //  RAYON_NUM_THREADS=1 RUST_BACKTRACE=1 cargo run -- --path
     // "tests/src/GeneralStateTestsFiller/**/" --skip-state-circuit
 
+    let mut config = Config::load()?;
     let args = Args::parse();
 
     let bytecode_test_config = BytecodeTestConfig {
@@ -242,74 +112,46 @@ fn main() -> Result<()> {
         ..Default::default()
     };
 
+    let statetest_config = StateTestConfig {
+        run_circuit: !args.skip_circuit,
+        bytecode_test_config: bytecode_test_config.clone(),
+        config: config.clone(),
+    };
+
     if let Some(raw) = &args.raw {
         run_bytecode(raw, bytecode_test_config)?;
         return Ok(());
     }
 
-    ResultCache::new(PathBuf::from(RESULT_CACHE))?.write_sorted()?;
-
-    let config = StateTestConfig {
-        max_steps: 65535,
-        max_gas: Gas(100000),
-        run_circuit: !args.skip_circuit,
-        bytecode_test_config,
-    };
-
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
-    let files = glob::glob(&args.path)
-        .expect("Failed to read glob pattern")
-        .map(|f| f.unwrap())
-        .filter(|f| {
-            !FILE_IGNORE_LIST
-                .iter()
-                .any(|e| f.as_path().to_string_lossy().contains(e))
-        });
-
-    let mut tests = Vec::new();
-    let mut compiler = Compiler::new(true, Some(PathBuf::from("./code.cache")))?;
-
     log::info!("Parsing and compliling tests...");
-    for file in files {
-        if let Some(ext) = file.extension() {
-            let ext = &*ext.to_string_lossy();
-            if !["yml", "json"].contains(&ext) {
-                continue;
-            }
-            let path = file.as_path().to_string_lossy();
-            let src = std::fs::read_to_string(&file)?;
-            let result = match ext {
-                "yml" => YamlStateTestBuilder::new(&mut compiler).from_yaml(&path, &src),
-                "json" => JsonStateTestBuilder::new(&mut compiler).from_json(&path, &src),
-                _ => unreachable!(),
-            };
-            let mut tcs = match result {
-                Err(err) => {
-                    if args.test.is_none() {
-                        log::warn!("Failed to load {}: {:?}", path, err);
-                    }
-                    Vec::new()
-                }
-                Ok(tcs) => tcs,
-            };
-
-            tests.append(&mut tcs);
-        }
-    }
+    let compiler = Compiler::new(true, Some(PathBuf::from("./code.cache")))?;
 
     if let Some(test_id) = args.test {
-        tests = tests.into_iter().filter(|t| t.id == test_id).collect();
-        if tests.is_empty() {
+        config.skip_test.clear();
+        let state_tests = load_statetests_suite(&args.path, config, compiler)?;
+        let mut state_tests: Vec<_> = state_tests
+            .into_iter()
+            .filter(|t| t.id == test_id)
+            .collect();
+        if state_tests.is_empty() {
             bail!("test '{}' not found", test_id);
         }
-        let test = tests.remove(0);
-        run_single_test(test, config)?;
+        run_single_test(state_tests.remove(0), statetest_config)?;
     } else {
-        run_test_suite(tests, config)?;
-        println!("REPORT\n{}",ResultCache::new(PathBuf::from(RESULT_CACHE))?.report());
+        let state_tests = load_statetests_suite(&args.path, config, compiler)?;
+        let mut results = if args.cache {
+            let results = ResultCache::with_file(PathBuf::from(RESULT_CACHE))?;
+            results.write_sorted()?;
+            results
+        } else {
+            ResultCache::with_memory()
+        };
+        run_statetests_suite(state_tests, statetest_config, &mut results)?;
+        println!("REPORT\n{}", results.report());
+        results.write_sorted()?;
     }
-
 
     Ok(())
 }

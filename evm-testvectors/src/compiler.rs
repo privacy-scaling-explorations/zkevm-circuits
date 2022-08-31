@@ -26,7 +26,7 @@ impl Cache {
             file.read_to_string(&mut buf)?;
             buf.lines()
                 .filter(|l| l.len() > 1)
-                .map(|l| l.split_once("=").unwrap())
+                .map(|l| l.split_once('=').unwrap())
                 .map(|(k, v)| (h256(k), bytes(v)))
                 .collect()
         } else {
