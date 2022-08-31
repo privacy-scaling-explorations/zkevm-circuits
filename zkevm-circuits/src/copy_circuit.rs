@@ -681,6 +681,7 @@ impl<F: Field> CopyCircuit<F> {
 }
 
 /// Dev helpers
+#[cfg(any(feature = "test", test))]
 pub mod dev {
     use super::*;
     use eth_types::Field;
