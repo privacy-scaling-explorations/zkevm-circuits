@@ -34,7 +34,6 @@ ecdsa = { git = "https://github.com/privacy-scaling-explorations/halo2wrong", ta
 ecc =       { git = "https://github.com/privacy-scaling-explorations/halo2wrong", tag = "v2022_08_24" }
 maingate =  { git = "https://github.com/privacy-scaling-explorations/halo2wrong", tag = "v2022_08_24" }
 integer =   { git = "https://github.com/privacy-scaling-explorations/halo2wrong", tag = "v2022_08_24" }
-group = "0.11"
 libsecp256k1 = "0.7"
 num-bigint = { version = "0.4" }
 subtle = "2.4"
