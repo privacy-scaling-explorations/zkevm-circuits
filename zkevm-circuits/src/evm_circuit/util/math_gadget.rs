@@ -1630,7 +1630,7 @@ impl<F: Field> SarWordsGadget<F> {
         let p_top = cb.query_cell();
         let is_neg = LtGadget::construct(cb, 127.expr(), a.cells[31].expr());
         let shf_lt256 = IsZeroGadget::construct(cb, sum::expr(&shift.cells[1..32]));
-        let max_u64 = 0xFFFFFFFFFFFFFFFFu64;
+        let max_u64 = 0xFFFFFFFFFFFFFFFF_u64;
         for idx in 0..4 {
             let offset = idx * N_BYTES_U64;
 
@@ -1792,7 +1792,7 @@ impl<F: Field> SarWordsGadget<F> {
         let shf_mod64 = shf0 % 64;
         let p_lo: u128 = 1 << shf_mod64;
         let p_hi: u128 = 1 << (64 - shf_mod64);
-        let p_top: u128 = is_neg as u128 * (0xFFFFFFFFFFFFFFFF - p_hi + 1);
+        let p_top: u128 = is_neg as u128 * (0xFFFFFFFFFFFFFFFF_u128 - p_hi + 1);
         let shf_lt256 = shift
             .to_le_bytes()
             .iter()
