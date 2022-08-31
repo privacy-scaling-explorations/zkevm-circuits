@@ -15,8 +15,8 @@ use ethers_core::{types::TransactionRequest, utils::keccak256};
 use ethers_signers::LocalWallet;
 use external_tracer::TraceConfig;
 use std::{collections::HashMap, str::FromStr};
-use thiserror::Error;
 use zkevm_circuits::test_util::BytecodeTestConfig;
+use thiserror::Error;
 
 const EVMERR_OOG: &str = "out of gas";
 const EVMERR_STACKUNDERFLOW: &str = "stack underflow";
@@ -61,7 +61,6 @@ impl Default for StateTestConfig {
             config: Config {
                 max_gas: 1000000,
                 max_steps: 2048,
-                allow_errors: Vec::new(),
                 unimplemented_opcodes: Vec::new(),
                 skip_path: Vec::new(),
                 skip_test: Vec::new(),
@@ -353,7 +352,7 @@ impl StateTest {
 
         if self.to.is_none() {
             return Err(StateTestError::SkipUnimplemented(
-                "TransactionCreation".to_string(),
+                "TransactionCreation".to_string()
             ));
         }
 
@@ -441,7 +440,7 @@ impl StateTest {
         let eth_block = eth_types::Block {
             author: trace_config.block_constants.coinbase,
             timestamp: trace_config.block_constants.timestamp,
-            number: Some(U64::from(trace_config.block_constants.timestamp.as_u64())),
+            number: Some(U64::from(trace_config.block_constants.number.as_u64())),
             difficulty: trace_config.block_constants.difficulty,
             gas_limit: trace_config.block_constants.gas_limit,
             base_fee_per_gas: Some(trace_config.block_constants.base_fee),

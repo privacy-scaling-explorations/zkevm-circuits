@@ -1,14 +1,5 @@
 max_gas = 500000
 max_steps = 1000
-allow_errors = [
-	"SkipUnimplemented(Calling to empty accounts unimplemented",
-	"SkipUnimplemented(Error gas uint64 overflow",
-	"SkipUnimplemented(Error out of gas",
-	"SkipUnimplemented(Error stack underflow",
-	"SkipUnimplemented(OPCODE",	
-	"SkipUnimplemented(TransactionCreation)",
-	"SkipTesstMaxGasLimit"
-]
 
 unimplemented_opcodes = [
     "EXP",
@@ -122,6 +113,73 @@ ids = ["invalidAddr_d31(ok)_g0_v0"]
 desc = ""
 ids= ["callWithHighValue_d0_g0_v0"]
 
+[[skip_test]]
+desc = "maximum geth trace size (10MB)"
+ids = [
+    "MLOAD_Bounds3_d0_g0_v0",
+    "MLOAD_Bounds3_d0_g1_v0",
+    "MSTORE_Bounds2a_d0_g1_v0",
+    "Call1024PreCalls_d0_g2_v0",
+    "Call1024PreCalls_d0_g1_v0",
+    "msize_d5(farChunk)_g0_v0",
+    "CallcodeToPrecompileFromTransaction_d0_g0_v0",
+    "CallcodeToPrecompileFromCalledContract_d0_g0_v0",
+    "CallcodeToPrecompileFromContractInitialization_d0_g0_v0",
+    "Call1024PreCalls_d0_g1_v0",
+    "Call1024PreCalls_d0_g0_v0",
+    "static_Call1024PreCalls2_d0_g0_v0",
+    "shiftSignedCombinations_d0_g0_v0",
+    "CreateOOGafterMaxCodesize_d5(HighContractCount_DelegateCreate_CallCreate_SelfDestruct)_g0_v0",
+    "CallInfiniteLoop_d0_g0_v0",
+    "static_callCreate2_d2_g0_v0",
+    "static_CallIdentity_5_d0_g0_v0",
+    "static_CallSha256_5_d0_g0_v0",
+    "static_CallRipemd160_5_d0_g0_v0",
+    "static_callChangeRevert_d1_g0_v0",
+    "static_callcallcodecall_010_OOGE_d0_g0_v0",
+    "static_callcallcall_000_OOGMBefore_d0_g0_v0",
+    "static_callcallcodecall_010_OOGMBefore_d1_g0_v0",
+    "static_callcallcodecall_010_OOGMBefore2_d0_g0_v0",
+    "static_callcallcallcode_001_OOGMBefore2_d1_g0_v0",
+    "static_callcallcallcode_001_OOGMBefore_d0_g0_v0",
+    "static_Call10_d1_g0_v0",
+    "static_Call10_d0_g0_v0",
+    "jsonCall10_d0_g0_v0",
+    "block504980_d0_g0_v0",
+    "shiftCombinations_d0_g0_v0",
+    "static_LoopCallsThenRevert_d0_g1_v0",
+    "CallRecursiveMethods_d0_g0_v0",
+    "static_LoopCallsThenRevert_d0_g0_v0",
+    "static_callcallcodecall_010_OOGMAfter_d1_g0_v0",
+    "static_callcallcodecall_010_OOGMAfter_2_d1_g0_v0",
+    "static_callcallcallcode_001_OOGMAfter2_d1_g0_v0",
+    "static_callcallcallcode_001_OOGMAfter_3_d1_g0_v0",
+    "static_callcallcodecall_010_OOGMAfter_3_d1_g0_v0",
+    "static_callcodecallcall_100_OOGMAfter2_d0_g0_v0",
+    "static_callcallcallcode_001_OOGMAfter_d1_g0_v0",
+    "static_callcodecallcall_100_OOGMAfter_2_d0_g0_v0",
+    "static_callcodecallcall_100_OOGMAfter2_d0_g0_v1",
+    "ContractCreationSpam_d0_g0_v0",
+    "CreateOOGafterMaxCodesize_d4(HighContractCount_DelegateCreate_CallCreateOOG)_g0_v0",
+    "static_callcallcall_000_OOGMAfter2_d0_g0_v0",
+    "static_callcodecallcallcode_101_OOGMAfter_1_d0_g0_v0",
+    "createInitFailStackSizeLargerThan1024_d0_g0_v0",
+    "costRevert_d27(stackOver)_g0_v0",
+    "costRevert_d20(stackOver)_g0_v0",
+    "costRevert_d13(stackOver)_g0_v0",
+    "costRevert_d6(stackOver)_g0_v0",
+    "static_Call1MB1024Calldepth_d1_g0_v0",
+    "stateRevert_d6(stackOver)_g0_v0",
+    "DelegatecallToPrecompileFromTransaction_d0_g0_v0",
+    "DelegatecallToPrecompileFromCalledContract_d0_g0_v0",
+    "DelegatecallToPrecompileFromContractInitialization_d0_g0_v0",
+    "CallWithZeroValueToPrecompileFromTransaction_d0_g0_v0",
+    "CallWithZeroValueToPrecompileFromCalledContract_d0_g0_v0",
+    "CallWithZeroValueToPrecompileFromContractInitialization_d0_g0_v0",
+    "CreateOOGafterMaxCodesize_d3(HighContractCount_NoDelegateCreate_CallCreateOOG)_g0_v0",
+    "twoOps_d0_g0_v0",
+    "Call10_d0_g0_v0"
+]
 
 [[skip_test]]
 ids = [

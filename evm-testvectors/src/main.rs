@@ -148,6 +148,7 @@ fn main() -> Result<()> {
         } else {
             ResultCache::with_memory()
         };
+        log::info!("Executing...");
         run_statetests_suite(state_tests, statetest_config, &mut results)?;
         println!("REPORT\n{}", results.report());
         results.write_sorted()?;

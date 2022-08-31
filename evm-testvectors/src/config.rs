@@ -6,7 +6,6 @@ use serde::Deserialize;
 pub struct Config {
     pub max_gas: u64,
     pub max_steps: u64,
-    pub allow_errors: Vec<String>,
 
     /// see https://github.com/appliedzkp/zkevm-circuits/issues/477
     pub unimplemented_opcodes: Vec<OpcodeId>,

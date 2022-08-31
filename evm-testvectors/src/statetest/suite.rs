@@ -10,6 +10,12 @@ use rayon::prelude::*;
 use std::sync::Arc;
 use std::sync::RwLock;
 
+const LVL_PANIK : &str = "00💀PANIK"; 
+const LVL_FAIL : &str = "01🔴FAILD";
+const LVL_SKIP : &str = "02🟠SKIPP";
+const LVL_IGNORE : &str = "03🟡IGNOR";
+const LVL_SUCCESS : &str = "04🟢SUCCS";
+
 pub fn load_statetests_suite(
     path: &str,
     config: Config,
@@ -88,8 +94,8 @@ pub fn run_statetests_suite(
 
         // Test must be ignored config?
         if skip_tests.contains(&&tc.id) {
-            log::info!(target: "vmvectests", "01🟡IGNOR {}",id);
-            results.write().unwrap().insert(&id, "01🟡IGNOR").unwrap();
+            log::info!(target: "vmvectests", "{} {}",LVL_IGNORE,id);
+            results.write().unwrap().insert(&id, LVL_IGNORE).unwrap();
             return;
         }
 
@@ -102,8 +108,8 @@ pub fn run_statetests_suite(
         let result = match result {
             Ok(res) => res,
             Err(_) => {
-                log::error!(target: "vmvectests", "00💀PANIK {}",id);
-                results.write().unwrap().insert(&id, "00💀PANIK").unwrap();
+                log::error!(target: "vmvectests", "{} {}",LVL_PANIK, id);
+                results.write().unwrap().insert(&id, LVL_PANIK).unwrap();
                 return;
             }
         };
@@ -114,19 +120,19 @@ pub fn run_statetests_suite(
                 StateTestError::SkipUnimplemented(_)
                 | StateTestError::SkipTestMaxSteps(_)
                 | StateTestError::SkipTestMaxGasLimit(_) => {
-                    log::warn!(target: "vmvectests", "02🟠SKIPP test {} : {:?}",id, err);
+                    log::warn!(target: "vmvectests", "{} test {} : {:?}",LVL_SKIP,id, err);
                     results
                         .write()
                         .unwrap()
-                        .insert(&id, &format!("02🟠SKIPP {}", err))
+                        .insert(&id, &format!("{} {}", LVL_SKIP, err))
                         .unwrap();
                 }
                 _ => {
-                    log::error!(target: "vmvectests", "01🔴FAILD {} : {:?}",id, err);
+                    log::error!(target: "vmvectests", "{} {} : {:?}",LVL_FAIL, id, err);
                     results
                         .write()
                         .unwrap()
-                        .insert(&id, &format!("01🔴FAILD {:?}", err))
+                        .insert(&id, &format!("{} {:?}", LVL_FAIL, err))
                         .unwrap();
                 }
             }
@@ -134,8 +140,8 @@ pub fn run_statetests_suite(
         }
 
         let results = std::sync::Arc::clone(&results);
-        results.write().unwrap().insert(&id, "04🟢SUCCS").unwrap();
-        log::info!(target: "vmvectests", "04🟢SUCCS {}",id)
+        results.write().unwrap().insert(&id, LVL_SUCCESS).unwrap();
+        log::info!(target: "vmvectests", "{} {}",LVL_SUCCESS, id)
     });
 
     Ok(())
