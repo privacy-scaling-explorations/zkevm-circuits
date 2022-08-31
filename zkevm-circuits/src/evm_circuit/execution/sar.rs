@@ -119,6 +119,7 @@ mod test {
     }
 
     // This case validates if the split is correct.
+    #[test]
     fn sar_gadget_constant_shift() {
         let a = rand_word();
         test_ok(OpcodeId::SAR, a, 8.into());

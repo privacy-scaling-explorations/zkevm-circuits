@@ -1805,7 +1805,7 @@ impl<F: Field> SarWordsGadget<F> {
             a64s_lo[idx] = u128::from(a64s[idx]) % p_lo;
             a64s_hi[idx] = u128::from(a64s[idx]) / p_lo;
         }
-        let mut b64s = [is_neg as u128 * 0xFFFFFFFFFFFFFFFF_u128; 4];
+        let mut b64s = if is_neg { [0xFFFFFFFFFFFFFFFF_u128; 4] } else { [0_u128; 4] };
         b64s[3 - shf_div64 as usize] = a64s_hi[3] + p_top;
         for k in 0..3 - shf_div64 {
             b64s[k] = a64s_hi[k + shf_div64] + a64s_lo[k + shf_div64 + 1] * p_hi;
