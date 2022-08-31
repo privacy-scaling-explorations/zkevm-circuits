@@ -752,7 +752,12 @@ impl<F: Field> ExecutionConfig<F> {
                             .chain(self.advices)
                         {
                             region
-                                .assign_advice(|| "assign advice rows", column, i, || Ok(F::zero()))
+                                .assign_advice(
+                                    || "assign advice rows",
+                                    column,
+                                    i,
+                                    || Value::known(F::zero()),
+                                )
                                 .unwrap();
                         }
                     }

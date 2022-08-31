@@ -16,9 +16,9 @@ use eth_types::{self, Field};
 use gadgets::is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction};
 use halo2_proofs::halo2curves::secp256k1::Secp256k1Affine;
 use halo2_proofs::{
-    arithmetic::{CurveAffine, FieldExt},
+    arithmetic::FieldExt,
     circuit::{AssignedCell, Layouter, Region, Value},
-    halo2curves::{group::ff::Field as GroupField, group::Curve, secp256k1, Coordinates},
+    halo2curves::secp256k1,
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
     poly::Rotation,
 };
@@ -640,10 +640,17 @@ fn pub_key_hash_to_address<F: Field>(pk_hash: &[u8]) -> F {
 mod sign_verify_tests {
     use super::*;
     use crate::util::power_of_randomness_from_instance;
+    use bus_mapping::circuit_input_builder::keccak_inputs_sign_verify;
+    use eth_types::sign_types::sign;
+    use halo2_proofs::arithmetic::Field as HaloField;
     use halo2_proofs::{
         circuit::SimpleFloorPlanner,
         dev::MockProver,
-        halo2curves::{bn256::Fr, group::Group},
+        halo2curves::{
+            bn256::Fr,
+            group::{Curve, Group},
+            CurveAffine,
+        },
         plonk::Circuit,
     };
     use pretty_assertions::assert_eq;
