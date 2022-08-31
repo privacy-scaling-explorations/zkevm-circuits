@@ -150,14 +150,14 @@ impl<F: Field> ExecutionGadget<F> for ShlShrGadget<F> {
         let [pop1, pop2, push] = indices.map(|idx| block.rws[idx].stack_value());
         let shf0 = pop1.to_le_bytes()[0];
         let divisor = if U256::from(shf0) == pop1 {
-          U256::from(1) << shf0
+            U256::from(1) << shf0
         } else {
-          U256::from(0)
+            U256::from(0)
         };
 
         let (quotient, remainder, dividend) = match step.opcode.unwrap() {
             OpcodeId::SHL => (pop2, U256::from(0), push),
-            OpcodeId::SHR => (push, pop2 - push * divisor, pop2)
+            OpcodeId::SHR => (push, pop2 - push * divisor, pop2),
             _ => unreachable!(),
         };
         self.quotient
