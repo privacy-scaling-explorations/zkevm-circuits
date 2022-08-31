@@ -1793,6 +1793,11 @@ impl<F: Field> SarWordsGadget<F> {
         let p_lo: u128 = 1 << shf_mod64;
         let p_hi: u128 = 1 << (64 - shf_mod64);
         let p_top: u128 = is_neg as u128 * (0xFFFFFFFFFFFFFFFF - p_hi + 1);
+        let shf_lt256 = shift
+            .to_le_bytes()
+            .iter()
+            .fold(0, |acc, val| acc + *val as u128)
+            - shf0 as u128;
         let a64s = a.0;
         let mut a64s_lo = [0_u128; 4];
         let mut a64s_hi = [0_u128; 4];
@@ -1839,6 +1844,8 @@ impl<F: Field> SarWordsGadget<F> {
             127.into(),
             u64::from(a.to_le_bytes()[31]).into(),
         )?;
+        self.shf_lt256
+            .assign(region, offset, F::from_u128(shf_lt256))?;
         self.shf_div64_eq0
             .assign(region, offset, F::from(shf_div64 as u64))?;
         self.shf_div64_eq1
