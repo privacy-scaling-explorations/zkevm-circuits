@@ -1,8 +1,12 @@
 use super::CachedRegion;
 use crate::{
-    evm_circuit::util::{
-        self, constraint_builder::ConstraintBuilder, from_bytes, pow_of_two, pow_of_two_expr,
-        select, split_u256, split_u256_limb64, sum, Cell,
+    evm_circuit::{
+        param::N_BYTES_U64,
+        table::{FixedTableTag, Lookup},
+        util::{
+            self, constraint_builder::ConstraintBuilder, from_bytes, pow_of_two, pow_of_two_expr,
+            select, split_u256, split_u256_limb64, sum, Cell,
+        }
     },
     util::Expr,
 };
