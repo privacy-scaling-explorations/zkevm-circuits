@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod test {
     use eth_types::geth_types::GethData;
-    use eth_types::{address, bytecode, Word};
+    use eth_types::{address, bytecode, Word, Bytecode};
     use mock::TestContext;
     use zkevm_circuits::evm_circuit::witness::block_convert;
     use zkevm_circuits::test_util::BytecodeTestConfig;
@@ -23,6 +23,8 @@ mod test {
             CALL
             STOP
         };
+
+        
         let code2 = bytecode! {
             STOP
         };
