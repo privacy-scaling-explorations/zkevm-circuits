@@ -17,6 +17,7 @@ use crate::table::TxFieldTag;
 use crate::tx_circuit::sign_verify::SignData;
 use crate::tx_circuit::tx_to_sign_data;
 use crate::util::random_linear_combine_word as rlc;
+use gadgets::util::Expr;
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter, Region, SimpleFloorPlanner},
     plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Fixed, Selector},
@@ -164,7 +165,9 @@ pub struct PiCircuitConfig<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: u
     block_value: Column<Advice>,
 
     q_tx_table: Selector,
+    q_tx_calldata: Selector,
     tx_id: Column<Advice>,
+    tx_id_inv: Column<Advice>,
     tag: Column<Fixed>,
     index: Column<Advice>,
     tx_value: Column<Advice>,
@@ -189,11 +192,14 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
         let block_value = meta.advice_column();
 
         let q_tx_table = meta.selector();
+        let q_tx_calldata = meta.selector();
+        // let q_is_calldata_start = meta.selector();
         // Tx Table
         let tx_id = meta.advice_column();
         let tag = meta.fixed_column();
         let index = meta.advice_column();
         let tx_value = meta.advice_column();
+        let tx_id_inv = meta.advice_column();
 
         let raw_public_inputs = meta.advice_column();
         let rpi_rlc_acc = meta.advice_column();
@@ -252,7 +258,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
         });
 
         let offset = BLOCK_LEN + 1 + EXTRA_LEN;
-        let tx_table_len = MAX_TXS * TX_LEN + 1 + MAX_CALLDATA;
+        let tx_table_len = MAX_TXS * TX_LEN + 1;
 
         //  0.3 Tx table -> {tx_id, index, value} column match with raw_public_inputs
         // at expected offset
@@ -299,11 +305,60 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
             },
         );
 
+        meta.create_gate("calldata constraints", |meta| {
+            let q_is_calldata = meta.query_selector(q_tx_calldata);
+            let tx_idx = meta.query_advice(tx_id, Rotation::cur());
+            let tx_idx_inv = meta.query_advice(tx_id_inv, Rotation::cur());
+            let tx_idx_next = meta.query_advice(tx_id, Rotation::next());
+            let tx_idx_inv_next = meta.query_advice(tx_id_inv, Rotation::next());
+            let idx = meta.query_advice(index, Rotation::cur());
+            let idx_next = meta.query_advice(index, Rotation::next());
+            let is_tx_id_zero = 1.expr() - tx_idx.clone() * tx_idx_inv.clone();
+            let is_tx_id_nonzero = tx_idx.clone() * tx_idx_inv.clone();
+            let is_tx_id_next_zero = 1.expr() - tx_idx_next.clone() * tx_idx_inv_next.clone();
+            let is_tx_id_next_nonzero = tx_idx_next.clone() * tx_idx_inv_next.clone();
+
+            // inv constraint
+            // tx_id * (1 - tx_id * tx_id_inv) = 0
+            // if tx_id != 0 then tx_id_inv * tx_id == 1
+            // if tx_id == 0 then tx_id_inv can be any value ??
+            let tx_id_inv_constraint = tx_idx.clone() * is_tx_id_zero.clone();
+
+            // if tx_id == 0 then idx == 0, tx_id_next == 0
+            let default_calldata_row_constraint1 = is_tx_id_zero.clone() * idx.clone();
+            let default_calldata_row_constraint2 = is_tx_id_zero.clone() * tx_idx_next.clone();
+
+            // if tx_id != 0 then
+            //    1. tx_id_next == tx_id: idx_next == idx + 1
+            //    2. (tx_id_next == tx_id + 1): idx_next == 0
+            //    3. (tx_id_next == 0)
+            // ether case 1, case 2 or case 3 holds.
+            let tx_id_constraint = (tx_idx_next.clone() - tx_idx.clone())
+                * (tx_idx_next.clone() - tx_idx.clone() - 1.expr())
+                * tx_idx_next.clone();
+            let calldata_of_same_tx_constraint = is_tx_id_next_nonzero.clone()
+                * (tx_idx_next.clone() - tx_idx.clone() - 1.expr())
+                * (idx_next.clone() - idx.clone() - 1.expr());
+            let calldata_of_next_tx_constraint = is_tx_id_next_nonzero.clone()
+                * (tx_idx_next.clone() - tx_idx.clone())
+                * idx_next.clone();
+
+            vec![
+                q_is_calldata.clone() * tx_id_inv_constraint,
+                q_is_calldata.clone() * is_tx_id_zero.clone() * default_calldata_row_constraint1,
+                q_is_calldata.clone() * is_tx_id_zero.clone() * default_calldata_row_constraint2,
+                q_is_calldata.clone() * is_tx_id_nonzero.clone() * tx_id_constraint,
+                q_is_calldata.clone() * is_tx_id_nonzero.clone() * calldata_of_same_tx_constraint,
+                q_is_calldata.clone() * is_tx_id_nonzero.clone() * calldata_of_next_tx_constraint,
+            ]
+        });
         Self {
             q_block_table,
             block_value,
             q_tx_table,
+            q_tx_calldata,
             tx_id,
+            tx_id_inv,
             tag,
             index,
             tx_value,
@@ -321,9 +376,22 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
     #[inline]
     fn circuit_len() -> usize {
         // +1 empty row in block table, +1 empty row in tx_table
-        BLOCK_LEN + 1 + EXTRA_LEN + 3 * (TX_LEN * MAX_TXS + 1 + MAX_CALLDATA)
+        BLOCK_LEN + 1 + EXTRA_LEN + 3 * (TX_LEN * MAX_TXS + 1) + MAX_CALLDATA
     }
 
+    fn assign_tx_empty_row(&self, region: &mut Region<'_, F>, offset: usize) -> Result<(), Error> {
+        region.assign_advice(|| "tx_id", self.tx_id, offset, || Ok(F::zero()))?;
+        region.assign_advice(|| "tx_id_inv", self.tx_id_inv, offset, || Ok(F::zero()))?;
+        region.assign_fixed(
+            || "tag",
+            self.tag,
+            offset,
+            || Ok(F::from(TxFieldTag::Null as u64)),
+        )?;
+        region.assign_advice(|| "index", self.index, offset, || Ok(F::zero()))?;
+        region.assign_advice(|| "tx_value", self.tx_value, offset, || Ok(F::zero()))?;
+        Ok(())
+    }
     /// Assigns a tx_table row and stores the values in a vec for the
     /// raw_public_inputs column
     #[allow(clippy::too_many_arguments)]
@@ -338,6 +406,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
         raw_pi_vals: &mut [F],
     ) -> Result<(), Error> {
         let tx_id = F::from(tx_id as u64);
+        let tx_id_inv = tx_id.invert().unwrap_or(F::zero());
         let tag = F::from(tag as u64);
         let index = F::from(index as u64);
         let tx_value = tx_value;
@@ -346,12 +415,13 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
 
         // Assign vals to Tx_table
         region.assign_advice(|| "tx_id", self.tx_id, offset, || Ok(tx_id))?;
+        region.assign_advice(|| "tx_id_inv", self.tx_id_inv, offset, || Ok(tx_id_inv))?;
         region.assign_fixed(|| "tag", self.tag, offset, || Ok(tag))?;
         region.assign_advice(|| "index", self.index, offset, || Ok(index))?;
         region.assign_advice(|| "tx_value", self.tx_value, offset, || Ok(tx_value))?;
 
         // Assign vals to raw_public_inputs column
-        let tx_table_len = TX_LEN * MAX_TXS + 1 + MAX_CALLDATA;
+        let tx_table_len = TX_LEN * MAX_TXS + 1;
 
         let id_offset = BLOCK_LEN + 1 + EXTRA_LEN;
         let index_offset = id_offset + tx_table_len;
@@ -381,6 +451,50 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
         // Add copy to vec
         raw_pi_vals[offset + id_offset] = tx_id;
         raw_pi_vals[offset + index_offset] = index;
+        raw_pi_vals[offset + value_offset] = tx_value;
+
+        Ok(())
+    }
+
+    /// Assigns one calldata row
+    #[allow(clippy::too_many_arguments)]
+    fn assign_tx_calldata_row(
+        &self,
+        region: &mut Region<'_, F>,
+        offset: usize,
+        tx_id: usize,
+        index: usize,
+        tx_value: F,
+        raw_pi_vals: &mut [F],
+    ) -> Result<(), Error> {
+        let tx_id = F::from(tx_id as u64);
+        let tx_id_inv = tx_id.invert().unwrap_or(F::zero());
+        let tag = F::from(TxFieldTag::CallData as u64);
+        let index = F::from(index as u64);
+        let tx_value = tx_value;
+
+        self.q_tx_calldata.enable(region, offset)?;
+
+        // Assign vals to Tx_table
+        region.assign_advice(|| "tx_id", self.tx_id, offset, || Ok(tx_id))?;
+        region.assign_advice(|| "tx_id_inv", self.tx_id_inv, offset, || Ok(tx_id_inv))?;
+        region.assign_fixed(|| "tag", self.tag, offset, || Ok(tag))?;
+        region.assign_advice(|| "index", self.index, offset, || Ok(index))?;
+        region.assign_advice(|| "tx_value", self.tx_value, offset, || Ok(tx_value))?;
+
+        // Assign vals to raw_public_inputs column
+        let tx_table_len = TX_LEN * MAX_TXS + 1;
+
+        let value_offset = BLOCK_LEN + 1 + EXTRA_LEN + 2 * tx_table_len;
+
+        region.assign_advice(
+            || "raw_pi.tx_value",
+            self.raw_public_inputs,
+            offset + value_offset,
+            || Ok(tx_value),
+        )?;
+
+        // Add copy to vec
         raw_pi_vals[offset + value_offset] = tx_value;
 
         Ok(())
@@ -720,11 +834,10 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
                 for (i, tx) in self.public_data.txs.iter().enumerate() {
                     for (index, byte) in tx.call_data.0.iter().enumerate() {
                         assert!(calldata_count < MAX_CALLDATA);
-                        config.assign_tx_row(
+                        config.assign_tx_calldata_row(
                             &mut region,
                             offset,
                             i + 1,
-                            TxFieldTag::CallData,
                             index,
                             F::from(*byte as u64),
                             &mut raw_pi_vals,
@@ -734,17 +847,19 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
                     }
                 }
                 for _ in calldata_count..MAX_CALLDATA {
-                    config.assign_tx_row(
+                    config.assign_tx_calldata_row(
                         &mut region,
                         offset,
                         0, // tx_id
-                        TxFieldTag::CallData,
                         0,
                         F::zero(),
                         &mut raw_pi_vals,
                     )?;
                     offset += 1;
                 }
+                // NOTE: we add this empty row so as to pass mock prover's check
+                //      otherwise it will emit CellValuePoisoned Error
+                config.assign_tx_empty_row(&mut region, offset)?;
 
                 // rpi_rlc and rand_rpi cols
                 let (rpi_rand, rpi_rlc) =
@@ -778,6 +893,7 @@ mod pi_circuit_test {
         dev::{MockProver, VerifyFailure},
         pairing::bn256::Fr,
     };
+    use log::{debug, info};
     use pretty_assertions::assert_eq;
     use rand::SeedableRng;
     use rand_chacha::ChaCha20Rng;
@@ -793,7 +909,7 @@ mod pi_circuit_test {
 
         let mut offset = 0;
         let mut result =
-            vec![F::zero(); BLOCK_LEN + 1 + EXTRA_LEN + 3 * (TX_LEN * MAX_TXS + 1 + MAX_CALLDATA)];
+            vec![F::zero(); BLOCK_LEN + 1 + EXTRA_LEN + 3 * (TX_LEN * MAX_TXS + 1) + MAX_CALLDATA];
 
         //  Insert Block Values
         // zero row
@@ -839,7 +955,7 @@ mod pi_circuit_test {
         assert!(txs.len() < MAX_TXS);
         let tx_default = TxValues::default();
 
-        let tx_table_len = TX_LEN * MAX_TXS + 1 + MAX_CALLDATA;
+        let tx_table_len = TX_LEN * MAX_TXS + 1;
 
         let id_offset = BLOCK_LEN + 1 + EXTRA_LEN;
         let index_offset = id_offset + tx_table_len;
@@ -878,16 +994,16 @@ mod pi_circuit_test {
         for (i, tx) in public_data.txs.iter().enumerate() {
             for (index, byte) in tx.call_data.0.iter().enumerate() {
                 assert!(calldata_count < MAX_CALLDATA);
-                result[id_offset + offset] = F::from((i + 1) as u64);
-                result[index_offset + offset] = F::from(index as u64);
+                // result[id_offset + offset] = F::from((i + 1) as u64);
+                // result[index_offset + offset] = F::from(index as u64);
                 result[value_offset + offset] = F::from(*byte as u64);
                 offset += 1;
                 calldata_count += 1;
             }
         }
         for _ in calldata_count..MAX_CALLDATA {
-            result[id_offset + offset] = F::zero();
-            result[index_offset + offset] = F::zero();
+            // result[id_offset + offset] = F::zero();
+            // result[index_offset + offset] = F::zero();
             result[value_offset + offset] = F::zero();
             offset += 1;
         }
@@ -905,9 +1021,15 @@ mod pi_circuit_test {
         let rand_rpi = F::random(&mut rng);
         let rlc_rpi_col =
             raw_public_inputs_col::<F, MAX_TXS, MAX_CALLDATA>(&public_data, randomness);
+        info!(
+            "pi circuit with {} txs and {} calldata has {} rows",
+            MAX_TXS,
+            MAX_CALLDATA,
+            rlc_rpi_col.len()
+        );
         assert_eq!(
             rlc_rpi_col.len(),
-            BLOCK_LEN + 1 + EXTRA_LEN + 3 * (TX_LEN * MAX_TXS + 1 + MAX_CALLDATA)
+            BLOCK_LEN + 1 + EXTRA_LEN + 3 * (TX_LEN * MAX_TXS + 1) + MAX_CALLDATA
         );
 
         // Computation of raw_pulic_inputs
