@@ -71,7 +71,7 @@ fn recover_pk(v: u8, r: &Word, s: &Word, msg_hash: &[u8; 32]) -> Result<Secp256k
     let pk_be = pk.serialize();
     let pk_le = pk_bytes_swap_endianness(&pk_be[1..]);
     let mut pk_bytes: Secp256k1Compressed = Default::default();
-    pk_bytes.as_mut().copy_from_slice(&pk_le[..]);
+    pk_bytes.as_mut().copy_from_slice(&pk_le[..32]);
     let pk = Secp256k1Affine::from_bytes(&pk_bytes);
     ct_option_ok_or(pk, Error::Synthesis).map_err(|e| {
         error!("Invalid public key little endian bytes");

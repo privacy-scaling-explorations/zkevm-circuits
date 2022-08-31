@@ -1,6 +1,5 @@
 //! Public Input Circuit implementation
 
-use std::io::Cursor;
 use std::marker::PhantomData;
 
 use eth_types::geth_types::BlockConstants;
@@ -127,8 +126,7 @@ impl PublicData {
             let sign_data: SignData =
                 tx_to_sign_data(tx, chain_id).expect("Error computing tx_sign_hash");
             let mut msg_hash_le = [0u8; 32];
-            // TODO CARLOS: This might be source of errors.
-            msg_hash_le.copy_from_slice(&sign_data.msg_hash.to_bytes().as_slice());
+            msg_hash_le.copy_from_slice(sign_data.msg_hash.to_bytes().as_slice());
             tx_vals.push(TxValues {
                 nonce: tx.nonce,
                 gas_price: tx.gas_price,

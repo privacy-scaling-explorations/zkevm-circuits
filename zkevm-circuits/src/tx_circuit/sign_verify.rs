@@ -13,25 +13,15 @@ use ecc::{EccConfig, GeneralEccChip};
 use ecdsa::ecdsa::{AssignedEcdsaSig, AssignedPublicKey, EcdsaChip};
 use eth_types::{self, Field};
 use gadgets::is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction};
-use halo2_proofs::halo2curves::secp256k1::{Fp, Secp256k1Affine};
+use halo2_proofs::halo2curves::secp256k1::Secp256k1Affine;
 use halo2_proofs::{
     arithmetic::{CurveAffine, FieldExt},
     circuit::{AssignedCell, Layouter, Region, Value},
-    halo2curves::{
-        group::{
-            ff::{Field as GroupField, PrimeField},
-            prime::PrimeCurveAffine,
-            Curve,
-        },
-        secp256k1, Coordinates,
-    },
+    halo2curves::{group::ff::Field as GroupField, group::Curve, secp256k1, Coordinates},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
     poly::Rotation,
 };
-use integer::{
-    rns::Limb, AssignedInteger, IntegerChip, IntegerConfig, IntegerInstructions, Range,
-    NUMBER_OF_LOOKUP_LIMBS,
-};
+use integer::{AssignedInteger, IntegerChip, IntegerConfig, IntegerInstructions, Range};
 
 use itertools::Itertools;
 use keccak256::plain::Keccak;
@@ -41,7 +31,7 @@ use maingate::{
     AssignedValue, MainGate, MainGateConfig, MainGateInstructions, RangeChip, RangeConfig,
     RangeInstructions, RegionCtx,
 };
-use std::{io::Cursor, marker::PhantomData};
+use std::marker::PhantomData;
 
 /// Power of randomness vector size required for the SignVerifyChip
 pub const POW_RAND_SIZE: usize = 63;
@@ -300,7 +290,6 @@ pub(crate) struct KeccakAux {
 
 impl<F: Field> SignVerifyConfig<F> {
     pub(crate) fn load_range(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
-        let bit_len_lookup = BIT_LEN_LIMB / NUMBER_OF_LOOKUP_LIMBS;
         let range_chip = RangeChip::<F>::new(self.range_config.clone());
         range_chip.load_composition_tables(layouter)?;
         range_chip.load_overflow_tables(layouter)?;
@@ -347,9 +336,7 @@ fn assign_pows_256<F: Field>(
 // conversion (byte range check included).
 fn integer_to_bytes_le<F: Field, FE: FieldExt>(
     ctx: &mut RegionCtx<'_, F>,
-    main_gate: &MainGate<F>,
     range_chip: &RangeChip<F>,
-    pows_256: &[AssignedValue<F>],
     int: &AssignedInteger<FE, F, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
 ) -> Result<[AssignedValue<F>; 32], Error> {
     let (_, limb0_bytes) =
@@ -386,8 +373,6 @@ impl<F: Field, const MAX_VERIF: usize> SignVerifyChip<F, MAX_VERIF> {
         ctx: &mut RegionCtx<'_, F>,
         ecc_chip: &mut GeneralEccChip<Secp256k1Affine, F, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<(), Error> {
-        let ctx_offset = &mut 0;
-
         ecc_chip.assign_aux_generator(ctx, Value::known(self.aux_generator))?;
         ecc_chip.assign_aux(ctx, self.window_size, 1)?;
         Ok(())
@@ -407,7 +392,7 @@ impl<F: Field, const MAX_VERIF: usize> SignVerifyChip<F, MAX_VERIF> {
         let (sig_r, sig_s) = signature;
 
         let ChipsRef {
-            main_gate,
+            main_gate: _,
             range_chip,
             ecc_chip,
             scalar_chip,
@@ -432,12 +417,11 @@ impl<F: Field, const MAX_VERIF: usize> SignVerifyChip<F, MAX_VERIF> {
         let msg_hash = scalar_chip.assign_integer(ctx, msg_hash, Range::Remainder)?;
 
         // Convert (msg_hash, pk_x, pk_y) integers to little endian bytes
-        let pows_256 = assign_pows_256(ctx, main_gate, 9)?;
-        let msg_hash_le = integer_to_bytes_le(ctx, main_gate, range_chip, &pows_256, &msg_hash)?;
+        let msg_hash_le = integer_to_bytes_le(ctx, range_chip, &msg_hash)?;
         let pk_x = pk_assigned.point.x();
-        let pk_x_le = integer_to_bytes_le(ctx, main_gate, range_chip, &pows_256, &pk_x)?;
+        let pk_x_le = integer_to_bytes_le(ctx, range_chip, pk_x)?;
         let pk_y = pk_assigned.point.y();
-        let pk_y_le = integer_to_bytes_le(ctx, main_gate, range_chip, &pows_256, &pk_y)?;
+        let pk_y_le = integer_to_bytes_le(ctx, range_chip, pk_y)?;
 
         // Ref. spec SignVerifyChip 4. Verify the ECDSA signature
         ecdsa_chip.verify(ctx, &sig, &pk_assigned, &msg_hash)?;
@@ -622,13 +606,13 @@ impl<F: Field, const MAX_VERIF: usize> SignVerifyChip<F, MAX_VERIF> {
             main_gate: &main_gate,
             range_chip: &range_chip,
             ecc_chip: &ecc_chip,
-            scalar_chip: &scalar_chip,
+            scalar_chip,
             ecdsa_chip: &ecdsa_chip,
         };
 
         layouter.assign_region(
             || "ecdsa chip verification",
-            |mut region| {
+            |region| {
                 assigned_ecdsas.clear();
                 keccak_auxs.clear();
                 let offset = &mut 0;
@@ -848,7 +832,7 @@ mod sign_verify_tests {
     // Generate a test key pair
     fn gen_key_pair(rng: impl RngCore) -> (secp256k1::Fq, Secp256k1Affine) {
         // generate a valid signature
-        let generator = <Secp256k1Affine as PrimeCurveAffine>::generator();
+        let generator = Secp256k1Affine::generator();
         let sk = secp256k1::Fq::random(rng);
         let pk = generator * sk;
         let pk = pk.to_affine();

@@ -110,8 +110,7 @@ fn degree() {
 #[test]
 fn verifying_key_independent_of_rw_length() {
     let randomness = Fr::from(0xcafeu64);
-    let degree = 17;
-    let params = ParamsKZG::<Bn256>::setup(16, rand_chacha::ChaCha20Rng::seed_from_u64(2));
+    let params = ParamsKZG::<Bn256>::setup(17, rand_chacha::ChaCha20Rng::seed_from_u64(2));
 
     let no_rows = StateCircuit::<Fr>::new(randomness, RwMap::default(), N_ROWS);
     let one_row = StateCircuit::<Fr>::new(

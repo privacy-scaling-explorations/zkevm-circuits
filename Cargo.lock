@@ -514,7 +514,6 @@ dependencies = [
  "eth-types",
  "ethers-signers",
  "ff 0.11.1",
- "group 0.11.0",
  "halo2_proofs 0.2.0",
  "itertools",
  "keccak256",
@@ -1838,18 +1837,6 @@ dependencies = [
 
 [[package]]
 name = "group"
-version = "0.11.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bc5ac374b108929de78460075f3dc439fa66df9d8fc77e8f12caa5165fcf0c89"
-dependencies = [
- "byteorder",
- "ff 0.11.1",
- "rand_core",
- "subtle",
-]
-
-[[package]]
-name = "group"
 version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7391856def869c1c81063a03457c676fbcd419709c3dfb33d8d319de484b154d"
@@ -2229,7 +2216,6 @@ dependencies = [
  "eth-types",
  "ethers",
  "ff 0.11.1",
- "group 0.11.0",
  "halo2_proofs 0.2.0",
  "lazy_static",
  "log",
@@ -3002,26 +2988,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0a2ca2c61bc9f3d74d2886294ab7b9853abd9c1ad903a3ac7815c58989bb7bab"
 dependencies = [
  "unicode-ident",
-]
-
-[[package]]
-name = "prover"
-version = "0.1.0"
-dependencies = [
- "bus-mapping",
- "env_logger",
- "eth-types",
- "ethers-providers",
- "halo2_proofs 0.2.0",
- "hyper",
- "log",
- "rand",
- "rand_xorshift",
- "serde",
- "serde_json",
- "strum",
- "tokio",
- "zkevm-circuits",
 ]
 
 [[package]]
@@ -4451,7 +4417,6 @@ dependencies = [
  "ethers-signers",
  "ff 0.11.1",
  "gadgets",
- "group 0.11.0",
  "halo2_proofs 0.2.0",
  "hex",
  "integer",
