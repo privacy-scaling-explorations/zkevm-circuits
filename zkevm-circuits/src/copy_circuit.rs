@@ -680,7 +680,7 @@ impl<F: Field> CopyCircuit<F> {
     }
 }
 
-#[cfg(feature = "dev")]
+#[cfg(test)]
 /// Dev helpers
 pub mod dev {
     use super::*;
@@ -795,7 +795,6 @@ pub mod dev {
     }
 }
 
-#[cfg(feature = "dev")]
 #[cfg(test)]
 mod tests {
     use super::dev::test_copy_circuit;
