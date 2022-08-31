@@ -1792,7 +1792,7 @@ impl<F: Field> SarWordsGadget<F> {
         let shf_mod64 = shf0 % 64;
         let p_lo: u128 = 1 << shf_mod64;
         let p_hi: u128 = 1 << (64 - shf_mod64);
-        let p_top: u128 = is_neg as u128 * (0xFFFFFFFFFFFFFFFF - p_hi + 1);
+        let p_top: u128 = if is_neg { 0xFFFFFFFFFFFFFFFF - p_hi + 1 } else { 0 };
         let shf_lt256 = shift
             .to_le_bytes()
             .iter()
