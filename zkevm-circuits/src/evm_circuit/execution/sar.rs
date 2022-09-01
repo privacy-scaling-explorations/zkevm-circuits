@@ -30,9 +30,12 @@ impl<F: Field> ExecutionGadget<F> for SarGadget<F> {
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
+        // a is the value to be shifted
         let a = cb.query_word();
+        // shift is a number of bits to shift to the right
         let shift = cb.query_word();
 
+        // pop a and shift from stack, and push b to the stack.
         cb.stack_pop(shift.expr());
         cb.stack_pop(a.expr());
         let sar_words = SarWordsGadget::construct(cb, a, shift);
