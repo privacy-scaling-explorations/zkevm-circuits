@@ -6,7 +6,7 @@ use halo2_proofs::{
     halo2curves::{
         group::{
             ff::{Field as GroupField, PrimeField},
-            Curve, GroupEncoding,
+            Curve,
         },
         secp256k1::{self, Secp256k1Affine},
         Coordinates,
@@ -106,10 +106,18 @@ pub fn recover_pk(
     let pk = libsecp256k1::recover(&msg_hash, &signature, &recovery_id)?;
     let pk_be = pk.serialize();
     let pk_le = pk_bytes_swap_endianness(&pk_be[1..]);
-    let mut pk_bytes = secp256k1::Secp256k1Compressed::default();
-    pk_bytes.as_mut().copy_from_slice(&pk_le[..32]);
-    let pk = Secp256k1Affine::from_bytes(&pk_bytes);
-    ct_option_ok_or(pk, libsecp256k1::Error::InvalidPublicKey)
+    let x = ct_option_ok_or(
+        secp256k1::Fp::from_bytes(pk_le[..32].try_into().unwrap()),
+        libsecp256k1::Error::InvalidPublicKey,
+    )?;
+    let y = ct_option_ok_or(
+        secp256k1::Fp::from_bytes(pk_le[32..].try_into().unwrap()),
+        libsecp256k1::Error::InvalidPublicKey,
+    )?;
+    ct_option_ok_or(
+        Secp256k1Affine::from_xy(x, y),
+        libsecp256k1::Error::InvalidPublicKey,
+    )
 }
 
 lazy_static! {

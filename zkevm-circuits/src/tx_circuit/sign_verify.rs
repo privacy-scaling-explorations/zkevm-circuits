@@ -548,8 +548,6 @@ impl<F: Field, const MAX_VERIF: usize> SignVerifyChip<F, MAX_VERIF> {
             return Err(Error::Synthesis);
         }
         let main_gate = MainGate::new(config.main_gate_config.clone());
-        // TODO: Figure out the best value for RangeChip base_bit_len, when we want to
-        // range on 8 bits.
         let range_chip = RangeChip::new(config.range_config.clone());
         let mut ecc_chip = GeneralEccChip::<Secp256k1Affine, F, NUMBER_OF_LIMBS, BIT_LEN_LIMB>::new(
             config.ecc_chip_config(),
