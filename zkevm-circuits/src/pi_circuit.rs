@@ -172,6 +172,7 @@ pub struct PiCircuitConfig<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: u
 
     q_tx_table: Selector,
     q_tx_calldata: Selector,
+    q_calldata_start: Selector,
     tx_id: Column<Advice>,
     tx_id_inv: Column<Advice>,
     tag: Column<Fixed>,
@@ -202,7 +203,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
 
         let q_tx_table = meta.complex_selector();
         let q_tx_calldata = meta.selector();
-        // let q_is_calldata_start = meta.selector();
+        let q_calldata_start = meta.selector();
         // Tx Table
         let tx_id = meta.advice_column();
         let tag = meta.fixed_column();
@@ -319,6 +320,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
 
         meta.create_gate("calldata constraints", |meta| {
             let q_is_calldata = meta.query_selector(q_tx_calldata);
+            let q_calldata_start = meta.query_selector(q_calldata_start);
             let tx_idx = meta.query_advice(tx_id, Rotation::cur());
             let tx_idx_inv = meta.query_advice(tx_id_inv, Rotation::cur());
             let tx_idx_next = meta.query_advice(tx_id, Rotation::next());
@@ -380,6 +382,10 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
                 * (tx_idx_next.clone() - tx_idx.clone())
                 * (is_final.clone() - 1.expr());
 
+            // if tx_id != 0 then
+            //    1. q_calldata_start * (tx_id - 1) == 0 and
+            //    2. q_calldata_start * (gas_cost - gas) == 0.
+
             vec![
                 q_is_calldata.clone() * tx_id_inv_constraint,
                 q_is_calldata.clone() * default_calldata_row_constraint1,
@@ -394,6 +400,8 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
                 q_is_calldata.clone() * is_tx_id_nonzero.clone() * gas_cost_of_next_tx_constraint,
                 q_is_calldata.clone() * is_tx_id_nonzero.clone() * is_final_of_same_tx_constraint,
                 q_is_calldata.clone() * is_tx_id_nonzero.clone() * is_final_of_next_tx_constraint,
+                q_calldata_start.clone() * is_tx_id_nonzero.clone() * (tx_idx - 1.expr()),
+                q_calldata_start.clone() * is_tx_id_nonzero.clone() * (gas_cost - gas),
             ]
         });
 
@@ -462,6 +470,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
             block_value,
             q_tx_table,
             q_tx_calldata,
+            q_calldata_start,
             tx_id,
             tx_id_inv,
             tag,
@@ -983,6 +992,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
                 }
                 // Tx Table CallData
                 let mut calldata_count = 0;
+                config.q_calldata_start.enable(&mut region, offset)?;
                 for (i, tx) in self.public_data.txs.iter().enumerate() {
                     let call_data_length = tx.call_data.0.len();
                     let mut gas_cost = F::zero();
