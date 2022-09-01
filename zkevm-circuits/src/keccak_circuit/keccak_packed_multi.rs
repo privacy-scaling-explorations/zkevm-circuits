@@ -15,7 +15,7 @@ use gadgets::util::{and, select, sum};
 use halo2_proofs::arithmetic::FieldExt;
 use halo2_proofs::plonk::VirtualCells;
 use halo2_proofs::{
-    circuit::{Layouter, Region, SimpleFloorPlanner},
+    circuit::{Layouter, Region, SimpleFloorPlanner, Value},
     plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, TableColumn},
     poly::Rotation,
 };
@@ -1609,7 +1609,7 @@ impl<F: Field> KeccakPackedConfig<F> {
                 || format!("assign {} {}", name, offset),
                 *column,
                 offset,
-                || Ok(*value),
+                || Value::known(*value),
             )?;
         }
 
@@ -1624,7 +1624,7 @@ impl<F: Field> KeccakPackedConfig<F> {
                 || format!("assign {} {}", name, offset),
                 *column,
                 offset,
-                || Ok(*value),
+                || Value::known(*value),
             )?;
         }
 
@@ -1639,7 +1639,7 @@ impl<F: Field> KeccakPackedConfig<F> {
                 || format!("assign lookup value {} {}", idx, offset),
                 column.advice,
                 offset,
-                || Ok(*bit),
+                || Value::known(*bit),
             )?;
         }
 
@@ -1648,7 +1648,7 @@ impl<F: Field> KeccakPackedConfig<F> {
             || format!("assign round cst {}", offset),
             self.round_cst,
             offset,
-            || Ok(row.round_cst),
+            || Value::known(row.round_cst),
         )?;
 
         Ok(())
@@ -2047,7 +2047,7 @@ fn multi_keccak<F: Field>(bytes: &[Vec<u8>], r: F) -> Vec<KeccakRow<F>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use halo2_proofs::{dev::MockProver, pairing::bn256::Fr};
+    use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
 
     fn verify<F: Field>(k: u32, inputs: Vec<Vec<u8>>, success: bool) {
         let mut circuit = KeccakPackedCircuit::new(2usize.pow(k));

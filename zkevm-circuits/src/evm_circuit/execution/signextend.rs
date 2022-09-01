@@ -17,7 +17,7 @@ use crate::{
 use array_init::array_init;
 use bus_mapping::evm::OpcodeId;
 use eth_types::{Field, ToLittleEndian};
-use halo2_proofs::plonk::Error;
+use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct SignextendGadget<F> {
@@ -185,7 +185,7 @@ impl<F: Field> ExecutionGadget<F> for SignextendGadget<F> {
             ]);
             let selector_value = selected + previous_selector_value;
             self.selectors[i]
-                .assign(region, offset, Some(selector_value))
+                .assign(region, offset, Value::known(selector_value))
                 .unwrap();
             previous_selector_value = selector_value;
         }
@@ -196,7 +196,7 @@ impl<F: Field> ExecutionGadget<F> for SignextendGadget<F> {
             sign = (value[index[0] as usize] >> 7) as u64;
         }
         self.sign_byte
-            .assign(region, offset, Some(F::from(sign * 0xFF)))
+            .assign(region, offset, Value::known(F::from(sign * 0xFF)))
             .unwrap();
 
         Ok(())

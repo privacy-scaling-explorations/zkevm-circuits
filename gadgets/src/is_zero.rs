@@ -5,8 +5,8 @@
 //!  `1/x` otherwise
 
 use halo2_proofs::{
-    circuit::{Chip, Region},
-    pairing::arithmetic::FieldExt,
+    arithmetic::FieldExt,
+    circuit::{Chip, Region, Value},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, VirtualCells},
     poly::Rotation,
 };
@@ -23,7 +23,7 @@ pub trait IsZeroInstruction<F: FieldExt> {
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
-        value: Option<F>,
+        value: Value<F>,
     ) -> Result<(), Error>;
 }
 
@@ -106,7 +106,7 @@ impl<F: FieldExt> IsZeroInstruction<F> for IsZeroChip<F> {
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
-        value: Option<F>,
+        value: Value<F>,
     ) -> Result<(), Error> {
         let config = self.config();
 
@@ -115,7 +115,7 @@ impl<F: FieldExt> IsZeroInstruction<F> for IsZeroChip<F> {
             || "witness inverse of value",
             config.value_inv,
             offset,
-            || value_invert.ok_or(Error::Synthesis),
+            || value_invert,
         )?;
 
         Ok(())
@@ -140,9 +140,9 @@ mod test {
     use super::{IsZeroChip, IsZeroConfig, IsZeroInstruction};
     use halo2_proofs::{
         arithmetic::FieldExt,
-        circuit::{Layouter, SimpleFloorPlanner},
+        circuit::{Layouter, SimpleFloorPlanner, Value},
         dev::MockProver,
-        pairing::bn256::Fr as Fp,
+        halo2curves::bn256::Fr as Fp,
         plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Selector},
         poly::Rotation,
     };
@@ -267,7 +267,7 @@ mod test {
                             || "first row value",
                             config.value,
                             0,
-                            || Ok(first_value),
+                            || Value::known(first_value),
                         )?;
 
                         let mut value_prev = first_value;
@@ -276,17 +276,17 @@ mod test {
                                 || "check",
                                 config.check,
                                 idx + 1,
-                                || Ok(F::from(*check as u64)),
+                                || Value::known(F::from(*check as u64)),
                             )?;
                             region.assign_advice(
                                 || "value",
                                 config.value,
                                 idx + 1,
-                                || Ok(*value),
+                                || Value::known(*value),
                             )?;
 
                             config.q_enable.enable(&mut region, idx + 1)?;
-                            chip.assign(&mut region, idx + 1, Some(*value - value_prev))?;
+                            chip.assign(&mut region, idx + 1, Value::known(*value - value_prev))?;
 
                             value_prev = *value;
                         }
@@ -406,23 +406,23 @@ mod test {
                                 || "check",
                                 config.check,
                                 idx + 1,
-                                || Ok(F::from(*check as u64)),
+                                || Value::known(F::from(*check as u64)),
                             )?;
                             region.assign_advice(
                                 || "value_a",
                                 config.value_a,
                                 idx + 1,
-                                || Ok(*value_a),
+                                || Value::known(*value_a),
                             )?;
                             region.assign_advice(
                                 || "value_b",
                                 config.value_b,
                                 idx + 1,
-                                || Ok(*value_b),
+                                || Value::known(*value_b),
                             )?;
 
                             config.q_enable.enable(&mut region, idx + 1)?;
-                            chip.assign(&mut region, idx + 1, Some(*value_a - *value_b))?;
+                            chip.assign(&mut region, idx + 1, Value::known(*value_a - *value_b))?;
                         }
 
                         Ok(())
