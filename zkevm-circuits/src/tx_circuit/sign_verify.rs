@@ -228,7 +228,7 @@ impl<F: Field> SignVerifyConfig<F> {
         let range_config = RangeChip::<F>::configure(
             meta,
             &main_gate_config,
-            vec![BIT_LEN_LIMB / NUMBER_OF_LIMBS],
+            vec![BIT_LEN_LIMB / NUMBER_OF_LIMBS, 8],
             overflow_bit_lengths,
         );
 
@@ -623,9 +623,6 @@ impl<F: Field, const MAX_VERIF: usize> SignVerifyChip<F, MAX_VERIF> {
                 Ok(())
             },
         )?;
-
-        config.load_range(layouter)?;
-
         Ok(assigned_sig_verifs)
     }
 }
