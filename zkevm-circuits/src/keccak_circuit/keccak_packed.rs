@@ -1346,7 +1346,7 @@ impl<F: Field> KeccakPackedConfig<F> {
             || {
                 let word: F = pack_u64(ROUND_CST[round])
                     .to_scalar()
-                    .expect("unexpected Address -> Scalar conversion failure");
+                    .expect("unexpected Word -> Scalar conversion failure");
                 Value::known(word)
             },
         )?;

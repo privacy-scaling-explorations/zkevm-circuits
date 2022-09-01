@@ -128,7 +128,7 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
             offset,
             Value::known(
                 size.to_scalar()
-                    .expect("unexpected Address -> Scalar conversion failure"),
+                    .expect("unexpected U256 -> Scalar conversion failure"),
             ),
         )?;
 

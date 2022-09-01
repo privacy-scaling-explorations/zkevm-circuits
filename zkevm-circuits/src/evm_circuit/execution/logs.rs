@@ -256,7 +256,7 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
             Value::known(
                 (msize + msize)
                     .to_scalar()
-                    .expect("unexpected Address -> Scalar conversion failure"),
+                    .expect("unexpected U256 -> Scalar conversion failure"),
             ),
         )?;
 

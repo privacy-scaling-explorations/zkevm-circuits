@@ -444,7 +444,7 @@ impl<F: Field> ExecutionGadget<F> for CallGadget<F> {
             Value::known(
                 callee_nonce
                     .to_scalar()
-                    .expect("unexpected Address -> Scalar conversion failure"),
+                    .expect("unexpected U256 -> Scalar conversion failure"),
             ),
         )?;
         self.callee_code_hash.assign(

@@ -90,7 +90,7 @@ mod tests {
             &general_params,
             &pk,
             &[circuit],
-            &[&[]],
+            &[&instance_slices[..]],
             rng,
             &mut transcript,
         )

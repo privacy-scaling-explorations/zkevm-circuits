@@ -121,7 +121,7 @@ impl<F: Field> ExecutionGadget<F> for BlockHashGadget<F> {
             Value::known(
                 current_block_number
                     .to_scalar()
-                    .expect("unexpected Address -> Scalar conversion failure"),
+                    .expect("unexpected U256 -> Scalar conversion failure"),
             ),
         )?;
         let current_block_number: F = current_block_number.to_scalar().unwrap();

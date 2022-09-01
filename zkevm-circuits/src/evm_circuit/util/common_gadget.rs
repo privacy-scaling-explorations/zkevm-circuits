@@ -226,7 +226,7 @@ impl<F: Field> RestoreContextGadget<F> {
                 Value::known(
                     value
                         .to_scalar()
-                        .expect("unexpected Address -> Scalar conversion failure"),
+                        .expect("unexpected U256 -> Scalar conversion failure"),
                 ),
             )?;
         }

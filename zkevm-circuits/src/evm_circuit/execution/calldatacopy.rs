@@ -229,7 +229,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
             Value::known(
                 copy_rwc_inc
                     .to_scalar()
-                    .expect("unexpected Address -> Scalar conversion failure"),
+                    .expect("unexpected U256 -> Scalar conversion failure"),
             ),
         )?;
 

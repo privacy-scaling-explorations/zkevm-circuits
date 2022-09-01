@@ -248,7 +248,7 @@ impl<F: Field, const N_ADDENDS: usize, const CHECK_OVREFLOW: bool>
             Value::known(
                 carry_lo
                     .to_scalar()
-                    .expect("unexpected Address -> Scalar conversion failure"),
+                    .expect("unexpected U256 -> Scalar conversion failure"),
             ),
         )?;
 
@@ -260,7 +260,7 @@ impl<F: Field, const N_ADDENDS: usize, const CHECK_OVREFLOW: bool>
                 Value::known(
                     carry_hi
                         .to_scalar()
-                        .expect("unexpected Address -> Scalar conversion failure"),
+                        .expect("unexpected U256 -> Scalar conversion failure"),
                 ),
             )?;
         }

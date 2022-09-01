@@ -141,9 +141,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
             region,
             offset,
             Value::known(
-                U256::from(tx.id)
-                    .to_scalar()
-                    .expect("unexpected Address -> Scalar conversion failure"),
+                F::from(tx.id as u64),
             ),
         )?;
         self.reversion_info.assign(
