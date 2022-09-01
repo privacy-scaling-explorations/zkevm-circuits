@@ -18,7 +18,7 @@ use crate::{
     mpt::{FixedTableTag, MPTConfig, ProofVariables},
     param::{
         BRANCH_0_C_START, BRANCH_0_S_START, IS_BRANCH_C_PLACEHOLDER_POS,
-        IS_BRANCH_S_PLACEHOLDER_POS, RLP_NUM, NIBBLES_COUNTER_POS, BRANCH_ROWS_NUM, BRANCH_0_KEY_POS, DRIFTED_POS, IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS, IS_EXT_LONG_ODD_C16_POS, IS_EXT_LONG_ODD_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS, S_RLP_START, S_START, C_RLP_START, C_START, HASH_WIDTH,
+        IS_BRANCH_S_PLACEHOLDER_POS, RLP_NUM, NIBBLES_COUNTER_POS, BRANCH_ROWS_NUM, BRANCH_0_KEY_POS, DRIFTED_POS, IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS, IS_EXT_LONG_ODD_C16_POS, IS_EXT_LONG_ODD_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS, S_RLP_START, S_START, C_RLP_START, C_START, HASH_WIDTH, IS_S_BRANCH_NON_HASHED_POS, IS_C_BRANCH_NON_HASHED_POS,
     }, witness_row::MptWitnessRow, storage_leaf::StorageLeaf, account_leaf::AccountLeaf, columns::{MainCols, DenoteCols, AccumulatorCols},
 };
 
@@ -203,7 +203,7 @@ impl<F: FieldExt> BranchConfig<F> {
                     meta.query_advice(s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM], Rotation(-16));
                 let is_branch_placeholder_c =
                     meta.query_advice(s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM], Rotation(-16));
-
+ 
                 /*
                 This constraint applies for when we have a placeholder branch.
                 In this case, both branches are the same - the placeholder branch and its
@@ -238,7 +238,7 @@ impl<F: FieldExt> BranchConfig<F> {
 
         /*
         We need to check that the length of the branch corresponds to the bytes at the beginning of
-        the RLP stream that specify the length of the RLP stream. There are three possible scenarios:
+        the RLP stream that specify the length of the RLP stream. There are three possible cases:
         1. Branch (length 21 = 213 - 192) with one byte of RLP meta data
            [213,128,194,32,1,128,194,32,1,128,128,128,128,128,128,128,128,128,128,128,128,128]
 
@@ -248,9 +248,9 @@ impl<F: FieldExt> BranchConfig<F> {
         3. Branch (length 340) with three bytes of RLP meta data
            [249,1,81,128,16,...
 
-        We specify which of the scenarios is in the current row as (note that `S` branch and
-            `C` branch could be of different length. `s_rlp1, s_rlp2` is used for `S` and
-           `s_main.bytes[0], s_main.bytes[1]` is used for `C`):
+        We specify the case as (note that `S` branch and
+        `C` branch can be of different length. `s_rlp1, s_rlp2` is used for `S` and
+        `s_main.bytes[0], s_main.bytes[1]` is used for `C`):
            rlp1, rlp2: 1, 1 means 1 RLP byte
            rlp1, rlp2: 1, 0 means 2 RLP bytes
            rlp1, rlp2: 0, 1 means 3 RLP bytes
@@ -739,6 +739,11 @@ impl<F: FieldExt> BranchConfig<F> {
                 s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
                 Rotation::cur(),
             );
+            let is_branch_non_hashed_s =
+                meta.query_advice(s_main.bytes[IS_S_BRANCH_NON_HASHED_POS - RLP_NUM], Rotation::cur());
+            let is_branch_non_hashed_c =
+                meta.query_advice(s_main.bytes[IS_C_BRANCH_NON_HASHED_POS - RLP_NUM], Rotation::cur());
+
             let q_enable = meta.query_fixed(q_enable, Rotation::cur());
 
             /*
@@ -758,8 +763,30 @@ impl<F: FieldExt> BranchConfig<F> {
             constraints.push((
                 "Bool check is_branch_placeholder_c",
                 get_bool_constraint(
-                    q_enable.clone() * is_branch_init_cur,
+                    q_enable.clone() * is_branch_init_cur.clone(),
                     is_branch_placeholder_c.clone(),
+                ),
+            ));
+
+            /*
+            `is_branch_non_hashed_s` needs to be boolean.
+            */
+            constraints.push((
+                "Bool check is_branch_non_hashed_s",
+                get_bool_constraint(
+                    q_enable.clone() * is_branch_init_cur.clone(),
+                    is_branch_non_hashed_s.clone(),
+                ),
+            ));
+
+            /*
+            `is_branch_non_hashed_c` needs to be boolean.
+            */
+            constraints.push((
+                "Bool check is_branch_non_hashed_c",
+                get_bool_constraint(
+                    q_enable.clone() * is_branch_init_cur.clone(),
+                    is_branch_non_hashed_c.clone(),
                 ),
             ));
 

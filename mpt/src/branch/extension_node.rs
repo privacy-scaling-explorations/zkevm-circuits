@@ -176,6 +176,12 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
                     Rotation(rot_into_branch_init),
                 );
             }
+            let mut is_ext_node_non_hashed = s_main.bytes[IS_S_EXT_NODE_NON_HASHED_POS - RLP_NUM];
+            if !is_s {
+                is_ext_node_non_hashed = s_main.bytes[IS_C_EXT_NODE_NON_HASHED_POS - RLP_NUM];
+            }
+            let is_ext_node_non_hashed =
+                meta.query_advice(is_ext_node_non_hashed, Rotation(rot_into_branch_init));
 
             let is_branch_init_prev = meta.query_advice(is_branch_init, Rotation::prev());
 
@@ -234,7 +240,7 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
                 ),
             ));
             constraints.push((
-                "bool check is_ext_lonnger_than_55",
+                "bool check is_ext_longer_than_55",
                 get_bool_constraint(
                     q_not_first.clone()
                         * q_enable.clone()
@@ -242,6 +248,17 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
                     is_ext_longer_than_55.clone(),
                 ),
             ));
+            constraints.push((
+                "bool check is_ext_node_non_hashed",
+                get_bool_constraint(
+                    q_not_first.clone()
+                        * q_enable.clone()
+                        * (one.clone() - is_branch_init_prev.clone()),
+                    is_ext_node_non_hashed.clone(),
+                ),
+            ));
+
+
 
             // At most one of the six selectors above can be enabled. If sum is 0, it is
             // a regular branch. If sum is 1, it is an extension node.

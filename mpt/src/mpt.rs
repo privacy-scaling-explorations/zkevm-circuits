@@ -448,6 +448,7 @@ impl<F: FieldExt> MPTConfig<F> {
             s_main.clone(),
             accumulators.clone(),
             acc_r,
+            fixed_table,
         );
 
         BranchRLCConfig::<F>::configure(
