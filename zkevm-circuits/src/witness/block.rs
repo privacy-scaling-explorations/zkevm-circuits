@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use bus_mapping::circuit_input_builder::{self, CopyEvent};
 use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word};
-use halo2_proofs::pairing::bn256::Fr;
+use halo2_proofs::halo2curves::bn256::Fr;
 use itertools::Itertools;
 
 use crate::{evm_circuit::util::RandomLinearCombination, table::BlockContextFieldTag};
