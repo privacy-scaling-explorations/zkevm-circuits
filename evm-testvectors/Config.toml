@@ -22,95 +22,44 @@ unimplemented_opcodes = [
     "STATICCALL",
     "SELFDESTRUCT"
 ]
-
-[[skip_path]]
-desc = "unimplemented"
-paths = [
-    "EIP1559",
-	"EIP2930",
-    "stPreCompiledContracts",
-    "stZeroKnowledge"
-]
-
-[[skip_path]]
-desc = "too big"
-paths = [
-    "stTimeConsuming",
-	"stExample",
-    "stQuadraticComplexityTest",
-    "50000"
-]
-
-[[skip_path]]	
-desc = "makes panic"
-paths = [
-    "randomStatetest",  # crashes geth?
-    "bufferFiller.yml"  # we are using U256::as_xxx() that panics
-]
-
-[[skip_path]]
-desc = "defines asm"
-paths = [ 
-    "stackLimitGas_1023Filler.json",
-    "stackLimitGas_1024Filler.json",
-    "stackLimitGas_1025Filler.json",
-    "stackLimitPush31_1023Filler.json",
-    "stackLimitPush31_1024Filler.json",
-    "stackLimitPush31_1025Filler.json",
-    "stackLimitPush32_1023Filler.json",
-    "stackLimitPush32_1024Filler.json",
-    "stackLimitPush32_1025Filler.json",
-    "sloadGasCostFiller.json",
-    "selfBalanceCallTypesFiller.json",
-    "selfBalanceGasCostFiller.json",
-    "selfBalanceUpdateFiller.json",
-    "chainIdGasCostFiller.json"
-]
-
-[[skip_path]]
-desc = "bad json"
-paths = [
-    "Opcodes_TransactionInitFiller",
-    "static_CallContractToCreateContractAndCallItOOGFiller.json", 
-    "dummyFiller.json",
-    "codesizeOOGInvalidSizeFiller.json",
-    "codesizeValidFiller.json",
-    "create2callPrecompilesFiller.json",
-    "callToNonExistentFiller.json",
-    "tackDepthLimitSECFiller.json",
-    "ValueOverflowFiller" # weird 0x:biginteger 0x...
-]
-
-[[skip_path]]
-desc = "uses :solidity"
-paths = [
-    "RevertRemoteSubCallStorageOOGFiller.yml",
-    "loopMulFiller.yml",
-    "loopExpFiller.yml",
-    "performanceTesterFiller.yml", 
-    "SelfDestructFiller.yml",
-    "RevertRemoteSubCallStorageOOGFiller.yml",
-    "solidityExampleFiller.yml"
-]
+# ignored tests, must fix  ---------------------------------------------------------------
 
 [[skip_test]]
-desc = "needs to be solved, using the block number"
-ids = ["blockInfo_d3(number)_g0_v0"]
-
-[[skip_test]]
-desc = ""
-ids = ["envInfo_d3(codecopy_neg_offset)_g0_v0"]
-
-[[skip_test]]
-desc = ""
+desc = "***panicked at 'circuit should pass', contraint error"
 ids=["random_d3(random3)_g0_v0","random_d4(random4)_g0_v0"]
 
 [[skip_test]]
-desc = ""
+desc = "***incorrect rw witness."
 ids = ["invalidAddr_d31(ok)_g0_v0"]
 
 [[skip_test]]
-desc = ""
+desc = "gen_associated_ops memory check error"
+ids = [
+    "callDataCopyOffset_d0_g0_v0",
+    "calldatacopy_dejavu2_d0_g0_v0",
+    "codeCopyOffset_d0_g0_v0",
+]
+
+[[skip_test]]
+desc = "NotEnoughRowsAvailable { current_k: 12 }"
+ids = [
+    "oog_d2(success)_g0_v0", 
+    "oog_d4(success)_g0_v0",
+    "push32withoutByte_d0_g0_v0"
+]
+
+# ignored tests, suff to be implemented --------------------------------------------------
+
+[[skip_test]]
+desc = "a an inexistent contract at address 0x2 is called, but parse_call() does not support it yet"
+ids = ["invalidAddr_d41(ok)_g0_v0"]
+
+[[skip_test]]
+desc = "Integer overflow when casting to u64"
+ids = ["envInfo_d3(codecopy_neg_offset)_g0_v0", "codecopy_dejavu2_d0_g0_v0"]
+
+[[skip_test]]
+desc = "call with value and not enough value to send"
 ids= ["callWithHighValue_d0_g0_v0"]
 
 [[skip_test]]
@@ -205,32 +154,77 @@ ids = [
 	"bufferSrcOffset_d6(ok)_g0_v0"
 ]
 
-[[skip_test]]
-desc = ""
-ids = ["callDataCopyOffset_d0_g0_v0"]
-
-[[skip_test]]
-desc = ""
-ids = ["calldatacopy_dejavu2_d0_g0_v0"]
-
-[[skip_test]]
-desc = ""
-ids = ["codeCopyOffset_d0_g0_v0"]
-
-[[skip_test]]
-desc = ""
-ids = ["codecopy_dejavu2_d0_g0_v0"]
-
-[[skip_test]]
-desc = ""
-ids = ["oog_d2(success)_g0_v0"]
-
-[[skip_test]]
-desc = ""
-ids = ["oog_d4(success)_g0_v0"]
-
-[[skip_test]]
-desc = ""
-ids = ["push32withoutByte_d0_g0_v0"]
 
 
+
+# ignored paths -------------------------------------------------------------------------
+
+[[skip_path]]
+desc = "unimplemented"
+paths = [
+    "EIP1559",
+	"EIP2930",
+    "stPreCompiledContracts",
+    "stZeroKnowledge"
+]
+
+[[skip_path]]
+desc = "too big"
+paths = [
+    "stTimeConsuming",
+	"stExample",
+    "stQuadraticComplexityTest",
+    "50000"
+]
+
+[[skip_path]]	
+desc = "makes panic"
+paths = [
+    "randomStatetest",  # crashes geth?
+    "bufferFiller.yml"  # we are using U256::as_xxx() that panics
+]
+
+[[skip_path]]
+desc = "defines asm"
+paths = [ 
+    "stackLimitGas_1023Filler.json",
+    "stackLimitGas_1024Filler.json",
+    "stackLimitGas_1025Filler.json",
+    "stackLimitPush31_1023Filler.json",
+    "stackLimitPush31_1024Filler.json",
+    "stackLimitPush31_1025Filler.json",
+    "stackLimitPush32_1023Filler.json",
+    "stackLimitPush32_1024Filler.json",
+    "stackLimitPush32_1025Filler.json",
+    "sloadGasCostFiller.json",
+    "selfBalanceCallTypesFiller.json",
+    "selfBalanceGasCostFiller.json",
+    "selfBalanceUpdateFiller.json",
+    "chainIdGasCostFiller.json"
+]
+
+[[skip_path]]
+desc = "bad json"
+paths = [
+    "Opcodes_TransactionInitFiller",
+    "static_CallContractToCreateContractAndCallItOOGFiller.json", 
+    "dummyFiller.json",
+    "codesizeOOGInvalidSizeFiller.json",
+    "codesizeValidFiller.json",
+    "create2callPrecompilesFiller.json",
+    "callToNonExistentFiller.json",
+    "tackDepthLimitSECFiller.json",
+    "ValueOverflowFiller" # weird 0x:biginteger 0x...
+]
+
+[[skip_path]]
+desc = "uses :solidity"
+paths = [
+    "RevertRemoteSubCallStorageOOGFiller.yml",
+    "loopMulFiller.yml",
+    "loopExpFiller.yml",
+    "performanceTesterFiller.yml", 
+    "SelfDestructFiller.yml",
+    "RevertRemoteSubCallStorageOOGFiller.yml",
+    "solidityExampleFiller.yml"
+]
