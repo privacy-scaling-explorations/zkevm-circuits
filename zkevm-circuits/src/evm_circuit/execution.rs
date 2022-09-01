@@ -802,26 +802,27 @@ impl<F: Field> ExecutionConfig<F> {
                     offset += height;
                     last_height = height;
 
-                    // evm_circuit_pad_to == 0 means no extra padding
-                    if exact || block.evm_circuit_pad_to == 0 {
-                        if step.execution_state == ExecutionState::EndBlock {
+                    if step.execution_state == ExecutionState::EndBlock {
+                        // evm_circuit_pad_to == 0 means no extra padding
+                        if exact || block.evm_circuit_pad_to == 0 {
+                            // no padding
                             break;
-                        }
-                    } else {
-                        if step.execution_state == ExecutionState::EndBlock
-                            && offset >= block.evm_circuit_pad_to
-                        {
-                            if offset > block.evm_circuit_pad_to {
-                                log::warn!(
-                                    "evm circuit offset larger than padding: {} > {}",
-                                    offset,
-                                    block.evm_circuit_pad_to
-                                );
+                        } else {
+                            // padding
+                            if offset >= block.evm_circuit_pad_to {
+                                if offset > block.evm_circuit_pad_to {
+                                    log::warn!(
+                                        "evm circuit offset larger than padding: {} > {}",
+                                        offset,
+                                        block.evm_circuit_pad_to
+                                    );
+                                }
+                                break;
                             }
-                            break;
                         }
                     }
                 }
+
                 // These are still referenced (but not used) in next rows
                 region.assign_advice(
                     || "step height",
