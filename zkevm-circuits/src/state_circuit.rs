@@ -8,12 +8,10 @@ mod random_linear_combination;
 mod test;
 
 use crate::{
-    evm_circuit::{
-        param::N_BYTES_WORD,
-        witness::{Rw, RwMap},
-    },
+    evm_circuit::param::N_BYTES_WORD,
     table::{RwTable, RwTableTag},
     util::{power_of_randomness_from_instance, Expr},
+    witness::{Rw, RwMap},
 };
 use constraint_builder::{ConstraintBuilder, Queries};
 use eth_types::{Address, Field};

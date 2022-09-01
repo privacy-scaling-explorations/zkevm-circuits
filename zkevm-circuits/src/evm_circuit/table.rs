@@ -1,6 +1,5 @@
 use crate::evm_circuit::step::ExecutionState;
 use crate::impl_expr;
-pub use crate::table::TxContextFieldTag;
 use eth_types::Field;
 use gadgets::util::Expr;
 use halo2_proofs::plonk::Expression;
