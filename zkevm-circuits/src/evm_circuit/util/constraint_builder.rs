@@ -277,6 +277,8 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         }
     }
 
+    /// Returns (list of constraints, list of first step constraints, stored
+    /// expressions, height used).
     #[allow(clippy::type_complexity)]
     pub(crate) fn build(
         self,
