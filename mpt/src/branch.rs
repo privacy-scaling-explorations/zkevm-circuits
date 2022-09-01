@@ -693,24 +693,27 @@ impl<F: FieldExt> BranchConfig<F> {
             let is_modified = meta.query_advice(branch.is_modified, Rotation::cur());
             let is_at_drifted_pos = meta.query_advice(branch.is_at_drifted_pos, Rotation::cur());
             let drifted_pos = meta.query_advice(branch.drifted_pos, Rotation::cur());
-            // is_modified is:
-            //   0 when node_index_cur != modified_node
-            //   1 when node_index_cur == modified_node (it's checked in selectors.rs for
-            // booleanity)
+
+            /*
+            `is_modified` is boolean (booleanity is checked in `selectors.rs`):
+              * 0 when `node_index != modified_node`
+              * 1 when `node_index == modified_node`
+            */
             constraints.push((
-                "is_modified",
+                "is_modified = 1 only for modified node",
                 q_not_first.clone()
                     * is_branch_child_cur.clone()
                     * is_modified.clone()
                     * (node_index_cur.clone() - modified_node_cur.clone()),
             ));
 
-            // is_at_drifted_pos is:
-            //   0 when node_index_cur != drifted_pos
-            //   1 when node_index_cur == drifted_pos (it's checked in selectors.rs for
-            // booleanity)
+            /* 
+            `is_at_drifted_pos` is boolean (booleanity is checked in `selectors.rs`):
+              * 0 when `node_index != drifted_pos`
+              * 1 when `node_index == drifted_pos`
+            */
             constraints.push((
-                "is_at_drifted pos",
+                "is_at_drifted_pos = 1 only for drifted node",
                 q_not_first.clone()
                     * is_branch_child_cur.clone()
                     * is_at_drifted_pos.clone()
@@ -720,9 +723,11 @@ impl<F: FieldExt> BranchConfig<F> {
             constraints
         });
 
-        meta.create_gate("branch placeholder selectors", |meta| {
-            // Not merged with gate above because this needs to be checked in the first row
-            // too and we need to avoid rotation -1.
+        meta.create_gate("Branch placeholder selectors", |meta| {
+            /*
+            Note: Not merged with gate above because this needs to be checked in the first row
+            too and we need to avoid rotation -1.
+            */
             let mut constraints = vec![];
             let is_branch_init_cur = meta.query_advice(branch.is_init, Rotation::cur());
 
@@ -735,15 +740,23 @@ impl<F: FieldExt> BranchConfig<F> {
                 Rotation::cur(),
             );
             let q_enable = meta.query_fixed(q_enable, Rotation::cur());
+
+            /*
+            `is_branch_placeholder_s` needs to be boolean.
+            */
             constraints.push((
-                "bool check branch is_branch_placeholder_s",
+                "Bool check is_branch_placeholder_s",
                 get_bool_constraint(
                     q_enable.clone() * is_branch_init_cur.clone(),
                     is_branch_placeholder_s.clone(),
                 ),
             ));
+
+            /*
+            `is_branch_placeholder_c` needs to be boolean.
+            */
             constraints.push((
-                "bool check branch is_branch_placeholder_c",
+                "Bool check is_branch_placeholder_c",
                 get_bool_constraint(
                     q_enable.clone() * is_branch_init_cur,
                     is_branch_placeholder_c.clone(),
@@ -753,6 +766,14 @@ impl<F: FieldExt> BranchConfig<F> {
             constraints
         });
 
+        /*
+        The cell `s_main.bytes[NIBBLES_COUNTER_POS - RLP_NUM]` in branch init row stores the number of
+        nibbles used up to this point (up to this branch). If a regular branch, the counter increases only
+        by 1 as only one nibble is used to determine the position of `modified_node` in a branch.
+        On the contrary, when it is an extension node the counter increases by the number of nibbles
+        in the extension key and the additional nibble for the position in a branch (this constraint
+        is in `extension_node.rs` though).
+        */
         meta.create_gate("Branch number of nibbles (not first level)", |meta| {
             let mut constraints = vec![];
             let q_enable = meta.query_fixed(q_enable, Rotation::cur());
@@ -788,6 +809,9 @@ impl<F: FieldExt> BranchConfig<F> {
             constraints
         });
 
+        /*
+        If we are in the first level of the trie, `nibbles_count` needs to be 1. 
+        */
         meta.create_gate("Branch number of nibbles (first level)", |meta| {
             let mut constraints = vec![];
             let q_enable = meta.query_fixed(q_enable, Rotation::cur());
@@ -806,6 +830,9 @@ impl<F: FieldExt> BranchConfig<F> {
                 Rotation::cur(),
             );
 
+            /* 
+            If branch is in the first level of the account trie, `nibbles_count` needs to be 1.
+            */
             constraints.push((
                 "nibbles_count first level account",
                 q_enable.clone()
@@ -814,7 +841,10 @@ impl<F: FieldExt> BranchConfig<F> {
                     * (one.clone() - not_first_level.clone())
                     * (nibbles_count_cur.clone() - one.clone()),
             ));
-
+    
+            /* 
+            If branch is in the first level of the storage trie, `nibbles_count` needs to be 1.
+            */
             constraints.push((
                 "nibbles_count first level storage",
                 q_enable.clone()
