@@ -16,7 +16,7 @@ use crate::{
 use eth_types::Field;
 use halo2_proofs::{
     arithmetic::FieldExt,
-    circuit::{Layouter, Region},
+    circuit::{Layouter, Region, Value},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector, VirtualCells},
     poly::Rotation,
 };
@@ -725,6 +725,11 @@ impl<F: Field> ExecutionConfig<F> {
                 let mut offset = 0;
 
                 self.q_step_first.enable(&mut region, offset)?;
+                                    || "assign advice rows",
+                                    column,
+                                    i,
+                                    || Value::known(F::zero()),
+                                )
 
                 // handle EndBlock
                 let dummy_tx = Transaction {
@@ -778,7 +783,7 @@ impl<F: Field> ExecutionConfig<F> {
                             || "step selector",
                             self.q_step,
                             offset,
-                            || Ok(if idx == 0 { F::one() } else { F::zero() }),
+                            || Value::known(if idx == 0 { F::one() } else { F::zero() }),
                         )?;
                         let value = if idx == 0 {
                             F::zero()
@@ -789,13 +794,13 @@ impl<F: Field> ExecutionConfig<F> {
                             || "step height",
                             self.num_rows_until_next_step,
                             offset,
-                            || Ok(value),
+                            || Value::known(value),
                         )?;
                         region.assign_advice(
                             || "step height inv",
                             self.num_rows_inv,
                             offset,
-                            || Ok(value.invert().unwrap_or(F::zero())),
+                            || Value::known(value.invert().unwrap_or(F::zero())),
                         )?;
                     }
 
@@ -828,13 +833,13 @@ impl<F: Field> ExecutionConfig<F> {
                     || "step height",
                     self.num_rows_until_next_step,
                     offset,
-                    || Ok(F::zero()),
+                    || Value::known(F::zero()),
                 )?;
                 region.assign_advice(
                     || "step height inv",
                     self.q_step,
                     offset,
-                    || Ok(F::zero()),
+                    || Value::known(F::zero()),
                 )?;
 
                 self.q_step_last.enable(&mut region, offset - last_height)?;
@@ -1086,10 +1091,10 @@ impl<F: Field> ExecutionConfig<F> {
             .unwrap_or_else(|| panic!("Execution state unknown: {:?}", step.execution_state))
         {
             let assigned = stored_expression.assign(region, offset)?;
-            if let Some(v) = assigned.value() {
+            assigned.value().map(|v| {
                 let name = stored_expression.name.clone();
-                assigned_stored_expressions.push((name, *v))
-            }
+                assigned_stored_expressions.push((name, *v));
+            });
         }
         Ok(assigned_stored_expressions)
     }

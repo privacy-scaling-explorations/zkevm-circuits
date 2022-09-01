@@ -9,7 +9,7 @@ use bus_mapping::evm::OpcodeId;
 use eth_types::{Field, ToLittleEndian, Word};
 use gadgets::is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction};
 use halo2_proofs::{
-    circuit::{Layouter, Region},
+    circuit::{Layouter, Region, Value},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, Selector, VirtualCells},
     poly::Rotation,
 };
@@ -505,7 +505,7 @@ impl<F: Field> Config<F> {
             || format!("assign q_enable {}", offset),
             self.q_enable,
             offset,
-            || Ok(F::from(enable as u64)),
+            || Value::known(F::from(enable as u64)),
         )?;
 
         // q_first
@@ -513,7 +513,7 @@ impl<F: Field> Config<F> {
             || format!("assign q_first {}", offset),
             self.q_first,
             offset,
-            || Ok(F::from((offset == 0) as u64)),
+            || Value::known(F::from((offset == 0) as u64)),
         )?;
 
         // q_last
@@ -539,15 +539,15 @@ impl<F: Field> Config<F> {
                 || format!("assign {} {}", name, offset),
                 *column,
                 offset,
-                || Ok(*value),
+                || Value::known(*value),
             )?;
         }
 
         // push_rindex_is_zero_chip
-        push_rindex_is_zero_chip.assign(region, offset, Some(push_rindex_prev))?;
+        push_rindex_is_zero_chip.assign(region, offset, Value::known(push_rindex_prev))?;
 
         // length_is_zero chip
-        length_is_zero_chip.assign(region, offset, Some(code_length))?;
+        length_is_zero_chip.assign(region, offset, Value::known(code_length))?;
 
         Ok(())
     }
@@ -571,7 +571,7 @@ impl<F: Field> Config<F> {
                             || format!("Push table assign {} {}", name, byte),
                             *column,
                             byte,
-                            || Ok(F::from(*value)),
+                            || Value::known(F::from(*value)),
                         )?;
                     }
                 }
@@ -654,7 +654,7 @@ mod tests {
     use super::*;
     use crate::bytecode_circuit::dev::test_bytecode_circuit_unrolled;
     use eth_types::Bytecode;
-    use halo2_proofs::pairing::bn256::Fr;
+    use halo2_proofs::halo2curves::bn256::Fr;
 
     fn get_randomness<F: Field>() -> F {
         F::from(123456)

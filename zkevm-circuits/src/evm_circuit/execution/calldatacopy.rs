@@ -20,7 +20,7 @@ use crate::{
 };
 use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId};
 use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar};
-use halo2_proofs::plonk::Error;
+use halo2_proofs::{circuit::Value, plonk::Error};
 
 use std::cmp::min;
 
@@ -193,7 +193,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
         self.src_id.assign(
             region,
             offset,
-            Some(F::from(u64::try_from(src_id).unwrap())),
+            Value::known(F::from(u64::try_from(src_id).unwrap())),
         )?;
 
         // Call data length and call data offset
@@ -203,9 +203,9 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
             (call.call_data_length, call.call_data_offset)
         };
         self.call_data_length
-            .assign(region, offset, Some(F::from(call_data_length)))?;
+            .assign(region, offset, Value::known(F::from(call_data_length)))?;
         self.call_data_offset
-            .assign(region, offset, Some(F::from(call_data_offset)))?;
+            .assign(region, offset, Value::known(F::from(call_data_offset)))?;
 
         // rw_counter increase from copy lookup is `length` memory writes + a variable
         // number of memory reads.
@@ -223,8 +223,15 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
                         .unwrap_or_default(),
                 )
             };
-        self.copy_rwc_inc
-            .assign(region, offset, copy_rwc_inc.to_scalar())?;
+        self.copy_rwc_inc.assign(
+            region,
+            offset,
+            Value::known(
+                copy_rwc_inc
+                    .to_scalar()
+                    .expect("unexpected U256 -> Scalar conversion failure"),
+            ),
+        )?;
 
         // Memory expansion
         let (_, memory_expansion_gas_cost) = self.memory_expansion.assign(

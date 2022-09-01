@@ -1,6 +1,6 @@
 use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId};
 use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar};
-use halo2_proofs::plonk::Error;
+use halo2_proofs::{circuit::Value, plonk::Error};
 
 use crate::{
     evm_circuit::{
@@ -164,8 +164,11 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
             .bytecodes
             .get(&call.code_hash)
             .expect("could not find current environment's bytecode");
-        self.code_size
-            .assign(region, offset, Some(F::from(code.bytes.len() as u64)))?;
+        self.code_size.assign(
+            region,
+            offset,
+            Value::known(F::from(code.bytes.len() as u64)),
+        )?;
 
         // assign the destination memory offset.
         let memory_address =
@@ -182,7 +185,14 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
         self.memory_copier_gas
             .assign(region, offset, size.as_u64(), memory_expansion_cost)?;
         // rw_counter increase from copy table lookup is number of bytes copied.
-        self.copy_rwc_inc.assign(region, offset, size.to_scalar())?;
+        self.copy_rwc_inc.assign(
+            region,
+            offset,
+            Value::known(
+                size.to_scalar()
+                    .expect("unexpected U256 -> Scalar conversion failure"),
+            ),
+        )?;
 
         Ok(())
     }

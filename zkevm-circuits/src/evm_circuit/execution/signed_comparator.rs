@@ -14,7 +14,7 @@ use crate::{
     util::Expr,
 };
 use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian};
-use halo2_proofs::plonk::Error;
+use halo2_proofs::{circuit::Value, plonk::Error};
 
 /// Gadget that implements the ExecutionGadget trait to handle the Opcodes SLT
 /// and SGT.
@@ -206,7 +206,7 @@ impl<F: Field> ExecutionGadget<F> for SignedComparatorGadget<F> {
         self.a_lt_b.assign(
             region,
             offset,
-            Some(if a < b { F::one() } else { F::zero() }),
+            Value::known(if a < b { F::one() } else { F::zero() }),
         )?;
 
         self.a.assign(region, offset, Some(a_le_bytes))?;
