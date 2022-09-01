@@ -725,11 +725,6 @@ impl<F: Field> ExecutionConfig<F> {
                 let mut offset = 0;
 
                 self.q_step_first.enable(&mut region, offset)?;
-                                    || "assign advice rows",
-                                    column,
-                                    i,
-                                    || Value::known(F::zero()),
-                                )
 
                 // handle EndBlock
                 let dummy_tx = Transaction {
