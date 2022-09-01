@@ -17,7 +17,6 @@ use crate::table::TxFieldTag;
 use crate::tx_circuit::sign_verify::SignData;
 use crate::tx_circuit::tx_to_sign_data;
 use crate::util::random_linear_combine_word as rlc;
-use gadgets::util;
 use gadgets::util::Expr;
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter, Region, SimpleFloorPlanner},
@@ -201,7 +200,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
         // BlockTable
         let block_value = meta.advice_column();
 
-        let q_tx_table = meta.selector();
+        let q_tx_table = meta.complex_selector();
         let q_tx_calldata = meta.selector();
         // let q_is_calldata_start = meta.selector();
         // Tx Table
@@ -334,7 +333,6 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
 
             let is_tx_id_zero = 1.expr() - tx_idx.clone() * tx_idx_inv.clone();
             let is_tx_id_nonzero = tx_idx.clone() * tx_idx_inv.clone();
-            let is_tx_id_next_zero = 1.expr() - tx_idx_next.clone() * tx_idx_inv_next.clone();
             let is_tx_id_next_nonzero = tx_idx_next.clone() * tx_idx_inv_next.clone();
             let is_value_zero = 1.expr() - value.clone() * value_inv.clone();
             let is_value_nonzero = value.clone() * value_inv.clone();
@@ -396,6 +394,66 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
                 q_is_calldata.clone() * is_tx_id_nonzero.clone() * gas_cost_of_next_tx_constraint,
                 q_is_calldata.clone() * is_tx_id_nonzero.clone() * is_final_of_same_tx_constraint,
                 q_is_calldata.clone() * is_tx_id_nonzero.clone() * is_final_of_next_tx_constraint,
+            ]
+        });
+
+        meta.create_gate("tx_id_inv is (tag - CallDataGasCost)^(-1)", |meta| {
+            let q_tx_table = meta.query_selector(q_tx_table);
+            let tx_tag = meta.query_fixed(tag, Rotation::cur());
+            // tx_value_inv is just used to hold the inverse of `tx_tag - CallDataGasCost`.
+            let inv = meta.query_advice(tx_id_inv, Rotation::cur());
+            let is_calldata_cost =
+                1.expr() - (tx_tag.clone() - TxFieldTag::CallDataGasCost.expr()) * inv.clone();
+            let constraint = is_calldata_cost * (tx_tag - TxFieldTag::CallDataGasCost.expr());
+
+            vec![q_tx_table * constraint]
+        });
+
+        meta.create_gate("tx_value_inv is value^(-1)", |meta| {
+            let q_tx_table = meta.query_selector(q_tx_table);
+            let tx_value = meta.query_advice(tx_value, Rotation::cur());
+            // tx_value_inv is just used to hold the inverse of `tx_tag - CallDataGasCost`.
+            let inv = meta.query_advice(tx_value_inv, Rotation::cur());
+            let is_tx_value_zero = 1.expr() - tx_value.clone() * inv.clone();
+            let constraint = is_tx_value_zero * tx_value.clone();
+
+            vec![q_tx_table * constraint]
+        });
+
+        meta.lookup_any("gas_cost in tx table", |meta| {
+            let q_tx_table = meta.query_selector(q_tx_table);
+            let is_final = meta.query_advice(is_final, Rotation::cur());
+
+            let tx_id = meta.query_advice(tx_id, Rotation::cur());
+            let tx_tag = meta.query_fixed(tag, Rotation::cur());
+            // note: tx_id_inv is used to hold (tx_tag -  CallDataGasCost)^(-1)
+            let inv = meta.query_advice(tx_id_inv, Rotation::cur());
+
+            // call_data_length is on the previous row of call_data_gas_cost
+            let calldata_length = meta.query_advice(tx_value, Rotation::prev());
+            let calldata_length_inv = meta.query_advice(tx_value_inv, Rotation::prev());
+
+            // calldata gas cost assigned in the tx table
+            let calldata_cost = meta.query_advice(tx_value, Rotation::cur());
+            // calldata gas cost calculated in call data
+            let calldata_cost_table = meta.query_advice(calldata_gas_cost, Rotation::cur());
+
+            let is_calldata_cost_row =
+                1.expr() - (tx_tag.clone() - TxFieldTag::CallDataGasCost.expr()) * inv.clone();
+            let is_calldata_length_nonzero = calldata_length * calldata_length_inv;
+
+            // lookup (tx_id, true, is_calldata_length_nonzero * is_calldata_cost *
+            // gas_cost) in the table (tx_id, is_final, gas_cost)
+            // if q_tx_table is true
+            let condition = q_tx_table * is_calldata_length_nonzero * is_calldata_cost_row;
+
+            vec![
+                (condition.clone() * tx_id.clone(), tx_id),
+                (condition.clone() * 1.expr(), is_final),
+                (
+                    condition.clone() * calldata_cost.clone(),
+                    calldata_cost_table,
+                ),
             ]
         });
 
@@ -469,10 +527,17 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
         raw_pi_vals: &mut [F],
     ) -> Result<(), Error> {
         let tx_id = F::from(tx_id as u64);
-        let tx_id_inv = tx_id.invert().unwrap_or(F::zero());
+        // tx_id_inv = (tag - CallDataGasCost)^(-1)
+        let tx_id_inv = if tag != TxFieldTag::CallDataGasCost {
+            let x = F::from(tag as u64) - F::from(TxFieldTag::CallDataGasCost as u64);
+            x.invert().unwrap_or(F::zero())
+        } else {
+            F::zero()
+        };
         let tag = F::from(tag as u64);
         let index = F::from(index as u64);
         let tx_value = tx_value;
+        let tx_value_inv = tx_value.invert().unwrap_or(F::zero());
 
         self.q_tx_table.enable(region, offset)?;
 
@@ -482,6 +547,12 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
         region.assign_fixed(|| "tag", self.tag, offset, || Ok(tag))?;
         region.assign_advice(|| "index", self.index, offset, || Ok(index))?;
         region.assign_advice(|| "tx_value", self.tx_value, offset, || Ok(tx_value))?;
+        region.assign_advice(
+            || "tx_value_inverse",
+            self.tx_value_inv,
+            offset,
+            || Ok(tx_value_inv),
+        )?;
 
         // Assign vals to raw_public_inputs column
         let tx_table_len = TX_LEN * MAX_TXS + 1;
@@ -892,10 +963,11 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
                             rlc(tx.value.to_le_bytes(), self.randomness),
                         ),
                         (TxFieldTag::CallDataLength, F::from(tx.call_data_len)),
-                        (
-                            TxFieldTag::TxSignHash,
-                            rlc(tx.tx_sign_hash, self.randomness),
-                        ),
+                        (TxFieldTag::CallDataGasCost, F::from(tx.call_data_gas_cost)),
+                        // (
+                        //     TxFieldTag::TxSignHash,
+                        //     rlc(tx.tx_sign_hash, self.randomness),
+                        // ),
                     ] {
                         config.assign_tx_row(
                             &mut region,
@@ -989,7 +1061,7 @@ mod pi_circuit_test {
         dev::{MockProver, VerifyFailure},
         pairing::bn256::Fr,
     };
-    use log::{debug, info};
+    use log::info;
     use pretty_assertions::assert_eq;
     use rand::SeedableRng;
     use rand_chacha::ChaCha20Rng;
@@ -1076,7 +1148,7 @@ mod pi_circuit_test {
                 F::from(tx.is_create),
                 rlc(tx.value.to_le_bytes(), randomness),
                 F::from(tx.call_data_len),
-                rlc(tx.tx_sign_hash, randomness),
+                F::from(tx.call_data_gas_cost),
             ] {
                 result[id_offset + offset] = F::from((i + 1) as u64);
                 result[index_offset + offset] = F::zero();
@@ -1087,8 +1159,8 @@ mod pi_circuit_test {
         }
         // Tx Table CallData
         let mut calldata_count = 0;
-        for (i, tx) in public_data.txs.iter().enumerate() {
-            for (index, byte) in tx.call_data.0.iter().enumerate() {
+        for (_i, tx) in public_data.txs.iter().enumerate() {
+            for (_index, byte) in tx.call_data.0.iter().enumerate() {
                 assert!(calldata_count < MAX_CALLDATA);
                 // result[id_offset + offset] = F::from((i + 1) as u64);
                 // result[index_offset + offset] = F::from(index as u64);
