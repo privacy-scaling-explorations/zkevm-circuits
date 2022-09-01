@@ -6,7 +6,7 @@ use crate::{
         util::{
             self, constraint_builder::ConstraintBuilder, from_bytes, pow_of_two, pow_of_two_expr,
             select, split_u256, split_u256_limb64, sum, Cell,
-        }
+        },
     },
     util::Expr,
 };
@@ -1538,7 +1538,11 @@ impl<F: Field> SarWordsGadget<F> {
         let shf_mod64 = shf0 % 64;
         let p_lo: u128 = 1 << shf_mod64;
         let p_hi: u128 = 1 << (64 - shf_mod64);
-        let p_top: u128 = if is_neg { 0xFFFFFFFFFFFFFFFF - p_hi + 1 } else { 0 };
+        let p_top: u128 = if is_neg {
+            0xFFFFFFFFFFFFFFFF - p_hi + 1
+        } else {
+            0
+        };
         let shf_lt256 = shift
             .to_le_bytes()
             .iter()
@@ -1551,7 +1555,11 @@ impl<F: Field> SarWordsGadget<F> {
             a64s_lo[idx] = u128::from(a64s[idx]) % p_lo;
             a64s_hi[idx] = u128::from(a64s[idx]) / p_lo;
         }
-        let mut b64s = if is_neg { [0xFFFFFFFFFFFFFFFF_u128; 4] } else { [0_u128; 4] };
+        let mut b64s = if is_neg {
+            [0xFFFFFFFFFFFFFFFF_u128; 4]
+        } else {
+            [0_u128; 4]
+        };
         b64s[3 - shf_div64 as usize] = a64s_hi[3] + p_top;
         for k in 0..3 - shf_div64 {
             b64s[k] = a64s_hi[k + shf_div64] + a64s_lo[k + shf_div64 + 1] * p_hi;
