@@ -148,11 +148,18 @@ pub(crate) trait ExecutionGadget<F: FieldExt> {
 
 #[derive(Clone, Debug)]
 pub(crate) struct ExecutionConfig<F> {
+    // EVM Circuit selector, which enables all usable rows.  The rows where this selector is
+    // disabled won't verify any constraint (they can be unused rows or rows with blinding
+    // factors).
     q_usable: Selector,
+    // Dynamic selector that is enabled at the rows where each assigned execution step starts (a
+    // step has dynamic height).
     q_step: Column<Advice>,
     num_rows_until_next_step: Column<Advice>,
     num_rows_inv: Column<Advice>,
+    // Selector enabled in the row where the first execution step starts.
     q_step_first: Selector,
+    // Selector enabled in the row where the last execution step starts.
     q_step_last: Selector,
     advices: [Column<Advice>; STEP_WIDTH],
     step: Step<F>,
@@ -290,23 +297,7 @@ impl<F: Field> ExecutionConfig<F> {
             let q_step_first = meta.query_selector(q_step_first);
             let q_step_last = meta.query_selector(q_step_last);
 
-            // Only one of execution_state should be enabled
-            let sum_to_one = (
-                "Only one of execution_state should be enabled",
-                step_curr
-                    .state
-                    .execution_state
-                    .iter()
-                    .fold(1u64.expr(), |acc, cell| acc - cell.expr()),
-            );
-
-            // Cells representation for execution_state should be bool.
-            let bool_checks = step_curr.state.execution_state.iter().map(|cell| {
-                (
-                    "Representation for execution_state should be bool",
-                    cell.expr() * (1u64.expr() - cell.expr()),
-                )
-            });
+            let execution_state_selector_constraints = step_curr.state.execution_state.configure();
 
             let _first_step_check = {
                 let begin_tx_selector =
@@ -326,8 +317,8 @@ impl<F: Field> ExecutionConfig<F> {
                 ))
             };
 
-            iter::once(sum_to_one)
-                .chain(bool_checks)
+            execution_state_selector_constraints
+                .into_iter()
                 .map(move |(name, poly)| (name, q_usable.clone() * q_step.clone() * poly))
             // TODO: Enable these after incomplete trace is no longer necessary.
             // .chain(first_step_check)

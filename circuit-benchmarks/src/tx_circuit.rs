@@ -75,6 +75,7 @@ mod tests {
         let pk = keygen_pk(&general_params, vk, &circuit).expect("keygen_pk should not fail");
         // Create a proof
         let mut transcript = Blake2bWrite::<_, G1Affine, Challenge255<_>>::init(vec![]);
+        let instance_slices: Vec<&[Fr]> = instance.iter().map(|v| &v[..]).collect();
 
         // Bench proof generation time
         let proof_message = format!("Packed Multi-Keccak Proof generation with {} rows", DEGREE);
@@ -90,7 +91,7 @@ mod tests {
             &general_params,
             &pk,
             &[circuit],
-            &[&instance_slices[..]],
+            &[&instance_slices],
             rng,
             &mut transcript,
         )
@@ -113,7 +114,7 @@ mod tests {
             &verifier_params,
             pk.get_vk(),
             strategy,
-            &[&[]],
+            &[&instance_slices],
             &mut verifier_transcript,
         )
         .expect("failed to verify bench circuit");

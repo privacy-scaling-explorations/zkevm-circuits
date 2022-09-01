@@ -17,7 +17,7 @@ use crate::{
     table::{AccountFieldTag, CallContextFieldTag},
     util::Expr,
 };
-use eth_types::{evm_types::GasCost, Field, ToAddress, ToScalar, U256};
+use eth_types::{evm_types::GasCost, Field, ToAddress};
 use halo2_proofs::{circuit::Value, plonk::Error};
 use keccak256::EMPTY_HASH_LE;
 
@@ -137,13 +137,8 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
         self.external_address
             .assign(region, offset, Some(le_bytes))?;
 
-        self.tx_id.assign(
-            region,
-            offset,
-            Value::known(
-                F::from(tx.id as u64),
-            ),
-        )?;
+        self.tx_id
+            .assign(region, offset, Value::known(F::from(tx.id as u64)))?;
         self.reversion_info.assign(
             region,
             offset,

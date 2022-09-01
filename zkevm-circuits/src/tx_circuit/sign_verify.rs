@@ -702,6 +702,7 @@ mod sign_verify_tests {
                 &keccak_inputs_sign_verify(&self.signatures),
                 self.randomness,
             )?;
+            config.sign_verify.load_range(&mut layouter)?;
             Ok(())
         }
     }

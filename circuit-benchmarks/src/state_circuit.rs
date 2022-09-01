@@ -49,6 +49,9 @@ mod tests {
         // Create a proof
         let mut transcript = Blake2bWrite::<_, G1Affine, Challenge255<_>>::init(vec![]);
 
+        let instance = empty_circuit.instance();
+        let instances: Vec<&[Fr]> = instance.iter().map(|v| v.as_slice()).collect();
+
         // Bench proof generation time
         let proof_message = format!("State Circuit Proof generation with {} rows", degree);
         let start2 = start_timer!(|| proof_message);
@@ -63,7 +66,7 @@ mod tests {
             &general_params,
             &pk,
             &[empty_circuit],
-            &[instances.as_slice()],
+            &[&instances],
             rng,
             &mut transcript,
         )
@@ -86,7 +89,7 @@ mod tests {
             &verifier_params,
             pk.get_vk(),
             strategy,
-            &[instances.as_slice()],
+            &[&instances],
             &mut verifier_transcript,
         )
         .expect("failed to verify bench circuit");
