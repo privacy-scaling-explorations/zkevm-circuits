@@ -584,17 +584,20 @@ impl<F: FieldExt> BranchConfig<F> {
                 Rotation::prev(),
             );
 
-            // TODO: not needed anymore
+            /*
+            `drifted_pos` (the index of the branch child that drifted down into a newly added branch)
+            needs to be the same for all branch nodes.
+            */
             constraints.push((
-                "drifted_pos = modified_node for node_index = 0 when NOT placeholder",
+                "drifted_pos the same for all branch children",
                 q_not_first.clone()
                     * (one.clone()
                         - is_branch_placeholder_s.clone()
                         - is_branch_placeholder_c.clone())
-                    * is_branch_init_prev
-                    * (drifted_pos_cur.clone() - modified_node_cur.clone()),
+                    * node_index_cur.clone() // ignore if node_index = 0
+                    * (drifted_pos_prev.clone() - drifted_pos_cur.clone()),
             ));
-             
+
             let is_last_branch_child = meta.query_advice(branch.is_last_child, Rotation::cur());
             let is_branch_placeholder_s_from_last = meta.query_advice(
                 s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM],
@@ -604,9 +607,8 @@ impl<F: FieldExt> BranchConfig<F> {
                 s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
                 Rotation(-16),
             );
-            // Rotations could be avoided but we would need is_branch_placeholder column.
+            // Rotations could be avoided but we would need additional is_branch_placeholder column.
             for ind in 0..16 {
-                
                 let mut s_hash = vec![];
                 let mut c_hash = vec![];
                 for column in s_main.bytes.iter() {
@@ -623,6 +625,21 @@ impl<F: FieldExt> BranchConfig<F> {
                 let s_mod_node_hash_rlc_cur = meta.query_advice(accs.s_mod_node_rlc, Rotation(-15+ind));
                 let c_mod_node_hash_rlc_cur = meta.query_advice(accs.c_mod_node_rlc, Rotation(-15+ind));
 
+                /*
+                For a branch placeholder we do not have any constraints. However, in the parallel
+                (regular) branch we have an additional constraint (besides `is_modified` row
+                corresponding to `mod_nod_hash_rlc`) in this case: `is_at_drifted_pos main.bytes RLC`
+                is stored in the placeholder `mod_node_hash_rlc`. For example, if there is a placeholder
+                branch in `S` proof, we have:
+                 * `is_modified c_main.bytes RLC = c_mod_node_hash_rlc`
+                 * `is_at_drifted_pos c_main.bytes RLC = s_mod_node_hash_rlc`
+                That means we simply use `mod_node_hash_rlc` column (because it is not occupied)
+                in the placeholder branch for `is_at_drifted_pos main.bytes RLC` of
+                the regular parallel branch.
+
+                When `S` branch is NOT a placeholder, `s_main.bytes RLC` corresponds to the value
+                stored in `accumulators.s_mod_node_rlc` in `is_modified` row.
+                */
                 constraints.push((
                     "NOT is_branch_placeholder_s: s_mod_node_hash_rlc corresponds to s_main.bytes at modified pos",
                     q_not_first.clone()
@@ -632,8 +649,12 @@ impl<F: FieldExt> BranchConfig<F> {
                             * (s_hash_rlc.clone() - s_mod_node_hash_rlc_cur.clone()),
                 ));
 
+                /*
+                When `S` branch is a placeholder, `c_main.bytes RLC` corresponds to the value
+                stored in `accumulators.s_mod_node_rlc` in `is_at_drifted_pos` row.
+                */
                 constraints.push((
-                    "is_branch_placeholder_s: s_mod_node_hash_rlc corresponds to s_main.bytes at drifted pos",
+                    "is_branch_placeholder_s: s_mod_node_hash_rlc corresponds to c_main.bytes at drifted pos",
                     q_not_first.clone()
                             * is_last_branch_child.clone()
                             * is_branch_placeholder_s_from_last.clone()
@@ -641,6 +662,10 @@ impl<F: FieldExt> BranchConfig<F> {
                             * (c_hash_rlc.clone() - s_mod_node_hash_rlc_cur), // c_hash_rlc is correct
                 ));
 
+                /*
+                When `C` branch is NOT a placeholder, `c_main.bytes RLC` corresponds to the value
+                stored in `accumulators.c_mod_node_rlc` in `is_modified` row.
+                */
                 constraints.push((
                     "NOT is_branch_placeholder_c: c_mod_node_hash_rlc corresponds to c_main.bytes at modified pos",
                     q_not_first.clone()
@@ -650,8 +675,12 @@ impl<F: FieldExt> BranchConfig<F> {
                             * (c_hash_rlc.clone() - c_mod_node_hash_rlc_cur.clone()),
                 ));
 
+                /*
+                When `C` branch is a placeholder, `s_main.bytes RLC` corresponds to the value
+                stored in `accumulators.c_mod_node_rlc` in `is_at_drifted_pos` row.
+                */
                 constraints.push((
-                    "is_branch_placeholder_c: c_mod_node_hash_rlc corresponds to c_main.bytes at drifted pos",
+                    "is_branch_placeholder_c: c_mod_node_hash_rlc corresponds to s_main.bytes at drifted pos",
                     q_not_first.clone()
                             * is_last_branch_child.clone()
                             * is_branch_placeholder_c_from_last.clone()
@@ -659,17 +688,6 @@ impl<F: FieldExt> BranchConfig<F> {
                             * (s_hash_rlc.clone() - c_mod_node_hash_rlc_cur), // s_hash_rlc is correct
                 ));
             }
-
-            constraints.push((
-                "drifted_pos_prev = drifted_pos_cur for node_index > 0 when NOT placeholder",
-                q_not_first.clone()
-                    * (one.clone()
-                        - is_branch_placeholder_s.clone()
-                        - is_branch_placeholder_c.clone())
-                    * node_index_cur.clone() // ignore if node_index = 0
-                    * (drifted_pos_prev.clone() - drifted_pos_cur.clone()),
-            ));
-            // Constraint for modified_node being the same for all branch nodes is above.
 
             let is_branch_child_cur = meta.query_advice(branch.is_child, Rotation::cur());
             let is_modified = meta.query_advice(branch.is_modified, Rotation::cur());

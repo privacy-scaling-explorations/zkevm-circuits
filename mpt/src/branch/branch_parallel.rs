@@ -26,11 +26,10 @@ impl<F: FieldExt> BranchParallelChip<F> {
         q_enable: Column<Fixed>,
         q_not_first: Column<Fixed>,
         branch: BranchCols<F>,
-        accs: AccumulatorCols<F>,
+        mod_node_hash_rlc: Column<Advice>,
         main: MainCols<F>,
         sel: Column<Advice>,
         is_node_hashed: Column<Advice>,
-        is_s: bool,
     ) -> BranchParallelConfig {
         let config = BranchParallelConfig {};
             
@@ -119,11 +118,6 @@ impl<F: FieldExt> BranchParallelChip<F> {
             // children rows and we get mod_node_hash_rlc there (otherwise we
             // would need iterate over all branch children rows (many rotations) and check
             // that at is_modified the value corresponds).
-
-            let mut mod_node_hash_rlc = accs.s_mod_node_rlc;
-            if !is_s {
-                mod_node_hash_rlc = accs.c_mod_node_rlc;
-            }
 
             let mod_node_hash_rlc_prev = meta.query_advice(mod_node_hash_rlc, Rotation::prev());
             let mod_node_hash_cur = meta.query_advice(mod_node_hash_rlc, Rotation::cur());
