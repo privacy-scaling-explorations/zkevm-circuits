@@ -26,7 +26,7 @@ pub use bytecode::Bytecode;
 pub use error::Error;
 use halo2_proofs::{
     arithmetic::{Field as Halo2Field, FieldExt},
-    pairing::{
+    halo2curves::{
         bn256::{Fq, Fr},
         group::ff::PrimeField,
     },

@@ -12,12 +12,13 @@ use eth_types::{
     Address, Field, ToAddress, Word, U256,
 };
 use gadgets::binary_number::AsBits;
-use halo2_proofs::poly::commitment::Params;
+use halo2_proofs::poly::kzg::commitment::ParamsKZG;
 use halo2_proofs::{
     dev::{MockProver, VerifyFailure},
-    pairing::bn256::{Bn256, Fr, G1Affine},
+    halo2curves::bn256::{Bn256, Fr},
     plonk::{keygen_vk, Advice, Circuit, Column, ConstraintSystem},
 };
+use rand::SeedableRng;
 use std::collections::{BTreeSet, HashMap};
 use strum::IntoEnumIterator;
 
@@ -109,8 +110,7 @@ fn degree() {
 #[test]
 fn verifying_key_independent_of_rw_length() {
     let randomness = Fr::from(0xcafeu64);
-    let degree = 17;
-    let params = Params::<G1Affine>::unsafe_setup::<Bn256>(degree);
+    let params = ParamsKZG::<Bn256>::setup(17, rand_chacha::ChaCha20Rng::seed_from_u64(2));
 
     let no_rows = StateCircuit::<Fr>::new(randomness, RwMap::default(), N_ROWS);
     let one_row = StateCircuit::<Fr>::new(

@@ -2,25 +2,31 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::bench_params::DEGREE;
     use ark_std::{end_timer, start_timer};
     use env_logger::Env;
-    use group::{Curve, Group};
-    use halo2_proofs::arithmetic::{BaseExt, CurveAffine};
-    use halo2_proofs::plonk::{create_proof, keygen_pk, keygen_vk, verify_proof, SingleVerifier};
+    use halo2_proofs::halo2curves::CurveAffine;
+    use halo2_proofs::plonk::{create_proof, keygen_pk, keygen_vk, verify_proof};
+    use halo2_proofs::poly::kzg::commitment::{KZGCommitmentScheme, ParamsKZG, ParamsVerifierKZG};
+    use halo2_proofs::poly::kzg::multiopen::{ProverSHPLONK, VerifierSHPLONK};
+    use halo2_proofs::poly::kzg::strategy::SingleStrategy;
     use halo2_proofs::{
-        pairing::bn256::{Bn256, Fr, G1Affine},
-        poly::commitment::{Params, ParamsVerifier},
-        transcript::{Blake2bRead, Blake2bWrite, Challenge255},
+        arithmetic::FieldExt,
+        halo2curves::bn256::{Bn256, Fr, G1Affine},
+        poly::commitment::ParamsProver,
+        transcript::{
+            Blake2bRead, Blake2bWrite, Challenge255, TranscriptReadBuffer, TranscriptWriterBuffer,
+        },
     };
     use rand::SeedableRng;
     use rand_chacha::ChaCha20Rng;
-    use secp256k1::Secp256k1Affine;
     use std::marker::PhantomData;
     use zkevm_circuits::tx_circuit::{
         sign_verify::{SignVerifyChip, POW_RAND_SIZE, VERIF_HEIGHT},
-        TxCircuit,
+        Curve, TxCircuit,
     };
+    use zkevm_circuits::tx_circuit::{Group, Secp256k1Affine};
+
+    use crate::bench_params::DEGREE;
 
     #[cfg_attr(not(feature = "benches"), ignore)]
     #[test]
@@ -58,32 +64,34 @@ mod tests {
         };
 
         // Bench setup generation
-        let setup_message = format!(
-            "Setup generation with degree = {} (MAX_TXS = {})",
-            DEGREE, MAX_TXS
-        );
+        let setup_message = format!("Setup generation with degree = {}", DEGREE);
         let start1 = start_timer!(|| setup_message);
-        let general_params: Params<G1Affine> =
-            Params::<G1Affine>::unsafe_setup::<Bn256>(DEGREE.try_into().unwrap());
-        let verifier_params: ParamsVerifier<Bn256> =
-            general_params.verifier(MAX_TXS * VERIF_HEIGHT).unwrap();
+        let general_params = ParamsKZG::<Bn256>::setup(DEGREE as u32, &mut rng);
+        let verifier_params: ParamsVerifierKZG<Bn256> = general_params.verifier_params().clone();
         end_timer!(start1);
 
         // Initialize the proving key
         let vk = keygen_vk(&general_params, &circuit).expect("keygen_vk should not fail");
         let pk = keygen_pk(&general_params, vk, &circuit).expect("keygen_pk should not fail");
         // Create a proof
-        let mut transcript = Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
+        let mut transcript = Blake2bWrite::<_, G1Affine, Challenge255<_>>::init(vec![]);
+        let instance_slices: Vec<&[Fr]> = instance.iter().map(|v| &v[..]).collect();
 
         // Bench proof generation time
-        let proof_message = format!("Tx Proof generation with {} degree", DEGREE);
+        let proof_message = format!("Packed Multi-Keccak Proof generation with {} rows", DEGREE);
         let start2 = start_timer!(|| proof_message);
-        let instance_slices: Vec<&[Fr]> = instance.iter().map(|v| &v[..]).collect();
-        create_proof(
+        create_proof::<
+            KZGCommitmentScheme<Bn256>,
+            ProverSHPLONK<'_, Bn256>,
+            Challenge255<G1Affine>,
+            ChaCha20Rng,
+            Blake2bWrite<Vec<u8>, G1Affine, Challenge255<G1Affine>>,
+            TxCircuit<Fr, 2, 1024>,
+        >(
             &general_params,
             &pk,
             &[circuit],
-            &[&instance_slices[..]],
+            &[&instance_slices],
             rng,
             &mut transcript,
         )
@@ -92,15 +100,21 @@ mod tests {
         end_timer!(start2);
 
         // Bench verification time
-        let start3 = start_timer!(|| "Tx Proof verification");
-        let mut verifier_transcript = Blake2bRead::<_, _, Challenge255<_>>::init(&proof[..]);
-        let strategy = SingleVerifier::new(&verifier_params);
+        let start3 = start_timer!(|| "Packed Multi-Keccak Proof verification");
+        let mut verifier_transcript = Blake2bRead::<_, G1Affine, Challenge255<_>>::init(&proof[..]);
+        let strategy = SingleStrategy::new(&general_params);
 
-        verify_proof(
+        verify_proof::<
+            KZGCommitmentScheme<Bn256>,
+            VerifierSHPLONK<'_, Bn256>,
+            Challenge255<G1Affine>,
+            Blake2bRead<&[u8], G1Affine, Challenge255<G1Affine>>,
+            SingleStrategy<'_, Bn256>,
+        >(
             &verifier_params,
             pk.get_vk(),
             strategy,
-            &[&instance_slices[..]],
+            &[&instance_slices],
             &mut verifier_transcript,
         )
         .expect("failed to verify bench circuit");

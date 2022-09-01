@@ -69,11 +69,13 @@ use super::copy_circuit::CopyCircuit;
 use crate::{tx_circuit::sign_verify::POW_RAND_SIZE, witness::block_convert};
 use bus_mapping::mock::BlockData;
 use eth_types::geth_types::{self, GethData};
-use group::{Curve, Group};
 use halo2_proofs::arithmetic::{CurveAffine, Field as Halo2Field};
-use halo2_proofs::pairing::bn256::Fr;
+use halo2_proofs::halo2curves::{
+    bn256::Fr,
+    group::{Curve, Group},
+    secp256k1::Secp256k1Affine,
+};
 use rand::RngCore;
-use secp256k1::Secp256k1Affine;
 use strum::IntoEnumIterator;
 
 /// Configuration of the Super Circuit

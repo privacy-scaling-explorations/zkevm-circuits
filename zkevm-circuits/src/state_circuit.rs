@@ -17,7 +17,7 @@ use constraint_builder::{ConstraintBuilder, Queries};
 use eth_types::{Address, Field};
 use gadgets::binary_number::{BinaryNumberChip, BinaryNumberConfig};
 use halo2_proofs::{
-    circuit::{Layouter, Region, SimpleFloorPlanner},
+    circuit::{Layouter, Region, SimpleFloorPlanner, Value},
     plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
@@ -151,7 +151,12 @@ impl<F: Field> StateCircuitConfig<F> {
                 log::trace!("state circuit assign offset:{} row:{:#?}", offset, row);
             }
 
-            region.assign_fixed(|| "selector", self.selector, offset, || Ok(F::one()))?;
+            region.assign_fixed(
+                || "selector",
+                self.selector,
+                offset,
+                || Value::known(F::one()),
+            )?;
 
             tag_chip.assign(region, offset, &row.tag())?;
 
@@ -191,7 +196,7 @@ impl<F: Field> StateCircuitConfig<F> {
                 || "initial_value",
                 self.initial_value,
                 offset,
-                || Ok(initial_value),
+                || Value::known(initial_value),
             )?;
         }
 
@@ -289,7 +294,12 @@ where
                         let offset =
                             usize::try_from(isize::try_from(padding_length).unwrap() + *row_offset)
                                 .unwrap();
-                        region.assign_advice(|| "override", advice_column, offset, || Ok(f))?;
+                        region.assign_advice(
+                            || "override",
+                            advice_column,
+                            offset,
+                            || Value::known(f),
+                        )?;
                     }
                 }
 

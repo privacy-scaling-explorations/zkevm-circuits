@@ -1,7 +1,10 @@
 //! The EVM circuit implementation.
 
 #![allow(missing_docs)]
-use halo2_proofs::{circuit::Layouter, plonk::*};
+use halo2_proofs::{
+    circuit::{Layouter, Value},
+    plonk::*,
+};
 
 mod execution;
 pub mod param;
@@ -75,7 +78,7 @@ impl<F: Field> EvmCircuit<F> {
                     .enumerate()
                 {
                     for (column, value) in self.fixed_table.iter().zip_eq(row) {
-                        region.assign_fixed(|| "", *column, offset, || Ok(value))?;
+                        region.assign_fixed(|| "", *column, offset, || Value::known(value))?;
                     }
                 }
 
@@ -94,7 +97,7 @@ impl<F: Field> EvmCircuit<F> {
                         || "",
                         self.byte_table[0],
                         offset,
-                        || Ok(F::from(offset as u64)),
+                        || Value::known(F::from(offset as u64)),
                     )?;
                 }
 
@@ -370,7 +373,7 @@ mod evm_circuit_stats {
     use super::*;
     use crate::evm_circuit::step::ExecutionState;
     use eth_types::{bytecode, evm_types::OpcodeId, geth_types::GethData};
-    use halo2_proofs::pairing::bn256::Fr;
+    use halo2_proofs::halo2curves::bn256::Fr;
     use halo2_proofs::plonk::ConstraintSystem;
     use mock::test_ctx::{helpers::*, TestContext};
     use strum::IntoEnumIterator;
