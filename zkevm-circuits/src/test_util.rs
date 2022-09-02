@@ -81,7 +81,9 @@ pub fn rand_tx<R: Rng + CryptoRng>(mut rng: R, chain_id: u64) -> Transaction {
     let wallet1 = LocalWallet::new(&mut rng).with_chain_id(chain_id);
     let from = wallet0.address();
     let to = wallet1.address();
-    let data = b"hello";
+    let mut data = b"helloworld".to_vec();
+    data[0] = 0;
+    data[2] = 0;
     let tx = TransactionRequest::new()
         .from(from)
         .to(to)

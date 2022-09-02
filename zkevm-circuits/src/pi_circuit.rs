@@ -329,6 +329,9 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
             let idx_next = meta.query_advice(index, Rotation::next());
             let value = meta.query_advice(tx_value, Rotation::cur());
             let value_inv = meta.query_advice(tx_value_inv, Rotation::cur());
+            let value_next = meta.query_advice(tx_value, Rotation::next());
+            let value_next_inv = meta.query_advice(tx_value_inv, Rotation::next());
+
             let gas_cost = meta.query_advice(calldata_gas_cost, Rotation::cur());
             let gas_cost_next = meta.query_advice(calldata_gas_cost, Rotation::next());
             let is_final = meta.query_advice(is_final, Rotation::cur());
@@ -338,6 +341,12 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
             let is_tx_id_next_nonzero = tx_idx_next.clone() * tx_idx_inv_next.clone();
             let is_value_zero = 1.expr() - value.clone() * value_inv.clone();
             let is_value_nonzero = value.clone() * value_inv.clone();
+            let is_value_next_zero = 1.expr() - value_next.clone() * value_next_inv.clone();
+            let is_value_next_nonzero = value_next.clone() * value_next_inv.clone();
+
+            let gas = 4.expr() * is_value_zero.clone() + 16.expr() * is_value_nonzero.clone();
+            let gas_next =
+                4.expr() * is_value_next_zero + 16.expr() * is_value_next_nonzero.clone();
 
             // inv constraint
             // tx_id * (1 - tx_id * tx_id_inv) = 0
@@ -368,13 +377,12 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
 
             // gas = value == 0 ? 4 : 16
             let tx_value_constraint = value.clone() * is_value_zero.clone();
-            let gas = 4.expr() * is_value_zero + 16.expr() * is_value_nonzero.clone();
             let gas_cost_of_same_tx_constraint = is_tx_id_next_nonzero.clone()
                 * (tx_idx_next.clone() - tx_idx.clone() - 1.expr())
-                * (gas_cost_next.clone() - gas_cost.clone() - gas.clone());
+                * (gas_cost_next.clone() - gas_cost.clone() - gas_next.clone());
             let gas_cost_of_next_tx_constraint = is_tx_id_next_nonzero.clone()
                 * (tx_idx_next.clone() - tx_idx.clone())
-                * (gas_cost_next.clone() - gas.clone());
+                * (gas_cost_next.clone() - gas_next.clone());
             let is_final_of_same_tx_constraint = is_tx_id_next_nonzero.clone()
                 * (tx_idx_next.clone() - tx_idx.clone() - 1.expr())
                 * is_final.clone();
