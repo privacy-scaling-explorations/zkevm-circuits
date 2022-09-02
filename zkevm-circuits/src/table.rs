@@ -1210,20 +1210,20 @@ impl ExpTable {
                         || "exponentiation table all-zero row",
                         column,
                         offset,
-                        || Ok(F::zero()),
+                        || Value::known(F::zero()),
                     )?;
                 }
 
                 offset += 1;
                 let exp_table_columns = self.columns();
                 for exp_event in block.exp_events.iter() {
-                    for row in Self::assignments(exp_event) {
+                    for row in Self::assignments::<F>(exp_event) {
                         for (column, value) in exp_table_columns.iter().zip_eq(row) {
                             region.assign_advice(
                                 || format!("exponentiation table row {}", offset),
                                 *column,
                                 offset,
-                                || Ok(value),
+                                || Value::known(value),
                             )?;
                         }
                         offset += 1;

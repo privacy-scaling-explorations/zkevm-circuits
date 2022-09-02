@@ -16,7 +16,7 @@
 
 use eth_types::{Field, ToLittleEndian, Word};
 use halo2_proofs::{
-    circuit::Region,
+    circuit::{Region, Value},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
     poly::Rotation,
 };
@@ -179,7 +179,7 @@ impl<F: Field> MulAddChip<F> {
                 || format!("a limb ({})", i),
                 column,
                 offset,
-                || Ok(F::from(value.as_u64())),
+                || Value::known(F::from(value.as_u64())),
             )?;
         }
 
@@ -198,7 +198,7 @@ impl<F: Field> MulAddChip<F> {
                 || format!("b limb ({})", i),
                 column,
                 offset + 1,
-                || Ok(F::from(value.as_u64())),
+                || Value::known(F::from(value.as_u64())),
             )?;
         }
 
@@ -207,25 +207,25 @@ impl<F: Field> MulAddChip<F> {
             || "c_lo",
             self.config.col0,
             offset + 2,
-            || Ok(F::from_u128(c_lo.as_u128())),
+            || Value::known(F::from_u128(c_lo.as_u128())),
         )?;
         region.assign_advice(
             || "c_hi",
             self.config.col1,
             offset + 2,
-            || Ok(F::from_u128(c_hi.as_u128())),
+            || Value::known(F::from_u128(c_hi.as_u128())),
         )?;
         region.assign_advice(
             || "d_lo",
             self.config.col2,
             offset + 2,
-            || Ok(F::from_u128(d_lo.as_u128())),
+            || Value::known(F::from_u128(d_lo.as_u128())),
         )?;
         region.assign_advice(
             || "d_hi",
             self.config.col3,
             offset + 2,
-            || Ok(F::from_u128(d_hi.as_u128())),
+            || Value::known(F::from_u128(d_hi.as_u128())),
         )?;
 
         // carry_lo.
@@ -248,7 +248,7 @@ impl<F: Field> MulAddChip<F> {
                 || format!("carry lo ({})", i),
                 col,
                 rot,
-                || Ok(F::from(*val as u64)),
+                || Value::known(F::from(*val as u64)),
             )?;
         }
 
@@ -272,7 +272,7 @@ impl<F: Field> MulAddChip<F> {
                 || format!("carry hi ({})", i),
                 col,
                 rot,
-                || Ok(F::from(*val as u64)),
+                || Value::known(F::from(*val as u64)),
             )?;
         }
 
@@ -288,7 +288,7 @@ mod test {
     use halo2_proofs::{
         circuit::SimpleFloorPlanner,
         dev::MockProver,
-        pairing::bn256::Fr as Fp,
+        halo2curves::bn256::Fr as Fp,
         plonk::{Circuit, Selector},
     };
     use rand::Rng;

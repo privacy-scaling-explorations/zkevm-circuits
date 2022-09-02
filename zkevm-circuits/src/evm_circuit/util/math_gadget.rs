@@ -1394,7 +1394,7 @@ impl<F: Field> ByteSizeGadget<F> {
             byte_index.assign(
                 region,
                 offset,
-                Some(if i == byte_size { F::one() } else { F::zero() }),
+                Value::known(if i == byte_size { F::one() } else { F::zero() }),
             )?;
         }
         if byte_size > 0 {
@@ -1402,7 +1402,7 @@ impl<F: Field> ByteSizeGadget<F> {
             self.most_significant_nonzero_byte_inverse.assign(
                 region,
                 offset,
-                Some(
+                Value::known(
                     F::from(u64::try_from(most_significant_nonzero_byte).unwrap())
                         .invert()
                         .unwrap(),

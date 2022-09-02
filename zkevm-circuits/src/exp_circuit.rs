@@ -6,7 +6,7 @@ use gadgets::{
     util::{and, not, or, Expr},
 };
 use halo2_proofs::{
-    circuit::Layouter,
+    circuit::{Layouter, Value},
     plonk::{Advice, Column, ConstraintSystem, Error, Selector},
     poly::Rotation,
 };
@@ -277,13 +277,13 @@ impl<F: Field> ExpCircuit<F> {
                             || format!("idx: {}", offset),
                             self.idx,
                             offset,
-                            || Ok(F::from(idx as u64)),
+                            || Value::known(F::from(idx as u64)),
                         )?;
                         region.assign_advice(
                             || format!("is_last: {}", offset),
                             self.is_last,
                             offset,
-                            || Ok(is_last),
+                            || Value::known(is_last),
                         )?;
                         exp_div_chip.assign(
                             &mut region,
@@ -324,7 +324,7 @@ impl<F: Field> ExpCircuit<F> {
                                     || format!("exp circuit: {:?}: {}", *column, offset + i),
                                     *column,
                                     offset + i,
-                                    || Ok(*value),
+                                    || Value::known(*value),
                                 )?;
                             }
                             for column in self.exp_table.columns() {
@@ -333,7 +333,7 @@ impl<F: Field> ExpCircuit<F> {
                                         || format!("unused rows: {}", offset + j),
                                         column,
                                         offset + j,
-                                        || Ok(F::zero()),
+                                        || Value::known(F::zero()),
                                     )?;
                                 }
                             }
@@ -358,7 +358,7 @@ impl<F: Field> ExpCircuit<F> {
                             || format!("padding steps: {}", offset + i),
                             column,
                             offset + i,
-                            || Ok(F::zero()),
+                            || Value::known(F::zero()),
                         )?;
                     }
                 }
@@ -373,7 +373,7 @@ impl<F: Field> ExpCircuit<F> {
                             || format!("padding steps: {}", offset + i),
                             column,
                             offset + i,
-                            || Ok(F::zero()),
+                            || Value::known(F::zero()),
                         )?;
                     }
                 }
@@ -384,7 +384,7 @@ impl<F: Field> ExpCircuit<F> {
     }
 }
 
-#[cfg(feature = "dev")]
+#[cfg(any(feature = "test", test))]
 /// Dev helpers
 pub mod dev {
     use super::*;
