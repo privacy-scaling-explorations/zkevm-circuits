@@ -711,7 +711,7 @@ impl<F: Field> ExecutionConfig<F> {
         &self,
         layouter: &mut impl Layouter<F>,
         block: &Block<F>,
-        _exact: bool,
+        exact: bool,
     ) -> Result<(), Error> {
         let power_of_randomness = (1..32)
             .map(|exp| block.randomness.pow(&[exp, 0, 0, 0]))
@@ -725,45 +725,29 @@ impl<F: Field> ExecutionConfig<F> {
                 let mut offset = 0;
 
                 self.q_step_first.enable(&mut region, offset)?;
-                // handle empty block conditions
-                if block.txs.is_empty() {
-                    // if enable padding to fix length in the future, just change `end_row` to
-                    // target length
-                    let num_rows = 2;
 
-                    for i in 0..num_rows {
-                        self.q_usable.enable(&mut region, i)?;
-
-                        for column in iter::empty()
-                            .chain([
-                                self.q_step,
-                                self.num_rows_until_next_step,
-                                self.num_rows_inv,
-                            ])
-                            .chain(self.advices)
-                        {
-                            region
-                                .assign_advice(
-                                    || "assign advice rows",
-                                    column,
-                                    i,
-                                    || Value::known(F::zero()),
-                                )
-                                .unwrap();
-                        }
-                    }
-
-                    //adjust q_step_last to 1
-                    self.q_step_last.enable(&mut region, num_rows - 1)?;
-
-                    return Ok(());
-                }
-
+                // handle EndBlock
+                let dummy_tx = Transaction {
+                    calls: vec![Default::default()],
+                    ..Default::default()
+                };
+                let last_tx = block.txs.last().unwrap_or(&dummy_tx);
+                let end_block_state = &ExecStep {
+                    rw_counter: if block.txs.is_empty() {
+                        0
+                    } else {
+                        // if it is the first tx,  less 1 rw lookup, refer to end_tx gadget
+                        last_tx.steps.last().unwrap().rw_counter + 9 - (last_tx.id == 1) as usize
+                    },
+                    execution_state: ExecutionState::EndBlock,
+                    ..Default::default()
+                };
                 // Collect all steps
                 let mut steps = block
                     .txs
                     .iter()
                     .flat_map(|tx| tx.steps.iter().map(move |step| (tx, step)))
+                    .chain(iter::repeat((last_tx, end_block_state)))
                     .peekable();
 
                 let mut last_height = 0;
@@ -817,7 +801,28 @@ impl<F: Field> ExecutionConfig<F> {
 
                     offset += height;
                     last_height = height;
+
+                    if step.execution_state == ExecutionState::EndBlock {
+                        // evm_circuit_pad_to == 0 means no extra padding
+                        if exact || block.evm_circuit_pad_to == 0 {
+                            // no padding
+                            break;
+                        } else {
+                            // padding
+                            if offset >= block.evm_circuit_pad_to {
+                                if offset > block.evm_circuit_pad_to {
+                                    log::warn!(
+                                        "evm circuit offset larger than padding: {} > {}",
+                                        offset,
+                                        block.evm_circuit_pad_to
+                                    );
+                                }
+                                break;
+                            }
+                        }
+                    }
                 }
+
                 // These are still referenced (but not used) in next rows
                 region.assign_advice(
                     || "step height",
@@ -832,9 +837,6 @@ impl<F: Field> ExecutionConfig<F> {
                     || Value::known(F::zero()),
                 )?;
 
-                // If not exact:
-                // TODO: Pad leftover region to the desired capacity
-                // TODO: Enable q_step_last
                 self.q_step_last.enable(&mut region, offset - last_height)?;
 
                 Ok(())
