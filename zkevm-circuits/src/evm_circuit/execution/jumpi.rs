@@ -18,7 +18,7 @@ use crate::{
     util::Expr,
 };
 use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian};
-use halo2_proofs::plonk::Error;
+use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct JumpiGadget<F> {
@@ -105,7 +105,8 @@ impl<F: Field> ExecutionGadget<F> for JumpiGadget<F> {
                     .unwrap(),
             ),
         )?;
-        self.condition.assign(region, offset, Some(condition))?;
+        self.condition
+            .assign(region, offset, Value::known(condition))?;
         self.is_condition_zero.assign(region, offset, condition)?;
 
         Ok(())

@@ -2,7 +2,7 @@
 
 use eth_types::{Field, ToScalar, Word};
 use halo2_proofs::{
-    circuit::Layouter,
+    circuit::{Layouter, Value},
     plonk::{Error, TableColumn},
 };
 use itertools::Itertools;
@@ -374,13 +374,13 @@ pub fn load_normalize_table<F: Field>(
                     || format!("{} input", name),
                     tables[0],
                     offset,
-                    || Ok(F::from(input)),
+                    || Value::known(F::from(input)),
                 )?;
                 table.assign_cell(
                     || format!("{} output", name),
                     tables[1],
                     offset,
-                    || Ok(F::from(output)),
+                    || Value::known(F::from(output)),
                 )?;
             }
             Ok(())
@@ -397,9 +397,14 @@ pub fn load_pack_table<F: Field>(
         || "pack table",
         |mut table| {
             for (offset, idx) in (0u64..256).enumerate() {
-                table.assign_cell(|| "unpacked", tables[0], offset, || Ok(F::from(idx)))?;
+                table.assign_cell(
+                    || "unpacked",
+                    tables[0],
+                    offset,
+                    || Value::known(F::from(idx)),
+                )?;
                 let packed: F = pack(&into_bits(&[idx as u8])).to_scalar().unwrap();
-                table.assign_cell(|| "packed", tables[1], offset, || Ok(packed))?;
+                table.assign_cell(|| "packed", tables[1], offset, || Value::known(packed))?;
             }
             Ok(())
         },
@@ -434,13 +439,13 @@ pub fn load_lookup_table<F: Field>(
                     || format!("{} input", name),
                     tables[0],
                     offset,
-                    || Ok(F::from(input)),
+                    || Value::known(F::from(input)),
                 )?;
                 table.assign_cell(
                     || format!("{} output", name),
                     tables[1],
                     offset,
-                    || Ok(F::from(output)),
+                    || Value::known(F::from(output)),
                 )?;
             }
             Ok(())

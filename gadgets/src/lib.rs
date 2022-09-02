@@ -19,18 +19,21 @@ pub mod monotone;
 pub mod util;
 
 use eth_types::Field;
-use halo2_proofs::{circuit::AssignedCell, plonk::Expression};
+use halo2_proofs::{
+    circuit::{AssignedCell, Value},
+    plonk::Expression,
+};
 
 #[allow(dead_code)]
 /// An assigned cell in the circuit.
 #[derive(Clone, Debug)]
 pub struct Variable<T, F: Field> {
     assig_cell: AssignedCell<F, F>,
-    value: Option<T>,
+    value: Value<T>,
 }
 
 impl<T, F: Field> Variable<T, F> {
-    pub(crate) fn new(assig_cell: AssignedCell<F, F>, value: Option<T>) -> Self {
+    pub(crate) fn new(assig_cell: AssignedCell<F, F>, value: Value<T>) -> Self {
         Self { assig_cell, value }
     }
 }
