@@ -343,6 +343,10 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
                 /*
                 We need to ensure there is only one modification at a time. If there is storage or
                 balance modification, we need to ensure `S` nonce and `C` nonce are the same.
+
+                Note: For `is_non_existing_account_proof` we do not need this constraint,
+                `S` and `C` proofs are the same and we need to do a lookup into only one
+                (the other one could really be whatever). Similarly for `is_codehash_proof`.
                 */
                 constraints.push((
                     "If storage or balance modification: S nonce = C nonce",
@@ -356,6 +360,10 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
                 /*
                 We need to ensure there is only one modification at a time. If there is storage or
                 nonce modification, we need to ensure `S` balance and `C` balance are the same.
+
+                Note: For `is_non_existing_account_proof` we do not need this constraint,
+                `S` and `C` proofs are the same and we need to do a lookup into only one
+                (the other one could really be whatever). Similarly for `is_codehash_proof`.
                 */
                 constraints.push((
                     "If storage or nonce modification: S balance = C balance",

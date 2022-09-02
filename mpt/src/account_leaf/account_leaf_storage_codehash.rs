@@ -216,6 +216,9 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
                         * (storage_root_s_from_prev.clone() - storage_root_s_from_cur.clone()),
                 ));
 
+                // Note: we do not check whether codehash is copied properly as only one of the
+                // `S` or `C` proofs are used for a lookup.
+
                 // Check there is only one modification at once:
                 let is_nonce_mod = meta.query_advice(proof_type.is_nonce_mod, Rotation::cur());
                 let is_balance_mod = meta.query_advice(proof_type.is_balance_mod, Rotation::cur());
@@ -225,7 +228,9 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
                 If the modification is nonce or balance modification, the storage root needs to 
                 stay the same.
 
-                Note: `is_non_existing_account_proof` uses only `S` proof.
+                Note: For `is_non_existing_account_proof` we do not need this constraint,
+                `S` and `C` proofs are the same and we need to do a lookup into only one
+                (the other one could really be whatever). Similarly for `is_codehash_proof`.
                 */
                 constraints.push((
                     "If nonce / balance: storage_root_s = storage_root_c",
@@ -240,7 +245,9 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
                 always except for `is_account_delete_mod` and `is_non_existing_account_proof`),
                 the storage root needs to stay the same.
 
-                Note: `is_non_existing_account_proof` uses only `S` proof.
+                Note: For `is_non_existing_account_proof` we do not need this constraint,
+                `S` and `C` proofs are the same and we need to do a lookup into only one
+                (the other one could really be whatever). Similarly for `is_codehash_proof`.
                 */
                 constraints.push((
                     "If nonce / balance / storage mod: codehash_s = codehash_c",

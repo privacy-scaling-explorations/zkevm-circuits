@@ -66,6 +66,8 @@ impl<F: FieldExt> SelectorsChip<F> {
             let is_balance_mod = meta.query_advice(proof_type.is_balance_mod, Rotation::cur());
             let is_account_delete_mod = meta.query_advice(proof_type.is_account_delete_mod, Rotation::cur());
             let is_non_existing_account_proof = meta.query_advice(proof_type.is_non_existing_account_proof, Rotation::cur());
+            let is_codehash_proof = meta.query_advice(proof_type.is_codehash_proof, Rotation::cur());
+
             let is_non_existing_account_row = meta.query_advice(account_leaf.is_non_existing_account_row, Rotation::cur());
 
             constraints.push((
@@ -189,11 +191,15 @@ impl<F: FieldExt> SelectorsChip<F> {
                 "bool check is_non_existing_account_proof",
                 get_bool_constraint(q_enable.clone(), is_non_existing_account_proof.clone()),
             ));
+            constraints.push((
+                "bool check is_codehash_proof",
+                get_bool_constraint(q_enable.clone(), is_codehash_proof.clone()),
+            ));
 
             constraints.push((
                 "is_storage_mod + is_nonce_mod + is_balance_mod + is_account_delete_mod + is_non_existing_account = 1",
                 q_enable.clone()
-                    * (is_storage_mod + is_nonce_mod + is_balance_mod + is_account_delete_mod + is_non_existing_account_proof
+                    * (is_storage_mod + is_nonce_mod + is_balance_mod + is_account_delete_mod + is_non_existing_account_proof + is_codehash_proof
                         - one.clone()),
             ));
 

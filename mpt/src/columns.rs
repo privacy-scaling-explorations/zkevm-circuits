@@ -11,8 +11,9 @@ pub(crate) struct ProofTypeCols<F> {
     pub(crate) is_storage_mod: Column<Advice>,
     pub(crate) is_nonce_mod: Column<Advice>,
     pub(crate) is_balance_mod: Column<Advice>,
+    pub(crate) is_codehash_proof: Column<Advice>, // no modification possible, we only need S or C proof
     pub(crate) is_account_delete_mod: Column<Advice>,
-    pub(crate) is_non_existing_account_proof: Column<Advice>,
+    pub(crate) is_non_existing_account_proof: Column<Advice>, // we only need S or C proof as there is no modification
     _marker: PhantomData<F>,
 }
 
@@ -22,6 +23,7 @@ impl<F: FieldExt> ProofTypeCols<F> {
             is_storage_mod : meta.advice_column(),
             is_nonce_mod : meta.advice_column(),
             is_balance_mod : meta.advice_column(),
+            is_codehash_proof : meta.advice_column(),
             is_account_delete_mod : meta.advice_column(),
             is_non_existing_account_proof : meta.advice_column(),
             _marker: PhantomData,
