@@ -1,4 +1,6 @@
-#![allow(missing_docs)]
+//! Witness for all circuits.
+//! The `Block<F>` is the witness struct post-processed from geth traces and
+//! used to generate witnesses for circuits.
 
 mod block;
 pub use block::{block_convert, Block, BlockContext};

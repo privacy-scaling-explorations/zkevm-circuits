@@ -13,6 +13,7 @@ use crate::{
     table::RwTableTag,
 };
 
+/// Step executed in a transaction
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ExecStep {
     /// The index in the Transaction calls
@@ -42,6 +43,7 @@ pub struct ExecStep {
 }
 
 impl ExecStep {
+    /// The memory size in word **before** this step
     pub fn memory_word_size(&self) -> u64 {
         // EVM always pads the memory size to word size
         // https://github.com/ethereum/go-ethereum/blob/master/core/vm/interpreter.go#L212-L216

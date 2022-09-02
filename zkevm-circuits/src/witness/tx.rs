@@ -1,15 +1,11 @@
-use std::iter;
-
 use bus_mapping::circuit_input_builder;
 use eth_types::{Address, Field, ToLittleEndian, ToScalar, ToWord, Word};
 
-use crate::{
-    evm_circuit::{step::ExecutionState, util::RandomLinearCombination},
-    table::TxContextFieldTag,
-};
+use crate::{evm_circuit::util::RandomLinearCombination, table::TxContextFieldTag};
 
 use super::{step::step_convert, Call, ExecStep};
 
+/// Transaction in a witness block
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct Transaction {
     /// The transaction identifier in the block
@@ -41,6 +37,7 @@ pub struct Transaction {
 }
 
 impl Transaction {
+    /// Assignments for tx table
     pub fn table_assignments<F: Field>(&self, randomness: F) -> Vec<[F; 4]> {
         [
             vec![
@@ -122,11 +119,7 @@ impl Transaction {
     }
 }
 
-pub(super) fn tx_convert(
-    tx: &circuit_input_builder::Transaction,
-    id: usize,
-    is_last_tx: bool,
-) -> Transaction {
+pub(super) fn tx_convert(tx: &circuit_input_builder::Transaction, id: usize) -> Transaction {
     Transaction {
         id,
         nonce: tx.nonce,
@@ -165,24 +158,6 @@ pub(super) fn tx_convert(
                 is_static: call.is_static,
             })
             .collect(),
-        steps: tx
-            .steps()
-            .iter()
-            .map(step_convert)
-            .chain(
-                (if is_last_tx {
-                    Some(iter::once(ExecStep {
-                        // if it is the first tx,  less 1 rw lookup, refer to end_tx gadget
-                        rw_counter: tx.steps().last().unwrap().rwc.0 + 9 - (id == 1) as usize,
-                        execution_state: ExecutionState::EndBlock,
-                        ..Default::default()
-                    }))
-                } else {
-                    None
-                })
-                .into_iter()
-                .flatten(),
-            )
-            .collect(),
+        steps: tx.steps().iter().map(step_convert).collect(),
     }
 }

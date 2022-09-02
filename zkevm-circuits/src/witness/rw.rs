@@ -1,16 +1,16 @@
+#![allow(missing_docs)]
 use std::collections::HashMap;
 
 use bus_mapping::operation::{self, AccountField, CallContextField, TxLogField, TxReceiptField};
 use eth_types::{Address, Field, ToAddress, ToLittleEndian, ToScalar, Word, U256};
 use itertools::Itertools;
-    /// Pad evm circuit to make selectors fixed, so vk/pk can be universal.
-    pub evm_circuit_pad_to: usize,
 
 use crate::{
     evm_circuit::util::RandomLinearCombination,
     table::{AccountFieldTag, CallContextFieldTag, RwTableTag, TxLogFieldTag, TxReceiptFieldTag},
 };
 
+/// Rw constainer for a witness block
 #[derive(Debug, Default, Clone)]
 pub struct RwMap(pub HashMap<RwTableTag, Vec<Rw>>);
 
@@ -77,11 +77,14 @@ impl RwMap {
         rows
     }
 }
+
+/// Read-write records in execution. Rws are used for connecting evm circuit and
+/// state circuits.
 #[derive(Clone, Copy, Debug)]
 pub enum Rw {
-    Start {
-        rw_counter: usize,
-    },
+    /// Start
+    Start { rw_counter: usize },
+    /// TxAccessListAccount
     TxAccessListAccount {
         rw_counter: usize,
         is_write: bool,
@@ -90,6 +93,7 @@ pub enum Rw {
         is_warm: bool,
         is_warm_prev: bool,
     },
+    /// TxAccessListAccountStorage
     TxAccessListAccountStorage {
         rw_counter: usize,
         is_write: bool,
@@ -99,6 +103,7 @@ pub enum Rw {
         is_warm: bool,
         is_warm_prev: bool,
     },
+    /// TxRefund
     TxRefund {
         rw_counter: usize,
         is_write: bool,
@@ -106,6 +111,7 @@ pub enum Rw {
         value: u64,
         value_prev: u64,
     },
+    /// Account
     Account {
         rw_counter: usize,
         is_write: bool,
@@ -114,6 +120,7 @@ pub enum Rw {
         value: Word,
         value_prev: Word,
     },
+    /// AccountStorage
     AccountStorage {
         rw_counter: usize,
         is_write: bool,
@@ -124,6 +131,7 @@ pub enum Rw {
         tx_id: usize,
         committed_value: Word,
     },
+    /// AccountDestructed
     AccountDestructed {
         rw_counter: usize,
         is_write: bool,
@@ -132,6 +140,7 @@ pub enum Rw {
         is_destructed: bool,
         is_destructed_prev: bool,
     },
+    /// CallContext
     CallContext {
         rw_counter: usize,
         is_write: bool,
@@ -139,6 +148,7 @@ pub enum Rw {
         field_tag: CallContextFieldTag,
         value: Word,
     },
+    /// Stack
     Stack {
         rw_counter: usize,
         is_write: bool,
@@ -146,6 +156,7 @@ pub enum Rw {
         stack_pointer: usize,
         value: Word,
     },
+    /// Memory
     Memory {
         rw_counter: usize,
         is_write: bool,
@@ -153,6 +164,7 @@ pub enum Rw {
         memory_address: u64,
         byte: u8,
     },
+    /// TxLog
     TxLog {
         rw_counter: usize,
         is_write: bool,
@@ -163,10 +175,10 @@ pub enum Rw {
         // byte index if field_tag is TxLogFieldTag:Data
         // 0 for other field tags
         index: usize,
-
         // when it is topic field, value can be word type
         value: Word,
     },
+    /// TxReceipt
     TxReceipt {
         rw_counter: usize,
         is_write: bool,
@@ -175,23 +187,25 @@ pub enum Rw {
         value: u64,
     },
 }
+
+/// Rw table row assignment
 #[derive(Default, Clone, Copy, Debug)]
 pub struct RwRow<F> {
-    pub rw_counter: F,
-    pub is_write: F,
-    pub tag: F,
-    pub id: F,
-    pub address: F,
-    pub field_tag: F,
-    pub storage_key: F,
-    pub value: F,
-    pub value_prev: F,
-    pub aux1: F,
-    pub aux2: F,
+    pub(crate) rw_counter: F,
+    pub(crate) is_write: F,
+    pub(crate) tag: F,
+    pub(crate) id: F,
+    pub(crate) address: F,
+    pub(crate) field_tag: F,
+    pub(crate) storage_key: F,
+    pub(crate) value: F,
+    pub(crate) value_prev: F,
+    pub(crate) aux1: F,
+    pub(crate) aux2: F,
 }
 
 impl<F: Field> RwRow<F> {
-    pub fn values(&self) -> [F; 11] {
+    pub(crate) fn values(&self) -> [F; 11] {
         [
             self.rw_counter,
             self.is_write,
@@ -206,7 +220,7 @@ impl<F: Field> RwRow<F> {
             self.aux2,
         ]
     }
-    pub fn rlc(&self, randomness: F) -> F {
+    pub(crate) fn rlc(&self, randomness: F) -> F {
         let values = self.values();
         values
             .iter()
@@ -216,7 +230,7 @@ impl<F: Field> RwRow<F> {
 }
 
 impl Rw {
-    pub fn tx_access_list_value_pair(&self) -> (bool, bool) {
+    pub(crate) fn tx_access_list_value_pair(&self) -> (bool, bool) {
         match self {
             Self::TxAccessListAccount {
                 is_warm,
@@ -232,7 +246,7 @@ impl Rw {
         }
     }
 
-    pub fn tx_refund_value_pair(&self) -> (u64, u64) {
+    pub(crate) fn tx_refund_value_pair(&self) -> (u64, u64) {
         match self {
             Self::TxRefund {
                 value, value_prev, ..
@@ -241,7 +255,7 @@ impl Rw {
         }
     }
 
-    pub fn account_value_pair(&self) -> (Word, Word) {
+    pub(crate) fn account_value_pair(&self) -> (Word, Word) {
         match self {
             Self::Account {
                 value, value_prev, ..
@@ -250,7 +264,7 @@ impl Rw {
         }
     }
 
-    pub fn aux_pair(&self) -> (usize, Word) {
+    pub(crate) fn aux_pair(&self) -> (usize, Word) {
         match self {
             Self::AccountStorage {
                 tx_id,
@@ -261,7 +275,7 @@ impl Rw {
         }
     }
 
-    pub fn storage_value_aux(&self) -> (Word, Word, usize, Word) {
+    pub(crate) fn storage_value_aux(&self) -> (Word, Word, usize, Word) {
         match self {
             Self::AccountStorage {
                 value,
@@ -274,42 +288,42 @@ impl Rw {
         }
     }
 
-    pub fn call_context_value(&self) -> Word {
+    pub(crate) fn call_context_value(&self) -> Word {
         match self {
             Self::CallContext { value, .. } => *value,
             _ => unreachable!(),
         }
     }
 
-    pub fn stack_value(&self) -> Word {
+    pub(crate) fn stack_value(&self) -> Word {
         match self {
             Self::Stack { value, .. } => *value,
             _ => unreachable!(),
         }
     }
 
-    pub fn log_value(&self) -> Word {
+    pub(crate) fn log_value(&self) -> Word {
         match self {
             Self::TxLog { value, .. } => *value,
             _ => unreachable!(),
         }
     }
 
-    pub fn receipt_value(&self) -> u64 {
+    pub(crate) fn receipt_value(&self) -> u64 {
         match self {
             Self::TxReceipt { value, .. } => *value,
             _ => unreachable!(),
         }
     }
 
-    pub fn memory_value(&self) -> u8 {
+    pub(crate) fn memory_value(&self) -> u8 {
         match self {
             Self::Memory { byte, .. } => *byte,
             _ => unreachable!(),
         }
     }
 
-    pub fn table_assignment<F: Field>(&self, randomness: F) -> RwRow<F> {
+    pub(crate) fn table_assignment<F: Field>(&self, randomness: F) -> RwRow<F> {
         RwRow {
             rw_counter: F::from(self.rw_counter() as u64),
             is_write: F::from(self.is_write() as u64),
@@ -330,7 +344,7 @@ impl Rw {
         }
     }
 
-    pub fn rw_counter(&self) -> usize {
+    pub(crate) fn rw_counter(&self) -> usize {
         match self {
             Self::Start { rw_counter }
             | Self::Memory { rw_counter, .. }
@@ -347,7 +361,7 @@ impl Rw {
         }
     }
 
-    pub fn is_write(&self) -> bool {
+    pub(crate) fn is_write(&self) -> bool {
         match self {
             Self::Start { .. } => false,
             Self::Memory { is_write, .. }
@@ -364,7 +378,7 @@ impl Rw {
         }
     }
 
-    pub fn tag(&self) -> RwTableTag {
+    pub(crate) fn tag(&self) -> RwTableTag {
         match self {
             Self::Start { .. } => RwTableTag::Start,
             Self::Memory { .. } => RwTableTag::Memory,
@@ -381,7 +395,7 @@ impl Rw {
         }
     }
 
-    pub fn id(&self) -> Option<usize> {
+    pub(crate) fn id(&self) -> Option<usize> {
         match self {
             Self::AccountStorage { tx_id, .. }
             | Self::TxAccessListAccount { tx_id, .. }
@@ -396,7 +410,7 @@ impl Rw {
         }
     }
 
-    pub fn address(&self) -> Option<Address> {
+    pub(crate) fn address(&self) -> Option<Address> {
         match self {
             Self::TxAccessListAccount {
                 account_address, ..
@@ -438,7 +452,7 @@ impl Rw {
         }
     }
 
-    pub fn field_tag(&self) -> Option<u64> {
+    pub(crate) fn field_tag(&self) -> Option<u64> {
         match self {
             Self::Account { field_tag, .. } => Some(*field_tag as u64),
             Self::CallContext { field_tag, .. } => Some(*field_tag as u64),
@@ -455,7 +469,7 @@ impl Rw {
         }
     }
 
-    pub fn storage_key(&self) -> Option<Word> {
+    pub(crate) fn storage_key(&self) -> Option<Word> {
         match self {
             Self::AccountStorage { storage_key, .. }
             | Self::TxAccessListAccountStorage { storage_key, .. } => Some(*storage_key),
@@ -472,7 +486,7 @@ impl Rw {
         }
     }
 
-    pub fn value_assignment<F: Field>(&self, randomness: F) -> F {
+    pub(crate) fn value_assignment<F: Field>(&self, randomness: F) -> F {
         match self {
             Self::Start { .. } => F::zero(),
             Self::CallContext {
@@ -519,7 +533,7 @@ impl Rw {
         }
     }
 
-    pub fn value_prev_assignment<F: Field>(&self, randomness: F) -> Option<F> {
+    pub(crate) fn value_prev_assignment<F: Field>(&self, randomness: F) -> Option<F> {
         match self {
             Self::Account {
                 value_prev,

@@ -9,6 +9,8 @@ use crate::{evm_circuit::util::RandomLinearCombination, table::BlockContextField
 
 use super::{tx::tx_convert, Bytecode, RwMap, Transaction};
 
+/// Block is the struct used by all circuits, which constains all the needed
+/// data for witness generation.
 #[derive(Debug, Default, Clone)]
 pub struct Block<F> {
     /// The randomness for random linear combination
@@ -23,12 +25,15 @@ pub struct Block<F> {
     pub context: BlockContext,
     /// Copy events for the EVM circuit's copy table.
     pub copy_events: Vec<CopyEvent>,
+    /// Pad evm circuit to make selectors fixed, so vk/pk can be universal.
+    pub evm_circuit_pad_to: usize,
     /// Length to rw table rows in state circuit
     pub state_circuit_pad_to: usize,
     /// Inputs to the SHA3 opcode
     pub sha3_inputs: Vec<Vec<u8>>,
 }
 
+/// Block context for execution
 #[derive(Debug, Default, Clone)]
 pub struct BlockContext {
     /// The address of the miner for the block
@@ -50,6 +55,7 @@ pub struct BlockContext {
 }
 
 impl BlockContext {
+    /// Assignments for block table
     pub fn table_assignments<F: Field>(&self, randomness: F) -> Vec<[F; 3]> {
         [
             vec![
@@ -133,6 +139,7 @@ impl From<&circuit_input_builder::Block> for BlockContext {
     }
 }
 
+/// Convert a block struct in bus-mapping to a witness block used in circuits
 pub fn block_convert(
     block: &circuit_input_builder::Block,
     code_db: &bus_mapping::state_db::CodeDB,
@@ -145,7 +152,7 @@ pub fn block_convert(
             .txs()
             .iter()
             .enumerate()
-            .map(|(idx, tx)| tx_convert(tx, idx + 1, idx + 1 == block.txs().len()))
+            .map(|(idx, tx)| tx_convert(tx, idx + 1))
             .collect(),
         bytecodes: block
             .txs()

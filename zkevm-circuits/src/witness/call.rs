@@ -1,5 +1,6 @@
 use eth_types::{Address, Word};
 
+/// Call in transactions.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct Call {
     /// The unique identifier of call in the whole proof, using the

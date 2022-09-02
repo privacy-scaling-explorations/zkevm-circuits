@@ -4,18 +4,23 @@ use sha3::{Digest, Keccak256};
 
 use crate::{evm_circuit::util::RandomLinearCombination, table::BytecodeFieldTag};
 
+/// Bytecode
 #[derive(Clone, Debug)]
 pub struct Bytecode {
+    /// Hash of bytecode
     pub hash: Word,
+    /// Raw bytes
     pub bytes: Vec<u8>,
 }
 
 impl Bytecode {
+    /// Construct from bytecode bytes
     pub fn new(bytes: Vec<u8>) -> Self {
         let hash = Word::from_big_endian(Keccak256::digest(&bytes).as_slice());
         Self { hash, bytes }
     }
 
+    /// Assignments for bytecode table
     pub fn table_assignments<F: Field>(&self, randomness: F) -> Vec<[F; 5]> {
         let n = 1 + self.bytes.len();
         let mut rows = Vec::with_capacity(n);
