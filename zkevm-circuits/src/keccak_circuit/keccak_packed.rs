@@ -1326,12 +1326,7 @@ impl<F: Field> KeccakPackedConfig<F> {
             || format!("assign round cst {}", offset),
             self.round_cst,
             offset,
-            || {
-                let word: F = pack_u64(ROUND_CST[round])
-                    .to_scalar()
-                    .expect("unexpected Word -> Scalar conversion failure");
-                Value::known(word)
-            },
+            || Value::known(pack_u64::<F>(ROUND_CST[round])),
         )?;
 
         Ok(())

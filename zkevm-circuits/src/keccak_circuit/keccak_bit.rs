@@ -175,8 +175,8 @@ impl<F: Field> KeccakBitConfig<F> {
         };
 
         // State bits
-        let mut s = vec![vec![vec![0u64.expr(); 64]; 5]; 5];
-        let mut s_next = vec![vec![vec![0u64.expr(); 64]; 5]; 5];
+        let mut s = vec![vec![vec![0u64.expr(); NUM_BITS_PER_WORD]; 5]; 5];
+        let mut s_next = vec![vec![vec![0u64.expr(); NUM_BITS_PER_WORD]; 5]; 5];
         meta.create_gate("Query state bits", |meta| {
             let mut counter = 0;
             for i in 0..5 {
@@ -191,7 +191,7 @@ impl<F: Field> KeccakBitConfig<F> {
             vec![0u64.expr()]
         });
         // Theta c bits
-        let mut c = vec![vec![0u64.expr(); 64]; 5];
+        let mut c = vec![vec![0u64.expr(); NUM_BITS_PER_WORD]; 5];
         meta.create_gate("Query Theta c bits", |meta| {
             let mut counter = 0;
             for c in c.iter_mut() {
@@ -203,10 +203,10 @@ impl<F: Field> KeccakBitConfig<F> {
             vec![0u64.expr()]
         });
         // Input bits
-        let mut i = vec![0u64.expr(); 64];
-        let mut i_next = vec![vec![0u64.expr(); 64]; 17];
+        let mut i = vec![0u64.expr(); NUM_BITS_PER_WORD];
+        let mut i_next = vec![vec![0u64.expr(); NUM_BITS_PER_WORD]; NUM_WORDS_TO_ABSORB];
         meta.create_gate("Query absorb inputs", |meta| {
-            for k in 0..64 {
+            for k in 0..NUM_BITS_PER_WORD {
                 i[k] = meta.query_advice(input[k], Rotation::cur());
             }
             for (i, i_next) in i_next.iter_mut().enumerate() {
@@ -223,7 +223,7 @@ impl<F: Field> KeccakBitConfig<F> {
             let pi = (5 + i - 1) % 5;
             let ni = (i + 1) % 5;
             for (k, c) in c.iter().enumerate() {
-                let pk = (64 + k - 1) % 64;
+                let pk = (NUM_BITS_PER_WORD + k - 1) % NUM_BITS_PER_WORD;
                 let bit = xor::expr(s[pi][0][k].clone(), s[pi][1][k].clone())
                     + xor::expr(s[pi][2][k].clone(), s[pi][3][k].clone())
                     + xor::expr(s[pi][4][k].clone(), s[ni][0][pk].clone())
@@ -281,10 +281,10 @@ impl<F: Field> KeccakBitConfig<F> {
             let mut s = s.clone();
 
             // Theta
-            let mut os = vec![vec![vec![0u64.expr(); 64]; 5]; 5];
+            let mut os = vec![vec![vec![0u64.expr(); NUM_BITS_PER_WORD]; 5]; 5];
             for i in 0..5 {
                 for j in 0..5 {
-                    for k in 0..64 {
+                    for k in 0..NUM_BITS_PER_WORD {
                         os[i][j][k] = xor::expr(s[i][j][k].clone(), c[i][k].clone());
                     }
                 }
@@ -294,8 +294,10 @@ impl<F: Field> KeccakBitConfig<F> {
             // Rho/Pi
             for (i, s) in s.iter().enumerate() {
                 for (j, s) in s.iter().enumerate() {
-                    for k in 0..64 {
-                        os[j][(2 * i + 3 * j) % 5][k] = s[(64 + k - RHO_MATRIX[i][j]) % 64].clone();
+                    for k in 0..NUM_BITS_PER_WORD {
+                        os[j][(2 * i + 3 * j) % 5][k] = s
+                            [(NUM_BITS_PER_WORD + k - RHO_MATRIX[i][j]) % NUM_BITS_PER_WORD]
+                            .clone();
                     }
                 }
             }
@@ -305,7 +307,7 @@ impl<F: Field> KeccakBitConfig<F> {
             let mut iota_counter = 0;
             for i in 0..5 {
                 for j in 0..5 {
-                    for k in 0..64 {
+                    for k in 0..NUM_BITS_PER_WORD {
                         if i == 0 && j == 0 && ROUND_CST_BIT_POS.contains(&k) {
                             cb.require_equal(
                                 "round state transition with round constant",
@@ -341,7 +343,7 @@ impl<F: Field> KeccakBitConfig<F> {
             for j in 0..5 {
                 for i in 0..5 {
                     if absorb_positions.contains(&(i, j)) {
-                        for k in 0..64 {
+                        for k in 0..NUM_BITS_PER_WORD {
                             cb.require_equal(
                                 "absorb bit",
                                 xor::expr(
@@ -353,7 +355,7 @@ impl<F: Field> KeccakBitConfig<F> {
                         }
                         input_slice += 1;
                     } else {
-                        for k in 0..64 {
+                        for k in 0..NUM_BITS_PER_WORD {
                             cb.require_equal(
                                 "absorb copy",
                                 s[i][j][k].clone() * continue_hash.clone(),
@@ -794,7 +796,7 @@ fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: &[u8], r: F) {
         // Absorb
         let mut counter = 0;
         for &(i, j) in &absorb_positions {
-            for k in 0..64 {
+            for k in 0..NUM_BITS_PER_WORD {
                 s[i][j][k] ^= chunk[counter];
                 counter += 1;
             }
@@ -802,7 +804,7 @@ fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: &[u8], r: F) {
 
         let mut counter = 0;
         for (round, round_cst) in ROUND_CST.iter().enumerate() {
-            let mut input = [0u8; 64];
+            let mut input = [0u8; NUM_BITS_PER_WORD];
             if counter < RATE_IN_BITS {
                 for bit in input.iter_mut() {
                     *bit = chunk[counter];
@@ -811,12 +813,12 @@ fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: &[u8], r: F) {
             }
 
             // Theta c
-            let mut c = [[0u8; 64]; 5];
+            let mut c = [[0u8; NUM_BITS_PER_WORD]; 5];
             for (i, c) in c.iter_mut().enumerate() {
                 let pi = (5 + i - 1) % 5;
                 let ni = (i + 1) % 5;
                 for (k, c) in c.iter_mut().enumerate() {
-                    let pk = (64 + k - 1) % 64;
+                    let pk = (NUM_BITS_PER_WORD + k - 1) % NUM_BITS_PER_WORD;
                     *c = s[pi][0][k]
                         ^ s[pi][1][k]
                         ^ s[pi][2][k]
@@ -914,7 +916,7 @@ fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: &[u8], r: F) {
                 // Theta
                 for i in 0..5 {
                     for j in 0..5 {
-                        for k in 0..64 {
+                        for k in 0..NUM_BITS_PER_WORD {
                             s[i][j][k] ^= c[i][k];
                         }
                     }
@@ -924,8 +926,9 @@ fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: &[u8], r: F) {
                 let mut os = s;
                 for (i, s) in s.iter().enumerate() {
                     for (j, s) in s.iter().enumerate() {
-                        for k in 0..64 {
-                            os[j][(2 * i + 3 * j) % 5][k] = s[(64 + k - RHO_MATRIX[i][j]) % 64]
+                        for k in 0..NUM_BITS_PER_WORD {
+                            os[j][(2 * i + 3 * j) % 5][k] =
+                                s[(NUM_BITS_PER_WORD + k - RHO_MATRIX[i][j]) % NUM_BITS_PER_WORD]
                         }
                     }
                 }
@@ -935,7 +938,7 @@ fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: &[u8], r: F) {
                 let mut os = s;
                 for i in 0..5 {
                     for j in 0..5 {
-                        for k in 0..64 {
+                        for k in 0..NUM_BITS_PER_WORD {
                             os[i][j][k] =
                                 s[i][j][k] ^ ((1 - s[(i + 1) % 5][j][k]) * s[(i + 2) % 5][j][k]);
                         }

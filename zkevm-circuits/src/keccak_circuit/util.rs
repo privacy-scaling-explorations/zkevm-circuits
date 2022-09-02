@@ -403,7 +403,7 @@ pub fn load_pack_table<F: Field>(
                     offset,
                     || Value::known(F::from(idx)),
                 )?;
-                let packed: F = pack(&into_bits(&[idx as u8])).to_scalar().unwrap();
+                let packed: F = pack(&into_bits(&[idx as u8]));
                 table.assign_cell(|| "packed", tables[1], offset, || Value::known(packed))?;
             }
             Ok(())
