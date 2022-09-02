@@ -45,6 +45,14 @@ struct Args {
     /// cache
     #[clap(short, long)]
     cache: bool,
+
+    /// Run all ignored tests (skipped ones are not executed)
+    #[clap(short, long)]
+    all_tests: bool,
+
+    /// Verbose
+    #[clap(short, long)]
+    v: bool,
 }
 
 /// This crate helps to execute the common ethereum tests located in https://github.com/ethereum/tests
@@ -115,7 +123,7 @@ fn main() -> Result<()> {
     let statetest_config = StateTestConfig {
         run_circuit: !args.skip_circuit,
         bytecode_test_config: bytecode_test_config.clone(),
-        config: config.clone(),
+        global: config.clone(),
     };
 
     if let Some(raw) = &args.raw {
@@ -140,6 +148,9 @@ fn main() -> Result<()> {
         }
         run_single_test(state_tests.remove(0), statetest_config)?;
     } else {
+        if args.all_tests {
+            config.skip_test.clear();
+        }
         let state_tests = load_statetests_suite(&args.path, config, compiler)?;
         let mut results = if args.cache {
             let results = ResultCache::with_file(PathBuf::from(RESULT_CACHE))?;

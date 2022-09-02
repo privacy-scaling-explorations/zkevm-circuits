@@ -1,30 +1,21 @@
 #[cfg(test)]
 mod test {
     use eth_types::geth_types::GethData;
-    use eth_types::{address, bytecode, Word, Bytecode};
+    use eth_types::bytecode::BytecodeElement;
+    use eth_types::{Bytes, address, bytecode, Word, Bytecode};
     use mock::TestContext;
     use zkevm_circuits::evm_circuit::witness::block_convert;
     use zkevm_circuits::test_util::BytecodeTestConfig;
+    use std::collections::HashMap;
 
     #[test]
     fn testme() {
         let addr0 = address!("0x00000000000000000000000000000000000cafe0");
         let addr1 = address!("0x00000000000000000000000000000000000cafe1");
-        let addr2 = address!("0x00000000000000000000000000000000000cafe2");
 
-        let code1 = bytecode! {
-            PUSH32(0)
-            PUSH32(0)
-            PUSH32(0)
-            PUSH32(0)
-            PUSH32(1)
-            PUSH32(Word::from("0x00000000000000000000000000000000000cafe2"))
-            PUSH32(100000)
-            CALL
-            STOP
-        };
 
-        
+
+        let code1 = Bytecode{ code: vec![BytecodeElement{value :0x6f, is_code: true }], num_opcodes: 1, markers: HashMap::new()};
         let code2 = bytecode! {
             STOP
         };
@@ -34,7 +25,6 @@ mod test {
             |accs| {
                 accs[0].address(addr0).balance(Word::one() << 18);
                 accs[1].address(addr1).code(code1);
-                accs[2].address(addr2).code(code2);
             },
             |mut txs, accs| {
                 txs[0]

@@ -22,25 +22,46 @@ unimplemented_opcodes = [
     "STATICCALL",
     "SELFDESTRUCT"
 ]
+
 # ignored tests, must fix  ---------------------------------------------------------------
 
-[[skip_test]]
+[[ignore_test]]
 desc = "***panicked at 'circuit should pass', contraint error"
 ids=["random_d3(random3)_g0_v0","random_d4(random4)_g0_v0"]
 
-[[skip_test]]
+[[ignore_test]]
 desc = "***incorrect rw witness."
 ids = ["invalidAddr_d31(ok)_g0_v0"]
 
-[[skip_test]]
+[[ignore_test]]
 desc = "gen_associated_ops memory check error"
 ids = [
     "callDataCopyOffset_d0_g0_v0",
     "calldatacopy_dejavu2_d0_g0_v0",
     "codeCopyOffset_d0_g0_v0",
+    "bufferSrcOffset_d10(ok)_g0_v0",
+	"bufferSrcOffset_d12(ok)_g0_v0",
+	"bufferSrcOffset_d13(ok)_g0_v0",
+	"bufferSrcOffset_d14(ok)_g0_v0",
+	"bufferSrcOffset_d2(ok)_g0_v0",
+	"bufferSrcOffset_d20(ok)_g0_v0",
+	"bufferSrcOffset_d21(ok)_g0_v0",
+	"bufferSrcOffset_d22(ok)_g0_v0",
+	"bufferSrcOffset_d23(ok)_g0_v0",
+	"bufferSrcOffset_d26(ok)_g0_v0",
+	"bufferSrcOffset_d30(ok)_g0_v0",
+	"bufferSrcOffset_d34(ok)_g0_v0",
+	"bufferSrcOffset_d36(ok)_g0_v0",
+	"bufferSrcOffset_d37(ok)_g0_v0",
+	"bufferSrcOffset_d38(ok)_g0_v0",
+	"bufferSrcOffset_d44(ok)_g0_v0",
+	"bufferSrcOffset_d45(ok)_g0_v0",
+	"bufferSrcOffset_d46(ok)_g0_v0",
+	"bufferSrcOffset_d47(ok)_g0_v0",
+	"bufferSrcOffset_d6(ok)_g0_v0"
 ]
 
-[[skip_test]]
+[[ignore_test]]
 desc = "NotEnoughRowsAvailable { current_k: 12 }"
 ids = [
     "oog_d2(success)_g0_v0", 
@@ -48,23 +69,64 @@ ids = [
     "push32withoutByte_d0_g0_v0"
 ]
 
-# ignored tests, suff to be implemented --------------------------------------------------
+[[ignore_test]]
+desc = "https://github.com/privacy-scaling-explorations/zkevm-circuits/blob/72649e3ef3277d568e2cdb53b7f6dd16a385f2f1/bus-mapping/src/evm/opcodes.rs#L363 takes all gas_limit as a fee"
+ids = [
+    "refundSSTORE_d0_g0_v0",
+    "refundMax_d0_g0_v0",
+    "refund_changeNonZeroStorage_d0_g0_v0",
+    "refund_getEtherBack_d0_g0_v0",
+    "refund_NoOOG_1_d0_g0_v0",
+    "refund_CallA_d0_g0_v0",
+    "refund50_2_d0_g0_v0",
+    "refund50_1_d0_g0_v0",
+    "makeMoney_d0_g0_v0"
+]
 
-[[skip_test]]
-desc = "a an inexistent contract at address 0x2 is called, but parse_call() does not support it yet"
-ids = ["invalidAddr_d41(ok)_g0_v0"]
+[[ignore_test]]
+desc = "a an inexistent contract at address is called, but parse_call() (or alike) does not support it yet"
+ids = [
+    "invalidAddr_d41(ok)_g0_v0",
+    "underflowTest_d91(CALL-7)_g0_v0",
+    "CallToNameRegistratorAddressTooBigRight_d0_g0_v0",
+    "ZeroValue_CALL_d0_g0_v0",
+    "NonZeroValue_CALL_d0_g0_v0",
+    "randomStatetest138_d0_g0_v0",
+]
 
-[[skip_test]]
+[[ignore_test]]
 desc = "Integer overflow when casting to u64"
-ids = ["envInfo_d3(codecopy_neg_offset)_g0_v0", "codecopy_dejavu2_d0_g0_v0"]
+ids = ["envInfo_d3(codecopy_neg_offset)_g0_v0", "codecopy_dejavu2_d0_g0_v0","randomStatetest222_d0_g0_v0"]
 
-[[skip_test]]
+[[ignore_test]]
 desc = "call with value and not enough value to send"
 ids= ["callWithHighValue_d0_g0_v0"]
+
+[[ignore_test]]
+desc = "Fully implement PUSHn #633"
+ids = ["randomStatetest0_d0_g0_v0"]
+
+# skipped tests, do not need to be fixed  --------------------------------------------------
 
 [[skip_test]]
 desc = "maximum geth trace size (10MB)"
 ids = [
+    "randomStatetest163_d0_g0_v0",
+    "randomStatetest150_d0_g0_v0",
+    "randomStatetest154_d0_g0_v0",
+    "randomStatetest159_d0_g0_v0",
+    "randomStatetest36_d0_g0_v0",
+    "randomStatetest101_d0_g0_v0",
+    "randomStatetest185_d0_g0_v0",
+    "randomStatetest326_d0_g0_v0",
+    "randomStatetest177_d0_g0_v0",
+    "randomStatetest178_d0_g0_v0",
+    "randomStatetest263_d0_g0_v0",
+    "randomStatetest205_d0_g0_v0",
+    "randomStatetest209_d0_g0_v0",
+    "randomStatetest306_d0_g0_v0",
+    "randomStatetest384_d0_g0_v0",
+    "randomStatetest48_d0_g0_v0",
     "MLOAD_Bounds3_d0_g0_v0",
     "MLOAD_Bounds3_d0_g1_v0",
     "MSTORE_Bounds2a_d0_g1_v0",
@@ -130,40 +192,13 @@ ids = [
     "Call10_d0_g0_v0"
 ]
 
-[[skip_test]]
-ids = [
-    "bufferSrcOffset_d10(ok)_g0_v0",
-	"bufferSrcOffset_d12(ok)_g0_v0",
-	"bufferSrcOffset_d13(ok)_g0_v0",
-	"bufferSrcOffset_d14(ok)_g0_v0",
-	"bufferSrcOffset_d2(ok)_g0_v0",
-	"bufferSrcOffset_d20(ok)_g0_v0",
-	"bufferSrcOffset_d21(ok)_g0_v0",
-	"bufferSrcOffset_d22(ok)_g0_v0",
-	"bufferSrcOffset_d23(ok)_g0_v0",
-	"bufferSrcOffset_d26(ok)_g0_v0",
-	"bufferSrcOffset_d30(ok)_g0_v0",
-	"bufferSrcOffset_d34(ok)_g0_v0",
-	"bufferSrcOffset_d36(ok)_g0_v0",
-	"bufferSrcOffset_d37(ok)_g0_v0",
-	"bufferSrcOffset_d38(ok)_g0_v0",
-	"bufferSrcOffset_d44(ok)_g0_v0",
-	"bufferSrcOffset_d45(ok)_g0_v0",
-	"bufferSrcOffset_d46(ok)_g0_v0",
-	"bufferSrcOffset_d47(ok)_g0_v0",
-	"bufferSrcOffset_d6(ok)_g0_v0"
-]
-
-
-
-
 # ignored paths -------------------------------------------------------------------------
 
 [[skip_path]]
 desc = "unimplemented"
 paths = [
     "EIP1559",
-	"EIP2930",
+    "EIP2930",
     "stPreCompiledContracts",
     "stZeroKnowledge"
 ]
@@ -172,16 +207,9 @@ paths = [
 desc = "too big"
 paths = [
     "stTimeConsuming",
-	"stExample",
+    "stExample",
     "stQuadraticComplexityTest",
     "50000"
-]
-
-[[skip_path]]	
-desc = "makes panic"
-paths = [
-    "randomStatetest",  # crashes geth?
-    "bufferFiller.yml"  # we are using U256::as_xxx() that panics
 ]
 
 [[skip_path]]

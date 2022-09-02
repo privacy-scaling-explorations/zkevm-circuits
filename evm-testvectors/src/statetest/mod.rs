@@ -44,13 +44,15 @@ pub enum StateTestError {
     SkipTestMaxSteps(usize),
     #[error("SkipUnimplemented({0})")]
     SkipUnimplemented(String),
+    #[error("Exception(expected:{expected:?}, found:{found:?})")]
+    Exception { expected: bool, found: bool },
 }
 
 #[derive(Debug, Clone)]
 pub struct StateTestConfig {
     pub run_circuit: bool,
     pub bytecode_test_config: BytecodeTestConfig,
-    pub config: Config,
+    pub global: Config,
 }
 
 impl Default for StateTestConfig {
@@ -58,12 +60,13 @@ impl Default for StateTestConfig {
         Self {
             run_circuit: true,
             bytecode_test_config: BytecodeTestConfig::default(),
-            config: Config {
+            global: Config {
                 max_gas: 1000000,
                 max_steps: 2048,
                 unimplemented_opcodes: Vec::new(),
                 skip_path: Vec::new(),
                 skip_test: Vec::new(),
+                ignore_test: Vec::new()
             },
         }
     }
@@ -118,6 +121,7 @@ pub struct StateTest {
     pub data: Bytes,
     pub pre: HashMap<Address, Account>,
     pub result: StateTestResult,
+    pub exception: bool,
 }
 
 impl std::fmt::Display for StateTest {
@@ -166,6 +170,7 @@ impl std::fmt::Display for StateTest {
         table.add_row(row!["nonce", format!("{}", self.nonce)]);
         table.add_row(row!["value", format!("{}", self.value)]);
         table.add_row(row!["data", format(&hex::encode(&self.data), "")]);
+        table.add_row(row!["exception", self.exception]);
 
         let mut addrs: Vec<_> = self.pre.keys().collect();
         addrs.extend(self.result.keys());
@@ -348,6 +353,7 @@ impl StateTest {
 
     pub fn run(self, config: StateTestConfig) -> Result<(), StateTestError> {
         // get the geth traces
+
         let (_, trace_config, post) = self.clone().into_traceconfig();
 
         if self.to.is_none() {
@@ -355,15 +361,24 @@ impl StateTest {
                 "TransactionCreation".to_string()
             ));
         }
+        
+        let geth_traces = external_tracer::trace(&trace_config);
+        if self.exception {
+            if geth_traces.is_ok() {
+                return Err(StateTestError::Exception { expected: self.exception, found : geth_traces.is_err()});
+            } else {
+                return Ok(())
+            }
+        }
+        
+        let geth_traces = geth_traces.map_err(|err| StateTestError::CircuitInput(err.to_string()))?;
 
-        let geth_traces = external_tracer::trace(&trace_config)
-            .map_err(|err| StateTestError::CircuitInput(err.to_string()))?;
-
-        if geth_traces[0].struct_logs.len() as u64 > config.config.max_steps {
+        if geth_traces[0].struct_logs.len() as u64 > config.global.max_steps {
             return Err(StateTestError::SkipTestMaxSteps(
                 geth_traces[0].struct_logs.len(),
             ));
         }
+
         // we are not checking here geth_traces[0].failed, since
         // there are some tests that makes the tx failing
         // (eg memory filler tests)
@@ -371,7 +386,7 @@ impl StateTest {
         if let Some(step) = geth_traces[0]
             .struct_logs
             .iter()
-            .find(|step| config.config.unimplemented_opcodes.contains(&step.op))
+            .find(|step| config.global.unimplemented_opcodes.contains(&step.op))
         {
             return Err(StateTestError::SkipUnimplemented(format!(
                 "OPCODE {:?}",
@@ -389,7 +404,7 @@ impl StateTest {
             }
         }
 
-        if geth_traces[0].gas.0 > config.config.max_gas {
+        if geth_traces[0].gas.0 > config.global.max_gas {
             return Err(StateTestError::SkipTestMaxGasLimit(geth_traces[0].gas.0));
         }
 

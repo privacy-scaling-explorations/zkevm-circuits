@@ -10,11 +10,14 @@ use rayon::prelude::*;
 use std::sync::Arc;
 use std::sync::RwLock;
 
+/// tests that panicks
 const LVL_PANIK : &str = "00💀PANIK"; 
+/// tests that are failing
 const LVL_FAIL : &str = "01🔴FAILD";
-const LVL_SKIP : &str = "02🟠SKIPP";
-const LVL_IGNORE : &str = "03🟡IGNOR";
-const LVL_SUCCESS : &str = "04🟢SUCCS";
+/// tests that are failing, but contains unimplemented features or known bugs
+const LVL_IGNORE: &str = "02🟠IGNOR";
+/// tests that passes
+const LVL_SUCCESS : &str = "03🟢SUCCS";
 
 pub fn load_statetests_suite(
     path: &str,
@@ -48,6 +51,7 @@ pub fn load_statetests_suite(
             }
             let path = file.as_path().to_string_lossy();
             let src = std::fs::read_to_string(&file)?;
+            log::debug!("Reading file {:?}", file);
             let mut tcs = match ext {
                 "yml" => YamlStateTestBuilder::new(&mut compiler).load_yaml(&path, &src)?,
                 "json" => JsonStateTestBuilder::new(&mut compiler).load_json(&path, &src)?,
@@ -74,9 +78,10 @@ pub fn run_statetests_suite(
 
     let skip_tests =
         config
-            .config
+            .global
             .skip_test
             .iter()
+            .chain(config.global.ignore_test.iter())
             .map(|t| &t.ids)
             .fold(Vec::new(), |mut acc, v| {
                 acc.extend(v);
@@ -94,14 +99,14 @@ pub fn run_statetests_suite(
 
         // Test must be ignored config?
         if skip_tests.contains(&&tc.id) {
-            log::info!(target: "vmvectests", "{} {}",LVL_IGNORE,id);
+            log::info!( "{} {}",LVL_IGNORE,id);
             results.write().unwrap().insert(&id, LVL_IGNORE).unwrap();
             return;
         }
 
         std::panic::set_hook(Box::new(|_info| {}));
 
-        log::debug!(target: "vmvectests", "running test {}...",id);
+        log::debug!("running test {}...",id);
         let result = std::panic::catch_unwind(|| tc.run(config.clone()));
 
         // handle panic
@@ -120,11 +125,11 @@ pub fn run_statetests_suite(
                 StateTestError::SkipUnimplemented(_)
                 | StateTestError::SkipTestMaxSteps(_)
                 | StateTestError::SkipTestMaxGasLimit(_) => {
-                    log::warn!(target: "vmvectests", "{} test {} : {:?}",LVL_SKIP,id, err);
+                    log::warn!(target: "vmvectests", "{} test {} : {:?}",LVL_IGNORE,id, err);
                     results
                         .write()
                         .unwrap()
-                        .insert(&id, &format!("{} {}", LVL_SKIP, err))
+                        .insert(&id, &format!("{} {}", LVL_IGNORE, err))
                         .unwrap();
                 }
                 _ => {
