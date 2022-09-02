@@ -15,9 +15,6 @@ num-traits = "0.2.14"
 plotters = { version = "0.3.0", optional = true }
 eth-types = { path = "../eth-types" }
 lazy_static = "1.4"
-gadgets = { path = "../gadgets" }
-strum = "0.24"
-strum_macros = "0.24"
 
 [dev-dependencies]
 pretty_assertions = "1.0"

@@ -14,7 +14,7 @@ use eth_types::{
     {geth_types::Transaction, Address, Field, ToLittleEndian, ToScalar},
 };
 use halo2_proofs::{
-    circuit::{AssignedCell, Layouter, Region, SimpleFloorPlanner},
+    circuit::{AssignedCell, Layouter, Region, SimpleFloorPlanner, Value},
     plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Expression},
 };
 use itertools::Itertools;
@@ -22,8 +22,14 @@ use log::error;
 use sign_verify::{SignVerifyChip, SignVerifyConfig};
 use std::marker::PhantomData;
 
-pub use group::{Curve, Group};
-pub use secp256k1::Secp256k1Affine;
+pub use halo2_proofs::halo2curves::{
+    group::{
+        ff::{Field as GroupField, PrimeField},
+        prime::PrimeCurveAffine,
+        Curve, Group, GroupEncoding,
+    },
+    secp256k1::{self, Secp256k1Affine, Secp256k1Compressed},
+};
 pub use sign_verify::{POW_RAND_SIZE, VERIF_HEIGHT};
 
 /// Config for TxCircuit
@@ -76,10 +82,25 @@ impl<F: Field> TxCircuitConfig<F> {
         index: usize,
         value: F,
     ) -> Result<AssignedCell<F, F>, Error> {
-        region.assign_advice(|| "tx_id", self.tx_id, offset, || Ok(F::from(tx_id as u64)))?;
-        region.assign_advice(|| "tag", self.tag, offset, || Ok(F::from(tag as u64)))?;
-        region.assign_advice(|| "index", self.index, offset, || Ok(F::from(index as u64)))?;
-        region.assign_advice(|| "value", self.value, offset, || Ok(value))
+        region.assign_advice(
+            || "tx_id",
+            self.tx_id,
+            offset,
+            || Value::known(F::from(tx_id as u64)),
+        )?;
+        region.assign_advice(
+            || "tag",
+            self.tag,
+            offset,
+            || Value::known(F::from(tag as u64)),
+        )?;
+        region.assign_advice(
+            || "index",
+            self.index,
+            offset,
+            || Value::known(F::from(index as u64)),
+        )?;
+        region.assign_advice(|| "value", self.value, offset, || Value::known(value))
     }
 }
 
@@ -159,7 +180,11 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
 
                     let address_cell = assigned_sig_verif.address.cell();
                     let msg_hash_rlc_cell = assigned_sig_verif.msg_hash_rlc.cell();
-                    let msg_hash_rlc_value = assigned_sig_verif.msg_hash_rlc.value();
+                    let mut msg_hash_rlc_value = F::zero();
+                    assigned_sig_verif.msg_hash_rlc.value().map(|f| {
+                        msg_hash_rlc_value = *f;
+                        f
+                    });
                     for (tag, value) in &[
                         (
                             TxFieldTag::Nonce,
@@ -199,10 +224,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
                                     .fold(0, |acc, byte| acc + if *byte == 0 { 4 } else { 16 }),
                             ),
                         ),
-                        (
-                            TxFieldTag::TxSignHash,
-                            *msg_hash_rlc_value.unwrap_or(&F::zero()),
-                        ),
+                        (TxFieldTag::TxSignHash, msg_hash_rlc_value),
                     ] {
                         let assigned_cell =
                             config.assign_row(&mut region, offset, i + 1, *tag, 0, *value)?;
@@ -285,6 +307,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
         config: Self::Config,
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
+        config.sign_verify.load_range(&mut layouter)?;
         self.assign(&config, &mut layouter)?;
         config.keccak_table.load(
             &mut layouter,
@@ -301,11 +324,10 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
 mod tx_circuit_tests {
     use super::*;
     use eth_types::address;
-    use group::{Curve, Group};
     use halo2_proofs::{
         arithmetic::CurveAffine,
         dev::{MockProver, VerifyFailure},
-        pairing::bn256::Fr,
+        halo2curves::{bn256::Fr, group::Group},
     };
     use mock::AddrOrWallet;
     use pretty_assertions::assert_eq;

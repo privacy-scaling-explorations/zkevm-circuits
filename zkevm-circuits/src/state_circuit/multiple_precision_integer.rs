@@ -3,7 +3,7 @@ use super::{N_LIMBS_ACCOUNT_ADDRESS, N_LIMBS_RW_COUNTER};
 use crate::util::Expr;
 use eth_types::{Address, Field};
 use halo2_proofs::{
-    circuit::{Layouter, Region},
+    circuit::{Layouter, Region, Value},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
@@ -71,7 +71,7 @@ impl Config<Address, N_LIMBS_ACCOUNT_ADDRESS> {
                 || format!("limb[{}] in address mpi", i),
                 self.limbs[i],
                 offset,
-                || Ok(F::from(limb as u64)),
+                || Value::known(F::from(limb as u64)),
             )?;
         }
         Ok(())
@@ -90,7 +90,7 @@ impl Config<u32, N_LIMBS_RW_COUNTER> {
                 || format!("limb[{}] in u32 mpi", i),
                 self.limbs[i],
                 offset,
-                || Ok(F::from(limb as u64)),
+                || Value::known(F::from(limb as u64)),
             )?;
         }
         Ok(())

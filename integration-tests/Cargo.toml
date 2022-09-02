@@ -19,10 +19,8 @@ url = "2.2.2"
 pretty_assertions = "1.0.0"
 log = "0.4.14"
 env_logger = "0.9"
-halo2_proofs = { version = "0.1.0-beta.1" }
-ff =  "0.11"
+halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2.git", tag = "v2022_08_19" }
 rand_chacha = "0.3"
-group = "0.11"
 paste = "1.0"
 
 [dev-dependencies]
