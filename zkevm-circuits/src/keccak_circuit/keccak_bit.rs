@@ -13,7 +13,7 @@ use crate::{
 use eth_types::Field;
 use gadgets::util::{and, select, sum, xor};
 use halo2_proofs::{
-    circuit::{Layouter, Region, SimpleFloorPlanner},
+    circuit::{Layouter, Region, SimpleFloorPlanner, Value},
     plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Fixed, TableColumn, VirtualCells},
     poly::Rotation,
 };
@@ -645,7 +645,7 @@ impl<F: Field> KeccakBitConfig<F> {
                 || format!("assign {} {}", name, offset),
                 *column,
                 offset,
-                || Ok(*value),
+                || Value::known(*value),
             )?;
         }
 
@@ -660,7 +660,7 @@ impl<F: Field> KeccakBitConfig<F> {
                 || format!("assign {} {}", name, offset),
                 *column,
                 offset,
-                || Ok(*value),
+                || Value::known(*value),
             )?;
         }
 
@@ -670,7 +670,7 @@ impl<F: Field> KeccakBitConfig<F> {
                 || format!("assign state bit {} {}", idx, offset),
                 *column,
                 offset,
-                || Ok(F::from(*bit as u64)),
+                || Value::known(F::from(*bit as u64)),
             )?;
         }
 
@@ -680,7 +680,7 @@ impl<F: Field> KeccakBitConfig<F> {
                 || format!("assign theta c bit {} {}", idx, offset),
                 *column,
                 offset,
-                || Ok(F::from(*bit as u64)),
+                || Value::known(F::from(*bit as u64)),
             )?;
         }
 
@@ -690,7 +690,7 @@ impl<F: Field> KeccakBitConfig<F> {
                 || format!("assign absorb bits {} {}", idx, offset),
                 *column,
                 offset,
-                || Ok(F::from(*bit as u64)),
+                || Value::known(F::from(*bit as u64)),
             )?;
         }
 
@@ -705,7 +705,7 @@ impl<F: Field> KeccakBitConfig<F> {
                 || format!("assign padding selector {} {}", idx, offset),
                 *column,
                 offset,
-                || Ok(F::from(*is_padding as u64)),
+                || Value::known(F::from(*is_padding as u64)),
             )?;
         }
 
@@ -716,7 +716,7 @@ impl<F: Field> KeccakBitConfig<F> {
                 || format!("assign padding selector {} {}", idx, offset),
                 *column,
                 offset,
-                || Ok(*data_rlc),
+                || Value::known(*data_rlc),
             )?;
         }
 
@@ -726,7 +726,7 @@ impl<F: Field> KeccakBitConfig<F> {
                 || format!("assign round constant bit {} {}", *pos, offset),
                 *column,
                 offset,
-                || Ok(F::from(((ROUND_CST[round] >> *pos) & 1) as u64)),
+                || Value::known(F::from(((ROUND_CST[round] >> *pos) & 1) as u64)),
             )?;
         }
 
@@ -753,7 +753,7 @@ impl<F: Field> KeccakBitConfig<F> {
                             || "theta c output",
                             self.theta_c_table[idx + 1],
                             offset,
-                            || Ok(F::from(*input & 1)),
+                            || Value::known(F::from(*input & 1)),
                         )?;
                     }
 
@@ -761,7 +761,7 @@ impl<F: Field> KeccakBitConfig<F> {
                         || "theta c input",
                         self.theta_c_table[0],
                         offset,
-                        || Ok(F::from(compressed_value)),
+                        || Value::known(F::from(compressed_value)),
                     )?;
                 }
                 Ok(())
@@ -986,7 +986,7 @@ fn multi_keccak<F: Field>(bytes: &[Vec<u8>], r: F) -> Vec<KeccakRow<F>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use halo2_proofs::{dev::MockProver, pairing::bn256::Fr};
+    use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
 
     fn verify<F: Field>(k: u32, inputs: Vec<Vec<u8>>, success: bool) {
         let mut circuit = KeccakBitCircuit::new(2usize.pow(k));

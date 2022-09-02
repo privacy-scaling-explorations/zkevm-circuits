@@ -1,6 +1,5 @@
 use crate::common::State;
 use eth_types::Field;
-use halo2_proofs::circuit::AssignedCell;
 use itertools::Itertools;
 use num_bigint::BigUint;
 use num_traits::Zero;
@@ -194,66 +193,6 @@ pub fn inspect(x: BigUint, name: &str, base: u8) {
     chunks.resize(65, 0);
     let info: Vec<(usize, u8)> = (0..65).zip(chunks.iter().copied()).collect_vec();
     println!("inspect {} {} info {:?}", name, x, info);
-}
-
-pub fn state_to_biguint<F: Field, const N: usize>(state: [F; N]) -> StateBigInt {
-    StateBigInt {
-        xy: state
-            .iter()
-            .map(|elem| elem.to_repr())
-            .map(|bytes| BigUint::from_bytes_le(&bytes))
-            .collect(),
-    }
-}
-
-pub fn state_to_state_bigint<F: Field, const N: usize>(state: [F; N]) -> State {
-    let mut matrix = [[0u64; 5]; 5];
-
-    let mut elems: Vec<u64> = state
-        .iter()
-        .map(|elem| elem.to_repr())
-        // This is horrible. But Field does not give much better alternatives
-        // and refactoring `State` will be done once the
-        // keccak_all_togheter is done.
-        .map(|bytes| {
-            debug_assert!(bytes[8..32] == vec![0u8; 24]);
-            let mut arr = [0u8; 8];
-            arr.copy_from_slice(&bytes[0..8]);
-            u64::from_le_bytes(arr)
-        })
-        .collect();
-    elems.extend(vec![0u64; 25 - N]);
-    (0..5)
-        .into_iter()
-        .for_each(|idx| matrix[idx].copy_from_slice(&elems[5 * idx..(5 * idx + 5)]));
-
-    matrix
-}
-
-pub fn state_bigint_to_field<F: Field, const N: usize>(state: StateBigInt) -> [F; N] {
-    let mut arr = [F::zero(); N];
-    let vector: Vec<F> = state
-        .xy
-        .iter()
-        .map(|elem| {
-            let mut array = [0u8; 32];
-            let bytes = elem.to_bytes_le();
-            array[0..bytes.len()].copy_from_slice(&bytes[0..bytes.len()]);
-            array
-        })
-        .map(|bytes| F::from_repr(bytes).unwrap())
-        .collect();
-    arr[0..N].copy_from_slice(&vector[0..N]);
-    arr
-}
-
-/// Returns only the value of a an assigned state cell.
-pub fn split_state_cells<F: Field, const N: usize>(state: [AssignedCell<F, F>; N]) -> [F; N] {
-    let mut res = [F::zero(); N];
-    state.iter().enumerate().for_each(|(idx, assigned_cell)| {
-        res[idx] = assigned_cell.value().copied().unwrap_or_default()
-    });
-    res
 }
 
 pub fn f_from_radix_be<F: Field>(buf: &[u8], base: u8) -> F {

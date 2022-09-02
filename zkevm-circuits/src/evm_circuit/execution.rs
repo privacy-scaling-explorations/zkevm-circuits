@@ -16,7 +16,7 @@ use crate::{
 use eth_types::Field;
 use halo2_proofs::{
     arithmetic::FieldExt,
-    circuit::{Layouter, Region},
+    circuit::{Layouter, Region, Value},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector, VirtualCells},
     poly::Rotation,
 };
@@ -148,11 +148,18 @@ pub(crate) trait ExecutionGadget<F: FieldExt> {
 
 #[derive(Clone, Debug)]
 pub(crate) struct ExecutionConfig<F> {
+    // EVM Circuit selector, which enables all usable rows.  The rows where this selector is
+    // disabled won't verify any constraint (they can be unused rows or rows with blinding
+    // factors).
     q_usable: Selector,
+    // Dynamic selector that is enabled at the rows where each assigned execution step starts (a
+    // step has dynamic height).
     q_step: Column<Advice>,
     num_rows_until_next_step: Column<Advice>,
     num_rows_inv: Column<Advice>,
+    // Selector enabled in the row where the first execution step starts.
     q_step_first: Selector,
+    // Selector enabled in the row where the last execution step starts.
     q_step_last: Selector,
     advices: [Column<Advice>; STEP_WIDTH],
     step: Step<F>,
@@ -290,23 +297,7 @@ impl<F: Field> ExecutionConfig<F> {
             let q_step_first = meta.query_selector(q_step_first);
             let q_step_last = meta.query_selector(q_step_last);
 
-            // Only one of execution_state should be enabled
-            let sum_to_one = (
-                "Only one of execution_state should be enabled",
-                step_curr
-                    .state
-                    .execution_state
-                    .iter()
-                    .fold(1u64.expr(), |acc, cell| acc - cell.expr()),
-            );
-
-            // Cells representation for execution_state should be bool.
-            let bool_checks = step_curr.state.execution_state.iter().map(|cell| {
-                (
-                    "Representation for execution_state should be bool",
-                    cell.expr() * (1u64.expr() - cell.expr()),
-                )
-            });
+            let execution_state_selector_constraints = step_curr.state.execution_state.configure();
 
             let _first_step_check = {
                 let begin_tx_selector =
@@ -326,8 +317,8 @@ impl<F: Field> ExecutionConfig<F> {
                 ))
             };
 
-            iter::once(sum_to_one)
-                .chain(bool_checks)
+            execution_state_selector_constraints
+                .into_iter()
                 .map(move |(name, poly)| (name, q_usable.clone() * q_step.clone() * poly))
             // TODO: Enable these after incomplete trace is no longer necessary.
             // .chain(first_step_check)
@@ -720,7 +711,7 @@ impl<F: Field> ExecutionConfig<F> {
         &self,
         layouter: &mut impl Layouter<F>,
         block: &Block<F>,
-        _exact: bool,
+        exact: bool,
     ) -> Result<(), Error> {
         let power_of_randomness = (1..32)
             .map(|exp| block.randomness.pow(&[exp, 0, 0, 0]))
@@ -734,40 +725,29 @@ impl<F: Field> ExecutionConfig<F> {
                 let mut offset = 0;
 
                 self.q_step_first.enable(&mut region, offset)?;
-                // handle empty block conditions
-                if block.txs.is_empty() {
-                    // if enable padding to fix length in the future, just change `end_row` to
-                    // target length
-                    let num_rows = 2;
 
-                    for i in 0..num_rows {
-                        self.q_usable.enable(&mut region, i)?;
-
-                        for column in iter::empty()
-                            .chain([
-                                self.q_step,
-                                self.num_rows_until_next_step,
-                                self.num_rows_inv,
-                            ])
-                            .chain(self.advices)
-                        {
-                            region
-                                .assign_advice(|| "assign advice rows", column, i, || Ok(F::zero()))
-                                .unwrap();
-                        }
-                    }
-
-                    //adjust q_step_last to 1
-                    self.q_step_last.enable(&mut region, num_rows - 1)?;
-
-                    return Ok(());
-                }
-
+                // handle EndBlock
+                let dummy_tx = Transaction {
+                    calls: vec![Default::default()],
+                    ..Default::default()
+                };
+                let last_tx = block.txs.last().unwrap_or(&dummy_tx);
+                let end_block_state = &ExecStep {
+                    rw_counter: if block.txs.is_empty() {
+                        0
+                    } else {
+                        // if it is the first tx,  less 1 rw lookup, refer to end_tx gadget
+                        last_tx.steps.last().unwrap().rw_counter + 9 - (last_tx.id == 1) as usize
+                    },
+                    execution_state: ExecutionState::EndBlock,
+                    ..Default::default()
+                };
                 // Collect all steps
                 let mut steps = block
                     .txs
                     .iter()
                     .flat_map(|tx| tx.steps.iter().map(move |step| (tx, step)))
+                    .chain(iter::repeat((last_tx, end_block_state)))
                     .peekable();
 
                 let mut last_height = 0;
@@ -798,7 +778,7 @@ impl<F: Field> ExecutionConfig<F> {
                             || "step selector",
                             self.q_step,
                             offset,
-                            || Ok(if idx == 0 { F::one() } else { F::zero() }),
+                            || Value::known(if idx == 0 { F::one() } else { F::zero() }),
                         )?;
                         let value = if idx == 0 {
                             F::zero()
@@ -809,36 +789,54 @@ impl<F: Field> ExecutionConfig<F> {
                             || "step height",
                             self.num_rows_until_next_step,
                             offset,
-                            || Ok(value),
+                            || Value::known(value),
                         )?;
                         region.assign_advice(
                             || "step height inv",
                             self.num_rows_inv,
                             offset,
-                            || Ok(value.invert().unwrap_or(F::zero())),
+                            || Value::known(value.invert().unwrap_or(F::zero())),
                         )?;
                     }
 
                     offset += height;
                     last_height = height;
+
+                    if step.execution_state == ExecutionState::EndBlock {
+                        // evm_circuit_pad_to == 0 means no extra padding
+                        if exact || block.evm_circuit_pad_to == 0 {
+                            // no padding
+                            break;
+                        } else {
+                            // padding
+                            if offset >= block.evm_circuit_pad_to {
+                                if offset > block.evm_circuit_pad_to {
+                                    log::warn!(
+                                        "evm circuit offset larger than padding: {} > {}",
+                                        offset,
+                                        block.evm_circuit_pad_to
+                                    );
+                                }
+                                break;
+                            }
+                        }
+                    }
                 }
+
                 // These are still referenced (but not used) in next rows
                 region.assign_advice(
                     || "step height",
                     self.num_rows_until_next_step,
                     offset,
-                    || Ok(F::zero()),
+                    || Value::known(F::zero()),
                 )?;
                 region.assign_advice(
                     || "step height inv",
                     self.q_step,
                     offset,
-                    || Ok(F::zero()),
+                    || Value::known(F::zero()),
                 )?;
 
-                // If not exact:
-                // TODO: Pad leftover region to the desired capacity
-                // TODO: Enable q_step_last
                 self.q_step_last.enable(&mut region, offset - last_height)?;
 
                 Ok(())
@@ -1088,10 +1086,10 @@ impl<F: Field> ExecutionConfig<F> {
             .unwrap_or_else(|| panic!("Execution state unknown: {:?}", step.execution_state))
         {
             let assigned = stored_expression.assign(region, offset)?;
-            if let Some(v) = assigned.value() {
+            assigned.value().map(|v| {
                 let name = stored_expression.name.clone();
-                assigned_stored_expressions.push((name, *v))
-            }
+                assigned_stored_expressions.push((name, *v));
+            });
         }
         Ok(assigned_stored_expressions)
     }

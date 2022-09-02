@@ -13,7 +13,7 @@ use crate::{evm_circuit::util::constraint_builder::BaseConstraintBuilder, util::
 use eth_types::Field;
 use gadgets::util::{and, select, sum};
 use halo2_proofs::{
-    circuit::{Layouter, Region, SimpleFloorPlanner},
+    circuit::{Layouter, Region, SimpleFloorPlanner, Value},
     plonk::{
         Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, TableColumn,
         VirtualCells,
@@ -1269,7 +1269,7 @@ impl<F: Field> KeccakPackedConfig<F> {
                 || format!("assign {} {}", name, offset),
                 *column,
                 offset,
-                || Ok(*value),
+                || Value::known(*value),
             )?;
         }
 
@@ -1292,7 +1292,7 @@ impl<F: Field> KeccakPackedConfig<F> {
                 || format!("assign {} {}", name, offset),
                 *column,
                 offset,
-                || Ok(*value),
+                || Value::known(*value),
             )?;
         }
 
@@ -1302,7 +1302,7 @@ impl<F: Field> KeccakPackedConfig<F> {
                 || format!("assign state word {} {}", idx, offset),
                 *column,
                 offset,
-                || Ok(*word),
+                || Value::known(*word),
             )?;
         }
 
@@ -1317,7 +1317,7 @@ impl<F: Field> KeccakPackedConfig<F> {
                 || format!("assign lookup value {} {}", idx, offset),
                 *column,
                 offset,
-                || Ok(*bit),
+                || Value::known(*bit),
             )?;
         }
 
@@ -1326,7 +1326,12 @@ impl<F: Field> KeccakPackedConfig<F> {
             || format!("assign round cst {}", offset),
             self.round_cst,
             offset,
-            || Ok(pack_u64(ROUND_CST[round])),
+            || {
+                let word: F = pack_u64(ROUND_CST[round])
+                    .to_scalar()
+                    .expect("unexpected Word -> Scalar conversion failure");
+                Value::known(word)
+            },
         )?;
 
         Ok(())
@@ -1667,7 +1672,7 @@ fn multi_keccak<F: Field>(bytes: &[Vec<u8>], r: F) -> Vec<KeccakRow<F>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use halo2_proofs::{dev::MockProver, pairing::bn256::Fr};
+    use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
 
     fn verify<F: Field>(k: u32, inputs: Vec<Vec<u8>>, success: bool) {
         let mut circuit = KeccakPackedCircuit::new(2usize.pow(k));

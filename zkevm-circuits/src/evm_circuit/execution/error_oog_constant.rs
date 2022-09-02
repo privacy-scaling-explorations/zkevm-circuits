@@ -9,7 +9,7 @@ use crate::evm_circuit::{
 };
 use crate::util::Expr;
 use eth_types::Field;
-use halo2_proofs::plonk::Error;
+use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct ErrorOOGConstantGadget<F> {
@@ -58,7 +58,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGConstantGadget<F> {
 
         // Inputs/Outputs
         self.gas_required
-            .assign(region, offset, Some(F::from(step.gas_cost)))?;
+            .assign(region, offset, Value::known(F::from(step.gas_cost)))?;
         // Gas insufficient check
         // Get `gas_available` variable here once it's available
         self.insufficient_gas

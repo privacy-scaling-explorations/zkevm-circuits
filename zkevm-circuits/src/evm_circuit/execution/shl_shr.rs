@@ -17,7 +17,7 @@ use crate::{
 };
 use bus_mapping::evm::OpcodeId;
 use eth_types::{Field, ToLittleEndian, U256};
-use halo2_proofs::plonk::Error;
+use halo2_proofs::{circuit::Value, plonk::Error};
 
 /// ShlShrGadget verifies opcode SHL and SHR.
 /// For SHL, verify pop1 * (2^pop2) % 2^256 == push;
@@ -171,7 +171,7 @@ impl<F: Field> ExecutionGadget<F> for ShlShrGadget<F> {
         self.shift
             .assign(region, offset, Some(pop1.to_le_bytes()))?;
         self.shf0
-            .assign(region, offset, Some(u64::from(shf0).into()))?;
+            .assign(region, offset, Value::known(u64::from(shf0).into()))?;
         self.mul_add_words
             .assign(region, offset, [quotient, divisor, remainder, dividend])?;
         let divisor_sum = (0..32).fold(0, |acc, idx| acc + divisor.byte(idx) as u64);
