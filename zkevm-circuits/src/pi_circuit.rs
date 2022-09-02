@@ -413,14 +413,14 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
             ]
         });
 
-        meta.create_gate("tx_id_inv is (tag - CallDataGasCost)^(-1)", |meta| {
+        meta.create_gate("tx_id_inv is (tag - CallDataLength)^(-1)", |meta| {
             let q_tx_table = meta.query_selector(q_tx_table);
             let tx_tag = meta.query_fixed(tag, Rotation::cur());
-            // tx_value_inv is just used to hold the inverse of `tx_tag - CallDataGasCost`.
+            // tx_value_inv is just used to hold the inverse of `tx_tag - CallDataLength`
             let inv = meta.query_advice(tx_id_inv, Rotation::cur());
-            let is_calldata_cost =
-                1.expr() - (tx_tag.clone() - TxFieldTag::CallDataGasCost.expr()) * inv.clone();
-            let constraint = is_calldata_cost * (tx_tag - TxFieldTag::CallDataGasCost.expr());
+            let is_calldata_length =
+                1.expr() - (tx_tag.clone() - TxFieldTag::CallDataLength.expr()) * inv.clone();
+            let constraint = is_calldata_length * (tx_tag - TxFieldTag::CallDataLength.expr());
 
             vec![q_tx_table * constraint]
         });
@@ -428,7 +428,6 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
         meta.create_gate("tx_value_inv is value^(-1)", |meta| {
             let q_tx_table = meta.query_selector(q_tx_table);
             let tx_value = meta.query_advice(tx_value, Rotation::cur());
-            // tx_value_inv is just used to hold the inverse of `tx_tag - CallDataGasCost`.
             let inv = meta.query_advice(tx_value_inv, Rotation::cur());
             let is_tx_value_zero = 1.expr() - tx_value.clone() * inv.clone();
             let constraint = is_tx_value_zero * tx_value.clone();
@@ -436,32 +435,52 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
             vec![q_tx_table * constraint]
         });
 
+        meta.create_gate(
+            "call_data_gas_cost should be zero if call_data_length is zero",
+            |meta| {
+                let q_tx_table = meta.query_selector(q_tx_table);
+
+                let tx_tag = meta.query_fixed(tag, Rotation::cur());
+                let inv = meta.query_advice(tx_id_inv, Rotation::cur());
+
+                let calldata_length = meta.query_advice(tx_value, Rotation::cur());
+                let calldata_length_inv = meta.query_advice(tx_value_inv, Rotation::cur());
+                let is_calldata_length_zero = 1.expr() - calldata_length * calldata_length_inv;
+
+                let calldata_cost = meta.query_advice(tx_value, Rotation::next());
+                let is_calldata_length_row =
+                    1.expr() - (tx_tag.clone() - TxFieldTag::CallDataLength.expr()) * inv.clone();
+
+                vec![q_tx_table * is_calldata_length_row * is_calldata_length_zero * calldata_cost]
+            },
+        );
+
         meta.lookup_any("gas_cost in tx table", |meta| {
             let q_tx_table = meta.query_selector(q_tx_table);
             let is_final = meta.query_advice(is_final, Rotation::cur());
 
             let tx_id = meta.query_advice(tx_id, Rotation::cur());
             let tx_tag = meta.query_fixed(tag, Rotation::cur());
-            // note: tx_id_inv is used to hold (tx_tag -  CallDataGasCost)^(-1)
+            // note: tx_id_inv is used to hold (tx_tag -  CallDataLength)^(-1)
             let inv = meta.query_advice(tx_id_inv, Rotation::cur());
 
-            // call_data_length is on the previous row of call_data_gas_cost
-            let calldata_length = meta.query_advice(tx_value, Rotation::prev());
-            let calldata_length_inv = meta.query_advice(tx_value_inv, Rotation::prev());
+            let calldata_length = meta.query_advice(tx_value, Rotation::cur());
+            let calldata_length_inv = meta.query_advice(tx_value_inv, Rotation::cur());
 
             // calldata gas cost assigned in the tx table
-            let calldata_cost = meta.query_advice(tx_value, Rotation::cur());
+            // call_data_cost is on the next row of call_data_length
+            let calldata_cost = meta.query_advice(tx_value, Rotation::next());
             // calldata gas cost calculated in call data
             let calldata_cost_table = meta.query_advice(calldata_gas_cost, Rotation::cur());
 
-            let is_calldata_cost_row =
-                1.expr() - (tx_tag.clone() - TxFieldTag::CallDataGasCost.expr()) * inv.clone();
+            let is_calldata_length_row =
+                1.expr() - (tx_tag.clone() - TxFieldTag::CallDataLength.expr()) * inv.clone();
             let is_calldata_length_nonzero = calldata_length * calldata_length_inv;
 
             // lookup (tx_id, true, is_calldata_length_nonzero * is_calldata_cost *
             // gas_cost) in the table (tx_id, is_final, gas_cost)
             // if q_tx_table is true
-            let condition = q_tx_table * is_calldata_length_nonzero * is_calldata_cost_row;
+            let condition = q_tx_table * is_calldata_length_nonzero * is_calldata_length_row;
 
             vec![
                 (condition.clone() * tx_id.clone(), tx_id),
@@ -545,8 +564,8 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
     ) -> Result<(), Error> {
         let tx_id = F::from(tx_id as u64);
         // tx_id_inv = (tag - CallDataGasCost)^(-1)
-        let tx_id_inv = if tag != TxFieldTag::CallDataGasCost {
-            let x = F::from(tag as u64) - F::from(TxFieldTag::CallDataGasCost as u64);
+        let tx_id_inv = if tag != TxFieldTag::CallDataLength {
+            let x = F::from(tag as u64) - F::from(TxFieldTag::CallDataLength as u64);
             x.invert().unwrap_or(F::zero())
         } else {
             F::zero()
