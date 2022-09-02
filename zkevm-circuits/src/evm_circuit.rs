@@ -369,6 +369,7 @@ pub mod test {
 
 #[cfg(test)]
 mod evm_circuit_stats {
+
     use super::test::*;
     use super::*;
     use crate::evm_circuit::step::ExecutionState;
@@ -377,6 +378,11 @@ mod evm_circuit_stats {
     use halo2_proofs::plonk::ConstraintSystem;
     use mock::test_ctx::{helpers::*, TestContext};
     use strum::IntoEnumIterator;
+
+    #[test]
+    pub fn empty_evm_circuit() {
+        run_test_circuit(Block::<Fr>::default()).unwrap();
+    }
 
     /// This function prints to stdout a table with all the implemented states
     /// and their responsible opcodes with the following stats:

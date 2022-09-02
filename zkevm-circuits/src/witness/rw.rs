@@ -3,6 +3,8 @@ use std::collections::HashMap;
 use bus_mapping::operation::{self, AccountField, CallContextField, TxLogField, TxReceiptField};
 use eth_types::{Address, Field, ToAddress, ToLittleEndian, ToScalar, Word, U256};
 use itertools::Itertools;
+    /// Pad evm circuit to make selectors fixed, so vk/pk can be universal.
+    pub evm_circuit_pad_to: usize,
 
 use crate::{
     evm_circuit::util::RandomLinearCombination,
