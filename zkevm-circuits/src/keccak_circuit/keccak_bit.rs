@@ -5,16 +5,16 @@ use super::util::{
 use crate::{
     evm_circuit::util::{constraint_builder::BaseConstraintBuilder, not, rlc},
     keccak_circuit::util::{
-        compose_rlc, from_bits, get_absorb_positions, into_bits, to_bytes, NUM_BITS_PER_WORD,
+        compose_rlc, get_absorb_positions, into_bits, pack_with_base, to_bytes, NUM_BITS_PER_WORD,
         NUM_WORDS_TO_ABSORB, RATE, RATE_IN_BITS, RHO_MATRIX,
     },
     util::Expr,
 };
-use eth_types::{Field, ToScalar};
+use eth_types::Field;
 use gadgets::util::{and, select, sum, xor};
 use halo2_proofs::{
     circuit::{Layouter, Region, SimpleFloorPlanner, Value},
-    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Fixed, TableColumn},
+    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Fixed, TableColumn, VirtualCells},
     poly::Rotation,
 };
 use itertools::Itertools;
@@ -49,7 +49,7 @@ struct KeccakRow<F> {
     input: [u8; ABSORB_WIDTH_PER_ROW],
     is_paddings: [bool; ABSORB_WIDTH_PER_ROW_BYTES],
     data_rlcs: [F; ABSORB_WIDTH_PER_ROW_BYTES],
-    is_final: u64,
+    is_final: bool,
     length: usize,
     data_rlc: F,
     hash_rlc: F,
@@ -169,9 +169,14 @@ impl<F: Field> KeccakBitConfig<F> {
             theta_c_table.push(meta.lookup_table_column());
         }
 
+        let start_new_hash = |meta: &mut VirtualCells<F>, rot| {
+            // A new hash is started when the previous hash is done or on the first row
+            meta.query_fixed(q_first, rot) + meta.query_advice(is_final, rot)
+        };
+
         // State bits
-        let mut s = vec![vec![vec![0u64.expr(); 64]; 5]; 5];
-        let mut s_next = vec![vec![vec![0u64.expr(); 64]; 5]; 5];
+        let mut s = vec![vec![vec![0u64.expr(); NUM_BITS_PER_WORD]; 5]; 5];
+        let mut s_next = vec![vec![vec![0u64.expr(); NUM_BITS_PER_WORD]; 5]; 5];
         meta.create_gate("Query state bits", |meta| {
             let mut counter = 0;
             for i in 0..5 {
@@ -186,7 +191,7 @@ impl<F: Field> KeccakBitConfig<F> {
             vec![0u64.expr()]
         });
         // Theta c bits
-        let mut c = vec![vec![0u64.expr(); 64]; 5];
+        let mut c = vec![vec![0u64.expr(); NUM_BITS_PER_WORD]; 5];
         meta.create_gate("Query Theta c bits", |meta| {
             let mut counter = 0;
             for c in c.iter_mut() {
@@ -198,10 +203,10 @@ impl<F: Field> KeccakBitConfig<F> {
             vec![0u64.expr()]
         });
         // Input bits
-        let mut i = vec![0u64.expr(); 64];
-        let mut i_next = vec![vec![0u64.expr(); 64]; 17];
+        let mut i = vec![0u64.expr(); NUM_BITS_PER_WORD];
+        let mut i_next = vec![vec![0u64.expr(); NUM_BITS_PER_WORD]; NUM_WORDS_TO_ABSORB];
         meta.create_gate("Query absorb inputs", |meta| {
-            for k in 0..64 {
+            for k in 0..NUM_BITS_PER_WORD {
                 i[k] = meta.query_advice(input[k], Rotation::cur());
             }
             for (i, i_next) in i_next.iter_mut().enumerate() {
@@ -218,7 +223,7 @@ impl<F: Field> KeccakBitConfig<F> {
             let pi = (5 + i - 1) % 5;
             let ni = (i + 1) % 5;
             for (k, c) in c.iter().enumerate() {
-                let pk = (64 + k - 1) % 64;
+                let pk = (NUM_BITS_PER_WORD + k - 1) % NUM_BITS_PER_WORD;
                 let bit = xor::expr(s[pi][0][k].clone(), s[pi][1][k].clone())
                     + xor::expr(s[pi][2][k].clone(), s[pi][3][k].clone())
                     + xor::expr(s[pi][4][k].clone(), s[ni][0][pk].clone())
@@ -262,11 +267,10 @@ impl<F: Field> KeccakBitConfig<F> {
         // Enforce fixed values on the first row
         meta.create_gate("first row", |meta| {
             let mut cb = BaseConstraintBuilder::new(MAX_DEGREE);
-            // is_final needs to be true
-            cb.require_equal(
-                "is_final needs to be enabled on the first row",
+            // is_final needs to be false
+            cb.require_zero(
+                "is_final needs to be disabled on the first row",
                 meta.query_advice(is_final, Rotation::cur()),
-                1.expr(),
             );
             cb.gate(meta.query_fixed(q_first, Rotation::cur()))
         });
@@ -277,10 +281,10 @@ impl<F: Field> KeccakBitConfig<F> {
             let mut s = s.clone();
 
             // Theta
-            let mut os = vec![vec![vec![0u64.expr(); 64]; 5]; 5];
+            let mut os = vec![vec![vec![0u64.expr(); NUM_BITS_PER_WORD]; 5]; 5];
             for i in 0..5 {
                 for j in 0..5 {
-                    for k in 0..64 {
+                    for k in 0..NUM_BITS_PER_WORD {
                         os[i][j][k] = xor::expr(s[i][j][k].clone(), c[i][k].clone());
                     }
                 }
@@ -290,8 +294,10 @@ impl<F: Field> KeccakBitConfig<F> {
             // Rho/Pi
             for (i, s) in s.iter().enumerate() {
                 for (j, s) in s.iter().enumerate() {
-                    for k in 0..64 {
-                        os[j][(2 * i + 3 * j) % 5][k] = s[(64 + k - RHO_MATRIX[i][j]) % 64].clone();
+                    for k in 0..NUM_BITS_PER_WORD {
+                        os[j][(2 * i + 3 * j) % 5][k] = s
+                            [(NUM_BITS_PER_WORD + k - RHO_MATRIX[i][j]) % NUM_BITS_PER_WORD]
+                            .clone();
                     }
                 }
             }
@@ -301,7 +307,7 @@ impl<F: Field> KeccakBitConfig<F> {
             let mut iota_counter = 0;
             for i in 0..5 {
                 for j in 0..5 {
-                    for k in 0..64 {
+                    for k in 0..NUM_BITS_PER_WORD {
                         if i == 0 && j == 0 && ROUND_CST_BIT_POS.contains(&k) {
                             cb.require_equal(
                                 "round state transition with round constant",
@@ -331,17 +337,17 @@ impl<F: Field> KeccakBitConfig<F> {
         // Absorb
         meta.create_gate("absorb", |meta| {
             let mut cb = BaseConstraintBuilder::new(MAX_DEGREE);
-            let is_not_final = not::expr(meta.query_advice(is_final, Rotation::cur()));
+            let continue_hash = not::expr(start_new_hash(meta, Rotation::cur()));
             let absorb_positions = get_absorb_positions();
             let mut input_slice = 0;
             for j in 0..5 {
                 for i in 0..5 {
                     if absorb_positions.contains(&(i, j)) {
-                        for k in 0..64 {
+                        for k in 0..NUM_BITS_PER_WORD {
                             cb.require_equal(
                                 "absorb bit",
                                 xor::expr(
-                                    s[i][j][k].clone() * is_not_final.clone(),
+                                    s[i][j][k].clone() * continue_hash.clone(),
                                     i_next[input_slice][k].clone(),
                                 ),
                                 s_next[i][j][k].clone(),
@@ -349,10 +355,10 @@ impl<F: Field> KeccakBitConfig<F> {
                         }
                         input_slice += 1;
                     } else {
-                        for k in 0..64 {
+                        for k in 0..NUM_BITS_PER_WORD {
                             cb.require_equal(
                                 "absorb copy",
-                                s[i][j][k].clone() * is_not_final.clone(),
+                                s[i][j][k].clone() * continue_hash.clone(),
                                 s_next[i][j][k].clone(),
                             );
                         }
@@ -373,7 +379,7 @@ impl<F: Field> KeccakBitConfig<F> {
                 .take(4)
                 .concat();
             let rlc = compose_rlc::expr(&hash_bytes, r);
-            cb.condition(meta.query_advice(is_final, Rotation::cur()), |cb| {
+            cb.condition(start_new_hash(meta, Rotation::cur()), |cb| {
                 cb.require_equal(
                     "hash rlc check",
                     rlc,
@@ -505,7 +511,7 @@ impl<F: Field> KeccakBitConfig<F> {
             let mut cb = BaseConstraintBuilder::new(MAX_DEGREE);
 
             let q_padding = meta.query_fixed(q_padding, Rotation::cur());
-            let is_final_prev = meta.query_advice(is_final, Rotation::prev());
+            let start_new_hash_prev = start_new_hash(meta, Rotation::prev());
             let length_prev = meta.query_advice(length, Rotation::prev());
             let length = meta.query_advice(length, Rotation::cur());
             let data_rlc_prev = meta.query_advice(data_rlc, Rotation::prev());
@@ -519,14 +525,15 @@ impl<F: Field> KeccakBitConfig<F> {
                 cb.require_equal(
                     "update length",
                     length.clone(),
-                    length_prev.clone() * not::expr(is_final_prev.expr())
+                    length_prev.clone() * not::expr(start_new_hash_prev.expr())
                         + sum::expr(is_paddings.iter().map(|is_padding| {
                             not::expr(meta.query_advice(*is_padding, Rotation::cur()))
                         })),
                 );
 
                 // Use intermediate cells to keep the degree low
-                let mut new_data_rlc = data_rlc_prev.clone() * not::expr(is_final_prev.expr());
+                let mut new_data_rlc =
+                    data_rlc_prev.clone() * not::expr(start_new_hash_prev.expr());
                 cb.require_equal(
                     "initial data rlc",
                     meta.query_advice(data_rlcs[0], Rotation::cur()),
@@ -789,7 +796,7 @@ fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: &[u8], r: F) {
         // Absorb
         let mut counter = 0;
         for &(i, j) in &absorb_positions {
-            for k in 0..64 {
+            for k in 0..NUM_BITS_PER_WORD {
                 s[i][j][k] ^= chunk[counter];
                 counter += 1;
             }
@@ -797,7 +804,7 @@ fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: &[u8], r: F) {
 
         let mut counter = 0;
         for (round, round_cst) in ROUND_CST.iter().enumerate() {
-            let mut input = [0u8; 64];
+            let mut input = [0u8; NUM_BITS_PER_WORD];
             if counter < RATE_IN_BITS {
                 for bit in input.iter_mut() {
                     *bit = chunk[counter];
@@ -806,12 +813,12 @@ fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: &[u8], r: F) {
             }
 
             // Theta c
-            let mut c = [[0u8; 64]; 5];
+            let mut c = [[0u8; NUM_BITS_PER_WORD]; 5];
             for (i, c) in c.iter_mut().enumerate() {
                 let pi = (5 + i - 1) % 5;
                 let ni = (i + 1) % 5;
                 for (k, c) in c.iter_mut().enumerate() {
-                    let pk = (64 + k - 1) % 64;
+                    let pk = (NUM_BITS_PER_WORD + k - 1) % NUM_BITS_PER_WORD;
                     *c = s[pi][0][k]
                         ^ s[pi][1][k]
                         ^ s[pi][2][k]
@@ -866,7 +873,7 @@ fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: &[u8], r: F) {
                     input.chunks(8).zip(is_paddings.iter()).enumerate()
                 {
                     if !*padding {
-                        let byte_value: F = from_bits(byte_bits).to_scalar().unwrap();
+                        let byte_value: F = pack_with_base(byte_bits, 2);
                         data_rlc = data_rlc * r + byte_value;
                     }
                     if idx < data_rlcs.len() - 1 {
@@ -899,7 +906,7 @@ fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: &[u8], r: F) {
                 input,
                 is_paddings,
                 data_rlcs,
-                is_final: is_final as u64,
+                is_final,
                 length,
                 data_rlc,
                 hash_rlc,
@@ -909,7 +916,7 @@ fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: &[u8], r: F) {
                 // Theta
                 for i in 0..5 {
                     for j in 0..5 {
-                        for k in 0..64 {
+                        for k in 0..NUM_BITS_PER_WORD {
                             s[i][j][k] ^= c[i][k];
                         }
                     }
@@ -919,8 +926,9 @@ fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: &[u8], r: F) {
                 let mut os = s;
                 for (i, s) in s.iter().enumerate() {
                     for (j, s) in s.iter().enumerate() {
-                        for k in 0..64 {
-                            os[j][(2 * i + 3 * j) % 5][k] = s[(64 + k - RHO_MATRIX[i][j]) % 64]
+                        for k in 0..NUM_BITS_PER_WORD {
+                            os[j][(2 * i + 3 * j) % 5][k] =
+                                s[(NUM_BITS_PER_WORD + k - RHO_MATRIX[i][j]) % NUM_BITS_PER_WORD]
                         }
                     }
                 }
@@ -930,7 +938,7 @@ fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: &[u8], r: F) {
                 let mut os = s;
                 for i in 0..5 {
                     for j in 0..5 {
-                        for k in 0..64 {
+                        for k in 0..NUM_BITS_PER_WORD {
                             os[i][j][k] =
                                 s[i][j][k] ^ ((1 - s[(i + 1) % 5][j][k]) * s[(i + 2) % 5][j][k]);
                         }
@@ -957,7 +965,7 @@ fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: &[u8], r: F) {
 
 fn multi_keccak<F: Field>(bytes: &[Vec<u8>], r: F) -> Vec<KeccakRow<F>> {
     // Dummy first row so that the initial data can be absorbed
-    // The initial data doesn't really matter, `is_final` just needs to be enabled.
+    // The initial data doesn't really matter, `is_final` just needs to be disabled.
     let mut rows: Vec<KeccakRow<F>> = vec![KeccakRow {
         q_padding: false,
         q_padding_last: false,
@@ -966,7 +974,7 @@ fn multi_keccak<F: Field>(bytes: &[Vec<u8>], r: F) -> Vec<KeccakRow<F>> {
         input: [0u8; ABSORB_WIDTH_PER_ROW],
         is_paddings: [false; ABSORB_WIDTH_PER_ROW_BYTES],
         data_rlcs: [F::zero(); ABSORB_WIDTH_PER_ROW_BYTES],
-        is_final: 1u64,
+        is_final: false,
         length: 0usize,
         data_rlc: F::zero(),
         hash_rlc: F::zero(),
