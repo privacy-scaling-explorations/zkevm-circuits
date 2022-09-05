@@ -697,7 +697,7 @@ mod sign_verify_tests {
                 self.randomness,
                 &self.signatures,
             )?;
-            config.sign_verify.keccak_table.load(
+            config.sign_verify.keccak_table.dev_load(
                 &mut layouter,
                 &keccak_inputs_sign_verify(&self.signatures),
                 self.randomness,
