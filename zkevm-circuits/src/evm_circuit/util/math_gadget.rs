@@ -1611,8 +1611,10 @@ impl<F: Field> SarWordsGadget<F> {
             .assign(region, offset, Value::known(F::from(shf_div64 as u64)))?;
         self.shf_mod64
             .assign(region, offset, Value::known(F::from(shf_mod64 as u64)))?;
-        self.p_lo.assign(region, offset, Value::known(F::from_u128(p_lo)))?;
-        self.p_hi.assign(region, offset, Value::known(F::from_u128(p_hi)))?;
+        self.p_lo
+            .assign(region, offset, Value::known(F::from_u128(p_lo)))?;
+        self.p_hi
+            .assign(region, offset, Value::known(F::from_u128(p_hi)))?;
         self.p_top
             .assign(region, offset, Value::known(F::from_u128(p_top)))?;
         self.is_neg.assign(
