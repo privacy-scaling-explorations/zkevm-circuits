@@ -56,7 +56,7 @@ use crate::bytecode_circuit::bytecode_unroller::{
 };
 
 use crate::evm_circuit::{table::FixedTableTag, witness::Block, EvmCircuit};
-use crate::table::{BlockTable, BytecodeTable, CopyTable, KeccakTable, RwTable, TxTable};
+use crate::table::{BlockTable, BytecodeTable, CopyTable, RwTable, TxTable};
 use crate::util::power_of_randomness_from_instance;
 use eth_types::Field;
 use halo2_proofs::{
@@ -65,7 +65,11 @@ use halo2_proofs::{
 };
 
 use super::copy_circuit::CopyCircuit;
-use crate::{evm_circuit::witness::block_convert, tx_circuit::sign_verify::POW_RAND_SIZE};
+use crate::{
+    evm_circuit::witness::block_convert,
+    keccak_circuit::keccak_bit::{KeccakBitCircuit, KeccakBitConfig},
+    tx_circuit::sign_verify::POW_RAND_SIZE,
+};
 use bus_mapping::mock::BlockData;
 use eth_types::geth_types::{self, GethData};
 use halo2_proofs::arithmetic::{CurveAffine, Field as Halo2Field};
@@ -84,13 +88,13 @@ pub struct SuperCircuitConfig<F: Field, const MAX_TXS: usize, const MAX_CALLDATA
     rw_table: RwTable,
     bytecode_table: BytecodeTable,
     block_table: BlockTable,
-    keccak_table: KeccakTable,
     copy_table: CopyTable,
     evm_circuit: EvmCircuit<F>,
     state_circuit: StateCircuitConfig<F>,
     tx_circuit: TxCircuitConfig<F>,
     bytecode_circuit: BytecodeConfig<F>,
     copy_circuit: CopyCircuit<F>,
+    keccak_circuit: KeccakBitConfig<F>,
 }
 
 /// The Super Circuit contains all the zkEVM circuits
@@ -140,9 +144,11 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
         let rw_table = RwTable::construct(meta);
         let bytecode_table = BytecodeTable::construct(meta);
         let block_table = BlockTable::construct(meta);
-        let keccak_table = KeccakTable::construct(meta);
         let q_copy_table = meta.fixed_column();
         let copy_table = CopyTable::construct(meta, q_copy_table);
+
+        let keccak_circuit = KeccakBitCircuit::configure(meta);
+        let keccak_table = keccak_circuit.keccak_table.clone();
 
         let power_of_randomness = power_of_randomness_from_instance(meta);
         let evm_circuit = EvmCircuit::configure(
@@ -166,7 +172,6 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
             rw_table,
             bytecode_table: bytecode_table.clone(),
             block_table,
-            keccak_table: keccak_table.clone(),
             copy_table,
             evm_circuit,
             state_circuit,
@@ -191,6 +196,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
                 bytecode_table,
                 keccak_table,
             ),
+            keccak_circuit,
         }
     }
 
@@ -243,9 +249,12 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
             self.block.randomness,
         )?;
         // --- Keccak Table ---
-        config
-            .keccak_table
-            .load(&mut layouter, &self.keccak_inputs, self.block.randomness)?;
+        config.keccak_circuit.load(&mut layouter)?;
+        config.keccak_circuit.assign_from_witness(
+            &mut layouter,
+            &self.keccak_inputs,
+            self.block.randomness,
+        )?;
         // --- Copy Circuit ---
         config
             .copy_circuit
