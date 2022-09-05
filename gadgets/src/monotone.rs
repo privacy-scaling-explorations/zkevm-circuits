@@ -2,9 +2,9 @@
 //! Monotone gadget helps to check if an advice column is monotonically
 //! increasing within a range. With strict enabled, it disallows equality of two
 //! cell.
-use halo2_proofs::pairing::arithmetic::FieldExt;
+use halo2_proofs::arithmetic::FieldExt;
 use halo2_proofs::{
-    circuit::{Chip, Layouter},
+    circuit::{Chip, Layouter, Value},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
@@ -73,7 +73,7 @@ impl<F: FieldExt, const RANGE: usize, const INCR: bool, const STRICT: bool>
                         || "range_table_value",
                         self.config.range_table,
                         idx,
-                        || Ok(F::from(idx as u64)),
+                        || Value::known(F::from(idx as u64)),
                     )?;
                 }
 
@@ -107,7 +107,7 @@ impl<F: FieldExt, const RANGE: usize, const INCR: bool, const STRICT: bool> Chip
 
 #[cfg(test)]
 mod test {
-    use super::{MonotoneChip, MonotoneConfig};
+    use super::{MonotoneChip, MonotoneConfig, Value};
     use halo2_proofs::{
         arithmetic::FieldExt,
         circuit::{Layouter, SimpleFloorPlanner},
@@ -115,7 +115,7 @@ mod test {
             FailureLocation, MockProver,
             VerifyFailure::{self, Lookup},
         },
-        pairing::bn256::Fr as Fp,
+        halo2curves::bn256::Fr as Fp,
         plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Selector},
     };
     use std::marker::PhantomData;
@@ -180,7 +180,12 @@ mod test {
                 || "witness",
                 |mut region| {
                     for (idx, value) in values.iter().enumerate() {
-                        region.assign_advice(|| "value", config.value, idx, || Ok(*value))?;
+                        region.assign_advice(
+                            || "value",
+                            config.value,
+                            idx,
+                            || Value::known(*value),
+                        )?;
                         if idx > 0 {
                             config.q_enable.enable(&mut region, idx)?;
                         }

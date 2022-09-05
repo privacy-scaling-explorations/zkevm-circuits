@@ -21,10 +21,10 @@ use eth_types::{evm_types::OpcodeId, ToWord};
 use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word};
 use eth_types::{ToAddress, U256};
 use halo2_proofs::arithmetic::FieldExt;
-use halo2_proofs::pairing::bn256::Fr;
+use halo2_proofs::halo2curves::bn256::Fr;
 use itertools::Itertools;
 use sha3::{Digest, Keccak256};
-use std::{collections::HashMap, iter};
+use std::collections::HashMap;
 
 #[derive(Debug, Default, Clone)]
 pub struct Block<F> {
@@ -40,6 +40,8 @@ pub struct Block<F> {
     pub context: BlockContext,
     /// Copy events for the EVM circuit's copy table.
     pub copy_events: Vec<CopyEvent>,
+    /// Pad evm circuit to make selectors fixed, so vk/pk can be universal.
+    pub evm_circuit_pad_to: usize,
     /// Length to rw table rows in state circuit
     pub state_circuit_pad_to: usize,
     /// Inputs to the SHA3 opcode
@@ -1276,7 +1278,7 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::GAS => ExecutionState::GAS,
                     OpcodeId::SELFBALANCE => ExecutionState::SELFBALANCE,
                     OpcodeId::SHA3 => ExecutionState::SHA3,
-                    OpcodeId::SHR => ExecutionState::SHR,
+                    OpcodeId::SHL | OpcodeId::SHR => ExecutionState::SHL_SHR,
                     OpcodeId::SLOAD => ExecutionState::SLOAD,
                     OpcodeId::SSTORE => ExecutionState::SSTORE,
                     OpcodeId::CALLDATASIZE => ExecutionState::CALLDATASIZE,
@@ -1292,7 +1294,6 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     // dummy ops
                     OpcodeId::BALANCE => dummy!(ExecutionState::BALANCE),
                     OpcodeId::EXP => dummy!(ExecutionState::EXP),
-                    OpcodeId::SHL => dummy!(ExecutionState::SHL),
                     OpcodeId::SAR => dummy!(ExecutionState::SAR),
                     OpcodeId::EXTCODESIZE => dummy!(ExecutionState::EXTCODESIZE),
                     OpcodeId::EXTCODECOPY => dummy!(ExecutionState::EXTCODECOPY),
@@ -1360,7 +1361,7 @@ fn step_convert(step: &circuit_input_builder::ExecStep) -> ExecStep {
     }
 }
 
-fn tx_convert(tx: &circuit_input_builder::Transaction, id: usize, is_last_tx: bool) -> Transaction {
+fn tx_convert(tx: &circuit_input_builder::Transaction, id: usize) -> Transaction {
     Transaction {
         id,
         nonce: tx.nonce,
@@ -1399,25 +1400,7 @@ fn tx_convert(tx: &circuit_input_builder::Transaction, id: usize, is_last_tx: bo
                 is_static: call.is_static,
             })
             .collect(),
-        steps: tx
-            .steps()
-            .iter()
-            .map(step_convert)
-            .chain(
-                (if is_last_tx {
-                    Some(iter::once(ExecStep {
-                        // if it is the first tx,  less 1 rw lookup, refer to end_tx gadget
-                        rw_counter: tx.steps().last().unwrap().rwc.0 + 9 - (id == 1) as usize,
-                        execution_state: ExecutionState::EndBlock,
-                        ..Default::default()
-                    }))
-                } else {
-                    None
-                })
-                .into_iter()
-                .flatten(),
-            )
-            .collect(),
+        steps: tx.steps().iter().map(step_convert).collect(),
     }
 }
 
@@ -1433,7 +1416,7 @@ pub fn block_convert(
             .txs()
             .iter()
             .enumerate()
-            .map(|(idx, tx)| tx_convert(tx, idx + 1, idx + 1 == block.txs().len()))
+            .map(|(idx, tx)| tx_convert(tx, idx + 1))
             .collect(),
         bytecodes: block
             .txs()

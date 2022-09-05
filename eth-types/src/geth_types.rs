@@ -8,7 +8,7 @@ use crate::{
 use ethers_core::types::TransactionRequest;
 use ethers_core::utils::keccak256;
 use ethers_signers::{LocalWallet, Signer};
-use ff::PrimeField;
+use halo2_proofs::halo2curves::{group::ff::PrimeField, secp256k1};
 use num::Integer;
 use num_bigint::BigUint;
 use serde::{Serialize, Serializer};

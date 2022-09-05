@@ -3,12 +3,13 @@
 use bus_mapping::circuit_input_builder::BuilderClient;
 use bus_mapping::operation::OperationContainer;
 use eth_types::geth_types;
-use group::{Curve, Group};
-use halo2_proofs::arithmetic::BaseExt;
 use halo2_proofs::{
-    arithmetic::{CurveAffine, Field},
+    arithmetic::{CurveAffine, Field, FieldExt},
     dev::MockProver,
-    pairing::bn256::Fr,
+    halo2curves::{
+        bn256::Fr,
+        group::{Curve, Group},
+    },
 };
 use integration_tests::{get_client, log_init, GenDataOutput, CHAIN_ID};
 use lazy_static::lazy_static;
@@ -67,8 +68,7 @@ async fn test_state_circuit_block(block_num: u64) {
     let circuit = StateCircuit::<Fr>::new(randomness, rw_map, 1 << 16);
     let power_of_randomness = circuit.instance();
 
-    use halo2_proofs::pairing::bn256::Fr as Fp;
-    let prover = MockProver::<Fp>::run(DEGREE as u32, &circuit, power_of_randomness).unwrap();
+    let prover = MockProver::<Fr>::run(DEGREE as u32, &circuit, power_of_randomness).unwrap();
     prover.verify().expect("state_circuit verification failed");
 }
 

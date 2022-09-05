@@ -7,7 +7,7 @@ use crate::{
 use eth_types::{Field, ToBigEndian};
 use gadgets::binary_number::{AsBits, BinaryNumberChip, BinaryNumberConfig};
 use halo2_proofs::{
-    circuit::Region,
+    circuit::{Region, Value},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
@@ -200,7 +200,7 @@ impl Config {
             || "upper_limb_difference",
             self.selector,
             offset,
-            || Ok(F::one()),
+            || Value::known(F::one()),
         )?;
 
         let cur_be_limbs = rw_to_be_limbs(cur);
@@ -223,13 +223,13 @@ impl Config {
             || "limb_difference",
             self.limb_difference,
             offset,
-            || Ok(limb_difference),
+            || Value::known(limb_difference),
         )?;
         region.assign_advice(
             || "limb_difference_inverse",
             self.limb_difference_inverse,
             offset,
-            || Ok(limb_difference.invert().unwrap()),
+            || Value::known(limb_difference.invert().unwrap()),
         )?;
 
         Ok(!matches!(

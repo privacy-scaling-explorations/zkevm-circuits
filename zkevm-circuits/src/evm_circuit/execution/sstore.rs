@@ -17,7 +17,10 @@ use crate::{
 };
 
 use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar};
-use halo2_proofs::plonk::{Error, Expression};
+use halo2_proofs::{
+    circuit::Value,
+    plonk::{Error, Expression},
+};
 
 #[derive(Clone, Debug)]
 pub(crate) struct SstoreGadget<F> {
@@ -145,24 +148,31 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
         self.tx_id
-            .assign(region, offset, Some(F::from(tx.id as u64)))?;
+            .assign(region, offset, Value::known(F::from(tx.id as u64)))?;
         self.is_static
-            .assign(region, offset, Some(F::from(call.is_static as u64)))?;
+            .assign(region, offset, Value::known(F::from(call.is_static as u64)))?;
         self.reversion_info.assign(
             region,
             offset,
             call.rw_counter_end_of_reversion,
             call.is_persistent,
         )?;
-        self.callee_address
-            .assign(region, offset, call.callee_address.to_scalar())?;
+        self.callee_address.assign(
+            region,
+            offset,
+            Value::known(
+                call.callee_address
+                    .to_scalar()
+                    .expect("unexpected Address -> Scalar conversion failure"),
+            ),
+        )?;
 
         let [key, value] =
             [step.rw_indices[5], step.rw_indices[6]].map(|idx| block.rws[idx].stack_value());
         self.key.assign(
             region,
             offset,
-            Some(Word::random_linear_combine(
+            Value::known(Word::random_linear_combine(
                 key.to_le_bytes(),
                 block.randomness,
             )),
@@ -170,7 +180,7 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
         self.value.assign(
             region,
             offset,
-            Some(Word::random_linear_combine(
+            Value::known(Word::random_linear_combine(
                 value.to_le_bytes(),
                 block.randomness,
             )),
@@ -180,7 +190,7 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
         self.value_prev.assign(
             region,
             offset,
-            Some(Word::random_linear_combine(
+            Value::known(Word::random_linear_combine(
                 value_prev.to_le_bytes(),
                 block.randomness,
             )),
@@ -188,7 +198,7 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
         self.original_value.assign(
             region,
             offset,
-            Some(Word::random_linear_combine(
+            Value::known(Word::random_linear_combine(
                 original_value.to_le_bytes(),
                 block.randomness,
             )),
@@ -196,11 +206,11 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
 
         let (_, is_warm) = block.rws[step.rw_indices[8]].tx_access_list_value_pair();
         self.is_warm
-            .assign(region, offset, Some(F::from(is_warm as u64)))?;
+            .assign(region, offset, Value::known(F::from(is_warm as u64)))?;
 
         let (tx_refund, tx_refund_prev) = block.rws[step.rw_indices[9]].tx_refund_value_pair();
         self.tx_refund_prev
-            .assign(region, offset, Some(F::from(tx_refund_prev)))?;
+            .assign(region, offset, Value::known(F::from(tx_refund_prev)))?;
 
         self.gas_cost.assign(
             region,
@@ -302,12 +312,12 @@ impl<F: Field> SstoreGasGadget<F> {
         self.value.assign(
             region,
             offset,
-            Some(Word::random_linear_combine(value.to_le_bytes(), randomness)),
+            Value::known(Word::random_linear_combine(value.to_le_bytes(), randomness)),
         )?;
         self.value_prev.assign(
             region,
             offset,
-            Some(Word::random_linear_combine(
+            Value::known(Word::random_linear_combine(
                 value_prev.to_le_bytes(),
                 randomness,
             )),
@@ -315,13 +325,13 @@ impl<F: Field> SstoreGasGadget<F> {
         self.original_value.assign(
             region,
             offset,
-            Some(Word::random_linear_combine(
+            Value::known(Word::random_linear_combine(
                 original_value.to_le_bytes(),
                 randomness,
             )),
         )?;
         self.is_warm
-            .assign(region, offset, Some(F::from(is_warm as u64)))?;
+            .assign(region, offset, Value::known(F::from(is_warm as u64)))?;
         self.value_eq_prev.assign(
             region,
             offset,
@@ -445,16 +455,16 @@ impl<F: Field> SstoreTxRefundGadget<F> {
         randomness: F,
     ) -> Result<(), Error> {
         self.tx_refund_old
-            .assign(region, offset, Some(F::from(tx_refund_old)))?;
+            .assign(region, offset, Value::known(F::from(tx_refund_old)))?;
         self.value.assign(
             region,
             offset,
-            Some(Word::random_linear_combine(value.to_le_bytes(), randomness)),
+            Value::known(Word::random_linear_combine(value.to_le_bytes(), randomness)),
         )?;
         self.value_prev.assign(
             region,
             offset,
-            Some(Word::random_linear_combine(
+            Value::known(Word::random_linear_combine(
                 value_prev.to_le_bytes(),
                 randomness,
             )),
@@ -462,7 +472,7 @@ impl<F: Field> SstoreTxRefundGadget<F> {
         self.original_value.assign(
             region,
             offset,
-            Some(Word::random_linear_combine(
+            Value::known(Word::random_linear_combine(
                 original_value.to_le_bytes(),
                 randomness,
             )),

@@ -17,7 +17,10 @@ use crate::{
     util::Expr,
 };
 use eth_types::{Field, ToLittleEndian, ToScalar, U256};
-use halo2_proofs::plonk::{Error, Expression};
+use halo2_proofs::{
+    circuit::Value,
+    plonk::{Error, Expression},
+};
 
 /// Construction of execution state that stays in the same call context, which
 /// lookups the opcode and verifies the execution state is responsible for it,
@@ -67,7 +70,7 @@ impl<F: Field> SameContextGadget<F> {
     ) -> Result<(), Error> {
         let opcode = step.opcode.unwrap();
         self.opcode
-            .assign(region, offset, Some(F::from(opcode.as_u64())))?;
+            .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
 
         self.sufficient_gas_left.assign(
             region,
@@ -217,13 +220,21 @@ impl<F: Field> RestoreContextGadget<F> {
                 caller_reversible_write_counter,
             ),
         ] {
-            cell.assign(region, offset, value.to_scalar())?;
+            cell.assign(
+                region,
+                offset,
+                Value::known(
+                    value
+                        .to_scalar()
+                        .expect("unexpected U256 -> Scalar conversion failure"),
+                ),
+            )?;
         }
 
         self.caller_code_hash.assign(
             region,
             offset,
-            Some(Word::random_linear_combine(
+            Value::known(Word::random_linear_combine(
                 caller_code_hash.to_le_bytes(),
                 block.randomness,
             )),

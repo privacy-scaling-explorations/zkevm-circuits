@@ -2,27 +2,37 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::bench_params::DEGREE;
     use ark_std::{end_timer, start_timer};
-    use eth_types::{address, bytecode, geth_types::GethData, Word};
-    use ethers_signers::{LocalWallet, Signer};
-    use halo2_proofs::plonk::{create_proof, keygen_pk, keygen_vk, verify_proof, SingleVerifier};
+    use eth_types::geth_types::GethData;
+    use eth_types::{address, bytecode, Word};
+    use ethers_signers::LocalWallet;
+    use ethers_signers::Signer;
+    use halo2_proofs::plonk::{create_proof, keygen_pk, keygen_vk, verify_proof};
+    use halo2_proofs::poly::kzg::commitment::{KZGCommitmentScheme, ParamsKZG, ParamsVerifierKZG};
+    use halo2_proofs::poly::kzg::multiopen::{ProverSHPLONK, VerifierSHPLONK};
+    use halo2_proofs::poly::kzg::strategy::SingleStrategy;
     use halo2_proofs::{
-        pairing::bn256::{Bn256, G1Affine},
-        poly::commitment::{Params, ParamsVerifier},
-        transcript::{Blake2bRead, Blake2bWrite, Challenge255},
+        halo2curves::bn256::{Bn256, Fr, G1Affine},
+        poly::commitment::ParamsProver,
+        transcript::{
+            Blake2bRead, Blake2bWrite, Challenge255, TranscriptReadBuffer, TranscriptWriterBuffer,
+        },
     };
     use mock::{TestContext, MOCK_CHAIN_ID};
     use rand::SeedableRng;
     use rand_chacha::ChaChaRng;
     use std::collections::HashMap;
+    use std::env::var;
     use zkevm_circuits::super_circuit::SuperCircuit;
-
-    use halo2_proofs::pairing::bn256::Fr;
 
     #[cfg_attr(not(feature = "benches"), ignore)]
     #[test]
     fn bench_super_circuit_prover() {
+        let degree: u32 = var("DEGREE")
+            .expect("No DEGREE env var was provided")
+            .parse()
+            .expect("Cannot parse DEGREE env var as u32");
+
         let mut rng = ChaChaRng::seed_from_u64(2);
 
         let chain_id = (*MOCK_CHAIN_ID).as_u64();
@@ -66,25 +76,29 @@ mod tests {
         let instance_refs: Vec<&[Fr]> = instance.iter().map(|v| &v[..]).collect();
 
         // Bench setup generation
-        let setup_message = format!("Setup generation with degree = {}", DEGREE);
+        let setup_message = format!("Setup generation with degree = {}", degree);
         let start1 = start_timer!(|| setup_message);
-        let general_params: Params<G1Affine> =
-            Params::<G1Affine>::unsafe_setup::<Bn256>(DEGREE.try_into().unwrap());
-        let verifier_params: ParamsVerifier<Bn256> =
-            general_params.verifier((1 << DEGREE) - 64).unwrap();
+        let general_params = ParamsKZG::<Bn256>::setup(degree, &mut rng);
+        let verifier_params: ParamsVerifierKZG<Bn256> = general_params.verifier_params().clone();
         end_timer!(start1);
 
         // Initialize the proving key
         let vk = keygen_vk(&general_params, &circuit).expect("keygen_vk should not fail");
         let pk = keygen_pk(&general_params, vk, &circuit).expect("keygen_pk should not fail");
-
         // Create a proof
-        let mut transcript = Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
+        let mut transcript = Blake2bWrite::<_, G1Affine, Challenge255<_>>::init(vec![]);
 
         // Bench proof generation time
-        let proof_message = format!("State Proof generation with {} degree", DEGREE);
+        let proof_message = format!("SuperCircuit Proof generation with {} rows", degree);
         let start2 = start_timer!(|| proof_message);
-        create_proof(
+        create_proof::<
+            KZGCommitmentScheme<Bn256>,
+            ProverSHPLONK<'_, Bn256>,
+            Challenge255<G1Affine>,
+            ChaChaRng,
+            Blake2bWrite<Vec<u8>, G1Affine, Challenge255<G1Affine>>,
+            SuperCircuit<Fr, 1, 32>,
+        >(
             &general_params,
             &pk,
             &[circuit],
@@ -97,11 +111,17 @@ mod tests {
         end_timer!(start2);
 
         // Bench verification time
-        let start3 = start_timer!(|| "State Proof verification");
-        let mut verifier_transcript = Blake2bRead::<_, _, Challenge255<_>>::init(&proof[..]);
-        let strategy = SingleVerifier::new(&verifier_params);
+        let start3 = start_timer!(|| "SuperCircuit Proof verification");
+        let mut verifier_transcript = Blake2bRead::<_, G1Affine, Challenge255<_>>::init(&proof[..]);
+        let strategy = SingleStrategy::new(&general_params);
 
-        verify_proof(
+        verify_proof::<
+            KZGCommitmentScheme<Bn256>,
+            VerifierSHPLONK<'_, Bn256>,
+            Challenge255<G1Affine>,
+            Blake2bRead<&[u8], G1Affine, Challenge255<G1Affine>>,
+            SingleStrategy<'_, Bn256>,
+        >(
             &verifier_params,
             pk.get_vk(),
             strategy,

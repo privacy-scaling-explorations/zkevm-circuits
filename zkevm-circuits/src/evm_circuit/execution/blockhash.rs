@@ -18,7 +18,7 @@ use crate::{
 use bus_mapping::evm::OpcodeId;
 use eth_types::{Field, ToLittleEndian, ToScalar};
 use gadgets::util::not;
-use halo2_proofs::plonk::Error;
+use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct BlockHashGadget<F> {
@@ -115,8 +115,15 @@ impl<F: Field> ExecutionGadget<F> for BlockHashGadget<F> {
         let block_number: F = block_number.to_scalar().unwrap();
 
         let current_block_number = block.context.number;
-        self.current_block_number
-            .assign(region, offset, current_block_number.to_scalar())?;
+        self.current_block_number.assign(
+            region,
+            offset,
+            Value::known(
+                current_block_number
+                    .to_scalar()
+                    .expect("unexpected U256 -> Scalar conversion failure"),
+            ),
+        )?;
         let current_block_number: F = current_block_number.to_scalar().unwrap();
 
         self.block_hash.assign(
