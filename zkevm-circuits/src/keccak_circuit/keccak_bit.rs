@@ -659,8 +659,8 @@ impl<F: Field> KeccakBitConfig<F> {
             offset,
             [
                 F::from(row.is_final),
-                F::from(row.length as u64),
                 row.data_rlc,
+                F::from(row.length as u64),
                 row.hash_rlc,
             ],
         )?;
