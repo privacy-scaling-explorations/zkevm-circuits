@@ -639,6 +639,13 @@ impl<F: FieldExt> BranchConfig<F> {
 
                 When `S` branch is NOT a placeholder, `s_main.bytes RLC` corresponds to the value
                 stored in `accumulators.s_mod_node_rlc` in `is_modified` row.
+
+                Note that `s_hash_rlc` is a bit misleading naming, because sometimes the branch
+                child is not hashed (shorter than 32 bytes), but in this case we need to compute
+                the RLC too - the same computation is used (stored in variable `s_hash_rlc`), but
+                we check in `branch_parallel` that the non-hashed child is of the appropriate length
+                (the length is specified by `rlp2`) and that there are 0s after the last branch child byte.
+                The same applies for `c_hash_rlc`.
                 */
                 constraints.push((
                     "NOT is_branch_placeholder_s: s_mod_node_hash_rlc corresponds to s_main.bytes at modified pos",

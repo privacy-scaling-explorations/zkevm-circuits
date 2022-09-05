@@ -9,7 +9,7 @@ use pairing::arithmetic::FieldExt;
 use std::convert::{TryInto};
 
 use crate::{
-    branch::{BranchConfig, branch_hash_in_parent::BranchHashInParentConfig, branch_parallel::BranchParallelChip, branch_key::BranchKeyConfig, branch_rlc::BranchRLCConfig, branch_init::BranchInitConfig, extension_node::ExtensionNodeChip, extension_node_key::ExtensionNodeKeyChip, Branch, BranchCols},
+    branch::{BranchConfig, branch_hash_in_parent::BranchHashInParentConfig, branch_parallel::BranchParallelConfig, branch_key::BranchKeyConfig, branch_rlc::BranchRLCConfig, branch_init::BranchInitConfig, extension_node::ExtensionNodeChip, extension_node_key::ExtensionNodeKeyChip, Branch, BranchCols},
     helpers::{get_is_extension_node, bytes_into_rlc},
     param::{
         RLP_NUM,
@@ -300,7 +300,7 @@ impl<F: FieldExt> MPTConfig<F> {
             acc_r,
         );
 
-        BranchParallelChip::<F>::configure(
+        BranchParallelConfig::<F>::configure(
             meta,
             q_enable,
             q_not_first,
@@ -311,7 +311,7 @@ impl<F: FieldExt> MPTConfig<F> {
             denoter.is_node_hashed_s,
         );
 
-        BranchParallelChip::<F>::configure(
+        BranchParallelConfig::<F>::configure(
             meta,
             q_enable,
             q_not_first,
