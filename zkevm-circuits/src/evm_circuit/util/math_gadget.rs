@@ -1590,31 +1590,31 @@ impl<F: Field> SarWordsGadget<F> {
         self.a64s
             .iter()
             .zip(a64s.iter())
-            .map(|(cell, val)| cell.assign(region, offset, Some(F::from(*val))))
+            .map(|(cell, val)| cell.assign(region, offset, Value::known(F::from(*val))))
             .collect::<Result<Vec<_>, _>>()?;
         self.b64s
             .iter()
             .zip(b64s.iter())
-            .map(|(cell, val)| cell.assign(region, offset, Some(F::from_u128(*val))))
+            .map(|(cell, val)| cell.assign(region, offset, Value::known(F::from_u128(*val))))
             .collect::<Result<Vec<_>, _>>()?;
         self.a64s_lo
             .iter()
             .zip(a64s_lo.iter())
-            .map(|(cell, val)| cell.assign(region, offset, Some(F::from_u128(*val))))
+            .map(|(cell, val)| cell.assign(region, offset, Value::known(F::from_u128(*val))))
             .collect::<Result<Vec<_>, _>>()?;
         self.a64s_hi
             .iter()
             .zip(a64s_hi.iter())
-            .map(|(cell, val)| cell.assign(region, offset, Some(F::from_u128(*val))))
+            .map(|(cell, val)| cell.assign(region, offset, Value::known(F::from_u128(*val))))
             .collect::<Result<Vec<_>, _>>()?;
         self.shf_div64
-            .assign(region, offset, Some(F::from(shf_div64 as u64)))?;
+            .assign(region, offset, Value::known(F::from(shf_div64 as u64)))?;
         self.shf_mod64
-            .assign(region, offset, Some(F::from(shf_mod64 as u64)))?;
-        self.p_lo.assign(region, offset, Some(F::from_u128(p_lo)))?;
-        self.p_hi.assign(region, offset, Some(F::from_u128(p_hi)))?;
+            .assign(region, offset, Value::known(F::from(shf_mod64 as u64)))?;
+        self.p_lo.assign(region, offset, Value::known(F::from_u128(p_lo)))?;
+        self.p_hi.assign(region, offset, Value::known(F::from_u128(p_hi)))?;
         self.p_top
-            .assign(region, offset, Some(F::from_u128(p_top)))?;
+            .assign(region, offset, Value::known(F::from_u128(p_top)))?;
         self.is_neg.assign(
             region,
             offset,
