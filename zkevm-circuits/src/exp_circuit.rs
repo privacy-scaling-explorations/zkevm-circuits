@@ -197,6 +197,21 @@ impl<F: Field> ExpCircuit<F> {
                     meta.query_advice(exp_table.intermediate_exponent_lo_hi, Rotation(8)),
                     meta.query_advice(exp_table.intermediate_exponent_lo_hi, Rotation(1)),
                 );
+                for (i, mul_gadget_col) in [
+                    mul_gadget.col0,
+                    mul_gadget.col1,
+                    mul_gadget.col2,
+                    mul_gadget.col3,
+                ]
+                .into_iter()
+                .enumerate()
+                {
+                    cb.require_equal(
+                        "exp_table.base_limb[i] == mul_gadget.b[i] (intermediate exponent is odd)",
+                        meta.query_advice(exp_table.base_limb, Rotation(i as i32)),
+                        meta.query_advice(mul_gadget_col, Rotation(1)),
+                    );
+                }
             });
             // remainder == 0 => exponent is even
             cb.condition(
@@ -214,6 +229,20 @@ impl<F: Field> ExpCircuit<F> {
                     meta.query_advice(exp_table.intermediate_exponent_lo_hi, Rotation(1)),
                     meta.query_advice(exp_table.intermediate_exponent_lo_hi, Rotation(8)) * 2.expr(),
                 );
+                for mul_gadget_col in [
+                    mul_gadget.col0,
+                    mul_gadget.col1,
+                    mul_gadget.col2,
+                    mul_gadget.col3,
+                ]
+                .into_iter()
+                {
+                    cb.require_equal(
+                        "mul_gadget.a[i] == mul_gadget.b[i] (intermediate exponent is even)",
+                        meta.query_advice(mul_gadget_col, Rotation(0)),
+                        meta.query_advice(mul_gadget_col, Rotation(1)),
+                    );
+                }
             });
 
             // For the last step, the intermediate_exponent MUST be 2, since we do not cover

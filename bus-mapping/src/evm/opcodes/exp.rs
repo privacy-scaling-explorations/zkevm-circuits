@@ -16,20 +16,20 @@ fn exp_by_squaring(base: U256, exponent: U256, steps: &mut Vec<ExpStep>) -> U256
     if exponent == U256::one() {
         return base;
     }
+
     let (exponent_div2, odd) = exponent.div_mod(U256::from(2));
+    let exp1 = exp_by_squaring(base, exponent_div2, steps);
+    let (exp2, _) = exp1.overflowing_mul(exp1);
+    steps.push((exp1, exp1, exp2).into());
+
     if odd.is_zero() {
         // exponent is even
-        let (base2, _) = base.overflowing_mul(base);
-        steps.push((base, base, base2).into());
-        exp_by_squaring(base2, exponent_div2, steps)
+        exp2
     } else {
         // exponent is odd
-        let (base2, _) = base.overflowing_mul(base);
-        steps.push((base, base, base2).into());
-        let exp1 = exp_by_squaring(base2, exponent_div2, steps);
-        let (exp2, _) = base.overflowing_mul(exp1);
-        steps.push((exp1, base, exp2).into());
-        exp2
+        let (exp, _) = base.overflowing_mul(exp2);
+        steps.push((exp2, base, exp).into());
+        exp
     }
 }
 
