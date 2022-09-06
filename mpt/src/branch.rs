@@ -1342,17 +1342,14 @@ impl<F: FieldExt> BranchConfig<F> {
                 offset,
             )?;
         } else {
-            // Note that key_rlc and key_rlc_mult are set the same in all
-            // branch children to avoid some rotations - constraint for this
-            // equality is in extension_node_key.
             row.assign_branch_row(
                 region,
                 mpt_config,
                 pv.node_index,
                 pv.modified_node,
-                pv.key_rlc,
-                pv.key_rlc_mult,
-                pv.mult_diff,
+                F::zero(),
+                F::zero(),
+                F::zero(),
                 pv.s_mod_node_hash_rlc,
                 pv.c_mod_node_hash_rlc,
                 pv.drifted_pos,

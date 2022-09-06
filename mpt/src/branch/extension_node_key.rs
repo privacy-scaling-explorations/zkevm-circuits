@@ -174,11 +174,6 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
                 Rotation(rot_into_branch_init-1),
             );
 
-            let is_branch_child_prev =
-                meta.query_advice(branch.is_child, Rotation::prev());
-            let is_branch_child_cur =
-                meta.query_advice(branch.is_child, Rotation::cur());
-
             // Any rotation that lands into branch children can be used:
             let modified_node_cur =
                 meta.query_advice(branch.modified_node, Rotation(-2));
@@ -186,9 +181,6 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
             let key_rlc_prev = meta.query_advice(accs.key.rlc, Rotation::prev());
             let key_rlc_prev_level = meta.query_advice(accs.key.rlc, Rotation(rot_into_prev_branch));
             let key_rlc_cur = meta.query_advice(accs.key.rlc, Rotation::cur());
-
-            let mult_diff_cur = meta.query_advice(accs.mult_diff, Rotation::cur());
-            let mult_diff_prev = meta.query_advice(accs.mult_diff, Rotation::prev());
 
             let key_rlc_mult_prev = meta.query_advice(accs.key.mult, Rotation::prev());
             let key_rlc_mult_prev_level = meta.query_advice(accs.key.mult, Rotation(rot_into_prev_branch));
@@ -198,28 +190,6 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
             let key_rlc_branch = meta.query_advice(accs.key.rlc, Rotation(rot_into_branch_init+1));
             let key_rlc_mult_branch = meta.query_advice(accs.key.mult, Rotation(rot_into_branch_init+1));
             let mult_diff = meta.query_advice(accs.mult_diff, Rotation(rot_into_branch_init+1));
-
-            constraints.push((
-                "branch key RLC same over all branch children",
-                q_not_first.clone()
-                    * is_branch_child_prev.clone()
-                    * is_branch_child_cur.clone()
-                    * (key_rlc_cur.clone() - key_rlc_prev.clone()),
-            ));
-            constraints.push((
-                "branch key RLC MULT same over all branch children",
-                q_not_first.clone()
-                    * is_branch_child_prev.clone()
-                    * is_branch_child_cur.clone()
-                    * (key_rlc_mult_cur.clone() - key_rlc_mult_prev.clone()),
-            ));
-            constraints.push((
-                "branch key MULT diff same over all branch children",
-                q_not_first.clone()
-                    * is_branch_child_prev.clone()
-                    * is_branch_child_cur.clone()
-                    * (mult_diff_cur.clone() - mult_diff_prev.clone()),
-            ));
 
             constraints.push((
                 "extension node row S and C key RLC are the same",
