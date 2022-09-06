@@ -92,9 +92,9 @@ mod tests {
             steps,
             vec![
                 (3.into(), 3.into(), 9.into()).into(),
-                (9.into(), 9.into(), 81.into()).into(),
-                (81.into(), 81.into(), 6561.into()).into(),
-                (6561.into(), 81.into(), 531441.into()).into(),
+                (9.into(), 3.into(), 27.into()).into(),
+                (27.into(), 27.into(), 729.into()).into(),
+                (729.into(), 729.into(), 531441.into()).into(),
                 (531441.into(), 3.into(), 1594323.into()).into(),
             ]
         );
