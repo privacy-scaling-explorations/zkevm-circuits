@@ -1,7 +1,6 @@
 use halo2_proofs::{
-    circuit::Chip,
     plonk::{Advice, Column, ConstraintSystem, Expression, Fixed, VirtualCells},
-    poly::Rotation,
+    poly::Rotation, circuit::Region,
 };
 use itertools::Itertools;
 use pairing::arithmetic::FieldExt;
@@ -13,15 +12,12 @@ use crate::{
         IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, IS_BRANCH_C_PLACEHOLDER_POS,
         IS_BRANCH_S_PLACEHOLDER_POS, IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS,
         IS_EXT_LONG_ODD_C16_POS, IS_EXT_LONG_ODD_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS,
-        KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH, RLP_NUM, IS_S_EXT_LONGER_THAN_55_POS, IS_C_EXT_LONGER_THAN_55_POS, IS_S_EXT_NODE_NON_HASHED_POS, IS_C_EXT_NODE_NON_HASHED_POS, NIBBLES_COUNTER_POS, BRANCH_ROWS_NUM,
-    }, columns::{MainCols, AccumulatorCols},
+        KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH, RLP_NUM, IS_S_EXT_LONGER_THAN_55_POS, IS_C_EXT_LONGER_THAN_55_POS, IS_S_EXT_NODE_NON_HASHED_POS, IS_C_EXT_NODE_NON_HASHED_POS, NIBBLES_COUNTER_POS, BRANCH_ROWS_NUM, C_RLP_START, HASH_WIDTH, C_START,
+    }, columns::{MainCols, AccumulatorCols}, mpt::{ProofVariables, MPTConfig}, witness_row::MptWitnessRow,
 };
 
 #[derive(Clone, Debug)]
-pub(crate) struct ExtensionNodeConfig {}
-
-pub(crate) struct ExtensionNodeChip<F> {
-    config: ExtensionNodeConfig,
+pub(crate) struct ExtensionNodeConfig<F> {
     _marker: PhantomData<F>,
 }
 
@@ -98,7 +94,7 @@ Key extension is [0].
 
 */
 
-impl<F: FieldExt> ExtensionNodeChip<F> {
+impl<F: FieldExt> ExtensionNodeConfig<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         q_enable: impl Fn(&mut VirtualCells<'_, F>) -> Expression<F>,
@@ -115,8 +111,8 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
         r_table: Vec<Expression<F>>,
         is_s: bool,
         acc_r: F,
-    ) -> ExtensionNodeConfig {
-        let config = ExtensionNodeConfig {};
+    ) -> Self {
+        let config = ExtensionNodeConfig { _marker: PhantomData };
         let one = Expression::Constant(F::from(1_u64));
         let c33 = Expression::Constant(F::from(33));
         let c128 = Expression::Constant(F::from(128));
@@ -1051,23 +1047,110 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
         config
     }
 
-    pub fn construct(config: ExtensionNodeConfig) -> Self {
-        Self {
-            config,
-            _marker: PhantomData,
+    pub fn assign(
+        &self,
+        region: &mut Region<'_, F>,
+        mpt_config: &MPTConfig<F>,
+        pv: &mut ProofVariables<F>,
+        row: &MptWitnessRow<F>,
+        offset: usize,
+        is_s: bool,
+    ) {
+        if pv.is_extension_node {
+            if is_s {
+                // [228,130,0,149,160,114,253,150,133,18,192,156,19,241,162,51,210,24,1,151,16,48,7,177,42,60,49,34,230,254,242,79,132,165,90,75,249]
+
+                // One nibble:
+                // [226,16,160,172,105,12...
+                // Could also be non-hashed branch:
+                // [223,16,221,198,132,32,0,0,0,1,198,132,32,0,0,0,1,128,128,128,128,128,128,128,128,128,128,128,128,128,128,128]
+
+                // [247,160,16,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,213,128,194,32,1,128,194,32,1,128,128,128,128,128,128,128,128,128,128,128,128,128]
+                // [248,58,159,16,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,217,128,196,130,32,0,1,128,196,130,32,0,1,128,128,128,128,128,128,128,128,128,128,128,128,128]
+
+                // Intermediate RLC value and mult (after key)
+                // to know which mult we need to use in c_advices.
+                pv.acc_s = F::zero();
+                pv.acc_mult_s = F::one();
+                let len: usize;
+                if row.get_byte(1) <= 32 {
+                    // key length is 1
+                    len = 2 // [length byte, key]
+                } else if row.get_byte(0) < 248 {
+                    len = (row.get_byte(1) - 128) as usize + 2;
+                } else {
+                    len = (row.get_byte(2) - 128) as usize + 3;
+                }
+                mpt_config.compute_acc_and_mult(
+                    &row.bytes,
+                    &mut pv.acc_s,
+                    &mut pv.acc_mult_s,
+                    0,
+                    len,
+                );
+
+                // Final RLC value.
+                pv.acc_c = pv.acc_s;
+                pv.acc_mult_c = pv.acc_mult_s;
+                let mut start = C_RLP_START + 1;
+                let mut len = HASH_WIDTH + 1;
+                if row.get_byte(C_RLP_START + 1) == 0 {
+                    // non-hashed branch in extension node
+                    start = C_START;
+                    len = HASH_WIDTH;
+                }
+                mpt_config.compute_acc_and_mult(
+                    &row.bytes,
+                    &mut pv.acc_c,
+                    &mut pv.acc_mult_c,
+                    start,
+                    len,
+                );
+
+                mpt_config.assign_acc(
+                    region,
+                    pv.acc_s,
+                    pv.acc_mult_s,
+                    pv.acc_c,
+                    F::zero(),
+                    offset,
+                ).ok();
+            } else {
+                // We use intermediate value from previous row (because
+                // up to acc_s it's about key and this is the same
+                // for both S and C).
+                pv.acc_c = pv.acc_s;
+                pv.acc_mult_c = pv.acc_mult_s;
+                let mut start = C_RLP_START + 1;
+                let mut len = HASH_WIDTH + 1;
+                if row.get_byte(C_RLP_START + 1) == 0 {
+                    // non-hashed branch in extension node
+                    start = C_START;
+                    len = HASH_WIDTH;
+                }
+                mpt_config.compute_acc_and_mult(
+                    &row.bytes,
+                    &mut pv.acc_c,
+                    &mut pv.acc_mult_c,
+                    start,
+                    len,
+                );
+
+                mpt_config.assign_acc(
+                    region,
+                    pv.acc_s,
+                    pv.acc_mult_s,
+                    pv.acc_c,
+                    F::zero(),
+                    offset,
+                ).ok();
+            }
+            region.assign_advice(
+                || "assign key_rlc".to_string(),
+                mpt_config.accumulators.key.rlc,
+                offset,
+                || Ok(pv.extension_node_rlc),
+            ).ok();
         }
-    }
-}
-
-impl<F: FieldExt> Chip<F> for ExtensionNodeChip<F> {
-    type Config = ExtensionNodeConfig;
-    type Loaded = ();
-
-    fn config(&self) -> &Self::Config {
-        &self.config
-    }
-
-    fn loaded(&self) -> &Self::Loaded {
-        &()
     }
 }

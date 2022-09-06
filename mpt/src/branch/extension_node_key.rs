@@ -1,5 +1,4 @@
 use halo2_proofs::{
-    circuit::Chip,
     plonk::{
         Advice, Column, ConstraintSystem, Expression, Fixed, VirtualCells,
     },
@@ -20,11 +19,42 @@ use crate::{
 
 use super::BranchCols;
 
-#[derive(Clone, Debug)]
-pub(crate) struct ExtensionNodeKeyConfig {}
+/*
+A branch occupies 19 rows:
+BRANCH.IS_INIT
+BRANCH.IS_CHILD 0
+...
+BRANCH.IS_CHILD 15
+BRANCH.IS_EXTENSION_NODE_S
+BRANCH.IS_EXTENSION_NODE_C
 
-pub(crate) struct ExtensionNodeKeyChip<F> {
-    config: ExtensionNodeKeyConfig,
+Example:
+
+[1 0 1 0 248 81 0 248 81 0 14 1 0 6 1 0 0 0 0 1 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0]
+[0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1]
+[0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1]
+[0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1]
+[0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1]
+[0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1]
+[0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1]
+[0 160 29 143 36 49 6 106 55 88 195 10 34 208 147 134 155 181 100 142 66 21 255 171 228 168 85 11 239 170 233 241 171 242 0 160 29 143 36 49 6 106 55 88 195 10 34 208 147 134 155 181 100 142 66 21 255 171 228 168 85 11 239 170 233 241 171 242 1]
+[0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1]
+[0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1]
+[0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1]
+[0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1]
+[0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1]
+[0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1]
+[0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1]
+[0 160 135 117 154 48 1 221 143 224 133 179 90 254 130 41 47 5 101 84 204 111 220 62 215 253 155 107 212 69 138 221 91 174 0 160 135 117 154 48 1 221 143 224 133 179 90 254 130 41 47 5 101 84 204 111 220 62 215 253 155 107 212 69 138 221 91 174 1]
+[0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1]
+[226 30 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 160 30 252 7 160 150 158 68 221 229 48 73 181 91 223 120 156 43 93 5 199 95 184 42 20 87 178 65 243 228 156 123 174 0 16]
+[0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 160 30 252 7 160 150 158 68 221 229 48 73 181 91 223 120 156 43 93 5 199 95 184 42 20 87 178 65 243 228 156 123 174 0 17]
+
+*/
+
+
+#[derive(Clone, Debug)]
+pub(crate) struct ExtensionNodeKeyConfig<F> {
     _marker: PhantomData<F>,
 }
 
@@ -54,7 +84,7 @@ Using this approach we do not need to store C RLP & key, but it will increase th
 (unless we pack this info together with short/long nibbles & c1/c16).
 */
 
-impl<F: FieldExt> ExtensionNodeKeyChip<F> {
+impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         q_not_first: Column<Fixed>,
@@ -66,21 +96,22 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
         accs: AccumulatorCols<F>, // accs.key used first for account address, then for storage key
         fixed_table: [Column<Fixed>; 3],
         r_table: Vec<Expression<F>>,
-    ) -> ExtensionNodeKeyConfig {
-        let config = ExtensionNodeKeyConfig {};
+    ) -> Self {
+        let config = ExtensionNodeKeyConfig { _marker: PhantomData };
         let one = Expression::Constant(F::one());
         let c128 = Expression::Constant(F::from(128));
         let c16 = Expression::Constant(F::from(16));
         let c16inv = Expression::Constant(F::from(16).invert().unwrap());
         let rot_into_branch_init = -BRANCH_ROWS_NUM+1;
 
-        // Note: these constraints check whether extension C row key_rlc is properly computed (taking into
-        // account nibbles) and the underlying branch key_rlc is properly computed (taking into account
-        // modified_node). S and C branch / extension node always have the same key_rlc, so there are no constraints
-        // for extension S row, except that extension S key_rlc is the same as extension C key_rlc (in case
-        // rotation into S row is used to retrieve extension node key_rlc).
-
-        meta.create_gate("extension node key", |meta| {
+        /*
+        Note: these constraints check whether extension C row key_rlc is properly computed (taking into
+        account the nibbles) and the underlying branch key_rlc is properly computed (taking into account
+        modified_node). S and C branch / extension node always have the same key_rlc, so there are no constraints
+        for extension S row, except that extension S key_rlc is the same as extension C key_rlc (in case
+        rotation into S row is used to retrieve extension node key_rlc).
+        */
+        meta.create_gate("Extension node key RLC", |meta| {
             let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
             let not_first_level =
                 meta.query_advice(not_first_level, Rotation::cur());
@@ -124,10 +155,12 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
 
             let is_extension_node = get_is_extension_node(meta, s_main.bytes, rot_into_branch_init);
 
-            // sel1 and sel2 determines whether branch modified_node needs to be
-            // multiplied by 16 or not. However, implicitly, sel1 and sel2 determines
-            // also (together with extension node key length) whether the extension
-            // node key nibble needs to be multiplied by 16 or not.
+            /*
+            sel1 and sel2 determines whether branch modified_node needs to be
+            multiplied by 16 or not. However, implicitly, sel1 and sel2 determines
+            also (together with extension node key length) whether the extension
+            node key nibble needs to be multiplied by 16 or not.
+            */
             
             let sel1 =
                 meta.query_advice( s_main.bytes[IS_BRANCH_C16_POS - RLP_NUM], Rotation(rot_into_branch_init));
@@ -167,21 +200,21 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
             let mult_diff = meta.query_advice(accs.mult_diff, Rotation(rot_into_branch_init+1));
 
             constraints.push((
-                "branch key RLC same over all branch children with index > 0",
+                "branch key RLC same over all branch children",
                 q_not_first.clone()
                     * is_branch_child_prev.clone()
                     * is_branch_child_cur.clone()
                     * (key_rlc_cur.clone() - key_rlc_prev.clone()),
             ));
             constraints.push((
-                "branch key RLC MULT same over all branch children with index > 0",
+                "branch key RLC MULT same over all branch children",
                 q_not_first.clone()
                     * is_branch_child_prev.clone()
                     * is_branch_child_cur.clone()
                     * (key_rlc_mult_cur.clone() - key_rlc_mult_prev.clone()),
             ));
             constraints.push((
-                "branch key MULT diff same over all branch children with index > 0",
+                "branch key MULT diff same over all branch children",
                 q_not_first.clone()
                     * is_branch_child_prev.clone()
                     * is_branch_child_cur.clone()
@@ -797,25 +830,5 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
         );
 
         config
-    }
-
-    pub fn construct(config: ExtensionNodeKeyConfig) -> Self {
-        Self {
-            config,
-            _marker: PhantomData,
-        }
-    }
-}
-
-impl<F: FieldExt> Chip<F> for ExtensionNodeKeyChip<F> {
-    type Config = ExtensionNodeKeyConfig;
-    type Loaded = ();
-
-    fn config(&self) -> &Self::Config {
-        &self.config
-    }
-
-    fn loaded(&self) -> &Self::Loaded {
-        &()
-    }
+    } 
 }

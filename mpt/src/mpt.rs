@@ -9,7 +9,7 @@ use pairing::arithmetic::FieldExt;
 use std::convert::{TryInto};
 
 use crate::{
-    branch::{BranchConfig, branch_hash_in_parent::BranchHashInParentConfig, branch_parallel::BranchParallelConfig, branch_key::BranchKeyConfig, branch_rlc::BranchRLCConfig, branch_init::BranchInitConfig, extension_node::ExtensionNodeChip, extension_node_key::ExtensionNodeKeyChip, Branch, BranchCols},
+    branch::{BranchConfig, branch_hash_in_parent::BranchHashInParentConfig, branch_parallel::BranchParallelConfig, branch_key::BranchKeyConfig, branch_rlc::BranchRLCConfig, branch_init::BranchInitConfig, extension_node::ExtensionNodeConfig, extension_node_key::ExtensionNodeKeyConfig, Branch, BranchCols},
     helpers::{get_is_extension_node, bytes_into_rlc},
     param::{
         RLP_NUM,
@@ -86,6 +86,8 @@ pub struct MPTConfig<F> {
     account_leaf_key_in_added_branch: AccountLeafKeyInAddedBranchConfig<F>,
     account_non_existing: AccountNonExistingConfig<F>,
     branch_config: BranchConfig<F>,
+    ext_node_config_s: ExtensionNodeConfig<F>,
+    ext_node_config_c: ExtensionNodeConfig<F>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -350,7 +352,7 @@ impl<F: FieldExt> MPTConfig<F> {
             false,
         );
 
-        ExtensionNodeChip::<F>::configure(
+        let ext_node_config_s = ExtensionNodeConfig::<F>::configure(
             meta,
             |meta| {
                 let is_extension_node_s = meta.query_advice(branch.is_extension_node_s, Rotation::cur());
@@ -373,7 +375,7 @@ impl<F: FieldExt> MPTConfig<F> {
             acc_r,
         );
 
-        ExtensionNodeChip::<F>::configure(
+        let ext_node_config_c = ExtensionNodeConfig::<F>::configure(
             meta,
             |meta| {
                 let is_extension_node_c = meta.query_advice(branch.is_extension_node_c, Rotation::cur());
@@ -396,7 +398,7 @@ impl<F: FieldExt> MPTConfig<F> {
             acc_r,
         );
 
-        ExtensionNodeKeyChip::<F>::configure(
+        ExtensionNodeKeyConfig::<F>::configure(
             meta,
             q_not_first,
             not_first_level,
@@ -767,6 +769,8 @@ impl<F: FieldExt> MPTConfig<F> {
             account_leaf_key_in_added_branch,
             account_non_existing,
             branch_config,
+            ext_node_config_s,
+            ext_node_config_c,
         }
     } 
  
@@ -1350,109 +1354,9 @@ impl<F: FieldExt> MPTConfig<F> {
                                     offset,
                                 )?;
                             } else if row.get_type() == MptWitnessRowType::ExtensionNodeS {
-                                if pv.is_extension_node {
-                                  	// [228,130,0,149,160,114,253,150,133,18,192,156,19,241,162,51,210,24,1,151,16,48,7,177,42,60,49,34,230,254,242,79,132,165,90,75,249]
-
-                                    // One nibble:
-                                  	// [226,16,160,172,105,12...
-                                    // Could also be non-hashed branch:
-                                    // [223,16,221,198,132,32,0,0,0,1,198,132,32,0,0,0,1,128,128,128,128,128,128,128,128,128,128,128,128,128,128,128]
-
-                                   	// [247,160,16,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,213,128,194,32,1,128,194,32,1,128,128,128,128,128,128,128,128,128,128,128,128,128]
-                                   	// [248,58,159,16,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,217,128,196,130,32,0,1,128,196,130,32,0,1,128,128,128,128,128,128,128,128,128,128,128,128,128]
-
-                                    // Intermediate RLC value and mult (after key)
-                                    // to know which mult we need to use in c_advices.
-                                    pv.acc_s = F::zero();
-                                    pv.acc_mult_s = F::one();
-                                    let len: usize;
-                                    if row.get_byte(1) <= 32 {
-                                        // key length is 1
-                                        len = 2 // [length byte, key]
-                                    } else if row.get_byte(0) < 248 {
-                                        len = (row.get_byte(1) - 128) as usize + 2;
-                                    } else {
-                                        len = (row.get_byte(2) - 128) as usize + 3;
-                                    }
-                                    self.compute_acc_and_mult(
-                                        &row.bytes,
-                                        &mut pv.acc_s,
-                                        &mut pv.acc_mult_s,
-                                        0,
-                                        len,
-                                    );
-
-                                    // Final RLC value.
-                                    pv.acc_c = pv.acc_s;
-                                    pv.acc_mult_c = pv.acc_mult_s;
-                                    let mut start = C_RLP_START + 1;
-                                    let mut len = HASH_WIDTH + 1;
-                                    if row.get_byte(C_RLP_START + 1) == 0 {
-                                        // non-hashed branch in extension node
-                                        start = C_START;
-                                        len = HASH_WIDTH;
-                                    }
-                                    self.compute_acc_and_mult(
-                                        &row.bytes,
-                                        &mut pv.acc_c,
-                                        &mut pv.acc_mult_c,
-                                        start,
-                                        len,
-                                    );
-
-                                    self.assign_acc(
-                                        &mut region,
-                                        pv.acc_s,
-                                        pv.acc_mult_s,
-                                        pv.acc_c,
-                                        F::zero(),
-                                        offset,
-                                    )?;
-                                }
-                                region.assign_advice(
-                                    || "assign key_rlc".to_string(),
-                                    self.accumulators.key.rlc,
-                                    offset,
-                                    || Ok(pv.extension_node_rlc),
-                                )?;
+                                self.ext_node_config_s.assign(&mut region, self, &mut pv, &row, offset, true);
                             } else if row.get_type() == MptWitnessRowType::ExtensionNodeC {
-                                if pv.is_extension_node {
-                                    // We use intermediate value from previous row (because
-                                    // up to acc_s it's about key and this is the same
-                                    // for both S and C).
-                                    pv.acc_c = pv.acc_s;
-                                    pv.acc_mult_c = pv.acc_mult_s;
-                                    let mut start = C_RLP_START + 1;
-                                    let mut len = HASH_WIDTH + 1;
-                                    if row.get_byte(C_RLP_START + 1) == 0 {
-                                        // non-hashed branch in extension node
-                                        start = C_START;
-                                        len = HASH_WIDTH;
-                                    }
-                                    self.compute_acc_and_mult(
-                                        &row.bytes,
-                                        &mut pv.acc_c,
-                                        &mut pv.acc_mult_c,
-                                        start,
-                                        len,
-                                    );
-
-                                    self.assign_acc(
-                                        &mut region,
-                                        pv.acc_s,
-                                        pv.acc_mult_s,
-                                        pv.acc_c,
-                                        F::zero(),
-                                        offset,
-                                    )?;
-                                }
-
-                                region.assign_advice(
-                                    || "assign key_rlc".to_string(),
-                                    self.accumulators.key.rlc,
-                                    offset,
-                                    || Ok(pv.extension_node_rlc),
-                                )?;
+                                self.ext_node_config_c.assign(&mut region, self, &mut pv, &row, offset, false); 
                             } else if row.get_type() == MptWitnessRowType::AccountLeafNeighbouringLeaf && row.get_byte(1) != 0 {
                                 // row[1] != 0 just to avoid usize problems below (when row doesn't
                                 // need to be assigned).
