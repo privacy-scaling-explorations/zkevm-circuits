@@ -50,8 +50,18 @@ Example:
 [226 30 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 160 30 252 7 160 150 158 68 221 229 48 73 181 91 223 120 156 43 93 5 199 95 184 42 20 87 178 65 243 228 156 123 174 0 16]
 [0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 160 30 252 7 160 150 158 68 221 229 48 73 181 91 223 120 156 43 93 5 199 95 184 42 20 87 178 65 243 228 156 123 174 0 17]
 
-*/
+The last two rows present the extension node. This might be a bit misleading, because the extension
+node appears in the trie above the branch (the first 17 rows).
 
+The constraints in `extension_node_key.rs` check the intermediate
+key RLC (address RLC) in the extension node is properly computed. Here, we need to take into
+account the extension node nibbles and the branch `modified_node`.
+
+Other constraints for extension nodes, like checking that the branch hash
+is in the extension node (the bytes `[30 252 ... 174]` in extension node rows present the hash
+of the underlying branch) or checking the hash of the extension is in the parent node are
+checking in `extension_node.rs`.
+*/
 
 #[derive(Clone, Debug)]
 pub(crate) struct ExtensionNodeKeyConfig<F> {
@@ -105,11 +115,17 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
         let rot_into_branch_init = -BRANCH_ROWS_NUM+1;
 
         /*
-        Note: these constraints check whether extension C row key_rlc is properly computed (taking into
-        account the nibbles) and the underlying branch key_rlc is properly computed (taking into account
-        modified_node). S and C branch / extension node always have the same key_rlc, so there are no constraints
-        for extension S row, except that extension S key_rlc is the same as extension C key_rlc (in case
-        rotation into S row is used to retrieve extension node key_rlc).
+        When we have a regular branch (not in extension node), the key RLC is simple to compute:
+        key_rlc = key_rlc_prev + modified_node * key_rlc_mult_prev * selMult
+
+        The multiplier `selMult` being 16 or 1 depending on the number (even or odd) number
+        of nibbles used in the levels above.
+
+        Extension node makes it more complicated because we need to take into account its nibbles
+        too. If there are for example two nibbles in the extension node `n1` and `n2` and if we
+        assume that there have been even nibbles in the levels above, then:
+        key_rlc = key_rlc_prev + n1 * key_rlc_mult_prev * 16 + n2 * key_rlc_mult_prev * 1 +
+            modified_node * key_rlc_mult_prev * r * 16     
         */
         meta.create_gate("Extension node key RLC", |meta| {
             let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
@@ -118,13 +134,14 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
 
             let mut constraints = vec![];
 
-            // Could be used any rotation into previous branch, because key RLC is the same in all
-            // branch children:
             let rot_into_prev_branch = rot_into_branch_init - EXTENSION_ROWS_NUM - 1;
 
-            // To reduce the expression degree, we pack together multiple information.
-            // Constraints on selectors are in extension_node.
-            // NOTE: even and odd refers to number of nibbles that are compactly encoded.
+            /*
+            To reduce the expression degree, we pack together multiple information.
+            Constraints on the selectors (like being boolean) are in extension_node.rs.
+
+            Note: even and odd refers to the number of nibbles that are compactly encoded.
+            */
             let is_ext_short_c16 = meta.query_advice(
                 s_main.bytes[IS_EXT_SHORT_C16_POS - RLP_NUM],
                 Rotation(rot_into_branch_init),
@@ -156,20 +173,27 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
             let is_extension_node = get_is_extension_node(meta, s_main.bytes, rot_into_branch_init);
 
             /*
-            sel1 and sel2 determines whether branch modified_node needs to be
+            sel1 and sel2 gives the information whether the branch modified_node needs to be
             multiplied by 16 or not. However, implicitly, sel1 and sel2 determines
-            also (together with extension node key length) whether the extension
+            also (together with the extension node key length) whether the extension
             node key nibble needs to be multiplied by 16 or not.
+
+            For example if modified_node of the branch needs be multiplied by 16, that means
+            there are even number of nibbles used above this branch. Now, if the extension node
+            has even number of nibbles, that means there are even number of nibbles used above
+            the extension node and we know we have to use the multiplier 16 for the first nibble
+            of the extension node.
             */
-            
             let sel1 =
                 meta.query_advice( s_main.bytes[IS_BRANCH_C16_POS - RLP_NUM], Rotation(rot_into_branch_init));
             let sel2 =
                 meta.query_advice(s_main.bytes[IS_BRANCH_C1_POS - RLP_NUM], Rotation(rot_into_branch_init));
 
-            // We are in extension row C, -18 brings us in the branch init row.
-            // -19 is account leaf storage codehash when we are in the first storage proof level.
-            let is_account_leaf_in_added_branch_prev = meta.query_advice(
+            /*
+            We are in extension row C, -18 brings us in the branch init row.
+            -19 is account leaf storage codehash when we are in the first storage proof level.
+            */
+            let is_first_storage_level = meta.query_advice(
                 is_account_leaf_in_added_branch,
                 Rotation(rot_into_branch_init-1),
             );
@@ -178,55 +202,104 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
             let modified_node_cur =
                 meta.query_advice(branch.modified_node, Rotation(-2));
             
-            let key_rlc_prev = meta.query_advice(accs.key.rlc, Rotation::prev());
-            let key_rlc_prev_level = meta.query_advice(accs.key.rlc, Rotation(rot_into_prev_branch));
-            let key_rlc_cur = meta.query_advice(accs.key.rlc, Rotation::cur());
+            let key_rlc_ext_node_prev = meta.query_advice(accs.key.rlc, Rotation::prev());
+            let key_rlc_prev_branch = meta.query_advice(accs.key.rlc, Rotation(rot_into_prev_branch));
+            let key_rlc_ext_node_cur = meta.query_advice(accs.key.rlc, Rotation::cur());
 
-            let key_rlc_mult_prev = meta.query_advice(accs.key.mult, Rotation::prev());
-            let key_rlc_mult_prev_level = meta.query_advice(accs.key.mult, Rotation(rot_into_prev_branch));
-            let key_rlc_mult_cur = meta.query_advice(accs.key.mult, Rotation::cur());
+            let key_rlc_ext_node_mult_prev = meta.query_advice(accs.key.mult, Rotation::prev());
+            let key_rlc_mult_prev_branch = meta.query_advice(accs.key.mult, Rotation(rot_into_prev_branch));
+            let key_rlc_ext_node_mult_cur = meta.query_advice(accs.key.mult, Rotation::cur());
 
             // Any rotation into branch children can be used:
             let key_rlc_branch = meta.query_advice(accs.key.rlc, Rotation(rot_into_branch_init+1));
             let key_rlc_mult_branch = meta.query_advice(accs.key.mult, Rotation(rot_into_branch_init+1));
             let mult_diff = meta.query_advice(accs.mult_diff, Rotation(rot_into_branch_init+1));
 
+            /*
+            Currently, the extension node S and extension node C both have the same key RLC -
+            however, sometimes extension node can be replaced by a shorter extension node
+            (in terms of nibbles), this is still to be implemented.
+
+            TODO: extension nodes of different nibbles length
+            */
             constraints.push((
-                "extension node row S and C key RLC are the same",
+                "Extension node row S and C key RLC are the same",
                 q_not_first.clone()
                     * is_extension_c_row.clone()
                     * is_extension_node.clone()
-                    * (key_rlc_cur.clone() - key_rlc_prev.clone()),
+                    * (key_rlc_ext_node_cur.clone() - key_rlc_ext_node_prev.clone()),
             ));
+
+            /*
+            Same as above but for the multiplier that is to be used for the first nibble 
+            of the extension node.
+            */
             constraints.push((
-                "extension node row S and C mult key RLC are the same",
+                "Extension node row S and C key RLC mult are the same",
                 q_not_first.clone()
                     * is_extension_c_row.clone()
                     * is_extension_node.clone()
-                    * (key_rlc_mult_cur.clone() - key_rlc_mult_prev.clone()),
+                    * (key_rlc_ext_node_mult_cur.clone() - key_rlc_ext_node_mult_prev.clone()),
             ));
 
             let s_rlp2 = meta.query_advice(s_main.rlp2, Rotation::prev());
-            let s_advices0 = meta.query_advice(s_main.bytes[0], Rotation::prev());
-            let s_advices1 = meta.query_advice(s_main.bytes[1], Rotation::prev());
+            let s_bytes0 = meta.query_advice(s_main.bytes[0], Rotation::prev());
+            let s_bytes1 = meta.query_advice(s_main.bytes[1], Rotation::prev());
 
-            // long even not first level not first storage selector:
             let after_first_level = not_first_level.clone()
-                    * (one.clone() - is_account_leaf_in_added_branch_prev.clone())
+                    * (one.clone() - is_first_storage_level.clone())
                     * is_extension_node.clone()
                     * is_extension_c_row.clone();
 
-            // mult_prev = 1 if first level, mult_prev = key_rlc_mult_prev_level if not first level
-            let mult_prev = after_first_level.clone() * key_rlc_mult_prev_level.clone() +
-                one.clone() - after_first_level.clone();
-            // rlc_prev = 0 if first level, rlc_prv = key_rlc_prev_level if not first level
-            let rlc_prev = after_first_level.clone() * key_rlc_prev_level.clone();
+            /*
+            mult_prev is the multiplier to be used for the first nibble of the extension node.
 
-            let mut long_even_rlc_sel1 = rlc_prev.clone() +
-                s_advices1 * mult_prev.clone();
-            // skip 1 because s_main.bytes[0] is 0 and doesn't contain any key info, and skip another 1
-            // because s_main.bytes[1] is not to be multiplied by any r_table element (as it's in compute_rlc).
-            long_even_rlc_sel1 = long_even_rlc_sel1.clone() + compute_rlc(
+            mult_prev = 1 if first level
+            mult_prev = key_rlc_mult_prev_level if not first level
+            */
+            let mult_prev = after_first_level.clone() * key_rlc_mult_prev_branch.clone() +
+                one.clone() - after_first_level.clone();
+
+            /*
+            rlc_prev is the RLC from the previous level. For example, if the extension node
+            is an a branch, then rlc_prev is the intermediate key RLC computed in this branch.
+
+            rlc_prev = 0 if first level
+            rlc_prev = key_rlc_prev_level if not first level
+            */
+            let rlc_prev = after_first_level.clone() * key_rlc_prev_branch.clone();
+
+            /*
+            We first compute the intermediate RLC for the case when we have
+            long even nibbles (meaning there is an even number of nibbles > 1)
+            and sel1 (branch modified_node needs to be multiplied by 16).
+
+            sel1 means there are even number of nibbles above the branch, long even
+            means there are even number of nibbles in the extension node, so there are even
+            number of nibbles above the extension node.
+            The example could be:
+            [228,130,0,149,160,114,253,150,133,18,192,156,19,241,162,51,210,24,1,151,16,48,7,177,42,60,49,34,230,254,242,79,132,165,90,75,249]
+
+            There is 0 at `s_main.bytes[0]` because there are even number of nibbles in the
+            extension node (that is how EVM's `hexToCompact` function works).
+            There are two nibbles `n1`, `n2` in this example and it holds:
+            `s_main.bytes[1] = 149 = n1 * 16 + n2`.
+
+            So, we first compute `rlc_prev + s_main.bytes[1] * mult_prev`.
+            */
+            let mut long_even_sel1_rlc = rlc_prev.clone() +
+                s_bytes1 * mult_prev.clone();
+
+            /*
+            We then add the remaining nibbles - if there are more than two. Note that if there
+            are only two, we will have 0s for `s_main.bytes[i]` for `i > 1`. Having 0s after the
+            last nibble is checked by `key_len_lookup` constraints below.
+
+            Skip one because s_main.bytes[0] is 0 and does not contain any key info, and skip another
+            one because `s_main.bytes[1]` is not to be multiplied by any `r_table` element
+            (how `compute_rlc` works).
+            */
+            long_even_sel1_rlc = long_even_sel1_rlc.clone() + compute_rlc(
                 meta,
                 s_main.bytes.iter().skip(2).map(|v| *v).collect_vec(),
                 0,
@@ -234,25 +307,56 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
                 -1,
                 r_table.clone(),
             );
+
+            /*
+            We check the extension node intermediate RLC for the case when we have
+            long even nibbles (meaning there is an even number of nibbles > 1)
+            and sel1 (branch modified_node needs to be multiplied by 16).
+            */
             constraints.push((
-                "long even sel1 extension",
+                "Long even sel1 extension node RLC",
                     q_not_first.clone()
                     * is_ext_long_even_c16.clone()
                     * is_extension_c_row.clone()
-                    * (key_rlc_cur.clone() - long_even_rlc_sel1.clone())
+                    * (key_rlc_ext_node_cur.clone() - long_even_sel1_rlc.clone())
             ));
-            // We check branch key RLC in extension C row too (otherwise +rotation would be needed
-            // because we first have branch rows and then extension rows):
+
+            /*
+            Once we have extension node key RLC computed we need to take into account also the nibble
+            corresponding to the branch (this nibble is `modified_node`):
+            `key_rlc_branch = key_rlc_ext_node + modified_node * mult_prev * mult_diff * 16`
+
+            Note that the multiplier used is `mult_prev * mult_diff`. This is because `mult_prev`
+            is the multiplier to be used for the first extension node nibble, but we then
+            need to take into account the number of nibbles in the extension node to have
+            the proper multiplier for the `modified_node`. `mult_diff` stores the power or `r`
+            such that the desired multiplier is `mult_prev * mult_diff`.
+            However, `mult_diff` needs to be checked to correspond to the length of the nibbles
+            (see `mult_diff` lookups below).
+
+            We check branch key RLC in `IS_EXTENSION_NODE_C` row (and not in branch rows),
+            otherwise +rotation would be needed
+            because we first have branch rows and then extension rows.
+            */
             constraints.push((
-                "long even sel1 branch",
+                "Long even sel1 extension node > branch key RLC",
                     q_not_first.clone()
                     * is_ext_long_even_c16.clone()
                     * is_extension_c_row.clone()
-                    * (key_rlc_branch.clone() - key_rlc_cur.clone() -
+                    * (key_rlc_branch.clone() - key_rlc_ext_node_cur.clone() -
                         c16.clone() * modified_node_cur.clone() * mult_prev.clone() * mult_diff.clone())
             ));
+
+            /*
+            We need to check that the multiplier stored in a branch is:
+            `key_rlc_mult_branch = mult_prev * mult_diff`.
+
+            While we can use the expression `mult_prev * mult_diff` in the constraints in this file,
+            we need to have `key_rlc_mult_branch` properly stored because it is accessed from the
+            child nodes when computing the key RLC in child nodes.
+            */
             constraints.push((
-                "long even sel1 branch mult",
+                "Long even sel1 extension node > branch key RLC mult",
                     q_not_first.clone()
                     * is_ext_long_even_c16.clone()
                     * is_extension_c_row.clone()
@@ -267,7 +371,7 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
             */
             // Note: sel1 and sel2 are turned around here (because of odd number of nibbles).
             let mut long_odd_sel2_rlc = rlc_prev.clone() +
-                c16.clone() * (s_advices0.clone() - c16.clone()) * mult_prev.clone(); // -16 because of hexToCompact
+                c16.clone() * (s_bytes0.clone() - c16.clone()) * mult_prev.clone(); // -16 because of hexToCompact
             // s_advices0 - 16 = 3 in example above
             let mut mult = one.clone();
             for ind in 0..HASH_WIDTH-1 {
@@ -296,7 +400,7 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
                     q_not_first.clone()
                         * is_ext_long_odd_c1.clone()
                         * is_extension_c_row.clone()
-                        * (key_rlc_cur.clone() - long_odd_sel2_rlc.clone())
+                        * (key_rlc_ext_node_cur.clone() - long_odd_sel2_rlc.clone())
             ));
             // We check branch key RLC in extension C row too (otherwise +rotation would be needed
             // because we first have branch rows and then extension rows):
@@ -305,7 +409,7 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
                     q_not_first.clone()
                         * is_ext_long_odd_c1.clone()
                         * is_extension_c_row.clone()
-                        * (key_rlc_branch.clone() - key_rlc_cur.clone() -
+                        * (key_rlc_branch.clone() - key_rlc_ext_node_cur.clone() -
                             modified_node_cur.clone() * mult_prev.clone() * mult_diff.clone())
             ));
             constraints.push((
@@ -326,7 +430,7 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
                     q_not_first.clone()
                         * is_ext_short_c16.clone()
                         * is_extension_c_row.clone()
-                        * (key_rlc_cur.clone() - short_sel1_rlc.clone())
+                        * (key_rlc_ext_node_cur.clone() - short_sel1_rlc.clone())
             ));
             // We check branch key RLC in extension C row too (otherwise +rotation would be needed
             // because we first have branch rows and then extension rows):
@@ -335,7 +439,7 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
                     q_not_first.clone()
                         * is_ext_short_c16.clone()
                         * is_extension_c_row.clone()
-                        * (key_rlc_branch.clone() - key_rlc_cur.clone() -
+                        * (key_rlc_branch.clone() - key_rlc_ext_node_cur.clone() -
                             c16.clone() * modified_node_cur.clone() * mult_prev.clone() * r_table[0].clone())
             ));
             constraints.push((
@@ -361,7 +465,7 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
             We get first_nibble by having second_nibble (5 in the example above) as the witness
             in extension row C and then: first_nibble = ((9*16 + 5) - 5) / 16.
             */
-            let mut long_even_sel2_rlc = key_rlc_prev_level.clone();
+            let mut long_even_sel2_rlc = key_rlc_prev_branch.clone();
             // Note: this can't appear in first level because it's sel2.
 
             let mut mult = one.clone();
@@ -380,18 +484,18 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
                 ));
 
                 long_even_sel2_rlc = long_even_sel2_rlc +
-                    first_nibble.clone() * key_rlc_mult_prev_level.clone() * mult.clone();
+                    first_nibble.clone() * key_rlc_mult_prev_branch.clone() * mult.clone();
                 mult = mult * r_table[0].clone();
 
                 long_even_sel2_rlc = long_even_sel2_rlc +
-                    second_nibble.clone() * c16.clone() * key_rlc_mult_prev_level.clone() * mult.clone();
+                    second_nibble.clone() * c16.clone() * key_rlc_mult_prev_branch.clone() * mult.clone();
             }
             constraints.push((
                 "long even sel2 extension",
                         q_not_first.clone()
                         * after_first_level.clone()
                         * is_ext_long_even_c1.clone()
-                        * (key_rlc_cur.clone() - long_even_sel2_rlc.clone())
+                        * (key_rlc_ext_node_cur.clone() - long_even_sel2_rlc.clone())
             ));
             // We check branch key RLC in extension C row too (otherwise +rotation would be needed
             // because we first have branch rows and then extension rows):
@@ -400,22 +504,22 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
                         q_not_first.clone()
                         * after_first_level.clone()
                         * is_ext_long_even_c1.clone()
-                        * (key_rlc_branch.clone() - key_rlc_cur.clone() -
-                            modified_node_cur.clone() * key_rlc_mult_prev_level.clone() * mult_diff.clone())
+                        * (key_rlc_branch.clone() - key_rlc_ext_node_cur.clone() -
+                            modified_node_cur.clone() * key_rlc_mult_prev_branch.clone() * mult_diff.clone())
             ));
             constraints.push((
                 "long even sel2 branch mult",
                         q_not_first.clone()
                         * after_first_level
                         * is_ext_long_even_c1.clone()
-                        * (key_rlc_mult_branch.clone() - key_rlc_mult_prev_level.clone() * mult_diff.clone() * r_table[0].clone())
+                        * (key_rlc_mult_branch.clone() - key_rlc_mult_prev_branch.clone() * mult_diff.clone() * r_table[0].clone())
                         // mult_diff is checked in a lookup below
             ));
 
             // long odd not first level not first storage selector:
             let long_odd = q_not_first.clone()
                     * not_first_level.clone()
-                    * (one.clone() - is_account_leaf_in_added_branch_prev.clone())
+                    * (one.clone() - is_first_storage_level.clone())
                     * is_extension_c_row.clone()
                     * (is_ext_long_odd_c16.clone() + is_ext_long_odd_c1.clone());
     
@@ -424,14 +528,14 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
             bytes: [228, 130, 16 + 3, 137, 0, ...]
             nibbles: [5, 0, ...]
             */
-            let mut long_odd_sel1_rlc = key_rlc_prev_level.clone() +
-                (s_advices0 - c16.clone()) * key_rlc_mult_prev_level.clone();
+            let mut long_odd_sel1_rlc = key_rlc_prev_branch.clone() +
+                (s_bytes0 - c16.clone()) * key_rlc_mult_prev_branch.clone();
             // skip 1 because s_main.bytes[0] has already been taken into account
             long_odd_sel1_rlc = long_odd_sel1_rlc.clone() + compute_rlc(
                 meta,
                 s_main.bytes.iter().skip(1).map(|v| *v).collect_vec(),
                 0,
-                key_rlc_mult_prev_level.clone(),
+                key_rlc_mult_prev_branch.clone(),
                 -1,
                 r_table.clone(),
             );
@@ -439,7 +543,7 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
                 "long odd sel1 extension",
                     long_odd.clone() // no need for check_extension here
                     * sel1.clone()
-                    * (key_rlc_cur.clone() - long_odd_sel1_rlc.clone())
+                    * (key_rlc_ext_node_cur.clone() - long_odd_sel1_rlc.clone())
             ));
             // We check branch key RLC in extension C row too (otherwise +rotation would be needed
             // because we first have branch rows and then extension rows):
@@ -447,31 +551,31 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
                 "long odd sel1 branch",
                     long_odd.clone()
                     * sel1.clone()
-                    * (key_rlc_branch.clone() - key_rlc_cur.clone() -
-                        c16.clone() * modified_node_cur.clone() * key_rlc_mult_prev_level.clone() * mult_diff.clone())
+                    * (key_rlc_branch.clone() - key_rlc_ext_node_cur.clone() -
+                        c16.clone() * modified_node_cur.clone() * key_rlc_mult_prev_branch.clone() * mult_diff.clone())
             ));
             constraints.push((
                 "long odd sel1 branch mult",
                     long_odd.clone()
                     * sel1.clone()
-                    * (key_rlc_mult_branch.clone() - key_rlc_mult_prev_level.clone() * mult_diff.clone())
+                    * (key_rlc_mult_branch.clone() - key_rlc_mult_prev_branch.clone() * mult_diff.clone())
                     // mult_diff is checked in a lookup below
             ));
 
             // short: 
             let short = q_not_first.clone()
                 * not_first_level.clone()
-                * (one.clone() - is_account_leaf_in_added_branch_prev.clone())
+                * (one.clone() - is_first_storage_level.clone())
                 * is_extension_c_row.clone()
                 * (is_ext_short_c16.clone() + is_ext_short_c1.clone());
 
-            let short_sel2_rlc = key_rlc_prev_level.clone() +
-                c16.clone() * (s_rlp2 - c16.clone()) * key_rlc_mult_prev_level.clone(); // -16 because of hexToCompact
+            let short_sel2_rlc = key_rlc_prev_branch.clone() +
+                c16.clone() * (s_rlp2 - c16.clone()) * key_rlc_mult_prev_branch.clone(); // -16 because of hexToCompact
             constraints.push((
                 "short sel2 extension",
                     short.clone() // no need for check_extension here
                     * sel2.clone()
-                    * (key_rlc_cur.clone() - short_sel2_rlc.clone())
+                    * (key_rlc_ext_node_cur.clone() - short_sel2_rlc.clone())
             ));
             // We check branch key RLC in extension C row too (otherwise +rotation would be needed
             // because we first have branch rows and then extension rows):
@@ -479,14 +583,14 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
                 "short sel2 branch",
                     short.clone()
                     * sel2.clone()
-                    * (key_rlc_branch.clone() - key_rlc_cur.clone() -
-                        modified_node_cur.clone() * key_rlc_mult_prev_level.clone())
+                    * (key_rlc_branch.clone() - key_rlc_ext_node_cur.clone() -
+                        modified_node_cur.clone() * key_rlc_mult_prev_branch.clone())
             ));
             constraints.push((
                 "short sel2 branch mult",
                     short.clone()
                     * sel2.clone()
-                    * (key_rlc_mult_branch.clone() - key_rlc_mult_prev_level.clone() * r_table[0].clone())
+                    * (key_rlc_mult_branch.clone() - key_rlc_mult_prev_branch.clone() * r_table[0].clone())
             ));
 
             let is_extension_s_row =
