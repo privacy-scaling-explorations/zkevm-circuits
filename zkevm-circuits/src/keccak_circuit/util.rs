@@ -131,6 +131,13 @@ pub fn rotate_rev<T>(parts: Vec<T>, count: usize, part_size: usize) -> Vec<T> {
     rotated_parts
 }
 
+/// Rotates bits left
+pub fn rotate_left(bits: &[u8], count: usize) -> [u8; NUM_BITS_PER_WORD] {
+    let mut rotated = bits.to_vec();
+    rotated.rotate_left(count);
+    rotated.try_into().unwrap()
+}
+
 /// Encodes the data using rlc
 pub mod compose_rlc {
     use eth_types::Field;
@@ -149,18 +156,12 @@ pub mod compose_rlc {
 
 /// Scatters a value into a packed word constant
 pub mod scatter {
-    use super::BIT_SIZE;
+    use super::pack;
     use eth_types::Field;
     use halo2_proofs::plonk::Expression;
 
-    pub(crate) fn expr<F: Field>(value: usize, count: usize) -> Expression<F> {
-        let mut packed = F::zero();
-        let mut factor = F::one();
-        for _ in 0..count {
-            packed += F::from(value as u64) * factor;
-            factor *= F::from(BIT_SIZE as u64);
-        }
-        Expression::Constant(packed)
+    pub(crate) fn expr<F: Field>(value: u8, count: usize) -> Expression<F> {
+        Expression::Constant(pack(&vec![value; count]))
     }
 }
 
@@ -179,50 +180,50 @@ pub fn get_absorb_positions() -> Vec<(usize, usize)> {
 
 /// Converts bytes into bits
 pub fn into_bits(bytes: &[u8]) -> Vec<u8> {
-    let num_bits = bytes.len() * 8;
-    let mut bits: Vec<u8> = vec![0; num_bits];
-    let mut counter = 0;
-    for byte in bytes {
+    let mut bits: Vec<u8> = vec![0; bytes.len() * 8];
+    for (byte_idx, byte) in bytes.iter().enumerate() {
         for idx in 0u64..8 {
-            bits[counter] = (*byte >> idx) & 1;
-            counter += 1;
+            bits[byte_idx * 8 + (idx as usize)] = (*byte >> idx) & 1;
         }
     }
     bits
 }
 
-/// Converts bits into bytes
-pub fn from_bits(bits: &[u8]) -> Word {
-    let mut value = Word::zero();
-    for (idx, bit) in bits.iter().enumerate() {
-        value += Word::from(*bit as u64) << idx;
-    }
-    value
+/// Pack bits in the range [0,BIT_SIZE[ into a sparse keccak word
+pub fn pack<F: Field>(bits: &[u8]) -> F {
+    pack_with_base(bits, BIT_SIZE)
 }
 
-/// Pack bits in the range [0,BIT_SIZE[ into a sparse keccak word
-pub fn pack(bits: &[u8]) -> Word {
-    let mut packed = Word::zero();
-    let mut factor = Word::from(1u64);
-    for bit in bits {
-        packed += Word::from(*bit as u64) * factor;
-        factor *= BIT_SIZE;
-    }
-    packed
+/// Pack bits in the range [0,BIT_SIZE[ into a sparse keccak word with the
+/// specified bit base
+pub fn pack_with_base<F: Field>(bits: &[u8], base: usize) -> F {
+    let base = F::from(base as u64);
+    bits.iter()
+        .rev()
+        .fold(F::zero(), |acc, &bit| acc * base + F::from(bit as u64))
+}
+
+/// Decodes the bits using the position data found in the part info
+pub fn pack_part(bits: &[u8], info: &PartInfo) -> u64 {
+    info.bits.iter().rev().fold(0u64, |acc, &bit_pos| {
+        acc * (BIT_SIZE as u64) + (bits[bit_pos] as u64)
+    })
 }
 
 /// Unpack a sparse keccak word into bits in the range [0,BIT_SIZE[
-pub fn unpack(packed: Word) -> [u8; NUM_BITS_PER_WORD] {
+pub fn unpack<F: Field>(packed: F) -> [u8; NUM_BITS_PER_WORD] {
     let mut bits = [0; NUM_BITS_PER_WORD];
+    let packed = Word::from_little_endian(packed.to_repr().as_ref());
+    let mask = Word::from(BIT_SIZE - 1);
     for (idx, bit) in bits.iter_mut().enumerate() {
-        *bit = ((packed >> (idx * BIT_COUNT)) & Word::from(BIT_SIZE - 1)).as_u32() as u8;
+        *bit = ((packed >> (idx * BIT_COUNT)) & mask).as_u32() as u8;
     }
-    debug_assert_eq!(pack(&bits), packed);
+    debug_assert_eq!(pack::<F>(&bits), packed.to_scalar().unwrap());
     bits
 }
 
 /// Pack bits stored in a u64 value into a sparse keccak word
-pub fn pack_u64(value: u64) -> Word {
+pub fn pack_u64<F: Field>(value: u64) -> F {
     pack(
         &((0..NUM_BITS_PER_WORD)
             .map(|i| ((value >> i) & 1) as u8)
@@ -230,20 +231,19 @@ pub fn pack_u64(value: u64) -> Word {
     )
 }
 
-/// Normalize bits with values in [0,BIT_SIZE[ to binary
-pub fn normalize(bits: &[u8]) -> [u8; NUM_BITS_PER_WORD] {
-    let mut normalized = [0; NUM_BITS_PER_WORD];
-    for (normalized, bit) in normalized.iter_mut().zip(bits.iter()) {
-        *normalized = *bit & 1;
+/// Calculates a ^ b with a and b field elements
+pub fn field_xor<F: Field>(a: F, b: F) -> F {
+    let mut bytes = [0u8; 32];
+    for (idx, (a, b)) in a
+        .to_repr()
+        .as_ref()
+        .iter()
+        .zip(b.to_repr().as_ref().iter())
+        .enumerate()
+    {
+        bytes[idx] = *a ^ *b;
     }
-    normalized
-}
-
-/// Rotates bits left
-pub fn rotate_left(bits: &[u8], count: usize) -> [u8; NUM_BITS_PER_WORD] {
-    let mut rotated = bits.to_vec();
-    rotated.rotate_left(count);
-    rotated.try_into().unwrap()
+    F::from_repr(bytes).unwrap()
 }
 
 /// Returns the size (in bits) of each part size when splitting up a keccak word
@@ -403,7 +403,7 @@ pub fn load_pack_table<F: Field>(
                     offset,
                     || Value::known(F::from(idx)),
                 )?;
-                let packed: F = pack(&into_bits(&[idx as u8])).to_scalar().unwrap();
+                let packed: F = pack(&into_bits(&[idx as u8]));
                 table.assign_cell(|| "packed", tables[1], offset, || Value::known(packed))?;
             }
             Ok(())
