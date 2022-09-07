@@ -22,40 +22,38 @@ extern crate prettytable;
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
 struct Args {
-    /// Path of test files
-    #[clap(short, long, default_value = "tests/src/GeneralStateTestsFiller/**")]
-    path: String,
+    /// (Ethereum tests) path 
+    #[clap(long, default_value = "tests/src/GeneralStateTestsFiller/**")]
+    ethtest: String,
 
-    /// Test to execute
-    #[clap(short, long)]
-    test: Option<String>,
+    /// (Ethereum tests) execute one test and dump the results
+    #[clap(long)]
+    ethtest_id: Option<String>,
 
-    /// Do not run circuits
-    #[clap(long, short)]
+    /// (Ethereum tests) Cache execution results 
+    #[clap(long)]
+    ethtest_cache: bool,
+
+    /// (Ethereum tests) Run all ignored tests (skipped ones are not executed)
+    #[clap(long)]
+    ethtest_all: bool,
+
+    /// Do not run any circuits
+    #[clap(long)]
     skip_circuit: bool,
 
-    /// Do not run circuit
+    /// Do not run state circuit
     #[clap(long)]
     skip_state_circuit: bool,
 
-    /// Raw execute bytecode
-    #[clap(short, long)]
+    /// Raw execute bytecode, can be hex `6001` or asm `PUSH1(60); PUSH1(60)` 
+    #[clap(long)]
     raw: Option<String>,
-
-    /// cache
-    #[clap(short, long)]
-    cache: bool,
-
-    /// Run all ignored tests (skipped ones are not executed)
-    #[clap(short, long)]
-    all_tests: bool,
 
     /// Verbose
     #[clap(short, long)]
     v: bool,
 }
-
-/// This crate helps to execute the common ethereum tests located in https://github.com/ethereum/tests
 
 const RESULT_CACHE: &str = "result.cache";
 
@@ -136,9 +134,9 @@ fn main() -> Result<()> {
     log::info!("Parsing and compliling tests...");
     let compiler = Compiler::new(true, Some(PathBuf::from("./code.cache")))?;
 
-    if let Some(test_id) = args.test {
+    if let Some(test_id) = args.ethtest_id {
         config.skip_test.clear();
-        let state_tests = load_statetests_suite(&args.path, config, compiler)?;
+        let state_tests = load_statetests_suite(&args.ethtest, config, compiler)?;
         let mut state_tests: Vec<_> = state_tests
             .into_iter()
             .filter(|t| t.id == test_id)
@@ -148,11 +146,11 @@ fn main() -> Result<()> {
         }
         run_single_test(state_tests.remove(0), statetest_config)?;
     } else {
-        if args.all_tests {
+        if args.ethtest_all {
             config.skip_test.clear();
         }
-        let state_tests = load_statetests_suite(&args.path, config, compiler)?;
-        let mut results = if args.cache {
+        let state_tests = load_statetests_suite(&args.ethtest, config, compiler)?;
+        let mut results = if args.ethtest_cache {
             let results = ResultCache::with_file(PathBuf::from(RESULT_CACHE))?;
             results.write_sorted()?;
             results
