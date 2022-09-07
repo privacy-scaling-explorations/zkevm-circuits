@@ -67,9 +67,9 @@ use halo2_proofs::{
 
 use super::copy_circuit::CopyCircuit;
 use crate::{
-    witness::block_convert,
     keccak_circuit::keccak_bit::{KeccakBitCircuit, KeccakBitConfig},
     tx_circuit::sign_verify::POW_RAND_SIZE,
+    witness::block_convert,
 };
 use bus_mapping::mock::BlockData;
 use eth_types::geth_types::{self, GethData};
