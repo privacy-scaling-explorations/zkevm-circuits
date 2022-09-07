@@ -271,8 +271,8 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
 
             /*
             We first compute the intermediate RLC for the case when we have
-            long even nibbles (meaning there is an even number of nibbles > 1)
-            and sel1 (branch modified_node needs to be multiplied by 16).
+            long even nibbles (meaning there is an even number of nibbles and this number is
+            bigger than 1) and sel1 (branch modified_node needs to be multiplied by 16).
 
             sel1 means there are even number of nibbles above the branch, long even
             means there are even number of nibbles in the extension node, so there are even
@@ -314,7 +314,7 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
             and sel1 (branch modified_node needs to be multiplied by 16).
             */
             constraints.push((
-                "Long even sel1 extension node RLC",
+                "Long even sel1 extension node key RLC",
                     q_not_first.clone()
                     * is_ext_long_even_c16.clone()
                     * is_extension_c_row.clone()
@@ -365,23 +365,66 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
             ));
 
             /* 
-            Example:
-            bytes: [228, 130, 16 + 3, 9*16 + 5, 0, ...]
-            nibbles: [5, 0, ...]
+            Long odd sel2 means there are odd number of nibbles and this number is bigger than 1.
+
+            sel2 means there are odd number of nibbles above the branch, long odd
+            means there are odd number of nibbles in the extension node, so there are even
+            number of nibbles above the extension node:
+            `nibbles_above_branch = nibbles_above_ext_node + ext_node_nibbles`.
+
+            The example could be:
+            [228, 130, 16 + 3, 9*16 + 5, 0, ...]
+
+            In this example, we have three nibbles: `[3, 9, 5]`. Note that because the number of nibbles
+            is odd, we have the first nibble already at position `s_main.bytes[0]` (16 is added to the
+            first nibble in `hexToCompact` function). As opposed, in the above example where we had
+            two nibbles, we had 0 at `s_main.bytes[0]`:
+            [228,130,0,149,160,114,253,150,133,18,192,156,19,241,162,51,210,24,1,151,16,48,7,177,42,60,49,34,230,254,242,79,132,165,90,75,249]
+
+            To get the first nibble we need to compute `s_main.bytes[0] - 16`.
             */
-            // Note: sel1 and sel2 are turned around here (because of odd number of nibbles).
             let mut long_odd_sel2_rlc = rlc_prev.clone() +
-                c16.clone() * (s_bytes0.clone() - c16.clone()) * mult_prev.clone(); // -16 because of hexToCompact
-            // s_advices0 - 16 = 3 in example above
+                c16.clone() * (s_bytes0.clone() - c16.clone()) * mult_prev.clone();
             let mut mult = one.clone();
+
+            /*
+            When there are odd number of nibbles in the extension node, we need to know each
+            nibble individually. When even number of nibbles this is not needed, because all we need
+            is `n1 * 16 + n2`, `n3 * 16 + n4`, ... and we already have nibbles stored in that format
+            in the extension node.
+            When odd number, we have `n1 + 16`, `n2 * 16 + n3`, `n4 * 16 + n5`,...,
+            but we need `n1 * 16 + n2`, `n3 * 16 + n4`,... (actually we need this only if there
+            are also even number of nibbles above the extension node as is the case in long odd sel2).
+
+            To get `n1 * 16 + n2`, `n3 * 16 + n4`,...
+            from
+            `n1 + 16`, `n2 * 16 + n3`, `n4 * 16 + n5`,...
+            we store the nibbles `n3`, `n5`,... in
+            `BRANCH.IS_EXTENSION_NODE_C` row.
+            
+            `BRANCH.IS_EXTENSION_NODE_S` and `BRANCH.IS_EXTENSION_NODE_C` rows of our example are thus:
+            [228, 130, 16 + 3, 9*16 + 5, 0, ...]
+            [5, 0, ...]
+
+            We name the values in `BRANCH.IS_EXTENSION_NODE_C` as `second_nibbles`.
+            Using the knowledge of `second_nibble` of the pair, we can compute `first_nibble`.
+            Having a list of `first_nibble` and `second_nibble`, we can compute the key RLC.
+
+            However, we need to check that the list of `second_nibbles` is correct. For example having
+            `first_nibble = 9 = ((9*16 + 5) - 5) / 16`
+            we check:
+            `first_nibble * 16 + 5 = s_main.bytes[1]`.
+            */
             for ind in 0..HASH_WIDTH-1 {
                 let s = meta.query_advice(s_main.bytes[1+ind], Rotation::prev());
                 let second_nibble = meta.query_advice(s_main.bytes[ind], Rotation::cur());
                 let first_nibble = (s.clone() - second_nibble.clone()) * c16inv.clone();
-                // Note that first_nibble and second_nibble need to be between 0 and 15 - this
-                // is checked in a lookup below.
+                /*
+                Note that first_nibble and second_nibble need to be between 0 and 15 - this
+                is checked in a lookup below.
+                */
                 constraints.push((
-                    "long odd sel2 nibble correspond to byte",
+                    "Long odd sel2 first_nibble second_nibble",
                     q_not_first.clone()
                         * is_ext_long_odd_c1.clone()
                         * is_extension_c_row.clone()
@@ -395,25 +438,51 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
                 long_odd_sel2_rlc = long_odd_sel2_rlc +
                     second_nibble.clone() * c16.clone() * mult_prev.clone() * mult.clone();
             }
+
+            /*
+            We check the extension node intermediate RLC for the case when we have
+            long odd nibbles (meaning there is an odd number of nibbles and this number is bigger than 1)
+            and sel2 (branch `modified_node` needs to be multiplied by 1).
+
+            Note that for the computation of the intermediate RLC we need `first_nibbles` and
+            `second_nibbles` mentioned in the constraint above.
+            */
             constraints.push((
-                "long odd sel2 extension",
+                "Long odd sel2 extension node key RLC",
                     q_not_first.clone()
                         * is_ext_long_odd_c1.clone()
                         * is_extension_c_row.clone()
                         * (key_rlc_ext_node_cur.clone() - long_odd_sel2_rlc.clone())
             ));
-            // We check branch key RLC in extension C row too (otherwise +rotation would be needed
-            // because we first have branch rows and then extension rows):
+
+            /*
+            Once we have extension node key RLC computed we need to take into account also the nibble
+            corresponding to the branch (this nibble is `modified_node`):
+            `key_rlc_branch = key_rlc_ext_node + modified_node * mult_prev * mult_diff * 1`.
+            */
             constraints.push((
-                "long odd sel2 branch",
+                "Long odd sel2 extension node > branch key RLC",
                     q_not_first.clone()
                         * is_ext_long_odd_c1.clone()
                         * is_extension_c_row.clone()
                         * (key_rlc_branch.clone() - key_rlc_ext_node_cur.clone() -
                             modified_node_cur.clone() * mult_prev.clone() * mult_diff.clone())
             ));
+
+            /*
+            We need to check that the multiplier stored in a branch is:
+            `key_rlc_mult_branch = mult_prev * mult_diff * r_table[0]`.
+
+            Note that compared to `Long even sel1` case, we have an additional factor
+            `r` here. This is because we have even number of nibbles above the extension node
+            and then we have odd number of nibbles in the extension node: this means the multiplier
+            for `n1` (which is stored in `s_main.bytes[0]`) will need a multiplier  `key_rlc_mult_branch * r`.
+            For `n3` we will need a multiplier  `key_rlc_mult_branch * r^2`,...
+            The difference with `Long even sel1` is that here we have an additional nibble in
+            `s_main.bytes[0]` which requires an increased multiplier.
+            */
             constraints.push((
-                "long odd sel2 branch mult",
+                "Long odd sel2 extension node > branch key RLC mult",
                     q_not_first.clone()
                         * is_ext_long_odd_c1.clone()
                         * is_extension_c_row.clone()
@@ -421,29 +490,48 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
                         // mult_diff is checked in a lookup below
             ));
 
-            // short
- 
             let short_sel1_rlc = rlc_prev.clone() +
                 (s_rlp2.clone() - c16.clone()) * mult_prev.clone(); // -16 because of hexToCompact
+
+            /*
+            Short means there is one nibble in the extension node
+            sel1 means there are even number of nibbles above the branch,
+            so there are odd number of nibbles above the extension node in this case:
+            `nibbles_above_branch = nibbles_above_ext_node + 1`.
+
+            We check the extension node intermediate RLC for the case when we have
+            one nibble and sel1 (branch `modified_node` needs to be multiplied by 16).
+            */
             constraints.push((
-                "short sel1 extension",
+                "Short sel1 extension node key RLC",
                     q_not_first.clone()
                         * is_ext_short_c16.clone()
                         * is_extension_c_row.clone()
                         * (key_rlc_ext_node_cur.clone() - short_sel1_rlc.clone())
             ));
-            // We check branch key RLC in extension C row too (otherwise +rotation would be needed
-            // because we first have branch rows and then extension rows):
+
+            /*
+            Once we have extension node key RLC computed we need to take into account also the nibble
+            corresponding to the branch (this nibble is `modified_node`):
+            `key_rlc_branch = key_rlc_ext_node + modified_node * mult_prev * mult_diff * 16`.
+
+            Note: `mult_diff = r` because we only have one nibble in the extension node.
+            */
             constraints.push((
-                "short sel1 branch",
+                "Short sel1 extension node > branch key RLC",
                     q_not_first.clone()
                         * is_ext_short_c16.clone()
                         * is_extension_c_row.clone()
                         * (key_rlc_branch.clone() - key_rlc_ext_node_cur.clone() -
                             c16.clone() * modified_node_cur.clone() * mult_prev.clone() * r_table[0].clone())
             ));
+
+            /*
+            We need to check that the multiplier stored in a branch is:
+            `key_rlc_mult_branch = mult_prev * r_table[0]`.
+            */
             constraints.push((
-                "short sel1 branch mult",
+                "Short sel1 extension node > branch key RLC mult",
                     q_not_first.clone()
                         * is_ext_short_c16.clone()
                         * is_extension_c_row.clone()
@@ -451,32 +539,53 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
             ));
 
             /* 
-            Note that there can be at max 31 key bytes because 32 same bytes would mean
-            the two keys being the same - update operation, not splitting into extension node.
-            So, we don't need to look further than s_main.bytes even if the first byte (s_main.bytes[0])
-            is "padding".
+            `Long even sel2` case is similar to `Long odd sel1` case above - similar in a way
+            that we need helper values for `first_nibbles`.
+
+            Here we have an even number of nibbles in the extension node and this number is bigger than 1.
+            And `sel2` means branch `modified_node` needs to be multiplied by 1, which is the same as
+            saying there are odd number of nibbles above the branch.
+            It holds: `nibbles_above_branch = nibbles_above_ext_node + ext_node_nibbles`.
+            That means we have an odd number of nibbles above extension node.
 
             Example:
-            bytes: [228, 130, 0, 9*16 + 5, 0, ...]
-            nibbles: [5, 0, ...]
-            Having sel2 means we need to:
-                key_rlc_prev_level + first_nibble * key_rlc_mult_prev_level,
-            However, we need to compute first_nibble (which is 9 in the example above).
-            We get first_nibble by having second_nibble (5 in the example above) as the witness
-            in extension row C and then: first_nibble = ((9*16 + 5) - 5) / 16.
+            `[228, 130, 0, 9*16 + 5, 0, ...]` // we only have two nibbles here (`even`)
+            `[5, 0, ...]`
+
+            We cannot use directly `n1 * 16 + n2` (`9*16 + 5` in the example) when computing the key RLC
+            because there is an odd number of nibbles above the extension node.
+            So we first need to compute: `key_rlc_prev_branch + n1 * key_rlc_mult_prev_branch`.
+            Which is the same as:
+            `key_rlc_prev_branch + (s_main.bytes[1] - second_nibble)/16 * key_rlc_mult_prev_branch`.
+
+            We then continue adding the rest of the nibbles.
+            In our example there is only one more nibble, so the extension node key RLC is:
+            `key_rlc_prev_branch + (s_main.bytes[1] - second_nibble)/16 * key_rlc_mult_prev_branch + first_nibble * key_rlc_mult_prev_branch * r * 16`.
+            Note that we added a factor `r` because we moved to a new pair of nibbles (a new byte).
             */
             let mut long_even_sel2_rlc = key_rlc_prev_branch.clone();
-            // Note: this can't appear in first level because it's sel2.
+            // Note: this cannot appear in the first level because it is sel2.
 
             let mut mult = one.clone();
             for ind in 0..HASH_WIDTH-1 {
+                /*
+                Note that there can be at max 31 key bytes because 32 same bytes would mean
+                the two keys being the same - update operation, not splitting into extension node.
+                So, we do not need to look further than `s_main.bytes` even if `s_main.bytes[0]`
+                is not used (when even number of nibbles).
+                */
                 let s = meta.query_advice(s_main.bytes[1+ind], Rotation::prev());
                 let second_nibble = meta.query_advice(s_main.bytes[ind], Rotation::cur());
                 let first_nibble = (s.clone() - second_nibble.clone()) * c16inv.clone();
-                // Note that first_nibble and second_nibble need to be between 0 and 15 - this
-                // is checked in a lookup below.
+
+                /*
+                In this constraints we check whether the list of `second_nibbles` is correct.
+
+                Note that first_nibble and second_nibble need to be between 0 and 15 - this
+                is checked in a lookup below.
+                */
                 constraints.push((
-                    "long even sel2 nibble correspond to byte",
+                    "Long even sel2 first_nibble second_nibble",
                         q_not_first.clone()
                         * after_first_level.clone() // no need for check_extension here
                         * is_ext_long_even_c1.clone()
@@ -490,25 +599,40 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
                 long_even_sel2_rlc = long_even_sel2_rlc +
                     second_nibble.clone() * c16.clone() * key_rlc_mult_prev_branch.clone() * mult.clone();
             }
+
+            /*
+            We check the extension node intermediate RLC for the case when we have
+            long even nibbles (meaning there is an even number of nibbles and this number is bigger than 1)
+            and `sel2` (branch `modified_node` needs to be multiplied by 1).
+            */
             constraints.push((
-                "long even sel2 extension",
+                "Long even sel2 extension node key RLC",
                         q_not_first.clone()
                         * after_first_level.clone()
                         * is_ext_long_even_c1.clone()
                         * (key_rlc_ext_node_cur.clone() - long_even_sel2_rlc.clone())
             ));
-            // We check branch key RLC in extension C row too (otherwise +rotation would be needed
-            // because we first have branch rows and then extension rows):
+
+            /*
+            Once we have extension node key RLC computed we need to take into account also the nibble
+            corresponding to the branch (this nibble is `modified_node`):
+            `key_rlc_branch = key_rlc_ext_node + modified_node * key_rlc_mult_prev_branch * mult_diff * 1`
+            */
             constraints.push((
-                "long even sel2 branch",
+                "Long even sel2 extension node > branch key RLC",
                         q_not_first.clone()
                         * after_first_level.clone()
                         * is_ext_long_even_c1.clone()
                         * (key_rlc_branch.clone() - key_rlc_ext_node_cur.clone() -
                             modified_node_cur.clone() * key_rlc_mult_prev_branch.clone() * mult_diff.clone())
             ));
+
+            /*
+            We need to check that the multiplier stored in a branch is:
+            `key_rlc_mult_branch = key_rlc_mult_prev_branch * mult_diff * r_table[0]`.
+            */
             constraints.push((
-                "long even sel2 branch mult",
+                "Long even sel2 extension node > branch key RLC mult",
                         q_not_first.clone()
                         * after_first_level
                         * is_ext_long_even_c1.clone()
