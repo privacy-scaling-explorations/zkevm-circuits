@@ -1,7 +1,7 @@
 use bus_mapping::evm::OpcodeId;
-use eth_types::{Field, ToLittleEndian, ToScalar};
-use gadgets::util::{and, not, or, Expr};
-use halo2_proofs::plonk::Error;
+use eth_types::{Field, ToLittleEndian, ToScalar, U256};
+use gadgets::util::{and, not, or, sum, Expr};
+use halo2_proofs::{circuit::Value, plonk::Error};
 
 use crate::evm_circuit::{
     step::ExecutionState,
@@ -9,8 +9,8 @@ use crate::evm_circuit::{
         common_gadget::SameContextGadget,
         constraint_builder::{ConstraintBuilder, StepStateTransition, Transition},
         from_bytes,
-        math_gadget::{ByteSizeGadget, IsEqualGadget, IsZeroGadget},
-        CachedRegion, Word,
+        math_gadget::{ByteSizeGadget, IsEqualGadget, IsZeroGadget, MulAddWordsGadget},
+        CachedRegion, Cell, Word,
     },
     witness::{Block, Call, ExecStep, Transaction},
 };
@@ -23,6 +23,12 @@ pub(crate) struct ExponentiationGadget<F> {
     same_context: SameContextGadget<F>,
     /// RLC-encoded integer base that will be exponentiated.
     base: Word<F>,
+    /// RLC-encoded representation for base * base, i.e. base^2
+    base_sq: Word<F>,
+    /// RLC-encoded representation for zero.
+    zero_rlc: Word<F>,
+    /// Gadget to multiply base * base == base^2
+    base_sq_mul_gadget: MulAddWordsGadget<F>,
     /// RLC-encoded exponent for the exponentiation operation.
     exponent: Word<F>,
     /// RLC-encoded result of the exponentiation.
@@ -31,6 +37,8 @@ pub(crate) struct ExponentiationGadget<F> {
     exponent_is_zero: IsZeroGadget<F>,
     /// Gadget to check if exponent is one or not.
     exponent_is_one: IsEqualGadget<F>,
+    /// Whether there is a single step in the exponentiation trace.
+    single_step: Cell<F>,
     /// Gadget to check the byte-size of exponent.
     exponent_byte_size: ByteSizeGadget<F>,
 }
@@ -81,6 +89,15 @@ impl<F: Field> ExecutionGadget<F> for ExponentiationGadget<F> {
         let exponent_is_one_expr =
             and::expr([exponent_is_one.expr(), not::expr(exponent_hi.clone())]);
 
+        let zero_rlc = cb.query_word();
+        cb.require_zero(
+            "base * base + c == base^2 (c == 0)",
+            sum::expr(&zero_rlc.cells),
+        );
+        let base_sq = cb.query_word();
+        let base_sq_mul_gadget =
+            MulAddWordsGadget::construct(cb, [&base_rlc, &base_rlc, &zero_rlc, &base_sq]);
+
         // If exponent == 0, base^exponent == 1, which implies:
         // 1. Low bytes of exponentiation == 1
         // 2. High bytes of exponentiation == 0
@@ -112,7 +129,10 @@ impl<F: Field> ExecutionGadget<F> for ExponentiationGadget<F> {
             );
         });
         // If exponent > 1, i.e. exponent != 0 && exponent != 1:
-        // We do a lookup to the exponentiation table.
+        // We do two lookups to the exponentiation table. If exponent == 2, there is
+        // only a single step in the exponentiation by squaring trace. In this
+        // case, is_first == is_last == true for that step.
+        let single_step = cb.query_cell();
         cb.condition(
             not::expr(or::expr([exponent_is_zero_expr, exponent_is_one_expr])),
             |cb| {
@@ -122,10 +142,26 @@ impl<F: Field> ExecutionGadget<F> for ExponentiationGadget<F> {
                     from_bytes::expr(&base_rlc.cells[0x10..0x18]),
                     from_bytes::expr(&base_rlc.cells[0x18..0x20]),
                 ];
+                let (base_sq_lo, base_sq_hi) = (
+                    from_bytes::expr(&base_sq.cells[0x00..0x10]),
+                    from_bytes::expr(&base_sq.cells[0x10..0x20]),
+                );
+                // lookup for first step, i.e.
+                // (is_first, is_last == 0, base, exponent, exponentiation)
                 cb.exp_table_lookup(
-                    base_limbs,
+                    1.expr(),
+                    single_step.expr(),
+                    base_limbs.clone(),
                     [exponent_lo.clone(), exponent_hi.clone()],
                     [exponentiation_lo.clone(), exponentiation_hi.clone()],
+                );
+                // lookup for last step, i.e. (is_first == 0, is_last, base, 2, base^2)
+                cb.exp_table_lookup(
+                    single_step.expr(),
+                    1.expr(),
+                    base_limbs,
+                    [2.expr(), 0.expr()],
+                    [base_sq_lo.expr(), base_sq_hi.expr()],
                 );
             },
         );
@@ -151,10 +187,14 @@ impl<F: Field> ExecutionGadget<F> for ExponentiationGadget<F> {
         Self {
             same_context,
             base: base_rlc,
+            base_sq,
+            zero_rlc,
+            base_sq_mul_gadget,
             exponent: exponent_rlc,
             exponentiation: exponentiation_rlc,
             exponent_is_zero,
             exponent_is_one,
+            single_step,
             exponent_byte_size,
         }
     }
@@ -187,6 +227,17 @@ impl<F: Field> ExecutionGadget<F> for ExponentiationGadget<F> {
             .assign(region, offset, exponent_scalar)?;
         self.exponent_is_one
             .assign(region, offset, exponent_scalar, F::one())?;
+
+        let (base_sq, _) = base.overflowing_mul(base);
+        self.zero_rlc
+            .assign(region, offset, Some(U256::zero().to_le_bytes()))?;
+        self.base_sq
+            .assign(region, offset, Some(base_sq.to_le_bytes()))?;
+        self.base_sq_mul_gadget
+            .assign(region, offset, [base, base, U256::zero(), base_sq])?;
+        let single_step = exponent.eq(&U256::from(2u64));
+        self.single_step
+            .assign(region, offset, Value::known(F::from(single_step as u64)))?;
 
         self.exponent_byte_size.assign(region, offset, exponent)?;
 

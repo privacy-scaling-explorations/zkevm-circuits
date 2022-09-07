@@ -2,13 +2,12 @@
 
 use eth_types::{Field, ToScalar, U256};
 use gadgets::{
-    is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction},
     mul_add::{MulAddChip, MulAddConfig},
     util::{and, not, or, Expr},
 };
 use halo2_proofs::{
     circuit::{Layouter, Value},
-    plonk::{Advice, Column, ConstraintSystem, Error, Selector},
+    plonk::{ConstraintSystem, Error, Selector},
     poly::Rotation,
 };
 
@@ -22,12 +21,6 @@ use crate::{
 pub struct ExpCircuit<F> {
     /// Whether the row is a step.
     pub q_step: Selector,
-    /// The incremental index in the circuit.
-    pub idx: Column<Advice>,
-    /// To compare whether or not the idx increments.
-    pub idx_eq: IsZeroConfig<F>,
-    /// Whether this row is the last row in the circuit.
-    pub is_last: Column<Advice>,
     /// Multiplication gadget to check that the reducing exponent's division by
     /// 2 was done correctly.
     pub exp_div: MulAddConfig<F>,
@@ -35,29 +28,16 @@ pub struct ExpCircuit<F> {
     pub exp_table: ExpTable,
     /// Multiplication gadget for verification of each step.
     pub mul_gadget: MulAddConfig<F>,
-    /// Whether or not the current row is meant for padding.
-    pub is_pad: Column<Advice>,
 }
 
 impl<F: Field> ExpCircuit<F> {
     /// Configure the exponentiation circuit.
     pub fn configure(meta: &mut ConstraintSystem<F>, exp_table: ExpTable) -> Self {
         let q_step = meta.complex_selector();
-        let idx = meta.advice_column();
-        let is_last = meta.advice_column();
         let exp_div = MulAddChip::configure(meta, q_step);
         let mul_gadget = MulAddChip::configure(meta, q_step);
-        let is_pad = meta.advice_column();
 
-        let diff_inv = meta.advice_column();
-        let idx_eq = IsZeroChip::configure(
-            meta,
-            |meta| meta.query_selector(q_step),
-            |meta| meta.query_advice(idx, Rotation(7)) - meta.query_advice(idx, Rotation::cur()),
-            diff_inv,
-        );
-
-        meta.create_gate("verify all but last steps", |meta| {
+        meta.create_gate("verify all but the last step", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
             // base limbs MUST be the same across all steps. Since each step consumes 7 rows
@@ -102,18 +82,29 @@ impl<F: Field> ExpCircuit<F> {
 
             cb.gate(and::expr([
                 meta.query_selector(q_step),
-                not::expr(meta.query_advice(is_last, Rotation::cur())),
+                not::expr(meta.query_advice(exp_table.is_last, Rotation::cur())),
             ]))
         });
 
-        meta.create_gate("verify all steps (excluding padding)", |meta| {
+        meta.create_gate("verify all steps", |meta| {
             let mut cb = BaseConstraintBuilder::default();
+
+            // both is_first and is_last are boolean values.
+            cb.require_boolean(
+                "is_first is boolean",
+                meta.query_advice(exp_table.is_first, Rotation::cur()),
+            );
+            cb.require_boolean(
+                "is_last is boolean",
+                meta.query_advice(exp_table.is_last, Rotation::cur()),
+            );
+            // TODO(rohit): enforce correct transition of is_first and is_last
 
             // We don't use the exp circuit for exponentiation by 0 or 1, so the first
             // multiplication MUST equal `base*base == base^2`. Since we populate the
             // multiplication gadget in a reverse order, the first multiplication is
             // assigned to the last row.
-            cb.condition(meta.query_advice(is_last, Rotation::cur()), |cb| {
+            cb.condition(meta.query_advice(exp_table.is_last, Rotation::cur()), |cb| {
                 for (i, mul_gadget_col) in [
                     mul_gadget.col0,
                     mul_gadget.col1,
@@ -198,7 +189,7 @@ impl<F: Field> ExpCircuit<F> {
             // remainder == 1 => exponent is odd
             cb.condition(
                 and::expr([
-                    not::expr(meta.query_advice(is_last, Rotation::cur())),
+                    not::expr(meta.query_advice(exp_table.is_last, Rotation::cur())),
                     remainder.clone(),
                 ]), |cb| {
                 cb.require_equal(
@@ -230,7 +221,7 @@ impl<F: Field> ExpCircuit<F> {
             // remainder == 0 => exponent is even
             cb.condition(
                 and::expr([
-                    not::expr(meta.query_advice(is_last, Rotation::cur())),
+                    not::expr(meta.query_advice(exp_table.is_last, Rotation::cur())),
                     not::expr(remainder),
                 ]), |cb| {
                 cb.require_equal(
@@ -259,23 +250,8 @@ impl<F: Field> ExpCircuit<F> {
                 }
             });
 
-            // If idx does not change
-            cb.condition(idx_eq.is_zero_expression.clone(), |cb| {
-                cb.require_zero("not the last step", meta.query_advice(is_last, Rotation::cur()));
-            });
-
-            // If idx changes
-            cb.condition(not::expr(idx_eq.is_zero_expression.clone()), |cb| {
-                cb.require_equal(
-                    "idx increments by 1",
-                    meta.query_advice(idx, Rotation::cur()) + 1.expr(),
-                    meta.query_advice(idx, Rotation(7)),
-                );
-                cb.require_equal(
-                    "is the last step",
-                    meta.query_advice(is_last, Rotation::cur()),
-                    1.expr(),
-                );
+            // For the last step in the exponentiation operation's trace.
+            cb.condition(meta.query_advice(exp_table.is_last, Rotation::cur()), |cb| {
                 cb.require_equal(
                     "if is_last is True: intermediate_exponent == 2 (lo == 2)",
                     meta.query_advice(exp_table.intermediate_exponent_lo_hi, Rotation::cur()),
@@ -287,21 +263,14 @@ impl<F: Field> ExpCircuit<F> {
                 );
             });
 
-            cb.gate(and::expr([
-                meta.query_selector(q_step),
-                not::expr(meta.query_advice(is_pad, Rotation::cur())),
-            ]))
+            cb.gate(meta.query_selector(q_step))
         });
 
         Self {
             q_step,
-            idx,
-            idx_eq,
-            is_last,
             exp_div,
             exp_table,
             mul_gadget,
-            is_pad,
         }
     }
 
@@ -316,7 +285,6 @@ impl<F: Field> ExpCircuit<F> {
 
         let exp_div_chip = MulAddChip::construct(self.exp_div.clone());
         let mul_chip = MulAddChip::construct(self.mul_gadget.clone());
-        let idx_eq_chip = IsZeroChip::construct(self.idx_eq.clone());
 
         layouter.assign_region(
             || "exponentiation circuit",
@@ -324,35 +292,12 @@ impl<F: Field> ExpCircuit<F> {
                 // assign everything except the exp table.
                 let mut offset = 0;
                 let two = U256::from(2);
-                for (idx, exp_event) in block.exp_events.iter().enumerate() {
+                for exp_event in block.exp_events.iter() {
                     let mut exponent = exp_event.exponent;
-                    for (i, step) in exp_event.steps.iter().rev().enumerate() {
-                        let is_last = if i == exp_event.steps.len() - 1 {
-                            F::one()
-                        } else {
-                            F::zero()
-                        };
+                    for step in exp_event.steps.iter().rev() {
                         let (exponent_div2, remainder) = exponent.div_mod(2.into());
 
                         self.q_step.enable(&mut region, offset)?;
-                        region.assign_advice(
-                            || format!("idx: {}", offset),
-                            self.idx,
-                            offset,
-                            || Value::known(F::from(idx as u64 + 1)),
-                        )?;
-                        region.assign_advice(
-                            || format!("is_last: {}", offset),
-                            self.is_last,
-                            offset,
-                            || Value::known(is_last),
-                        )?;
-                        region.assign_advice(
-                            || format!("is_pad: {}", offset),
-                            self.is_pad,
-                            offset,
-                            || Value::known(F::zero()),
-                        )?;
                         exp_div_chip.assign(
                             &mut region,
                             offset,
@@ -363,7 +308,6 @@ impl<F: Field> ExpCircuit<F> {
                             offset,
                             [step.a, step.b, U256::zero(), step.d],
                         )?;
-                        idx_eq_chip.assign(&mut region, offset, Value::known(is_last))?;
 
                         // update reducing exponent
                         if remainder.is_zero() {
@@ -414,7 +358,6 @@ impl<F: Field> ExpCircuit<F> {
                 // assign a zero step, analogous to padding.
                 let mut all_columns = self.exp_table.columns();
                 all_columns.extend_from_slice(&[
-                    self.is_last,
                     self.exp_div.col0,
                     self.exp_div.col1,
                     self.exp_div.col2,
@@ -430,18 +373,6 @@ impl<F: Field> ExpCircuit<F> {
                         )?;
                     }
                 }
-                region.assign_advice(
-                    || format!("padding step (idx): {}", offset),
-                    self.idx,
-                    offset,
-                    || Value::known(F::from((block.exp_events.len() + 1) as u64)),
-                )?;
-                region.assign_advice(
-                    || format!("padding step (is_pad): {}", offset),
-                    self.is_pad,
-                    offset,
-                    || Value::known(F::one()),
-                )?;
                 for column in [
                     self.mul_gadget.col0,
                     self.mul_gadget.col1,
