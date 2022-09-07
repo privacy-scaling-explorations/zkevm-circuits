@@ -1,6 +1,6 @@
 [package]
-name = "evm-testvectors"
-description="tools for executing the common ethereum tests"
+name = "testool"
+description="tools for doing tests"
 version = "0.1.0"
 edition = "2021"
 
