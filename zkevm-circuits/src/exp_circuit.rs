@@ -2,6 +2,7 @@
 
 use eth_types::{Field, ToScalar, U256};
 use gadgets::{
+    is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction},
     mul_add::{MulAddChip, MulAddConfig},
     util::{and, not, or, Expr},
 };
@@ -23,6 +24,8 @@ pub struct ExpCircuit<F> {
     pub q_step: Selector,
     /// The incremental index in the circuit.
     pub idx: Column<Advice>,
+    /// To compare whether or not the idx increments.
+    pub idx_eq: IsZeroConfig<F>,
     /// Whether this row is the last row in the circuit.
     pub is_last: Column<Advice>,
     /// Multiplication gadget to check that the reducing exponent's division by
@@ -32,6 +35,8 @@ pub struct ExpCircuit<F> {
     pub exp_table: ExpTable,
     /// Multiplication gadget for verification of each step.
     pub mul_gadget: MulAddConfig<F>,
+    /// Whether or not the current row is meant for padding.
+    pub is_pad: Column<Advice>,
 }
 
 impl<F: Field> ExpCircuit<F> {
@@ -42,6 +47,15 @@ impl<F: Field> ExpCircuit<F> {
         let is_last = meta.advice_column();
         let exp_div = MulAddChip::configure(meta, q_step);
         let mul_gadget = MulAddChip::configure(meta, q_step);
+        let is_pad = meta.advice_column();
+
+        let diff_inv = meta.advice_column();
+        let idx_eq = IsZeroChip::configure(
+            meta,
+            |meta| meta.query_selector(q_step),
+            |meta| meta.query_advice(idx, Rotation(7)) - meta.query_advice(idx, Rotation::cur()),
+            diff_inv,
+        );
 
         meta.create_gate("verify all but last steps", |meta| {
             let mut cb = BaseConstraintBuilder::default();
@@ -92,7 +106,7 @@ impl<F: Field> ExpCircuit<F> {
             ]))
         });
 
-        meta.create_gate("verify all steps", |meta| {
+        meta.create_gate("verify all steps (excluding padding)", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
             // We don't use the exp circuit for exponentiation by 0 or 1, so the first
@@ -245,10 +259,23 @@ impl<F: Field> ExpCircuit<F> {
                 }
             });
 
-            // For the last step, the intermediate_exponent MUST be 2, since we do not cover
-            // the case where exponent == 0 or exponent == 1 in exponentiation
-            // circuit.
-            cb.condition(meta.query_advice(is_last, Rotation::cur()), |cb| {
+            // If idx does not change
+            cb.condition(idx_eq.is_zero_expression.clone(), |cb| {
+                cb.require_zero("not the last step", meta.query_advice(is_last, Rotation::cur()));
+            });
+
+            // If idx changes
+            cb.condition(not::expr(idx_eq.is_zero_expression.clone()), |cb| {
+                cb.require_equal(
+                    "idx increments by 1",
+                    meta.query_advice(idx, Rotation::cur()) + 1.expr(),
+                    meta.query_advice(idx, Rotation(7)),
+                );
+                cb.require_equal(
+                    "is the last step",
+                    meta.query_advice(is_last, Rotation::cur()),
+                    1.expr(),
+                );
                 cb.require_equal(
                     "if is_last is True: intermediate_exponent == 2 (lo == 2)",
                     meta.query_advice(exp_table.intermediate_exponent_lo_hi, Rotation::cur()),
@@ -260,16 +287,21 @@ impl<F: Field> ExpCircuit<F> {
                 );
             });
 
-            cb.gate(meta.query_selector(q_step))
+            cb.gate(and::expr([
+                meta.query_selector(q_step),
+                not::expr(meta.query_advice(is_pad, Rotation::cur())),
+            ]))
         });
 
         Self {
             q_step,
             idx,
+            idx_eq,
             is_last,
             exp_div,
             exp_table,
             mul_gadget,
+            is_pad,
         }
     }
 
@@ -284,6 +316,7 @@ impl<F: Field> ExpCircuit<F> {
 
         let exp_div_chip = MulAddChip::construct(self.exp_div.clone());
         let mul_chip = MulAddChip::construct(self.mul_gadget.clone());
+        let idx_eq_chip = IsZeroChip::construct(self.idx_eq.clone());
 
         layouter.assign_region(
             || "exponentiation circuit",
@@ -291,10 +324,10 @@ impl<F: Field> ExpCircuit<F> {
                 // assign everything except the exp table.
                 let mut offset = 0;
                 let two = U256::from(2);
-                for exp_event in block.exp_events.iter() {
+                for (idx, exp_event) in block.exp_events.iter().enumerate() {
                     let mut exponent = exp_event.exponent;
-                    for (idx, step) in exp_event.steps.iter().rev().enumerate() {
-                        let is_last = if idx == exp_event.steps.len() - 1 {
+                    for (i, step) in exp_event.steps.iter().rev().enumerate() {
+                        let is_last = if i == exp_event.steps.len() - 1 {
                             F::one()
                         } else {
                             F::zero()
@@ -306,13 +339,19 @@ impl<F: Field> ExpCircuit<F> {
                             || format!("idx: {}", offset),
                             self.idx,
                             offset,
-                            || Value::known(F::from(idx as u64)),
+                            || Value::known(F::from(idx as u64 + 1)),
                         )?;
                         region.assign_advice(
                             || format!("is_last: {}", offset),
                             self.is_last,
                             offset,
                             || Value::known(is_last),
+                        )?;
+                        region.assign_advice(
+                            || format!("is_pad: {}", offset),
+                            self.is_pad,
+                            offset,
+                            || Value::known(F::zero()),
                         )?;
                         exp_div_chip.assign(
                             &mut region,
@@ -324,6 +363,7 @@ impl<F: Field> ExpCircuit<F> {
                             offset,
                             [step.a, step.b, U256::zero(), step.d],
                         )?;
+                        idx_eq_chip.assign(&mut region, offset, Value::known(is_last))?;
 
                         // update reducing exponent
                         if remainder.is_zero() {
@@ -375,7 +415,6 @@ impl<F: Field> ExpCircuit<F> {
                 let mut all_columns = self.exp_table.columns();
                 all_columns.extend_from_slice(&[
                     self.is_last,
-                    self.idx,
                     self.exp_div.col0,
                     self.exp_div.col1,
                     self.exp_div.col2,
@@ -391,6 +430,18 @@ impl<F: Field> ExpCircuit<F> {
                         )?;
                     }
                 }
+                region.assign_advice(
+                    || format!("padding step (idx): {}", offset),
+                    self.idx,
+                    offset,
+                    || Value::known(F::from((block.exp_events.len() + 1) as u64)),
+                )?;
+                region.assign_advice(
+                    || format!("padding step (is_pad): {}", offset),
+                    self.is_pad,
+                    offset,
+                    || Value::known(F::one()),
+                )?;
                 for column in [
                     self.mul_gadget.col0,
                     self.mul_gadget.col1,
@@ -476,19 +527,33 @@ pub mod dev {
 
 #[cfg(test)]
 mod tests {
-    use bus_mapping::{circuit_input_builder::CircuitInputBuilder, mock::BlockData};
-    use eth_types::{bytecode, geth_types::GethData, Word};
+    use bus_mapping::{circuit_input_builder::CircuitInputBuilder, evm::OpcodeId, mock::BlockData};
+    use eth_types::{bytecode, geth_types::GethData, Bytecode, Word};
     use mock::TestContext;
 
     use crate::{evm_circuit::witness::block_convert, exp_circuit::dev::test_exp_circuit};
 
-    fn gen_data(base: Word, exponent: Word) -> CircuitInputBuilder {
-        let code = bytecode! {
+    fn gen_code_single(base: Word, exponent: Word) -> Bytecode {
+        bytecode! {
             PUSH32(exponent)
             PUSH32(base)
             EXP
             STOP
-        };
+        }
+    }
+
+    fn gen_code_multiple(args: Vec<(Word, Word)>) -> Bytecode {
+        let mut code = Bytecode::default();
+        for (base, exponent) in args.into_iter() {
+            code.push(32, exponent);
+            code.push(32, base);
+            code.write_op(OpcodeId::EXP);
+        }
+        code.write_op(OpcodeId::STOP);
+        code
+    }
+
+    fn gen_data(code: Bytecode) -> CircuitInputBuilder {
         let test_ctx = TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap();
         let block: GethData = test_ctx.into();
         let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
@@ -499,13 +564,21 @@ mod tests {
     }
 
     fn test_ok(base: Word, exponent: Word) {
-        let builder = gen_data(base, exponent);
+        let code = gen_code_single(base, exponent);
+        let builder = gen_data(code);
         let block = block_convert(&builder.block, &builder.code_db);
         assert_eq!(test_exp_circuit(10, block), Ok(()));
     }
 
+    fn test_ok_multiple(args: Vec<(Word, Word)>) {
+        let code = gen_code_multiple(args);
+        let builder = gen_data(code);
+        let block = block_convert(&builder.block, &builder.code_db);
+        assert_eq!(test_exp_circuit(20, block), Ok(()));
+    }
+
     #[test]
-    fn exp_circuit_valid() {
+    fn exp_circuit_single() {
         test_ok(3.into(), 7.into());
         test_ok(5.into(), 11.into());
         test_ok(7.into(), 13.into());
@@ -513,5 +586,14 @@ mod tests {
         test_ok(13.into(), 23.into());
         test_ok(29.into(), 43.into());
         test_ok(41.into(), 259.into());
+    }
+
+    #[test]
+    fn exp_circuit_multiple() {
+        test_ok_multiple(vec![
+            (3.into(), 7.into()),
+            (5.into(), 11.into()),
+            (7.into(), 13.into()),
+        ]);
     }
 }
