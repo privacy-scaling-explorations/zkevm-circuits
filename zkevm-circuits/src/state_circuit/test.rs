@@ -1,7 +1,7 @@
 use super::{StateCircuit, StateCircuitConfig};
 use crate::{
-    evm_circuit::witness::{Rw, RwMap},
     table::{AccountFieldTag, CallContextFieldTag, RwTableTag, TxLogFieldTag, TxReceiptFieldTag},
+    witness::{Rw, RwMap},
 };
 use bus_mapping::operation::{
     MemoryOp, Operation, OperationContainer, RWCounter, StackOp, StorageOp, RW,

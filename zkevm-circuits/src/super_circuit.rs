@@ -55,9 +55,10 @@ use crate::bytecode_circuit::bytecode_unroller::{
     unroll, Config as BytecodeConfig, UnrolledBytecode,
 };
 
-use crate::evm_circuit::{table::FixedTableTag, witness::Block, EvmCircuit};
+use crate::evm_circuit::{table::FixedTableTag, EvmCircuit};
 use crate::table::{BlockTable, BytecodeTable, CopyTable, RwTable, TxTable};
 use crate::util::power_of_randomness_from_instance;
+use crate::witness::Block;
 use eth_types::Field;
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner},
@@ -66,9 +67,9 @@ use halo2_proofs::{
 
 use super::copy_circuit::CopyCircuit;
 use crate::{
-    evm_circuit::witness::block_convert,
     keccak_circuit::keccak_bit::{KeccakBitCircuit, KeccakBitConfig},
     tx_circuit::sign_verify::POW_RAND_SIZE,
+    witness::block_convert,
 };
 use bus_mapping::mock::BlockData;
 use eth_types::geth_types::{self, GethData};

@@ -28,5 +28,6 @@ pub mod table;
 pub mod test_util;
 pub mod tx_circuit;
 pub mod util;
+pub mod witness;
 
 pub use gadgets::impl_expr;
