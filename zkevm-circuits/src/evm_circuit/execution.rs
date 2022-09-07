@@ -31,7 +31,7 @@ mod bitwise;
 mod block_ctx;
 mod blockhash;
 mod byte;
-mod call;
+mod call_staticcall;
 mod calldatacopy;
 mod calldataload;
 mod calldatasize;
@@ -85,7 +85,7 @@ use bitwise::BitwiseGadget;
 use block_ctx::{BlockCtxU160Gadget, BlockCtxU256Gadget, BlockCtxU64Gadget};
 use blockhash::BlockHashGadget;
 use byte::ByteGadget;
-use call::CallGadget;
+use call_staticcall::CallStaticCallGadget;
 use calldatacopy::CallDataCopyGadget;
 use calldataload::CallDataLoadGadget;
 use calldatasize::CallDataSizeGadget;
@@ -175,7 +175,7 @@ pub(crate) struct ExecutionConfig<F> {
     address_gadget: AddressGadget<F>,
     bitwise_gadget: BitwiseGadget<F>,
     byte_gadget: ByteGadget<F>,
-    call_gadget: CallGadget<F>,
+    call_staticcall_gadget: CallStaticCallGadget<F>,
     call_value_gadget: CallValueGadget<F>,
     calldatacopy_gadget: CallDataCopyGadget<F>,
     calldataload_gadget: CallDataLoadGadget<F>,
@@ -219,7 +219,6 @@ pub(crate) struct ExecutionConfig<F> {
     callcode_gadget: DummyGadget<F, 7, 1, { ExecutionState::CALLCODE }>,
     delegatecall_gadget: DummyGadget<F, 6, 1, { ExecutionState::DELEGATECALL }>,
     create2_gadget: DummyGadget<F, 4, 1, { ExecutionState::CREATE2 }>,
-    staticcall_gadget: DummyGadget<F, 6, 1, { ExecutionState::STATICCALL }>,
     selfdestruct_gadget: DummyGadget<F, 1, 0, { ExecutionState::SELFDESTRUCT }>,
     signed_comparator_gadget: SignedComparatorGadget<F>,
     signextend_gadget: SignextendGadget<F>,
@@ -400,7 +399,7 @@ impl<F: Field> ExecutionConfig<F> {
             addmod_gadget: configure_gadget!(),
             bitwise_gadget: configure_gadget!(),
             byte_gadget: configure_gadget!(),
-            call_gadget: configure_gadget!(),
+            call_staticcall_gadget: configure_gadget!(),
             call_value_gadget: configure_gadget!(),
             calldatacopy_gadget: configure_gadget!(),
             calldataload_gadget: configure_gadget!(),
@@ -445,7 +444,6 @@ impl<F: Field> ExecutionConfig<F> {
             callcode_gadget: configure_gadget!(),
             delegatecall_gadget: configure_gadget!(),
             create2_gadget: configure_gadget!(),
-            staticcall_gadget: configure_gadget!(),
             selfdestruct_gadget: configure_gadget!(),
             shl_shr_gadget: configure_gadget!(),
             signed_comparator_gadget: configure_gadget!(),
@@ -917,7 +915,7 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::ADDRESS => assign_exec_step!(self.address_gadget),
             ExecutionState::BITWISE => assign_exec_step!(self.bitwise_gadget),
             ExecutionState::BYTE => assign_exec_step!(self.byte_gadget),
-            ExecutionState::CALL => assign_exec_step!(self.call_gadget),
+            ExecutionState::CALL_STATICCALL => assign_exec_step!(self.call_staticcall_gadget),
             ExecutionState::CALLDATACOPY => assign_exec_step!(self.calldatacopy_gadget),
             ExecutionState::CALLDATALOAD => assign_exec_step!(self.calldataload_gadget),
             ExecutionState::CALLDATASIZE => assign_exec_step!(self.calldatasize_gadget),
@@ -965,7 +963,6 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::CALLCODE => assign_exec_step!(self.callcode_gadget),
             ExecutionState::DELEGATECALL => assign_exec_step!(self.delegatecall_gadget),
             ExecutionState::CREATE2 => assign_exec_step!(self.create2_gadget),
-            ExecutionState::STATICCALL => assign_exec_step!(self.staticcall_gadget),
             ExecutionState::SELFDESTRUCT => assign_exec_step!(self.selfdestruct_gadget),
             // end of dummy gadgets
             ExecutionState::SHA3 => assign_exec_step!(self.sha3_gadget),

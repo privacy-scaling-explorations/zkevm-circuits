@@ -31,7 +31,7 @@ use halo2_proofs::{circuit::Value, plonk::Error};
 use keccak256::EMPTY_HASH_LE;
 
 #[derive(Clone, Debug)]
-pub(crate) struct CallGadget<F> {
+pub(crate) struct CallStaticCallGadget<F> {
     opcode: Cell<F>,
     tx_id: Cell<F>,
     reversion_info: ReversionInfo<F>,
@@ -59,10 +59,10 @@ pub(crate) struct CallGadget<F> {
     capped_callee_gas_left: MinMaxGadget<F, N_BYTES_GAS>,
 }
 
-impl<F: Field> ExecutionGadget<F> for CallGadget<F> {
-    const NAME: &'static str = "CALL";
+impl<F: Field> ExecutionGadget<F> for CallStaticCallGadget<F> {
+    const NAME: &'static str = "CALL_STATICCALL";
 
-    const EXECUTION_STATE: ExecutionState = ExecutionState::CALL;
+    const EXECUTION_STATE: ExecutionState = ExecutionState::CALL_STATICCALL;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();

@@ -1,33 +1,33 @@
 use super::Opcode;
-use crate::{
-    circuit_input_builder::{CircuitInputStateRef, ExecStep},
-    operation::{AccountField, CallContextField, TxAccessListAccountOp, RW},
-    Error,
-};
-
-use eth_types::{
-    evm_types::{
-        gas_utils::{eip150_gas, memory_expansion_gas_cost},
-        GasCost,
-    },
-    GethExecStep, ToWord,
-};
+use crate::circuit_input_builder::{CircuitInputStateRef, ExecState, ExecStep};
+use crate::operation::{AccountField, CallContextField, TxAccessListAccountOp, RW};
+use crate::Error;
+use eth_types::evm_types::gas_utils::{eip150_gas, memory_expansion_gas_cost};
+use eth_types::evm_types::GasCost;
+use eth_types::evm_types::OpcodeId;
+use eth_types::{GethExecStep, ToWord};
 use keccak256::EMPTY_HASH;
 use log::warn;
 use std::cmp::max;
 
 /// Placeholder structure used to implement [`Opcode`] trait over it
-/// corresponding to the `OpcodeId::CALL` `OpcodeId`.
+/// corresponding to the `OpcodeId::CALL` and `OpcodeId::STATICCALL`.
+/// - CALL: N_ARGS = 7
+/// - STATICCALL: N_ARGS = 6
+/// TODO: Suppose to add bus-mapping of `OpcodeId::CALLCODE` and
+/// `OpcodeId::DELEGATECALL` here.
 #[derive(Debug, Copy, Clone)]
-pub(crate) struct Call<const N_ARGS: usize>;
+pub(crate) struct CallOpcode<const N_ARGS: usize>;
 
-impl<const N_ARGS: usize> Opcode for Call<N_ARGS> {
+impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
     fn gen_associated_ops(
         state: &mut CircuitInputStateRef,
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];
         let mut exec_step = state.new_step(geth_step)?;
+        let is_call = exec_step.exec_state == ExecState::Op(OpcodeId::CALL);
+
         let args_offset = geth_step.stack.nth_last(N_ARGS - 4)?.as_usize();
         let args_length = geth_step.stack.nth_last(N_ARGS - 3)?.as_usize();
         let ret_offset = geth_step.stack.nth_last(N_ARGS - 2)?.as_usize();
@@ -116,17 +116,29 @@ impl<const N_ARGS: usize> Opcode for Call<N_ARGS> {
             state.call_context_read(&mut exec_step, call.call_id, field, value);
         }
 
-        state.transfer(
-            &mut exec_step,
-            call.caller_address,
-            call.address,
-            call.value,
-        )?;
-
         let (_, callee_account) = state.sdb.get_account(&call.address);
         let is_empty_account = callee_account.is_empty();
         let callee_nonce = callee_account.nonce;
         let callee_code_hash = callee_account.code_hash;
+
+        if is_call {
+            state.transfer(
+                &mut exec_step,
+                call.caller_address,
+                call.address,
+                call.value,
+            )?
+        } else {
+            let callee_balance = callee_account.balance;
+            state.account_read(
+                &mut exec_step,
+                call.address,
+                AccountField::Balance,
+                callee_balance,
+                callee_balance,
+            )?;
+        }
+
         for (field, value) in [
             (AccountField::Nonce, callee_nonce),
             (AccountField::CodeHash, callee_code_hash.to_word()),
@@ -198,7 +210,7 @@ impl<const N_ARGS: usize> Opcode for Call<N_ARGS> {
                     ),
                     (
                         CallContextField::StackPointer,
-                        (geth_step.stack.stack_pointer().0 + 6).into(),
+                        (geth_step.stack.stack_pointer().0 + N_ARGS - 1).into(),
                     ),
                     (
                         CallContextField::GasLeft,
@@ -213,7 +225,7 @@ impl<const N_ARGS: usize> Opcode for Call<N_ARGS> {
                     state.call_context_write(&mut exec_step, current_call.call_id, field, value);
                 }
 
-                for (field, value) in [
+                let mut call_context_lookups = vec![
                     (CallContextField::CallerId, current_call.call_id.into()),
                     (CallContextField::TxId, tx_id.into()),
                     (CallContextField::Depth, call.depth.into()),
@@ -238,7 +250,13 @@ impl<const N_ARGS: usize> Opcode for Call<N_ARGS> {
                         CallContextField::ReturnDataLength,
                         call.return_data_length.into(),
                     ),
-                    (CallContextField::Value, call.value),
+                ];
+
+                if is_call {
+                    call_context_lookups.push((CallContextField::Value, call.value));
+                }
+
+                call_context_lookups.extend_from_slice(&[
                     (CallContextField::IsSuccess, (call.is_success as u64).into()),
                     (CallContextField::IsStatic, (call.is_static as u64).into()),
                     (CallContextField::LastCalleeId, 0.into()),
@@ -247,7 +265,8 @@ impl<const N_ARGS: usize> Opcode for Call<N_ARGS> {
                     (CallContextField::IsRoot, 0.into()),
                     (CallContextField::IsCreate, 0.into()),
                     (CallContextField::CodeHash, call.code_hash.to_word()),
-                ] {
+                ]);
+                for (field, value) in call_context_lookups {
                     state.call_context_read(&mut exec_step, call.call_id, field, value);
                 }
 

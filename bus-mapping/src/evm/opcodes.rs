@@ -20,11 +20,11 @@ pub use self::sha3::sha3_tests::{gen_sha3_code, MemoryKind};
 
 mod address;
 mod balance;
-mod call;
 mod calldatacopy;
 mod calldataload;
 mod calldatasize;
 mod caller;
+mod callop;
 mod callvalue;
 mod chainid;
 mod codecopy;
@@ -56,11 +56,11 @@ mod memory_expansion_test;
 use self::sha3::Sha3;
 use address::Address;
 use balance::Balance;
-use call::Call;
 use calldatacopy::Calldatacopy;
 use calldataload::Calldataload;
 use calldatasize::Calldatasize;
 use caller::Caller;
+use callop::CallOpcode;
 use callvalue::Callvalue;
 use codecopy::Codecopy;
 use codesize::Codesize;
@@ -222,10 +222,8 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         OpcodeId::LOG2 => Log::gen_associated_ops,
         OpcodeId::LOG3 => Log::gen_associated_ops,
         OpcodeId::LOG4 => Log::gen_associated_ops,
-        OpcodeId::CALL => Call::<7>::gen_associated_ops,
-        OpcodeId::CALLCODE => Call::<7>::gen_associated_ops,
-        OpcodeId::DELEGATECALL => Call::<6>::gen_associated_ops,
-        OpcodeId::STATICCALL => Call::<6>::gen_associated_ops,
+        OpcodeId::CALL => CallOpcode::<7>::gen_associated_ops,
+        OpcodeId::STATICCALL => CallOpcode::<6>::gen_associated_ops,
         OpcodeId::RETURN => Return::gen_associated_ops,
         // REVERT is almost the same as RETURN
         OpcodeId::REVERT => Return::gen_associated_ops,
