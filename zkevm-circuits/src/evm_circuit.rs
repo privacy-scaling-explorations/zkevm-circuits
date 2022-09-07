@@ -310,11 +310,13 @@ pub mod test {
             config
                 .copy_table
                 .load(&mut layouter, &self.block, self.block.randomness)?;
-            config.keccak_table.load(
+
+            config.keccak_table.dev_load(
                 &mut layouter,
                 &self.block.sha3_inputs,
                 self.block.randomness,
             )?;
+
             config
                 .evm_circuit
                 .assign_block_exact(&mut layouter, &self.block)
