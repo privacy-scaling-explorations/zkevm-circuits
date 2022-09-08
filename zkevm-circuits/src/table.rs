@@ -1,12 +1,10 @@
 //! Table definitions used cross-circuits
 
 use crate::copy_circuit::number_or_hash_to_field;
-use crate::evm_circuit::witness::{Rw, RwRow};
-use crate::evm_circuit::{
-    util::{rlc, RandomLinearCombination},
-    witness::{Block, BlockContext, Bytecode, RwMap, Transaction},
-};
+use crate::evm_circuit::util::{rlc, RandomLinearCombination};
 use crate::impl_expr;
+use crate::witness::{Block, BlockContext, Bytecode, RwMap, Transaction};
+use crate::witness::{Rw, RwRow};
 use bus_mapping::circuit_input_builder::{CopyDataType, CopyEvent};
 use eth_types::{Field, ToAddress, ToLittleEndian, ToScalar, Word, U256};
 use gadgets::binary_number::{BinaryNumberChip, BinaryNumberConfig};
@@ -648,13 +646,27 @@ impl KeccakTable {
         vec![[F::one(), input_rlc, input_len, output_rlc]]
     }
 
-    // NOTE: For now, the input_rlc of the keccak is defined as
-    // `RLC(reversed(input))` for convenience of the circuits that do the lookups.
-    // This allows calculating the `input_rlc` after all the inputs bytes have been
-    // layed out via the pattern `acc[i] = acc[i-1] * r + value[i]`.
-    /// Assign the `KeccakTable` from a list hashing inputs, followig the same
-    /// table layout that the Keccak Circuit uses.
-    pub fn load<'a, F: Field>(
+    /// Assign a table row for keccak table
+    pub fn assign_row<F: Field>(
+        &self,
+        region: &mut Region<F>,
+        offset: usize,
+        values: [F; 4],
+    ) -> Result<(), Error> {
+        for (column, value) in self.columns().iter().zip(values.iter()) {
+            region.assign_advice(
+                || format!("assign {}", offset),
+                *column,
+                offset,
+                || Value::known(*value),
+            )?;
+        }
+        Ok(())
+    }
+
+    /// Provide this function for the case that we want to consume a keccak
+    /// table but without running the full keccak circuit
+    pub fn dev_load<'a, F: Field>(
         &self,
         layouter: &mut impl Layouter<F>,
         inputs: impl IntoIterator<Item = &'a Vec<u8>> + Clone,

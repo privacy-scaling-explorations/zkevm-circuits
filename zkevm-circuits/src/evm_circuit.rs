@@ -8,13 +8,13 @@ use halo2_proofs::{
 
 mod execution;
 pub mod param;
-mod step;
+pub(crate) mod step;
 pub(crate) mod util;
 
 pub mod table;
-pub mod witness;
 
 use crate::table::LookupTable;
+pub use crate::witness;
 use eth_types::Field;
 use execution::ExecutionConfig;
 use itertools::Itertools;
@@ -308,11 +308,13 @@ pub mod test {
             config
                 .copy_table
                 .load(&mut layouter, &self.block, self.block.randomness)?;
-            config.keccak_table.load(
+
+            config.keccak_table.dev_load(
                 &mut layouter,
                 &self.block.sha3_inputs,
                 self.block.randomness,
             )?;
+
             config
                 .evm_circuit
                 .assign_block_exact(&mut layouter, &self.block)

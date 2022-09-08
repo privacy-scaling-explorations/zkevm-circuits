@@ -485,7 +485,8 @@ pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
     }
     let coinbase_balance_prev = coinbase_account.balance;
     let coinbase_balance =
-        coinbase_account.balance + effective_tip * (state.tx.gas - exec_step.gas_left.0);
+        coinbase_balance_prev + effective_tip * (state.tx.gas - exec_step.gas_left.0);
+    coinbase_account.balance = coinbase_balance;
     state.account_write(
         &mut exec_step,
         state.block.coinbase,

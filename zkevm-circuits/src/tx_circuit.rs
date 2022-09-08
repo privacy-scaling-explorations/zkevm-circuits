@@ -309,7 +309,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
     ) -> Result<(), Error> {
         config.sign_verify.load_range(&mut layouter)?;
         self.assign(&config, &mut layouter)?;
-        config.keccak_table.load(
+        config.keccak_table.dev_load(
             &mut layouter,
             &keccak_inputs_tx_circuit(&self.txs[..], self.chain_id).map_err(|e| {
                 error!("keccak_inputs_tx_circuit error: {:?}", e);
