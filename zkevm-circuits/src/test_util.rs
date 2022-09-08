@@ -1,3 +1,5 @@
+//! Doc: TODO
+
 use crate::{state_circuit::StateCircuit, witness::Block};
 use bus_mapping::mock::BlockData;
 use eth_types::geth_types::{GethData, Transaction};
@@ -16,10 +18,14 @@ fn init_env_logger() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("error")).init();
 }
 
+/// Doc: TODO
 #[derive(Debug, Clone)]
 pub struct BytecodeTestConfig {
+    /// Doc: TODO
     pub enable_evm_circuit_test: bool,
+    /// Doc: TODO
     pub enable_state_circuit_test: bool,
+    /// Doc: TODO
     pub gas_limit: u64,
 }
 
@@ -33,6 +39,7 @@ impl Default for BytecodeTestConfig {
     }
 }
 
+/// Doc: TODO
 pub fn run_test_circuits<const NACC: usize, const NTX: usize>(
     test_ctx: TestContext<NACC, NTX>,
     config: Option<BytecodeTestConfig>,
@@ -50,6 +57,7 @@ pub fn run_test_circuits<const NACC: usize, const NTX: usize>(
     test_circuits_using_witness_block(block, config.unwrap_or_default())
 }
 
+/// Doc: TODO
 pub fn test_circuits_using_witness_block(
     block: Block<Fr>,
     config: BytecodeTestConfig,
@@ -76,6 +84,7 @@ pub fn test_circuits_using_witness_block(
     Ok(())
 }
 
+/// Doc: TODO
 pub fn rand_tx<R: Rng + CryptoRng>(mut rng: R, chain_id: u64) -> Transaction {
     let wallet0 = LocalWallet::new(&mut rng).with_chain_id(chain_id);
     let wallet1 = LocalWallet::new(&mut rng).with_chain_id(chain_id);
