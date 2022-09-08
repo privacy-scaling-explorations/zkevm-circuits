@@ -1,10 +1,6 @@
-<<<<<<< HEAD
-#![allow(missing_docs)]
+//! Testing utilities
 
-use crate::{evm_circuit::witness::Block, state_circuit::StateCircuit};
-=======
 use crate::{state_circuit::StateCircuit, witness::Block};
->>>>>>> 3e400dc (move evm_circuit::witness as crate::witness; split it into smaller mods (#726))
 use bus_mapping::mock::BlockData;
 use eth_types::geth_types::{GethData, Transaction};
 use ethers_core::types::{NameOrAddress, TransactionRequest};
@@ -22,10 +18,14 @@ fn init_env_logger() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("error")).init();
 }
 
+/// Bytecode circuit test configuration
 #[derive(Debug, Clone)]
 pub struct BytecodeTestConfig {
+    /// Test EVM circuit
     pub enable_evm_circuit_test: bool,
+    /// Test state circuit
     pub enable_state_circuit_test: bool,
+    /// Gas limit
     pub gas_limit: u64,
 }
 
@@ -39,6 +39,7 @@ impl Default for BytecodeTestConfig {
     }
 }
 
+/// Test circuit
 pub fn run_test_circuits<const NACC: usize, const NTX: usize>(
     test_ctx: TestContext<NACC, NTX>,
     config: Option<BytecodeTestConfig>,
@@ -56,6 +57,7 @@ pub fn run_test_circuits<const NACC: usize, const NTX: usize>(
     test_circuits_using_witness_block(block, config.unwrap_or_default())
 }
 
+/// Test circuit using a witness block
 pub fn test_circuits_using_witness_block(
     block: Block<Fr>,
     config: BytecodeTestConfig,
@@ -82,7 +84,7 @@ pub fn test_circuits_using_witness_block(
     Ok(())
 }
 
-pub fn rand_tx<R: Rng + CryptoRng>(mut rng: R, chain_id: u64) -> Transaction {
+pub(crate) fn rand_tx<R: Rng + CryptoRng>(mut rng: R, chain_id: u64) -> Transaction {
     let wallet0 = LocalWallet::new(&mut rng).with_chain_id(chain_id);
     let wallet1 = LocalWallet::new(&mut rng).with_chain_id(chain_id);
     let from = wallet0.address();
