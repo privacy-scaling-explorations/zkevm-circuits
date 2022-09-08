@@ -100,33 +100,6 @@ impl<F: Field> ExpCircuit<F> {
             );
             // TODO(rohit): enforce correct transition of is_first and is_last
 
-            // We don't use the exp circuit for exponentiation by 0 or 1, so the first
-            // multiplication MUST equal `base*base == base^2`. Since we populate the
-            // multiplication gadget in a reverse order, the first multiplication is
-            // assigned to the last row.
-            cb.condition(meta.query_advice(exp_table.is_last, Rotation::cur()), |cb| {
-                for (i, mul_gadget_col) in [
-                    mul_gadget.col0,
-                    mul_gadget.col1,
-                    mul_gadget.col2,
-                    mul_gadget.col3,
-                ]
-                .into_iter()
-                .enumerate()
-                {
-                    cb.require_equal(
-                        "if is_last is True: exp_table.base_limb[i] == mul_gadget.a[i]",
-                        meta.query_advice(exp_table.base_limb, Rotation(i as i32)),
-                        meta.query_advice(mul_gadget_col, Rotation(0)),
-                    );
-                    cb.require_equal(
-                        "if is_last is True: exp_table.base_limb[i] == mul_gadget.b[i]",
-                        meta.query_advice(exp_table.base_limb, Rotation(i as i32)),
-                        meta.query_advice(mul_gadget_col, Rotation(1)),
-                    );
-                }
-            });
-
             // For every step, the intermediate exponentiation MUST equal the result of
             // the corresponding multiplication.
             cb.require_equal(
@@ -261,6 +234,26 @@ impl<F: Field> ExpCircuit<F> {
                     "if is_last is True: intermediate_exponent == 2 (hi == 0)",
                     meta.query_advice(exp_table.intermediate_exponent_lo_hi, Rotation::next()),
                 );
+                for (i, mul_gadget_col) in [
+                    mul_gadget.col0,
+                    mul_gadget.col1,
+                    mul_gadget.col2,
+                    mul_gadget.col3,
+                ]
+                .into_iter()
+                .enumerate()
+                {
+                    cb.require_equal(
+                        "if is_last is True: exp_table.base_limb[i] == mul_gadget.a[i]",
+                        meta.query_advice(exp_table.base_limb, Rotation(i as i32)),
+                        meta.query_advice(mul_gadget_col, Rotation(0)),
+                    );
+                    cb.require_equal(
+                        "if is_last is True: exp_table.base_limb[i] == mul_gadget.b[i]",
+                        meta.query_advice(exp_table.base_limb, Rotation(i as i32)),
+                        meta.query_advice(mul_gadget_col, Rotation(1)),
+                    );
+                }
             });
 
             cb.gate(meta.query_selector(q_step))
