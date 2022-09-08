@@ -640,18 +640,13 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
                         // mult_diff is checked in a lookup below
             ));
 
-            // long odd not first level not first storage selector:
+            // long odd not first level selector:
             let long_odd = q_not_first.clone()
                     * not_first_level.clone()
                     * (one.clone() - is_first_storage_level.clone())
                     * is_extension_c_row.clone()
                     * (is_ext_long_odd_c16.clone() + is_ext_long_odd_c1.clone());
     
-            /* 
-            Example:
-            bytes: [228, 130, 16 + 3, 137, 0, ...]
-            nibbles: [5, 0, ...]
-            */
             let mut long_odd_sel1_rlc = key_rlc_prev_branch.clone() +
                 (s_bytes0 - c16.clone()) * key_rlc_mult_prev_branch.clone();
             // skip 1 because s_main.bytes[0] has already been taken into account
@@ -663,30 +658,47 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
                 -1,
                 r_table.clone(),
             );
+
+            /*
+            `Long odd` means there is an odd number of nibbles and the number is bigger than 1.
+            `sel1` means there is an even number of nibbles above the branch.
+            Thus, there is an odd number of nibbles above the extension node.
+            Because of an odd number of nibbles in the extension node, we have the first
+            nibble `n1` stored in `s_main.bytes[0]` (actually `n1 + 16`). We multiply it with 
+            `key_rlc_mult_prev_branch`. Further nibbles are already paired in `s_main.bytes[i]`
+            for `i > 0` and we do not need information about `second_nibbles`.
+            */
             constraints.push((
-                "long odd sel1 extension",
+                "Long odd sel1 extension node key RLC",
                     long_odd.clone() // no need for check_extension here
                     * sel1.clone()
                     * (key_rlc_ext_node_cur.clone() - long_odd_sel1_rlc.clone())
             ));
-            // We check branch key RLC in extension C row too (otherwise +rotation would be needed
-            // because we first have branch rows and then extension rows):
+
+            /*
+            corresponding to the branch (this nibble is `modified_node`):
+            `key_rlc_branch = key_rlc_ext_node + modified_node * key_rlc_mult_prev_branch * mult_diff * 16`
+            */
             constraints.push((
-                "long odd sel1 branch",
+                "Long odd sel1 extension node > branch key RLC",
                     long_odd.clone()
                     * sel1.clone()
                     * (key_rlc_branch.clone() - key_rlc_ext_node_cur.clone() -
                         c16.clone() * modified_node_cur.clone() * key_rlc_mult_prev_branch.clone() * mult_diff.clone())
             ));
+
+            /*
+            We need to check that the multiplier stored in a branch is:
+            `key_rlc_mult_branch = key_rlc_mult_prev_branch * mult_diff`.
+            */
             constraints.push((
-                "long odd sel1 branch mult",
+                "Long odd sel1 extension node > branch key RLC mult",
                     long_odd.clone()
                     * sel1.clone()
                     * (key_rlc_mult_branch.clone() - key_rlc_mult_prev_branch.clone() * mult_diff.clone())
                     // mult_diff is checked in a lookup below
             ));
 
-            // short: 
             let short = q_not_first.clone()
                 * not_first_level.clone()
                 * (one.clone() - is_first_storage_level.clone())
@@ -695,23 +707,48 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
 
             let short_sel2_rlc = key_rlc_prev_branch.clone() +
                 c16.clone() * (s_rlp2 - c16.clone()) * key_rlc_mult_prev_branch.clone(); // -16 because of hexToCompact
+
+            /*
+            `Short` means there is only one nibble in the extension node.
+            `sel2` means there are odd number of nibbles above the branch. 
+            That means there are even number of nibbles above the extension node.
+
+            Because of `short`, we have the first (and only) nibble in `s_main.rlp2`.
+            We add this nibble to the previous key RLC to obtain the extension node key RLC.
+            */
             constraints.push((
-                "short sel2 extension",
+                "Short sel2 extension node key RLC",
                     short.clone() // no need for check_extension here
                     * sel2.clone()
                     * (key_rlc_ext_node_cur.clone() - short_sel2_rlc.clone())
             ));
-            // We check branch key RLC in extension C row too (otherwise +rotation would be needed
-            // because we first have branch rows and then extension rows):
+
+            /*
+            Once we have extension node key RLC computed we need to take into account also the nibble
+            corresponding to the branch (this nibble is `modified_node`):
+            `key_rlc_branch = key_rlc_ext_node + modified_node * key_rlc_mult_prev_branch`.
+
+            Note that there is no multiplication by power of `r` needed because `modified_node`
+            nibble uses the same multiplier as the nibble in the extension node as the two
+            of them form a byte in a key.
+            */
             constraints.push((
-                "short sel2 branch",
+                "Short sel2 branch extension node > branch key RLC",
                     short.clone()
                     * sel2.clone()
                     * (key_rlc_branch.clone() - key_rlc_ext_node_cur.clone() -
                         modified_node_cur.clone() * key_rlc_mult_prev_branch.clone())
             ));
+
+            /*
+            We need to check that the multiplier stored in a branch is:
+            `key_rlc_mult_branch = key_rlc_mult_prev_branch * r`.
+
+            Note that we only need to multiply by `r`, because only one key byte is used
+            in this extension node (one nibble in extension node + modified node nibble).
+            */
             constraints.push((
-                "short sel2 branch mult",
+                "Short sel2 branch extension node > branch key RLC mult",
                     short.clone()
                     * sel2.clone()
                     * (key_rlc_mult_branch.clone() - key_rlc_mult_prev_branch.clone() * r_table[0].clone())
@@ -719,9 +756,12 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
 
             let is_extension_s_row =
                 meta.query_advice(branch.is_extension_node_s, Rotation::cur());
-            // We need to ensure `s_main.bytes` are all 0 when short - the only nibble is in `s_main.rlp2`.
-            // For long version, the constraints to have 0s after nibbles end in `s_main.bytes` are
-            // below using `key_len_lookup`.
+
+            /*
+            We need to ensure `s_main.bytes` are all 0 when short - the only nibble is in `s_main.rlp2`.
+            For long version, the constraints to have 0s after nibbles end in `s_main.bytes` are
+            implemented using `key_len_lookup`.
+            */
             for ind in 0..HASH_WIDTH {
                 let s = meta.query_advice(s_main.bytes[ind], Rotation::cur());
                 constraints.push((
@@ -781,8 +821,14 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
                 * (is_ext_long_odd_c16 + is_ext_long_odd_c1)
         };
 
-        // mult_diff
-        meta.lookup_any("extension_node_key mult_diff", |meta| {
+        /*
+        It needs to be checked that `mult_diff` value corresponds to the number
+        of the extension node nibbles. The information about the number of nibbles
+        is encoded in `s_main.rlp2` - except in `short` case, but in this case we only
+        have one nibble and we already know what value should have `mult_diff`.
+        Thus, we check whether `(RMult, s_main.rlp2, mult_diff)` is in `fixed_table`.
+        */
+        meta.lookup_any("Extension node key mult_diff", |meta| {
             let mut constraints = vec![];
             let not_first_level =
                 meta.query_advice(not_first_level, Rotation::cur());
@@ -860,9 +906,12 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
             constraints
         });
 
-        // second_nibble needs to be between 0 and 15.
+        /*
+        It needs to be checked that `second_nibbles` stored in `IS_EXTENSION_NODE_C` row
+        are all between 0 and 15.
+        */
         for ind in 0..HASH_WIDTH - 1 {
-            meta.lookup_any("extension_node second nibble", |meta| {
+            meta.lookup_any("Extension node second_nibble", |meta| {
                 let mut constraints = vec![];
                 let not_first_level =
                     meta.query_advice(not_first_level, Rotation::cur());
@@ -872,6 +921,10 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
                 let sel2 =
                     meta.query_advice(s_main.bytes[IS_BRANCH_C1_POS - RLP_NUM], Rotation(rot_into_branch_init));
 
+                /*
+                Note that get_long_even also has is_extension_c factor, so this is checked
+                only in IS_EXTENSION_NODE_C row.
+                */
                 let long_even_sel2 = get_long_even(meta) * sel2;
                 let long_odd_sel1 = get_long_odd(meta) * sel1;
 
@@ -886,42 +939,6 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
                 ));
                 constraints.push((
                     (long_even_sel2 + long_odd_sel1) * not_first_level * second_nibble,
-                    meta.query_fixed(fixed_table[1], Rotation::cur()),
-                ));
-
-                constraints
-            });
-        }
-
-        // first_nibble needs to be between 0 and 15.
-        for ind in 0..HASH_WIDTH - 1 {
-            meta.lookup_any("extension node first nibble", |meta| {
-                let mut constraints = vec![];
-                let not_first_level =
-                    meta.query_advice(not_first_level, Rotation::cur());
-
-                let sel1 =
-                    meta.query_advice( s_main.bytes[IS_BRANCH_C16_POS - RLP_NUM], Rotation(rot_into_branch_init));
-                let sel2 =
-                    meta.query_advice(s_main.bytes[IS_BRANCH_C1_POS - RLP_NUM], Rotation(rot_into_branch_init));
-
-                let long_even_sel2 = get_long_even(meta) * sel2;
-                let long_odd_sel1 = get_long_odd(meta) * sel1;
-
-                let s = meta.query_advice(s_main.bytes[1 + ind], Rotation::prev());
-                let second_nibble =
-                    meta.query_advice(s_main.bytes[ind], Rotation::cur());
-                let first_nibble =
-                    (s.clone() - second_nibble.clone()) * c16inv.clone();
-
-                constraints.push((
-                    Expression::Constant(F::from(
-                        FixedTableTag::Range16 as u64,
-                    )),
-                    meta.query_fixed(fixed_table[0], Rotation::cur()),
-                ));
-                constraints.push((
-                    (long_even_sel2 + long_odd_sel1) * not_first_level * first_nibble,
                     meta.query_fixed(fixed_table[1], Rotation::cur()),
                 ));
 
@@ -958,8 +975,11 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
         };
 
         /*
-        There are 0s after key length. Note that for a short version (only one nibble), all
-        `s_main.bytes` need to be 0 (the only nibble is in `s_main.rlp2`).
+        `s_main.bytes[i] = 0` after last extension node nibble.
+
+        Note that for a short version (only one nibble), all
+        `s_main.bytes` need to be 0 (the only nibble is in `s_main.rlp2`) - this is checked
+        separately.
         */
         /*
         for ind in 1..HASH_WIDTH {
@@ -1010,8 +1030,11 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
             FixedTableTag::Range256,
             fixed_table,
         );
-        // There is no need to check s_main.bytes in C row as these bytes are checked
-        // to be nibbles.
+
+        /*
+        There is no need to check s_main.bytes in C row as these bytes are checked
+        to be nibbles.
+        */
         range_lookups(
             meta,
             sel_c,
