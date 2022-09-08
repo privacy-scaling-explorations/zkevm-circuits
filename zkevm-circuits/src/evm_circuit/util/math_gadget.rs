@@ -1562,7 +1562,9 @@ impl<F: Field> SarWordsGadget<F> {
         let p_lo: u128 = 1 << shf_mod64;
         let p_hi: u128 = 1 << (64 - shf_mod64);
         let p_top: u128 = if is_neg {
-            0xFFFFFFFFFFFFFFFF_u128 - p_hi + 1
+            0xFFFFFFFFFFFFFFFF_u128
+            - p_hi
+            + 1
         } else {
             0
         };
