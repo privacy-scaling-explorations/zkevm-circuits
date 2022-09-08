@@ -1,7 +1,7 @@
 use array_init::array_init;
 use bus_mapping::evm::OpcodeId;
 use eth_types::Field;
-use halo2_proofs::plonk::Error;
+use halo2_proofs::{circuit::Value, plonk::Error};
 
 use crate::{
     evm_circuit::{
@@ -83,11 +83,11 @@ impl<F: Field> ExecutionGadget<F> for CodesizeGadget<F> {
             .iter()
             .zip(codesize.to_le_bytes().iter())
         {
-            c.assign(region, offset, Some(F::from(*b as u64)))?;
+            c.assign(region, offset, Value::known(F::from(*b as u64)))?;
         }
 
         self.codesize
-            .assign(region, offset, Some(F::from(codesize)))?;
+            .assign(region, offset, Value::known(F::from(codesize)))?;
 
         Ok(())
     }

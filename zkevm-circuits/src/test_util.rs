@@ -1,11 +1,11 @@
-use crate::{evm_circuit::witness::Block, state_circuit::StateCircuit};
+use crate::{state_circuit::StateCircuit, witness::Block};
 use bus_mapping::mock::BlockData;
 use eth_types::geth_types::{GethData, Transaction};
 use ethers_core::types::{NameOrAddress, TransactionRequest};
 use ethers_core::utils::keccak256;
 use ethers_signers::{LocalWallet, Signer};
 use halo2_proofs::dev::{MockProver, VerifyFailure};
-use halo2_proofs::pairing::bn256::Fr;
+use halo2_proofs::halo2curves::bn256::Fr;
 use mock::TestContext;
 use rand::{CryptoRng, Rng};
 
@@ -44,7 +44,7 @@ pub fn run_test_circuits<const NACC: usize, const NTX: usize>(
         .unwrap();
 
     // build a witness block from trace result
-    let block = crate::evm_circuit::witness::block_convert(&builder.block, &builder.code_db);
+    let block = crate::witness::block_convert(&builder.block, &builder.code_db);
 
     // finish required tests according to config using this witness block
     test_circuits_using_witness_block(block, config.unwrap_or_default())

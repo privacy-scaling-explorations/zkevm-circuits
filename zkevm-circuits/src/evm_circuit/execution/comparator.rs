@@ -14,7 +14,7 @@ use crate::{
     util::Expr,
 };
 use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian};
-use halo2_proofs::plonk::Error;
+use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct ComparatorGadget<F> {
@@ -160,7 +160,7 @@ impl<F: Field> ExecutionGadget<F> for ComparatorGadget<F> {
         self.a.assign(region, offset, Some(a))?;
         self.b.assign(region, offset, Some(b))?;
         self.result
-            .assign(region, offset, Some(F::from(result.low_u64())))?;
+            .assign(region, offset, Value::known(F::from(result.low_u64())))?;
 
         Ok(())
     }
