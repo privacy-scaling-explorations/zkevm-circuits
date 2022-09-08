@@ -20,7 +20,10 @@ use halo2_proofs::{
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector, VirtualCells},
     poly::Rotation,
 };
-use std::{collections::HashMap, iter};
+use std::{
+    collections::HashMap,
+    iter::{self, Skip},
+};
 use strum::IntoEnumIterator;
 
 mod add_sub;
@@ -1113,7 +1116,11 @@ impl<F: Field> ExecutionConfig<F> {
             }
         }
 
+        println!("rw indices is : {}", step.rw_indices.len());
         for (idx, assigned_rw_value) in assigned_rw_values.iter().enumerate() {
+            if step.rw_indices.is_empty() {
+                break;
+            }
             let rw_idx = step.rw_indices[idx];
             let rw = block.rws[rw_idx];
             let table_assignments = rw.table_assignment(block.randomness);

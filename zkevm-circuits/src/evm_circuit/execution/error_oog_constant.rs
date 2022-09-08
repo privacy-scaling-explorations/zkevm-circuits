@@ -3,10 +3,12 @@ use crate::evm_circuit::{
     param::N_BYTES_GAS,
     step::ExecutionState,
     util::{
-        constraint_builder::ConstraintBuilder, math_gadget::RangeCheckGadget, CachedRegion, Cell,
+        common_gadget::RestoreContextGadget, constraint_builder::ConstraintBuilder,
+        math_gadget::RangeCheckGadget, CachedRegion, Cell,
     },
     witness::{Block, Call, ExecStep, Transaction},
 };
+use crate::table::CallContextFieldTag;
 use crate::util::Expr;
 use eth_types::Field;
 use halo2_proofs::{circuit::Value, plonk::Error};
@@ -17,7 +19,9 @@ pub(crate) struct ErrorOOGConstantGadget<F> {
     // constrain gas left is less than required
     gas_required: Cell<F>,
     insufficient_gas: RangeCheckGadget<F, N_BYTES_GAS>,
-    // restore_context: RestoreContextGadget<F>,
+    is_success: Cell<F>,
+
+    restore_context: RestoreContextGadget<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for ErrorOOGConstantGadget<F> {
@@ -28,6 +32,9 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGConstantGadget<F> {
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
         let gas_required = cb.query_cell();
+        let is_success = cb.query_cell();
+
+        cb.require_zero("is_success is false ", is_success.expr());
 
         // Check if the amount of gas available is less than the amount of gas
         // required
@@ -36,12 +43,47 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGConstantGadget<F> {
 
         // TODO: Handle root & internal call constraints and use ContextSwitchGadget to
         // switch call context to caller's and consume all gas_left
+        let is_to_end_tx = cb.next.execution_state_selector([ExecutionState::EndTx]);
+        cb.require_equal(
+            "Go to EndTx only when is_root",
+            cb.curr.state.is_root.expr(),
+            is_to_end_tx,
+        );
+
+        // When it's a root call
+        // cb.condition(cb.curr.state.is_root.expr(), |cb| {
+        // When a transaction ends with this error case, this call must be not
+        // persistent
+        // cb.call_context_lookup(
+        //         false.expr(),
+        //         None,
+        //         CallContextFieldTag::IsPersistent,
+        //         0.expr(),
+        // )});
+
+        // if not root call, switch to caller's context
+        cb.condition(1.expr() - cb.curr.state.is_root.expr(), |cb| {
+            // When a transaction ends with this error case, this call must be not
+            // persistent
+            cb.call_context_lookup(
+                false.expr(),
+                None,
+                CallContextFieldTag::IsPersistent,
+                0.expr(),
+            )
+        });
+
+        // When it's an internal call
+        let restore_context = cb.condition(1.expr() - cb.curr.state.is_root.expr(), |cb| {
+            RestoreContextGadget::construct(cb, 1.expr(), 0.expr(), 0.expr())
+        });
 
         Self {
             opcode,
             gas_required,
             insufficient_gas,
-            // restore_context,
+            is_success,
+            restore_context,
         }
     }
 
@@ -49,9 +91,9 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGConstantGadget<F> {
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        _block: &Block<F>,
+        block: &Block<F>,
         _tx: &Transaction,
-        _call: &Call,
+        call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
         let _opcode = step.opcode.unwrap();
@@ -63,6 +105,11 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGConstantGadget<F> {
         // Get `gas_available` variable here once it's available
         self.insufficient_gas
             .assign(region, offset, F::from(step.gas_cost - step.gas_left))?;
+
+        self.is_success
+            .assign(region, offset, Value::known(F::from(call.is_success)))?;
+        self.restore_context
+            .assign(region, offset, block, call, step)?;
 
         Ok(())
     }
@@ -144,7 +191,7 @@ mod test {
     }
 
     #[test]
-    fn oog_constant_gadget_simple() {
+    fn oog_constant_root() {
         // Transfer 1 ether, successfully
         // in root call
         test_oog_constant(mock_tx(eth(1), gwei(2), vec![]), false);
