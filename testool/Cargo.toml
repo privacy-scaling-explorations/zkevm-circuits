@@ -26,10 +26,13 @@ pairing_bn256 = { git = "https://github.com/appliedzkp/pairing" }
 mock = { path = "../mock" }
 glob = "0.3"
 rayon = "1.5"
-prettytable-rs = "0.8"
+prettytable-rs = "0.9"
 clap = { version = "3.1", features = ["derive"] }
 ethers-signers = "0.6"
 toml = "0.5"
+strum= "0.24"
+strum_macros = "0.24"
+handlebars = "4.3"
 
 [features]
 ignore-test-docker = []

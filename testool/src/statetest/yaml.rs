@@ -1,4 +1,4 @@
-use super::{AccountMatch, Env, StateTest};
+use super::executor::{AccountMatch, Env, StateTest};
 use crate::abi;
 use crate::utils::MainnetFork;
 use crate::Compiler;
@@ -130,15 +130,15 @@ impl<'a> YamlStateTestBuilder<'a> {
                     })
                     .collect();
 
-                let mut exception : bool = false;
+                let mut exception: bool = false;
 
                 if let Some(exceptions) = expect["expectException"].as_hash() {
-                   for (network, _) in exceptions {
-                       let network = network.as_str().unwrap().to_string();
-                       if MainnetFork::in_network_range(&[network])? {
-                        exception = true;  
-                       }
-                   }
+                    for (network, _) in exceptions {
+                        let network = network.as_str().unwrap().to_string();
+                        if MainnetFork::in_network_range(&[network])? {
+                            exception = true;
+                        }
+                    }
                 }
 
                 let data_refs = Self::parse_refs(&expect["indexes"]["data"])?;
@@ -195,7 +195,7 @@ impl<'a> YamlStateTestBuilder<'a> {
                                 nonce,
                                 value: *value,
                                 data: data.0.clone(),
-                                exception : *exception,
+                                exception: *exception,
                             });
                             break;
                         }
@@ -729,7 +729,7 @@ arith:
                     storage: HashMap::from([(U256::zero(), U256::one())]),
                 },
             )]),
-            exception: false
+            exception: false,
         };
 
         assert_eq!(current, expected);

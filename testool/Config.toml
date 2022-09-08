@@ -3,8 +3,6 @@ max_steps = 1000
 
 unimplemented_opcodes = [
     "EXP",
-    "SHL",
-    "SHR",
     "SAR",
     "RETURN",
     "REVERT",
@@ -67,20 +65,6 @@ ids = [
     "oog_d2(success)_g0_v0", 
     "oog_d4(success)_g0_v0",
     "push32withoutByte_d0_g0_v0"
-]
-
-[[ignore_test]]
-desc = "https://github.com/privacy-scaling-explorations/zkevm-circuits/blob/72649e3ef3277d568e2cdb53b7f6dd16a385f2f1/bus-mapping/src/evm/opcodes.rs#L363 takes all gas_limit as a fee"
-ids = [
-    "refundSSTORE_d0_g0_v0",
-    "refundMax_d0_g0_v0",
-    "refund_changeNonZeroStorage_d0_g0_v0",
-    "refund_getEtherBack_d0_g0_v0",
-    "refund_NoOOG_1_d0_g0_v0",
-    "refund_CallA_d0_g0_v0",
-    "refund50_2_d0_g0_v0",
-    "refund50_1_d0_g0_v0",
-    "makeMoney_d0_g0_v0"
 ]
 
 [[ignore_test]]

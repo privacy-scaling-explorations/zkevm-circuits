@@ -1,6 +1,6 @@
 #![allow(dead_code, unused_imports)]
 
-use super::{AccountMatch, Env, StateTest};
+use super::executor::{AccountMatch, Env, StateTest};
 use crate::abi;
 use crate::compiler::Compiler;
 use crate::utils::MainnetFork;
@@ -185,7 +185,7 @@ impl<'a> JsonStateTestBuilder<'a> {
                                 gas_limit: *gas_limit,
                                 value: *value,
                                 data: eth_types::Bytes(data.0.clone()),
-                                exception: false // TODO: check
+                                exception: false, // TODO: check
                             });
                         }
                     }
@@ -589,7 +589,7 @@ mod test {
                     storage: HashMap::from([(U256::zero(), U256::from(2u64))]),
                 },
             )]),
-            exception: false
+            exception: false,
         };
 
         assert_eq!(expected, test);

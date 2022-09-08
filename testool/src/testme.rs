@@ -1,21 +1,27 @@
 #[cfg(test)]
 mod test {
-    use eth_types::geth_types::GethData;
     use eth_types::bytecode::BytecodeElement;
-    use eth_types::{Bytes, address, bytecode, Word, Bytecode};
+    use eth_types::geth_types::GethData;
+    use eth_types::{address, bytecode, Bytecode, Bytes, Word};
     use mock::TestContext;
+    use std::collections::HashMap;
     use zkevm_circuits::evm_circuit::witness::block_convert;
     use zkevm_circuits::test_util::BytecodeTestConfig;
-    use std::collections::HashMap;
 
     #[test]
     fn testme() {
+        /*
         let addr0 = address!("0x00000000000000000000000000000000000cafe0");
         let addr1 = address!("0x00000000000000000000000000000000000cafe1");
 
-
-
-        let code1 = Bytecode{ code: vec![BytecodeElement{value :0x6f, is_code: true }], num_opcodes: 1, markers: HashMap::new()};
+        let code1 = Bytecode {
+            code: vec![BytecodeElement {
+                value: 0x6f,
+                is_code: true,
+            }],
+            num_opcodes: 1,
+            markers: HashMap::new(),
+        };
         let code2 = bytecode! {
             STOP
         };
@@ -45,5 +51,6 @@ mod test {
         let bytecode_test_config = BytecodeTestConfig::default();
         zkevm_circuits::test_util::test_circuits_using_witness_block(block, bytecode_test_config)
             .expect("should work")
+        */
     }
 }

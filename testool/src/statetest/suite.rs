@@ -1,23 +1,14 @@
+use super::JsonStateTestBuilder;
+use super::Results;
 use super::{StateTest, StateTestConfig};
 use crate::compiler::Compiler;
 use crate::config::Config;
-use crate::result_cache::ResultCache;
-use crate::statetest::JsonStateTestBuilder;
-use crate::statetest::StateTestError;
+use crate::statetest::results::{ResultInfo, ResultLevel};
 use crate::statetest::YamlStateTestBuilder;
 use anyhow::Result;
 use rayon::prelude::*;
 use std::sync::Arc;
 use std::sync::RwLock;
-
-/// tests that panicks
-const LVL_PANIK : &str = "00💀PANIK"; 
-/// tests that are failing
-const LVL_FAIL : &str = "01🔴FAILD";
-/// tests that are failing, but contains unimplemented features or known bugs
-const LVL_IGNORE: &str = "02🟠IGNOR";
-/// tests that passes
-const LVL_SUCCESS : &str = "03🟢SUCCS";
 
 pub fn load_statetests_suite(
     path: &str,
@@ -67,7 +58,7 @@ pub fn load_statetests_suite(
 pub fn run_statetests_suite(
     tcs: Vec<StateTest>,
     config: StateTestConfig,
-    results: &mut ResultCache,
+    results: &mut Results,
 ) -> Result<()> {
     let tcs: Vec<StateTest> = tcs
         .into_iter()
@@ -76,77 +67,99 @@ pub fn run_statetests_suite(
 
     let results = Arc::new(RwLock::from(results));
 
-    let skip_tests =
-        config
-            .global
-            .skip_test
-            .iter()
-            .chain(config.global.ignore_test.iter())
-            .map(|t| &t.ids)
-            .fold(Vec::new(), |mut acc, v| {
-                acc.extend(v);
-                acc
-            });
+    let skip_tests = config
+        .global
+        .skip_test
+        .iter()
+        .chain(config.global.ignore_test.iter())
+        .map(|t| &t.ids)
+        .fold(Vec::new(), |mut acc, v| {
+            acc.extend(v);
+            acc
+        });
 
     // for each test
-    tcs.into_par_iter().for_each(|tc| {
-        let id = format!("{}/{}", tc.path, tc.id);
-
+    tcs.into_par_iter().for_each(|ref tc| {
         // Test result is cached? Ignore
-        if results.read().unwrap().contains(id.as_str()) {
+        if results.read().unwrap().contains(tc.id.as_str()) {
             return;
         }
 
         // Test must be ignored config?
         if skip_tests.contains(&&tc.id) {
-            log::info!( "{} {}",LVL_IGNORE,id);
-            results.write().unwrap().insert(&id, LVL_IGNORE).unwrap();
+            results
+                .write()
+                .unwrap()
+                .insert(
+                    tc.id.clone(),
+                    ResultInfo {
+                        level: ResultLevel::Ignored,
+                        details: "Ignored in config file".to_string(),
+                        path: tc.path.to_string(),
+                    },
+                )
+                .unwrap();
             return;
         }
 
         std::panic::set_hook(Box::new(|_info| {}));
 
-        log::debug!("running test {}...",id);
-        let result = std::panic::catch_unwind(|| tc.run(config.clone()));
+        log::debug!("running test {}/{}...", tc.path, tc.id);
+        let result = std::panic::catch_unwind(|| tc.clone().run(config.clone()));
 
         // handle panic
         let result = match result {
             Ok(res) => res,
             Err(_) => {
-                log::error!(target: "vmvectests", "{} {}",LVL_PANIK, id);
-                results.write().unwrap().insert(&id, LVL_PANIK).unwrap();
+                results
+                    .write()
+                    .unwrap()
+                    .insert(
+                        tc.id.clone(),
+                        ResultInfo {
+                            level: ResultLevel::Panic,
+                            details: String::default(),
+                            path: tc.path.to_string(),
+                        },
+                    )
+                    .unwrap();
                 return;
             }
         };
 
         // handle known error
         if let Err(err) = result {
-            match err {
-                StateTestError::SkipUnimplemented(_)
-                | StateTestError::SkipTestMaxSteps(_)
-                | StateTestError::SkipTestMaxGasLimit(_) => {
-                    log::warn!(target: "vmvectests", "{} test {} : {:?}",LVL_IGNORE,id, err);
-                    results
-                        .write()
-                        .unwrap()
-                        .insert(&id, &format!("{} {}", LVL_IGNORE, err))
-                        .unwrap();
-                }
-                _ => {
-                    log::error!(target: "vmvectests", "{} {} : {:?}",LVL_FAIL, id, err);
-                    results
-                        .write()
-                        .unwrap()
-                        .insert(&id, &format!("{} {:?}", LVL_FAIL, err))
-                        .unwrap();
-                }
-            }
+            results
+                .write()
+                .unwrap()
+                .insert(
+                    tc.id.clone(),
+                    ResultInfo {
+                        level: if err.is_skip() {
+                            ResultLevel::Ignored
+                        } else {
+                            ResultLevel::Fail
+                        },
+                        details: err.to_string(),
+                        path: tc.path.to_string(),
+                    },
+                )
+                .unwrap();
             return;
         }
 
-        let results = std::sync::Arc::clone(&results);
-        results.write().unwrap().insert(&id, LVL_SUCCESS).unwrap();
-        log::info!(target: "vmvectests", "{} {}",LVL_SUCCESS, id)
+        results
+            .write()
+            .unwrap()
+            .insert(
+                tc.id.clone(),
+                ResultInfo {
+                    level: ResultLevel::Success,
+                    details: String::default(),
+                    path: tc.path.to_string(),
+                },
+            )
+            .unwrap();
     });
 
     Ok(())

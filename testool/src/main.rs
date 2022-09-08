@@ -1,19 +1,21 @@
 mod abi;
 mod compiler;
 mod config;
-mod result_cache;
 mod statetest;
 mod testme;
 mod utils;
 
+use std::time::SystemTime;
+use std::process::Command;
 use anyhow::{bail, Result};
 use clap::Parser;
 use compiler::Compiler;
 use config::Config;
-use result_cache::ResultCache;
-use statetest::{load_statetests_suite, run_statetests_suite, StateTest, StateTestConfig};
+use statetest::{load_statetests_suite, run_statetests_suite, Results, StateTest, StateTestConfig};
 use std::path::PathBuf;
 use zkevm_circuits::test_util::BytecodeTestConfig;
+
+const REPORT_FOLDER : &str = "report";
 
 #[macro_use]
 extern crate prettytable;
@@ -22,7 +24,7 @@ extern crate prettytable;
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
 struct Args {
-    /// (Ethereum tests) path 
+    /// (Ethereum tests) path
     #[clap(long, default_value = "tests/src/GeneralStateTestsFiller/**")]
     ethtest: String,
 
@@ -30,13 +32,17 @@ struct Args {
     #[clap(long)]
     ethtest_id: Option<String>,
 
-    /// (Ethereum tests) Cache execution results 
+    /// (Ethereum tests) Cache execution results
     #[clap(long)]
     ethtest_cache: bool,
 
     /// (Ethereum tests) Run all ignored tests (skipped ones are not executed)
     #[clap(long)]
     ethtest_all: bool,
+
+    /// (Ethereum tests) CI mode: generates log and and html file with info
+    #[clap(long)]
+    ci: bool,
 
     /// Do not run any circuits
     #[clap(long)]
@@ -46,7 +52,7 @@ struct Args {
     #[clap(long)]
     skip_state_circuit: bool,
 
-    /// Raw execute bytecode, can be hex `6001` or asm `PUSH1(60); PUSH1(60)` 
+    /// Raw execute bytecode, can be hex `6001` or asm `PUSH1(60); PUSH1(60)`
     #[clap(long)]
     raw: Option<String>,
 
@@ -135,6 +141,7 @@ fn main() -> Result<()> {
     let compiler = Compiler::new(true, Some(PathBuf::from("./code.cache")))?;
 
     if let Some(test_id) = args.ethtest_id {
+        // test only one 
         config.skip_test.clear();
         let state_tests = load_statetests_suite(&args.ethtest, config, compiler)?;
         let mut state_tests: Vec<_> = state_tests
@@ -145,22 +152,62 @@ fn main() -> Result<()> {
             bail!("test '{}' not found", test_id);
         }
         run_single_test(state_tests.remove(0), statetest_config)?;
+    } else if args.ci {
+        // ci mode
+        config.skip_test.clear();
+        let path = "tests/src/GeneralStateTestsFiller/stBadOpcode/eip2315NotRemovedFiller.json";
+
+        let state_tests = load_statetests_suite(path, config, compiler)?;
+        let output = Command::new("git").args(&["rev-parse", "HEAD"]).output().unwrap();
+        let git_hash = String::from_utf8(output.stdout).unwrap();
+        let git_hash = &git_hash[..7].to_string();
+        let timestamp = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs();        
+
+        std::fs::create_dir_all(REPORT_FOLDER)?;
+        let csv_filename = format!("{}/{}.{}.csv", REPORT_FOLDER, timestamp, git_hash);
+        let html_filename = format!("{}/{}.{}.html", REPORT_FOLDER, timestamp, git_hash);
+
+        let mut results = Results::with_cache(PathBuf::from(csv_filename))?;
+        run_statetests_suite(state_tests, statetest_config, &mut results)?;
+
+        // filter non-csv files and files from the same commit
+        let mut files: Vec<_>  = std::fs::read_dir(REPORT_FOLDER).unwrap().filter_map(|f| {
+            let filename = f.unwrap().file_name().to_str().unwrap().to_string();
+            if filename.ends_with(".csv") && !filename.contains(&format!(".{}.",git_hash)) {
+            Some(filename)
+          }  else {
+            None
+          }
+        }).collect();
+        files.sort_by(|f,s| s.cmp(f));
+        let previous = if !files.is_empty() {
+            let file = files.remove(0);            
+            println!("Comparing with previous results in {}", file);
+            let path = format!("{}/{}", REPORT_FOLDER, file);
+            Some((file, Results::from_file(PathBuf::from(path))?))
+        } else {
+            None
+        };
+
+        std::fs::write(&html_filename, results.report(previous).gen_html()?)?;
+
+        println!("{}",html_filename);
     } else {
+        // manual 
         if args.ethtest_all {
             config.skip_test.clear();
         }
         let state_tests = load_statetests_suite(&args.ethtest, config, compiler)?;
         let mut results = if args.ethtest_cache {
-            let results = ResultCache::with_file(PathBuf::from(RESULT_CACHE))?;
-            results.write_sorted()?;
+            let results = Results::with_cache(PathBuf::from(RESULT_CACHE))?;
             results
         } else {
-            ResultCache::with_memory()
+            Results::default()
         };
         log::info!("Executing...");
         run_statetests_suite(state_tests, statetest_config, &mut results)?;
-        println!("REPORT\n{}", results.report());
-        results.write_sorted()?;
+        log::info!("Generating report...");
+        results.report(None).print_tty()?;
     }
 
     Ok(())
