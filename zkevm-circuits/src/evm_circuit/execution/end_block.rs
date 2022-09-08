@@ -5,26 +5,26 @@ use crate::evm_circuit::{
     witness::{Block, Call, ExecStep, Transaction},
 };
 use eth_types::Field;
+use gadgets::not;
 use halo2_proofs::plonk::Error;
 
 use std::marker::PhantomData;
 
 #[derive(Clone, Debug)]
-pub(crate) struct EndBlockGadget<F> {
+pub(crate) struct EndBlockGadget<F, const MAX_TXS: usize> {
     _marker: PhantomData<F>,
 }
 
-impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
+impl<F: Field, const MAX_TXS: usize> ExecutionGadget<F> for EndBlockGadget<F, MAX_TXS> {
     const NAME: &'static str = "EndBlock";
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::EndBlock;
 
     fn configure(_: &mut ConstraintBuilder<F>) -> Self {
-        // TODO: For last step, constrain:
-        //         - tx_id is equal to total_tx
-        //         - rw_counter is equal to public input one
-
-        // TODO: For the rest steps, propagate the rw_counter and call_id to next step.
+        let is_last_step = cb.curr.state.;
+        
+        cb.condition(is_last_step.expr(), |cb| {});
+        cb.condition(not::expr(is_last_step.expr()), |cb| {});
 
         Self {
             _marker: PhantomData,
