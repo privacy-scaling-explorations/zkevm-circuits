@@ -467,7 +467,8 @@ pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
     }
     let caller_balance_prev = caller_account.balance;
     let caller_balance =
-        caller_account.balance + state.tx.gas_price * (exec_step.gas_left.0 + effective_refund);
+        caller_balance_prev + state.tx.gas_price * (exec_step.gas_left.0 + effective_refund);
+    caller_account.balance = caller_balance;
 
     state.account_write(
         &mut exec_step,

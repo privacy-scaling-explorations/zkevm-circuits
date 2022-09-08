@@ -42,12 +42,12 @@ pub enum StateTestError {
 
 impl StateTestError {
     pub fn is_skip(&self) -> bool {
-        match self {
+        matches!(
+            self,
             StateTestError::SkipUnimplemented(_)
-            | StateTestError::SkipTestMaxSteps(_)
-            | StateTestError::SkipTestMaxGasLimit(_) => true,
-            _ => false,
-        }
+                | StateTestError::SkipTestMaxSteps(_)
+                | StateTestError::SkipTestMaxGasLimit(_)
+        )
     }
 }
 

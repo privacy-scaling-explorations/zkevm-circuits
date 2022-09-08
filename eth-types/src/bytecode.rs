@@ -285,23 +285,22 @@ impl<'a> Iterator for BytecodeIterator<'a> {
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(byte) = self.0.next() {
             if let Ok(op) = OpcodeId::try_from(byte.value) {
-
-            if op.is_push() {
-                let n = op.as_u8() - OpcodeId::PUSH1.as_u8() + 1;
-                let mut value = vec![0u8; n as usize];
-                for value_byte in value.iter_mut() {
-                    *value_byte = self.0.next().unwrap().value;
+                if op.is_push() {
+                    let n = op.as_u8() - OpcodeId::PUSH1.as_u8() + 1;
+                    let mut value = vec![0u8; n as usize];
+                    for value_byte in value.iter_mut() {
+                        *value_byte = self.0.next().unwrap().value;
+                    }
+                    Some(OpcodeWithData::Push(
+                        n as usize,
+                        Word::from(value.as_slice()),
+                    ))
+                } else {
+                    Some(OpcodeWithData::Opcode(op))
                 }
-                Some(OpcodeWithData::Push(
-                    n as usize,
-                    Word::from(value.as_slice()),
-                ))
             } else {
-                Some(OpcodeWithData::Opcode(op))
-            }
-        } else {
                 Some(OpcodeWithData::Opcode(OpcodeId::INVALID(byte.value)))
-        }
+            }
         } else {
             None
         }

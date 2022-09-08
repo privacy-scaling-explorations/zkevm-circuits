@@ -5,17 +5,17 @@ mod statetest;
 mod testme;
 mod utils;
 
-use std::time::SystemTime;
-use std::process::Command;
 use anyhow::{bail, Result};
 use clap::Parser;
 use compiler::Compiler;
 use config::Config;
 use statetest::{load_statetests_suite, run_statetests_suite, Results, StateTest, StateTestConfig};
 use std::path::PathBuf;
+use std::process::Command;
+use std::time::SystemTime;
 use zkevm_circuits::test_util::BytecodeTestConfig;
 
-const REPORT_FOLDER : &str = "report";
+const REPORT_FOLDER: &str = "report";
 
 #[macro_use]
 extern crate prettytable;
@@ -141,7 +141,7 @@ fn main() -> Result<()> {
     let compiler = Compiler::new(true, Some(PathBuf::from("./code.cache")))?;
 
     if let Some(test_id) = args.ethtest_id {
-        // test only one 
+        // test only one
         config.skip_test.clear();
         let state_tests = load_statetests_suite(&args.ethtest, config, compiler)?;
         let mut state_tests: Vec<_> = state_tests
@@ -155,13 +155,19 @@ fn main() -> Result<()> {
     } else if args.ci {
         // ci mode
         config.skip_test.clear();
-        let path = "tests/src/GeneralStateTestsFiller/stBadOpcode/eip2315NotRemovedFiller.json";
+        let path = "tests/src/GeneralStateTestsFiller/**/*";
 
         let state_tests = load_statetests_suite(path, config, compiler)?;
-        let output = Command::new("git").args(&["rev-parse", "HEAD"]).output().unwrap();
+        let output = Command::new("git")
+            .args(&["rev-parse", "HEAD"])
+            .output()
+            .unwrap();
         let git_hash = String::from_utf8(output.stdout).unwrap();
         let git_hash = &git_hash[..7].to_string();
-        let timestamp = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs();        
+        let timestamp = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
 
         std::fs::create_dir_all(REPORT_FOLDER)?;
         let csv_filename = format!("{}/{}.{}.csv", REPORT_FOLDER, timestamp, git_hash);
@@ -171,17 +177,20 @@ fn main() -> Result<()> {
         run_statetests_suite(state_tests, statetest_config, &mut results)?;
 
         // filter non-csv files and files from the same commit
-        let mut files: Vec<_>  = std::fs::read_dir(REPORT_FOLDER).unwrap().filter_map(|f| {
-            let filename = f.unwrap().file_name().to_str().unwrap().to_string();
-            if filename.ends_with(".csv") && !filename.contains(&format!(".{}.",git_hash)) {
-            Some(filename)
-          }  else {
-            None
-          }
-        }).collect();
-        files.sort_by(|f,s| s.cmp(f));
+        let mut files: Vec<_> = std::fs::read_dir(REPORT_FOLDER)
+            .unwrap()
+            .filter_map(|f| {
+                let filename = f.unwrap().file_name().to_str().unwrap().to_string();
+                if filename.ends_with(".csv") && !filename.contains(&format!(".{}.", git_hash)) {
+                    Some(filename)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        files.sort_by(|f, s| s.cmp(f));
         let previous = if !files.is_empty() {
-            let file = files.remove(0);            
+            let file = files.remove(0);
             println!("Comparing with previous results in {}", file);
             let path = format!("{}/{}", REPORT_FOLDER, file);
             Some((file, Results::from_file(PathBuf::from(path))?))
@@ -191,16 +200,15 @@ fn main() -> Result<()> {
 
         std::fs::write(&html_filename, results.report(previous).gen_html()?)?;
 
-        println!("{}",html_filename);
+        println!("{}", html_filename);
     } else {
-        // manual 
+        // manual
         if args.ethtest_all {
             config.skip_test.clear();
         }
         let state_tests = load_statetests_suite(&args.ethtest, config, compiler)?;
         let mut results = if args.ethtest_cache {
-            let results = Results::with_cache(PathBuf::from(RESULT_CACHE))?;
-            results
+            Results::with_cache(PathBuf::from(RESULT_CACHE))?
         } else {
             Results::default()
         };

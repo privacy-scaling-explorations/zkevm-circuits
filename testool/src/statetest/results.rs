@@ -30,7 +30,7 @@ pub struct ResultInfo {
 }
 
 impl ResultLevel {
-    pub fn to_display_string(&self) -> String {
+    pub fn display_string(&self) -> String {
         use ResultLevel::*;
         match self {
             Panic => "💀PANIK",
@@ -47,29 +47,29 @@ pub struct DiffEntry {
     curr: Option<ResultInfo>,
 }
 
-pub struct Diffs{
+pub struct Diffs {
     info: String,
-    tests : Vec<DiffEntry>,
+    tests: Vec<DiffEntry>,
 }
 
 impl Diffs {
     pub fn gen_info(&self) -> Vec<String> {
-        let mut stat:  HashMap<ResultLevel, isize> = HashMap::new();
+        let mut stat: HashMap<ResultLevel, isize> = HashMap::new();
         let mut stat_news = 0isize;
 
         for t in &self.tests {
             if let Some(prev) = &t.prev {
-               *stat.entry(prev.level).or_default() -=1;
-               *stat.entry(t.curr.as_ref().unwrap().level).or_default() +=1;
+                *stat.entry(prev.level).or_default() -= 1;
+                *stat.entry(t.curr.as_ref().unwrap().level).or_default() += 1;
             } else {
                 stat_news += 1;
             }
         }
-        
+
         let mut buff = String::default();
-        buff.push_str(&format!("new: {:+} ",stat_news));
-        for (lvl,n) in stat {
-            buff.push_str(&format!("/ {:?}: {:+} ",lvl, n));
+        buff.push_str(&format!("new: {:+} ", stat_news));
+        for (lvl, n) in stat {
+            buff.push_str(&format!("/ {:?}: {:+} ", lvl, n));
         }
 
         let mut out = Vec::new();
@@ -77,15 +77,17 @@ impl Diffs {
         out.push(buff);
         for t in &self.tests {
             if let Some(prev) = &t.prev {
-               let curr = t.curr.as_ref().unwrap();
-               out.push(format!("{} : {:?}({}) => {:?}({})\n", t.id, prev.level, prev.details, curr.level, curr.details));
+                let curr = t.curr.as_ref().unwrap();
+                out.push(format!(
+                    "{} : {:?}({}) => {:?}({})\n",
+                    t.id, prev.level, prev.details, curr.level, curr.details
+                ));
             }
         }
 
         out
     }
 }
-
 
 pub struct Report {
     tests: HashMap<String, ResultInfo>,
@@ -98,7 +100,7 @@ impl Report {
     pub fn print_tty(&self) -> Result<()> {
         self.by_folder.print_tty(false)?;
         self.by_result.print_tty(false)?;
-        println!("{:#?}",self.diffs.gen_info());
+        println!("{:#?}", self.diffs.gen_info());
         Ok(())
     }
     pub fn gen_html(&self) -> Result<String> {
@@ -170,8 +172,11 @@ impl Results {
         let mut results = HashSet::new();
         let mut count_by_folder_level: HashMap<String, usize> = HashMap::new();
         let mut count_by_result: HashMap<String, usize> = HashMap::new();
-        
-        let mut diffs = Diffs { info: String::default(), tests: Vec::new() };
+
+        let mut diffs = Diffs {
+            info: String::default(),
+            tests: Vec::new(),
+        };
         let mut prev_results = None;
         if let Some((prev_info, p_results)) = previous {
             diffs.info = prev_info;
@@ -201,7 +206,7 @@ impl Results {
                     }
                 } else {
                     diffs.tests.push(DiffEntry {
-                        id : id.to_string(),
+                        id: id.to_string(),
                         prev: None,
                         curr: Some(info.clone()),
                     });
@@ -271,7 +276,7 @@ impl Results {
             by_result,
             diffs,
         }
-    } 
+    }
 
     pub fn contains(&self, test: &str) -> bool {
         self.tests.contains_key(test)
@@ -282,7 +287,7 @@ impl Results {
         if !self.tests.contains_key(&test_id) {
             log::info!(
                 "{} {}/{} {}",
-                result.level.to_display_string(),
+                result.level.display_string(),
                 result.path,
                 test_id,
                 result.details
