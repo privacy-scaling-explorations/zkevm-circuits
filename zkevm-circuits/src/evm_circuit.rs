@@ -8,13 +8,13 @@ use halo2_proofs::{
 
 mod execution;
 pub mod param;
-mod step;
+pub(crate) mod step;
 pub(crate) mod util;
 
 pub mod table;
-pub mod witness;
 
 use crate::table::LookupTable;
+pub use crate::witness;
 use eth_types::Field;
 use execution::ExecutionConfig;
 use itertools::Itertools;

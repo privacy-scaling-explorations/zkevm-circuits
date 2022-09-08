@@ -11,10 +11,10 @@ use crate::{
             math_gadget::{AddWordsGadget, RangeCheckGadget},
             Cell, Word,
         },
-        witness::{Block, Call, ExecStep},
     },
     table::{AccountFieldTag, CallContextFieldTag},
     util::Expr,
+    witness::{Block, Call, ExecStep},
 };
 use eth_types::{Field, ToLittleEndian, ToScalar, U256};
 use halo2_proofs::{
