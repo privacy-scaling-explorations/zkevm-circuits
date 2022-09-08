@@ -98,7 +98,16 @@ impl<F: Field> ExpCircuit<F> {
                 "is_last is boolean",
                 meta.query_advice(exp_table.is_last, Rotation::cur()),
             );
-            // TODO(rohit): enforce correct transition of is_first and is_last
+            // If this is not the final step, the identifier does not change.
+            cb.condition(not::expr(meta.query_advice(exp_table.is_last, Rotation::cur())), |cb| {
+                cb.require_equal(
+                    "identifier::cur == identifier::next",
+                    meta.query_advice(exp_table.identifier, Rotation::cur()),
+                    meta.query_advice(exp_table.identifier, Rotation(7)),
+                );
+            });
+            // TODO(rohit): add padding row after the end of every exponentiation trace to properly
+            // constrain the is_first/is_last columns.
 
             // For every step, the intermediate exponentiation MUST equal the result of
             // the corresponding multiplication.

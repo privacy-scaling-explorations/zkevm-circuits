@@ -254,6 +254,7 @@ pub(crate) enum Lookup<F> {
     },
     /// Lookup to exponentiation table.
     ExpTable {
+        identifier: Expression<F>,
         is_first: Expression<F>,
         is_last: Expression<F>,
         base_limbs: [Expression<F>; 4],
@@ -376,12 +377,14 @@ impl<F: Field> Lookup<F> {
                 output_rlc.clone(),
             ],
             Self::ExpTable {
+                identifier,
                 is_first,
                 is_last,
                 base_limbs,
                 intermediate_exponent_lo_hi,
                 intermediate_exp_lo_hi,
             } => vec![
+                identifier.clone(),
                 is_first.clone(),
                 is_last.clone(),
                 base_limbs[0].clone(),
