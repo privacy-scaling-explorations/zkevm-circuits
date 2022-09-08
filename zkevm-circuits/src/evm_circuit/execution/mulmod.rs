@@ -160,7 +160,7 @@ impl<F: Field> ExecutionGadget<F> for MulModGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::test_util::run_test_circuits;
+    use crate::test_util::run_test_circuits_default;
     use eth_types::evm_types::Stack;
     use eth_types::{bytecode, Word, U256};
     use mock::TestContext;
@@ -185,7 +185,7 @@ mod test {
                 .unwrap();
             last.stack = Stack::from_vec(vec![r]);
         }
-        run_test_circuits(ctx, None).is_ok()
+        run_test_circuits_default(ctx, None).is_ok()
     }
 
     fn test_u32(a: u32, b: u32, n: u32, r: Option<u32>) -> bool {

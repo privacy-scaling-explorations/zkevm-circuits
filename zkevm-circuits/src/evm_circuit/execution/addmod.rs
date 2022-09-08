@@ -225,7 +225,7 @@ impl<F: Field> ExecutionGadget<F> for AddModGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::test_util::run_test_circuits;
+    use crate::test_util::run_test_circuits_default;
     use eth_types::evm_types::Stack;
     use eth_types::{bytecode, Word};
     use mock::TestContext;
@@ -255,7 +255,7 @@ mod test {
                 .unwrap();
             last.stack = Stack::from_vec(vec![r]);
         }
-        run_test_circuits(ctx, None)
+        run_test_circuits_default(ctx, None)
     }
     fn test_u32(
         a: u32,

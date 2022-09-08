@@ -248,7 +248,7 @@ mod test {
     use eth_types::{bytecode, ToWord, Word};
     use mock::TestContext;
 
-    use crate::{evm_circuit::test::rand_bytes, test_util::run_test_circuits};
+    use crate::{evm_circuit::test::rand_bytes, test_util::run_test_circuits_default};
 
     fn test_root_ok(offset: usize) {
         let bytecode = bytecode! {
@@ -258,7 +258,7 @@ mod test {
         };
 
         assert_eq!(
-            run_test_circuits(
+            run_test_circuits_default(
                 TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
                 None
             ),
@@ -310,7 +310,7 @@ mod test {
         )
         .unwrap();
 
-        assert_eq!(run_test_circuits(ctx, None), Ok(()));
+        assert_eq!(run_test_circuits_default(ctx, None), Ok(()));
     }
 
     #[test]

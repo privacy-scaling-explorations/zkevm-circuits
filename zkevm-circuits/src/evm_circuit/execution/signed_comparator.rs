@@ -223,7 +223,7 @@ mod test {
     use eth_types::Word;
     use mock::TestContext;
 
-    use crate::{evm_circuit::test::rand_word, test_util::run_test_circuits};
+    use crate::{evm_circuit::test::rand_word, test_util::run_test_circuits_default};
 
     fn test_ok(pairs: Vec<(OpcodeId, Word, Word)>) {
         let mut bytecode = bytecode! {};
@@ -235,7 +235,7 @@ mod test {
         bytecode.write_op(OpcodeId::STOP);
 
         assert_eq!(
-            run_test_circuits(
+            run_test_circuits_default(
                 TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
                 None
             ),

@@ -127,7 +127,7 @@ impl<F: Field> ExecutionGadget<F> for ByteGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::{evm_circuit::test::rand_word, test_util::run_test_circuits};
+    use crate::{evm_circuit::test::rand_word, test_util::run_test_circuits_default};
     use eth_types::{bytecode, Word};
     use mock::TestContext;
 
@@ -140,7 +140,7 @@ mod test {
         };
 
         assert_eq!(
-            run_test_circuits(
+            run_test_circuits_default(
                 TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
                 None
             ),

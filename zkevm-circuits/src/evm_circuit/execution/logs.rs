@@ -268,6 +268,7 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
 
 #[cfg(test)]
 mod test {
+    use bus_mapping::circuit_input_builder::CircuitsParams;
     use eth_types::{evm_types::OpcodeId, Bytecode, Word};
     use mock::TestContext;
     use rand::Rng;
@@ -348,6 +349,10 @@ mod test {
             run_test_circuits(
                 TestContext::<2, 1>::simple_ctx_with_bytecode(code_prepare).unwrap(),
                 None,
+                CircuitsParams {
+                    max_rws: 512,
+                    ..Default::default()
+                }
             ),
             Ok(()),
         );
@@ -403,6 +408,10 @@ mod test {
             run_test_circuits(
                 TestContext::<2, 1>::simple_ctx_with_bytecode(code_prepare).unwrap(),
                 None,
+                CircuitsParams {
+                    max_rws: 1024,
+                    ..Default::default()
+                }
             ),
             Ok(()),
         );

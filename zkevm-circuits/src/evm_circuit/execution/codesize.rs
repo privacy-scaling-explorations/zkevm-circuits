@@ -98,7 +98,7 @@ mod tests {
     use eth_types::{bytecode, Word};
     use mock::TestContext;
 
-    use crate::test_util::run_test_circuits;
+    use crate::test_util::run_test_circuits_default;
 
     fn test_ok(large: bool) {
         let mut code = bytecode! {};
@@ -114,7 +114,7 @@ mod tests {
         code.append(&tail);
 
         assert_eq!(
-            run_test_circuits(
+            run_test_circuits_default(
                 TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap(),
                 None
             ),

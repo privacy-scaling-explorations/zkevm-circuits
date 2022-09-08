@@ -79,7 +79,7 @@ fn run_bytecode(code: &str, bytecode_test_config: BytecodeTestConfig) -> Result<
     use eth_types::bytecode;
     use mock::TestContext;
     use std::str::FromStr;
-    use zkevm_circuits::test_util::run_test_circuits;
+    use zkevm_circuits::test_util::run_test_circuits_default;
 
     let bytecode = if let Ok(bytes) = hex::decode(code) {
         match bytecode::Bytecode::try_from(bytes.clone()) {
@@ -104,7 +104,7 @@ fn run_bytecode(code: &str, bytecode_test_config: BytecodeTestConfig) -> Result<
         bytecode
     };
 
-    let result = run_test_circuits(
+    let result = run_test_circuits_default(
         TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode)?,
         Some(bytecode_test_config),
     );

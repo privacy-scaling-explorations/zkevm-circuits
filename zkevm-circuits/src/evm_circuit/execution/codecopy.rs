@@ -199,6 +199,7 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
 
 #[cfg(test)]
 mod tests {
+    use bus_mapping::circuit_input_builder::CircuitsParams;
     use eth_types::{bytecode, Word};
     use mock::TestContext;
 
@@ -224,6 +225,10 @@ mod tests {
             run_test_circuits(
                 TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap(),
                 None,
+                CircuitsParams {
+                    max_rws: 1024,
+                    ..Default::default()
+                }
             ),
             Ok(()),
         );
