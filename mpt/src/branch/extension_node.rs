@@ -16,6 +16,47 @@ use crate::{
     }, columns::{MainCols, AccumulatorCols}, mpt::{ProofVariables, MPTConfig}, witness_row::MptWitnessRow,
 };
 
+/*
+A branch occupies 19 rows:
+BRANCH.IS_INIT
+BRANCH.IS_CHILD 0
+...
+BRANCH.IS_CHILD 15
+BRANCH.IS_EXTENSION_NODE_S
+BRANCH.IS_EXTENSION_NODE_C
+
+Example:
+
+[1 0 1 0 248 81 0 248 81 0 14 1 0 6 1 0 0 0 0 1 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0]
+[0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1]
+[0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1]
+[0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1]
+[0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1]
+[0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1]
+[0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1]
+[0 160 29 143 36 49 6 106 55 88 195 10 34 208 147 134 155 181 100 142 66 21 255 171 228 168 85 11 239 170 233 241 171 242 0 160 29 143 36 49 6 106 55 88 195 10 34 208 147 134 155 181 100 142 66 21 255 171 228 168 85 11 239 170 233 241 171 242 1]
+[0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1]
+[0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1]
+[0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1]
+[0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1]
+[0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1]
+[0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1]
+[0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1]
+[0 160 135 117 154 48 1 221 143 224 133 179 90 254 130 41 47 5 101 84 204 111 220 62 215 253 155 107 212 69 138 221 91 174 0 160 135 117 154 48 1 221 143 224 133 179 90 254 130 41 47 5 101 84 204 111 220 62 215 253 155 107 212 69 138 221 91 174 1]
+[0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1]
+[226 30 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 160 30 252 7 160 150 158 68 221 229 48 73 181 91 223 120 156 43 93 5 199 95 184 42 20 87 178 65 243 228 156 123 174 0 16]
+[0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 160 30 252 7 160 150 158 68 221 229 48 73 181 91 223 120 156 43 93 5 199 95 184 42 20 87 178 65 243 228 156 123 174 0 17]
+
+The last two rows present the extension node. This might be a bit misleading, because the extension
+node appears in the trie above the branch (the first 17 rows).
+
+The constraints in `extension_node.rs` check:
+ - RLP of the node
+ - that the branch hash is in the extension node (the bytes `[30 252 ... 174]` in extension node rows present the hash
+of the underlying branch)
+ - that the hash of the extension is in the parent node.
+*/
+
 #[derive(Clone, Debug)]
 pub(crate) struct ExtensionNodeConfig<F> {
     _marker: PhantomData<F>,
@@ -123,13 +164,122 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
         if !is_s {
             rot_into_branch_init = -18;
         }
+ 
+        meta.create_gate("Extension node RLC", |meta| {
+            let mut constraints = vec![];
+            let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
+            let q_enable = q_enable(meta);
+            let is_branch_init_prev = meta.query_advice(is_branch_init, Rotation::prev());
 
-        // Note that is_extension_node is not explicitly checked (for example, what if
-        // the attacker sets is_extension_node = 1 for a regular branch or the other way
-        // around), however, this check is done implicitly with key RLC
-        // constraints (the final key RLC will fail if is_extension_node is set
-        // to 1 for a regular branch or if is_extension_node is set to 0 for an
-        // extension node).
+            let mut rot = 0;
+            if !is_s {
+                rot = -1;
+            }
+
+            /*
+            s_rlp1, s_rlp2, s_bytes need to be the same in both extension rows.
+            However, to make space for nibble witnesses, we put nibbles in
+            extension row C s_bytes. So we use s_bytes from S row.
+            */
+
+            let s_rlp1 = meta.query_advice(s_main.rlp1, Rotation(rot));
+            let mut rlc = s_rlp1;
+            let s_rlp2 = meta.query_advice(s_main.rlp2, Rotation(rot));
+            rlc = rlc + s_rlp2 * r_table[0].clone();
+
+            let s_bytes_rlc = compute_rlc(
+                meta,
+                s_main.bytes.to_vec(),
+                1,
+                one.clone(),
+                rot,
+                r_table.clone(),
+            );
+            rlc = rlc + s_bytes_rlc;
+
+            let acc_s = meta.query_advice(accs.acc_s.rlc, Rotation(rot));
+            
+            /*
+            The intermediate RLC after `s_main` bytes needs to be properly computed.
+            */
+            constraints.push((
+                "s_main RLC",
+                q_not_first.clone()
+                    * q_enable.clone()
+                    * (one.clone() - is_branch_init_prev.clone())
+                    * (rlc - acc_s.clone()),
+            ));
+
+            // We use rotation 0 in both cases from now on:
+            let c_rlp2 = meta.query_advice(c_main.rlp2, Rotation::cur());
+            let c160 = Expression::Constant(F::from(160_u64));
+
+            // c_rlp2 = 160 when branch is hashed (longer than 31) and c_rlp2 = 0 otherwise
+            let is_branch_hashed = c_rlp2.clone() * c160_inv.clone();
+
+            /*
+            When the branch is hashed, we have `c_rlp2 = 160` because it specifies the length of the
+            hash: `32 = 160 - 128`.
+            */
+            constraints.push((
+                "c_rlp2 = 160",
+                q_not_first.clone()
+                    * q_enable.clone()
+                    * is_branch_hashed.clone()
+                    * (c_rlp2.clone() - c160),
+            ));
+
+            /*
+            Note: hashed branch has 160 at c_rlp2 and hash in c_advices,
+            non-hashed branch has 0 at c_rlp2 and all the bytes in c_advices
+            */
+
+            let acc_mult_s = meta.query_advice(accs.acc_s.mult, Rotation::cur());
+            let c_advices0 = meta.query_advice(c_main.bytes[0], Rotation::cur());
+            rlc = acc_s.clone() + c_rlp2 * acc_mult_s.clone();
+            let c_advices_rlc = compute_rlc(meta, c_main.bytes.to_vec(), 0, acc_mult_s.clone(), 0, r_table.clone());
+            rlc = rlc + c_advices_rlc;
+
+            let mut rlc_non_hashed_branch = acc_s + c_advices0 * acc_mult_s.clone();
+            let c_advices_rlc_non_hashed = compute_rlc(meta,
+                c_main.bytes.iter().skip(1).map(|v| *v).collect_vec(), 0, acc_mult_s, 0, r_table);
+            rlc_non_hashed_branch = rlc_non_hashed_branch + c_advices_rlc_non_hashed;
+
+            let acc_c = meta.query_advice(accs.acc_c.rlc, Rotation::cur());
+
+            /*
+            Check whether the extension node RLC is properly computed.
+            The RLC is used to check whether the extension node is a node at the appropriate position
+            in the parent node. That means, it is used in a lookup to check whether
+            `(extension_node_RLC, node_hash_RLC)` is in the keccak table.
+            */
+            constraints.push((
+                "Hashed extension node RLC",
+                q_not_first.clone()
+                    * q_enable.clone()
+                    * (one.clone() - is_branch_init_prev.clone())
+                    * is_branch_hashed.clone()
+                    * (rlc - acc_c.clone()),
+            ));
+
+            /*
+            Check whether the extension node (non-hashed) RLC is properly computed.
+            The RLC is used to check whether the non-hashed extension node is a node at the appropriate position
+            in the parent node. That means, there is a constraint to ensure that
+            `extension_node_RLC = node_hash_RLC` for some `node` in parent branch.
+            */
+            constraints.push((
+                "Non-hashed extension node RLC",
+                q_not_first
+                    * q_enable
+                    * (one.clone() - is_branch_init_prev.clone())
+                    * (one.clone() - is_branch_hashed)
+                    * (rlc_non_hashed_branch - acc_c),
+            ));
+
+            constraints
+        });
+ 
         meta.create_gate("Extension node selectors & RLP", |meta| {
             let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
             let q_enable = q_enable(meta);
@@ -181,8 +331,30 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
 
             let is_branch_init_prev = meta.query_advice(is_branch_init, Rotation::prev());
 
+            /*
+            We first check that the selectors in branch init row are boolean.
+
+            We have the following selectors in branch init:
+            ```
+            is_ext_short_c16
+            is_ext_short_c1
+            is_ext_long_even_c16
+            is_ext_long_even_c1
+            is_ext_long_odd_c16
+            is_ext_long_odd_c1
+            ```
+
+            `short` means there is only one nibble in the extension node, `long` means there
+            are at least two. `even` means the number of nibbles is even, `odd` means the number
+            of nibbles is odd. `c16` means that above the branch there are even number of
+            nibbles (the same as saying that `modified_node` of the branch needs to be
+            multiplied by 16 in the computation of the key RLC), `c1` means
+            that above the branch there are odd number of
+            nibbles (the same as saying that `modified_node` of the branch needs to be
+            multiplied by 1 in the computation of the key RLC).
+            */
             constraints.push((
-                "bool check is_ext_short_c16",
+                "Bool check is_ext_short_c16",
                 get_bool_constraint(
                     q_not_first.clone()
                         * q_enable.clone()
@@ -191,7 +363,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                 ),
             ));
             constraints.push((
-                "bool check is_ext_short_c1",
+                "Bool check is_ext_short_c1",
                 get_bool_constraint(
                     q_not_first.clone()
                         * q_enable.clone()
@@ -200,7 +372,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                 ),
             ));
             constraints.push((
-                "bool check is_ext_long_even_c16",
+                "Bool check is_ext_long_even_c16",
                 get_bool_constraint(
                     q_not_first.clone()
                         * q_enable.clone()
@@ -209,7 +381,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                 ),
             ));
             constraints.push((
-                "bool check is_ext_long_even_c1",
+                "Bool check is_ext_long_even_c1",
                 get_bool_constraint(
                     q_not_first.clone()
                         * q_enable.clone()
@@ -218,7 +390,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                 ),
             ));
             constraints.push((
-                "bool check is_ext_long_odd_c16",
+                "Bool check is_ext_long_odd_c16",
                 get_bool_constraint(
                     q_not_first.clone()
                         * q_enable.clone()
@@ -227,7 +399,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                 ),
             ));
             constraints.push((
-                "bool check is_ext_long_odd_c1",
+                "Bool check is_ext_long_odd_c1",
                 get_bool_constraint(
                     q_not_first.clone()
                         * q_enable.clone()
@@ -236,7 +408,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                 ),
             ));
             constraints.push((
-                "bool check is_ext_longer_than_55",
+                "Bool check is_ext_longer_than_55",
                 get_bool_constraint(
                     q_not_first.clone()
                         * q_enable.clone()
@@ -245,7 +417,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                 ),
             ));
             constraints.push((
-                "bool check is_ext_node_non_hashed",
+                "Bool check is_ext_node_non_hashed",
                 get_bool_constraint(
                     q_not_first.clone()
                         * q_enable.clone()
@@ -254,12 +426,21 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                 ),
             ));
 
+            /*
+            Only one of the six options can appear. When we have an extension node it holds:
+            `is_ext_short_c16 + is_ext_short_c1 + is_ext_long_even_c16 + is_ext_long_even_c1 + is_ext_long_odd_c16 + is_ext_long_odd_c1 = 1`.
+            And when it is a regular branch:
+            `is_ext_short_c16 + is_ext_short_c1 + is_ext_long_even_c16 + is_ext_long_even_c1 + is_ext_long_odd_c16 + is_ext_long_odd_c1 = 0`.
 
-
-            // At most one of the six selectors above can be enabled. If sum is 0, it is
-            // a regular branch. If sum is 1, it is an extension node.
+            Note that if the attacker sets `is_extension_node = 1`
+            for a regular branch (or `is_extension_node = 0` for the extension node),
+            the final key RLC check fails because key RLC is computed differently
+            for extension nodes and regular branches - a regular branch occupies only one
+            key nibble (`modified_node`), while extension node occupies at least one additional
+            nibble (the actual extension of the extension node).
+            */
             constraints.push((
-                "bool check extension node selectors sum",
+                "Bool check extension node selectors sum",
                 get_bool_constraint(
                     q_not_first.clone()
                         * q_enable.clone()
@@ -272,8 +453,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                         + is_ext_long_odd_c1.clone(),
                 ),
             ));
-
-            // is_branch_c16 and is_branch_c1 correspond to the six extension selectors.
+ 
             let is_branch_c16 = meta.query_advice(
                 s_main.bytes[IS_BRANCH_C16_POS - RLP_NUM],
                 Rotation(rot_into_branch_init),
@@ -282,9 +462,24 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                 s_main.bytes[IS_BRANCH_C1_POS - RLP_NUM],
                 Rotation(rot_into_branch_init),
             );
+
+            /*
+            `is_branch_c16` and `is_branch_c1` information is duplicated with
+            extension node selectors when we have an extension node (while in case of a regular
+            branch the extension node selectors do not hold this information).
+            That means when we have an extension node and `is_branch_c16 = 1`,
+            there is `is_ext_short_c16 = 1` or
+            `is_ext_long_even_c16 = 1` or `is_ext_long_odd_c16 = 1`.
+
+            We have such a duplication to reduce the expression degree - for example instead of
+            using `is_ext_long_even * is_branch_c16` we just use `is_ext_long_even_c16`.
+
+            But we need to check that `is_branch_c16` and `is_branch_c1` are consistent
+            with extension node selectors.
+            */
             let mut constrain_sel = |branch_sel: Expression<F>, ext_sel: Expression<F>| {
                 constraints.push((
-                    "branch c16/c1 selector - extension c16/c1 selector",
+                    "Branch c16/c1 selector - extension c16/c1 selector",
                     q_not_first.clone()
                         * q_enable.clone()
                         * (one.clone() - is_branch_init_prev.clone())
@@ -299,48 +494,53 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
             constrain_sel(is_branch_c1.clone(), is_ext_long_even_c1.clone());
             constrain_sel(is_branch_c16.clone(), is_ext_long_odd_c16.clone());
             constrain_sel(is_branch_c1.clone(), is_ext_long_odd_c1.clone());
-
-            /*
-            If key_len = 1 (is_short = 1, is_long = 0)
-            [226,16,160,172,105,12...
-            there is no byte specifying key length, but in this case the first byte is 226.
-            So, when s_main.rlp1 = 226, we need to ensure is_key_odd = 1, is_key_even = 0
-            (is_key_even = 0 can be omitted because of the constraints above).
-
-            If key_len > 1 (is_short = 0, is_long = 1)
-            [228,130,0,149,160,114,253,150,133,18,192,156,19,241,162,51,210,24,1,151,16,48,7,177,42,60,49,34,230,254,242,79,132,165,90,75,249]
-            the second byte specifies the key_len (we need to subract 128 to get it).
-            */
-
+ 
             // In C we have nibbles, we check below only for S.
             if is_s {
                 let s_rlp1 = meta.query_advice(s_main.rlp1, Rotation::cur());
-                let s_advices0 = meta.query_advice(s_main.bytes[0], Rotation::cur());
+                let s_bytes0 = meta.query_advice(s_main.bytes[0], Rotation::cur());
 
                 let is_short = is_ext_short_c16.clone() + is_ext_short_c1.clone();
                 let is_even_nibbles = is_ext_long_even_c16.clone() + is_ext_long_even_c1.clone();
                 let is_long_odd_nibbles = is_ext_long_odd_c16.clone()+ is_ext_long_odd_c1.clone();
 
-                // This prevents setting to even when it's not even,
-                // because when it's not even s_advices0 != 0 (hexToCompact adds 16).
+                /*
+                This constraint prevents the attacker to set the number of nibbles to be even
+                when it is not even.
+                Note that when it is not even it holds `s_bytes0 != 0` (hexToCompact adds 16).
+
+                If the number of nibbles is 1, like in
+                `[226,16,160,172,105,12...`
+                there is no byte specifying the length.
+                If the number of nibbles is bigger than 1 and it is even, like in
+                `[228,130,0,149,160,114,253,150,133,18,192,156,19,241,162,51,210,24,1,151,16,48,7,177,42,60,49,34,230,254,242,79,132,165,90,75,249]`
+                the second byte (`s_main.rlp2`) specifies the length (we need to subract 128 to get it),
+                the third byte (`s_main.bytes[0]`) is 0.
+                */
                 constraints.push((
-                    "long & even implies s_advices0 = 0",
+                    "Long & even implies s_bytes0 = 0",
                     q_not_first.clone()
                         * q_enable.clone()
                         * is_even_nibbles.clone()
-                        * s_advices0.clone(),
+                        * s_bytes0.clone(),
                 ));
 
                 let c_rlp2 = meta.query_advice(c_main.rlp2, Rotation::cur());
                 let is_branch_hashed = c_rlp2 * c160_inv.clone();
 
-                // RLP
-                // If only one nibble:
-                // [226,16,160,172,105,12...
-                // One nibble with non-hashed branch:
-                // [223,16,221,198,132,32,0,0,0,1,198,132,32,0,0,0,1,128,128,128,128,128,128,128,128,128,128,128,128,128,128,128]
+                /*
+                We need to check that the length specified in `s_main.rlp1` corresponds to the actual
+                length of the extension node.
+
+                For example, in
+                `[226,16,160,172,105,12...`
+                we check that `226 - 192 = 1 + 32 + 1`.
+                1 is for `s_main.rlp2`, 32 is for 32 bytes of the branch hash,
+                1 is for the byte 160 which denotes the length
+                of the hash (128 + 32).
+                */
                 constraints.push((
-                    "One nibble & HASHED branch",
+                    "One nibble & hashed branch RLP",
                     q_not_first.clone()
                         * q_enable.clone()
                         // when one nibble, extension node cannot be longer that 55
@@ -349,22 +549,46 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                         * (s_rlp1.clone() - c192.clone() - c33.clone() - one.clone()),
                 ));
 
-                let c_advices0 = meta.query_advice(c_main.bytes[0], Rotation::cur());
+                let c_bytes0 = meta.query_advice(c_main.bytes[0], Rotation::cur());
+
+                /*
+                We need to check that the length specified in `s_main.rlp1` corresponds to the actual
+                length of the extension node.
+                
+                For example, in
+                `[223,16,221,198,132,32,0,0,0,1,198,132,32,0,0,0,1,128,128,128,128,128,128,128,128,128,128,128,128,128,128,128]`
+                we check that `223 - 192 = 1 + 29 + 1`.
+                1 is for `s_main.rlp2`,
+                29 is for the branch RLP (which is not hashed because it is shorter than 32 bytes),
+                1 is for `c_main.bytes[0]` which denotes the length of the branch RLP.
+                */
                 // TODO: prepare test
                 constraints.push((
-                    "One nibble & NON-HASHED branch",
+                    "One nibble & non-hashed branch RLP",
                     q_not_first.clone()
                         * q_enable.clone()
                         // when one nibble, extension node cannot be longer that 55
                         * is_short.clone()
                         * (one.clone() - is_branch_hashed.clone())
-                        * (s_rlp1.clone() - c192.clone() - one.clone() - (c_advices0.clone() - c192.clone()) - one.clone()),
+                        * (s_rlp1.clone() - c192.clone() - one.clone() - (c_bytes0.clone() - c192.clone()) - one.clone()),
                 ));
 
-                // [228,130,0,149,160,114,253...
                 let s_rlp2 = meta.query_advice(s_main.rlp2, Rotation::cur());
+
+                /*
+                We need to check that the length specified in `s_main.rlp1` corresponds to the actual
+                length of the extension node.
+                
+                For example, in
+                `[228,130,0,149,160,114,253...`
+                we check that `228 - 192 = (130 - 128) + 1 + 32 + 1`.
+                1 is for `s_main.rlp2` which specifies the length of the nibbles part,
+                32 is for the branch hash,
+                1 is for the byte 160 which denotes the length
+                of the hash (128 + 32).
+                */
                 constraints.push((
-                    "More than one nibble & HASHED branch & ext not longer than 55 RLP",
+                    "More than one nibble & hashed branch & ext not longer than 55 RLP",
                     q_not_first.clone()
                         * q_enable.clone()
                         * (one.clone() - is_ext_longer_than_55.clone())
@@ -373,73 +597,113 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                         * (s_rlp1.clone() - c192.clone() - (s_rlp2.clone() - c128.clone()) - one.clone() - c33.clone()),
                 ));
 
+                /*
+                We need to check that the length specified in `s_main.rlp1` corresponds to the actual
+                length of the extension node.
+                
+                We check that `s_main.rlp1 - 192` = `s_main.rlp2 - 128 + 1 + c_main.bytes[0] - 192 + 1`.
+                */
                 constraints.push((
-                    "More than one nibble & NON-HASHED branch & ext not longer than 55 RLP",
+                    "More than one nibble & non-hashed branch & ext not longer than 55 RLP",
                     q_not_first.clone()
                         * q_enable.clone()
                         * (one.clone() - is_ext_longer_than_55.clone())
                         * (is_even_nibbles.clone() + is_long_odd_nibbles.clone())
                         * (one.clone() - is_branch_hashed.clone())
                         * (s_rlp1.clone() - c192.clone() - (s_rlp2.clone() - c128.clone()) - one.clone()
-                            - (c_advices0.clone() - c192.clone()) - one.clone()),
+                            - (c_bytes0.clone() - c192.clone()) - one.clone()),
                 ));
 
-                // Note: ext longer than 55 RLP cannot appear when there is only one nibble because in this case
-                // we would have 1 byte for a nibble and at most 32 bytes for branch.
+                /*
+                Note: ext longer than 55 RLP cannot appear when there is only one nibble because in this case
+                we would have 1 byte for a nibble and at most 32 bytes for branch.
+                */
 
-                // Example:
-                // [248,67,160,59,138,106,70,105,186,37,13,38,205,122,69,158,202,157,33,95,131,7,227,58,235,229,3,121,188,90,54,23,236,52,68,161,160,...
+                /*
+                When extension node RLP is longer than 55 bytes, the RLP has an additional byte
+                at second position and the first byte specifies the length of the substream
+                that specifies the length of the RLP. The substream is always just one byte: `s_main.rlp2`.
+                And `s_main.rlp1 = 248` where `248 = 247 + 1` means the length of 1 byte.
+
+                Example:
+                `[248,67,160,59,138,106,70,105,186,37,13,38,205,122,69,158,202,157,33,95,131,7,227,58,235,229,3,121,188,90,54,23,236,52,68,161,160,...`
+                */
                 constraints.push((
-                    "ext longer than 55 RLP: s_rlp1 = 248",
+                    "Extension longer than 55 RLP: s_rlp1 = 248",
                     q_not_first.clone()
                         * q_enable.clone()
                         * is_ext_longer_than_55.clone()
                         * (s_rlp1.clone() - c248.clone()),
                 ));
 
+                /*
+                We need to check that the length specified in `s_main.rlp2` corresponds to the actual
+                length of the extension node.
+
+                Example:
+                `[248,67,160,59,138,106,70,105,186,37,13,38,205,122,69,158,202,157,33,95,131,7,227,58,235,229,3,121,188,90,54,23,236,52,68,161,160,...`
+                
+                We check that `s_main.rlp2 = (s_main.bytes[0] - 128) + 1 + 32 + 1`.
+                `s_main.bytes[0] - 128` specifies the extension node nibbles part, 
+                1 is for `s_main.rlp2` which specifies the length of the RLP stream,
+                32 is for the branch hash,
+                1 is for the byte 160 which denotes the length of the hash (128 + 32). 
+                */
                 // TODO: test
                 constraints.push((
-                    "HASHED branch & ext longer than 55 RLP",
+                    "Hashed branch & ext longer than 55 RLP",
                     q_not_first.clone()
                         * q_enable.clone()
                         * is_ext_longer_than_55.clone()
                         * is_branch_hashed.clone()
-                        * (s_rlp2.clone() - (s_advices0.clone() - c128.clone()) - one.clone() - c33.clone()),
+                        * (s_rlp2.clone() - (s_bytes0.clone() - c128.clone()) - one.clone() - c33.clone()),
                 ));
 
+                /*
+                We need to check that the length specified in `s_main.rlp2` corresponds to the actual
+                length of the extension node.
+
+                We check that `s_main.rlp2 = (s_main.bytes[0] - 128) + 1 + c_main.bytes[0] - 192 + 1`.
+                `s_main.bytes[0] - 128` specifies the extension node nibbles part, 
+                1 is for `s_main.rlp2` which specifies the length of the RLP stream,
+                `c_main.bytes[0] - 192` is for the branch RLP (which is not hashed because it is shorter than 32 bytes),
+                1 is for the byte 160 which denotes the length of the hash (128 + 32). 
+                */
                 // TODO: test
                 constraints.push((
-                    "NON-HASHED branch & ext longer than 55 RLP",
+                    "Non-hashed branch & ext longer than 55 RLP",
                     q_not_first.clone()
                         * q_enable.clone()
                         * is_ext_longer_than_55.clone()
                         * (one.clone() - is_branch_hashed.clone())
-                        * (s_rlp1.clone() - (s_advices0 - c128.clone()) - one.clone()
-                            - (c_advices0.clone() - c192.clone()) - one.clone()),
+                        * (s_rlp1.clone() - (s_bytes0 - c128.clone()) - one.clone()
+                            - (c_bytes0.clone() - c192.clone()) - one.clone()),
                 ));
 
-                // [228,130,0,149,160,114,253,150,133,18,192,156,19,241,162,51,210,24,1,151,16,48,7,177,42,60,49,34,230,254,242,79,132,165,90,75,249]
-                // Note that the first element (228 in this case) can go much higher - for example, if there
-                // are 40 nibbles, this would take 20 bytes which would make the first element 248.
-
-                // If only one byte in key:
-                // [226,16,160,172,105,12...
-
-                // Extension node with non-hashed branch:
-                // List contains up to 55 bytes (192 + 55)
-                // [247,160,16,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,213,128,194,32,1,128,194,32,1,128,128,128,128,128,128,128,128,128,128,128,128,128]
-
-                // List contains more than 55 bytes
-                // [248,58,159,16,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,217,128,196,130,32,0,1,128,196,130,32,0,1,128,128,128,128,128,128,128,128,128,128,128,128,128]
-
-                // Note that the extension node can be much shorter than the one above - in case when
-                // there are less nibbles, so we cannot say that 226 appears as the first byte only
-                // when there are hashed nodes in the branch and there is only one nibble.
-                // Branch with two non-hashed nodes (that's the shortest possible branch):
-                // [217,128,196,130,32,0,1,128,196,130,32,0,1,128,128,128,128,128,128,128,128,128,128,128,128,128]
-                // Note: branch contains at least 26 bytes. 192 + 26 = 218
-
                 /*
+                Some observations:
+
+                [228,130,0,149,160,114,253,150,133,18,192,156,19,241,162,51,210,24,1,151,16,48,7,177,42,60,49,34,230,254,242,79,132,165,90,75,249]
+                Note that the first element (228 in this case) can go much higher - for example, if there
+                are 40 nibbles, this would take 20 bytes which would make the first element 248.
+
+                If only one byte in key:
+                [226,16,160,172,105,12...
+
+                Extension node with non-hashed branch:
+                List contains up to 55 bytes (192 + 55)
+                [247,160,16,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,213,128,194,32,1,128,194,32,1,128,128,128,128,128,128,128,128,128,128,128,128,128]
+
+                List contains more than 55 bytes
+                [248,58,159,16,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,217,128,196,130,32,0,1,128,196,130,32,0,1,128,128,128,128,128,128,128,128,128,128,128,128,128]
+
+                Note that the extension node can be much shorter than the one above - in case when
+                there are less nibbles, so we cannot say that 226 appears as the first byte only
+                when there are hashed nodes in the branch and there is only one nibble.
+                Branch with two non-hashed nodes (that's the shortest possible branch):
+                [217,128,196,130,32,0,1,128,196,130,32,0,1,128,128,128,128,128,128,128,128,128,128,128,128,128]
+                Note: branch contains at least 26 bytes. 192 + 26 = 218
+
                 If proofEl[0] <= 247 (length at most 55, so proofEl[1] doesn't specify the length of the whole
                     remaining stream, only of the next substream)
                 If proofEl[1] <= 128:
@@ -456,10 +720,15 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
             constraints
         });
 
-        // Note: acc_mult is checked in extension_node_key.
+        // Note: acc_mult is checked in `extension_node_key.rs`.
 
-        // Check whether branch hash is in extension node row.
-        meta.lookup_any("extension_node branch hash in extension row", |meta| {
+        /*
+        Check whether branch hash is in the extension node row - we check that the branch hash RLC
+        (computed over the first 17 rows) corresponds to the extension node hash stored in
+        the extension node row. That means `(branch_RLC, extension_node_hash_RLC`) needs to
+        be in a keccak table.
+        */
+        meta.lookup_any("Extension node branch hash in extension row", |meta| {
             let q_enable = q_enable(meta);
             let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
             let is_branch_init_prev = meta.query_advice(is_branch_init, Rotation::prev());
@@ -503,11 +772,8 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
 
             constraints
         });
-
-        // Check whether branch hash is in extension node row (non-hashed branch).
-        // Note: there need to be 0s after branch ends in extension node c_main.bytes (see
-        // the constraints below).
-        meta.create_gate("extension_node branch hash in extension row (non-hashed branch)", |meta| {
+ 
+        meta.create_gate("Extension node branch hash in extension row (non-hashed branch)", |meta| {
             let mut constraints = vec![];
             let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
             let q_enable = q_enable(meta);
@@ -532,8 +798,16 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
             }
             let rlc = bytes_expr_into_rlc(&branch_in_ext, acc_r);
 
+            /*
+            Check whether branch is in extension node row (non-hashed branch) -
+            we check that the branch RLC is the same as the extension node branch part RLC
+            (RLC computed over `c_main.bytes`).
+
+            Note: there need to be 0s after branch ends in the extension node `c_main.bytes`
+            (see below).
+            */
             constraints.push((
-                "non-hashed branch rlc",
+                "Non-hashed branch in extension node",
                 q_not_first
                     * q_enable
                     * (one.clone() - is_branch_hashed)
@@ -554,8 +828,10 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
             q_not_first * q_enable * (one.clone() - is_branch_hashed)
         };
 
-        // There are 0s after non-hashed branch ends in c_main.bytes.
         /*
+        /*
+        There are 0s after non-hashed branch ends in `c_main.bytes`.
+        */
         for ind in 1..HASH_WIDTH {
             key_len_lookup(
                 meta,
@@ -567,106 +843,21 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                 fixed_table,
             )
         }
-        */ 
+        */  
 
-        // Check whether RLC is properly computed.
-        meta.create_gate("Extension node RLC", |meta| {
-            let mut constraints = vec![];
-            let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
-            let q_enable = q_enable(meta);
-            let is_branch_init_prev = meta.query_advice(is_branch_init, Rotation::prev());
+        /*
+        Note: Correspondence between nibbles in C and bytes in S is checked in
+        extension_node_key.
+        */
 
-            let mut rot = 0;
-            if !is_s {
-                rot = -1;
-            }
+        /*
+        When we have an extension node in the first level of the account trie,
+        its hash needs to be compared to the root of the trie.
 
-            // s_rlp1, s_rlp2, s_advices need to be the same in both extension rows.
-            // However, to make space for nibble witnesses, we put nibbles in
-            // extension row C s_advices. So we use s_advices from S row.
-
-            let s_rlp1 = meta.query_advice(s_main.rlp1, Rotation(rot));
-            let mut rlc = s_rlp1;
-            let s_rlp2 = meta.query_advice(s_main.rlp2, Rotation(rot));
-            rlc = rlc + s_rlp2 * r_table[0].clone();
-
-            let s_advices_rlc = compute_rlc(
-                meta,
-                s_main.bytes.to_vec(),
-                1,
-                one.clone(),
-                rot,
-                r_table.clone(),
-            );
-            rlc = rlc + s_advices_rlc;
-
-            let acc_s = meta.query_advice(accs.acc_s.rlc, Rotation(rot));
-            constraints.push((
-                "acc_s",
-                q_not_first.clone()
-                    * q_enable.clone()
-                    * (one.clone() - is_branch_init_prev.clone())
-                    * (rlc - acc_s.clone()),
-            ));
-
-
-            // We use rotation 0 in both cases from now on:
-            let c_rlp2 = meta.query_advice(c_main.rlp2, Rotation::cur());
-            let c160 = Expression::Constant(F::from(160_u64));
-
-            // c_rlp2 = 160 when branch is hashed (longer than 31) and c_rlp2 = 0 otherwise
-            let is_branch_hashed = c_rlp2.clone() * c160_inv.clone();
-
-            constraints.push((
-                "c_rlp2",
-                q_not_first.clone()
-                    * q_enable.clone()
-                    * is_branch_hashed.clone()
-                    * (c_rlp2.clone() - c160),
-            ));
-
-            // Note: hashed branch has 160 at c_rlp2 and hash in c_advices,
-            // non-hashed branch has 0 at c_rlp2 and all the bytes in c_advices
-
-            let acc_mult_s = meta.query_advice(accs.acc_s.mult, Rotation::cur());
-            let c_advices0 = meta.query_advice(c_main.bytes[0], Rotation::cur());
-            rlc = acc_s.clone() + c_rlp2 * acc_mult_s.clone();
-            let c_advices_rlc = compute_rlc(meta, c_main.bytes.to_vec(), 0, acc_mult_s.clone(), 0, r_table.clone());
-            rlc = rlc + c_advices_rlc;
-
-            let mut rlc_non_hashed_branch = acc_s + c_advices0 * acc_mult_s.clone();
-            let c_advices_rlc_non_hashed = compute_rlc(meta,
-                c_main.bytes.iter().skip(1).map(|v| *v).collect_vec(), 0, acc_mult_s, 0, r_table);
-            rlc_non_hashed_branch = rlc_non_hashed_branch + c_advices_rlc_non_hashed;
-
-            let acc_c = meta.query_advice(accs.acc_c.rlc, Rotation::cur());
-            constraints.push((
-                "acc_c",
-                q_not_first.clone()
-                    * q_enable.clone()
-                    * (one.clone() - is_branch_init_prev.clone())
-                    * is_branch_hashed.clone()
-                    * (rlc - acc_c.clone()),
-            ));
-
-            constraints.push((
-                "acc_c non-hashed branch",
-                q_not_first
-                    * q_enable
-                    * (one.clone() - is_branch_init_prev.clone())
-                    * (one.clone() - is_branch_hashed)
-                    * (rlc_non_hashed_branch - acc_c),
-            ));
-
-            constraints
-        });
-
-        // Correspondence between nibbles in C and bytes in S is checked in
-        // extension_node_key.
-
-        // The branch counterpart is in branch_hash_in_parent.
+        Note: the branch counterpart is implemented in `branch_hash_in_parent.rs`.
+        */
         meta.lookup_any(
-            "account first level extension node hash - compared to root",
+            "Account first level extension node hash - compared to root",
             |meta| {
                 let q_enable = q_enable(meta);
                 let mut constraints = vec![];
@@ -697,8 +888,14 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
             },
         );
 
-        // Check whether extension node hash is in parent branch.
-        // Don't check if it's first storage level (see storage_root_in_account_leaf).
+        /*
+        Check whether the extension node hash is in the parent branch.
+        That means we check whether
+        `(extension_node_RLC, node_hash_RLC)` is in the keccak table where `node` is a parent
+        brach child at `modified_node` position.
+
+        Note: do not check if it is in the first storage level (see `storage_root_in_account_leaf.rs`).
+        */
         meta.lookup_any("Extension node hash in parent branch", |meta| {
             let q_enable = q_enable(meta);
             let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
@@ -756,7 +953,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
             constraints
         });
 
-        meta.create_gate("Extension node in parent branch (NON-HASHED extension node)", |meta| {
+        meta.create_gate("Extension node in parent branch (non-hashed extension node)", |meta| {
             let q_enable = q_enable(meta);
             let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
             let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
@@ -789,6 +986,11 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                 mod_node_hash_rlc_cur = meta.query_advice(accs.c_mod_node_rlc, Rotation(-21));
             }
             
+            /*
+            When an extension node is not hashed, we do not check whether it is in a parent 
+            branch using a lookup (see above), instead we need to check whether the branch child
+            at `modified_node` position is exactly the same as the extension node.
+            */
             constraints.push((
                 "Non-hashed extension node in parent branch",
                     q_not_first.clone()
@@ -805,10 +1007,11 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
 
         /* 
         We need to make sure the total number of nibbles is 64. This constraint ensures the number
-        of nibbles used (stored in branch init) is correctly computed. Once in a leaf, the remaining
-        nibbles stored in a leaf need to be added to the count.
+        of nibbles used (stored in branch init) is correctly computed - nibbles up until this
+        extension node + nibbles in this extension node.
+        Once in a leaf, the remaining nibbles stored in a leaf need to be added to the count.
+        The final count needs to be 64.
         */
-        // TODO: reset to 0 after account leaf
         if is_s {
             meta.create_gate("Extension node number of nibbles (not first level)", |meta| {
                 let mut constraints = vec![];
@@ -831,8 +1034,10 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                 let is_even_nibbles = get_is_extension_node_even_nibbles(meta, s_main.bytes, rot_into_branch_init);
                 let is_long_odd_nibbles = get_is_extension_node_long_odd_nibbles(meta, s_main.bytes, rot_into_branch_init);
 
-                // Note: for regular branches, the constraint that `nibbles_count` increases
-                // by 1 is in branch.rs.
+                /*
+                Note: for regular branches, the constraint that `nibbles_count` increases
+                by 1 is in `branch.rs`.
+                */
 
                 let nibbles_count_cur = meta.query_advice(
                     s_main.bytes[NIBBLES_COUNTER_POS - RLP_NUM],
@@ -844,7 +1049,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                 );
 
                 constraints.push((
-                    "Nibbles num when one nibbles",
+                    "Nibbles number when one nibbles",
                     q_not_first.clone()
                         * q_enable.clone()
                         * (one.clone() - is_account_leaf_in_added_branch.clone())
@@ -857,7 +1062,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                 let mut num_nibbles = (s_rlp2.clone() - c128.clone() - one.clone()) * (one.clone() + one.clone());
                 // [228,130,0,149,160,114,253...
                 constraints.push((
-                    "Nibbles num when even number of nibbles & ext not longer than 55",
+                    "Nibbles number when even number of nibbles & ext not longer than 55",
                     q_not_first.clone()
                         * q_enable.clone()
                         * (one.clone() - is_account_leaf_in_added_branch.clone())
@@ -929,8 +1134,10 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                 let is_even_nibbles = get_is_extension_node_even_nibbles(meta, s_main.bytes, rot_into_branch_init);
                 let is_long_odd_nibbles = get_is_extension_node_long_odd_nibbles(meta, s_main.bytes, rot_into_branch_init);
 
-                // Note: for regular branches, the constraint that `nibbles_count` increases
-                // by 1 is in branch.rs.
+                /*
+                Note: for regular branches, the constraint that `nibbles_count` increases
+                by 1 is in `branch.rs`.
+                */
 
                 let nibbles_count_cur = meta.query_advice(
                     s_main.bytes[NIBBLES_COUNTER_POS - RLP_NUM],
