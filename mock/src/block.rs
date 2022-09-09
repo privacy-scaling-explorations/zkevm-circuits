@@ -6,7 +6,7 @@ use ethers_core::types::Bloom;
 use ethers_core::types::OtherFields;
 
 fn u64_to_h64(val: U64) -> H64 {
-    let mut vec = Vec::with_capacity(8);
+    let mut vec = [0u8; 8];
     val.to_big_endian(&mut vec);
 
     H64::from_slice(&vec)
