@@ -155,6 +155,7 @@ impl<F: Field> ExecutionGadget<F> for ExponentiationGadget<F> {
                     single_step.expr(),
                     base_limbs.clone(),
                     [exponent_lo.clone(), exponent_hi.clone()],
+                    exponent_rlc.cells[0].expr(),
                     [exponentiation_lo.clone(), exponentiation_hi.clone()],
                 );
                 // lookup for last step, i.e. (is_first == 0, is_last, base, 2, base^2)
@@ -163,7 +164,8 @@ impl<F: Field> ExecutionGadget<F> for ExponentiationGadget<F> {
                     single_step.expr(),
                     1.expr(),
                     base_limbs,
-                    [2.expr(), 0.expr()],
+                    [2.expr(), 0.expr()], // exponent == 2
+                    2.expr(),             // lsb_exponent == 2
                     [base_sq_lo.expr(), base_sq_hi.expr()],
                 );
             },

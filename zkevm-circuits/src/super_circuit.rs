@@ -56,7 +56,7 @@ use crate::bytecode_circuit::bytecode_unroller::{
 };
 use crate::copy_circuit::CopyCircuit;
 use crate::evm_circuit::{table::FixedTableTag, EvmCircuit};
-use crate::exp_circuit::ExpCircuit;
+use crate::exp_circuit::{self, ExpCircuit};
 use crate::keccak_circuit::keccak_packed_multi::KeccakPackedConfig as KeccakConfig;
 use crate::pi_circuit::{PiCircuit, PiCircuitConfig, PublicData};
 use crate::state_circuit::StateCircuitConfig;
@@ -132,6 +132,8 @@ pub struct SuperCircuit<
     /// Passed down to the evm_circuit. Usually that will be
     /// `FixedTableTag::iter().collect()`.
     pub fixed_table_tags: Vec<FixedTableTag>,
+    /// Passed down to the exponentiation circuit.
+    pub exp_circuit_fixed_table_tags: Vec<exp_circuit::FixedTableTag>,
     // Tx Circuit
     /// The transaction circuit that will be used in the `synthesize` step.
     pub tx_circuit: TxCircuit<F, MAX_TXS, MAX_CALLDATA>,
@@ -297,6 +299,9 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: u
         // --- Exponentiation Circuit ---
         config
             .exp_circuit
+            .load_fixed_table(&mut layouter, self.exp_circuit_fixed_table_tags.clone())?;
+        config
+            .exp_circuit
             .assign_block(&mut layouter, &self.block)?;
         // --- Keccak Table ---
         config.keccak_circuit.load(&mut layouter)?;
@@ -345,6 +350,8 @@ impl<const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: usize>
         block.randomness = Fr::from(MOCK_RANDOMNESS);
 
         let fixed_table_tags: Vec<FixedTableTag> = FixedTableTag::iter().collect();
+        let exp_circuit_fixed_table_tags: Vec<exp_circuit::FixedTableTag> =
+            exp_circuit::FixedTableTag::iter().collect();
         let log2_ceil = |n| u32::BITS - (n as u32).leading_zeros() - (n & (n - 1) == 0) as u32;
 
         let num_rows_required =
@@ -388,6 +395,7 @@ impl<const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: usize>
         let circuit = SuperCircuit::<_, MAX_TXS, MAX_CALLDATA, MAX_RWS> {
             block,
             fixed_table_tags,
+            exp_circuit_fixed_table_tags,
             tx_circuit,
             keccak_inputs,
             // Instead of using 1 << k - NUM_BLINDING_ROWS, we use a much smaller number of enabled

@@ -2,19 +2,43 @@
 
 use eth_types::{Field, ToScalar, U256};
 use gadgets::{
+    impl_expr,
     mul_add::{MulAddChip, MulAddConfig},
     util::{and, not, or, Expr},
 };
 use halo2_proofs::{
     circuit::{Layouter, Region, Value},
-    plonk::{Advice, Column, ConstraintSystem, Error, Selector},
+    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, Selector},
     poly::Rotation,
 };
+use itertools::Itertools;
+use strum_macros::EnumIter;
 
 use crate::{
     evm_circuit::{util::constraint_builder::BaseConstraintBuilder, witness::Block},
-    table::ExpTable,
+    table::{ExpTable, LookupTable},
 };
+
+#[derive(Clone, Copy, Debug, EnumIter)]
+/// Fixed table to lookup odd or even byte values.
+pub enum FixedTableTag {
+    /// Represents an odd byte.
+    OddByte,
+    /// Represents an even byte.
+    EvenByte,
+}
+impl_expr!(FixedTableTag);
+
+impl FixedTableTag {
+    /// Build the assignments for the fixed table.
+    pub fn build<F: Field>(&self) -> Box<dyn Iterator<Item = [F; 2]>> {
+        let tag = F::from(*self as u64);
+        match self {
+            Self::OddByte => Box::new((1..256).step_by(2).map(move |value| [tag, F::from(value)])),
+            Self::EvenByte => Box::new((0..256).step_by(2).map(move |value| [tag, F::from(value)])),
+        }
+    }
+}
 
 /// Layout for the Exponentiation circuit.
 #[derive(Clone, Debug)]
@@ -23,13 +47,15 @@ pub struct ExpCircuit<F> {
     pub q_step: Selector,
     /// Whether the row is reserved for padding after an exponentiation trace.
     pub is_pad: Column<Advice>,
-    /// Multiplication gadget to check that the reducing exponent's division by
-    /// 2 was done correctly.
-    pub exp_div: MulAddConfig<F>,
+    /// Boolean value to indicate whether or not the intermediate exponent value
+    /// at this row is odd or even.
+    pub is_odd: Column<Advice>,
     /// The Exponentiation circuit's table.
     pub exp_table: ExpTable,
     /// Multiplication gadget for verification of each step.
     pub mul_gadget: MulAddConfig<F>,
+    /// Fixed table for odd/even byte values.
+    pub fixed_table: [Column<Fixed>; 2],
 }
 
 impl<F: Field> ExpCircuit<F> {
@@ -37,8 +63,9 @@ impl<F: Field> ExpCircuit<F> {
     pub fn configure(meta: &mut ConstraintSystem<F>, exp_table: ExpTable) -> Self {
         let q_step = meta.complex_selector();
         let is_pad = meta.advice_column();
-        let exp_div = MulAddChip::configure(meta, q_step);
+        let is_odd = meta.advice_column();
         let mul_gadget = MulAddChip::configure(meta, q_step);
+        let fixed_table = [(); 2].map(|_| meta.fixed_column());
 
         meta.create_gate("verify all but the last step", |meta| {
             let mut cb = BaseConstraintBuilder::default();
@@ -149,47 +176,14 @@ impl<F: Field> ExpCircuit<F> {
                 ]),
             );
 
-            // The intermediate exponent starts at the exponent, i.e.
-            // intermediate_exponent[0] == exponent.
-            // For every intermediate step, the intermediate exponent is reduced:
-            // 1. intermediate_exponent::next == intermediate_exponent::cur - 1, if odd.
-            // 2. intermediate_exponent::next == intermediate_exponent::cur/2, if even.
-            let remainder = meta.query_advice(exp_div.col0, Rotation(2));
-            cb.require_zero("remainder_hi == 0", meta.query_advice(exp_div.col1, Rotation(2)));
-            cb.require_boolean("remainder_lo is 0 or 1", remainder.clone());
-
-            // verify that denominator == 2
-            cb.require_zero(
-                "denominator_limb[1], [2] and [3] == 0",
-                or::expr([
-                    meta.query_advice(exp_div.col1, Rotation(1)),
-                    meta.query_advice(exp_div.col2, Rotation(1)),
-                    meta.query_advice(exp_div.col3, Rotation(1)),
-                ]),
-            );
-            cb.require_equal(
-                "denominator_limbs[0] == 2",
-                meta.query_advice(exp_div.col0, Rotation(1)),
-                2.expr(),
-            );
-
-            // verify that `exponent` value was divided by 2.
-            for ((column1, rot1), (column2, rot2)) in [
-                ((exp_div.col2, Rotation(2)), (exp_table.intermediate_exponent_lo_hi, Rotation(0))),
-                ((exp_div.col3, Rotation(2)), (exp_table.intermediate_exponent_lo_hi, Rotation(1))),
-            ] {
-                cb.require_equal(
-                    "intermediate exponent == numerator from exponent division gadget",
-                    meta.query_advice(column1, rot1),
-                    meta.query_advice(column2, rot2),
-                );
-            }
+            // The odd/even assignment is boolean.
+            cb.require_boolean("is_odd parity is boolean", meta.query_advice(is_odd, Rotation::cur()));
 
             // remainder == 1 => exponent is odd
             cb.condition(
                 and::expr([
                     not::expr(meta.query_advice(exp_table.is_last, Rotation::cur())),
-                    remainder.clone(),
+                    meta.query_advice(is_odd, Rotation::cur()),
                 ]), |cb| {
                 cb.require_equal(
                     "intermediate_exponent::next == intermediate_exponent::cur - 1 (lo::next == lo::cur - 1)",
@@ -221,7 +215,7 @@ impl<F: Field> ExpCircuit<F> {
             cb.condition(
                 and::expr([
                     not::expr(meta.query_advice(exp_table.is_last, Rotation::cur())),
-                    not::expr(remainder),
+                    not::expr(meta.query_advice(is_odd, Rotation::cur())),
                 ]), |cb| {
                 cb.require_equal(
                     "intermediate_exponent::next == intermediate_exponent::cur / 2",
@@ -285,12 +279,43 @@ impl<F: Field> ExpCircuit<F> {
             cb.gate(meta.query_selector(q_step))
         });
 
+        meta.lookup_any("fixed table (odd) lookup", |meta| {
+            let cond = and::expr([
+                meta.query_selector(q_step),
+                meta.query_advice(is_odd, Rotation::cur()),
+            ]);
+            vec![
+                FixedTableTag::OddByte.expr(),
+                meta.query_advice(exp_table.lsb_int_exponent, Rotation::cur()),
+            ]
+            .into_iter()
+            .zip(fixed_table.table_exprs(meta).into_iter())
+            .map(|(arg, table)| (cond.clone() * arg, table))
+            .collect()
+        });
+
+        meta.lookup_any("fixed table (even) lookup", |meta| {
+            let cond = and::expr([
+                meta.query_selector(q_step),
+                not::expr(meta.query_advice(is_odd, Rotation::cur())),
+            ]);
+            vec![
+                FixedTableTag::EvenByte.expr(),
+                meta.query_advice(exp_table.lsb_int_exponent, Rotation::cur()),
+            ]
+            .into_iter()
+            .zip(fixed_table.table_exprs(meta).into_iter())
+            .map(|(arg, table)| (cond.clone() * arg, table))
+            .collect()
+        });
+
         Self {
             q_step,
             is_pad,
-            exp_div,
+            is_odd,
             exp_table,
             mul_gadget,
+            fixed_table,
         }
     }
 
@@ -303,7 +328,6 @@ impl<F: Field> ExpCircuit<F> {
         const OFFSET_INCREMENT: usize = 7usize;
         const ROWS_PER_STEP: usize = 4usize;
 
-        let exp_div_chip = MulAddChip::construct(self.exp_div.clone());
         let mul_chip = MulAddChip::construct(self.mul_gadget.clone());
 
         layouter.assign_region(
@@ -311,7 +335,6 @@ impl<F: Field> ExpCircuit<F> {
             |mut region| {
                 // assign everything except the exp table.
                 let mut offset = 0;
-                let two = U256::from(2);
                 for exp_event in block.exp_events.iter() {
                     let mut exponent = exp_event.exponent;
                     for step in exp_event.steps.iter().rev() {
@@ -324,10 +347,11 @@ impl<F: Field> ExpCircuit<F> {
                             offset,
                             || Value::known(F::zero()),
                         )?;
-                        exp_div_chip.assign(
-                            &mut region,
+                        region.assign_advice(
+                            || format!("is_odd: {}", offset),
+                            self.is_odd,
                             offset,
-                            [exponent_div2, two, remainder, exponent],
+                            || Value::known(F::from(remainder.as_u64())),
                         )?;
                         mul_chip.assign(
                             &mut region,
@@ -389,10 +413,6 @@ impl<F: Field> ExpCircuit<F> {
                 // assign a zero step, analogous to padding.
                 let mut all_columns = self.exp_table.columns();
                 all_columns.extend_from_slice(&[
-                    self.exp_div.col0,
-                    self.exp_div.col1,
-                    self.exp_div.col2,
-                    self.exp_div.col3,
                     self.mul_gadget.col0,
                     self.mul_gadget.col1,
                     self.mul_gadget.col2,
@@ -414,6 +434,29 @@ impl<F: Field> ExpCircuit<F> {
         )
     }
 
+    /// Load fixed table
+    pub fn load_fixed_table(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        fixed_table_tags: Vec<FixedTableTag>,
+    ) -> Result<(), Error> {
+        layouter.assign_region(
+            || "fixed table",
+            |mut region| {
+                for (offset, row) in std::iter::once([F::zero(); 2])
+                    .chain(fixed_table_tags.iter().flat_map(|tag| tag.build()))
+                    .enumerate()
+                {
+                    for (column, value) in self.fixed_table.iter().zip_eq(row) {
+                        region.assign_fixed(|| "", *column, offset, || Value::known(value))?;
+                    }
+                }
+
+                Ok(())
+            },
+        )
+    }
+
     fn assign_padding_row(&self, region: &mut Region<'_, F>, offset: usize) -> Result<(), Error> {
         region.assign_advice(
             || format!("padding row (is_pad): {}", offset),
@@ -424,10 +467,6 @@ impl<F: Field> ExpCircuit<F> {
 
         let mut all_columns = self.exp_table.columns();
         all_columns.extend_from_slice(&[
-            self.exp_div.col0,
-            self.exp_div.col1,
-            self.exp_div.col2,
-            self.exp_div.col3,
             self.mul_gadget.col0,
             self.mul_gadget.col1,
             self.mul_gadget.col2,
@@ -495,7 +534,14 @@ pub mod dev {
             config: Self::Config,
             mut layouter: impl Layouter<F>,
         ) -> Result<(), halo2_proofs::plonk::Error> {
-            config.exp_circuit.assign_block(&mut layouter, &self.block)
+            config.exp_circuit.load_fixed_table(
+                &mut layouter,
+                vec![FixedTableTag::OddByte, FixedTableTag::EvenByte],
+            )?;
+            config
+                .exp_circuit
+                .assign_block(&mut layouter, &self.block)?;
+            Ok(())
         }
     }
 

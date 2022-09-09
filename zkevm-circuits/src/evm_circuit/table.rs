@@ -259,6 +259,7 @@ pub(crate) enum Lookup<F> {
         is_last: Expression<F>,
         base_limbs: [Expression<F>; 4],
         intermediate_exponent_lo_hi: [Expression<F>; 2],
+        lsb_int_exponent: Expression<F>,
         intermediate_exp_lo_hi: [Expression<F>; 2],
     },
     /// Conditional lookup enabled by the first element.
@@ -382,6 +383,7 @@ impl<F: Field> Lookup<F> {
                 is_last,
                 base_limbs,
                 intermediate_exponent_lo_hi,
+                lsb_int_exponent,
                 intermediate_exp_lo_hi,
             } => vec![
                 identifier.clone(),
@@ -393,6 +395,7 @@ impl<F: Field> Lookup<F> {
                 base_limbs[3].clone(),
                 intermediate_exponent_lo_hi[0].clone(),
                 intermediate_exponent_lo_hi[1].clone(),
+                lsb_int_exponent.clone(),
                 intermediate_exp_lo_hi[0].clone(),
                 intermediate_exp_lo_hi[1].clone(),
             ],

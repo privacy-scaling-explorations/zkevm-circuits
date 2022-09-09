@@ -1188,6 +1188,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
 
     // Exponentiation Table
 
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn exp_table_lookup(
         &mut self,
         identifier: Expression<F>,
@@ -1195,6 +1196,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         is_last: Expression<F>,
         base_limbs: [Expression<F>; 4],
         exponent_lo_hi: [Expression<F>; 2],
+        lsb_exponent: Expression<F>,
         exponentiation_lo_hi: [Expression<F>; 2],
     ) {
         self.add_lookup(
@@ -1205,6 +1207,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
                 is_last,
                 base_limbs,
                 intermediate_exponent_lo_hi: exponent_lo_hi,
+                lsb_int_exponent: lsb_exponent,
                 intermediate_exp_lo_hi: exponentiation_lo_hi,
             },
         );
