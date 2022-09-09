@@ -15,7 +15,7 @@ array-init = "2.0.0"
 bus-mapping = { path = "../bus-mapping" }
 eth-types = { path = "../eth-types" }
 gadgets = { path = "../gadgets" }
-ethers-core = "0.6"
+ethers-core = "0.17.0"
 strum = "0.24"
 strum_macros = "0.24"
 rand_xorshift = "0.3"
@@ -41,7 +41,7 @@ hex = "0.4.3"
 mock = { path = "../mock" }
 itertools = "0.10.1"
 pretty_assertions = "1.0.0"
-ethers-signers = "0.6"
+ethers-signers = "0.17.0"
 rand_chacha = "0.3"
 
 [features]
