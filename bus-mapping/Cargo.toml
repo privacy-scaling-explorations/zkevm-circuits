@@ -11,8 +11,8 @@ gadgets = { path = "../gadgets" }
 keccak256 = { path = "../keccak256" }
 mock = { path = "../mock", optional = true }
 
-ethers-core = "0.6"
-ethers-providers = "0.6"
+ethers-core = "0.17.0"
+ethers-providers = "0.17.0"
 halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2.git", tag = "v2022_08_19" }
 itertools = "0.10"
 lazy_static = "1.4"

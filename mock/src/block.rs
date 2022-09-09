@@ -1,8 +1,16 @@
 //! Mock Block definition and builder related methods.
 
 use crate::{MockTransaction, MOCK_CHAIN_ID};
-use eth_types::{Address, Block, Bytes, Hash, Transaction, Word, U64};
-use ethbloom::Bloom;
+use eth_types::{Address, Block, Bytes, Hash, Transaction, Word, H64, U64};
+use ethers_core::types::Bloom;
+use ethers_core::types::OtherFields;
+
+fn u64_to_h64(val: U64) -> H64 {
+    let mut vec = Vec::with_capacity(8);
+    val.to_big_endian(&mut vec);
+
+    H64::from_slice(&vec)
+}
 
 #[derive(Clone, Debug)]
 /// Mock structure which represents an Ethereum Block and can be used for tests.
@@ -73,7 +81,7 @@ impl From<MockBlock> for Block<Transaction> {
             hash: mock.hash.or_else(|| Some(Hash::default())),
             parent_hash: mock.parent_hash,
             uncles_hash: mock.uncles_hash,
-            author: mock.author,
+            author: Some(mock.author),
             state_root: mock.state_root,
             transactions_root: mock.transactions_root,
             receipts_root: mock.receipts_root,
@@ -94,8 +102,9 @@ impl From<MockBlock> for Block<Transaction> {
                 .collect::<Vec<Transaction>>(),
             size: Some(mock.size),
             mix_hash: Some(mock.mix_hash),
-            nonce: Some(mock.nonce),
+            nonce: Some(u64_to_h64(mock.nonce)),
             base_fee_per_gas: Some(mock.base_fee_per_gas),
+            other: OtherFields::default(),
         }
     }
 }
@@ -106,7 +115,7 @@ impl From<MockBlock> for Block<()> {
             hash: mock.hash.or_else(|| Some(Hash::default())),
             parent_hash: mock.parent_hash,
             uncles_hash: mock.uncles_hash,
-            author: mock.author,
+            author: Some(mock.author),
             state_root: mock.state_root,
             transactions_root: mock.transactions_root,
             receipts_root: mock.receipts_root,
@@ -123,8 +132,9 @@ impl From<MockBlock> for Block<()> {
             transactions: vec![],
             size: Some(mock.size),
             mix_hash: Some(mock.mix_hash),
-            nonce: Some(mock.nonce),
+            nonce: Some(u64_to_h64(mock.nonce)),
             base_fee_per_gas: Some(mock.base_fee_per_gas),
+            other: OtherFields::default(),
         }
     }
 }

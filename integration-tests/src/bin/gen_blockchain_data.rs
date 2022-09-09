@@ -98,8 +98,8 @@ async fn main() {
             path: path_sol.to_str().expect("path is not str").to_string(),
             name: name.to_string(),
             abi,
-            bin,
-            bin_runtime,
+            bin: bin.into_bytes().expect("bin"),
+            bin_runtime: bin_runtime.into_bytes().expect("bin_runtime"),
         };
 
         let mut path_json = path_sol.clone();
