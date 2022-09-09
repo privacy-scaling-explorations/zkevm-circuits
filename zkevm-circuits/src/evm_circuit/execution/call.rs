@@ -3,7 +3,6 @@ use crate::{
         execution::ExecutionGadget,
         param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_GAS, N_BYTES_MEMORY_WORD_SIZE},
         step::ExecutionState,
-        table::{AccountFieldTag, CallContextFieldTag},
         util::{
             common_gadget::TransferGadget,
             constraint_builder::{
@@ -20,6 +19,7 @@ use crate::{
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
+    table::{AccountFieldTag, CallContextFieldTag},
     util::Expr,
 };
 use bus_mapping::evm::OpcodeId;
@@ -27,7 +27,7 @@ use eth_types::{
     evm_types::{GasCost, GAS_STIPEND_CALL_WITH_VALUE},
     Field, ToLittleEndian, ToScalar,
 };
-use halo2_proofs::plonk::Error;
+use halo2_proofs::{circuit::Value, plonk::Error};
 use keccak256::EMPTY_HASH_LE;
 
 #[derive(Clone, Debug)]
@@ -53,7 +53,7 @@ pub(crate) struct CallGadget<F> {
     transfer: TransferGadget<F>,
     callee_nonce: Cell<F>,
     callee_code_hash: Cell<F>,
-    is_account_empty: BatchedIsZeroGadget<F, 2>,
+    is_empty_nonce_and_balance: BatchedIsZeroGadget<F, 2>,
     is_empty_code_hash: IsEqualGadget<F>,
     one_64th_gas: ConstantDivisionGadget<F, N_BYTES_GAS>,
     capped_callee_gas_left: MinMaxGadget<F, N_BYTES_GAS>,
@@ -172,7 +172,7 @@ impl<F: Field> ExecutionGadget<F> for CallGadget<F> {
                 cb.account_read(callee_address.clone(), field_tag, value.expr());
                 value
             });
-        let is_account_empty = BatchedIsZeroGadget::construct(
+        let is_empty_nonce_and_balance = BatchedIsZeroGadget::construct(
             cb,
             [
                 callee_nonce.expr(),
@@ -187,16 +187,14 @@ impl<F: Field> ExecutionGadget<F> for CallGadget<F> {
                 cb.power_of_randomness(),
             ),
         );
+        let is_empty_account = is_empty_nonce_and_balance.expr() * is_empty_code_hash.expr();
         // Sum up gas cost
         let gas_cost = select::expr(
             is_warm_prev.expr(),
             GasCost::WARM_ACCESS.expr(),
             GasCost::COLD_ACCOUNT_ACCESS.expr(),
         ) + has_value.clone()
-            * (GasCost::CALL_WITH_VALUE.expr()
-                + is_account_empty.expr()
-                    * is_empty_code_hash.expr()
-                    * GasCost::NEW_ACCOUNT.expr())
+            * (GasCost::CALL_WITH_VALUE.expr() + is_empty_account * GasCost::NEW_ACCOUNT.expr())
             + memory_expansion.gas_cost();
 
         // Apply EIP 150
@@ -323,7 +321,7 @@ impl<F: Field> ExecutionGadget<F> for CallGadget<F> {
             transfer,
             callee_nonce,
             callee_code_hash,
-            is_account_empty,
+            is_empty_nonce_and_balance,
             is_empty_code_hash,
             one_64th_gas,
             capped_callee_gas_left,
@@ -373,22 +371,29 @@ impl<F: Field> ExecutionGadget<F> for CallGadget<F> {
 
         let opcode = step.opcode.unwrap();
         self.opcode
-            .assign(region, offset, Some(F::from(opcode.as_u64())))?;
+            .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
 
         self.tx_id
-            .assign(region, offset, Some(F::from(tx_id.low_u64())))?;
+            .assign(region, offset, Value::known(F::from(tx_id.low_u64())))?;
         self.reversion_info.assign(
             region,
             offset,
             call.rw_counter_end_of_reversion,
             call.is_persistent,
         )?;
-        self.current_address
-            .assign(region, offset, current_address.to_scalar())?;
+        self.current_address.assign(
+            region,
+            offset,
+            Value::known(
+                current_address
+                    .to_scalar()
+                    .expect("unexpected Address -> Scalar conversion failure"),
+            ),
+        )?;
         self.is_static
-            .assign(region, offset, Some(F::from(is_static.low_u64())))?;
+            .assign(region, offset, Value::known(F::from(is_static.low_u64())))?;
         self.depth
-            .assign(region, offset, Some(F::from(depth.low_u64())))?;
+            .assign(region, offset, Value::known(F::from(depth.low_u64())))?;
 
         self.gas.assign(region, offset, Some(gas.to_le_bytes()))?;
         self.callee_address
@@ -396,16 +401,16 @@ impl<F: Field> ExecutionGadget<F> for CallGadget<F> {
         self.value
             .assign(region, offset, Some(value.to_le_bytes()))?;
         self.is_success
-            .assign(region, offset, Some(F::from(is_success.low_u64())))?;
+            .assign(region, offset, Value::known(F::from(is_success.low_u64())))?;
         self.gas_is_u64.assign(
             region,
             offset,
             sum::value(&gas.to_le_bytes()[N_BYTES_GAS..]),
         )?;
         self.is_warm
-            .assign(region, offset, Some(F::from(is_warm as u64)))?;
+            .assign(region, offset, Value::known(F::from(is_warm as u64)))?;
         self.is_warm_prev
-            .assign(region, offset, Some(F::from(is_warm_prev as u64)))?;
+            .assign(region, offset, Value::known(F::from(is_warm_prev as u64)))?;
         self.callee_reversion_info.assign(
             region,
             offset,
@@ -433,17 +438,24 @@ impl<F: Field> ExecutionGadget<F> for CallGadget<F> {
             callee_balance_pair,
             value,
         )?;
-        self.callee_nonce
-            .assign(region, offset, callee_nonce.to_scalar())?;
+        self.callee_nonce.assign(
+            region,
+            offset,
+            Value::known(
+                callee_nonce
+                    .to_scalar()
+                    .expect("unexpected U256 -> Scalar conversion failure"),
+            ),
+        )?;
         self.callee_code_hash.assign(
             region,
             offset,
-            Some(Word::random_linear_combine(
+            Value::known(Word::random_linear_combine(
                 callee_code_hash.to_le_bytes(),
                 block.randomness,
             )),
         )?;
-        let is_account_empty = self.is_account_empty.assign(
+        let is_empty_nonce_and_balance = self.is_empty_nonce_and_balance.assign(
             region,
             offset,
             [
@@ -451,12 +463,13 @@ impl<F: Field> ExecutionGadget<F> for CallGadget<F> {
                 Word::random_linear_combine(callee_balance_pair.1.to_le_bytes(), block.randomness),
             ],
         )?;
-        self.is_empty_code_hash.assign(
+        let is_empty_code_hash = self.is_empty_code_hash.assign(
             region,
             offset,
             Word::random_linear_combine(callee_code_hash.to_le_bytes(), block.randomness),
             Word::random_linear_combine(*EMPTY_HASH_LE, block.randomness),
         )?;
+        let is_empty_account = is_empty_nonce_and_balance * is_empty_code_hash;
         let has_value = !value.is_zero();
         let gas_cost = if is_warm_prev {
             GasCost::WARM_ACCESS.as_u64()
@@ -464,7 +477,7 @@ impl<F: Field> ExecutionGadget<F> for CallGadget<F> {
             GasCost::COLD_ACCOUNT_ACCESS.as_u64()
         } + if has_value {
             GasCost::CALL_WITH_VALUE.as_u64()
-                + if is_account_empty == F::one() {
+                + if is_empty_account == F::one() {
                     GasCost::NEW_ACCOUNT.as_u64()
                 } else {
                     0
@@ -487,10 +500,7 @@ impl<F: Field> ExecutionGadget<F> for CallGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::evm_circuit::{
-        test::{run_test_circuit_complete_fixed_table, run_test_circuit_incomplete_fixed_table},
-        witness::block_convert,
-    };
+    use crate::evm_circuit::{test::run_test_circuit, witness::block_convert};
     use eth_types::{address, bytecode};
     use eth_types::{bytecode::Bytecode, evm_types::OpcodeId, geth_types::Account};
     use eth_types::{Address, ToWord, Word};
@@ -546,6 +556,29 @@ mod test {
         }
     }
 
+    fn caller_for_insufficient_balance(stack: Stack) -> Account {
+        let terminator = OpcodeId::STOP;
+
+        let bytecode = bytecode! {
+            PUSH32(Word::from(stack.rd_length))
+            PUSH32(Word::from(stack.rd_offset))
+            PUSH32(Word::from(stack.cd_length))
+            PUSH32(Word::from(stack.cd_offset))
+            PUSH32(stack.value)
+            PUSH32(Address::repeat_byte(0xff).to_word())
+            PUSH32(Word::from(stack.gas))
+            CALL
+            .write_op(terminator)
+        };
+
+        Account {
+            address: Address::repeat_byte(0xfe),
+            balance: Word::from(10).pow(18.into()),
+            code: bytecode.to_vec().into(),
+            ..Default::default()
+        }
+    }
+
     fn callee(code: Bytecode) -> Account {
         let code = code.to_vec();
         let is_empty = code.is_empty();
@@ -558,7 +591,7 @@ mod test {
         }
     }
 
-    fn test_ok(caller: Account, callee: Account, use_complete_fixed_table: bool) {
+    fn test_ok(caller: Account, callee: Account) {
         let block = TestContext::<3, 1>::new(
             None,
             |accs| {
@@ -592,14 +625,44 @@ mod test {
             .handle_block(&block_data.eth_block, &block_data.geth_traces)
             .unwrap();
         let block = block_convert(&builder.block, &builder.code_db);
-        assert_eq!(
-            if use_complete_fixed_table {
-                run_test_circuit_complete_fixed_table(block)
-            } else {
-                run_test_circuit_incomplete_fixed_table(block)
+        assert_eq!(run_test_circuit(block), Ok(()));
+    }
+
+    fn test_oog(caller: Account, callee: Account) {
+        let block = TestContext::<3, 1>::new(
+            None,
+            |accs| {
+                accs[0]
+                    .address(address!("0x000000000000000000000000000000000000cafe"))
+                    .balance(Word::from(10u64.pow(19)));
+                accs[1]
+                    .address(caller.address)
+                    .code(caller.code)
+                    .nonce(caller.nonce)
+                    .balance(caller.balance);
+                accs[2]
+                    .address(callee.address)
+                    .code(callee.code)
+                    .nonce(callee.nonce)
+                    .balance(callee.balance);
             },
-            Ok(())
-        );
+            |mut txs, accs| {
+                txs[0]
+                    .from(accs[0].address)
+                    .to(accs[1].address)
+                    .gas(21100.into());
+            },
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap()
+        .into();
+        let block_data = bus_mapping::mock::BlockData::new_from_geth_data(block);
+        let mut builder = block_data.new_circuit_input_builder();
+        builder
+            .handle_block(&block_data.eth_block, &block_data.geth_traces)
+            .unwrap();
+        let block = block_convert(&builder.block, &builder.code_db);
+        assert_eq!(run_test_circuit(block), Ok(()));
     }
 
     #[test]
@@ -646,7 +709,45 @@ mod test {
         ];
         let callees = vec![callee(bytecode! {}), callee(bytecode! { STOP })];
         for (stack, callee) in stacks.into_iter().cartesian_product(callees.into_iter()) {
-            test_ok(caller(stack, true), callee, false);
+            test_ok(caller(stack, true), callee);
+        }
+    }
+
+    #[test]
+    fn call_with_insufficient_balance() {
+        let stacks = vec![Stack {
+            // this value is bigger than caller's balance
+            value: Word::from(11).pow(18.into()),
+            ..Default::default()
+        }];
+        let callees = vec![callee(bytecode! {}), callee(bytecode! { STOP })];
+        for (stack, callee) in stacks.into_iter().cartesian_product(callees.into_iter()) {
+            test_ok(caller_for_insufficient_balance(stack), callee);
+        }
+    }
+
+    #[test]
+    fn call_with_oog() {
+        let stacks = vec![
+            // With gas and memory expansion
+            Stack {
+                gas: 100,
+                cd_offset: 64,
+                cd_length: 320,
+                rd_offset: 0,
+                rd_length: 32,
+                ..Default::default()
+            },
+        ];
+
+        let bytecode = bytecode! {
+            PUSH32(Word::from(0))
+            PUSH32(Word::from(0))
+            STOP
+        };
+        let callees = vec![callee(bytecode)];
+        for (stack, callee) in stacks.into_iter().cartesian_product(callees.into_iter()) {
+            test_oog(caller(stack, true), callee);
         }
     }
 
@@ -676,7 +777,7 @@ mod test {
         ];
 
         for (caller, callee) in callers.into_iter().cartesian_product(callees.into_iter()) {
-            test_ok(caller, callee, false);
+            test_ok(caller, callee);
         }
     }
 
@@ -734,7 +835,6 @@ mod test {
                 JUMPDEST // 56
                 STOP
             }),
-            true,
         );
     }
 }

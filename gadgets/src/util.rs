@@ -78,6 +78,23 @@ pub mod not {
     }
 }
 
+/// Returns `a ^ b`.
+/// `a` and `b` needs to be boolean
+pub mod xor {
+    use crate::util::Expr;
+    use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
+
+    /// Returns an expression that represents the XOR of the given expression.
+    pub fn expr<F: FieldExt, E: Expr<F>>(a: E, b: E) -> Expression<F> {
+        a.expr() + b.expr() - 2.expr() * a.expr() * b.expr()
+    }
+
+    /// Returns a value that represents the XOR of the given value.
+    pub fn value<F: FieldExt>(a: F, b: F) -> F {
+        a + b - F::from(2u64) * a * b
+    }
+}
+
 /// Returns `when_true` when `selector == 1`, and returns `when_false` when
 /// `selector == 0`. `selector` needs to be boolean.
 pub mod select {
@@ -126,7 +143,7 @@ pub trait Expr<F: FieldExt> {
 #[macro_export]
 macro_rules! impl_expr {
     ($type:ty) => {
-        impl<F: FieldExt> $crate::util::Expr<F> for $type {
+        impl<F: halo2_proofs::arithmetic::FieldExt> $crate::util::Expr<F> for $type {
             #[inline]
             fn expr(&self) -> Expression<F> {
                 Expression::Constant(F::from(*self as u64))
@@ -134,7 +151,7 @@ macro_rules! impl_expr {
         }
     };
     ($type:ty, $method:path) => {
-        impl<F: FieldExt> $crate::util::Expr<F> for $type {
+        impl<F: halo2_proofs::arithmetic::FieldExt> $crate::util::Expr<F> for $type {
             #[inline]
             fn expr(&self) -> Expression<F> {
                 Expression::Constant(F::from($method(self) as u64))
@@ -168,7 +185,7 @@ impl<F: FieldExt> Expr<F> for i32 {
     #[inline]
     fn expr(&self) -> Expression<F> {
         Expression::Constant(
-            F::from(self.abs() as u64)
+            F::from(self.unsigned_abs() as u64)
                 * if self.is_negative() {
                     -F::one()
                 } else {

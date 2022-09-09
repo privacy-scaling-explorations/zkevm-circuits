@@ -2,7 +2,6 @@ use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
         step::ExecutionState,
-        table::CallContextFieldTag,
         util::{
             common_gadget::RestoreContextGadget,
             constraint_builder::{
@@ -14,11 +13,12 @@ use crate::{
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
+    table::CallContextFieldTag,
     util::Expr,
 };
 use bus_mapping::evm::OpcodeId;
 use eth_types::Field;
-use halo2_proofs::plonk::Error;
+use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct StopGadget<F> {
@@ -106,8 +106,11 @@ impl<F: Field> ExecutionGadget<F> for StopGadget<F> {
             .bytecodes
             .get(&call.code_hash)
             .expect("could not find current environment's bytecode");
-        self.code_length
-            .assign(region, offset, Some(F::from(code.bytes.len() as u64)))?;
+        self.code_length.assign(
+            region,
+            offset,
+            Value::known(F::from(code.bytes.len() as u64)),
+        )?;
 
         self.is_out_of_range.assign(
             region,
@@ -117,7 +120,7 @@ impl<F: Field> ExecutionGadget<F> for StopGadget<F> {
 
         let opcode = step.opcode.unwrap();
         self.opcode
-            .assign(region, offset, Some(F::from(opcode.as_u64())))?;
+            .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
 
         self.restore_context
             .assign(region, offset, block, call, step)?;
@@ -128,9 +131,7 @@ impl<F: Field> ExecutionGadget<F> for StopGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::evm_circuit::{
-        test::run_test_circuit_incomplete_fixed_table, witness::block_convert,
-    };
+    use crate::evm_circuit::{test::run_test_circuit, witness::block_convert};
     use eth_types::{address, bytecode, Bytecode, Word};
     use itertools::Itertools;
     use mock::TestContext;
@@ -204,7 +205,7 @@ mod test {
             .handle_block(&block_data.eth_block, &block_data.geth_traces)
             .unwrap();
         let block = block_convert(&builder.block, &builder.code_db);
-        assert_eq!(run_test_circuit_incomplete_fixed_table(block), Ok(()));
+        assert_eq!(run_test_circuit(block), Ok(()));
     }
 
     #[test]

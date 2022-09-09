@@ -13,8 +13,10 @@ use crate::{
 };
 use array_init::array_init;
 use eth_types::{evm_types::GasCost, Field, ToLittleEndian, U256};
-use halo2_proofs::plonk::{Error, Expression};
-use std::convert::TryInto;
+use halo2_proofs::{
+    circuit::Value,
+    plonk::{Error, Expression},
+};
 
 /// Decodes the usable part of an address stored in a Word
 pub(crate) mod address_low {
@@ -105,7 +107,7 @@ impl<F: Field> MemoryAddressGadget<F> {
         self.memory_offset.assign(
             region,
             offset,
-            Some(Word::random_linear_combine(memory_offset_bytes, randomness)),
+            Value::known(Word::random_linear_combine(memory_offset_bytes, randomness)),
         )?;
         self.memory_offset_bytes.assign(
             region,
@@ -334,14 +336,13 @@ impl<F: Field, const N: usize, const N_BYTES_MEMORY_WORD_SIZE: usize>
 /// This gas cost is the difference between the next and current memory costs:
 /// `memory_cost = Gmem * memory_size + floor(memory_size * memory_size / 512)`
 #[derive(Clone, Debug)]
-pub(crate) struct MemoryCopierGasGadget<F> {
+pub(crate) struct MemoryCopierGasGadget<F, const GAS_COPY: GasCost> {
     word_size: MemoryWordSizeGadget<F>,
     gas_cost: Expression<F>,
     gas_cost_range_check: RangeCheckGadget<F, N_BYTES_GAS>,
 }
 
-impl<F: Field> MemoryCopierGasGadget<F> {
-    pub const GAS_COPY: GasCost = GasCost::COPY;
+impl<F: Field, const GAS_COPY: GasCost> MemoryCopierGasGadget<F, GAS_COPY> {
     pub const WORD_SIZE: u64 = 32u64;
 
     /// Input requirements:
@@ -358,7 +359,7 @@ impl<F: Field> MemoryCopierGasGadget<F> {
     ) -> Self {
         let word_size = MemoryWordSizeGadget::construct(cb, num_bytes);
 
-        let gas_cost = word_size.expr() * Self::GAS_COPY.expr() + memory_expansion_gas_cost;
+        let gas_cost = word_size.expr() * GAS_COPY.expr() + memory_expansion_gas_cost;
         let gas_cost_range_check = RangeCheckGadget::construct(cb, gas_cost.clone());
 
         Self {
@@ -381,7 +382,7 @@ impl<F: Field> MemoryCopierGasGadget<F> {
         memory_expansion_gas_cost: u64,
     ) -> Result<u64, Error> {
         let word_size = self.word_size.assign(region, offset, num_bytes)?;
-        let gas_cost = word_size * Self::GAS_COPY.as_u64() + memory_expansion_gas_cost;
+        let gas_cost = word_size * GAS_COPY.as_u64() + memory_expansion_gas_cost;
         self.gas_cost_range_check
             .assign(region, offset, F::from(gas_cost))?;
         // Return the memory copier gas cost
@@ -500,8 +501,8 @@ impl<F: Field, const MAX_BYTES: usize, const ADDR_SIZE_IN_BYTES: usize>
 
         assert_eq!(selectors.len(), MAX_BYTES);
         for (idx, selector) in selectors.iter().enumerate() {
-            self.selectors[idx].assign(region, offset, Some(F::from(*selector as u64)))?;
-            self.bytes[idx].assign(region, offset, Some(F::from(bytes[idx] as u64)))?;
+            self.selectors[idx].assign(region, offset, Value::known(F::from(*selector as u64)))?;
+            self.bytes[idx].assign(region, offset, Value::known(F::from(bytes[idx] as u64)))?;
             // assign bound_dist and bound_dist_is_zero
             let oob = addr_start + idx as u64 >= addr_end;
             let bound_dist = if oob {
@@ -509,7 +510,7 @@ impl<F: Field, const MAX_BYTES: usize, const ADDR_SIZE_IN_BYTES: usize>
             } else {
                 F::from(addr_end - addr_start - idx as u64)
             };
-            self.bound_dist[idx].assign(region, offset, Some(bound_dist))?;
+            self.bound_dist[idx].assign(region, offset, Value::known(bound_dist))?;
             self.bound_dist_is_zero[idx].assign(region, offset, bound_dist)?;
         }
         Ok(())

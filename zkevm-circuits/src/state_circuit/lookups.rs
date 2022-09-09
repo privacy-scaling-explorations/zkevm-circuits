@@ -1,24 +1,60 @@
 use super::mpt_updates::MptUpdates;
-use crate::evm_circuit::table::CallContextFieldTag;
+use crate::table::CallContextFieldTag;
 use eth_types::Field;
 use halo2_proofs::{
-    circuit::Layouter,
-    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
+    circuit::{Layouter, Value},
+    plonk::{Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
 use std::marker::PhantomData;
 use strum::IntoEnumIterator;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct Config {
     // Can these be TableColumn's?
     // https://github.com/zcash/halo2/blob/642efc1536d3ea2566b04814bd60a00c4745ae22/halo2_proofs/src/plonk/circuit.rs#L266
-    pub u8: Column<Fixed>,
-    pub u10: Column<Fixed>,
-    pub u16: Column<Fixed>,
+    u8: Column<Fixed>,
+    u10: Column<Fixed>,
+    u16: Column<Fixed>,
     pub call_context_field_tag: Column<Fixed>,
     // TODO: move this into mpt_updates and rename this to fixed_lookups.
     pub mpt_update: Column<Advice>,
+}
+
+impl Config {
+    pub fn range_check_u8<F: Field>(
+        &self,
+        meta: &mut ConstraintSystem<F>,
+        msg: &'static str,
+        exp_fn: impl FnOnce(&mut VirtualCells<'_, F>) -> Expression<F>,
+    ) {
+        meta.lookup_any(msg, |meta| {
+            let exp = exp_fn(meta);
+            vec![(exp, meta.query_fixed(self.u8, Rotation::cur()))]
+        });
+    }
+    pub fn range_check_u10<F: Field>(
+        &self,
+        meta: &mut ConstraintSystem<F>,
+        msg: &'static str,
+        exp_fn: impl FnOnce(&mut VirtualCells<'_, F>) -> Expression<F>,
+    ) {
+        meta.lookup_any(msg, |meta| {
+            let exp = exp_fn(meta);
+            vec![(exp, meta.query_fixed(self.u10, Rotation::cur()))]
+        });
+    }
+    pub fn range_check_u16<F: Field>(
+        &self,
+        meta: &mut ConstraintSystem<F>,
+        msg: &'static str,
+        exp_fn: impl FnOnce(&mut VirtualCells<'_, F>) -> Expression<F>,
+    ) {
+        meta.lookup_any(msg, |meta| {
+            let exp = exp_fn(meta);
+            vec![(exp, meta.query_fixed(self.u16, Rotation::cur()))]
+        });
+    }
 }
 
 #[derive(Clone)]
@@ -85,7 +121,7 @@ impl<F: Field> Chip<F> {
                             || format!("assign {} in u{} fixed column", i, exponent),
                             column,
                             i,
-                            || Ok(F::from(i as u64)),
+                            || Value::known(F::from(i as u64)),
                         )?;
                     }
                     Ok(())
@@ -105,7 +141,7 @@ impl<F: Field> Chip<F> {
                         },
                         self.config.call_context_field_tag,
                         field_tag as usize,
-                        || Ok(F::from(field_tag as u64)),
+                        || Value::known(F::from(field_tag as u64)),
                     )?;
                 }
                 Ok(())

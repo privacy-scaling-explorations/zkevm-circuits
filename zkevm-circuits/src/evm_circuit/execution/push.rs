@@ -13,7 +13,7 @@ use crate::{
 };
 use array_init::array_init;
 use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian};
-use halo2_proofs::plonk::Error;
+use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct PushGadget<F> {
@@ -134,7 +134,7 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
             selector.assign(
                 region,
                 offset,
-                Some(F::from((idx < num_additional_pushed) as u64)),
+                Value::known(F::from((idx < num_additional_pushed) as u64)),
             )?;
         }
 
@@ -231,5 +231,38 @@ mod test {
         {
             test_ok(opcode, &rand_bytes(idx + 1));
         }
+    }
+
+    #[test]
+    fn stack_overflow_simple() {
+        test_stack_overflow(OpcodeId::PUSH1, &[1]);
+    }
+
+    fn test_stack_overflow(opcode: OpcodeId, bytes: &[u8]) {
+        assert!(bytes.len() as u8 == opcode.as_u8() - OpcodeId::PUSH1.as_u8() + 1,);
+
+        let mut bytecode = bytecode! {
+            .write_op(opcode)
+        };
+        for b in bytes {
+            bytecode.write(*b, false);
+        }
+        // still add 1024 causes stack overflow
+        for _ in 0..1025 {
+            bytecode.write_op(opcode);
+            for b in bytes {
+                bytecode.write(*b, false);
+            }
+        }
+        // append final stop op code
+        bytecode.write_op(OpcodeId::STOP);
+
+        assert_eq!(
+            run_test_circuits(
+                TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+                None
+            ),
+            Ok(())
+        );
     }
 }

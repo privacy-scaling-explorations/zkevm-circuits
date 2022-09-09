@@ -1,14 +1,14 @@
-use std::convert::TryInto;
-
 use bus_mapping::evm::OpcodeId;
 use eth_types::{Field, ToLittleEndian};
-use halo2_proofs::plonk::{Error, Expression};
+use halo2_proofs::{
+    circuit::Value,
+    plonk::{Error, Expression},
+};
 
 use crate::{
     evm_circuit::{
         param::{N_BYTES_MEMORY_ADDRESS, N_BYTES_WORD},
         step::ExecutionState,
-        table::{CallContextFieldTag, TxContextFieldTag},
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
@@ -18,6 +18,7 @@ use crate::{
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
+    table::{CallContextFieldTag, TxContextFieldTag},
     util::Expr,
 };
 
@@ -203,11 +204,12 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
                 call.caller_id as u64,
             )
         };
-        self.src_id.assign(region, offset, Some(F::from(src_id)))?;
+        self.src_id
+            .assign(region, offset, Value::known(F::from(src_id)))?;
         self.call_data_length
-            .assign(region, offset, Some(F::from(calldata_length)))?;
+            .assign(region, offset, Value::known(F::from(calldata_length)))?;
         self.call_data_offset
-            .assign(region, offset, Some(F::from(calldata_offset)))?;
+            .assign(region, offset, Value::known(F::from(calldata_offset)))?;
 
         let mut calldata_bytes = vec![0u8; N_BYTES_WORD];
         let (src_addr, src_addr_end) = (

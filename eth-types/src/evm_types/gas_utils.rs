@@ -9,8 +9,9 @@ pub fn memory_expansion_gas_cost(curr_memory_word_size: u64, next_memory_word_si
         0
     } else {
         GasCost::MEMORY_EXPANSION_LINEAR_COEFF.0 * (next_memory_word_size - curr_memory_word_size)
-            + (next_memory_word_size * next_memory_word_size
-                - curr_memory_word_size * curr_memory_word_size)
+            + next_memory_word_size * next_memory_word_size
+                / GasCost::MEMORY_EXPANSION_QUAD_DENOMINATOR.0
+            - curr_memory_word_size * curr_memory_word_size
                 / GasCost::MEMORY_EXPANSION_QUAD_DENOMINATOR.0
     }
 }

@@ -12,7 +12,7 @@ use crate::{
     util::Expr,
 };
 use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian};
-use halo2_proofs::plonk::Error;
+use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct DupGadget<F> {
@@ -69,7 +69,7 @@ impl<F: Field> ExecutionGadget<F> for DupGadget<F> {
         self.value.assign(
             region,
             offset,
-            Some(Word::random_linear_combine(
+            Value::known(Word::random_linear_combine(
                 value.to_le_bytes(),
                 block.randomness,
             )),

@@ -53,6 +53,7 @@ impl Opcode for Stop {
             );
 
             let geth_step_next = &geth_steps[1];
+            let caller_ctx = state.caller_ctx()?;
             let caller_gas_left = geth_step_next.gas.0 - geth_step.gas.0;
             for (field, value) in [
                 (CallContextField::IsRoot, (caller.is_root as u64).into()),
@@ -69,7 +70,7 @@ impl Opcode for Stop {
                 (CallContextField::GasLeft, caller_gas_left.into()),
                 (
                     CallContextField::MemorySize,
-                    geth_step_next.memory.word_size().into(),
+                    caller_ctx.memory.word_size().into(),
                 ),
                 (
                     CallContextField::ReversibleWriteCounter,

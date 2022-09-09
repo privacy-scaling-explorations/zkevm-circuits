@@ -3,7 +3,6 @@ use crate::{
         execution::ExecutionGadget,
         param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_U64, N_BYTES_WORD},
         step::ExecutionState,
-        table::BlockContextFieldTag,
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
@@ -11,13 +10,13 @@ use crate::{
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
+    table::BlockContextFieldTag,
     util::Expr,
 };
 use bus_mapping::evm::OpcodeId;
 use eth_types::Field;
 use eth_types::ToLittleEndian;
 use halo2_proofs::plonk::Error;
-use std::convert::{TryFrom, TryInto};
 
 #[derive(Clone, Debug)]
 pub(crate) struct BlockCtxGadget<F, const N_BYTES: usize> {

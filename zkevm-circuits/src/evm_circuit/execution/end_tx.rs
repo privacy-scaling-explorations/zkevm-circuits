@@ -3,10 +3,6 @@ use crate::{
         execution::ExecutionGadget,
         param::N_BYTES_GAS,
         step::ExecutionState,
-        table::{
-            BlockContextFieldTag, CallContextFieldTag, RwTableTag, TxContextFieldTag,
-            TxReceiptFieldTag,
-        },
         util::{
             common_gadget::UpdateBalanceGadget,
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
@@ -18,10 +14,13 @@ use crate::{
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
+    table::{
+        BlockContextFieldTag, CallContextFieldTag, RwTableTag, TxContextFieldTag, TxReceiptFieldTag,
+    },
     util::Expr,
 };
 use eth_types::{evm_types::MAX_REFUND_QUOTIENT_OF_GAS_USED, Field, ToScalar};
-use halo2_proofs::plonk::Error;
+use halo2_proofs::{circuit::Value, plonk::Error};
 use strum::EnumCount;
 
 #[derive(Clone, Debug)]
@@ -203,10 +202,12 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             [step.rw_indices[3], step.rw_indices[4]].map(|idx| block.rws[idx].account_value_pair());
 
         self.tx_id
-            .assign(region, offset, Some(F::from(tx.id as u64)))?;
-        self.tx_gas.assign(region, offset, Some(F::from(tx.gas)))?;
+            .assign(region, offset, Value::known(F::from(tx.id as u64)))?;
+        self.tx_gas
+            .assign(region, offset, Value::known(F::from(tx.gas)))?;
         let (max_refund, _) = self.max_refund.assign(region, offset, gas_used as u128)?;
-        self.refund.assign(region, offset, Some(F::from(refund)))?;
+        self.refund
+            .assign(region, offset, Value::known(F::from(refund)))?;
         self.effective_refund.assign(
             region,
             offset,
@@ -222,8 +223,15 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             effective_refund + step.gas_left,
             gas_fee_refund,
         )?;
-        self.tx_caller_address
-            .assign(region, offset, tx.caller_address.to_scalar())?;
+        self.tx_caller_address.assign(
+            region,
+            offset,
+            Value::known(
+                tx.caller_address
+                    .to_scalar()
+                    .expect("unexpected Address -> Scalar conversion failure"),
+            ),
+        )?;
         self.gas_fee_refund.assign(
             region,
             offset,
@@ -245,8 +253,17 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             gas_used,
             effective_tip * gas_used,
         )?;
-        self.coinbase
-            .assign(region, offset, block.context.coinbase.to_scalar())?;
+        self.coinbase.assign(
+            region,
+            offset,
+            Value::known(
+                block
+                    .context
+                    .coinbase
+                    .to_scalar()
+                    .expect("unexpected Address -> Scalar conversion failure"),
+            ),
+        )?;
         self.coinbase_reward.assign(
             region,
             offset,
@@ -270,12 +287,15 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
         self.current_cumulative_gas_used.assign(
             region,
             offset,
-            Some(F::from(current_cumulative_gas_used)),
+            Value::known(F::from(current_cumulative_gas_used)),
         )?;
         self.is_first_tx
             .assign(region, offset, F::from(tx.id as u64), F::one())?;
-        self.is_persistent
-            .assign(region, offset, Some(F::from(call.is_persistent as u64)))?;
+        self.is_persistent.assign(
+            region,
+            offset,
+            Value::known(F::from(call.is_persistent as u64)),
+        )?;
 
         Ok(())
     }
@@ -283,9 +303,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::evm_circuit::{
-        test::run_test_circuit_incomplete_fixed_table, witness::block_convert,
-    };
+    use crate::evm_circuit::{test::run_test_circuit, witness::block_convert};
     use eth_types::{self, bytecode, geth_types::GethData};
     use mock::{eth, test_ctx::helpers::account_0_code_account_1_no_code, TestContext};
 
@@ -297,7 +315,7 @@ mod test {
             .unwrap();
         let block = block_convert(&builder.block, &builder.code_db);
 
-        assert_eq!(run_test_circuit_incomplete_fixed_table(block), Ok(()));
+        assert_eq!(run_test_circuit(block), Ok(()));
     }
 
     #[test]

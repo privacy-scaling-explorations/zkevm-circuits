@@ -1,12 +1,15 @@
 //! Execution step related module.
 
-use crate::{error::ExecError, exec_trace::OperationRef, operation::RWCounter, operation::RW};
+use crate::{
+    circuit_input_builder::CallContext, error::ExecError, exec_trace::OperationRef,
+    operation::RWCounter, operation::RW,
+};
 use eth_types::{
     evm_types::{Gas, GasCost, OpcodeId, ProgramCounter},
     GethExecStep, H256,
 };
 use gadgets::impl_expr;
-use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
+use halo2_proofs::plonk::Expression;
 use strum_macros::EnumIter;
 
 /// An execution step of the EVM.
@@ -47,7 +50,7 @@ impl ExecStep {
     /// Create a new Self from a `GethExecStep`.
     pub fn new(
         step: &GethExecStep,
-        call_index: usize,
+        call_ctx: &CallContext,
         rwc: RWCounter,
         reversible_write_counter: usize,
         log_id: usize,
@@ -56,17 +59,25 @@ impl ExecStep {
             exec_state: ExecState::Op(step.op),
             pc: step.pc,
             stack_size: step.stack.0.len(),
-            memory_size: step.memory.0.len(),
+            memory_size: call_ctx.memory.len(),
             gas_left: step.gas,
             gas_cost: step.gas_cost,
-            gas_refund: Gas(0),
-            call_index,
+            gas_refund: step.refund,
+            call_index: call_ctx.index,
             rwc,
             reversible_write_counter,
             log_id,
             bus_mapping_instance: Vec::new(),
             error: None,
         }
+    }
+
+    /// Returns `true` if `error` is oog and stack related..
+    pub fn oog_or_stack_error(&self) -> bool {
+        matches!(
+            self.error,
+            Some(ExecError::OutOfGas(_) | ExecError::StackOverflow | ExecError::StackUnderflow)
+        )
     }
 }
 
@@ -150,6 +161,10 @@ pub enum CopyDataType {
     TxCalldata,
     /// When the destination for the copy event is tx's log.
     TxLog,
+    /// When the destination rows are not directly for copying but for a special
+    /// scenario where we wish to accumulate the value (RLC) over all rows.
+    /// This is used for Copy Lookup from SHA3 opcode verification.
+    RlcAcc,
 }
 
 impl From<CopyDataType> for usize {
@@ -168,7 +183,7 @@ impl_expr!(CopyDataType);
 
 /// Defines a single copy step in a copy event. This type is unified over the
 /// source/destination row in the copy table.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CopyStep {
     /// Address (source/destination) for the copy step.
     pub addr: u64,
@@ -191,7 +206,7 @@ pub struct CopyStep {
 }
 
 /// Defines an enum type that can hold either a number or a hash value.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum NumberOrHash {
     /// Variant to indicate a number value.
     Number(usize),
@@ -201,7 +216,7 @@ pub enum NumberOrHash {
 
 /// Defines a copy event associated with EVM opcodes such as CALLDATACOPY,
 /// CODECOPY, CREATE, etc. More information:
-/// https://github.com/privacy-scaling-explorations/zkevm-specs/blob/master/specs/copy-proof.md.
+/// <https://github.com/privacy-scaling-explorations/zkevm-specs/blob/master/specs/copy-proof.md>.
 #[derive(Clone, Debug)]
 pub struct CopyEvent {
     /// Represents the start address at the source of the copy event.
@@ -225,10 +240,4 @@ pub struct CopyEvent {
     pub length: u64,
     /// Represents the list of copy steps in this copy event.
     pub steps: Vec<CopyStep>,
-    /// Helper field for witness generation.
-    pub tx_id: usize,
-    /// Helper field for witness generation.
-    pub call_id: usize,
-    /// Helper field for witness generation.
-    pub pc: ProgramCounter,
 }

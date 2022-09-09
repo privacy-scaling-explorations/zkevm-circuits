@@ -1,11 +1,9 @@
 //! Lt chip can be used to compare LT for two expressions LHS and RHS.
 
-use std::array;
-
 use eth_types::Field;
 use halo2_proofs::{
     arithmetic::FieldExt,
-    circuit::{Chip, Region},
+    circuit::{Chip, Region, Value},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, VirtualCells},
     poly::Rotation,
 };
@@ -78,7 +76,9 @@ impl<F: Field, const N_BYTES: usize> LtChip<F, N_BYTES> {
 
             let check_b = bool_check(lt);
 
-            array::IntoIter::new([check_a, check_b]).map(move |poly| q_enable.clone() * poly)
+            [check_a, check_b]
+                .into_iter()
+                .map(move |poly| q_enable.clone() * poly)
         });
 
         LtConfig { lt, diff, range }
@@ -105,7 +105,7 @@ impl<F: Field, const N_BYTES: usize> LtInstruction<F> for LtChip<F, N_BYTES> {
             || "lt chip: lt",
             config.lt,
             offset,
-            || Ok(F::from(lt as u64)),
+            || Value::known(F::from(lt as u64)),
         )?;
 
         let diff = (lhs - rhs) + (if lt { config.range } else { F::zero() });
@@ -116,7 +116,7 @@ impl<F: Field, const N_BYTES: usize> LtInstruction<F> for LtChip<F, N_BYTES> {
                 || format!("lt chip: diff byte {}", idx),
                 *diff_column,
                 offset,
-                || Ok(F::from(diff_bytes[idx] as u64)),
+                || Value::known(F::from(diff_bytes[idx] as u64)),
             )?;
         }
 
@@ -143,9 +143,9 @@ mod test {
     use eth_types::Field;
     use halo2_proofs::{
         arithmetic::FieldExt,
-        circuit::{Layouter, SimpleFloorPlanner},
+        circuit::{Layouter, SimpleFloorPlanner, Value},
         dev::MockProver,
-        pairing::bn256::Fr as Fp,
+        halo2curves::bn256::Fr as Fp,
         plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Selector},
         poly::Rotation,
     };
@@ -265,7 +265,7 @@ mod test {
                             || "first row value",
                             config.value,
                             0,
-                            || Ok(first_value),
+                            || Value::known(first_value),
                         )?;
 
                         let mut value_prev = first_value;
@@ -275,13 +275,13 @@ mod test {
                                 || "check",
                                 config.check,
                                 idx + 1,
-                                || Ok(F::from(*check as u64)),
+                                || Value::known(F::from(*check as u64)),
                             )?;
                             region.assign_advice(
                                 || "value",
                                 config.value,
                                 idx + 1,
-                                || Ok(*value),
+                                || Value::known(*value),
                             )?;
                             chip.assign(&mut region, idx + 1, value_prev, *value)?;
 
@@ -391,19 +391,19 @@ mod test {
                                 || "check",
                                 config.check,
                                 idx + 1,
-                                || Ok(F::from(*check as u64)),
+                                || Value::known(F::from(*check as u64)),
                             )?;
                             region.assign_advice(
                                 || "value_a",
                                 config.value_a,
                                 idx + 1,
-                                || Ok(*value_a),
+                                || Value::known(*value_a),
                             )?;
                             region.assign_advice(
                                 || "value_b",
                                 config.value_b,
                                 idx + 1,
-                                || Ok(*value_b),
+                                || Value::known(*value_b),
                             )?;
                             chip.assign(&mut region, idx + 1, *value_a, *value_b)?;
                         }

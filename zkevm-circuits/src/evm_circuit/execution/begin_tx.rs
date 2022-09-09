@@ -3,7 +3,6 @@ use crate::{
         execution::ExecutionGadget,
         param::N_BYTES_GAS,
         step::ExecutionState,
-        table::{AccountFieldTag, CallContextFieldTag, TxContextFieldTag},
         util::{
             common_gadget::TransferWithGasFeeGadget,
             constraint_builder::{
@@ -15,9 +14,11 @@ use crate::{
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
+    table::{AccountFieldTag, CallContextFieldTag, TxFieldTag as TxContextFieldTag},
     util::Expr,
 };
 use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar};
+use halo2_proofs::circuit::Value;
 use halo2_proofs::plonk::Error;
 
 #[derive(Clone, Debug)]
@@ -225,27 +226,45 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 .map(|idx| block.rws[idx].account_value_pair());
 
         self.tx_id
-            .assign(region, offset, Some(F::from(tx.id as u64)))?;
+            .assign(region, offset, Value::known(F::from(tx.id as u64)))?;
         self.tx_nonce
-            .assign(region, offset, Some(F::from(tx.nonce)))?;
-        self.tx_gas.assign(region, offset, Some(F::from(tx.gas)))?;
+            .assign(region, offset, Value::known(F::from(tx.nonce)))?;
+        self.tx_gas
+            .assign(region, offset, Value::known(F::from(tx.gas)))?;
         self.tx_gas_price
             .assign(region, offset, Some(tx.gas_price.to_le_bytes()))?;
         self.mul_gas_fee_by_gas
             .assign(region, offset, tx.gas_price, tx.gas, gas_fee)?;
-        self.tx_caller_address
-            .assign(region, offset, tx.caller_address.to_scalar())?;
-        self.tx_callee_address
-            .assign(region, offset, tx.callee_address.to_scalar())?;
+        self.tx_caller_address.assign(
+            region,
+            offset,
+            Value::known(
+                tx.caller_address
+                    .to_scalar()
+                    .expect("unexpected Address -> Scalar conversion failure"),
+            ),
+        )?;
+        self.tx_callee_address.assign(
+            region,
+            offset,
+            Value::known(
+                tx.callee_address
+                    .to_scalar()
+                    .expect("unexpected Address -> Scalar conversion failure"),
+            ),
+        )?;
         self.tx_is_create
-            .assign(region, offset, Some(F::from(tx.is_create as u64)))?;
+            .assign(region, offset, Value::known(F::from(tx.is_create as u64)))?;
         self.tx_call_data_length.assign(
             region,
             offset,
-            Some(F::from(tx.call_data_length as u64)),
+            Value::known(F::from(tx.call_data_length as u64)),
         )?;
-        self.tx_call_data_gas_cost
-            .assign(region, offset, Some(F::from(tx.call_data_gas_cost)))?;
+        self.tx_call_data_gas_cost.assign(
+            region,
+            offset,
+            Value::known(F::from(tx.call_data_gas_cost)),
+        )?;
         self.reversion_info.assign(
             region,
             offset,
@@ -265,7 +284,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         self.code_hash.assign(
             region,
             offset,
-            Some(RandomLinearCombination::random_linear_combine(
+            Value::known(RandomLinearCombination::random_linear_combine(
                 callee_code_hash.to_le_bytes(),
                 block.randomness,
             )),
@@ -277,7 +296,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::evm_circuit::{
-        test::{rand_bytes, run_test_circuit_incomplete_fixed_table},
+        test::{rand_bytes, run_test_circuit},
         witness::block_convert,
     };
     use bus_mapping::{evm::OpcodeId, mock::BlockData};
@@ -336,7 +355,7 @@ mod test {
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
         let block = block_convert(&builder.block, &builder.code_db);
-        assert_eq!(run_test_circuit_incomplete_fixed_table(block), Ok(()));
+        assert_eq!(run_test_circuit(block), Ok(()));
     }
 
     fn mock_tx(value: Word, gas_price: Word, calldata: Vec<u8>) -> eth_types::Transaction {
@@ -402,7 +421,7 @@ mod test {
             .unwrap();
         let block = block_convert(&builder.block, &builder.code_db);
 
-        assert_eq!(run_test_circuit_incomplete_fixed_table(block), Ok(()));
+        assert_eq!(run_test_circuit(block), Ok(()));
     }
 
     #[test]

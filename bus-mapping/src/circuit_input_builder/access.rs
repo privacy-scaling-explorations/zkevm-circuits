@@ -4,7 +4,7 @@ use ethers_core::utils::get_contract_address;
 use std::collections::{hash_map::Entry, HashMap, HashSet};
 
 /// State and Code Access with "keys/index" used in the access operation.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum AccessValue {
     /// Account access
     Account {
@@ -26,7 +26,7 @@ pub enum AccessValue {
 }
 
 /// State Access caused by a transaction or an execution step
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Access {
     step_index: Option<usize>,
     rw: RW,
@@ -54,7 +54,7 @@ fn get_call_result(trace: &[GethExecStep]) -> Option<Word> {
 }
 
 /// State and Code Access set.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct AccessSet {
     /// Set of accounts
     pub state: HashMap<Address, HashSet<Word>>,

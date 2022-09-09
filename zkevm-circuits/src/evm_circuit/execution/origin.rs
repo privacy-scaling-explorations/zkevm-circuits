@@ -3,7 +3,6 @@ use crate::{
         execution::ExecutionGadget,
         param::N_BYTES_ACCOUNT_ADDRESS,
         step::ExecutionState,
-        table::{CallContextFieldTag, TxContextFieldTag},
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
@@ -11,12 +10,12 @@ use crate::{
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
+    table::{CallContextFieldTag, TxContextFieldTag},
     util::Expr,
 };
 use bus_mapping::evm::OpcodeId;
 use eth_types::{Field, ToLittleEndian};
-use halo2_proofs::plonk::Error;
-use std::convert::TryInto;
+use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct OriginGadget<F> {
@@ -77,7 +76,7 @@ impl<F: Field> ExecutionGadget<F> for OriginGadget<F> {
 
         // Assing TxId.
         self.tx_id
-            .assign(region, offset, Some(F::from(tx.id as u64)))?;
+            .assign(region, offset, Value::known(F::from(tx.id as u64)))?;
 
         // Assign Origin addr RLC.
         self.origin.assign(

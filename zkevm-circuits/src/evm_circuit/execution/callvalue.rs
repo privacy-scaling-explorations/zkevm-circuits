@@ -2,7 +2,6 @@ use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
         step::ExecutionState,
-        table::CallContextFieldTag,
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
@@ -10,11 +9,12 @@ use crate::{
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
+    table::CallContextFieldTag,
     util::Expr,
 };
 use bus_mapping::evm::OpcodeId;
 use eth_types::{Field, ToLittleEndian};
-use halo2_proofs::plonk::Error;
+use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct CallValueGadget<F> {
@@ -76,7 +76,7 @@ impl<F: Field> ExecutionGadget<F> for CallValueGadget<F> {
         self.call_value.assign(
             region,
             offset,
-            Some(Word::random_linear_combine(
+            Value::known(Word::random_linear_combine(
                 call_value.to_le_bytes(),
                 block.randomness,
             )),

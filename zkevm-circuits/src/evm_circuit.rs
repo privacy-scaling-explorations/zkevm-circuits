@@ -1,20 +1,24 @@
 //! The EVM circuit implementation.
 
 #![allow(missing_docs)]
-use halo2_proofs::{circuit::Layouter, plonk::*};
+use halo2_proofs::{
+    circuit::{Layouter, Value},
+    plonk::*,
+};
 
 mod execution;
 pub mod param;
-mod step;
+pub(crate) mod step;
 pub(crate) mod util;
 
 pub mod table;
-pub mod witness;
 
+use crate::table::LookupTable;
+pub use crate::witness;
 use eth_types::Field;
 use execution::ExecutionConfig;
 use itertools::Itertools;
-use table::{FixedTableTag, LookupTable};
+use table::FixedTableTag;
 use witness::Block;
 
 /// EvmCircuit implements verification of execution trace of a block.
@@ -27,6 +31,7 @@ pub struct EvmCircuit<F> {
 
 impl<F: Field> EvmCircuit<F> {
     /// Configure EvmCircuit
+    #[allow(clippy::too_many_arguments)]
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         power_of_randomness: [Expression<F>; 31],
@@ -35,6 +40,7 @@ impl<F: Field> EvmCircuit<F> {
         bytecode_table: &dyn LookupTable<F>,
         block_table: &dyn LookupTable<F>,
         copy_table: &dyn LookupTable<F>,
+        keccak_table: &dyn LookupTable<F>,
     ) -> Self {
         let fixed_table = [(); 4].map(|_| meta.fixed_column());
         let byte_table = [(); 1].map(|_| meta.fixed_column());
@@ -48,6 +54,7 @@ impl<F: Field> EvmCircuit<F> {
             bytecode_table,
             block_table,
             copy_table,
+            keccak_table,
         ));
 
         Self {
@@ -71,7 +78,7 @@ impl<F: Field> EvmCircuit<F> {
                     .enumerate()
                 {
                     for (column, value) in self.fixed_table.iter().zip_eq(row) {
-                        region.assign_fixed(|| "", *column, offset, || Ok(value))?;
+                        region.assign_fixed(|| "", *column, offset, || Value::known(value))?;
                     }
                 }
 
@@ -90,7 +97,7 @@ impl<F: Field> EvmCircuit<F> {
                         || "",
                         self.byte_table[0],
                         offset,
-                        || Ok(F::from(offset as u64)),
+                        || Value::known(F::from(offset as u64)),
                     )?;
                 }
 
@@ -145,23 +152,17 @@ impl<F: Field> EvmCircuit<F> {
 #[cfg(any(feature = "test", test))]
 pub mod test {
     use crate::{
-        copy_circuit::CopyCircuit,
-        evm_circuit::{
-            table::FixedTableTag,
-            witness::{Block, BlockContext, Bytecode, RwMap, Transaction},
-            EvmCircuit,
-        },
-        rw_table::RwTable,
-        util::Expr,
+        evm_circuit::{table::FixedTableTag, witness::Block, EvmCircuit},
+        table::{BlockTable, BytecodeTable, CopyTable, KeccakTable, RwTable, TxTable},
+        util::power_of_randomness_from_instance,
     };
+    use bus_mapping::evm::OpcodeId;
     use eth_types::{Field, Word};
     use halo2_proofs::{
         circuit::{Layouter, SimpleFloorPlanner},
         dev::{MockProver, VerifyFailure},
-        plonk::{Advice, Circuit, Column, ConstraintSystem, Error},
-        poly::Rotation,
+        plonk::{Circuit, ConstraintSystem, Error},
     };
-    use itertools::Itertools;
     use rand::{
         distributions::uniform::{SampleRange, SampleUniform},
         random, thread_rng, Rng,
@@ -188,167 +189,40 @@ pub mod test {
         Word::from_big_endian(&rand_bytes_array::<32>())
     }
 
-    #[derive(Clone)]
-    pub struct TestCircuitConfig<F> {
-        tx_table: [Column<Advice>; 4],
-        rw_table: RwTable,
-        bytecode_table: [Column<Advice>; 5],
-        block_table: [Column<Advice>; 3],
-        copy_table: CopyCircuit<F>,
-        pub evm_circuit: EvmCircuit<F>,
+    /// create fixed_table_tags needed given witness block
+    pub(crate) fn detect_fixed_table_tags<F: Field>(block: &Block<F>) -> Vec<FixedTableTag> {
+        let need_bitwise_lookup = block.txs.iter().any(|tx| {
+            tx.steps.iter().any(|step| {
+                matches!(
+                    step.opcode,
+                    Some(OpcodeId::AND)
+                        | Some(OpcodeId::OR)
+                        | Some(OpcodeId::XOR)
+                        | Some(OpcodeId::NOT)
+                )
+            })
+        });
+        FixedTableTag::iter()
+            .filter(|t| {
+                !matches!(
+                    t,
+                    FixedTableTag::BitwiseAnd
+                        | FixedTableTag::BitwiseOr
+                        | FixedTableTag::BitwiseXor
+                ) || need_bitwise_lookup
+            })
+            .collect()
     }
 
-    impl<F: Field> TestCircuitConfig<F> {
-        fn load_txs(
-            &self,
-            layouter: &mut impl Layouter<F>,
-            txs: &[Transaction],
-            randomness: F,
-        ) -> Result<(), Error> {
-            layouter.assign_region(
-                || "tx table",
-                |mut region| {
-                    let mut offset = 0;
-                    for column in self.tx_table {
-                        region.assign_advice(
-                            || "tx table all-zero row",
-                            column,
-                            offset,
-                            || Ok(F::zero()),
-                        )?;
-                    }
-                    offset += 1;
-
-                    for tx in txs.iter() {
-                        for row in tx.table_assignments(randomness) {
-                            for (column, value) in self.tx_table.iter().zip_eq(row) {
-                                region.assign_advice(
-                                    || format!("tx table row {}", offset),
-                                    *column,
-                                    offset,
-                                    || Ok(value),
-                                )?;
-                            }
-                            offset += 1;
-                        }
-                    }
-                    Ok(())
-                },
-            )
-        }
-
-        fn load_rws(
-            &self,
-            layouter: &mut impl Layouter<F>,
-            rws: &RwMap,
-            randomness: F,
-        ) -> Result<(), Error> {
-            layouter.assign_region(
-                || "rw table",
-                |mut region| {
-                    let mut offset = 0;
-                    self.rw_table
-                        .assign(&mut region, offset, &Default::default())?;
-                    offset += 1;
-
-                    let mut rows = rws
-                        .0
-                        .values()
-                        .flat_map(|rws| rws.iter())
-                        .collect::<Vec<_>>();
-
-                    rows.sort_by_key(|a| a.rw_counter());
-                    let mut expected_rw_counter = 1;
-                    for rw in rows {
-                        assert!(rw.rw_counter() == expected_rw_counter);
-                        expected_rw_counter += 1;
-
-                        self.rw_table.assign(
-                            &mut region,
-                            offset,
-                            &rw.table_assignment(randomness),
-                        )?;
-                        offset += 1;
-                    }
-                    Ok(())
-                },
-            )
-        }
-
-        fn load_bytecodes<'a>(
-            &self,
-            layouter: &mut impl Layouter<F>,
-            bytecodes: impl IntoIterator<Item = &'a Bytecode> + Clone,
-            randomness: F,
-        ) -> Result<(), Error> {
-            layouter.assign_region(
-                || "bytecode table",
-                |mut region| {
-                    let mut offset = 0;
-                    for column in self.bytecode_table {
-                        region.assign_advice(
-                            || "bytecode table all-zero row",
-                            column,
-                            offset,
-                            || Ok(F::zero()),
-                        )?;
-                    }
-                    offset += 1;
-
-                    for bytecode in bytecodes.clone() {
-                        for row in bytecode.table_assignments(randomness) {
-                            for (column, value) in self.bytecode_table.iter().zip_eq(row) {
-                                region.assign_advice(
-                                    || format!("bytecode table row {}", offset),
-                                    *column,
-                                    offset,
-                                    || Ok(value),
-                                )?;
-                            }
-                            offset += 1;
-                        }
-                    }
-                    Ok(())
-                },
-            )
-        }
-
-        fn load_block(
-            &self,
-            layouter: &mut impl Layouter<F>,
-            block: &BlockContext,
-            randomness: F,
-        ) -> Result<(), Error> {
-            layouter.assign_region(
-                || "block table",
-                |mut region| {
-                    let mut offset = 0;
-                    for column in self.block_table {
-                        region.assign_advice(
-                            || "block table all-zero row",
-                            column,
-                            offset,
-                            || Ok(F::zero()),
-                        )?;
-                    }
-                    offset += 1;
-
-                    for row in block.table_assignments(randomness) {
-                        for (column, value) in self.block_table.iter().zip_eq(row) {
-                            region.assign_advice(
-                                || format!("block table row {}", offset),
-                                *column,
-                                offset,
-                                || Ok(value),
-                            )?;
-                        }
-                        offset += 1;
-                    }
-
-                    Ok(())
-                },
-            )
-        }
+    #[derive(Clone)]
+    pub struct TestCircuitConfig<F> {
+        tx_table: TxTable,
+        rw_table: RwTable,
+        bytecode_table: BytecodeTable,
+        block_table: BlockTable,
+        copy_table: CopyTable,
+        keccak_table: KeccakTable,
+        pub evm_circuit: EvmCircuit<F>,
     }
 
     #[derive(Default)]
@@ -375,29 +249,25 @@ pub mod test {
         }
 
         fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-            let tx_table = [(); 4].map(|_| meta.advice_column());
+            let tx_table = TxTable::construct(meta);
             let rw_table = RwTable::construct(meta);
-            let bytecode_table = [(); 5].map(|_| meta.advice_column());
-            let block_table = [(); 3].map(|_| meta.advice_column());
-            let copy_table = CopyCircuit::configure(meta, &tx_table, &rw_table, &bytecode_table);
+            let bytecode_table = BytecodeTable::construct(meta);
+            let block_table = BlockTable::construct(meta);
+            let q_copy_table = meta.fixed_column();
+            let copy_table = CopyTable::construct(meta, q_copy_table);
+            let keccak_table = KeccakTable::construct(meta);
 
-            // This gate is used just to get the array of expressions from the power of
-            // randomness instance column, so that later on we don't need to query
-            // columns everywhere, and can pass the power of randomness array
-            // expression everywhere.  The gate itself doesn't add any constraints.
-            let power_of_randomness = {
-                let columns = [(); 31].map(|_| meta.instance_column());
-                let mut power_of_randomness = None;
-
-                meta.create_gate("", |meta| {
-                    power_of_randomness =
-                        Some(columns.map(|column| meta.query_instance(column, Rotation::cur())));
-
-                    [0.expr()]
-                });
-
-                power_of_randomness.unwrap()
-            };
+            let power_of_randomness = power_of_randomness_from_instance(meta);
+            let evm_circuit = EvmCircuit::configure(
+                meta,
+                power_of_randomness,
+                &tx_table,
+                &rw_table,
+                &bytecode_table,
+                &block_table,
+                &copy_table,
+                &keccak_table,
+            );
 
             Self::Config {
                 tx_table,
@@ -405,15 +275,8 @@ pub mod test {
                 bytecode_table,
                 block_table,
                 copy_table,
-                evm_circuit: EvmCircuit::configure(
-                    meta,
-                    power_of_randomness,
-                    &tx_table,
-                    &rw_table,
-                    &bytecode_table,
-                    &block_table,
-                    &copy_table,
-                ),
+                keccak_table,
+                evm_circuit,
             }
         }
 
@@ -426,15 +289,34 @@ pub mod test {
                 .evm_circuit
                 .load_fixed_table(&mut layouter, self.fixed_table_tags.clone())?;
             config.evm_circuit.load_byte_table(&mut layouter)?;
-            config.load_txs(&mut layouter, &self.block.txs, self.block.randomness)?;
-            config.load_rws(&mut layouter, &self.block.rws, self.block.randomness)?;
-            config.load_bytecodes(
+            config
+                .tx_table
+                .load(&mut layouter, &self.block.txs, self.block.randomness)?;
+            self.block.rws.check_rw_counter_sanity();
+            config.rw_table.load(
+                &mut layouter,
+                &self.block.rws.table_assignments(),
+                self.block.state_circuit_pad_to,
+                self.block.randomness,
+            )?;
+            config.bytecode_table.load(
                 &mut layouter,
                 self.block.bytecodes.values(),
                 self.block.randomness,
             )?;
-            config.load_block(&mut layouter, &self.block.context, self.block.randomness)?;
-            config.copy_table.assign_block(&mut layouter, &self.block)?;
+            config
+                .block_table
+                .load(&mut layouter, &self.block.context, self.block.randomness)?;
+            config
+                .copy_table
+                .load(&mut layouter, &self.block, self.block.randomness)?;
+
+            config.keccak_table.dev_load(
+                &mut layouter,
+                &self.block.sha3_inputs,
+                self.block.randomness,
+            )?;
+
             config
                 .evm_circuit
                 .assign_block_exact(&mut layouter, &self.block)
@@ -455,10 +337,8 @@ pub mod test {
         }
     }
 
-    pub fn run_test_circuit<F: Field>(
-        block: Block<F>,
-        fixed_table_tags: Vec<FixedTableTag>,
-    ) -> Result<(), Vec<VerifyFailure>> {
+    pub fn run_test_circuit<F: Field>(block: Block<F>) -> Result<(), Vec<VerifyFailure>> {
+        let fixed_table_tags = detect_fixed_table_tags(&block);
         let log2_ceil = |n| u32::BITS - (n as u32).leading_zeros() - (n & (n - 1) == 0) as u32;
 
         let num_rows_required_for_steps = TestCircuit::get_num_rows_required(&block);
@@ -487,45 +367,24 @@ pub mod test {
         let prover = MockProver::<F>::run(k, &circuit, power_of_randomness).unwrap();
         prover.verify_at_rows(active_gate_rows.into_iter(), active_lookup_rows.into_iter())
     }
-
-    pub fn run_test_circuit_incomplete_fixed_table<F: Field>(
-        block: Block<F>,
-    ) -> Result<(), Vec<VerifyFailure>> {
-        run_test_circuit(
-            block,
-            vec![
-                FixedTableTag::Zero,
-                FixedTableTag::Range5,
-                FixedTableTag::Range16,
-                FixedTableTag::Range32,
-                FixedTableTag::Range64,
-                FixedTableTag::Range256,
-                FixedTableTag::Range512,
-                FixedTableTag::Range1024,
-                FixedTableTag::SignByte,
-                FixedTableTag::ResponsibleOpcode,
-                FixedTableTag::Pow2,
-            ],
-        )
-    }
-
-    pub fn run_test_circuit_complete_fixed_table<F: Field>(
-        block: Block<F>,
-    ) -> Result<(), Vec<VerifyFailure>> {
-        run_test_circuit(block, FixedTableTag::iter().collect())
-    }
 }
 
 #[cfg(test)]
 mod evm_circuit_stats {
+
     use super::test::*;
     use super::*;
     use crate::evm_circuit::step::ExecutionState;
     use eth_types::{bytecode, evm_types::OpcodeId, geth_types::GethData};
-    use halo2_proofs::pairing::bn256::Fr;
+    use halo2_proofs::halo2curves::bn256::Fr;
     use halo2_proofs::plonk::ConstraintSystem;
     use mock::test_ctx::{helpers::*, TestContext};
     use strum::IntoEnumIterator;
+
+    #[test]
+    pub fn empty_evm_circuit() {
+        run_test_circuit(Block::<Fr>::default()).unwrap();
+    }
 
     /// This function prints to stdout a table with all the implemented states
     /// and their responsible opcodes with the following stats:
@@ -584,9 +443,9 @@ mod evm_circuit_stats {
         println!("| ---            | ---            | ---|    --- | ---   |");
         for (state, opcode, height, gas_cost) in stats {
             println!(
-                "| {: <14} | {: <14} | {: >2} | {: >6} | {: >1.3} |",
-                format!("{:?}", state),
-                format!("{:?}", opcode),
+                "| {: <14?} | {: <14?} | {: >2} | {: >6} | {: >1.3} |",
+                state,
+                opcode,
                 height,
                 gas_cost,
                 height as f64 / gas_cost as f64

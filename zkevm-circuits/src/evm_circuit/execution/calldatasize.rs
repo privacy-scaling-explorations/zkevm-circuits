@@ -3,7 +3,6 @@ use crate::{
         execution::ExecutionGadget,
         param::N_BYTES_CALLDATASIZE,
         step::ExecutionState,
-        table::CallContextFieldTag,
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
@@ -11,13 +10,12 @@ use crate::{
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
+    table::CallContextFieldTag,
     util::Expr,
 };
 use bus_mapping::evm::OpcodeId;
 use eth_types::{Field, ToLittleEndian};
 use halo2_proofs::plonk::Error;
-
-use std::convert::TryInto;
 
 #[derive(Clone, Debug)]
 pub(crate) struct CallDataSizeGadget<F> {
@@ -91,7 +89,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataSizeGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::evm_circuit::{
-        test::{rand_bytes, run_test_circuit_incomplete_fixed_table},
+        test::{rand_bytes, run_test_circuit},
         witness::block_convert,
     };
     use eth_types::{address, bytecode, Word};
@@ -173,7 +171,7 @@ mod test {
             .handle_block(&block_data.eth_block, &block_data.geth_traces)
             .unwrap();
         let block = block_convert(&builder.block, &builder.code_db);
-        assert_eq!(run_test_circuit_incomplete_fixed_table(block), Ok(()));
+        assert_eq!(run_test_circuit(block), Ok(()));
     }
 
     #[test]

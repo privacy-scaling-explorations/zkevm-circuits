@@ -10,12 +10,11 @@ use crate::Variable;
 use digest::{FixedOutput, Input};
 use eth_types::Field;
 use halo2_proofs::{
-    circuit::Region,
+    circuit::{Region, Value},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, Selector},
     poly::Rotation,
 };
 use sha3::{Digest, Keccak256};
-use std::convert::TryInto;
 
 #[cfg(test)]
 use halo2_proofs::circuit::Layouter;
@@ -117,7 +116,7 @@ impl<F: Field> WordConfig<F> {
                         || format!("load {}", byte),
                         self.byte_lookup,
                         byte.into(),
-                        || Ok(F::from(byte as u64)),
+                        || Value::known(F::from(byte as u64)),
                     )?;
                 }
 
@@ -131,7 +130,7 @@ impl<F: Field> WordConfig<F> {
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
-        word: [Option<u8>; 32],
+        word: [Value<u8>; 32],
     ) -> Result<Word<F>, Error> {
         let mut bytes: Vec<Variable<u8, F>> = Vec::with_capacity(32);
 
@@ -144,7 +143,7 @@ impl<F: Field> WordConfig<F> {
                 || format!("assign byte {}", idx),
                 *column,
                 offset,
-                || byte_field_elem.ok_or(Error::Synthesis),
+                || byte_field_elem,
             )?;
 
             bytes.push(Variable::new(cell, *byte));
@@ -161,8 +160,7 @@ mod tests {
         arithmetic::Field as Halo2Field,
         circuit::SimpleFloorPlanner,
         dev::{FailureLocation, MockProver, VerifyFailure},
-        pairing::bn256::Fr as Fp,
-        pairing::group::ff::PrimeField,
+        halo2curves::{bn256::Fr as Fp, group::ff::PrimeField},
         plonk::{Circuit, Instance},
     };
     use rand::SeedableRng;
@@ -173,7 +171,7 @@ mod tests {
     fn evm_word() {
         #[derive(Default)]
         struct MyCircuit<F: Field> {
-            word: [Option<u8>; 32],
+            word: [Value<u8>; 32],
             _marker: PhantomData<F>,
         }
 
@@ -247,7 +245,7 @@ mod tests {
                 word: word
                     .to_repr()
                     .iter()
-                    .map(|b| Some(*b))
+                    .map(|b| Value::known(*b))
                     .collect::<Vec<_>>()
                     .try_into()
                     .unwrap(),

@@ -4,7 +4,7 @@ use crate::{evm_types::OpcodeId, Bytes, Word};
 use std::collections::HashMap;
 
 /// Helper struct that represents a single element in a bytecode.
-#[derive(Copy, Clone, Debug, Default, PartialEq)]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub struct BytecodeElement {
     /// The byte value of the element.
     pub value: u8,
@@ -13,7 +13,7 @@ pub struct BytecodeElement {
 }
 
 /// EVM Bytecode
-#[derive(Debug, Default, Clone, PartialEq)]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct Bytecode {
     code: Vec<BytecodeElement>,
     num_opcodes: usize,

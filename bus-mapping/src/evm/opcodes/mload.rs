@@ -1,7 +1,6 @@
 use super::Opcode;
 use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
 use crate::Error;
-use core::convert::TryInto;
 use eth_types::evm_types::MemoryAddress;
 use eth_types::{GethExecStep, ToBigEndian};
 
@@ -33,7 +32,7 @@ impl Opcode for Mload {
         let mut mem_read_addr: MemoryAddress = stack_value_read.try_into()?;
         // Accesses to memory that hasn't been initialized are valid, and return
         // 0.
-        let mem_read_value = geth_steps[1].memory.read_word(mem_read_addr);
+        let mem_read_value = geth_steps[1].stack.last()?;
 
         //
         // First stack write
@@ -49,6 +48,13 @@ impl Opcode for Mload {
             // Update mem_read_addr to next byte's one
             mem_read_addr += MemoryAddress::from(1);
         }
+
+        // reconstruction
+        let offset = geth_step.stack.nth_last(0)?;
+        let offset_addr: MemoryAddress = offset.try_into()?;
+
+        let minimal_length = offset_addr.0 + 32;
+        state.call_ctx_mut()?.memory.extend_at_least(minimal_length);
 
         Ok(vec![exec_step])
     }

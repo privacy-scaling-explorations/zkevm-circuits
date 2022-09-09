@@ -3,30 +3,33 @@ use crate::{
     evm_circuit::{
         param::{MAX_STEP_HEIGHT, STEP_WIDTH},
         step::{ExecutionState, Step},
-        table::{LookupTable, Table},
+        table::Table,
         util::{
             constraint_builder::{BaseConstraintBuilder, ConstraintBuilder},
             rlc, CellType,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
+    table::LookupTable,
     util::Expr,
 };
 use eth_types::Field;
 use halo2_proofs::{
     arithmetic::FieldExt,
-    circuit::{Layouter, Region},
+    circuit::{Layouter, Region, Value},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector, VirtualCells},
     poly::Rotation,
 };
-use std::{collections::HashMap, convert::TryInto, iter};
+use std::{collections::HashMap, iter};
 use strum::IntoEnumIterator;
 
 mod add_sub;
 mod addmod;
+mod address;
 mod begin_tx;
 mod bitwise;
 mod block_ctx;
+mod blockhash;
 mod byte;
 mod call;
 mod calldatacopy;
@@ -42,6 +45,7 @@ mod dummy;
 mod dup;
 mod end_block;
 mod end_tx;
+mod error_oog_constant;
 mod error_oog_static_memory;
 mod extcodehash;
 mod gas;
@@ -63,7 +67,8 @@ mod push;
 mod r#return;
 mod sdiv_smod;
 mod selfbalance;
-mod shr;
+mod sha3;
+mod shl_shr;
 mod signed_comparator;
 mod signextend;
 mod sload;
@@ -71,11 +76,14 @@ mod sstore;
 mod stop;
 mod swap;
 
+use self::sha3::Sha3Gadget;
 use add_sub::AddSubGadget;
 use addmod::AddModGadget;
+use address::AddressGadget;
 use begin_tx::BeginTxGadget;
 use bitwise::BitwiseGadget;
 use block_ctx::{BlockCtxU160Gadget, BlockCtxU256Gadget, BlockCtxU64Gadget};
+use blockhash::BlockHashGadget;
 use byte::ByteGadget;
 use call::CallGadget;
 use calldatacopy::CallDataCopyGadget;
@@ -91,7 +99,7 @@ use dummy::DummyGadget;
 use dup::DupGadget;
 use end_block::EndBlockGadget;
 use end_tx::EndTxGadget;
-use error_oog_static_memory::ErrorOOGStaticMemoryGadget;
+use error_oog_constant::ErrorOOGConstantGadget;
 use extcodehash::ExtcodehashGadget;
 use gas::GasGadget;
 use gasprice::GasPriceGadget;
@@ -112,7 +120,7 @@ use push::PushGadget;
 use r#return::ReturnGadget;
 use sdiv_smod::SignedDivModGadget;
 use selfbalance::SelfbalanceGadget;
-use shr::ShrGadget;
+use shl_shr::ShlShrGadget;
 use signed_comparator::SignedComparatorGadget;
 use signextend::SignextendGadget;
 use sload::SloadGadget;
@@ -140,11 +148,18 @@ pub(crate) trait ExecutionGadget<F: FieldExt> {
 
 #[derive(Clone, Debug)]
 pub(crate) struct ExecutionConfig<F> {
+    // EVM Circuit selector, which enables all usable rows.  The rows where this selector is
+    // disabled won't verify any constraint (they can be unused rows or rows with blinding
+    // factors).
     q_usable: Selector,
+    // Dynamic selector that is enabled at the rows where each assigned execution step starts (a
+    // step has dynamic height).
     q_step: Column<Advice>,
     num_rows_until_next_step: Column<Advice>,
     num_rows_inv: Column<Advice>,
+    // Selector enabled in the row where the first execution step starts.
     q_step_first: Selector,
+    // Selector enabled in the row where the last execution step starts.
     q_step_last: Selector,
     advices: [Column<Advice>; STEP_WIDTH],
     step: Step<F>,
@@ -157,6 +172,7 @@ pub(crate) struct ExecutionConfig<F> {
     // opcode gadgets
     add_sub_gadget: AddSubGadget<F>,
     addmod_gadget: AddModGadget<F>,
+    address_gadget: AddressGadget<F>,
     bitwise_gadget: BitwiseGadget<F>,
     byte_gadget: ByteGadget<F>,
     call_gadget: CallGadget<F>,
@@ -190,13 +206,10 @@ pub(crate) struct ExecutionConfig<F> {
     return_gadget: ReturnGadget<F>,
     sdiv_smod_gadget: SignedDivModGadget<F>,
     selfbalance_gadget: SelfbalanceGadget<F>,
-    shr_gadget: ShrGadget<F>,
-    sha3_gadget: DummyGadget<F, 2, 1, { ExecutionState::SHA3 }>,
-    address_gadget: DummyGadget<F, 0, 1, { ExecutionState::ADDRESS }>,
+    sha3_gadget: Sha3Gadget<F>,
+    shl_shr_gadget: ShlShrGadget<F>,
     balance_gadget: DummyGadget<F, 1, 1, { ExecutionState::BALANCE }>,
-    blockhash_gadget: DummyGadget<F, 1, 1, { ExecutionState::BLOCKHASH }>,
     exp_gadget: DummyGadget<F, 2, 1, { ExecutionState::EXP }>,
-    shl_gadget: DummyGadget<F, 2, 1, { ExecutionState::SHL }>,
     sar_gadget: DummyGadget<F, 2, 1, { ExecutionState::SAR }>,
     extcodesize_gadget: DummyGadget<F, 1, 1, { ExecutionState::EXTCODESIZE }>,
     extcodecopy_gadget: DummyGadget<F, 4, 0, { ExecutionState::EXTCODECOPY }>,
@@ -214,11 +227,43 @@ pub(crate) struct ExecutionConfig<F> {
     sstore_gadget: SstoreGadget<F>,
     stop_gadget: StopGadget<F>,
     swap_gadget: SwapGadget<F>,
+    blockhash_gadget: BlockHashGadget<F>,
     block_ctx_u64_gadget: BlockCtxU64Gadget<F>,
     block_ctx_u160_gadget: BlockCtxU160Gadget<F>,
     block_ctx_u256_gadget: BlockCtxU256Gadget<F>,
     // error gadgets
-    error_oog_static_memory_gadget: ErrorOOGStaticMemoryGadget<F>,
+    error_oog_constant: ErrorOOGConstantGadget<F>,
+    error_oog_static_memory_gadget:
+        DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasStaticMemoryExpansion }>,
+    error_stack_overflow: DummyGadget<F, 0, 0, { ExecutionState::ErrorStackOverflow }>,
+    error_stack_underflow: DummyGadget<F, 0, 0, { ExecutionState::ErrorStackUnderflow }>,
+    error_oog_dynamic_memory_gadget:
+        DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasDynamicMemoryExpansion }>,
+    error_oog_log: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasLOG }>,
+    error_oog_sload: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasSLOAD }>,
+    error_oog_sstore: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasSSTORE }>,
+    error_oog_call: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasCALL }>,
+    error_oog_memory_copy: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasMemoryCopy }>,
+    error_oog_account_access: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasAccountAccess }>,
+    error_oog_sha3: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasSHA3 }>,
+    error_oog_ext_codecopy: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasEXTCODECOPY }>,
+    error_oog_call_code: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasCALLCODE }>,
+    error_oog_delegate_call: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasDELEGATECALL }>,
+    error_oog_exp: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasEXP }>,
+    error_oog_create2: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasCREATE2 }>,
+    error_oog_static_call: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasSTATICCALL }>,
+    error_oog_self_destruct: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasSELFDESTRUCT }>,
+    error_oog_code_store: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasCodeStore }>,
+    error_insufficient_balance: DummyGadget<F, 0, 0, { ExecutionState::ErrorInsufficientBalance }>,
+    error_invalid_jump: DummyGadget<F, 0, 0, { ExecutionState::ErrorInvalidJump }>,
+    error_depth: DummyGadget<F, 0, 0, { ExecutionState::ErrorDepth }>,
+    error_write_protection: DummyGadget<F, 0, 0, { ExecutionState::ErrorWriteProtection }>,
+    error_contract_address_collision:
+        DummyGadget<F, 0, 0, { ExecutionState::ErrorContractAddressCollision }>,
+    error_invalid_creation_code: DummyGadget<F, 0, 0, { ExecutionState::ErrorInvalidCreationCode }>,
+    error_return_data_out_of_bound:
+        DummyGadget<F, 0, 0, { ExecutionState::ErrorReturnDataOutOfBound }>,
+    invalid_opcode_gadget: DummyGadget<F, 0, 0, { ExecutionState::ErrorInvalidOpcode }>,
 }
 
 impl<F: Field> ExecutionConfig<F> {
@@ -233,6 +278,7 @@ impl<F: Field> ExecutionConfig<F> {
         bytecode_table: &dyn LookupTable<F>,
         block_table: &dyn LookupTable<F>,
         copy_table: &dyn LookupTable<F>,
+        keccak_table: &dyn LookupTable<F>,
     ) -> Self {
         let q_usable = meta.complex_selector();
         let q_step = meta.advice_column();
@@ -251,23 +297,7 @@ impl<F: Field> ExecutionConfig<F> {
             let q_step_first = meta.query_selector(q_step_first);
             let q_step_last = meta.query_selector(q_step_last);
 
-            // Only one of execution_state should be enabled
-            let sum_to_one = (
-                "Only one of execution_state should be enabled",
-                step_curr
-                    .state
-                    .execution_state
-                    .iter()
-                    .fold(1u64.expr(), |acc, cell| acc - cell.expr()),
-            );
-
-            // Cells representation for execution_state should be bool.
-            let bool_checks = step_curr.state.execution_state.iter().map(|cell| {
-                (
-                    "Representation for execution_state should be bool",
-                    cell.expr() * (1u64.expr() - cell.expr()),
-                )
-            });
+            let execution_state_selector_constraints = step_curr.state.execution_state.configure();
 
             let _first_step_check = {
                 let begin_tx_selector =
@@ -287,8 +317,8 @@ impl<F: Field> ExecutionConfig<F> {
                 ))
             };
 
-            iter::once(sum_to_one)
-                .chain(bool_checks)
+            execution_state_selector_constraints
+                .into_iter()
                 .map(move |(name, poly)| (name, q_usable.clone() * q_step.clone() * poly))
             // TODO: Enable these after incomplete trace is no longer necessary.
             // .chain(first_step_check)
@@ -406,7 +436,6 @@ impl<F: Field> ExecutionConfig<F> {
             balance_gadget: configure_gadget!(),
             blockhash_gadget: configure_gadget!(),
             exp_gadget: configure_gadget!(),
-            shl_gadget: configure_gadget!(),
             sar_gadget: configure_gadget!(),
             extcodesize_gadget: configure_gadget!(),
             extcodecopy_gadget: configure_gadget!(),
@@ -418,7 +447,7 @@ impl<F: Field> ExecutionConfig<F> {
             create2_gadget: configure_gadget!(),
             staticcall_gadget: configure_gadget!(),
             selfdestruct_gadget: configure_gadget!(),
-            shr_gadget: configure_gadget!(),
+            shl_shr_gadget: configure_gadget!(),
             signed_comparator_gadget: configure_gadget!(),
             signextend_gadget: configure_gadget!(),
             sload_gadget: configure_gadget!(),
@@ -429,7 +458,34 @@ impl<F: Field> ExecutionConfig<F> {
             block_ctx_u160_gadget: configure_gadget!(),
             block_ctx_u256_gadget: configure_gadget!(),
             // error gadgets
+            error_oog_constant: configure_gadget!(),
             error_oog_static_memory_gadget: configure_gadget!(),
+            error_stack_overflow: configure_gadget!(),
+            error_stack_underflow: configure_gadget!(),
+            error_oog_dynamic_memory_gadget: configure_gadget!(),
+            error_oog_log: configure_gadget!(),
+            error_oog_sload: configure_gadget!(),
+            error_oog_sstore: configure_gadget!(),
+            error_oog_call: configure_gadget!(),
+            error_oog_memory_copy: configure_gadget!(),
+            error_oog_account_access: configure_gadget!(),
+            error_oog_sha3: configure_gadget!(),
+            error_oog_ext_codecopy: configure_gadget!(),
+            error_oog_call_code: configure_gadget!(),
+            error_oog_delegate_call: configure_gadget!(),
+            error_oog_exp: configure_gadget!(),
+            error_oog_create2: configure_gadget!(),
+            error_oog_static_call: configure_gadget!(),
+            error_oog_self_destruct: configure_gadget!(),
+            error_oog_code_store: configure_gadget!(),
+            error_insufficient_balance: configure_gadget!(),
+            error_invalid_jump: configure_gadget!(),
+            error_write_protection: configure_gadget!(),
+            error_depth: configure_gadget!(),
+            error_contract_address_collision: configure_gadget!(),
+            error_invalid_creation_code: configure_gadget!(),
+            error_return_data_out_of_bound: configure_gadget!(),
+            invalid_opcode_gadget: configure_gadget!(),
             // step and presets
             step: step_curr,
             height_map,
@@ -445,6 +501,7 @@ impl<F: Field> ExecutionConfig<F> {
             bytecode_table,
             block_table,
             copy_table,
+            keccak_table,
             &power_of_randomness,
             &cell_manager,
         );
@@ -619,6 +676,7 @@ impl<F: Field> ExecutionConfig<F> {
         bytecode_table: &dyn LookupTable<F>,
         block_table: &dyn LookupTable<F>,
         copy_table: &dyn LookupTable<F>,
+        keccak_table: &dyn LookupTable<F>,
         power_of_randomness: &[Expression<F>; 31],
         cell_manager: &CellManager<F>,
     ) {
@@ -634,6 +692,7 @@ impl<F: Field> ExecutionConfig<F> {
                         Table::Block => block_table,
                         Table::Byte => byte_table,
                         Table::Copy => copy_table,
+                        Table::Keccak => keccak_table,
                     }
                     .table_exprs(meta);
                     vec![(
@@ -652,7 +711,7 @@ impl<F: Field> ExecutionConfig<F> {
         &self,
         layouter: &mut impl Layouter<F>,
         block: &Block<F>,
-        _exact: bool,
+        exact: bool,
     ) -> Result<(), Error> {
         let power_of_randomness = (1..32)
             .map(|exp| block.randomness.pow(&[exp, 0, 0, 0]))
@@ -667,11 +726,28 @@ impl<F: Field> ExecutionConfig<F> {
 
                 self.q_step_first.enable(&mut region, offset)?;
 
+                // handle EndBlock
+                let dummy_tx = Transaction {
+                    calls: vec![Default::default()],
+                    ..Default::default()
+                };
+                let last_tx = block.txs.last().unwrap_or(&dummy_tx);
+                let end_block_state = &ExecStep {
+                    rw_counter: if block.txs.is_empty() {
+                        0
+                    } else {
+                        // if it is the first tx,  less 1 rw lookup, refer to end_tx gadget
+                        last_tx.steps.last().unwrap().rw_counter + 9 - (last_tx.id == 1) as usize
+                    },
+                    execution_state: ExecutionState::EndBlock,
+                    ..Default::default()
+                };
                 // Collect all steps
                 let mut steps = block
                     .txs
                     .iter()
                     .flat_map(|tx| tx.steps.iter().map(move |step| (tx, step)))
+                    .chain(iter::repeat((last_tx, end_block_state)))
                     .peekable();
 
                 let mut last_height = 0;
@@ -702,7 +778,7 @@ impl<F: Field> ExecutionConfig<F> {
                             || "step selector",
                             self.q_step,
                             offset,
-                            || Ok(if idx == 0 { F::one() } else { F::zero() }),
+                            || Value::known(if idx == 0 { F::one() } else { F::zero() }),
                         )?;
                         let value = if idx == 0 {
                             F::zero()
@@ -713,36 +789,54 @@ impl<F: Field> ExecutionConfig<F> {
                             || "step height",
                             self.num_rows_until_next_step,
                             offset,
-                            || Ok(value),
+                            || Value::known(value),
                         )?;
                         region.assign_advice(
                             || "step height inv",
                             self.num_rows_inv,
                             offset,
-                            || Ok(value.invert().unwrap_or(F::zero())),
+                            || Value::known(value.invert().unwrap_or(F::zero())),
                         )?;
                     }
 
                     offset += height;
                     last_height = height;
+
+                    if step.execution_state == ExecutionState::EndBlock {
+                        // evm_circuit_pad_to == 0 means no extra padding
+                        if exact || block.evm_circuit_pad_to == 0 {
+                            // no padding
+                            break;
+                        } else {
+                            // padding
+                            if offset >= block.evm_circuit_pad_to {
+                                if offset > block.evm_circuit_pad_to {
+                                    log::warn!(
+                                        "evm circuit offset larger than padding: {} > {}",
+                                        offset,
+                                        block.evm_circuit_pad_to
+                                    );
+                                }
+                                break;
+                            }
+                        }
+                    }
                 }
+
                 // These are still referenced (but not used) in next rows
                 region.assign_advice(
                     || "step height",
                     self.num_rows_until_next_step,
                     offset,
-                    || Ok(F::zero()),
+                    || Value::known(F::zero()),
                 )?;
                 region.assign_advice(
                     || "step height inv",
                     self.q_step,
                     offset,
-                    || Ok(F::zero()),
+                    || Value::known(F::zero()),
                 )?;
 
-                // If not exact:
-                // TODO: Pad leftover region to the desired capacity
-                // TODO: Enable q_step_last
                 self.q_step_last.enable(&mut region, offset - last_height)?;
 
                 Ok(())
@@ -820,6 +914,7 @@ impl<F: Field> ExecutionConfig<F> {
             // opcode
             ExecutionState::ADD_SUB => assign_exec_step!(self.add_sub_gadget),
             ExecutionState::ADDMOD => assign_exec_step!(self.addmod_gadget),
+            ExecutionState::ADDRESS => assign_exec_step!(self.address_gadget),
             ExecutionState::BITWISE => assign_exec_step!(self.bitwise_gadget),
             ExecutionState::BYTE => assign_exec_step!(self.byte_gadget),
             ExecutionState::CALL => assign_exec_step!(self.call_gadget),
@@ -856,14 +951,11 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::BLOCKCTXU64 => assign_exec_step!(self.block_ctx_u64_gadget),
             ExecutionState::BLOCKCTXU160 => assign_exec_step!(self.block_ctx_u160_gadget),
             ExecutionState::BLOCKCTXU256 => assign_exec_step!(self.block_ctx_u256_gadget),
+            ExecutionState::BLOCKHASH => assign_exec_step!(self.blockhash_gadget),
             ExecutionState::SELFBALANCE => assign_exec_step!(self.selfbalance_gadget),
             // dummy gadgets
-            ExecutionState::SHA3 => assign_exec_step!(self.sha3_gadget),
-            ExecutionState::ADDRESS => assign_exec_step!(self.address_gadget),
             ExecutionState::BALANCE => assign_exec_step!(self.balance_gadget),
-            ExecutionState::BLOCKHASH => assign_exec_step!(self.blockhash_gadget),
             ExecutionState::EXP => assign_exec_step!(self.exp_gadget),
-            ExecutionState::SHL => assign_exec_step!(self.shl_gadget),
             ExecutionState::SAR => assign_exec_step!(self.sar_gadget),
             ExecutionState::EXTCODESIZE => assign_exec_step!(self.extcodesize_gadget),
             ExecutionState::EXTCODECOPY => assign_exec_step!(self.extcodecopy_gadget),
@@ -876,28 +968,165 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::STATICCALL => assign_exec_step!(self.staticcall_gadget),
             ExecutionState::SELFDESTRUCT => assign_exec_step!(self.selfdestruct_gadget),
             // end of dummy gadgets
-            ExecutionState::SHR => assign_exec_step!(self.shr_gadget),
+            ExecutionState::SHA3 => assign_exec_step!(self.sha3_gadget),
+            ExecutionState::SHL_SHR => assign_exec_step!(self.shl_shr_gadget),
             ExecutionState::SIGNEXTEND => assign_exec_step!(self.signextend_gadget),
             ExecutionState::SLOAD => assign_exec_step!(self.sload_gadget),
             ExecutionState::SSTORE => assign_exec_step!(self.sstore_gadget),
             ExecutionState::STOP => assign_exec_step!(self.stop_gadget),
             ExecutionState::SWAP => assign_exec_step!(self.swap_gadget),
-            // errors
+            // dummy errors
             ExecutionState::ErrorOutOfGasStaticMemoryExpansion => {
                 assign_exec_step!(self.error_oog_static_memory_gadget)
             }
+            ExecutionState::ErrorOutOfGasConstant => {
+                assign_exec_step!(self.error_oog_constant)
+            }
+            ExecutionState::ErrorOutOfGasDynamicMemoryExpansion => {
+                assign_exec_step!(self.error_oog_dynamic_memory_gadget)
+            }
+            ExecutionState::ErrorOutOfGasLOG => {
+                assign_exec_step!(self.error_oog_log)
+            }
+            ExecutionState::ErrorOutOfGasSLOAD => {
+                assign_exec_step!(self.error_oog_sload)
+            }
+            ExecutionState::ErrorOutOfGasSSTORE => {
+                assign_exec_step!(self.error_oog_sstore)
+            }
+            ExecutionState::ErrorOutOfGasCALL => {
+                assign_exec_step!(self.error_oog_call)
+            }
+            ExecutionState::ErrorOutOfGasMemoryCopy => {
+                assign_exec_step!(self.error_oog_memory_copy)
+            }
+            ExecutionState::ErrorOutOfGasAccountAccess => {
+                assign_exec_step!(self.error_oog_account_access)
+            }
+            ExecutionState::ErrorOutOfGasSHA3 => {
+                assign_exec_step!(self.error_oog_sha3)
+            }
+            ExecutionState::ErrorOutOfGasEXTCODECOPY => {
+                assign_exec_step!(self.error_oog_ext_codecopy)
+            }
+            ExecutionState::ErrorOutOfGasCALLCODE => {
+                assign_exec_step!(self.error_oog_call_code)
+            }
+            ExecutionState::ErrorOutOfGasDELEGATECALL => {
+                assign_exec_step!(self.error_oog_delegate_call)
+            }
+            ExecutionState::ErrorOutOfGasEXP => {
+                assign_exec_step!(self.error_oog_exp)
+            }
+            ExecutionState::ErrorOutOfGasCREATE2 => {
+                assign_exec_step!(self.error_oog_create2)
+            }
+            ExecutionState::ErrorOutOfGasSTATICCALL => {
+                assign_exec_step!(self.error_oog_static_call)
+            }
+            ExecutionState::ErrorOutOfGasSELFDESTRUCT => {
+                assign_exec_step!(self.error_oog_self_destruct)
+            }
+
+            ExecutionState::ErrorOutOfGasCodeStore => {
+                assign_exec_step!(self.error_oog_code_store)
+            }
+            ExecutionState::ErrorStackOverflow => {
+                assign_exec_step!(self.error_stack_overflow)
+            }
+            ExecutionState::ErrorStackUnderflow => {
+                assign_exec_step!(self.error_stack_underflow)
+            }
+            ExecutionState::ErrorInsufficientBalance => {
+                assign_exec_step!(self.error_insufficient_balance)
+            }
+            ExecutionState::ErrorInvalidJump => {
+                assign_exec_step!(self.error_invalid_jump)
+            }
+            ExecutionState::ErrorWriteProtection => {
+                assign_exec_step!(self.error_write_protection)
+            }
+            ExecutionState::ErrorDepth => {
+                assign_exec_step!(self.error_depth)
+            }
+            ExecutionState::ErrorContractAddressCollision => {
+                assign_exec_step!(self.error_contract_address_collision)
+            }
+            ExecutionState::ErrorInvalidCreationCode => {
+                assign_exec_step!(self.error_invalid_creation_code)
+            }
+            ExecutionState::ErrorReturnDataOutOfBound => {
+                assign_exec_step!(self.error_return_data_out_of_bound)
+            }
+
+            ExecutionState::ErrorInvalidOpcode => {
+                assign_exec_step!(self.invalid_opcode_gadget)
+            }
+
             _ => unimplemented!("unimplemented ExecutionState: {:?}", step.execution_state),
         }
 
         // Fill in the witness values for stored expressions
+        let assigned_stored_expressions = self.assign_stored_expressions(region, offset, step)?;
+
+        Self::check_rw_lookup(&assigned_stored_expressions, step, block);
+        Ok(())
+    }
+
+    fn assign_stored_expressions(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+        step: &ExecStep,
+    ) -> Result<Vec<(String, F)>, Error> {
+        let mut assigned_stored_expressions = Vec::new();
         for stored_expression in self
             .stored_expressions_map
             .get(&step.execution_state)
             .unwrap_or_else(|| panic!("Execution state unknown: {:?}", step.execution_state))
         {
-            stored_expression.assign(region, offset)?;
+            let assigned = stored_expression.assign(region, offset)?;
+            assigned.value().map(|v| {
+                let name = stored_expression.name.clone();
+                assigned_stored_expressions.push((name, *v));
+            });
+        }
+        Ok(assigned_stored_expressions)
+    }
+
+    fn check_rw_lookup(
+        assigned_stored_expressions: &[(String, F)],
+        step: &ExecStep,
+        block: &Block<F>,
+    ) {
+        let mut assigned_rw_values = Vec::new();
+        // Reversion lookup expressions have different ordering compared to rw table,
+        // making it a bit complex to check,
+        // so we skip checking reversion lookups.
+        for (name, v) in assigned_stored_expressions {
+            if name.starts_with("rw lookup ")
+                && !name.contains(" with reversion")
+                && !v.is_zero_vartime()
+                && !assigned_rw_values.contains(&(name.clone(), *v))
+            {
+                assigned_rw_values.push((name.clone(), *v));
+            }
         }
 
-        Ok(())
+        for (idx, assigned_rw_value) in assigned_rw_values.iter().enumerate() {
+            let rw_idx = step.rw_indices[idx];
+            let rw = block.rws[rw_idx];
+            let table_assignments = rw.table_assignment(block.randomness);
+            let rlc = table_assignments.rlc(block.randomness);
+            if rlc != assigned_rw_value.1 {
+                log::error!(
+                    "incorrect rw witness. lookup input name: \"{}\". rw: {:?}, rw index: {:?}, {}th rw of step {:?}",
+                    assigned_rw_value.0,
+                    rw,
+                    rw_idx,
+                    idx,
+                    step.execution_state);
+            }
+        }
     }
 }
