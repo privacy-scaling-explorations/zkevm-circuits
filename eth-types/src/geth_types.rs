@@ -198,7 +198,7 @@ impl Transaction {
         )?;
         // msg = rlp([nonce, gasPrice, gas, to, value, data, sig_v, r, s])
         let req: TransactionRequest = self.into();
-        let msg = req.chain_id(chain_id).rlp_unsigned();
+        let msg = req.chain_id(chain_id).rlp();
         let msg_hash: [u8; 32] = Keccak256::digest(&msg)
             .as_slice()
             .to_vec()
