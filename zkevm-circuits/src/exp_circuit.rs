@@ -6,8 +6,8 @@ use gadgets::{
     util::{and, not, or, Expr},
 };
 use halo2_proofs::{
-    circuit::{Layouter, Value},
-    plonk::{ConstraintSystem, Error, Selector},
+    circuit::{Layouter, Region, Value},
+    plonk::{Advice, Column, ConstraintSystem, Error, Selector},
     poly::Rotation,
 };
 
@@ -21,6 +21,8 @@ use crate::{
 pub struct ExpCircuit<F> {
     /// Whether the row is a step.
     pub q_step: Selector,
+    /// Whether the row is reserved for padding after an exponentiation trace.
+    pub is_pad: Column<Advice>,
     /// Multiplication gadget to check that the reducing exponent's division by
     /// 2 was done correctly.
     pub exp_div: MulAddConfig<F>,
@@ -34,6 +36,7 @@ impl<F: Field> ExpCircuit<F> {
     /// Configure the exponentiation circuit.
     pub fn configure(meta: &mut ConstraintSystem<F>, exp_table: ExpTable) -> Self {
         let q_step = meta.complex_selector();
+        let is_pad = meta.advice_column();
         let exp_div = MulAddChip::configure(meta, q_step);
         let mul_gadget = MulAddChip::configure(meta, q_step);
 
@@ -98,16 +101,30 @@ impl<F: Field> ExpCircuit<F> {
                 "is_last is boolean",
                 meta.query_advice(exp_table.is_last, Rotation::cur()),
             );
-            // If this is not the final step, the identifier does not change.
-            cb.condition(not::expr(meta.query_advice(exp_table.is_last, Rotation::cur())), |cb| {
-                cb.require_equal(
-                    "identifier::cur == identifier::next",
-                    meta.query_advice(exp_table.identifier, Rotation::cur()),
-                    meta.query_advice(exp_table.identifier, Rotation(7)),
-                );
-            });
-            // TODO(rohit): add padding row after the end of every exponentiation trace to properly
-            // constrain the is_first/is_last columns.
+            // first step is followed by either intermediate or padding row.
+            cb.require_zero(
+                "if is_first::cur is True: is_first::next is False",
+                and::expr([
+                    meta.query_advice(exp_table.is_first, Rotation::cur()),
+                    meta.query_advice(exp_table.is_first, Rotation(7)),
+                ]),
+            );
+            // is_first == 0 following an intermediate step.
+            cb.require_zero(
+                "if is_first::cur is False then is_first::next is False",
+                and::expr([
+                    not::expr(meta.query_advice(exp_table.is_first, Rotation::cur())),
+                    meta.query_advice(exp_table.is_first, Rotation(7)),
+                ]),
+            );
+            // is_last is True then the following row is reserved for padding.
+            cb.require_zero(
+                "if is_last::cur is True then is_pad::next is True",
+                and::expr([
+                    not::expr(meta.query_advice(exp_table.is_last, Rotation::cur())),
+                    meta.query_advice(is_pad, Rotation(7)),
+                ]),
+            );
 
             // For every step, the intermediate exponentiation MUST equal the result of
             // the corresponding multiplication.
@@ -270,6 +287,7 @@ impl<F: Field> ExpCircuit<F> {
 
         Self {
             q_step,
+            is_pad,
             exp_div,
             exp_table,
             mul_gadget,
@@ -300,6 +318,12 @@ impl<F: Field> ExpCircuit<F> {
                         let (exponent_div2, remainder) = exponent.div_mod(2.into());
 
                         self.q_step.enable(&mut region, offset)?;
+                        region.assign_advice(
+                            || format!("is_pad: {}", offset),
+                            self.is_pad,
+                            offset,
+                            || Value::known(F::zero()),
+                        )?;
                         exp_div_chip.assign(
                             &mut region,
                             offset,
@@ -325,6 +349,9 @@ impl<F: Field> ExpCircuit<F> {
                         // exponentiation circuit.
                         offset += OFFSET_INCREMENT;
                     }
+                    // Additionally, 1 row is reserved for a padding row at the end of every
+                    // exponentiation trace.
+                    offset += 1;
                 }
 
                 // assign exp table.
@@ -355,6 +382,8 @@ impl<F: Field> ExpCircuit<F> {
                         }
                         offset += OFFSET_INCREMENT;
                     }
+                    self.assign_padding_row(&mut region, offset)?;
+                    offset += 1;
                 }
 
                 // assign a zero step, analogous to padding.
@@ -364,24 +393,13 @@ impl<F: Field> ExpCircuit<F> {
                     self.exp_div.col1,
                     self.exp_div.col2,
                     self.exp_div.col3,
-                ]);
-                for column in all_columns {
-                    for i in 0..OFFSET_INCREMENT {
-                        region.assign_advice(
-                            || format!("padding steps: {}", offset + i),
-                            column,
-                            offset + i,
-                            || Value::known(F::zero()),
-                        )?;
-                    }
-                }
-                for column in [
                     self.mul_gadget.col0,
                     self.mul_gadget.col1,
                     self.mul_gadget.col2,
                     self.mul_gadget.col3,
-                ] {
-                    for i in 0..OFFSET_INCREMENT {
+                ]);
+                for column in all_columns {
+                    for i in 0..(OFFSET_INCREMENT - 1) {
                         region.assign_advice(
                             || format!("padding steps: {}", offset + i),
                             column,
@@ -394,6 +412,37 @@ impl<F: Field> ExpCircuit<F> {
                 Ok(())
             },
         )
+    }
+
+    fn assign_padding_row(&self, region: &mut Region<'_, F>, offset: usize) -> Result<(), Error> {
+        region.assign_advice(
+            || format!("padding row (is_pad): {}", offset),
+            self.is_pad,
+            offset,
+            || Value::known(F::one()),
+        )?;
+
+        let mut all_columns = self.exp_table.columns();
+        all_columns.extend_from_slice(&[
+            self.exp_div.col0,
+            self.exp_div.col1,
+            self.exp_div.col2,
+            self.exp_div.col3,
+            self.mul_gadget.col0,
+            self.mul_gadget.col1,
+            self.mul_gadget.col2,
+            self.mul_gadget.col3,
+        ]);
+        for column in all_columns {
+            region.assign_advice(
+                || format!("padding steps: {}", offset),
+                column,
+                offset,
+                || Value::known(F::zero()),
+            )?;
+        }
+
+        Ok(())
     }
 }
 
