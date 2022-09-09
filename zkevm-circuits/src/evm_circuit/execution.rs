@@ -147,7 +147,7 @@ pub(crate) trait ExecutionGadget<F: FieldExt> {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct ExecutionConfig<F> {
+pub(crate) struct ExecutionConfig<F, const MAX_TXS: usize, const MAX_RWS: usize> {
     // EVM Circuit selector, which enables all usable rows.  The rows where this selector is
     // disabled won't verify any constraint (they can be unused rows or rows with blinding
     // factors).
@@ -167,7 +167,7 @@ pub(crate) struct ExecutionConfig<F> {
     stored_expressions_map: HashMap<ExecutionState, Vec<StoredExpression<F>>>,
     // internal state gadgets
     begin_tx_gadget: BeginTxGadget<F>,
-    end_block_gadget: EndBlockGadget<F>,
+    end_block_gadget: EndBlockGadget<F, MAX_TXS, MAX_RWS>,
     end_tx_gadget: EndTxGadget<F>,
     // opcode gadgets
     add_sub_gadget: AddSubGadget<F>,
@@ -266,7 +266,7 @@ pub(crate) struct ExecutionConfig<F> {
     invalid_opcode_gadget: DummyGadget<F, 0, 0, { ExecutionState::ErrorInvalidOpcode }>,
 }
 
-impl<F: Field> ExecutionConfig<F> {
+impl<F: Field, const MAX_TXS: usize, const MAX_RWS: usize> ExecutionConfig<F, MAX_TXS, MAX_RWS> {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn configure(
         meta: &mut ConstraintSystem<F>,
@@ -288,7 +288,7 @@ impl<F: Field> ExecutionConfig<F> {
         let q_step_last = meta.complex_selector();
         let advices = [(); STEP_WIDTH].map(|_| meta.advice_column());
 
-        let step_curr = Step::new(meta, advices, 0);
+        let step_curr = Step::new(meta, advices, q_step_last, 0);
         let mut height_map = HashMap::new();
 
         meta.create_gate("Constrain execution state", |meta| {
@@ -362,7 +362,7 @@ impl<F: Field> ExecutionConfig<F> {
         });
 
         let mut stored_expressions_map = HashMap::new();
-        let step_next = Step::new(meta, advices, MAX_STEP_HEIGHT);
+        let step_next = Step::new(meta, advices, q_step_last, MAX_STEP_HEIGHT);
         macro_rules! configure_gadget {
             () => {
                 Self::configure_gadget(
@@ -548,7 +548,7 @@ impl<F: Field> ExecutionConfig<F> {
         };
 
         // Now actually configure the gadget with the correct minimal height
-        let step_next = &Step::new(meta, advices, height);
+        let step_next = &Step::new(meta, advices, q_step_last, height);
         let mut cb = ConstraintBuilder::new(
             step_curr.clone(),
             step_next.clone(),

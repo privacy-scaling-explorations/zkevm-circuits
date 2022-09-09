@@ -23,13 +23,13 @@ use witness::Block;
 
 /// EvmCircuit implements verification of execution trace of a block.
 #[derive(Clone, Debug)]
-pub struct EvmCircuit<F> {
+pub struct EvmCircuit<F, const MAX_TXS: usize, const MAX_RWS: usize> {
     fixed_table: [Column<Fixed>; 4],
     byte_table: [Column<Fixed>; 1],
-    execution: Box<ExecutionConfig<F>>,
+    execution: Box<ExecutionConfig<F, MAX_TXS, MAX_RWS>>,
 }
 
-impl<F: Field> EvmCircuit<F> {
+impl<F: Field, const MAX_TXS: usize, const MAX_RWS: usize> EvmCircuit<F, MAX_TXS, MAX_RWS> {
     /// Configure EvmCircuit
     #[allow(clippy::too_many_arguments)]
     pub fn configure(
@@ -215,23 +215,23 @@ pub mod test {
     }
 
     #[derive(Clone)]
-    pub struct TestCircuitConfig<F> {
+    pub struct TestCircuitConfig<F, const MAX_TXS: usize, const MAX_RWS: usize> {
         tx_table: TxTable,
         rw_table: RwTable,
         bytecode_table: BytecodeTable,
         block_table: BlockTable,
         copy_table: CopyTable,
         keccak_table: KeccakTable,
-        pub evm_circuit: EvmCircuit<F>,
+        pub evm_circuit: EvmCircuit<F, MAX_TXS, MAX_RWS>,
     }
 
     #[derive(Default)]
-    pub struct TestCircuit<F> {
+    pub struct TestCircuit<F, const MAX_TXS: usize, const MAX_RWS: usize> {
         block: Block<F>,
         fixed_table_tags: Vec<FixedTableTag>,
     }
 
-    impl<F> TestCircuit<F> {
+    impl<F, const MAX_TXS: usize, const MAX_RWS: usize> TestCircuit<F, MAX_TXS, MAX_RWS> {
         pub fn new(block: Block<F>, fixed_table_tags: Vec<FixedTableTag>) -> Self {
             Self {
                 block,
@@ -240,8 +240,10 @@ pub mod test {
         }
     }
 
-    impl<F: Field> Circuit<F> for TestCircuit<F> {
-        type Config = TestCircuitConfig<F>;
+    impl<F: Field, const MAX_TXS: usize, const MAX_RWS: usize> Circuit<F>
+        for TestCircuit<F, MAX_TXS, MAX_RWS>
+    {
+        type Config = TestCircuitConfig<F, { MAX_TXS }, { MAX_RWS }>;
         type FloorPlanner = SimpleFloorPlanner;
 
         fn without_witnesses(&self) -> Self {
@@ -323,7 +325,7 @@ pub mod test {
         }
     }
 
-    impl<F: Field> TestCircuit<F> {
+    impl<F: Field, const MAX_TXS: usize, const MAX_RWS: usize> TestCircuit<F, MAX_TXS, MAX_RWS> {
         pub fn get_num_rows_required(block: &Block<F>) -> usize {
             let mut cs = ConstraintSystem::default();
             let config = TestCircuit::configure(&mut cs);

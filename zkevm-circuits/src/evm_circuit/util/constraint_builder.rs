@@ -242,8 +242,6 @@ pub(crate) struct ConstraintBuilder<'a, F> {
     pub max_degree: usize,
     pub(crate) curr: Step<F>,
     pub(crate) next: Step<F>,
-    /// `q_step_last` selector at offset curr
-    pub(crate) q_step_last: Expression<F>,
     power_of_randomness: &'a [Expression<F>; 31],
     execution_state: ExecutionState,
     constraints: Vec<(&'static str, Expression<F>)>,
@@ -261,7 +259,6 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
     pub(crate) fn new(
         curr: Step<F>,
         next: Step<F>,
-        q_step_last: Expression<F>,
         power_of_randomness: &'a [Expression<F>; 31],
         execution_state: ExecutionState,
     ) -> Self {
@@ -269,7 +266,6 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
             max_degree: MAX_DEGREE,
             curr,
             next,
-            q_step_last,
             power_of_randomness,
             execution_state,
             constraints: Vec::new(),
@@ -1070,6 +1066,18 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
                 0.expr(),
                 0.expr(),
             ),
+        );
+    }
+
+    // RwTable Padding (Start tag)
+
+    pub(crate) fn rw_table_start_lookup(&mut self, counter: Expression<F>) {
+        self.rw_lookup_with_counter(
+            "Start lookup",
+            counter,
+            0.expr(),
+            RwTableTag::Start,
+            RwValues::default(),
         );
     }
 
