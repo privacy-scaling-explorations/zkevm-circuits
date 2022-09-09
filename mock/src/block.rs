@@ -5,13 +5,6 @@ use eth_types::{Address, Block, Bytes, Hash, Transaction, Word, H64, U64};
 use ethers_core::types::Bloom;
 use ethers_core::types::OtherFields;
 
-fn u64_to_h64(val: U64) -> H64 {
-    let mut vec = [0u8; 8];
-    val.to_big_endian(&mut vec);
-
-    H64::from_slice(&vec)
-}
-
 #[derive(Clone, Debug)]
 /// Mock structure which represents an Ethereum Block and can be used for tests.
 /// It contains all the builder-pattern methods required to be able to specify
@@ -38,7 +31,7 @@ pub struct MockBlock {
     pub(crate) transactions: Vec<MockTransaction>,
     size: Word,
     mix_hash: Hash,
-    nonce: U64,
+    nonce: H64,
     // This field is handled here as we assume that all block txs have the same ChainId.
     // Also, the field is stored in the block_table since we don't have a chain_config
     // structure/table.
@@ -69,7 +62,7 @@ impl Default for MockBlock {
             transactions: Vec::new(),
             size: Word::zero(),
             mix_hash: Hash::zero(),
-            nonce: U64::zero(),
+            nonce: H64::zero(),
             chain_id: *MOCK_CHAIN_ID,
         }
     }
@@ -102,7 +95,7 @@ impl From<MockBlock> for Block<Transaction> {
                 .collect::<Vec<Transaction>>(),
             size: Some(mock.size),
             mix_hash: Some(mock.mix_hash),
-            nonce: Some(u64_to_h64(mock.nonce)),
+            nonce: Some(mock.nonce),
             base_fee_per_gas: Some(mock.base_fee_per_gas),
             other: OtherFields::default(),
         }
@@ -132,7 +125,7 @@ impl From<MockBlock> for Block<()> {
             transactions: vec![],
             size: Some(mock.size),
             mix_hash: Some(mock.mix_hash),
-            nonce: Some(u64_to_h64(mock.nonce)),
+            nonce: Some(mock.nonce),
             base_fee_per_gas: Some(mock.base_fee_per_gas),
             other: OtherFields::default(),
         }
@@ -271,8 +264,8 @@ impl MockBlock {
     }
 
     /// Set nonce field for the MockBlock.
-    pub fn nonce(&mut self, nonce: u64) -> &mut Self {
-        self.nonce = U64::from(nonce);
+    pub fn nonce(&mut self, nonce: H64) -> &mut Self {
+        self.nonce = nonce;
         self
     }
 
