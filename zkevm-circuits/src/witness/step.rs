@@ -189,6 +189,7 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::CREATE2 => dummy!(ExecutionState::CREATE2),
                     OpcodeId::STATICCALL => dummy!(ExecutionState::STATICCALL),
                     OpcodeId::SELFDESTRUCT => dummy!(ExecutionState::SELFDESTRUCT),
+                    OpcodeId::STATICCALL => dummy!(ExecutionState::STATICCALL),
                     _ => unimplemented!("unimplemented opcode {:?}", op),
                 }
             }
