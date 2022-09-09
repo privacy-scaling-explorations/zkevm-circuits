@@ -257,10 +257,7 @@ pub(crate) struct KeccakAux {
 impl<F: Field> SignVerifyConfig<F> {
     pub(crate) fn load_range(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
         let range_chip = RangeChip::<F>::new(self.range_config.clone());
-        range_chip.load_composition_tables(layouter)?;
-        range_chip.load_overflow_tables(layouter)?;
-
-        Ok(())
+        range_chip.load_table(layouter)
     }
 
     pub(crate) fn ecc_chip_config(&self) -> EccConfig {
