@@ -73,11 +73,7 @@ pub struct Compiler {
 
 impl Compiler {
     pub fn new(compile: bool, cache_path: Option<PathBuf>) -> Result<Self> {
-        let cache = if let Some(path) = cache_path {
-            Some(Cache::new(path)?)
-        } else {
-            None
-        };
+        let cache = cache_path.map(|path| Cache::new(path)?);
         Ok(Compiler { compile, cache })
     }
 
