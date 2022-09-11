@@ -42,6 +42,7 @@ mod number;
 mod origin;
 mod r#return;
 mod returndatacopy;
+mod returndatasize;
 mod selfbalance;
 mod sha3;
 mod sload;
@@ -76,6 +77,7 @@ use mstore::Mstore;
 use origin::Origin;
 use r#return::Return;
 use returndatacopy::Returndatacopy;
+use returndatasize::Returndatasize;
 use selfbalance::Selfbalance;
 use sload::Sload;
 use sstore::Sstore;
@@ -161,7 +163,7 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         OpcodeId::CODESIZE => Codesize::gen_associated_ops,
         OpcodeId::EXTCODESIZE => Extcodesize::gen_associated_ops,
         OpcodeId::EXTCODECOPY => Extcodecopy::gen_associated_ops,
-        OpcodeId::RETURNDATASIZE => StackOnlyOpcode::<0, 1>::gen_associated_ops,
+        OpcodeId::RETURNDATASIZE => Returndatasize::gen_associated_ops,
         OpcodeId::RETURNDATACOPY => Returndatacopy::gen_associated_ops,
         OpcodeId::EXTCODEHASH => Extcodehash::gen_associated_ops,
         OpcodeId::BLOCKHASH => StackOnlyOpcode::<1, 1>::gen_associated_ops,
