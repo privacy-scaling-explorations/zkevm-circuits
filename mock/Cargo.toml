@@ -9,9 +9,8 @@ license = "MIT OR Apache-2.0"
 eth-types = { path = "../eth-types" }
 external-tracer = { path = "../external-tracer" }
 lazy_static = "1.4"
-ethbloom = "0.11.1"
 itertools = "0.10.3"
-ethers-signers = "0.6"
-ethers-core = "0.6"
+ethers-signers = "0.17.0"
+ethers-core = "0.17.0"
 rand_chacha = "0.3"
 rand = "0.8"

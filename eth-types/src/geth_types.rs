@@ -6,7 +6,6 @@ use crate::{
     Word, U64,
 };
 use ethers_core::types::TransactionRequest;
-use ethers_core::utils::keccak256;
 use ethers_signers::{LocalWallet, Signer};
 use halo2_proofs::halo2curves::{group::ff::PrimeField, secp256k1};
 use num::Integer;
@@ -65,7 +64,7 @@ impl<TX> TryFrom<&Block<TX>> for BlockConstants {
 
     fn try_from(block: &Block<TX>) -> Result<Self, Self::Error> {
         Ok(Self {
-            coinbase: block.author,
+            coinbase: block.author.ok_or(Error::IncompleteBlock)?,
             timestamp: block.timestamp,
             number: block.number.ok_or(Error::IncompleteBlock)?,
             difficulty: block.difficulty,
@@ -199,7 +198,7 @@ impl Transaction {
         )?;
         // msg = rlp([nonce, gasPrice, gas, to, value, data, sig_v, r, s])
         let req: TransactionRequest = self.into();
-        let msg = req.rlp(chain_id);
+        let msg = req.chain_id(chain_id).rlp();
         let msg_hash: [u8; 32] = Keccak256::digest(&msg)
             .as_slice()
             .to_vec()
@@ -247,9 +246,7 @@ impl GethData {
             assert_eq!(Word::from(wallet.chain_id()), self.chain_id);
             let geth_tx: Transaction = (&*tx).into();
             let req: TransactionRequest = (&geth_tx).into();
-            let tx_rlp = req.rlp(self.chain_id.as_u64());
-            let sighash = keccak256(tx_rlp.as_ref()).into();
-            let sig = wallet.sign_hash(sighash, true);
+            let sig = wallet.sign_transaction_sync(&req.chain_id(self.chain_id.as_u64()).into());
             tx.v = U64::from(sig.v);
             tx.r = sig.r;
             tx.s = sig.s;
