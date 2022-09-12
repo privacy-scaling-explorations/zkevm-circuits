@@ -2,7 +2,6 @@ mod abi;
 mod compiler;
 mod config;
 mod statetest;
-mod testme;
 mod utils;
 
 use anyhow::{bail, Result};
@@ -16,6 +15,7 @@ use std::time::SystemTime;
 use zkevm_circuits::test_util::BytecodeTestConfig;
 
 const REPORT_FOLDER: &str = "report";
+const CODEHASH_FILE: &str = "./codehash.txt";
 
 #[macro_use]
 extern crate prettytable;
@@ -138,7 +138,7 @@ fn main() -> Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
     log::info!("Parsing and compliling tests...");
-    let compiler = Compiler::new(true, Some(PathBuf::from("./code.cache")))?;
+    let compiler = Compiler::new(true, Some(PathBuf::from(CODEHASH_FILE)))?;
 
     if let Some(test_id) = args.ethtest_id {
         // test only one
@@ -181,11 +181,8 @@ fn main() -> Result<()> {
             .unwrap()
             .filter_map(|f| {
                 let filename = f.unwrap().file_name().to_str().unwrap().to_string();
-                if filename.ends_with(".csv") && !filename.contains(&format!(".{}.", git_hash)) {
-                    Some(filename)
-                } else {
-                    None
-                }
+                (filename.ends_with(".csv") && !filename.contains(&format!(".{}.", git_hash)))
+                    .then_some(filename)
             })
             .collect();
         files.sort_by(|f, s| s.cmp(f));

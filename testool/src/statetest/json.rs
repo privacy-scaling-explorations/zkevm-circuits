@@ -522,20 +522,6 @@ mod test {
     }
 }
 "#;
-    /*
-    #[test]
-    fn test_json() -> Result<()> {
-        let mut compiler = Compiler::new(true, None)?;
-        let mut builder = JsonStateTestBuilder::new(&mut compiler);
-        builder.from_json(
-            "",
-            include_str!(
-                "../tests/src/GeneralStateTestsFiller/stCodeCopyTest/ExtCodeCopyTestsFiller.json"
-            ),
-        )?;
-        Ok(())
-    }
-    */
     #[test]
     fn test_json_parse() -> Result<()> {
         let mut compiler = Compiler::new(true, None)?;
