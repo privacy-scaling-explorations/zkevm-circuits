@@ -1,5 +1,4 @@
 use halo2_proofs::{
-    circuit::Chip,
     plonk::{Advice, Column, ConstraintSystem, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
@@ -15,19 +14,75 @@ use crate::{
     }, columns::{MainCols, AccumulatorCols, DenoteCols},
 };
 
-#[derive(Clone, Debug)]
-pub(crate) struct LeafKeyConfig {}
+/*
+A storage leaf occupies 5 rows.
+Contrary as in the branch rows, the `S` and `C` leaves are not positioned parallel to each other.
+The rows are the following:
+LEAF_KEY_S
+LEAF_VALUE_S
+LEAF_KEY_C
+LEAF_VALUE_C
+LEAF_DRIFTED
 
-// Verifies the RLC of leaf RLP: RLP meta data & key (value and then hash of
-// the whole RLC are checked in leaf_value).
-// Verifies RLC of a leaf key - used for a check from outside the circuit to
-// verify that the proper key is used.
-pub(crate) struct LeafKeyChip<F> {
-    config: LeafKeyConfig,
+An example of leaf rows:
+[226 160 59 138 106 70 105 186 37 13 38 205 122 69 158 202 157 33 95 131 7 227 58 235 229 3 121 188 90 54 23 236 52 68 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 2]
+[1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 13]
+[226 160 59 138 106 70 105 186 37 13 38 205 122 69 158 202 157 33 95 131 7 227 58 235 229 3 121 188 90 54 23 236 52 68 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 3]
+[17 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 14]
+[0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 15]
+
+In the above example the value has been changed from 1 (`LEAF_VALUE_S`) to 17 (`LEAF_VALUE_C`).
+
+In the example below the value in `LEAF_VALUE_C` takes more than 1 byte: `[187 239 170 ...]`
+This has two consequences:
+ - Two additional RLP bytes: `[161 160]` where `33 = 161 - 128` means there are `31` bytes behind `161`,
+   `32 = 160 - 128` means there are `30` bytes behind `160`.
+ - `LEAF_KEY_S` starts with `248` because the leaf has more than 55 bytes, `1 = 248 - 247` means
+   there is 1 byte after `248` which specifies the length - the length is `67`. We can see that
+   that the leaf key is shifted by 1 position compared to the example above.
+
+For this reason we need to distinguish two cases: 1 byte in leaf value, more than 1 byte in leaf value.
+These two cases are denoted by `is_short` and `is_long`. There are two other cases we need to
+distinguish: `last_level` when the leaf is in the last level and has no nibbles, `one_nibble` when
+the leaf has only one nibble.
+
+`is_long`:
+[226 160 59 138 106 70 105 186 37 13 38 205 122 69 158 202 157 33 95 131 7 227 58 235 229 3 121 188 90 54 23 236 52 68 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 2]
+[1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 13]
+[248 67 160 59 138 106 70 105 186 37 13 38 205 122 69 158 202 157 33 95 131 7 227 58 235 229 3 121 188 90 54 23 236 52 68 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 3]
+[161 160 187 239 170 18 88 1 56 188 38 60 149 117 120 38 223 78 36 235 129 201 170 170 170 170 170 170 170 170 170 170 170 170 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 14]
+[0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 15]
+
+`last_level`
+[194 32 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 2]
+[1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 13]
+[194 32 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 3]
+[17 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 14]
+[0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 15]
+
+`one_nibble`:
+[194 48 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 2]
+[1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 13]
+[194 48 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 3]
+[17 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 14]
+[0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 15]
+
+`s_mod_node_rlc` (`flag1`) and `c_mod_node_rlc` (`flag2`) columns store the information of what
+kind of case we have:
+ `flag1: 1, flag2: 0`: `is_long`
+ `flag1: 0, flag2: 1`: `is_short`
+ `flag1: 1, flag2: 1`: `last_level`
+ `flag1: 0, flag0: 1`: `one_nibble`
+
+The constraints in `leaf_key.rs` apply to `LEAF_KEY_S` and `LEAF_KEY_C` rows.
+*/
+
+#[derive(Clone, Debug)]
+pub(crate) struct LeafKeyConfig<F> {
     _marker: PhantomData<F>,
 }
 
-impl<F: FieldExt> LeafKeyChip<F> {
+impl<F: FieldExt> LeafKeyConfig<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         q_enable: impl Fn(&mut VirtualCells<'_, F>) -> Expression<F> + Copy,
@@ -39,8 +94,8 @@ impl<F: FieldExt> LeafKeyChip<F> {
         r_table: Vec<Expression<F>>,
         fixed_table: [Column<Fixed>; 3],
         is_s: bool,
-    ) -> LeafKeyConfig {
-        let config = LeafKeyConfig {};
+    ) -> Self {
+        let config = LeafKeyConfig { _marker: PhantomData };
         let one = Expression::Constant(F::one());
         let c32 = Expression::Constant(F::from(32));
         let c48 = Expression::Constant(F::from(48));
@@ -54,14 +109,12 @@ impl<F: FieldExt> LeafKeyChip<F> {
             rot_into_account = -3;
         }
 
-        // TODO: if key is of length 1, then there is one less byte in RLP meta data
-        // (this is easier seen in extension nodes, it will probably be difficult
-        // to generate such test for normal ShortNode)
-
-        // Checking leaf RLC is ok - this value is then taken in the next row, where
-        // leaf value is added to RLC, finally lookup is used to check the hash that
-        // corresponds to this RLC is in the parent branch.
-        meta.create_gate("Storage leaf RLC", |meta| {
+        /*
+        Checking the leaf RLC is ok - this value is then taken in the next row, where
+        leaf value is added to the RLC. Finally, the lookup is used to check the hash that
+        corresponds to the RLC is in the parent branch.
+        */
+        meta.create_gate("Storage leaf key RLC", |meta| {
             let q_enable = q_enable(meta);
             let mut constraints = vec![];
 
@@ -76,18 +129,41 @@ impl<F: FieldExt> LeafKeyChip<F> {
             let is_short = (one.clone() - flag1.clone()) * flag2.clone();
             let one_nibble = (one.clone() - flag1.clone()) * (one.clone() - flag2.clone());
 
+            /*
+            When `is_long` (the leaf value is longer than 1 byte), `s_main.rlp1` needs to be 248.
+
+            Example:
+            `[248 67 160 59 138 106 70 105 186 37 13 38 205 122 69 158 202 157 33 95 131 7 227 58 235 229 3 121 188 90 54 23 236 52 68 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 3]`
+            */
             constraints.push((
                 "is_long: s_rlp1 = 248",
                 q_enable.clone() * is_long.clone() * (s_rlp1.clone() - c248),
             )); 
+
+            /*
+            When `last_level`, there is no nibble stored in the leaf key, it is just the value
+            `32` in `s_main.rlp2`. In the `getProof` output, there is then the value stored immediately
+            after `32`. However, in the MPT witness, we have value in the next row, so there are 0s
+            in `s_main.bytes` (we do not need to check `s_main.bytes[i]` to be 0 due to how the RLC
+            constraints are written).
+
+            Example:
+            `[194 32 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 3]`
+            */
             constraints.push((
                 "last_level: s_rlp2 = 32",
                 q_enable.clone() * last_level.clone() * (s_rlp2.clone() - c32.clone()),
             ));
+
+            /*
+            The two values that store the information about what kind of case we have need to be
+            boolean.
+            */
             constraints.push((
                 "flag1 is boolean",
                 get_bool_constraint(q_enable.clone(), flag1.clone()),
             ));
+
             constraints.push((
                 "flag2 is boolean",
                 get_bool_constraint(q_enable.clone(), flag2.clone()),
@@ -106,16 +182,24 @@ impl<F: FieldExt> LeafKeyChip<F> {
             rlc = rlc + c_rlp2 * r_table[R_TABLE_LEN - 1].clone() * r_table[2].clone();
 
             let acc = meta.query_advice(accs.acc_s.rlc, Rotation::cur());
-            constraints.push(("Leaf key acc",
+
+            /*
+            We need to ensure that the RLC of the row is computed properly for `is_short` and
+            `is_long`. We compare the computed value with the value stored in `accumulators.acc_s.rlc`.
+            */
+            constraints.push(("Leaf key RLC (short or long)",
                 q_enable.clone()
-                * (is_short + is_long) // activate if is_short or is_long
+                * (is_short + is_long)
                 * (rlc - acc.clone())));
             
             /*
+            We need to ensure that the RLC of the row is computed properly for `last_level` and
+            `one_nibble`. We compare the computed value with the value stored in `accumulators.acc_s.rlc`.
+
             `last_level` and `one_nibble` cases have one RLP byte (`s_rlp1`) and one byte (`s_rlp2`)
             where it is 32 (for `last_level`) or `48 + last_nibble` (for `one_nibble`).
             */
-            constraints.push(("Leaf key acc last level or one nibble",
+            constraints.push(("Leaf key RLC (last level or one nibble)",
                 q_enable
                 * (last_level + one_nibble)
                 * (rlc_last_level_or_one_nibble - acc)));
@@ -141,8 +225,10 @@ impl<F: FieldExt> LeafKeyChip<F> {
         };
 
         /*
-        There are 0s after key length (this doesn't need to be checked for last_level as
-        in this case s_main.bytes are not used).
+        /*
+        There are 0s in `s_main.bytes` after the last key nibble (this does not need to be checked
+        for `last_level` and `one_nibble` as in these cases `s_main.bytes` are not used).
+        */
         for ind in 0..HASH_WIDTH {
             key_len_lookup(
                 meta,
@@ -171,17 +257,29 @@ impl<F: FieldExt> LeafKeyChip<F> {
         key_len_lookup(meta, sel_long, 33, s_main.bytes[0], c_main.rlp2, 128, fixed_table);
         */
 
-        // acc_mult corresponds to key length (short):
+        /*
+        The intermediate RLC value of this row is stored in `accumulators.acc_s.rlc`.
+        To compute the final leaf RLC in `LEAF_VALUE` row, we need to know the multiplier to be used
+        for the first byte in `LEAF_VALUE` row too. The multiplier is stored in `accumulators.acc_s.mult`.
+        We check that the multiplier corresponds to the length of the key that is stored in `s_main.rlp2`
+        for `is_short` and in `s_main.bytes[0]` for `is_long`.
+
+        Note: `last_level` and `one_nibble` have fixed multiplier because the length of the nibbles
+        in these cases is fixed.
+        */
         mult_diff_lookup(meta, sel_short, 2, s_main.rlp2, accs.acc_s.mult, 128, fixed_table);
-        // acc_mult corresponds to key length (long):
         mult_diff_lookup(meta, sel_long, 3, s_main.bytes[0], accs.acc_s.mult, 128, fixed_table);
 
-        // Checking the key - accumulated RLC is taken (computed using the path through
-        // branches) and key bytes are added to the RLC. The external circuit
-        // can check the key (where value in trie is being set at key) RLC is
-        // the same as in key_rlc column.
+        /*
+        We need to ensure that the storage leaf is at the key specified in `key_rlc` column (used
+        by MPT lookup). To do this we take the key RLC computed in the branches above the leaf
+        and add the remaining bytes (nibbles) stored in the leaf.
+
+        We also ensure that the number of all nibbles (in branches / extension nodes above
+        the leaf and in the leaf) is 64.
+        */
         meta.create_gate(
-            "Storage leaf key RLC & nibbles count (leaf not in first level, branch not placeholder) ",
+            "Storage leaf key RLC & nibbles count (leaf not in first level, branch not placeholder)",
             |meta| {
                 let q_enable = q_enable(meta);
                 let mut constraints = vec![];
@@ -206,12 +304,15 @@ impl<F: FieldExt> LeafKeyChip<F> {
                 let key_rlc_acc_start = meta.query_advice(accs.key.rlc, Rotation(rot));
                 let key_mult_start = meta.query_advice(accs.key.mult, Rotation(rot));
 
-                // sel1 and sel2 are in init branch
-                let sel1 = meta.query_advice(
+                /*
+                `c16` and `c1` specify whether in the branch above the leaf the `modified_nibble`
+                had to be multiplied by 16 or by 1 for the computation the key RLC.
+                */
+                let c16 = meta.query_advice(
                     s_main.bytes[IS_BRANCH_C16_POS - RLP_NUM],
                     Rotation(rot_into_init),
                 );
-                let sel2 = meta.query_advice(
+                let c1 = meta.query_advice(
                     s_main.bytes[IS_BRANCH_C1_POS - RLP_NUM],
                     Rotation(rot_into_init),
                 );
@@ -221,36 +322,42 @@ impl<F: FieldExt> LeafKeyChip<F> {
                 if !is_s {
                     is_branch_placeholder =
                         meta.query_advice(s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM], Rotation(rot_into_init));
-
                 }
 
-                // If the last branch is placeholder (the placeholder branch is the same as its
-                // parallel counterpart), there is a branch modified_index nibble already
-                // incorporated in key_rlc. That means we need to ignore the first nibble here
-                // (in leaf key).
+                /*
+                If the last branch is placeholder (the placeholder branch is the same as its
+                parallel counterpart), there is a branch `modified_node` nibble already
+                incorporated in `key_rlc`. That means we need to ignore the first nibble here
+                (in leaf key).
+                */
 
-                // For short RLP (key starts at s_main.bytes[0]):
+                // For short RLP (the key starts at `s_main.bytes[0]`):
 
-                // If sel1 = 1, we have one nibble+48 in s_main.bytes[0].
-                let s_advice0 = meta.query_advice(s_main.bytes[0], Rotation::cur());
+                // If `c16`, we have one nibble+48 in `s_main.bytes[0]`.
+                let s_bytes0 = meta.query_advice(s_main.bytes[0], Rotation::cur());
                 let mut key_rlc_acc_short = key_rlc_acc_start.clone()
-                    + (s_advice0.clone() - c48.clone()) * key_mult_start.clone() * sel1.clone();
-                let mut key_mult = key_mult_start.clone() * r_table[0].clone() * sel1.clone();
-                key_mult = key_mult + key_mult_start.clone() * sel2.clone(); // set to key_mult_start if sel2, stays key_mult if sel1
+                    + (s_bytes0.clone() - c48.clone()) * key_mult_start.clone() * c16.clone();
+                let mut key_mult = key_mult_start.clone() * r_table[0].clone() * c16.clone();
+                key_mult = key_mult + key_mult_start.clone() * c1.clone(); // set to key_mult_start if sel2, stays key_mult if sel1
 
-                // If sel2 = 1 and !is_branch_placeholder, we have 32 in s_main.bytes[0].
+                /*
+                If `c1` and branch above is not a placeholder, we have 32 in `s_main.bytes[0]`.
+                This is because `c1` in the branch above means there is an even number of nibbles left
+                and we have an even number of nibbles in the leaf, the first byte (after RLP bytes
+                specifying the length) of the key is 32.
+                */
                 constraints.push((
-                    "Leaf key acc s_advice0",
+                    "Leaf key RLC s_bytes0 (short)",
                     q_enable.clone()
-                        * (s_advice0.clone() - c32.clone())
-                        * sel2.clone()
+                        * (s_bytes0.clone() - c32.clone())
+                        * c1.clone()
                         * (one.clone() - is_branch_placeholder.clone())
                         * (one.clone() - is_leaf_in_first_level.clone())
                         * is_short.clone(),
                 ));
 
-                let s_advices1 = meta.query_advice(s_main.bytes[1], Rotation::cur());
-                key_rlc_acc_short = key_rlc_acc_short + s_advices1.clone() * key_mult.clone();
+                let s_bytes1 = meta.query_advice(s_main.bytes[1], Rotation::cur());
+                key_rlc_acc_short = key_rlc_acc_short + s_bytes1.clone() * key_mult.clone();
 
                 for ind in 2..HASH_WIDTH {
                     let s = meta.query_advice(s_main.bytes[ind], Rotation::cur());
@@ -265,13 +372,22 @@ impl<F: FieldExt> LeafKeyChip<F> {
 
                 let key_rlc = meta.query_advice(accs.key.rlc, Rotation::cur());
 
-                // No need to distinguish between sel1 and sel2 here as it was already
-                // when computing key_rlc_acc_short.
+                /*
+                We need to ensure the leaf key RLC is computed properly. We take the key RLC value
+                from the last branch and add the bytes from position
+                `s_main.bytes[0]` up at most to `c_main.rlp1`. We need to ensure that there are 0s
+                after the last key byte, this is done by `key_len_lookup`.
 
-                // Short example:
-                // [226,160,59,138,106,70,105,186,37,13,38[227,32,161,160,187,239,170,18,88,1,56,188,38,60,149,117,120,38,223,78,36,235,129,201,170,170,170,170,170,170,170,170,170,170,170,170]
+                The computed value needs to be the same as the value stored `key_rlc` column.
+
+                `is_short` example:
+                [226,160,59,138,106,70,105,186,37,13,38[227,32,161,160,187,239,170,18,88,1,56,188,38,60,149,117,120,38,223,78,36,235,129,201,170,170,170,170,170,170,170,170,170,170,170,170]
+
+                Note: No need to distinguish between `c16` and `c1` here as it was already
+                when computing `key_rlc_acc_short`.
+                */
                 constraints.push((
-                    "Key RLC short",
+                    "Key RLC (short)",
                     q_enable.clone()
                         * (key_rlc_acc_short - key_rlc.clone())
                         * (one.clone() - is_branch_placeholder.clone())
@@ -279,21 +395,21 @@ impl<F: FieldExt> LeafKeyChip<F> {
                         * is_short.clone(),
                 ));
 
-                // For long RLP (key starts at s_main.bytes[1]):
+                // For long RLP (key starts at `s_main.bytes[1]`):
 
                 // If sel1 = 1, we have nibble+48 in s_main.bytes[1].
                 let s_advice1 = meta.query_advice(s_main.bytes[1], Rotation::cur());
                 let mut key_rlc_acc_long = key_rlc_acc_start.clone()
-                    + (s_advice1.clone() - c48.clone()) * key_mult_start.clone() * sel1.clone();
-                let mut key_mult = key_mult_start.clone() * r_table[0].clone() * sel1.clone();
-                key_mult = key_mult + key_mult_start.clone() * sel2.clone(); // set to key_mult_start if sel2, stays key_mult if sel1
+                    + (s_advice1.clone() - c48.clone()) * key_mult_start.clone() * c16.clone();
+                let mut key_mult = key_mult_start.clone() * r_table[0].clone() * c16.clone();
+                key_mult = key_mult + key_mult_start.clone() * c1.clone(); // set to key_mult_start if sel2, stays key_mult if sel1
 
                 // If sel2 = 1 and !is_branch_placeholder, we have 32 in s_main.bytes[1].
                 constraints.push((
                     "Leaf key acc s_advice1",
                     q_enable.clone()
                         * (s_advice1.clone() - c32.clone())
-                        * sel2.clone()
+                        * c1.clone()
                         * (one.clone() - is_branch_placeholder.clone())
                         * (one.clone() - is_leaf_in_first_level.clone())
                         * is_long.clone(),
@@ -353,10 +469,10 @@ impl<F: FieldExt> LeafKeyChip<F> {
                 );
 
                 let s_rlp2 = meta.query_advice(s_main.rlp2, Rotation::cur());
-                let leaf_nibbles_long = ((s_advice0.clone() - c128.clone() - one.clone()) * (one.clone() + one.clone())) * sel2.clone() +
-                    ((s_advice0.clone() - c128.clone()) * (one.clone() + one.clone()) - one.clone()) * sel1.clone();
-                let leaf_nibbles_short = ((s_rlp2.clone() - c128.clone() - one.clone()) * (one.clone() + one.clone())) * sel2.clone() +
-                    ((s_rlp2.clone() - c128.clone()) * (one.clone() + one.clone()) - one.clone()) * sel1.clone();
+                let leaf_nibbles_long = ((s_bytes0.clone() - c128.clone() - one.clone()) * (one.clone() + one.clone())) * c1.clone() +
+                    ((s_bytes0.clone() - c128.clone()) * (one.clone() + one.clone()) - one.clone()) * c16.clone();
+                let leaf_nibbles_short = ((s_rlp2.clone() - c128.clone() - one.clone()) * (one.clone() + one.clone())) * c1.clone() +
+                    ((s_rlp2.clone() - c128.clone()) * (one.clone() + one.clone()) - one.clone()) * c16.clone();
                 let leaf_nibbles_last_level = Expression::Constant(F::zero()); 
                 let leaf_nibbles_one_nibble = one.clone(); 
 
@@ -764,25 +880,5 @@ impl<F: FieldExt> LeafKeyChip<F> {
         );
 
         config
-    }
-
-    pub fn construct(config: LeafKeyConfig) -> Self {
-        Self {
-            config,
-            _marker: PhantomData,
-        }
-    }
-}
-
-impl<F: FieldExt> Chip<F> for LeafKeyChip<F> {
-    type Config = LeafKeyConfig;
-    type Loaded = ();
-
-    fn config(&self) -> &Self::Config {
-        &self.config
-    }
-
-    fn loaded(&self) -> &Self::Loaded {
-        &()
     }
 }

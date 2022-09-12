@@ -15,7 +15,7 @@ use crate::{
         RLP_NUM,
     },
     roots::RootsChip,
-    storage_root_in_account_leaf::StorageRootChip, account_leaf::{AccountLeafCols, AccountLeaf, account_leaf_key_in_added_branch::AccountLeafKeyInAddedBranchConfig, account_leaf_key::AccountLeafKeyConfig, account_leaf_nonce_balance::AccountLeafNonceBalanceConfig, account_leaf_storage_codehash::AccountLeafStorageCodehashConfig, account_non_existing::AccountNonExistingConfig}, storage_leaf::{StorageLeafCols, StorageLeaf, leaf_key_in_added_branch::LeafKeyInAddedBranchChip, leaf_key::LeafKeyChip, leaf_value::LeafValueChip}, witness_row::{MptWitnessRow, MptWitnessRowType}, columns::{ProofTypeCols, MainCols, AccumulatorCols, DenoteCols},
+    storage_root_in_account_leaf::StorageRootChip, account_leaf::{AccountLeafCols, AccountLeaf, account_leaf_key_in_added_branch::AccountLeafKeyInAddedBranchConfig, account_leaf_key::AccountLeafKeyConfig, account_leaf_nonce_balance::AccountLeafNonceBalanceConfig, account_leaf_storage_codehash::AccountLeafStorageCodehashConfig, account_non_existing::AccountNonExistingConfig}, storage_leaf::{StorageLeafCols, StorageLeaf, leaf_key_in_added_branch::LeafKeyInAddedBranchChip, leaf_key::LeafKeyConfig, leaf_value::LeafValueChip}, witness_row::{MptWitnessRow, MptWitnessRowType}, columns::{ProofTypeCols, MainCols, AccumulatorCols, DenoteCols},
 };
 use crate::{
     param::{
@@ -485,7 +485,7 @@ impl<F: FieldExt> MPTConfig<F> {
             fixed_table,
         );
 
-        LeafKeyChip::<F>::configure(
+        LeafKeyConfig::<F>::configure(
             meta,
             |meta| {
                 let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
@@ -509,7 +509,7 @@ impl<F: FieldExt> MPTConfig<F> {
             true,
         );
 
-        LeafKeyChip::<F>::configure(
+        LeafKeyConfig::<F>::configure(
             meta,
             |meta| {
                 let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
