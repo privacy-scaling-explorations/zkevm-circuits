@@ -1013,14 +1013,14 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
         The final count needs to be 64.
         */
         if is_s {
-            meta.create_gate("Extension node number of nibbles (not first level)", |meta| {
+            meta.create_gate("Extension node number of nibbles", |meta| {
                 let mut constraints = vec![];
                 let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
                 let q_enable = q_enable(meta);
                 let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
 
                 // Only check if there is an account above the branch.
-                let is_account_leaf_in_added_branch = meta.query_advice(
+                let is_first_storage_level = meta.query_advice(
                     is_account_leaf_in_added_branch,
                     Rotation(rot_into_branch_init - 1),
                 );
@@ -1043,206 +1043,111 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                     s_main.bytes[NIBBLES_COUNTER_POS - RLP_NUM],
                     Rotation(rot_into_branch_init),
                 );
-                let nibbles_count_prev = meta.query_advice(
+                let mut nibbles_count_prev = meta.query_advice(
                     s_main.bytes[NIBBLES_COUNTER_POS - RLP_NUM],
                     Rotation(rot_into_branch_init - BRANCH_ROWS_NUM),
                 );
 
+                /*
+                nibbles_count_prev needs to be 0 when in first account level or
+                in first storage level
+                */
+                nibbles_count_prev = (one.clone() - is_first_storage_level.clone()) * nibbles_count_prev.clone();
+                nibbles_count_prev = not_first_level.clone() * nibbles_count_prev.clone();
+
+                /*
+                When there is only one nibble in the extension node, `nibbles_count` changes
+                for 2: one nibble and `modified_node` in a branch.
+                */
                 constraints.push((
-                    "Nibbles number when one nibbles",
+                    "Nibbles number when one nibble",
                     q_not_first.clone()
                         * q_enable.clone()
-                        * (one.clone() - is_account_leaf_in_added_branch.clone())
-                        * not_first_level.clone()
                         * is_short.clone()
                         * (nibbles_count_cur.clone() - nibbles_count_prev.clone() - one.clone() - one.clone()), // -1 for nibble, - 1 is for branch position
                 ));
 
                 let s_rlp2 = meta.query_advice(s_main.rlp2, Rotation::cur());
                 let mut num_nibbles = (s_rlp2.clone() - c128.clone() - one.clone()) * (one.clone() + one.clone());
-                // [228,130,0,149,160,114,253...
+                /*
+                When there is an even number of nibbles in the extension node,
+                we compute the number of nibbles as: `(s_rlp2 - 128 - 1) * 2`.
+                By `s_rlp2 - 128` we get the number of bytes where nibbles are compressed, but
+                then we need to subtract 1 because `s_main.bytes[0]` does not contain any nibbles
+                (it is just 0 when even number of nibbles).
+
+                In the example below it is: `(130 - 128 - 1) * 2`.
+                `[228,130,0,149,160,114,253...`
+                */
                 constraints.push((
                     "Nibbles number when even number of nibbles & ext not longer than 55",
                     q_not_first.clone()
                         * q_enable.clone()
-                        * (one.clone() - is_account_leaf_in_added_branch.clone())
-                        * not_first_level.clone()
                         * is_even_nibbles.clone()
                         * (one.clone() - is_ext_longer_than_55.clone())
                         * (nibbles_count_cur.clone() - nibbles_count_prev.clone() - num_nibbles.clone() - one.clone()), // - 1 is for branch position
                 ));
 
                 num_nibbles = (s_rlp2 - c128.clone()) * (one.clone() + one.clone()) - one.clone();
+
+                /*
+                When there is an odd number of nibbles in the extension node,
+                we compute the number of nibbles as: `(s_rlp2 - 128) * 2`.
+                By `s_rlp2 - 128` we get the number of bytes where nibbles are compressed. We
+                multiply by 2 to get the nibbles, but then subtract 1 because in
+                `s_main.bytes[0]` there is only 1 nibble.
+                */
                 constraints.push((
                     "Nibbles num when odd number (>1) of nibbles & ext not longer than 55",
                     q_not_first.clone()
                         * q_enable.clone()
-                        * (one.clone() - is_account_leaf_in_added_branch.clone())
-                        * not_first_level.clone()
                         * is_long_odd_nibbles.clone()
                         * (one.clone() - is_ext_longer_than_55.clone())
                         * (nibbles_count_cur.clone() - nibbles_count_prev.clone() - num_nibbles.clone() - one.clone()), // - 1 is for branch position
                 ));
 
-                // [248,58,159,16,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,217,128,196,130,32,0,1,128,196,130,32,0,1,128,128,128,128,128,128,128,128,128,128,128,128,128]
-                let s_advices0 = meta.query_advice(s_main.bytes[0], Rotation::cur());
-                num_nibbles = (s_advices0.clone() - c128.clone() - one.clone()) * (one.clone() + one.clone());
+                let s_bytes0 = meta.query_advice(s_main.bytes[0], Rotation::cur());
+                num_nibbles = (s_bytes0.clone() - c128.clone() - one.clone()) * (one.clone() + one.clone());
+
+                /*
+                When there is an even number of nibbles in the extension node and the extension
+                node is longer than 55 bytes, the number of bytes containing the nibbles
+                is given by `s_main.bytes[0]`.
+                We compute the number of nibbles as: `(s_bytes0 - 128 - 1) * 2`.
+                By `s_bytes0 - 128` we get the number of bytes where nibbles are compressed, but
+                then we need to subtract 1 because `s_main.bytes[1]` does not contain any nibbles
+                (it is just 0 when even number of nibbles).
+                */
                 constraints.push((
-                    "Nibbles num when even number of nibbles & ext not longer than 55",
+                    "Nibbles num when even number of nibbles & ext longer than 55",
                     q_not_first.clone()
                         * q_enable.clone()
-                        * (one.clone() - is_account_leaf_in_added_branch.clone())
-                        * not_first_level.clone()
                         * is_even_nibbles.clone()
                         * is_ext_longer_than_55.clone()
                         * (nibbles_count_cur.clone() - nibbles_count_prev.clone() - num_nibbles.clone() - one.clone()), // - 1 is for branch position
                 ));
 
-                num_nibbles = (s_advices0 - c128.clone()) * (one.clone() + one.clone()) - one.clone();
+                num_nibbles = (s_bytes0 - c128.clone()) * (one.clone() + one.clone()) - one.clone();
+
+                /*
+                When there is an odd number of nibbles in the extension node and the extension,
+                node is longer than 55 bytes, the number of bytes containing the nibbles
+                is given by `s_main.bytes[0]`.
+                We compute the number of nibbles as: `(s_main.bytes[0] - 128) * 2`.
+                By `s_main.bytes[0] - 128` we get the number of bytes where nibbles are compressed. We
+                multiply by 2 to get the nibbles, but then subtract 1 because in
+                `s_main.bytes[1]` there is only 1 nibble.
+
+                Example:
+                `[248,58,159,16,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,217,128,196,130,32,0,1,128,196,130,32,0,1,128,128,128,128,128,128,128,128,128,128,128,128,128]`
+                */
                 constraints.push((
-                    "Nibbles num when odd number (>1) of nibbles & ext not longer than 55",
+                    "Nibbles num when odd number (>1) of nibbles & ext longer than 55",
                     q_not_first.clone()
                         * q_enable.clone()
-                        * (one.clone() - is_account_leaf_in_added_branch)
-                        * not_first_level.clone()
                         * is_long_odd_nibbles.clone()
                         * is_ext_longer_than_55.clone()
                         * (nibbles_count_cur - nibbles_count_prev - num_nibbles - one.clone()), // - 1 is for branch position
-                ));
-
-                constraints
-            });
-
-            meta.create_gate("Extension node number of nibbles (first level)", |meta| {
-                let mut constraints = vec![];
-                let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
-                let q_enable = q_enable(meta);
-                let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
-
-                // Only check if there is an account above the branch.
-                let is_account_leaf_in_added_branch = meta.query_advice(
-                    is_account_leaf_in_added_branch,
-                    Rotation(rot_into_branch_init - 1),
-                );
-
-                let is_ext_longer_than_55 = meta.query_advice(
-                    s_main.bytes[IS_S_EXT_LONGER_THAN_55_POS - RLP_NUM],
-                    Rotation(rot_into_branch_init),
-                );
-
-                let is_short = get_is_extension_node_one_nibble(meta, s_main.bytes, rot_into_branch_init);
-                let is_even_nibbles = get_is_extension_node_even_nibbles(meta, s_main.bytes, rot_into_branch_init);
-                let is_long_odd_nibbles = get_is_extension_node_long_odd_nibbles(meta, s_main.bytes, rot_into_branch_init);
-
-                /*
-                Note: for regular branches, the constraint that `nibbles_count` increases
-                by 1 is in `branch.rs`.
-                */
-
-                let nibbles_count_cur = meta.query_advice(
-                    s_main.bytes[NIBBLES_COUNTER_POS - RLP_NUM],
-                    Rotation(rot_into_branch_init),
-                );
-
-                constraints.push((
-                    "Nibbles num when one nibbles (first level account)",
-                    q_not_first.clone()
-                        * q_enable.clone()
-                        * (one.clone() - not_first_level.clone())
-                        * is_short.clone()
-                        * (nibbles_count_cur.clone() - one.clone() - one.clone()), // -1 for nibble, - 1 is for branch position
-                ));
-                constraints.push((
-                    "Nibbles num when one nibbles (first level storage)",
-                    q_not_first.clone()
-                        * q_enable.clone()
-                        * is_account_leaf_in_added_branch.clone()
-                        * is_short.clone()
-                        * (nibbles_count_cur.clone() - one.clone() - one.clone()), // -1 for nibble, - 1 is for branch position
-                ));
-
-                let s_rlp2 = meta.query_advice(s_main.rlp2, Rotation::cur());
-                let mut num_nibbles = (s_rlp2.clone() - c128.clone() - one.clone()) * (one.clone() + one.clone());
-                // [228,130,0,149,160,114,253...
-                constraints.push((
-                    "Nibbles num when even number of nibbles & ext not longer than 55 (first level account)",
-                    q_not_first.clone()
-                        * q_enable.clone()
-                        * (one.clone() - not_first_level.clone())
-                        * is_even_nibbles.clone()
-                        * (one.clone() - is_ext_longer_than_55.clone())
-                        * (nibbles_count_cur.clone() - num_nibbles.clone() - one.clone()), // - 1 is for branch position
-                ));
-                constraints.push((
-                    "Nibbles num when even number of nibbles & ext not longer than 55 (first level storage)",
-                    q_not_first.clone()
-                        * q_enable.clone()
-                        * is_account_leaf_in_added_branch.clone()
-                        * is_even_nibbles.clone()
-                        * (one.clone() - is_ext_longer_than_55.clone())
-                        * (nibbles_count_cur.clone() - num_nibbles.clone() - one.clone()), // - 1 is for branch position
-                ));
-
-                num_nibbles = (s_rlp2 - c128.clone()) * (one.clone() + one.clone()) - one.clone();
-                constraints.push((
-                    "Nibbles num when odd number (>1) of nibbles & ext not longer than 55 (first level account)",
-                    q_not_first.clone()
-                        * q_enable.clone()
-                        * (one.clone() - not_first_level.clone())
-                        * is_long_odd_nibbles.clone()
-                        * (one.clone() - is_ext_longer_than_55.clone())
-                        * (nibbles_count_cur.clone() - num_nibbles.clone() - one.clone()), // - 1 is for branch position
-                ));
-                constraints.push((
-                    "Nibbles num when odd number (>1) of nibbles & ext not longer than 55 (first level storage)",
-                    q_not_first.clone()
-                        * q_enable.clone()
-                        * is_account_leaf_in_added_branch.clone()
-                        * is_long_odd_nibbles.clone()
-                        * (one.clone() - is_ext_longer_than_55.clone())
-                        * (nibbles_count_cur.clone() - num_nibbles.clone() - one.clone()), // - 1 is for branch position
-                ));
-
-                // [248,58,159,16,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,217,128,196,130,32,0,1,128,196,130,32,0,1,128,128,128,128,128,128,128,128,128,128,128,128,128]
-                let s_advices0 = meta.query_advice(s_main.bytes[0], Rotation::cur());
-                num_nibbles = (s_advices0.clone() - c128.clone() - one.clone()) * (one.clone() + one.clone());
-                constraints.push((
-                    "Nibbles num when even number of nibbles & ext not longer than 55 (first level account)",
-                    q_not_first.clone()
-                        * q_enable.clone()
-                        * (one.clone() - not_first_level.clone())
-                        * is_even_nibbles.clone()
-                        * is_ext_longer_than_55.clone()
-                        * (nibbles_count_cur.clone() - num_nibbles.clone() - one.clone()), // - 1 is for branch position
-                ));
-                constraints.push((
-                    "Nibbles num when even number of nibbles & ext not longer than 55 (first level storage)",
-                    q_not_first.clone()
-                        * q_enable.clone()
-                        * is_account_leaf_in_added_branch.clone()
-                        * is_even_nibbles.clone()
-                        * is_ext_longer_than_55.clone()
-                        * (nibbles_count_cur.clone() - num_nibbles.clone() - one.clone()), // - 1 is for branch position
-                ));
-
-                num_nibbles = (s_advices0 - c128.clone()) * (one.clone() + one.clone()) - one.clone();
-                constraints.push((
-                    "Nibbles num when odd number (>1) of nibbles & ext not longer than 55 (first level account)",
-                    q_not_first.clone()
-                        * q_enable.clone()
-                        * (one.clone() - not_first_level.clone())
-                        * is_long_odd_nibbles.clone()
-                        * is_ext_longer_than_55.clone()
-                        * (nibbles_count_cur.clone() - num_nibbles.clone() - one.clone()), // - 1 is for branch position
-                ));
-                constraints.push((
-                    "Nibbles num when odd number (>1) of nibbles & ext not longer than 55 (first level storage)",
-                    q_not_first.clone()
-                        * q_enable.clone()
-                        * is_account_leaf_in_added_branch.clone()
-                        * is_long_odd_nibbles.clone()
-                        * is_ext_longer_than_55.clone()
-                        * (nibbles_count_cur - num_nibbles - one.clone()), // - 1 is for branch position
                 ));
 
                 constraints
