@@ -1,7 +1,7 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::N_BYTES_MEMORY_ADDRESS,
+        param::N_BYTES_U64,
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
@@ -20,7 +20,7 @@ use halo2_proofs::plonk::Error;
 #[derive(Clone, Debug)]
 pub(crate) struct ReturnDataSizeGadget<F> {
     same_context: SameContextGadget<F>,
-    return_data_size: RandomLinearCombination<F, N_BYTES_MEMORY_ADDRESS>,
+    return_data_size: RandomLinearCombination<F, N_BYTES_U64>,
 }
 
 impl<F: Field> ExecutionGadget<F> for ReturnDataSizeGadget<F> {
@@ -74,7 +74,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataSizeGadget<F> {
             region,
             offset,
             Some(
-                return_data_size.to_le_bytes()[..N_BYTES_MEMORY_ADDRESS]
+                return_data_size.to_le_bytes()[..N_BYTES_U64]
                     .try_into()
                     .expect("could not encode return_data_size as byte array in little endian"),
             ),
@@ -163,24 +163,16 @@ mod test {
 
     #[test]
     fn test_simple() {
-        let (addr_a, addr_b) = (mock::MOCK_ACCOUNTS[0], mock::MOCK_ACCOUNTS[1]);
         let code = bytecode! {
             RETURNDATASIZE
             STOP
         };
-        let ctx = TestContext::<2, 1>::new(
-            None,
-            |accs| {
-                accs[0].address(addr_b).code(code);
-                accs[1].address(addr_a).balance(Word::from(1u64 << 30));
-            },
-            |mut txs, accs| {
-                txs[0].to(accs[0].address).from(accs[1].address);
-            },
-            |block, _tx| block,
+        assert_eq!(
+            run_test_circuits(
+                TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap(),
+                None
+            ),
+            Ok(())
         )
-        .unwrap();
-
-        assert_eq!(run_test_circuits(ctx, None), Ok(()));
     }
 }

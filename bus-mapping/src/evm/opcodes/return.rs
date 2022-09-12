@@ -46,7 +46,7 @@ impl Opcode for Return {
 
             state.call_context_write(
                 &mut exec_step,
-                state.call()?.call_id,
+                state.caller()?.call_id,
                 CallContextField::LastCalleeId,
                 state.call()?.call_id.into(),
             );
