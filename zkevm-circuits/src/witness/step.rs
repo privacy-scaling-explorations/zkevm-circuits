@@ -175,6 +175,7 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::CALLDATALOAD => ExecutionState::CALLDATALOAD,
                     OpcodeId::CODESIZE => ExecutionState::CODESIZE,
                     OpcodeId::RETURN | OpcodeId::REVERT => ExecutionState::RETURN,
+                    OpcodeId::STATICCALL => ExecutionState::STATICCALL,
                     // dummy ops
                     OpcodeId::BALANCE => dummy!(ExecutionState::BALANCE),
                     OpcodeId::EXP => dummy!(ExecutionState::EXP),
@@ -187,9 +188,7 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::CALLCODE => dummy!(ExecutionState::CALLCODE),
                     OpcodeId::DELEGATECALL => dummy!(ExecutionState::DELEGATECALL),
                     OpcodeId::CREATE2 => dummy!(ExecutionState::CREATE2),
-                    OpcodeId::STATICCALL => dummy!(ExecutionState::STATICCALL),
                     OpcodeId::SELFDESTRUCT => dummy!(ExecutionState::SELFDESTRUCT),
-                    OpcodeId::STATICCALL => dummy!(ExecutionState::STATICCALL),
                     _ => unimplemented!("unimplemented opcode {:?}", op),
                 }
             }

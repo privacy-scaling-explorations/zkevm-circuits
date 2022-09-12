@@ -231,6 +231,10 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
             warn!("Using dummy gen_selfdestruct_ops for opcode SELFDESTRUCT");
             DummySelfDestruct::gen_associated_ops
         }
+        OpcodeId::CALLCODE | OpcodeId::DELEGATECALL => {
+            warn!("Using dummy gen_call_ops for opcode {:?}", opcode_id);
+            DummyCall::gen_associated_ops
+        }
         OpcodeId::CREATE => {
             warn!("Using dummy gen_create_ops for opcode {:?}", opcode_id);
             DummyCreate::<false>::gen_associated_ops
@@ -536,6 +540,61 @@ pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
     }
 
     Ok(exec_step)
+}
+
+#[derive(Debug, Copy, Clone)]
+struct DummyCall;
+
+impl Opcode for DummyCall {
+    fn gen_associated_ops(
+        state: &mut CircuitInputStateRef,
+        geth_steps: &[GethExecStep],
+    ) -> Result<Vec<ExecStep>, Error> {
+        dummy_gen_call_ops(state, geth_steps)
+    }
+}
+
+fn dummy_gen_call_ops(
+    state: &mut CircuitInputStateRef,
+    geth_steps: &[GethExecStep],
+) -> Result<Vec<ExecStep>, Error> {
+    let geth_step = &geth_steps[0];
+    let mut exec_step = state.new_step(geth_step)?;
+
+    let tx_id = state.tx_ctx.id();
+    let call = state.parse_call(geth_step)?;
+
+    let (_, account) = state.sdb.get_account(&call.address);
+    let callee_code_hash = account.code_hash;
+
+    let is_warm = state.sdb.check_account_in_access_list(&call.address);
+    state.push_op_reversible(
+        &mut exec_step,
+        RW::WRITE,
+        TxAccessListAccountOp {
+            tx_id,
+            address: call.address,
+            is_warm: true,
+            is_warm_prev: is_warm,
+        },
+    )?;
+
+    state.push_call(call.clone());
+
+    match (
+        state.is_precompiled(&call.address),
+        callee_code_hash.to_fixed_bytes() == *EMPTY_HASH,
+    ) {
+        // 1. Call to precompiled.
+        (true, _) => Ok(vec![exec_step]),
+        // 2. Call to account with empty code.
+        (_, true) => {
+            state.handle_return(geth_step)?;
+            Ok(vec![exec_step])
+        }
+        // 3. Call to account with non-empty code.
+        (_, false) => Ok(vec![exec_step]),
+    }
 }
 
 #[derive(Debug, Copy, Clone)]

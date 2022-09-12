@@ -70,7 +70,11 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
             ),
             (
                 CallContextField::IsStatic,
-                (current_call.is_static as u64).into(),
+                if is_call {
+                    (current_call.is_static as u64).into()
+                } else {
+                    1.into()
+                },
             ),
             (CallContextField::Depth, current_call.depth.into()),
         ] {
@@ -127,7 +131,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                 call.caller_address,
                 call.address,
                 call.value,
-            )?
+            )?;
         } else {
             let callee_balance = callee_account.balance;
             state.account_read(
