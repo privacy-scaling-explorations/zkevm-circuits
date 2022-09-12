@@ -87,7 +87,9 @@ impl Block {
         Ok(Self {
             chain_id,
             history_hashes,
-            coinbase: eth_block.author,
+            coinbase: eth_block
+                .author
+                .ok_or(Error::EthTypeError(eth_types::Error::IncompleteBlock))?,
             gas_limit: eth_block.gas_limit.low_u64(),
             number: eth_block
                 .number

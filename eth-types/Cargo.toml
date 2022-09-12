@@ -6,11 +6,11 @@ authors = ["The appliedzkp team"]
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-ethers-core = "0.6"
-ethers-signers = "0.6"
+ethers-core = "0.17.0"
+ethers-signers = "0.17.0"
 hex = "0.4"
 lazy_static = "1.4"
-halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2.git", tag = "v2022_08_19" }
+halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2.git", tag = "v2022_09_10" }
 regex = "1.5.4"
 serde = {version = "1.0.130", features = ["derive"] }
 serde_json = "1.0.66"
