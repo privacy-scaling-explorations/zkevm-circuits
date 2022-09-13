@@ -230,23 +230,31 @@ pub struct CopyEvent {
 }
 
 impl CopyEvent {
-    /// increase in the rw counter as a result of this copy event
-    pub fn rw_counter_increase(&self) -> usize {
+    /// rw counter at step index
+    pub fn rw_counter(&self, step_index: usize) -> u64 {
+        u64::try_from(self.rw_counter_start.0).unwrap() + self.rw_counter_increase(step_index)
+    }
+
+    /// rw counter increase left at step index
+    pub fn rw_counter_increase_left(&self, step_index: usize) -> u64 {
+        self.rw_counter(self.bytes.len() * 2) - self.rw_counter(step_index)
+    }
+
+    // increase in rw counter from the start of the copy event to step index
+    fn rw_counter_increase(&self, step_index: usize) -> u64 {
         let source_rw_increase = match self.src_type {
             CopyDataType::Bytecode | CopyDataType::TxCalldata => 0,
             CopyDataType::Memory => std::cmp::min(
-                self.bytes.len(),
+                u64::try_from(step_index + 1).unwrap() / 2,
                 self.src_addr_end
                     .checked_sub(self.src_addr)
-                    .unwrap_or_default()
-                    .try_into()
-                    .unwrap(),
+                    .unwrap_or_default(),
             ),
             CopyDataType::RlcAcc | CopyDataType::TxLog => unreachable!(),
         };
         let destination_rw_increase = match self.dst_type {
             CopyDataType::RlcAcc => 0,
-            CopyDataType::TxLog | CopyDataType::Memory => self.bytes.len(),
+            CopyDataType::TxLog | CopyDataType::Memory => u64::try_from(step_index).unwrap() / 2,
             CopyDataType::Bytecode | CopyDataType::TxCalldata => unreachable!(),
         };
         source_rw_increase + destination_rw_increase

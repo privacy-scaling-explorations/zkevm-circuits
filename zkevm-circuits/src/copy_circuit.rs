@@ -569,8 +569,6 @@ impl<F: Field> CopyCircuit<F> {
             || Value::known(copy_step.is_code.map_or(F::zero(), |v| F::from(v))),
         )?;
         // is_pad
-        // let is_pad = copy_step.rw != RW::WRITE && copy_step.addr <
-        // copy_event.src_addr_end;
         let is_pad = is_read && copy_step_addr >= copy_event.src_addr_end;
         region.assign_advice(
             || format!("assign is_pad {}", offset),
@@ -579,41 +577,18 @@ impl<F: Field> CopyCircuit<F> {
             || Value::known(F::from(is_pad)),
         )?;
         // rw_counter
-        let source_rw_increase = match copy_event.src_type {
-            CopyDataType::Bytecode | CopyDataType::TxCalldata => 0,
-            CopyDataType::Memory => {
-                if is_pad {
-                    copy_event.src_addr_end - copy_event.src_addr
-                } else {
-                    u64::try_from(step_idx + 1).unwrap() / 2
-                }
-            }
-            CopyDataType::TxLog | CopyDataType::RlcAcc => unreachable!(),
-        };
-        let destination_rw_increase = match copy_event.dst_type {
-            CopyDataType::TxLog | CopyDataType::Memory => u64::try_from(step_idx).unwrap() / 2,
-            CopyDataType::RlcAcc => 0,
-            CopyDataType::Bytecode | CopyDataType::TxCalldata => unreachable!(),
-        };
-        let rw_counter = u64::try_from(copy_event.rw_counter_start.0).unwrap()
-            + source_rw_increase
-            + destination_rw_increase;
         region.assign_advice(
             || format!("assign rw_counter {}", offset),
             self.copy_table.rw_counter,
             offset,
-            || Value::known(F::from(rw_counter)),
+            || Value::known(F::from(copy_event.rw_counter(step_idx))),
         )?;
         // rwc_inc_left
-        let rwc_inc_left = u64::try_from(copy_event.rw_counter_increase()).unwrap()
-            - source_rw_increase
-            - destination_rw_increase;
-
         region.assign_advice(
             || format!("assign rwc_inc_left {}", offset),
             self.copy_table.rwc_inc_left,
             offset,
-            || Value::known(F::from(rwc_inc_left)),
+            || Value::known(F::from(copy_event.rw_counter_increase_left(step_idx))),
         )?;
         // tag binary number chip
         let tag = if is_read {

@@ -825,28 +825,7 @@ impl CopyTable {
                 F::from(copy_step_addr)
             };
 
-            let source_rw_increase = match copy_event.src_type {
-                CopyDataType::Bytecode | CopyDataType::TxCalldata => 0,
-                CopyDataType::Memory => std::cmp::min(
-                    copy_event
-                        .src_addr_end
-                        .checked_sub(copy_event.src_addr)
-                        .unwrap_or_default(),
-                    u64::try_from(step_idx + 1).unwrap() / 2,
-                ),
-                CopyDataType::TxLog | CopyDataType::RlcAcc => unreachable!(),
-            };
-            let destination_rw_increase = match copy_event.dst_type {
-                CopyDataType::TxLog | CopyDataType::Memory => u64::try_from(step_idx).unwrap() / 2,
-                CopyDataType::RlcAcc => 0,
-                CopyDataType::Bytecode | CopyDataType::TxCalldata => unreachable!(),
-            };
-            let rw_counter = u64::try_from(copy_event.rw_counter_start.0).unwrap()
-                + source_rw_increase
-                + destination_rw_increase;
-            let rwc_inc_left = u64::try_from(copy_event.rw_counter_increase()).unwrap()
-                - source_rw_increase
-                - destination_rw_increase;
+            let bytes_left = u64::try_from(copy_event.bytes.len() * 2 - step_idx).unwrap() / 2;
             assignments.push((
                 tag,
                 [
@@ -854,10 +833,10 @@ impl CopyTable {
                     id,
                     addr,
                     F::from(copy_event.src_addr_end),
-                    F::from(u64::try_from(copy_event.bytes.len() * 2 - step_idx).unwrap() / 2), // bytes_left
+                    F::from(bytes_left),
                     rlc_acc,
-                    F::from(rw_counter),
-                    F::from(rwc_inc_left),  // rw_inc_left
+                    F::from(copy_event.rw_counter(step_idx)),
+                    F::from(copy_event.rw_counter_increase_left(step_idx)),
                 ],
             ));
         }

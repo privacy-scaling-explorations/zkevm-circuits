@@ -126,10 +126,8 @@ fn gen_copy_steps(
                     RW::READ,
                     MemoryOp::new(state.call()?.caller_id, addr.into(), byte),
                 );
-                byte
-            } else {
-                byte
             }
+            byte
         } else {
             0
         };
