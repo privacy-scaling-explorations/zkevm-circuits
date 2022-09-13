@@ -1,5 +1,4 @@
 use halo2_proofs::{
-    circuit::Chip,
     plonk::{Advice, Column, ConstraintSystem, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
@@ -12,17 +11,15 @@ use crate::{
     param::{BRANCH_ROWS_NUM, KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH}, columns::{MainCols, AccumulatorCols, DenoteCols},
 };
 
-#[derive(Clone, Debug)]
-pub(crate) struct LeafValueConfig {}
 
 // Verifies the hash of a leaf is in the parent branch. Verifies storage leaf
 // RLP.
-pub(crate) struct LeafValueChip<F> {
-    config: LeafValueConfig,
+#[derive(Clone, Debug)]
+pub(crate) struct LeafValueConfig<F> {
     _marker: PhantomData<F>,
 }
 
-impl<F: FieldExt> LeafValueChip<F> {
+impl<F: FieldExt> LeafValueConfig<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         inter_root: Column<Advice>,
@@ -43,8 +40,8 @@ impl<F: FieldExt> LeafValueChip<F> {
         is_s: bool,
         acc_r: F,
         fixed_table: [Column<Fixed>; 3],
-    ) -> LeafValueConfig {
-        let config = LeafValueConfig {};
+    ) -> Self {
+        let config = LeafValueConfig { _marker: PhantomData };
 
         // TODO: use r_table
 
@@ -538,25 +535,5 @@ impl<F: FieldExt> LeafValueChip<F> {
         */
 
         config
-    }
-
-    pub fn construct(config: LeafValueConfig) -> Self {
-        Self {
-            config,
-            _marker: PhantomData,
-        }
-    }
-}
-
-impl<F: FieldExt> Chip<F> for LeafValueChip<F> {
-    type Config = LeafValueConfig;
-    type Loaded = ();
-
-    fn config(&self) -> &Self::Config {
-        &self.config
-    }
-
-    fn loaded(&self) -> &Self::Loaded {
-        &()
     }
 }

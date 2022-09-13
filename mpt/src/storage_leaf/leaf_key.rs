@@ -1,17 +1,17 @@
 use halo2_proofs::{
     plonk::{Advice, Column, ConstraintSystem, Expression, Fixed, VirtualCells},
-    poly::Rotation,
+    poly::Rotation, circuit::Region,
 };
 use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
 use crate::{
     helpers::{compute_rlc, get_bool_constraint, key_len_lookup, mult_diff_lookup, range_lookups},
-    mpt::{FixedTableTag},
+    mpt::{FixedTableTag, MPTConfig, ProofVariables},
     param::{
         BRANCH_ROWS_NUM, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, RLP_NUM,
-        R_TABLE_LEN, HASH_WIDTH, IS_BRANCH_S_PLACEHOLDER_POS, IS_BRANCH_C_PLACEHOLDER_POS, NIBBLES_COUNTER_POS,
-    }, columns::{MainCols, AccumulatorCols, DenoteCols},
+        R_TABLE_LEN, HASH_WIDTH, IS_BRANCH_S_PLACEHOLDER_POS, IS_BRANCH_C_PLACEHOLDER_POS, NIBBLES_COUNTER_POS, S_START,
+    }, columns::{MainCols, AccumulatorCols, DenoteCols}, witness_row::{MptWitnessRow, MptWitnessRowType},
 };
 
 /*
@@ -822,5 +822,131 @@ impl<F: FieldExt> LeafKeyConfig<F> {
         );
 
         config
+    }
+
+    pub fn assign(
+        &self,
+        region: &mut Region<'_, F>,
+        mpt_config: &MPTConfig<F>,
+        pv: &mut ProofVariables<F>,
+        row: &MptWitnessRow<F>,
+        offset: usize,
+    ) {
+        /*
+        getProof storage leaf examples:
+            short (one RLP byte > 128: 160):
+            [226,160,59,138,106,70,105,186,37,13,38,205,122,69,158,202,157,33,95,131,7,227,58,235,229,3,121,188,90,54,23,236,52,68,1]
+
+            long (two RLP bytes: 67, 160):
+            [248,67,160,59,138,106,70,105,186,37,13,38,205,122,69,158,202,157,33,95,131,7,227,58,235,229,3,121,188,90,54,23,236,52,68,161,160,187,239,170,18,88,1,56,188,38,60,149,117,120,38,223,78,36,235,129,201,170,170,170,170,170,17
+
+            last_level (one RLP byte: 32)
+            32 at position 1 means there are no key nibbles (last level):
+            [227,32,161,160,187,239,170,18,88,1,56,188,38,60,149,117,120,38,223,78,36,235,129,201,170,170,170,170,170,170,170,170,170,170,170,170]
+            [194,32,1]
+
+            this one falls into short again:
+            [196,130,32,0,1]
+        */
+
+        // Info whether leaf rlp is long or short.
+        // Long means the key length is at position 2.
+        // Short means the key length is at position 1.
+        let mut typ = "short";
+        if row.get_byte(0) == 248 {
+            typ = "long";
+        } else if row.get_byte(1) == 32 {
+            typ = "last_level";
+        } else if row.get_byte(1) < 128 {
+            typ = "one_nibble";
+        }
+        mpt_config.assign_long_short(region, typ, offset).ok();
+
+        pv.acc_s = F::zero();
+        pv.acc_mult_s = F::one();
+        let len: usize;
+        if typ == "long" {
+            len = (row.get_byte(2) - 128) as usize + 3;
+        } else if typ == "short" {
+            len = (row.get_byte(1) - 128) as usize + 2;
+        } else {
+            // last_level or one_nibble
+            len = 2
+        }
+        mpt_config.compute_acc_and_mult(
+            &row.bytes,
+            &mut pv.acc_s,
+            &mut pv.acc_mult_s,
+            0,
+            len,
+        );
+
+        mpt_config.assign_acc(
+            region,
+            pv.acc_s,
+            pv.acc_mult_s,
+            F::zero(),
+            F::zero(),
+            offset,
+        ).ok();
+
+        // note that this assignment needs to be after assign_acc call
+        if row.get_byte(0) < 223 { // when shorter than 32 bytes, the node doesn't get hashed
+            // not_hashed
+            region.assign_advice(
+                || "assign not_hashed".to_string(),
+                mpt_config.accumulators.acc_c.rlc,
+                offset,
+                || Ok(F::one()),
+            ).ok();
+        }
+
+        // TODO: handle if branch or extension node is added
+        let mut start = S_START - 1;
+        if row.get_byte(0) == 248 {
+            // long RLP
+            start = S_START;
+        }
+
+        // For leaf S and leaf C we need to start with the same rlc.
+        let mut key_rlc_new = pv.key_rlc;
+        let mut key_rlc_mult_new = pv.key_rlc_mult;
+        if (pv.is_branch_s_placeholder && row.get_type() == MptWitnessRowType::StorageLeafSKey)
+            || (pv.is_branch_c_placeholder && row.get_type() == MptWitnessRowType::StorageLeafCKey)
+        {
+            key_rlc_new = pv.key_rlc_prev;
+            key_rlc_mult_new = pv.key_rlc_mult_prev;
+        }
+        if typ != "last_level" && typ != "one_nibble" {
+            // If in last level or having only one nibble,
+            // the key RLC is already computed using the first two bytes above.
+            mpt_config.compute_key_rlc(&row.bytes, &mut key_rlc_new, &mut key_rlc_mult_new, start);
+        }
+        region.assign_advice(
+            || "assign key_rlc".to_string(),
+            mpt_config.accumulators.key.rlc,
+            offset,
+            || Ok(key_rlc_new),
+        ).ok();
+
+        // Store key_rlc into rlc2 to be later set in
+        // leaf value C row (to enable lookups):
+        pv.rlc2 = key_rlc_new;
+
+        // Assign previous key RLC -
+        // needed in case of placeholder branch/extension.
+        // Constraint for this is in leaf_key.
+        region.assign_advice(
+            || "assign key_rlc".to_string(),
+            mpt_config.denoter.sel1,
+            offset,
+            || Ok(pv.key_rlc_prev),
+        ).ok();
+        region.assign_advice(
+            || "assign key_rlc_mult".to_string(),
+            mpt_config.denoter.sel2,
+            offset,
+            || Ok(pv.key_rlc_mult_prev),
+        ).ok();
     }
 }

@@ -15,7 +15,7 @@ use crate::{
         RLP_NUM,
     },
     roots::RootsChip,
-    storage_root_in_account_leaf::StorageRootChip, account_leaf::{AccountLeafCols, AccountLeaf, account_leaf_key_in_added_branch::AccountLeafKeyInAddedBranchConfig, account_leaf_key::AccountLeafKeyConfig, account_leaf_nonce_balance::AccountLeafNonceBalanceConfig, account_leaf_storage_codehash::AccountLeafStorageCodehashConfig, account_non_existing::AccountNonExistingConfig}, storage_leaf::{StorageLeafCols, StorageLeaf, leaf_key_in_added_branch::LeafKeyInAddedBranchChip, leaf_key::LeafKeyConfig, leaf_value::LeafValueChip}, witness_row::{MptWitnessRow, MptWitnessRowType}, columns::{ProofTypeCols, MainCols, AccumulatorCols, DenoteCols},
+    storage_root_in_account_leaf::StorageRootChip, account_leaf::{AccountLeafCols, AccountLeaf, account_leaf_key_in_added_branch::AccountLeafKeyInAddedBranchConfig, account_leaf_key::AccountLeafKeyConfig, account_leaf_nonce_balance::AccountLeafNonceBalanceConfig, account_leaf_storage_codehash::AccountLeafStorageCodehashConfig, account_non_existing::AccountNonExistingConfig}, storage_leaf::{StorageLeafCols, StorageLeaf, leaf_key_in_added_branch::LeafKeyInAddedBranchChip, leaf_key::LeafKeyConfig, leaf_value::LeafValueConfig}, witness_row::{MptWitnessRow, MptWitnessRowType}, columns::{ProofTypeCols, MainCols, AccumulatorCols, DenoteCols},
 };
 use crate::{
     param::{
@@ -88,6 +88,10 @@ pub struct MPTConfig<F> {
     branch_config: BranchConfig<F>,
     ext_node_config_s: ExtensionNodeConfig<F>,
     ext_node_config_c: ExtensionNodeConfig<F>,
+    storage_leaf_key_s: LeafKeyConfig<F>,
+    storage_leaf_key_c: LeafKeyConfig<F>,
+    storage_leaf_value_s: LeafValueConfig<F>,
+    storage_leaf_value_c: LeafValueConfig<F>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -485,7 +489,7 @@ impl<F: FieldExt> MPTConfig<F> {
             fixed_table,
         );
 
-        LeafKeyConfig::<F>::configure(
+        let storage_leaf_key_s = LeafKeyConfig::<F>::configure(
             meta,
             |meta| {
                 let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
@@ -509,7 +513,7 @@ impl<F: FieldExt> MPTConfig<F> {
             true,
         );
 
-        LeafKeyConfig::<F>::configure(
+        let storage_leaf_key_c = LeafKeyConfig::<F>::configure(
             meta,
             |meta| {
                 let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
@@ -552,7 +556,7 @@ impl<F: FieldExt> MPTConfig<F> {
             keccak_table.clone(),
         );
 
-        LeafValueChip::<F>::configure(
+        let storage_leaf_value_s = LeafValueConfig::<F>::configure(
             meta,
             inter_start_root,
             q_not_first,
@@ -569,7 +573,7 @@ impl<F: FieldExt> MPTConfig<F> {
             fixed_table.clone(),
         );
 
-        LeafValueChip::<F>::configure(
+        let storage_leaf_value_c = LeafValueConfig::<F>::configure(
             meta,
             inter_final_root,
             q_not_first,
@@ -771,6 +775,10 @@ impl<F: FieldExt> MPTConfig<F> {
             branch_config,
             ext_node_config_s,
             ext_node_config_c,
+            storage_leaf_key_s,
+            storage_leaf_key_c,
+            storage_leaf_value_s,
+            storage_leaf_value_c,
         }
     } 
  
@@ -888,6 +896,49 @@ impl<F: FieldExt> MPTConfig<F> {
             offset,
             || Ok(acc_mult_c),
         )?;
+
+        Ok(())
+    }
+
+    /*
+    assign_long_short is used for setting flags for storage leaf and storage value.
+    For storage leaf, it sets whether it is short (one RLP byte) or long (two RLP bytes)
+    or last level (no nibbles in leaf, all nibbles in the path above the leaf) or one nibble.
+    Note that last_level and one_nibble imply having only one RLP byte.
+
+    For storage value, it sets whether it is short or long (value having more than one byte).
+    */
+    pub(crate) fn assign_long_short(
+        &self,
+        region: &mut Region<'_, F>,
+        typ: &str,
+        offset: usize,
+    ) -> Result<(), Error> {
+        let mut flag1 = false;
+        let mut flag2 = false;
+        // for one_nibble, it is both 0
+        if typ == "long" {
+            flag1 = true;
+        } else if typ == "short" {
+            flag2 = true;
+        } else if typ == "last_level" {
+            flag1 = true;
+            flag2 = true;
+        }
+        region
+            .assign_advice(
+                || "assign s_modified_node_rlc".to_string(),
+                self.accumulators.s_mod_node_rlc,
+                offset,
+                || Ok(F::from(flag1 as u64)),
+            );
+        region
+            .assign_advice(
+                || "assign c_modified_node_rlc".to_string(),
+                self.accumulators.c_mod_node_rlc,
+                offset,
+                || Ok(F::from(flag2 as u64)),
+            );
 
         Ok(())
     }
@@ -1015,166 +1066,12 @@ impl<F: FieldExt> MPTConfig<F> {
                                 offset,
                             )?;
 
-                            /*
-                            assign_long_short is used for setting flags for storage leaf and storage value.
-                            For storage leaf, it sets whether it is short (one RLP byte) or long (two RLP bytes)
-                            or last level (no nibbles in leaf, all nibbles in the path above the leaf) or one nibble.
-                            Note that last_level and one_nibble imply having only one RLP byte.
-
-                            For storage value, it sets whether it is short or long (value having more than one byte).
-                            */
-                            let assign_long_short = |region: &mut Region<'_, F>, typ: &str| {
-                                let mut flag1 = false;
-                                let mut flag2 = false;
-                                // for one_nibble, it is both 0
-                                if typ == "long" {
-                                    flag1 = true;
-                                } else if typ == "short" {
-                                    flag2 = true;
-                                } else if typ == "last_level" {
-                                    flag1 = true;
-                                    flag2 = true;
-                                }
-                                region
-                                    .assign_advice(
-                                        || "assign s_modified_node_rlc".to_string(),
-                                        self.accumulators.s_mod_node_rlc,
-                                        offset,
-                                        || Ok(F::from(flag1 as u64)),
-                                    )
-                                    .ok();
-                                region
-                                    .assign_advice(
-                                        || "assign c_modified_node_rlc".to_string(),
-                                        self.accumulators.c_mod_node_rlc,
-                                        offset,
-                                        || Ok(F::from(flag2 as u64)),
-                                    )
-                                    .ok();
-                            };
-
                             // Storage leaf key
-                            if row.get_type() == MptWitnessRowType::StorageLeafSKey ||
-                                row.get_type() == MptWitnessRowType::StorageLeafCKey {
-                                /*
-                                getProof storage leaf examples:
-                                  short (one RLP byte > 128: 160):
-                                  [226,160,59,138,106,70,105,186,37,13,38,205,122,69,158,202,157,33,95,131,7,227,58,235,229,3,121,188,90,54,23,236,52,68,1]
-
-                                  long (two RLP bytes: 67, 160):
-                                  [248,67,160,59,138,106,70,105,186,37,13,38,205,122,69,158,202,157,33,95,131,7,227,58,235,229,3,121,188,90,54,23,236,52,68,161,160,187,239,170,18,88,1,56,188,38,60,149,117,120,38,223,78,36,235,129,201,170,170,170,170,170,17
-
-                                  last_level (one RLP byte: 32)
-                                  32 at position 1 means there are no key nibbles (last level):
-                                  [227,32,161,160,187,239,170,18,88,1,56,188,38,60,149,117,120,38,223,78,36,235,129,201,170,170,170,170,170,170,170,170,170,170,170,170]
-                                  [194,32,1]
-
-                                  this one falls into short again:
-                                  [196,130,32,0,1]
-                                */
-
-                                // Info whether leaf rlp is long or short.
-                                // Long means the key length is at position 2.
-                                // Short means the key length is at position 1.
-                                let mut typ = "short";
-                                if row.get_byte(0) == 248 {
-                                    typ = "long";
-                                } else if row.get_byte(1) == 32 {
-                                    typ = "last_level";
-                                } else if row.get_byte(1) < 128 {
-                                    typ = "one_nibble";
-                                }
-                                assign_long_short(&mut region, typ);
-
-                                pv.acc_s = F::zero();
-                                pv.acc_mult_s = F::one();
-                                let len: usize;
-                                if typ == "long" {
-                                    len = (row.get_byte(2) - 128) as usize + 3;
-                                } else if typ == "short" {
-                                    len = (row.get_byte(1) - 128) as usize + 2;
-                                } else {
-                                    // last_level or one_nibble
-                                    len = 2
-                                }
-                                self.compute_acc_and_mult(
-                                    &row.bytes,
-                                    &mut pv.acc_s,
-                                    &mut pv.acc_mult_s,
-                                    0,
-                                    len,
-                                );
-
-                                self.assign_acc(
-                                    &mut region,
-                                    pv.acc_s,
-                                    pv.acc_mult_s,
-                                    F::zero(),
-                                    F::zero(),
-                                    offset,
-                                )?;
-
-                                // note that this assignment needs to be after assign_acc call
-                                if row.get_byte(0) < 223 { // when shorter than 32 bytes, the node doesn't get hashed
-                                    // not_hashed
-                                    region.assign_advice(
-                                        || "assign not_hashed".to_string(),
-                                        self.accumulators.acc_c.rlc,
-                                        offset,
-                                        || Ok(F::one()),
-                                    )?;
-                                }
-
-                                // TODO: handle if branch or extension node is added
-                                let mut start = S_START - 1;
-                                if row.get_byte(0) == 248 {
-                                    // long RLP
-                                    start = S_START;
-                                }
-
-                                // For leaf S and leaf C we need to start with the same rlc.
-                                let mut key_rlc_new = pv.key_rlc;
-                                let mut key_rlc_mult_new = pv.key_rlc_mult;
-                                if (pv.is_branch_s_placeholder && row.get_type() == MptWitnessRowType::StorageLeafSKey)
-                                    || (pv.is_branch_c_placeholder && row.get_type() == MptWitnessRowType::StorageLeafCKey)
-                                {
-                                    key_rlc_new = pv.key_rlc_prev;
-                                    key_rlc_mult_new = pv.key_rlc_mult_prev;
-                                }
-                                if typ != "last_level" && typ != "one_nibble" {
-                                    // If in last level or having only one nibble,
-                                    // the key RLC is already computed using the first two bytes above.
-                                    self.compute_key_rlc(&row.bytes, &mut key_rlc_new, &mut key_rlc_mult_new, start);
-                                }
-                                region.assign_advice(
-                                    || "assign key_rlc".to_string(),
-                                    self.accumulators.key.rlc,
-                                    offset,
-                                    || Ok(key_rlc_new),
-                                )?;
-
-                                // Store key_rlc into rlc2 to be later set in
-                                // leaf value C row (to enable lookups):
-                                pv.rlc2 = key_rlc_new;
-
-                                // Assign previous key RLC -
-                                // needed in case of placeholder branch/extension.
-                                // Constraint for this is in leaf_key.
-                                region.assign_advice(
-                                    || "assign key_rlc".to_string(),
-                                    self.denoter.sel1,
-                                    offset,
-                                    || Ok(pv.key_rlc_prev),
-                                )?;
-                                region.assign_advice(
-                                    || "assign key_rlc_mult".to_string(),
-                                    self.denoter.sel2,
-                                    offset,
-                                    || Ok(pv.key_rlc_mult_prev),
-                                )?;
-                            }
-
-                            if row.get_type() == MptWitnessRowType::StorageLeafSValue
+                            if row.get_type() == MptWitnessRowType::StorageLeafSKey {
+                                self.storage_leaf_key_s.assign(&mut region, self, &mut pv, row, offset);
+                            } else if row.get_type() == MptWitnessRowType::StorageLeafCKey {
+                                self.storage_leaf_key_c.assign(&mut region, self, &mut pv, row, offset);
+                            } else if row.get_type() == MptWitnessRowType::StorageLeafSValue
                                 || row.get_type() == MptWitnessRowType::StorageLeafCValue {
                                 // Info whether leaf value is 1 byte or more:
                                 let mut is_long = false;
@@ -1205,7 +1102,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                 if is_long {
                                     typ = "long";
                                 } 
-                                assign_long_short(&mut region, typ);
+                                self.assign_long_short(&mut region, typ, offset);
 
                                 // Leaf RLC
                                 self.compute_acc_and_mult(
@@ -1327,7 +1224,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                 } else if row.get_byte(1) == 32 {
                                     typ = "last_level";
                                 }
-                                assign_long_short(&mut region, typ);
+                                self.assign_long_short(&mut region, typ, offset);
 
                                 pv.acc_s = F::zero();
                                 pv.acc_mult_s = F::one();
