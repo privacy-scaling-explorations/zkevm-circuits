@@ -1,14 +1,14 @@
 use halo2_proofs::{
     plonk::{Advice, Column, ConstraintSystem, Expression, Fixed, VirtualCells},
-    poly::Rotation,
+    poly::Rotation, circuit::Region,
 };
 use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
 use crate::{
     helpers::{get_bool_constraint, key_len_lookup, range_lookups},
-    mpt::{FixedTableTag},
-    param::{BRANCH_ROWS_NUM, KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH}, columns::{MainCols, AccumulatorCols, DenoteCols},
+    mpt::{FixedTableTag, MPTConfig, ProofVariables},
+    param::{BRANCH_ROWS_NUM, KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH, HASH_WIDTH}, columns::{MainCols, AccumulatorCols, DenoteCols}, witness_row::{MptWitnessRow, MptWitnessRowType},
 };
 
 
@@ -535,5 +535,148 @@ impl<F: FieldExt> LeafValueConfig<F> {
         */
 
         config
+    }
+
+    pub fn assign(
+        &self,
+        region: &mut Region<'_, F>,
+        mpt_config: &MPTConfig<F>,
+        witness: &[MptWitnessRow<F>],
+        pv: &mut ProofVariables<F>,
+        offset: usize,
+        is_s: bool,
+    ) {
+        let row_prev = &witness[offset - 1];
+        let row = &witness[offset];
+
+        // Info whether leaf value is 1 byte or more:
+        let mut is_long = false;
+        if row_prev.get_byte(0) == 248 {
+            // whole leaf is in long format (3 RLP meta bytes)
+            let key_len = row_prev.get_byte(2) - 128;
+            if row_prev.get_byte(1) - key_len - 1 > 1 {
+                is_long = true;
+            }
+        } else if row_prev.get_byte(1) < 128 {
+            // last_level or one_nibble
+            let leaf_len = row_prev.get_byte(0) - 192;
+            if leaf_len - 1 > 1 {
+                is_long = true;
+            }
+        } else {
+            let leaf_len = row_prev.get_byte(0) - 192;
+            let key_len = row_prev.get_byte(1) - 128;
+            if leaf_len - key_len - 1 > 1 {
+                is_long = true;
+            }
+        }
+        // Short means there is only one byte for value (no RLP specific bytes).
+        // Long means there is more than one byte for value which brings two
+        // RLP specific bytes, like: 161 160 ... for 32-long value.
+        let mut typ = "short";
+        if is_long {
+            typ = "long";
+        } 
+        mpt_config.assign_long_short(region, typ, offset).ok();
+
+        // Leaf RLC
+        mpt_config.compute_acc_and_mult(
+            &row.bytes,
+            &mut pv.acc_s,
+            &mut pv.acc_mult_s,
+            0,
+            HASH_WIDTH + 2,
+        );
+
+        pv.acc_c = F::zero();
+        pv.acc_mult_c = F::one();
+        // Leaf value RLC
+        let mut start = 0;
+        if is_long {
+            start = 2;
+        }
+        mpt_config.compute_acc_and_mult(
+            &row.bytes,
+            &mut pv.acc_c,
+            &mut pv.acc_mult_c,
+            start,
+            HASH_WIDTH + 2,
+        );
+
+        let empty_trie_hash: Vec<u8> = vec![
+            86, 232, 31, 23, 27, 204, 85, 166, 255, 131, 69, 230, 146, 192,
+            248, 110, 91, 72, 224, 27, 153, 108, 173, 192, 1, 98, 47, 181,
+            227, 99, 180, 33,
+        ];
+        if is_s {
+            // Store leaf value RLC into rlc1 to be later set in leaf value C row (to enable lookups):
+            pv.rlc1 = pv.acc_c;
+
+            /*
+            account leaf storage codehash S <- rotate here
+            account leaf storage codehash C
+            account leaf in added branch
+            leaf key S
+            leaf value S <- we are here
+            leaf key C
+            leaf value C
+            */
+            let row_prev = &witness[offset - 4];
+            if row_prev.get_type() == MptWitnessRowType::AccountLeafRootCodehashS
+                && row_prev.s_hash_bytes() == empty_trie_hash
+            {
+                // Leaf is without branch and it is just a placeholder.
+                region.assign_advice(
+                    || "assign sel1".to_string(),
+                    mpt_config.denoter.sel1,
+                    offset,
+                    || Ok(F::one()),
+                ).ok();
+            }
+        } else {
+            region.assign_advice(
+                || "assign key_rlc into key_rlc_mult".to_string(),
+                mpt_config.accumulators.key.mult,
+                offset,
+                || Ok(pv.rlc2),
+            ).ok();
+            region.assign_advice(
+                || "assign leaf value S into mult_diff".to_string(),
+                mpt_config.accumulators.mult_diff,
+                offset,
+                || Ok(pv.rlc1),
+            ).ok();
+
+            /*
+            account leaf storage codehash S
+            account leaf storage codehash C <- rotate here
+            account leaf in added branch
+            leaf key S
+            leaf value S
+            leaf key C
+            leaf value C <- we are here
+            */
+            let row_prev = &witness[offset - 5];
+            if row_prev.get_type() == MptWitnessRowType::AccountLeafRootCodehashC
+                && row_prev.s_hash_bytes() == empty_trie_hash
+            {
+                // Leaf is without branch and it is just a placeholder.
+                region.assign_advice(
+                    || "assign sel2".to_string(),
+                    mpt_config.denoter.sel2,
+                    offset,
+                    || Ok(F::one()),
+                ).ok();
+            }
+        }
+
+        mpt_config.assign_acc(
+            region,
+            pv.acc_s, // leaf RLC
+            pv.acc_mult_s,
+            pv.acc_c, // leaf value RLC
+            F::zero(),
+            offset,
+        ).ok();
     }
 }
