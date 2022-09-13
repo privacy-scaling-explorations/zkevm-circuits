@@ -196,7 +196,7 @@ impl Bytecode {
     pub fn append_asm(&mut self, op: &str) -> Result<(), Error> {
         match OpcodeWithData::from_str(op)? {
             OpcodeWithData::Opcode(op) => self.write_op(op),
-            OpcodeWithData::Push(n, value) => self.push(n,value)
+            OpcodeWithData::Push(n, value) => self.push(n, value),
         };
         Ok(())
     }

@@ -233,7 +233,7 @@ impl StateTest {
         let chain_id = 1;
         let wallet = LocalWallet::from_str(&hex::encode(self.secret_key.0)).unwrap();
         let mut tx = TransactionRequest::new()
-            .chain_id(chain_id)    
+            .chain_id(chain_id)
             .from(self.from)
             .nonce(self.nonce)
             .value(self.value)

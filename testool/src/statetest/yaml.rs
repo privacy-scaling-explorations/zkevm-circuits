@@ -5,8 +5,8 @@ use crate::Compiler;
 use anyhow::{bail, Context, Result};
 use eth_types::evm_types::OpcodeId;
 use eth_types::{geth_types::Account, Address, Bytes, H256, U256};
-use ethers_core::utils::secret_key_to_address;
 use ethers_core::k256::ecdsa::SigningKey;
+use ethers_core::utils::secret_key_to_address;
 use std::collections::HashMap;
 use std::convert::TryInto;
 use std::str::FromStr;
@@ -325,7 +325,8 @@ impl<'a> YamlStateTestBuilder<'a> {
         Ok(Bytes::from(hex::decode(as_str)?))
     }
 
-    /// returns the element as calldata bytes, supports 0x, :raw, :abi, :yul and { LLL }
+    /// returns the element as calldata bytes, supports 0x, :raw, :abi, :yul and
+    /// { LLL }
     fn parse_calldata(&mut self, yaml: &Yaml) -> Result<(Bytes, Option<Label>)> {
         let tags = if let Some(as_str) = yaml.as_str() {
             Self::decompose_tags(as_str)

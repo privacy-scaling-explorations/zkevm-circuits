@@ -1,5 +1,4 @@
 /// Execute the bytecode from an empty state and run the EVM and State circuits
-
 mod abi;
 mod compiler;
 mod config;
@@ -42,7 +41,8 @@ struct Args {
     #[clap(long)]
     ethtest_all: bool,
 
-    /// (Ethereum tests) CI mode: generates log and and html file with info.  Doesn't skip any test.
+    /// (Ethereum tests) CI mode: generates log and and html file with info.
+    /// Doesn't skip any test.
     #[clap(long)]
     ci: bool,
 

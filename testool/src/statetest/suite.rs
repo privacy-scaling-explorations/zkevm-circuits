@@ -15,12 +15,8 @@ pub fn load_statetests_suite(
     config: Config,
     mut compiler: Compiler,
 ) -> Result<Vec<StateTest>> {
-    let skip_paths : Vec<&String> = config
-        .skip_path
-        .iter()
-        .flat_map(|t| &t.paths)
-        .collect();
-    
+    let skip_paths: Vec<&String> = config.skip_path.iter().flat_map(|t| &t.paths).collect();
+
     let files = glob::glob(path)
         .expect("Failed to read glob pattern")
         .map(|f| f.unwrap())
@@ -64,7 +60,7 @@ pub fn run_statetests_suite(
 
     let results = Arc::new(RwLock::from(results));
 
-    let skip_tests : Vec<&String> = config
+    let skip_tests: Vec<&String> = config
         .global
         .skip_test
         .iter()

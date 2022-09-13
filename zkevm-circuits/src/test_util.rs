@@ -98,7 +98,7 @@ pub(crate) fn rand_tx<R: Rng + CryptoRng>(mut rng: R, chain_id: u64) -> Transact
         .data(data)
         .gas(500_000)
         .gas_price(1234);
-    
+
     let sig = wallet0.sign_transaction_sync(&tx.clone().into());
     let to = tx.to.map(|to| match to {
         NameOrAddress::Address(a) => a,
