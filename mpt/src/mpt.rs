@@ -15,13 +15,12 @@ use crate::{
         RLP_NUM,
     },
     roots::RootsChip,
-    storage_root_in_account_leaf::StorageRootChip, account_leaf::{AccountLeafCols, AccountLeaf, account_leaf_key_in_added_branch::AccountLeafKeyInAddedBranchConfig, account_leaf_key::AccountLeafKeyConfig, account_leaf_nonce_balance::AccountLeafNonceBalanceConfig, account_leaf_storage_codehash::AccountLeafStorageCodehashConfig, account_non_existing::AccountNonExistingConfig}, storage_leaf::{StorageLeafCols, StorageLeaf, leaf_key_in_added_branch::LeafKeyInAddedBranchChip, leaf_key::LeafKeyConfig, leaf_value::LeafValueConfig}, witness_row::{MptWitnessRow, MptWitnessRowType}, columns::{ProofTypeCols, MainCols, AccumulatorCols, DenoteCols},
+    storage_root_in_account_leaf::StorageRootChip, account_leaf::{AccountLeafCols, AccountLeaf, account_leaf_key_in_added_branch::AccountLeafKeyInAddedBranchConfig, account_leaf_key::AccountLeafKeyConfig, account_leaf_nonce_balance::AccountLeafNonceBalanceConfig, account_leaf_storage_codehash::AccountLeafStorageCodehashConfig, account_non_existing::AccountNonExistingConfig}, storage_leaf::{StorageLeafCols, StorageLeaf, leaf_key_in_added_branch::LeafKeyInAddedBranchConfig, leaf_key::LeafKeyConfig, leaf_value::LeafValueConfig}, witness_row::{MptWitnessRow, MptWitnessRowType}, columns::{ProofTypeCols, MainCols, AccumulatorCols, DenoteCols},
 };
 use crate::{
     param::{
-        C_RLP_START, C_START,
         HASH_WIDTH, IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS, KECCAK_INPUT_WIDTH,
-        KECCAK_OUTPUT_WIDTH, S_START,
+        KECCAK_OUTPUT_WIDTH,
     },
     selectors::SelectorsChip,
 };
@@ -92,6 +91,7 @@ pub struct MPTConfig<F> {
     storage_leaf_key_c: LeafKeyConfig<F>,
     storage_leaf_value_s: LeafValueConfig<F>,
     storage_leaf_value_c: LeafValueConfig<F>,
+    storage_leaf_key_in_added_branch: LeafKeyInAddedBranchConfig<F>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -537,7 +537,7 @@ impl<F: FieldExt> MPTConfig<F> {
             false,
         );
 
-        LeafKeyInAddedBranchChip::<F>::configure(
+        let storage_leaf_key_in_added_branch = LeafKeyInAddedBranchConfig::<F>::configure(
             meta,
             |meta| {
                 let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
@@ -779,6 +779,7 @@ impl<F: FieldExt> MPTConfig<F> {
             storage_leaf_key_c,
             storage_leaf_value_s,
             storage_leaf_value_c,
+            storage_leaf_key_in_added_branch,
         }
     } 
  
@@ -931,14 +932,14 @@ impl<F: FieldExt> MPTConfig<F> {
                 self.accumulators.s_mod_node_rlc,
                 offset,
                 || Ok(F::from(flag1 as u64)),
-            );
+            ).ok();
         region
             .assign_advice(
                 || "assign c_modified_node_rlc".to_string(),
                 self.accumulators.c_mod_node_rlc,
                 offset,
                 || Ok(F::from(flag2 as u64)),
-            );
+            ).ok();
 
         Ok(())
     }
@@ -1088,41 +1089,7 @@ impl<F: FieldExt> MPTConfig<F> {
                             } else if row.get_type() == MptWitnessRowType::AccountLeafRootCodehashC {
                                 self.account_leaf_storage_codehash_c.assign(&mut region, self, &mut pv, &row.bytes, offset);
                             } else if row.get_type() == MptWitnessRowType::NeighbouringStorageLeaf && row.get_byte(1) != 0 {
-                                // row[1] != 0 just to avoid usize problems below (when row doesn't
-                                // need to be assigned) Info whether
-                                // leaf rlp is long or short.
-                                let mut typ = "short";
-                                if row.get_byte(0) == 248 {
-                                    typ = "long";
-                                } else if row.get_byte(1) == 32 {
-                                    typ = "last_level";
-                                }
-                                self.assign_long_short(&mut region, typ, offset).ok();
-
-                                pv.acc_s = F::zero();
-                                pv.acc_mult_s = F::one();
-                                let len: usize;
-                                if row.get_byte(0) == 248 {
-                                    len = (row.get_byte(2) - 128) as usize + 3;
-                                } else {
-                                    len = (row.get_byte(1) - 128) as usize + 2;
-                                }
-                                self.compute_acc_and_mult(
-                                    &row.bytes,
-                                    &mut pv.acc_s,
-                                    &mut pv.acc_mult_s,
-                                    0,
-                                    len,
-                                );
-
-                                self.assign_acc(
-                                    &mut region,
-                                    pv.acc_s,
-                                    pv.acc_mult_s,
-                                    F::zero(),
-                                    F::zero(),
-                                    offset,
-                                )?;
+                                self.storage_leaf_key_in_added_branch.assign(&mut region, self, &mut pv, &row, offset);
                             } else if row.get_type() == MptWitnessRowType::ExtensionNodeS {
                                 self.ext_node_config_s.assign(&mut region, self, &mut pv, &row, offset, true);
                             } else if row.get_type() == MptWitnessRowType::ExtensionNodeC {

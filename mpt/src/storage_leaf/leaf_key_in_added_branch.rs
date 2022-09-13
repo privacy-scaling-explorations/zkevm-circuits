@@ -1,5 +1,5 @@
 use halo2_proofs::{
-    circuit::Chip,
+    circuit::{Chip, Region},
     plonk::{Advice, Column, ConstraintSystem, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
@@ -11,8 +11,8 @@ use crate::{
         compute_rlc, get_bool_constraint, get_is_extension_node_one_nibble, key_len_lookup,
         mult_diff_lookup, range_lookups,
     },
-    mpt::{FixedTableTag},
-    param::{IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, LEAF_DRIFTED_IND, BRANCH_ROWS_NUM, LEAF_KEY_S_IND, LEAF_KEY_C_IND}, columns::{MainCols, AccumulatorCols},
+    mpt::{FixedTableTag, MPTConfig, ProofVariables},
+    param::{IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, LEAF_DRIFTED_IND, BRANCH_ROWS_NUM, LEAF_KEY_S_IND, LEAF_KEY_C_IND}, columns::{MainCols, AccumulatorCols}, witness_row::MptWitnessRow,
 };
 
 use crate::param::{
@@ -20,15 +20,13 @@ use crate::param::{
     KECCAK_OUTPUT_WIDTH, RLP_NUM, R_TABLE_LEN,
 };
 
-#[derive(Clone, Debug)]
-pub(crate) struct LeafKeyInAddedBranchConfig {}
 
-pub(crate) struct LeafKeyInAddedBranchChip<F> {
-    config: LeafKeyInAddedBranchConfig,
+#[derive(Clone, Debug)]
+pub(crate) struct LeafKeyInAddedBranchConfig<F> {
     _marker: PhantomData<F>,
 }
 
-impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
+impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         q_enable: impl Fn(&mut VirtualCells<'_, F>) -> Expression<F> + Copy,
@@ -40,8 +38,8 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
         r_table: Vec<Expression<F>>,
         fixed_table: [Column<Fixed>; 3],
         keccak_table: [Column<Fixed>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
-    ) -> LeafKeyInAddedBranchConfig {
-        let config = LeafKeyInAddedBranchConfig {};
+    ) -> Self {
+        let config = LeafKeyInAddedBranchConfig { _marker: PhantomData };
 
         let one = Expression::Constant(F::one());
         let c16 = Expression::Constant(F::from(16_u64));
@@ -608,23 +606,49 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
         config
     }
 
-    pub fn construct(config: LeafKeyInAddedBranchConfig) -> Self {
-        Self {
-            config,
-            _marker: PhantomData,
+    pub fn assign(
+        &self,
+        region: &mut Region<'_, F>,
+        mpt_config: &MPTConfig<F>,
+        pv: &mut ProofVariables<F>,
+        row: &MptWitnessRow<F>,
+        offset: usize,
+    ) {
+        /*
+        row[1] != 0 just to avoid usize problems below (when row doesn't
+        need to be assigned) Info whether leaf rlp is long or short.
+        */
+        let mut typ = "short";
+        if row.get_byte(0) == 248 {
+            typ = "long";
+        } else if row.get_byte(1) == 32 {
+            typ = "last_level";
         }
-    }
-}
+        mpt_config.assign_long_short(region, typ, offset).ok();
 
-impl<F: FieldExt> Chip<F> for LeafKeyInAddedBranchChip<F> {
-    type Config = LeafKeyInAddedBranchConfig;
-    type Loaded = ();
+        pv.acc_s = F::zero();
+        pv.acc_mult_s = F::one();
+        let len: usize;
+        if row.get_byte(0) == 248 {
+            len = (row.get_byte(2) - 128) as usize + 3;
+        } else {
+            len = (row.get_byte(1) - 128) as usize + 2;
+        }
+        mpt_config.compute_acc_and_mult(
+            &row.bytes,
+            &mut pv.acc_s,
+            &mut pv.acc_mult_s,
+            0,
+            len,
+        );
 
-    fn config(&self) -> &Self::Config {
-        &self.config
-    }
-
-    fn loaded(&self) -> &Self::Loaded {
-        &()
+        mpt_config.assign_acc(
+            region,
+            pv.acc_s,
+            pv.acc_mult_s,
+            F::zero(),
+            F::zero(),
+            offset,
+        ).ok();
     }
 }
