@@ -368,20 +368,22 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
 
             let c32 = Expression::Constant(F::from(32));
 
-            // Note: when leaf is in the first level, the key stored in the leaf is always of length 33 -
-            // the first byte being 32 (when after branch, the information whether there the key is odd or even
-            // is in s_main.bytes[IS_BRANCH_C16_POS - LAYOUT_OFFSET] (see sel1/sel2).
+            /*
+            Note: when leaf is in the first level, the key stored in the leaf is always of length 33 -
+            the first byte being 32 (when after branch, the information whether there the key is odd or even
+            is in `s_main.bytes[IS_BRANCH_C16_POS - LAYOUT_OFFSET]` (see sel1/sel2).
+            */
 
-            let s_advice1 = meta.query_advice(s_main.bytes[1], Rotation::cur());
+            let s_bytes1 = meta.query_advice(s_main.bytes[1], Rotation::cur());
             let mut key_rlc_acc = Expression::Constant(F::zero());
 
             constraints.push((
                 "Account leaf key s_main.bytes[1] = 32",
-                q_enable.clone() * (s_advice1 - c32) * is_leaf_in_first_level.clone(),
+                q_enable.clone() * (s_bytes1 - c32) * is_leaf_in_first_level.clone(),
             ));
 
-            let s_advices2 = meta.query_advice(s_main.bytes[2], Rotation::cur());
-            key_rlc_acc = key_rlc_acc + s_advices2;
+            let s_bytes2 = meta.query_advice(s_main.bytes[2], Rotation::cur());
+            key_rlc_acc = key_rlc_acc + s_bytes2;
 
             for ind in 3..HASH_WIDTH {
                 let s = meta.query_advice(s_main.bytes[ind], Rotation::cur());
