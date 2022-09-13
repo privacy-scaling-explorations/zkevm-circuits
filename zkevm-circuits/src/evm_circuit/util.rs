@@ -169,6 +169,7 @@ impl<F: FieldExt> StoredExpression<F> {
                     instance_query.rotation(),
                 )
             },
+            &|_| unimplemented!(),
             &|a| -a,
             &|a, b| a + b,
             &|a, b| a * b,
