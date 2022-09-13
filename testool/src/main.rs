@@ -1,3 +1,5 @@
+/// Execute the bytecode from an empty state and run the EVM and State circuits
+
 mod abi;
 mod compiler;
 mod config;
@@ -40,7 +42,7 @@ struct Args {
     #[clap(long)]
     ethtest_all: bool,
 
-    /// (Ethereum tests) CI mode: generates log and and html file with info
+    /// (Ethereum tests) CI mode: generates log and and html file with info.  Doesn't skip any test.
     #[clap(long)]
     ci: bool,
 
@@ -89,7 +91,7 @@ fn run_bytecode(code: &str, bytecode_test_config: BytecodeTestConfig) -> Result<
             }
             Err(err) => {
                 println!("Failed to parse bytecode {:?}", err);
-                bytecode::Bytecode::from_raw_unsafe(bytes)
+                bytecode::Bytecode::from_raw_unchecked(bytes)
             }
         }
     } else {

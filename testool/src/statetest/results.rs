@@ -33,7 +33,7 @@ impl ResultLevel {
     pub fn display_string(&self) -> String {
         use ResultLevel::*;
         match self {
-            Panic => "💀PANIK",
+            Panic => "💀PANIC",
             Fail => "🔴FAILD",
             Ignored => "🟠IGNOR",
             Success => "🟢SUCCS",
@@ -73,7 +73,7 @@ impl Diffs {
         }
 
         let mut out = Vec::new();
-        out.push(format!("DIFFS {}", self.info));
+        out.push(format!("DIFFS {}\n", self.info));
         out.push(buff);
         for t in &self.tests {
             if let Some(prev) = &t.prev {

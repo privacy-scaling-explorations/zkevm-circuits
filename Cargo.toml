@@ -15,7 +15,6 @@ members = [
 
 [patch.crates-io]
 halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2.git", tag = "v2022_08_19" }
-bitvec = { git = "https://github.com/ed255/bitvec.git", rev = "5cfc5fa8496c66872d21905e677120fc3e79693c" }
 
 # Definition of benchmarks profile to use.
 [profile.bench]

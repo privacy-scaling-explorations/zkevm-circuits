@@ -15,7 +15,7 @@ array-init = "2.0.0"
 bus-mapping = { path = "../bus-mapping" }
 eth-types = { path = "../eth-types" }
 gadgets = { path = "../gadgets" }
-ethers-core = "0.6"
+ethers-core = "0.17.0"
 strum = "0.24"
 strum_macros = "0.24"
 rand_xorshift = "0.3"
@@ -26,7 +26,7 @@ keccak256 = { path = "../keccak256"}
 log = "0.4"
 env_logger = "0.9"
 group = "0.11"
-ethers-signers = "0.6"
+ethers-signers = "0.17.0"
 mock = { path = "../mock" }
 ecdsa = { git = "https://github.com/privacy-scaling-explorations/halo2wrong", tag = "v2022_08_24" }
 ecc =       { git = "https://github.com/privacy-scaling-explorations/halo2wrong", tag = "v2022_08_24" }

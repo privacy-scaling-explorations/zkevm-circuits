@@ -3,6 +3,13 @@
 use crate::{evm_types::OpcodeId, Bytes, Word};
 use std::{collections::HashMap, str::FromStr};
 
+/// Error type for Bytecode related failures
+#[derive(Debug)]
+pub enum Error {
+    /// Serde de/serialization error.
+    InvalidAsmError(String),
+}
+
 /// Helper struct that represents a single element in a bytecode.
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub struct BytecodeElement {
@@ -32,7 +39,7 @@ impl From<Bytecode> for Bytes {
 
 impl Bytecode {
     /// Build not checked bytecode
-    pub fn from_raw_unsafe(input: Vec<u8>) -> Self {
+    pub fn from_raw_unchecked(input: Vec<u8>) -> Self {
         Self {
             code: input
                 .iter()
@@ -186,23 +193,15 @@ impl Bytecode {
     }
 
     /// Append asm
-    pub fn append_asm(&mut self, op: &str) {
-        if let Some(push) = op.strip_prefix("PUSH") {
-            let n_value: Vec<_> = push.splitn(3, ['(', ')']).collect();
-            let n = n_value[0].parse::<usize>().unwrap();
-            let value = if n_value[1].starts_with("0x") {
-                Word::from_str_radix(&n_value[1][2..], 16).unwrap()
-            } else {
-                Word::from_str_radix(n_value[1], 10).unwrap()
-            };
-            self.push(n, value);
-        } else {
-            let opcode = OpcodeId::from_str(op).expect("unable to parse opcode");
-            self.write_op(opcode);
-        }
+    pub fn append_asm(&mut self, op: &str) -> Result<(), Error> {
+        match OpcodeWithData::from_str(op)? {
+            OpcodeWithData::Opcode(op) => self.write_op(op),
+            OpcodeWithData::Push(n, value) => self.push(n,value)
+        };
+        Ok(())
     }
 
-    ///
+    /// Append an opcode
     pub fn append_op(&mut self, op: OpcodeWithData) -> &mut Self {
         match op {
             OpcodeWithData::Opcode(opcode) => {
@@ -224,9 +223,9 @@ impl Bytecode {
 /// An ASM entry
 #[derive(Clone, PartialEq, Eq)]
 pub enum OpcodeWithData {
-    ///
+    /// A non-push opcode
     Opcode(OpcodeId),
-    ///
+    /// A push opcode
     Push(usize, Word),
 }
 
@@ -243,11 +242,11 @@ impl OpcodeWithData {
 }
 
 impl FromStr for OpcodeWithData {
-    type Err = String;
+    type Err = Error;
 
     #[allow(clippy::manual_range_contains)]
     fn from_str(op: &str) -> Result<Self, Self::Err> {
-        let err = || format!("unable to parse {}", op);
+        let err = || Error::InvalidAsmError(op.to_string());
         if let Some(push) = op.strip_prefix("PUSH") {
             let n_value: Vec<_> = push.splitn(3, ['(', ')']).collect();
             let n = n_value[0].parse::<usize>().map_err(|_| err())?;

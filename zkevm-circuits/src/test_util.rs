@@ -4,7 +4,6 @@ use crate::{state_circuit::StateCircuit, witness::Block};
 use bus_mapping::mock::BlockData;
 use eth_types::geth_types::{GethData, Transaction};
 use ethers_core::types::{NameOrAddress, TransactionRequest};
-use ethers_core::utils::keccak256;
 use ethers_signers::{LocalWallet, Signer};
 use halo2_proofs::dev::{MockProver, VerifyFailure};
 use halo2_proofs::halo2curves::bn256::Fr;
@@ -91,6 +90,7 @@ pub(crate) fn rand_tx<R: Rng + CryptoRng>(mut rng: R, chain_id: u64) -> Transact
     let to = wallet1.address();
     let data = b"hello";
     let tx = TransactionRequest::new()
+        .chain_id(chain_id)
         .from(from)
         .to(to)
         .nonce(3)
@@ -98,9 +98,8 @@ pub(crate) fn rand_tx<R: Rng + CryptoRng>(mut rng: R, chain_id: u64) -> Transact
         .data(data)
         .gas(500_000)
         .gas_price(1234);
-    let tx_rlp = tx.rlp(chain_id);
-    let sighash = keccak256(tx_rlp.as_ref()).into();
-    let sig = wallet0.sign_hash(sighash, true);
+    
+    let sig = wallet0.sign_transaction_sync(&tx.clone().into());
     let to = tx.to.map(|to| match to {
         NameOrAddress::Address(a) => a,
         _ => unreachable!(),

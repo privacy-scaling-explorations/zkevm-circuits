@@ -3,7 +3,7 @@ use anyhow::Context;
 use bus_mapping::circuit_input_builder::CircuitInputBuilder;
 use bus_mapping::mock::BlockData;
 use eth_types::{geth_types, geth_types::Account, Address, Bytes, GethExecTrace, H256, U256, U64};
-use ethers_core::{types::TransactionRequest, utils::keccak256};
+use ethers_core::types::TransactionRequest;
 use ethers_signers::LocalWallet;
 use external_tracer::TraceConfig;
 use std::{collections::HashMap, str::FromStr};
@@ -230,8 +230,10 @@ impl std::fmt::Display for StateTest {
 
 impl StateTest {
     fn into_traceconfig(self) -> (String, TraceConfig, StateTestResult) {
+        let chain_id = 1;
         let wallet = LocalWallet::from_str(&hex::encode(self.secret_key.0)).unwrap();
         let mut tx = TransactionRequest::new()
+            .chain_id(chain_id)    
             .from(self.from)
             .nonce(self.nonce)
             .value(self.value)
@@ -243,9 +245,7 @@ impl StateTest {
             tx = tx.to(to);
         }
 
-        let tx_rlp = tx.rlp(1u64);
-        let sighash = keccak256(tx_rlp.as_ref()).into();
-        let sig = wallet.sign_hash(sighash, true);
+        let sig = wallet.sign_transaction_sync(&tx.into());
 
         (
             self.id,
@@ -460,7 +460,7 @@ impl StateTest {
             .collect();
 
         let eth_block = eth_types::Block {
-            author: trace_config.block_constants.coinbase,
+            author: Some(trace_config.block_constants.coinbase),
             timestamp: trace_config.block_constants.timestamp,
             number: Some(U64::from(trace_config.block_constants.number.as_u64())),
             difficulty: trace_config.block_constants.difficulty,

@@ -8,7 +8,7 @@ use anyhow::{bail, Context, Result};
 use eth_types::evm_types::OpcodeId;
 use eth_types::{geth_types::Account, Address, Bytes, H256, U256};
 use ethers_core::utils::secret_key_to_address;
-use k256::ecdsa::SigningKey;
+use ethers_core::k256::ecdsa::SigningKey;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::convert::TryInto;

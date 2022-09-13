@@ -113,7 +113,7 @@ impl Compiler {
         for op in src.split(';') {
             let op = match bytecode::OpcodeWithData::from_str(op.trim()) {
                 Ok(op) => op,
-                Err(err) => bail!("unable to process asm entry {}: {}", op, err),
+                Err(err) => bail!("unable to process asm entry {}: {:?}", op, err),
             };
             bytecode.append_op(op);
         }

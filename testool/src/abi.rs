@@ -64,7 +64,7 @@ pub fn encode_funccall(spec: &str) -> Result<Bytes> {
         inputs: func_params,
         outputs: vec![],
         state_mutability: StateMutability::Payable,
-        constant: false,
+        constant: Some(false),
     };
 
     Ok(Bytes::from(func.encode_input(&args)?))
