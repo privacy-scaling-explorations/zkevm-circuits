@@ -48,7 +48,13 @@ impl<F: Field> Circuit<F> for BytecodeCircuitTester<F> {
             self.bytecodes.iter().map(|b| &b.bytes),
             self.randomness,
         )?;
-        config.assign(&mut layouter, self.size, &self.bytecodes, self.randomness)?;
+        config.assign_internal(
+            &mut layouter,
+            self.size,
+            &self.bytecodes,
+            self.randomness,
+            false,
+        )?;
         Ok(())
     }
 }

@@ -390,6 +390,17 @@ impl<F: Field> Config<F> {
         witness: &[UnrolledBytecode<F>],
         randomness: F,
     ) -> Result<(), Error> {
+        self.assign_internal(layouter, size, witness, randomness, true)
+    }
+
+    pub(crate) fn assign_internal(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        size: usize,
+        witness: &[UnrolledBytecode<F>],
+        randomness: F,
+        fail_fast: bool,
+    ) -> Result<(), Error> {
         let push_rindex_is_zero_chip = IsZeroChip::construct(self.push_rindex_is_zero.clone());
         let length_is_zero_chip = IsZeroChip::construct(self.length_is_zero.clone());
 
@@ -408,11 +419,13 @@ impl<F: Field> Config<F> {
                     let mut hash_input_rlc = F::zero();
                     let code_length = F::from(bytecode.bytes.len() as u64);
                     for (idx, row) in bytecode.rows.iter().enumerate() {
-                        if offset > last_row_offset {
-                            panic!(
+                        if fail_fast && offset > last_row_offset {
+                            log::error!(
                                 "Bytecode Circuit: offset={} > last_row_offset={}",
-                                offset, last_row_offset
+                                offset,
+                                last_row_offset
                             );
+                            return Err(Error::Synthesis);
                         }
 
                         // Track which byte is an opcode and which is push
@@ -429,27 +442,30 @@ impl<F: Field> Config<F> {
                         }
 
                         // Set the data for this row
-                        self.set_row(
-                            &mut region,
-                            &push_rindex_is_zero_chip,
-                            &length_is_zero_chip,
-                            offset,
-                            true,
-                            offset == last_row_offset,
-                            row.code_hash,
-                            row.tag,
-                            row.index,
-                            row.is_code,
-                            row.value,
-                            push_rindex,
-                            hash_input_rlc,
-                            code_length,
-                            F::from(byte_push_size as u64),
-                            idx == bytecode.bytes.len(),
-                            false,
-                            F::from(push_rindex_prev),
-                        )?;
-                        push_rindex_prev = push_rindex;
+                        if offset <= last_row_offset {
+                            self.set_row(
+                                &mut region,
+                                &push_rindex_is_zero_chip,
+                                &length_is_zero_chip,
+                                offset,
+                                true,
+                                offset == last_row_offset,
+                                row.code_hash,
+                                row.tag,
+                                row.index,
+                                row.is_code,
+                                row.value,
+                                push_rindex,
+                                hash_input_rlc,
+                                code_length,
+                                F::from(byte_push_size as u64),
+                                idx == bytecode.bytes.len(),
+                                false,
+                                F::from(push_rindex_prev),
+                            )?;
+                            push_rindex_prev = push_rindex;
+                        }
+                        // always increment, see `fail_fast`
                         offset += 1;
                     }
                 }
