@@ -1,8 +1,7 @@
 use crate::{
     circuit_input_builder::{
-        CircuitInputStateRef, CopyDataType, CopyEvent, CopyStep, ExecStep, NumberOrHash,
+        CircuitInputStateRef, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
     },
-    operation::RW,
     Error,
 };
 use eth_types::{Bytecode, GethExecStep};
@@ -87,7 +86,6 @@ fn gen_copy_steps(
     src_addr: u64,
     dst_addr: u64,
     bytes_left: u64,
-    src_addr_end: u64,
     bytecode: &Bytecode,
 ) -> Result<Vec<(u8, bool)>, Error> {
     let mut steps = Vec::with_capacity(bytes_left as usize);
@@ -121,7 +119,6 @@ fn gen_copy_event(
         code_offset,
         dst_offset,
         length,
-        src_addr_end,
         &bytecode,
     )?;
 
@@ -154,9 +151,9 @@ mod codecopy_tests {
     };
 
     use crate::{
-        circuit_input_builder::{CopyDataType, CopyStep, ExecState, NumberOrHash},
+        circuit_input_builder::{CopyDataType, ExecState, NumberOrHash},
         mock::BlockData,
-        operation::{MemoryOp, RWCounter, StackOp, RW},
+        operation::{MemoryOp, StackOp, RW},
     };
 
     #[test]

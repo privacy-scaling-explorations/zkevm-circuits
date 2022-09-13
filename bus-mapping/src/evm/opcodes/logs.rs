@@ -1,7 +1,7 @@
 use super::Opcode;
 use crate::circuit_input_builder::{CircuitInputStateRef, ExecState, ExecStep};
-use crate::circuit_input_builder::{CopyDataType, CopyEvent, CopyStep, NumberOrHash};
-use crate::operation::{CallContextField, TxLogField, RW};
+use crate::circuit_input_builder::{CopyDataType, CopyEvent, NumberOrHash};
+use crate::operation::{CallContextField, TxLogField};
 use crate::Error;
 use eth_types::evm_types::OpcodeId;
 use eth_types::Word;
@@ -195,11 +195,9 @@ fn gen_copy_event(
 #[cfg(test)]
 mod log_tests {
     use crate::{
-        circuit_input_builder::{CopyDataType, CopyStep, ExecState, NumberOrHash},
+        circuit_input_builder::{CopyDataType, ExecState, NumberOrHash},
         mock::BlockData,
-        operation::{
-            CallContextField, CallContextOp, MemoryOp, RWCounter, StackOp, TxLogField, TxLogOp, RW,
-        },
+        operation::{CallContextField, CallContextOp, MemoryOp, StackOp, TxLogField, TxLogOp, RW},
     };
     use eth_types::{
         bytecode,

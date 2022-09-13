@@ -2,7 +2,7 @@
 
 use crate::{
     circuit_input_builder::CallContext, error::ExecError, exec_trace::OperationRef,
-    operation::RWCounter, operation::RW,
+    operation::RWCounter,
 };
 use eth_types::{
     evm_types::{Gas, GasCost, OpcodeId, ProgramCounter},

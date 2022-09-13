@@ -1,6 +1,6 @@
 use super::Opcode;
 use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
-use crate::circuit_input_builder::{CopyDataType, CopyEvent, CopyStep, NumberOrHash};
+use crate::circuit_input_builder::{CopyDataType, CopyEvent, NumberOrHash};
 use crate::operation::{CallContextField, MemoryOp, RW};
 use crate::Error;
 use eth_types::GethExecStep;
@@ -117,7 +117,7 @@ fn gen_copy_steps(
     let mut copy_steps = Vec::with_capacity(bytes_left as usize);
     for idx in 0..bytes_left {
         let addr = src_addr + idx;
-        let (value, is_pad) = if addr < src_addr_end {
+        let value = if addr < src_addr_end {
             let byte =
                 state.call_ctx()?.call_data[(addr - state.call()?.call_data_offset) as usize];
             if !is_root {
@@ -126,17 +126,12 @@ fn gen_copy_steps(
                     RW::READ,
                     MemoryOp::new(state.call()?.caller_id, addr.into(), byte),
                 );
-                (byte, false)
+                byte
             } else {
-                (byte, false)
+                byte
             }
         } else {
-            (0, true)
-        };
-        let tag = if is_root {
-            CopyDataType::TxCalldata
-        } else {
-            CopyDataType::Memory
+            0
         };
         copy_steps.push((value, false));
         state.memory_write(exec_step, (dst_addr + idx).into(), value)?;
@@ -195,9 +190,9 @@ fn gen_copy_event(
 #[cfg(test)]
 mod calldatacopy_tests {
     use crate::{
-        circuit_input_builder::{CopyDataType, ExecState, NumberOrHash},
+        circuit_input_builder::{ExecState, NumberOrHash},
         mock::BlockData,
-        operation::{CallContextField, CallContextOp, MemoryOp, RWCounter, StackOp, RW},
+        operation::{CallContextField, CallContextOp, MemoryOp, StackOp, RW},
     };
     use eth_types::{
         bytecode,

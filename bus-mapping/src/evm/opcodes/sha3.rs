@@ -1,8 +1,7 @@
 use crate::{
     circuit_input_builder::{
-        CircuitInputStateRef, CopyDataType, CopyEvent, CopyStep, ExecStep, NumberOrHash,
+        CircuitInputStateRef, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
     },
-    operation::RW,
     Error,
 };
 use eth_types::{GethExecStep, Word, U256};
@@ -90,9 +89,9 @@ pub mod sha3_tests {
     use rand::{random, Rng};
 
     use crate::{
-        circuit_input_builder::{CopyDataType, CopyStep, ExecState},
+        circuit_input_builder::ExecState,
         mock::BlockData,
-        operation::{MemoryOp, RWCounter, StackOp, RW},
+        operation::{MemoryOp, StackOp, RW},
     };
 
     /// Generate bytecode for SHA3 opcode after having populated sufficient

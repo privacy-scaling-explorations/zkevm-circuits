@@ -7,7 +7,7 @@ use crate::evm_circuit::{
     witness::{Block, BlockContext, Bytecode, RwMap, Transaction},
 };
 use crate::impl_expr;
-use bus_mapping::circuit_input_builder::{CopyDataType, CopyEvent, CopyStep};
+use bus_mapping::circuit_input_builder::{CopyDataType, CopyEvent};
 use eth_types::{Field, ToAddress, ToLittleEndian, ToScalar, Word, U256};
 use gadgets::binary_number::{BinaryNumberChip, BinaryNumberConfig};
 use halo2_proofs::{
@@ -18,7 +18,6 @@ use halo2_proofs::{
 use halo2_proofs::{circuit::Layouter, plonk::*, poly::Rotation};
 use itertools::Itertools;
 use keccak256::plain::Keccak;
-use std::iter::once;
 use strum_macros::{EnumCount, EnumIter};
 
 /// Trait used for dynamic tables.  Used to get an automatic implementation of
@@ -769,28 +768,10 @@ impl CopyTable {
         } else {
             F::zero()
         };
-        for (step_idx, (copy_step, is_read_step)) in copy_event
+        for (step_idx, is_read_step) in copy_event
             .bytes
             .iter()
-            .flat_map(|(value, is_code)| {
-                let read_step = CopyStep {
-                    value: *value,
-                    is_code: if copy_event.src_type == CopyDataType::Bytecode {
-                        Some(*is_code)
-                    } else {
-                        None
-                    },
-                };
-                let write_step = CopyStep {
-                    value: *value,
-                    is_code: if copy_event.dst_type == CopyDataType::Bytecode {
-                        Some(*is_code)
-                    } else {
-                        None
-                    },
-                };
-                once((read_step, true)).chain(once((write_step, false)))
-            })
+            .flat_map(|_| vec![true, false].into_iter())
             .enumerate()
         {
             // is_first

@@ -3,7 +3,7 @@
 //! etc.
 
 use bus_mapping::circuit_input_builder::{CopyDataType, CopyEvent, CopyStep, NumberOrHash};
-use bus_mapping::operation::RW;
+
 use eth_types::{Field, ToAddress, ToScalar, U256};
 use gadgets::{
     binary_number::BinaryNumberChip,
@@ -861,17 +861,9 @@ pub mod dev {
 mod tests {
     use super::dev::test_copy_circuit;
     use bus_mapping::evm::{gen_sha3_code, MemoryKind};
-    use bus_mapping::{
-        circuit_input_builder::{CircuitInputBuilder, CopyDataType},
-        mock::BlockData,
-        operation::RWCounter,
-    };
+    use bus_mapping::{circuit_input_builder::CircuitInputBuilder, mock::BlockData};
     use eth_types::{bytecode, geth_types::GethData, Word};
     use mock::TestContext;
-    use rand::{
-        prelude::{IteratorRandom, SliceRandom},
-        Rng,
-    };
 
     use crate::evm_circuit::witness::block_convert;
 
