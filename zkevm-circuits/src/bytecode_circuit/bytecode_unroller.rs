@@ -408,6 +408,13 @@ impl<F: Field> Config<F> {
                     let mut hash_input_rlc = F::zero();
                     let code_length = F::from(bytecode.bytes.len() as u64);
                     for (idx, row) in bytecode.rows.iter().enumerate() {
+                        if offset > last_row_offset {
+                            panic!(
+                                "Bytecode Circuit: offset={} > last_row_offset={}",
+                                offset, last_row_offset
+                            );
+                        }
+
                         // Track which byte is an opcode and which is push
                         // data
                         let is_code = push_rindex == 0;
@@ -422,30 +429,28 @@ impl<F: Field> Config<F> {
                         }
 
                         // Set the data for this row
-                        if offset <= last_row_offset {
-                            self.set_row(
-                                &mut region,
-                                &push_rindex_is_zero_chip,
-                                &length_is_zero_chip,
-                                offset,
-                                true,
-                                offset == last_row_offset,
-                                row.code_hash,
-                                row.tag,
-                                row.index,
-                                row.is_code,
-                                row.value,
-                                push_rindex,
-                                hash_input_rlc,
-                                code_length,
-                                F::from(byte_push_size as u64),
-                                idx == bytecode.bytes.len(),
-                                false,
-                                F::from(push_rindex_prev),
-                            )?;
-                            push_rindex_prev = push_rindex;
-                            offset += 1;
-                        }
+                        self.set_row(
+                            &mut region,
+                            &push_rindex_is_zero_chip,
+                            &length_is_zero_chip,
+                            offset,
+                            true,
+                            offset == last_row_offset,
+                            row.code_hash,
+                            row.tag,
+                            row.index,
+                            row.is_code,
+                            row.value,
+                            push_rindex,
+                            hash_input_rlc,
+                            code_length,
+                            F::from(byte_push_size as u64),
+                            idx == bytecode.bytes.len(),
+                            false,
+                            F::from(push_rindex_prev),
+                        )?;
+                        push_rindex_prev = push_rindex;
+                        offset += 1;
                     }
                 }
 
