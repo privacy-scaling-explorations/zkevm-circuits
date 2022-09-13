@@ -1,9 +1,12 @@
-use crate::{evm_circuit::witness::Block, state_circuit::StateCircuit};
+use crate::{state_circuit::StateCircuit, witness::Block};
 use bus_mapping::mock::BlockData;
-use eth_types::geth_types::GethData;
+use eth_types::geth_types::{GethData, Transaction};
+use ethers_core::types::{NameOrAddress, TransactionRequest};
+use ethers_signers::{LocalWallet, Signer};
 use halo2_proofs::dev::{MockProver, VerifyFailure};
-use halo2_proofs::pairing::bn256::Fr;
+use halo2_proofs::halo2curves::bn256::Fr;
 use mock::TestContext;
+use rand::{CryptoRng, Rng};
 
 #[cfg(test)]
 #[ctor::ctor]
@@ -40,7 +43,7 @@ pub fn run_test_circuits<const NACC: usize, const NTX: usize>(
         .unwrap();
 
     // build a witness block from trace result
-    let block = crate::evm_circuit::witness::block_convert(&builder.block, &builder.code_db);
+    let block = crate::witness::block_convert(&builder.block, &builder.code_db);
 
     // finish required tests according to config using this witness block
     test_circuits_using_witness_block(block, config.unwrap_or_default())
@@ -70,4 +73,39 @@ pub fn test_circuits_using_witness_block(
     }
 
     Ok(())
+}
+
+pub fn rand_tx<R: Rng + CryptoRng>(mut rng: R, chain_id: u64) -> Transaction {
+    let wallet0 = LocalWallet::new(&mut rng).with_chain_id(chain_id);
+    let wallet1 = LocalWallet::new(&mut rng).with_chain_id(chain_id);
+    let from = wallet0.address();
+    let to = wallet1.address();
+    let data = b"hello";
+    let tx = TransactionRequest::new()
+        .chain_id(chain_id)
+        .from(from)
+        .to(to)
+        .nonce(3)
+        .value(1000)
+        .data(data)
+        .gas(500_000)
+        .gas_price(1234);
+    let sig = wallet0.sign_transaction_sync(&tx.clone().into());
+    let to = tx.to.map(|to| match to {
+        NameOrAddress::Address(a) => a,
+        _ => unreachable!(),
+    });
+    Transaction {
+        from: tx.from.unwrap(),
+        to,
+        gas_limit: tx.gas.unwrap(),
+        gas_price: tx.gas_price.unwrap(),
+        value: tx.value.unwrap(),
+        call_data: tx.data.unwrap(),
+        nonce: tx.nonce.unwrap(),
+        v: sig.v,
+        r: sig.r,
+        s: sig.s,
+        ..Transaction::default()
+    }
 }

@@ -59,6 +59,7 @@ impl Opcode for Sha3 {
             state.memory_read(&mut exec_step, (offset.as_usize() + i).into(), *byte)?;
             steps.push((*byte, false));
         }
+        state.block.sha3_inputs.push(memory);
 
         let call_id = state.call()?.call_id;
         state.push_copy(CopyEvent {

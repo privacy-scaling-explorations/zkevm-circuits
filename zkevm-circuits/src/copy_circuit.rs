@@ -11,7 +11,7 @@ use gadgets::{
     util::{and, not, or, Expr},
 };
 use halo2_proofs::{
-    circuit::{Layouter, Region},
+    circuit::{Layouter, Region, Value},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, Selector},
     poly::Rotation,
 };
@@ -477,7 +477,12 @@ impl<F: Field> CopyCircuit<F> {
         lt_chip: &LtChip<F, 8>,
     ) -> Result<(), Error> {
         // q_enable
-        region.assign_fixed(|| "q_enable", self.q_enable, offset, || Ok(F::one()))?;
+        region.assign_fixed(
+            || "q_enable",
+            self.q_enable,
+            offset,
+            || Value::known(F::one()),
+        )?;
         // enable q_step on the Read step
         let is_read = step_idx % 2 == 0;
         if is_read {
@@ -496,7 +501,7 @@ impl<F: Field> CopyCircuit<F> {
             || format!("assign is_first {}", offset),
             self.copy_table.is_first,
             offset,
-            || Ok(if step_idx == 0 { F::one() } else { F::zero() }),
+            || Value::known(if step_idx == 0 { F::one() } else { F::zero() }),
         )?;
         // is_last
         region.assign_advice(
@@ -504,7 +509,7 @@ impl<F: Field> CopyCircuit<F> {
             self.is_last,
             offset,
             || {
-                Ok(if step_idx == copy_event.bytes.len() * 2 - 1 {
+                Value::known(if step_idx == copy_event.bytes.len() * 2 - 1 {
                     F::one()
                 } else {
                     F::zero()
@@ -516,7 +521,7 @@ impl<F: Field> CopyCircuit<F> {
             || format!("assign id {}", offset),
             self.copy_table.id,
             offset,
-            || Ok(number_or_hash_to_field(id, randomness)),
+            || Value::known(number_or_hash_to_field(id, randomness)),
         )?;
         // addr
         let copy_step_addr: u64 =
@@ -540,28 +545,28 @@ impl<F: Field> CopyCircuit<F> {
             || format!("assign addr {}", offset),
             self.copy_table.addr,
             offset,
-            || Ok(addr),
+            || Value::known(addr),
         )?;
         // value
         region.assign_advice(
             || format!("assign value {}", offset),
             self.value,
             offset,
-            || Ok(value),
+            || Value::known(value),
         )?;
         // rlc_acc
         region.assign_advice(
             || format!("assign rlc_acc {}", offset),
             self.copy_table.rlc_acc,
             offset,
-            || Ok(rlc_acc),
+            || Value::known(rlc_acc),
         )?;
         // is_code
         region.assign_advice(
             || format!("assign is_code {}", offset),
             self.is_code,
             offset,
-            || Ok(copy_step.is_code.map_or(F::zero(), |v| F::from(v))),
+            || Value::known(copy_step.is_code.map_or(F::zero(), |v| F::from(v))),
         )?;
         // is_pad
         // let is_pad = copy_step.rw != RW::WRITE && copy_step.addr <
@@ -571,7 +576,7 @@ impl<F: Field> CopyCircuit<F> {
             || format!("assign is_pad {}", offset),
             self.is_pad,
             offset,
-            || Ok(F::from(is_pad)),
+            || Value::known(F::from(is_pad)),
         )?;
         // rw_counter
         let source_rw_increase = match copy_event.src_type {
@@ -597,7 +602,7 @@ impl<F: Field> CopyCircuit<F> {
             || format!("assign rw_counter {}", offset),
             self.copy_table.rw_counter,
             offset,
-            || Ok(F::from(rw_counter)),
+            || Value::known(F::from(rw_counter)),
         )?;
         // rwc_inc_left
         let rwc_inc_left = u64::try_from(copy_event.rw_counter_increase()).unwrap()
@@ -608,7 +613,7 @@ impl<F: Field> CopyCircuit<F> {
             || format!("assign rwc_inc_left {}", offset),
             self.copy_table.rwc_inc_left,
             offset,
-            || Ok(F::from(rwc_inc_left)),
+            || Value::known(F::from(rwc_inc_left)),
         )?;
         // tag binary number chip
         let tag = if is_read {
@@ -624,14 +629,14 @@ impl<F: Field> CopyCircuit<F> {
                 || format!("assign src_addr_end {}", offset),
                 self.copy_table.src_addr_end,
                 offset,
-                || Ok(F::from(copy_event.src_addr_end)),
+                || Value::known(F::from(copy_event.src_addr_end)),
             )?;
             // bytes_left
             region.assign_advice(
                 || format!("assign bytes_left {}", offset),
                 self.copy_table.bytes_left,
                 offset,
-                || Ok(F::from(bytes_left)),
+                || Value::known(F::from(bytes_left)),
             )?;
             // lt chip
             lt_chip.assign(
@@ -651,90 +656,95 @@ impl<F: Field> CopyCircuit<F> {
         tag_chip: &BinaryNumberChip<F, CopyDataType, 3>,
     ) -> Result<(), Error> {
         // q_enable
-        region.assign_fixed(|| "q_enable", self.q_enable, offset, || Ok(F::zero()))?;
+        region.assign_fixed(
+            || "q_enable",
+            self.q_enable,
+            offset,
+            || Value::known(F::zero()),
+        )?;
         // is_first
         region.assign_advice(
             || format!("assign is_first {}", offset),
             self.copy_table.is_first,
             offset,
-            || Ok(F::zero()),
+            || Value::known(F::zero()),
         )?;
         // is_last
         region.assign_advice(
             || format!("assign is_last {}", offset),
             self.is_last,
             offset,
-            || Ok(F::zero()),
+            || Value::known(F::zero()),
         )?;
         // id
         region.assign_advice(
             || format!("assign id {}", offset),
             self.copy_table.id,
             offset,
-            || Ok(F::zero()),
+            || Value::known(F::zero()),
         )?;
         // addr
         region.assign_advice(
             || format!("assign addr {}", offset),
             self.copy_table.addr,
             offset,
-            || Ok(F::zero()),
+            || Value::known(F::zero()),
         )?;
         // src_addr_end
         region.assign_advice(
             || format!("assign src_addr_end {}", offset),
             self.copy_table.src_addr_end,
             offset,
-            || Ok(F::zero()),
+            || Value::known(F::zero()),
         )?;
         // bytes_left
         region.assign_advice(
             || format!("assign bytes_left {}", offset),
             self.copy_table.bytes_left,
             offset,
-            || Ok(F::zero()),
+            || Value::known(F::zero()),
         )?;
         // value
         region.assign_advice(
             || format!("assign value {}", offset),
             self.value,
             offset,
-            || Ok(F::zero()),
+            || Value::known(F::zero()),
         )?;
         // rlc_acc
         region.assign_advice(
             || format!("assign rlc_acc {}", offset),
             self.copy_table.rlc_acc,
             offset,
-            || Ok(F::zero()),
+            || Value::known(F::zero()),
         )?;
         // is_code
         region.assign_advice(
             || format!("assign is_code {}", offset),
             self.is_code,
             offset,
-            || Ok(F::zero()),
+            || Value::known(F::zero()),
         )?;
         // is_pad
         region.assign_advice(
             || format!("assign is_pad {}", offset),
             self.is_pad,
             offset,
-            || Ok(F::zero()),
+            || Value::known(F::zero()),
         )?;
         // rw_counter
         region.assign_advice(
             || format!("assign rw_counter {}", offset),
             self.copy_table.rw_counter,
             offset,
-            || Ok(F::zero()),
+            || Value::known(F::zero()),
         )?;
         // rwc_inc_left
         region.assign_advice(
             || format!("assign rwc_inc_left {}", offset),
             self.copy_table.rwc_inc_left,
             offset,
-            || Ok(F::zero()),
+            || Value::known(F::zero()),
         )?;
         // tag
         tag_chip.assign(region, offset, &CopyDataType::default())?;
@@ -742,8 +752,8 @@ impl<F: Field> CopyCircuit<F> {
     }
 }
 
-#[cfg(feature = "dev")]
 /// Dev helpers
+#[cfg(any(feature = "test", test))]
 pub mod dev {
     use super::*;
     use eth_types::Field;
@@ -863,19 +873,34 @@ mod tests {
     use bus_mapping::evm::{gen_sha3_code, MemoryKind};
     use bus_mapping::{circuit_input_builder::CircuitInputBuilder, mock::BlockData};
     use eth_types::{bytecode, geth_types::GethData, Word};
+    use mock::test_ctx::helpers::account_0_code_account_1_no_code;
     use mock::TestContext;
 
+    use crate::evm_circuit::test::rand_bytes;
     use crate::evm_circuit::witness::block_convert;
 
     fn gen_calldatacopy_data() -> CircuitInputBuilder {
+        let length = 0x0fffusize;
         let code = bytecode! {
-            PUSH32(Word::from(0x20))
+            PUSH32(Word::from(length))
             PUSH32(Word::from(0x00))
             PUSH32(Word::from(0x00))
             CALLDATACOPY
             STOP
         };
-        let test_ctx = TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap();
+        let calldata = rand_bytes(length);
+        let test_ctx = TestContext::<2, 1>::new(
+            None,
+            account_0_code_account_1_no_code(code),
+            |mut txs, accs| {
+                txs[0]
+                    .from(accs[1].address)
+                    .to(accs[0].address)
+                    .input(calldata.into());
+            },
+            |block, _txs| block.number(0xcafeu64),
+        )
+        .unwrap();
         let block: GethData = test_ctx.into();
         let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
         builder
@@ -916,21 +941,21 @@ mod tests {
     fn copy_circuit_valid_calldatacopy() {
         let builder = gen_calldatacopy_data();
         let block = block_convert(&builder.block, &builder.code_db);
-        assert!(test_copy_circuit(10, block).is_ok());
+        assert_eq!(test_copy_circuit(14, block), Ok(()));
     }
 
     #[test]
     fn copy_circuit_valid_codecopy() {
         let builder = gen_codecopy_data();
         let block = block_convert(&builder.block, &builder.code_db);
-        assert!(test_copy_circuit(10, block).is_ok());
+        assert_eq!(test_copy_circuit(10, block), Ok(()));
     }
 
     #[test]
     fn copy_circuit_valid_sha3() {
         let builder = gen_sha3_data();
         let block = block_convert(&builder.block, &builder.code_db);
-        assert!(test_copy_circuit(20, block).is_ok());
+        assert_eq!(test_copy_circuit(20, block), Ok(()));
     }
 
     // // TODO: replace these with deterministic failure tests

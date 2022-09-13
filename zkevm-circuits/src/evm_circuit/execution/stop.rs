@@ -18,7 +18,7 @@ use crate::{
 };
 use bus_mapping::evm::OpcodeId;
 use eth_types::Field;
-use halo2_proofs::plonk::Error;
+use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct StopGadget<F> {
@@ -106,8 +106,11 @@ impl<F: Field> ExecutionGadget<F> for StopGadget<F> {
             .bytecodes
             .get(&call.code_hash)
             .expect("could not find current environment's bytecode");
-        self.code_length
-            .assign(region, offset, Some(F::from(code.bytes.len() as u64)))?;
+        self.code_length.assign(
+            region,
+            offset,
+            Value::known(F::from(code.bytes.len() as u64)),
+        )?;
 
         self.is_out_of_range.assign(
             region,
@@ -117,7 +120,7 @@ impl<F: Field> ExecutionGadget<F> for StopGadget<F> {
 
         let opcode = step.opcode.unwrap();
         self.opcode
-            .assign(region, offset, Some(F::from(opcode.as_u64())))?;
+            .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
 
         self.restore_context
             .assign(region, offset, block, call, step)?;

@@ -1,18 +1,16 @@
 //! Table definitions used cross-circuits
 
 use crate::copy_circuit::number_or_hash_to_field;
-use crate::evm_circuit::witness::{Rw, RwRow};
-use crate::evm_circuit::{
-    util::{rlc, RandomLinearCombination},
-    witness::{Block, BlockContext, Bytecode, RwMap, Transaction},
-};
+use crate::evm_circuit::util::{rlc, RandomLinearCombination};
 use crate::impl_expr;
+use crate::witness::{Block, BlockContext, Bytecode, RwMap, Transaction};
+use crate::witness::{Rw, RwRow};
 use bus_mapping::circuit_input_builder::{CopyDataType, CopyEvent};
 use eth_types::{Field, ToAddress, ToLittleEndian, ToScalar, Word, U256};
 use gadgets::binary_number::{BinaryNumberChip, BinaryNumberConfig};
 use halo2_proofs::{
     arithmetic::FieldExt,
-    circuit::Region,
+    circuit::{Region, Value},
     plonk::{Advice, Column, ConstraintSystem, Error},
 };
 use halo2_proofs::{circuit::Layouter, plonk::*, poly::Rotation};
@@ -127,7 +125,7 @@ impl TxTable {
                         || "tx table all-zero row",
                         column,
                         offset,
-                        || Ok(F::zero()),
+                        || Value::known(F::zero()),
                     )?;
                 }
                 offset += 1;
@@ -140,7 +138,7 @@ impl TxTable {
                                 || format!("tx table row {}", offset),
                                 *column,
                                 offset,
-                                || Ok(value),
+                                || Value::known(value),
                             )?;
                         }
                         offset += 1;
@@ -385,7 +383,12 @@ impl RwTable {
             (self.aux1, row.aux1),
             (self.aux2, row.aux2),
         ] {
-            region.assign_advice(|| "assign rw row on rw table", column, offset, || Ok(value))?;
+            region.assign_advice(
+                || "assign rw row on rw table",
+                column,
+                offset,
+                || Value::known(value),
+            )?;
         }
         Ok(())
     }
@@ -476,7 +479,7 @@ impl BytecodeTable {
                         || "bytecode table all-zero row",
                         column,
                         offset,
-                        || Ok(F::zero()),
+                        || Value::known(F::zero()),
                     )?;
                 }
                 offset += 1;
@@ -489,7 +492,7 @@ impl BytecodeTable {
                                 || format!("bytecode table row {}", offset),
                                 *column,
                                 offset,
-                                || Ok(value),
+                                || Value::known(value),
                             )?;
                         }
                         offset += 1;
@@ -574,7 +577,7 @@ impl BlockTable {
                         || "block table all-zero row",
                         column,
                         offset,
-                        || Ok(F::zero()),
+                        || Value::known(F::zero()),
                     )?;
                 }
                 offset += 1;
@@ -586,7 +589,7 @@ impl BlockTable {
                             || format!("block table row {}", offset),
                             *column,
                             offset,
-                            || Ok(value),
+                            || Value::known(value),
                         )?;
                     }
                     offset += 1;
@@ -643,16 +646,30 @@ impl KeccakTable {
         vec![[F::one(), input_rlc, input_len, output_rlc]]
     }
 
-    // NOTE: For now, the input_rlc of the keccak is defined as
-    // `RLC(reversed(input))` for convenience of the circuits that do the lookups.
-    // This allows calculating the `input_rlc` after all the inputs bytes have been
-    // layed out via the pattern `acc[i] = acc[i-1] * r + value[i]`.
-    /// Assign the `KeccakTable` from a list hashing inputs, followig the same
-    /// table layout that the Keccak Circuit uses.
-    pub fn load<F: Field>(
+    /// Assign a table row for keccak table
+    pub fn assign_row<F: Field>(
+        &self,
+        region: &mut Region<F>,
+        offset: usize,
+        values: [F; 4],
+    ) -> Result<(), Error> {
+        for (column, value) in self.columns().iter().zip(values.iter()) {
+            region.assign_advice(
+                || format!("assign {}", offset),
+                *column,
+                offset,
+                || Value::known(*value),
+            )?;
+        }
+        Ok(())
+    }
+
+    /// Provide this function for the case that we want to consume a keccak
+    /// table but without running the full keccak circuit
+    pub fn dev_load<'a, F: Field>(
         &self,
         layouter: &mut impl Layouter<F>,
-        inputs: impl IntoIterator<Item = Vec<u8>> + Clone,
+        inputs: impl IntoIterator<Item = &'a Vec<u8>> + Clone,
         randomness: F,
     ) -> Result<(), Error> {
         layouter.assign_region(
@@ -664,21 +681,21 @@ impl KeccakTable {
                         || "keccak table all-zero row",
                         column,
                         offset,
-                        || Ok(F::zero()),
+                        || Value::known(F::zero()),
                     )?;
                 }
                 offset += 1;
 
                 let keccak_table_columns = self.columns();
                 for input in inputs.clone() {
-                    for row in Self::assignments(&input, randomness) {
+                    for row in Self::assignments(input, randomness) {
                         // let mut column_index = 0;
                         for (column, value) in keccak_table_columns.iter().zip_eq(row) {
                             region.assign_advice(
                                 || format!("keccak table row {}", offset),
                                 *column,
                                 offset,
-                                || Ok(value),
+                                || Value::known(value),
                             )?;
                         }
                         offset += 1;
@@ -863,7 +880,7 @@ impl CopyTable {
                         || "copy table all-zero row",
                         column,
                         offset,
-                        || Ok(F::zero()),
+                        || Value::known(F::zero()),
                     )?;
                 }
                 offset += 1;
@@ -877,7 +894,7 @@ impl CopyTable {
                                 || format!("copy table row {}", offset),
                                 *column,
                                 offset,
-                                || Ok(value),
+                                || Value::known(value),
                             )?;
                         }
                         tag_chip.assign(&mut region, offset, &tag)?;

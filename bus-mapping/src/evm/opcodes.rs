@@ -16,7 +16,7 @@ use keccak256::EMPTY_HASH;
 use log::warn;
 
 #[cfg(any(feature = "test", test))]
-pub use sha3::sha3_tests::{gen_sha3_code, MemoryKind};
+pub use self::sha3::sha3_tests::{gen_sha3_code, MemoryKind};
 
 mod address;
 mod balance;
@@ -53,6 +53,7 @@ mod swap;
 #[cfg(test)]
 mod memory_expansion_test;
 
+use self::sha3::Sha3;
 use address::Address;
 use balance::Balance;
 use call::Call;
@@ -76,7 +77,6 @@ use origin::Origin;
 use r#return::Return;
 use returndatacopy::Returndatacopy;
 use selfbalance::Selfbalance;
-use sha3::Sha3;
 use sload::Sload;
 use sstore::Sstore;
 use stackonlyop::StackOnlyOpcode;
@@ -467,7 +467,8 @@ pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
     }
     let caller_balance_prev = caller_account.balance;
     let caller_balance =
-        caller_account.balance + state.tx.gas_price * (exec_step.gas_left.0 + effective_refund);
+        caller_balance_prev + state.tx.gas_price * (exec_step.gas_left.0 + effective_refund);
+    caller_account.balance = caller_balance;
 
     state.account_write(
         &mut exec_step,
@@ -484,7 +485,8 @@ pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
     }
     let coinbase_balance_prev = coinbase_account.balance;
     let coinbase_balance =
-        coinbase_account.balance + effective_tip * (state.tx.gas - exec_step.gas_left.0);
+        coinbase_balance_prev + effective_tip * (state.tx.gas - exec_step.gas_left.0);
+    coinbase_account.balance = coinbase_balance;
     state.account_write(
         &mut exec_step,
         state.block.coinbase,

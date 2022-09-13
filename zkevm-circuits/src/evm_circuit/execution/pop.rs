@@ -13,7 +13,7 @@ use crate::{
 };
 use bus_mapping::evm::OpcodeId;
 use eth_types::{Field, ToLittleEndian};
-use halo2_proofs::plonk::Error;
+use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct PopGadget<F> {
@@ -64,7 +64,7 @@ impl<F: Field> ExecutionGadget<F> for PopGadget<F> {
         self.value.assign(
             region,
             offset,
-            Some(Word::random_linear_combine(
+            Value::known(Word::random_linear_combine(
                 value.to_le_bytes(),
                 block.randomness,
             )),

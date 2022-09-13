@@ -62,7 +62,7 @@ impl ExecStep {
             memory_size: call_ctx.memory.len(),
             gas_left: step.gas,
             gas_cost: step.gas_cost,
-            gas_refund: Gas(0),
+            gas_refund: step.refund,
             call_index: call_ctx.index,
             rwc,
             reversible_write_counter,

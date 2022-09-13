@@ -21,7 +21,7 @@ use array_init::array_init;
 use bus_mapping::circuit_input_builder::CopyDataType;
 use eth_types::Field;
 use eth_types::{evm_types::GasCost, evm_types::OpcodeId, ToLittleEndian, ToScalar};
-use halo2_proofs::plonk::Error;
+use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct LogGadget<F> {
@@ -224,27 +224,41 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
                     block.rws[topic_stack_entry].stack_value().to_le_bytes(),
                     block.randomness,
                 );
-                self.topic_selectors[i].assign(region, offset, Some(F::one()))?;
+                self.topic_selectors[i].assign(region, offset, Value::known(F::one()))?;
                 topic_stack_entry.1 += 1;
             } else {
-                self.topic_selectors[i].assign(region, offset, Some(F::zero()))?;
+                self.topic_selectors[i].assign(region, offset, Value::known(F::zero()))?;
             }
-            self.topics[i].assign(region, offset, Some(topic))?;
+            self.topics[i].assign(region, offset, Value::known(topic))?;
         }
 
-        self.contract_address
-            .assign(region, offset, call.callee_address.to_scalar())?;
+        self.contract_address.assign(
+            region,
+            offset,
+            Value::known(
+                call.callee_address
+                    .to_scalar()
+                    .expect("unexpected Address -> Scalar conversion failure"),
+            ),
+        )?;
 
         self.is_static_call
-            .assign(region, offset, Some(F::from(call.is_static as u64)))?;
+            .assign(region, offset, Value::known(F::from(call.is_static as u64)))?;
         self.is_persistent
-            .assign(region, offset, Some(F::from(is_persistent)))?;
+            .assign(region, offset, Value::known(F::from(is_persistent)))?;
         self.tx_id
-            .assign(region, offset, Some(F::from(tx.id as u64)))?;
+            .assign(region, offset, Value::known(F::from(tx.id as u64)))?;
         // rw_counter increase from copy table lookup is `msize` memory reads + `msize`
         // log writes.
-        self.copy_rwc_inc
-            .assign(region, offset, (msize + msize).to_scalar())?;
+        self.copy_rwc_inc.assign(
+            region,
+            offset,
+            Value::known(
+                (msize + msize)
+                    .to_scalar()
+                    .expect("unexpected U256 -> Scalar conversion failure"),
+            ),
+        )?;
 
         Ok(())
     }

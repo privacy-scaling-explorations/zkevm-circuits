@@ -65,6 +65,8 @@ pub struct Block {
     pub txs: Vec<Transaction>,
     /// Copy events in this block.
     pub copy_events: Vec<CopyEvent>,
+    /// Inputs to the SHA3 opcode
+    pub sha3_inputs: Vec<Vec<u8>>,
     code: HashMap<Hash, Vec<u8>>,
 }
 
@@ -85,7 +87,9 @@ impl Block {
         Ok(Self {
             chain_id,
             history_hashes,
-            coinbase: eth_block.author,
+            coinbase: eth_block
+                .author
+                .ok_or(Error::EthTypeError(eth_types::Error::IncompleteBlock))?,
             gas_limit: eth_block.gas_limit.low_u64(),
             number: eth_block
                 .number
@@ -99,6 +103,7 @@ impl Block {
             txs: Vec::new(),
             copy_events: Vec::new(),
             code: HashMap::new(),
+            sha3_inputs: Vec::new(),
         })
     }
 
