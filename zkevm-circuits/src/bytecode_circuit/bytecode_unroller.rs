@@ -464,9 +464,13 @@ impl<F: Field> Config<F> {
                                 F::from(push_rindex_prev),
                             )?;
                             push_rindex_prev = push_rindex;
+                            offset += 1;
+                        } else if fail_fast {
+                            // This if-else clause preserves the behaviour if !fail_fast.
+                            //
+                            // Always increment to catch errors early.
+                            offset += 1;
                         }
-                        // always increment, see `fail_fast`
-                        offset += 1;
                     }
                 }
 
