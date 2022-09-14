@@ -1,6 +1,6 @@
 use bus_mapping::evm::OpcodeId;
 use eth_types::{Field, ToLittleEndian, ToScalar, U256};
-use gadgets::util::{and, not, or, sum, Expr};
+use gadgets::util::{and, not, or, split_u256, sum, Expr};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 use crate::evm_circuit::{
@@ -33,10 +33,12 @@ pub(crate) struct ExponentiationGadget<F> {
     exponent: Word<F>,
     /// RLC-encoded result of the exponentiation.
     exponentiation: Word<F>,
-    /// Gadget to check if exponent is zero or not.
-    exponent_is_zero: IsZeroGadget<F>,
-    /// Gadget to check if exponent is one or not.
-    exponent_is_one: IsEqualGadget<F>,
+    /// Gadget to check if low 128-bit part of exponent is zero or not.
+    exponent_lo_is_zero: IsZeroGadget<F>,
+    /// Gadget to check if high 128-bit part of exponent is zero or not.
+    exponent_hi_is_zero: IsZeroGadget<F>,
+    /// Gadget to check if low 128-bit part of exponent is one or not.
+    exponent_lo_is_one: IsEqualGadget<F>,
     /// Whether there is a single step in the exponentiation trace.
     single_step: Cell<F>,
     /// Gadget to check the byte-size of exponent.
@@ -82,12 +84,13 @@ impl<F: Field> ExecutionGadget<F> for ExponentiationGadget<F> {
 
         // We simplify constraints depending on whether or not the exponent is 0 or 1.
         // In order to do this, we build some utility expressions.
-        let exponent_is_zero = IsZeroGadget::construct(cb, exponent_lo.clone());
+        let exponent_lo_is_zero = IsZeroGadget::construct(cb, exponent_lo.clone());
+        let exponent_hi_is_zero = IsZeroGadget::construct(cb, exponent_hi.clone());
         let exponent_is_zero_expr =
-            and::expr([exponent_is_zero.expr(), not::expr(exponent_hi.clone())]);
-        let exponent_is_one = IsEqualGadget::construct(cb, exponent_lo.clone(), 1.expr());
+            and::expr([exponent_lo_is_zero.expr(), exponent_hi_is_zero.expr()]);
+        let exponent_lo_is_one = IsEqualGadget::construct(cb, exponent_lo.clone(), 1.expr());
         let exponent_is_one_expr =
-            and::expr([exponent_is_one.expr(), not::expr(exponent_hi.clone())]);
+            and::expr([exponent_lo_is_one.expr(), exponent_hi_is_zero.expr()]);
 
         let zero_rlc = cb.query_word();
         cb.require_zero(
@@ -197,8 +200,9 @@ impl<F: Field> ExecutionGadget<F> for ExponentiationGadget<F> {
             base_sq_mul_gadget,
             exponent: exponent_rlc,
             exponentiation: exponentiation_rlc,
-            exponent_is_zero,
-            exponent_is_one,
+            exponent_lo_is_zero,
+            exponent_hi_is_zero,
+            exponent_lo_is_one,
             single_step,
             exponent_byte_size,
         }
@@ -225,13 +229,19 @@ impl<F: Field> ExecutionGadget<F> for ExponentiationGadget<F> {
         self.exponentiation
             .assign(region, offset, Some(exponentiation.to_le_bytes()))?;
 
-        let exponent_scalar = exponent
+        let (exponent_lo, exponent_hi) = split_u256(&exponent);
+        let exponent_lo_scalar = exponent_lo
             .to_scalar()
-            .expect("exponent should fit into scalar");
-        self.exponent_is_zero
-            .assign(region, offset, exponent_scalar)?;
-        self.exponent_is_one
-            .assign(region, offset, exponent_scalar, F::one())?;
+            .expect("exponent lo should fit into scalar");
+        let exponent_hi_scalar = exponent_hi
+            .to_scalar()
+            .expect("exponent hi should fit into scalar");
+        self.exponent_lo_is_zero
+            .assign(region, offset, exponent_lo_scalar)?;
+        self.exponent_hi_is_zero
+            .assign(region, offset, exponent_hi_scalar)?;
+        self.exponent_lo_is_one
+            .assign(region, offset, exponent_lo_scalar, F::one())?;
 
         let (base_sq, _) = base.overflowing_mul(base);
         self.zero_rlc
@@ -292,6 +302,10 @@ mod tests {
     #[test]
     fn exp_gadget_simple() {
         test_ok(2.into(), 5.into());
+        test_ok(
+            2.into(),
+            Word::from_str_radix("0x200000000000000000000000000000000", 16).unwrap(),
+        );
         test_ok(3.into(), 101.into());
         test_ok(5.into(), 259.into());
         test_ok(7.into(), 1023.into());
