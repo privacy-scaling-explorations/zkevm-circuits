@@ -12,6 +12,7 @@ use eth_types::{
 use ethers_core::types::Block;
 use halo2_proofs::plonk::Instance;
 
+use crate::table::BlockTable;
 use crate::table::TxFieldTag;
 use crate::table::TxTable;
 use crate::util::random_linear_combine_word as rlc;
@@ -157,8 +158,7 @@ impl PublicData {
 #[derive(Clone, Debug)]
 pub struct PiCircuitConfig<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> {
     q_block_table: Selector,
-    block_value: Column<Advice>,
-
+    block_table: BlockTable,
     q_tx_table: Selector,
     tx_table: TxTable,
     raw_public_inputs: Column<Advice>,
@@ -175,7 +175,7 @@ pub struct PiCircuitConfig<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: u
 impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
     PiCircuitConfig<F, MAX_TXS, MAX_CALLDATA>
 {
-    fn new(meta: &mut ConstraintSystem<F>, block_value: Column<Advice>, tx_table: TxTable) -> Self {
+    fn new(meta: &mut ConstraintSystem<F>, block_table: BlockTable, tx_table: TxTable) -> Self {
         let q_block_table = meta.selector();
 
         let q_tx_table = meta.selector();
@@ -231,7 +231,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
         // offset
         meta.create_gate("block_table[i] = raw_public_inputs[offset + i]", |meta| {
             let q_block_table = meta.query_selector(q_block_table);
-            let block_value = meta.query_advice(block_value, Rotation::cur());
+            let block_value = meta.query_advice(block_table.value, Rotation::cur());
             let rpi_block_value = meta.query_advice(raw_public_inputs, Rotation::cur());
             vec![q_block_table * (block_value - rpi_block_value)]
         });
@@ -286,7 +286,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
 
         Self {
             q_block_table,
-            block_value,
+            block_table,
             q_tx_table,
             tx_table,
             raw_public_inputs,
@@ -400,7 +400,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
         // zero row
         region.assign_advice(
             || "zero",
-            self.block_value,
+            self.block_table.value,
             offset,
             || Value::known(F::zero()),
         )?;
@@ -417,7 +417,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
         let coinbase = block_values.coinbase.to_scalar().unwrap();
         region.assign_advice(
             || "coinbase",
-            self.block_value,
+            self.block_table.value,
             offset,
             || Value::known(coinbase),
         )?;
@@ -434,7 +434,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
         let gas_limit = F::from(block_values.gas_limit);
         region.assign_advice(
             || "gas_limit",
-            self.block_value,
+            self.block_table.value,
             offset,
             || Value::known(gas_limit),
         )?;
@@ -451,7 +451,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
         let number = F::from(block_values.number);
         region.assign_advice(
             || "number",
-            self.block_value,
+            self.block_table.value,
             offset,
             || Value::known(number),
         )?;
@@ -468,7 +468,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
         let timestamp = F::from(block_values.timestamp);
         region.assign_advice(
             || "timestamp",
-            self.block_value,
+            self.block_table.value,
             offset,
             || Value::known(timestamp),
         )?;
@@ -485,7 +485,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
         let difficulty = rlc(block_values.difficulty.to_le_bytes(), randomness);
         region.assign_advice(
             || "difficulty",
-            self.block_value,
+            self.block_table.value,
             offset,
             || Value::known(difficulty),
         )?;
@@ -502,7 +502,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
         let base_fee = rlc(block_values.base_fee.to_le_bytes(), randomness);
         region.assign_advice(
             || "base_fee",
-            self.block_value,
+            self.block_table.value,
             offset,
             || Value::known(base_fee),
         )?;
@@ -519,7 +519,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
         let chain_id = F::from(block_values.chain_id);
         region.assign_advice(
             || "chain_id",
-            self.block_value,
+            self.block_table.value,
             offset,
             || Value::known(chain_id),
         )?;
@@ -536,7 +536,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
             let prev_hash = rlc(prev_hash.to_fixed_bytes(), randomness);
             region.assign_advice(
                 || "prev_hash",
-                self.block_value,
+                self.block_table.value,
                 offset,
                 || Value::known(prev_hash),
             )?;
@@ -687,9 +687,9 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
     }
 
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-        let block_value = meta.advice_column();
+        let block_table = BlockTable::construct(meta);
         let tx_table = TxTable::construct(meta);
-        PiCircuitConfig::new(meta, block_value, tx_table)
+        PiCircuitConfig::new(meta, block_table, tx_table)
     }
 
     fn synthesize(
