@@ -15,7 +15,7 @@ pub enum Error {
     /// Denotes that the byte in the bytecode does not match with any Opcode ID.
     InvalidOpcodeIdByte(u8),
     /// Error while parsing an `Instruction/Opcode`.
-    OpcodeParsing,
+    OpcodeParsing(String),
     /// Error while parsing a `MemoryAddress`.
     MemAddressParsing,
     /// Error while parsing a `StackAddress`.

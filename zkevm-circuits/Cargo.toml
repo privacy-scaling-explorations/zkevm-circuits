@@ -16,6 +16,8 @@ bus-mapping = { path = "../bus-mapping" }
 eth-types = { path = "../eth-types" }
 gadgets = { path = "../gadgets" }
 ethers-core = "0.17.0"
+ethers-signers = "0.17.0"
+mock = { path = "../mock" }
 strum = "0.24"
 strum_macros = "0.24"
 rand_xorshift = "0.3"
@@ -38,7 +40,6 @@ bus-mapping = { path = "../bus-mapping", features = ["test"] }
 criterion = "0.3"
 ctor = "0.1.22"
 hex = "0.4.3"
-mock = { path = "../mock" }
 itertools = "0.10.1"
 pretty_assertions = "1.0.0"
 ethers-signers = "0.17.0"
