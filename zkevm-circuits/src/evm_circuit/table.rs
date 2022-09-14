@@ -107,7 +107,7 @@ pub(crate) enum Table {
     Keccak,
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct RwValues<F> {
     pub id: Expression<F>,
     pub address: Expression<F>,

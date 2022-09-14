@@ -78,6 +78,8 @@ pub enum TxFieldTag {
     TxSignHash,
     /// CallData
     CallData,
+    /// Pad
+    Pad,
 }
 impl_expr!(TxFieldTag);
 

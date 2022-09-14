@@ -1085,11 +1085,13 @@ impl<F: Field, const MAX_TXS: usize, const MAX_RWS: usize> ExecutionConfig<F, MA
             .get(&step.execution_state)
             .unwrap_or_else(|| panic!("Execution state unknown: {:?}", step.execution_state))
         {
-            let assigned = stored_expression.assign(region, offset)?;
-            assigned.value().map(|v| {
-                let name = stored_expression.name.clone();
-                assigned_stored_expressions.push((name, *v));
-            });
+            let assigned = stored_expression.assign(region, offset);
+            if let Some(assigned) = assigned {
+                assigned?.value().map(|v| {
+                    let name = stored_expression.name.clone();
+                    assigned_stored_expressions.push((name, *v));
+                });
+            }
         }
         Ok(assigned_stored_expressions)
     }

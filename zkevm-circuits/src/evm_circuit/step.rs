@@ -490,10 +490,11 @@ impl<F: FieldExt> Step<F> {
                 log_id: cell_manager.query_cell(CellType::Storage),
             }
         };
-        let mut q_step_last = {
+        let q_step_last = {
             let mut e = None;
             meta.create_gate("Query q_last_step", |meta| {
                 e = Some(meta.query_selector(q_step_last));
+                vec![0.expr()]
             });
             e.unwrap()
         };

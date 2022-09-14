@@ -152,10 +152,12 @@ impl<F: FieldExt> StoredExpression<F> {
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-    ) -> Result<AssignedCell<F, F>, Error> {
+    ) -> Option<Result<AssignedCell<F, F>, Error>> {
         let value = self.expr.evaluate(
             &|scalar| scalar,
-            &|_| unimplemented!("selector column"),
+            &|_selector| {
+                unimplemented!("evaluate selector");
+            },
             &|fixed_query| {
                 region.get_fixed(offset, fixed_query.column_index(), fixed_query.rotation())
             },
@@ -174,7 +176,7 @@ impl<F: FieldExt> StoredExpression<F> {
             &|a, b| a * b,
             &|a, scalar| a * scalar,
         );
-        self.cell.assign(region, offset, Value::known(value))
+        Some(self.cell.assign(region, offset, Value::known(value)))
     }
 }
 

@@ -328,22 +328,25 @@ pub mod test {
     impl<F: Field, const MAX_TXS: usize, const MAX_RWS: usize> TestCircuit<F, MAX_TXS, MAX_RWS> {
         pub fn get_num_rows_required(block: &Block<F>) -> usize {
             let mut cs = ConstraintSystem::default();
-            let config = TestCircuit::configure(&mut cs);
+            let config = TestCircuit::<F, MAX_TXS, MAX_RWS>::configure(&mut cs);
             config.evm_circuit.get_num_rows_required(block)
         }
 
         pub fn get_active_rows(block: &Block<F>) -> (Vec<usize>, Vec<usize>) {
             let mut cs = ConstraintSystem::default();
-            let config = TestCircuit::configure(&mut cs);
+            let config = TestCircuit::<F, MAX_TXS, MAX_RWS>::configure(&mut cs);
             config.evm_circuit.get_active_rows(block)
         }
     }
 
     pub fn run_test_circuit<F: Field>(block: Block<F>) -> Result<(), Vec<VerifyFailure>> {
+        const MAX_TXS: usize = 4;
+        const MAX_RWS: usize = 512;
         let fixed_table_tags = detect_fixed_table_tags(&block);
         let log2_ceil = |n| u32::BITS - (n as u32).leading_zeros() - (n & (n - 1) == 0) as u32;
 
-        let num_rows_required_for_steps = TestCircuit::get_num_rows_required(&block);
+        let num_rows_required_for_steps =
+            TestCircuit::<F, MAX_TXS, MAX_RWS>::get_num_rows_required(&block);
 
         let k = log2_ceil(
             64 + fixed_table_tags
@@ -364,8 +367,9 @@ pub mod test {
         let power_of_randomness = (1..32)
             .map(|exp| vec![block.randomness.pow(&[exp, 0, 0, 0]); (1 << k) - 64])
             .collect();
-        let (active_gate_rows, active_lookup_rows) = TestCircuit::get_active_rows(&block);
-        let circuit = TestCircuit::<F>::new(block, fixed_table_tags);
+        let (active_gate_rows, active_lookup_rows) =
+            TestCircuit::<F, MAX_TXS, MAX_RWS>::get_active_rows(&block);
+        let circuit = TestCircuit::<F, MAX_TXS, MAX_RWS>::new(block, fixed_table_tags);
         let prover = MockProver::<F>::run(k, &circuit, power_of_randomness).unwrap();
         prover.verify_at_rows(active_gate_rows.into_iter(), active_lookup_rows.into_iter())
     }
@@ -401,7 +405,7 @@ mod evm_circuit_stats {
     #[test]
     pub fn get_evm_states_stats() {
         let mut meta = ConstraintSystem::<Fr>::default();
-        let circuit = TestCircuit::configure(&mut meta);
+        let circuit = TestCircuit::<_, 4, 64>::configure(&mut meta);
 
         let mut implemented_states = Vec::new();
         for state in ExecutionState::iter() {

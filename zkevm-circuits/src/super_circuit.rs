@@ -309,7 +309,7 @@ impl<const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: usize>
         let log2_ceil = |n| u32::BITS - (n as u32).leading_zeros() - (n & (n - 1) == 0) as u32;
 
         let num_rows_required_for_steps =
-            SuperCircuit::<_, MAX_TXS, MAX_CALLDATA>::get_num_rows_required(&block);
+            SuperCircuit::<_, MAX_TXS, MAX_CALLDATA, MAX_RWS>::get_num_rows_required(&block);
 
         let k = log2_ceil(
             64 + fixed_table_tags
@@ -336,7 +336,7 @@ impl<const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: usize>
         let chain_id = block.context.chain_id;
         let tx_circuit = TxCircuit::new(aux_generator, block.randomness, chain_id.as_u64(), txs);
 
-        let circuit = SuperCircuit::<_, MAX_TXS, MAX_CALLDATA> {
+        let circuit = SuperCircuit::<_, MAX_TXS, MAX_CALLDATA, MAX_RWS> {
             block,
             fixed_table_tags,
             tx_circuit,
@@ -409,7 +409,8 @@ mod super_circuit_tests {
         block.sign(&wallets);
 
         let (k, circuit, instance) =
-            SuperCircuit::<_, 1, 32>::build(block, &mut ChaCha20Rng::seed_from_u64(2)).unwrap();
+            SuperCircuit::<_, 1, 32, 256>::build(block, &mut ChaCha20Rng::seed_from_u64(2))
+                .unwrap();
         let prover = MockProver::run(k, &circuit, instance).unwrap();
         let res = prover.verify();
         if let Err(err) = res {

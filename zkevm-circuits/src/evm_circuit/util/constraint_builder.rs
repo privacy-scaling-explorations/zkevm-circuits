@@ -1077,7 +1077,16 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
             counter,
             0.expr(),
             RwTableTag::Start,
-            RwValues::default(),
+            RwValues {
+                id: 0.expr(),
+                address: 0.expr(),
+                field_tag: 0.expr(),
+                storage_key: 0.expr(),
+                value: 0.expr(),
+                value_prev: 0.expr(),
+                aux1: 0.expr(),
+                aux2: 0.expr(),
+            },
         );
     }
 
