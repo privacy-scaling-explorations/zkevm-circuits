@@ -476,7 +476,7 @@ impl MptTable {
         randomness: F,
     ) -> Result<(), Error> {
         for (offset, row) in updates.table_assignments(randomness).iter().enumerate() {
-            self.assign(region, offset, &row)?;
+            self.assign(region, offset, row)?;
         }
         Ok(())
     }
