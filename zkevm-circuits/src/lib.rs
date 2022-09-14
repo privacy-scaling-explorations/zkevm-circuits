@@ -24,8 +24,10 @@ pub mod pi_circuit;
 pub mod state_circuit;
 pub mod super_circuit;
 pub mod table;
-#[cfg(test)]
+
+#[cfg(any(feature = "test", test))]
 pub mod test_util;
+
 pub mod tx_circuit;
 pub mod util;
 pub mod witness;

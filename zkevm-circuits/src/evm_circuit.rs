@@ -116,8 +116,8 @@ impl<F: Field> EvmCircuit<F> {
         Ok(())
     }
 
-    /// Assign exact steps in block without padding for unit test purpose
     #[cfg(any(feature = "test", test))]
+    /// Assign exact steps in block without padding for unit test purpose
     pub fn assign_block_exact(
         &self,
         layouter: &mut impl Layouter<F>,

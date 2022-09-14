@@ -1,8 +1,9 @@
+//! Testing utilities
+
 use crate::{state_circuit::StateCircuit, witness::Block};
 use bus_mapping::mock::BlockData;
 use eth_types::geth_types::{GethData, Transaction};
 use ethers_core::types::{NameOrAddress, TransactionRequest};
-use ethers_core::utils::keccak256;
 use ethers_signers::{LocalWallet, Signer};
 use halo2_proofs::dev::{MockProver, VerifyFailure};
 use halo2_proofs::halo2curves::bn256::Fr;
@@ -16,10 +17,14 @@ fn init_env_logger() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("error")).init();
 }
 
+/// Bytecode circuit test configuration
 #[derive(Debug, Clone)]
 pub struct BytecodeTestConfig {
+    /// Test EVM circuit
     pub enable_evm_circuit_test: bool,
+    /// Test state circuit
     pub enable_state_circuit_test: bool,
+    /// Gas limit
     pub gas_limit: u64,
 }
 
@@ -33,6 +38,7 @@ impl Default for BytecodeTestConfig {
     }
 }
 
+/// Test circuit
 pub fn run_test_circuits<const NACC: usize, const NTX: usize>(
     test_ctx: TestContext<NACC, NTX>,
     config: Option<BytecodeTestConfig>,
@@ -50,6 +56,7 @@ pub fn run_test_circuits<const NACC: usize, const NTX: usize>(
     test_circuits_using_witness_block(block, config.unwrap_or_default())
 }
 
+/// Test circuit using a witness block
 pub fn test_circuits_using_witness_block(
     block: Block<Fr>,
     config: BytecodeTestConfig,
@@ -76,13 +83,14 @@ pub fn test_circuits_using_witness_block(
     Ok(())
 }
 
-pub fn rand_tx<R: Rng + CryptoRng>(mut rng: R, chain_id: u64) -> Transaction {
+pub(crate) fn rand_tx<R: Rng + CryptoRng>(mut rng: R, chain_id: u64) -> Transaction {
     let wallet0 = LocalWallet::new(&mut rng).with_chain_id(chain_id);
     let wallet1 = LocalWallet::new(&mut rng).with_chain_id(chain_id);
     let from = wallet0.address();
     let to = wallet1.address();
     let data = b"hello";
     let tx = TransactionRequest::new()
+        .chain_id(chain_id)
         .from(from)
         .to(to)
         .nonce(3)
@@ -90,9 +98,7 @@ pub fn rand_tx<R: Rng + CryptoRng>(mut rng: R, chain_id: u64) -> Transaction {
         .data(data)
         .gas(500_000)
         .gas_price(1234);
-    let tx_rlp = tx.rlp(chain_id);
-    let sighash = keccak256(tx_rlp.as_ref()).into();
-    let sig = wallet0.sign_hash(sighash, true);
+    let sig = wallet0.sign_transaction_sync(&tx.clone().into());
     let to = tx.to.map(|to| match to {
         NameOrAddress::Address(a) => a,
         _ => unreachable!(),

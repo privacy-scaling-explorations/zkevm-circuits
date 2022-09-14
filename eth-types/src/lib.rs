@@ -38,7 +38,7 @@ pub use ethers_core::abi::ethereum_types::U512;
 use ethers_core::types;
 pub use ethers_core::types::{
     transaction::{eip2930::AccessList, response::Transaction},
-    Address, Block, Bytes, Signature, H160, H256, U256, U64,
+    Address, Block, Bytes, Signature, H160, H256, H64, U256, U64,
 };
 
 use serde::{de, Deserialize, Serialize};

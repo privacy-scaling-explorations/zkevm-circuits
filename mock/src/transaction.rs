@@ -6,10 +6,10 @@ use eth_types::{
     geth_types::Transaction as GethTransaction, AccessList, Address, Bytes, Hash, Transaction,
     Word, U64,
 };
+use ethers_core::types::OtherFields;
 use ethers_core::{
     rand::{CryptoRng, RngCore},
     types::TransactionRequest,
-    utils::keccak256,
 };
 use ethers_signers::{LocalWallet, Signer};
 use lazy_static::lazy_static;
@@ -181,6 +181,7 @@ impl From<MockTransaction> for Transaction {
             max_priority_fee_per_gas: Some(mock.max_priority_fee_per_gas),
             max_fee_per_gas: Some(mock.max_fee_per_gas),
             chain_id: Some(mock.chain_id),
+            other: OtherFields::default(),
         }
     }
 }
@@ -307,10 +308,8 @@ impl MockTransaction {
             .value(self.value)
             .data(self.input.clone())
             .gas(self.gas)
-            .gas_price(self.gas_price);
-
-        let tx_rlp = tx.rlp(self.chain_id.low_u64());
-        let sighash = keccak256(tx_rlp.as_ref()).into();
+            .gas_price(self.gas_price)
+            .chain_id(self.chain_id.low_u64());
 
         match (self.v, self.r, self.s) {
             (None, None, None) => {
@@ -320,7 +319,7 @@ impl MockTransaction {
                         .from
                         .as_wallet()
                         .with_chain_id(self.chain_id.low_u64())
-                        .sign_hash(sighash, true);
+                        .sign_transaction_sync(&tx.into());
                     // Set sig parameters
                     self.sig_data((sig.v, sig.r, sig.s));
                 }
