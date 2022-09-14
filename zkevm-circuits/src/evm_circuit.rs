@@ -116,6 +116,7 @@ impl<F: Field> EvmCircuit<F> {
         Ok(())
     }
 
+    #[cfg(any(feature = "test", test))]
     /// Assign exact steps in block without padding for unit test purpose
     pub fn assign_block_exact(
         &self,
@@ -148,6 +149,7 @@ impl<F: Field> EvmCircuit<F> {
     }
 }
 
+#[cfg(any(feature = "test", test))]
 pub mod test {
     use crate::{
         evm_circuit::{table::FixedTableTag, witness::Block, EvmCircuit},

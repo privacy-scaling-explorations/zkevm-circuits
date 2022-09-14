@@ -175,19 +175,8 @@ impl Bytecode {
     /// Generate the diassembly
     pub fn disasm(&self) -> String {
         let mut asm = String::new();
-        let mut code_iter = self.code.iter();
-        while let Some(byte) = code_iter.next() {
-            let op = OpcodeId::try_from(byte.value).unwrap();
-            if op.is_push() {
-                let n = (op.as_u8() - OpcodeId::PUSH1.as_u8() + 1) as usize;
-                let mut value = vec![0u8; n];
-                for value_byte in value.iter_mut() {
-                    *value_byte = code_iter.next().cloned().unwrap().value;
-                }
-                asm.push_str(&format!("PUSH{}({:?})\n", n, Word::from(value.as_slice())));
-            } else {
-                asm.push_str(&format!("{:?}\n", op));
-            }
+        for op in self.iter() {
+            asm.push_str(&op.to_string());
         }
         asm
     }

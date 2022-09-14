@@ -7,7 +7,7 @@ pub struct Config {
     pub max_gas: u64,
     pub max_steps: u64,
 
-    /// see https://github.com/appliedzkp/zkevm-circuits/issues/477
+    /// see [Implemented opcodes status](https://github.com/appliedzkp/zkevm-circuits/issues/477)
     pub unimplemented_opcodes: Vec<OpcodeId>,
     pub ignore_test: Vec<SkipTest>,
     pub skip_path: Vec<SkipPath>,
