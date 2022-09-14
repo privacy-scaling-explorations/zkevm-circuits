@@ -9,7 +9,7 @@ use std::marker::PhantomData;
 use crate::{
     helpers::{
         compute_rlc, get_bool_constraint, get_is_extension_node_one_nibble, key_len_lookup,
-        mult_diff_lookup, range_lookups,
+        mult_diff_lookup, range_lookups, get_is_extension_node,
     },
     mpt::{FixedTableTag, MPTConfig, ProofVariables},
     param::{IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, LEAF_DRIFTED_IND, BRANCH_ROWS_NUM, LEAF_KEY_S_IND, LEAF_KEY_C_IND}, columns::{MainCols, AccumulatorCols}, witness_row::MptWitnessRow,
@@ -235,16 +235,18 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
           Leaf S (leaf to be deleted)     || Leaf C
           Leaf to be drifted one level up || 
         */
-
         meta.create_gate("Drifted leaf key RLC", |meta| {
             let q_enable = q_enable(meta);
             let mut constraints = vec![];
 
-            // Get back into S or C extension row to retrieve key_rlc. Note that this works
-            // for both - extension nodes and branches. That's because branch key RLC is
-            // stored in extension node row when there is NO extension node (the
-            // constraint is in extension_node_key).
-            let key_rlc_cur = meta.query_advice(accs.key.rlc, Rotation(-LEAF_DRIFTED_IND-1));
+            let is_ext_node = get_is_extension_node(meta, s_main.bytes, rot_branch_init);
+
+            /*
+            Note: Branch key RLC is in the first branch child row (not in branch init). We need to go
+            in the branch above the placeholder branch.
+            */
+            let key_rlc_cur = meta.query_advice(accs.key.rlc, Rotation(-LEAF_DRIFTED_IND-1)) * is_ext_node.clone()
+                + meta.query_advice(accs.key.rlc, Rotation(rot_branch_init - BRANCH_ROWS_NUM + 1)) * (one.clone() - is_ext_node);
 
             // sel1 and sel2 determines whether drifted_pos needs to be
             // multiplied by 16 or not.
@@ -268,8 +270,10 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
             let is_long = flag1.clone() * (one.clone() - flag2.clone());
             let is_short = (one.clone() - flag1.clone()) * flag2.clone();
 
-            // Key RLC of the drifted leaf needs to be the same as key RLC of the leaf
-            // before it drifted down into extension/branch.
+            /*
+            Key RLC of the drifted leaf needs to be the same as key RLC of the leaf
+            before it drifted down into extension/branch.
+            */
             let is_branch_s_placeholder = meta.query_advice(
                 s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM],
                 Rotation(rot_branch_init),
@@ -350,6 +354,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                     * (one.clone() - is_leaf_in_first_storage_level.clone())
                     * (leaf_key_s_rlc.clone() - key_rlc_short.clone()),
             ));
+
             constraints.push((
                 "Drifted leaf key C short",
                 q_enable.clone()
@@ -398,6 +403,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                     * (one.clone() - is_leaf_in_first_storage_level.clone())
                     * (leaf_key_s_rlc.clone() - key_rlc_long.clone()),
             ));
+
             constraints.push((
                 "Drifted leaf key C long",
                 q_enable.clone()
@@ -426,6 +432,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                     * (one.clone() - is_leaf_in_first_storage_level.clone())
                     * (leaf_key_s_rlc.clone() - key_rlc_start.clone()), // no nibbles in drifted leaf
             ));
+
             constraints.push((
                 "Drifted leaf key C last level",
                 q_enable.clone()

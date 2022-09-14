@@ -8,7 +8,7 @@ use std::marker::PhantomData;
 use crate::{
     helpers::{
         compute_rlc, get_is_extension_node_one_nibble, key_len_lookup,
-        mult_diff_lookup, range_lookups,
+        mult_diff_lookup, range_lookups, get_is_extension_node,
     },
     mpt::{FixedTableTag, MPTConfig, ProofVariables},
     param::{IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, ACCOUNT_DRIFTED_LEAF_IND, BRANCH_ROWS_NUM, ACCOUNT_LEAF_KEY_S_IND, ACCOUNT_LEAF_KEY_C_IND, ACCOUNT_LEAF_NONCE_BALANCE_S_IND, ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND, ACCOUNT_LEAF_NONCE_BALANCE_C_IND, ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND}, columns::{MainCols, AccumulatorCols, DenoteCols},
@@ -202,12 +202,16 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
             // Drifted leaf in added branch has the same key as it had it before it drifted down to the new branch.
             let q_enable = q_enable(meta);
             let mut constraints = vec![];
+            
+            let is_ext_node = get_is_extension_node(meta, s_main.bytes, rot_branch_init);
 
-            // Get back into S or C extension row to retrieve key_rlc. Note that this works
-            // for both - extension nodes and branches. That's because branch key RLC is
-            // stored in extension node row when there is NO extension node (the
-            // constraint is in extension_node_key).
-            let key_rlc_cur = meta.query_advice(accs.key.rlc, Rotation(-ACCOUNT_DRIFTED_LEAF_IND-1));
+            /*
+            Note: Branch key RLC is in the first branch child row (not in branch init). We need to go
+            in the branch above the placeholder branch.
+            */
+            let key_rlc_cur = meta.query_advice(accs.key.rlc, Rotation(-ACCOUNT_DRIFTED_LEAF_IND-1)) * is_ext_node.clone()
+                + meta.query_advice(accs.key.rlc, Rotation(rot_branch_init - BRANCH_ROWS_NUM + 1)) * (one.clone() - is_ext_node);
+
             // Note: key_rlc_cur means key RLC at added branch, we now need to add the bytes stored in drifted leaf key.
 
             // sel1 and sel2 determines whether drifted_pos needs to be
