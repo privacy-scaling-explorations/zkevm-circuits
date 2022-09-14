@@ -285,6 +285,15 @@ pub fn gen_associated_ops(
         );
 
         exec_step.error = Some(exec_error);
+        if exec_step.oog_or_stack_error() {
+            state.call_context_read(&mut exec_step, 1, CallContextField::IsSuccess, 0u64.into());
+            state.call_context_read(
+                &mut exec_step,
+                1,
+                CallContextField::IsPersistent,
+                0u64.into(),
+            );
+        }
         // for `oog_or_stack_error` error message will be returned by geth_step error
         // field, when this kind of error happens, no more proceeding
         if geth_step.op.is_call_or_create() && !exec_step.oog_or_stack_error() {

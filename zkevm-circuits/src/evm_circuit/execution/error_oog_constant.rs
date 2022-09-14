@@ -19,7 +19,6 @@ pub(crate) struct ErrorOOGConstantGadget<F> {
     // constrain gas left is less than required
     gas_required: Cell<F>,
     insufficient_gas: RangeCheckGadget<F, N_BYTES_GAS>,
-    is_success: Cell<F>,
 
     restore_context: RestoreContextGadget<F>,
 }
@@ -32,14 +31,20 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGConstantGadget<F> {
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
         let gas_required = cb.query_cell();
-        let is_success = cb.query_cell();
-
-        cb.require_zero("is_success is false ", is_success.expr());
 
         // Check if the amount of gas available is less than the amount of gas
         // required
         let insufficient_gas =
             RangeCheckGadget::construct(cb, gas_required.expr() - cb.curr.state.gas_left.expr());
+
+        // current call must be failed.
+        cb.call_context_lookup(false.expr(), None, CallContextFieldTag::IsSuccess, 0.expr());
+        cb.call_context_lookup(
+            false.expr(),
+            None,
+            CallContextFieldTag::IsPersistent,
+            0.expr(),
+        );
 
         // TODO: Handle root & internal call constraints and use ContextSwitchGadget to
         // switch call context to caller's and consume all gas_left
@@ -50,28 +55,17 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGConstantGadget<F> {
             is_to_end_tx,
         );
 
-        // When it's a root call
-        // cb.condition(cb.curr.state.is_root.expr(), |cb| {
-        // When a transaction ends with this error case, this call must be not
-        // persistent
-        // cb.call_context_lookup(
+        // if not root call, switch to caller's context
+        // cb.condition(1.expr() - cb.curr.state.is_root.expr(), |cb| {
+        //     // When a transaction ends with this error case, this call must be not
+        //     // persistent
+        //     cb.call_context_lookup(
         //         false.expr(),
         //         None,
         //         CallContextFieldTag::IsPersistent,
         //         0.expr(),
-        // )});
-
-        // if not root call, switch to caller's context
-        cb.condition(1.expr() - cb.curr.state.is_root.expr(), |cb| {
-            // When a transaction ends with this error case, this call must be not
-            // persistent
-            cb.call_context_lookup(
-                false.expr(),
-                None,
-                CallContextFieldTag::IsPersistent,
-                0.expr(),
-            )
-        });
+        //     )
+        // });
 
         // When it's an internal call
         let restore_context = cb.condition(1.expr() - cb.curr.state.is_root.expr(), |cb| {
@@ -82,7 +76,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGConstantGadget<F> {
             opcode,
             gas_required,
             insufficient_gas,
-            is_success,
             restore_context,
         }
     }
@@ -106,8 +99,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGConstantGadget<F> {
         self.insufficient_gas
             .assign(region, offset, F::from(step.gas_cost - step.gas_left))?;
 
-        self.is_success
-            .assign(region, offset, Value::known(F::from(call.is_success)))?;
         self.restore_context
             .assign(region, offset, block, call, step)?;
 
