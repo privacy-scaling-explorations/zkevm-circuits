@@ -555,58 +555,11 @@ impl<F: FieldExt> LeafKeyConfig<F> {
         );
 
         /*
-        Check that `key_rlc_prev` stores `key_rlc` from the previous branch (needed when
-        after the placeholder).
-        */
-        meta.create_gate("Previous level RLC", |meta| {
-            let q_enable = q_enable(meta);
-            let mut constraints = vec![];
-
-            let is_first_storage_level =
-                meta.query_advice(is_account_leaf_in_added_branch, Rotation(rot_into_init - 1));
-
-            let is_leaf_without_branch =
-                meta.query_advice(is_account_leaf_in_added_branch, Rotation(rot_into_account));
-
-            // Could be used any rotation into previous branch, because key RLC is the same
-            // in all branch children:
-            let rot_into_prev_branch = rot_into_init - 5;
-            // TODO: check why a different rotation causes (for example rot_into_init - 3)
-            // causes ConstraintPoisened
-
-            // key_rlc_mult_prev_level = 1 if is_first_storage_level
-            let key_rlc_mult_prev_level = (one.clone() - is_first_storage_level.clone())
-                * meta.query_advice(accs.key.mult, Rotation(rot_into_prev_branch))
-                + is_first_storage_level.clone();
-            // key_rlc_prev_level = 0 if is_first_storage_level
-            let key_rlc_prev_level = (one.clone() - is_first_storage_level)
-                * meta.query_advice(accs.key.rlc, Rotation(rot_into_prev_branch));
-
-            let rlc_prev = meta.query_advice(denoter.sel1, Rotation::cur());
-            let mult_prev = meta.query_advice(denoter.sel2, Rotation::cur());
-
-            constraints.push((
-                "Previous key RLC",
-                q_enable.clone()
-                    * (rlc_prev - key_rlc_prev_level)
-                    * (one.clone() - is_leaf_without_branch.clone()),
-            ));
-            constraints.push((
-                "Previous key RLC mult",
-                q_enable
-                    * (mult_prev - key_rlc_mult_prev_level)
-                    * (one.clone() - is_leaf_without_branch.clone()),
-            ));
-
-            constraints
-        });
-
-        /*
         For leaf under the placeholder branch we would not need to check the key RLC -
         this leaf is something we did not ask for, it is just a leaf that happened to be
         at the place where adding a new leaf causes adding a new branch.
-        For example, when adding a leaf `L`
-        causes that a leaf `L1` (this will be the leaf under the branch placeholder)
+        For example, when adding a leaf `L` causes that a leaf `L1`
+        (this will be the leaf under the branch placeholder)
         is replaced by a branch, we get a placeholder branch at `S` side
         and leaf `L1` under it. However, the key RLC needs to be compared for leaf `L`,
         because this is where the modification takes place.
@@ -622,7 +575,7 @@ impl<F: FieldExt> LeafKeyConfig<F> {
         Note that the hash of a leaf `L1` needs to be checked to be in the branch
         above the placeholder branch - this is checked in `leaf_value.rs`.
         */
-        meta.create_gate("Storage leaf key RLC (after placeholder)", |meta| {
+        meta.create_gate("Storage leaf key RLC (before drifting into a new branch)", |meta| {
             /*
             Note: `last_level` cannot occur in a leaf after placeholder branch, because being
             after placeholder branch means this leaf drifted down into a new branch (in a parallel
@@ -638,7 +591,7 @@ impl<F: FieldExt> LeafKeyConfig<F> {
             let is_short = (one.clone() - flag1.clone()) * flag2.clone();
             let one_nibble = (one.clone() - flag1.clone()) * (one.clone() - flag2.clone());
 
-            // Note: key rlc is in the first branch node (not branch init).
+            // Note: key RLC is in the first branch node (not branch init).
             let rot_level_above = rot_into_init + 1 - BRANCH_ROWS_NUM;
 
             let is_first_storage_level =
@@ -654,58 +607,53 @@ impl<F: FieldExt> LeafKeyConfig<F> {
                     meta.query_advice(s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM], Rotation(rot_into_init));
             }
 
-            // Previous key RLC:
             /*
-            Note: if using directly:
-            let key_rlc_prev = meta.query_advice(key_rlc, Rotation(rot_level_above));
-            The ConstraintPoisoned error is thrown in extension_node_key.
+            Retrieve the key RLC and multiplier from above the placeholder branch.
             */
-            let key_rlc_acc_start = meta.query_advice(denoter.sel1, Rotation::cur())
+            let key_rlc_acc_start = meta.query_advice(accs.key.rlc, Rotation(rot_level_above))
                 * (one.clone() - is_first_storage_level.clone());
-            let key_mult_start = meta.query_advice(denoter.sel2, Rotation::cur())
+            let key_mult_start = meta.query_advice(accs.key.mult, Rotation(rot_level_above))
                 * (one.clone() - is_first_storage_level.clone())
                 + is_first_storage_level.clone();
 
-            // Note: the approach (like for sel1 and sel2) with retrieving
-            // key RLC and key RLC mult from the level above placeholder fails
-            // due to ConstraintPoisened error.
-            // sel1 and sel2 are in init branch
-            // Note that when is_first_storage_level, it is always sel2 = 1 because
-            // there are all 32 bytes in a key.
-            let sel1 = (one.clone() - is_first_storage_level.clone())
+            /*
+            Note that when `is_first_storage_level`, it is always `is_c1 = 1` because
+            there are all 32 bytes in a key.
+            */
+            let is_c16 = (one.clone() - is_first_storage_level.clone())
                 * meta.query_advice(
                     s_main.bytes[IS_BRANCH_C16_POS - RLP_NUM],
                     Rotation(rot_level_above - 1),
                 );
-            let sel2 = (one.clone() - is_first_storage_level.clone())
+            let is_c1 = (one.clone() - is_first_storage_level.clone())
                 * meta.query_advice(
                     s_main.bytes[IS_BRANCH_C1_POS - RLP_NUM],
                     Rotation(rot_level_above - 1),
                 )
                 + is_first_storage_level.clone();
 
-            // For short RLP (key starts at s_main.bytes[0]):
+            // When short RLP, key starts at `s_main.bytes[0]`:
 
-            // If sel1 = 1, we have one nibble+48 in s_main.bytes[0].
-            let s_advice0 = meta.query_advice(s_main.bytes[0], Rotation::cur());
+            // If `is_c16 = 1`, we have one nibble+48 in `s_main.bytes[0]`.
+            let s_bytes0 = meta.query_advice(s_main.bytes[0], Rotation::cur());
             let mut key_rlc_acc_short = key_rlc_acc_start.clone()
-                + (s_advice0.clone() - c48.clone()) * key_mult_start.clone() * sel1.clone();
-            let key_mult = key_mult_start.clone() * r_table[0].clone() * sel1.clone()
-                + key_mult_start.clone() * sel2.clone(); // set to key_mult_start if sel2, stays key_mult if sel1
+                + (s_bytes0.clone() - c48.clone()) * key_mult_start.clone() * is_c16.clone();
+            let key_mult = key_mult_start.clone() * r_table[0].clone() * is_c16.clone()
+                + key_mult_start.clone() * is_c1.clone(); // set to key_mult_start if sel2, stays key_mult if sel1
 
-            // If sel2 = 1, we have 32 in s_main.bytes[0].
+            // If `is_c1 = 1`, we have 32 in `s_main.bytes[0]`.
             constraints.push((
-                "Leaf key acc s_advice0",
+                "Leaf key acc s_bytes0",
                 q_enable.clone()
-                    * (s_advice0.clone() - c32.clone())
-                    * sel2.clone()
+                    * (s_bytes0.clone() - c32.clone())
+                    * is_c1.clone()
                     * is_branch_placeholder.clone()
                     * (one.clone() - is_leaf_in_first_level.clone())
                     * is_short.clone(),
             ));
 
-            let s_advices1 = meta.query_advice(s_main.bytes[1], Rotation::cur());
-            key_rlc_acc_short = key_rlc_acc_short + s_advices1.clone() * key_mult.clone();
+            let s_bytes1 = meta.query_advice(s_main.bytes[1], Rotation::cur());
+            key_rlc_acc_short = key_rlc_acc_short + s_bytes1.clone() * key_mult.clone();
 
             for ind in 2..HASH_WIDTH {
                 let s = meta.query_advice(s_main.bytes[ind], Rotation::cur());
@@ -719,10 +667,12 @@ impl<F: FieldExt> LeafKeyConfig<F> {
 
             let key_rlc = meta.query_advice(accs.key.rlc, Rotation::cur());
 
-            // No need to distinguish between sel1 and sel2 here as it was already
-            // when computing key_rlc_acc_short.
+            /*
+            No need to distinguish between `is_c16` and `is_c1` here as it was already
+            when computing `key_rlc_acc_short`.
+            */
             constraints.push((
-                "Key RLC short",
+                "Key RLC (short)",
                 q_enable.clone()
                     * (key_rlc_acc_short - key_rlc.clone())
                     * is_branch_placeholder.clone()
@@ -730,26 +680,26 @@ impl<F: FieldExt> LeafKeyConfig<F> {
                     * is_short.clone(),
             ));
 
-            // For long RLP (key starts at s_main.bytes[1]):
+            // When long RLP: key starts at `s_main.bytes[1]`:
 
-            // If sel1 = 1, we have nibble+48 in s_main.bytes[1].
-            let s_advice1 = meta.query_advice(s_main.bytes[1], Rotation::cur());
+            // If `is_c16 = 1`, we have nibble+48 in `s_main.bytes[1]`.
+            let s_bytes1 = meta.query_advice(s_main.bytes[1], Rotation::cur());
             let mut key_rlc_acc_long = key_rlc_acc_start.clone()
-                + (s_advice1.clone() - c48.clone()) * key_mult_start.clone() * sel1.clone();
+                + (s_bytes1.clone() - c48.clone()) * key_mult_start.clone() * is_c16.clone();
 
-            // If sel2 = 1, we have 32 in s_main.bytes[1].
+            // If `is_c1 = 1`, we have 32 in `s_main.bytes[1]`.
             constraints.push((
-                "Leaf key acc s_advice1",
+                "Leaf key acc s_bytes1",
                 q_enable.clone()
-                    * (s_advice1.clone() - c32.clone())
-                    * sel2.clone()
+                    * (s_bytes1.clone() - c32.clone())
+                    * is_c1.clone()
                     * is_branch_placeholder.clone()
                     * (one.clone() - is_leaf_in_first_level.clone())
                     * is_long.clone(),
             ));
 
-            let s_advices2 = meta.query_advice(s_main.bytes[2], Rotation::cur());
-            key_rlc_acc_long = key_rlc_acc_long + s_advices2 * key_mult.clone();
+            let s_bytes2 = meta.query_advice(s_main.bytes[2], Rotation::cur());
+            key_rlc_acc_long = key_rlc_acc_long + s_bytes2 * key_mult.clone();
 
             for ind in 3..HASH_WIDTH {
                 let s = meta.query_advice(s_main.bytes[ind], Rotation::cur());
@@ -763,10 +713,12 @@ impl<F: FieldExt> LeafKeyConfig<F> {
             let c_rlp2 = meta.query_advice(c_main.rlp2, Rotation::cur());
             key_rlc_acc_long = key_rlc_acc_long + c_rlp2.clone() * key_mult * r_table[30].clone();
 
-            // No need to distinguish between sel1 and sel2 here as it was already
-            // when computing key_rlc_acc_long.
+            /*
+            No need to distinguish between `is_c16` and `is_c1` here as it was already
+            when computing `key_rlc_acc_long`.
+            */
             constraints.push((
-                "Key RLC long",
+                "Key RLC (long)",
                 q_enable.clone()
                     * (key_rlc_acc_long - key_rlc.clone())
                     * is_branch_placeholder.clone()
@@ -780,10 +732,10 @@ impl<F: FieldExt> LeafKeyConfig<F> {
             */
 
             let s_rlp2 = meta.query_advice(s_main.rlp2, Rotation::cur());
-            let leaf_nibbles_long = ((s_advice0.clone() - c128.clone() - one.clone()) * (one.clone() + one.clone())) * sel2.clone() +
-                ((s_advice0.clone() - c128.clone()) * (one.clone() + one.clone()) - one.clone()) * sel1.clone();
-            let leaf_nibbles_short = ((s_rlp2.clone() - c128.clone() - one.clone()) * (one.clone() + one.clone())) * sel2.clone() +
-                ((s_rlp2.clone() - c128.clone()) * (one.clone() + one.clone()) - one.clone()) * sel1.clone();
+            let leaf_nibbles_long = ((s_bytes0.clone() - c128.clone() - one.clone()) * (one.clone() + one.clone())) * is_c1.clone() +
+                ((s_bytes0.clone() - c128.clone()) * (one.clone() + one.clone()) - one.clone()) * is_c16.clone();
+            let leaf_nibbles_short = ((s_rlp2.clone() - c128.clone() - one.clone()) * (one.clone() + one.clone())) * is_c1.clone() +
+                ((s_rlp2.clone() - c128.clone()) * (one.clone() + one.clone()) - one.clone()) * is_c16.clone();
             let leaf_nibbles_one_nibble = one.clone(); 
 
             let leaf_nibbles = leaf_nibbles_long * is_long + leaf_nibbles_short * is_short
@@ -853,9 +805,11 @@ impl<F: FieldExt> LeafKeyConfig<F> {
             [196,130,32,0,1]
         */
 
-        // Info whether leaf rlp is long or short.
-        // Long means the key length is at position 2.
-        // Short means the key length is at position 1.
+        /*
+        Info whether leaf rlp is long or short:
+         - long means the key length is at position 2.
+         - short means the key length is at position 1.
+        */
         let mut typ = "short";
         if row.get_byte(0) == 248 {
             typ = "long";
@@ -933,24 +887,7 @@ impl<F: FieldExt> LeafKeyConfig<F> {
             || Ok(key_rlc_new),
         ).ok();
 
-        // Store key_rlc into rlc2 to be later set in
-        // leaf value C row (to enable lookups):
+        // Store key_rlc into rlc2 to be later set in leaf value C row (to enable lookups):
         pv.rlc2 = key_rlc_new;
-
-        // Assign previous key RLC -
-        // needed in case of placeholder branch/extension.
-        // Constraint for this is in leaf_key.
-        region.assign_advice(
-            || "assign key_rlc".to_string(),
-            mpt_config.denoter.sel1,
-            offset,
-            || Ok(pv.key_rlc_prev),
-        ).ok();
-        region.assign_advice(
-            || "assign key_rlc_mult".to_string(),
-            mpt_config.denoter.sel2,
-            offset,
-            || Ok(pv.key_rlc_mult_prev),
-        ).ok();
     }
 }
