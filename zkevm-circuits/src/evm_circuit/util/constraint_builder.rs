@@ -1192,7 +1192,6 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
     pub(crate) fn exp_table_lookup(
         &mut self,
         identifier: Expression<F>,
-        is_first: Expression<F>,
         is_last: Expression<F>,
         base_limbs: [Expression<F>; 4],
         exponent_lo_hi: [Expression<F>; 2],
@@ -1203,7 +1202,6 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
             "exponentiation lookup",
             Lookup::ExpTable {
                 identifier,
-                is_first,
                 is_last,
                 base_limbs,
                 intermediate_exponent_lo_hi: exponent_lo_hi,

@@ -151,20 +151,18 @@ impl<F: Field> ExecutionGadget<F> for ExponentiationGadget<F> {
                 );
                 let identifier = cb.curr.state.rw_counter.expr() + cb.rw_counter_offset();
                 // lookup for first step, i.e.
-                // (is_first, is_last == 0, base, exponent, exponentiation)
+                // (is_last, base, exponent, exponentiation)
                 cb.exp_table_lookup(
                     identifier.clone(),
-                    1.expr(),
                     single_step.expr(),
                     base_limbs.clone(),
                     [exponent_lo.clone(), exponent_hi.clone()],
                     exponent_rlc.cells[0].expr(),
                     [exponentiation_lo.clone(), exponentiation_hi.clone()],
                 );
-                // lookup for last step, i.e. (is_first == 0, is_last, base, 2, base^2)
+                // lookup for last step, i.e. (is_last, base, 2, base^2)
                 cb.exp_table_lookup(
                     identifier,
-                    single_step.expr(),
                     1.expr(),
                     base_limbs,
                     [2.expr(), 0.expr()], // exponent == 2
