@@ -390,6 +390,17 @@ impl<F: Field> Config<F> {
         witness: &[UnrolledBytecode<F>],
         randomness: F,
     ) -> Result<(), Error> {
+        self.assign_internal(layouter, size, witness, randomness, true)
+    }
+
+    pub(crate) fn assign_internal(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        size: usize,
+        witness: &[UnrolledBytecode<F>],
+        randomness: F,
+        fail_fast: bool,
+    ) -> Result<(), Error> {
         let push_rindex_is_zero_chip = IsZeroChip::construct(self.push_rindex_is_zero.clone());
         let length_is_zero_chip = IsZeroChip::construct(self.length_is_zero.clone());
 
@@ -408,6 +419,15 @@ impl<F: Field> Config<F> {
                     let mut hash_input_rlc = F::zero();
                     let code_length = F::from(bytecode.bytes.len() as u64);
                     for (idx, row) in bytecode.rows.iter().enumerate() {
+                        if fail_fast && offset > last_row_offset {
+                            log::error!(
+                                "Bytecode Circuit: offset={} > last_row_offset={}",
+                                offset,
+                                last_row_offset
+                            );
+                            return Err(Error::Synthesis);
+                        }
+
                         // Track which byte is an opcode and which is push
                         // data
                         let is_code = push_rindex == 0;
