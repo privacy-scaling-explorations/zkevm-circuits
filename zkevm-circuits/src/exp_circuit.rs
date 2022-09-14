@@ -524,11 +524,11 @@ mod tests {
         builder
     }
 
-    fn test_ok(base: Word, exponent: Word) {
+    fn test_ok(base: Word, exponent: Word, k: Option<u32>) {
         let code = gen_code_single(base, exponent);
         let builder = gen_data(code);
         let block = block_convert(&builder.block, &builder.code_db);
-        assert_eq!(test_exp_circuit(10, block), Ok(()));
+        assert_eq!(test_exp_circuit(k.unwrap_or(10), block), Ok(()));
     }
 
     fn test_ok_multiple(args: Vec<(Word, Word)>) {
@@ -540,13 +540,22 @@ mod tests {
 
     #[test]
     fn exp_circuit_single() {
-        test_ok(3.into(), 7.into());
-        test_ok(5.into(), 11.into());
-        test_ok(7.into(), 13.into());
-        test_ok(11.into(), 17.into());
-        test_ok(13.into(), 23.into());
-        test_ok(29.into(), 43.into());
-        test_ok(41.into(), 259.into());
+        test_ok(3.into(), 7.into(), None);
+        test_ok(5.into(), 11.into(), None);
+        test_ok(7.into(), 13.into(), None);
+        test_ok(11.into(), 17.into(), None);
+        test_ok(13.into(), 23.into(), None);
+        test_ok(29.into(), 43.into(), None);
+        test_ok(41.into(), 259.into(), None);
+    }
+
+    #[test]
+    fn exp_circuit_big() {
+        test_ok(
+            2.into(),
+            Word::from_str_radix("0x1FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFE", 16).unwrap(),
+            Some(20),
+        );
     }
 
     #[test]
