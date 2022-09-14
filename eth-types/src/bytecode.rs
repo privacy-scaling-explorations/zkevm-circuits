@@ -177,6 +177,7 @@ impl Bytecode {
         let mut asm = String::new();
         for op in self.iter() {
             asm.push_str(&op.to_string());
+            asm.push('\n');
         }
         asm
     }
