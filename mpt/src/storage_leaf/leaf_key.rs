@@ -554,27 +554,10 @@ impl<F: FieldExt> LeafKeyConfig<F> {
             },
         );
 
-        // For leaf under placeholder branch we wouldn't need to check key RLC -
-        // this leaf is something we didn't ask for. For example, when setting a leaf L
-        // causes that leaf L1 (this is the leaf under branch placeholder)
-        // is replaced by branch, then we get placeholder branch at S positions
-        // and leaf L1 under it. However, key RLC needs to be compared for leaf L,
-        // because this is where the key was changed (but it causes to change also L1).
-        // In delete, the situation is just turned around.
-        // However, we check key RLC for this leaf too because this simplifies
-        // the constraints for checking that leaf L1 is the same as the leaf that
-        // is in the branch parallel to the placeholder branch -
-        // same with the exception of extension node key. This can be checked by
-        // comparing key RLC of the leaf before being replaced by branch and key RLC
-        // of this same leaf after it drifted into a branch.
-        // Constraints for this are in leaf_key_in_added_branch.
-
-        // Note that hash of leaf L1 needs to be checked to be in the branch
-        // above the placeholder branch - this is checked in leaf_value (where RLC
-        // from the first gate above is used).
-
-        // Check that key_rlc_prev stores key_rlc from the previous branch (needed when
-        // after the placeholder).
+        /*
+        Check that `key_rlc_prev` stores `key_rlc` from the previous branch (needed when
+        after the placeholder).
+        */
         meta.create_gate("Previous level RLC", |meta| {
             let q_enable = q_enable(meta);
             let mut constraints = vec![];
@@ -618,12 +601,33 @@ impl<F: FieldExt> LeafKeyConfig<F> {
             constraints
         });
 
-        // For a leaf after placeholder, we need to use key_rlc from previous level
-        // (the branch above placeholder).
+        /*
+        For leaf under the placeholder branch we would not need to check the key RLC -
+        this leaf is something we did not ask for, it is just a leaf that happened to be
+        at the place where adding a new leaf causes adding a new branch.
+        For example, when adding a leaf `L`
+        causes that a leaf `L1` (this will be the leaf under the branch placeholder)
+        is replaced by a branch, we get a placeholder branch at `S` side
+        and leaf `L1` under it. However, the key RLC needs to be compared for leaf `L`,
+        because this is where the modification takes place.
+        In delete, the situation is turned around.
+
+        However, we also check that the key RLC for `L1` is computed properly because
+        we need `L1` key RLC for the constraints for checking that leaf `L1` is the same
+        as the drifted leaf key RLC in the branch parallel. This can be checked by
+        comparing the key RLC of the leaf before being replaced by branch and the key RLC
+        of this same leaf after it drifted into a branch.
+        Constraints for this are in `leaf_key_in_added_branch.rs`.
+
+        Note that the hash of a leaf `L1` needs to be checked to be in the branch
+        above the placeholder branch - this is checked in `leaf_value.rs`.
+        */
         meta.create_gate("Storage leaf key RLC (after placeholder)", |meta| {
-            // Note: last_level cannot occur in a leaf after placeholder branch, because being
-            // after placeholder branch means this leaf drifted down into a new branch (in a parallel
-            // proof) and thus cannot be in the last level.
+            /*
+            Note: `last_level` cannot occur in a leaf after placeholder branch, because being
+            after placeholder branch means this leaf drifted down into a new branch (in a parallel
+            proof) and thus cannot be in the last level.
+            */
 
             let q_enable = q_enable(meta);
             let mut constraints = vec![];

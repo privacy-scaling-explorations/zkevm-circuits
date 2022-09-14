@@ -187,9 +187,11 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
           Leaf S             || Leaf C
                              || Drifted leaf (this is Leaf S drifted into Added branch)
 
-          Leaf S needs to have the same RLC as Drifted leaf.
-          Note that Leaf S RLC is computed by taking key_rlc from Branch S and then adding the bytes in Leaf key S row.
-          Drifted leaf RLC is computed by taking key_rlc from Added branch and then adding the bytes in Drifted leaf row.
+        Leaf S needs to have the same RLC as Drifted leaf.
+        Note that Leaf S RLC is computed by taking the key RLC from Branch S and then adding
+        the bytes in Leaf key S row.
+        Drifted leaf RLC is computed by taking the key RLC from Added branch and then adding the bytes
+        in Drifted leaf row.
 
         Delete case (C branch is placeholder):
           Branch S                        || Branch C             
@@ -206,21 +208,26 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
             let is_ext_node = get_is_extension_node(meta, s_main.bytes, rot_branch_init);
 
             /*
+            We obtain the key RLC from the branch / extension node above the placeholder branch.
+            We then add the remaining key nibbles that are stored in the drifted leaf key and the final RLC
+            needs to be the same as the one stored in `accumulators.key.rlc` in the account leaf key row
+            (not the drifted leaf). This means the storage leaf has the same key RLC before and after
+            it drifts into a new branch.
+
             Note: Branch key RLC is in the first branch child row (not in branch init). We need to go
             in the branch above the placeholder branch.
             */
             let key_rlc_cur = meta.query_advice(accs.key.rlc, Rotation(-ACCOUNT_DRIFTED_LEAF_IND-1)) * is_ext_node.clone()
                 + meta.query_advice(accs.key.rlc, Rotation(rot_branch_init - BRANCH_ROWS_NUM + 1)) * (one.clone() - is_ext_node);
 
-            // Note: key_rlc_cur means key RLC at added branch, we now need to add the bytes stored in drifted leaf key.
-
-            // sel1 and sel2 determines whether drifted_pos needs to be
-            // multiplied by 16 or not.
-            let sel1 = meta.query_advice(
+            /*
+            `is_c16` and `is_c1` determine whether `drifted_pos` needs to be multiplied by 16 or 1.
+            */
+            let is_c16 = meta.query_advice(
                 s_main.bytes[IS_BRANCH_C16_POS - RLP_NUM],
                 Rotation(rot_branch_init),
             );
-            let sel2 = meta.query_advice(
+            let is_c1 = meta.query_advice(
                 s_main.bytes[IS_BRANCH_C1_POS - RLP_NUM],
                 Rotation(rot_branch_init),
             );
@@ -230,8 +237,10 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
                 Rotation(rot_branch_init),
             );
 
-            // Key RLC of the drifted leaf needs to be the same as key RLC of the leaf
-            // before it drifted down into extension/branch.
+            /*
+            Key RLC of the drifted leaf needs to be the same as key RLC of the leaf
+            before it drifted down into extension/branch.
+            */
             let is_branch_s_placeholder = meta.query_advice(
                 s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM],
                 Rotation(rot_branch_init),
@@ -241,10 +250,12 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
                 Rotation(rot_branch_init),
             );
 
-            // Note: we could use rotation -30 to get branch_rlc_mult
-            // (like meta.query_advice(key_rlc_mult, Rotation(-30))), but this throws an error
-            // when account is in the first or second level. However, acc_mult_c in the account
-            // leaf row stores this value too (the constraints for this are in account_leaf_key).
+            /*
+            Note: We could use rotation -30 to get `branch_rlc_mult`
+            (like `meta.query_advice(key_rlc_mult, Rotation(-30)))`, but this throws an error
+            when account is in the first or second level. However, `acc_mult_c` in the account
+            leaf row stores this value too (the constraints for this are in `account_leaf_key.rs`).
+            */
             let branch_rlc_mult = meta.query_advice(accs.acc_c.mult, Rotation(-(ACCOUNT_DRIFTED_LEAF_IND - ACCOUNT_LEAF_KEY_S_IND)));
 
             let mult_diff = meta.query_advice(accs.mult_diff, Rotation(rot_branch_init + 1)); 
@@ -264,27 +275,28 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
                     * mult_diff.clone()
                     * (one.clone() - is_one_nibble.clone());
             let drifted_pos_mult =
-                key_mult.clone() * c16.clone() * sel1.clone() + key_mult.clone() * sel2.clone();
+                key_mult.clone() * c16.clone() * is_c16.clone() + key_mult.clone() * is_c1.clone();
 
-            // Note: the difference in key_mult for sel1 and sel2 is already taken into
-            // account in mult_diff.
+            /*
+            Note: the difference in `key_mult` for `is_c16` and `is_c1` is already taken into account in `mult_diff`.
+            */
 
             let key_rlc_start = key_rlc_cur.clone() + drifted_pos.clone() * drifted_pos_mult;
 
-            // If sel1 = 1, we have one nibble+48 in s_main.bytes[1].
-            let s_advice1 = meta.query_advice(s_main.bytes[1], Rotation::cur());
+            // If is_c16 = 1, we have one nibble+48 in `s_main.bytes[1]`.
+            let s_bytes1 = meta.query_advice(s_main.bytes[1], Rotation::cur());
 
-            // If sel2 = 1, we have 32 in s_main.bytes[1].
+            // If is_c1 = 1, we have 32 in `s_main.bytes[1]`.
             constraints.push((
                 "Leaf key acc s_advice1",
                 q_enable.clone()
                     * (is_branch_s_placeholder.clone() + is_branch_c_placeholder.clone()) // drifted leaf appears only when there is a placeholder branch
-                    * (s_advice1.clone() - c32.clone())
-                    * sel2.clone()
+                    * (s_bytes1.clone() - c32.clone())
+                    * is_c1.clone()
             ));
 
             let mut key_rlc = key_rlc_start.clone()
-                + (s_advice1.clone() - c48.clone()) * sel1.clone() * key_mult.clone();
+                + (s_bytes1.clone() - c48.clone()) * is_c16.clone() * key_mult.clone();
 
             for ind in 2..HASH_WIDTH {
                 let s = meta.query_advice(s_main.bytes[ind], Rotation::cur());
@@ -300,8 +312,8 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
             key_rlc = key_rlc + c_rlp2.clone() * key_mult * r_table[0].clone();
 
             /*
-            Note: no need to distinguish between sel1 and sel2 here as it was already
-            when computing key_rlc.
+            Note: no need to distinguish between `is_c16` and `is_c1` here as it was already
+            when computing `key_rlc`.
             */
 
             /*
@@ -443,9 +455,11 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
                 meta.query_fixed(keccak_table[0], Rotation::cur()),
             ));
 
-            // s(c)_mod_node_hash_rlc in placeholder branch contains hash of a drifted leaf
-            // (that this value corresponds to the value in the non-placeholder branch at drifted_pos
-            // is checked in branch_parallel)
+            /*
+            `s(c)_mod_node_hash_rlc` in placeholder branch contains hash of a drifted leaf
+            (that this value corresponds to the value in the non-placeholder branch at `drifted_pos`
+            is checked in `branch_parallel.rs`)
+            */
             let mut mod_node_hash_rlc = meta.query_advice(accs.s_mod_node_rlc, Rotation(rot));
             if !is_s {
                 mod_node_hash_rlc = meta.query_advice(accs.c_mod_node_rlc, Rotation(rot));
