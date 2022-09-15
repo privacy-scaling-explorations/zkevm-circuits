@@ -6,7 +6,7 @@ use super::{
 use crate::util::Expr;
 use crate::{
     evm_circuit::{param::N_BYTES_WORD, util::not},
-    table::{AccountFieldTag, RwTableTag},
+    table::{AccountFieldTag, RwTableTag, ProofType},
 };
 use eth_types::Field;
 use gadgets::binary_number::BinaryNumberConfig;
@@ -34,7 +34,7 @@ pub struct RwTableQueries<F: Field> {
 pub struct MptUpdateTableQueries<F: Field> {
     pub address: Expression<F>,
     pub storage_key: Expression<F>,
-    pub field_tag: Expression<F>,
+    pub proof_type: Expression<F>,
     pub new_root: Expression<F>,
     pub old_root: Expression<F>,
     pub new_value: Expression<F>,
@@ -245,7 +245,7 @@ impl<F: Field> ConstraintBuilder<F> {
                         q.rw_table.storage_key.clone(),
                         q.mpt_update_table.storage_key.clone(),
                     ),
-                    (q.field_tag(), q.mpt_update_table.field_tag.clone()),
+                    (ProofType::StorageChanged.expr(), q.mpt_update_table.proof_type.clone()),
                     (q.state_root(), q.mpt_update_table.new_root.clone()),
                     (q.state_root_prev(), q.mpt_update_table.old_root.clone()),
                     (q.value(), q.mpt_update_table.new_value.clone()),
@@ -331,7 +331,7 @@ impl<F: Field> ConstraintBuilder<F> {
                         q.rw_table.storage_key.clone(),
                         q.mpt_update_table.storage_key.clone(),
                     ),
-                    (q.field_tag(), q.mpt_update_table.field_tag.clone()),
+                    (q.field_tag(), q.mpt_update_table.proof_type.clone()),
                     (q.state_root(), q.mpt_update_table.new_root.clone()),
                     (q.state_root_prev(), q.mpt_update_table.old_root.clone()),
                     (q.value(), q.mpt_update_table.new_value.clone()),

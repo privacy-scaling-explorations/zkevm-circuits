@@ -400,7 +400,7 @@ fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: &StateCircuitConfig<F>) 
         mpt_update_table: MptUpdateTableQueries {
             address: mpt_update_table_expressions[0].clone(),
             storage_key: mpt_update_table_expressions[1].clone(),
-            field_tag: mpt_update_table_expressions[2].clone(),
+            proof_type: mpt_update_table_expressions[2].clone(),
             new_root: mpt_update_table_expressions[3].clone(),
             old_root: mpt_update_table_expressions[4].clone(),
             new_value: mpt_update_table_expressions[5].clone(),

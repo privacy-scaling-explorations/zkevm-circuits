@@ -424,6 +424,33 @@ impl RwTable {
     }
 }
 
+/// The types of proofs in the MPT table
+pub enum ProofType {
+    /// Nonce updated
+    NonceChanged = AccountFieldTag::Nonce as isize,
+    /// Balance updated
+    BalanceChanged = AccountFieldTag::Balance as isize,
+    /// Code hash exists
+    CodeHashExists = AccountFieldTag::CodeHash as isize,
+    /// Account destroyed
+    AccountDestructed,
+    /// Account does not exist
+    AccountDoesNotExist,
+    /// Storage updated
+    StorageChanged,
+}
+impl_expr!(ProofType);
+
+impl From<AccountFieldTag> for ProofType {
+    fn from(tag: AccountFieldTag) -> Self {
+        match tag {
+            AccountFieldTag::Nonce => Self::NonceChanged,
+            AccountFieldTag::Balance => Self::BalanceChanged,
+            AccountFieldTag::CodeHash => Self::CodeHashExists,
+        }
+    }
+}
+
 /// The MptTable shared between MPT Circuit and State Circuit
 #[derive(Clone, Copy, Debug)]
 pub struct MptTable([Column<Advice>; 7]);

@@ -1,5 +1,5 @@
 use crate::evm_circuit::{util::RandomLinearCombination, witness::Rw};
-use crate::table::AccountFieldTag;
+use crate::table::{AccountFieldTag, ProofType};
 use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word};
 use itertools::Itertools;
 use std::collections::HashMap;
@@ -61,7 +61,7 @@ impl MptUpdates {
                 MptUpdateRow([
                     update.key.address(),
                     update.key.storage_key(randomness),
-                    update.key.field_tag(),
+                    update.key.proof_type(),
                     new_root,
                     old_root,
                     new_value,
@@ -123,11 +123,12 @@ impl Key {
             }
         }
     }
-    fn field_tag<F: Field>(&self) -> F {
-        match self {
-            Self::Account { field_tag, .. } => F::from(*field_tag as u64),
-            Self::AccountStorage { .. } => F::zero(),
-        }
+    fn proof_type<F: Field>(&self) -> F {
+        let proof_type = match self {
+            Self::AccountStorage { .. } => ProofType::StorageChanged,
+            Self::Account { field_tag, .. } => (*field_tag).into()
+        };
+        F::from(proof_type as u64)
     }
     fn storage_key<F: Field>(&self, randomness: F) -> F {
         match self {
