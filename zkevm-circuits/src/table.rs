@@ -3,6 +3,7 @@
 use crate::copy_circuit::number_or_hash_to_field;
 use crate::evm_circuit::util::{rlc, RandomLinearCombination};
 use crate::impl_expr;
+use crate::util::Challenges;
 use crate::witness::{
     Block, BlockContext, Bytecode, MptUpdateRow, MptUpdates, Rw, RwMap, RwRow, Transaction,
 };
@@ -17,6 +18,7 @@ use halo2_proofs::{
 use halo2_proofs::{circuit::Layouter, plonk::*, poly::Rotation};
 use itertools::Itertools;
 use keccak256::plain::Keccak;
+use std::array;
 use strum_macros::{EnumCount, EnumIter};
 
 /// Trait used for dynamic tables.  Used to get an automatic implementation of
@@ -539,12 +541,14 @@ pub struct BytecodeTable {
 impl BytecodeTable {
     /// Construct a new BytecodeTable
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
+        let [tag, index, is_code, value] = array::from_fn(|_| meta.advice_column());
+        let code_hash = meta.advice_column_in(SecondPhase);
         Self {
-            code_hash: meta.advice_column(),
-            tag: meta.advice_column(),
-            index: meta.advice_column(),
-            is_code: meta.advice_column(),
-            value: meta.advice_column(),
+            code_hash,
+            tag,
+            index,
+            is_code,
+            value,
         }
     }
 
@@ -554,7 +558,7 @@ impl BytecodeTable {
         &self,
         layouter: &mut impl Layouter<F>,
         bytecodes: impl IntoIterator<Item = &'a Bytecode> + Clone,
-        randomness: F,
+        challenges: &Challenges<Value<F>>,
     ) -> Result<(), Error> {
         layouter.assign_region(
             || "bytecode table",
@@ -572,13 +576,13 @@ impl BytecodeTable {
 
                 let bytecode_table_columns = self.columns();
                 for bytecode in bytecodes.clone() {
-                    for row in bytecode.table_assignments(randomness) {
+                    for row in bytecode.table_assignments(challenges) {
                         for (column, value) in bytecode_table_columns.iter().zip_eq(row) {
                             region.assign_advice(
                                 || format!("bytecode table row {}", offset),
                                 *column,
                                 offset,
-                                || Value::known(value),
+                                || value,
                             )?;
                         }
                         offset += 1;
@@ -711,25 +715,37 @@ impl KeccakTable {
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
         Self {
             is_enabled: meta.advice_column(),
-            input_rlc: meta.advice_column(),
+            input_rlc: meta.advice_column_in(SecondPhase),
             input_len: meta.advice_column(),
-            output_rlc: meta.advice_column(),
+            output_rlc: meta.advice_column_in(SecondPhase),
         }
     }
 
     /// Generate the keccak table assignments from a byte array input.
-    pub fn assignments<F: Field>(input: &[u8], randomness: F) -> Vec<[F; 4]> {
-        let input_rlc: F = rlc::value(input.iter().rev(), randomness);
+    pub fn assignments<F: Field>(
+        input: &[u8],
+        challenges: &Challenges<Value<F>>,
+    ) -> Vec<[Value<F>; 4]> {
+        let input_rlc = challenges
+            .keccak_input()
+            .map(|challenge| rlc::value(input.iter().rev(), challenge));
         let input_len = F::from(input.len() as u64);
         let mut keccak = Keccak::default();
         keccak.update(input);
         let output = keccak.digest();
-        let output_rlc = RandomLinearCombination::<F, 32>::random_linear_combine(
-            Word::from_big_endian(output.as_slice()).to_le_bytes(),
-            randomness,
-        );
+        let output_rlc = challenges.evm_word().map(|challenge| {
+            RandomLinearCombination::<F, 32>::random_linear_combine(
+                Word::from_big_endian(output.as_slice()).to_le_bytes(),
+                challenge,
+            )
+        });
 
-        vec![[F::one(), input_rlc, input_len, output_rlc]]
+        vec![[
+            Value::known(F::one()),
+            input_rlc,
+            Value::known(input_len),
+            output_rlc,
+        ]]
     }
 
     /// Assign a table row for keccak table
@@ -756,7 +772,7 @@ impl KeccakTable {
         &self,
         layouter: &mut impl Layouter<F>,
         inputs: impl IntoIterator<Item = &'a Vec<u8>> + Clone,
-        randomness: F,
+        challenges: &Challenges<Value<F>>,
     ) -> Result<(), Error> {
         layouter.assign_region(
             || "keccak table",
@@ -774,14 +790,14 @@ impl KeccakTable {
 
                 let keccak_table_columns = self.columns();
                 for input in inputs.clone() {
-                    for row in Self::assignments(input, randomness) {
+                    for row in Self::assignments(input, challenges) {
                         // let mut column_index = 0;
                         for (column, value) in keccak_table_columns.iter().zip_eq(row) {
                             region.assign_advice(
                                 || format!("keccak table row {}", offset),
                                 *column,
                                 offset,
-                                || Value::known(value),
+                                || value,
                             )?;
                         }
                         offset += 1;

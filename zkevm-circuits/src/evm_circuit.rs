@@ -154,12 +154,12 @@ pub mod test {
     use crate::{
         evm_circuit::{table::FixedTableTag, witness::Block, EvmCircuit},
         table::{BlockTable, BytecodeTable, CopyTable, KeccakTable, RwTable, TxTable},
-        util::power_of_randomness_from_instance,
+        util::{power_of_randomness_from_instance, Challenges},
     };
     use bus_mapping::evm::OpcodeId;
     use eth_types::{Field, Word};
     use halo2_proofs::{
-        circuit::{Layouter, SimpleFloorPlanner},
+        circuit::{Layouter, SimpleFloorPlanner, Value},
         dev::{MockProver, VerifyFailure},
         plonk::{Circuit, ConstraintSystem, Error},
     };
@@ -285,6 +285,8 @@ pub mod test {
             config: Self::Config,
             mut layouter: impl Layouter<F>,
         ) -> Result<(), Error> {
+            let challenges = Challenges::mock(Value::known(self.block.randomness));
+
             config
                 .evm_circuit
                 .load_fixed_table(&mut layouter, self.fixed_table_tags.clone())?;
@@ -302,7 +304,7 @@ pub mod test {
             config.bytecode_table.load(
                 &mut layouter,
                 self.block.bytecodes.values(),
-                self.block.randomness,
+                &challenges,
             )?;
             config
                 .block_table
@@ -311,11 +313,9 @@ pub mod test {
                 .copy_table
                 .load(&mut layouter, &self.block, self.block.randomness)?;
 
-            config.keccak_table.dev_load(
-                &mut layouter,
-                &self.block.sha3_inputs,
-                self.block.randomness,
-            )?;
+            config
+                .keccak_table
+                .dev_load(&mut layouter, &self.block.sha3_inputs, &challenges)?;
 
             config
                 .evm_circuit
