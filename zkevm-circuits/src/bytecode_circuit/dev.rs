@@ -9,15 +9,28 @@ use halo2_proofs::{
 use halo2_proofs::{circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit};
 use std::vec;
 
+/// BytecodeCircuitTester
 #[derive(Default)]
-pub(crate) struct BytecodeCircuitTester<F: Field> {
+pub struct BytecodeCircuitTester<F: Field> {
     bytecodes: Vec<UnrolledBytecode<F>>,
     size: usize,
     randomness: F,
 }
 
-fn get_randomness<F: Field>() -> F {
+/// get_randomness
+pub fn get_randomness<F: Field>() -> F {
     F::from(123456)
+}
+
+impl<F: Field> BytecodeCircuitTester<F> {
+    /// new BytecodeCircuitTester
+    pub fn new(bytecodes: Vec<UnrolledBytecode<F>>, size: usize, randomness: F) -> Self {
+        BytecodeCircuitTester {
+            bytecodes,
+            size,
+            randomness,
+        }
+    }
 }
 
 impl<F: Field> Circuit<F> for BytecodeCircuitTester<F> {

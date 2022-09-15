@@ -20,6 +20,7 @@ env_logger = "0.9"
 ethers-signers = "0.17.0"
 mock = { path="../mock" }
 rand_chacha = "0.3"
+hex = "0.4.3"
 
 [features]
 default = []
