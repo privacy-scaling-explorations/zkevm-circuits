@@ -3,8 +3,13 @@ use crate::evm_circuit::{
     param::N_BYTES_GAS,
     step::ExecutionState,
     util::{
-        common_gadget::RestoreContextGadget, constraint_builder::ConstraintBuilder,
-        math_gadget::RangeCheckGadget, CachedRegion, Cell,
+        common_gadget::RestoreContextGadget,
+        constraint_builder::{
+            ConstraintBuilder, StepStateTransition,
+            Transition::{Delta, Same},
+        },
+        math_gadget::RangeCheckGadget,
+        CachedRegion, Cell,
     },
     witness::{Block, Call, ExecStep, Transaction},
 };
@@ -55,21 +60,20 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGConstantGadget<F> {
             is_to_end_tx,
         );
 
-        // if not root call, switch to caller's context
-        // cb.condition(1.expr() - cb.curr.state.is_root.expr(), |cb| {
-        //     // When a transaction ends with this error case, this call must be not
-        //     // persistent
-        //     cb.call_context_lookup(
-        //         false.expr(),
-        //         None,
-        //         CallContextFieldTag::IsPersistent,
-        //         0.expr(),
-        //     )
-        // });
+        // When it's a root call
+        cb.condition(cb.curr.state.is_root.expr(), |cb| {
+            // Do step state transition
+            cb.require_step_state_transition(StepStateTransition {
+                call_id: Same,
+                rw_counter: Delta(4.expr()),
+                ..StepStateTransition::any()
+            });
+        });
 
-        // When it's an internal call
+        // When it's an internal call, need to restore caller's state as finishing this
+        // call. Restore caller state to next StepState
         let restore_context = cb.condition(1.expr() - cb.curr.state.is_root.expr(), |cb| {
-            RestoreContextGadget::construct(cb, 1.expr(), 0.expr(), 0.expr())
+            RestoreContextGadget::construct(cb, 4.expr(), 0.expr(), 0.expr())
         });
 
         Self {
@@ -110,7 +114,13 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGConstantGadget<F> {
 mod test {
     use crate::evm_circuit::{test::run_test_circuit, witness::block_convert};
     use bus_mapping::{evm::OpcodeId, mock::BlockData};
-    use eth_types::{self, bytecode, evm_types::GasCost, geth_types::GethData, Word};
+    use eth_types::{
+        self, address, bytecode, bytecode::Bytecode, evm_types::GasCost, geth_types::Account,
+        geth_types::GethData, Address, ToWord, Word,
+    };
+    //use eth_types::{bytecode::Bytecode};
+    //use eth_types::{Address, ToWord, Word};
+    use itertools::Itertools;
     use mock::{
         eth, gwei, test_ctx::helpers::account_0_code_account_1_no_code, TestContext, MOCK_ACCOUNTS,
     };
@@ -187,5 +197,133 @@ mod test {
         // in root call
         test_oog_constant(mock_tx(eth(1), gwei(2), vec![]), false);
         // TODO: add internal call test
+    }
+
+    #[derive(Clone, Copy, Debug, Default)]
+    struct Stack {
+        gas: u64,
+        value: Word,
+        cd_offset: u64,
+        cd_length: u64,
+        rd_offset: u64,
+        rd_length: u64,
+    }
+
+    fn caller(stack: Stack, caller_is_success: bool) -> Account {
+        let terminator = if caller_is_success {
+            OpcodeId::RETURN
+        } else {
+            OpcodeId::REVERT
+        };
+
+        // Call twice for testing both cold and warm access
+        let bytecode = bytecode! {
+            PUSH32(Word::from(stack.rd_length))
+            PUSH32(Word::from(stack.rd_offset))
+            PUSH32(Word::from(stack.cd_length))
+            PUSH32(Word::from(stack.cd_offset))
+            PUSH32(stack.value)
+            PUSH32(Address::repeat_byte(0xff).to_word())
+            PUSH32(Word::from(stack.gas))
+            CALL
+            PUSH32(Word::from(stack.rd_length))
+            PUSH32(Word::from(stack.rd_offset))
+            PUSH32(Word::from(stack.cd_length))
+            PUSH32(Word::from(stack.cd_offset))
+            PUSH32(stack.value)
+            PUSH32(Address::repeat_byte(0xff).to_word())
+            PUSH32(Word::from(stack.gas))
+            CALL
+            //STOP
+            //PUSH1(0)
+            //PUSH1(0)
+            .write_op(terminator)
+        };
+
+        Account {
+            address: Address::repeat_byte(0xfe),
+            balance: Word::from(10).pow(20.into()),
+            code: bytecode.to_vec().into(),
+            ..Default::default()
+        }
+    }
+
+    fn oog_constant_internal_call(caller: Account, callee: Account) {
+        let block = TestContext::<3, 1>::new(
+            None,
+            |accs| {
+                accs[0]
+                    .address(address!("0x000000000000000000000000000000000000cafe"))
+                    .balance(Word::from(10u64.pow(19)));
+                accs[1]
+                    .address(caller.address)
+                    .code(caller.code)
+                    .nonce(caller.nonce)
+                    .balance(caller.balance);
+                accs[2]
+                    .address(callee.address)
+                    .code(callee.code)
+                    .nonce(callee.nonce)
+                    .balance(callee.balance);
+            },
+            |mut txs, accs| {
+                txs[0]
+                    .from(accs[0].address)
+                    .to(accs[1].address)
+                    .gas(23800.into());
+            },
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap()
+        .into();
+        let block_data = bus_mapping::mock::BlockData::new_from_geth_data(block);
+        let mut builder = block_data.new_circuit_input_builder();
+        builder
+            .handle_block(&block_data.eth_block, &block_data.geth_traces)
+            .unwrap();
+        let block = block_convert(&builder.block, &builder.code_db);
+        assert_eq!(run_test_circuit(block), Ok(()));
+    }
+
+    fn callee(code: Bytecode) -> Account {
+        let code = code.to_vec();
+        let is_empty = code.is_empty();
+        Account {
+            address: Address::repeat_byte(0xff),
+            code: code.into(),
+            nonce: if is_empty { 0 } else { 1 }.into(),
+            balance: if is_empty { 0 } else { 0xdeadbeefu64 }.into(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn test_oog_constant_internal() {
+        let stacks = vec![
+            // With gas and memory expansion
+            Stack {
+                gas: 5000,
+                cd_offset: 64,
+                cd_length: 320,
+                rd_offset: 0,
+                rd_length: 32,
+                ..Default::default()
+            },
+        ];
+
+        let bytecode = bytecode! {
+            PUSH32(Word::from(0))
+            PUSH32(Word::from(1))
+            PUSH32(Word::from(2))
+            PUSH32(Word::from(10))
+            PUSH32(Word::from(224))
+            PUSH32(Word::from(1025))
+            PUSH32(Word::from(5089))
+            STOP
+        };
+        let callees = vec![callee(bytecode)];
+        for (stack, callee) in stacks.into_iter().cartesian_product(callees.into_iter()) {
+            oog_constant_internal_call(caller(stack, false), callee);
+        }
     }
 }

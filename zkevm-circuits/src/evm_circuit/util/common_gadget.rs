@@ -189,24 +189,32 @@ impl<F: Field> RestoreContextGadget<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
+        let call_sucess = call.is_success;
+        let start_index = if call_sucess {
+            1 // stop restore context case
+        } else {
+            2 // error cases
+        };
+
         let [caller_id, caller_is_root, caller_is_create, caller_code_hash, caller_program_counter, caller_stack_pointer, caller_gas_left, caller_memory_word_size, caller_reversible_write_counter] =
             if call.is_root {
                 [U256::zero(); 9]
             } else {
                 [
-                    step.rw_indices[1],
-                    step.rw_indices[2],
-                    step.rw_indices[3],
-                    step.rw_indices[4],
-                    step.rw_indices[5],
-                    step.rw_indices[6],
-                    step.rw_indices[7],
-                    step.rw_indices[8],
-                    step.rw_indices[9],
+                    step.rw_indices[start_index],
+                    step.rw_indices[start_index + 1],
+                    step.rw_indices[start_index + 2],
+                    step.rw_indices[start_index + 3],
+                    step.rw_indices[start_index + 4],
+                    step.rw_indices[start_index + 5],
+                    step.rw_indices[start_index + 6],
+                    step.rw_indices[start_index + 7],
+                    step.rw_indices[start_index + 8],
                 ]
                 .map(|idx| block.rws[idx].call_context_value())
             };
 
+        print!("caller code hash: {}", caller_code_hash);
         for (cell, value) in [
             (&self.caller_id, caller_id),
             (&self.caller_is_root, caller_is_root),
@@ -220,6 +228,7 @@ impl<F: Field> RestoreContextGadget<F> {
                 caller_reversible_write_counter,
             ),
         ] {
+            println!("value is {}", value);
             cell.assign(
                 region,
                 offset,
