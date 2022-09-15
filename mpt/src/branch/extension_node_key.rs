@@ -206,9 +206,12 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
             let key_rlc_prev_branch = meta.query_advice(accs.key.rlc, Rotation(rot_into_prev_branch));
             let key_rlc_ext_node_cur = meta.query_advice(accs.key.rlc, Rotation::cur());
 
-            let key_rlc_ext_node_mult_prev = meta.query_advice(accs.key.mult, Rotation::prev());
             let key_rlc_mult_prev_branch = meta.query_advice(accs.key.mult, Rotation(rot_into_prev_branch));
-            let key_rlc_ext_node_mult_cur = meta.query_advice(accs.key.mult, Rotation::cur());
+
+            /*
+            Note: `ext_node_key_mult` is not set, we always compute it by taking `branch_key_mult` from the branch above and multiplying it
+            by `mult_diff` which reflects how many nibbles are in the extension node.
+            */
 
             // Any rotation into branch children can be used:
             let key_rlc_branch = meta.query_advice(accs.key.rlc, Rotation(rot_into_branch_init+1));
@@ -228,18 +231,6 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
                     * is_extension_c_row.clone()
                     * is_extension_node.clone()
                     * (key_rlc_ext_node_cur.clone() - key_rlc_ext_node_prev.clone()),
-            ));
-
-            /*
-            Same as above but for the multiplier that is to be used for the first nibble 
-            of the extension node.
-            */
-            constraints.push((
-                "Extension node row S and C key RLC mult are the same",
-                q_not_first.clone()
-                    * is_extension_c_row.clone()
-                    * is_extension_node.clone()
-                    * (key_rlc_ext_node_mult_cur.clone() - key_rlc_ext_node_mult_prev.clone()),
             ));
 
             let s_rlp2 = meta.query_advice(s_main.rlp2, Rotation::prev());

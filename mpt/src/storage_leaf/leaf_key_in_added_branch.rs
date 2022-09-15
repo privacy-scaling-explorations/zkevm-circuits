@@ -235,7 +235,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
           Leaf S (leaf to be deleted)     || Leaf C
           Leaf to be drifted one level up || 
         */
-        meta.create_gate("Drifted leaf key RLC", |meta| {
+        meta.create_gate("Storage drifted leaf key RLC", |meta| {
             let q_enable = q_enable(meta);
             let mut constraints = vec![];
 

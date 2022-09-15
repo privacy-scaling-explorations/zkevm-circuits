@@ -575,7 +575,7 @@ impl<F: FieldExt> LeafKeyConfig<F> {
         Note that the hash of a leaf `L1` needs to be checked to be in the branch
         above the placeholder branch - this is checked in `leaf_value.rs`.
         */
-        meta.create_gate("Storage leaf key RLC (before drifting into a new branch)", |meta| {
+        meta.create_gate("Storage leaf key RLC (after placeholder)", |meta| {
             /*
             Note: `last_level` cannot occur in a leaf after placeholder branch, because being
             after placeholder branch means this leaf drifted down into a new branch (in a parallel

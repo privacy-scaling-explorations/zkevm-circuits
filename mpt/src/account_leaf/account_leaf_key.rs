@@ -83,7 +83,7 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
         not_first_level: Column<Advice>,
         s_main: MainCols<F>,
         c_main: MainCols<F>,
-        accs: AccumulatorCols<F>, // acc_c contains key_rlc_prev & key_rlc_mult_prev
+        accs: AccumulatorCols<F>,
         r_table: Vec<Expression<F>>,
         fixed_table: [Column<Fixed>; 3],
         address_rlc: Column<Advice>,
@@ -375,72 +375,6 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
         );
 
         /*
-        When there is an account leaf after a placeholder branch, the intermediate key RLC needs to be
-        fetched from the branch above the placeholder branch. That would require a rotation over two
-        levels which leads into ConstrainedPoisoned because we are accessing the rows before 0 in
-        some cases. For this reason, we copy previous key RLC to the current branch so that we have
-        in each branch a current and previous key RLC at our disposal. This way we do not need to
-        rotate over two levels.
-        */
-        meta.create_gate("Previous level address RLC", |meta| {
-            let q_enable = q_enable(meta);
-            let mut constraints = vec![];
-
-            // All branch children have the same not_first_level, any rotation could be
-            // used.
-            let is_branch_in_first_level = one.clone()
-                - meta.query_advice(not_first_level, Rotation(rot_into_first_branch_child));
-            let is_account_in_first_level =
-                one.clone() - meta.query_advice(not_first_level, Rotation::cur());
-            // If account is in the first level or the branch above the account leaf is in
-            // the first level, there is no branch a level above from where the
-            // key_rlc could be copied.
-
-            // Could be used any rotation into previous branch, because key RLC is the same
-            // in all branch children:
-            let rot_into_prev_branch = rot_into_init - 5;
-            // TODO: check why a different rotation causes (for example rot_into_init - 3)
-            // causes ConstraintPoisened
-
-            // key_rlc_mult_prev_level = 1 if no_prev_key_rlc
-            let key_rlc_mult_prev_level = (one.clone() - is_branch_in_first_level.clone())
-                * meta.query_advice(accs.key.mult, Rotation(rot_into_prev_branch))
-                + is_branch_in_first_level.clone();
-            // key_rlc_prev_level = 0 if no_prev_key_rlc
-            let key_rlc_prev_level = (one.clone() - is_branch_in_first_level.clone())
-                * meta.query_advice(accs.key.rlc, Rotation(rot_into_prev_branch));
-
-            let rlc_prev = meta.query_advice(accs.acc_c.rlc, Rotation::cur());
-            let mult_prev = meta.query_advice(accs.acc_c.mult, Rotation::cur());
-
-            /*
-            We need to ensure that the key RLC from the branch above the placeholder branch is copied
-            to `accs.acc_c.rlc`. This enables us to compute the address RLC after a branch placeholder
-            (see the constraint below) by not using rotations over two levels (we have the intermediate
-            RLC in the current row).
-            */
-            constraints.push((
-                "Previous key RLC",
-                q_enable.clone()
-                    * (one.clone() - is_account_in_first_level.clone())
-                    * (rlc_prev - key_rlc_prev_level),
-            ));
-
-            /*
-            We need to ensure that the key RLC mult from the branch above the placeholder branch is copied
-            to `accs.acc_c.mult`.
-            */
-            constraints.push((
-                "Previous key RLC mult",
-                q_enable
-                    * (one.clone() - is_account_in_first_level)
-                    * (mult_prev - key_rlc_mult_prev_level),
-            ));
-
-            constraints
-        });
-
-        /*
         The example layout for a branch placeholder looks like (placeholder could be in `C` proof too):
             Branch 1S               || Branch 1C
             Branch 2S (placeholder) || Branch 2C
@@ -467,8 +401,22 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
             let is_leaf_in_first_level =
                 one.clone() - meta.query_advice(not_first_level, Rotation::cur());
 
-            let key_rlc_acc_start = meta.query_advice(accs.acc_c.rlc, Rotation::cur());
-            let key_mult_start = meta.query_advice(accs.acc_c.mult, Rotation::cur());
+            // let key_rlc_acc_start = meta.query_advice(accs.acc_c.rlc, Rotation::cur());
+            // let key_mult_start = meta.query_advice(accs.acc_c.mult, Rotation::cur());
+
+            let is_placeholder_branch_in_first_level =
+                one.clone() - meta.query_advice(not_first_level, Rotation(rot_into_init));
+
+            // Note: key RLC is in the first branch node (not branch init).
+            let rot_level_above = rot_into_init + 1 - BRANCH_ROWS_NUM;
+
+            let key_rlc_acc_start = meta.query_advice(accs.key.rlc, Rotation(rot_level_above))
+                * (one.clone() - is_placeholder_branch_in_first_level.clone());
+            let key_mult_start = meta.query_advice(accs.key.mult, Rotation(rot_level_above))
+                * (one.clone() - is_placeholder_branch_in_first_level.clone())
+                + is_placeholder_branch_in_first_level.clone();
+
+            // TODO: the expressions below can be simplified
 
             let sel1p = meta.query_advice(
                 s_main.bytes[IS_BRANCH_C16_POS - RLP_NUM],
@@ -704,9 +652,6 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
             acc += F::from(*b as u64) * acc_mult;
             acc_mult *= mpt_config.acc_r;
         }
-        // Assigning acc_s, acc_mult_s below together with acc_c
-        // (key_rlc_prev) and acc_c_mult
-        // (key_rlc_mult_prev).
 
         if row[row.len() - 1] == 6 {
             pv.acc_account_s = acc;
@@ -734,17 +679,12 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
             || Ok(key_rlc_new),
         ).ok();
 
-        // Assign previous key RLC and mult in acc_c and acc_c_mult - don't
-        // use sel1/sel2 here (as in storage leaf case) as sel1/sel2 is
-        // used for whether nonce/balance is short/long (in nonce balance
-        // row, see offset - 1).
-        // Constraints for previous key RLC are in account_leaf_key.
         mpt_config.assign_acc(
             region,
             acc,
             acc_mult,
-            pv.key_rlc_prev,
-            pv.key_rlc_mult_prev,
+            F::zero(),
+            F::zero(),
             offset,
         ).ok();
     }
