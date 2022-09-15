@@ -1112,8 +1112,6 @@ pub struct ExpTable {
     pub base_limb: Column<Advice>,
     /// The integer exponent of the exponentiation.
     pub intermediate_exponent_lo_hi: Column<Advice>,
-    /// The lowest significant byte of the intermediate exponent.
-    pub lsb_int_exponent: Column<Advice>,
     /// The intermediate result of exponentiation by squaring.
     pub intermediate_exp_lo_hi: Column<Advice>,
 }
@@ -1126,7 +1124,6 @@ impl ExpTable {
             self.is_last,
             self.base_limb,
             self.intermediate_exponent_lo_hi,
-            self.lsb_int_exponent,
             self.intermediate_exp_lo_hi,
         ]
     }
@@ -1140,14 +1137,13 @@ impl ExpTable {
             is_last: meta.advice_column(),
             base_limb: meta.advice_column(),
             intermediate_exponent_lo_hi: meta.advice_column(),
-            lsb_int_exponent: meta.advice_column(),
             intermediate_exp_lo_hi: meta.advice_column(),
         }
     }
 
     /// Given an exponentiation event and randomness, get assignments to the
     /// exponentiation table.
-    pub fn assignments<F: Field>(exp_event: &ExpEvent) -> Vec<[F; 6]> {
+    pub fn assignments<F: Field>(exp_event: &ExpEvent) -> Vec<[F; 5]> {
         let mut assignments = Vec::new();
         let base_limbs = split_u256_limb64(&exp_event.base);
         let identifier = F::from(exp_event.identifier as u64);
@@ -1160,7 +1156,6 @@ impl ExpTable {
             };
             let (exp_lo, exp_hi) = split_u256(&exp_step.d);
             let (exponent_lo, exponent_hi) = split_u256(&exponent);
-            let lsb_exponent = exponent.to_le_bytes()[0];
 
             // row 1
             assignments.push([
@@ -1170,7 +1165,6 @@ impl ExpTable {
                 exponent_lo
                     .to_scalar()
                     .expect("exponent should fit to scalar"),
-                F::from(lsb_exponent as u64),
                 exp_lo
                     .to_scalar()
                     .expect("exponentiation lo should fit to scalar"),
@@ -1183,7 +1177,6 @@ impl ExpTable {
                 exponent_hi
                     .to_scalar()
                     .expect("exponent hi should fit to scalar"),
-                F::zero(),
                 exp_hi
                     .to_scalar()
                     .expect("exponentiation hi should fit to scalar"),
@@ -1195,14 +1188,12 @@ impl ExpTable {
                 base_limbs[2].as_u64().into(),
                 F::zero(),
                 F::zero(),
-                F::zero(),
             ]);
             // row 4
             assignments.push([
                 identifier,
                 F::zero(),
                 base_limbs[3].as_u64().into(),
-                F::zero(),
                 F::zero(),
                 F::zero(),
             ]);
@@ -1272,7 +1263,6 @@ impl<F: Field> LookupTable<F> for ExpTable {
             meta.query_advice(self.base_limb, Rotation(3)),
             meta.query_advice(self.intermediate_exponent_lo_hi, Rotation::cur()),
             meta.query_advice(self.intermediate_exponent_lo_hi, Rotation::next()),
-            meta.query_advice(self.lsb_int_exponent, Rotation::cur()),
             meta.query_advice(self.intermediate_exp_lo_hi, Rotation::cur()),
             meta.query_advice(self.intermediate_exp_lo_hi, Rotation::next()),
         ]
