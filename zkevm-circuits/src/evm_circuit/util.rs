@@ -217,7 +217,7 @@ impl<F: FieldExt> CellManager<F> {
         // Setup the columns and query the cells
         let width = advices.len();
         let mut cells = Vec::with_capacity(height * width);
-        let mut columns = Vec::with_capacity(height);
+        let mut columns = Vec::with_capacity(width);
         meta.create_gate("Query rows for step", |meta| {
             for c in 0..width {
                 for r in 0..height {
