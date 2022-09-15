@@ -1111,9 +1111,9 @@ pub struct ExpTable {
     /// The integer base of the exponentiation.
     pub base_limb: Column<Advice>,
     /// The integer exponent of the exponentiation.
-    pub intermediate_exponent_lo_hi: Column<Advice>,
+    pub exponent_lo_hi: Column<Advice>,
     /// The intermediate result of exponentiation by squaring.
-    pub intermediate_exp_lo_hi: Column<Advice>,
+    pub exponentiation_lo_hi: Column<Advice>,
 }
 
 impl ExpTable {
@@ -1123,8 +1123,8 @@ impl ExpTable {
             self.identifier,
             self.is_last,
             self.base_limb,
-            self.intermediate_exponent_lo_hi,
-            self.intermediate_exp_lo_hi,
+            self.exponent_lo_hi,
+            self.exponentiation_lo_hi,
         ]
     }
 }
@@ -1136,8 +1136,8 @@ impl ExpTable {
             identifier: meta.advice_column(),
             is_last: meta.advice_column(),
             base_limb: meta.advice_column(),
-            intermediate_exponent_lo_hi: meta.advice_column(),
-            intermediate_exp_lo_hi: meta.advice_column(),
+            exponent_lo_hi: meta.advice_column(),
+            exponentiation_lo_hi: meta.advice_column(),
         }
     }
 
@@ -1261,10 +1261,10 @@ impl<F: Field> LookupTable<F> for ExpTable {
             meta.query_advice(self.base_limb, Rotation::next()),
             meta.query_advice(self.base_limb, Rotation(2)),
             meta.query_advice(self.base_limb, Rotation(3)),
-            meta.query_advice(self.intermediate_exponent_lo_hi, Rotation::cur()),
-            meta.query_advice(self.intermediate_exponent_lo_hi, Rotation::next()),
-            meta.query_advice(self.intermediate_exp_lo_hi, Rotation::cur()),
-            meta.query_advice(self.intermediate_exp_lo_hi, Rotation::next()),
+            meta.query_advice(self.exponent_lo_hi, Rotation::cur()),
+            meta.query_advice(self.exponent_lo_hi, Rotation::next()),
+            meta.query_advice(self.exponentiation_lo_hi, Rotation::cur()),
+            meta.query_advice(self.exponentiation_lo_hi, Rotation::next()),
         ]
     }
 }

@@ -1203,8 +1203,8 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
                 identifier,
                 is_last,
                 base_limbs,
-                intermediate_exponent_lo_hi: exponent_lo_hi,
-                intermediate_exp_lo_hi: exponentiation_lo_hi,
+                exponent_lo_hi,
+                exponentiation_lo_hi,
             },
         );
     }

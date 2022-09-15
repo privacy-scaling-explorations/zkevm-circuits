@@ -257,8 +257,8 @@ pub(crate) enum Lookup<F> {
         identifier: Expression<F>,
         is_last: Expression<F>,
         base_limbs: [Expression<F>; 4],
-        intermediate_exponent_lo_hi: [Expression<F>; 2],
-        intermediate_exp_lo_hi: [Expression<F>; 2],
+        exponent_lo_hi: [Expression<F>; 2],
+        exponentiation_lo_hi: [Expression<F>; 2],
     },
     /// Conditional lookup enabled by the first element.
     Conditional(Expression<F>, Box<Lookup<F>>),
@@ -379,8 +379,8 @@ impl<F: Field> Lookup<F> {
                 identifier,
                 is_last,
                 base_limbs,
-                intermediate_exponent_lo_hi,
-                intermediate_exp_lo_hi,
+                exponent_lo_hi,
+                exponentiation_lo_hi,
             } => vec![
                 identifier.clone(),
                 is_last.clone(),
@@ -388,10 +388,10 @@ impl<F: Field> Lookup<F> {
                 base_limbs[1].clone(),
                 base_limbs[2].clone(),
                 base_limbs[3].clone(),
-                intermediate_exponent_lo_hi[0].clone(),
-                intermediate_exponent_lo_hi[1].clone(),
-                intermediate_exp_lo_hi[0].clone(),
-                intermediate_exp_lo_hi[1].clone(),
+                exponent_lo_hi[0].clone(),
+                exponent_lo_hi[1].clone(),
+                exponentiation_lo_hi[0].clone(),
+                exponentiation_lo_hi[1].clone(),
             ],
             Self::Conditional(condition, lookup) => lookup
                 .input_exprs()

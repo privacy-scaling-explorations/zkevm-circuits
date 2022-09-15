@@ -130,12 +130,12 @@ impl<F: Field> ExpCircuit<F> {
             // the corresponding multiplication.
             cb.require_equal(
                 "intermediate exponentiation lo == mul_gadget.d_lo",
-                meta.query_advice(exp_table.intermediate_exp_lo_hi, Rotation::cur()),
+                meta.query_advice(exp_table.exponentiation_lo_hi, Rotation::cur()),
                 meta.query_advice(mul_gadget.col2, Rotation(2)),
             );
             cb.require_equal(
                 "intermediate exponentiation hi == mul_gadget.d_hi",
-                meta.query_advice(exp_table.intermediate_exp_lo_hi, Rotation::next()),
+                meta.query_advice(exp_table.exponentiation_lo_hi, Rotation::next()),
                 meta.query_advice(mul_gadget.col3, Rotation(2)),
             );
 
@@ -162,13 +162,13 @@ impl<F: Field> ExpCircuit<F> {
                 ]), |cb| {
                 cb.require_equal(
                     "intermediate_exponent::next == intermediate_exponent::cur - 1 (lo::next == lo::cur - 1)",
-                    meta.query_advice(exp_table.intermediate_exponent_lo_hi, Rotation(7)),
-                    meta.query_advice(exp_table.intermediate_exponent_lo_hi, Rotation(0)) - 1.expr(),
+                    meta.query_advice(exp_table.exponent_lo_hi, Rotation(7)),
+                    meta.query_advice(exp_table.exponent_lo_hi, Rotation(0)) - 1.expr(),
                 );
                 cb.require_equal(
                     "intermediate_exponent::next == intermediate_exponent::cur - 1 (hi::next == hi::cur)",
-                    meta.query_advice(exp_table.intermediate_exponent_lo_hi, Rotation(8)),
-                    meta.query_advice(exp_table.intermediate_exponent_lo_hi, Rotation(1)),
+                    meta.query_advice(exp_table.exponent_lo_hi, Rotation(8)),
+                    meta.query_advice(exp_table.exponent_lo_hi, Rotation(1)),
                 );
                 for (i, mul_gadget_col) in [
                     mul_gadget.col0,
@@ -194,12 +194,12 @@ impl<F: Field> ExpCircuit<F> {
                 ]), |cb| {
                 cb.require_equal(
                     "intermediate_exponent::next == intermediate_exponent::cur / 2 (equate cur lo)",
-                    meta.query_advice(exp_table.intermediate_exponent_lo_hi, Rotation(0)),
+                    meta.query_advice(exp_table.exponent_lo_hi, Rotation(0)),
                     meta.query_advice(parity_check.col2, Rotation(2)),
                 );
                 cb.require_equal(
                     "intermediate_exponent::next == intermediate_exponent::cur / 2 (equate cur hi)",
-                    meta.query_advice(exp_table.intermediate_exponent_lo_hi, Rotation(1)),
+                    meta.query_advice(exp_table.exponent_lo_hi, Rotation(1)),
                     meta.query_advice(parity_check.col3, Rotation(2)),
                 );
                 let (limb0, limb1, limb2, limb3) = (
@@ -212,12 +212,12 @@ impl<F: Field> ExpCircuit<F> {
                 let exponent_next_hi = limb2 + (limb3 * multiplier);
                 cb.require_equal(
                     "intermediate_exponent::next == intermediate_exponent::cur / 2 (equate next lo)",
-                    meta.query_advice(exp_table.intermediate_exponent_lo_hi, Rotation(7)),
+                    meta.query_advice(exp_table.exponent_lo_hi, Rotation(7)),
                     exponent_next_lo,
                 );
                 cb.require_equal(
                     "intermediate_exponent::next == intermediate_exponent::cur / 2 (equate next hi)",
-                    meta.query_advice(exp_table.intermediate_exponent_lo_hi, Rotation(8)),
+                    meta.query_advice(exp_table.exponent_lo_hi, Rotation(8)),
                     exponent_next_hi,
                 );
                 for mul_gadget_col in [
@@ -240,12 +240,12 @@ impl<F: Field> ExpCircuit<F> {
             cb.condition(meta.query_advice(exp_table.is_last, Rotation::cur()), |cb| {
                 cb.require_equal(
                     "if is_last is True: intermediate_exponent == 2 (lo == 2)",
-                    meta.query_advice(exp_table.intermediate_exponent_lo_hi, Rotation::cur()),
+                    meta.query_advice(exp_table.exponent_lo_hi, Rotation::cur()),
                     2.expr(),
                 );
                 cb.require_zero(
                     "if is_last is True: intermediate_exponent == 2 (hi == 0)",
-                    meta.query_advice(exp_table.intermediate_exponent_lo_hi, Rotation::next()),
+                    meta.query_advice(exp_table.exponent_lo_hi, Rotation::next()),
                 );
                 for (i, mul_gadget_col) in [
                     mul_gadget.col0,
