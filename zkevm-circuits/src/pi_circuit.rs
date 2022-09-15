@@ -17,7 +17,8 @@ use crate::table::TxFieldTag;
 use crate::tx_circuit::sign_verify::SignData;
 use crate::tx_circuit::tx_to_sign_data;
 use crate::util::random_linear_combine_word as rlc;
-use gadgets::util::Expr;
+use gadgets::is_zero::IsZeroChip;
+use gadgets::util::{not, or, Expr};
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter, Region, SimpleFloorPlanner},
     plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Fixed, Selector},
@@ -202,8 +203,8 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
         let block_value = meta.advice_column();
 
         let q_tx_table = meta.complex_selector();
-        let q_tx_calldata = meta.selector();
-        let q_calldata_start = meta.selector();
+        let q_tx_calldata = meta.complex_selector();
+        let q_calldata_start = meta.complex_selector();
         // Tx Table
         let tx_id = meta.advice_column();
         let tag = meta.fixed_column();
@@ -318,17 +319,32 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
             },
         );
 
+        let tx_id_is_zero_config = IsZeroChip::configure(
+            meta,
+            |meta| meta.query_selector(q_tx_calldata),
+            |meta| meta.query_advice(tx_id, Rotation::cur()),
+            tx_id_inv,
+        );
+        let tx_value_is_zero_config = IsZeroChip::configure(
+            meta,
+            |meta| {
+                or::expr([
+                    meta.query_selector(q_tx_table),
+                    meta.query_selector(q_tx_calldata),
+                ])
+            },
+            |meta| meta.query_advice(tx_value, Rotation::cur()),
+            tx_value_inv,
+        );
+
         meta.create_gate("calldata constraints", |meta| {
             let q_is_calldata = meta.query_selector(q_tx_calldata);
             let q_calldata_start = meta.query_selector(q_calldata_start);
             let tx_idx = meta.query_advice(tx_id, Rotation::cur());
-            let tx_idx_inv = meta.query_advice(tx_id_inv, Rotation::cur());
             let tx_idx_next = meta.query_advice(tx_id, Rotation::next());
             let tx_idx_inv_next = meta.query_advice(tx_id_inv, Rotation::next());
             let idx = meta.query_advice(index, Rotation::cur());
             let idx_next = meta.query_advice(index, Rotation::next());
-            let value = meta.query_advice(tx_value, Rotation::cur());
-            let value_inv = meta.query_advice(tx_value_inv, Rotation::cur());
             let value_next = meta.query_advice(tx_value, Rotation::next());
             let value_next_inv = meta.query_advice(tx_value_inv, Rotation::next());
 
@@ -336,120 +352,92 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
             let gas_cost_next = meta.query_advice(calldata_gas_cost, Rotation::next());
             let is_final = meta.query_advice(is_final, Rotation::cur());
 
-            let is_tx_id_zero = 1.expr() - tx_idx.clone() * tx_idx_inv.clone();
-            let is_tx_id_nonzero = tx_idx.clone() * tx_idx_inv.clone();
-            let is_tx_id_next_nonzero = tx_idx_next.clone() * tx_idx_inv_next.clone();
-            let is_value_zero = 1.expr() - value.clone() * value_inv.clone();
-            let is_value_nonzero = value.clone() * value_inv.clone();
-            let is_value_next_zero = 1.expr() - value_next.clone() * value_next_inv.clone();
-            let is_value_next_nonzero = value_next.clone() * value_next_inv.clone();
+            let is_tx_id_nonzero = not::expr(tx_id_is_zero_config.expr());
+            let is_tx_id_next_nonzero = tx_idx_next.expr() * tx_idx_inv_next.expr();
 
-            let gas = 4.expr() * is_value_zero.clone() + 16.expr() * is_value_nonzero.clone();
-            let gas_next =
-                4.expr() * is_value_next_zero + 16.expr() * is_value_next_nonzero.clone();
+            let is_value_zero = tx_value_is_zero_config.expr();
+            let is_value_nonzero = not::expr(tx_value_is_zero_config.expr());
 
-            // inv constraint
-            // tx_id * (1 - tx_id * tx_id_inv) = 0
-            // if tx_id != 0 then tx_id_inv * tx_id == 1
-            // if tx_id == 0 then tx_id_inv can be any value ??
-            let tx_id_inv_constraint = tx_idx.clone() * is_tx_id_zero.clone();
-
-            // if tx_id == 0 then idx == 0, tx_id_next == 0
-            let default_calldata_row_constraint1 = is_tx_id_zero.clone() * idx.clone();
-            let default_calldata_row_constraint2 = is_tx_id_zero.clone() * tx_idx_next.clone();
-            let default_calldata_row_constraint3 = is_tx_id_zero.clone() * is_final.clone();
-            let default_calldata_row_constraint4 = is_tx_id_zero.clone() * gas_cost.clone();
-
-            // if tx_id != 0 then
-            //    1. tx_id_next == tx_id: idx_next == idx + 1
-            //    2. (tx_id_next == tx_id + 1): idx_next == 0
-            //    3. (tx_id_next == 0)
-            // ether case 1, case 2 or case 3 holds.
-            let tx_id_constraint = (tx_idx_next.clone() - tx_idx.clone())
-                * (tx_idx_next.clone() - tx_idx.clone() - 1.expr())
-                * tx_idx_next.clone();
-            let calldata_of_same_tx_constraint = is_tx_id_next_nonzero.clone()
-                * (tx_idx_next.clone() - tx_idx.clone() - 1.expr())
-                * (idx_next.clone() - idx.clone() - 1.expr());
-            let calldata_of_next_tx_constraint = is_tx_id_next_nonzero.clone()
-                * (tx_idx_next.clone() - tx_idx.clone())
-                * idx_next.clone();
+            let is_value_next_nonzero = value_next.expr() * value_next_inv.expr();
+            let is_value_next_zero = not::expr(is_value_next_nonzero.expr());
 
             // gas = value == 0 ? 4 : 16
-            let tx_value_constraint = value.clone() * is_value_zero.clone();
-            let gas_cost_of_same_tx_constraint = is_tx_id_next_nonzero.clone()
-                * (tx_idx_next.clone() - tx_idx.clone() - 1.expr())
-                * (gas_cost_next.clone() - gas_cost.clone() - gas_next.clone());
-            let gas_cost_of_next_tx_constraint = is_tx_id_next_nonzero.clone()
-                * (tx_idx_next.clone() - tx_idx.clone())
-                * (gas_cost_next.clone() - gas_next.clone());
-            let is_final_of_same_tx_constraint = is_tx_id_next_nonzero.clone()
-                * (tx_idx_next.clone() - tx_idx.clone() - 1.expr())
-                * is_final.clone();
-            let is_final_of_next_tx_constraint = is_tx_id_next_nonzero.clone()
-                * (tx_idx_next.clone() - tx_idx.clone())
-                * (is_final.clone() - 1.expr());
+            let gas = 4.expr() * is_value_zero.expr() + 16.expr() * is_value_nonzero.expr();
+            let gas_next = 4.expr() * is_value_next_zero + 16.expr() * is_value_next_nonzero;
+
+            // if tx_id == 0 then idx == 0, tx_id_next == 0
+            let default_calldata_row_constraint1 = tx_id_is_zero_config.expr() * idx.expr();
+            let default_calldata_row_constraint2 = tx_id_is_zero_config.expr() * tx_idx_next.expr();
+            let default_calldata_row_constraint3 = tx_id_is_zero_config.expr() * is_final.expr();
+            let default_calldata_row_constraint4 = tx_id_is_zero_config.expr() * gas_cost.expr();
+
+            // if tx_id != 0 then
+            //    1. tx_id_next == tx_id: idx_next == idx + 1, gas_cost_next == gas_cost +
+            // gas_next, is_final == false,    2. (tx_id_next == tx_id + 1):
+            // idx_next == 0, gas_cost_next == gas_next, is_final == true,    3.
+            // (tx_id_next == 0) ether case 1, case 2 or case 3 holds.
+            let tx_id_constraint = (tx_idx_next.expr() - tx_idx.expr())
+                * (tx_idx_next.expr() - tx_idx.expr() - 1.expr())
+                * tx_idx_next.expr();
+
+            let calldata_of_same_tx_constraint = is_tx_id_next_nonzero.expr()
+                * (tx_idx_next.expr() - tx_idx.expr() - 1.expr())
+                * (idx_next.expr() - idx.expr() - 1.expr());
+            let calldata_of_next_tx_constraint = is_tx_id_next_nonzero.expr()
+                * (tx_idx_next.expr() - tx_idx.expr())
+                * idx_next.expr();
+
+            let gas_cost_of_same_tx_constraint = is_tx_id_next_nonzero.expr()
+                * (tx_idx_next.expr() - tx_idx.expr() - 1.expr())
+                * (gas_cost_next.expr() - gas_cost.expr() - gas_next.expr());
+            let gas_cost_of_next_tx_constraint = is_tx_id_next_nonzero.expr()
+                * (tx_idx_next.expr() - tx_idx.expr())
+                * (gas_cost_next.expr() - gas_next.expr());
+
+            let is_final_of_same_tx_constraint = is_tx_id_next_nonzero.expr()
+                * (tx_idx_next.expr() - tx_idx.expr() - 1.expr())
+                * is_final.expr();
+            let is_final_of_next_tx_constraint = is_tx_id_next_nonzero.expr()
+                * (tx_idx_next.expr() - tx_idx.expr())
+                * (is_final.expr() - 1.expr());
 
             // if tx_id != 0 then
             //    1. q_calldata_start * (tx_id - 1) == 0 and
             //    2. q_calldata_start * (gas_cost - gas) == 0.
 
             vec![
-                q_is_calldata.clone() * tx_id_inv_constraint,
-                q_is_calldata.clone() * default_calldata_row_constraint1,
-                q_is_calldata.clone() * default_calldata_row_constraint2,
-                q_is_calldata.clone() * default_calldata_row_constraint3,
-                q_is_calldata.clone() * default_calldata_row_constraint4,
-                q_is_calldata.clone() * is_tx_id_nonzero.clone() * tx_id_constraint,
-                q_is_calldata.clone() * is_tx_id_nonzero.clone() * calldata_of_same_tx_constraint,
-                q_is_calldata.clone() * is_tx_id_nonzero.clone() * calldata_of_next_tx_constraint,
-                q_is_calldata.clone() * tx_value_constraint,
-                q_is_calldata.clone() * is_tx_id_nonzero.clone() * gas_cost_of_same_tx_constraint,
-                q_is_calldata.clone() * is_tx_id_nonzero.clone() * gas_cost_of_next_tx_constraint,
-                q_is_calldata.clone() * is_tx_id_nonzero.clone() * is_final_of_same_tx_constraint,
-                q_is_calldata.clone() * is_tx_id_nonzero.clone() * is_final_of_next_tx_constraint,
-                q_calldata_start.clone() * is_tx_id_nonzero.clone() * (tx_idx - 1.expr()),
-                q_calldata_start.clone() * is_tx_id_nonzero.clone() * (gas_cost - gas),
+                q_is_calldata.expr() * default_calldata_row_constraint1,
+                q_is_calldata.expr() * default_calldata_row_constraint2,
+                q_is_calldata.expr() * default_calldata_row_constraint3,
+                q_is_calldata.expr() * default_calldata_row_constraint4,
+                q_is_calldata.expr() * is_tx_id_nonzero.expr() * tx_id_constraint,
+                q_is_calldata.expr() * is_tx_id_nonzero.expr() * calldata_of_same_tx_constraint,
+                q_is_calldata.expr() * is_tx_id_nonzero.expr() * calldata_of_next_tx_constraint,
+                q_is_calldata.expr() * is_tx_id_nonzero.expr() * gas_cost_of_same_tx_constraint,
+                q_is_calldata.expr() * is_tx_id_nonzero.expr() * gas_cost_of_next_tx_constraint,
+                q_is_calldata.expr() * is_tx_id_nonzero.expr() * is_final_of_same_tx_constraint,
+                q_is_calldata.expr() * is_tx_id_nonzero.expr() * is_final_of_next_tx_constraint,
+                q_calldata_start.expr() * is_tx_id_nonzero.expr() * (tx_idx - 1.expr()),
+                q_calldata_start.expr() * is_tx_id_nonzero.expr() * (gas_cost - gas),
             ]
         });
 
-        meta.create_gate("tx_id_inv is (tag - CallDataLength)^(-1)", |meta| {
-            let q_tx_table = meta.query_selector(q_tx_table);
-            let tx_tag = meta.query_fixed(tag, Rotation::cur());
-            // tx_value_inv is just used to hold the inverse of `tx_tag - CallDataLength`
-            let inv = meta.query_advice(tx_id_inv, Rotation::cur());
-            let is_calldata_length =
-                1.expr() - (tx_tag.clone() - TxFieldTag::CallDataLength.expr()) * inv.clone();
-            let constraint = is_calldata_length * (tx_tag - TxFieldTag::CallDataLength.expr());
-
-            vec![q_tx_table * constraint]
-        });
-
-        meta.create_gate("tx_value_inv is value^(-1)", |meta| {
-            let q_tx_table = meta.query_selector(q_tx_table);
-            let tx_value = meta.query_advice(tx_value, Rotation::cur());
-            let inv = meta.query_advice(tx_value_inv, Rotation::cur());
-            let is_tx_value_zero = 1.expr() - tx_value.clone() * inv.clone();
-            let constraint = is_tx_value_zero * tx_value.clone();
-
-            vec![q_tx_table * constraint]
-        });
+        // Test if tx tag equals to CallDataLength
+        let tx_tag_is_cdl_config = IsZeroChip::configure(
+            meta,
+            |meta| meta.query_selector(q_tx_table),
+            |meta| meta.query_fixed(tag, Rotation::cur()) - TxFieldTag::CallDataLength.expr(),
+            tx_id_inv,
+        );
 
         meta.create_gate(
             "call_data_gas_cost should be zero if call_data_length is zero",
             |meta| {
                 let q_tx_table = meta.query_selector(q_tx_table);
 
-                let tx_tag = meta.query_fixed(tag, Rotation::cur());
-                let inv = meta.query_advice(tx_id_inv, Rotation::cur());
-
-                let calldata_length = meta.query_advice(tx_value, Rotation::cur());
-                let calldata_length_inv = meta.query_advice(tx_value_inv, Rotation::cur());
-                let is_calldata_length_zero = 1.expr() - calldata_length * calldata_length_inv;
-
+                let is_calldata_length_zero = tx_value_is_zero_config.expr();
+                let is_calldata_length_row = tx_tag_is_cdl_config.expr();
                 let calldata_cost = meta.query_advice(tx_value, Rotation::next());
-                let is_calldata_length_row =
-                    1.expr() - (tx_tag.clone() - TxFieldTag::CallDataLength.expr()) * inv.clone();
 
                 vec![q_tx_table * is_calldata_length_row * is_calldata_length_zero * calldata_cost]
             },
@@ -460,22 +448,15 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
             let is_final = meta.query_advice(is_final, Rotation::cur());
 
             let tx_id = meta.query_advice(tx_id, Rotation::cur());
-            let tx_tag = meta.query_fixed(tag, Rotation::cur());
-            // note: tx_id_inv is used to hold (tx_tag -  CallDataLength)^(-1)
-            let inv = meta.query_advice(tx_id_inv, Rotation::cur());
-
-            let calldata_length = meta.query_advice(tx_value, Rotation::cur());
-            let calldata_length_inv = meta.query_advice(tx_value_inv, Rotation::cur());
 
             // calldata gas cost assigned in the tx table
-            // call_data_cost is on the next row of call_data_length
-            let calldata_cost = meta.query_advice(tx_value, Rotation::next());
+            // CallDataGasCost is on the next row of CallDataLength
+            let calldata_cost_assigned = meta.query_advice(tx_value, Rotation::next());
             // calldata gas cost calculated in call data
-            let calldata_cost_table = meta.query_advice(calldata_gas_cost, Rotation::cur());
+            let calldata_cost_calc = meta.query_advice(calldata_gas_cost, Rotation::cur());
 
-            let is_calldata_length_row =
-                1.expr() - (tx_tag.clone() - TxFieldTag::CallDataLength.expr()) * inv.clone();
-            let is_calldata_length_nonzero = calldata_length * calldata_length_inv;
+            let is_calldata_length_row = tx_tag_is_cdl_config.expr();
+            let is_calldata_length_nonzero = not::expr(tx_value_is_zero_config.expr());
 
             // lookup (tx_id, true, is_calldata_length_nonzero * is_calldata_cost *
             // gas_cost) in the table (tx_id, is_final, gas_cost)
@@ -483,11 +464,11 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
             let condition = q_tx_table * is_calldata_length_nonzero * is_calldata_length_row;
 
             vec![
-                (condition.clone() * tx_id.clone(), tx_id),
-                (condition.clone() * 1.expr(), is_final),
+                (condition.expr() * tx_id.expr(), tx_id),
+                (condition.expr() * 1.expr(), is_final),
                 (
-                    condition.clone() * calldata_cost.clone(),
-                    calldata_cost_table,
+                    condition.expr() * calldata_cost_assigned,
+                    calldata_cost_calc,
                 ),
             ]
         });
@@ -1063,7 +1044,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
                     offset += 1;
                 }
                 // NOTE: we add this empty row so as to pass mock prover's check
-                //      otherwise it will emit CellValuePoisoned Error
+                //      otherwise it will emit CellNotAssigned Error
                 config.assign_tx_empty_row(&mut region, offset)?;
 
                 // rpi_rlc and rand_rpi cols
