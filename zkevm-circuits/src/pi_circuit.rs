@@ -29,6 +29,8 @@ use halo2_proofs::{
 const TX_LEN: usize = 9;
 const BLOCK_LEN: usize = 7 + 256;
 const EXTRA_LEN: usize = 2;
+const ZERO_BYTE_GAS_COST: u64 = 4;
+const NONZERO_BYTE_GAS_COST: u64 = 16;
 
 /// Values of the block table (as in the spec)
 #[derive(Clone, Default, Debug)]
@@ -144,11 +146,13 @@ impl PublicData {
                 is_create: (tx.to.is_none() as u64),
                 value: tx.value,
                 call_data_len: tx.call_data.0.len() as u64,
-                call_data_gas_cost: tx
-                    .call_data
-                    .0
-                    .iter()
-                    .fold(0, |acc, byte| acc + if *byte == 0 { 4 } else { 16 }),
+                call_data_gas_cost: tx.call_data.0.iter().fold(0, |acc, byte| {
+                    acc + if *byte == 0 {
+                        ZERO_BYTE_GAS_COST
+                    } else {
+                        NONZERO_BYTE_GAS_COST
+                    }
+                }),
                 tx_sign_hash: msg_hash_le,
             });
         }
@@ -362,8 +366,10 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
             let is_value_next_zero = not::expr(is_value_next_nonzero.expr());
 
             // gas = value == 0 ? 4 : 16
-            let gas = 4.expr() * is_value_zero.expr() + 16.expr() * is_value_nonzero.expr();
-            let gas_next = 4.expr() * is_value_next_zero + 16.expr() * is_value_next_nonzero;
+            let gas = ZERO_BYTE_GAS_COST.expr() * is_value_zero.expr()
+                + NONZERO_BYTE_GAS_COST.expr() * is_value_nonzero.expr();
+            let gas_next = ZERO_BYTE_GAS_COST.expr() * is_value_next_zero
+                + NONZERO_BYTE_GAS_COST.expr() * is_value_next_nonzero;
 
             // if tx_id == 0 then idx == 0, tx_id_next == 0
             let default_calldata_row_constraint1 = tx_id_is_zero_config.expr() * idx.expr();
@@ -628,32 +634,48 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
         let tx_value_inv = tx_value.invert().unwrap_or(F::zero());
         let is_final = if is_final { F::one() } else { F::zero() };
 
-        self.q_tx_calldata.enable(region, offset)?;
+        // Assign vals to raw_public_inputs column
+        let tx_table_len = TX_LEN * MAX_TXS + 1;
+        let calldata_offset = tx_table_len + offset;
+
+        self.q_tx_calldata.enable(region, calldata_offset)?;
 
         // Assign vals to Tx_table
-        region.assign_advice(|| "tx_id", self.tx_id, offset, || Ok(tx_id))?;
-        region.assign_advice(|| "tx_id_inv", self.tx_id_inv, offset, || Ok(tx_id_inv))?;
-        region.assign_fixed(|| "tag", self.tag, offset, || Ok(tag))?;
-        region.assign_advice(|| "index", self.index, offset, || Ok(index))?;
-        region.assign_advice(|| "tx_value", self.tx_value, offset, || Ok(tx_value))?;
+        region.assign_advice(|| "tx_id", self.tx_id, calldata_offset, || Ok(tx_id))?;
+        region.assign_advice(
+            || "tx_id_inv",
+            self.tx_id_inv,
+            calldata_offset,
+            || Ok(tx_id_inv),
+        )?;
+        region.assign_fixed(|| "tag", self.tag, calldata_offset, || Ok(tag))?;
+        region.assign_advice(|| "index", self.index, calldata_offset, || Ok(index))?;
+        region.assign_advice(
+            || "tx_value",
+            self.tx_value,
+            calldata_offset,
+            || Ok(tx_value),
+        )?;
         region.assign_advice(
             || "tx_value_inv",
             self.tx_value_inv,
-            offset,
+            calldata_offset,
             || Ok(tx_value_inv),
         )?;
-        region.assign_advice(|| "is_final", self.is_final, offset, || Ok(is_final))?;
+        region.assign_advice(
+            || "is_final",
+            self.is_final,
+            calldata_offset,
+            || Ok(is_final),
+        )?;
         region.assign_advice(
             || "gas_cost",
             self.calldata_gas_cost,
-            offset,
+            calldata_offset,
             || Ok(gas_cost),
         )?;
 
-        // Assign vals to raw_public_inputs column
-        let tx_table_len = TX_LEN * MAX_TXS + 1;
-
-        let value_offset = BLOCK_LEN + 1 + EXTRA_LEN + 2 * tx_table_len;
+        let value_offset = BLOCK_LEN + 1 + EXTRA_LEN + 3 * tx_table_len;
 
         region.assign_advice(
             || "raw_pi.tx_value",
@@ -981,6 +1003,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
                         ),
                         (TxFieldTag::CallDataLength, F::from(tx.call_data_len)),
                         (TxFieldTag::CallDataGasCost, F::from(tx.call_data_gas_cost)),
+                        // this field is not included in the Tx table
                         // (
                         //     TxFieldTag::TxSignHash,
                         //     rlc(tx.tx_sign_hash, self.randomness),
@@ -1001,6 +1024,8 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
                 // Tx Table CallData
                 let mut calldata_count = 0;
                 config.q_calldata_start.enable(&mut region, offset)?;
+                // the call data bytes assignment starts at offset 0
+                offset = 0;
                 for (i, tx) in self.public_data.txs.iter().enumerate() {
                     let call_data_length = tx.call_data.0.len();
                     let mut gas_cost = F::zero();
@@ -1012,9 +1037,9 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
                             false
                         };
                         gas_cost += if *byte == 0 {
-                            F::from(4_u64)
+                            F::from(ZERO_BYTE_GAS_COST)
                         } else {
-                            F::from(16_u64)
+                            F::from(NONZERO_BYTE_GAS_COST)
                         };
                         config.assign_tx_calldata_row(
                             &mut region,
@@ -1045,7 +1070,8 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
                 }
                 // NOTE: we add this empty row so as to pass mock prover's check
                 //      otherwise it will emit CellNotAssigned Error
-                config.assign_tx_empty_row(&mut region, offset)?;
+                let tx_table_len = TX_LEN * MAX_TXS + 1;
+                config.assign_tx_empty_row(&mut region, tx_table_len + offset)?;
 
                 // rpi_rlc and rand_rpi cols
                 let (rpi_rand, rpi_rlc) =
