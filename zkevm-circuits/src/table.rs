@@ -777,21 +777,25 @@ impl CopyTable {
         let mut assignments = Vec::new();
         let rlc_acc = if copy_event.dst_type == CopyDataType::RlcAcc {
             let values = copy_event
-                .steps
+                .bytes
                 .iter()
-                .filter(|s| s.rw.is_write())
-                .map(|s| s.value)
+                .map(|(value, _)| *value)
                 .collect::<Vec<u8>>();
             rlc::value(values.iter().rev(), randomness)
         } else {
             F::zero()
         };
-        for (step_idx, copy_step) in copy_event.steps.iter().enumerate() {
+        for (step_idx, is_read_step) in copy_event
+            .bytes
+            .iter()
+            .flat_map(|_| vec![true, false].into_iter())
+            .enumerate()
+        {
             // is_first
             let is_first = if step_idx == 0 { F::one() } else { F::zero() };
             // id
             let id = {
-                let id = if copy_step.rw.is_read() {
+                let id = if is_read_step {
                     &copy_event.src_id
                 } else {
                     &copy_event.dst_id
@@ -799,27 +803,40 @@ impl CopyTable {
                 number_or_hash_to_field(id, randomness)
             };
             // addr
-            let addr = match copy_step.tag {
-                CopyDataType::TxLog => {
-                    let addr = (U256::from(copy_step.addr)
-                        + (U256::from(TxLogFieldTag::Data as u64) << 32)
-                        + (U256::from(copy_event.log_id.unwrap()) << 48))
-                        .to_address();
-                    addr.to_scalar().unwrap()
-                }
-                _ => F::from(copy_step.addr),
+            let tag = if is_read_step {
+                copy_event.src_type
+            } else {
+                copy_event.dst_type
             };
+            let copy_step_addr: u64 =
+                if is_read_step {
+                    copy_event.src_addr
+                } else {
+                    copy_event.dst_addr
+                } + (u64::try_from(step_idx).unwrap() - if is_read_step { 0 } else { 1 }) / 2u64;
+            let addr = if tag == CopyDataType::TxLog {
+                (U256::from(copy_step_addr)
+                    + (U256::from(TxLogFieldTag::Data as u64) << 32)
+                    + (U256::from(copy_event.log_id.unwrap()) << 48))
+                    .to_address()
+                    .to_scalar()
+                    .unwrap()
+            } else {
+                F::from(copy_step_addr)
+            };
+
+            let bytes_left = u64::try_from(copy_event.bytes.len() * 2 - step_idx).unwrap() / 2;
             assignments.push((
-                copy_step.tag,
+                tag,
                 [
                     is_first,
                     id,
                     addr,
-                    F::from(copy_event.src_addr_end), // src_addr_end
-                    F::from(copy_event.length - step_idx as u64 / 2), // bytes_left
-                    rlc_acc,                          // rlc_acc
-                    F::from(copy_step.rwc.0 as u64),  // rw_counter
-                    F::from(copy_step.rwc_inc_left),  // rw_inc_left
+                    F::from(copy_event.src_addr_end),
+                    F::from(bytes_left),
+                    rlc_acc,
+                    F::from(copy_event.rw_counter(step_idx)),
+                    F::from(copy_event.rw_counter_increase_left(step_idx)),
                 ],
             ));
         }
