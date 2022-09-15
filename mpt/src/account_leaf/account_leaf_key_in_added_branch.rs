@@ -8,7 +8,7 @@ use std::marker::PhantomData;
 use crate::{
     helpers::{
         compute_rlc, key_len_lookup,
-        mult_diff_lookup, range_lookups, get_is_extension_node,
+        mult_diff_lookup, range_lookups, get_is_extension_node, get_is_extension_node_one_nibble,
     },
     mpt::{FixedTableTag, MPTConfig, ProofVariables},
     param::{IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, ACCOUNT_DRIFTED_LEAF_IND, BRANCH_ROWS_NUM, ACCOUNT_LEAF_KEY_S_IND, ACCOUNT_LEAF_KEY_C_IND, ACCOUNT_LEAF_NONCE_BALANCE_S_IND, ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND, ACCOUNT_LEAF_NONCE_BALANCE_C_IND, ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND}, columns::{MainCols, AccumulatorCols, DenoteCols},
@@ -235,13 +235,18 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
                 * (one.clone() - is_branch_placeholder_in_first_level.clone())
                 + is_branch_placeholder_in_first_level;
 
+            // When we have only one nibble in the extension node, `mult_diff` is not used (and set).
+            let is_one_nibble = get_is_extension_node_one_nibble(meta, s_main.bytes, rot_branch_init);
+
             /*
             `mult_diff` is the power of multiplier `r` and it corresponds to the number of nibbles in the extension node.
             We need `mult_diff` because there is nothing stored in
             `meta.query_advice(accs.key.mult, Rotation(-ACCOUNT_DRIFTED_LEAF_IND-1))` as we always use `mult_diff` also in `extension_node_key.rs`.
             */
             let mult_diff = meta.query_advice(accs.mult_diff, Rotation(rot_branch_init + 1));
-            let mut key_rlc_mult = branch_above_placeholder_mult.clone() * mult_diff * is_ext_node.clone()
+            let mut key_rlc_mult =
+                branch_above_placeholder_mult.clone() * mult_diff.clone() * is_ext_node.clone() * (one.clone() - is_one_nibble.clone())
+                + branch_above_placeholder_mult.clone() * is_ext_node.clone() * is_one_nibble.clone()
                 + branch_above_placeholder_mult * (one.clone() - is_ext_node);
             
             /*

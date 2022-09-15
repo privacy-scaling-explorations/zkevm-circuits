@@ -1,5 +1,5 @@
 use halo2_proofs::{
-    circuit::{Chip, Region},
+    circuit::{Region},
     plonk::{Advice, Column, ConstraintSystem, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
@@ -8,8 +8,8 @@ use std::marker::PhantomData;
 
 use crate::{
     helpers::{
-        compute_rlc, get_bool_constraint, get_is_extension_node_one_nibble, key_len_lookup,
-        mult_diff_lookup, range_lookups, get_is_extension_node,
+        compute_rlc, get_bool_constraint, key_len_lookup,
+        mult_diff_lookup, range_lookups, get_is_extension_node, get_is_extension_node_one_nibble,
     },
     mpt::{FixedTableTag, MPTConfig, ProofVariables},
     param::{IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, LEAF_DRIFTED_IND, BRANCH_ROWS_NUM, LEAF_KEY_S_IND, LEAF_KEY_C_IND}, columns::{MainCols, AccumulatorCols}, witness_row::MptWitnessRow,
@@ -240,6 +240,10 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
             let mut constraints = vec![];
 
             let is_ext_node = get_is_extension_node(meta, s_main.bytes, rot_branch_init);
+            let is_branch_placeholder_in_first_level = meta.query_advice(
+                is_account_leaf_in_added_branch,
+                Rotation(rot_branch_init - 1),
+            );
 
             /*
             We obtain the key RLC from the branch / extension node above the placeholder branch.
@@ -251,8 +255,33 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
             Note: Branch key RLC is in the first branch child row (not in branch init). We need to go
             in the branch above the placeholder branch.
             */
+
+            /*
+            We need the intermediate key RLC right before `drifted_pos` is added to it. If the branch parallel to the placeholder branch
+            is an extension node, we have the intermediate RLC stored in the extension node `accumulators.key.rlc`. 
+            If it is a regular branch, we need to go one branch above to retrieve the RLC (if there is no level above, we take 0).
+            */
             let key_rlc_cur = meta.query_advice(accs.key.rlc, Rotation(-LEAF_DRIFTED_IND-1)) * is_ext_node.clone()
-                + meta.query_advice(accs.key.rlc, Rotation(rot_branch_init - BRANCH_ROWS_NUM + 1)) * (one.clone() - is_ext_node);
+                + (meta.query_advice(accs.key.rlc, Rotation(rot_branch_init - BRANCH_ROWS_NUM + 1)) * (one.clone() - is_branch_placeholder_in_first_level.clone()))
+                * (one.clone() - is_ext_node.clone());
+ 
+            let branch_above_placeholder_mult = meta.query_advice(accs.key.mult, Rotation(rot_branch_init - BRANCH_ROWS_NUM + 1))
+                * (one.clone() - is_branch_placeholder_in_first_level.clone())
+                + is_branch_placeholder_in_first_level;
+
+            // When we have only one nibble in the extension node, `mult_diff` is not used (and set).
+            let is_one_nibble = get_is_extension_node_one_nibble(meta, s_main.bytes, rot_branch_init);
+
+            /*
+            `mult_diff` is the power of multiplier `r` and it corresponds to the number of nibbles in the extension node.
+            We need `mult_diff` because there is nothing stored in
+            `meta.query_advice(accs.key.mult, Rotation(-ACCOUNT_DRIFTED_LEAF_IND-1))` as we always use `mult_diff` also in `extension_node_key.rs`.
+            */
+            let mult_diff = meta.query_advice(accs.mult_diff, Rotation(rot_branch_init + 1));
+            let mut key_rlc_mult =
+                branch_above_placeholder_mult.clone() * mult_diff.clone() * is_ext_node.clone() * (one.clone() - is_one_nibble.clone())
+                + branch_above_placeholder_mult.clone() * is_ext_node.clone() * is_one_nibble.clone()
+                + branch_above_placeholder_mult * (one.clone() - is_ext_node);
 
             /*
             `is_c16` and `is_c1` determine whether `drifted_pos` needs to be multiplied by 16 or 1.
@@ -265,11 +294,6 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                 s_main.bytes[IS_BRANCH_C1_POS - RLP_NUM],
                 Rotation(rot_branch_init),
             );
-
-            // Note: previous `key_rlc` in sel1/sel2 could be queried instead.
-            let branch_rlc_mult = meta.query_advice(accs.key.mult, Rotation(-30));
-
-            let mult_diff = meta.query_advice(accs.mult_diff, Rotation(rot_branch_init + 1));
 
             let flag1 = meta.query_advice(accs.s_mod_node_rlc, Rotation::cur());
             let flag2 = meta.query_advice(accs.c_mod_node_rlc, Rotation::cur());
@@ -293,35 +317,15 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
             // We retrieve key_rlc from the leaf that was replaced by a branch. This RLC
             // need to be the same as drifted leaf key RLC.
             let leaf_key_s_rlc = meta.query_advice(accs.key.rlc, Rotation(-(LEAF_DRIFTED_IND - LEAF_KEY_S_IND)));
-            let leaf_key_c_rlc = meta.query_advice(accs.key.rlc, Rotation(-(LEAF_DRIFTED_IND - LEAF_KEY_C_IND)));
-
-            // whether placeholder branch is in the first storage level:
-            let is_branch_in_first_storage_level = meta.query_advice(
-                is_account_leaf_in_added_branch,
-                Rotation(rot_branch_init - 1),
-            );
+            let leaf_key_c_rlc = meta.query_advice(accs.key.rlc, Rotation(-(LEAF_DRIFTED_IND - LEAF_KEY_C_IND))); 
 
             let is_leaf_in_first_storage_level =
                 meta.query_advice(is_account_leaf_in_added_branch, Rotation(rot_into_account));
 
-            let is_one_nibble = get_is_extension_node_one_nibble(meta, s_main.bytes, rot_branch_init);
-
             // Any rotation that lands into branch children can be used.
             let drifted_pos = meta.query_advice(drifted_pos, Rotation(-17));
-            let mut key_mult = branch_rlc_mult.clone()
-                * mult_diff.clone()
-                * (one.clone() - is_branch_in_first_storage_level.clone())
-                + is_branch_in_first_storage_level.clone() * is_one_nibble.clone()
-                + is_branch_in_first_storage_level.clone()
-                    * mult_diff.clone()
-                    * (one.clone() - is_one_nibble.clone());
             let drifted_pos_mult =
-                key_mult.clone() * c16.clone() * is_c16.clone() + key_mult.clone() * is_c1.clone();
-
-            /*
-            Note: the difference in `key_mult` for `is_c16` and `is_c1` is already taken into
-            account in `mult_diff`.
-            */
+                key_rlc_mult.clone() * c16.clone() * is_c16.clone() + key_rlc_mult.clone() * is_c1.clone();
 
             let key_rlc_start = key_rlc_cur.clone() + drifted_pos.clone() * drifted_pos_mult;
 
@@ -340,11 +344,11 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
             ));
 
             let mut key_rlc_short = key_rlc_start.clone()
-                + (s_bytes0.clone() - c48.clone()) * is_c16.clone() * key_mult.clone();
+                + (s_bytes0.clone() - c48.clone()) * is_c16.clone() * key_rlc_mult.clone();
 
             for ind in 1..HASH_WIDTH {
                 let s = meta.query_advice(s_main.bytes[ind], Rotation::cur());
-                key_rlc_short = key_rlc_short + s * key_mult.clone() * r_table[ind - 1].clone();
+                key_rlc_short = key_rlc_short + s * key_rlc_mult.clone() * r_table[ind - 1].clone();
             }
 
             /*
@@ -395,17 +399,17 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
             ));
 
             let mut key_rlc_long = key_rlc_start.clone()
-                + (s_bytes1.clone() - c48.clone()) * is_c16.clone() * key_mult.clone();
+                + (s_bytes1.clone() - c48.clone()) * is_c16.clone() * key_rlc_mult.clone();
 
             for ind in 2..HASH_WIDTH {
                 let s = meta.query_advice(s_main.bytes[ind], Rotation::cur());
-                key_mult = key_mult * r_table[0].clone();
-                key_rlc_long = key_rlc_long + s * key_mult.clone();
+                key_rlc_mult = key_rlc_mult * r_table[0].clone();
+                key_rlc_long = key_rlc_long + s * key_rlc_mult.clone();
             }
 
-            key_mult = key_mult * r_table[0].clone();
+            key_rlc_mult = key_rlc_mult * r_table[0].clone();
             let c_rlp1 = meta.query_advice(c_main.rlp1, Rotation::cur());
-            key_rlc_long = key_rlc_long + c_rlp1.clone() * key_mult;
+            key_rlc_long = key_rlc_long + c_rlp1.clone() * key_rlc_mult;
 
             /*
             No need to distinguish between `is_c16` and `is_c1` here as it was already
