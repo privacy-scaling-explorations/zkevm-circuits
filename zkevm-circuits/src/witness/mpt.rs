@@ -4,7 +4,7 @@ use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word};
 use itertools::Itertools;
 use std::collections::HashMap;
 
-/// asdfasdf
+/// An MPT update whose validility is proved by the MptCircuit
 #[derive(Debug, Clone, Copy)]
 pub struct MptUpdate {
     key: Key,
@@ -14,11 +14,11 @@ pub struct MptUpdate {
     new_root: Word,
 }
 
-/// asdfasdf
+/// All the MPT updates in the MptCircuit, accessible by their key
 #[derive(Default, Clone)]
 pub struct MptUpdates(HashMap<Key, MptUpdate>);
 
-/// asdfasdf
+/// The field element encoding of an MPT update, which is used by the MptTable
 #[derive(Debug, Clone, Copy)]
 pub struct MptUpdateRow<F>([F; 7]);
 
@@ -74,15 +74,12 @@ impl MptUpdates {
 
 impl MptUpdate {
     pub(crate) fn value_assignments<F: Field>(&self, word_randomness: F) -> (F, F) {
-        let assign = |x: Word| {
-            let mut result =
-                RandomLinearCombination::random_linear_combine(x.to_le_bytes(), word_randomness);
-            if let Key::Account { field_tag, .. } = self.key {
-                if matches!(field_tag, AccountFieldTag::Nonce) {
-                    result = x.to_scalar().unwrap()
-                }
-            }
-            result
+        let assign = |x: Word| match self.key {
+            Key::Account {
+                field_tag: AccountFieldTag::Nonce,
+                ..
+            } => x.to_scalar().unwrap(),
+            _ => RandomLinearCombination::random_linear_combine(x.to_le_bytes(), word_randomness),
         };
 
         (assign(self.new_value), assign(self.old_value))
@@ -126,7 +123,7 @@ impl Key {
     fn proof_type<F: Field>(&self) -> F {
         let proof_type = match self {
             Self::AccountStorage { .. } => ProofType::StorageChanged,
-            Self::Account { field_tag, .. } => (*field_tag).into()
+            Self::Account { field_tag, .. } => (*field_tag).into(),
         };
         F::from(proof_type as u64)
     }
@@ -144,7 +141,8 @@ impl Key {
 }
 
 impl<F: Field> MptUpdateRow<F> {
-    /// asdfasdf
+    /// The individual values of the row, in the column order used by the
+    /// MptTable
     pub fn values(&self) -> impl Iterator<Item = &F> {
         self.0.iter()
     }

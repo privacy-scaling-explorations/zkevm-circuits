@@ -6,7 +6,7 @@ use super::{
 use crate::util::Expr;
 use crate::{
     evm_circuit::{param::N_BYTES_WORD, util::not},
-    table::{AccountFieldTag, RwTableTag, ProofType},
+    table::{AccountFieldTag, ProofType, RwTableTag},
 };
 use eth_types::Field;
 use gadgets::binary_number::BinaryNumberConfig;
@@ -245,7 +245,10 @@ impl<F: Field> ConstraintBuilder<F> {
                         q.rw_table.storage_key.clone(),
                         q.mpt_update_table.storage_key.clone(),
                     ),
-                    (ProofType::StorageChanged.expr(), q.mpt_update_table.proof_type.clone()),
+                    (
+                        ProofType::StorageChanged.expr(),
+                        q.mpt_update_table.proof_type.clone(),
+                    ),
                     (q.state_root(), q.mpt_update_table.new_root.clone()),
                     (q.state_root_prev(), q.mpt_update_table.old_root.clone()),
                     (q.value(), q.mpt_update_table.new_value.clone()),
@@ -380,6 +383,17 @@ impl<F: Field> ConstraintBuilder<F> {
 
         self.require_equal(
             "state_root is unchanged for TxLog",
+            q.state_root(),
+            q.state_root_prev(),
+        );
+    }
+
+    fn build_tx_receipt_constraints(&mut self, q: &Queries<F>) {
+        // TODO: implement TxReceipt constraints
+        self.require_equal("TxReceipt rows not implemented", 1.expr(), 0.expr());
+
+        self.require_equal(
+            "state_root is unchanged for TxReceipt",
             q.state_root(),
             q.state_root_prev(),
         );
