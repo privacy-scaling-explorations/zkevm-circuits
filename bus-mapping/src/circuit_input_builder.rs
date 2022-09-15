@@ -313,7 +313,9 @@ impl<P: JsonRpcClient> BuilderClient<P> {
             None,
             RW::WRITE,
             AccessValue::Account {
-                address: eth_block.author,
+                address: eth_block
+                    .author
+                    .ok_or(Error::EthTypeError(eth_types::Error::IncompleteBlock))?,
             },
         )];
         for (tx_index, tx) in eth_block.transactions.iter().enumerate() {

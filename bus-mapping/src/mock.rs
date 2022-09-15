@@ -41,7 +41,10 @@ impl BlockData {
         let mut sdb = StateDB::new();
         let mut code_db = CodeDB::new();
 
-        sdb.set_account(&geth_data.eth_block.author, state_db::Account::zero());
+        sdb.set_account(
+            &geth_data.eth_block.author.expect("Block.author"),
+            state_db::Account::zero(),
+        );
         for tx in geth_data.eth_block.transactions.iter() {
             sdb.set_account(&tx.from, state_db::Account::zero());
             if let Some(to) = tx.to.as_ref() {
