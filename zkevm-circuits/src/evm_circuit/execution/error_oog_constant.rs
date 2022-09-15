@@ -118,8 +118,6 @@ mod test {
         self, address, bytecode, bytecode::Bytecode, evm_types::GasCost, geth_types::Account,
         geth_types::GethData, Address, ToWord, Word,
     };
-    //use eth_types::{bytecode::Bytecode};
-    //use eth_types::{Address, ToWord, Word};
     use itertools::Itertools;
     use mock::{
         eth, gwei, test_ctx::helpers::account_0_code_account_1_no_code, TestContext, MOCK_ACCOUNTS,
@@ -192,11 +190,9 @@ mod test {
     }
 
     #[test]
-    fn oog_constant_root() {
-        // Transfer 1 ether, successfully
-        // in root call
+    fn test_oog_constant_root() {
+        // in root call , out of gas constant happens
         test_oog_constant(mock_tx(eth(1), gwei(2), vec![]), false);
-        // TODO: add internal call test
     }
 
     #[derive(Clone, Copy, Debug, Default)]
@@ -209,14 +205,17 @@ mod test {
         rd_length: u64,
     }
 
-    fn caller(stack: Stack, caller_is_success: bool) -> Account {
-        let terminator = if caller_is_success {
-            OpcodeId::RETURN
-        } else {
-            OpcodeId::REVERT
-        };
+    fn caller() -> Account {
+        let terminator = OpcodeId::REVERT;
 
-        // Call twice for testing both cold and warm access
+        let stack = Stack {
+            gas: 200,
+            cd_offset: 64,
+            cd_length: 320,
+            rd_offset: 0,
+            rd_length: 32,
+            ..Default::default()
+        };
         let bytecode = bytecode! {
             PUSH32(Word::from(stack.rd_length))
             PUSH32(Word::from(stack.rd_offset))
@@ -234,7 +233,6 @@ mod test {
             PUSH32(Address::repeat_byte(0xff).to_word())
             PUSH32(Word::from(stack.gas))
             CALL
-            //STOP
             //PUSH1(0)
             //PUSH1(0)
             .write_op(terminator)
@@ -299,18 +297,6 @@ mod test {
 
     #[test]
     fn test_oog_constant_internal() {
-        let stacks = vec![
-            // With gas and memory expansion
-            Stack {
-                gas: 5000,
-                cd_offset: 64,
-                cd_length: 320,
-                rd_offset: 0,
-                rd_length: 32,
-                ..Default::default()
-            },
-        ];
-
         let bytecode = bytecode! {
             PUSH32(Word::from(0))
             PUSH32(Word::from(1))
@@ -321,9 +307,7 @@ mod test {
             PUSH32(Word::from(5089))
             STOP
         };
-        let callees = vec![callee(bytecode)];
-        for (stack, callee) in stacks.into_iter().cartesian_product(callees.into_iter()) {
-            oog_constant_internal_call(caller(stack, false), callee);
-        }
+        let callee = callee(bytecode);
+        oog_constant_internal_call(caller(), callee);
     }
 }

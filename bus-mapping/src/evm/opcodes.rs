@@ -285,8 +285,7 @@ pub fn gen_associated_ops(
 
         exec_step.error = Some(exec_error.clone());
         if exec_step.oog_or_stack_error() {
-            exec_step = gen_restore_context_ops(state, geth_steps)?;
-            exec_step.error = Some(exec_error);
+            state.gen_restore_context_ops(&mut exec_step, geth_steps)?;
         }
         // for `oog_or_stack_error` error message will be returned by geth_step error
         // field, when this kind of error happens, no more proceeding
@@ -540,79 +539,6 @@ pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
             CallContextField::TxId,
             (state.tx_ctx.id() + 1).into(),
         );
-    }
-
-    Ok(exec_step)
-}
-
-pub fn gen_restore_context_ops(
-    state: &mut CircuitInputStateRef,
-    geth_steps: &[GethExecStep],
-) -> Result<ExecStep, Error> {
-    ///////////////////////
-    let geth_step = &geth_steps[0];
-    let mut exec_step = state.new_step(geth_step)?;
-    let call = state.call()?.clone();
-    let caller = state.caller()?.clone();
-    ///// add call failure ops
-    state.call_context_read(
-        &mut exec_step,
-        call.call_id,
-        CallContextField::IsSuccess,
-        0u64.into(),
-    );
-    state.call_context_read(
-        &mut exec_step,
-        call.call_id,
-        CallContextField::IsPersistent,
-        0u64.into(),
-    );
-    state.call_context_read(
-        &mut exec_step,
-        call.call_id,
-        CallContextField::CallerId,
-        caller.call_id.into(),
-    );
-
-    let geth_step_next = &geth_steps[1];
-    let caller_ctx = state.caller_ctx()?;
-    let caller_gas_left = if geth_step_next.gas.0 == 0 {
-        0
-    } else {
-        geth_step_next.gas.0 - geth_step.gas.0
-    };
-
-    for (field, value) in [
-        (CallContextField::IsRoot, (caller.is_root as u64).into()),
-        (
-            CallContextField::IsCreate,
-            (caller.is_create() as u64).into(),
-        ),
-        (CallContextField::CodeHash, caller.code_hash.to_word()),
-        (CallContextField::ProgramCounter, geth_step_next.pc.0.into()),
-        (
-            CallContextField::StackPointer,
-            geth_step_next.stack.stack_pointer().0.into(),
-        ),
-        (CallContextField::GasLeft, caller_gas_left.into()),
-        (
-            CallContextField::MemorySize,
-            caller_ctx.memory.word_size().into(),
-        ),
-        (
-            CallContextField::ReversibleWriteCounter,
-            state.caller_ctx()?.reversible_write_counter.into(),
-        ),
-    ] {
-        state.call_context_read(&mut exec_step, caller.call_id, field, value);
-    }
-
-    for (field, value) in [
-        (CallContextField::LastCalleeId, call.call_id.into()),
-        (CallContextField::LastCalleeReturnDataOffset, 0.into()),
-        (CallContextField::LastCalleeReturnDataLength, 0.into()),
-    ] {
-        state.call_context_write(&mut exec_step, caller.call_id, field, value);
     }
 
     Ok(exec_step)
