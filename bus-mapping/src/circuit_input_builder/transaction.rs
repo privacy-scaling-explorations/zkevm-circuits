@@ -14,7 +14,7 @@ use crate::{
 
 use super::{call::ReversionGroup, Call, CallContext, CallKind, CodeSource, ExecStep};
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 /// Context of a [`Transaction`] which can mutate in an [`ExecStep`].
 pub struct TransactionContext {
     /// Unique identifier of transaction of the block. The value is `index + 1`.
@@ -178,7 +178,7 @@ impl TransactionContext {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 /// Result of the parsing of an Ethereum Transaction.
 pub struct Transaction {
     /// Nonce
@@ -198,7 +198,7 @@ pub struct Transaction {
     /// Signature
     pub signature: Signature,
     /// Calls made in the transaction
-    calls: Vec<Call>,
+    pub(crate) calls: Vec<Call>,
     /// Execution steps
     steps: Vec<ExecStep>,
 }

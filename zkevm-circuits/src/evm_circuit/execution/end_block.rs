@@ -47,6 +47,11 @@ impl<F: Field, const MAX_TXS: usize, const MAX_RWS: usize> ExecutionGadget<F>
             // We conclude that the number of meaningful entries in the rw_table
             // is total_rw.
 
+            // TODO: We need a selector expression to disable this lookup when there are no
+            // txs. Otherwise we can't prove 0txs blocks!  How can we build such expression?
+            // ideas:
+            // - self.curr.state.rw_counter == 0
+
             // 2. Verify that final step as tx_id identical to the number of
             // txs in tx_table.
             cb.call_context_lookup(0.expr(), None, CallContextFieldTag::TxId, total_txs.expr());

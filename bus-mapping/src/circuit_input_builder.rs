@@ -13,7 +13,7 @@ mod transaction;
 use self::access::gen_state_access_trace;
 use crate::error::Error;
 use crate::evm::opcodes::{gen_associated_ops, gen_begin_tx_ops, gen_end_tx_ops};
-use crate::operation::{CallContextField, RW};
+use crate::operation::{CallContextField, Operation, RWCounter, StartOp, RW};
 use crate::rpc::GethClient;
 use crate::state_db::{self, CodeDB, StateDB};
 pub use access::{Access, AccessSet, AccessValue, CodeSource};
@@ -57,6 +57,7 @@ pub struct CircuitInputBuilder {
     pub block: Block,
     /// Block Context
     pub block_ctx: BlockContext,
+    max_rws: usize,
 }
 
 impl<'a> CircuitInputBuilder {
@@ -68,6 +69,7 @@ impl<'a> CircuitInputBuilder {
             code_db,
             block,
             block_ctx: BlockContext::new(),
+            max_rws: 512, // TODO
         }
     }
 
@@ -145,7 +147,43 @@ impl<'a> CircuitInputBuilder {
             self.handle_tx(tx, geth_trace, tx_index + 1 == eth_block.transactions.len())?;
         }
         self.set_value_ops_call_context_rwc_eor();
+        self.set_end_block();
         Ok(())
+    }
+
+    fn set_end_block(&mut self) {
+        let rw_counter = self.block_ctx.rwc;
+        let max_rws = self.max_rws;
+        self.block.block_steps.end_block_not_last.rwc = rw_counter;
+        self.block.block_steps.end_block_last.rwc = rw_counter;
+        let end_block_last = &mut self.block.block_steps.end_block_last;
+
+        let mut dummy_tx = Transaction::default();
+        let mut dummy_tx_ctx = TransactionContext::default();
+        let mut state = self.state_ref(&mut dummy_tx, &mut dummy_tx_ctx);
+
+        let push_op = |step: &mut ExecStep, rwc: RWCounter, rw: RW, op: StartOp| {
+            let op_ref = state.block.container.insert(Operation::new(rwc, rw, op));
+            step.bus_mapping_instance.push(op_ref);
+        };
+
+        let total_rw = rw_counter.0 + 1;
+        push_op(&mut end_block_last, RWCounter(1), RW::READ, StartOp {});
+        push_op(
+            &mut end_block_last,
+            RWCounter(max_rws - total_rw),
+            RW::READ,
+            StartOp {},
+        );
+
+        if let Some(call_id) = self.block.txs.last().map(|tx| tx.calls[0].call_id) {
+            state.call_context_read(
+                &mut end_block_last,
+                call_id,
+                CallContextField::TxId,
+                Word::from(self.block.txs.len() as u64),
+            );
+        }
     }
 
     /// Handle a transaction with its corresponding execution trace to generate
