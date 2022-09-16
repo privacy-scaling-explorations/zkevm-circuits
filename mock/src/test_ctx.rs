@@ -104,6 +104,80 @@ impl<const NACC: usize, const NTX: usize> From<TestContext<NACC, NTX>> for GethD
 }
 
 impl<const NACC: usize, const NTX: usize> TestContext<NACC, NTX> {
+    pub fn new_with_logger_config2<FAcc, FTx, Fb>(
+        history_hashes: Option<Vec<Word>>,
+        acc_fns: FAcc,
+        func_tx: FTx,
+        func_block: Fb,
+        geth_traces: [eth_types::GethExecTrace;NTX],
+    ) -> Result<Self, Error>
+    where
+        FTx: FnOnce(Vec<&mut MockTransaction>, [MockAccount; NACC]),
+        Fb: FnOnce(&mut MockBlock, Vec<MockTransaction>) -> &mut MockBlock,
+        FAcc: FnOnce([&mut MockAccount; NACC]),
+    {
+        let mut accounts: Vec<MockAccount> = vec![MockAccount::default(); NACC];
+        // Build Accounts modifiers
+        let account_refs = accounts
+            .iter_mut()
+            .collect_vec()
+            .try_into()
+            .expect("Mismatched len err");
+        acc_fns(account_refs);
+        let accounts: [MockAccount; NACC] = accounts
+            .iter_mut()
+            .map(|acc| acc.build())
+            .collect_vec()
+            .try_into()
+            .expect("Mismatched acc len");
+
+        let mut transactions = vec![MockTransaction::default(); NTX];
+        // By default, set the TxIndex and the Nonce values of the multiple transactions
+        // of the context correlative so that any Ok test passes by default.
+        // If the user decides to override these values, they'll then be set to whatever
+        // inputs were provided by the user.
+        transactions
+            .iter_mut()
+            .enumerate()
+            .skip(1)
+            .for_each(|(idx, tx)| {
+                tx.transaction_idx(u64::try_from(idx).expect("Unexpected idx conversion error"));
+                tx.nonce(Word::from(
+                    u64::try_from(idx).expect("Unexpected idx conversion error"),
+                ));
+            });
+        let tx_refs = transactions.iter_mut().collect();
+
+        // Build Tx modifiers.
+        func_tx(tx_refs, accounts.clone());
+        let transactions: Vec<MockTransaction> =
+            transactions.iter_mut().map(|tx| tx.build()).collect();
+
+        // Build Block modifiers
+        let mut block = MockBlock::default();
+        block.transactions.extend_from_slice(&transactions);
+        func_block(&mut block, transactions).build();
+
+        let chain_id = block.chain_id;
+        let block = Block::<Transaction>::from(block);
+        let accounts: [Account; NACC] = accounts
+            .iter()
+            .cloned()
+            .map(Account::from)
+            .collect_vec()
+            .try_into()
+            .expect("Mismatched acc len");
+
+
+        Ok(Self {
+            chain_id,
+            accounts,
+            history_hashes: history_hashes.unwrap_or_default(),
+            eth_block: block,
+            geth_traces,
+        })
+    }
+
     pub fn new_with_logger_config<FAcc, FTx, Fb>(
         history_hashes: Option<Vec<Word>>,
         acc_fns: FAcc,

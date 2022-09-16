@@ -4530,6 +4530,7 @@ dependencies = [
  "rand",
  "rand_chacha",
  "rand_xorshift",
+ "serde_json",
  "sha3 0.10.4",
  "strum",
  "strum_macros",
