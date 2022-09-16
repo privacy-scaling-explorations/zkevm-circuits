@@ -7,7 +7,7 @@ use gadgets::{
 };
 use halo2_proofs::{
     circuit::{Layouter, Region, Value},
-    plonk::{Advice, Column, ConstraintSystem, Error, Selector},
+    plonk::{ConstraintSystem, Error, Selector},
     poly::Rotation,
 };
 
@@ -27,8 +27,6 @@ pub const ROWS_PER_STEP: usize = 4usize;
 pub struct ExpCircuit<F> {
     /// Whether the row is a step.
     pub q_step: Selector,
-    /// Whether the row is reserved for padding after an exponentiation trace.
-    pub is_pad: Column<Advice>,
     /// The Exponentiation circuit's table.
     pub exp_table: ExpTable,
     /// Multiplication gadget for verification of each step.
@@ -41,7 +39,6 @@ impl<F: Field> ExpCircuit<F> {
     /// Configure the exponentiation circuit.
     pub fn configure(meta: &mut ConstraintSystem<F>, exp_table: ExpTable) -> Self {
         let q_step = meta.complex_selector();
-        let is_pad = meta.advice_column();
         let mul_gadget = MulAddChip::configure(meta, q_step);
         let parity_check = MulAddChip::configure(meta, q_step);
 
@@ -51,7 +48,7 @@ impl<F: Field> ExpCircuit<F> {
             .to_scalar()
             .unwrap();
 
-        meta.create_gate("verify all but the last step", |meta| {
+        meta.create_gate("verify all but the last step (non-padding rows)", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
             // base limbs MUST be the same across all steps. Since each step consumes 7 rows
@@ -97,6 +94,7 @@ impl<F: Field> ExpCircuit<F> {
 
             cb.gate(and::expr([
                 meta.query_selector(q_step),
+                not::expr(meta.query_advice(exp_table.is_pad, Rotation::cur())),
                 not::expr(meta.query_advice(exp_table.is_last, Rotation::cur())),
             ]))
         });
@@ -112,23 +110,33 @@ impl<F: Field> ExpCircuit<F> {
             // is_pad is boolean.
             cb.require_boolean(
                 "is_pad is boolean",
-                meta.query_advice(is_pad, Rotation::cur()),
+                meta.query_advice(exp_table.is_pad, Rotation::cur()),
             );
             // is_last is True then the following row is reserved for padding.
-            cb.condition(meta.query_advice(exp_table.is_last, Rotation::cur()), |cb| {
-                cb.require_equal(
-                    "if is_last is True then is_pad::next == 1",
-                    meta.query_advice(is_pad, Rotation(7)),
-                    1.expr(),
-                );
-            });
+            cb.condition(
+                meta.query_advice(exp_table.is_last, Rotation::cur()),
+                |cb| {
+                    cb.require_equal(
+                        "if is_last is True then is_pad::next == 1",
+                        meta.query_advice(exp_table.is_pad, Rotation(7)),
+                        1.expr(),
+                    );
+                },
+            );
+
+            cb.gate(meta.query_selector(q_step))
+        });
+
+        meta.create_gate("verify all steps (non-padding rows)", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
+
             // is_last is False then the following row is not padding.
             cb.condition(
                 not::expr(meta.query_advice(exp_table.is_last, Rotation::cur())),
                 |cb| {
                 cb.require_zero(
                     "if is_last is False then is_pad::next == 0",
-                    meta.query_advice(is_pad, Rotation(7)),
+                    meta.query_advice(exp_table.is_pad, Rotation(7)),
                 );
             });
 
@@ -275,12 +283,14 @@ impl<F: Field> ExpCircuit<F> {
                 }
             });
 
-            cb.gate(meta.query_selector(q_step))
+            cb.gate(and::expr([
+                meta.query_selector(q_step),
+                not::expr(meta.query_advice(exp_table.is_pad, Rotation::cur())),
+            ]))
         });
 
         Self {
             q_step,
-            is_pad,
             exp_table,
             mul_gadget,
             parity_check,
@@ -308,12 +318,6 @@ impl<F: Field> ExpCircuit<F> {
                         let (exponent_div2, remainder) = exponent.div_mod(two);
 
                         self.q_step.enable(&mut region, offset)?;
-                        region.assign_advice(
-                            || format!("is_pad: {}", offset),
-                            self.is_pad,
-                            offset,
-                            || Value::known(F::zero()),
-                        )?;
                         mul_chip.assign(
                             &mut region,
                             offset,
@@ -341,7 +345,7 @@ impl<F: Field> ExpCircuit<F> {
                     }
                     // Additionally, 1 row is reserved for a padding row at the end of every
                     // exponentiation trace.
-                    offset += 1;
+                    offset += OFFSET_INCREMENT;
                 }
 
                 // assign exp table.
@@ -372,58 +376,48 @@ impl<F: Field> ExpCircuit<F> {
                         }
                         offset += OFFSET_INCREMENT;
                     }
-                    self.assign_padding_row(&mut region, offset)?;
-                    offset += 1;
+
+                    // padding step
+                    self.q_step.enable(&mut region, offset)?;
+                    self.assign_padding_rows(&mut region, offset)?;
+                    offset += OFFSET_INCREMENT;
                 }
 
-                // assign a zero step, analogous to padding.
-                let mut all_columns = self.exp_table.columns();
-                all_columns.extend_from_slice(&[
-                    self.mul_gadget.col0,
-                    self.mul_gadget.col1,
-                    self.mul_gadget.col2,
-                    self.mul_gadget.col3,
-                ]);
-                for column in all_columns {
-                    for i in 0..(OFFSET_INCREMENT - 1) {
-                        region.assign_advice(
-                            || format!("padding steps: {}", offset + i),
-                            column,
-                            offset + i,
-                            || Value::known(F::zero()),
-                        )?;
-                    }
-                }
-
-                Ok(())
+                self.assign_padding_rows(&mut region, offset)
             },
         )
     }
 
-    fn assign_padding_row(&self, region: &mut Region<'_, F>, offset: usize) -> Result<(), Error> {
-        region.assign_advice(
-            || format!("padding row (is_pad): {}", offset),
-            self.is_pad,
-            offset,
-            || Value::known(F::one()),
-        )?;
-
-        let mut all_columns = self.exp_table.columns();
-        all_columns.extend_from_slice(&[
-            self.mul_gadget.col0,
-            self.mul_gadget.col1,
-            self.mul_gadget.col2,
-            self.mul_gadget.col3,
-        ]);
-        for column in all_columns {
+    fn assign_padding_rows(&self, region: &mut Region<'_, F>, offset: usize) -> Result<(), Error> {
+        for i in 0..OFFSET_INCREMENT {
+            let mut all_columns = self.exp_table.columns();
+            all_columns.extend_from_slice(&[
+                self.mul_gadget.col0,
+                self.mul_gadget.col1,
+                self.mul_gadget.col2,
+                self.mul_gadget.col3,
+                self.mul_gadget.col4,
+                self.parity_check.col0,
+                self.parity_check.col1,
+                self.parity_check.col2,
+                self.parity_check.col3,
+                self.parity_check.col4,
+            ]);
+            for column in all_columns {
+                region.assign_advice(
+                    || format!("padding steps: {}", offset + i),
+                    column,
+                    offset + i,
+                    || Value::known(F::zero()),
+                )?;
+            }
             region.assign_advice(
-                || format!("padding steps: {}", offset),
-                column,
-                offset,
-                || Value::known(F::zero()),
+                || format!("padding row (is_pad): {}", offset + i),
+                self.exp_table.is_pad,
+                offset + i,
+                || Value::known(F::one()),
             )?;
         }
-
         Ok(())
     }
 }

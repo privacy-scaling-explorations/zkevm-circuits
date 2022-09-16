@@ -9,7 +9,7 @@ use crate::evm_circuit::{
         common_gadget::SameContextGadget,
         constraint_builder::{ConstraintBuilder, StepStateTransition, Transition},
         from_bytes,
-        math_gadget::{ByteSizeGadget, IsEqualGadget, IsZeroGadget, MulAddWordsGadget},
+        math_gadget::{ByteSizeGadget, IsEqualGadget, IsZeroGadget},
         CachedRegion, Cell, Word,
     },
     witness::{Block, Call, ExecStep, Transaction},
@@ -27,8 +27,6 @@ pub(crate) struct ExponentiationGadget<F> {
     base_sq: Word<F>,
     /// RLC-encoded representation for zero.
     zero_rlc: Word<F>,
-    /// Gadget to multiply base * base == base^2
-    base_sq_mul_gadget: MulAddWordsGadget<F>,
     /// RLC-encoded exponent for the exponentiation operation.
     exponent: Word<F>,
     /// RLC-encoded result of the exponentiation.
@@ -98,8 +96,6 @@ impl<F: Field> ExecutionGadget<F> for ExponentiationGadget<F> {
             sum::expr(&zero_rlc.cells),
         );
         let base_sq = cb.query_word();
-        let base_sq_mul_gadget =
-            MulAddWordsGadget::construct(cb, [&base_rlc, &base_rlc, &zero_rlc, &base_sq]);
 
         // If exponent == 0, base^exponent == 1, which implies:
         // 1. Low bytes of exponentiation == 1
@@ -193,7 +189,6 @@ impl<F: Field> ExecutionGadget<F> for ExponentiationGadget<F> {
             base: base_rlc,
             base_sq,
             zero_rlc,
-            base_sq_mul_gadget,
             exponent: exponent_rlc,
             exponentiation: exponentiation_rlc,
             exponent_lo_is_zero,
@@ -244,8 +239,6 @@ impl<F: Field> ExecutionGadget<F> for ExponentiationGadget<F> {
             .assign(region, offset, Some(U256::zero().to_le_bytes()))?;
         self.base_sq
             .assign(region, offset, Some(base_sq.to_le_bytes()))?;
-        self.base_sq_mul_gadget
-            .assign(region, offset, [base, base, U256::zero(), base_sq])?;
         let single_step = exponent.eq(&U256::from(2u64));
         self.single_step
             .assign(region, offset, Value::known(F::from(single_step as u64)))?;

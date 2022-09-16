@@ -1109,6 +1109,8 @@ pub struct ExpTable {
     /// Whether this row is the last row in the exponentiation operation's
     /// trace.
     pub is_last: Column<Advice>,
+    /// Whether this row is reserved for padding.
+    pub is_pad: Column<Advice>,
     /// The integer base of the exponentiation.
     pub base_limb: Column<Advice>,
     /// The integer exponent of the exponentiation.
@@ -1123,6 +1125,7 @@ impl ExpTable {
         vec![
             self.identifier,
             self.is_last,
+            self.is_pad,
             self.base_limb,
             self.exponent_lo_hi,
             self.exponentiation_lo_hi,
@@ -1136,6 +1139,7 @@ impl ExpTable {
         Self {
             identifier: meta.advice_column(),
             is_last: meta.advice_column(),
+            is_pad: meta.advice_column(),
             base_limb: meta.advice_column(),
             exponent_lo_hi: meta.advice_column(),
             exponentiation_lo_hi: meta.advice_column(),
@@ -1144,7 +1148,7 @@ impl ExpTable {
 
     /// Given an exponentiation event and randomness, get assignments to the
     /// exponentiation table.
-    pub fn assignments<F: Field>(exp_event: &ExpEvent) -> Vec<[F; 5]> {
+    pub fn assignments<F: Field>(exp_event: &ExpEvent) -> Vec<[F; 6]> {
         let mut assignments = Vec::new();
         let base_limbs = split_u256_limb64(&exp_event.base);
         let identifier = F::from(exp_event.identifier as u64);
@@ -1155,6 +1159,7 @@ impl ExpTable {
             } else {
                 F::zero()
             };
+            let is_pad = F::zero();
             let (exp_lo, exp_hi) = split_u256(&exp_step.d);
             let (exponent_lo, exponent_hi) = split_u256(&exponent);
 
@@ -1162,6 +1167,7 @@ impl ExpTable {
             assignments.push([
                 identifier,
                 is_last,
+                is_pad,
                 base_limbs[0].as_u64().into(),
                 exponent_lo
                     .to_scalar()
@@ -1174,6 +1180,7 @@ impl ExpTable {
             assignments.push([
                 identifier,
                 F::zero(),
+                is_pad,
                 base_limbs[1].as_u64().into(),
                 exponent_hi
                     .to_scalar()
@@ -1186,6 +1193,7 @@ impl ExpTable {
             assignments.push([
                 identifier,
                 F::zero(),
+                is_pad,
                 base_limbs[2].as_u64().into(),
                 F::zero(),
                 F::zero(),
@@ -1194,6 +1202,7 @@ impl ExpTable {
             assignments.push([
                 identifier,
                 F::zero(),
+                is_pad,
                 base_limbs[3].as_u64().into(),
                 F::zero(),
                 F::zero(),
@@ -1257,6 +1266,7 @@ impl<F: Field> LookupTable<F> for ExpTable {
         vec![
             meta.query_advice(self.identifier, Rotation::cur()),
             meta.query_advice(self.is_last, Rotation::cur()),
+            meta.query_advice(self.is_pad, Rotation::cur()),
             meta.query_advice(self.base_limb, Rotation::cur()),
             meta.query_advice(self.base_limb, Rotation::next()),
             meta.query_advice(self.base_limb, Rotation(2)),
