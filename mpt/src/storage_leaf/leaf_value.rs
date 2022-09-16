@@ -11,9 +11,70 @@ use crate::{
     param::{BRANCH_ROWS_NUM, KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH, HASH_WIDTH}, columns::{MainCols, AccumulatorCols, DenoteCols}, witness_row::{MptWitnessRow, MptWitnessRowType},
 };
 
+/*
+A storage leaf occupies 5 rows.
+Contrary as in the branch rows, the `S` and `C` leaves are not positioned parallel to each other.
+The rows are the following:
+LEAF_KEY_S
+LEAF_VALUE_S
+LEAF_KEY_C
+LEAF_VALUE_C
+LEAF_DRIFTED
 
-// Verifies the hash of a leaf is in the parent branch. Verifies storage leaf
-// RLP.
+An example of leaf rows:
+[226 160 59 138 106 70 105 186 37 13 38 205 122 69 158 202 157 33 95 131 7 227 58 235 229 3 121 188 90 54 23 236 52 68 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 2]
+[1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 13]
+[226 160 59 138 106 70 105 186 37 13 38 205 122 69 158 202 157 33 95 131 7 227 58 235 229 3 121 188 90 54 23 236 52 68 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 3]
+[17 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 14]
+[0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 15]
+
+In the above example the value has been changed from 1 (`LEAF_VALUE_S`) to 17 (`LEAF_VALUE_C`).
+
+In the example below the value in `LEAF_VALUE_C` takes more than 1 byte: `[187 239 170 ...]`
+This has two consequences:
+ - Two additional RLP bytes: `[161 160]` where `33 = 161 - 128` means there are `31` bytes behind `161`,
+   `32 = 160 - 128` means there are `30` bytes behind `160`.
+ - `LEAF_KEY_S` starts with `248` because the leaf has more than 55 bytes, `1 = 248 - 247` means
+   there is 1 byte after `248` which specifies the length - the length is `67`. We can see that
+   that the leaf key is shifted by 1 position compared to the example above.
+
+For this reason we need to distinguish two cases: 1 byte in leaf value, more than 1 byte in leaf value.
+These two cases are denoted by `is_short` and `is_long`. There are two other cases we need to
+distinguish: `last_level` when the leaf is in the last level and has no nibbles, `one_nibble` when
+the leaf has only one nibble.
+
+`is_long`:
+[226 160 59 138 106 70 105 186 37 13 38 205 122 69 158 202 157 33 95 131 7 227 58 235 229 3 121 188 90 54 23 236 52 68 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 2]
+[1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 13]
+[248 67 160 59 138 106 70 105 186 37 13 38 205 122 69 158 202 157 33 95 131 7 227 58 235 229 3 121 188 90 54 23 236 52 68 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 3]
+[161 160 187 239 170 18 88 1 56 188 38 60 149 117 120 38 223 78 36 235 129 201 170 170 170 170 170 170 170 170 170 170 170 170 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 14]
+[0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 15]
+
+`last_level`
+[194 32 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 2]
+[1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 13]
+[194 32 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 3]
+[17 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 14]
+[0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 15]
+
+`one_nibble`:
+[194 48 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 2]
+[1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 13]
+[194 48 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 3]
+[17 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 14]
+[0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 15]
+
+`s_mod_node_rlc` (`flag1`) and `c_mod_node_rlc` (`flag2`) columns store the information of what
+kind of case we have:
+ `flag1: 1, flag2: 0`: `is_long`
+ `flag1: 0, flag2: 1`: `is_short`
+ `flag1: 1, flag2: 1`: `last_level`
+ `flag1: 0, flag0: 1`: `one_nibble`
+
+The constraints in `leaf_value.rs` apply to `LEAF_VALUE_S` and `LEAF_VALUE_C` rows.
+The constraints ensure the hash of a storage leaf is in a parent branch and that the RLP of the leaf is correct.
+*/
+
 #[derive(Clone, Debug)]
 pub(crate) struct LeafValueConfig<F> {
     _marker: PhantomData<F>,
@@ -43,12 +104,10 @@ impl<F: FieldExt> LeafValueConfig<F> {
     ) -> Self {
         let config = LeafValueConfig { _marker: PhantomData };
 
-        // TODO: use r_table
-
-        // NOTE: Rotation -6 can be used here (in S and C leaf), because
-        // s_mod_node_hash_rlc and c_mod_node_hash_rlc have the same value in all branch
-        // rows (thus, the same value in branch node_index: 13 and branch
-        // node_index: 15). The same holds for sel1 and sel2.
+        /*
+        A rotation into any branch child is ok as `s_mod_node_hash_rlc` and `c_mod_node_hash_rlc` are the same
+        in all branch children.
+        */
         let rot = -6;
         let mut rot_into_init = -20;
         let mut rot_into_account = -2;
@@ -58,8 +117,10 @@ impl<F: FieldExt> LeafValueConfig<F> {
         }
         let one = Expression::Constant(F::one());
 
-        // RLC is needed in lookup below and in storage_root_in_account_leaf for
-        // leaf without branch.
+        /*
+        We need the RLC of the whole leaf for a lookup that ensures the leaf is in the parent branch.
+        We need the leaf value RLC for external lookups that ensure the value has been set correctly.
+        */
         meta.create_gate("Leaf & leaf value RLC", |meta| {
             let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
             let is_leaf = meta.query_advice(is_leaf_value, Rotation::cur());
@@ -81,24 +142,35 @@ impl<F: FieldExt> LeafValueConfig<F> {
             let s_rlp1_prev = meta.query_advice(s_main.rlp1, Rotation::prev());
             let s_rlp1_cur = meta.query_advice(s_main.rlp1, Rotation::cur());
 
+            /*
+            `is_short` means value has only one byte and consequently, the RLP of
+            the value is only this byte itself. If there are more bytes, the value is
+            equipped with two RLP meta bytes, like 161 160 if there is a
+            value of length 32 (the first RLP byte means 33 bytes after it, the second
+            RLP byte means 32 bytes after it).
+
+            `is_short` example:
+            `[1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 13]`
+
+            `is_long` example:
+            `[161 160 187 239 170 18 88 1 56 188 38 60 149 117 120 38 223 78 36 235 129 201 170 170 170 170 170 170 170 170 170 170 170 170 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 14]`
+
+            We need to ensure `is_long` and `is_short` are booleans and that `is_long + is_short = 1`.
+            */
             constraints.push((
                 "is_long is boolean",
                 get_bool_constraint(q_enable.clone(), is_long.clone()),
             ));
+
             constraints.push((
                 "is_short is boolean",
                 get_bool_constraint(q_enable.clone(), is_long.clone()),
             ));
+
             constraints.push((
                 "is_long + is_short = 1",
                 q_enable.clone() * (is_long.clone() + is_short.clone() - one.clone()),
             ));
-
-            // Note: is_short means value has only one byte and consequently, the RLP of
-            // value is this byte itself. If there are more bytes, the value is
-            // equipped with two RLP meta bytes, like 161 160 if there is a
-            // value of length 32 (the first RLP byte means 33 bytes after it, the second
-            // RLP byte means 32 bytes after it).
 
             let leaf_rlc_prev = meta.query_advice(accs.acc_s.rlc, Rotation::prev());
             let leaf_mult_prev = meta.query_advice(accs.acc_s.mult, Rotation::prev());
@@ -126,43 +198,61 @@ impl<F: FieldExt> LeafValueConfig<F> {
             let acc_s = meta.query_advice(accs.acc_s.rlc, Rotation::cur());
             let acc_c_cur = meta.query_advice(accs.acc_c.rlc, Rotation::cur());
 
+            /*
+            We need to ensure that the stored leaf RLC is the same as the computed one.
+            */
             constraints.push(("Leaf RLC", q_enable.clone() * (acc_s - leaf_rlc)));
+
+            /*
+            We need to ensure that the stored leaf value RLC is the same as the computed one.
+            */
             constraints.push((
                 "Leaf value RLC",
                 q_enable.clone() * (acc_c_cur - leaf_value_rlc),
             ));
-
-            // Constraints to enable lookup:
-            // key RLC is in sel1, leaf value S RLC is in sel2 (for lookup it's needed also
-            // leaf value C RLC, which is in acc_c)
-            // NOTE: when placeholder leaf, prev value needs to be set to 0 - the witness
-            // generator add all 0s as a placeholder leaf for this reason; no constraint
-            // is needed for this 0s as the lookup will fail if otherwise.
+ 
             if !is_s {
                 let key_c_rlc_from_prev = meta.query_advice(accs.key.rlc, Rotation(-1));
                 let key_c_rlc_from_cur = meta.query_advice(accs.key.mult, Rotation::cur());
                 let leaf_value_s_rlc_from_prev = meta.query_advice(accs.acc_c.rlc, Rotation(-2));
                 let leaf_value_s_rlc_from_cur = meta.query_advice(accs.mult_diff, Rotation::cur());
+                
+                /*
+                To enable external lookups we need to have the following information in the same row:
+                 - key RLC:                       we copy it to `sel1` column from the leaf key C row
+                 - previous (`S`) leaf value RLC: we copy it to `sel2` column from the leaf value `S` row
+                 - current (`C`) leaf value RLC:  stored in `acc_c` column
+                */
                 constraints.push((
-                    "key C RLC",
+                    "Leaf key C RLC properly copied",
                     q_enable.clone() * (key_c_rlc_from_prev - key_c_rlc_from_cur),
                 ));
+
                 constraints.push((
-                    "leaf value S RLC",
+                    "Leaf value S RLC properly copied",
                     q_enable.clone() * (leaf_value_s_rlc_from_prev - leaf_value_s_rlc_from_cur),
                 ));
             }
-
-            // If sel = 1, value = 0:
-            // This is to prevent attacks where sel would be set to 1 to avoid
-            // hash in parent constraints.
+ 
             let mut sel = meta.query_advice(denoter.sel1, Rotation(rot));
             if !is_s {
                 sel = meta.query_advice(denoter.sel2, Rotation(rot));
             }
             let is_leaf_without_branch =
                 meta.query_advice(is_account_leaf_in_added_branch, Rotation(rot_into_account));
-            // For leaf without branch the constraint is in storage_root_in_account_leaf
+
+            /*
+            `sel` column in branch children rows determines whether the `modified_node` is empty child.
+            For example when adding a new storage leaf to the trie, we have an empty child in `S` proof
+            and non-empty in `C` proof. 
+            When there is an empty child, we have a placeholder leaf under the last branch.
+
+            If `sel = 1` which means an empty child, we need to ensure that the value is set to 0
+            in the placeholder leaf.
+
+            Note: For a leaf without a branch (means it is in the first level of the trie)
+            the constraint is in `storage_root_in_account_leaf.rs`.
+            */
             constraints.push((
                 "Placeholder leaf (no value set) needs to have value = 0 (s_rlp1)",
                 q_enable.clone()
@@ -170,6 +260,7 @@ impl<F: FieldExt> LeafValueConfig<F> {
                     * (one.clone() - is_leaf_without_branch.clone())
                     * s_rlp1_cur.clone(),
             ));
+
             constraints.push((
                 "Placeholder leaf (no value set) needs to have value = 0 (s_rlp2)",
                 q_enable.clone()
@@ -177,6 +268,7 @@ impl<F: FieldExt> LeafValueConfig<F> {
                     * (one.clone() - is_leaf_without_branch.clone())
                     * s_rlp2_cur.clone(),
             ));
+
             for col in s_main.bytes.iter() {
                 let s = meta.query_advice(*col, Rotation::cur());
                 constraints.push((
@@ -189,19 +281,21 @@ impl<F: FieldExt> LeafValueConfig<F> {
             }
 
             // RLP constraints:
-            let s_advices0_prev = meta.query_advice(s_main.bytes[0], Rotation::prev());
+            let s_bytes0_prev = meta.query_advice(s_main.bytes[0], Rotation::prev());
             let short_remainder = s_rlp1_prev.clone() - c192.clone() - s_rlp2_prev.clone()
                 + c128.clone()
                 - one.clone();
-            let long_remainder = s_rlp2_prev - s_advices0_prev + c128.clone() - one.clone();
+            let long_remainder = s_rlp2_prev - s_bytes0_prev + c128.clone() - one.clone();
             let long_value_len = s_rlp2_cur.clone() - c128.clone() + one.clone() + one.clone();
 
             let short_short_check = short_remainder.clone() - one.clone();
             let long_long_check = long_remainder - long_value_len.clone();
             let short_long_check = short_remainder - long_value_len.clone();
-            // Note: long short is not possible because the key has at most 32 bytes and
-            // short value means only 1 byte which (together with RLP meta
-            // bytes) cannot go over 55 bytes.
+            /*
+            Note: long short is not possible because the key has at most 32 bytes and
+            short value means only 1 byte which (together with RLP meta
+            bytes) cannot go over 55 bytes.
+            */
 
             let long_value_check = s_rlp1_cur - c128.clone() - s_rlp2_cur + c128 - one.clone();
 
