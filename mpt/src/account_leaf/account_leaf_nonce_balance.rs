@@ -13,7 +13,7 @@ use crate::{
     param::{
         ACCOUNT_LEAF_KEY_C_IND, ACCOUNT_LEAF_KEY_S_IND, ACCOUNT_LEAF_NONCE_BALANCE_C_IND,
         ACCOUNT_LEAF_NONCE_BALANCE_S_IND, HASH_WIDTH, ACCOUNT_NON_EXISTING_IND, S_START, C_START,
-    }, columns::{ProofTypeCols, MainCols, AccumulatorCols, DenoteCols},
+    }, columns::{ProofTypeCols, MainCols, AccumulatorCols, DenoteCols}, witness_row::{MptWitnessRow, MptWitnessRowType},
 };
 
 /*
@@ -739,13 +739,13 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
         region: &mut Region<'_, F>,
         mpt_config: &MPTConfig<F>,
         pv: &mut ProofVariables<F>,
-        row: &Vec<u8>,
+        row: &MptWitnessRow<F>,
         offset: usize,
     ) {
         let mut nonce_len: usize = 1;
         // Note: when nonce or balance is 0, the actual value stored in RLP encoding is 128.
-        if row[S_START] > 128 {
-            nonce_len = row[S_START] as usize - 128 + 1; // +1 for byte with length info
+        if row.get_byte(S_START) > 128 {
+            nonce_len = row.get_byte(S_START) as usize - 128 + 1; // +1 for byte with length info
             region.assign_advice(
                 || "assign sel1".to_string(),
                 mpt_config.denoter.sel1,
@@ -768,8 +768,8 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
         }
 
         let mut balance_len: usize = 1;
-        if row[C_START] > 128 {
-            balance_len = row[C_START] as usize - 128 + 1; // +1 for byte with length info
+        if row.get_byte(C_START) > 128 {
+            balance_len = row.get_byte(C_START) as usize - 128 + 1; // +1 for byte with length info
             region.assign_advice(
                 || "assign sel2".to_string(),
                 mpt_config.denoter.sel2,
@@ -797,22 +797,21 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
         // Note: Below, it first computes and assigns the nonce RLC and balance RLC without
         // RLP specific byte (there is a RLP specific byte when nonce/balance RLP length > 1).
         if nonce_len == 1 && balance_len == 1 {
-            mpt_config.compute_rlc_and_assign(region, row, pv, offset, S_START, C_START, HASH_WIDTH, HASH_WIDTH).ok();
+            mpt_config.compute_rlc_and_assign(region, &row.bytes, pv, offset, S_START, C_START, HASH_WIDTH, HASH_WIDTH).ok();
         } else if nonce_len > 1 && balance_len == 1 {
-            mpt_config.compute_rlc_and_assign(region, row, pv, offset, S_START+1, C_START, HASH_WIDTH-1, HASH_WIDTH).ok();
+            mpt_config.compute_rlc_and_assign(region, &row.bytes, pv, offset, S_START+1, C_START, HASH_WIDTH-1, HASH_WIDTH).ok();
         } else if nonce_len == 1 && balance_len > 1 {
-            mpt_config.compute_rlc_and_assign(region, row, pv, offset, S_START, C_START+1, HASH_WIDTH, HASH_WIDTH-1).ok();
+            mpt_config.compute_rlc_and_assign(region, &row.bytes, pv, offset, S_START, C_START+1, HASH_WIDTH, HASH_WIDTH-1).ok();
         } else if nonce_len > 1 && balance_len > 1 {
-            mpt_config.compute_rlc_and_assign(region, row, pv, offset, S_START+1, C_START+1, HASH_WIDTH-1, HASH_WIDTH-1).ok();
-        }
-        if row[row.len() - 1] == 7 {
-            pv.nonce_value_s = pv.rlc1;
-            pv.balance_value_s = pv.rlc2;
+            mpt_config.compute_rlc_and_assign(region, &row.bytes, pv, offset, S_START+1, C_START+1, HASH_WIDTH-1, HASH_WIDTH-1).ok();
         }
 
         let mut acc_account;
         let mut acc_mult_account;
-        if row[row.len() - 1] == 7 {
+        if row.get_type() == MptWitnessRowType::AccountLeafNonceBalanceS {
+            pv.nonce_value_s = pv.rlc1;
+            pv.balance_value_s = pv.rlc2;
+
             acc_account = pv.acc_account_s;
             acc_mult_account = pv.acc_mult_account_s;
             
@@ -838,7 +837,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
 
         // s_rlp1, s_rlp2
         mpt_config.compute_acc_and_mult(
-            row,
+            &row.bytes,
             &mut acc_account,
             &mut acc_mult_account,
             S_START - 2,
@@ -846,7 +845,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
         );
         // c_rlp1, c_rlp2
         mpt_config.compute_acc_and_mult(
-            row,
+            &row.bytes,
             &mut acc_account,
             &mut acc_mult_account,
             C_START - 2,
@@ -870,7 +869,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
         */
         
         mpt_config.compute_acc_and_mult(
-            row,
+            &row.bytes,
             &mut acc_account,
             &mut acc_mult_account,
             S_START,
@@ -890,7 +889,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
         
         // balance contribution to leaf RLC 
         mpt_config.compute_acc_and_mult(
-            row,
+            &row.bytes,
             &mut acc_account,
             &mut acc_mult_account,
             C_START,
@@ -923,7 +922,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
             offset,
             || Ok(mult_diff_c),
         ).ok();
-        if row[row.len() - 1] == 7 {
+        if row.get_type() == MptWitnessRowType::AccountLeafNonceBalanceS {
             pv.acc_nonce_balance_s = acc_account;
             pv.acc_mult_nonce_balance_s = acc_mult_account;
         } else {

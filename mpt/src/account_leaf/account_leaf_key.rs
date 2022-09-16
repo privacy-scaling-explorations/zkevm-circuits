@@ -11,7 +11,7 @@ use crate::{
     param::{
         HASH_WIDTH, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS, IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS, IS_EXT_LONG_ODD_C16_POS, IS_EXT_LONG_ODD_C1_POS, 
         IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS, RLP_NUM, R_TABLE_LEN, S_START, NIBBLES_COUNTER_POS, BRANCH_ROWS_NUM,
-    }, columns::{ProofTypeCols, MainCols, AccumulatorCols},
+    }, columns::{ProofTypeCols, MainCols, AccumulatorCols}, witness_row::{MptWitnessRow, MptWitnessRowType},
 };
 
 /*
@@ -640,20 +640,20 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
         region: &mut Region<'_, F>,
         mpt_config: &MPTConfig<F>,
         pv: &mut ProofVariables<F>,
-        row: &Vec<u8>,
+        row: &MptWitnessRow<F>,
         offset: usize,
     ) {
         // account leaf key S & C
         let mut acc = F::zero();
         let mut acc_mult = F::one();
         // 35 = 2 (leaf rlp) + 1 (key rlp) + key_len
-        let key_len = (row[2] - 128) as usize;
-        for b in row.iter().take(3 + key_len) {
+        let key_len = (row.get_byte(2) - 128) as usize;
+        for b in row.bytes.iter().take(3 + key_len) {
             acc += F::from(*b as u64) * acc_mult;
             acc_mult *= mpt_config.acc_r;
         }
 
-        if row[row.len() - 1] == 6 {
+        if row.get_type() == MptWitnessRowType::AccountLeafKeyS {
             pv.acc_account_s = acc;
             pv.acc_mult_account_s = acc_mult
         } else {
@@ -664,14 +664,14 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
         // For leaf S and leaf C we need to start with the same rlc.
         let mut key_rlc_new = pv.key_rlc;
         let mut key_rlc_mult_new = pv.key_rlc_mult;
-        if (pv.is_branch_s_placeholder && row[row.len() - 1] == 6)
-            || (pv.is_branch_c_placeholder && row[row.len() - 1] == 4)
+        if (pv.is_branch_s_placeholder && row.get_type() == MptWitnessRowType::AccountLeafKeyS)
+            || (pv.is_branch_c_placeholder && row.get_type() == MptWitnessRowType::AccountLeafKeyC)
         {
             key_rlc_new = pv.key_rlc_prev;
             key_rlc_mult_new = pv.key_rlc_mult_prev;
         }
 
-        mpt_config.compute_key_rlc(row, &mut key_rlc_new, &mut key_rlc_mult_new, S_START);
+        mpt_config.compute_key_rlc(&row.bytes, &mut key_rlc_new, &mut key_rlc_mult_new, S_START);
         region.assign_advice(
             || "assign key_rlc".to_string(),
             mpt_config.accumulators.key.rlc,

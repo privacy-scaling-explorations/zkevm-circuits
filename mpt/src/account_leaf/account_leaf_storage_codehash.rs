@@ -12,7 +12,7 @@ use crate::{
         ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND, ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND, BRANCH_ROWS_NUM,
         EXTENSION_ROWS_NUM, IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS,
         KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH, RLP_NUM, ACCOUNT_NON_EXISTING_IND, S_START, C_START, HASH_WIDTH,
-    }, columns::{ProofTypeCols, MainCols, AccumulatorCols, DenoteCols},
+    }, columns::{ProofTypeCols, MainCols, AccumulatorCols, DenoteCols}, witness_row::{MptWitnessRow, MptWitnessRowType},
 };
 
 /*
@@ -544,17 +544,17 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
         region: &mut Region<'_, F>,
         mpt_config: &MPTConfig<F>,
         pv: &mut ProofVariables<F>,
-        row: &Vec<u8>,
+        row: &MptWitnessRow<F>,
         offset: usize,
     ) {
-        if row[row.len() - 1] == 9 {
+        if row.get_type() == MptWitnessRowType::AccountLeafRootCodehashS {
             pv.acc_s = pv.acc_nonce_balance_s;
             pv.acc_mult_s = pv.acc_mult_nonce_balance_s;
 
             // storage root RLC and code hash RLC
             pv.rlc1 = F::zero();
             pv.rlc2 = F::zero();
-            mpt_config.compute_rlc_and_assign(region, row, pv, offset, S_START, C_START, HASH_WIDTH, HASH_WIDTH).ok();
+            mpt_config.compute_rlc_and_assign(region, &row.bytes, pv, offset, S_START, C_START, HASH_WIDTH, HASH_WIDTH).ok();
         } else {
             pv.acc_s = pv.acc_nonce_balance_c;
             pv.acc_mult_s = pv.acc_mult_nonce_balance_c;
@@ -577,11 +577,11 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
             // assign storage root RLC and code hash RLC for this row
             pv.rlc1 = F::zero();
             pv.rlc2 = F::zero();
-            mpt_config.compute_rlc_and_assign(region, row, pv, offset, S_START, C_START, HASH_WIDTH, HASH_WIDTH).ok();
+            mpt_config.compute_rlc_and_assign(region, &row.bytes, pv, offset, S_START, C_START, HASH_WIDTH, HASH_WIDTH).ok();
         }
         // storage
         mpt_config.compute_acc_and_mult(
-            row,
+            &row.bytes,
             &mut pv.acc_s,
             &mut pv.acc_mult_s,
             S_START - 1,
@@ -589,7 +589,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
         );
         // code hash
         mpt_config.compute_acc_and_mult(
-            row,
+            &row.bytes,
             &mut pv.acc_s,
             &mut pv.acc_mult_s,
             C_START - 1,

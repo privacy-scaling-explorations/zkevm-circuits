@@ -1077,17 +1077,17 @@ impl<F: FieldExt> MPTConfig<F> {
                             } else if row.get_type() == MptWitnessRowType::StorageLeafCValue {
                                 self.storage_leaf_value_c.assign(&mut region, self, witness, &mut pv, offset, false);
                             } else if row.get_type() == MptWitnessRowType::AccountLeafKeyS {
-                                self.account_leaf_key_s.assign(&mut region, self, &mut pv, &row.bytes, offset);
+                                self.account_leaf_key_s.assign(&mut region, self, &mut pv, &row, offset);
                             } else if row.get_type() == MptWitnessRowType::AccountLeafKeyC {
-                                self.account_leaf_key_c.assign(&mut region, self, &mut pv, &row.bytes, offset);
+                                self.account_leaf_key_c.assign(&mut region, self, &mut pv, &row, offset);
                             } else if row.get_type() == MptWitnessRowType::AccountLeafNonceBalanceS {
-                                self.account_leaf_nonce_balance_s.assign(&mut region, self, &mut pv, &row.bytes, offset);
+                                self.account_leaf_nonce_balance_s.assign(&mut region, self, &mut pv, row, offset);
                             } else if row.get_type() == MptWitnessRowType::AccountLeafNonceBalanceC {
-                                self.account_leaf_nonce_balance_c.assign(&mut region, self, &mut pv, &row.bytes, offset);
+                                self.account_leaf_nonce_balance_c.assign(&mut region, self, &mut pv, row, offset);
                             } else if row.get_type() == MptWitnessRowType::AccountLeafRootCodehashS {
-                                self.account_leaf_storage_codehash_s.assign(&mut region, self, &mut pv, &row.bytes, offset);
+                                self.account_leaf_storage_codehash_s.assign(&mut region, self, &mut pv, row, offset);
                             } else if row.get_type() == MptWitnessRowType::AccountLeafRootCodehashC {
-                                self.account_leaf_storage_codehash_c.assign(&mut region, self, &mut pv, &row.bytes, offset);
+                                self.account_leaf_storage_codehash_c.assign(&mut region, self, &mut pv, row, offset);
                             } else if row.get_type() == MptWitnessRowType::NeighbouringStorageLeaf && row.get_byte(1) != 0 {
                                 self.storage_leaf_key_in_added_branch.assign(&mut region, self, &mut pv, &row, offset);
                             } else if row.get_type() == MptWitnessRowType::ExtensionNodeS {
