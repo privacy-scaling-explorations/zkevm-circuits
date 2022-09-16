@@ -166,7 +166,10 @@ impl<F: Field> ExpCircuit<F> {
             // The odd/even assignment is boolean.
             cb.require_zero("is_odd is boolean (hi == 0)", meta.query_advice(parity_check.col1, Rotation(2)));
             let is_odd = meta.query_advice(parity_check.col0, Rotation(2));
-            cb.require_boolean("is_odd parity is boolean", is_odd.clone());
+            cb.require_boolean("is_odd is boolean (lo is boolean)", is_odd.clone());
+
+            // There should be no overflow in the parity check mul gadget.
+            cb.require_zero("no overflow in parity check mul gadget", parity_check.overflow.clone());
 
             // remainder == 1 => exponent is odd
             cb.condition(
