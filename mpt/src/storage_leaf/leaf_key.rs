@@ -567,7 +567,7 @@ impl<F: FieldExt> LeafKeyConfig<F> {
 
         However, we also check that the key RLC for `L1` is computed properly because
         we need `L1` key RLC for the constraints for checking that leaf `L1` is the same
-        as the drifted leaf key RLC in the branch parallel. This can be checked by
+        as the drifted leaf in the branch parallel. This can be checked by
         comparing the key RLC of the leaf before being replaced by branch and the key RLC
         of this same leaf after it drifted into a branch.
         Constraints for this are in `leaf_key_in_added_branch.rs`.
@@ -641,9 +641,12 @@ impl<F: FieldExt> LeafKeyConfig<F> {
             let key_mult = key_mult_start.clone() * r_table[0].clone() * is_c16.clone()
                 + key_mult_start.clone() * is_c1.clone(); // set to key_mult_start if sel2, stays key_mult if sel1
 
-            // If `is_c1 = 1`, we have 32 in `s_main.bytes[0]`.
+            /*
+            If `is_c1 = 1` which means there is an even number of nibbles stored in a leaf,
+            we have 32 in `s_main.bytes[0]`.
+            */
             constraints.push((
-                "Leaf key acc s_bytes0",
+                "Leaf key acc s_bytes0 (short)",
                 q_enable.clone()
                     * (s_bytes0.clone() - c32.clone())
                     * is_c1.clone()
@@ -668,7 +671,17 @@ impl<F: FieldExt> LeafKeyConfig<F> {
             let key_rlc = meta.query_advice(accs.key.rlc, Rotation::cur());
 
             /*
-            No need to distinguish between `is_c16` and `is_c1` here as it was already
+            When `is_short` the first key byte is at `s_main.bytes[0]`. We retrieve the key RLC from the
+            branch above the branch placeholder and add the nibbles stored in a leaf.
+            The computed key RLC needs to be the same as the value stored at `accumulators.key.rlc`.
+
+            `is_short`:
+            `[226 160 59 138 106 70 105 186 37 13 38 205 122 69 158 202 157 33 95 131 7 227 58 235 229 3 121 188 90 54 23 236 52 68 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 2]`
+
+            `is_long`:
+            `[248 67 160 59 138 106 70 105 186 37 13 38 205 122 69 158 202 157 33 95 131 7 227 58 235 229 3 121 188 90 54 23 236 52 68 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 3]`
+
+            Note: No need to distinguish between `is_c16` and `is_c1` here as it was already
             when computing `key_rlc_acc_short`.
             */
             constraints.push((
@@ -687,9 +700,12 @@ impl<F: FieldExt> LeafKeyConfig<F> {
             let mut key_rlc_acc_long = key_rlc_acc_start.clone()
                 + (s_bytes1.clone() - c48.clone()) * key_mult_start.clone() * is_c16.clone();
 
-            // If `is_c1 = 1`, we have 32 in `s_main.bytes[1]`.
+            /*
+            If `is_c1 = 1` which means there is an even number of nibbles stored in a leaf,
+            we have 32 in `s_main.bytes[1]`.
+            */
             constraints.push((
-                "Leaf key acc s_bytes1",
+                "Leaf key acc s_bytes1 (long)",
                 q_enable.clone()
                     * (s_bytes1.clone() - c32.clone())
                     * is_c1.clone()
@@ -714,6 +730,16 @@ impl<F: FieldExt> LeafKeyConfig<F> {
             key_rlc_acc_long = key_rlc_acc_long + c_rlp2.clone() * key_mult * r_table[30].clone();
 
             /*
+            When `is_long` the first key byte is at `s_main.bytes[1]`. We retrieve the key RLC from the
+            branch above the branch placeholder and add the nibbles stored in a leaf.
+            The computed key RLC needs to be the same as the value stored at `accumulators.key.rlc`.
+
+            `is_short`:
+            `[226 160 59 138 106 70 105 186 37 13 38 205 122 69 158 202 157 33 95 131 7 227 58 235 229 3 121 188 90 54 23 236 52 68 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 2]`
+
+            `is_long`:
+            `[248 67 160 59 138 106 70 105 186 37 13 38 205 122 69 158 202 157 33 95 131 7 227 58 235 229 3 121 188 90 54 23 236 52 68 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 3]`
+
             No need to distinguish between `is_c16` and `is_c1` here as it was already
             when computing `key_rlc_acc_long`.
             */
@@ -740,17 +766,23 @@ impl<F: FieldExt> LeafKeyConfig<F> {
 
             let leaf_nibbles = leaf_nibbles_long * is_long + leaf_nibbles_short * is_short
                 + leaf_nibbles_one_nibble * one_nibble;
-
-            /*
-            Note that when the leaf is in the first storage level (but positioned after the placeholder
-            in the circuit), there is no branch above the placeholder branch from where
-            `nibbles_count` is to be retrieved. In that case `nibbles_count = 0`.
-            */
+ 
             let nibbles_count = meta.query_advice(
                 s_main.bytes[NIBBLES_COUNTER_POS - RLP_NUM],
                 Rotation(rot_into_init - BRANCH_ROWS_NUM),
             ) * (one.clone() - is_first_storage_level.clone());
 
+            /*
+            Checking the total number of nibbles is to prevent having short addresses
+            which could lead to a root node which would be shorter than 32 bytes and thus not hashed. That
+            means the trie could be manipulated to reach a desired root.
+
+            To get the number of nibbles above the leaf we need to go into the branch above the placeholder branch.
+
+            Note that when the leaf is in the first storage level (but positioned after the placeholder
+            in the circuit), there is no branch above the placeholder branch from where
+            `nibbles_count` is to be retrieved. In that case `nibbles_count = 0`.
+            */
             constraints.push((
                 "Total number of account address nibbles is 64 (after placeholder)",
                 q_enable
@@ -762,6 +794,9 @@ impl<F: FieldExt> LeafKeyConfig<F> {
             constraints
         });
 
+        /*
+        Range lookups ensure that `s_main`, `c_main.rlp1`, `c_main.rlp2` columns are all bytes (between 0 - 255).
+        */
         range_lookups(
             meta,
             q_enable,
