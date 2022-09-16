@@ -17,7 +17,7 @@ use eth_types::Field;
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{Layouter, Region, Value},
-    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector, VirtualCells},
+    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, Selector, VirtualCells},
     poly::Rotation,
 };
 use std::{collections::HashMap, iter};
@@ -160,7 +160,7 @@ pub(crate) struct ExecutionConfig<F, const MAX_TXS: usize, const MAX_RWS: usize>
     // Selector enabled in the row where the first execution step starts.
     q_step_first: Selector,
     // Selector enabled in the row where the last execution step starts.
-    q_step_last: Selector,
+    q_step_last: Column<Fixed>,
     advices: [Column<Advice>; STEP_WIDTH],
     step: Step<F>,
     height_map: HashMap<ExecutionState, usize>,
@@ -285,7 +285,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_RWS: usize> ExecutionConfig<F, MA
         let num_rows_until_next_step = meta.advice_column();
         let num_rows_inv = meta.advice_column();
         let q_step_first = meta.complex_selector();
-        let q_step_last = meta.complex_selector();
+        let q_step_last = meta.fixed_column();
         let advices = [(); STEP_WIDTH].map(|_| meta.advice_column());
 
         let step_curr = Step::new(meta, advices, q_step_last, 0);
@@ -295,11 +295,12 @@ impl<F: Field, const MAX_TXS: usize, const MAX_RWS: usize> ExecutionConfig<F, MA
             let q_usable = meta.query_selector(q_usable);
             let q_step = meta.query_advice(q_step, Rotation::cur());
             let q_step_first = meta.query_selector(q_step_first);
-            let q_step_last = meta.query_selector(q_step_last);
+            let q_step_last = meta.query_fixed(q_step_last, Rotation::cur());
 
             let execution_state_selector_constraints = step_curr.state.execution_state.configure();
 
-            let _first_step_check = {
+            // NEW: Enabled, this will break hand crafted tests, maybe we can remove them?
+            let first_step_check = {
                 let begin_tx_selector =
                     step_curr.execution_state_selector([ExecutionState::BeginTx]);
                 iter::once((
@@ -308,7 +309,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_RWS: usize> ExecutionConfig<F, MA
                 ))
             };
 
-            let _last_step_check = {
+            let last_step_check = {
                 let end_block_selector =
                     step_curr.execution_state_selector([ExecutionState::EndBlock]);
                 iter::once((
@@ -320,9 +321,8 @@ impl<F: Field, const MAX_TXS: usize, const MAX_RWS: usize> ExecutionConfig<F, MA
             execution_state_selector_constraints
                 .into_iter()
                 .map(move |(name, poly)| (name, q_usable.clone() * q_step.clone() * poly))
-            // TODO: Enable these after incomplete trace is no longer necessary.
-            // .chain(first_step_check)
-            // .chain(last_step_check)
+                .chain(first_step_check)
+                .chain(last_step_check)
         });
 
         meta.create_gate("q_step", |meta| {
@@ -526,7 +526,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_RWS: usize> ExecutionConfig<F, MA
         q_step: Column<Advice>,
         num_rows_until_next_step: Column<Advice>,
         q_step_first: Selector,
-        q_step_last: Selector,
+        q_step_last: Column<Fixed>,
         power_of_randomness: &[Expression<F>; 31],
         step_curr: &Step<F>,
         step_next: &Step<F>,
@@ -572,6 +572,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_RWS: usize> ExecutionConfig<F, MA
         );
 
         let (constraints, constraints_first_step, stored_expressions, _) = cb.build();
+        // cb.build() will return constraints_last_step, constraints_not_last_step
         debug_assert!(
             !height_map.contains_key(&G::EXECUTION_STATE),
             "execution state already configured"
@@ -591,6 +592,8 @@ impl<F: Field, const MAX_TXS: usize, const MAX_RWS: usize> ExecutionConfig<F, MA
         for (selector, constraints) in [
             (q_steps, constraints),
             (q_steps_first, constraints_first_step),
+            (q_step_last, constraints_last_step),
+            (q_steps * (1 - q_step_last), constraints_not_last_step),
         ] {
             if !constraints.is_empty() {
                 meta.create_gate(G::NAME, |meta| {
@@ -607,7 +610,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_RWS: usize> ExecutionConfig<F, MA
         meta.create_gate("Constrain state machine transitions", |meta| {
             let q_usable = meta.query_selector(q_usable);
             let q_step = meta.query_advice(q_step, Rotation::cur());
-            let q_step_last = meta.query_selector(q_step_last);
+            let q_step_last = meta.query_fixed(q_step_last, Rotation::cur());
 
             // ExecutionState transition should be correct.
             iter::empty()
@@ -837,7 +840,12 @@ impl<F: Field, const MAX_TXS: usize, const MAX_RWS: usize> ExecutionConfig<F, MA
                     || Value::known(F::zero()),
                 )?;
 
-                self.q_step_last.enable(&mut region, offset - last_height)?;
+                region.assign_fixed(
+                    || "q_step_last",
+                    self.q_step_last,
+                    offset - last_height,
+                    || Value::known(F::one()),
+                )?;
 
                 Ok(())
             },

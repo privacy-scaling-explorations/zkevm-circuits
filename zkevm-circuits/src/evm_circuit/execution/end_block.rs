@@ -71,9 +71,9 @@ impl<F: Field, const MAX_TXS: usize, const MAX_RWS: usize> ExecutionGadget<F>
             // Propagate rw_counter and call_id (and all other state fields) all the way
             // down
             cb.require_step_state_transition(StepStateTransition::default());
-            // Next step is EndBlock
-            // TODO
         });
+
+        cb.last_step(|cb| {});
 
         Self { total_txs }
     }

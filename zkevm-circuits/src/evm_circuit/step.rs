@@ -12,7 +12,8 @@ use eth_types::ToLittleEndian;
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::Value,
-    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
+    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, Selector},
+    poly::Rotation,
 };
 use std::iter;
 use strum::IntoEnumIterator;
@@ -467,7 +468,7 @@ impl<F: FieldExt> Step<F> {
     pub(crate) fn new(
         meta: &mut ConstraintSystem<F>,
         advices: [Column<Advice>; STEP_WIDTH],
-        q_step_last: Selector,
+        q_step_last: Column<Fixed>,
         offset: usize,
     ) -> Self {
         let mut cell_manager = CellManager::new(meta, MAX_STEP_HEIGHT, &advices, offset);
@@ -493,7 +494,7 @@ impl<F: FieldExt> Step<F> {
         let q_step_last = {
             let mut e = None;
             meta.create_gate("Query q_last_step", |meta| {
-                e = Some(meta.query_selector(q_step_last));
+                e = Some(meta.query_fixed(q_step_last, Rotation::cur()));
                 vec![0.expr()]
             });
             e.unwrap()

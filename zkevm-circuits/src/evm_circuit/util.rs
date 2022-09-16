@@ -74,6 +74,7 @@ impl<F: FieldExt> Expr<F> for &Cell<F> {
 pub struct CachedRegion<'r, 'b, F: FieldExt> {
     region: &'r mut Region<'b, F>,
     advice: Vec<Vec<F>>,
+    fixed: Vec<F>,
     power_of_randomness: [F; 31],
     width_start: usize,
     height_start: usize,
@@ -92,6 +93,7 @@ impl<'r, 'b, F: FieldExt> CachedRegion<'r, 'b, F> {
         Self {
             region,
             advice: vec![vec![F::zero(); height]; width],
+            fixed: vec![F::zero(); width],
             power_of_randomness,
             width_start,
             height_start,
@@ -125,7 +127,7 @@ impl<'r, 'b, F: FieldExt> CachedRegion<'r, 'b, F> {
     }
 
     pub fn get_fixed(&self, _row_index: usize, _column_index: usize, _rotation: Rotation) -> F {
-        unimplemented!("fixed column");
+        self.fixed[_column_index - self.width_start]
     }
 
     pub fn get_advice(&self, row_index: usize, column_index: usize, rotation: Rotation) -> F {

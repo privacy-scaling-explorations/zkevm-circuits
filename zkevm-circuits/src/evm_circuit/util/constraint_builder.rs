@@ -210,7 +210,19 @@ impl<F: Field> BaseConstraintBuilder<F> {
             None => constraint,
         };
         self.validate_degree(constraint.degree(), name);
-        self.constraints.push((name, constraint));
+        self.constraints_push((name, constraint));
+    }
+
+    pub(crate) first_step(&mut self, constraint: impl FnOnce(&mut Self) -> R) {}
+    pub(crate) last_step(&mut self, constraint: impl FnOnce(&mut Self) -> R) {}
+    pub(crate) not_last_step(&mut self, constraint: impl FnOnce(&mut Self) -> R) {}
+
+    fn constraints_push(&mut self, ...) {
+        match self.constraints_dest {
+            Regular => self.constraints.push((name, constraint))
+            Last => self.constraints.push((name, constraint))
+            NotLast => self.constraints.push((name, constraint))
+        }
     }
 
     pub(crate) fn validate_degree(&self, degree: usize, name: &'static str) {
@@ -246,6 +258,8 @@ pub(crate) struct ConstraintBuilder<'a, F> {
     execution_state: ExecutionState,
     constraints: Vec<(&'static str, Expression<F>)>,
     constraints_first_step: Vec<(&'static str, Expression<F>)>,
+    constraints_last_step: Vec<(&'static str, Expression<F>)>,
+    constraints_not_last_step: Vec<(&'static str, Expression<F>)>,
     rw_counter_offset: Expression<F>,
     program_counter_offset: usize,
     stack_pointer_offset: i32,
@@ -270,6 +284,8 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
             execution_state,
             constraints: Vec::new(),
             constraints_first_step: Vec::new(),
+            constraints_last_step: Vec::new(),
+            constraints_not_last_step: Vec::new(),
             rw_counter_offset: 0.expr(),
             program_counter_offset: 0,
             stack_pointer_offset: 0,
@@ -292,6 +308,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         usize,
     ) {
         let execution_state_selector = self.curr.execution_state_selector([self.execution_state]);
+        // TODO: Return a struct
         (
             self.constraints
                 .into_iter()
@@ -301,6 +318,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
                 .into_iter()
                 .map(|(name, constraint)| (name, execution_state_selector.clone() * constraint))
                 .collect(),
+            // TODO: self.constraints_last_step
             self.stored_expressions,
             self.curr.cell_manager.get_height(),
         )
@@ -1229,9 +1247,16 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
             Some(condition) => condition.clone() * constraint,
             None => constraint,
         };
+
+        let constraint = self.split_expression(name, constraint, MAX_DEGREE - IMPLICIT_DEGREE);
+
         self.validate_degree(constraint.degree(), name);
         self.constraints_first_step.push((name, constraint));
     }
+
+    // TODO: add_lookup_last_step to be used as `rw_table_start_lookup_last_step`
+    // and `call_context_lookup_last_step` and `tx_context_lookup_last_step`.
+    // TODO: require_step_state_transition_not_last_step
 
     pub(crate) fn add_lookup(&mut self, name: &str, lookup: Lookup<F>) {
         let lookup = match &self.condition {
@@ -1247,11 +1272,12 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         self.store_expression(name, compressed_expr, CellType::Lookup(lookup.table()));
     }
 
-    pub(crate) fn store_expression(
+    pub(crate) fn store_expression2(
         &mut self,
         name: &str,
         expr: Expression<F>,
         cell_type: CellType,
+        constraints: &mut Vec<(&'static str, Expression<F>)>,
     ) -> Expression<F> {
         // Check if we already stored the expression somewhere
         let stored_expression = self.find_stored_expression(expr.clone(), cell_type);
@@ -1273,7 +1299,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
 
                 // Require the stored value to equal the value of the expression
                 let name = format!("{} (stored expression)", name);
-                self.constraints.push((
+                constraints.push((
                     Box::leak(name.clone().into_boxed_str()),
                     cell.expr() - expr.clone(),
                 ));
@@ -1288,6 +1314,15 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
                 cell.expr()
             }
         }
+    }
+
+    pub(crate) fn store_expression(
+        &mut self,
+        name: &str,
+        expr: Expression<F>,
+        cell_type: CellType,
+    ) -> Expression<F> {
+        self.store_expression2(name, expr, cell_type, &mut self.constraints)
     }
 
     pub(crate) fn find_stored_expression(
