@@ -1,7 +1,7 @@
 use super::{StateCircuit, StateCircuitConfig};
 use crate::{
     table::{AccountFieldTag, CallContextFieldTag, RwTableTag, TxLogFieldTag, TxReceiptFieldTag},
-    witness::{Rw, RwMap},
+    witness::{MptUpdates, Rw, RwMap},
 };
 use bus_mapping::operation::{
     MemoryOp, Operation, OperationContainer, RWCounter, StackOp, StorageOp, RW,
@@ -104,7 +104,7 @@ fn test_state_circuit_ok(
 fn degree() {
     let mut meta = ConstraintSystem::<Fr>::default();
     StateCircuit::<Fr>::configure(&mut meta);
-    assert_eq!(meta.degree(), 9);
+    assert_eq!(meta.degree(), 12);
 }
 
 #[test]
@@ -425,7 +425,7 @@ fn address_limb_mismatch() {
         value: U256::zero(),
         value_prev: U256::zero(),
     }];
-    let overrides = HashMap::from([((AdviceColumn::Address, 0), Fr::from(10))]);
+    let overrides = HashMap::from([((AdviceColumn::AddressLimb0, 0), Fr::zero())]);
 
     let result = verify_with_overrides(rows, overrides);
 
@@ -464,7 +464,7 @@ fn storage_key_mismatch() {
         tx_id: 4,
         committed_value: U256::from(34),
     }];
-    let overrides = HashMap::from([((AdviceColumn::StorageKey, 0), Fr::from(10))]);
+    let overrides = HashMap::from([((AdviceColumn::StorageKeyByte1, 0), Fr::one())]);
 
     let result = verify_with_overrides(rows, overrides);
 
@@ -484,8 +484,9 @@ fn storage_key_byte_out_of_range() {
         committed_value: U256::from(500),
     }];
     let overrides = HashMap::from([
-        ((AdviceColumn::StorageKey, 0), Fr::from(256)),
-        ((AdviceColumn::StorageKeyByte0, 0), Fr::from(256)),
+        ((AdviceColumn::StorageKeyByte0, 0), Fr::from(0xcafeu64)), /* 0xcafeu64 is the fixed
+                                                                    * "randomness" we use for
+                                                                    * this test. */
         ((AdviceColumn::StorageKeyByte1, 0), Fr::zero()),
     ]);
 
@@ -958,7 +959,7 @@ fn bad_initial_tx_log_value() {
 }
 
 #[test]
-#[ignore = ""]
+#[ignore = "TxReceipt constraints not yet implemented"]
 fn bad_initial_tx_receipt_value() {
     let rows = vec![Rw::TxReceipt {
         rw_counter: 1,
@@ -981,9 +982,11 @@ fn bad_initial_tx_receipt_value() {
 
 fn prover(rows: Vec<Rw>, overrides: HashMap<(AdviceColumn, isize), Fr>) -> MockProver<Fr> {
     let randomness = Fr::from(0xcafeu64);
+    let updates = MptUpdates::mock_from(&rows);
     let circuit = StateCircuit::<Fr> {
         randomness,
         rows,
+        updates,
         overrides,
         n_rows: N_ROWS,
     };
