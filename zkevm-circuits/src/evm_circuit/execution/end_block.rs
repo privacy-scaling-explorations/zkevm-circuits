@@ -12,7 +12,6 @@ use crate::{
     util::Expr,
 };
 use eth_types::Field;
-use gadgets::util::not;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
@@ -30,9 +29,8 @@ impl<F: Field, const MAX_TXS: usize, const MAX_RWS: usize> ExecutionGadget<F>
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let total_txs = cb.query_cell();
         let rw_counter = cb.curr.state.rw_counter.clone();
-        let q_step_last = cb.curr.q_step_last.clone();
 
-        cb.condition(q_step_last.expr(), |cb| {
+        cb.step_last(|cb| {
             // 1. Verify rw_counter counts to the same number of meaningful rows in
             // rw_table to ensure there is no malicious insertion.
 
@@ -67,13 +65,11 @@ impl<F: Field, const MAX_TXS: usize, const MAX_RWS: usize> ExecutionGadget<F>
             // We conclude that the number of meaningful txs in the tx_table
             // is total_tx.
         });
-        cb.condition(not::expr(q_step_last.expr()), |cb| {
+        cb.not_step_last(|cb| {
             // Propagate rw_counter and call_id (and all other state fields) all the way
             // down
             cb.require_step_state_transition(StepStateTransition::default());
         });
-
-        cb.last_step(|cb| {});
 
         Self { total_txs }
     }

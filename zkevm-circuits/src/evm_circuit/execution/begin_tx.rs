@@ -67,11 +67,14 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             .map(|field_tag| cb.tx_context_as_word(tx_id.expr(), field_tag, None));
 
         // Add first step constraint to have both rw_counter and tx_id to be 1
-        cb.add_constraint_first_step(
-            "rw_counter is initialized to be 1",
-            1.expr() - cb.curr.state.rw_counter.expr(),
-        );
-        cb.add_constraint_first_step("tx_id is initialized to be 1", 1.expr() - tx_id.expr());
+        cb.step_first(|cb| {
+            cb.require_equal(
+                "rw_counter is initialized to be 1",
+                cb.curr.state.rw_counter.expr(),
+                1.expr(),
+            );
+            cb.require_equal("tx_id is initialized to be 1", tx_id.expr(), 1.expr());
+        });
 
         // Increase caller's nonce.
         // (tx caller's nonce always increases even tx ends with error)
