@@ -2,7 +2,7 @@ use std::{convert::{TryFrom, TryInto}, marker::PhantomData};
 use halo2_proofs::{circuit::Region, plonk::Error, arithmetic::FieldExt};
 use num_enum::TryFromPrimitive;
 
-use crate::{param::{NOT_FIRST_LEVEL_POS, IS_NON_EXISTING_ACCOUNT_POS, COUNTER_WITNESS_LEN, HASH_WIDTH, IS_STORAGE_MOD_POS, S_START, C_START, RLP_NUM, WITNESS_ROW_WIDTH, S_RLP_START, C_RLP_START, IS_NONCE_MOD_POS, IS_BALANCE_MOD_POS, IS_ACCOUNT_DELETE_MOD_POS}, account_leaf::AccountLeaf, storage_leaf::StorageLeaf, branch::Branch, mpt::{MPTConfig, ProofVariables}, columns::ProofTypeCols, helpers::bytes_into_rlc};
+use crate::{param::{NOT_FIRST_LEVEL_POS, IS_NON_EXISTING_ACCOUNT_POS, COUNTER_WITNESS_LEN, HASH_WIDTH, IS_STORAGE_MOD_POS, S_START, C_START, RLP_NUM, WITNESS_ROW_WIDTH, S_RLP_START, C_RLP_START, IS_NONCE_MOD_POS, IS_BALANCE_MOD_POS, IS_ACCOUNT_DELETE_MOD_POS, IS_CODEHASH_MOD_POS}, account_leaf::AccountLeaf, storage_leaf::StorageLeaf, branch::Branch, mpt::{MPTConfig, ProofVariables}, helpers::bytes_into_rlc};
 
 #[derive(Eq, PartialEq, TryFromPrimitive)]
 #[repr(u8)]
@@ -582,6 +582,12 @@ impl<F: FieldExt> MptWitnessRow<F> {
             mpt_config.proof_type.is_balance_mod,
             offset,
             || Ok(F::from(self.get_byte_rev(IS_BALANCE_MOD_POS) as u64)),
+        )?;
+        region.assign_advice(
+            || "is_codehash_mod",
+            mpt_config.proof_type.is_codehash_mod,
+            offset,
+            || Ok(F::from(self.get_byte_rev(IS_CODEHASH_MOD_POS) as u64)),
         )?;
         region.assign_advice(
             || "is_account_delete_mod",

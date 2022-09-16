@@ -64,9 +64,9 @@ impl<F: FieldExt> SelectorsChip<F> {
             let is_storage_mod = meta.query_advice(proof_type.is_storage_mod, Rotation::cur());
             let is_nonce_mod = meta.query_advice(proof_type.is_nonce_mod, Rotation::cur());
             let is_balance_mod = meta.query_advice(proof_type.is_balance_mod, Rotation::cur());
+            let is_codehash_mod = meta.query_advice(proof_type.is_codehash_mod, Rotation::cur());
             let is_account_delete_mod = meta.query_advice(proof_type.is_account_delete_mod, Rotation::cur());
             let is_non_existing_account_proof = meta.query_advice(proof_type.is_non_existing_account_proof, Rotation::cur());
-            let is_codehash_proof = meta.query_advice(proof_type.is_codehash_proof, Rotation::cur());
 
             let is_non_existing_account_row = meta.query_advice(account_leaf.is_non_existing_account_row, Rotation::cur());
 
@@ -180,6 +180,10 @@ impl<F: FieldExt> SelectorsChip<F> {
                 get_bool_constraint(q_enable.clone(), is_balance_mod.clone()),
             ));
             constraints.push((
+                "bool check is_codehash_mode",
+                get_bool_constraint(q_enable.clone(), is_codehash_mod.clone()),
+            ));
+            constraints.push((
                 "bool check is_account_delete_mod",
                 get_bool_constraint(q_enable.clone(), is_account_delete_mod.clone()),
             ));
@@ -190,16 +194,12 @@ impl<F: FieldExt> SelectorsChip<F> {
             constraints.push((
                 "bool check is_non_existing_account_proof",
                 get_bool_constraint(q_enable.clone(), is_non_existing_account_proof.clone()),
-            ));
-            constraints.push((
-                "bool check is_codehash_proof",
-                get_bool_constraint(q_enable.clone(), is_codehash_proof.clone()),
-            ));
+            )); 
 
             constraints.push((
                 "is_storage_mod + is_nonce_mod + is_balance_mod + is_account_delete_mod + is_non_existing_account = 1",
                 q_enable.clone()
-                    * (is_storage_mod + is_nonce_mod + is_balance_mod + is_account_delete_mod + is_non_existing_account_proof + is_codehash_proof
+                    * (is_storage_mod + is_nonce_mod + is_balance_mod + is_account_delete_mod + is_non_existing_account_proof + is_codehash_mod
                         - one.clone()),
             ));
 
@@ -383,6 +383,8 @@ impl<F: FieldExt> SelectorsChip<F> {
                 let is_nonce_mod_cur = meta.query_advice(proof_type.is_nonce_mod, Rotation::cur());
                 let is_balance_mod_prev = meta.query_advice(proof_type.is_balance_mod, Rotation::prev());
                 let is_balance_mod_cur = meta.query_advice(proof_type.is_balance_mod, Rotation::cur());
+                let is_codehash_mod_prev = meta.query_advice(proof_type.is_codehash_mod, Rotation::prev());
+                let is_codehash_mod_cur = meta.query_advice(proof_type.is_codehash_mod, Rotation::cur());
                 let is_account_delete_mod_prev = meta.query_advice(proof_type.is_account_delete_mod, Rotation::prev());
                 let is_account_delete_mod_cur = meta.query_advice(proof_type.is_account_delete_mod, Rotation::cur());
                 let is_non_existing_account_proof_cur = meta.query_advice(proof_type.is_non_existing_account_proof, Rotation::prev());
@@ -433,6 +435,21 @@ impl<F: FieldExt> SelectorsChip<F> {
                         * (one.clone() - is_branch_init_cur.clone())
                         * (one.clone() - is_account_leaf_key_s_cur.clone())
                         * (is_balance_mod_cur - is_balance_mod_prev),
+                ));
+
+                constraints.push((
+                    "is_codehash_mod does not change outside first level",
+                    q_not_first.clone()
+                        * not_first_level.clone()
+                        * (is_codehash_mod_cur.clone() - is_codehash_mod_prev.clone()),
+                ));
+                constraints.push((
+                    "is_codehash_mod does not change inside first level except in the first row",
+                    q_not_first.clone()
+                        * (one.clone() - not_first_level.clone())
+                        * (one.clone() - is_branch_init_cur.clone())
+                        * (one.clone() - is_account_leaf_key_s_cur.clone())
+                        * (is_codehash_mod_cur - is_codehash_mod_prev),
                 ));
 
                 constraints.push((

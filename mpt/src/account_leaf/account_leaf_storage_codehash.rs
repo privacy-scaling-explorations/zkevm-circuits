@@ -79,11 +79,13 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
         let config = AccountLeafStorageCodehashConfig { _marker: PhantomData };
         let one = Expression::Constant(F::one());
 
-        // We don't need to check acc_mult because it's not used after this row.
+        // Note: We do not need to check `acc_mult` because it is not used after this row.
 
-        // Note: differently as in storage leaf value (see empty_trie there), the placeholder
-        // leaf never appears in the first level here, because there is always
-        // at least a genesis account.
+        /*
+        Note: differently as in storage leaf value (see empty_trie there), the placeholder
+        leaf never appears in the first level here, because there is always
+        at least a genesis account.
+        */
         meta.create_gate("Account leaf storage codehash", |meta| {
             let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
             let q_enable = q_not_first.clone()
@@ -91,33 +93,31 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
 
             let mut constraints = vec![];
 
-            // We have storage length in s_rlp2 (which is 160 presenting 128 + 32).
-            // We have storage hash in s_main.bytes.
-            // We have codehash length in c_rlp2 (which is 160 presenting 128 + 32).
-            // We have codehash in c_main.bytes.
-
-            // Rows:
-            // account leaf key
-            // account leaf nonce balance S
-            // account leaf nonce balance C
-            // account leaf storage codeHash S
-            // account leaf storage codeHash C
+            /*
+            We have storage length in `s_rlp2` (which is 160 presenting `128 + 32`).
+            We have storage hash in `s_main.bytes`.
+            We have codehash length in `c_rlp2` (which is 160 presenting `128 + 32`).
+            We have codehash in `c_main.bytes`.
+            */
 
             let mut rot_into_non_existing = -(ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND - ACCOUNT_NON_EXISTING_IND);
             if !is_s {
                 rot_into_non_existing = -(ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND - ACCOUNT_NON_EXISTING_IND);
             }
 
-            // When non_existing_account_proof and wrong leaf, these constraints need to be checked (the wrong
-            // leaf is being checked). When non_existing_account_proof and not wrong leaf (there are only branches
-            // in the proof and a placeholder account leaf), these constraints are not checked. It is checked
-            // that there is nil in the parent branch at the proper position (see account_non_existing), note
-            // that we need (placeholder) account leaf for lookups and to know when to check that parent branch
-            // has a nil.
+            /*
+            When non_existing_account_proof and not wrong leaf there is only a placeholder account leaf
+            and the constraints in this gate are not triggered. In that case it is checked
+            that there is nil in the parent branch at the proper position (see `account_non_existing.rs`), note
+            that we need (placeholder) account leaf for lookups and to know when to check that parent branch
+            has a nil.
+
+            Note: `(is_non_existing_account_proof.clone() - is_wrong_leaf.clone() - one.clone())`
+            cannot be 0 when `is_non_existing_account_proof = 0` (see `account_leaf_nonce_balance.rs`).
+            */
+
             let is_wrong_leaf = meta.query_advice(s_main.rlp1, Rotation(rot_into_non_existing));
             let is_non_existing_account_proof = meta.query_advice(proof_type.is_non_existing_account_proof, Rotation::cur());
-            // Note: (is_non_existing_account_proof.clone() - is_wrong_leaf.clone() - one.clone())
-            // cannot be 0 when is_non_existing_account_proof = 0 (see account_leaf_nonce_balance).
 
             let c160 = Expression::Constant(F::from(160));
             let rot = -2;
@@ -220,8 +220,10 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
                 // `S` or `C` proofs are used for a lookup.
 
                 // Check there is only one modification at once:
+                let is_storage_mod = meta.query_advice(proof_type.is_storage_mod, Rotation::cur());
                 let is_nonce_mod = meta.query_advice(proof_type.is_nonce_mod, Rotation::cur());
                 let is_balance_mod = meta.query_advice(proof_type.is_balance_mod, Rotation::cur());
+                let is_codehash_mod = meta.query_advice(proof_type.is_codehash_mod, Rotation::cur());
                 let is_account_delete_mod = meta.query_advice(proof_type.is_account_delete_mod, Rotation::cur());
 
                 /*
@@ -230,12 +232,12 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
 
                 Note: For `is_non_existing_account_proof` we do not need this constraint,
                 `S` and `C` proofs are the same and we need to do a lookup into only one
-                (the other one could really be whatever). Similarly for `is_codehash_proof`.
+                (the other one could really be whatever).
                 */
                 constraints.push((
-                    "If nonce / balance: storage_root_s = storage_root_c",
+                    "If nonce or balance or codehash modification: storage_root_s = storage_root_c",
                     q_enable.clone()
-                        * (is_nonce_mod.clone() + is_balance_mod.clone())
+                        * (is_nonce_mod.clone() + is_balance_mod.clone() + is_codehash_mod.clone())
                         * (one.clone() - is_account_delete_mod.clone())
                         * (storage_root_s_from_cur.clone() - storage_root_stored.clone()),
                 ));
@@ -247,11 +249,12 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
 
                 Note: For `is_non_existing_account_proof` we do not need this constraint,
                 `S` and `C` proofs are the same and we need to do a lookup into only one
-                (the other one could really be whatever). Similarly for `is_codehash_proof`.
+                (the other one could really be whatever).
                 */
                 constraints.push((
-                    "If nonce / balance / storage mod: codehash_s = codehash_c",
+                    "If nonce or balance or storage modification: codehash_s = codehash_c",
                     q_enable.clone()
+                        * (is_nonce_mod.clone() + is_balance_mod.clone() + is_storage_mod.clone())
                         * (one.clone() - is_account_delete_mod.clone())
                         * (codehash_s_from_cur.clone() - codehash_stored.clone()),
                 ));

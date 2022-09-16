@@ -338,6 +338,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
                 let is_storage_mod = meta.query_advice(proof_type.is_storage_mod, Rotation::cur());
                 let is_nonce_mod = meta.query_advice(proof_type.is_nonce_mod, Rotation::cur());
                 let is_balance_mod = meta.query_advice(proof_type.is_balance_mod, Rotation::cur());
+                let is_codehash_mod = meta.query_advice(proof_type.is_codehash_mod, Rotation::cur());
                 let is_account_delete_mod = meta.query_advice(proof_type.is_account_delete_mod, Rotation::cur());
 
                 /*
@@ -346,29 +347,28 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
 
                 Note: For `is_non_existing_account_proof` we do not need this constraint,
                 `S` and `C` proofs are the same and we need to do a lookup into only one
-                (the other one could really be whatever). Similarly for `is_codehash_proof`.
+                (the other one could really be whatever).
                 */
                 constraints.push((
-                    "If storage or balance modification: S nonce = C nonce",
+                    "If storage / balance / codehash modification: S nonce = C nonce",
                     q_enable.clone()
-                        * (is_storage_mod.clone()
-                            + is_balance_mod.clone())
+                        * (is_storage_mod.clone() + is_balance_mod.clone() + is_codehash_mod.clone())
                         * (one.clone() - is_account_delete_mod.clone())
                         * (nonce_s_from_cur.clone() - nonce_stored.clone()),
                 ));
 
                 /*
                 We need to ensure there is only one modification at a time. If there is storage or
-                nonce modification, we need to ensure `S` balance and `C` balance are the same.
+                nonce or codehash modification, we need to ensure `S` balance and `C` balance are the same.
 
                 Note: For `is_non_existing_account_proof` we do not need this constraint,
                 `S` and `C` proofs are the same and we need to do a lookup into only one
-                (the other one could really be whatever). Similarly for `is_codehash_proof`.
+                (the other one could really be whatever).
                 */
                 constraints.push((
-                    "If storage or nonce modification: S balance = C balance",
+                    "If storage / nonce / codehash modification: S balance = C balance",
                     q_enable.clone()
-                        * (is_storage_mod.clone() + is_nonce_mod.clone())
+                        * (is_storage_mod.clone() + is_nonce_mod.clone() + is_codehash_mod)
                         * (one.clone() - is_account_delete_mod.clone())
                         * (balance_s_from_cur.clone() - balance_stored.clone()),
                 ));
