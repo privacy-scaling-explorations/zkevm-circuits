@@ -16,6 +16,12 @@ use crate::{
     table::ExpTable,
 };
 
+/// The number of rows assigned for each step in an exponentiation trace.
+pub const OFFSET_INCREMENT: usize = 7usize;
+/// The number of rows required for the exponentiation table within the circuit
+/// for each step.
+pub const ROWS_PER_STEP: usize = 4usize;
+
 /// Layout for the Exponentiation circuit.
 #[derive(Clone, Debug)]
 pub struct ExpCircuit<F> {
@@ -287,9 +293,6 @@ impl<F: Field> ExpCircuit<F> {
         layouter: &mut impl Layouter<F>,
         block: &Block<F>,
     ) -> Result<(), Error> {
-        const OFFSET_INCREMENT: usize = 7usize;
-        const ROWS_PER_STEP: usize = 4usize;
-
         let mul_chip = MulAddChip::construct(self.mul_gadget.clone());
         let parity_check_chip = MulAddChip::construct(self.parity_check.clone());
 

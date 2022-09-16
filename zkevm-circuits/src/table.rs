@@ -2,6 +2,7 @@
 
 use crate::copy_circuit::number_or_hash_to_field;
 use crate::evm_circuit::util::{rlc, RandomLinearCombination};
+use crate::exp_circuit::{OFFSET_INCREMENT, ROWS_PER_STEP};
 use crate::impl_expr;
 use crate::util::build_tx_log_address;
 use crate::util::Challenges;
@@ -1221,16 +1222,6 @@ impl ExpTable {
             || "exponentiation table",
             |mut region| {
                 let mut offset = 0;
-                for column in self.columns() {
-                    region.assign_advice(
-                        || "exponentiation table all-zero row",
-                        column,
-                        offset,
-                        || Value::known(F::zero()),
-                    )?;
-                }
-
-                offset += 1;
                 let exp_table_columns = self.columns();
                 for exp_event in block.exp_events.iter() {
                     for row in Self::assignments::<F>(exp_event) {
@@ -1244,8 +1235,17 @@ impl ExpTable {
                         }
                         offset += 1;
                     }
+                    for i in ROWS_PER_STEP..OFFSET_INCREMENT {
+                        for column in exp_table_columns.iter() {
+                            region.assign_advice(
+                                || format!("exponentiation table: empty row: {}", offset + i),
+                                *column,
+                                offset + i,
+                                || Value::known(F::zero()),
+                            )?;
+                        }
+                    }
                 }
-
                 Ok(())
             },
         )
