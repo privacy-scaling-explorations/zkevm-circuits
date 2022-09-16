@@ -20,6 +20,7 @@ use eth_types::{
     Address, GethExecStep, ToAddress, ToBigEndian, Word, H256,
 };
 use ethers_core::utils::{get_contract_address, get_create2_address};
+use std::cmp::max;
 
 /// Reference to the internal state of the CircuitInputBuilder in a particular
 /// [`ExecStep`].
@@ -993,5 +994,33 @@ impl<'a> CircuitInputStateRef<'a> {
         }
 
         Ok(None)
+    }
+
+    /// Expand memory of the call context when entering a new call context in
+    /// case the call arguments or return arguments go beyond the call
+    /// context current memory.
+    pub(crate) fn call_expand_memory(
+        &mut self,
+        args_offset: usize,
+        args_length: usize,
+        ret_offset: usize,
+        ret_length: usize,
+    ) -> Result<(), Error> {
+        let call_ctx = self.call_ctx_mut()?;
+        let args_minimal = if args_length != 0 {
+            args_offset + args_length
+        } else {
+            0
+        };
+        let ret_minimal = if ret_length != 0 {
+            ret_offset + ret_length
+        } else {
+            0
+        };
+        if args_minimal != 0 || ret_minimal != 0 {
+            let minimal_length = max(args_minimal, ret_minimal);
+            call_ctx.memory.extend_at_least(minimal_length);
+        }
+        Ok(())
     }
 }
