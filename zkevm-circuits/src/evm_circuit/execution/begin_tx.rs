@@ -173,26 +173,30 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         }
 
         cb.require_step_state_transition(StepStateTransition {
-            // 19 read/write including:
-            //   - Read CallContext TxId
-            //   - Read CallContext RwCounterEndOfReversion
-            //   - Read CallContext IsPersistent
+            // 23 reads and writes:
+            //   - Write CallContext TxId
+            //   - Write CallContext RwCounterEndOfReversion
+            //   - Write CallContext IsPersistent
+            //   - Write CallContext IsSuccess
             //   - Write Account Nonce
             //   - Write TxAccessListAccount
             //   - Write TxAccessListAccount
             //   - Write Account Balance
             //   - Write Account Balance
             //   - Read Account CodeHash
-            //   - Read CallContext Depth
-            //   - Read CallContext CallerAddress
-            //   - Read CallContext CalleeAddress
-            //   - Read CallContext CallDataOffset
-            //   - Read CallContext CallDataLength
-            //   - Read CallContext Value
-            //   - Read CallContext IsStatic
-            //   - Read CallContext LastCalleeId
-            //   - Read CallContext LastCalleeReturnDataOffset
-            //   - Read CallContext LastCalleeReturnDataLength
+            //   - Write CallContext Depth
+            //   - Write CallContext CallerAddress
+            //   - Write CallContext CalleeAddress
+            //   - Write CallContext CallDataOffset
+            //   - Write CallContext CallDataLength
+            //   - Write CallContext Value
+            //   - Write CallContext IsStatic
+            //   - Write CallContext LastCalleeId
+            //   - Write CallContext LastCalleeReturnDataOffset
+            //   - Write CallContext LastCalleeReturnDataLength
+            //   - Write CallContext IsRoot
+            //   - Write CallContext IsCreate
+            //   - Write CallContext CodeHash
             rw_counter: Delta(23.expr()),
             call_id: To(call_id.expr()),
             is_root: To(true.expr()),
