@@ -16,9 +16,9 @@ use crate::{
     table::{AccountFieldTag, CallContextFieldTag},
 };
 use bus_mapping::circuit_input_builder::CopyDataType;
-use eth_types::{evm_types::GasCost, Field, ToAddress, ToLittleEndian, ToScalar, U256};
+use eth_types::{evm_types::GasCost, Field, ToAddress, ToLittleEndian, ToScalar};
 use gadgets::util::Expr;
-use halo2_proofs::plonk::Error;
+use halo2_proofs::{circuit::Value, plonk::Error};
 
 use super::ExecutionGadget;
 
@@ -176,7 +176,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
         )?;
 
         self.tx_id
-            .assign(region, offset, U256::from(transaction.id).to_scalar())?;
+            .assign(region, offset, Value::known(F::from(transaction.id as u64)))?;
         self.reversion_info.assign(
             region,
             offset,
@@ -189,12 +189,12 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
             _ => unreachable!(),
         };
         self.is_warm
-            .assign(region, offset, Some(F::from(is_warm)))?;
+            .assign(region, offset, Value::known(F::from(is_warm)))?;
 
         let code_hash = block.rws[step.rw_indices[8]]
             .table_assignment(block.randomness)
             .value;
-        self.code_hash.assign(region, offset, Some(code_hash))?;
+        self.code_hash.assign(region, offset, Value::known(code_hash))?;
 
         let (code, _) = block.rws[step.rw_indices[8]].account_value_pair();
         let bytecode = block
@@ -202,10 +202,17 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
             .get(&code)
             .expect("could not find external bytecode");
         self.code_size
-            .assign(region, offset, Some(F::from(bytecode.bytes.len() as u64)))?;
+            .assign(region, offset, Value::known(F::from(bytecode.bytes.len() as u64)))?;
 
-        self.copy_rwc_inc
-            .assign(region, offset, memory_length.to_scalar())?;
+        self.copy_rwc_inc.assign(
+            region,
+            offset,
+            Value::known(
+                memory_length
+                    .to_scalar()
+                    .expect("unexpected U256 -> Scalar conversion failure"),
+            ),
+        )?;
 
         let (_, memory_expansion_gas_cost) = self.memory_expansion.assign(
             region,
