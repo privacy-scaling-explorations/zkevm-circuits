@@ -1,8 +1,9 @@
 //! Mock Block definition and builder related methods.
 
 use crate::{MockTransaction, MOCK_CHAIN_ID};
-use eth_types::{Address, Block, Bytes, Hash, Transaction, Word, U64};
-use ethbloom::Bloom;
+use eth_types::{Address, Block, Bytes, Hash, Transaction, Word, H64, U64};
+use ethers_core::types::Bloom;
+use ethers_core::types::OtherFields;
 
 #[derive(Clone, Debug)]
 /// Mock structure which represents an Ethereum Block and can be used for tests.
@@ -30,7 +31,7 @@ pub struct MockBlock {
     pub(crate) transactions: Vec<MockTransaction>,
     size: Word,
     mix_hash: Hash,
-    nonce: U64,
+    nonce: H64,
     // This field is handled here as we assume that all block txs have the same ChainId.
     // Also, the field is stored in the block_table since we don't have a chain_config
     // structure/table.
@@ -61,7 +62,7 @@ impl Default for MockBlock {
             transactions: Vec::new(),
             size: Word::zero(),
             mix_hash: Hash::zero(),
-            nonce: U64::zero(),
+            nonce: H64::zero(),
             chain_id: *MOCK_CHAIN_ID,
         }
     }
@@ -73,7 +74,7 @@ impl From<MockBlock> for Block<Transaction> {
             hash: mock.hash.or_else(|| Some(Hash::default())),
             parent_hash: mock.parent_hash,
             uncles_hash: mock.uncles_hash,
-            author: mock.author,
+            author: Some(mock.author),
             state_root: mock.state_root,
             transactions_root: mock.transactions_root,
             receipts_root: mock.receipts_root,
@@ -96,6 +97,7 @@ impl From<MockBlock> for Block<Transaction> {
             mix_hash: Some(mock.mix_hash),
             nonce: Some(mock.nonce),
             base_fee_per_gas: Some(mock.base_fee_per_gas),
+            other: OtherFields::default(),
         }
     }
 }
@@ -106,7 +108,7 @@ impl From<MockBlock> for Block<()> {
             hash: mock.hash.or_else(|| Some(Hash::default())),
             parent_hash: mock.parent_hash,
             uncles_hash: mock.uncles_hash,
-            author: mock.author,
+            author: Some(mock.author),
             state_root: mock.state_root,
             transactions_root: mock.transactions_root,
             receipts_root: mock.receipts_root,
@@ -125,6 +127,7 @@ impl From<MockBlock> for Block<()> {
             mix_hash: Some(mock.mix_hash),
             nonce: Some(mock.nonce),
             base_fee_per_gas: Some(mock.base_fee_per_gas),
+            other: OtherFields::default(),
         }
     }
 }
@@ -261,8 +264,8 @@ impl MockBlock {
     }
 
     /// Set nonce field for the MockBlock.
-    pub fn nonce(&mut self, nonce: u64) -> &mut Self {
-        self.nonce = U64::from(nonce);
+    pub fn nonce(&mut self, nonce: H64) -> &mut Self {
+        self.nonce = nonce;
         self
     }
 

@@ -1,17 +1,20 @@
 //! The EVM circuit implementation.
 
 #![allow(missing_docs)]
-use halo2_proofs::{circuit::Layouter, plonk::*};
+use halo2_proofs::{
+    circuit::{Layouter, Value},
+    plonk::*,
+};
 
 mod execution;
 pub mod param;
-mod step;
+pub(crate) mod step;
 pub(crate) mod util;
 
 pub mod table;
-pub mod witness;
 
 use crate::table::LookupTable;
+pub use crate::witness;
 use eth_types::Field;
 use execution::ExecutionConfig;
 use itertools::Itertools;
@@ -23,7 +26,7 @@ use witness::Block;
 pub struct EvmCircuit<F> {
     fixed_table: [Column<Fixed>; 4],
     byte_table: [Column<Fixed>; 1],
-    execution: Box<ExecutionConfig<F>>,
+    pub(crate) execution: Box<ExecutionConfig<F>>,
 }
 
 impl<F: Field> EvmCircuit<F> {
@@ -75,7 +78,7 @@ impl<F: Field> EvmCircuit<F> {
                     .enumerate()
                 {
                     for (column, value) in self.fixed_table.iter().zip_eq(row) {
-                        region.assign_fixed(|| "", *column, offset, || Ok(value))?;
+                        region.assign_fixed(|| "", *column, offset, || Value::known(value))?;
                     }
                 }
 
@@ -94,7 +97,7 @@ impl<F: Field> EvmCircuit<F> {
                         || "",
                         self.byte_table[0],
                         offset,
-                        || Ok(F::from(offset as u64)),
+                        || Value::known(F::from(offset as u64)),
                     )?;
                 }
 
@@ -113,8 +116,8 @@ impl<F: Field> EvmCircuit<F> {
         Ok(())
     }
 
-    /// Assign exact steps in block without padding for unit test purpose
     #[cfg(any(feature = "test", test))]
+    /// Assign exact steps in block without padding for unit test purpose
     pub fn assign_block_exact(
         &self,
         layouter: &mut impl Layouter<F>,
@@ -153,7 +156,7 @@ pub mod test {
         table::{BlockTable, BytecodeTable, CopyTable, KeccakTable, RwTable, TxTable},
         util::power_of_randomness_from_instance,
     };
-    use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId};
+    use bus_mapping::evm::OpcodeId;
     use eth_types::{Field, Word};
     use halo2_proofs::{
         circuit::{Layouter, SimpleFloorPlanner},
@@ -307,21 +310,13 @@ pub mod test {
             config
                 .copy_table
                 .load(&mut layouter, &self.block, self.block.randomness)?;
-            config.keccak_table.load(
+
+            config.keccak_table.dev_load(
                 &mut layouter,
-                self.block
-                    .copy_events
-                    .iter()
-                    .filter(|ce| ce.dst_type == CopyDataType::RlcAcc)
-                    .map(|ce| {
-                        ce.steps
-                            .iter()
-                            .filter(|s| s.rw.is_write())
-                            .map(|s| s.value)
-                            .collect::<Vec<u8>>()
-                    }),
+                &self.block.sha3_inputs,
                 self.block.randomness,
             )?;
+
             config
                 .evm_circuit
                 .assign_block_exact(&mut layouter, &self.block)
@@ -376,18 +371,24 @@ pub mod test {
 
 #[cfg(test)]
 mod evm_circuit_stats {
+
     use super::test::*;
     use super::*;
     use crate::evm_circuit::step::ExecutionState;
     use eth_types::{bytecode, evm_types::OpcodeId, geth_types::GethData};
-    use halo2_proofs::pairing::bn256::Fr;
+    use halo2_proofs::halo2curves::bn256::Fr;
     use halo2_proofs::plonk::ConstraintSystem;
     use mock::test_ctx::{helpers::*, TestContext};
     use strum::IntoEnumIterator;
 
+    #[test]
+    pub fn empty_evm_circuit() {
+        run_test_circuit(Block::<Fr>::default()).unwrap();
+    }
+
     /// This function prints to stdout a table with all the implemented states
     /// and their responsible opcodes with the following stats:
-    /// - height: number of rows used by the execution state
+    /// - height: number of rows in the EVM circuit used by the execution state
     /// - gas: gas value used for the opcode execution
     /// - height/gas: ratio between circuit cost and gas cost
     ///

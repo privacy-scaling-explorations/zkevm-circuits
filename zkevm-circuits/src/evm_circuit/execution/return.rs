@@ -15,7 +15,7 @@ use crate::{
 };
 use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId};
 use eth_types::{Field, ToScalar};
-use halo2_proofs::plonk::Error;
+use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct ReturnGadget<F> {
@@ -188,6 +188,9 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
             F::from(call.return_data_length),
             F::from(length.as_u64()),
         )?;
+        let opcode = step.opcode.unwrap();
+        self.opcode
+            .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
 
         Ok(())
     }

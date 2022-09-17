@@ -20,7 +20,7 @@ mod chainid_tests {
             STOP
         };
 
-        // Geth the execution steps from the external tracer
+        // Get the execution steps from the external tracer
         let block: GethData = TestContext::<2, 1>::new(
             None,
             account_0_code_account_1_no_code(code),

@@ -26,7 +26,7 @@ test_doc: ## Test the docs
 test_benches: ## Compiles the benchmarks
 	@cargo test --verbose --release --all-features -p circuit-benchmarks --no-run
 
-test-all: fmt doc clippy test_doc test_benches test ## Run all the CI checks locally (in your actual toolchain) 
+test-all: fmt doc clippy test_doc test_benches test ## Run all the CI checks locally (in your actual toolchain)
 
 evm_bench: ## Run Evm Circuit benchmarks
 	@cargo test --profile bench bench_evm_circuit_prover -p circuit-benchmarks --features benches  -- --nocapture
@@ -36,6 +36,15 @@ state_bench: ## Run State Circuit benchmarks
 
 keccak_round_bench: ## Run State Circuit benchmarks
 	@cargo test --profile bench bench_keccak_round -p circuit-benchmarks --features benches  -- --nocapture
+
+bit_keccak_bench: ## Run Bit Keccak Circuit benchmarks
+	@cargo test --profile bench bench_bit_keccak_circuit_prover -p circuit-benchmarks --features benches  -- --nocapture
+
+packed_keccak_bench: ## Run Packed Keccak Circuit benchmarks
+	@cargo test --profile bench bench_packed_keccak_circuit_prover -p circuit-benchmarks --features benches  -- --nocapture
+
+packed_multi_keccak_bench: ## Run Packed Multi Keccak Circuit benchmarks
+	@cargo test --profile bench bench_packed_multi_keccak_circuit_prover -p circuit-benchmarks --features benches  -- --nocapture
 
 circuit_benches: evm_bench state_bench ## Run All Circuit benchmarks
 

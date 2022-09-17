@@ -1,7 +1,7 @@
 use super::{StateCircuit, StateCircuitConfig};
 use crate::{
-    evm_circuit::witness::{Rw, RwMap},
     table::{AccountFieldTag, CallContextFieldTag, RwTableTag, TxLogFieldTag, TxReceiptFieldTag},
+    witness::{MptUpdates, Rw, RwMap},
 };
 use bus_mapping::operation::{
     MemoryOp, Operation, OperationContainer, RWCounter, StackOp, StorageOp, RW,
@@ -12,12 +12,13 @@ use eth_types::{
     Address, Field, ToAddress, Word, U256,
 };
 use gadgets::binary_number::AsBits;
-use halo2_proofs::poly::commitment::Params;
+use halo2_proofs::poly::kzg::commitment::ParamsKZG;
 use halo2_proofs::{
     dev::{MockProver, VerifyFailure},
-    pairing::bn256::{Bn256, Fr, G1Affine},
+    halo2curves::bn256::{Bn256, Fr},
     plonk::{keygen_vk, Advice, Circuit, Column, ConstraintSystem},
 };
+use rand::SeedableRng;
 use std::collections::{BTreeSet, HashMap};
 use strum::IntoEnumIterator;
 
@@ -103,14 +104,13 @@ fn test_state_circuit_ok(
 fn degree() {
     let mut meta = ConstraintSystem::<Fr>::default();
     StateCircuit::<Fr>::configure(&mut meta);
-    assert_eq!(meta.degree(), 9);
+    assert_eq!(meta.degree(), 12);
 }
 
 #[test]
 fn verifying_key_independent_of_rw_length() {
     let randomness = Fr::from(0xcafeu64);
-    let degree = 17;
-    let params = Params::<G1Affine>::unsafe_setup::<Bn256>(degree);
+    let params = ParamsKZG::<Bn256>::setup(17, rand_chacha::ChaCha20Rng::seed_from_u64(2));
 
     let no_rows = StateCircuit::<Fr>::new(randomness, RwMap::default(), N_ROWS);
     let one_row = StateCircuit::<Fr>::new(
@@ -425,7 +425,7 @@ fn address_limb_mismatch() {
         value: U256::zero(),
         value_prev: U256::zero(),
     }];
-    let overrides = HashMap::from([((AdviceColumn::Address, 0), Fr::from(10))]);
+    let overrides = HashMap::from([((AdviceColumn::AddressLimb0, 0), Fr::zero())]);
 
     let result = verify_with_overrides(rows, overrides);
 
@@ -464,7 +464,7 @@ fn storage_key_mismatch() {
         tx_id: 4,
         committed_value: U256::from(34),
     }];
-    let overrides = HashMap::from([((AdviceColumn::StorageKey, 0), Fr::from(10))]);
+    let overrides = HashMap::from([((AdviceColumn::StorageKeyByte1, 0), Fr::one())]);
 
     let result = verify_with_overrides(rows, overrides);
 
@@ -484,8 +484,9 @@ fn storage_key_byte_out_of_range() {
         committed_value: U256::from(500),
     }];
     let overrides = HashMap::from([
-        ((AdviceColumn::StorageKey, 0), Fr::from(256)),
-        ((AdviceColumn::StorageKeyByte0, 0), Fr::from(256)),
+        ((AdviceColumn::StorageKeyByte0, 0), Fr::from(0xcafeu64)), /* 0xcafeu64 is the fixed
+                                                                    * "randomness" we use for
+                                                                    * this test. */
         ((AdviceColumn::StorageKeyByte1, 0), Fr::zero()),
     ]);
 
@@ -958,7 +959,7 @@ fn bad_initial_tx_log_value() {
 }
 
 #[test]
-#[ignore = ""]
+#[ignore = "TxReceipt constraints not yet implemented"]
 fn bad_initial_tx_receipt_value() {
     let rows = vec![Rw::TxReceipt {
         rw_counter: 1,
@@ -981,9 +982,11 @@ fn bad_initial_tx_receipt_value() {
 
 fn prover(rows: Vec<Rw>, overrides: HashMap<(AdviceColumn, isize), Fr>) -> MockProver<Fr> {
     let randomness = Fr::from(0xcafeu64);
+    let updates = MptUpdates::mock_from(&rows);
     let circuit = StateCircuit::<Fr> {
         randomness,
         rows,
+        updates,
         overrides,
         n_rows: N_ROWS,
     };
