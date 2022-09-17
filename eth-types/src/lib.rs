@@ -185,6 +185,16 @@ impl ToWord for Address {
     }
 }
 
+impl ToWord for bool {
+    fn to_word(&self) -> Word {
+        if *self {
+            Word::one()
+        } else {
+            Word::zero()
+        }
+    }
+}
+
 impl<F: Field> ToScalar<F> for Address {
     fn to_scalar(&self) -> Option<F> {
         let mut bytes = [0u8; 32];
