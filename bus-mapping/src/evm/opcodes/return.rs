@@ -131,13 +131,12 @@ fn handle_copy(
     destination: Destination,
 ) -> Result<(), Error> {
     let copy_length = std::cmp::min(source.length, destination.length);
-    let rw_counter_start = state.block_ctx.rwc;
-
     let bytes: Vec<_> = state.call_ctx()?.memory.0[source.offset..source.offset + copy_length]
         .iter()
         .map(|byte| (*byte, false))
         .collect();
 
+    let rw_counter_start = state.block_ctx.rwc;
     for (i, (byte, _is_code)) in bytes.iter().enumerate() {
         state.push_op(
             step,
@@ -172,17 +171,15 @@ fn handle_create(
     step: &mut ExecStep,
     source: Source,
 ) -> Result<(), Error> {
-    let bytes = state.call_ctx()?.memory.0[source.offset..source.offset + source.length].to_vec();
-    let bytecode = Bytecode::from(bytes.clone());
-    let rw_counter_start = state.block_ctx.rwc;
-    let bytes: Vec<_> = bytecode
+    let values = state.call_ctx()?.memory.0[source.offset..source.offset + source.length].to_vec();
+    let dst_id = NumberOrHash::Hash(H256(keccak256(&values)));
+    let bytes: Vec<_> = Bytecode::from(values)
         .code
         .iter()
         .map(|element| (element.value, element.is_code))
         .collect();
 
-    let dst_id = NumberOrHash::Hash(H256(keccak256(&bytecode.to_vec())));
-
+    let rw_counter_start = state.block_ctx.rwc;
     for (i, (byte, _)) in bytes.iter().enumerate() {
         state.push_op(
             step,

@@ -90,17 +90,27 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
         cb.condition(
             not::expr(is_create.expr()) * not::expr(is_root.expr()) * range.has_length(),
             |cb| {
+                let source_id = cb.curr.state.call_id.expr();
+                let source_tag = CopyDataType::Memory.expr();
+                let destination_id = caller_id.expr();
+                let destination_tag = CopyDataType::Memory.expr();
+                let source_address_start = range.offset();
+                let source_address_end = range.offset() + copy_length.clone();
+                let destination_address_start = return_data_offset.expr();
+                let rlc_acc = 0.expr();
+                let rw_counter_start =
+                    cb.curr.state.rw_counter.expr() + cb.rw_counter_offset().expr();
                 cb.copy_table_lookup(
-                    cb.curr.state.call_id.expr(),
-                    CopyDataType::Memory.expr(),
-                    caller_id.expr(),
-                    CopyDataType::Memory.expr(),
-                    range.offset(),
-                    range.offset() + copy_length.clone(),
-                    return_data_offset.expr(),
+                    source_id,
+                    source_tag,
+                    destination_id,
+                    destination_tag,
+                    source_address_start,
+                    source_address_end,
+                    destination_address_start,
                     copy_length.clone(),
-                    0.expr(),
-                    cb.curr.state.rw_counter.expr() + cb.rw_counter_offset().expr(),
+                    rlc_acc,
+                    rw_counter_start,
                     copy_length.clone() + copy_length,
                 );
             },
@@ -108,20 +118,8 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
 
         cb.condition(
             is_create.expr() * is_success.expr() * range.has_length(),
-            |cb| {
-                cb.copy_table_lookup(
-                    cb.curr.state.call_id.expr(),  // source id
-                    CopyDataType::Memory.expr(),   // source tag
-                    caller_id.expr(),              // destination id
-                    CopyDataType::Bytecode.expr(), // destination tag
-                    range.offset(),                // source address
-                    range.address(),               //
-                    0.expr(),                      // destination address
-                    range.length(),                // length
-                    0.expr(),
-                    cb.curr.state.rw_counter.expr() + cb.rw_counter_offset().expr(),
-                    range.length(),
-                );
+            |_cb| {
+                // TODO: copy_table_lookup for contract creation
             },
         );
 
