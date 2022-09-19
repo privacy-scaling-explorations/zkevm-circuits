@@ -72,6 +72,11 @@ use crate::{
     witness::block_convert,
 };
 use bus_mapping::mock::BlockData;
+use bus_mapping::circuit_input_builder::CircuitInputBuilder;
+use eth_types::{
+    {geth_types::Transaction},
+};
+
 use eth_types::geth_types::{self, GethData};
 use halo2_proofs::arithmetic::{CurveAffine, Field as Halo2Field};
 use halo2_proofs::halo2curves::{
@@ -336,6 +341,67 @@ impl<const MAX_TXS: usize, const MAX_CALLDATA: usize> SuperCircuit<Fr, MAX_TXS, 
         };
         Ok((k, circuit, instance))
     }
+
+    /// From the witness data, generate a SuperCircuit instance with all of the
+    /// sub-circuits filled with their corresponding witnesses.
+    ///
+    /// Also, return with it the minimum required SRS degree for the circuit and
+    /// the Public Inputs needed.
+    pub fn build_with_builder(
+        builder: CircuitInputBuilder,
+        eth_block: eth_types::Block<eth_types::Transaction>,
+        rng: &mut (impl RngCore + Clone),
+    ) -> Result<(u32, Self, Vec<Vec<Fr>>), bus_mapping::Error> {
+        let keccak_inputs = builder.keccak_inputs()?;
+        let mut block = block_convert(&builder.block, &builder.code_db);
+
+        block.randomness = Fr::random(rng.clone());
+        let aux_generator = <Secp256k1Affine as CurveAffine>::CurveExt::random(rng).to_affine();
+
+        let fixed_table_tags: Vec<FixedTableTag> = FixedTableTag::iter().collect();
+        let log2_ceil = |n| u32::BITS - (n as u32).leading_zeros() - (n & (n - 1) == 0) as u32;
+
+        let num_rows_required_for_steps =
+            SuperCircuit::<_, MAX_TXS, MAX_CALLDATA>::get_num_rows_required(&block);
+
+        let k = log2_ceil(
+            64 + fixed_table_tags
+                .iter()
+                .map(|tag| tag.build::<Fr>().count())
+                .sum::<usize>(),
+        );
+        let bytecodes_len = block
+            .bytecodes
+            .iter()
+            .map(|(_, bytecode)| bytecode.bytes.len())
+            .sum::<usize>();
+        let k = k.max(log2_ceil(64 + bytecodes_len));
+        let k = k.max(log2_ceil(64 + num_rows_required_for_steps));
+        let k = k + 1;
+
+        let mut instance: Vec<Vec<Fr>> = (1..POW_RAND_SIZE + 1)
+            .map(|exp| vec![block.randomness.pow_vartime(&[exp as u64, 0, 0, 0]); (1 << k) - 64])
+            .collect();
+        // SignVerifyChip -> ECDSAChip -> MainGate instance column
+        instance.push(vec![]);
+
+        let chain_id = block.context.chain_id;
+        let txs: Vec<Transaction> = eth_block.transactions.iter().map(|tx| Transaction::from(tx)).collect();
+        let tx_circuit = TxCircuit::new(aux_generator, block.randomness, chain_id.as_u64(), txs);
+
+        let circuit = SuperCircuit::<_, MAX_TXS, MAX_CALLDATA> {
+            block,
+            fixed_table_tags,
+            tx_circuit,
+            keccak_inputs,
+            // Instead of using 1 << k - NUM_BLINDING_ROWS, we use a much smaller number of enabled
+            // rows for the Bytecode Circuit because otherwise it penalizes significantly the
+            // MockProver verification time.
+            bytecode_size: bytecodes_len + 64,
+        };
+        Ok((k, circuit, instance))
+    }
+
 }
 
 #[cfg(test)]
