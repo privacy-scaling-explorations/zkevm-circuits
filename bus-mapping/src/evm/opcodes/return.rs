@@ -62,22 +62,7 @@ impl Opcode for Return {
         let offset = offset.as_usize();
         let length = length.as_usize();
         if call.is_create() && call.is_success {
-            // assert!(offset + length <= memory.0.len());
-            // let code = memory.0[offset..offset + length].to_vec();
-            // // TODO: is this already handled by state.handle_return(step)
-            // below? state.code_db.insert(code);
-            // // Warning: this isn't covered in any test!
-            // if length > 0 {
-            //     handle_create(
-            //         state,
-            //         &mut exec_step,
-            //         Source {
-            //             id: call.call_id,
-            //             offset,
-            //             length,
-            //         },
-            //     )?;
-            // }
+            unimplemented!();
         } else if !is_root {
             let caller_ctx = state.caller_ctx_mut()?;
             let return_offset = call.return_data_offset.try_into().unwrap();
