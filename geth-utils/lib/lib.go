@@ -13,6 +13,7 @@ import (
 
 // TODO: Add proper error handling.  For example, return an int, where 0 means
 // ok, and !=0 means error.
+//
 //export CreateTrace
 func CreateTrace(configStr *C.char) *C.char {
 	var config gethutil.TraceConfig
@@ -27,9 +28,6 @@ func CreateTrace(configStr *C.char) *C.char {
 	}
 
 	bytes, err := json.MarshalIndent(executionResults, "", "  ")
-	if len(bytes) > 10000000 {
-		return C.CString(fmt.Sprintf("Failed to process trace, err: bigger than 10MB (%v)",len(bytes)))
-	}
 
 	if err != nil {
 		return C.CString(fmt.Sprintf("Failed to marshal []ExecutionResult, err: %v", err))
