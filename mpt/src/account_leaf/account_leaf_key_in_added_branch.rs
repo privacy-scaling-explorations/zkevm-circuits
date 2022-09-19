@@ -14,6 +14,35 @@ use crate::{
     param::{IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, ACCOUNT_DRIFTED_LEAF_IND, BRANCH_ROWS_NUM, ACCOUNT_LEAF_KEY_S_IND, ACCOUNT_LEAF_KEY_C_IND, ACCOUNT_LEAF_NONCE_BALANCE_S_IND, ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND, ACCOUNT_LEAF_NONCE_BALANCE_C_IND, ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND}, columns::{MainCols, AccumulatorCols, DenoteCols},
 };
 
+/*
+An account leaf occupies 8 rows.
+Contrary as in the branch rows, the `S` and `C` leaves are not positioned parallel to each other.
+The rows are the following:
+ACCOUNT_LEAF_KEY_S
+ACCOUNT_LEAF_KEY_C
+ACCOUNT_NON_EXISTING
+ACCOUNT_LEAF_NONCE_BALANCE_S
+ACCOUNT_LEAF_NONCE_BALANCE_C
+ACCOUNT_LEAF_STORAGE_CODEHASH_S
+ACCOUNT_LEAF_STORAGE_CODEHASH_C
+ACCOUNT_DRIFTED_LEAF
+
+An example of leaf rows:
+[248 102 157 55 236 125 29 155 142 209 241 75 145 144 143 254 65 81 209 56 13 192 157 236 195 213 73 132 11 251 149 241 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 6]
+[248 102 157 32 133 130 180 167 143 97 28 115 102 25 94 62 148 249 8 6 55 244 16 75 187 208 208 127 251 120 61 73 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 4]
+[0 0 157 32 133 130 180 167 143 97 28 115 102 25 94 62 148 249 8 6 55 244 16 75 187 208 208 127 251 120 61 73 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 18]
+[184 70 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 248 68 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 7]
+[184 70 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 248 68 23 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 8]
+[0 160 112 158 181 221 162 20 124 79 184 25 162 13 167 162 146 25 237 242 59 120 184 154 118 137 92 181 187 152 115 82 223 48 0 160 7 190 1 231 231 32 111 227 30 206 233 26 215 93 173 166 90 214 186 67 58 230 71 161 185 51 4 105 247 198 103 124 0 9]
+[0 160 112 158 181 221 162 20 124 79 184 25 162 13 167 162 146 25 237 242 59 120 184 154 118 137 92 181 187 152 115 82 223 48 0 160 7 190 1 231 231 32 111 227 30 206 233 26 215 93 173 166 90 214 186 67 58 230 71 161 185 51 4 105 247 198 103 124 0 11]
+[248 102 157 32 236 125 29 155 142 209 241 75 145 144 143 254 65 81 209 56 13 192 157 236 195 213 73 132 11 251 149 241 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 6 10]
+
+The `ACCOUNT_LEAF_DRIFTED` row is nonempty when a leaf is added (or deleted) to the position in trie where there is already
+an existing leaf. This appears when an existing leaf and a newly added leaf have the same initial key nibbles.
+In this case, a new branch is created and both leaves (existing and newly added) appear in the new branch.
+`ACCOUNT_LEAF_DRIFTED` row contains the key bytes of the existing leaf once it drifted down to the new branch.
+*/
+
 use crate::param::{
     HASH_WIDTH, IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS, KECCAK_INPUT_WIDTH,
     KECCAK_OUTPUT_WIDTH, RLP_NUM, R_TABLE_LEN,
@@ -40,9 +69,11 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
     ) -> Self {
         let config = AccountLeafKeyInAddedBranchConfig { _marker: PhantomData };
 
-        // Note: q_enable switches off the first level, there is no need for checks
-        // for the first level because when the leaf appears in an added branch, it is at least
-        // in the second level (added branch being above it).
+        /*
+        Note: `q_enable` switches off the first level, there is no need for checks
+        for the first level because when the leaf appears in an added branch it is at least
+        in the second level (added branch being above it).
+        */
 
         let one = Expression::Constant(F::one());
         let c16 = Expression::Constant(F::from(16_u64));
@@ -199,7 +230,6 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
           Leaf S (leaf to be deleted)     || Leaf C
           Leaf to be drifted one level up || 
         */
-
         meta.create_gate("Account drifted leaf key RLC", |meta| {
             // Drifted leaf in added branch has the same key as it had it before it drifted down to the new branch.
             let q_enable = q_enable(meta);
