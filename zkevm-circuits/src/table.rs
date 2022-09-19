@@ -3,8 +3,9 @@
 use crate::copy_circuit::number_or_hash_to_field;
 use crate::evm_circuit::util::{rlc, RandomLinearCombination};
 use crate::impl_expr;
-use crate::witness::{Block, BlockContext, Bytecode, RwMap, Transaction};
-use crate::witness::{Rw, RwRow};
+use crate::witness::{
+    Block, BlockContext, Bytecode, MptUpdateRow, MptUpdates, Rw, RwMap, RwRow, Transaction,
+};
 use bus_mapping::circuit_input_builder::{CopyDataType, CopyEvent};
 use eth_types::{Field, ToAddress, ToLittleEndian, ToScalar, Word, U256};
 use gadgets::binary_number::{BinaryNumberChip, BinaryNumberConfig};
@@ -208,7 +209,7 @@ impl From<RwTableTag> for usize {
 }
 
 /// Tag for an AccountField in RwTable
-#[derive(Clone, Copy, Debug, EnumIter)]
+#[derive(Clone, Copy, Debug, EnumIter, Hash, PartialEq, Eq)]
 pub enum AccountFieldTag {
     /// Nonce field
     Nonce = 1,
@@ -393,7 +394,7 @@ impl RwTable {
         Ok(())
     }
 
-    /// Assign the `RwTable` from a `RwMap`, followig the same
+    /// Assign the `RwTable` from a `RwMap`, following the same
     /// table layout that the State Circuit uses.
     pub fn load<F: Field>(
         &self,
@@ -418,6 +419,91 @@ impl RwTable {
         let (rows, _) = RwMap::table_assignments_prepad(rws, n_rows);
         for (offset, row) in rows.iter().enumerate() {
             self.assign(region, offset, &row.table_assignment(randomness))?;
+        }
+        Ok(())
+    }
+}
+
+/// The types of proofs in the MPT table
+pub enum ProofType {
+    /// Nonce updated
+    NonceChanged = AccountFieldTag::Nonce as isize,
+    /// Balance updated
+    BalanceChanged = AccountFieldTag::Balance as isize,
+    /// Code hash exists
+    CodeHashExists = AccountFieldTag::CodeHash as isize,
+    /// Account destroyed
+    AccountDestructed,
+    /// Account does not exist
+    AccountDoesNotExist,
+    /// Storage updated
+    StorageChanged,
+}
+impl_expr!(ProofType);
+
+impl From<AccountFieldTag> for ProofType {
+    fn from(tag: AccountFieldTag) -> Self {
+        match tag {
+            AccountFieldTag::Nonce => Self::NonceChanged,
+            AccountFieldTag::Balance => Self::BalanceChanged,
+            AccountFieldTag::CodeHash => Self::CodeHashExists,
+        }
+    }
+}
+
+/// The MptTable shared between MPT Circuit and State Circuit
+#[derive(Clone, Copy, Debug)]
+pub struct MptTable([Column<Advice>; 7]);
+
+impl DynamicTableColumns for MptTable {
+    fn columns(&self) -> Vec<Column<Advice>> {
+        self.0.to_vec()
+    }
+}
+
+impl MptTable {
+    /// Construct a new MptTable
+    pub(crate) fn construct<F: FieldExt>(meta: &mut ConstraintSystem<F>) -> Self {
+        Self([0; 7].map(|_| meta.advice_column()))
+    }
+
+    pub(crate) fn assign<F: Field>(
+        &self,
+        region: &mut Region<'_, F>,
+        offset: usize,
+        row: &MptUpdateRow<F>,
+    ) -> Result<(), Error> {
+        for (column, value) in self.0.iter().zip_eq(row.values()) {
+            region.assign_advice(
+                || "assign mpt table row value",
+                *column,
+                offset,
+                || Value::known(*value),
+            )?;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn load<F: Field>(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        updates: &MptUpdates,
+        randomness: F,
+    ) -> Result<(), Error> {
+        layouter.assign_region(
+            || "mpt table",
+            |mut region| self.load_with_region(&mut region, updates, randomness),
+        )
+    }
+
+    pub(crate) fn load_with_region<F: Field>(
+        &self,
+        region: &mut Region<'_, F>,
+        updates: &MptUpdates,
+        randomness: F,
+    ) -> Result<(), Error> {
+        for (offset, row) in updates.table_assignments(randomness).iter().enumerate() {
+            self.assign(region, offset, row)?;
         }
         Ok(())
     }
