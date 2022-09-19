@@ -56,7 +56,7 @@ use crate::bytecode_circuit::bytecode_unroller::{
 };
 
 use crate::evm_circuit::{table::FixedTableTag, EvmCircuit};
-use crate::table::{BlockTable, BytecodeTable, CopyTable, RwTable, TxTable};
+use crate::table::{BlockTable, BytecodeTable, CopyTable, MptTable, RwTable, TxTable};
 use crate::util::power_of_randomness_from_instance;
 use crate::witness::Block;
 use eth_types::Field;
@@ -87,6 +87,7 @@ use strum::IntoEnumIterator;
 pub struct SuperCircuitConfig<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> {
     tx_table: TxTable,
     rw_table: RwTable,
+    mpt_table: MptTable,
     bytecode_table: BytecodeTable,
     block_table: BlockTable,
     copy_table: CopyTable,
@@ -143,6 +144,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
         let tx_table = TxTable::construct(meta);
         let rw_table = RwTable::construct(meta);
+        let mpt_table = MptTable::construct(meta);
         let bytecode_table = BytecodeTable::construct(meta);
         let block_table = BlockTable::construct(meta);
         let q_copy_table = meta.fixed_column();
@@ -166,11 +168,13 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
             meta,
             power_of_randomness[..31].to_vec().try_into().unwrap(),
             &rw_table,
+            &mpt_table,
         );
 
         Self::Config {
             tx_table: tx_table.clone(),
             rw_table,
+            mpt_table,
             bytecode_table: bytecode_table.clone(),
             block_table,
             copy_table,

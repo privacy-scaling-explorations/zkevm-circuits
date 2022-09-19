@@ -3,8 +3,9 @@
 use crate::copy_circuit::number_or_hash_to_field;
 use crate::evm_circuit::util::{rlc, RandomLinearCombination};
 use crate::impl_expr;
-use crate::witness::{Block, BlockContext, Bytecode, RwMap, Transaction};
-use crate::witness::{Rw, RwRow};
+use crate::witness::{
+    Block, BlockContext, Bytecode, MptUpdateRow, MptUpdates, Rw, RwMap, RwRow, Transaction,
+};
 use bus_mapping::circuit_input_builder::{CopyDataType, CopyEvent};
 use eth_types::{Field, ToAddress, ToLittleEndian, ToScalar, Word, U256};
 use gadgets::binary_number::{BinaryNumberChip, BinaryNumberConfig};
@@ -208,7 +209,7 @@ impl From<RwTableTag> for usize {
 }
 
 /// Tag for an AccountField in RwTable
-#[derive(Clone, Copy, Debug, EnumIter)]
+#[derive(Clone, Copy, Debug, EnumIter, Hash, PartialEq, Eq)]
 pub enum AccountFieldTag {
     /// Nonce field
     Nonce = 1,
@@ -393,7 +394,7 @@ impl RwTable {
         Ok(())
     }
 
-    /// Assign the `RwTable` from a `RwMap`, followig the same
+    /// Assign the `RwTable` from a `RwMap`, following the same
     /// table layout that the State Circuit uses.
     pub fn load<F: Field>(
         &self,
@@ -418,6 +419,91 @@ impl RwTable {
         let (rows, _) = RwMap::table_assignments_prepad(rws, n_rows);
         for (offset, row) in rows.iter().enumerate() {
             self.assign(region, offset, &row.table_assignment(randomness))?;
+        }
+        Ok(())
+    }
+}
+
+/// The types of proofs in the MPT table
+pub enum ProofType {
+    /// Nonce updated
+    NonceChanged = AccountFieldTag::Nonce as isize,
+    /// Balance updated
+    BalanceChanged = AccountFieldTag::Balance as isize,
+    /// Code hash exists
+    CodeHashExists = AccountFieldTag::CodeHash as isize,
+    /// Account destroyed
+    AccountDestructed,
+    /// Account does not exist
+    AccountDoesNotExist,
+    /// Storage updated
+    StorageChanged,
+}
+impl_expr!(ProofType);
+
+impl From<AccountFieldTag> for ProofType {
+    fn from(tag: AccountFieldTag) -> Self {
+        match tag {
+            AccountFieldTag::Nonce => Self::NonceChanged,
+            AccountFieldTag::Balance => Self::BalanceChanged,
+            AccountFieldTag::CodeHash => Self::CodeHashExists,
+        }
+    }
+}
+
+/// The MptTable shared between MPT Circuit and State Circuit
+#[derive(Clone, Copy, Debug)]
+pub struct MptTable([Column<Advice>; 7]);
+
+impl DynamicTableColumns for MptTable {
+    fn columns(&self) -> Vec<Column<Advice>> {
+        self.0.to_vec()
+    }
+}
+
+impl MptTable {
+    /// Construct a new MptTable
+    pub(crate) fn construct<F: FieldExt>(meta: &mut ConstraintSystem<F>) -> Self {
+        Self([0; 7].map(|_| meta.advice_column()))
+    }
+
+    pub(crate) fn assign<F: Field>(
+        &self,
+        region: &mut Region<'_, F>,
+        offset: usize,
+        row: &MptUpdateRow<F>,
+    ) -> Result<(), Error> {
+        for (column, value) in self.0.iter().zip_eq(row.values()) {
+            region.assign_advice(
+                || "assign mpt table row value",
+                *column,
+                offset,
+                || Value::known(*value),
+            )?;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn load<F: Field>(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        updates: &MptUpdates,
+        randomness: F,
+    ) -> Result<(), Error> {
+        layouter.assign_region(
+            || "mpt table",
+            |mut region| self.load_with_region(&mut region, updates, randomness),
+        )
+    }
+
+    pub(crate) fn load_with_region<F: Field>(
+        &self,
+        region: &mut Region<'_, F>,
+        updates: &MptUpdates,
+        randomness: F,
+    ) -> Result<(), Error> {
+        for (offset, row) in updates.table_assignments(randomness).iter().enumerate() {
+            self.assign(region, offset, row)?;
         }
         Ok(())
     }
@@ -777,21 +863,25 @@ impl CopyTable {
         let mut assignments = Vec::new();
         let rlc_acc = if copy_event.dst_type == CopyDataType::RlcAcc {
             let values = copy_event
-                .steps
+                .bytes
                 .iter()
-                .filter(|s| s.rw.is_write())
-                .map(|s| s.value)
+                .map(|(value, _)| *value)
                 .collect::<Vec<u8>>();
             rlc::value(values.iter().rev(), randomness)
         } else {
             F::zero()
         };
-        for (step_idx, copy_step) in copy_event.steps.iter().enumerate() {
+        for (step_idx, is_read_step) in copy_event
+            .bytes
+            .iter()
+            .flat_map(|_| vec![true, false].into_iter())
+            .enumerate()
+        {
             // is_first
             let is_first = if step_idx == 0 { F::one() } else { F::zero() };
             // id
             let id = {
-                let id = if copy_step.rw.is_read() {
+                let id = if is_read_step {
                     &copy_event.src_id
                 } else {
                     &copy_event.dst_id
@@ -799,27 +889,40 @@ impl CopyTable {
                 number_or_hash_to_field(id, randomness)
             };
             // addr
-            let addr = match copy_step.tag {
-                CopyDataType::TxLog => {
-                    let addr = (U256::from(copy_step.addr)
-                        + (U256::from(TxLogFieldTag::Data as u64) << 32)
-                        + (U256::from(copy_event.log_id.unwrap()) << 48))
-                        .to_address();
-                    addr.to_scalar().unwrap()
-                }
-                _ => F::from(copy_step.addr),
+            let tag = if is_read_step {
+                copy_event.src_type
+            } else {
+                copy_event.dst_type
             };
+            let copy_step_addr: u64 =
+                if is_read_step {
+                    copy_event.src_addr
+                } else {
+                    copy_event.dst_addr
+                } + (u64::try_from(step_idx).unwrap() - if is_read_step { 0 } else { 1 }) / 2u64;
+            let addr = if tag == CopyDataType::TxLog {
+                (U256::from(copy_step_addr)
+                    + (U256::from(TxLogFieldTag::Data as u64) << 32)
+                    + (U256::from(copy_event.log_id.unwrap()) << 48))
+                    .to_address()
+                    .to_scalar()
+                    .unwrap()
+            } else {
+                F::from(copy_step_addr)
+            };
+
+            let bytes_left = u64::try_from(copy_event.bytes.len() * 2 - step_idx).unwrap() / 2;
             assignments.push((
-                copy_step.tag,
+                tag,
                 [
                     is_first,
                     id,
                     addr,
-                    F::from(copy_event.src_addr_end), // src_addr_end
-                    F::from(copy_event.length - step_idx as u64 / 2), // bytes_left
-                    rlc_acc,                          // rlc_acc
-                    F::from(copy_step.rwc.0 as u64),  // rw_counter
-                    F::from(copy_step.rwc_inc_left),  // rw_inc_left
+                    F::from(copy_event.src_addr_end),
+                    F::from(bytes_left),
+                    rlc_acc,
+                    F::from(copy_event.rw_counter(step_idx)),
+                    F::from(copy_event.rw_counter_increase_left(step_idx)),
                 ],
             ));
         }

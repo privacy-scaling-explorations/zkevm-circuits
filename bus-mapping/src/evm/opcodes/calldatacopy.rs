@@ -1,6 +1,6 @@
 use super::Opcode;
 use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
-use crate::circuit_input_builder::{CopyDataType, CopyEvent, CopyStep, NumberOrHash};
+use crate::circuit_input_builder::{CopyDataType, CopyEvent, NumberOrHash};
 use crate::operation::{CallContextField, MemoryOp, RW};
 use crate::Error;
 use eth_types::GethExecStep;
@@ -113,12 +113,11 @@ fn gen_copy_steps(
     src_addr_end: u64,
     bytes_left: u64,
     is_root: bool,
-) -> Result<Vec<CopyStep>, Error> {
-    let mut copy_steps = Vec::with_capacity(2 * bytes_left as usize);
+) -> Result<Vec<(u8, bool)>, Error> {
+    let mut copy_steps = Vec::with_capacity(bytes_left as usize);
     for idx in 0..bytes_left {
         let addr = src_addr + idx;
-        let rwc = state.block_ctx.rwc;
-        let (value, is_pad) = if addr < src_addr_end {
+        let value = if addr < src_addr_end {
             let byte =
                 state.call_ctx()?.call_data[(addr - state.call()?.call_data_offset) as usize];
             if !is_root {
@@ -127,45 +126,13 @@ fn gen_copy_steps(
                     RW::READ,
                     MemoryOp::new(state.call()?.caller_id, addr.into(), byte),
                 );
-                (byte, false)
-            } else {
-                (byte, false)
             }
+            byte
         } else {
-            (0, true)
+            0
         };
-        let tag = if is_root {
-            CopyDataType::TxCalldata
-        } else {
-            CopyDataType::Memory
-        };
-        // Read
-        copy_steps.push(CopyStep {
-            addr,
-            tag,
-            rw: RW::READ,
-            value,
-            is_code: None,
-            is_pad,
-            rwc,
-            rwc_inc_left: 0,
-        });
-        // Write
-        copy_steps.push(CopyStep {
-            addr: dst_addr + idx,
-            tag: CopyDataType::Memory,
-            rw: RW::WRITE,
-            value,
-            is_code: None,
-            is_pad: false,
-            rwc: state.block_ctx.rwc,
-            rwc_inc_left: 0,
-        });
+        copy_steps.push((value, false));
         state.memory_write(exec_step, (dst_addr + idx).into(), value)?;
-    }
-
-    for cs in copy_steps.iter_mut() {
-        cs.rwc_inc_left = state.block_ctx.rwc.0 as u64 - cs.rwc.0 as u64;
     }
 
     Ok(copy_steps)
@@ -175,6 +142,7 @@ fn gen_copy_event(
     state: &mut CircuitInputStateRef,
     geth_step: &GethExecStep,
 ) -> Result<CopyEvent, Error> {
+    let rw_counter_start = state.block_ctx.rwc;
     let memory_offset = geth_step.stack.nth_last(0)?.as_u64();
     let data_offset = geth_step.stack.nth_last(1)?.as_u64();
     let length = geth_step.stack.nth_last(2)?.as_u64();
@@ -212,17 +180,17 @@ fn gen_copy_event(
         dst_id: NumberOrHash::Number(state.call()?.call_id),
         dst_addr: memory_offset,
         log_id: None,
-        length,
-        steps: copy_steps,
+        rw_counter_start,
+        bytes: copy_steps,
     })
 }
 
 #[cfg(test)]
 mod calldatacopy_tests {
     use crate::{
-        circuit_input_builder::{CopyDataType, CopyStep, ExecState, NumberOrHash},
+        circuit_input_builder::{ExecState, NumberOrHash},
         mock::BlockData,
-        operation::{CallContextField, CallContextOp, MemoryOp, RWCounter, StackOp, RW},
+        operation::{CallContextField, CallContextOp, MemoryOp, StackOp, RW},
     };
     use eth_types::{
         bytecode,
@@ -404,13 +372,12 @@ mod calldatacopy_tests {
 
         let copy_events = builder.block.copy_events.clone();
         assert_eq!(copy_events.len(), 1);
-        assert_eq!(copy_events[0].steps.len(), 2 * copy_size);
+        assert_eq!(copy_events[0].bytes.len(), copy_size);
         assert_eq!(copy_events[0].src_id, NumberOrHash::Number(caller_id));
         assert_eq!(
             copy_events[0].dst_id,
             NumberOrHash::Number(expected_call_id)
         );
-        assert_eq!(copy_events[0].length, copy_size as u64);
         assert!(copy_events[0].log_id.is_none());
         assert_eq!(copy_events[0].src_addr as usize, offset + call_data_offset);
         assert_eq!(
@@ -419,48 +386,9 @@ mod calldatacopy_tests {
         );
         assert_eq!(copy_events[0].dst_addr as usize, dst_offset);
 
-        let mut rwc = RWCounter(step.rwc.0 + 6);
-        let mut rwc_inc = copy_events[0].steps.first().unwrap().rwc_inc_left;
-        for (idx, copy_rw_pair) in copy_events[0].steps.chunks(2).enumerate() {
-            assert_eq!(copy_rw_pair.len(), 2);
-            let (value, is_pad) = memory_a
-                .get(offset + call_data_offset + idx)
-                .cloned()
-                .map_or((0, true), |v| (v, false));
-            // Read
-            let read_step = copy_rw_pair[0].clone();
-            assert_eq!(
-                read_step,
-                CopyStep {
-                    addr: (offset + call_data_offset + idx) as u64,
-                    tag: CopyDataType::Memory,
-                    rw: RW::READ,
-                    is_code: None,
-                    value,
-                    is_pad,
-                    rwc: if !is_pad { rwc.inc_pre() } else { rwc },
-                    rwc_inc_left: rwc_inc,
-                }
-            );
-            if !is_pad {
-                rwc_inc -= 1;
-            }
-            // Write
-            let write_step = copy_rw_pair[1].clone();
-            assert_eq!(
-                write_step,
-                CopyStep {
-                    addr: (dst_offset + idx) as u64,
-                    tag: CopyDataType::Memory,
-                    rw: RW::WRITE,
-                    is_code: None,
-                    value,
-                    is_pad: false,
-                    rwc: rwc.inc_pre(),
-                    rwc_inc_left: rwc_inc,
-                }
-            );
-            rwc_inc -= 1;
+        for (idx, (value, is_code)) in copy_events[0].bytes.iter().enumerate() {
+            assert_eq!(Some(value), memory_a.get(offset + call_data_offset + idx));
+            assert!(!is_code);
         }
     }
 
@@ -649,45 +577,11 @@ mod calldatacopy_tests {
 
         // single copy event with `size` reads and `size` writes.
         assert_eq!(copy_events.len(), 1);
-        assert_eq!(copy_events[0].steps.len(), 2 * size);
+        assert_eq!(copy_events[0].bytes.len(), size);
 
-        let mut rwc = RWCounter(step.rwc.0 + 5);
-        for (idx, copy_rw_pair) in copy_events[0].steps.chunks(2).enumerate() {
-            assert_eq!(copy_rw_pair.len(), 2);
-            let (value, is_pad) = calldata
-                .get(offset as usize + idx)
-                .cloned()
-                .map_or((0, true), |v| (v, false));
-            // read
-            let read_step = copy_rw_pair[0].clone();
-            assert_eq!(
-                read_step,
-                CopyStep {
-                    addr: (offset + idx) as u64,
-                    tag: CopyDataType::TxCalldata,
-                    rw: RW::READ,
-                    value,
-                    is_code: None,
-                    is_pad,
-                    rwc,
-                    rwc_inc_left: (size - idx) as u64,
-                }
-            );
-            // write
-            let write_step = copy_rw_pair[1].clone();
-            assert_eq!(
-                write_step,
-                CopyStep {
-                    addr: (dst_offset + idx) as u64,
-                    tag: CopyDataType::Memory,
-                    rw: RW::WRITE,
-                    value,
-                    is_code: None,
-                    is_pad: false,
-                    rwc: rwc.inc_pre(),
-                    rwc_inc_left: (size - idx) as u64,
-                }
-            );
+        for (idx, (value, is_code)) in copy_events[0].bytes.iter().enumerate() {
+            assert_eq!(value, calldata.get(offset as usize + idx).unwrap_or(&0));
+            assert!(!is_code);
         }
     }
 }

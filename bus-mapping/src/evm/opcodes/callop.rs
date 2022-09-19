@@ -8,7 +8,6 @@ use eth_types::evm_types::OpcodeId;
 use eth_types::{GethExecStep, ToWord};
 use keccak256::EMPTY_HASH;
 use log::warn;
-use std::cmp::max;
 
 /// Placeholder structure used to implement [`Opcode`] trait over it
 /// corresponding to the `OpcodeId::CALL` and `OpcodeId::STATICCALL`.
@@ -34,21 +33,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
         let ret_length = geth_step.stack.nth_last(N_ARGS - 1)?.as_usize();
 
         // we need to keep the memory until parse_call complete
-        let call_ctx = state.call_ctx_mut()?;
-        let args_minimal = if args_length != 0 {
-            args_offset + args_length
-        } else {
-            0
-        };
-        let ret_minimal = if ret_length != 0 {
-            ret_offset + ret_length
-        } else {
-            0
-        };
-        if args_minimal != 0 || ret_minimal != 0 {
-            let minimal_length = max(args_minimal, ret_minimal);
-            call_ctx.memory.extend_at_least(minimal_length);
-        }
+        state.call_expand_memory(args_offset, args_length, ret_offset, ret_length)?;
 
         let tx_id = state.tx_ctx.id();
         let call = state.parse_call(geth_step)?;
