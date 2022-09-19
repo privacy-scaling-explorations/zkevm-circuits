@@ -1,11 +1,13 @@
 //! Common utility traits and functions.
-use eth_types::Field;
 use halo2_proofs::{
     plonk::{ConstraintSystem, Expression},
     poly::Rotation,
 };
 
 pub use gadgets::util::Expr;
+use crate::table::TxLogFieldTag;
+use eth_types::{Field, ToAddress};
+pub use ethers_core::types::{Address, U256};
 
 pub(crate) fn random_linear_combine_word<F: Field>(bytes: [u8; 32], randomness: F) -> F {
     crate::evm_circuit::util::Word::random_linear_combine(bytes, randomness)
@@ -33,4 +35,11 @@ pub fn power_of_randomness_from_instance<F: Field, const N: usize>(
     });
 
     power_of_randomness.unwrap()
+}
+
+pub(crate) fn build_tx_log_address(index: u64, field_tag: TxLogFieldTag, log_id: u64) -> Address {
+    (U256::from(index)
+        + (U256::from(field_tag as u64) << 32)
+        + (U256::from(log_id) << 48))
+        .to_address()
 }

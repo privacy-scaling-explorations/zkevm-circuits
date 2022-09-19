@@ -4,7 +4,7 @@
 
 use bus_mapping::circuit_input_builder::{CopyDataType, CopyEvent, CopyStep, NumberOrHash};
 
-use eth_types::{Field, ToAddress, ToScalar, U256};
+use eth_types::{Field, ToScalar};
 use gadgets::{
     binary_number::BinaryNumberChip,
     less_than::{LtChip, LtConfig, LtInstruction},
@@ -26,6 +26,7 @@ use crate::{
         BytecodeFieldTag, CopyTable, LookupTable, RwTableTag, TxContextFieldTag, TxLogFieldTag,
     },
 };
+use crate::util::build_tx_log_address;
 
 /// Encode the type `NumberOrHash` into a field element
 pub fn number_or_hash_to_field<F: Field>(v: &NumberOrHash, randomness: F) -> F {
@@ -532,10 +533,7 @@ impl<F: Field> CopyCircuit<F> {
             } + (u64::try_from(step_idx).unwrap() - if is_read { 0 } else { 1 }) / 2u64;
 
         let addr = if is_read && copy_event.dst_type == CopyDataType::TxLog {
-            (U256::from(copy_step_addr)
-                + (U256::from(TxLogFieldTag::Data as u64) << 32)
-                + (U256::from(copy_event.log_id.unwrap()) << 48))
-                .to_address()
+            build_tx_log_address(copy_step_addr, TxLogFieldTag::Data, copy_event.log_id.unwrap())
                 .to_scalar()
                 .unwrap()
         } else {

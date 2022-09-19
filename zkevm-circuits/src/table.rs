@@ -7,7 +7,7 @@ use crate::witness::{
     Block, BlockContext, Bytecode, MptUpdateRow, MptUpdates, Rw, RwMap, RwRow, Transaction,
 };
 use bus_mapping::circuit_input_builder::{CopyDataType, CopyEvent};
-use eth_types::{Field, ToAddress, ToLittleEndian, ToScalar, Word, U256};
+use eth_types::{Field, ToLittleEndian, ToScalar, Word};
 use gadgets::binary_number::{BinaryNumberChip, BinaryNumberConfig};
 use halo2_proofs::{
     arithmetic::FieldExt,
@@ -18,6 +18,7 @@ use halo2_proofs::{circuit::Layouter, plonk::*, poly::Rotation};
 use itertools::Itertools;
 use keccak256::plain::Keccak;
 use strum_macros::{EnumCount, EnumIter};
+use crate::util::build_tx_log_address;
 
 /// Trait used for dynamic tables.  Used to get an automatic implementation of
 /// the LookupTable trait where each `table_expr` is a query to each column at
@@ -901,10 +902,7 @@ impl CopyTable {
                     copy_event.dst_addr
                 } + (u64::try_from(step_idx).unwrap() - if is_read_step { 0 } else { 1 }) / 2u64;
             let addr = if tag == CopyDataType::TxLog {
-                (U256::from(copy_step_addr)
-                    + (U256::from(TxLogFieldTag::Data as u64) << 32)
-                    + (U256::from(copy_event.log_id.unwrap()) << 48))
-                    .to_address()
+                build_tx_log_address(copy_step_addr, TxLogFieldTag::Data,copy_event.log_id.unwrap())
                     .to_scalar()
                     .unwrap()
             } else {

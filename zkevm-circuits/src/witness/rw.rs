@@ -9,6 +9,7 @@ use crate::{
     evm_circuit::util::RandomLinearCombination,
     table::{AccountFieldTag, CallContextFieldTag, RwTableTag, TxLogFieldTag, TxReceiptFieldTag},
 };
+use crate::util::build_tx_log_address;
 
 /// Rw constainer for a witness block
 #[derive(Debug, Default, Clone)]
@@ -439,10 +440,7 @@ impl Rw {
             } => {
                 // make field_tag fit into one limb (16 bits)
                 Some(
-                    (U256::from(*index as u64)
-                        + (U256::from(*field_tag as u64) << 32)
-                        + (U256::from(*log_id) << 48))
-                        .to_address(),
+                    build_tx_log_address(*index as u64, *field_tag, *log_id)
                 )
             }
             Self::Start { .. }
