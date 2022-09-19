@@ -940,12 +940,21 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         );
     }
 
-    pub(crate) fn reversion_info(&mut self, call_id: Option<Expression<F>>) -> ReversionInfo<F> {
+    fn reversion_info(
+        &mut self,
+        call_id: Option<Expression<F>>,
+        is_write: bool,
+    ) -> ReversionInfo<F> {
         let [rw_counter_end_of_reversion, is_persistent] = [
             CallContextFieldTag::RwCounterEndOfReversion,
             CallContextFieldTag::IsPersistent,
         ]
-        .map(|field_tag| self.call_context(call_id.clone(), field_tag));
+        .map(|field_tag| {
+            let cell = self.query_cell();
+            self.call_context_lookup(is_write.expr(), call_id.clone(), field_tag, cell.expr());
+            cell
+        });
+
         ReversionInfo {
             rw_counter_end_of_reversion,
             is_persistent,
@@ -955,6 +964,20 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
                 self.curr.state.reversible_write_counter.expr()
             },
         }
+    }
+
+    pub(crate) fn reversion_info_read(
+        &mut self,
+        call_id: Option<Expression<F>>,
+    ) -> ReversionInfo<F> {
+        self.reversion_info(call_id, false)
+    }
+
+    pub(crate) fn reversion_info_write(
+        &mut self,
+        call_id: Option<Expression<F>>,
+    ) -> ReversionInfo<F> {
+        self.reversion_info(call_id, true)
     }
 
     // Stack

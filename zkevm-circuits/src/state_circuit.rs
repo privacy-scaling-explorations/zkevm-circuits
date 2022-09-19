@@ -152,7 +152,6 @@ impl<F: Field> StateCircuitConfig<F> {
         let rows = rows.into_iter();
         let prev_rows = once(None).chain(rows.clone().map(Some));
 
-        let mut initial_value = F::zero();
         let mut state_root = F::zero();
 
         for (offset, (row, prev_row)) in rows.zip(prev_rows).enumerate() {
@@ -190,28 +189,24 @@ impl<F: Field> StateCircuitConfig<F> {
                     .assign(region, offset, &row, &prev_row)?;
 
                 if is_first_access {
-                    // Update initial value for RwTableTag::CallContext rows.
-                    if matches!(row.tag(), RwTableTag::CallContext) {
-                        initial_value = row.value_assignment(randomness)
-                    }
-
                     // If previous row was a last access, we need to update the state root.
                     if let Some(update) = updates.get(&prev_row) {
                         let (new_root, old_root) = update.root_assignments(randomness);
                         assert_eq!(state_root, old_root);
                         state_root = new_root;
                     }
+
+                    if matches!(row.tag(), RwTableTag::CallContext) && !row.is_write() {
+                        assert_eq!(row.value_assignment(randomness), F::zero(), "{:?}", row);
+                    }
                 }
             }
 
-            // For non-RwTableTag::CallContext rows, the initial value can be determined
-            // from the mpt updates or is 0.
-            if !matches!(row.tag(), RwTableTag::CallContext) {
-                initial_value = updates
-                    .get(&row)
-                    .map(|u| u.value_assignments(randomness).1)
-                    .unwrap_or_default();
-            }
+            // The initial value can be determined from the mpt updates or is 0.
+            let initial_value = updates
+                .get(&row)
+                .map(|u| u.value_assignments(randomness).1)
+                .unwrap_or_default();
             region.assign_advice(
                 || "initial_value",
                 self.initial_value,
