@@ -364,13 +364,12 @@ impl<F: Field> ConstraintBuilder<F> {
             "field_tag in CallContextFieldTag range",
             vec![(q.field_tag(), q.lookups.call_context_field_tag.clone())],
         );
-
+        self.require_zero("initial CallContext value is 0", q.initial_value());
         self.require_equal(
             "state_root is unchanged for CallContext",
             q.state_root(),
             q.state_root_prev(),
         );
-        // TODO: explain why call context doesn't need an initial value.
     }
 
     fn build_tx_log_constraints(&mut self, q: &Queries<F>) {

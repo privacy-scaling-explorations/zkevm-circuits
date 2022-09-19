@@ -314,8 +314,9 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
             CallContextField::IsPersistent,
             (call.is_persistent as usize).into(),
         ),
+        (CallContextField::IsSuccess, call.is_success.to_word()),
     ] {
-        state.call_context_read(&mut exec_step, call.call_id, field, value);
+        state.call_context_write(&mut exec_step, call.call_id, field, value);
     }
 
     // Increase caller's nonce
@@ -423,7 +424,7 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
                 (CallContextField::IsCreate, 0.into()),
                 (CallContextField::CodeHash, code_hash.to_word()),
             ] {
-                state.call_context_read(&mut exec_step, call.call_id, field, value);
+                state.call_context_write(&mut exec_step, call.call_id, field, value);
             }
 
             Ok(exec_step)

@@ -41,7 +41,7 @@ impl<F: Field> ExecutionGadget<F> for SloadGadget<F> {
         let opcode = cb.query_cell();
 
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
-        let mut reversion_info = cb.reversion_info(None);
+        let mut reversion_info = cb.reversion_info_read(None);
         let callee_address = cb.call_context(None, CallContextFieldTag::CalleeAddress);
 
         let key = cb.query_cell();
