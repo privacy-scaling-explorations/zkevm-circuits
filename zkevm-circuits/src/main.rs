@@ -23,8 +23,22 @@ fn load_json_rpc_result(path: &str) -> Value {
     output
 }
 
+fn load_trace(path: &str) -> GethExecTrace {
+    let trace = load_json_rpc_result(path);
+    let trace: GethExecTrace = serde_json::from_value(trace["result"].clone()).unwrap();
+    trace
+}
+
 /// `cargo run -p zkevm-circuits --features test`
 pub fn main() {
+    let trace_paths = ["block27/Layer_2_Block_27_0x22e529c2cd81496c988753b22a9085d584c71bcffa82afff3842264ed7145129.json", "block27/Layer_2_Block_27_0xed7a45b1cda9ccade76c118254eb977f3a85621d72dbb37d472d1db09ac99cec.json"];
+    let traces: [GethExecTrace; 2] = trace_paths
+        .iter()
+        .map(|path| load_trace(path))
+        .collect::<Vec<_>>()
+        .try_into()
+        .unwrap();
+
     let history_hashes = load_json_rpc_result("block27/block_hashes.json");
     let history_hashes: Vec<U256> = serde_json::from_value(history_hashes).unwrap();
     let state = load_json_rpc_result("block27/prestate.json");
@@ -44,7 +58,7 @@ pub fn main() {
         gas_limit: 1_000_000u64,
     };
 
-    let ctx = TestContext::<2, 2>::new_with_state_and_block(
+    let mut ctx: TestContext<2, 2> = TestContext::<2, 2>::new_with_state_and_block(
         Some(history_hashes),
         state,
         block,
@@ -52,6 +66,7 @@ pub fn main() {
     )
     .unwrap()
     .into();
+    ctx.geth_traces = traces;
 
     run_test_circuits(ctx, Some(config)).unwrap()
 }
