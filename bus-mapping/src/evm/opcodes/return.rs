@@ -1,7 +1,5 @@
 use super::Opcode;
-use crate::circuit_input_builder::CopyEvent;
-use crate::circuit_input_builder::CopyStep;
-use crate::circuit_input_builder::{CopyDataType, NumberOrHash};
+use crate::circuit_input_builder::{CopyDataType, CopyEvent, NumberOrHash};
 use crate::operation::MemoryOp;
 use crate::{
     circuit_input_builder::CircuitInputStateRef,
@@ -64,22 +62,22 @@ impl Opcode for Return {
         let offset = offset.as_usize();
         let length = length.as_usize();
         if call.is_create() && call.is_success {
-            assert!(offset + length <= memory.0.len());
-            let code = memory.0[offset..offset + length].to_vec();
-            // TODO: is this already handled by state.handle_return(step) below?
-            state.code_db.insert(code);
-            // Warning: this isn't covered in any test!
-            if length > 0 {
-                handle_create(
-                    state,
-                    &mut exec_step,
-                    Source {
-                        id: call.call_id,
-                        offset,
-                        length,
-                    },
-                )?;
-            }
+            // assert!(offset + length <= memory.0.len());
+            // let code = memory.0[offset..offset + length].to_vec();
+            // // TODO: is this already handled by state.handle_return(step)
+            // below? state.code_db.insert(code);
+            // // Warning: this isn't covered in any test!
+            // if length > 0 {
+            //     handle_create(
+            //         state,
+            //         &mut exec_step,
+            //         Source {
+            //             id: call.call_id,
+            //             offset,
+            //             length,
+            //         },
+            //     )?;
+            // }
         } else if !is_root {
             let caller_ctx = state.caller_ctx_mut()?;
             let return_offset = call.return_data_offset.try_into().unwrap();
@@ -133,55 +131,28 @@ fn handle_copy(
     destination: Destination,
 ) -> Result<(), Error> {
     let copy_length = std::cmp::min(source.length, destination.length);
-    let initial_rw_counter = state.block_ctx.rwc.0;
-    let rw_counter_increase = copy_length * 2;
+    let rw_counter_start = state.block_ctx.rwc;
 
-    let bytes = state.call_ctx()?.memory.0[source.offset..source.offset + copy_length].to_vec();
-
-    let copy_steps = bytes
+    let bytes: Vec<_> = state.call_ctx()?.memory.0[source.offset..source.offset + copy_length]
         .iter()
-        .enumerate()
-        .flat_map(|(i, &byte)| {
-            [
-                CopyStep {
-                    addr: (source.offset + i).try_into().unwrap(),
-                    tag: CopyDataType::Memory,
-                    rw: RW::READ,
-                    value: byte,
-                    is_code: None,
-                    is_pad: false,
-                    rwc: (initial_rw_counter + 2 * i).into(),
-                    rwc_inc_left: (rw_counter_increase - 2 * i).try_into().unwrap(),
-                },
-                CopyStep {
-                    addr: (destination.offset + i).try_into().unwrap(),
-                    tag: CopyDataType::Memory,
-                    rw: RW::WRITE,
-                    value: byte,
-                    is_code: None,
-                    is_pad: false,
-                    rwc: (initial_rw_counter + 2 * i + 1).into(),
-                    rwc_inc_left: (rw_counter_increase - 2 * i - 1).try_into().unwrap(),
-                },
-            ]
-            .into_iter()
-        })
+        .map(|byte| (*byte, false))
         .collect();
 
-    for (i, &byte) in bytes.iter().enumerate() {
+    for (i, (byte, _is_code)) in bytes.iter().enumerate() {
         state.push_op(
             step,
             RW::READ,
-            MemoryOp::new(source.id, (source.offset + i).into(), byte),
+            MemoryOp::new(source.id, (source.offset + i).into(), *byte),
         );
         state.push_op(
             step,
             RW::WRITE,
-            MemoryOp::new(destination.id, (destination.offset + i).into(), byte),
+            MemoryOp::new(destination.id, (destination.offset + i).into(), *byte),
         );
     }
 
     state.push_copy(CopyEvent {
+        rw_counter_start,
         src_type: CopyDataType::Memory,
         src_id: NumberOrHash::Number(source.id),
         src_addr: source.offset.try_into().unwrap(),
@@ -189,9 +160,8 @@ fn handle_copy(
         dst_type: CopyDataType::Memory,
         dst_id: NumberOrHash::Number(destination.id),
         dst_addr: destination.offset.try_into().unwrap(),
-        length: copy_length.try_into().unwrap(),
         log_id: None,
-        steps: copy_steps,
+        bytes,
     });
 
     Ok(())
@@ -204,57 +174,35 @@ fn handle_create(
 ) -> Result<(), Error> {
     let bytes = state.call_ctx()?.memory.0[source.offset..source.offset + source.length].to_vec();
     let bytecode = Bytecode::from(bytes.clone());
-    let initial_rw_counter = state.block_ctx.rwc.0;
-    let copy_steps = bytes
+    let rw_counter_start = state.block_ctx.rwc;
+    let bytes: Vec<_> = bytecode
+        .code
         .iter()
-        .enumerate()
-        .flat_map(|(i, &byte)| {
-            [
-                CopyStep {
-                    addr: (source.offset + i).try_into().unwrap(),
-                    tag: CopyDataType::Memory,
-                    rw: RW::READ,
-                    value: byte,
-                    is_code: None,
-                    is_pad: false,
-                    rwc: (initial_rw_counter + i).into(),
-                    rwc_inc_left: (source.length - i).try_into().unwrap(),
-                },
-                CopyStep {
-                    addr: i.try_into().unwrap(),
-                    tag: CopyDataType::Bytecode,
-                    rw: RW::WRITE,
-                    value: byte,
-                    is_code: Some(bytecode.get(i).unwrap().is_code),
-                    is_pad: false,
-                    rwc: (initial_rw_counter + i).into(),
-                    rwc_inc_left: (source.length - i).try_into().unwrap(),
-                },
-            ]
-            .into_iter()
-        })
+        .map(|element| (element.value, element.is_code))
         .collect();
 
-    state.push_copy(CopyEvent {
-        src_type: CopyDataType::Memory,
-        src_id: NumberOrHash::Number(source.id),
-        src_addr: 0, // not used
-        src_addr_end: (source.offset + source.length).try_into().unwrap(),
-        dst_type: CopyDataType::Bytecode,
-        dst_id: NumberOrHash::Hash(H256(keccak256(&bytes))),
-        dst_addr: 0, // not used
-        length: source.length.try_into().unwrap(),
-        log_id: None,
-        steps: copy_steps,
-    });
+    let dst_id = NumberOrHash::Hash(H256(keccak256(&bytecode.to_vec())));
 
-    for (i, &byte) in bytes.iter().enumerate() {
+    for (i, (byte, _)) in bytes.iter().enumerate() {
         state.push_op(
             step,
             RW::READ,
-            MemoryOp::new(source.id, (source.offset + i).into(), byte),
+            MemoryOp::new(source.id, (source.offset + i).into(), *byte),
         );
     }
+
+    state.push_copy(CopyEvent {
+        rw_counter_start,
+        src_type: CopyDataType::Memory,
+        src_id: NumberOrHash::Number(source.id),
+        src_addr: source.offset.try_into().unwrap(),
+        src_addr_end: (source.offset + source.length).try_into().unwrap(),
+        dst_type: CopyDataType::Bytecode,
+        dst_id,
+        dst_addr: 0,
+        log_id: None,
+        bytes,
+    });
 
     Ok(())
 }

@@ -151,7 +151,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
         self.opcode.assign(
             region,
             offset,
-            step.opcode.map(|opcode| F::from(opcode.as_u64())),
+            Value::known(F::from(step.opcode.unwrap().as_u64())),
         )?;
 
         let [memory_offset, length] = [0, 1].map(|i| block.rws[step.rw_indices[i]].stack_value());
@@ -163,7 +163,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
             (&self.is_create, call.is_create),
             (&self.is_success, call.is_success),
         ] {
-            cell.assign(region, offset, value.to_scalar())?;
+            cell.assign(region, offset, Value::known(value.to_scalar().unwrap()))?;
         }
 
         for (cell, value) in [
@@ -174,7 +174,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
             (&self.return_data_length, call.return_data_length.into()),
             (&self.return_data_offset, call.return_data_offset.into()),
         ] {
-            cell.assign(region, offset, Some(value))?;
+            cell.assign(region, offset, Value::known(value))?;
         }
 
         if !call.is_root {
