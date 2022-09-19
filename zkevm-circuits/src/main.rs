@@ -31,6 +31,7 @@ fn load_trace(path: &str) -> GethExecTrace {
 
 /// `cargo run -p zkevm-circuits --features test`
 pub fn main() {
+    /*
     let trace_paths = ["block27/Layer_2_Block_27_0x22e529c2cd81496c988753b22a9085d584c71bcffa82afff3842264ed7145129.json", "block27/Layer_2_Block_27_0xed7a45b1cda9ccade76c118254eb977f3a85621d72dbb37d472d1db09ac99cec.json"];
     let traces: [GethExecTrace; 2] = trace_paths
         .iter()
@@ -38,15 +39,23 @@ pub fn main() {
         .collect::<Vec<_>>()
         .try_into()
         .unwrap();
+    */
+    let block = load_json_rpc_result("block27/block.json");
+    let mut block: Blk<Txn> = serde_json::from_value(block.clone()).unwrap();
+    let history_hashes: Vec<U256> = {
+        let hashes = load_json_rpc_result("block27/block_hashes.json");
+        let mut hashes: Vec<U256> = serde_json::from_value(hashes).unwrap();
+        let block_num: usize = block.number.unwrap().as_u64().try_into().unwrap();
 
-    let history_hashes = load_json_rpc_result("block27/block_hashes.json");
-    let history_hashes: Vec<U256> = serde_json::from_value(history_hashes).unwrap();
+        if block_num < hashes.len() {
+            hashes.drain((hashes.len() - block_num)..).collect()
+        } else {
+            hashes
+        }
+    };
     let state = load_json_rpc_result("block27/prestate.json");
     let state: HashMap<H160, Account2> =
         serde_json::from_value(state[0]["result"].clone()).unwrap();
-
-    let block = load_json_rpc_result("block27/block.json");
-    let mut block: Blk<Txn> = serde_json::from_value(block.clone()).unwrap();
 
     // Need to mock base fee
     block.base_fee_per_gas = Some(U256::zero());
@@ -66,7 +75,7 @@ pub fn main() {
     )
     .unwrap()
     .into();
-    ctx.geth_traces = traces;
+    //ctx.geth_traces = traces;
 
     run_test_circuits(ctx, Some(config)).unwrap()
 }
