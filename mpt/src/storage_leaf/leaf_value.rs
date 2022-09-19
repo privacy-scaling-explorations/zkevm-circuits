@@ -297,72 +297,135 @@ impl<F: FieldExt> LeafValueConfig<F> {
             bytes) cannot go over 55 bytes.
             */
 
-            let long_value_check = s_rlp1_cur - c128.clone() - s_rlp2_cur + c128 - one.clone();
+            let long_value_check = s_rlp1_cur - s_rlp2_cur + one.clone();
 
+            /*
+            When the leaf is short (first key byte in `s_main.bytes[0]` in the leaf key row) and the value
+            is short (first value byte in `s_main.rlp1` in the leaf value row), we need to check that:
+            `s_rlp1_prev - 192 - s_rlp2_prev + 128 - 1 - 1 = 0`.
+
+            The first `-1` presents the byte occupied by `s_rlp2_prev`.
+            The second `-1` presents the length of the value which is 1 because the value is short in this case.
+
+            Example:
+            `[226 160 59 138 106 70 105 186 37 13 38 205 122 69 158 202 157 33 95 131 7 227 58 235 229 3 121 188 90 54 23 236 52 68 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 2]`
+
+            In the example: `34 = 226 - 192` gives the length of the RLP stream. `32 = 160 - 128` gives the length
+            of the key. That means there are 34 bytes after the first byte, 32 of these are occupied by the key,
+            1 is occupied by `s_rlp2_prev`, and 1 is occupied by the value.
+            */
             constraints.push((
                 "RLP leaf short value short",
                 q_enable.clone() * short_short_check * is_leaf_short.clone() * is_short.clone(),
             ));
+
+            /*
+            When the leaf is long (first key byte in `s_main.bytes[1]` in the leaf key row) and the value
+            is long (first value byte in `s_main.bytes[0]` in the leaf value row), we need to check that:
+            `s_rlp2_prev - s_bytes0_prev + 128 - 1 - (s_rlp2_cur - 128 + 1 + 1) = 0`.
+
+            The expression `s_rlp2_prev - s_bytes0_prev + 128 - 1` gives us the number of bytes that are to be left
+            in the value. The expression `s_rlp2_cur - 128 + 1 + 1` gives us the number of bytes in the leaf.
+
+            Note that there is an additional constraint to ensure `s_main.rlp1 = s_main.rlp2 + 1`.
+
+            Example:
+            `[248 67 160 59 138 106 70 105 186 37 13 38 205 122 69 158 202 157 33 95 131 7 227 58 235 229 3 121 188 90 54 23 236 52 68 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 3]`
+            `[161 160 187 239 170 18 88 1 56 188 38 60 149 117 120 38 223 78 36 235 129 201 170 170 170 170 170 170 170 170 170 170 170 170 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 14]`
+
+            67 is the number of bytes after `s_main.rlp2`. `160 - 128 + 1` is the number of bytes that are occupied
+            by the key and the byte that stores key length.
+            In the next row, we have `32 = 160 - 128` bytes after `s_main.rlp2`, but we need to take into
+            account also the two bytes `s_main.rlp1` and `s_main.rlp2`.
+            */
             constraints.push((
                 "RLP leaf long value long",
                 q_enable.clone() * long_long_check * is_leaf_long.clone() * is_long.clone(),
             ));
+
+            /*
+            When the leaf is short (first key byte in `s_main.bytes[0]` in the leaf key row) and the value
+            is long (first value byte in `s_main.bytes[0]` in the leaf value row), we need to check that:
+            `s_rlp1_prev - 192 - s_rlp2_prev + 128 - 1 - (s_rlp2_cur - 128 + 1 + 1) = 0`.
+
+            The expression `s_rlp1_prev - 192 - s_rlp2_prev + 128 - 1` gives us the number of bytes that are to be left
+            in the value. The expression `s_rlp2_cur - 128 + 1 + 1` gives us the number of bytes in the leaf.
+            */
             constraints.push((
                 "RLP leaf short value long",
                 q_enable.clone() * short_long_check * is_leaf_short.clone() * is_long.clone(),
             ));
+
+            /*
+            When the leaf is long (first key byte in `s_main.bytes[1]` in the leaf key row)
+            we need to ensure that `s_main.rlp1 = s_main.rlp2 + 1`.
+            */
             constraints.push((
                 "RLP long value check",
                 q_enable.clone() * long_value_check * is_long.clone(),
             ));
 
-            // example: [194,32,1]
-            // Note: s_rlp2 = 32 when last_level is checked in leaf_key.
+            /*
+            When the leaf is in the last level of the trie and the value is short, 
+            we need to ensure that `s_main.rlp2 = 32`.
+
+            Note that in this case we do not have the length of the key stored in `s_main.rlp2` or `s_main.bytes[0]`.
+            
+            Example: `[194,32,1]`
+            */
             constraints.push((
-                "RLP check last level short value",
+                "RLP check last level or one nibble & short value",
                 q_enable.clone()
                     * (s_rlp1_prev.clone() - Expression::Constant(F::from(194)))
-                    * last_level.clone()
+                    * (last_level.clone() + one_nibble.clone())
                     * is_short.clone(),
             ));
 
             let last_level_or_one_nibblelong_check = s_rlp1_prev.clone() - c192.clone()
                 - one.clone() - long_value_len;
-            // example:  [227,32,161,160,187,239,170,18,88,1,56,188,38,60,149,117,120,38,223,78,36,235,129,201,170,170,170,170,170,170,170,170,170,170,170,170]
+
+            /*
+            When the leaf is in the last level of the trie and the value is long or there is one nibble in the key,
+            we need to check:
+            `s_rlp1_prev - 192 - 1  - (s_rlp2_cur - 128 + 1 + 1) = 0`.
+
+            `s_rlp1_prev - 192 - 1` gives us the number of bytes that are to be in the leaf value row, while
+            s_rlp2_cur - 128 + 1 + 1 gives us the number of bytes in the leaf value row.
+
+            Note that in this case we do not have the length of the key stored in `s_main.rlp2` or `s_main.bytes[0]`.
+
+            Example:
+            `[227,32,161,160,187,239,170,18,88,1,56,188,38,60,149,117,120,38,223,78,36,235,129,201,170,170,170,170,170,170,170,170,170,170,170,170]`
+            */
             constraints.push((
-                "RLP check last level long value",
+                "RLP check last level or one nibble & long value",
                 q_enable.clone()
                     * last_level_or_one_nibblelong_check
                     * (last_level.clone() + one_nibble)
                     * is_long.clone(),
             ));
-
-            // sel is set to 1 in leaf value row when leaf is without branch and it is a
-            // placeholder - this appears when a first leaf is added to an empty
-            // trie or when the only leaf is deleted from the trie.
-            // This selector is used only to prevent checking the leaf hash being the
-            // storage trie root (because leaf is just a placeholder) in
-            // storage_root_in_account_leaf.
-            // To prevent setting sel = 1 in cases when storage trie is not empty, the
-            // constraints below are added.
+ 
             let empty_trie_hash: Vec<u8> = vec![
                 86, 232, 31, 23, 27, 204, 85, 166, 255, 131, 69, 230, 146, 192, 248, 110, 91, 72,
                 224, 27, 153, 108, 173, 192, 1, 98, 47, 181, 227, 99, 180, 33,
             ];
             let mut sel = meta.query_advice(denoter.sel1, Rotation::cur());
 
-            // account leaf storage codehash S
-            // account leaf storage codehash C
-            // account leaf in added branch
-            // leaf key S
-            // leaf value S
-            // leaf key C
-            // leaf value C
             let mut rot_into_storage_root = -4;
             if !is_s {
                 sel = meta.query_advice(denoter.sel2, Rotation::cur());
                 rot_into_storage_root = -5;
             }
+
+            /*
+            `sel = 1` in the leaf value row when the leaf is only a placeholder (it is added or deleted and
+            thus there is no leaf in either `S` or `C` proof).
+            This selector is used to trigger off the constraint for the leaf hash being the same as
+            the storage trie root (because leaf in this case is just a placeholder) in
+            `storage_root_in_account_leaf.rs`.
+            These constraints prevent setting `sel = 1` (and thus triggering off the constraint for the leaf hash
+            to be the storage trie) in cases when the storage trie is not empty.
+            */
             for (ind, col) in s_main.bytes.iter().enumerate() {
                 let s = meta.query_advice(*col, Rotation(rot_into_storage_root));
                 constraints.push((
@@ -377,7 +440,11 @@ impl<F: FieldExt> LeafValueConfig<F> {
             constraints
         });
 
-        meta.lookup_any("leaf hash in parent", |meta| {
+        /*
+        It needs to be checked that the hash of a leaf is in the parent node. We do this by a lookup
+        into keccak table: `lookup(leaf_hash_rlc, parent_node_mod_child_rlc)`. 
+        */
+        meta.lookup_any("Leaf hash in parent", |meta| {
             let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
             let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
             let is_leaf = meta.query_advice(is_leaf_value, Rotation::cur());
@@ -395,12 +462,14 @@ impl<F: FieldExt> LeafValueConfig<F> {
             let is_branch_placeholder =
                 meta.query_advice(is_branch_placeholder, Rotation(rot_into_init));
 
-            // For leaf without branch, the constraints are in storage_root_in_account_leaf.
+            // For leaf without branch, the constraints are in `storage_root_in_account_leaf.rs`.
             let is_leaf_without_branch =
                 meta.query_advice(is_account_leaf_in_added_branch, Rotation(rot_into_account));
 
-            // If sel = 1, there is no leaf at this position (value is being added or
-            // deleted) and we don't check the hash of it.
+            /*
+            If `sel = 1`, the leaf is only a placeholder (the leaf is being added or deleted)
+            and we do not check the hash of it.
+            */
             let mut constraints = vec![];
             constraints.push((
                 q_enable.clone()
@@ -429,14 +498,18 @@ impl<F: FieldExt> LeafValueConfig<F> {
             constraints
         });
 
-        // Note: branch_parallel checks that there are 0s in *_advices after the last
-        // byte of the non-hashed branch child (otherwise some corrupted RLC could be provided
-        // as all *_advices are used).
-        meta.create_gate("non-hashed leaf in parent", |meta| {
-            // When leaf is not hashed, the mod_node_hash_rlc stores the RLC of the leaf bytes
-            // (instead of the RLC of leaf hash). So we take leaf RLC and compare it to the value
-            // stored in mod_node_hash_rlc.
+        /*
+        When the leaf is not hashed (shorter than 32 bytes), it needs to be checked that its RLC
+        is the same as the RLC of the modified node in the parent branch.
 
+        When leaf is not hashed, the `mod_node_hash_rlc` stores the RLC of the leaf bytes
+        (instead of the RLC of leaf hash). So we take the leaf RLC and compare it to the value
+        stored in `mod_node_hash_rlc` in the parent branch.
+
+        Note: `branch_parallel.rs` checks that there are 0s in `*_bytes` after the last
+        byte of the non-hashed branch child (otherwise some corrupted RLC could be provided).
+        */
+        meta.create_gate("Non-hashed leaf in parent", |meta| {
             let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
             let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
             let is_leaf = meta.query_advice(is_leaf_value, Rotation::cur());
@@ -477,9 +550,11 @@ impl<F: FieldExt> LeafValueConfig<F> {
             constraints
         });
 
-        // Lookup for case when there is a placeholder branch - in this case we need to
-        // check the hash in the branch above the placeholder branch.
-        meta.lookup_any("leaf hash in parent (branch placeholder)", |meta| {
+        /*
+        Lookup for case when there is a placeholder branch - in this case we need to
+        check the hash to correspond to the modified node of the branch above the placeholder branch.
+        */
+        meta.lookup_any("Leaf hash in parent (branch placeholder)", |meta| {
             let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
             let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
             let is_leaf = meta.query_advice(is_leaf_value, Rotation::cur());
@@ -518,11 +593,15 @@ impl<F: FieldExt> LeafValueConfig<F> {
             let is_leaf_without_branch =
                 meta.query_advice(is_account_leaf_in_added_branch, Rotation(rot_into_account));
 
-            // Note: sel1 and sel2 in branch children: denote whether there is no leaf at
-            // is_modified (when value is added or deleted from trie)
+            /*
+            Note: `sel1` and `sel2` in branch children: denote whether there is no leaf at
+            `is_modified` (when value is added or deleted from trie).
+            */
 
-            // If sel = 1, there is no leaf at this position (value is being added or
-            // deleted) and we don't check the hash of it.
+            /*
+            If `sel = 1`, there is no leaf at this position (value is being added or
+            deleted) and we do not check the hash of it.
+            */
             let mut constraints = vec![];
             constraints.push((
                 q_enable.clone()
@@ -558,39 +637,10 @@ impl<F: FieldExt> LeafValueConfig<F> {
             constraints
         });
 
-        // Note: For cases when storage leaf is in the first storage level, the
-        // constraints are in storage_root_in_account_leaf.
-
-        // Check hash of a storage leaf to be state root when leaf without branch.
-        // Note: needed only if circuit is used without account. Currently not used.
-        // Prepare test if we start using it.
-        meta.lookup_any(
-            "storage (no account proof) in first level leaf without branch - compared to root",
-            |meta| {
-                let mut constraints = vec![];
-                let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
-                let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
-                let is_leaf = meta.query_advice(is_leaf_value, Rotation::cur());
-
-                let rlc = meta.query_advice(accs.acc_s.rlc, Rotation::cur());
-                let root = meta.query_advice(inter_root, Rotation::cur());
-
-                constraints.push((
-                    q_not_first.clone()
-                        * is_leaf.clone()
-                        * (one.clone() - not_first_level.clone())
-                        * rlc,
-                    meta.query_fixed(keccak_table[0], Rotation::cur()),
-                ));
-                let keccak_table_i = meta.query_fixed(keccak_table[1], Rotation::cur());
-                constraints.push((
-                    q_not_first * is_leaf * (one.clone() - not_first_level) * root,
-                    keccak_table_i,
-                ));
-
-                constraints
-            },
-        );
+        /*
+        Note: For cases when storage leaf is in the first storage level, the
+        constraints are in `storage_root_in_account_leaf.rs`.
+        */
 
         let sel = |meta: &mut VirtualCells<F>| {
             let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
@@ -598,6 +648,9 @@ impl<F: FieldExt> LeafValueConfig<F> {
             not_first_level * is_leaf
         };
 
+        /*
+        Range lookups ensure that `s_main`, `s_main.rlp1`, `s_main.rlp2` columns are all bytes (between 0 - 255).
+        */
         range_lookups(
             meta,
             sel,
@@ -613,8 +666,10 @@ impl<F: FieldExt> LeafValueConfig<F> {
             fixed_table,
         );
 
-        // There are zeros in s_main.bytes after value:
         /*
+        /*
+        There are 0s in `s_main.bytes` after the last value byte.
+        */
         for ind in 0..HASH_WIDTH {
             key_len_lookup(
                 meta,
