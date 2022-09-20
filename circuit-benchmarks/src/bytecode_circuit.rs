@@ -26,12 +26,12 @@ mod tests {
     #[test]
     fn bench_bytecode_circuit_prover() {
         let degree: u32 = var("DEGREE")
-            .unwrap_or("12".to_string())
+            .unwrap_or_else(|_| "12")
             .parse()
             .expect("Cannot parse DEGREE env var as u32");
 
         let bytecodes_len: u32 = var("DATASCALE")
-            .unwrap_or("0".to_string())
+            .unwrap_or_else(|_| "0")
             .parse()
             .expect("Cannot parse NOC env var as u32");
 
@@ -111,7 +111,10 @@ mod tests {
         end_timer!(start3);
     }
 
-    fn generate_code_bytes<F: Field>(size: u32, randomness: F) -> Vec<UnrolledBytecode<F>> {
+    fn generate_code_bytes<F: Field>(
+        bytecodes_len: u32,
+        randomness: F,
+    ) -> Vec<UnrolledBytecode<F>> {
         let sample_hexbytes: &str = "608060405260405162000f6238038062000f6283398101604081905262000026\
                                      9162000519565b82816200005560017f360894a13ba1a3210667c828492db98d\
                                      ca3e2076cc3735a920a3ca505d382bbd620005f9565b60008051602062000f1b\
@@ -241,7 +244,7 @@ mod tests {
                                      0060000000000000000000000000000000000000000000000000000000000000\
                                      00000000000000000000000000000000000000000000";
         let bytes = hex::decode(sample_hexbytes).expect("hex decode failed");
-        (0..size)
+        (0..bytecodes_len)
             .map(|_| unroll(bytes.clone(), randomness))
             .collect::<Vec<UnrolledBytecode<F>>>()
     }
