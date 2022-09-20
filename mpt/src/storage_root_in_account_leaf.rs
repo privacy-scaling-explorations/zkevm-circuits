@@ -31,7 +31,6 @@ impl<F: FieldExt> StorageRootChip<F> {
         not_first_level: Column<Advice>,
         is_account_leaf_in_added_branch: Column<Advice>,
         storage_leaf: StorageLeafCols<F>,
-        is_last_branch_child: Column<Advice>,
         s_main: MainCols<F>,
         accs: AccumulatorCols<F>,
         sel: Column<Advice>,
@@ -41,84 +40,6 @@ impl<F: FieldExt> StorageRootChip<F> {
     ) -> StorageRootConfig {
         let config = StorageRootConfig {};
         let one = Expression::Constant(F::one()); 
-
-        // Storage first level extension hash - root in last account leaf (extension
-        // node).
-        // Note: extension node in the first level cannot be shorter than 32 bytes (it is always hashed).
-        meta.lookup_any(
-            "storage_root_in_account_leaf 2: root of the first level extension node in account leaf",
-            |meta| {
-                let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
-
-                let mut rot_into_branch_init = -17;
-                let mut rot_into_last_branch_child = -1;
-                let mut is_branch_placeholder = meta.query_advice(
-                    s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM],
-                    Rotation(rot_into_branch_init),
-                );
-                if !is_s {
-                    rot_into_branch_init = -18;
-                    rot_into_last_branch_child = -2;
-                    is_branch_placeholder = meta.query_advice(
-                        s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
-                        Rotation(rot_into_branch_init),
-                    );
-                }
-
-                // Only check if there is an account above the leaf.
-                let is_account_leaf_in_added_branch = meta.query_advice(
-                    is_account_leaf_in_added_branch,
-                    Rotation(rot_into_branch_init - 1),
-                );
-
-                let is_extension_node =
-                    get_is_extension_node(meta, s_main.bytes, rot_into_branch_init);
-
-                // We need to do the lookup only if we are in the last branch child.
-                let is_after_last_branch_child =
-                    meta.query_advice(is_last_branch_child, Rotation(rot_into_last_branch_child));
-
-                // Note: acc_c in both cases.
-                let acc = meta.query_advice(accs.acc_c.rlc, Rotation::cur());
-
-                let mut sc_hash = vec![];
-                // Note: storage root is always in s_main.bytes!
-                for column in s_main.bytes.iter() {
-                    if is_s {
-                        sc_hash
-                            .push(meta.query_advice(*column, 
-                                Rotation(rot_into_branch_init - (ACCOUNT_LEAF_ROWS - ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND))));
-                    } else {
-                        sc_hash
-                            .push(meta.query_advice(*column, 
-                                Rotation(rot_into_branch_init - (ACCOUNT_LEAF_ROWS - ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND))));
-                    }
-                }
-                let hash_rlc = bytes_expr_into_rlc(&sc_hash, acc_r);
-
-                let mut constraints = vec![];
-                constraints.push((
-                    not_first_level.clone()
-                        * is_extension_node.clone()
-                        * is_after_last_branch_child.clone()
-                        * is_account_leaf_in_added_branch.clone()
-                        * (one.clone() - is_branch_placeholder.clone())
-                        * acc,
-                    meta.query_fixed(keccak_table[0], Rotation::cur()),
-                ));
-                constraints.push((
-                    not_first_level.clone()
-                        * is_extension_node.clone()
-                        * is_after_last_branch_child.clone()
-                        * is_account_leaf_in_added_branch.clone()
-                        * (one.clone() - is_branch_placeholder.clone())
-                        * hash_rlc.clone(),
-                    meta.query_fixed(keccak_table[1], Rotation::cur()),
-                ));
-
-                constraints
-            },
-        );
 
         // If there is no branch, just a leaf.
         // Note: storage leaf in the first level cannot be shorter than 32 bytes (it is always hashed).

@@ -7,14 +7,16 @@ use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
 use crate::{
-    helpers::{compute_rlc, get_bool_constraint, bytes_expr_into_rlc, key_len_lookup, get_is_extension_node_one_nibble, get_is_extension_node_even_nibbles, get_is_extension_node_long_odd_nibbles},
+    helpers::{compute_rlc, get_bool_constraint, bytes_expr_into_rlc, key_len_lookup, get_is_extension_node_one_nibble, get_is_extension_node_even_nibbles, get_is_extension_node_long_odd_nibbles, get_is_extension_node},
     param::{
         IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, IS_BRANCH_C_PLACEHOLDER_POS,
         IS_BRANCH_S_PLACEHOLDER_POS, IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS,
         IS_EXT_LONG_ODD_C16_POS, IS_EXT_LONG_ODD_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS,
-        KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH, RLP_NUM, IS_S_EXT_LONGER_THAN_55_POS, IS_C_EXT_LONGER_THAN_55_POS, IS_S_EXT_NODE_NON_HASHED_POS, IS_C_EXT_NODE_NON_HASHED_POS, NIBBLES_COUNTER_POS, BRANCH_ROWS_NUM, C_RLP_START, HASH_WIDTH, C_START,
+        KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH, RLP_NUM, IS_S_EXT_LONGER_THAN_55_POS, IS_C_EXT_LONGER_THAN_55_POS, IS_S_EXT_NODE_NON_HASHED_POS, IS_C_EXT_NODE_NON_HASHED_POS, NIBBLES_COUNTER_POS, BRANCH_ROWS_NUM, C_RLP_START, HASH_WIDTH, C_START, ACCOUNT_LEAF_ROWS, ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND, ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND,
     }, columns::{MainCols, AccumulatorCols}, mpt::{ProofVariables, MPTConfig}, witness_row::MptWitnessRow,
 };
+
+use super::BranchCols;
 
 /*
 A branch occupies 19 rows:
@@ -143,8 +145,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
         not_first_level: Column<Advice>,
         q_not_first: Column<Fixed>,
         is_account_leaf_in_added_branch: Column<Advice>,
-        is_branch_init: Column<Advice>, /* to avoid ConstraintPoisened and failed lookups (when
-                                         * rotation lands < 0) */
+        branch: BranchCols<F>,
         s_main: MainCols<F>,
         c_main: MainCols<F>,
         accs: AccumulatorCols<F>,
@@ -169,7 +170,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
             let mut constraints = vec![];
             let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
             let q_enable = q_enable(meta);
-            let is_branch_init_prev = meta.query_advice(is_branch_init, Rotation::prev());
+            let is_branch_init_prev = meta.query_advice(branch.is_init, Rotation::prev());
 
             let mut rot = 0;
             if !is_s {
@@ -329,7 +330,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
             let is_ext_node_non_hashed =
                 meta.query_advice(is_ext_node_non_hashed, Rotation(rot_into_branch_init));
 
-            let is_branch_init_prev = meta.query_advice(is_branch_init, Rotation::prev());
+            let is_branch_init_prev = meta.query_advice(branch.is_init, Rotation::prev());
 
             /*
             We first check that the selectors in branch init row are boolean.
@@ -731,7 +732,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
         meta.lookup_any("Extension node branch hash in extension row", |meta| {
             let q_enable = q_enable(meta);
             let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
-            let is_branch_init_prev = meta.query_advice(is_branch_init, Rotation::prev());
+            let is_branch_init_prev = meta.query_advice(branch.is_init, Rotation::prev());
 
             let c_rlp2 = meta.query_advice(c_main.rlp2, Rotation::cur());
             let is_branch_hashed = c_rlp2 * c160_inv.clone();
@@ -882,6 +883,88 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                         * (one.clone() - not_first_level)
                         * root,
                     keccak_table_i,
+                ));
+
+                constraints
+            },
+        );
+
+        /*
+        When extension node is in the first level of the storage trie, we need to check whether
+        `hash(ext_node) = storage_trie_root`. We do this by checking whether
+        `(ext_node_RLC, storage_trie_root_RLC)` is in the keccak table.
+        
+        Note: extension node in the first level cannot be shorter than 32 bytes (it is always hashed).
+        */
+        meta.lookup_any(
+            "Extension node in first level of storage trie - hash compared to the storage root",
+            |meta| {
+                let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
+
+                let mut rot_into_branch_init = -17;
+                let mut rot_into_last_branch_child = -1;
+                let mut is_branch_placeholder = meta.query_advice(
+                    s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM],
+                    Rotation(rot_into_branch_init),
+                );
+                if !is_s {
+                    rot_into_branch_init = -18;
+                    rot_into_last_branch_child = -2;
+                    is_branch_placeholder = meta.query_advice(
+                        s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
+                        Rotation(rot_into_branch_init),
+                    );
+                }
+
+                // Only check if there is an account above the leaf.
+                let is_account_leaf_in_added_branch = meta.query_advice(
+                    is_account_leaf_in_added_branch,
+                    Rotation(rot_into_branch_init - 1),
+                );
+
+                let is_extension_node =
+                    get_is_extension_node(meta, s_main.bytes, rot_into_branch_init);
+
+                // We need to do the lookup only if we are in the last branch child.
+                let is_after_last_branch_child =
+                    meta.query_advice(branch.is_last_child, Rotation(rot_into_last_branch_child));
+
+                // Note: acc_c in both cases.
+                let acc = meta.query_advice(accs.acc_c.rlc, Rotation::cur());
+
+                let mut sc_hash = vec![];
+                // Note: storage root is always in `s_main.bytes`.
+                for column in s_main.bytes.iter() {
+                    if is_s {
+                        sc_hash
+                            .push(meta.query_advice(*column, 
+                                Rotation(rot_into_branch_init - (ACCOUNT_LEAF_ROWS - ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND))));
+                    } else {
+                        sc_hash
+                            .push(meta.query_advice(*column, 
+                                Rotation(rot_into_branch_init - (ACCOUNT_LEAF_ROWS - ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND))));
+                    }
+                }
+                let hash_rlc = bytes_expr_into_rlc(&sc_hash, acc_r);
+
+                let mut constraints = vec![];
+                constraints.push((
+                    not_first_level.clone()
+                        * is_extension_node.clone()
+                        * is_after_last_branch_child.clone()
+                        * is_account_leaf_in_added_branch.clone()
+                        * (one.clone() - is_branch_placeholder.clone())
+                        * acc,
+                    meta.query_fixed(keccak_table[0], Rotation::cur()),
+                ));
+                constraints.push((
+                    not_first_level.clone()
+                        * is_extension_node.clone()
+                        * is_after_last_branch_child.clone()
+                        * is_account_leaf_in_added_branch.clone()
+                        * (one.clone() - is_branch_placeholder.clone())
+                        * hash_rlc.clone(),
+                    meta.query_fixed(keccak_table[1], Rotation::cur()),
                 ));
 
                 constraints
