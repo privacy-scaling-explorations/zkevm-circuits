@@ -42,6 +42,10 @@ jobs:
       - uses: actions-rs/toolchain@v1
         with:
           override: false
+      - name: Setup golang
+        uses: actions/setup-go@v3
+        with:
+          go-version: ~1.18
       # Go cache for building geth-utils
       - name: Go cache
         uses: actions/cache@v3
