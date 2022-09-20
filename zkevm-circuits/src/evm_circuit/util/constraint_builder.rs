@@ -452,17 +452,17 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
             ($name:tt) => {
                 match step_state_transition.$name {
                     Transition::Same => self.require_equal(
-                        concat!("State transition constraint of ", stringify!($name)),
+                        concat!("State transition (same) constraint of ", stringify!($name)),
                         self.next.state.$name.expr(),
                         self.curr.state.$name.expr(),
                     ),
                     Transition::Delta(delta) => self.require_equal(
-                        concat!("State transition constraint of ", stringify!($name)),
+                        concat!("State transition (delta) constraint of ", stringify!($name)),
                         self.next.state.$name.expr(),
                         self.curr.state.$name.expr() + delta,
                     ),
                     Transition::To(to) => self.require_equal(
-                        concat!("State transition constraint of ", stringify!($name)),
+                        concat!("State transition (to) constraint of ", stringify!($name)),
                         self.next.state.$name.expr(),
                         to,
                     ),
