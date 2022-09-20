@@ -770,6 +770,8 @@ impl<F: Field> ExecutionConfig<F> {
             |mut region| {
                 let mut offset = 0;
 
+                self.q_step_first.enable(&mut region, offset)?;
+
                 // handle EndBlock
                 let dummy_call = Call::default();
                 let dummy_tx = Transaction {
