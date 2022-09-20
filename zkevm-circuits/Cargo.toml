@@ -47,4 +47,4 @@ rand_chacha = "0.3"
 
 [features]
 default = []
-test = ["dep:mock"]
+test = ["mock"]
