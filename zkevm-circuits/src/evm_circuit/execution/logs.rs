@@ -129,7 +129,7 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
         let dst_addr = build_tx_log_expression(
             0.expr(),
             TxLogFieldTag::Data.expr(),
-            cb.curr.state.log_id.expr(),
+            cb.curr.state.log_id.expr() + 1.expr(),
         );
         let cond = memory_address.has_length() * is_persistent.expr();
         cb.condition(cond.clone(), |cb| {
