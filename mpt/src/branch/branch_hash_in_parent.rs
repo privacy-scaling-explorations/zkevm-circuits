@@ -6,8 +6,8 @@ use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
 use crate::{
-    helpers::get_is_extension_node,
-    param::{KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH, IS_BRANCH_S_PLACEHOLDER_POS, RLP_NUM, IS_BRANCH_C_PLACEHOLDER_POS, IS_S_BRANCH_NON_HASHED_POS, IS_C_BRANCH_NON_HASHED_POS}, columns::{MainCols, AccumulatorPair},
+    helpers::{get_is_extension_node, bytes_expr_into_rlc},
+    param::{KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH, IS_BRANCH_S_PLACEHOLDER_POS, RLP_NUM, IS_BRANCH_C_PLACEHOLDER_POS, IS_S_BRANCH_NON_HASHED_POS, IS_C_BRANCH_NON_HASHED_POS, ACCOUNT_LEAF_ROWS, ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND, ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND}, columns::{MainCols, AccumulatorPair, AccumulatorCols},
 };
 
 /*
@@ -77,9 +77,9 @@ impl<F: FieldExt> BranchHashInParentConfig<F> {
         is_account_leaf_in_added_branch: Column<Advice>,
         is_last_branch_child: Column<Advice>,
         s_main: MainCols<F>,
-        mod_node_hash_rlc: Column<Advice>,
-        acc_pair: AccumulatorPair<F>,
+        accs: AccumulatorCols<F>,
         keccak_table: [Column<Fixed>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
+        acc_r: F,
         is_s: bool,
     ) -> Self {
         let config = BranchHashInParentConfig { _marker: PhantomData };
@@ -88,7 +88,7 @@ impl<F: FieldExt> BranchHashInParentConfig<F> {
         /*
         When branch is in the first level of the account trie, we need to check whether
         `hash(branch) = account_trie_root`. We do this by checking whether
-        `(branch_RLC, account_trie_root_RLC)` is in the Keccak table.
+        `(branch_RLC, account_trie_root_RLC)` is in the keccak table.
         
         Note: branch in the first level cannot be shorter than 32 bytes (it is always hashed).
         */
@@ -113,6 +113,11 @@ impl<F: FieldExt> BranchHashInParentConfig<F> {
                 }
 
                 let is_extension_node = get_is_extension_node(meta, s_main.bytes, -16);
+
+                let mut acc_pair = accs.clone().acc_s;
+                if !is_s {
+                    acc_pair = accs.clone().acc_c;
+                }
 
                 // TODO: acc currently doesn't have branch ValueNode info (which 128 if nil)
                 let acc = meta.query_advice(acc_pair.rlc, Rotation::cur());
@@ -140,6 +145,94 @@ impl<F: FieldExt> BranchHashInParentConfig<F> {
                         * (one.clone() - not_first_level)
                         * root,
                     keccak_table_i,
+                ));
+
+                constraints
+            },
+        );
+
+        /*
+        When branch is in the first level of the storage trie, we need to check whether
+        `hash(branch) = storage_trie_root`. We do this by checking whether
+        `(branch_RLC, storage_trie_root_RLC)` is in the keccak table.
+        
+        Note: branch in the first level cannot be shorter than 32 bytes (it is always hashed).
+        */
+        meta.lookup_any(
+            "Branch in first level of storage trie - hash compared to the storage root",
+            |meta| {
+                // Note: we are in the same row (last branch child) for S and C.
+                let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
+                let rot_into_branch_init = -16;
+                let mut is_branch_placeholder = meta.query_advice(
+                    s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM],
+                    Rotation(rot_into_branch_init),
+                );
+                if !is_s {
+                    is_branch_placeholder = meta.query_advice(
+                        s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
+                        Rotation(rot_into_branch_init),
+                    );
+                }
+
+                // Only check if there is an account above the leaf.
+                let is_account_leaf_in_added_branch = meta.query_advice(
+                    is_account_leaf_in_added_branch,
+                    Rotation(rot_into_branch_init - 1),
+                );
+
+                let is_extension_node =
+                    get_is_extension_node(meta, s_main.bytes, rot_into_branch_init);
+
+                // We need to do the lookup only if we are in the last branch child.
+                let is_last_branch_child = meta.query_advice(is_last_branch_child, Rotation::cur());
+
+                let mut acc = meta.query_advice(accs.acc_s.rlc, Rotation::cur());
+                if !is_s {
+                    acc = meta.query_advice(accs.acc_c.rlc, Rotation::cur());
+                }
+
+                // TODO: acc currently doesn't have branch ValueNode info (which 128 if nil)
+                let c128 = Expression::Constant(F::from(128));
+                let mut mult = meta.query_advice(accs.acc_s.mult, Rotation::cur());
+                if !is_s {
+                    mult = meta.query_advice(accs.acc_c.mult, Rotation::cur());
+                }
+                let branch_acc = acc + c128 * mult;
+
+                let mut sc_hash = vec![];
+                // Note: storage root is always in s_main.bytes.
+                for column in s_main.bytes.iter() {
+                    if is_s {
+                        sc_hash
+                            .push(meta.query_advice(*column,
+                                Rotation(rot_into_branch_init - (ACCOUNT_LEAF_ROWS - ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND))));
+                    } else {
+                        sc_hash
+                            .push(meta.query_advice(*column, 
+                                Rotation(rot_into_branch_init - (ACCOUNT_LEAF_ROWS - ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND))));
+                    }
+                }
+                let hash_rlc = bytes_expr_into_rlc(&sc_hash, acc_r);
+                let mut constraints = vec![];
+                constraints.push((
+                    not_first_level.clone()
+                        * (one.clone() - is_extension_node.clone())
+                        * is_last_branch_child.clone()
+                        * is_account_leaf_in_added_branch.clone()
+                        * (one.clone() - is_branch_placeholder.clone())
+                        * branch_acc, // TODO: replace with acc once ValueNode is added
+                    meta.query_fixed(keccak_table[0], Rotation::cur()),
+                ));
+
+                constraints.push((
+                    not_first_level.clone()
+                        * (one.clone() - is_extension_node.clone())
+                        * is_last_branch_child.clone()
+                        * is_account_leaf_in_added_branch.clone()
+                        * (one.clone() - is_branch_placeholder.clone())
+                        * hash_rlc,
+                    meta.query_fixed(keccak_table[1], Rotation::cur()),
                 ));
 
                 constraints
@@ -187,6 +280,11 @@ impl<F: FieldExt> BranchHashInParentConfig<F> {
 
             let is_extension_node = get_is_extension_node(meta, s_main.bytes, -16);
 
+            let mut acc_pair = accs.clone().acc_s;
+            if !is_s {
+                acc_pair = accs.clone().acc_c;
+            }
+
             // TODO: acc currently doesn't have branch ValueNode info (which 128 if nil)
             let acc = meta.query_advice(acc_pair.rlc, Rotation::cur());
             let c128 = Expression::Constant(F::from(128));
@@ -204,6 +302,12 @@ impl<F: FieldExt> BranchHashInParentConfig<F> {
                     * branch_acc, // TODO: replace with acc once ValueNode is added
                 meta.query_fixed(keccak_table[0], Rotation::cur()),
             ));
+
+            let mut mod_node_hash_rlc = accs.clone().s_mod_node_rlc;
+            if !is_s {
+                mod_node_hash_rlc = accs.c_mod_node_rlc;
+            }
+
             // Any rotation that lands into branch can be used instead of -19.
             let mod_node_hash_rlc_cur = meta.query_advice(mod_node_hash_rlc, Rotation(-19));
             let keccak_table_i = meta.query_fixed(keccak_table[1], Rotation::cur());
@@ -263,6 +367,11 @@ impl<F: FieldExt> BranchHashInParentConfig<F> {
 
             let is_extension_node = get_is_extension_node(meta, s_main.bytes, -16);
 
+            let mut acc_pair = accs.clone().acc_s;
+            if !is_s {
+                acc_pair = accs.clone().acc_c;
+            }
+
             // TODO: acc currently doesn't have branch ValueNode info (which 128 if nil)
             let acc = meta.query_advice(acc_pair.rlc, Rotation::cur());
             let c128 = Expression::Constant(F::from(128));
@@ -270,6 +379,11 @@ impl<F: FieldExt> BranchHashInParentConfig<F> {
             let branch_acc = acc + c128 * mult;
 
             let mut constraints = vec![];
+
+            let mut mod_node_hash_rlc = accs.s_mod_node_rlc;
+            if !is_s {
+                mod_node_hash_rlc = accs.c_mod_node_rlc;
+            }
 
             let mod_node_hash_rlc_cur = meta.query_advice(mod_node_hash_rlc, Rotation(-19));
             constraints.push((

@@ -336,9 +336,9 @@ impl<F: FieldExt> MPTConfig<F> {
             account_leaf.is_in_added_branch,
             branch.is_last_child,
             s_main.clone(),
-            accumulators.s_mod_node_rlc,
-            accumulators.acc_s.clone(),
+            accumulators.clone(),
             keccak_table,
+            acc_r,
             true,
         );
 
@@ -350,9 +350,9 @@ impl<F: FieldExt> MPTConfig<F> {
             account_leaf.is_in_added_branch,
             branch.is_last_child,
             s_main.clone(),
-            accumulators.c_mod_node_rlc,
-            accumulators.acc_c.clone(),
+            accumulators.clone(),
             keccak_table,
+            acc_r,
             false,
         );
 
