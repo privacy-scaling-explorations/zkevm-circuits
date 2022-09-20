@@ -17,6 +17,7 @@ use halo2_proofs::{
 };
 use std::iter::once;
 
+use crate::util::build_tx_log_address;
 use crate::{
     evm_circuit::{
         util::{constraint_builder::BaseConstraintBuilder, rlc, RandomLinearCombination},
@@ -26,7 +27,6 @@ use crate::{
         BytecodeFieldTag, CopyTable, LookupTable, RwTableTag, TxContextFieldTag, TxLogFieldTag,
     },
 };
-use crate::util::build_tx_log_address;
 
 /// Encode the type `NumberOrHash` into a field element
 pub fn number_or_hash_to_field<F: Field>(v: &NumberOrHash, randomness: F) -> F {
@@ -533,9 +533,13 @@ impl<F: Field> CopyCircuit<F> {
             } + (u64::try_from(step_idx).unwrap() - if is_read { 0 } else { 1 }) / 2u64;
 
         let addr = if is_read && copy_event.dst_type == CopyDataType::TxLog {
-            build_tx_log_address(copy_step_addr, TxLogFieldTag::Data, copy_event.log_id.unwrap())
-                .to_scalar()
-                .unwrap()
+            build_tx_log_address(
+                copy_step_addr,
+                TxLogFieldTag::Data,
+                copy_event.log_id.unwrap(),
+            )
+            .to_scalar()
+            .unwrap()
         } else {
             F::from(copy_step_addr)
         };
