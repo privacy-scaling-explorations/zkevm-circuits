@@ -735,7 +735,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_RWS: usize> ExecutionConfig<F, MA
                 self.q_step_first.enable(&mut region, offset)?;
 
                 let dummy_tx = Transaction::default();
-                let dummy_call = Call::default();
+                let last_call = &block.txs.last().unwrap().calls[0];
                 let end_block_not_last = &block.end_block_not_last;
                 let end_block_last = &block.end_block_last;
                 // Collect all steps
@@ -779,8 +779,8 @@ impl<F: Field, const MAX_TXS: usize, const MAX_RWS: usize> ExecutionConfig<F, MA
                                 Some(_) => (end_block_not_last, Some(end_block_not_last)),
                                 _ => unreachable!(),
                             };
-                            let next = next_step.map(|step| (&dummy_tx, &dummy_call, step));
-                            (&dummy_tx, &dummy_call, step, next)
+                            let next = next_step.map(|step| (&dummy_tx, last_call, step));
+                            (&dummy_tx, last_call, step, next)
                         }
                     };
                     let height = self.get_step_height(step.execution_state);
@@ -1100,6 +1100,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_RWS: usize> ExecutionConfig<F, MA
             .get(&step.execution_state)
             .unwrap_or_else(|| panic!("Execution state unknown: {:?}", step.execution_state))
         {
+            println!("expr: {:?}", stored_expression);
             let assigned = stored_expression.assign(region, offset);
             if let Some(assigned) = assigned {
                 assigned?.value().map(|v| {
@@ -1138,6 +1139,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_RWS: usize> ExecutionConfig<F, MA
         for (idx, assigned_rw_value) in assigned_rw_values.iter().enumerate() {
             let rw_idx = step.rw_indices[idx];
             let rw = block.rws[rw_idx];
+            println!("{:?} -> {:?}", rw_idx, rw);
             let table_assignments = rw.table_assignment(block.randomness);
             let rlc = table_assignments.rlc(block.randomness);
             if rlc != assigned_rw_value.1 {
@@ -1148,6 +1150,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_RWS: usize> ExecutionConfig<F, MA
                     rw_idx,
                     idx,
                     step.execution_state);
+                log::error!("rlc diff:\n- {:#?}\n+ {:#?}", assigned_rw_value.1, rlc);
             }
         }
     }

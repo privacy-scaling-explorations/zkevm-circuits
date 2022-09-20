@@ -5,7 +5,10 @@ use crate::{
         step::ExecutionState,
         util::{
             common_gadget::UpdateBalanceGadget,
-            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
+            constraint_builder::{
+                ConstraintBuilder, StepStateTransition,
+                Transition::{Delta, Same},
+            },
             math_gadget::{
                 AddWordsGadget, ConstantDivisionGadget, IsEqualGadget, MinMaxGadget,
                 MulWordByU64Gadget,
@@ -163,6 +166,9 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             |cb| {
                 cb.require_step_state_transition(StepStateTransition {
                     rw_counter: Delta(9.expr() - is_first_tx.expr()),
+                    // We propagate call_id so that EndBlock can get the last tx_id
+                    // in order to count processed txs.
+                    call_id: Same,
                     ..StepStateTransition::any()
                 });
             },

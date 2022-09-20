@@ -3,7 +3,7 @@ use crate::{
         execution::ExecutionGadget,
         step::ExecutionState,
         util::{
-            constraint_builder::{ConstraintBuilder, StepStateTransition},
+            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Same},
             CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
@@ -28,14 +28,14 @@ impl<F: Field, const MAX_TXS: usize, const MAX_RWS: usize> ExecutionGadget<F>
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let total_txs = cb.query_cell();
-        let rw_counter = cb.curr.state.rw_counter.clone();
+        let last_rw_counter = cb.curr.state.rw_counter.clone().expr() - 1.expr();
 
         cb.step_last(|cb| {
             // 1. Verify rw_counter counts to the same number of meaningful rows in
             // rw_table to ensure there is no malicious insertion.
 
             // extra 1 from the tx_id lookup
-            let total_rw = rw_counter.expr() + 1.expr();
+            let total_rw = last_rw_counter + 1.expr();
 
             // Verify that there are at most total_rw meaningful entries in
             // the rw_table.
@@ -71,9 +71,12 @@ impl<F: Field, const MAX_TXS: usize, const MAX_RWS: usize> ExecutionGadget<F>
             // is total_tx.
         });
         cb.not_step_last(|cb| {
-            // Propagate rw_counter and call_id (and all other state fields) all the way
-            // down
-            cb.require_step_state_transition(StepStateTransition::default());
+            // Propagate rw_counter and call_id all the way down.
+            cb.require_step_state_transition(StepStateTransition {
+                rw_counter: Same,
+                call_id: Same,
+                ..StepStateTransition::any()
+            });
         });
 
         Self { total_txs }
@@ -88,6 +91,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_RWS: usize> ExecutionGadget<F>
         _: &Call,
         _step: &ExecStep,
     ) -> Result<(), Error> {
+        println!("DBG total_txs: {:?}", block.txs.len());
         self.total_txs.assign(
             region,
             offset,

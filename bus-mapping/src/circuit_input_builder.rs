@@ -57,7 +57,6 @@ pub struct CircuitInputBuilder {
     pub block: Block,
     /// Block Context
     pub block_ctx: BlockContext,
-    max_rws: usize,
 }
 
 impl<'a> CircuitInputBuilder {
@@ -69,7 +68,6 @@ impl<'a> CircuitInputBuilder {
             code_db,
             block,
             block_ctx: BlockContext::new(),
-            max_rws: 512, // TODO
         }
     }
 
@@ -153,21 +151,24 @@ impl<'a> CircuitInputBuilder {
 
     fn set_end_block(&mut self) {
         let rw_counter = self.block_ctx.rwc;
-        let max_rws = self.max_rws;
+        let last_rw_counter = rw_counter.0 - 1;
+        let max_rws = self.block.max_rws;
         self.block.block_steps.end_block_not_last.rwc = rw_counter;
         self.block.block_steps.end_block_last.rwc = rw_counter;
-        let end_block_last = &mut self.block.block_steps.end_block_last;
+        let mut end_block_not_last = self.block.block_steps.end_block_not_last.clone();
+        let mut end_block_last = self.block.block_steps.end_block_last.clone();
 
-        let mut dummy_tx = Transaction::default();
+        let mut dummy_tx = Transaction::dummy();
         let mut dummy_tx_ctx = TransactionContext::default();
         let mut state = self.state_ref(&mut dummy_tx, &mut dummy_tx_ctx);
 
-        let push_op = |step: &mut ExecStep, rwc: RWCounter, rw: RW, op: StartOp| {
+        let mut push_op = |step: &mut ExecStep, rwc: RWCounter, rw: RW, op: StartOp| {
             let op_ref = state.block.container.insert(Operation::new(rwc, rw, op));
             step.bus_mapping_instance.push(op_ref);
         };
 
-        let total_rw = rw_counter.0 + 1;
+        let total_rw = last_rw_counter + 1;
+        debug_assert!(total_rw + 1 <= max_rws);
         push_op(&mut end_block_last, RWCounter(1), RW::READ, StartOp {});
         push_op(
             &mut end_block_last,
@@ -176,14 +177,20 @@ impl<'a> CircuitInputBuilder {
             StartOp {},
         );
 
-        if let Some(call_id) = self.block.txs.last().map(|tx| tx.calls[0].call_id) {
+        if let Some(call_id) = state.block.txs.last().map(|tx| tx.calls[0].call_id) {
             state.call_context_read(
                 &mut end_block_last,
                 call_id,
                 CallContextField::TxId,
-                Word::from(self.block.txs.len() as u64),
+                Word::from(state.block.txs.len() as u64),
             );
         }
+
+        end_block_not_last.rwc = rw_counter;
+        end_block_last.rwc = rw_counter;
+
+        self.block.block_steps.end_block_not_last = end_block_not_last;
+        self.block.block_steps.end_block_last = end_block_last;
     }
 
     /// Handle a transaction with its corresponding execution trace to generate
@@ -315,11 +322,12 @@ pub struct BuilderClient<P: JsonRpcClient> {
     cli: GethClient<P>,
     chain_id: Word,
     history_hashes: Vec<Word>,
+    max_rws: usize,
 }
 
 impl<P: JsonRpcClient> BuilderClient<P> {
     /// Create a new BuilderClient
-    pub async fn new(client: GethClient<P>) -> Result<Self, Error> {
+    pub async fn new(client: GethClient<P>, max_rws: usize) -> Result<Self, Error> {
         let chain_id = client.get_chain_id().await?;
 
         Ok(Self {
@@ -327,6 +335,7 @@ impl<P: JsonRpcClient> BuilderClient<P> {
             chain_id: chain_id.into(),
             // TODO: Get history hashes
             history_hashes: Vec::new(),
+            max_rws,
         })
     }
 
@@ -438,7 +447,12 @@ impl<P: JsonRpcClient> BuilderClient<P> {
         eth_block: &EthBlock,
         geth_traces: &[eth_types::GethExecTrace],
     ) -> Result<CircuitInputBuilder, Error> {
-        let block = Block::new(self.chain_id, self.history_hashes.clone(), eth_block)?;
+        let block = Block::new(
+            self.chain_id,
+            self.history_hashes.clone(),
+            eth_block,
+            self.max_rws,
+        )?;
         let mut builder = CircuitInputBuilder::new(sdb, code_db, block);
         builder.handle_block(eth_block, geth_traces)?;
         Ok(builder)

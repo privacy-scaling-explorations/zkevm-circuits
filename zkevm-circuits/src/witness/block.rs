@@ -7,7 +7,7 @@ use itertools::Itertools;
 
 use crate::{evm_circuit::util::RandomLinearCombination, table::BlockContextFieldTag};
 
-use super::{tx::tx_convert, Bytecode, RwMap, Transaction};
+use super::{step::step_convert, tx::tx_convert, Bytecode, ExecStep, RwMap, Transaction};
 
 /// Block is the struct used by all circuits, which constains all the needed
 /// data for witness generation.
@@ -17,6 +17,11 @@ pub struct Block<F> {
     pub randomness: F,
     /// Transactions in the block
     pub txs: Vec<Transaction>,
+    /// EndBlock step that is repeated after the last transaction and before
+    /// reaching the last EVM row.
+    pub end_block_not_last: ExecStep,
+    /// Last EndBlock step that appears in the last EVM row.
+    pub end_block_last: ExecStep,
     /// Read write events in the RwTable
     pub rws: RwMap,
     /// Bytecode used in the block
@@ -25,10 +30,17 @@ pub struct Block<F> {
     pub context: BlockContext,
     /// Copy events for the EVM circuit's copy table.
     pub copy_events: Vec<CopyEvent>,
+    // TODO: Rename to `max_evm_rows`
     /// Pad evm circuit to make selectors fixed, so vk/pk can be universal.
+    /// When 0, the EVM circuit contains as many rows for all steps + 1 row
+    /// for EndBlock.
     pub evm_circuit_pad_to: usize,
-    /// Length to rw table rows in state circuit
-    pub state_circuit_pad_to: usize,
+    // /// Length to rw table rows in state circuit.  When 0, the State circuit
+    // /// contains as many rows as rw operations + 1 row for a Start.
+    // pub state_circuit_pad_to: usize,
+    /// RwTable length.  This must be at least the number of rw operations + 1,
+    /// in order to allocate at least a Start row.
+    pub max_rws: usize,
     /// Inputs to the SHA3 opcode
     pub sha3_inputs: Vec<Vec<u8>>,
 }
@@ -145,7 +157,8 @@ pub fn block_convert(
     code_db: &bus_mapping::state_db::CodeDB,
 ) -> Block<Fr> {
     Block {
-        randomness: Fr::from(0xcafeu64),
+        // randomness: Fr::from(0xcafeu64), // TODO: Uncomment
+        randomness: Fr::from(0x100), // Special value to reveal elements after RLC
         context: block.into(),
         rws: RwMap::from(&block.container),
         txs: block
@@ -154,6 +167,8 @@ pub fn block_convert(
             .enumerate()
             .map(|(idx, tx)| tx_convert(tx, idx + 1))
             .collect(),
+        end_block_not_last: step_convert(&block.block_steps.end_block_not_last),
+        end_block_last: step_convert(&block.block_steps.end_block_last),
         bytecodes: block
             .txs()
             .iter()
@@ -172,6 +187,7 @@ pub fn block_convert(
             .collect(),
         copy_events: block.copy_events.clone(),
         sha3_inputs: block.sha3_inputs.clone(),
+        max_rws: block.max_rws,
         ..Default::default()
     }
 }

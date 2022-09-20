@@ -97,6 +97,7 @@ mod test {
     use crate::test_util::run_test_circuits;
     use eth_types::{bytecode, Word};
     use mock::test_ctx::{helpers::*, TestContext};
+    use pretty_assertions::assert_eq;
 
     #[test]
     fn gasprice_gadget_test() {

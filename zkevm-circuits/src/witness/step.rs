@@ -194,6 +194,7 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
             }
             circuit_input_builder::ExecState::BeginTx => ExecutionState::BeginTx,
             circuit_input_builder::ExecState::EndTx => ExecutionState::EndTx,
+            circuit_input_builder::ExecState::EndBlock => ExecutionState::EndBlock,
         }
     }
 }
@@ -219,6 +220,7 @@ pub(super) fn step_convert(step: &circuit_input_builder::ExecStep) -> ExecStep {
                     operation::Target::CallContext => RwTableTag::CallContext,
                     operation::Target::TxReceipt => RwTableTag::TxReceipt,
                     operation::Target::TxLog => RwTableTag::TxLog,
+                    operation::Target::Start => RwTableTag::Start,
                 };
                 (tag, x.as_usize())
             })
