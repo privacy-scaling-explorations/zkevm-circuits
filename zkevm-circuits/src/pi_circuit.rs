@@ -310,16 +310,17 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
         meta.create_gate(
             "tx_table.tx_value[i] == raw_public_inputs[offset + 2* tx_table_len + i]",
             |meta| {
-                // row.q_tx_table * row.tx_table.tx_value
-                // == row.q_tx_table * row_offset_tx_table_tx_value.raw_public_inputs
+                // (row.q_tx_calldata | row.q_tx_table) * row.tx_table.tx_value
+                // == (row.q_tx_calldata | row.q_tx_table) * row_offset_tx_table_tx_value.raw_public_inputs
                 let q_tx_table = meta.query_selector(q_tx_table);
+                let q_tx_calldata = meta.query_selector(q_tx_calldata);
                 let tx_value = meta.query_advice(tx_value, Rotation::cur());
                 let rpi_tx_value = meta.query_advice(
                     raw_public_inputs,
                     Rotation((offset + 2 * tx_table_len) as i32),
                 );
 
-                vec![q_tx_table * (tx_value - rpi_tx_value)]
+                vec![or::expr([q_tx_table, q_tx_calldata]) * (tx_value - rpi_tx_value)]
             },
         );
 
