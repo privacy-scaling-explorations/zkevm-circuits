@@ -4,10 +4,10 @@ use halo2_proofs::{
     poly::Rotation,
 };
 
-pub use gadgets::util::Expr;
 use crate::table::TxLogFieldTag;
 use eth_types::{Field, ToAddress};
 pub use ethers_core::types::{Address, U256};
+pub use gadgets::util::Expr;
 
 pub(crate) fn random_linear_combine_word<F: Field>(bytes: [u8; 32], randomness: F) -> F {
     crate::evm_circuit::util::Word::random_linear_combine(bytes, randomness)
@@ -38,8 +38,26 @@ pub fn power_of_randomness_from_instance<F: Field, const N: usize>(
 }
 
 pub(crate) fn build_tx_log_address(index: u64, field_tag: TxLogFieldTag, log_id: u64) -> Address {
-    (U256::from(index)
-        + (U256::from(field_tag as u64) << 32)
-        + (U256::from(log_id) << 48))
+    (U256::from(index) + (U256::from(field_tag as u64) << 32) + (U256::from(log_id) << 48))
         .to_address()
+}
+
+pub(crate) fn build_tx_log_from_expr_to_expression<F: halo2_proofs::arithmetic::FieldExt>(
+    index: Expression<F>,
+    field_tag: Expression<F>,
+    log_id: Expression<F>,
+) -> Expression<F> {
+    index + (1u64 << 32).expr() * field_tag + ((1u64 << 48).expr()) * log_id
+}
+
+pub(crate) fn build_tx_log_expression<F: halo2_proofs::arithmetic::FieldExt>(
+    index: u64,
+    field_tag: TxLogFieldTag,
+    log_id: u64,
+) -> Expression<F> {
+    if index != 0 {
+        build_tx_log_from_expr_to_expression(index.expr(), field_tag.expr(), log_id.expr())
+    } else {
+        (1u64 << 32).expr() * field_tag.expr() + ((1u64 << 48).expr()) * log_id.expr()
+    }
 }
