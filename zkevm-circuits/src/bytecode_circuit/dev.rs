@@ -1,19 +1,23 @@
 use super::bytecode_unroller::{unroll, Config, UnrolledBytecode};
 use crate::table::{BytecodeTable, KeccakTable};
-use crate::util::power_of_randomness_from_instance;
+use crate::util::DEFAULT_RAND;
 use eth_types::Field;
 use halo2_proofs::{
     circuit::Layouter,
-    plonk::{ConstraintSystem, Error},
+    plonk::{ConstraintSystem, Error, Expression},
 };
 use halo2_proofs::{circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit};
 use std::vec;
 
+/// tester for bytecode circuit
 #[derive(Default)]
-pub(crate) struct BytecodeCircuitTester<F: Field> {
-    bytecodes: Vec<UnrolledBytecode<F>>,
-    size: usize,
-    randomness: F,
+pub struct BytecodeCircuitTester<F: Field> {
+    /// byte codes
+    pub bytecodes: Vec<UnrolledBytecode<F>>,
+    /// size
+    pub size: usize,
+    /// randomness
+    pub randomness: F,
 }
 
 fn get_randomness<F: Field>() -> F {
@@ -31,7 +35,13 @@ impl<F: Field> Circuit<F> for BytecodeCircuitTester<F> {
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
         let bytecode_table = BytecodeTable::construct(meta);
 
-        let randomness = power_of_randomness_from_instance::<_, 1>(meta);
+        //let randomness = power_of_randomness_from_instance::<_, 1>(meta);
+        let randomness: [Expression<F>; 31] = (1..32)
+            .map(|exp| Expression::Constant(F::from_u128(DEFAULT_RAND).pow(&[exp, 0, 0, 0])))
+            .collect::<Vec<_>>()
+            .try_into()
+            .unwrap();
+
         let keccak_table = KeccakTable::construct(meta);
 
         Config::configure(meta, randomness[0].clone(), bytecode_table, keccak_table)
@@ -117,10 +127,10 @@ pub fn test_bytecode_circuit_unrolled<F: Field>(
         randomness,
     };
 
-    let num_rows = 1 << k;
-    const NUM_BLINDING_ROWS: usize = 7 - 1;
-    let instance = vec![vec![randomness; num_rows - NUM_BLINDING_ROWS]];
-    let prover = MockProver::<F>::run(k, &circuit, instance).unwrap();
+    // let num_rows = 1 << k;
+    // const NUM_BLINDING_ROWS: usize = 7 - 1;
+    // let instance = vec![vec![randomness; num_rows - NUM_BLINDING_ROWS]];
+    let prover = MockProver::<F>::run(k, &circuit, [].to_vec()).unwrap();
     let result = prover.verify();
     if let Err(failures) = &result {
         for failure in failures.iter() {

@@ -1,6 +1,7 @@
 #![cfg(feature = "circuits")]
 
 use bus_mapping::circuit_input_builder::BuilderClient;
+
 use bus_mapping::operation::OperationContainer;
 use eth_types::geth_types;
 use halo2_proofs::{
@@ -11,7 +12,9 @@ use halo2_proofs::{
         group::{Curve, Group},
     },
 };
-use integration_tests::{get_client, log_init, GenDataOutput, CHAIN_ID};
+use integration_tests::{
+    get_client, log_init, GenDataOutput, CHAIN_ID, END_BLOCK, START_BLOCK, TX_ID,
+};
 use lazy_static::lazy_static;
 use log::trace;
 use paste::paste;
@@ -31,14 +34,79 @@ lazy_static! {
     pub static ref GEN_DATA: GenDataOutput = GenDataOutput::load();
 }
 
+#[tokio::test]
+async fn test_mock_prove_tx() {
+    log_init();
+    let tx_id: &str = &TX_ID;
+    log::info!("test evm circuit, tx: {}", tx_id);
+    if tx_id.is_empty() {
+        return;
+    }
+    let cli = get_client();
+    let cli = BuilderClient::new(cli).await.unwrap();
+    let builder = cli.gen_inputs_tx(tx_id).await.unwrap();
+
+    if builder.block.txs.is_empty() {
+        log::info!("skip empty block");
+        return;
+    }
+
+    let block = block_convert(&builder.block, &builder.code_db);
+    run_test_circuit(block).unwrap();
+    log::info!("prove done");
+}
+
+#[tokio::test]
+async fn test_evm_circuit_all_block() {
+    log_init();
+    let start: usize = *START_BLOCK;
+    let end: usize = *END_BLOCK;
+    for blk in start..=end {
+        test_evm_circuit_block(blk as u64).await;
+    }
+}
+
+#[tokio::test]
+async fn test_evm_circuit_batch() {
+    log_init();
+    let start: usize = 1;
+    let end: usize = 8;
+    let cli = get_client();
+    let cli = BuilderClient::new(cli).await.unwrap();
+    let builder = cli
+        .gen_inputs_multi_blocks(start as u64, end as u64 + 1)
+        .await
+        .unwrap();
+
+    if builder.block.txs.is_empty() {
+        log::info!("skip empty block");
+        return;
+    }
+
+    let block = block_convert(&builder.block, &builder.code_db);
+    log::info!("tx num: {}", builder.block.txs.len());
+    run_test_circuit(block).unwrap();
+    log::info!("prove done");
+}
+
 async fn test_evm_circuit_block(block_num: u64) {
     log::info!("test evm circuit, block number: {}", block_num);
     let cli = get_client();
     let cli = BuilderClient::new(cli).await.unwrap();
     let (builder, _) = cli.gen_inputs(block_num).await.unwrap();
 
+    if builder.block.txs.is_empty() {
+        log::info!("skip empty block");
+        return;
+    }
+
     let block = block_convert(&builder.block, &builder.code_db);
-    run_test_circuit(block).expect("evm_circuit verification failed");
+    let result = run_test_circuit(block);
+    log::info!(
+        "test evm circuit, block number: {} result {:?}",
+        block_num,
+        result
+    );
 }
 
 async fn test_state_circuit_block(block_num: u64) {

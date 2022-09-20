@@ -14,7 +14,7 @@ version = "0.7.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9e8b47f52ea9bae42228d07ec09eb676433d7c4ed1ebdf0f1d1c29ed446f1ab8"
 dependencies = [
- "cfg-if",
+ "cfg-if 1.0.0",
  "cipher",
  "cpufeatures",
  "opaque-debug 0.3.0",
@@ -328,11 +328,13 @@ checksum = "c1ad822118d20d2c234f427000d5acc36eabe1e29a348c89b63dd60b13f28e5d"
 name = "bus-mapping"
 version = "0.1.0"
 dependencies = [
+ "ctor",
+ "env_logger",
  "eth-types",
  "ethers-core",
  "ethers-providers",
  "gadgets",
- "halo2_proofs 0.2.0",
+ "halo2_proofs",
  "hex",
  "itertools",
  "keccak256",
@@ -402,6 +404,12 @@ checksum = "2fff2a6927b3bb87f9595d67196a70493f627687a71d87a0d692242c33f58c11"
 
 [[package]]
 name = "cfg-if"
+version = "0.1.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4785bdd1c96b2a846b2bd7cc02e86b6b3dbf14e7e53446c4f54c92a361040822"
+
+[[package]]
+name = "cfg-if"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
@@ -439,7 +447,7 @@ dependencies = [
  "env_logger",
  "eth-types",
  "ethers-signers",
- "halo2_proofs 0.2.0",
+ "halo2_proofs",
  "itertools",
  "keccak256",
  "mock",
@@ -674,7 +682,7 @@ version = "1.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b540bd8bc810d3885c6ea91e2018302f68baba2129ab3e88f32389ee9370880d"
 dependencies = [
- "cfg-if",
+ "cfg-if 1.0.0",
 ]
 
 [[package]]
@@ -719,7 +727,7 @@ version = "0.5.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2dd04ddaf88237dc3b8d8f9a3c1004b506b54b3313403944054d23c0870c521"
 dependencies = [
- "cfg-if",
+ "cfg-if 1.0.0",
  "crossbeam-utils",
 ]
 
@@ -729,7 +737,7 @@ version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "715e8152b692bba2d374b53d4875445368fdf21a94751410af607a5ac677d1fc"
 dependencies = [
- "cfg-if",
+ "cfg-if 1.0.0",
  "crossbeam-epoch",
  "crossbeam-utils",
 ]
@@ -741,7 +749,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "045ebe27666471bb549370b4b0b3e51b07f56325befa4284db65fc89c02511b1"
 dependencies = [
  "autocfg",
- "cfg-if",
+ "cfg-if 1.0.0",
  "crossbeam-utils",
  "memoffset",
  "once_cell",
@@ -754,7 +762,7 @@ version = "0.8.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "51887d4adc7b564537b15adcfb307936f8075dfcd5f00dde9a9f1d29383682bc"
 dependencies = [
- "cfg-if",
+ "cfg-if 1.0.0",
  "once_cell",
 ]
 
@@ -992,7 +1000,7 @@ version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b98cf8ebf19c3d1b223e151f99a4f9f0690dca41414773390fc824184ac833e1"
 dependencies = [
- "cfg-if",
+ "cfg-if 1.0.0",
  "dirs-sys-next",
 ]
 
@@ -1037,7 +1045,7 @@ dependencies = [
 [[package]]
 name = "ecc"
 version = "0.1.0"
-source = "git+https://github.com/privacy-scaling-explorations/halo2wrong?tag=v2022_09_09#2d708b4453387f03059aad68d6d87441db112a2f"
+source = "git+https://github.com/scroll-tech/halo2wrong?branch=scroll-dev-0902#46658f34ec33dbdc913667d5c1a8af617d543257"
 dependencies = [
  "group",
  "integer",
@@ -1051,7 +1059,7 @@ dependencies = [
 [[package]]
 name = "ecdsa"
 version = "0.1.0"
-source = "git+https://github.com/privacy-scaling-explorations/halo2wrong?tag=v2022_09_09#2d708b4453387f03059aad68d6d87441db112a2f"
+source = "git+https://github.com/scroll-tech/halo2wrong?branch=scroll-dev-0902#46658f34ec33dbdc913667d5c1a8af617d543257"
 dependencies = [
  "ecc",
  "group",
@@ -1121,7 +1129,7 @@ version = "0.8.31"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9852635589dc9f9ea1b6fe9f05b50ef208c85c834a562f0c6abb1c475736ec2b"
 dependencies = [
- "cfg-if",
+ "cfg-if 1.0.0",
 ]
 
 [[package]]
@@ -1165,7 +1173,7 @@ version = "0.1.0"
 dependencies = [
  "ethers-core",
  "ethers-signers",
- "halo2_proofs 0.2.0",
+ "halo2_proofs",
  "hex",
  "itertools",
  "lazy_static",
@@ -1403,7 +1411,7 @@ version = "0.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ebe5db405d0e584aa8dae154ffebb90f2305cae588fd11d9f6b857ebe3a79294"
 dependencies = [
- "cfg-if",
+ "cfg-if 1.0.0",
  "colored",
  "dunce",
  "ethers-core",
@@ -1717,7 +1725,7 @@ version = "0.1.0"
 dependencies = [
  "digest 0.7.6",
  "eth-types",
- "halo2_proofs 0.2.0",
+ "halo2_proofs",
  "rand",
  "rand_xorshift",
  "sha3 0.7.3",
@@ -1765,7 +1773,7 @@ version = "0.2.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4eb1a864a501629691edf6c15a593b7a51eebaa1e8468e9ddc623de7c9b58ec6"
 dependencies = [
- "cfg-if",
+ "cfg-if 1.0.0",
  "js-sys",
  "libc",
  "wasi 0.11.0+wasi-snapshot-preview1",
@@ -1836,32 +1844,40 @@ checksum = "eabb4a44450da02c90444cf74558da904edde8fb4e9035a9a6a4e15445af0bd7"
 
 [[package]]
 name = "halo2_proofs"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e925780549adee8364c7f2b685c753f6f3df23bde520c67416e93bf615933760"
+version = "0.2.0"
+source = "git+https://github.com/scroll-tech/halo2.git?branch=scroll-dev-0902#8c6b1666140c92e09849fd332fc201b34e8422a5"
 dependencies = [
  "blake2b_simd",
+ "cfg-if 0.1.10",
  "ff",
  "group",
- "pasta_curves",
+ "halo2curves 0.2.1",
+ "num-bigint",
+ "num-integer",
  "plotters",
+ "poseidon",
  "rand_core",
  "rayon",
+ "subtle",
  "tabbycat",
+ "tracing",
 ]
 
 [[package]]
-name = "halo2_proofs"
+name = "halo2curves"
 version = "0.2.0"
-source = "git+https://github.com/privacy-scaling-explorations/halo2.git?tag=v2022_09_10#a9e99a72a65d7c98e8a4258c2c94269c834d1c10"
+source = "git+https://github.com/privacy-scaling-explorations/halo2curves?tag=v0.2.0#bbd4cee10dbf9c51e0456ea67ec2b894b49f688c"
 dependencies = [
- "blake2b_simd",
  "ff",
  "group",
- "halo2curves",
+ "lazy_static",
+ "num-bigint",
+ "num-traits",
+ "pasta_curves",
+ "rand",
  "rand_core",
- "rayon",
- "tracing",
+ "static_assertions",
+ "subtle",
 ]
 
 [[package]]
@@ -1884,10 +1900,10 @@ dependencies = [
 [[package]]
 name = "halo2wrong"
 version = "0.1.0"
-source = "git+https://github.com/privacy-scaling-explorations/halo2wrong?tag=v2022_09_09#2d708b4453387f03059aad68d6d87441db112a2f"
+source = "git+https://github.com/scroll-tech/halo2wrong?branch=scroll-dev-0902#46658f34ec33dbdc913667d5c1a8af617d543257"
 dependencies = [
  "group",
- "halo2_proofs 0.2.0",
+ "halo2_proofs",
  "num-bigint",
  "num-integer",
  "num-traits",
@@ -2158,7 +2174,7 @@ version = "0.1.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7a5bbe824c507c5da5956355e86a746d82e0e1464f65d862cc5e71da70e94b2c"
 dependencies = [
- "cfg-if",
+ "cfg-if 1.0.0",
  "js-sys",
  "wasm-bindgen",
  "web-sys",
@@ -2167,7 +2183,7 @@ dependencies = [
 [[package]]
 name = "integer"
 version = "0.1.0"
-source = "git+https://github.com/privacy-scaling-explorations/halo2wrong?tag=v2022_09_09#2d708b4453387f03059aad68d6d87441db112a2f"
+source = "git+https://github.com/scroll-tech/halo2wrong?branch=scroll-dev-0902#46658f34ec33dbdc913667d5c1a8af617d543257"
 dependencies = [
  "group",
  "maingate",
@@ -2186,7 +2202,8 @@ dependencies = [
  "env_logger",
  "eth-types",
  "ethers",
- "halo2_proofs 0.2.0",
+ "halo2_proofs",
+ "hex",
  "lazy_static",
  "log",
  "paste",
@@ -2194,6 +2211,7 @@ dependencies = [
  "rand_chacha",
  "serde",
  "serde_json",
+ "strum",
  "tokio",
  "url",
  "zkevm-circuits",
@@ -2247,7 +2265,7 @@ version = "0.11.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6db2573d3fd3e4cc741affc9b5ce1a8ce36cf29f09f80f36da4309d0ae6d7854"
 dependencies = [
- "cfg-if",
+ "cfg-if 1.0.0",
  "ecdsa 0.14.6",
  "elliptic-curve",
  "sha2 0.10.5",
@@ -2265,7 +2283,7 @@ name = "keccak256"
 version = "0.1.0"
 dependencies = [
  "eth-types",
- "halo2_proofs 0.1.0",
+ "halo2_proofs",
  "itertools",
  "lazy_static",
  "num-bigint",
@@ -2325,7 +2343,7 @@ version = "0.7.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "efbc0f03f9a775e9f6aed295c6a1ba2253c5757a9e03d55c6caa46a681abcddd"
 dependencies = [
- "cfg-if",
+ "cfg-if 1.0.0",
  "winapi",
 ]
 
@@ -2399,13 +2417,13 @@ version = "0.4.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "abb12e687cfb44aa40f41fc3978ef76448f9b6038cad6aef4259d3c095a2382e"
 dependencies = [
- "cfg-if",
+ "cfg-if 1.0.0",
 ]
 
 [[package]]
 name = "maingate"
 version = "0.1.0"
-source = "git+https://github.com/privacy-scaling-explorations/halo2wrong?tag=v2022_09_09#2d708b4453387f03059aad68d6d87441db112a2f"
+source = "git+https://github.com/scroll-tech/halo2wrong?branch=scroll-dev-0902#46658f34ec33dbdc913667d5c1a8af617d543257"
 dependencies = [
  "group",
  "halo2wrong",
@@ -2666,7 +2684,7 @@ version = "0.8.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d76e8e1493bcac0d2766c42737f34458f1c8c50c0d23bcb24ea953affb273216"
 dependencies = [
- "cfg-if",
+ "cfg-if 1.0.0",
  "instant",
  "libc",
  "redox_syscall",
@@ -2680,7 +2698,7 @@ version = "0.9.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "09a279cbf25cb0757810394fbc1e359949b59e348145c643a939a525692e6929"
 dependencies = [
- "cfg-if",
+ "cfg-if 1.0.0",
  "libc",
  "redox_syscall",
  "smallvec",
@@ -3000,6 +3018,16 @@ dependencies = [
  "crc32fast",
  "flate2",
  "miniz_oxide",
+]
+
+[[package]]
+name = "poseidon"
+version = "0.2.0"
+source = "git+https://github.com/appliedzkp/poseidon.git#336466a8d7aba6cf65be6980552cf7be93e957d8"
+dependencies = [
+ "group",
+ "halo2curves 0.2.0",
+ "subtle",
 ]
 
 [[package]]
@@ -3578,7 +3606,7 @@ version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "028f48d513f9678cda28f6e4064755b3fbb2af6acd672f2c209b62323f7aea0f"
 dependencies = [
- "cfg-if",
+ "cfg-if 1.0.0",
  "cpufeatures",
  "digest 0.10.3",
 ]
@@ -3589,7 +3617,7 @@ version = "0.10.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "006769ba83e921b3085caa8334186b00cf92b4cb1a6cf4632fbccc8eff5c7549"
 dependencies = [
- "cfg-if",
+ "cfg-if 1.0.0",
  "cpufeatures",
  "digest 0.10.3",
 ]
@@ -3613,7 +3641,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4d58a1e1bf39749807d89cf2d98ac2dfa0ff1cb3faa38fbb64dd88ac8013d800"
 dependencies = [
  "block-buffer 0.9.0",
- "cfg-if",
+ "cfg-if 1.0.0",
  "cpufeatures",
  "digest 0.9.0",
  "opaque-debug 0.3.0",
@@ -3625,7 +3653,7 @@ version = "0.10.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf9db03534dff993187064c4e0c05a5708d2a9728ace9a8959b77bedf415dac5"
 dependencies = [
- "cfg-if",
+ "cfg-if 1.0.0",
  "cpufeatures",
  "digest 0.10.3",
 ]
@@ -4033,7 +4061,7 @@ version = "0.1.36"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2fce9567bd60a67d08a16488756721ba392f24f29006402881e43b19aac64307"
 dependencies = [
- "cfg-if",
+ "cfg-if 1.0.0",
  "pin-project-lite",
  "tracing-attributes",
  "tracing-core",
@@ -4237,7 +4265,7 @@ version = "0.2.83"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "eaf9f5aceeec8be17c128b2e93e031fb8a4d469bb9c4ae2d7dc1888b26887268"
 dependencies = [
- "cfg-if",
+ "cfg-if 1.0.0",
  "wasm-bindgen-macro",
 ]
 
@@ -4262,7 +4290,7 @@ version = "0.4.33"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "23639446165ca5a5de86ae1d8896b737ae80319560fbaa4c2887b7da6e7ebd7d"
 dependencies = [
- "cfg-if",
+ "cfg-if 1.0.0",
  "js-sys",
  "wasm-bindgen",
  "web-sys",
@@ -4514,7 +4542,7 @@ dependencies = [
  "ethers-core",
  "ethers-signers",
  "gadgets",
- "halo2_proofs 0.2.0",
+ "halo2_proofs",
  "hex",
  "integer",
  "itertools",

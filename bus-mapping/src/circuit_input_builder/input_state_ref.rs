@@ -20,6 +20,7 @@ use eth_types::{
     Address, GethExecStep, ToAddress, ToBigEndian, Word, H256,
 };
 use ethers_core::utils::{get_contract_address, get_create2_address};
+use keccak256::EMPTY_HASH;
 use std::cmp::max;
 
 /// Reference to the internal state of the CircuitInputBuilder in a particular
@@ -565,6 +566,7 @@ impl<'a> CircuitInputStateRef<'a> {
     }
 
     /// Check if address is a precompiled or not.
+    /// FIXME: we should move this to a more common place.
     pub fn is_precompiled(&self, address: &Address) -> bool {
         address.0[0..19] == [0u8; 19] && (1..=9).contains(&address.0[19])
     }
@@ -588,7 +590,7 @@ impl<'a> CircuitInputStateRef<'a> {
                 step.stack.nth_last(2)?,
             ),
             CallKind::CallCode => (caller.address, caller.address, step.stack.nth_last(2)?),
-            CallKind::DelegateCall => (caller.caller_address, caller.address, Word::zero()),
+            CallKind::DelegateCall => (caller.caller_address, caller.address, caller.value),
             CallKind::StaticCall => (
                 caller.address,
                 step.stack.nth_last(1)?.to_address(),
@@ -615,11 +617,15 @@ impl<'a> CircuitInputStateRef<'a> {
                     }
                     _ => address,
                 };
-                let (found, account) = self.sdb.get_account(&code_address);
-                if !found {
-                    return Err(Error::AccountNotFound(code_address));
+                if self.is_precompiled(&code_address) {
+                    (CodeSource::Address(code_address), H256::from(*EMPTY_HASH))
+                } else {
+                    let (found, account) = self.sdb.get_account(&code_address);
+                    if !found {
+                        return Err(Error::AccountNotFound(code_address));
+                    }
+                    (CodeSource::Address(code_address), account.code_hash)
                 }
-                (CodeSource::Address(code_address), account.code_hash)
             }
         };
 
@@ -983,6 +989,12 @@ impl<'a> CircuitInputStateRef<'a> {
                 };
                 let (found, _) = self.sdb.get_account(&address);
                 if found {
+                    log::error!(
+                        "create address collision at {:?}, step {:?}, next_step {:?}",
+                        address,
+                        step,
+                        next_step
+                    );
                     return Ok(Some(ExecError::ContractAddressCollision));
                 }
             }

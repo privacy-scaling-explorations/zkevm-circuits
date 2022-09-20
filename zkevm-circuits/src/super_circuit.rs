@@ -222,9 +222,12 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
             self.block.randomness,
         )?;
         config.state_circuit.load(&mut layouter)?;
-        config
-            .block_table
-            .load(&mut layouter, &self.block.context, self.block.randomness)?;
+        config.block_table.load(
+            &mut layouter,
+            &self.block.context,
+            &self.block.txs,
+            self.block.randomness,
+        )?;
         config
             .copy_table
             .load(&mut layouter, &self.block, self.block.randomness)?;
@@ -325,7 +328,7 @@ impl<const MAX_TXS: usize, const MAX_CALLDATA: usize> SuperCircuit<Fr, MAX_TXS, 
         // SignVerifyChip -> ECDSAChip -> MainGate instance column
         instance.push(vec![]);
 
-        let chain_id = block.context.chain_id;
+        let chain_id = block.context.chain_id();
         let tx_circuit = TxCircuit::new(aux_generator, block.randomness, chain_id.as_u64(), txs);
 
         let circuit = SuperCircuit::<_, MAX_TXS, MAX_CALLDATA> {

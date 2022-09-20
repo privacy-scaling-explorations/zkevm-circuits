@@ -669,15 +669,18 @@ fn into_words(message: &[u8]) -> Vec<u64> {
     words
 }
 
+/// test module
+#[cfg(any(feature = "test", test))]
 #[cfg(test)]
-mod tests {
+pub mod tests {
     use super::*;
-    use crate::bytecode_circuit::dev::test_bytecode_circuit_unrolled;
+    use crate::{bytecode_circuit::dev::test_bytecode_circuit_unrolled, util::DEFAULT_RAND};
     use eth_types::Bytecode;
     use halo2_proofs::halo2curves::bn256::Fr;
 
-    fn get_randomness<F: Field>() -> F {
-        F::from(123456)
+    /// get randomness value
+    pub fn get_randomness<F: Field>() -> F {
+        F::from(DEFAULT_RAND as u64)
     }
 
     /// Verify unrolling code

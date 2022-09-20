@@ -5,3 +5,4 @@
 [submodule "integration-tests/contracts/vendor/openzeppelin-contracts"]
 	path = integration-tests/contracts/vendor/openzeppelin-contracts
 	url = https://github.com/OpenZeppelin/openzeppelin-contracts
+	update = none
