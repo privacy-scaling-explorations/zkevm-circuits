@@ -42,7 +42,7 @@ pub(crate) fn build_tx_log_address(index: u64, field_tag: TxLogFieldTag, log_id:
         .to_address()
 }
 
-pub(crate) fn build_tx_log_expression<F: halo2_proofs::arithmetic::FieldExt>(
+pub(crate) fn build_tx_log_expression<F: Field>(
     index: Expression<F>,
     field_tag: Expression<F>,
     log_id: Expression<F>,
