@@ -288,7 +288,7 @@ where
                 config.assign_with_region(&mut region, &self.rows, self.n_rows, self.randomness)?;
                 #[cfg(test)]
                 {
-                    let padding_length = RwMap::padding_len(&self.rows, self.n_rows);
+                    let padding_length = RwMap::padding_len(self.rows.len(), self.n_rows);
                     for ((column, row_offset), &f) in &self.overrides {
                         let advice_column = column.value(&config);
                         let offset =

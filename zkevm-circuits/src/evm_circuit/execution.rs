@@ -734,33 +734,55 @@ impl<F: Field, const MAX_TXS: usize, const MAX_RWS: usize> ExecutionConfig<F, MA
 
                 self.q_step_first.enable(&mut region, offset)?;
 
-                // handle EndBlock
-                let dummy_tx = Transaction {
-                    calls: vec![Default::default()],
-                    ..Default::default()
-                };
-                let last_tx = block.txs.last().unwrap_or(&dummy_tx);
-                let end_block_state = &ExecStep {
-                    rw_counter: if block.txs.is_empty() {
-                        0
-                    } else {
-                        // if it is the first tx,  less 1 rw lookup, refer to end_tx gadget
-                        last_tx.steps.last().unwrap().rw_counter + 9 - (last_tx.id == 1) as usize
-                    },
-                    execution_state: ExecutionState::EndBlock,
-                    ..Default::default()
-                };
+                let dummy_tx = Transaction::default();
+                let dummy_call = Call::default();
+                let end_block_not_last = &block.end_block_not_last;
+                let end_block_last = &block.end_block_last;
                 // Collect all steps
                 let mut steps = block
                     .txs
                     .iter()
                     .flat_map(|tx| tx.steps.iter().map(move |step| (tx, step)))
-                    .chain(iter::repeat((last_tx, end_block_state)))
                     .peekable();
 
-                let mut last_height = 0;
-                while let Some((transaction, step)) = steps.next() {
-                    let call = &transaction.calls[step.call_index];
+                let last_height = 1;
+                // end_block_rows tracks the remaining EndBlock rows
+                let mut end_block_rows = None;
+                loop {
+                    let (transaction, call, step, next) = match steps.next() {
+                        Some((transaction, step)) => {
+                            let call = &transaction.calls[step.call_index];
+                            let next = steps.peek().map(|&(transaction, step)| {
+                                (transaction, &transaction.calls[step.call_index], step)
+                            });
+                            (transaction, call, step, next)
+                        }
+                        None => {
+                            if end_block_rows.is_none() {
+                                end_block_rows = Some(if exact || block.evm_circuit_pad_to == 0 {
+                                    1
+                                } else {
+                                    if offset >= block.evm_circuit_pad_to {
+                                        log::error!(
+                                            "evm circuit offset larger than padding: {} > {}",
+                                            offset,
+                                            block.evm_circuit_pad_to
+                                        );
+                                        return Err(Error::Synthesis);
+                                    }
+                                    block.evm_circuit_pad_to - offset
+                                });
+                            }
+                            let (step, next_step) = match end_block_rows {
+                                Some(1) => (end_block_last, None),
+                                Some(2) => (end_block_not_last, Some(end_block_last)),
+                                Some(_) => (end_block_not_last, Some(end_block_not_last)),
+                                _ => unreachable!(),
+                            };
+                            let next = next_step.map(|step| (&dummy_tx, &dummy_call, step));
+                            (&dummy_tx, &dummy_call, step, next)
+                        }
+                    };
                     let height = self.get_step_height(step.execution_state);
 
                     // Assign the step witness
@@ -772,9 +794,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_RWS: usize> ExecutionConfig<F, MA
                         call,
                         step,
                         height,
-                        steps.peek().map(|&(transaction, step)| {
-                            (transaction, &transaction.calls[step.call_index], step)
-                        }),
+                        next,
                         power_of_randomness,
                     )?;
 
@@ -808,26 +828,13 @@ impl<F: Field, const MAX_TXS: usize, const MAX_RWS: usize> ExecutionConfig<F, MA
                     }
 
                     offset += height;
-                    last_height = height;
 
-                    if step.execution_state == ExecutionState::EndBlock {
-                        // evm_circuit_pad_to == 0 means no extra padding
-                        if exact || block.evm_circuit_pad_to == 0 {
-                            // no padding
+                    if let Some(i) = end_block_rows {
+                        if i == 1 {
+                            debug_assert_eq!(height, 1);
                             break;
-                        } else {
-                            // padding
-                            if offset >= block.evm_circuit_pad_to {
-                                if offset > block.evm_circuit_pad_to {
-                                    log::warn!(
-                                        "evm circuit offset larger than padding: {} > {}",
-                                        offset,
-                                        block.evm_circuit_pad_to
-                                    );
-                                }
-                                break;
-                            }
                         }
+                        end_block_rows = Some(i - 1);
                     }
                 }
 
@@ -906,7 +913,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_RWS: usize> ExecutionConfig<F, MA
     ) -> Result<(), Error> {
         log::trace!("assign_exec_step offset:{} step:{:?}", offset, step);
         self.step
-            .assign_exec_step(region, offset, block, transaction, call, step)?;
+            .assign_exec_step(region, offset, block, call, step)?;
 
         macro_rules! assign_exec_step {
             ($gadget:expr) => {
@@ -1121,6 +1128,11 @@ impl<F: Field, const MAX_TXS: usize, const MAX_RWS: usize> ExecutionConfig<F, MA
             {
                 assigned_rw_values.push((name.clone(), *v));
             }
+        }
+        if matches!(step.execution_state, ExecutionState::EndBlock) {
+            println!("Block:\n {:#?}", block);
+            println!("Step:\n {:#?}", step);
+            println!("assigned_rw_values:\n {:#?}", assigned_rw_values);
         }
 
         for (idx, assigned_rw_value) in assigned_rw_values.iter().enumerate() {

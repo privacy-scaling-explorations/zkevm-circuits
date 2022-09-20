@@ -178,7 +178,7 @@ impl TransactionContext {
     }
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 /// Result of the parsing of an Ethereum Transaction.
 pub struct Transaction {
     /// Nonce
@@ -222,6 +222,26 @@ impl From<&Transaction> for geth_types::Transaction {
 }
 
 impl Transaction {
+    /// Create a dummy Transaction with zero values
+    pub fn dummy() -> Self {
+        Self {
+            nonce: 0,
+            gas: 0,
+            gas_price: Word::zero(),
+            from: Address::zero(),
+            to: Address::zero(),
+            value: Word::zero(),
+            input: Vec::new(),
+            signature: Signature {
+                r: Word::zero(),
+                s: Word::zero(),
+                v: 0,
+            },
+            calls: Vec::new(),
+            steps: Vec::new(),
+        }
+    }
+
     /// Create a new Self.
     pub fn new(
         call_id: usize,

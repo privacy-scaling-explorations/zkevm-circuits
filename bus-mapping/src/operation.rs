@@ -894,14 +894,14 @@ impl PartialOrd for StartOp {
 }
 
 impl Ord for StartOp {
-    fn cmp(&self, other: &Self) -> Ordering {
+    fn cmp(&self, _other: &Self) -> Ordering {
         Ordering::Equal
     }
 }
 
 impl Op for StartOp {
     fn into_enum(self) -> OpEnum {
-        OpEnum::StartOp(self)
+        OpEnum::Start(self)
     }
 
     fn reverse(&self) -> Self {

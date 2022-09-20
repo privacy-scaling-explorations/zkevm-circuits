@@ -43,10 +43,10 @@ pub fn run_test_circuits<const NACC: usize, const NTX: usize>(
         .handle_block(&block.eth_block, &block.geth_traces)
         .unwrap();
 
-    // println!("{:#?}", builder.block);
+    println!("xxx Block CIB\n{:#?}", builder.block);
     // build a witness block from trace result
     let block = crate::witness::block_convert(&builder.block, &builder.code_db);
-    // println!("{:#?}", block);
+    println!("xxx Block Wit\n{:#?}", block);
 
     // finish required tests according to config using this witness block
     test_circuits_using_witness_block(block, config.unwrap_or_default())

@@ -418,6 +418,7 @@ impl RwTable {
         randomness: F,
     ) -> Result<(), Error> {
         let (rows, _) = RwMap::table_assignments_prepad(rws, n_rows);
+        println!("xxx Rw Rows:\n{:#?}", rows);
         for (offset, row) in rows.iter().enumerate() {
             self.assign(region, offset, &row.table_assignment(randomness))?;
         }

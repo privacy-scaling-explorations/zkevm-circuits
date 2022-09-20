@@ -23,6 +23,8 @@ pub struct BlockData {
     pub eth_block: eth_types::Block<eth_types::Transaction>,
     /// Execution Trace from geth
     pub geth_traces: Vec<eth_types::GethExecTrace>,
+    /// TODO
+    pub max_rws: usize,
 }
 
 impl BlockData {
@@ -32,7 +34,13 @@ impl BlockData {
         CircuitInputBuilder::new(
             self.sdb.clone(),
             self.code_db.clone(),
-            Block::new(self.chain_id, self.history_hashes.clone(), &self.eth_block).unwrap(),
+            Block::new(
+                self.chain_id,
+                self.history_hashes.clone(),
+                &self.eth_block,
+                self.max_rws,
+            )
+            .unwrap(),
         )
     }
 
@@ -69,6 +77,7 @@ impl BlockData {
             history_hashes: geth_data.history_hashes,
             eth_block: geth_data.eth_block,
             geth_traces: geth_data.geth_traces,
+            max_rws: 128, // TODO: Set a better value maybe
         }
     }
 }
