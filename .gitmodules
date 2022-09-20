@@ -1,6 +1,7 @@
 [submodule "evm-testvectors/tests"]
 	path = testool/tests
 	url = https://github.com/ethereum/tests
+	update = none
 
 [submodule "integration-tests/contracts/vendor/openzeppelin-contracts"]
 	path = integration-tests/contracts/vendor/openzeppelin-contracts
