@@ -1,18 +1,17 @@
 //! Table definitions used cross-circuits
 
 use crate::copy_circuit::number_or_hash_to_field;
-use crate::evm_circuit::witness::{Rw, RwRow};
-use crate::evm_circuit::{
-    util::{rlc, RandomLinearCombination},
-    witness::{Block, BlockContext, Bytecode, RwMap, Transaction},
-};
+use crate::evm_circuit::util::{rlc, RandomLinearCombination};
 use crate::impl_expr;
+use crate::witness::{
+    Block, BlockContext, Bytecode, MptUpdateRow, MptUpdates, Rw, RwMap, RwRow, Transaction,
+};
 use bus_mapping::circuit_input_builder::{CopyDataType, CopyEvent};
 use eth_types::{Field, ToAddress, ToLittleEndian, ToScalar, Word, U256};
 use gadgets::binary_number::{BinaryNumberChip, BinaryNumberConfig};
 use halo2_proofs::{
     arithmetic::FieldExt,
-    circuit::Region,
+    circuit::{Region, Value},
     plonk::{Advice, Column, ConstraintSystem, Error},
 };
 use halo2_proofs::{circuit::Layouter, plonk::*, poly::Rotation};
@@ -127,7 +126,7 @@ impl TxTable {
                         || "tx table all-zero row",
                         column,
                         offset,
-                        || Ok(F::zero()),
+                        || Value::known(F::zero()),
                     )?;
                 }
                 offset += 1;
@@ -140,7 +139,7 @@ impl TxTable {
                                 || format!("tx table row {}", offset),
                                 *column,
                                 offset,
-                                || Ok(value),
+                                || Value::known(value),
                             )?;
                         }
                         offset += 1;
@@ -210,7 +209,7 @@ impl From<RwTableTag> for usize {
 }
 
 /// Tag for an AccountField in RwTable
-#[derive(Clone, Copy, Debug, EnumIter)]
+#[derive(Clone, Copy, Debug, EnumIter, Hash, PartialEq, Eq)]
 pub enum AccountFieldTag {
     /// Nonce field
     Nonce = 1,
@@ -385,12 +384,17 @@ impl RwTable {
             (self.aux1, row.aux1),
             (self.aux2, row.aux2),
         ] {
-            region.assign_advice(|| "assign rw row on rw table", column, offset, || Ok(value))?;
+            region.assign_advice(
+                || "assign rw row on rw table",
+                column,
+                offset,
+                || Value::known(value),
+            )?;
         }
         Ok(())
     }
 
-    /// Assign the `RwTable` from a `RwMap`, followig the same
+    /// Assign the `RwTable` from a `RwMap`, following the same
     /// table layout that the State Circuit uses.
     pub fn load<F: Field>(
         &self,
@@ -415,6 +419,91 @@ impl RwTable {
         let (rows, _) = RwMap::table_assignments_prepad(rws, n_rows);
         for (offset, row) in rows.iter().enumerate() {
             self.assign(region, offset, &row.table_assignment(randomness))?;
+        }
+        Ok(())
+    }
+}
+
+/// The types of proofs in the MPT table
+pub enum ProofType {
+    /// Nonce updated
+    NonceChanged = AccountFieldTag::Nonce as isize,
+    /// Balance updated
+    BalanceChanged = AccountFieldTag::Balance as isize,
+    /// Code hash exists
+    CodeHashExists = AccountFieldTag::CodeHash as isize,
+    /// Account destroyed
+    AccountDestructed,
+    /// Account does not exist
+    AccountDoesNotExist,
+    /// Storage updated
+    StorageChanged,
+}
+impl_expr!(ProofType);
+
+impl From<AccountFieldTag> for ProofType {
+    fn from(tag: AccountFieldTag) -> Self {
+        match tag {
+            AccountFieldTag::Nonce => Self::NonceChanged,
+            AccountFieldTag::Balance => Self::BalanceChanged,
+            AccountFieldTag::CodeHash => Self::CodeHashExists,
+        }
+    }
+}
+
+/// The MptTable shared between MPT Circuit and State Circuit
+#[derive(Clone, Copy, Debug)]
+pub struct MptTable([Column<Advice>; 7]);
+
+impl DynamicTableColumns for MptTable {
+    fn columns(&self) -> Vec<Column<Advice>> {
+        self.0.to_vec()
+    }
+}
+
+impl MptTable {
+    /// Construct a new MptTable
+    pub(crate) fn construct<F: FieldExt>(meta: &mut ConstraintSystem<F>) -> Self {
+        Self([0; 7].map(|_| meta.advice_column()))
+    }
+
+    pub(crate) fn assign<F: Field>(
+        &self,
+        region: &mut Region<'_, F>,
+        offset: usize,
+        row: &MptUpdateRow<F>,
+    ) -> Result<(), Error> {
+        for (column, value) in self.0.iter().zip_eq(row.values()) {
+            region.assign_advice(
+                || "assign mpt table row value",
+                *column,
+                offset,
+                || Value::known(*value),
+            )?;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn load<F: Field>(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        updates: &MptUpdates,
+        randomness: F,
+    ) -> Result<(), Error> {
+        layouter.assign_region(
+            || "mpt table",
+            |mut region| self.load_with_region(&mut region, updates, randomness),
+        )
+    }
+
+    pub(crate) fn load_with_region<F: Field>(
+        &self,
+        region: &mut Region<'_, F>,
+        updates: &MptUpdates,
+        randomness: F,
+    ) -> Result<(), Error> {
+        for (offset, row) in updates.table_assignments(randomness).iter().enumerate() {
+            self.assign(region, offset, row)?;
         }
         Ok(())
     }
@@ -476,7 +565,7 @@ impl BytecodeTable {
                         || "bytecode table all-zero row",
                         column,
                         offset,
-                        || Ok(F::zero()),
+                        || Value::known(F::zero()),
                     )?;
                 }
                 offset += 1;
@@ -489,7 +578,7 @@ impl BytecodeTable {
                                 || format!("bytecode table row {}", offset),
                                 *column,
                                 offset,
-                                || Ok(value),
+                                || Value::known(value),
                             )?;
                         }
                         offset += 1;
@@ -574,7 +663,7 @@ impl BlockTable {
                         || "block table all-zero row",
                         column,
                         offset,
-                        || Ok(F::zero()),
+                        || Value::known(F::zero()),
                     )?;
                 }
                 offset += 1;
@@ -586,7 +675,7 @@ impl BlockTable {
                             || format!("block table row {}", offset),
                             *column,
                             offset,
-                            || Ok(value),
+                            || Value::known(value),
                         )?;
                     }
                     offset += 1;
@@ -643,16 +732,30 @@ impl KeccakTable {
         vec![[F::one(), input_rlc, input_len, output_rlc]]
     }
 
-    // NOTE: For now, the input_rlc of the keccak is defined as
-    // `RLC(reversed(input))` for convenience of the circuits that do the lookups.
-    // This allows calculating the `input_rlc` after all the inputs bytes have been
-    // layed out via the pattern `acc[i] = acc[i-1] * r + value[i]`.
-    /// Assign the `KeccakTable` from a list hashing inputs, followig the same
-    /// table layout that the Keccak Circuit uses.
-    pub fn load<F: Field>(
+    /// Assign a table row for keccak table
+    pub fn assign_row<F: Field>(
+        &self,
+        region: &mut Region<F>,
+        offset: usize,
+        values: [F; 4],
+    ) -> Result<(), Error> {
+        for (column, value) in self.columns().iter().zip(values.iter()) {
+            region.assign_advice(
+                || format!("assign {}", offset),
+                *column,
+                offset,
+                || Value::known(*value),
+            )?;
+        }
+        Ok(())
+    }
+
+    /// Provide this function for the case that we want to consume a keccak
+    /// table but without running the full keccak circuit
+    pub fn dev_load<'a, F: Field>(
         &self,
         layouter: &mut impl Layouter<F>,
-        inputs: impl IntoIterator<Item = Vec<u8>> + Clone,
+        inputs: impl IntoIterator<Item = &'a Vec<u8>> + Clone,
         randomness: F,
     ) -> Result<(), Error> {
         layouter.assign_region(
@@ -664,21 +767,21 @@ impl KeccakTable {
                         || "keccak table all-zero row",
                         column,
                         offset,
-                        || Ok(F::zero()),
+                        || Value::known(F::zero()),
                     )?;
                 }
                 offset += 1;
 
                 let keccak_table_columns = self.columns();
                 for input in inputs.clone() {
-                    for row in Self::assignments(&input, randomness) {
+                    for row in Self::assignments(input, randomness) {
                         // let mut column_index = 0;
                         for (column, value) in keccak_table_columns.iter().zip_eq(row) {
                             region.assign_advice(
                                 || format!("keccak table row {}", offset),
                                 *column,
                                 offset,
-                                || Ok(value),
+                                || Value::known(value),
                             )?;
                         }
                         offset += 1;
@@ -760,21 +863,25 @@ impl CopyTable {
         let mut assignments = Vec::new();
         let rlc_acc = if copy_event.dst_type == CopyDataType::RlcAcc {
             let values = copy_event
-                .steps
+                .bytes
                 .iter()
-                .filter(|s| s.rw.is_write())
-                .map(|s| s.value)
+                .map(|(value, _)| *value)
                 .collect::<Vec<u8>>();
             rlc::value(values.iter().rev(), randomness)
         } else {
             F::zero()
         };
-        for (step_idx, copy_step) in copy_event.steps.iter().enumerate() {
+        for (step_idx, is_read_step) in copy_event
+            .bytes
+            .iter()
+            .flat_map(|_| vec![true, false].into_iter())
+            .enumerate()
+        {
             // is_first
             let is_first = if step_idx == 0 { F::one() } else { F::zero() };
             // id
             let id = {
-                let id = if copy_step.rw.is_read() {
+                let id = if is_read_step {
                     &copy_event.src_id
                 } else {
                     &copy_event.dst_id
@@ -782,27 +889,40 @@ impl CopyTable {
                 number_or_hash_to_field(id, randomness)
             };
             // addr
-            let addr = match copy_step.tag {
-                CopyDataType::TxLog => {
-                    let addr = (U256::from(copy_step.addr)
-                        + (U256::from(TxLogFieldTag::Data as u64) << 32)
-                        + (U256::from(copy_event.log_id.unwrap()) << 48))
-                        .to_address();
-                    addr.to_scalar().unwrap()
-                }
-                _ => F::from(copy_step.addr),
+            let tag = if is_read_step {
+                copy_event.src_type
+            } else {
+                copy_event.dst_type
             };
+            let copy_step_addr: u64 =
+                if is_read_step {
+                    copy_event.src_addr
+                } else {
+                    copy_event.dst_addr
+                } + (u64::try_from(step_idx).unwrap() - if is_read_step { 0 } else { 1 }) / 2u64;
+            let addr = if tag == CopyDataType::TxLog {
+                (U256::from(copy_step_addr)
+                    + (U256::from(TxLogFieldTag::Data as u64) << 32)
+                    + (U256::from(copy_event.log_id.unwrap()) << 48))
+                    .to_address()
+                    .to_scalar()
+                    .unwrap()
+            } else {
+                F::from(copy_step_addr)
+            };
+
+            let bytes_left = u64::try_from(copy_event.bytes.len() * 2 - step_idx).unwrap() / 2;
             assignments.push((
-                copy_step.tag,
+                tag,
                 [
                     is_first,
                     id,
                     addr,
-                    F::from(copy_event.src_addr_end), // src_addr_end
-                    F::from(copy_event.length - step_idx as u64 / 2), // bytes_left
-                    rlc_acc,                          // rlc_acc
-                    F::from(copy_step.rwc.0 as u64),  // rw_counter
-                    F::from(copy_step.rwc_inc_left),  // rw_inc_left
+                    F::from(copy_event.src_addr_end),
+                    F::from(bytes_left),
+                    rlc_acc,
+                    F::from(copy_event.rw_counter(step_idx)),
+                    F::from(copy_event.rw_counter_increase_left(step_idx)),
                 ],
             ));
         }
@@ -825,7 +945,7 @@ impl CopyTable {
                         || "copy table all-zero row",
                         column,
                         offset,
-                        || Ok(F::zero()),
+                        || Value::known(F::zero()),
                     )?;
                 }
                 offset += 1;
@@ -839,7 +959,7 @@ impl CopyTable {
                                 || format!("copy table row {}", offset),
                                 *column,
                                 offset,
-                                || Ok(value),
+                                || Value::known(value),
                             )?;
                         }
                         tag_chip.assign(&mut region, offset, &tag)?;

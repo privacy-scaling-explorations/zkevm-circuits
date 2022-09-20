@@ -27,7 +27,7 @@ use eth_types::{
     evm_types::{GasCost, GAS_STIPEND_CALL_WITH_VALUE},
     Field, ToLittleEndian, ToScalar,
 };
-use halo2_proofs::plonk::Error;
+use halo2_proofs::{circuit::Value, plonk::Error};
 use keccak256::EMPTY_HASH_LE;
 
 #[derive(Clone, Debug)]
@@ -89,7 +89,7 @@ impl<F: Field> ExecutionGadget<F> for CallGadget<F> {
         let callee_call_id = cb.curr.state.rw_counter.clone();
 
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
-        let mut reversion_info = cb.reversion_info(None);
+        let mut reversion_info = cb.reversion_info_read(None);
         let [current_address, is_static, depth] = [
             CallContextFieldTag::CalleeAddress,
             CallContextFieldTag::IsStatic,
@@ -134,7 +134,7 @@ impl<F: Field> ExecutionGadget<F> for CallGadget<F> {
         );
 
         // Propagate rw_counter_end_of_reversion and is_persistent
-        let mut callee_reversion_info = cb.reversion_info(Some(callee_call_id.expr()));
+        let mut callee_reversion_info = cb.reversion_info_write(Some(callee_call_id.expr()));
         cb.require_equal(
             "callee_is_persistent == is_persistent ⋅ is_success",
             callee_reversion_info.is_persistent(),
@@ -281,7 +281,7 @@ impl<F: Field> ExecutionGadget<F> for CallGadget<F> {
                 (CallContextFieldTag::IsCreate, 0.expr()),
                 (CallContextFieldTag::CodeHash, callee_code_hash.expr()),
             ] {
-                cb.call_context_lookup(false.expr(), Some(callee_call_id.expr()), field_tag, value);
+                cb.call_context_lookup(true.expr(), Some(callee_call_id.expr()), field_tag, value);
             }
 
             // Give gas stipend if value is not zero
@@ -371,22 +371,29 @@ impl<F: Field> ExecutionGadget<F> for CallGadget<F> {
 
         let opcode = step.opcode.unwrap();
         self.opcode
-            .assign(region, offset, Some(F::from(opcode.as_u64())))?;
+            .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
 
         self.tx_id
-            .assign(region, offset, Some(F::from(tx_id.low_u64())))?;
+            .assign(region, offset, Value::known(F::from(tx_id.low_u64())))?;
         self.reversion_info.assign(
             region,
             offset,
             call.rw_counter_end_of_reversion,
             call.is_persistent,
         )?;
-        self.current_address
-            .assign(region, offset, current_address.to_scalar())?;
+        self.current_address.assign(
+            region,
+            offset,
+            Value::known(
+                current_address
+                    .to_scalar()
+                    .expect("unexpected Address -> Scalar conversion failure"),
+            ),
+        )?;
         self.is_static
-            .assign(region, offset, Some(F::from(is_static.low_u64())))?;
+            .assign(region, offset, Value::known(F::from(is_static.low_u64())))?;
         self.depth
-            .assign(region, offset, Some(F::from(depth.low_u64())))?;
+            .assign(region, offset, Value::known(F::from(depth.low_u64())))?;
 
         self.gas.assign(region, offset, Some(gas.to_le_bytes()))?;
         self.callee_address
@@ -394,16 +401,16 @@ impl<F: Field> ExecutionGadget<F> for CallGadget<F> {
         self.value
             .assign(region, offset, Some(value.to_le_bytes()))?;
         self.is_success
-            .assign(region, offset, Some(F::from(is_success.low_u64())))?;
+            .assign(region, offset, Value::known(F::from(is_success.low_u64())))?;
         self.gas_is_u64.assign(
             region,
             offset,
             sum::value(&gas.to_le_bytes()[N_BYTES_GAS..]),
         )?;
         self.is_warm
-            .assign(region, offset, Some(F::from(is_warm as u64)))?;
+            .assign(region, offset, Value::known(F::from(is_warm as u64)))?;
         self.is_warm_prev
-            .assign(region, offset, Some(F::from(is_warm_prev as u64)))?;
+            .assign(region, offset, Value::known(F::from(is_warm_prev as u64)))?;
         self.callee_reversion_info.assign(
             region,
             offset,
@@ -431,12 +438,19 @@ impl<F: Field> ExecutionGadget<F> for CallGadget<F> {
             callee_balance_pair,
             value,
         )?;
-        self.callee_nonce
-            .assign(region, offset, callee_nonce.to_scalar())?;
+        self.callee_nonce.assign(
+            region,
+            offset,
+            Value::known(
+                callee_nonce
+                    .to_scalar()
+                    .expect("unexpected U256 -> Scalar conversion failure"),
+            ),
+        )?;
         self.callee_code_hash.assign(
             region,
             offset,
-            Some(Word::random_linear_combine(
+            Value::known(Word::random_linear_combine(
                 callee_code_hash.to_le_bytes(),
                 block.randomness,
             )),

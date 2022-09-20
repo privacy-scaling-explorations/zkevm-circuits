@@ -1,6 +1,5 @@
 use crate::evm_circuit::step::ExecutionState;
 use crate::impl_expr;
-pub use crate::table::TxContextFieldTag;
 use eth_types::Field;
 use gadgets::util::Expr;
 use halo2_proofs::plonk::Expression;
@@ -84,13 +83,13 @@ impl FixedTableTag {
                         })
                 }))
             }
-            Self::Pow2 => Box::new((0..65).map(move |value| {
-                [
-                    tag,
-                    F::from(value),
-                    F::from_u128(1_u128 << value),
-                    F::zero(),
-                ]
+            Self::Pow2 => Box::new((0..256).map(move |value| {
+                let (pow_lo, pow_hi) = if value < 128 {
+                    (F::from_u128(1_u128 << value), F::from(0))
+                } else {
+                    (F::from(0), F::from_u128(1 << (value - 128)))
+                };
+                [tag, F::from(value), pow_lo, pow_hi]
             })),
         }
     }

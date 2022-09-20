@@ -20,12 +20,13 @@ pub mod error;
 pub mod bytecode;
 pub mod evm_types;
 pub mod geth_types;
+pub mod sign_types;
 
 pub use bytecode::Bytecode;
 pub use error::Error;
 use halo2_proofs::{
     arithmetic::{Field as Halo2Field, FieldExt},
-    pairing::{
+    halo2curves::{
         bn256::{Fq, Fr},
         group::ff::PrimeField,
     },
@@ -37,7 +38,7 @@ pub use ethers_core::abi::ethereum_types::U512;
 use ethers_core::types;
 pub use ethers_core::types::{
     transaction::{eip2930::AccessList, response::Transaction},
-    Address, Block, Bytes, H160, H256, U256, U64,
+    Address, Block, Bytes, Signature, H160, H256, H64, U256, U64,
 };
 
 use serde::{de, Deserialize, Serialize};
@@ -181,6 +182,16 @@ impl ToWord for Address {
         let mut bytes = [0u8; 32];
         bytes[32 - Self::len_bytes()..].copy_from_slice(self.as_bytes());
         Word::from(bytes)
+    }
+}
+
+impl ToWord for bool {
+    fn to_word(&self) -> Word {
+        if *self {
+            Word::one()
+        } else {
+            Word::zero()
+        }
     }
 }
 

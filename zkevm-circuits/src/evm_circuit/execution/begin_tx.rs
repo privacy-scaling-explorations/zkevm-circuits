@@ -18,6 +18,7 @@ use crate::{
     util::Expr,
 };
 use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar};
+use halo2_proofs::circuit::Value;
 use halo2_proofs::plonk::Error;
 
 #[derive(Clone, Debug)]
@@ -48,8 +49,20 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         // Use rw_counter of the step which triggers next call as its call_id.
         let call_id = cb.curr.state.rw_counter.clone();
 
-        let tx_id = cb.call_context(Some(call_id.expr()), CallContextFieldTag::TxId);
-        let mut reversion_info = cb.reversion_info(None);
+        let tx_id = cb.query_cell();
+        cb.call_context_lookup(
+            1.expr(),
+            Some(call_id.expr()),
+            CallContextFieldTag::TxId,
+            tx_id.expr(),
+        );
+        let mut reversion_info = cb.reversion_info_write(None);
+        cb.call_context_lookup(
+            1.expr(),
+            Some(call_id.expr()),
+            CallContextFieldTag::IsSuccess,
+            reversion_info.is_persistent(),
+        );
 
         let [tx_nonce, tx_gas, tx_caller_address, tx_callee_address, tx_is_create, tx_call_data_length, tx_call_data_gas_cost] =
             [
@@ -137,7 +150,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             code_hash.expr(),
         );
 
-        // Setup next call's context.
+        // Setup first call's context.
         for (field_tag, value) in [
             (CallContextFieldTag::Depth, 1.expr()),
             (CallContextFieldTag::CallerAddress, tx_caller_address.expr()),
@@ -156,31 +169,35 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             (CallContextFieldTag::IsCreate, 0.expr()),
             (CallContextFieldTag::CodeHash, code_hash.expr()),
         ] {
-            cb.call_context_lookup(false.expr(), Some(call_id.expr()), field_tag, value);
+            cb.call_context_lookup(true.expr(), Some(call_id.expr()), field_tag, value);
         }
 
         cb.require_step_state_transition(StepStateTransition {
-            // 19 read/write including:
-            //   - Read CallContext TxId
-            //   - Read CallContext RwCounterEndOfReversion
-            //   - Read CallContext IsPersistent
+            // 23 reads and writes:
+            //   - Write CallContext TxId
+            //   - Write CallContext RwCounterEndOfReversion
+            //   - Write CallContext IsPersistent
+            //   - Write CallContext IsSuccess
             //   - Write Account Nonce
             //   - Write TxAccessListAccount
             //   - Write TxAccessListAccount
             //   - Write Account Balance
             //   - Write Account Balance
             //   - Read Account CodeHash
-            //   - Read CallContext Depth
-            //   - Read CallContext CallerAddress
-            //   - Read CallContext CalleeAddress
-            //   - Read CallContext CallDataOffset
-            //   - Read CallContext CallDataLength
-            //   - Read CallContext Value
-            //   - Read CallContext IsStatic
-            //   - Read CallContext LastCalleeId
-            //   - Read CallContext LastCalleeReturnDataOffset
-            //   - Read CallContext LastCalleeReturnDataLength
-            rw_counter: Delta(22.expr()),
+            //   - Write CallContext Depth
+            //   - Write CallContext CallerAddress
+            //   - Write CallContext CalleeAddress
+            //   - Write CallContext CallDataOffset
+            //   - Write CallContext CallDataLength
+            //   - Write CallContext Value
+            //   - Write CallContext IsStatic
+            //   - Write CallContext LastCalleeId
+            //   - Write CallContext LastCalleeReturnDataOffset
+            //   - Write CallContext LastCalleeReturnDataLength
+            //   - Write CallContext IsRoot
+            //   - Write CallContext IsCreate
+            //   - Write CallContext CodeHash
+            rw_counter: Delta(23.expr()),
             call_id: To(call_id.expr()),
             is_root: To(true.expr()),
             is_create: To(false.expr()),
@@ -221,31 +238,49 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
     ) -> Result<(), Error> {
         let gas_fee = tx.gas_price * tx.gas;
         let [caller_balance_pair, callee_balance_pair, (callee_code_hash, _)] =
-            [step.rw_indices[6], step.rw_indices[7], step.rw_indices[8]]
+            [step.rw_indices[7], step.rw_indices[8], step.rw_indices[9]]
                 .map(|idx| block.rws[idx].account_value_pair());
 
         self.tx_id
-            .assign(region, offset, Some(F::from(tx.id as u64)))?;
+            .assign(region, offset, Value::known(F::from(tx.id as u64)))?;
         self.tx_nonce
-            .assign(region, offset, Some(F::from(tx.nonce)))?;
-        self.tx_gas.assign(region, offset, Some(F::from(tx.gas)))?;
+            .assign(region, offset, Value::known(F::from(tx.nonce)))?;
+        self.tx_gas
+            .assign(region, offset, Value::known(F::from(tx.gas)))?;
         self.tx_gas_price
             .assign(region, offset, Some(tx.gas_price.to_le_bytes()))?;
         self.mul_gas_fee_by_gas
             .assign(region, offset, tx.gas_price, tx.gas, gas_fee)?;
-        self.tx_caller_address
-            .assign(region, offset, tx.caller_address.to_scalar())?;
-        self.tx_callee_address
-            .assign(region, offset, tx.callee_address.to_scalar())?;
+        self.tx_caller_address.assign(
+            region,
+            offset,
+            Value::known(
+                tx.caller_address
+                    .to_scalar()
+                    .expect("unexpected Address -> Scalar conversion failure"),
+            ),
+        )?;
+        self.tx_callee_address.assign(
+            region,
+            offset,
+            Value::known(
+                tx.callee_address
+                    .to_scalar()
+                    .expect("unexpected Address -> Scalar conversion failure"),
+            ),
+        )?;
         self.tx_is_create
-            .assign(region, offset, Some(F::from(tx.is_create as u64)))?;
+            .assign(region, offset, Value::known(F::from(tx.is_create as u64)))?;
         self.tx_call_data_length.assign(
             region,
             offset,
-            Some(F::from(tx.call_data_length as u64)),
+            Value::known(F::from(tx.call_data_length as u64)),
         )?;
-        self.tx_call_data_gas_cost
-            .assign(region, offset, Some(F::from(tx.call_data_gas_cost)))?;
+        self.tx_call_data_gas_cost.assign(
+            region,
+            offset,
+            Value::known(F::from(tx.call_data_gas_cost)),
+        )?;
         self.reversion_info.assign(
             region,
             offset,
@@ -265,7 +300,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         self.code_hash.assign(
             region,
             offset,
-            Some(RandomLinearCombination::random_linear_combine(
+            Value::known(RandomLinearCombination::random_linear_combine(
                 callee_code_hash.to_le_bytes(),
                 block.randomness,
             )),

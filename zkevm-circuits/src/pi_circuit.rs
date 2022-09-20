@@ -1,27 +1,26 @@
 //! Public Input Circuit implementation
 
-use std::io::Cursor;
 use std::marker::PhantomData;
 
 use eth_types::geth_types::BlockConstants;
 use eth_types::geth_types::GethData;
+use eth_types::sign_types::SignData;
 use eth_types::H256;
 use eth_types::{
     geth_types::Transaction, Address, Field, ToBigEndian, ToLittleEndian, ToScalar, Word,
 };
 use ethers_core::types::Block;
-use halo2_proofs::arithmetic::BaseExt;
 use halo2_proofs::plonk::Instance;
 
+use crate::table::BlockTable;
 use crate::table::TxFieldTag;
-use crate::tx_circuit::sign_verify::SignData;
-use crate::tx_circuit::tx_to_sign_data;
+use crate::table::TxTable;
 use crate::util::random_linear_combine_word as rlc;
 use gadgets::is_zero::IsZeroChip;
 use gadgets::util::{not, or, Expr};
 use halo2_proofs::{
-    circuit::{AssignedCell, Layouter, Region, SimpleFloorPlanner},
-    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Fixed, Selector},
+    circuit::{AssignedCell, Layouter, Region, SimpleFloorPlanner, Value},
+    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Selector},
     poly::Rotation,
 };
 
@@ -130,13 +129,11 @@ impl PublicData {
             .expect("Error converting chain_id to u64");
         let mut tx_vals = vec![];
         for tx in &self.txs {
-            let sign_data: SignData =
-                tx_to_sign_data(tx, chain_id).expect("Error computing tx_sign_hash");
+            let sign_data: SignData = tx
+                .sign_data(chain_id)
+                .expect("Error computing tx_sign_hash");
             let mut msg_hash_le = [0u8; 32];
-            sign_data
-                .msg_hash
-                .write(&mut Cursor::new(&mut msg_hash_le[..]))
-                .expect("cannot write bytes to array");
+            msg_hash_le.copy_from_slice(sign_data.msg_hash.to_bytes().as_slice());
             tx_vals.push(TxValues {
                 nonce: tx.nonce,
                 gas_price: tx.gas_price,
@@ -173,19 +170,16 @@ impl PublicData {
 #[derive(Clone, Debug)]
 pub struct PiCircuitConfig<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> {
     q_block_table: Selector,
-    block_value: Column<Advice>,
-
+    block_table: BlockTable,
     q_tx_table: Selector,
     q_tx_calldata: Selector,
     q_calldata_start: Selector,
-    tx_id: Column<Advice>,
+    tx_table: TxTable,
     tx_id_inv: Column<Advice>,
-    tag: Column<Fixed>,
-    index: Column<Advice>,
-    tx_value: Column<Advice>,
     tx_value_inv: Column<Advice>,
     calldata_gas_cost: Column<Advice>,
     is_final: Column<Advice>,
+
 
     raw_public_inputs: Column<Advice>,
     rpi_rlc_acc: Column<Advice>,
@@ -201,19 +195,17 @@ pub struct PiCircuitConfig<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: u
 impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
     PiCircuitConfig<F, MAX_TXS, MAX_CALLDATA>
 {
-    fn new(meta: &mut ConstraintSystem<F>) -> Self {
+    fn new(meta: &mut ConstraintSystem<F>, block_table: BlockTable, tx_table: TxTable) -> Self {
         let q_block_table = meta.selector();
-        // BlockTable
-        let block_value = meta.advice_column();
 
         let q_tx_table = meta.complex_selector();
         let q_tx_calldata = meta.complex_selector();
         let q_calldata_start = meta.complex_selector();
         // Tx Table
-        let tx_id = meta.advice_column();
-        let tag = meta.fixed_column();
-        let index = meta.advice_column();
-        let tx_value = meta.advice_column();
+        let tx_id = tx_table.tx_id.clone();
+        let tx_value = tx_table.value.clone();
+        let tag = tx_table.tag.clone();
+        let index = tx_table.index.clone();
         let tx_id_inv = meta.advice_column();
         let tx_value_inv = meta.advice_column();
         let calldata_gas_cost = meta.advice_column();
@@ -234,7 +226,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
 
         // 0.0 rpi_rlc_acc[0] == RLC(raw_public_inputs, rand_rpi)
         meta.create_gate(
-            "rpi_rlc_acc[i] = rand_rpi * rpi_rlc_acc[i+1] + raw_public_inputs[i] ",
+            "rpi_rlc_acc[i] = rand_rpi * rpi_rlc_acc[i+1] + raw_public_inputs[i]",
             |meta| {
                 // q_not_end * row.rpi_rlc_acc ==
                 // (q_not_end * row_next.rpi_rlc_acc * row.rand_rpi + row.raw_public_inputs )
@@ -268,9 +260,9 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
 
         // 0.2 Block table -> value column match with raw_public_inputs at expected
         // offset
-        meta.create_gate("", |meta| {
+        meta.create_gate("block_table[i] = raw_public_inputs[offset + i]", |meta| {
             let q_block_table = meta.query_selector(q_block_table);
-            let block_value = meta.query_advice(block_value, Rotation::cur());
+            let block_value = meta.query_advice(block_table.value, Rotation::cur());
             let rpi_block_value = meta.query_advice(raw_public_inputs, Rotation::cur());
             vec![q_block_table * (block_value - rpi_block_value)]
         });
@@ -286,7 +278,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
                 // row.q_tx_table * row.tx_table.tx_id
                 // == row.q_tx_table * row_offset_tx_table_tx_id.raw_public_inputs
                 let q_tx_table = meta.query_selector(q_tx_table);
-                let tx_id = meta.query_advice(tx_id, Rotation::cur());
+                let tx_id = meta.query_advice(tx_table.tx_id, Rotation::cur());
                 let rpi_tx_id = meta.query_advice(raw_public_inputs, Rotation(offset as i32));
 
                 vec![q_tx_table * (tx_id - rpi_tx_id)]
@@ -299,7 +291,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
                 // row.q_tx_table * row.tx_table.tx_index
                 // == row.q_tx_table * row_offset_tx_table_tx_index.raw_public_inputs
                 let q_tx_table = meta.query_selector(q_tx_table);
-                let tx_index = meta.query_advice(index, Rotation::cur());
+                let tx_index = meta.query_advice(tx_table.index, Rotation::cur());
                 let rpi_tx_index =
                     meta.query_advice(raw_public_inputs, Rotation((offset + tx_table_len) as i32));
 
@@ -313,8 +305,8 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
                 // (row.q_tx_calldata | row.q_tx_table) * row.tx_table.tx_value
                 // == (row.q_tx_calldata | row.q_tx_table) * row_offset_tx_table_tx_value.raw_public_inputs
                 let q_tx_table = meta.query_selector(q_tx_table);
-                let q_tx_calldata = meta.query_selector(q_tx_calldata);
                 let tx_value = meta.query_advice(tx_value, Rotation::cur());
+                let q_tx_calldata = meta.query_selector(q_tx_calldata);
                 let rpi_tx_value = meta.query_advice(
                     raw_public_inputs,
                     Rotation((offset + 2 * tx_table_len) as i32),
@@ -327,7 +319,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
         let tx_id_is_zero_config = IsZeroChip::configure(
             meta,
             |meta| meta.query_selector(q_tx_calldata),
-            |meta| meta.query_advice(tx_id, Rotation::cur()),
+            |meta| meta.query_advice(tx_table.tx_id, Rotation::cur()),
             tx_id_inv,
         );
         let tx_value_is_zero_config = IsZeroChip::configure(
@@ -433,7 +425,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
         let tx_tag_is_cdl_config = IsZeroChip::configure(
             meta,
             |meta| meta.query_selector(q_tx_table),
-            |meta| meta.query_fixed(tag, Rotation::cur()) - TxFieldTag::CallDataLength.expr(),
+            |meta| meta.query_advice(tag, Rotation::cur()) - TxFieldTag::CallDataLength.expr(),
             tx_id_inv,
         );
 
@@ -482,15 +474,12 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
 
         Self {
             q_block_table,
-            block_value,
+            block_table,
             q_tx_table,
             q_tx_calldata,
             q_calldata_start,
-            tx_id,
+            tx_table,
             tx_id_inv,
-            tag,
-            index,
-            tx_value,
             tx_value_inv,
             calldata_gas_cost,
             is_final,
@@ -512,28 +501,28 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
     }
 
     fn assign_tx_empty_row(&self, region: &mut Region<'_, F>, offset: usize) -> Result<(), Error> {
-        region.assign_advice(|| "tx_id", self.tx_id, offset, || Ok(F::zero()))?;
-        region.assign_advice(|| "tx_id_inv", self.tx_id_inv, offset, || Ok(F::zero()))?;
-        region.assign_fixed(
+        region.assign_advice(|| "tx_id", self.tx_table.tx_id, offset, || Value::known(F::zero()))?;
+        region.assign_advice(|| "tx_id_inv", self.tx_id_inv, offset, || Value::known(F::zero()))?;
+        region.assign_advice(
             || "tag",
-            self.tag,
+            self.tx_table.tag,
             offset,
-            || Ok(F::from(TxFieldTag::Null as u64)),
+            || Value::known(F::from(TxFieldTag::Null as u64)),
         )?;
-        region.assign_advice(|| "index", self.index, offset, || Ok(F::zero()))?;
-        region.assign_advice(|| "tx_value", self.tx_value, offset, || Ok(F::zero()))?;
+        region.assign_advice(|| "index", self.tx_table.index, offset, || Value::known(F::zero()))?;
+        region.assign_advice(|| "tx_value", self.tx_table.value, offset, || Value::known(F::zero()))?;
         region.assign_advice(
             || "tx_value_inv",
             self.tx_value_inv,
             offset,
-            || Ok(F::zero()),
+            || Value::known(F::zero()),
         )?;
-        region.assign_advice(|| "is_final", self.is_final, offset, || Ok(F::zero()))?;
+        region.assign_advice(|| "is_final", self.is_final, offset, || Value::known(F::zero()))?;
         region.assign_advice(
             || "gas_cost",
             self.calldata_gas_cost,
             offset,
-            || Ok(F::zero()),
+            || Value::known(F::zero()),
         )?;
         Ok(())
     }
@@ -566,16 +555,31 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
         self.q_tx_table.enable(region, offset)?;
 
         // Assign vals to Tx_table
-        region.assign_advice(|| "tx_id", self.tx_id, offset, || Ok(tx_id))?;
-        region.assign_advice(|| "tx_id_inv", self.tx_id_inv, offset, || Ok(tx_id_inv))?;
-        region.assign_fixed(|| "tag", self.tag, offset, || Ok(tag))?;
-        region.assign_advice(|| "index", self.index, offset, || Ok(index))?;
-        region.assign_advice(|| "tx_value", self.tx_value, offset, || Ok(tx_value))?;
+        region.assign_advice(
+            || "tx_id",
+            self.tx_table.tx_id,
+            offset,
+            || Value::known(tx_id),
+        )?;
+        region.assign_advice(|| "tag", self.tx_table.tag, offset, || Value::known(tag))?;
+        region.assign_advice(
+            || "index",
+            self.tx_table.index,
+            offset,
+            || Value::known(index),
+        )?;
+        region.assign_advice(
+            || "tx_value",
+            self.tx_table.value,
+            offset,
+            || Value::known(tx_value),
+        )?;
+        region.assign_advice(|| "tx_id_inv", self.tx_id_inv, offset, || Value::known(tx_id_inv))?;
         region.assign_advice(
             || "tx_value_inverse",
             self.tx_value_inv,
             offset,
-            || Ok(tx_value_inv),
+            || Value::known(tx_value_inv),
         )?;
 
         // Assign vals to raw_public_inputs column
@@ -589,21 +593,21 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
             || "raw_pi.tx_id",
             self.raw_public_inputs,
             offset + id_offset,
-            || Ok(tx_id),
+            || Value::known(tx_id),
         )?;
 
         region.assign_advice(
             || "raw_pi.tx_index",
             self.raw_public_inputs,
             offset + index_offset,
-            || Ok(index),
+            || Value::known(index),
         )?;
 
         region.assign_advice(
             || "raw_pi.tx_value",
             self.raw_public_inputs,
             offset + value_offset,
-            || Ok(tx_value),
+            || Value::known(tx_value),
         )?;
 
         // Add copy to vec
@@ -642,38 +646,38 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
         self.q_tx_calldata.enable(region, calldata_offset)?;
 
         // Assign vals to Tx_table
-        region.assign_advice(|| "tx_id", self.tx_id, calldata_offset, || Ok(tx_id))?;
+        region.assign_advice(|| "tx_id", self.tx_table.tx_id, calldata_offset, || Value::known(tx_id))?;
         region.assign_advice(
             || "tx_id_inv",
             self.tx_id_inv,
             calldata_offset,
-            || Ok(tx_id_inv),
+            || Value::known(tx_id_inv),
         )?;
-        region.assign_fixed(|| "tag", self.tag, calldata_offset, || Ok(tag))?;
-        region.assign_advice(|| "index", self.index, calldata_offset, || Ok(index))?;
+        region.assign_advice(|| "tag", self.tx_table.tag, calldata_offset, || Value::known(tag))?;
+        region.assign_advice(|| "index", self.tx_table.index, calldata_offset, || Value::known(index))?;
         region.assign_advice(
             || "tx_value",
-            self.tx_value,
+            self.tx_table.value,
             calldata_offset,
-            || Ok(tx_value),
+            || Value::known(tx_value),
         )?;
         region.assign_advice(
             || "tx_value_inv",
             self.tx_value_inv,
             calldata_offset,
-            || Ok(tx_value_inv),
+            || Value::known(tx_value_inv),
         )?;
         region.assign_advice(
             || "is_final",
             self.is_final,
             calldata_offset,
-            || Ok(is_final),
+            || Value::known(is_final),
         )?;
         region.assign_advice(
             || "gas_cost",
             self.calldata_gas_cost,
             calldata_offset,
-            || Ok(gas_cost),
+            || Value::known(gas_cost),
         )?;
 
         let value_offset = BLOCK_LEN + 1 + EXTRA_LEN + 3 * tx_table_len;
@@ -682,7 +686,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
             || "raw_pi.tx_value",
             self.raw_public_inputs,
             offset + value_offset,
-            || Ok(tx_value),
+            || Value::known(tx_value),
         )?;
 
         // Add copy to vec
@@ -707,98 +711,153 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
         }
 
         // zero row
-        region.assign_advice(|| "zero", self.block_value, offset, || Ok(F::zero()))?;
-        region.assign_advice(|| "zero", self.raw_public_inputs, offset, || Ok(F::zero()))?;
+        region.assign_advice(
+            || "zero",
+            self.block_table.value,
+            offset,
+            || Value::known(F::zero()),
+        )?;
+        region.assign_advice(
+            || "zero",
+            self.raw_public_inputs,
+            offset,
+            || Value::known(F::zero()),
+        )?;
         raw_pi_vals[offset] = F::zero();
         offset += 1;
 
         // coinbase
         let coinbase = block_values.coinbase.to_scalar().unwrap();
-        region.assign_advice(|| "coinbase", self.block_value, offset, || Ok(coinbase))?;
+        region.assign_advice(
+            || "coinbase",
+            self.block_table.value,
+            offset,
+            || Value::known(coinbase),
+        )?;
         region.assign_advice(
             || "coinbase",
             self.raw_public_inputs,
             offset,
-            || Ok(coinbase),
+            || Value::known(coinbase),
         )?;
         raw_pi_vals[offset] = coinbase;
         offset += 1;
 
         // gas_limit
         let gas_limit = F::from(block_values.gas_limit);
-        region.assign_advice(|| "gas_limit", self.block_value, offset, || Ok(gas_limit))?;
+        region.assign_advice(
+            || "gas_limit",
+            self.block_table.value,
+            offset,
+            || Value::known(gas_limit),
+        )?;
         region.assign_advice(
             || "gas_limit",
             self.raw_public_inputs,
             offset,
-            || Ok(gas_limit),
+            || Value::known(gas_limit),
         )?;
         raw_pi_vals[offset] = gas_limit;
         offset += 1;
 
         // number
         let number = F::from(block_values.number);
-        region.assign_advice(|| "number", self.block_value, offset, || Ok(number))?;
-        region.assign_advice(|| "number", self.raw_public_inputs, offset, || Ok(number))?;
+        region.assign_advice(
+            || "number",
+            self.block_table.value,
+            offset,
+            || Value::known(number),
+        )?;
+        region.assign_advice(
+            || "number",
+            self.raw_public_inputs,
+            offset,
+            || Value::known(number),
+        )?;
         raw_pi_vals[offset] = number;
         offset += 1;
 
         // timestamp
         let timestamp = F::from(block_values.timestamp);
-        region.assign_advice(|| "timestamp", self.block_value, offset, || Ok(timestamp))?;
+        region.assign_advice(
+            || "timestamp",
+            self.block_table.value,
+            offset,
+            || Value::known(timestamp),
+        )?;
         region.assign_advice(
             || "timestamp",
             self.raw_public_inputs,
             offset,
-            || Ok(timestamp),
+            || Value::known(timestamp),
         )?;
         raw_pi_vals[offset] = timestamp;
         offset += 1;
 
         // difficulty
         let difficulty = rlc(block_values.difficulty.to_le_bytes(), randomness);
-        region.assign_advice(|| "difficulty", self.block_value, offset, || Ok(difficulty))?;
+        region.assign_advice(
+            || "difficulty",
+            self.block_table.value,
+            offset,
+            || Value::known(difficulty),
+        )?;
         region.assign_advice(
             || "difficulty",
             self.raw_public_inputs,
             offset,
-            || Ok(difficulty),
+            || Value::known(difficulty),
         )?;
         raw_pi_vals[offset] = difficulty;
         offset += 1;
 
         // base_fee
         let base_fee = rlc(block_values.base_fee.to_le_bytes(), randomness);
-        region.assign_advice(|| "base_fee", self.block_value, offset, || Ok(base_fee))?;
+        region.assign_advice(
+            || "base_fee",
+            self.block_table.value,
+            offset,
+            || Value::known(base_fee),
+        )?;
         region.assign_advice(
             || "base_fee",
             self.raw_public_inputs,
             offset,
-            || Ok(base_fee),
+            || Value::known(base_fee),
         )?;
         raw_pi_vals[offset] = base_fee;
         offset += 1;
 
         // chain_id
         let chain_id = F::from(block_values.chain_id);
-        region.assign_advice(|| "chain_id", self.block_value, offset, || Ok(chain_id))?;
+        region.assign_advice(
+            || "chain_id",
+            self.block_table.value,
+            offset,
+            || Value::known(chain_id),
+        )?;
         let chain_id_cell = region.assign_advice(
             || "chain_id",
             self.raw_public_inputs,
             offset,
-            || Ok(chain_id),
+            || Value::known(chain_id),
         )?;
         raw_pi_vals[offset] = chain_id;
         offset += 1;
 
         for prev_hash in block_values.history_hashes {
             let prev_hash = rlc(prev_hash.to_fixed_bytes(), randomness);
-            region.assign_advice(|| "prev_hash", self.block_value, offset, || Ok(prev_hash))?;
+            region.assign_advice(
+                || "prev_hash",
+                self.block_table.value,
+                offset,
+                || Value::known(prev_hash),
+            )?;
             region.assign_advice(
                 || "prev_hash",
                 self.raw_public_inputs,
                 offset,
-                || Ok(prev_hash),
+                || Value::known(prev_hash),
             )?;
             raw_pi_vals[offset] = prev_hash;
             offset += 1;
@@ -837,7 +896,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
             || "state.root",
             self.raw_public_inputs,
             offset,
-            || Ok(state_root),
+            || Value::known(state_root),
         )?;
         raw_pi_vals[offset] = state_root;
         offset += 1;
@@ -848,7 +907,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
             || "parent_block.hash",
             self.raw_public_inputs,
             offset,
-            || Ok(prev_state_root),
+            || Value::known(prev_state_root),
         )?;
         raw_pi_vals[offset] = prev_state_root;
         Ok([state_root_cell, prev_state_root_cell])
@@ -872,9 +931,14 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
             || "rpi_rlc_acc",
             self.rpi_rlc_acc,
             offset,
-            || Ok(rpi_rlc_acc),
+            || Value::known(rpi_rlc_acc),
         )?;
-        region.assign_advice(|| "rand_rpi", self.rand_rpi, offset, || Ok(rand_rpi))?;
+        region.assign_advice(
+            || "rand_rpi",
+            self.rand_rpi,
+            offset,
+            || Value::known(rand_rpi),
+        )?;
         self.q_end.enable(region, offset)?;
 
         // Next rows
@@ -885,18 +949,28 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
                 || "rpi_rlc_acc",
                 self.rpi_rlc_acc,
                 offset,
-                || Ok(rpi_rlc_acc),
+                || Value::known(rpi_rlc_acc),
             )?;
-            region.assign_advice(|| "rand_rpi", self.rand_rpi, offset, || Ok(rand_rpi))?;
+            region.assign_advice(
+                || "rand_rpi",
+                self.rand_rpi,
+                offset,
+                || Value::known(rand_rpi),
+            )?;
             self.q_not_end.enable(region, offset)?;
         }
 
         // First row
         rpi_rlc_acc *= rand_rpi;
         rpi_rlc_acc += raw_pi_vals[0];
-        let rpi_rlc =
-            region.assign_advice(|| "rpi_rlc_acc", self.rpi_rlc_acc, 0, || Ok(rpi_rlc_acc))?;
-        let rpi_rand = region.assign_advice(|| "rand_rpi", self.rand_rpi, 0, || Ok(rand_rpi))?;
+        let rpi_rlc = region.assign_advice(
+            || "rpi_rlc_acc",
+            self.rpi_rlc_acc,
+            0,
+            || Value::known(rpi_rlc_acc),
+        )?;
+        let rpi_rand =
+            region.assign_advice(|| "rand_rpi", self.rand_rpi, 0, || Value::known(rand_rpi))?;
         self.q_not_end.enable(region, 0)?;
         Ok((rpi_rand, rpi_rlc))
     }
@@ -926,7 +1000,9 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
     }
 
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-        PiCircuitConfig::new(meta)
+        let block_table = BlockTable::construct(meta);
+        let tx_table = TxTable::construct(meta);
+        PiCircuitConfig::new(meta, block_table, tx_table)
     }
 
     fn synthesize(
@@ -1104,7 +1180,7 @@ mod pi_circuit_test {
     use crate::test_util::rand_tx;
     use halo2_proofs::{
         dev::{MockProver, VerifyFailure},
-        pairing::bn256::Fr,
+        halo2curves::bn256::Fr,
     };
     use log::info;
     use pretty_assertions::assert_eq;

@@ -16,7 +16,7 @@ use keccak256::EMPTY_HASH;
 use log::warn;
 
 #[cfg(any(feature = "test", test))]
-pub use sha3::sha3_tests::{gen_sha3_code, MemoryKind};
+pub use self::sha3::sha3_tests::{gen_sha3_code, MemoryKind};
 
 mod address;
 mod balance;
@@ -53,6 +53,7 @@ mod swap;
 #[cfg(test)]
 mod memory_expansion_test;
 
+use self::sha3::Sha3;
 use address::Address;
 use balance::Balance;
 use call::Call;
@@ -76,7 +77,6 @@ use origin::Origin;
 use r#return::Return;
 use returndatacopy::Returndatacopy;
 use selfbalance::Selfbalance;
-use sha3::Sha3;
 use sload::Sload;
 use sstore::Sstore;
 use stackonlyop::StackOnlyOpcode;
@@ -314,8 +314,9 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
             CallContextField::IsPersistent,
             (call.is_persistent as usize).into(),
         ),
+        (CallContextField::IsSuccess, call.is_success.to_word()),
     ] {
-        state.call_context_read(&mut exec_step, call.call_id, field, value);
+        state.call_context_write(&mut exec_step, call.call_id, field, value);
     }
 
     // Increase caller's nonce
@@ -423,7 +424,7 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
                 (CallContextField::IsCreate, 0.into()),
                 (CallContextField::CodeHash, code_hash.to_word()),
             ] {
-                state.call_context_read(&mut exec_step, call.call_id, field, value);
+                state.call_context_write(&mut exec_step, call.call_id, field, value);
             }
 
             Ok(exec_step)
@@ -467,7 +468,8 @@ pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
     }
     let caller_balance_prev = caller_account.balance;
     let caller_balance =
-        caller_account.balance + state.tx.gas_price * (exec_step.gas_left.0 + effective_refund);
+        caller_balance_prev + state.tx.gas_price * (exec_step.gas_left.0 + effective_refund);
+    caller_account.balance = caller_balance;
 
     state.account_write(
         &mut exec_step,
@@ -484,7 +486,8 @@ pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
     }
     let coinbase_balance_prev = coinbase_account.balance;
     let coinbase_balance =
-        coinbase_account.balance + effective_tip * (state.tx.gas - exec_step.gas_left.0);
+        coinbase_balance_prev + effective_tip * (state.tx.gas - exec_step.gas_left.0);
+    coinbase_account.balance = coinbase_balance;
     state.account_write(
         &mut exec_step,
         state.block.coinbase,
@@ -557,6 +560,24 @@ fn dummy_gen_call_ops(
 ) -> Result<Vec<ExecStep>, Error> {
     let geth_step = &geth_steps[0];
     let mut exec_step = state.new_step(geth_step)?;
+
+    let (args_offset, args_length, ret_offset, ret_length) = {
+        // CALLCODE    (gas, addr, value, argsOffset, argsLength, retOffset, retLength)
+        // DELEGATECALL(gas, addr,        argsOffset, argsLength, retOffset, retLength)
+        // STATICCALL  (gas, addr,        argsOffset, argsLength, retOffset, retLength)
+        let pos = match geth_step.op {
+            OpcodeId::CALLCODE => (3, 4, 5, 6),
+            OpcodeId::DELEGATECALL | OpcodeId::STATICCALL => (2, 3, 4, 5),
+            _ => unreachable!("opcode is not of call type"),
+        };
+        (
+            geth_step.stack.nth_last(pos.0)?.as_usize(),
+            geth_step.stack.nth_last(pos.1)?.as_usize(),
+            geth_step.stack.nth_last(pos.2)?.as_usize(),
+            geth_step.stack.nth_last(pos.3)?.as_usize(),
+        )
+    };
+    state.call_expand_memory(args_offset, args_length, ret_offset, ret_length)?;
 
     let tx_id = state.tx_ctx.id();
     let call = state.parse_call(geth_step)?;
