@@ -204,26 +204,32 @@ fn handle_create(
 #[cfg(test)]
 mod return_tests {
     use crate::mock::BlockData;
+    use eth_types::evm_types::OpcodeId;
     use eth_types::geth_types::GethData;
     use eth_types::{bytecode, Word};
     use mock::test_ctx::helpers::{account_0_code_account_1_no_code, tx_from_1_to_0};
     use mock::TestContext;
 
     fn test_return(
+        is_return: bool,
         callee_return_data_offset: usize,
         callee_return_data_length: usize,
         caller_return_data_offset: usize,
         caller_return_data_length: usize,
     ) {
-        let contract = bytecode! {
+        let mut contract = bytecode! {
             PUSH1(0x20)
             PUSH1(0)
             PUSH1(0)
             CALLDATACOPY
             PUSH1(callee_return_data_length)
             PUSH1(callee_return_data_offset)
-            RETURN
         };
+        contract.write_op(if is_return {
+            OpcodeId::RETURN
+        } else {
+            OpcodeId::REVERT
+        });
 
         let constructor = bytecode! {
             PUSH12(Word::from(contract.to_vec().as_slice()))
@@ -273,10 +279,16 @@ mod return_tests {
 
     #[test]
     fn test_cases() {
-        test_return(0, 0, 0, 0);
-        test_return(10, 10, 10, 10);
-        test_return(0, 0, 0, 0);
-        test_return(0, 0, 0, 100);
-        test_return(0, 0, 0, 0);
+        test_return(true, 0, 0, 0, 0);
+        test_return(true, 10, 10, 10, 10);
+        test_return(true, 0, 0, 0, 0);
+        test_return(true, 0, 0, 0, 100);
+        test_return(true, 0, 0, 0, 0);
+
+        test_return(false, 0, 0, 0, 0);
+        test_return(false, 10, 10, 10, 10);
+        test_return(false, 0, 0, 0, 0);
+        test_return(false, 0, 0, 0, 100);
+        test_return(false, 0, 0, 0, 0);
     }
 }

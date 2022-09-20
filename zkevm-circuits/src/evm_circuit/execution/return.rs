@@ -199,104 +199,128 @@ mod test {
     use crate::evm_circuit::test::run_test_circuit;
     use crate::evm_circuit::witness::block_convert;
     use crate::test_util::run_test_circuits;
+    use eth_types::evm_types::OpcodeId;
     use eth_types::geth_types::Account;
-    use eth_types::{address, bytecode};
+    use eth_types::{address, bytecode, Bytecode};
     use eth_types::{Address, ToWord, Word};
     use mock::TestContext;
 
-    #[test]
-    fn test_return() {
-        let bytecode = bytecode! {
-            PUSH32(40)
-            PUSH32(30) // i think there's a memory expansion issue when there this value is too large?
-            RETURN
-        };
+    const CALLEE_ADDRESS: Address = Address::repeat_byte(0xff);
+    const CALLER_ADDRESS: Address = Address::repeat_byte(0x34);
 
-        assert_eq!(
-            run_test_circuits(
-                TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
-                None
-            ),
-            Ok(())
-        );
+    fn callee_bytecode(is_return: bool, offset: u64, length: u64) -> Bytecode {
+        let memory_address = 2;
+        let memory_value = Word::MAX;
+        let mut code = bytecode! {
+            PUSH32(memory_value)
+            PUSH1(memory_address)
+            MSTORE
+            PUSH32(offset)
+            PUSH32(length)
+        };
+        code.write_op(if is_return {
+            OpcodeId::RETURN
+        } else {
+            OpcodeId::REVERT
+        });
+        code
     }
-    // TODO: be sure to add tests that test offset = 0
-    // root return with insufficient gas for memory expansion.
+
+    fn caller_bytecode(call_return_data_length: u64, call_return_data_offset: u64) -> Bytecode {
+        let call_value = 1000;
+        let call_gas = 4000;
+        bytecode! {
+            PUSH32(call_return_data_length)
+            PUSH32(call_return_data_offset)
+            PUSH32(0)
+            PUSH32(0)
+            PUSH32(call_value)
+            PUSH32(CALLEE_ADDRESS.to_word())
+            PUSH32(call_gas)
+            CALL
+            STOP
+        }
+    }
+
+    #[test]
+    fn test_root() {
+        let offset = 0;
+        let length = 10;
+        for is_return in [true, false] {
+            let code = callee_bytecode(is_return, offset, length);
+            assert_eq!(
+                run_test_circuits(
+                    TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap(),
+                    None
+                ),
+                Ok(()),
+                "{}",
+                dbg!(is_return)
+            );
+        }
+    }
 
     #[test]
     fn test_return_nonroot() {
-        let callee_bytecode = bytecode! {
-            PUSH32(Word::MAX)
-            PUSH1(Word::from(102u64))
-            MSTORE
-            PUSH1(Word::from(10)) // length!?!?
-            PUSH2(Word::from(2)) // offset!?!?!
-            RETURN
-        };
+        let callee_offset = 10;
+        let callee_length = 10;
 
-        let callee = Account {
-            address: Address::repeat_byte(0xff),
-            code: callee_bytecode.to_vec().into(),
-            nonce: Word::one(),
-            balance: 0xdeadbeefu64.into(),
-            ..Default::default()
-        };
+        let caller_offset = 20;
+        let caller_length = 20;
 
-        let caller_bytecode = bytecode! {
-            PUSH32(Word::from(10)) // call_return_data_length
-            PUSH32(Word::from(10)) // call_return_data_offset
-            PUSH32(Word::from(14u64))
-            PUSH32(Word::from(10u64))
-            PUSH32(Word::from(4u64)) // value
-            PUSH32(Address::repeat_byte(0xff).to_word())
-            PUSH32(Word::from(40000u64)) // gas
-            CALL
-            STOP
-        };
+        for is_return in [true, false] {
+            let callee = Account {
+                address: CALLEE_ADDRESS,
+                code: callee_bytecode(is_return, callee_offset, callee_length).into(),
+                nonce: Word::one(),
+                balance: 0xdeadbeefu64.into(),
+                ..Default::default()
+            };
+            let call_argument_offset = 5; // these are flipped or something...
+            let call_argument_length = 5; //
+            let caller = Account {
+                address: CALLER_ADDRESS,
+                code: caller_bytecode(call_argument_offset, call_argument_length).into(),
+                nonce: Word::one(),
+                balance: 0xdeadbeefu64.into(),
+                ..Default::default()
+            };
 
-        let caller = Account {
-            address: Address::repeat_byte(0x34),
-            code: caller_bytecode.to_vec().into(),
-            nonce: Word::one(),
-            balance: 0xdeadbeefu64.into(),
-            ..Default::default()
-        };
-
-        let block = TestContext::<3, 1>::new(
-            None,
-            |accs| {
-                accs[0]
-                    .address(address!("0x000000000000000000000000000000000000cafe"))
-                    .balance(Word::from(10u64.pow(19)));
-                accs[1]
-                    .address(caller.address)
-                    .code(caller.code)
-                    .nonce(caller.nonce)
-                    .balance(caller.balance);
-                accs[2]
-                    .address(callee.address)
-                    .code(callee.code)
-                    .nonce(callee.nonce)
-                    .balance(callee.balance);
-            },
-            |mut txs, accs| {
-                txs[0]
-                    .from(accs[0].address)
-                    .to(accs[1].address)
-                    .gas(100000u64.into());
-            },
-            |block, _tx| block.number(0xcafeu64),
-        )
-        .unwrap();
-        let block_data = bus_mapping::mock::BlockData::new_from_geth_data(block.into());
-        let mut builder = block_data.new_circuit_input_builder();
-        builder
-            .handle_block(&block_data.eth_block, &block_data.geth_traces)
+            let block = TestContext::<3, 1>::new(
+                None,
+                |accs| {
+                    accs[0]
+                        .address(address!("0x000000000000000000000000000000000000cafe"))
+                        .balance(Word::from(10u64.pow(19)));
+                    accs[1].account(&caller);
+                    accs[2].account(&callee);
+                },
+                |mut txs, accs| {
+                    txs[0]
+                        .from(accs[0].address)
+                        .to(accs[1].address)
+                        .gas(100000u64.into());
+                },
+                |block, _tx| block.number(0xcafeu64),
+            )
             .unwrap();
+            let block_data = bus_mapping::mock::BlockData::new_from_geth_data(block.into());
+            let mut builder = block_data.new_circuit_input_builder();
+            builder
+                .handle_block(&block_data.eth_block, &block_data.geth_traces)
+                .unwrap();
 
-        assert_eq!(
-            run_test_circuit(block_convert(&builder.block, &builder.code_db)),
-            Ok(())
-        );
+            assert_eq!(
+                run_test_circuit(block_convert(&builder.block, &builder.code_db)),
+                Ok(())
+            );
+        }
     }
+
+    // test_root_return
+    // test_nonroot_return
+    // test_memory_expansion....
+    //
+
+    // test_
 }
