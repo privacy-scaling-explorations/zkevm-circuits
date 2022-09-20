@@ -3,6 +3,7 @@
 use crate::copy_circuit::number_or_hash_to_field;
 use crate::evm_circuit::util::{rlc, RandomLinearCombination};
 use crate::impl_expr;
+use crate::util::build_tx_log_address;
 use crate::witness::{
     Block, BlockContext, Bytecode, MptUpdateRow, MptUpdates, Rw, RwMap, RwRow, Transaction,
 };
@@ -18,7 +19,6 @@ use halo2_proofs::{circuit::Layouter, plonk::*, poly::Rotation};
 use itertools::Itertools;
 use keccak256::plain::Keccak;
 use strum_macros::{EnumCount, EnumIter};
-use crate::util::build_tx_log_address;
 
 /// Trait used for dynamic tables.  Used to get an automatic implementation of
 /// the LookupTable trait where each `table_expr` is a query to each column at
@@ -902,9 +902,13 @@ impl CopyTable {
                     copy_event.dst_addr
                 } + (u64::try_from(step_idx).unwrap() - if is_read_step { 0 } else { 1 }) / 2u64;
             let addr = if tag == CopyDataType::TxLog {
-                build_tx_log_address(copy_step_addr, TxLogFieldTag::Data,copy_event.log_id.unwrap())
-                    .to_scalar()
-                    .unwrap()
+                build_tx_log_address(
+                    copy_step_addr,
+                    TxLogFieldTag::Data,
+                    copy_event.log_id.unwrap(),
+                )
+                .to_scalar()
+                .unwrap()
             } else {
                 F::from(copy_step_addr)
             };

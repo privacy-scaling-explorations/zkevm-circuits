@@ -5,11 +5,11 @@ use bus_mapping::operation::{self, AccountField, CallContextField, TxLogField, T
 use eth_types::{Address, Field, ToAddress, ToLittleEndian, ToScalar, Word, U256};
 use itertools::Itertools;
 
+use crate::util::build_tx_log_address;
 use crate::{
     evm_circuit::util::RandomLinearCombination,
     table::{AccountFieldTag, CallContextFieldTag, RwTableTag, TxLogFieldTag, TxReceiptFieldTag},
 };
-use crate::util::build_tx_log_address;
 
 /// Rw constainer for a witness block
 #[derive(Debug, Default, Clone)]
@@ -439,9 +439,7 @@ impl Rw {
                 ..
             } => {
                 // make field_tag fit into one limb (16 bits)
-                Some(
-                    build_tx_log_address(*index as u64, *field_tag, *log_id)
-                )
+                Some(build_tx_log_address(*index as u64, *field_tag, *log_id))
             }
             Self::Start { .. }
             | Self::CallContext { .. }
