@@ -32,7 +32,7 @@ impl Opcode for Return {
                 .call_ctx_mut()?
                 .memory
                 .extend_at_least((offset.low_u64() + length.low_u64()).try_into().unwrap());
-            // TODO: handle memory expansion gas cost!!
+            // TODO: handle memory expansion gas cost?
         }
 
         let call = state.call()?.clone();
@@ -62,7 +62,19 @@ impl Opcode for Return {
         let offset = offset.as_usize();
         let length = length.as_usize();
         if call.is_create() && call.is_success {
-            unimplemented!();
+            // Note: handle_return updates state.code_db. All we need to do here is push the
+            // copy event.
+            if length > 0 {
+                handle_create(
+                    state,
+                    &mut exec_step,
+                    Source {
+                        id: call.call_id,
+                        offset,
+                        length,
+                    },
+                )?;
+            }
         } else if !is_root {
             let caller_ctx = state.caller_ctx_mut()?;
             let return_offset = call.return_data_offset.try_into().unwrap();
