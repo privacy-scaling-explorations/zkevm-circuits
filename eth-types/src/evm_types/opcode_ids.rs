@@ -6,9 +6,10 @@ use regex::Regex;
 use serde::{de, Deserialize, Serialize};
 use std::fmt;
 use std::str::FromStr;
+use strum_macros::EnumIter;
 
 /// Opcode enum. One-to-one corresponding to an `u8` value.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Hash)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Hash, EnumIter)]
 pub enum OpcodeId {
     /// `STOP`
     STOP,

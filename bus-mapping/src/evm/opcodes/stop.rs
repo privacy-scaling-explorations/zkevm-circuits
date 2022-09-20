@@ -4,7 +4,7 @@ use crate::{
     operation::CallContextField,
     Error,
 };
-use eth_types::{GethExecStep, ToWord};
+use eth_types::GethExecStep;
 
 /// Placeholder structure used to implement [`Opcode`] trait over it
 /// corresponding to the [`OpcodeId::STOP`](crate::evm::OpcodeId::STOP)
@@ -44,7 +44,7 @@ impl Opcode for Stop {
             // Instruction.step_state_transition_to_restored_context
             // in python spec, and should be reusable among all expected halting opcodes or
             // exceptions.
-            state.gen_restore_context_ops(&mut exec_step, geth_steps);
+            state.gen_restore_context_ops(&mut exec_step, geth_steps)?;
         }
 
         state.handle_return(geth_step)?;

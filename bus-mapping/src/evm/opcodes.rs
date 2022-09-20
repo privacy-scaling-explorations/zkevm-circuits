@@ -283,7 +283,7 @@ pub fn gen_associated_ops(
             exec_error, geth_step.op
         );
 
-        exec_step.error = Some(exec_error.clone());
+        exec_step.error = Some(exec_error);
         if exec_step.oog_or_stack_error() {
             state.gen_restore_context_ops(&mut exec_step, geth_steps)?;
         }

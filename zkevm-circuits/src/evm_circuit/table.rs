@@ -1,5 +1,7 @@
 use crate::evm_circuit::step::ExecutionState;
 use crate::impl_expr;
+pub use crate::table::TxContextFieldTag;
+use bus_mapping::evm::OpcodeId;
 use eth_types::Field;
 use gadgets::util::Expr;
 use halo2_proofs::plonk::Expression;
@@ -22,6 +24,7 @@ pub enum FixedTableTag {
     BitwiseXor,
     ResponsibleOpcode,
     Pow2,
+    ConstantGasCost,
 }
 impl_expr!(FixedTableTag);
 
@@ -90,6 +93,14 @@ impl FixedTableTag {
                     (F::from(0), F::from_u128(1 << (value - 128)))
                 };
                 [tag, F::from(value), pow_lo, pow_hi]
+            })),
+            Self::ConstantGasCost => Box::new(OpcodeId::iter().map(move |opcode| {
+                [
+                    tag,
+                    F::from(opcode.as_u64()),
+                    F::from(opcode.constant_gas_cost().0),
+                    F::zero(),
+                ]
             })),
         }
     }

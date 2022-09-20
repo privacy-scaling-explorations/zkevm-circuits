@@ -8,7 +8,7 @@ use crate::evm_circuit::{
             ConstraintBuilder, StepStateTransition,
             Transition::{Delta, Same},
         },
-        math_gadget::RangeCheckGadget,
+        math_gadget::LtGadget,
         CachedRegion, Cell,
     },
     witness::{Block, Call, ExecStep, Transaction},
@@ -23,7 +23,7 @@ pub(crate) struct ErrorOOGConstantGadget<F> {
     opcode: Cell<F>,
     // constrain gas left is less than required
     gas_required: Cell<F>,
-    insufficient_gas: RangeCheckGadget<F, N_BYTES_GAS>,
+    insufficient_gas: LtGadget<F, N_BYTES_GAS>,
     restore_context: RestoreContextGadget<F>,
 }
 
@@ -35,10 +35,17 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGConstantGadget<F> {
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
         let gas_required = cb.query_cell();
+
+        cb.constant_gas_lookup(opcode.expr(), gas_required.expr());
         // Check if the amount of gas available is less than the amount of gas
         // required
         let insufficient_gas =
-            RangeCheckGadget::construct(cb, gas_required.expr() - cb.curr.state.gas_left.expr());
+            LtGadget::construct(cb, cb.curr.state.gas_left.expr(), gas_required.expr());
+        cb.require_equal(
+            "constant gas left is less than gas required ",
+            insufficient_gas.expr(),
+            1.expr(),
+        );
 
         // current call must be failed.
         cb.call_context_lookup(false.expr(), None, CallContextFieldTag::IsSuccess, 0.expr());
@@ -96,15 +103,21 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGConstantGadget<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        let _opcode = step.opcode.unwrap();
+        let opcode = step.opcode.unwrap();
 
+        self.opcode
+            .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
         // Inputs/Outputs
         self.gas_required
             .assign(region, offset, Value::known(F::from(step.gas_cost)))?;
         // Gas insufficient check
         // Get `gas_available` variable here once it's available
-        self.insufficient_gas
-            .assign(region, offset, F::from(step.gas_cost - step.gas_left))?;
+        self.insufficient_gas.assign(
+            region,
+            offset,
+            F::from(step.gas_left),
+            F::from(step.gas_cost),
+        )?;
 
         self.restore_context
             .assign(region, offset, block, call, step)?;

@@ -30,8 +30,6 @@ use eth_types::{
 use halo2_proofs::{circuit::Value, plonk::Error};
 use keccak256::EMPTY_HASH_LE;
 
-use super::end_tx;
-
 #[derive(Clone, Debug)]
 pub(crate) struct CallGadget<F> {
     opcode: Cell<F>,

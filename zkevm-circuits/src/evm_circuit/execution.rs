@@ -22,7 +22,7 @@ use halo2_proofs::{
 };
 use std::{
     collections::HashMap,
-    iter::{self, Skip},
+    iter::{self},
 };
 use strum::IntoEnumIterator;
 
