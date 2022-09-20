@@ -398,11 +398,18 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
             let s_bytes0 = meta.query_advice(s_main.bytes[0], Rotation::cur());
 
             /*
-            If `is_c1 = 1`,
-            we have 32 in `s_main.bytes[0]`.
+            If `is_c1` and branch above is not a placeholder, we have 32 in `s_main.bytes[0]`.
+            This is because `c1` in the branch above means there is an even number of nibbles left
+            and we have an even number of nibbles in the leaf, the first byte (after RLP bytes
+            specifying the length) of the key is 32.
+
+            Note: `is_c1` is taken from the branch parallel to the placeholder branch. This is because
+            the leaf in added branch is in this branch (parallel to placeholder branch).
+            When computing the key RLC, `is_c1` means `drifted_pos` needs to be multiplied by 1, while
+            `is_c16` means `drifted_pos` needs to be multiplied by 16.
             */
             constraints.push((
-                "Leaf key acc s_bytes0",
+                "Leaf key RLC s_bytes0 = 32 (short)",
                 q_enable.clone()
                     * (is_branch_s_placeholder.clone() + is_branch_c_placeholder.clone()) // drifted leaf appears only when there is a placeholder branch
                     * (s_bytes0.clone() - c32.clone())
@@ -426,14 +433,17 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
             */
 
             /*
-            Note: No need to distinguish between `is_c16` and `is_c1` here as it was already
+            No need to distinguish between `is_c16` and `is_c1` here as it was already
             when computing `key_rlc`.
+            */
 
-            Note: When S placeholder, `leaf_key_s_rlc` is `key_rlc` of the leaf before it drifted down
-            in a new branch. This value needs to be the same as `key_rlc` of the drifted leaf.
+            /*
+            When `S` placeholder, `leaf_key_s_rlc` is the key RLC of the leaf before it drifted down
+            in a new branch. We retrieve it from `LEAF_KEY_S` row.
+            This value needs to be the same as the key RLC of the drifted leaf.
             */
             constraints.push((
-                "Drifted leaf key S short",
+                "Drifted leaf key RLC S (short)",
                 q_enable.clone()
                     * is_branch_s_placeholder.clone()
                     * is_short.clone()
@@ -441,8 +451,15 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                     * (leaf_key_s_rlc.clone() - key_rlc_short.clone()),
             ));
 
+            /*
+            When `C` placeholder, `leaf_key_c_rlc` is the key RLC of the leaf after its neighbour leaf
+            has been deleted (and there were only two leaves, so the branch was deleted).
+            We retrieve it from `LEAF_KEY_C` row.
+            This value needs to be the same as the key RLC of the neighbour leaf (neighbour of
+            the leaf that was deleted) before the leaf was deleted.
+            */
             constraints.push((
-                "Drifted leaf key C short",
+                "Drifted leaf key RLC C (short)",
                 q_enable.clone()
                     * is_branch_c_placeholder.clone()
                     * is_short.clone()
@@ -456,9 +473,14 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
             // If `is_c16 = 1`, we have one nibble+48 in `s_main.bytes[1]`.
             let s_bytes1 = meta.query_advice(s_main.bytes[1], Rotation::cur());
 
-            // If `is_c1 = 1`, we have 32 in `s_main.bytes[1]`.
+            /*
+            If `is_c1` and branch above is not a placeholder, we have 32 in `s_main.bytes[1]`.
+            This is because `is_c1` in the branch above means there is an even number of nibbles left
+            and we have an even number of nibbles in the leaf, the first byte (after RLP bytes
+            specifying the length) of the key is 32.
+            */
             constraints.push((
-                "Leaf key acc s_bytes1",
+                "Leaf key acc s_bytes1 = 32 (long)",
                 q_enable.clone()
                     * (s_bytes1.clone() - c32.clone())
                     * is_c1.clone()
@@ -477,14 +499,15 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
 
             key_rlc_mult = key_rlc_mult * r_table[0].clone();
             let c_rlp1 = meta.query_advice(c_main.rlp1, Rotation::cur());
-            key_rlc_long = key_rlc_long + c_rlp1.clone() * key_rlc_mult;
+            key_rlc_long = key_rlc_long + c_rlp1.clone() * key_rlc_mult.clone();
 
             /*
-            No need to distinguish between `is_c16` and `is_c1` here as it was already
-            when computing `key_rlc`.
+            When `S` placeholder, `leaf_key_s_rlc` is the key RLC of the leaf before it drifted down
+            in a new branch. We retrieve it from `LEAF_KEY_S` row.
+            This value needs to be the same as the key RLC of the drifted leaf.
             */
             constraints.push((
-                "Drifted leaf key S long",
+                "Drifted leaf key RLC S (long)",
                 q_enable.clone()
                     * is_branch_s_placeholder.clone()
                     * is_long.clone()
@@ -492,8 +515,15 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                     * (leaf_key_s_rlc.clone() - key_rlc_long.clone()),
             ));
 
+            /*
+            When `C` placeholder, `leaf_key_c_rlc` is the key RLC of the leaf after its neighbour leaf
+            has been deleted (and there were only two leaves, so the branch was deleted).
+            We retrieve it from `LEAF_KEY_C` row.
+            This value needs to be the same as the key RLC of the neighbour leaf (neighbour of
+            the leaf that was deleted) before the leaf was deleted.
+            */
             constraints.push((
-                "Drifted leaf key C long",
+                "Drifted leaf key RLC C (long)",
                 q_enable.clone()
                     * is_branch_c_placeholder.clone()
                     * is_long.clone()
@@ -503,8 +533,12 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
 
             // Last level:
             let s_rlp2 = meta.query_advice(s_main.rlp2, Rotation::cur());
+
+            /*
+            When the leaf is in the last level there are no nibbles stored in the key and `s_main.rlp2 = 32`.
+            */
             constraints.push((
-                "Leaf key acc s_rlp2 = 32 last level",
+                "Leaf key acc s_rlp2 = 32 (last level)",
                 q_enable.clone()
                     * (is_branch_s_placeholder.clone() + is_branch_c_placeholder.clone()) // drifted leaf appears only when there is a placeholder branch
                     * (s_rlp2.clone() - c32.clone())
@@ -512,8 +546,16 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                     * last_level.clone(),
             ));
 
+            /*
+            When `S` placeholder, `leaf_key_s_rlc` is the key RLC of the leaf before it drifted down
+            in a new branch. We retrieve it from `LEAF_KEY_S` row.
+            This value needs to be the same as the key RLC of the drifted leaf.
+
+            We do not need to add any nibbles to the key RLC as there are none stored in the storage leaf
+            (last level).
+            */
             constraints.push((
-                "Drifted leaf key S last level",
+                "Drifted leaf key RLC S (last level)",
                 q_enable.clone()
                     * is_branch_s_placeholder.clone()
                     * last_level.clone()
@@ -521,54 +563,95 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                     * (leaf_key_s_rlc.clone() - key_rlc_start.clone()), // no nibbles in drifted leaf
             ));
 
+            /*
+            When `C` placeholder, `leaf_key_c_rlc` is the key RLC of the leaf after its neighbour leaf
+            has been deleted (and there were only two leaves, so the branch was deleted).
+            We retrieve it from `LEAF_KEY_C` row.
+            This value needs to be the same as the key RLC of the neighbour leaf (neighbour of
+            the leaf that was deleted) before the leaf was deleted.
+
+            We do not need to add any nibbles to the key RLC as there are none stored in the storage leaf
+            (last level).
+            */
             constraints.push((
-                "Drifted leaf key C last level",
+                "Drifted leaf key RLC C (last level)",
                 q_enable.clone()
                     * is_branch_c_placeholder.clone()
                     * last_level.clone()
                     * (one.clone() - is_leaf_in_first_storage_level.clone())
-                    * (leaf_key_c_rlc.clone() - key_rlc_start), // no nibbles in drifted leaf
+                    * (leaf_key_c_rlc.clone() - key_rlc_start.clone()), // no nibbles in drifted leaf
+            ));
+
+            let key_rlc_one_nibble = key_rlc_start.clone() + (s_rlp2 - c48.clone()) * key_rlc_mult.clone();
+
+            /*
+            When `S` placeholder, `leaf_key_s_rlc` is the key RLC of the leaf before it drifted down
+            in a new branch. We retrieve it from `LEAF_KEY_S` row.
+            This value needs to be the same as the key RLC of the drifted leaf.
+
+            We only need to add one nibble to the key RLC.
+            */
+            constraints.push((
+                "Drifted leaf key RLC S (one nibble)",
+                q_enable.clone()
+                    * is_branch_s_placeholder.clone()
+                    * last_level.clone()
+                    * (one.clone() - is_leaf_in_first_storage_level.clone())
+                    * (leaf_key_s_rlc.clone() - key_rlc_one_nibble.clone()),
+            ));
+
+            /*
+            When `C` placeholder, `leaf_key_c_rlc` is the key RLC of the leaf after its neighbour leaf
+            has been deleted (and there were only two leaves, so the branch was deleted).
+            We retrieve it from `LEAF_KEY_C` row.
+            This value needs to be the same as the key RLC of the neighbour leaf (neighbour of
+            the leaf that was deleted) before the leaf was deleted.
+
+            We only need to add one nibble to the key RLC.
+            */
+            constraints.push((
+                "Drifted leaf key RLC C (one nibble)",
+                q_enable.clone()
+                    * is_branch_c_placeholder.clone()
+                    * last_level.clone()
+                    * (one.clone() - is_leaf_in_first_storage_level.clone())
+                    * (leaf_key_c_rlc.clone() - key_rlc_one_nibble),
             ));
 
             constraints
         });
 
         /*
-        Checking accumulated RLC for key is not necessary here for
-        leaf_key_in_added_branch because we check this for leaf_key and here
-        we only check the key in leaf_key_in_added_branch corresponds to the
-        one in leaf_key.
+        It needs to be ensured that the hash of the drifted leaf is in the parent branch
+        at `drifted_pos` position.
 
-        In case we have a placeholder branch at position S:
-        (1) branch (17 rows) which contains leaf that turns into branch at
-        is_modified position (S positions) |     branch (17 rows) that
-        contains added branch hash at is_modified position (C positions)
-        (2) placeholder branch (17 rows) (S positions) | added branch (17 rows) (C
-        positions)     S extension node row
-            C extension node row
-        (3) leaf key S
-        (4) leaf value S ((3)||(4) hash is two levels above in (1) at is_modified)
-        (5) leaf key C
-        (6) leaf value C ((5)||(6) hash is in one level above (2) at is_modified)
-        (7) leaf in added branch - the same as leaf key S in (3), but it has the
-        first nibble removed
+        Rows:
+        Leaf key S
+        Leaf value S
+        Leaf key C
+        Leaf value C
+        Drifted leaf (leaf in added branch)
 
-        We need to check that leaf_in_added_branch hash is in (2) at drifted_pos
-        position (drifted_pos is the first nibble in leaf key S (3), because
-        leaf drifts down to this position in new branch)
+        Add case (S branch is placeholder):
+          Branch S           || Branch C             
+          Placeholder branch || Added branch
+          Leaf S             || Leaf C
+                             || Drifted leaf (this is Leaf S drifted into Added branch)
 
-        We need to construct RLP of the leaf. We have leaf key in
-        is_leaf_in_added_branch and the value is the same as it is in the
-        leaf value S (3).
+        We need to compute the RLC of the drifted leaf. We compute the intermediate RLC
+        from the bytes in `LEAF_DRIFTED` row. And we retrieve the value from `LEAF_VALUE_S` row
+        (where there is the same leaf, but before it drifted down into a new branch).
+        
+        Then we execute the lookup into a keccak table: `lookup(leaf_rlc, branch_child_at_drifted_pos_rlc)`.
         */
-        meta.lookup_any("leaf_key_in_added_branch: drifted leaf hash the branch (S)", |meta| {
+        meta.lookup_any("Leaf key in added branch: neighbour leaf in the added branch (S)", |meta| {
             let q_enable = q_enable(meta);
             let mut constraints = vec![];
 
             let mut rlc = meta.query_advice(accs.acc_s.rlc, Rotation::cur());
             let acc_mult = meta.query_advice(accs.acc_s.mult, Rotation::cur());
 
-            // If branch placeholder in S, leaf value is 3 above.
+            // If branch placeholder in `S`, the leaf value is 3 rows above.
             let rot_val = -3;
 
             let s_rlp1 = meta.query_advice(s_main.rlp1, Rotation(rot_val));
@@ -587,7 +670,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                     rot_val,
                     r_table.clone(),
                 );
-            // Note: value doesn't reach c_rlp1.
+            // Note: value does not reach c_rlp1.
 
             let is_leaf_in_first_storage_level =
                 meta.query_advice(is_account_leaf_in_added_branch, Rotation(rot_into_account));
@@ -607,9 +690,20 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                 meta.query_fixed(keccak_table[0], Rotation::cur()),
             ));
 
-            // s_mod_node_hash_rlc in placeholder branch contains hash of a drifted leaf
-            // (that this value corresponds to the value in the non-placeholder branch at drifted_pos
-            // is checked in branch_parallel)
+            /*
+            `s_mod_node_hash_rlc` in the placeholder branch stores the hash of a neighbour leaf.
+            This is because `c_mod_node_hash_rlc` in the added branch stores the hash of
+            `modified_node` (the leaf that has been added):
+
+            Add case (S branch is placeholder):
+              Branch S           || Branch C             
+              Placeholder branch (`s_mod_node_hash_rlc` stores `drifted_pos` node hash) || Added branch (`c_mod_node_hash_rlc` stores `modified_node` hash)
+              Leaf S             || Leaf C
+                                 || Drifted leaf (this is Leaf S drifted into Added branch)
+
+            That the stored value corresponds to the value in the non-placeholder branch at `drifted_pos`
+            is checked in `branch_parallel.rs`.
+            */
             let s_mod_node_hash_rlc = meta.query_advice(accs.s_mod_node_rlc, Rotation(rot));
             let keccak_table_i = meta.query_fixed(keccak_table[1], Rotation::cur());
             constraints.push((
@@ -623,7 +717,31 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
             constraints
         });
 
-        meta.lookup_any("leaf_key_in_added_branch: drifted leaf hash the branch (C)", |meta| {
+        /*
+        It needs to be ensured that the hash of the drifted leaf is in the parent branch
+        at `drifted_pos` position.
+
+        Rows:
+        Leaf key S
+        Leaf value S
+        Leaf key C
+        Leaf value C
+        Drifted leaf (leaf in added branch)
+
+        Delete case (C branch is placeholder):
+          Branch S                        || Branch C             
+          Branch to be deleted            || Placeholder branch
+          Leaf S (leaf to be deleted)     || Leaf C
+          Leaf to be drifted one level up || 
+        
+        We need to compute the RLC of the leaf that is a neighbour leaf of the leaf that is to be deleted.
+        We compute the intermediate RLC from the bytes in `LEAF_DRIFTED` row.
+        And we retrieve the value from `LEAF_VALUE_C` row
+        (where there is the same leaf, but after it was moved one level up because of the deleted branch).
+        
+        Then we execute the lookup into a keccak table: `lookup(leaf_rlc, branch_child_at_drifted_pos_rlc)`.
+        */
+        meta.lookup_any("Leaf key in added branch: neighbour leaf in the deleted branch (C)", |meta| {
             let q_enable = q_enable(meta);
             let mut constraints = vec![];
 
@@ -648,7 +766,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                     rot_val,
                     r_table.clone(),
                 );
-            // Note: value doesn't reach c_rlp1.
+            // Note: value does not reach `c_rlp1`.
 
             let is_leaf_in_first_storage_level =
                 meta.query_advice(is_account_leaf_in_added_branch, Rotation(rot_into_account));
@@ -669,9 +787,18 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
             ));
 
             /*
-            `c_mod_node_hash_rlc` in placeholder branch contains hash of a drifted leaf
-            (that this value corresponds to the value in the non-placeholder branch at drifted_pos
-            is checked in `branch_parallel.rs`)
+            `c_mod_node_hash_rlc` in the placeholder branch stores the hash of a neighbour leaf.
+            This is because `s_mod_node_hash_rlc` in the deleted branch stores the hash of
+            `modified_node` (the leaf that is to be deleted):
+
+            Delete case (C branch is placeholder):
+              Branch S                        || Branch C             
+              Branch to be deleted (`s_mod_node_hash_rlc` stores `modified_node` hash) || Placeholder branch (`c_mod_node_hash_rlc` stores `drifted_pos` node hash)
+              Leaf S (leaf to be deleted)     || Leaf C
+              Leaf to be drifted one level up || 
+            
+            That the stored value corresponds to the value in the non-placeholder branch at `drifted_pos`
+            is checked in `branch_parallel.rs`.
             */
             let c_mod_node_hash_rlc = meta.query_advice(accs.c_mod_node_rlc, Rotation(rot));
             let keccak_table_i = meta.query_fixed(keccak_table[1], Rotation::cur());
@@ -686,6 +813,9 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
             constraints
         });
 
+        /*
+        Range lookups ensure that `s_main`, `c_main.rlp1`, `c_main.rlp2` columns are all bytes (between 0 - 255).
+        */
         range_lookups(
             meta,
             q_enable,

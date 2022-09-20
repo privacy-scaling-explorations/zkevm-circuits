@@ -358,8 +358,8 @@ impl<F: FieldExt> LeafKeyConfig<F> {
                 key_mult = key_mult + key_mult_start.clone() * is_c1.clone(); // set to key_mult_start if sel2, stays key_mult if sel1
 
                 /*
-                If `c1` and branch above is not a placeholder, we have 32 in `s_main.bytes[0]`.
-                This is because `c1` in the branch above means there is an even number of nibbles left
+                If `is_c1` and branch above is not a placeholder, we have 32 in `s_main.bytes[0]`.
+                This is because `is_c1` in the branch above means there is an even number of nibbles left
                 and we have an even number of nibbles in the leaf, the first byte (after RLP bytes
                 specifying the length) of the key is 32.
                 */
@@ -412,7 +412,7 @@ impl<F: FieldExt> LeafKeyConfig<F> {
 
                 // For long RLP (key starts at `s_main.bytes[1]`):
 
-                // If `c16`, we have nibble+48 in `s_main.bytes[1]`.
+                // If `is_c16`, we have nibble+48 in `s_main.bytes[1]`.
                 let s_bytes1 = meta.query_advice(s_main.bytes[1], Rotation::cur());
                 let mut key_rlc_acc_long = key_rlc_acc_start.clone()
                     + (s_bytes1.clone() - c48.clone()) * key_mult_start.clone() * is_c16.clone();
@@ -420,8 +420,8 @@ impl<F: FieldExt> LeafKeyConfig<F> {
                 key_mult = key_mult + key_mult_start.clone() * is_c1.clone(); // set to key_mult_start if sel2, stays key_mult if sel1
 
                 /*
-                If `c1` and branch above is not a placeholder, we have 32 in `s_main.bytes[1]`.
-                This is because `c1` in the branch above means there is an even number of nibbles left
+                If `is_c1` and branch above is not a placeholder, we have 32 in `s_main.bytes[1]`.
+                This is because `is_c1` in the branch above means there is an even number of nibbles left
                 and we have an even number of nibbles in the leaf, the first byte (after RLP bytes
                 specifying the length) of the key is 32.
                 */
@@ -470,6 +470,20 @@ impl<F: FieldExt> LeafKeyConfig<F> {
                         * (key_rlc_acc_long - key_rlc.clone())
                         * (one.clone() - is_branch_placeholder.clone())
                         * is_long.clone(),
+                ));
+
+                let s_rlp2 = meta.query_advice(s_main.rlp2, Rotation::cur());
+
+                /*
+                When the leaf is in the last level there are no nibbles stored in the key and
+                `s_main.rlp2 = 32`.
+                */
+                constraints.push((
+                    "Leaf key acc s_rlp2 = 32 (last level)",
+                    q_enable.clone()
+                        * (s_rlp2 - c32.clone())
+                        * (one.clone() - is_branch_placeholder.clone())
+                        * last_level.clone(),
                 ));
 
                 /*
