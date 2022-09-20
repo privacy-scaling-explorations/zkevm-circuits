@@ -4,7 +4,7 @@ use halo2_proofs::{
     poly::Rotation,
 };
 
-use crate::{evm_circuit::util::Cell, table::TxLogFieldTag};
+use crate::table::TxLogFieldTag;
 use eth_types::{Field, ToAddress};
 pub use ethers_core::types::{Address, U256};
 pub use gadgets::util::Expr;
@@ -42,22 +42,10 @@ pub(crate) fn build_tx_log_address(index: u64, field_tag: TxLogFieldTag, log_id:
         .to_address()
 }
 
-pub(crate) fn build_tx_log_from_expr_to_expression<F: halo2_proofs::arithmetic::FieldExt>(
+pub(crate) fn build_tx_log_expression<F: halo2_proofs::arithmetic::FieldExt>(
     index: Expression<F>,
     field_tag: Expression<F>,
     log_id: Expression<F>,
 ) -> Expression<F> {
     index + (1u64 << 32).expr() * field_tag + ((1u64 << 48).expr()) * log_id
-}
-
-pub(crate) fn build_tx_log_expression<F: halo2_proofs::arithmetic::FieldExt>(
-    index: u64,
-    field_tag: TxLogFieldTag,
-    log_id: &Cell<F>,
-) -> Expression<F> {
-    if index != 0 {
-        build_tx_log_from_expr_to_expression(index.expr(), field_tag.expr(), log_id.expr())
-    } else {
-        (1u64 << 32).expr() * field_tag.expr() + ((1u64 << 48).expr()) * log_id.expr()
-    }
 }
