@@ -6,9 +6,9 @@ use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
 use crate::{
-    helpers::{get_bool_constraint, key_len_lookup, range_lookups},
+    helpers::{get_bool_constraint, key_len_lookup, range_lookups, bytes_expr_into_rlc},
     mpt::{FixedTableTag, MPTConfig, ProofVariables},
-    param::{BRANCH_ROWS_NUM, KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH, HASH_WIDTH}, columns::{MainCols, AccumulatorCols, DenoteCols}, witness_row::{MptWitnessRow, MptWitnessRowType},
+    param::{BRANCH_ROWS_NUM, KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH, HASH_WIDTH, LEAF_VALUE_S_IND, ACCOUNT_LEAF_ROWS, ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND, ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND, LEAF_VALUE_C_IND}, columns::{MainCols, AccumulatorCols, DenoteCols}, witness_row::{MptWitnessRow, MptWitnessRowType},
 };
 
 /*
@@ -439,6 +439,73 @@ impl<F: FieldExt> LeafValueConfig<F> {
 
             constraints
         });
+
+        /*
+        If there is no branch or extension node in the storage trie (just a leaf), it needs
+        to be ensured that the hash of the (only) leaf is the storage root.
+
+        Note: storage leaf in the first level cannot be shorter than 32 bytes (it is always hashed).
+        */
+        meta.lookup_any(
+            "Hash of the only storage leaf is storage trie root",
+            |meta| {
+                let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
+
+                let mut rot_into_storage_root = -LEAF_VALUE_S_IND - (ACCOUNT_LEAF_ROWS - ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND);
+                let mut rot_into_last_account_row = -LEAF_VALUE_S_IND - 1;
+                if !is_s {
+                    rot_into_storage_root = -LEAF_VALUE_C_IND - (ACCOUNT_LEAF_ROWS - ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND);
+                    rot_into_last_account_row = -LEAF_VALUE_C_IND - 1;
+                }
+
+                /*
+                Note: if leaf is a placeholder, the root in the account leaf needs to be the empty trie hash
+                (see the gate below).
+                */
+                let mut is_placeholder = meta.query_advice(denoter.sel1, Rotation(rot));
+                if !is_s {
+                    is_placeholder = meta.query_advice(denoter.sel2, Rotation(rot));
+                }
+
+                // Only check if there is an account above the leaf.
+                let is_account_leaf_in_added_branch = meta.query_advice(
+                    is_account_leaf_in_added_branch,
+                    Rotation(rot_into_last_account_row),
+                );
+
+                let acc = meta.query_advice(accs.acc_s.rlc, Rotation::cur());
+
+                let mut sc_hash = vec![];
+                // Note: storage root is always in `s_main.bytes`.
+                for column in s_main.bytes.iter() {
+                    sc_hash.push(
+                        meta.query_advice(*column, Rotation(rot_into_storage_root)),
+                    );
+                }
+                let hash_rlc = bytes_expr_into_rlc(&sc_hash, acc_r);
+
+                let mut constraints = vec![];
+                constraints.push((
+                    not_first_level.clone()
+                        * is_leaf.clone()
+                        * (one.clone() - is_placeholder.clone())
+                        * is_account_leaf_in_added_branch.clone()
+                        * acc,
+                    meta.query_fixed(keccak_table[0], Rotation::cur()),
+                ));
+
+                constraints.push((
+                    not_first_level.clone()
+                        * is_leaf.clone()
+                        * (one.clone() - is_placeholder)
+                        * is_account_leaf_in_added_branch.clone()
+                        * hash_rlc.clone(),
+                    meta.query_fixed(keccak_table[1], Rotation::cur()),
+                ));
+
+                constraints
+            },
+        );
 
         /*
         It needs to be checked that the hash of a leaf is in the parent node. We do this by a lookup

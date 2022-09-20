@@ -39,66 +39,7 @@ impl<F: FieldExt> StorageRootChip<F> {
         is_s: bool,
     ) -> StorageRootConfig {
         let config = StorageRootConfig {};
-        let one = Expression::Constant(F::one()); 
-
-        // If there is no branch, just a leaf.
-        // Note: storage leaf in the first level cannot be shorter than 32 bytes (it is always hashed).
-        meta.lookup_any(
-            "storage_root_in_account_leaf 3: root of the first level storage leaf in account leaf",
-            |meta| {
-                let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
-
-                let mut rot_into_storage_root = -LEAF_VALUE_S_IND - (ACCOUNT_LEAF_ROWS - ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND);
-                let mut rot_into_last_account_row = -LEAF_VALUE_S_IND - 1;
-                let mut is_leaf = meta.query_advice(storage_leaf.is_s_value, Rotation::cur());
-                if !is_s {
-                    rot_into_storage_root = -LEAF_VALUE_C_IND - (ACCOUNT_LEAF_ROWS - ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND);
-                    rot_into_last_account_row = -LEAF_VALUE_C_IND - 1;
-                    is_leaf = meta.query_advice(storage_leaf.is_c_value, Rotation::cur());
-                }
-
-                // Note: if leaf is a placeholder, the root in account leaf needs to be hash of empty trie
-                // (see the gate below)
-                let is_placeholder = meta.query_advice(sel, Rotation::cur());
-
-                // Only check if there is an account above the leaf.
-                let is_account_leaf_in_added_branch = meta.query_advice(
-                    is_account_leaf_in_added_branch,
-                    Rotation(rot_into_last_account_row),
-                );
-
-                let acc = meta.query_advice(accs.acc_s.rlc, Rotation::cur());
-
-                let mut sc_hash = vec![];
-                // Note: storage root is always in s_main.bytes!
-                for column in s_main.bytes.iter() {
-                    sc_hash.push(
-                        meta.query_advice(*column, Rotation(rot_into_storage_root)),
-                    );
-                }
-                let hash_rlc = bytes_expr_into_rlc(&sc_hash, acc_r);
-
-                let mut constraints = vec![];
-                constraints.push((
-                    not_first_level.clone()
-                        * is_leaf.clone()
-                        * (one.clone() - is_placeholder.clone())
-                        * is_account_leaf_in_added_branch.clone()
-                        * acc,
-                    meta.query_fixed(keccak_table[0], Rotation::cur()),
-                ));
-                constraints.push((
-                    not_first_level.clone()
-                        * is_leaf.clone()
-                        * (one.clone() - is_placeholder)
-                        * is_account_leaf_in_added_branch.clone()
-                        * hash_rlc.clone(),
-                    meta.query_fixed(keccak_table[1], Rotation::cur()),
-                ));
-
-                constraints
-            },
-        );
+        let one = Expression::Constant(F::one());  
 
         meta.create_gate("storage leaf in first level - leaf placeholder in first level requires empty trie", |meta| {
             let q_enable = meta.query_fixed(q_enable, Rotation::cur());
