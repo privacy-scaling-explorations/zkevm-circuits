@@ -126,7 +126,7 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
         );
 
         let copy_rwc_inc = cb.query_cell();
-        let dst_addr = build_tx_log_expression(0, TxLogFieldTag::Data, cb.curr.state.log_id);
+        let dst_addr = build_tx_log_expression(0, TxLogFieldTag::Data, &cb.curr.state.log_id);
         let cond = memory_address.has_length() * is_persistent.expr();
         cb.condition(cond.clone(), |cb| {
             cb.copy_table_lookup(
