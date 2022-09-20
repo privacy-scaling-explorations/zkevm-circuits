@@ -450,6 +450,7 @@ impl<F: FieldExt> LeafValueConfig<F> {
             "Hash of the only storage leaf is storage trie root",
             |meta| {
                 let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
+                let is_leaf = meta.query_advice(is_leaf_value, Rotation::cur());
 
                 let mut rot_into_storage_root = -LEAF_VALUE_S_IND - (ACCOUNT_LEAF_ROWS - ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND);
                 let mut rot_into_last_account_row = -LEAF_VALUE_S_IND - 1;
