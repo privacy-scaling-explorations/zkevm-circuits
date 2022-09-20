@@ -26,14 +26,14 @@ mod tests {
     #[test]
     fn bench_bytecode_circuit_prover() {
         let degree: u32 = var("DEGREE")
-            .unwrap_or_else(|_| "12")
+            .unwrap_or_else(|_| "12".to_string())
             .parse()
             .expect("Cannot parse DEGREE env var as u32");
 
-        let bytecodes_len: u32 = var("DATASCALE")
-            .unwrap_or_else(|_| "0")
+        let bytecodes_len: u32 = var("BTYECODES_LEN")
+            .unwrap_or_else(|_| "0".to_string())
             .parse()
-            .expect("Cannot parse NOC env var as u32");
+            .expect("Cannot parse BTYECODES_LEN env var as u32");
 
         let randomness = get_randomness();
         // Create the circuit
