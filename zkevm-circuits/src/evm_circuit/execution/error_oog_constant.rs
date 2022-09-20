@@ -24,7 +24,6 @@ pub(crate) struct ErrorOOGConstantGadget<F> {
     // constrain gas left is less than required
     gas_required: Cell<F>,
     insufficient_gas: RangeCheckGadget<F, N_BYTES_GAS>,
-
     restore_context: RestoreContextGadget<F>,
 }
 
@@ -36,7 +35,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGConstantGadget<F> {
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
         let gas_required = cb.query_cell();
-
         // Check if the amount of gas available is less than the amount of gas
         // required
         let insufficient_gas =
@@ -65,7 +63,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGConstantGadget<F> {
             // Do step state transition
             cb.require_step_state_transition(StepStateTransition {
                 call_id: Same,
-                rw_counter: Delta(4.expr()),
+                rw_counter: Delta(2.expr() + cb.curr.state.reversible_write_counter.expr()),
                 ..StepStateTransition::any()
             });
         });
@@ -73,7 +71,12 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGConstantGadget<F> {
         // When it's an internal call, need to restore caller's state as finishing this
         // call. Restore caller state to next StepState
         let restore_context = cb.condition(1.expr() - cb.curr.state.is_root.expr(), |cb| {
-            RestoreContextGadget::construct(cb, 4.expr(), 0.expr(), 0.expr())
+            RestoreContextGadget::construct(
+                cb,
+                2.expr() + cb.curr.state.reversible_write_counter.expr(),
+                0.expr(),
+                0.expr(),
+            )
         });
 
         Self {
@@ -118,7 +121,7 @@ mod test {
         self, address, bytecode, bytecode::Bytecode, evm_types::GasCost, geth_types::Account,
         geth_types::GethData, Address, ToWord, Word,
     };
-    use itertools::Itertools;
+
     use mock::{
         eth, gwei, test_ctx::helpers::account_0_code_account_1_no_code, TestContext, MOCK_ACCOUNTS,
     };
