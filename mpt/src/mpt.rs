@@ -15,7 +15,7 @@ use crate::{
         RLP_NUM,
     },
     roots::RootsChip,
-    storage_root_in_account_leaf::StorageRootChip, account_leaf::{AccountLeafCols, AccountLeaf, account_leaf_key_in_added_branch::AccountLeafKeyInAddedBranchConfig, account_leaf_key::AccountLeafKeyConfig, account_leaf_nonce_balance::AccountLeafNonceBalanceConfig, account_leaf_storage_codehash::AccountLeafStorageCodehashConfig, account_non_existing::AccountNonExistingConfig}, storage_leaf::{StorageLeafCols, StorageLeaf, leaf_key_in_added_branch::LeafKeyInAddedBranchConfig, leaf_key::LeafKeyConfig, leaf_value::LeafValueConfig}, witness_row::{MptWitnessRow, MptWitnessRowType}, columns::{ProofTypeCols, MainCols, AccumulatorCols, DenoteCols},
+    account_leaf::{AccountLeafCols, AccountLeaf, account_leaf_key_in_added_branch::AccountLeafKeyInAddedBranchConfig, account_leaf_key::AccountLeafKeyConfig, account_leaf_nonce_balance::AccountLeafNonceBalanceConfig, account_leaf_storage_codehash::AccountLeafStorageCodehashConfig, account_non_existing::AccountNonExistingConfig}, storage_leaf::{StorageLeafCols, StorageLeaf, leaf_key_in_added_branch::LeafKeyInAddedBranchConfig, leaf_key::LeafKeyConfig, leaf_value::LeafValueConfig}, witness_row::{MptWitnessRow, MptWitnessRowType}, columns::{ProofTypeCols, MainCols, AccumulatorCols, DenoteCols},
 };
 use crate::{
     param::{
@@ -413,34 +413,6 @@ impl<F: FieldExt> MPTConfig<F> {
             accumulators.clone(),
             fixed_table.clone(),
             r_table.clone(),
-        );
-
-        StorageRootChip::<F>::configure(
-            meta,
-            q_enable,
-            not_first_level,
-            account_leaf.is_in_added_branch,
-            storage_leaf.clone(),
-            s_main.clone(),
-            accumulators.clone(),
-            denoter.sel1,
-            keccak_table,
-            acc_r,
-            true,
-        );
-
-        StorageRootChip::<F>::configure(
-            meta,
-            q_enable,
-            not_first_level,
-            account_leaf.is_in_added_branch,
-            storage_leaf.clone(),
-            s_main.clone(), // s_main (and not c_main) is correct
-            accumulators.clone(),
-            denoter.sel2,
-            keccak_table,
-            acc_r,
-            false,
         );
 
         BranchInitConfig::<F>::configure(

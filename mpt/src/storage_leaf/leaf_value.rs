@@ -109,11 +109,11 @@ impl<F: FieldExt> LeafValueConfig<F> {
         in all branch children.
         */
         let rot = -6;
-        let mut rot_into_init = -20;
+        let mut rot_into_init = -LEAF_VALUE_S_IND - BRANCH_ROWS_NUM;
         let mut rot_into_account = -2;
         if !is_s {
-            rot_into_init = -22;
-            rot_into_account = -4;
+            rot_into_init = rot_into_init - 2;
+            rot_into_account = rot_into_account - 2;
         }
         let one = Expression::Constant(F::one());
 
@@ -522,6 +522,76 @@ impl<F: FieldExt> LeafValueConfig<F> {
                         * (s.clone() - Expression::Constant(F::from(empty_trie_hash[ind] as u64))),
                 ));
             }
+
+            constraints
+        });
+
+        /*
+        If there is no branch or extension node in the storage trie (just a leaf)
+        and the only leaf appears after branch placeholder, it needs
+        to be ensured that the hash of the (only) leaf is the storage root.
+        This appears when there is only one leaf in the storage trie and we add another leaf which
+        means the only leaf in a trie is replaced by a branch or extension node (in delete scenario
+        we have two leaves and one is deleted) - that means we have a branch placeholder in `S` proof
+        and the leaf after it.
+
+        Note: Branch in the first level cannot be shorter than 32 bytes (it is always hashed).
+        */
+        meta.lookup_any(
+            "Hash of the only storage leaf which is after a placeholder is storage trie root",
+            |meta| {
+            let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
+
+            // Check in leaf value row.
+            let mut rot_into_storage_root = -LEAF_VALUE_S_IND - (ACCOUNT_LEAF_ROWS - ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND) - BRANCH_ROWS_NUM;
+            let mut rot_into_last_account_row = -LEAF_VALUE_S_IND - 1;
+            let mut rot_into_last_account_row_placeholder = -LEAF_VALUE_S_IND - 1 - BRANCH_ROWS_NUM;
+            let is_leaf = meta.query_advice(is_leaf_value, Rotation::cur());
+
+            let is_branch_placeholder =
+                meta.query_advice(is_branch_placeholder, Rotation(rot_into_init));
+
+            if !is_s {
+                rot_into_storage_root = -LEAF_VALUE_C_IND - (ACCOUNT_LEAF_ROWS - ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND) - BRANCH_ROWS_NUM;
+                rot_into_last_account_row = -LEAF_VALUE_C_IND - 1;
+                rot_into_last_account_row_placeholder = -LEAF_VALUE_C_IND - 1 - BRANCH_ROWS_NUM;
+            }
+
+            // Only check if there is an account above the leaf.
+            let is_account_leaf_in_added_branch_placeholder =
+                meta.query_advice(is_account_leaf_in_added_branch, Rotation(rot_into_last_account_row_placeholder));
+            let is_account_leaf_in_added_branch =
+                meta.query_advice(is_account_leaf_in_added_branch, Rotation(rot_into_last_account_row));
+
+            let acc = meta.query_advice(accs.acc_s.rlc, Rotation::cur());
+
+            let mut sc_hash = vec![];
+            // Note: storage root is always in `s_main.bytes`.
+            for column in s_main.bytes.iter() {
+                sc_hash.push(meta.query_advice(*column, Rotation(rot_into_storage_root)));
+            }
+            let hash_rlc = bytes_expr_into_rlc(&sc_hash, acc_r);
+
+            let mut constraints = vec![];
+            constraints.push((
+                not_first_level.clone()
+                    * is_leaf.clone()
+                    * (one.clone() - is_account_leaf_in_added_branch.clone()) // if account is directly above storage leaf, there is no placeholder branch
+                    * is_account_leaf_in_added_branch_placeholder.clone()
+                    * is_branch_placeholder.clone()
+                    * acc,
+                meta.query_fixed(keccak_table[0], Rotation::cur()),
+            ));
+
+            constraints.push((
+                not_first_level.clone()
+                    * is_leaf.clone()
+                    * (one.clone() - is_account_leaf_in_added_branch.clone()) // if account is directly above storage leaf, there is no placeholder branch
+                    * is_account_leaf_in_added_branch_placeholder.clone()
+                    * is_branch_placeholder.clone()
+                    * hash_rlc.clone(),
+                meta.query_fixed(keccak_table[1], Rotation::cur()),
+            ));
 
             constraints
         });
