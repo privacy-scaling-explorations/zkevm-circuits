@@ -132,7 +132,7 @@ mod tests {
                         .map(|opcode| opcode.as_u8())
                         .collect::<Vec<u8>>()
                 })
-                .map(|bytes| unroll(bytes.clone(), randomness))
+                .map(|bytes| unroll(bytes, randomness))
                 .collect()
         }
     }
