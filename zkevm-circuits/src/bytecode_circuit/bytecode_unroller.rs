@@ -10,7 +10,10 @@ use eth_types::{Field, ToLittleEndian, Word};
 use gadgets::is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction};
 use halo2_proofs::{
     circuit::{Layouter, Region, Value},
-    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, Selector, VirtualCells},
+    plonk::{
+        Advice, Column, ConstraintSystem, Error, Expression, Fixed, SecondPhase, Selector,
+        VirtualCells,
+    },
     poly::Rotation,
 };
 use keccak256::plain::Keccak;
@@ -68,7 +71,7 @@ impl<F: Field> Config<F> {
         let q_last = meta.selector();
         let value = bytecode_table.value;
         let push_rindex = meta.advice_column();
-        let hash_input_rlc = meta.advice_column();
+        let hash_input_rlc = meta.advice_column_in(SecondPhase);
         let code_length = meta.advice_column();
         let byte_push_size = meta.advice_column();
         let is_final = meta.advice_column();
