@@ -10,7 +10,7 @@ use ethers_signers::{LocalWallet, Signer};
 use halo2_proofs::halo2curves::{group::ff::PrimeField, secp256k1};
 use num::Integer;
 use num_bigint::BigUint;
-use serde::{Serialize, Serializer};
+use serde::{Deserialize, Serialize, Serializer};
 use serde_with::serde_as;
 use sha3::{Digest, Keccak256};
 use std::collections::HashMap;
@@ -23,6 +23,22 @@ pub struct Account {
     pub address: Address,
     /// nonce
     pub nonce: Word,
+    /// Balance
+    pub balance: Word,
+    /// EVM Code
+    pub code: Bytes,
+    /// Storage
+    #[serde(serialize_with = "serde_account_storage")]
+    pub storage: HashMap<Word, Word>,
+}
+
+
+/// The struct to parse the state, which has no address field.
+#[serde_as]
+#[derive(PartialEq, Eq, Debug, Default, Clone, Serialize, Deserialize)]
+pub struct RawAccount {
+    /// nonce
+    pub nonce: u64,
     /// Balance
     pub balance: Word,
     /// EVM Code

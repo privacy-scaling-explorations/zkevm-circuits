@@ -5,3 +5,6 @@
 [submodule "integration-tests/contracts/vendor/openzeppelin-contracts"]
 	path = integration-tests/contracts/vendor/openzeppelin-contracts
 	url = https://github.com/OpenZeppelin/openzeppelin-contracts
+[submodule "tmp"]
+	path = tmp
+	url = git@github.com:pinkiebell/tmp.git
