@@ -34,6 +34,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGConstantGadget<F> {
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
+        cb.opcode_lookup(opcode.expr(), 1.expr());
+
         let gas_required = cb.query_cell();
 
         cb.constant_gas_lookup(opcode.expr(), gas_required.expr());
@@ -56,8 +58,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGConstantGadget<F> {
             0.expr(),
         );
 
-        // TODO: Handle root & internal call constraints and use ContextSwitchGadget to
-        // switch call context to caller's and consume all gas_left
+        // Go to EndTx only when is_root
         let is_to_end_tx = cb.next.execution_state_selector([ExecutionState::EndTx]);
         cb.require_equal(
             "Go to EndTx only when is_root",
