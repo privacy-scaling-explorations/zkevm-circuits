@@ -553,18 +553,6 @@ impl<F: FieldExt> MptWitnessRow<F> {
             )?;
         }
         
-        let counter_u32: u32 = u32::from_be_bytes(
-                self.counter_bytes()
-                .try_into()
-                .expect("slice of incorrect length"),
-        );
-        region.assign_advice(
-            || "counter",
-            mpt_config.counter,
-            offset,
-            || Ok(F::from(counter_u32 as u64)),
-        )?;
-
         region.assign_advice(
             || "is_storage_mod",
             mpt_config.proof_type.is_storage_mod,

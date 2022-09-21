@@ -1,5 +1,4 @@
 use halo2_proofs::{
-    circuit::Chip,
     plonk::{Advice, Column, ConstraintSystem, Expression, Fixed},
     poly::Rotation,
 };
@@ -8,18 +7,17 @@ use std::marker::PhantomData;
 
 use crate::storage_leaf::StorageLeafCols;
 
+/*
+Constraints for roots and not_first_level selector.
+Note: comparing the roots with the hash of branch/extension node (or account leaf if in the first level)
+is done in branch_hash_in_parent/extension_node (account_leaf_storage_codehash).
+*/
 #[derive(Clone, Debug)]
-pub(crate) struct RootsConfig {}
-
-// Constraints for roots and not_first_level selector.
-// Note: comparing the roots with the hash of branch/extension node (or account leaf if in the first level)
-// is done in branch_hash_in_parent/extension_node (account_leaf_storage_codehash).
-pub(crate) struct RootsChip<F> {
-    config: RootsConfig,
+pub(crate) struct RootsConfig<F> {
     _marker: PhantomData<F>,
 }
 
-impl<F: FieldExt> RootsChip<F> {
+impl<F: FieldExt> RootsConfig<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         q_enable: Column<Fixed>,
@@ -31,9 +29,8 @@ impl<F: FieldExt> RootsChip<F> {
         inter_start_root: Column<Advice>,
         inter_final_root: Column<Advice>,
         address_rlc: Column<Advice>,
-        counter: Column<Advice>,
-    ) -> RootsConfig {
-        let config = RootsConfig {};
+    ) -> Self {
+        let config = RootsConfig { _marker: PhantomData };
 
         meta.create_gate("roots", |meta| {
             let mut constraints = vec![];
@@ -119,10 +116,10 @@ impl<F: FieldExt> RootsChip<F> {
             ));
 
             // Note that not_first_level can change in is_branch_init or is_account_leaf.
-            // The attacker could thus insert more first levels, but there will be counter
-            // for storage modifications which will prevent this. Still, the attacker
-            // could potentially put first levels at wrong places, but then address/key
-            // RLC constraints would fail.
+            // The attacker could thus insert more first levels, but there will be
+            // `start_root/end_root` used in lookups which will prevent this scenario.
+            // Also, the attacker could potentially put first levels at wrong places, but then
+            // address/key RLC constraints would fail.
             constraints.push((
                 "not_first_level doesn't change except at is_branch_init or is_account_leaf_key_s or is_storage_leaf_key_s",
                 q_not_first.clone()
@@ -171,65 +168,11 @@ impl<F: FieldExt> RootsChip<F> {
                     * (address_rlc_cur.clone() - address_rlc_prev.clone())
             ));
 
-            // counter does not change except when a new modification proof starts
-            let counter_prev = meta.query_advice(counter, Rotation::prev());
-            let counter_cur = meta.query_advice(counter, Rotation::cur());
-            constraints.push((
-                "counter does not change outside first level",
-                q_not_first.clone()
-                    * not_first_level_cur.clone()
-                    * (counter_cur.clone() - counter_prev.clone())
-            ));
-            constraints.push((
-                "counter does not change inside first level except in the first row",
-                q_not_first.clone()
-                    * (one.clone() - not_first_level_cur.clone())
-                    * (one.clone() - is_branch_init.clone())
-                    * (one.clone() - is_account_leaf_key_s.clone())
-                    * (counter_cur.clone() - counter_prev.clone())
-            ));
-
-            constraints.push((
-                "counter increases by 1 in first row in first level (branch)",
-                q_not_first.clone()
-                    * (one.clone() - not_first_level_cur.clone())
-                    * is_branch_init.clone()
-                    * (counter_cur.clone() - counter_prev.clone() - one.clone())
-            ));
-            constraints.push((
-                "counter increases by 1 in first row in first level (account leaf)",
-                q_not_first.clone()
-                    * (one.clone() - not_first_level_cur.clone())
-                    * is_account_leaf_key_s.clone()
-                    * (counter_cur.clone() - counter_prev.clone() - one)
-            ));
-
-
             // TODO: check public roots to match with first and last inter roots
 
             constraints
         });
 
         config
-    }
-
-    pub fn construct(config: RootsConfig) -> Self {
-        Self {
-            config,
-            _marker: PhantomData,
-        }
-    }
-}
-
-impl<F: FieldExt> Chip<F> for RootsChip<F> {
-    type Config = RootsConfig;
-    type Loaded = ();
-
-    fn config(&self) -> &Self::Config {
-        &self.config
-    }
-
-    fn loaded(&self) -> &Self::Loaded {
-        &()
     }
 }

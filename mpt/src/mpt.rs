@@ -14,7 +14,7 @@ use crate::{
     param::{
         RLP_NUM,
     },
-    roots::RootsChip,
+    roots::RootsConfig,
     account_leaf::{AccountLeafCols, AccountLeaf, account_leaf_key_in_added_branch::AccountLeafKeyInAddedBranchConfig, account_leaf_key::AccountLeafKeyConfig, account_leaf_nonce_balance::AccountLeafNonceBalanceConfig, account_leaf_storage_codehash::AccountLeafStorageCodehashConfig, account_non_existing::AccountNonExistingConfig}, storage_leaf::{StorageLeafCols, StorageLeaf, leaf_key_in_added_branch::LeafKeyInAddedBranchConfig, leaf_key::LeafKeyConfig, leaf_value::LeafValueConfig}, witness_row::{MptWitnessRow, MptWitnessRowType}, columns::{ProofTypeCols, MainCols, AccumulatorCols, DenoteCols},
 };
 use crate::{
@@ -75,7 +75,6 @@ pub struct MPTConfig<F> {
                                   * address_rlc computed in the account leaf key row. Needed to
                                   * enable lookup for storage key/value (to have address RLC in
                                   * the same row as storage key/value). */
-    pub(crate) counter: Column<Advice>,
     account_leaf_key_s: AccountLeafKeyConfig<F>,
     account_leaf_key_c: AccountLeafKeyConfig<F>,
     account_leaf_nonce_balance_s: AccountLeafNonceBalanceConfig<F>,
@@ -252,7 +251,6 @@ impl<F: FieldExt> MPTConfig<F> {
         let denoter = DenoteCols::new(meta);
  
         let address_rlc = meta.advice_column();
-        let counter = meta.advice_column();
 
         SelectorsChip::<F>::configure(
             meta,
@@ -266,7 +264,7 @@ impl<F: FieldExt> MPTConfig<F> {
             denoter.clone(),
         );
 
-        RootsChip::<F>::configure(
+        RootsConfig::<F>::configure(
             meta,
             q_enable,
             q_not_first,
@@ -277,7 +275,6 @@ impl<F: FieldExt> MPTConfig<F> {
             inter_start_root,
             inter_final_root,
             address_rlc,
-            counter,
         );
 
         let branch_config = BranchConfig::<F>::configure(
@@ -733,7 +730,6 @@ impl<F: FieldExt> MPTConfig<F> {
             keccak_table,
             fixed_table,
             address_rlc,
-            counter,
             account_leaf_key_s,
             account_leaf_key_c,
             account_leaf_nonce_balance_s,
