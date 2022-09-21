@@ -827,6 +827,8 @@ impl DynamicTableColumns for KeccakTable {
 pub struct CopyTable {
     /// Whether the row is the first read-write pair for a copy event.
     pub is_first: Column<Advice>,
+    /// Whether the row is the last read-write pair for a copy event.
+    pub is_last: Column<Advice>,
     /// The relevant ID for the read-write row, represented as a random linear
     /// combination. The ID may be one of the below:
     /// 1. Call ID/Caller ID for CopyDataType::Memory
@@ -841,11 +843,18 @@ pub struct CopyTable {
     pub src_addr_end: Column<Advice>,
     /// The number of bytes left to be copied.
     pub bytes_left: Column<Advice>,
+    /// The value copied in this copy step.
+    pub value: Column<Advice>,
     /// An accumulator value in the RLC representation. This is used for
     /// specific purposes, for instance, when `tag == CopyDataType::RlcAcc`.
     /// Having an additional column for the `rlc_acc` simplifies the lookup
     /// to copy table.
     pub rlc_acc: Column<Advice>,
+    /// Whether the row is padding.
+    pub is_pad: Column<Advice>,
+    /// In case of a bytecode tag, this denotes whether or not the copied byte
+    /// is an opcode or push data byte.
+    pub is_code: Column<Advice>,
     /// The associated read-write counter for this row.
     pub rw_counter: Column<Advice>,
     /// Decrementing counter denoting reverse read-write counter.
@@ -861,12 +870,16 @@ impl CopyTable {
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>, q_enable: Column<Fixed>) -> Self {
         Self {
             is_first: meta.advice_column(),
+            is_last: meta.advice_column(),
             id: meta.advice_column(),
             tag: BinaryNumberChip::configure(meta, q_enable, None),
             addr: meta.advice_column(),
             src_addr_end: meta.advice_column(),
             bytes_left: meta.advice_column(),
+            value: meta.advice_column(),
             rlc_acc: meta.advice_column(),
+            is_pad: meta.advice_column(),
+            is_code: meta.advice_column(),
             rw_counter: meta.advice_column(),
             rwc_inc_left: meta.advice_column(),
         }
@@ -876,8 +889,9 @@ impl CopyTable {
     pub fn assignments<F: Field>(
         copy_event: &CopyEvent,
         randomness: F,
-    ) -> Vec<(CopyDataType, [F; 8])> {
+    ) -> Vec<(CopyDataType, [F; 12])> {
         let mut assignments = Vec::new();
+        // rlc_acc
         let rlc_acc = if copy_event.dst_type == CopyDataType::RlcAcc {
             let values = copy_event
                 .bytes
@@ -888,14 +902,40 @@ impl CopyTable {
         } else {
             F::zero()
         };
-        for (step_idx, is_read_step) in copy_event
+        let mut value_acc = F::zero();
+        for (step_idx, (is_read_step, copy_step)) in copy_event
             .bytes
             .iter()
-            .flat_map(|_| vec![true, false].into_iter())
+            .flat_map(|(value, is_code)| {
+                let read_step = CopyStep {
+                    value: *value,
+                    is_code: if copy_event.src_type == CopyDataType::Bytecode {
+                        Some(*is_code)
+                    } else {
+                        None
+                    },
+                };
+                let write_step = CopyStep {
+                    value: *value,
+                    is_code: if copy_event.dst_type == CopyDataType::Bytecode {
+                        Some(*is_code)
+                    } else {
+                        None
+                    },
+                };
+                once((true, read_step)).chain(once((false, write_step)))
+            })
             .enumerate()
         {
             // is_first
             let is_first = if step_idx == 0 { F::one() } else { F::zero() };
+            // is last
+            let is_last = if step_idx == copy_event.bytes.len() * 2 - 1 {
+                F::one()
+            } else {
+                F::zero()
+            };
+
             // id
             let id = {
                 let id = if is_read_step {
@@ -905,18 +945,21 @@ impl CopyTable {
                 };
                 number_or_hash_to_field(id, randomness)
             };
+
             // addr
             let tag = if is_read_step {
                 copy_event.src_type
             } else {
                 copy_event.dst_type
             };
+
             let copy_step_addr: u64 =
                 if is_read_step {
                     copy_event.src_addr
                 } else {
                     copy_event.dst_addr
                 } + (u64::try_from(step_idx).unwrap() - if is_read_step { 0 } else { 1 }) / 2u64;
+
             let addr = if tag == CopyDataType::TxLog {
                 build_tx_log_address(
                     copy_step_addr,
@@ -929,16 +972,38 @@ impl CopyTable {
                 F::from(copy_step_addr)
             };
 
+            // bytes_left
             let bytes_left = u64::try_from(copy_event.bytes.len() * 2 - step_idx).unwrap() / 2;
+            // value
+            let value = if copy_event.dst_type == CopyDataType::RlcAcc {
+                if is_read_step {
+                    F::from(copy_step.value as u64)
+                } else {
+                    value_acc = value_acc * randomness + F::from(copy_step.value as u64);
+                    value_acc
+                }
+            } else {
+                F::from(copy_step.value as u64)
+            };
+            // is_pad
+            let is_pad = F::from(is_read_step && copy_step_addr >= copy_event.src_addr_end);
+
+            // is_code
+            let is_code = copy_step.is_code.map_or(F::zero(), |v| F::from(v));
+
             assignments.push((
                 tag,
                 [
                     is_first,
+                    is_last,
                     id,
                     addr,
                     F::from(copy_event.src_addr_end),
                     F::from(bytes_left),
+                    value,
                     rlc_acc,
+                    is_pad,
+                    is_code,
                     F::from(copy_event.rw_counter(step_idx)),
                     F::from(copy_event.rw_counter_increase_left(step_idx)),
                 ],
@@ -995,11 +1060,15 @@ impl CopyTable {
     fn columns(&self) -> Vec<Column<Advice>> {
         vec![
             self.is_first,
+            self.is_last,
             self.id,
             self.addr,
             self.src_addr_end,
             self.bytes_left,
+            self.value,
             self.rlc_acc,
+            self.is_pad,
+            self.is_code,
             self.rw_counter,
             self.rwc_inc_left,
         ]
