@@ -718,6 +718,7 @@ pub mod dev {
     #[derive(Default)]
     struct CopyCircuitTester<F> {
         block: Block<F>,
+        max_txs: usize,
         randomness: F,
     }
 
@@ -727,7 +728,11 @@ pub mod dev {
         }
 
         pub fn new(block: Block<F>, randomness: F) -> Self {
-            Self { block, randomness }
+            Self {
+                block,
+                randomness,
+                max_txs: 4,
+            }
         }
         pub fn r() -> Expression<F> {
             123456u64.expr()
@@ -773,13 +778,16 @@ pub mod dev {
             config: Self::Config,
             mut layouter: impl Layouter<F>,
         ) -> Result<(), halo2_proofs::plonk::Error> {
-            config
-                .tx_table
-                .load(&mut layouter, &self.block.txs, self.randomness)?;
+            config.tx_table.load(
+                &mut layouter,
+                &self.block.txs,
+                self.max_txs,
+                self.randomness,
+            )?;
             config.rw_table.load(
                 &mut layouter,
                 &self.block.rws.table_assignments(),
-                self.block.max_rws,
+                self.block.circuits_params.max_rws,
                 self.randomness,
             )?;
             config.bytecode_table.load(

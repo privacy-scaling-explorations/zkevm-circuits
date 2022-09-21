@@ -14,6 +14,7 @@ use crate::{
 use eth_types::Field;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
+// TODO: Remove MAX_TXS
 #[derive(Clone, Debug)]
 pub(crate) struct EndBlockGadget<F, const MAX_TXS: usize, const MAX_RWS: usize> {
     total_txs: Cell<F>,
@@ -55,15 +56,24 @@ impl<F: Field, const MAX_TXS: usize, const MAX_RWS: usize> ExecutionGadget<F>
             // 2. Verify that final step as tx_id identical to the number of
             // txs in tx_table.
             cb.call_context_lookup(0.expr(), None, CallContextFieldTag::TxId, total_txs.expr());
-            // Verify that there are at most total_txs meaningful entries in
-            // the tx_table
-            cb.tx_context_lookup(1.expr(), TxContextFieldTag::Pad, None, 0.expr());
+            // Verify that there are at most total_txs meaningful txs in the tx_table, by
+            // showing that the Tx following the last processed one has
+            // CallerAddress = 0x0 (which means padding tx).
+            // TODO: Update specs to follow this approach of padding and num_txs verif.
             cb.tx_context_lookup(
-                (MAX_TXS.expr() - total_txs.expr()) * (TxContextFieldTag::TxSignHash as u64).expr(),
-                TxContextFieldTag::Pad,
+                total_txs.expr() + 1.expr(),
+                TxContextFieldTag::CallerAddress,
                 None,
                 0.expr(),
             );
+            // cb.tx_context_lookup(1.expr(), TxContextFieldTag::Pad, None,
+            // 0.expr()); cb.tx_context_lookup(
+            //     (MAX_TXS.expr() - total_txs.expr()) *
+            // (TxContextFieldTag::TxSignHash as u64).expr(),
+            //     TxContextFieldTag::Pad,
+            //     None,
+            //     0.expr(),
+            // );
             // Since every tx lookup done in the EVM circuit must succeed and
             // uses a unique tx_id, we know that at least there
             // are total_tx meaningful txs in the tx_table.

@@ -745,41 +745,35 @@ impl<F: Field, const MAX_TXS: usize, const MAX_RWS: usize> ExecutionConfig<F, MA
                     .flat_map(|tx| tx.steps.iter().map(move |step| (tx, step)))
                     .peekable();
 
-                let last_height = 1;
-                // end_block_rows tracks the remaining EndBlock rows
+                let evm_circuit_rows = block.evm_circuit_pad_to;
+                let exact = exact || evm_circuit_rows == 0;
+                // end_block_rows tracks the remaining EndBlock rows, and is set once all the
+                // transaction steps have been assigned.
                 let mut end_block_rows = None;
-                let mut get_next =
-                    |offset: &usize, end_block_rows: &mut Option<usize>| match steps.next() {
-                        Some((transaction, step)) => Ok(Some((
-                            transaction,
-                            &transaction.calls[step.call_index],
-                            step,
-                        ))),
-                        None => {
-                            if end_block_rows.is_none() {
-                                *end_block_rows = Some(if exact || block.evm_circuit_pad_to == 0 {
+                let mut get_next = |offset: &usize| match steps.next() {
+                    Some((transaction, step)) => {
+                        Some((transaction, &transaction.calls[step.call_index], step))
+                    }
+                    None => {
+                        end_block_rows = Some(match end_block_rows {
+                            None => {
+                                if exact {
                                     1
                                 } else {
-                                    if *offset >= block.evm_circuit_pad_to {
-                                        log::error!(
-                                            "evm circuit offset larger than padding: {} > {}",
-                                            offset,
-                                            block.evm_circuit_pad_to
-                                        );
-                                        return Err(Error::Synthesis);
-                                    }
-                                    block.evm_circuit_pad_to - offset
-                                });
+                                    evm_circuit_rows - offset
+                                }
                             }
-                            return Ok(match end_block_rows {
-                                Some(0) => None,
-                                Some(1) => Some((&dummy_tx, last_call, end_block_last)),
-                                Some(_) => Some((&dummy_tx, last_call, end_block_not_last)),
-                                _ => unreachable!(),
-                            });
+                            Some(i) => i - 1,
+                        });
+                        match end_block_rows {
+                            Some(0) => None,
+                            Some(1) => Some((&dummy_tx, last_call, end_block_last)),
+                            Some(_) => Some((&dummy_tx, last_call, end_block_not_last)),
+                            _ => unreachable!(),
                         }
-                    };
-                let mut next = get_next(&offset, &mut end_block_rows)?;
+                    }
+                };
+                let mut next = get_next(&offset);
                 loop {
                     let (transaction, call, step) = match next {
                         Some(n) => n,
@@ -787,7 +781,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_RWS: usize> ExecutionConfig<F, MA
                             break;
                         }
                     };
-                    next = get_next(&offset, &mut end_block_rows)?;
+                    next = get_next(&offset);
                     let height = self.get_step_height(step.execution_state);
 
                     // Assign the step witness
@@ -834,15 +828,18 @@ impl<F: Field, const MAX_TXS: usize, const MAX_RWS: usize> ExecutionConfig<F, MA
 
                     offset += height;
 
-                    // if next.is_none() {
-                    //     debug_assert_eq!(height, 1);
-                    // }
-                    if let Some(i) = end_block_rows {
-                        if i == 0 {
-                            debug_assert_eq!(height, 1);
-                            break;
-                        }
-                        end_block_rows = Some(i - 1);
+                    if !exact && offset >= evm_circuit_rows {
+                        log::error!(
+                            "evm circuit offset larger than padding: {} > {}",
+                            offset,
+                            evm_circuit_rows
+                        );
+                        return Err(Error::Synthesis);
+                    }
+
+                    if next.is_none() {
+                        // Assert that EndBlock height is 1
+                        debug_assert_eq!(height, 1);
                     }
                 }
 
@@ -860,7 +857,9 @@ impl<F: Field, const MAX_TXS: usize, const MAX_RWS: usize> ExecutionConfig<F, MA
                     || Value::known(F::zero()),
                 )?;
 
-                self.q_step_last.enable(&mut region, offset - last_height)?;
+                const END_BLOCK_HEIGHT: usize = 1;
+                self.q_step_last
+                    .enable(&mut region, offset - END_BLOCK_HEIGHT)?;
 
                 Ok(())
             },

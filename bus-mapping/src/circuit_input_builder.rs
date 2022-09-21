@@ -29,6 +29,24 @@ use itertools::Itertools;
 use std::collections::HashMap;
 pub use transaction::{Transaction, TransactionContext};
 
+/// Circuit Setup Parameters
+#[derive(Debug, Clone)]
+pub struct CircuitsParams {
+    /// Maximum number of rw operations in the state circuit (RwTable length /
+    /// nummber of rows). This must be at least the number of rw operations
+    /// + 1, in order to allocate at least a Start row.
+    pub max_rws: usize,
+    // TODO: evm_circuit_rows
+    // TODO: max_txs
+    // TODO: max_calldata
+}
+
+impl Default for CircuitsParams {
+    fn default() -> Self {
+        CircuitsParams { max_rws: 128 }
+    }
+}
+
 /// Builder to generate a complete circuit input from data gathered from a geth
 /// instance. This structure is the centre of the crate and is intended to be
 /// the only entry point to it. The `CircuitInputBuilder` works in several
@@ -152,7 +170,7 @@ impl<'a> CircuitInputBuilder {
     fn set_end_block(&mut self) {
         let rw_counter = self.block_ctx.rwc;
         let last_rw_counter = rw_counter.0 - 1;
-        let max_rws = self.block.max_rws;
+        let max_rws = self.block.circuits_params.max_rws;
         self.block.block_steps.end_block_not_last.rwc = rw_counter;
         self.block.block_steps.end_block_last.rwc = rw_counter;
         let mut end_block_not_last = self.block.block_steps.end_block_not_last.clone();
@@ -322,12 +340,15 @@ pub struct BuilderClient<P: JsonRpcClient> {
     cli: GethClient<P>,
     chain_id: Word,
     history_hashes: Vec<Word>,
-    max_rws: usize,
+    circuits_params: CircuitsParams,
 }
 
 impl<P: JsonRpcClient> BuilderClient<P> {
     /// Create a new BuilderClient
-    pub async fn new(client: GethClient<P>, max_rws: usize) -> Result<Self, Error> {
+    pub async fn new(
+        client: GethClient<P>,
+        circuits_params: CircuitsParams,
+    ) -> Result<Self, Error> {
         let chain_id = client.get_chain_id().await?;
 
         Ok(Self {
@@ -335,7 +356,7 @@ impl<P: JsonRpcClient> BuilderClient<P> {
             chain_id: chain_id.into(),
             // TODO: Get history hashes
             history_hashes: Vec::new(),
-            max_rws,
+            circuits_params,
         })
     }
 
@@ -451,7 +472,7 @@ impl<P: JsonRpcClient> BuilderClient<P> {
             self.chain_id,
             self.history_hashes.clone(),
             eth_block,
-            self.max_rws,
+            self.circuits_params.clone(),
         )?;
         let mut builder = CircuitInputBuilder::new(sdb, code_db, block);
         builder.handle_block(eth_block, geth_traces)?;

@@ -1,6 +1,6 @@
 //! Block-related utility module
 
-use super::{execution::ExecState, transaction::Transaction, CopyEvent, ExecStep};
+use super::{execution::ExecState, transaction::Transaction, CircuitsParams, CopyEvent, ExecStep};
 use crate::{
     operation::{OperationContainer, RWCounter},
     Error,
@@ -80,8 +80,8 @@ pub struct Block {
     /// Inputs to the SHA3 opcode
     pub sha3_inputs: Vec<Vec<u8>>,
     code: HashMap<Hash, Vec<u8>>,
-    /// TODO
-    pub max_rws: usize,
+    /// Circuits Setup Paramteres
+    pub circuits_params: CircuitsParams,
 }
 
 impl Block {
@@ -90,7 +90,7 @@ impl Block {
         chain_id: Word,
         history_hashes: Vec<Word>,
         eth_block: &eth_types::Block<TX>,
-        max_rws: usize,
+        circuits_params: CircuitsParams,
     ) -> Result<Self, Error> {
         if eth_block.base_fee_per_gas.is_none() {
             // FIXME: resolve this once we have proper EIP-1559 support
@@ -127,7 +127,7 @@ impl Block {
             copy_events: Vec::new(),
             code: HashMap::new(),
             sha3_inputs: Vec::new(),
-            max_rws,
+            circuits_params,
         })
     }
 

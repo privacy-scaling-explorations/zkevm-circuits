@@ -45,6 +45,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::BeginTx;
 
+    // TODO: Constraint that CallerAddress != 0x0
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         // Use rw_counter of the step which triggers next call as its call_id.
         let call_id = cb.curr.state.rw_counter.clone();

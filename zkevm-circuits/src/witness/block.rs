@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use bus_mapping::circuit_input_builder::{self, CopyEvent};
+use bus_mapping::circuit_input_builder::{self, CircuitsParams, CopyEvent};
 use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word};
 use halo2_proofs::halo2curves::bn256::Fr;
 use itertools::Itertools;
@@ -38,9 +38,8 @@ pub struct Block<F> {
     // /// Length to rw table rows in state circuit.  When 0, the State circuit
     // /// contains as many rows as rw operations + 1 row for a Start.
     // pub state_circuit_pad_to: usize,
-    /// RwTable length.  This must be at least the number of rw operations + 1,
-    /// in order to allocate at least a Start row.
-    pub max_rws: usize,
+    /// Circuit Setup Parameters
+    pub circuits_params: CircuitsParams,
     /// Inputs to the SHA3 opcode
     pub sha3_inputs: Vec<Vec<u8>>,
 }
@@ -187,7 +186,7 @@ pub fn block_convert(
             .collect(),
         copy_events: block.copy_events.clone(),
         sha3_inputs: block.sha3_inputs.clone(),
-        max_rws: block.max_rws,
+        circuits_params: block.circuits_params.clone(),
         ..Default::default()
     }
 }

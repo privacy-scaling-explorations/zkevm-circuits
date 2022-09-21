@@ -224,7 +224,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: u
         config.rw_table.load(
             &mut layouter,
             &self.block.rws.table_assignments(),
-            self.block.max_rws,
+            self.block.circuits_params.max_rws,
             self.block.randomness,
         )?;
         config.state_circuit.load(&mut layouter)?;
@@ -240,7 +240,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: u
         config.state_circuit.assign(
             &mut layouter,
             &self.block.rws.table_assignments(),
-            self.block.max_rws,
+            self.block.circuits_params.max_rws,
             self.block.randomness,
         )?;
         // --- Tx Circuit ---

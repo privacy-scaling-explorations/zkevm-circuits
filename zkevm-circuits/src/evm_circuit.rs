@@ -228,6 +228,7 @@ pub mod test {
     #[derive(Default)]
     pub struct TestCircuit<F, const MAX_TXS: usize, const MAX_RWS: usize> {
         block: Block<F>,
+        max_txs: usize,
         fixed_table_tags: Vec<FixedTableTag>,
     }
 
@@ -235,6 +236,7 @@ pub mod test {
         pub fn new(block: Block<F>, fixed_table_tags: Vec<FixedTableTag>) -> Self {
             Self {
                 block,
+                max_txs: 4,
                 fixed_table_tags,
             }
         }
@@ -291,14 +293,17 @@ pub mod test {
                 .evm_circuit
                 .load_fixed_table(&mut layouter, self.fixed_table_tags.clone())?;
             config.evm_circuit.load_byte_table(&mut layouter)?;
-            config
-                .tx_table
-                .load(&mut layouter, &self.block.txs, self.block.randomness)?;
+            config.tx_table.load(
+                &mut layouter,
+                &self.block.txs,
+                self.max_txs,
+                self.block.randomness,
+            )?;
             self.block.rws.check_rw_counter_sanity();
             config.rw_table.load(
                 &mut layouter,
                 &self.block.rws.table_assignments(),
-                self.block.max_rws,
+                self.block.circuits_params.max_rws,
                 self.block.randomness,
             )?;
             config.bytecode_table.load(
