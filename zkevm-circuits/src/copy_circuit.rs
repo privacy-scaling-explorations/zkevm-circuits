@@ -743,7 +743,7 @@ pub mod dev {
     use crate::{
         evm_circuit::witness::Block,
         table::{BytecodeTable, RwTable, TxTable},
-        util::power_of_randomness_from_instance,
+        util::{power_of_randomness_from_instance, Challenges},
     };
 
     #[derive(Clone)]
@@ -812,6 +812,8 @@ pub mod dev {
             config: Self::Config,
             mut layouter: impl Layouter<F>,
         ) -> Result<(), halo2_proofs::plonk::Error> {
+            let challenges = Challenges::mock(Value::known(self.randomness));
+
             config
                 .tx_table
                 .load(&mut layouter, &self.block.txs, self.randomness)?;
@@ -824,7 +826,7 @@ pub mod dev {
             config.bytecode_table.load(
                 &mut layouter,
                 self.block.bytecodes.values(),
-                self.randomness,
+                &challenges,
             )?;
             config
                 .copy_circuit

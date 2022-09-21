@@ -7,7 +7,9 @@
 pub mod sign_verify;
 
 use crate::table::{KeccakTable, TxFieldTag, TxTable};
-use crate::util::{power_of_randomness_from_instance, random_linear_combine_word as rlc};
+use crate::util::{
+    power_of_randomness_from_instance, random_linear_combine_word as rlc, Challenges,
+};
 use bus_mapping::circuit_input_builder::keccak_inputs_tx_circuit;
 use eth_types::{
     sign_types::SignData,
@@ -307,6 +309,8 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
         config: Self::Config,
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
+        let challenges = Challenges::mock(Value::known(self.randomness));
+
         config.sign_verify.load_range(&mut layouter)?;
         self.assign(&config, &mut layouter)?;
         config.keccak_table.dev_load(
@@ -315,7 +319,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
                 error!("keccak_inputs_tx_circuit error: {:?}", e);
                 Error::Synthesis
             })?,
-            self.randomness,
+            &challenges,
         )
     }
 }
