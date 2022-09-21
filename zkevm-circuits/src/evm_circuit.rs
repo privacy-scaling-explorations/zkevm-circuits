@@ -371,7 +371,9 @@ pub mod test {
             TestCircuit::<F, MAX_TXS, MAX_RWS>::get_active_rows(&block);
         let circuit = TestCircuit::<F, MAX_TXS, MAX_RWS>::new(block, fixed_table_tags);
         let prover = MockProver::<F>::run(k, &circuit, power_of_randomness).unwrap();
-        prover.verify_at_rows(active_gate_rows.into_iter(), active_lookup_rows.into_iter())
+        prover.verify_at_rows_par(active_gate_rows.into_iter(), active_lookup_rows.into_iter())
+        // prover.assert_satisfied();
+        // Ok(())
     }
 }
 

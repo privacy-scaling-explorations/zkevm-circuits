@@ -748,21 +748,19 @@ impl<F: Field, const MAX_TXS: usize, const MAX_RWS: usize> ExecutionConfig<F, MA
                 let last_height = 1;
                 // end_block_rows tracks the remaining EndBlock rows
                 let mut end_block_rows = None;
-                loop {
-                    let (transaction, call, step, next) = match steps.next() {
-                        Some((transaction, step)) => {
-                            let call = &transaction.calls[step.call_index];
-                            let next = steps.peek().map(|&(transaction, step)| {
-                                (transaction, &transaction.calls[step.call_index], step)
-                            });
-                            (transaction, call, step, next)
-                        }
+                let mut get_next =
+                    |offset: &usize, end_block_rows: &mut Option<usize>| match steps.next() {
+                        Some((transaction, step)) => Ok(Some((
+                            transaction,
+                            &transaction.calls[step.call_index],
+                            step,
+                        ))),
                         None => {
                             if end_block_rows.is_none() {
-                                end_block_rows = Some(if exact || block.evm_circuit_pad_to == 0 {
+                                *end_block_rows = Some(if exact || block.evm_circuit_pad_to == 0 {
                                     1
                                 } else {
-                                    if offset >= block.evm_circuit_pad_to {
+                                    if *offset >= block.evm_circuit_pad_to {
                                         log::error!(
                                             "evm circuit offset larger than padding: {} > {}",
                                             offset,
@@ -773,16 +771,23 @@ impl<F: Field, const MAX_TXS: usize, const MAX_RWS: usize> ExecutionConfig<F, MA
                                     block.evm_circuit_pad_to - offset
                                 });
                             }
-                            let (step, next_step) = match end_block_rows {
-                                Some(1) => (end_block_last, None),
-                                Some(2) => (end_block_not_last, Some(end_block_last)),
-                                Some(_) => (end_block_not_last, Some(end_block_not_last)),
+                            return Ok(match end_block_rows {
+                                Some(0) => None,
+                                Some(1) => Some((&dummy_tx, last_call, end_block_last)),
+                                Some(_) => Some((&dummy_tx, last_call, end_block_not_last)),
                                 _ => unreachable!(),
-                            };
-                            let next = next_step.map(|step| (&dummy_tx, last_call, step));
-                            (&dummy_tx, last_call, step, next)
+                            });
                         }
                     };
+                let mut next = get_next(&offset, &mut end_block_rows)?;
+                loop {
+                    let (transaction, call, step) = match next {
+                        Some(n) => n,
+                        None => {
+                            break;
+                        }
+                    };
+                    next = get_next(&offset, &mut end_block_rows)?;
                     let height = self.get_step_height(step.execution_state);
 
                     // Assign the step witness
@@ -829,8 +834,11 @@ impl<F: Field, const MAX_TXS: usize, const MAX_RWS: usize> ExecutionConfig<F, MA
 
                     offset += height;
 
+                    // if next.is_none() {
+                    //     debug_assert_eq!(height, 1);
+                    // }
                     if let Some(i) = end_block_rows {
-                        if i == 1 {
+                        if i == 0 {
                             debug_assert_eq!(height, 1);
                             break;
                         }

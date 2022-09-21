@@ -97,7 +97,6 @@ mod test {
     use crate::test_util::run_test_circuits;
     use eth_types::{bytecode, Word};
     use mock::test_ctx::{helpers::*, TestContext};
-    use pretty_assertions::assert_eq;
 
     #[test]
     fn gasprice_gadget_test() {
@@ -123,6 +122,10 @@ mod test {
         )
         .unwrap();
 
-        assert_eq!(run_test_circuits(ctx, None), Ok(()));
+        let res = run_test_circuits(ctx, None);
+        if let Err(ref e) = res {
+            println!("{:#?}", e);
+        }
+        assert_eq!(res, Ok(()));
     }
 }
