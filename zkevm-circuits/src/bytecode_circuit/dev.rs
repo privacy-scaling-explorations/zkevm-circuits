@@ -72,7 +72,6 @@ impl<F: Field> BytecodeCircuitTester<F> {
             size: 2usize.pow(k),
         };
 
-        const NUM_BLINDING_ROWS: usize = 7 - 1;
         let prover = MockProver::<F>::run(k, &circuit, Vec::new()).unwrap();
         let result = prover.verify();
         if let Err(failures) = &result {
@@ -101,7 +100,6 @@ pub fn test_bytecode_circuit_unrolled<F: Field>(
         size: 2usize.pow(k),
     };
 
-    const NUM_BLINDING_ROWS: usize = 7 - 1;
     let prover = MockProver::<F>::run(k, &circuit, Vec::new()).unwrap();
     let result = prover.verify();
     if let Err(failures) = &result {
