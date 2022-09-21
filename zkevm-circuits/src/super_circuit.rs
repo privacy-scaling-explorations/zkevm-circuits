@@ -48,6 +48,8 @@
 //!   - [x] Tx Circuit
 //!   - [ ] MPT Circuit
 
+use std::convert::TryInto;
+
 use crate::state_circuit::StateCircuitConfig;
 use crate::tx_circuit::{TxCircuit, TxCircuitConfig};
 
@@ -295,6 +297,10 @@ impl<const MAX_TXS: usize, const MAX_CALLDATA: usize> SuperCircuit<Fr, MAX_TXS, 
             .expect("could not handle block tx");
         let keccak_inputs = builder.keccak_inputs()?;
         let mut block = block_convert(&builder.block, &builder.code_db);
+
+        let state_circuit_pad_to = ((1u64 << 19) - 256).try_into().unwrap();
+        block.state_circuit_pad_to = state_circuit_pad_to;
+        block.evm_circuit_pad_to = state_circuit_pad_to;
 
         block.randomness = Fr::random(rng.clone());
         let aux_generator = <Secp256k1Affine as CurveAffine>::CurveExt::random(rng).to_affine();
