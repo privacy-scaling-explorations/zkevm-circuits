@@ -14,7 +14,7 @@ use crate::{
     param::{
         RLP_NUM,
     },
-    roots::RootsConfig,
+    proof_chain::ProofChainConfig,
     account_leaf::{AccountLeafCols, AccountLeaf, account_leaf_key_in_added_branch::AccountLeafKeyInAddedBranchConfig, account_leaf_key::AccountLeafKeyConfig, account_leaf_nonce_balance::AccountLeafNonceBalanceConfig, account_leaf_storage_codehash::AccountLeafStorageCodehashConfig, account_non_existing::AccountNonExistingConfig}, storage_leaf::{StorageLeafCols, StorageLeaf, leaf_key_in_added_branch::LeafKeyInAddedBranchConfig, leaf_key::LeafKeyConfig, leaf_value::LeafValueConfig}, witness_row::{MptWitnessRow, MptWitnessRowType}, columns::{ProofTypeCols, MainCols, AccumulatorCols, DenoteCols},
 };
 use crate::{
@@ -264,13 +264,14 @@ impl<F: FieldExt> MPTConfig<F> {
             denoter.clone(),
         );
 
-        RootsConfig::<F>::configure(
+        ProofChainConfig::<F>::configure(
             meta,
+            proof_type.clone(),
             q_enable,
             q_not_first,
             not_first_level,
             branch.is_init,
-            account_leaf.is_key_s,
+            account_leaf.clone(),
             storage_leaf.clone(),
             inter_start_root,
             inter_final_root,
