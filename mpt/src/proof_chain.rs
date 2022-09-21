@@ -16,13 +16,19 @@ assignments.
 
 Potential attacks:
  - `not_first_level` is assigned to 1 in the first level of the proof. This way the attacker could avoid
-    checking that the hash of the first level node is the same as the trie root, which would make
-    the proof meaningless. We prevent this by ensuring the first row has `not_first_level = 0`
-    (for the first row we have a fixed column selector), that after the storage leaf (proof
-    ends with a storage leaf or account leaf) there is a row with `not_first_level = 0`,
-    and that after the account leaf when it is non storage modification there
-    is a row with `not_first_level = 0`.
+   checking that the hash of the first level node is the same as the trie root, which would make
+   the proof meaningless. We prevent this by ensuring the first row has `not_first_level = 0`
+   (for the first row we have a fixed column selector), that after the storage leaf (proof
+   ends with a storage leaf or account leaf) there is a row with `not_first_level = 0`,
+   and that after the account leaf when it is non storage modification there
+   is a row with `not_first_level = 0`.
+ - `not_first_level` is assigned to 0 in the middle of the proof - in this case the address RLC
+   constraints fail.
+ - Additional proof is added between the proofs (we have more `not_first_level = 0` than expected) -
+   in this case the `start_root/final_root` lookups will fail.
 
+It needs to be ensured that `start_root` and `final_root` change only in the first row of
+the `not_first_level = 0` node.
 
 Note: Comparing the roots with the hash of branch / extension node in the first level
 (or account leaf if in the first level) is done in `branch_hash_in_parent.rs`, `extension_node.rs`
@@ -153,38 +159,52 @@ impl<F: FieldExt> ProofChainConfig<F> {
                     * (one.clone() - is_account_leaf_last_row_prev.clone()),
             ));
 
+            /*
+            `not_first_level` can change only in `is_branch_init` or `is_account_leaf_key_s` or
+            `is__leaf_key_s`.
+
+            Note that the change `not_first_level = 1` to `not_first_level = 0` (going to the first level)
+            is covered by the constraints above which constrain when such a change can occur.
+            On the other hand, this constraint ensured that `not_first_level` is changed in the middle
+            of the node rows.
+            */
             constraints.push((
-                "start_root does not change when not in first level",
+                "not_first_level does not change except at is_branch_init or is_account_leaf_key_s or is_storage_leaf_key_s",
                 q_not_first.clone()
-                    * not_first_level_cur.clone()
+                    * (one.clone() - is_branch_init.clone())
+                    * (one.clone() - is_account_leaf_key_s.clone())
+                    * (one.clone() - is_storage_leaf_key_s.clone())
+                    * (not_first_level_cur.clone() - not_first_level_prev.clone()),
+            ));
+
+            /*
+            `start_root` can change only in the first row of the first level.
+            We check that it stays the same always except when `not_first_level_prev = not_first_level_cur + 1`,
+            that means when `not_first_level` goes from 1 to 0.
+            */
+            constraints.push((
+                "start_root can change only when in the first row of the first level",
+                q_not_first.clone()
+                    * (not_first_level_prev.clone() - not_first_level_cur.clone() - one.clone())
                     * (start_root_cur.clone() - start_root_prev.clone()),
             ));
 
+            /*
+            `final_root` can change only in the first row of the first level.
+            We check that it stays the same always except when `not_first_level_prev = not_first_level_cur + 1`,
+            that means when `not_first_level` goes from 1 to 0.
+            */
             constraints.push((
-                "start_root does not change when in first level and (not in account leaf key || not in branch init)",
+                "final_root can change only when in the first row of the first level",
                 q_not_first.clone()
-                    * (one.clone() - not_first_level_cur.clone())
-                    * (one.clone() - is_branch_init.clone())
-                    * (one.clone() - is_account_leaf_key_s.clone())
-                    * (start_root_cur.clone() - start_root_prev.clone()),
-            ));
-
-            constraints.push((
-                "final_root does not change when not in first level",
-                q_not_first.clone()
-                    * not_first_level_cur.clone()
+                    * (not_first_level_prev.clone() - not_first_level_cur.clone() - one.clone())
                     * (final_root_cur.clone() - final_root_prev.clone()),
             ));
 
-            constraints.push((
-                "final_root does not change when in first level and (not in account leaf key || not in branch init)",
-                q_not_first.clone()
-                    * (one.clone() - not_first_level_cur.clone())
-                    * (one.clone() - is_branch_init.clone())
-                    * (one.clone() - is_account_leaf_key_s.clone())
-                    * (final_root_cur.clone() - final_root_prev.clone()),
-            ));
-
+            /*
+            When we go from one modification to another, the previous `final_root` needs to be
+            the same as the current `start_root`.
+            */
             constraints.push((
                 "final_root_prev = start_root_cur when not_first_level = 1 -> not_first_level = 0",
                 q_not_first.clone()
@@ -193,33 +213,23 @@ impl<F: FieldExt> ProofChainConfig<F> {
                     * (final_root_prev.clone() - start_root_cur.clone()),
             )); 
 
-            // If not_first_level is 0 in a previous row (being in branch init),
-            // then not_first_level needs to be 1 in the current row (preventing two consecutive
-            // blocks to be not_first_level = 0).
+            /*
+            If `not_first_level` is 0 in a previous row (being in branch init),
+            then `not_first_level` needs to be 1 in the current row (preventing two consecutive
+            blocks to be `not_first_level = 0`).
+            */
             constraints.push((
-                "not_first_level 0 -> 1 in branch init",
+                "not_first_level 0 -> 1 in branch init after the first level",
                 q_not_first.clone()
                     * is_branch_init.clone()
                     * (one.clone() - not_first_level_prev.clone())
                     * (not_first_level_cur.clone() - one.clone()),
             ));
-
-            // Note that not_first_level can change in is_branch_init or is_account_leaf.
-            // The attacker could thus insert more first levels, but there will be
-            // `start_root/end_root` used in lookups which will prevent this scenario.
-            // Also, the attacker could potentially put first levels at wrong places, but then
-            // address/key RLC constraints would fail.
-            constraints.push((
-                "not_first_level does not change except at is_branch_init or is_account_leaf_key_s or is_storage_leaf_key_s",
-                q_not_first.clone()
-                    * (one.clone() - is_branch_init.clone())
-                    * (one.clone() - is_account_leaf_key_s.clone())
-                    * (one.clone() - is_storage_leaf_key_s.clone()) // when storage proof doesn't have branches/extension nodes
-                    * (not_first_level_cur.clone() - not_first_level_prev.clone()),
-            )); 
-  
-            // These two address_rlc constraints are to ensure there is account proof before the
-            // storage proof.
+ 
+            /*
+            These two address_rlc constraints are to ensure there is an account proof before the
+            storage proof.
+            */
             constraints.push((
                 // First row of first level can be (besides branch_init) also is_account_leaf_key_s,
                 // but in this case the constraint in account_leaf_key.rs is triggered.
