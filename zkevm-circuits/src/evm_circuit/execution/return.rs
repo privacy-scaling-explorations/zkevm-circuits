@@ -196,13 +196,13 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::evm_circuit::test::run_test_circuit;
-    use crate::evm_circuit::witness::block_convert;
-    use crate::test_util::run_test_circuits;
-    use eth_types::evm_types::OpcodeId;
-    use eth_types::geth_types::Account;
-    use eth_types::{address, bytecode, Bytecode};
-    use eth_types::{Address, ToWord, Word};
+    use crate::evm_circuit::{
+        test::run_test_circuit, test_util::run_test_circuits, witness::block_convert,
+    };
+    use eth_types::{
+        address, bytecode, evm_types::OpcodeId, geth_types::Account, Address, Bytecode, ToWord,
+        Word,
+    };
     use mock::TestContext;
 
     const CALLEE_ADDRESS: Address = Address::repeat_byte(0xff);
@@ -227,7 +227,7 @@ mod test {
     }
 
     fn caller_bytecode(call_return_data_length: u64, call_return_data_offset: u64) -> Bytecode {
-        let call_value = 1000;
+        let call_value = 0;
         let call_gas = 4000;
         bytecode! {
             PUSH32(call_return_data_length)
@@ -240,6 +240,8 @@ mod test {
             CALL
             STOP
         }
+        // what happens is that it reverts immediately, without being able to
+        // enter the inner call at all..
     }
 
     #[test]
@@ -273,7 +275,6 @@ mod test {
                 address: CALLEE_ADDRESS,
                 code: callee_bytecode(is_return, callee_offset, callee_length).into(),
                 nonce: Word::one(),
-                balance: 0xdeadbeefu64.into(),
                 ..Default::default()
             };
             let call_argument_offset = 5; // these are flipped or something...
@@ -282,7 +283,6 @@ mod test {
                 address: CALLER_ADDRESS,
                 code: caller_bytecode(call_argument_offset, call_argument_length).into(),
                 nonce: Word::one(),
-                balance: 0xdeadbeefu64.into(),
                 ..Default::default()
             };
 
@@ -312,7 +312,9 @@ mod test {
 
             assert_eq!(
                 run_test_circuit(block_convert(&builder.block, &builder.code_db)),
-                Ok(())
+                Ok(()),
+                "{}",
+                dbg!(is_return)
             );
         }
     }
