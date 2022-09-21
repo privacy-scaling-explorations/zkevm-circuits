@@ -631,7 +631,7 @@ fn pub_key_hash_to_address<F: Field>(pk_hash: &[u8]) -> F {
 #[cfg(test)]
 mod sign_verify_tests {
     use super::*;
-    use crate::util::power_of_randomness_from_instance;
+    use crate::util::{power_of_randomness_from_instance, Challenges};
     use bus_mapping::circuit_input_builder::keccak_inputs_sign_verify;
     use eth_types::sign_types::sign;
     use halo2_proofs::arithmetic::Field as HaloField;
@@ -688,6 +688,8 @@ mod sign_verify_tests {
             config: Self::Config,
             mut layouter: impl Layouter<F>,
         ) -> Result<(), Error> {
+            let challenges = Challenges::mock(Value::known(self.randomness));
+
             self.sign_verify.assign(
                 &config.sign_verify,
                 &mut layouter,
@@ -697,7 +699,7 @@ mod sign_verify_tests {
             config.sign_verify.keccak_table.dev_load(
                 &mut layouter,
                 &keccak_inputs_sign_verify(&self.signatures),
-                self.randomness,
+                &challenges,
             )?;
             config.sign_verify.load_range(&mut layouter)?;
             Ok(())

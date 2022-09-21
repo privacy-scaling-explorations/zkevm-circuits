@@ -1,20 +1,33 @@
 //! Common utility traits and functions.
-use eth_types::Field;
 use halo2_proofs::{
-    plonk::{ConstraintSystem, Expression},
+    arithmetic::FieldExt,
+    circuit::{Layouter, Value},
+    plonk::{Challenge, ConstraintSystem, Expression, FirstPhase, VirtualCells},
     poly::Rotation,
 };
 
 pub use gadgets::util::Expr;
 
-pub(crate) fn random_linear_combine_word<F: Field>(bytes: [u8; 32], randomness: F) -> F {
+pub(crate) fn query_expression<F: FieldExt, T>(
+    meta: &mut ConstraintSystem<F>,
+    mut f: impl FnMut(&mut VirtualCells<F>) -> T,
+) -> T {
+    let mut expr = None;
+    meta.create_gate("Query expression", |meta| {
+        expr = Some(f(meta));
+        Some(0.expr())
+    });
+    expr.unwrap()
+}
+
+pub(crate) fn random_linear_combine_word<F: FieldExt>(bytes: [u8; 32], randomness: F) -> F {
     crate::evm_circuit::util::Word::random_linear_combine(bytes, randomness)
 }
 
 /// Query N instances at current rotation and return their expressions.  This
 /// function is used to get the power of randomness (passed as
 /// instances) in our tests.
-pub fn power_of_randomness_from_instance<F: Field, const N: usize>(
+pub fn power_of_randomness_from_instance<F: FieldExt, const N: usize>(
     meta: &mut ConstraintSystem<F>,
 ) -> [Expression<F>; N] {
     // This gate is used just to get the array of expressions from the power of
@@ -23,14 +36,62 @@ pub fn power_of_randomness_from_instance<F: Field, const N: usize>(
     // expression everywhere.  The gate itself doesn't add any constraints.
 
     let columns = [(); N].map(|_| meta.instance_column());
-    let mut power_of_randomness = None;
+    query_expression(meta, |meta| {
+        columns.map(|column| meta.query_instance(column, Rotation::cur()))
+    })
+}
 
-    meta.create_gate("power of randomness from instance", |meta| {
-        power_of_randomness =
-            Some(columns.map(|column| meta.query_instance(column, Rotation::cur())));
+/// All challenges used in `SuperCircuit`.
+#[derive(Clone, Copy, Debug)]
+pub struct Challenges<T = Challenge> {
+    evm_word: T,
+    keccak_input: T,
+}
 
-        [0.expr()]
-    });
+impl Challenges {
+    /// Construct `Challenges` by allocating challenges in specific phases.
+    pub fn construct<F: FieldExt>(meta: &mut ConstraintSystem<F>) -> Self {
+        Self {
+            evm_word: meta.challenge_usable_after(FirstPhase),
+            keccak_input: meta.challenge_usable_after(FirstPhase),
+        }
+    }
 
-    power_of_randomness.unwrap()
+    /// Returns `Expression` of challenges from `ConstraintSystem`.
+    pub fn exprs<F: FieldExt>(&self, meta: &mut ConstraintSystem<F>) -> Challenges<Expression<F>> {
+        let [evm_word, keccak_input] = query_expression(meta, |meta| {
+            [self.evm_word, self.keccak_input].map(|challenge| meta.query_challenge(challenge))
+        });
+        Challenges {
+            evm_word,
+            keccak_input,
+        }
+    }
+
+    /// Returns `Value` of challenges from `Layouter`.
+    pub fn values<F: FieldExt>(&self, layouter: &mut impl Layouter<F>) -> Challenges<Value<F>> {
+        Challenges {
+            evm_word: layouter.get_challenge(self.evm_word),
+            keccak_input: layouter.get_challenge(self.keccak_input),
+        }
+    }
+}
+
+impl<T: Clone> Challenges<T> {
+    /// Returns challenge of `evm_word`.
+    pub fn evm_word(&self) -> T {
+        self.evm_word.clone()
+    }
+
+    /// Returns challenge of `keccak_input`.
+    pub fn keccak_input(&self) -> T {
+        self.keccak_input.clone()
+    }
+
+    pub(crate) fn mock(challenge: T) -> Self {
+        Self {
+            evm_word: challenge.clone(),
+            keccak_input: challenge,
+        }
+    }
 }
