@@ -9,7 +9,7 @@ use crate::{
         AccountFieldTag, BytecodeFieldTag, CallContextFieldTag, RwTableTag, TxContextFieldTag,
         TxLogFieldTag, TxReceiptFieldTag,
     },
-    util::Expr,
+    util::{build_tx_log_expression, Expr},
 };
 use eth_types::Field;
 use halo2_proofs::{
@@ -1055,7 +1055,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
             RwTableTag::TxLog,
             RwValues::new(
                 tx_id,
-                index + (1u64 << 32).expr() * field_tag.expr() + (1u64 << 48).expr() * log_id,
+                build_tx_log_expression(index, field_tag.expr(), log_id),
                 0.expr(),
                 0.expr(),
                 value,

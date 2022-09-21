@@ -6,6 +6,9 @@ use halo2_proofs::{
     poly::Rotation,
 };
 
+use crate::table::TxLogFieldTag;
+use eth_types::{Field, ToAddress};
+pub use ethers_core::types::{Address, U256};
 pub use gadgets::util::Expr;
 
 pub(crate) fn query_expression<F: FieldExt, T>(
@@ -94,4 +97,17 @@ impl<T: Clone> Challenges<T> {
             keccak_input: challenge,
         }
     }
+}
+
+pub(crate) fn build_tx_log_address(index: u64, field_tag: TxLogFieldTag, log_id: u64) -> Address {
+    (U256::from(index) + (U256::from(field_tag as u64) << 32) + (U256::from(log_id) << 48))
+        .to_address()
+}
+
+pub(crate) fn build_tx_log_expression<F: Field>(
+    index: Expression<F>,
+    field_tag: Expression<F>,
+    log_id: Expression<F>,
+) -> Expression<F> {
+    index + (1u64 << 32).expr() * field_tag + ((1u64 << 48).expr()) * log_id
 }
