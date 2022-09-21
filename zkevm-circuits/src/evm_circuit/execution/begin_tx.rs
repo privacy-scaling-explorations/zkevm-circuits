@@ -303,7 +303,9 @@ mod test {
         test::{rand_bytes, run_test_circuit},
         witness::block_convert,
     };
-    use bus_mapping::{evm::OpcodeId, mock::BlockData};
+    use bus_mapping::{
+        circuit_input_builder::CIRCUITS_PARAMS_DEFAULT, evm::OpcodeId, mock::BlockData,
+    };
     use eth_types::{self, bytecode, evm_types::GasCost, geth_types::GethData, Word};
     use mock::{
         eth, gwei, test_ctx::helpers::account_0_code_account_1_no_code, TestContext, MOCK_ACCOUNTS,
@@ -353,13 +355,18 @@ mod test {
         .unwrap()
         .into();
 
-        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+        let mut builder =
+            BlockData::new_from_geth_data_params(block.clone(), CIRCUITS_PARAMS_DEFAULT)
+                .new_circuit_input_builder();
 
         builder
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
         let block = block_convert(&builder.block, &builder.code_db);
-        assert_eq!(run_test_circuit(block), Ok(()));
+        assert_eq!(
+            run_test_circuit::<_, { CIRCUITS_PARAMS_DEFAULT.max_rws }>(block),
+            Ok(())
+        );
     }
 
     fn mock_tx(value: Word, gas_price: Word, calldata: Vec<u8>) -> eth_types::Transaction {
@@ -419,13 +426,18 @@ mod test {
         .unwrap()
         .into();
 
-        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+        let mut builder =
+            BlockData::new_from_geth_data_params(block.clone(), CIRCUITS_PARAMS_DEFAULT)
+                .new_circuit_input_builder();
+
         builder
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
         let block = block_convert(&builder.block, &builder.code_db);
-
-        assert_eq!(run_test_circuit(block), Ok(()));
+        assert_eq!(
+            run_test_circuit::<_, { CIRCUITS_PARAMS_DEFAULT.max_rws }>(block),
+            Ok(())
+        );
     }
 
     #[test]

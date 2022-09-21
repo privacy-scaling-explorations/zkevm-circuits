@@ -236,7 +236,7 @@ pub mod test {
         pub fn new(block: Block<F>, fixed_table_tags: Vec<FixedTableTag>) -> Self {
             Self {
                 block,
-                max_txs: 4,
+                max_txs: MAX_TXS,
                 fixed_table_tags,
             }
         }
@@ -344,9 +344,10 @@ pub mod test {
         }
     }
 
-    pub fn run_test_circuit<F: Field>(block: Block<F>) -> Result<(), Vec<VerifyFailure>> {
+    pub fn run_test_circuit<F: Field, const MAX_RWS: usize>(
+        block: Block<F>,
+    ) -> Result<(), Vec<VerifyFailure>> {
         const MAX_TXS: usize = 4;
-        const MAX_RWS: usize = 128;
         let fixed_table_tags = detect_fixed_table_tags(&block);
         let log2_ceil = |n| u32::BITS - (n as u32).leading_zeros() - (n & (n - 1) == 0) as u32;
 

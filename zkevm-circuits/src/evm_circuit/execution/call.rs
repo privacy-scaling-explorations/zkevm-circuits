@@ -501,8 +501,13 @@ impl<F: Field> ExecutionGadget<F> for CallGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::evm_circuit::{test::run_test_circuit, witness::block_convert};
+    use bus_mapping::{circuit_input_builder::CIRCUITS_PARAMS_DEFAULT, mock::BlockData};
     use eth_types::{address, bytecode};
-    use eth_types::{bytecode::Bytecode, evm_types::OpcodeId, geth_types::Account};
+    use eth_types::{
+        bytecode::Bytecode,
+        evm_types::OpcodeId,
+        geth_types::{Account, GethData},
+    };
     use eth_types::{Address, ToWord, Word};
     use itertools::Itertools;
     use mock::TestContext;
@@ -592,7 +597,7 @@ mod test {
     }
 
     fn test_ok(caller: Account, callee: Account) {
-        let block = TestContext::<3, 1>::new(
+        let block: GethData = TestContext::<3, 1>::new(
             None,
             |accs| {
                 accs[0]
@@ -619,17 +624,22 @@ mod test {
         )
         .unwrap()
         .into();
-        let block_data = bus_mapping::mock::BlockData::new_from_geth_data(block);
-        let mut builder = block_data.new_circuit_input_builder();
+        let mut builder =
+            BlockData::new_from_geth_data_params(block.clone(), CIRCUITS_PARAMS_DEFAULT)
+                .new_circuit_input_builder();
+
         builder
-            .handle_block(&block_data.eth_block, &block_data.geth_traces)
+            .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
         let block = block_convert(&builder.block, &builder.code_db);
-        assert_eq!(run_test_circuit(block), Ok(()));
+        assert_eq!(
+            run_test_circuit::<_, { CIRCUITS_PARAMS_DEFAULT.max_rws }>(block),
+            Ok(())
+        );
     }
 
     fn test_oog(caller: Account, callee: Account) {
-        let block = TestContext::<3, 1>::new(
+        let block: GethData = TestContext::<3, 1>::new(
             None,
             |accs| {
                 accs[0]
@@ -656,13 +666,18 @@ mod test {
         )
         .unwrap()
         .into();
-        let block_data = bus_mapping::mock::BlockData::new_from_geth_data(block);
-        let mut builder = block_data.new_circuit_input_builder();
+        let mut builder =
+            BlockData::new_from_geth_data_params(block.clone(), CIRCUITS_PARAMS_DEFAULT)
+                .new_circuit_input_builder();
+
         builder
-            .handle_block(&block_data.eth_block, &block_data.geth_traces)
+            .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
         let block = block_convert(&builder.block, &builder.code_db);
-        assert_eq!(run_test_circuit(block), Ok(()));
+        assert_eq!(
+            run_test_circuit::<_, { CIRCUITS_PARAMS_DEFAULT.max_rws }>(block),
+            Ok(())
+        );
     }
 
     #[test]

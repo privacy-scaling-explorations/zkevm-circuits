@@ -43,9 +43,14 @@ pub struct CircuitsParams {
 
 impl Default for CircuitsParams {
     fn default() -> Self {
-        CircuitsParams { max_rws: 128 }
+        CircuitsParams {
+            max_rws: CIRCUITS_PARAMS_DEFAULT.max_rws,
+        }
     }
 }
+
+/// TODO
+pub const CIRCUITS_PARAMS_DEFAULT: CircuitsParams = CircuitsParams { max_rws: 128 };
 
 /// Builder to generate a complete circuit input from data gathered from a geth
 /// instance. This structure is the centre of the crate and is intended to be
