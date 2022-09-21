@@ -333,7 +333,7 @@ impl<F: Field> ExecutionGadget<F> for CallGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
-        _tx: &Transaction,
+        _: &Transaction,
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
@@ -543,9 +543,8 @@ mod test {
             PUSH32(Address::repeat_byte(0xff).to_word())
             PUSH32(Word::from(stack.gas))
             CALL
-            //STOP
-            //PUSH1(0)
-            //PUSH1(0)
+            PUSH1(0)
+            PUSH1(0)
             .write_op(terminator)
         };
 
@@ -651,7 +650,7 @@ mod test {
                 txs[0]
                     .from(accs[0].address)
                     .to(accs[1].address)
-                    .gas(23800.into());
+                    .gas(21100.into());
             },
             |block, _tx| block.number(0xcafeu64),
         )
@@ -732,7 +731,7 @@ mod test {
         let stacks = vec![
             // With gas and memory expansion
             Stack {
-                gas: 5000,
+                gas: 100,
                 cd_offset: 64,
                 cd_length: 320,
                 rd_offset: 0,
@@ -743,17 +742,12 @@ mod test {
 
         let bytecode = bytecode! {
             PUSH32(Word::from(0))
-            PUSH32(Word::from(1))
-            PUSH32(Word::from(2))
-            PUSH32(Word::from(10))
-            PUSH32(Word::from(224))
-            PUSH32(Word::from(1025))
-            PUSH32(Word::from(5089))
+            PUSH32(Word::from(0))
             STOP
         };
         let callees = vec![callee(bytecode)];
         for (stack, callee) in stacks.into_iter().cartesian_product(callees.into_iter()) {
-            test_oog(caller(stack, false), callee);
+            test_oog(caller(stack, true), callee);
         }
     }
 

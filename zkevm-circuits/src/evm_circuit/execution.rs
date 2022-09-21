@@ -1116,7 +1116,6 @@ impl<F: Field> ExecutionConfig<F> {
             }
         }
 
-        println!("rw indices is : {}", step.rw_indices.len());
         for (idx, assigned_rw_value) in assigned_rw_values.iter().enumerate() {
             if step.rw_indices.is_empty() {
                 break;
