@@ -769,7 +769,7 @@ impl<'a> CircuitInputStateRef<'a> {
             .pop()
             .expect("reversion_groups should not be empty for non-persistent call");
 
-        // // Apply reversions
+        // Apply reversions
         for (step_index, op_ref) in reversion_group.op_refs.iter().rev().copied() {
             if let Some(op) = self.get_rev_op_by_ref(&op_ref) {
                 self.apply_op(&op);

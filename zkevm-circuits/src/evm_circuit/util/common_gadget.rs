@@ -214,7 +214,6 @@ impl<F: Field> RestoreContextGadget<F> {
                 .map(|idx| block.rws[idx].call_context_value())
             };
 
-        print!("caller code hash: {}", caller_code_hash);
         for (cell, value) in [
             (&self.caller_id, caller_id),
             (&self.caller_is_root, caller_is_root),
@@ -228,7 +227,6 @@ impl<F: Field> RestoreContextGadget<F> {
                 caller_reversible_write_counter,
             ),
         ] {
-            println!("value is {}", value);
             cell.assign(
                 region,
                 offset,
