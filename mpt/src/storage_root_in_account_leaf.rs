@@ -41,48 +41,19 @@ impl<F: FieldExt> StorageRootChip<F> {
         let config = StorageRootConfig {};
         let one = Expression::Constant(F::one());  
 
-        meta.create_gate("storage leaf in first level - leaf placeholder in first level requires empty trie", |meta| {
-            let q_enable = meta.query_fixed(q_enable, Rotation::cur());
-            let mut constraints = vec![];
+        
+        /*
+        If there is no branch, just a leaf, but after a placeholder.
+        If there is no branch or extension node in the storage trie (just a leaf)
+        and the only leaf in the trie is after branch placeholder, it needs
+        to be ensured that the hash of the (only) leaf is the storage root.
+        This appears when there is only one leaf in the storage trie and we add another
 
-            let mut rot_into_storage_root = -LEAF_VALUE_S_IND - (ACCOUNT_LEAF_ROWS - ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND);
-            let mut rot_into_last_account_row = -LEAF_VALUE_S_IND - 1;
-            let mut is_leaf = meta.query_advice(storage_leaf.is_s_value, Rotation::cur());
-            if !is_s {
-                rot_into_storage_root = -LEAF_VALUE_C_IND - (ACCOUNT_LEAF_ROWS - ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND);
-                rot_into_last_account_row = -LEAF_VALUE_C_IND - 1;
-                is_leaf = meta.query_advice(storage_leaf.is_c_value, Rotation::cur());
-            }
-            let is_placeholder = meta.query_advice(sel, Rotation::cur());
-            
-            // Only check if there is an account above the leaf.
-            let is_account_leaf_above = meta.query_advice(
-                is_account_leaf_in_added_branch,
-                Rotation(rot_into_last_account_row),
-            );
-    
-            let empty_trie_hash: Vec<u8> = vec![
-                86, 232, 31, 23, 27, 204, 85, 166, 255, 131, 69, 230, 146, 192, 248, 110, 91, 72,
-                224, 27, 153, 108, 173, 192, 1, 98, 47, 181, 227, 99, 180, 33,
-            ];
-            for (ind, col) in s_main.bytes.iter().enumerate() {
-                let s = meta.query_advice(*col, Rotation(rot_into_storage_root));
-                constraints.push((
-                    "If placeholder leaf without branch (sel = 1), then storage trie is empty",
-                    q_enable.clone()
-                        * is_placeholder.clone()
-                        * is_account_leaf_above.clone()
-                        * is_leaf.clone()
-                        * (s.clone() - Expression::Constant(F::from(empty_trie_hash[ind] as u64))),
-                ));
-            }
-
-            constraints
-        });
-
-        // If there is no branch, just a leaf, but after a placeholder.
-        // Note: branch in the first level cannot be shorter than 32 bytes (it is always hashed).
-        meta.lookup_any("storage_root_in_account_leaf 4: root of the first level storage leaf (after branch placeholder) in account leaf", |meta| {
+        Note: Branch in the first level cannot be shorter than 32 bytes (it is always hashed).
+        */
+        meta.lookup_any(
+            "Hash of the only storage leaf which is after a placeholder is storage trie root",
+            |meta| {
             let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
 
             // Check in leaf value row.
@@ -144,6 +115,7 @@ impl<F: FieldExt> StorageRootChip<F> {
 
             constraints
         });
+        
 
         config
     }

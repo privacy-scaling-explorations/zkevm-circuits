@@ -405,38 +405,6 @@ impl<F: FieldExt> LeafValueConfig<F> {
                     * is_long.clone(),
             ));
  
-            let empty_trie_hash: Vec<u8> = vec![
-                86, 232, 31, 23, 27, 204, 85, 166, 255, 131, 69, 230, 146, 192, 248, 110, 91, 72,
-                224, 27, 153, 108, 173, 192, 1, 98, 47, 181, 227, 99, 180, 33,
-            ];
-            let mut sel = meta.query_advice(denoter.sel1, Rotation::cur());
-
-            let mut rot_into_storage_root = -4;
-            if !is_s {
-                sel = meta.query_advice(denoter.sel2, Rotation::cur());
-                rot_into_storage_root = -5;
-            }
-
-            /*
-            `sel = 1` in the leaf value row when the leaf is only a placeholder (it is added or deleted and
-            thus there is no leaf in either `S` or `C` proof).
-            This selector is used to trigger off the constraint for the leaf hash being the same as
-            the storage trie root (because leaf in this case is just a placeholder) in
-            `storage_root_in_account_leaf.rs`.
-            These constraints prevent setting `sel = 1` (and thus triggering off the constraint for the leaf hash
-            to be the storage trie) in cases when the storage trie is not empty.
-            */
-            for (ind, col) in s_main.bytes.iter().enumerate() {
-                let s = meta.query_advice(*col, Rotation(rot_into_storage_root));
-                constraints.push((
-                    "If placeholder leaf without branch (sel = 1), then storage trie is empty",
-                    q_enable.clone()
-                        * sel.clone()
-                        * is_leaf_without_branch.clone()
-                        * (s.clone() - Expression::Constant(F::from(empty_trie_hash[ind] as u64))),
-                ));
-            }
-
             constraints
         });
 
@@ -507,6 +475,56 @@ impl<F: FieldExt> LeafValueConfig<F> {
                 constraints
             },
         );
+
+        /*
+        When there is only one leaf in a storage trie and it is a placeholder, the trie needs to
+        be empty - the storage root is hash of an empty trie.
+        This occurs when the storage trie is empty and the first leaf is added (or reversed when
+        there is only one leaf and it is deleted) - in this case we have a placeholder leaf in
+        `S` proof and only one leaf in `C` proof. We need to check that in `S` proof we have an
+        empty trie.
+        */
+        meta.create_gate(
+            "Hash of the only storage leaf which is placeholder requires empty storage root",
+            |meta| {
+            let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
+            let mut constraints = vec![];
+
+            let mut rot_into_storage_root = -LEAF_VALUE_S_IND - (ACCOUNT_LEAF_ROWS - ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND);
+            let mut rot_into_last_account_row = -LEAF_VALUE_S_IND - 1;
+            let mut is_placeholder = meta.query_advice(denoter.sel1, Rotation(rot));
+            if !is_s {
+                rot_into_storage_root = -LEAF_VALUE_C_IND - (ACCOUNT_LEAF_ROWS - ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND);
+                rot_into_last_account_row = -LEAF_VALUE_C_IND - 1;
+                is_placeholder = meta.query_advice(denoter.sel2, Rotation(rot));
+            }
+
+            let is_leaf = meta.query_advice(is_leaf_value, Rotation::cur());
+            
+            // Only check if there is an account above the leaf.
+            let is_account_leaf_above = meta.query_advice(
+                is_account_leaf_in_added_branch,
+                Rotation(rot_into_last_account_row),
+            );
+    
+            let empty_trie_hash: Vec<u8> = vec![
+                86, 232, 31, 23, 27, 204, 85, 166, 255, 131, 69, 230, 146, 192, 248, 110, 91, 72,
+                224, 27, 153, 108, 173, 192, 1, 98, 47, 181, 227, 99, 180, 33,
+            ];
+            for (ind, col) in s_main.bytes.iter().enumerate() {
+                let s = meta.query_advice(*col, Rotation(rot_into_storage_root));
+                constraints.push((
+                    "If placeholder leaf without branch (sel = 1), then storage trie is empty",
+                    q_not_first.clone()
+                        * is_placeholder.clone()
+                        * is_account_leaf_above.clone()
+                        * is_leaf.clone()
+                        * (s.clone() - Expression::Constant(F::from(empty_trie_hash[ind] as u64))),
+                ));
+            }
+
+            constraints
+        });
 
         /*
         It needs to be checked that the hash of a leaf is in the parent node. We do this by a lookup
