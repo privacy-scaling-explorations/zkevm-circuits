@@ -13,7 +13,7 @@ use ethers_core::utils::keccak256;
 #[derive(Debug, Copy, Clone)]
 pub(crate) struct Return;
 
-// rename to ReturnRevertStop?
+// TODO: rename to indicate this handles REVERT (and maybe STOP)?
 impl Opcode for Return {
     fn gen_associated_ops(
         state: &mut CircuitInputStateRef,
@@ -32,12 +32,9 @@ impl Opcode for Return {
                 .call_ctx_mut()?
                 .memory
                 .extend_at_least((offset.low_u64() + length.low_u64()).try_into().unwrap());
-            // TODO: handle memory expansion gas cost?
         }
 
         let call = state.call()?.clone();
-        // assert_eq!(offset, call.return_data_offset.into());
-        // assert_eq!(length, call.return_data_length.into());
         let is_root = call.is_root;
         for (field, value) in [
             (CallContextField::IsRoot, is_root.to_word()),
@@ -45,7 +42,6 @@ impl Opcode for Return {
             (CallContextField::IsSuccess, call.is_success.to_word()),
             (CallContextField::CallerId, call.caller_id.into()),
             (
-                // these two are wrong and should be for the caller?
                 CallContextField::ReturnDataOffset,
                 call.return_data_offset.into(),
             ),
@@ -54,11 +50,8 @@ impl Opcode for Return {
                 call.return_data_length.into(),
             ),
         ] {
-            // should these be caller?
             state.call_context_read(&mut exec_step, call.call_id, field, value);
         }
-
-        dbg!(call.return_data_offset, call.return_data_length);
 
         if !is_root {
             state.handle_restore_context(steps, &mut exec_step)?;
@@ -92,25 +85,20 @@ impl Opcode for Return {
             caller_ctx.return_data[0..copy_len]
                 .copy_from_slice(&memory.0[offset..offset + copy_len]);
 
-            // how are these being set?????
-            dbg!(copy_len, call.return_data_offset, call.return_data_length);
-
-            if length > 0 {
-                handle_copy(
-                    state,
-                    &mut exec_step,
-                    Source {
-                        id: call.call_id,
-                        offset,
-                        length,
-                    },
-                    Destination {
-                        id: call.caller_id,
-                        offset: call.return_data_offset.try_into().unwrap(),
-                        length: call.return_data_length.try_into().unwrap(),
-                    },
-                )?;
-            }
+            handle_copy(
+                state,
+                &mut exec_step,
+                Source {
+                    id: call.call_id,
+                    offset,
+                    length,
+                },
+                Destination {
+                    id: call.caller_id,
+                    offset: call.return_data_offset.try_into().unwrap(),
+                    length: call.return_data_length.try_into().unwrap(),
+                },
+            )?;
         }
 
         state.handle_return(step)?;
@@ -208,96 +196,4 @@ fn handle_create(
     });
 
     Ok(())
-}
-
-#[cfg(test)]
-mod return_tests {
-    use crate::mock::BlockData;
-    use eth_types::evm_types::OpcodeId;
-    use eth_types::geth_types::GethData;
-    use eth_types::{bytecode, Word};
-    use mock::test_ctx::helpers::{account_0_code_account_1_no_code, tx_from_1_to_0};
-    use mock::TestContext;
-
-    fn test_return(
-        is_return: bool,
-        callee_return_data_offset: usize,
-        callee_return_data_length: usize,
-        caller_return_data_offset: usize,
-        caller_return_data_length: usize,
-    ) {
-        let mut contract = bytecode! {
-            PUSH1(0x20)
-            PUSH1(0)
-            PUSH1(0)
-            CALLDATACOPY
-            PUSH1(callee_return_data_length)
-            PUSH1(callee_return_data_offset)
-        };
-        contract.write_op(if is_return {
-            OpcodeId::RETURN
-        } else {
-            OpcodeId::REVERT
-        });
-
-        let constructor = bytecode! {
-            PUSH12(Word::from(contract.to_vec().as_slice()))
-            PUSH1(0)
-            MSTORE
-            PUSH1(0xC)
-            PUSH1(0x14)
-            RETURN
-        };
-
-        let code = bytecode! {
-            PUSH21(Word::from(constructor.to_vec().as_slice()))
-            PUSH1(0)
-            MSTORE
-
-            PUSH1 (0x15)
-            PUSH1 (0xB)
-            PUSH1 (0)
-            CREATE
-
-            PUSH1 (caller_return_data_length)
-            PUSH1 (caller_return_data_offset)
-            PUSH1 (0x20)
-            PUSH1 (0)
-            PUSH1 (0)
-            DUP6
-            PUSH2 (0xFFFF)
-            CALL
-
-            STOP
-        };
-        // Get the execution steps from the external tracer
-        let block: GethData = TestContext::<2, 1>::new(
-            None,
-            account_0_code_account_1_no_code(code),
-            tx_from_1_to_0,
-            |block, _tx| block.number(0xcafeu64),
-        )
-        .unwrap()
-        .into();
-
-        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
-        builder
-            .handle_block(&block.eth_block, &block.geth_traces)
-            .unwrap();
-    }
-
-    #[test]
-    fn test_cases() {
-        test_return(true, 0, 0, 0, 0);
-        test_return(true, 10, 10, 10, 10);
-        test_return(true, 0, 0, 0, 0);
-        test_return(true, 0, 0, 0, 100);
-        test_return(true, 0, 0, 0, 0);
-
-        test_return(false, 0, 0, 0, 0);
-        test_return(false, 10, 10, 10, 10);
-        test_return(false, 0, 0, 0, 0);
-        test_return(false, 0, 0, 0, 100);
-        test_return(false, 0, 0, 0, 0);
-    }
 }
