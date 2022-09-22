@@ -824,7 +824,9 @@ impl<'a> CircuitInputStateRef<'a> {
         Ok(())
     }
 
-    ///asdfasdfasdfa
+    /// Bus mapping for the RestoreContextGadget as used in RETURN.
+    // TODO: unify this with restore context bus mapping for STOP.
+    // TODO: unify this with the `handle return function above.`
     pub fn handle_restore_context(
         &mut self,
         steps: &[GethExecStep],
@@ -867,29 +869,22 @@ impl<'a> CircuitInputStateRef<'a> {
             self.call_context_read(exec_step, caller.call_id, field, value);
         }
 
-        let [mut last_callee_return_data_offset, last_callee_return_data_length] =
-            match geth_step.op {
-                OpcodeId::STOP => [Word::zero(); 2],
-                OpcodeId::REVERT | OpcodeId::RETURN => {
-                    // TODO: move this back into the return bus mapping.
-                    // todo, somehow these are reversed....
-                    let offset = geth_step.stack.nth_last(0)?;
-                    let length = geth_step.stack.nth_last(1)?;
+        let [last_callee_return_data_offset, last_callee_return_data_length] = match geth_step.op {
+            OpcodeId::STOP => [Word::zero(); 2],
+            OpcodeId::REVERT | OpcodeId::RETURN => {
+                // TODO: move this back into the return bus mapping.
+                let offset = geth_step.stack.nth_last(0)?;
+                let length = geth_step.stack.nth_last(1)?;
+                // This is the convention we are using for memory addresses so that there is no
+                // memory expansion cost when the length is 0.
+                if length.is_zero() {
+                    [Word::zero(); 2]
+                } else {
                     [offset, length]
                 }
-                _ => unreachable!(),
-            };
-
-        // This is the convention we are using for memory addresses so that we do not
-        // charge of memory expansion costs when the length is 0.
-        if last_callee_return_data_length.is_zero() {
-            last_callee_return_data_offset = Word::zero();
-        }
-
-        dbg!(
-            last_callee_return_data_offset,
-            last_callee_return_data_length
-        );
+            }
+            _ => unreachable!(),
+        };
         for (field, value) in [
             (CallContextField::LastCalleeId, call.call_id.into()),
             (
