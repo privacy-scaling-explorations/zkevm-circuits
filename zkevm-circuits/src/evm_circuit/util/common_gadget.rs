@@ -143,7 +143,7 @@ impl<F: Field> RestoreContextGadget<F> {
         } else {
             caller_gas_left.expr() + cb.curr.state.gas_left.expr()
         };
-        // TODO: check that memory expansion cost for return/revert is accounted for.
+        // TODO: Do we need to constrain the gas cost of the return here?
 
         // Accumulate reversible_write_counter in case this call stack reverts in the
         // future even it itself succeeds. Note that when sub-call halts in
