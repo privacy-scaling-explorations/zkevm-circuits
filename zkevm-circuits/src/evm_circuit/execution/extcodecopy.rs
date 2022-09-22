@@ -59,7 +59,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
         let memory_address = MemoryAddressGadget::construct(cb, memory_offset, memory_length);
 
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
-        let mut reversion_info = cb.reversion_info(None);
+        let mut reversion_info = cb.reversion_info_read(None);
         let is_warm = cb.query_bool();
         cb.account_access_list_write(
             tx_id.expr(),
