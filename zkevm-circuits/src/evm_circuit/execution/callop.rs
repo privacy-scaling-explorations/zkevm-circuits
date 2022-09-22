@@ -21,8 +21,14 @@ use halo2_proofs::circuit::Value;
 use halo2_proofs::plonk::Error;
 use keccak256::EMPTY_HASH_LE;
 
+/// Gadget for call related opcodes. It supports `OpcodeId::CALL` and
+/// `OpcodeId::STATICCALL` for now (will add `OpcodeId::CALLCODE` and
+/// `OpcodeId::DELEGATECALL`).
+/// Const generic parameter `HAS_VALUE` is used to distinguish if need to pop
+/// `value` from stack (the third stack pop). `HAS_VALUE` is true for `CALL` and
+/// `CALLCODE`, and false for `DELEGATECALL` and `STATICCALL`.
 #[derive(Clone, Debug)]
-pub(crate) struct CallOpGadget<F, const IS_CALL: bool> {
+pub(crate) struct CallOpGadget<F, const HAS_VALUE: bool> {
     opcode: Cell<F>,
     tx_id: Cell<F>,
     reversion_info: ReversionInfo<F>,
@@ -50,10 +56,10 @@ pub(crate) struct CallOpGadget<F, const IS_CALL: bool> {
     capped_callee_gas_left: MinMaxGadget<F, N_BYTES_GAS>,
 }
 
-impl<F: Field, const IS_CALL: bool> ExecutionGadget<F> for CallOpGadget<F, IS_CALL> {
-    const NAME: &'static str = if IS_CALL { "CALL" } else { "STATICCALL" };
+impl<F: Field, const HAS_VALUE: bool> ExecutionGadget<F> for CallOpGadget<F, HAS_VALUE> {
+    const NAME: &'static str = if HAS_VALUE { "CALL" } else { "STATICCALL" };
 
-    const EXECUTION_STATE: ExecutionState = if IS_CALL {
+    const EXECUTION_STATE: ExecutionState = if HAS_VALUE {
         ExecutionState::CALL
     } else {
         ExecutionState::STATICCALL
@@ -62,17 +68,18 @@ impl<F: Field, const IS_CALL: bool> ExecutionGadget<F> for CallOpGadget<F, IS_CA
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
         cb.opcode_lookup(opcode.expr(), 1.expr());
+        let is_call = (OpcodeId::STATICCALL.expr() - opcode.expr()) * F::from(9).invert().unwrap();
 
         // We do the responsible opcode check explicitly here because we're not
         // using the `SameContextGadget` for `CALL` or `STATICCALL`.
         cb.require_equal(
             "Opcode should be CALL or STATICCALL",
             opcode.expr(),
-            if IS_CALL {
-                OpcodeId::CALL.expr()
-            } else {
-                OpcodeId::STATICCALL.expr()
-            },
+            select::expr(
+                is_call.expr(),
+                OpcodeId::CALL.expr(),
+                OpcodeId::STATICCALL.expr(),
+            ),
         );
 
         let gas_word = cb.query_word();
@@ -96,18 +103,18 @@ impl<F: Field, const IS_CALL: bool> ExecutionGadget<F> for CallOpGadget<F, IS_CA
         ]
         .map(|field_tag| cb.call_context(None, field_tag));
 
-        if !IS_CALL {
-            cb.require_zero("is_static == 1 for STATICCALL", 1.expr() - is_static.expr());
-        }
+        cb.condition(1.expr() - is_call.expr(), |cb| {
+            cb.require_zero("is_static == 1 for STATICCALL", 1.expr() - is_static.expr())
+        });
 
         cb.range_lookup(depth.expr(), 1024);
 
         // Lookup values from stack
         cb.stack_pop(gas_word.expr());
         cb.stack_pop(callee_address_word.expr());
-        if IS_CALL {
-            cb.stack_pop(value.expr())
-        };
+        if HAS_VALUE {
+            cb.stack_pop(value.expr());
+        }
         cb.stack_pop(cd_offset.expr());
         cb.stack_pop(cd_length.expr());
         cb.stack_pop(rd_offset.expr());
@@ -214,6 +221,7 @@ impl<F: Field, const IS_CALL: bool> ExecutionGadget<F> for CallOpGadget<F, IS_CA
 
         // TODO: Handle precompiled
 
+        let stack_pointer_delta = select::expr(is_call.expr(), 6.expr(), 5.expr());
         cb.condition(is_empty_code_hash.expr(), |cb| {
             // Save caller's call state
             for field_tag in [
@@ -224,10 +232,11 @@ impl<F: Field, const IS_CALL: bool> ExecutionGadget<F> for CallOpGadget<F, IS_CA
                 cb.call_context_lookup(true.expr(), None, field_tag, 0.expr());
             }
 
+            let rw_counter_delta = select::expr(is_call.expr(), 24.expr(), 23.expr());
             cb.require_step_state_transition(StepStateTransition {
-                rw_counter: Delta(if IS_CALL { 24.expr() } else { 23.expr() }),
+                rw_counter: Delta(rw_counter_delta),
                 program_counter: Delta(1.expr()),
-                stack_pointer: Delta(if IS_CALL { 6.expr() } else { 5.expr() }),
+                stack_pointer: Delta(stack_pointer_delta.expr()),
                 gas_left: Delta(
                     has_value.clone() * GAS_STIPEND_CALL_WITH_VALUE.expr() - gas_cost.clone(),
                 ),
@@ -246,7 +255,7 @@ impl<F: Field, const IS_CALL: bool> ExecutionGadget<F> for CallOpGadget<F, IS_CA
                 ),
                 (
                     CallContextFieldTag::StackPointer,
-                    cb.curr.state.stack_pointer.expr() + if IS_CALL { 6.expr() } else { 5.expr() },
+                    cb.curr.state.stack_pointer.expr() + stack_pointer_delta,
                 ),
                 (
                     CallContextFieldTag::GasLeft,
@@ -278,16 +287,23 @@ impl<F: Field, const IS_CALL: bool> ExecutionGadget<F> for CallOpGadget<F, IS_CA
             ] {
                 cb.call_context_lookup(true.expr(), Some(callee_call_id.expr()), field_tag, value);
             }
+        });
 
-            if IS_CALL {
+        // Make it outside of the previous condition since nested condition is not
+        // supported.
+        cb.condition(
+            is_call.expr() * (1.expr() - is_empty_code_hash.expr()),
+            |cb| {
                 cb.call_context_lookup(
                     true.expr(),
                     Some(callee_call_id.expr()),
                     CallContextFieldTag::Value,
                     value.expr(),
                 )
-            }
+            },
+        );
 
+        cb.condition(1.expr() - is_empty_code_hash.expr(), |cb| {
             for (field_tag, value) in [
                 (CallContextFieldTag::IsSuccess, is_success.expr()),
                 (CallContextFieldTag::IsStatic, is_static.expr()),
@@ -304,8 +320,9 @@ impl<F: Field, const IS_CALL: bool> ExecutionGadget<F> for CallOpGadget<F, IS_CA
             // Give gas stipend if value is not zero
             let callee_gas_left = callee_gas_left + has_value * GAS_STIPEND_CALL_WITH_VALUE.expr();
 
+            let rw_counter_delta = select::expr(is_call, 44.expr(), 42.expr());
             cb.require_step_state_transition(StepStateTransition {
-                rw_counter: Delta(if IS_CALL { 44.expr() } else { 42.expr() }),
+                rw_counter: Delta(rw_counter_delta),
                 call_id: To(callee_call_id.expr()),
                 is_root: To(false.expr()),
                 is_create: To(false.expr()),
@@ -366,7 +383,7 @@ impl<F: Field, const IS_CALL: bool> ExecutionGadget<F> for CallOpGadget<F, IS_CA
     }
 }
 
-impl<F: Field, const IS_CALL: bool> CallOpGadget<F, IS_CALL> {
+impl<F: Field, const HAS_VALUE: bool> CallOpGadget<F, HAS_VALUE> {
     fn assign_common_exec_step(
         &self,
         region: &mut CachedRegion<'_, '_, F>,
