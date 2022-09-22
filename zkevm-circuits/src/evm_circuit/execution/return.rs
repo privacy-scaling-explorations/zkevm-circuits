@@ -30,8 +30,8 @@ pub(crate) struct ReturnGadget<F> {
     is_success: Cell<F>,
     restore_context: RestoreContextGadget<F>,
 
-    nonroot_copy_length: MinMaxGadget<F, N_BYTES_MEMORY_ADDRESS>,
-    nonroot_copy_length_is_zero: IsZeroGadget<F>,
+    copy_length: MinMaxGadget<F, N_BYTES_MEMORY_ADDRESS>,
+    copy_length_is_zero: IsZeroGadget<F>,
 
     caller_id: Cell<F>, // can you get this out of restore_context?
     return_data_offset: Cell<F>,
@@ -75,19 +75,17 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
             cb.require_next_state(ExecutionState::EndTx);
         });
 
-        let nonroot_copy_length =
+        let copy_length =
             MinMaxGadget::construct(cb, return_data_length.expr(), range.length());
-        let nonroot_copy_length_is_zero = IsZeroGadget::construct(cb, nonroot_copy_length.min());
-        // TODO: check if this is needed. I think return_data_length is 0 for the root
-        // call, so this would not be needed.
-        let copy_length = not::expr(is_root.expr()) * nonroot_copy_length.min();
+        let copy_length_is_zero = IsZeroGadget::construct(cb, copy_length.min());
+        let copy_rw_increase = copy_length.min() + copy_length.min();
 
         let restore_context = cb.condition(not::expr(is_root.expr()), |cb| {
             cb.require_next_state_not(ExecutionState::EndTx);
             RestoreContextGadget::construct(
                 cb,
                 is_success.expr(),
-                copy_length.clone() + copy_length.clone(),
+                copy_rw_increase.clone(),
                 range.offset(),
                 range.length(),
             )
@@ -96,14 +94,14 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
         cb.condition(
             not::expr(is_create.expr())
                 * not::expr(is_root.expr())
-                * not::expr(nonroot_copy_length_is_zero.expr()),
+                * not::expr(copy_length_is_zero.expr()),
             |cb| {
                 let source_id = cb.curr.state.call_id.expr();
                 let source_tag = CopyDataType::Memory.expr();
                 let destination_id = caller_id.expr();
                 let destination_tag = CopyDataType::Memory.expr();
-                let source_address_start = range.offset(); // this is wrong....
-                let source_address_end = range.offset() + copy_length.clone(); // this is also wrong....
+                let source_address_start = range.offset();
+                let source_address_end = range.offset() + copy_length.min();
                 let destination_address_start = return_data_offset.expr();
                 let rlc_acc = 0.expr();
                 let rw_counter_start =
@@ -116,10 +114,10 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
                     source_address_start,
                     source_address_end,
                     destination_address_start,
-                    copy_length.clone(),
+                    copy_length.min(),
                     rlc_acc,
                     rw_counter_start,
-                    copy_length.clone() + copy_length,
+                    copy_rw_increase,
                 );
             },
         );
@@ -138,8 +136,8 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
             is_create,
             is_success,
             caller_id,
-            nonroot_copy_length,
-            nonroot_copy_length_is_zero,
+            copy_length,
+            copy_length_is_zero,
             return_data_offset,
             return_data_length,
             restore_context,
@@ -191,13 +189,13 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
                 .assign(region, offset, block, call, step, 8)?;
         }
 
-        self.nonroot_copy_length.assign(
+        self.copy_length.assign(
             region,
             offset,
             F::from(call.return_data_length),
             F::from(length.as_u64()),
         )?;
-        self.nonroot_copy_length_is_zero.assign(
+        self.copy_length_is_zero.assign(
             region,
             offset,
             F::from(std::cmp::min(call.return_data_length, length.as_u64())),
