@@ -57,11 +57,11 @@ use crate::bytecode_circuit::bytecode_unroller::{
 
 use crate::evm_circuit::{table::FixedTableTag, EvmCircuit};
 use crate::table::{BlockTable, BytecodeTable, CopyTable, MptTable, RwTable, TxTable};
-use crate::util::power_of_randomness_from_instance;
+use crate::util::{power_of_randomness_from_instance, Challenges};
 use crate::witness::Block;
 use eth_types::Field;
 use halo2_proofs::{
-    circuit::{Layouter, SimpleFloorPlanner},
+    circuit::{Layouter, SimpleFloorPlanner, Value},
     plonk::{Circuit, ConstraintSystem, Error},
 };
 
@@ -197,9 +197,9 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
             ),
             bytecode_circuit: BytecodeConfig::configure(
                 meta,
-                power_of_randomness[0].clone(),
                 bytecode_table,
                 keccak_table,
+                Challenges::mock(power_of_randomness[0].clone()),
             ),
             keccak_circuit,
         }
@@ -210,6 +210,8 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
         config: Self::Config,
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
+        let challenges = Challenges::mock(Value::known(self.block.randomness));
+
         // --- EVM Circuit ---
         config
             .evm_circuit
@@ -244,14 +246,14 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
             .block
             .bytecodes
             .iter()
-            .map(|(_, b)| unroll(b.bytes.clone(), self.block.randomness))
+            .map(|(_, b)| unroll(b.bytes.clone()))
             .collect();
         config.bytecode_circuit.load(&mut layouter)?;
         config.bytecode_circuit.assign(
             &mut layouter,
             self.bytecode_size,
             &bytecodes,
-            self.block.randomness,
+            &challenges,
         )?;
         // --- Keccak Table ---
         config.keccak_circuit.load(&mut layouter)?;
