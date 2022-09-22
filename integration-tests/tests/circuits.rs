@@ -113,7 +113,6 @@ async fn test_tx_circuit_block(block_num: u64) {
 
 pub async fn test_bytecode_circuit_block(block_num: u64) {
     const DEGREE: u32 = 16;
-    let randomness = Fr::from(123456);
 
     log::info!("test bytecode circuit, block number: {}", block_num);
     let cli = get_client();
@@ -121,7 +120,7 @@ pub async fn test_bytecode_circuit_block(block_num: u64) {
     let (builder, _) = cli.gen_inputs(block_num).await.unwrap();
     let bytecodes: Vec<Vec<u8>> = builder.code_db.0.values().cloned().collect();
 
-    test_bytecode_circuit(DEGREE, bytecodes, randomness);
+    test_bytecode_circuit::<Fr>(DEGREE, bytecodes);
 }
 
 pub async fn test_copy_circuit_block(block_num: u64) {
