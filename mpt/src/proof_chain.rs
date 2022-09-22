@@ -26,6 +26,9 @@ Potential attacks:
    constraints fail.
  - Additional proof is added between the proofs (we have more `not_first_level = 0` than expected) -
    in this case the `start_root/final_root` lookups will fail.
+ - Proof without account proof part (only having storage proof) - the attacker could omit the witness
+   for account proof and thus avoid any account related checks. This is prevented with constraints
+   that ensure there is always an account proof before the storage proof.
 
 It needs to be ensured that `start_root` and `final_root` change only in the first row of
 the `not_first_level = 0` node.
@@ -227,18 +230,56 @@ impl<F: FieldExt> ProofChainConfig<F> {
             ));
  
             /*
-            These two address_rlc constraints are to ensure there is an account proof before the
-            storage proof.
+            It needs to be ensured there is an account proof before the
+            storage proof. Otherwise the attacker could use only a storage proof with a properly
+            set `address_rlc` (storage mod lookup row contains `val_prev`, `val_cur`, `key_rlc`,
+            `address_rlc`) and it would not be detected that the account proof has not validated
+            (was not there).
+
+            We make sure `address_rlc = 0` at the beginning of the proof (except if it is
+            the account leaf which already have set the proper `address_rlc`). This makes sure
+            that there is a step where `address_rlc` is set to the proper value. This step
+            should happen in the account leaf first row (there is a separate constraint that
+            allows `address_rlc` to be changed only in the account leaf first row).
+            So to have the proper `address_rlc` we have to have an account leaf (and thus an account proof).
+
+            If the attacker would try to use a storage proof without an account proof, the first
+            storage proof node would need to be denoted by `not_first_level = 0` (otherwise
+            constraints related to `not_first_level` would fail - there needs to be `not_firstl_level = 0`
+            after the end of the previous proof). But then if this node is a branch, this constraint
+            would make sure that `address_rlc = 0`. As `address_rlc` cannot be changed later on
+            in the storage proof, the lookup will fail (except for the negligible probability that
+            the lookup really requires `address_rlc = 0`). If the first node is a storage leaf, we
+            need to ensure in a separate constraint that `address_rlc = 0` in this case too.
             */
             constraints.push((
-                // First row of first level can be (besides branch_init) also is_account_leaf_key_s,
-                // but in this case the constraint in account_leaf_key.rs is triggered.
+                /*
+                First row of first level can be (besides `branch_init`) also `is_account_leaf_key_s`,
+                but in this case `address_rlc` needs to be set.
+                */
                 "address_rlc is 0 in first row of first level",
                 q_not_first.clone()
                     * (one.clone() - not_first_level_cur.clone())
                     * is_branch_init.clone()
                     * address_rlc_cur.clone()
             ));
+
+            /*
+            Ensuring that the storage proof cannot be used without the account proof - in case the storage
+            proof would consist only of a storage leaf.
+            */
+            constraints.push((
+                "address_rlc is 0 in first row of first level when in storage leaf",
+                q_not_first.clone()
+                    * (one.clone() - not_first_level_cur.clone())
+                    * is_storage_leaf_key_s.clone()
+                    * address_rlc_cur.clone()
+            ));
+
+            /*
+            It needs to be ensured that `address_rlc` changes only at the first row of the account leaf 
+            or in the branch init row if it is in the first level.
+            */
             constraints.push((
                 "address_rlc does not change except at is_account_leaf_key_s or branch init in first level",
                 q_not_first.clone()

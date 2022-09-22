@@ -540,9 +540,11 @@ impl<F: FieldExt> MptWitnessRow<F> {
                 || Ok(F::zero()),
             )?;
         } else {
-            // address_rlc can be set only in account leaf row - this is to
-            // prevent omitting account proof (and having only storage proof
-            // with the appropriate address_rlc)
+            /*
+            `address_rlc` can be set only in the account leaf row - this is to
+            prevent omitting account proof (and having only storage proof
+            with the appropriate address RLC)
+            */
             let address_rlc = bytes_into_rlc(self.address_bytes(), mpt_config.acc_r,);
 
             region.assign_advice(
