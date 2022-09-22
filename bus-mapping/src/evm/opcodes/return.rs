@@ -57,6 +57,7 @@ impl Opcode for Return {
             state.handle_restore_context(steps, &mut exec_step)?;
         }
 
+        // can we use ref here?
         let memory = state.call_ctx()?.memory.clone();
         let offset = offset.as_usize();
         let length = length.as_usize();
@@ -77,28 +78,29 @@ impl Opcode for Return {
         } else if !is_root && length > 0 {
             let caller_ctx = state.caller_ctx_mut()?;
             let return_offset = call.return_data_offset.try_into().unwrap();
+            let copy_length = std::cmp::min(call.return_data_length.try_into().unwrap(), length);
+            if copy_length > 0 {
+                caller_ctx.memory.0[return_offset..return_offset + copy_length]
+                    .copy_from_slice(&memory.0[offset..offset + copy_length]);
+                caller_ctx.return_data.resize(length, 0);
+                caller_ctx.return_data[0..copy_length]
+                    .copy_from_slice(&memory.0[offset..offset + copy_length]);
 
-            let copy_len = std::cmp::min(call.return_data_length.try_into().unwrap(), length);
-            caller_ctx.memory.0[return_offset..return_offset + copy_len]
-                .copy_from_slice(&memory.0[offset..offset + copy_len]);
-            caller_ctx.return_data.resize(length, 0);
-            caller_ctx.return_data[0..copy_len]
-                .copy_from_slice(&memory.0[offset..offset + copy_len]);
-
-            handle_copy(
-                state,
-                &mut exec_step,
-                Source {
-                    id: call.call_id,
-                    offset,
-                    length,
-                },
-                Destination {
-                    id: call.caller_id,
-                    offset: call.return_data_offset.try_into().unwrap(),
-                    length: call.return_data_length.try_into().unwrap(),
-                },
-            )?;
+                handle_copy(
+                    state,
+                    &mut exec_step,
+                    Source {
+                        id: call.call_id,
+                        offset,
+                        length,
+                    },
+                    Destination {
+                        id: call.caller_id,
+                        offset: call.return_data_offset.try_into().unwrap(),
+                        length: call.return_data_length.try_into().unwrap(),
+                    },
+                )?;
+            }
         }
 
         state.handle_return(step)?;
