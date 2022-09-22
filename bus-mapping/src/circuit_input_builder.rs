@@ -191,7 +191,11 @@ impl<'a> CircuitInputBuilder {
         };
 
         let total_rw = last_rw_counter + 1;
-        debug_assert!(total_rw + 1 <= max_rws);
+        // We need at least 1 extra Start row
+        #[allow(clippy::int_plus_one)]
+        {
+            debug_assert!(total_rw + 1 <= max_rws);
+        }
         push_op(&mut end_block_last, RWCounter(1), RW::READ, StartOp {});
         push_op(
             &mut end_block_last,

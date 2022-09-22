@@ -28,8 +28,7 @@ impl RwMap {
             .0
             .iter()
             .filter(|(tag, _rs)| !matches!(tag, RwTableTag::Start))
-            .map(|(_tag, rs)| rs)
-            .flatten()
+            .flat_map(|(_tag, rs)| rs)
             .map(|r| r.rw_counter())
             .sorted()
             .enumerate()

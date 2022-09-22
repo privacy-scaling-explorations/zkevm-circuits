@@ -72,7 +72,7 @@ mod tests {
         block.sign(&wallets);
 
         let (_, circuit, instance) =
-            SuperCircuit::<_, 1, 32>::build(block, &mut ChaChaRng::seed_from_u64(2)).unwrap();
+            SuperCircuit::<_, 1, 32, 512>::build(block, &mut ChaChaRng::seed_from_u64(2)).unwrap();
         let instance_refs: Vec<&[Fr]> = instance.iter().map(|v| &v[..]).collect();
 
         // Bench setup generation
@@ -97,7 +97,7 @@ mod tests {
             Challenge255<G1Affine>,
             ChaChaRng,
             Blake2bWrite<Vec<u8>, G1Affine, Challenge255<G1Affine>>,
-            SuperCircuit<Fr, 1, 32>,
+            SuperCircuit<Fr, 1, 32, 512>,
         >(
             &general_params,
             &pk,

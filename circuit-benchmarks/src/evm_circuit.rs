@@ -9,12 +9,14 @@ use zkevm_circuits::evm_circuit::{witness::Block, EvmCircuit};
 use zkevm_circuits::table::{BlockTable, BytecodeTable, RwTable, TxTable};
 
 #[derive(Debug, Default)]
-pub struct TestCircuit<F> {
+pub struct TestCircuit<F, const MAX_TXS: usize, const MAX_RWS: usize> {
     block: Block<F>,
 }
 
-impl<F: Field> Circuit<F> for TestCircuit<F> {
-    type Config = EvmCircuit<F>;
+impl<F: Field, const MAX_TXS: usize, const MAX_RWS: usize> Circuit<F>
+    for TestCircuit<F, MAX_TXS, MAX_RWS>
+{
+    type Config = EvmCircuit<F, MAX_TXS, MAX_RWS>;
     type FloorPlanner = SimpleFloorPlanner;
 
     fn without_witnesses(&self) -> Self {
@@ -81,7 +83,7 @@ mod evm_circ_benches {
             .parse()
             .expect("Cannot parse DEGREE env var as u32");
 
-        let circuit = TestCircuit::<Fr>::default();
+        let circuit = TestCircuit::<Fr, 1, 128>::default();
         let mut rng = XorShiftRng::from_seed([
             0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37, 0x32, 0x54, 0x06,
             0xbc, 0xe5,
@@ -109,7 +111,7 @@ mod evm_circ_benches {
             Challenge255<G1Affine>,
             XorShiftRng,
             Blake2bWrite<Vec<u8>, G1Affine, Challenge255<G1Affine>>,
-            TestCircuit<Fr>,
+            TestCircuit<Fr, 1, 128>,
         >(
             &general_params,
             &pk,

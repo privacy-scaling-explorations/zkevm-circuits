@@ -774,13 +774,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_RWS: usize> ExecutionConfig<F, MA
                     }
                 };
                 let mut next = get_next(&offset);
-                loop {
-                    let (transaction, call, step) = match next {
-                        Some(n) => n,
-                        None => {
-                            break;
-                        }
-                    };
+                while let Some((transaction, call, step)) = next {
                     next = get_next(&offset);
                     let height = self.get_step_height(step.execution_state);
 
