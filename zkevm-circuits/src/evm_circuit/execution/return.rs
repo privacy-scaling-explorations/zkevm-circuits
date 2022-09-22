@@ -14,7 +14,7 @@ use crate::{
     util::Expr,
 };
 use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId};
-use eth_types::{Field, ToScalar, Word};
+use eth_types::{Field, ToScalar};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
@@ -152,13 +152,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
             Value::known(F::from(step.opcode.unwrap().as_u64())),
         )?;
 
-        let [mut memory_offset, length] =
-            [0, 1].map(|i| block.rws[step.rw_indices[i]].stack_value());
-        dbg!(memory_offset, length);
-        // if length.is_zero() {
-        //     memory_offset = Word::zero();
-        // }
-
+        let [memory_offset, length] = [0, 1].map(|i| block.rws[step.rw_indices[i]].stack_value());
         // there might be an issue if this is constructed with length = 0, but it does
         // have a have_length, method, so that seems unlikely.
         self.range
@@ -250,18 +244,19 @@ mod test {
 
     #[test]
     fn test_root() {
-        let offset = 0;
-        let length = 10;
-        for is_return in [true, false] {
-            let code = callee_bytecode(is_return, offset, length);
+        let test_parameters = [(0, 0), (0, 10), (300, 20), (1000, 0)];
+        for ((offset, length), is_return) in
+            test_parameters.iter().cartesian_product(&[true, false])
+        {
+            let code = callee_bytecode(*is_return, *offset, *length);
             assert_eq!(
                 run_test_circuits(
                     TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap(),
                     None
                 ),
                 Ok(()),
-                "{}",
-                dbg!(is_return)
+                "(offset, length, is_return) = {:?}",
+                (*offset, *length, *is_return)
             );
         }
     }
