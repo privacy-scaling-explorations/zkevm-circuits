@@ -5,8 +5,10 @@ use crate::{
         param::N_BYTES_MEMORY_ADDRESS,
         step::ExecutionState,
         util::{
-            common_gadget::RestoreContextGadget, constraint_builder::ConstraintBuilder,
-            math_gadget::MinMaxGadget, not, CachedRegion, Cell,
+            common_gadget::RestoreContextGadget,
+            constraint_builder::ConstraintBuilder,
+            math_gadget::{IsZeroGadget, MinMaxGadget},
+            not, CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -29,6 +31,7 @@ pub(crate) struct ReturnGadget<F> {
     restore_context: RestoreContextGadget<F>,
 
     nonroot_copy_length: MinMaxGadget<F, N_BYTES_MEMORY_ADDRESS>,
+    nonroot_copy_length_is_zero: IsZeroGadget<F>,
 
     caller_id: Cell<F>, // can you get this out of restore_context?
     return_data_offset: Cell<F>,
@@ -74,6 +77,9 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
 
         let nonroot_copy_length =
             MinMaxGadget::construct(cb, return_data_length.expr(), range.length());
+        let nonroot_copy_length_is_zero = IsZeroGadget::construct(cb, nonroot_copy_length.min());
+        // TODO: check if this is needed. I think return_data_length is 0 for the root
+        // call, so this would not be needed.
         let copy_length = not::expr(is_root.expr()) * nonroot_copy_length.min();
 
         let restore_context = cb.condition(not::expr(is_root.expr()), |cb| {
@@ -87,34 +93,36 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
             )
         });
 
-        // cb.condition(
-        //     not::expr(is_create.expr()) * not::expr(is_root.expr()) *
-        // range.has_length(),     |cb| {
-        //         let source_id = cb.curr.state.call_id.expr();
-        //         let source_tag = CopyDataType::Memory.expr();
-        //         let destination_id = caller_id.expr();
-        //         let destination_tag = CopyDataType::Memory.expr();
-        //         let source_address_start = range.offset();
-        //         let source_address_end = range.offset() + copy_length.clone();
-        //         let destination_address_start = return_data_offset.expr();
-        //         let rlc_acc = 0.expr();
-        //         let rw_counter_start =
-        //             cb.curr.state.rw_counter.expr() + cb.rw_counter_offset().expr();
-        //         cb.copy_table_lookup(
-        //             source_id,
-        //             source_tag,
-        //             destination_id,
-        //             destination_tag,
-        //             source_address_start,
-        //             source_address_end,
-        //             destination_address_start,
-        //             copy_length.clone(),
-        //             rlc_acc,
-        //             rw_counter_start,
-        //             copy_length.clone() + copy_length,
-        //         );
-        //     },
-        // );
+        cb.condition(
+            not::expr(is_create.expr())
+                * not::expr(is_root.expr())
+                * not::expr(nonroot_copy_length_is_zero.expr()),
+            |cb| {
+                let source_id = cb.curr.state.call_id.expr();
+                let source_tag = CopyDataType::Memory.expr();
+                let destination_id = caller_id.expr();
+                let destination_tag = CopyDataType::Memory.expr();
+                let source_address_start = range.offset(); // this is wrong....
+                let source_address_end = range.offset() + copy_length.clone(); // this is also wrong....
+                let destination_address_start = return_data_offset.expr();
+                let rlc_acc = 0.expr();
+                let rw_counter_start =
+                    cb.curr.state.rw_counter.expr() + cb.rw_counter_offset().expr();
+                cb.copy_table_lookup(
+                    source_id,
+                    source_tag,
+                    destination_id,
+                    destination_tag,
+                    source_address_start,
+                    source_address_end,
+                    destination_address_start,
+                    copy_length.clone(),
+                    rlc_acc,
+                    rw_counter_start,
+                    copy_length.clone() + copy_length,
+                );
+            },
+        );
 
         cb.condition(
             is_create.expr() * is_success.expr() * range.has_length(),
@@ -131,6 +139,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
             is_success,
             caller_id,
             nonroot_copy_length,
+            nonroot_copy_length_is_zero,
             return_data_offset,
             return_data_length,
             restore_context,
@@ -188,6 +197,12 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
             F::from(call.return_data_length),
             F::from(length.as_u64()),
         )?;
+        self.nonroot_copy_length_is_zero.assign(
+            region,
+            offset,
+            F::from(std::cmp::min(call.return_data_length, length.as_u64())),
+        )?;
+
         let opcode = step.opcode.unwrap();
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
@@ -243,7 +258,7 @@ mod test {
     }
 
     #[test]
-    fn test_root() {
+    fn test_return_root() {
         let test_parameters = [(0, 0), (0, 10), (300, 20), (1000, 0)];
         for ((offset, length), is_return) in
             test_parameters.iter().cartesian_product(&[true, false])
@@ -261,6 +276,7 @@ mod test {
         }
     }
 
+    // (0, 10, 1000, 0, true)
     #[test]
     fn test_return_nonroot() {
         let test_parameters = [
