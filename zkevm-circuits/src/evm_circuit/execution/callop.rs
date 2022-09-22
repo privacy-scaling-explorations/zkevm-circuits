@@ -363,30 +363,6 @@ impl<F: Field, const HAS_VALUE: bool> ExecutionGadget<F> for CallOpGadget<F, HAS
         }
     }
 
-    /*
-        fn assign_exec_step(
-            &self,
-            region: &mut CachedRegion<'_, '_, F>,
-            offset: usize,
-            block: &Block<F>,
-            _: &Transaction,
-            call: &Call,
-            step: &ExecStep,
-        ) -> Result<(), Error> {
-            self.assign_common_exec_step(region, offset, block, call, step)?;
-            let opcode = step.opcode.unwrap();
-            match opcode {
-                OpcodeId::CALL => self.assign_exec_step_for_call(region, offset, block, call, step),
-                OpcodeId::STATICCALL => {
-                    self.assign_exec_step_for_staticcall(region, offset, block, call, step)
-                }
-                _ => unreachable!(),
-            }
-        }
-    }
-
-    impl<F: Field, const HAS_VALUE: bool> CallOpGadget<F, HAS_VALUE> {
-        */
     fn assign_exec_step(
         &self,
         region: &mut CachedRegion<'_, '_, F>,
@@ -561,6 +537,7 @@ impl<F: Field, const HAS_VALUE: bool> ExecutionGadget<F> for CallOpGadget<F, HAS
 
 #[cfg(test)]
 mod test {
+    use super::*;
     use crate::evm_circuit::test::run_test_circuit;
     use crate::evm_circuit::witness::block_convert;
     use eth_types::bytecode::Bytecode;
@@ -571,6 +548,131 @@ mod test {
     use mock::TestContext;
     use std::default::Default;
 
+    #[test]
+    fn callop_insufficient_balance() {
+        let opcodes = [OpcodeId::CALL, OpcodeId::STATICCALL];
+        let stacks = [Stack {
+            // this value is bigger than caller's balance
+            value: Word::from(11).pow(18.into()),
+            ..Default::default()
+        }];
+        let callees = [callee(bytecode! {}), callee(bytecode! { STOP })];
+        for ((opcode, stack), callee) in opcodes
+            .into_iter()
+            .cartesian_product(stacks.into_iter())
+            .cartesian_product(callees.into_iter())
+        {
+            test_ok(caller_for_insufficient_balance(opcode, stack), callee);
+        }
+    }
+
+    #[test]
+    fn callop_nested() {
+        for opcode in [OpcodeId::CALL, OpcodeId::STATICCALL] {
+            test_nested(opcode);
+        }
+    }
+
+    #[test]
+    fn callop_oog() {
+        let opcodes = [OpcodeId::CALL, OpcodeId::STATICCALL];
+        let stacks = [
+            // With gas and memory expansion
+            Stack {
+                gas: 100,
+                cd_offset: 64,
+                cd_length: 320,
+                rd_offset: 0,
+                rd_length: 32,
+                ..Default::default()
+            },
+        ];
+
+        let bytecode = bytecode! {
+            PUSH32(Word::from(0))
+            PUSH32(Word::from(0))
+            STOP
+        };
+        let callees = [callee(bytecode)];
+        for ((opcode, stack), callee) in opcodes
+            .into_iter()
+            .cartesian_product(stacks.into_iter())
+            .cartesian_product(callees.into_iter())
+        {
+            test_oog(caller(opcode, stack, true), callee);
+        }
+    }
+
+    #[test]
+    fn callop_recursive() {
+        for opcode in [OpcodeId::CALL, OpcodeId::STATICCALL] {
+            test_recursive(opcode);
+        }
+    }
+
+    #[test]
+    fn callop_simple() {
+        let opcodes = vec![OpcodeId::CALL, OpcodeId::STATICCALL];
+        let stacks = vec![
+            // With nothing
+            Stack::default(),
+            // With value
+            Stack {
+                value: Word::from(10).pow(18.into()),
+                ..Default::default()
+            },
+            // With gas
+            Stack {
+                gas: 100,
+                ..Default::default()
+            },
+            Stack {
+                gas: 100000,
+                ..Default::default()
+            },
+            // With memory expansion
+            Stack {
+                cd_offset: 64,
+                cd_length: 320,
+                rd_offset: 0,
+                rd_length: 32,
+                ..Default::default()
+            },
+            Stack {
+                cd_offset: 0,
+                cd_length: 32,
+                rd_offset: 64,
+                rd_length: 320,
+                ..Default::default()
+            },
+            Stack {
+                cd_offset: 0xFFFFFF,
+                cd_length: 0,
+                rd_offset: 0xFFFFFF,
+                rd_length: 0,
+                ..Default::default()
+            },
+        ];
+        let callees = vec![callee(bytecode! {}), callee(bytecode! { STOP })];
+        for ((opcode, stack), callee) in opcodes
+            .into_iter()
+            .cartesian_product(stacks.into_iter())
+            .cartesian_product(callees.into_iter())
+        {
+            test_ok(caller(opcode, stack, true), callee);
+        }
+    }
+
+    #[derive(Clone, Copy, Debug, Default)]
+    struct Stack {
+        gas: u64,
+        value: Word,
+        cd_offset: u64,
+        cd_length: u64,
+        rd_offset: u64,
+        rd_length: u64,
+    }
+
     fn callee(code: Bytecode) -> Account {
         let code = code.to_vec();
         let is_empty = code.is_empty();
@@ -580,6 +682,112 @@ mod test {
             nonce: if is_empty { 0 } else { 1 }.into(),
             balance: if is_empty { 0 } else { 0xdeadbeefu64 }.into(),
             ..Default::default()
+        }
+    }
+
+    fn caller(opcode: OpcodeId, stack: Stack, caller_is_success: bool) -> Account {
+        let has_value = opcode == OpcodeId::CALL;
+        let terminator = if caller_is_success {
+            OpcodeId::RETURN
+        } else {
+            OpcodeId::REVERT
+        };
+
+        // Call twice for testing both cold and warm access
+        let mut bytecode = bytecode! {
+            PUSH32(Word::from(stack.rd_length))
+            PUSH32(Word::from(stack.rd_offset))
+            PUSH32(Word::from(stack.cd_length))
+            PUSH32(Word::from(stack.cd_offset))
+        };
+        if has_value {
+            bytecode.push(32, stack.value);
+        }
+        bytecode.append(&bytecode! {
+            PUSH32(Address::repeat_byte(0xff).to_word())
+            PUSH32(Word::from(stack.gas))
+            .write_op(opcode)
+            PUSH32(Word::from(stack.rd_length))
+            PUSH32(Word::from(stack.rd_offset))
+            PUSH32(Word::from(stack.cd_length))
+            PUSH32(Word::from(stack.cd_offset))
+        });
+        if has_value {
+            bytecode.push(32, stack.value);
+        }
+        bytecode.append(&bytecode! {
+            PUSH32(Address::repeat_byte(0xff).to_word())
+            PUSH32(Word::from(stack.gas))
+            .write_op(opcode)
+            PUSH1(0)
+            PUSH1(0)
+            .write_op(terminator)
+        });
+
+        Account {
+            address: Address::repeat_byte(0xfe),
+            balance: Word::from(10).pow(20.into()),
+            code: bytecode.to_vec().into(),
+            ..Default::default()
+        }
+    }
+
+    fn caller_for_insufficient_balance(opcode: OpcodeId, stack: Stack) -> Account {
+        let has_value = opcode == OpcodeId::CALL;
+        let terminator = OpcodeId::STOP;
+
+        let mut bytecode = bytecode! {
+            PUSH32(Word::from(stack.rd_length))
+            PUSH32(Word::from(stack.rd_offset))
+            PUSH32(Word::from(stack.cd_length))
+            PUSH32(Word::from(stack.cd_offset))
+        };
+        if has_value {
+            bytecode.push(32, stack.value);
+        }
+        bytecode.append(&bytecode! {
+            PUSH32(Address::repeat_byte(0xff).to_word())
+            PUSH32(Word::from(stack.gas))
+            .write_op(opcode)
+            .write_op(terminator)
+        });
+
+        Account {
+            address: Address::repeat_byte(0xfe),
+            balance: Word::from(10).pow(18.into()),
+            code: bytecode.to_vec().into(),
+            ..Default::default()
+        }
+    }
+
+    fn test_nested(opcode: OpcodeId) {
+        let callers = vec![
+            caller(
+                opcode,
+                Stack {
+                    gas: 100000,
+                    ..Default::default()
+                },
+                true,
+            ),
+            caller(
+                opcode,
+                Stack {
+                    gas: 100000,
+                    ..Default::default()
+                },
+                false,
+            ),
+        ];
+        let callees = vec![
+            // Success
+            callee(bytecode! { PUSH1(0) PUSH1(0) RETURN }),
+            // Failure
+            callee(bytecode! { PUSH1(0) PUSH1(0) REVERT }),
+        ];
+
+        for (caller, callee) in callers.into_iter().cartesian_product(callees.into_iter()) {
+            test_ok(caller, callee);
         }
     }
 
@@ -657,480 +865,70 @@ mod test {
         assert_eq!(run_test_circuit(block), Ok(()));
     }
 
-    #[cfg(test)]
-    mod call_tests {
-        use super::*;
-
-        #[derive(Clone, Copy, Debug, Default)]
-        struct Stack {
-            gas: u64,
-            value: Word,
-            cd_offset: u64,
-            cd_length: u64,
-            rd_offset: u64,
-            rd_length: u64,
+    fn test_recursive(opcode: OpcodeId) {
+        let has_value = opcode == OpcodeId::CALL;
+        let mut caller_bytecode = bytecode! {
+            PUSH1(0)
+            PUSH1(0)
+            PUSH1(0)
+            PUSH1(0)
+        };
+        if has_value {
+            caller_bytecode.push(1, U256::from(0));
         }
+        caller_bytecode.append(&bytecode! {
+            PUSH32(Address::repeat_byte(0xff).to_word())
+            PUSH2(10000)
+            .write_op(opcode)
+            STOP
+        });
+        // The following bytecode calls itself recursively if gas_left is greater than
+        // 100, and halts with REVERT if gas_left is odd, otherwise just halts
+        // with STOP.
+        let mut callee_bytecode = bytecode! {
+            GAS
+            PUSH1(100)
+            GT
+            PUSH1(43)
+            JUMPI
 
-        fn caller(stack: Stack, caller_is_success: bool) -> Account {
-            let terminator = if caller_is_success {
-                OpcodeId::RETURN
-            } else {
-                OpcodeId::REVERT
-            };
+            PUSH1(0)
+            PUSH1(0)
+            PUSH1(0)
+            PUSH1(0)
+        };
+        if has_value {
+            callee_bytecode.push(1, U256::from(0));
+        }
+        callee_bytecode.append(&bytecode! {
+            PUSH20(Address::repeat_byte(0xff).to_word())
+            PUSH1(132)
+            GAS
+            SUB
+            .write_op(opcode)
 
-            // Call twice for testing both cold and warm access
-            let bytecode = bytecode! {
-                PUSH32(Word::from(stack.rd_length))
-                PUSH32(Word::from(stack.rd_offset))
-                PUSH32(Word::from(stack.cd_length))
-                PUSH32(Word::from(stack.cd_offset))
-                PUSH32(stack.value)
-                PUSH32(Address::repeat_byte(0xff).to_word())
-                PUSH32(Word::from(stack.gas))
-                CALL
-                PUSH32(Word::from(stack.rd_length))
-                PUSH32(Word::from(stack.rd_offset))
-                PUSH32(Word::from(stack.cd_length))
-                PUSH32(Word::from(stack.cd_offset))
-                PUSH32(stack.value)
-                PUSH32(Address::repeat_byte(0xff).to_word())
-                PUSH32(Word::from(stack.gas))
-                CALL
-                PUSH1(0)
-                PUSH1(0)
-                .write_op(terminator)
-            };
+            JUMPDEST // 43
+            GAS
+            PUSH1(1)
+            AND
+            PUSH1(56)
+            JUMPI
 
+            PUSH1(0)
+            PUSH1(0)
+            REVERT
+
+            JUMPDEST // 56
+            STOP
+        });
+        test_ok(
             Account {
                 address: Address::repeat_byte(0xfe),
                 balance: Word::from(10).pow(20.into()),
-                code: bytecode.to_vec().into(),
+                code: caller_bytecode.into(),
                 ..Default::default()
-            }
-        }
-
-        fn caller_for_insufficient_balance(stack: Stack) -> Account {
-            let terminator = OpcodeId::STOP;
-
-            let bytecode = bytecode! {
-                PUSH32(Word::from(stack.rd_length))
-                PUSH32(Word::from(stack.rd_offset))
-                PUSH32(Word::from(stack.cd_length))
-                PUSH32(Word::from(stack.cd_offset))
-                PUSH32(stack.value)
-                PUSH32(Address::repeat_byte(0xff).to_word())
-                PUSH32(Word::from(stack.gas))
-                CALL
-                .write_op(terminator)
-            };
-
-            Account {
-                address: Address::repeat_byte(0xfe),
-                balance: Word::from(10).pow(18.into()),
-                code: bytecode.to_vec().into(),
-                ..Default::default()
-            }
-        }
-
-        #[test]
-        fn call_gadget_simple() {
-            let stacks = vec![
-                // With nothing
-                Stack::default(),
-                // With value
-                Stack {
-                    value: Word::from(10).pow(18.into()),
-                    ..Default::default()
-                },
-                // With gas
-                Stack {
-                    gas: 100,
-                    ..Default::default()
-                },
-                Stack {
-                    gas: 100000,
-                    ..Default::default()
-                },
-                // With memory expansion
-                Stack {
-                    cd_offset: 64,
-                    cd_length: 320,
-                    rd_offset: 0,
-                    rd_length: 32,
-                    ..Default::default()
-                },
-                Stack {
-                    cd_offset: 0,
-                    cd_length: 32,
-                    rd_offset: 64,
-                    rd_length: 320,
-                    ..Default::default()
-                },
-                Stack {
-                    cd_offset: 0xFFFFFF,
-                    cd_length: 0,
-                    rd_offset: 0xFFFFFF,
-                    rd_length: 0,
-                    ..Default::default()
-                },
-            ];
-            let callees = vec![callee(bytecode! {}), callee(bytecode! { STOP })];
-            for (stack, callee) in stacks.into_iter().cartesian_product(callees.into_iter()) {
-                test_ok(caller(stack, true), callee);
-            }
-        }
-
-        #[test]
-        fn call_with_insufficient_balance() {
-            let stacks = vec![Stack {
-                // this value is bigger than caller's balance
-                value: Word::from(11).pow(18.into()),
-                ..Default::default()
-            }];
-            let callees = vec![callee(bytecode! {}), callee(bytecode! { STOP })];
-            for (stack, callee) in stacks.into_iter().cartesian_product(callees.into_iter()) {
-                test_ok(caller_for_insufficient_balance(stack), callee);
-            }
-        }
-
-        #[test]
-        fn call_with_oog() {
-            let stacks = vec![
-                // With gas and memory expansion
-                Stack {
-                    gas: 100,
-                    cd_offset: 64,
-                    cd_length: 320,
-                    rd_offset: 0,
-                    rd_length: 32,
-                    ..Default::default()
-                },
-            ];
-
-            let bytecode = bytecode! {
-                PUSH32(Word::from(0))
-                PUSH32(Word::from(0))
-                STOP
-            };
-            let callees = vec![callee(bytecode)];
-            for (stack, callee) in stacks.into_iter().cartesian_product(callees.into_iter()) {
-                test_oog(caller(stack, true), callee);
-            }
-        }
-
-        #[test]
-        fn call_gadget_nested() {
-            let callers = vec![
-                caller(
-                    Stack {
-                        gas: 100000,
-                        ..Default::default()
-                    },
-                    true,
-                ),
-                caller(
-                    Stack {
-                        gas: 100000,
-                        ..Default::default()
-                    },
-                    false,
-                ),
-            ];
-            let callees = vec![
-                // Success
-                callee(bytecode! { PUSH1(0) PUSH1(0) RETURN }),
-                // Failure
-                callee(bytecode! { PUSH1(0) PUSH1(0) REVERT }),
-            ];
-
-            for (caller, callee) in callers.into_iter().cartesian_product(callees.into_iter()) {
-                test_ok(caller, callee);
-            }
-        }
-
-        #[test]
-        fn call_gadget_recursive() {
-            test_ok(
-                Account {
-                    address: Address::repeat_byte(0xfe),
-                    balance: Word::from(10).pow(20.into()),
-                    code: bytecode! {
-                        PUSH1(0)
-                        PUSH1(0)
-                        PUSH1(0)
-                        PUSH1(0)
-                        PUSH1(0)
-                        PUSH32(Address::repeat_byte(0xff).to_word())
-                        PUSH2(10000)
-                        CALL
-                        STOP
-                    }
-                    .into(),
-                    ..Default::default()
-                },
-                // The following bytecode calls itself recursively if gas_left is greater than 100,
-                // and halts with REVERT if gas_left is odd, otherwise just halts
-                // with STOP.
-                callee(bytecode! {
-                    GAS
-                    PUSH1(100)
-                    GT
-                    PUSH1(43)
-                    JUMPI
-
-                    PUSH1(0)
-                    PUSH1(0)
-                    PUSH1(0)
-                    PUSH1(0)
-                    PUSH1(0)
-                    PUSH20(Address::repeat_byte(0xff).to_word())
-                    PUSH1(132)
-                    GAS
-                    SUB
-                    CALL
-
-                    JUMPDEST // 43
-                    GAS
-                    PUSH1(1)
-                    AND
-                    PUSH1(56)
-                    JUMPI
-
-                    PUSH1(0)
-                    PUSH1(0)
-                    REVERT
-
-                    JUMPDEST // 56
-                    STOP
-                }),
-            );
-        }
-    }
-
-    #[cfg(test)]
-    mod staticcall_tests {
-        use super::*;
-
-        #[derive(Clone, Copy, Debug, Default)]
-        struct Stack {
-            gas: u64,
-            cd_offset: u64,
-            cd_length: u64,
-            rd_offset: u64,
-            rd_length: u64,
-        }
-
-        fn caller(stack: Stack, caller_is_success: bool) -> Account {
-            let terminator = if caller_is_success {
-                OpcodeId::RETURN
-            } else {
-                OpcodeId::REVERT
-            };
-
-            // Call twice for testing both cold and warm access
-            let bytecode = bytecode! {
-                PUSH32(Word::from(stack.rd_length))
-                PUSH32(Word::from(stack.rd_offset))
-                PUSH32(Word::from(stack.cd_length))
-                PUSH32(Word::from(stack.cd_offset))
-                PUSH32(Address::repeat_byte(0xff).to_word())
-                PUSH32(Word::from(stack.gas))
-                STATICCALL
-                PUSH32(Word::from(stack.rd_length))
-                PUSH32(Word::from(stack.rd_offset))
-                PUSH32(Word::from(stack.cd_length))
-                PUSH32(Word::from(stack.cd_offset))
-                PUSH32(Address::repeat_byte(0xff).to_word())
-                PUSH32(Word::from(stack.gas))
-                STATICCALL
-                PUSH1(0)
-                PUSH1(0)
-                .write_op(terminator)
-            };
-
-            Account {
-                address: Address::repeat_byte(0xfe),
-                balance: Word::from(10).pow(20.into()),
-                code: bytecode.to_vec().into(),
-                ..Default::default()
-            }
-        }
-
-        fn caller_for_insufficient_balance(stack: Stack) -> Account {
-            let terminator = OpcodeId::STOP;
-
-            let bytecode = bytecode! {
-                PUSH32(Word::from(stack.rd_length))
-                PUSH32(Word::from(stack.rd_offset))
-                PUSH32(Word::from(stack.cd_length))
-                PUSH32(Word::from(stack.cd_offset))
-                PUSH32(Address::repeat_byte(0xff).to_word())
-                PUSH32(Word::from(stack.gas))
-                STATICCALL
-                .write_op(terminator)
-            };
-
-            Account {
-                address: Address::repeat_byte(0xfe),
-                balance: Word::from(10).pow(18.into()),
-                code: bytecode.to_vec().into(),
-                ..Default::default()
-            }
-        }
-
-        #[test]
-        fn staticcall_gadget_simple() {
-            let stacks = vec![
-                // With nothing
-                Stack::default(),
-                // With gas
-                Stack {
-                    gas: 100,
-                    ..Default::default()
-                },
-                Stack {
-                    gas: 100000,
-                    ..Default::default()
-                },
-                // With memory expansion
-                Stack {
-                    cd_offset: 64,
-                    cd_length: 320,
-                    rd_offset: 0,
-                    rd_length: 32,
-                    ..Default::default()
-                },
-                Stack {
-                    cd_offset: 0,
-                    cd_length: 32,
-                    rd_offset: 64,
-                    rd_length: 320,
-                    ..Default::default()
-                },
-                Stack {
-                    cd_offset: 0xFFFFFF,
-                    cd_length: 0,
-                    rd_offset: 0xFFFFFF,
-                    rd_length: 0,
-                    ..Default::default()
-                },
-            ];
-            let callees = vec![callee(bytecode! {}), callee(bytecode! { STOP })];
-            for (stack, callee) in stacks.into_iter().cartesian_product(callees.into_iter()) {
-                test_ok(caller(stack, true), callee);
-            }
-        }
-
-        #[test]
-        fn staticcall_with_oog() {
-            let stacks = vec![
-                // With gas and memory expansion
-                Stack {
-                    gas: 100,
-                    cd_offset: 64,
-                    cd_length: 320,
-                    rd_offset: 0,
-                    rd_length: 32,
-                },
-            ];
-
-            let bytecode = bytecode! {
-                PUSH32(Word::from(0))
-                PUSH32(Word::from(0))
-                STOP
-            };
-            let callees = vec![callee(bytecode)];
-            for (stack, callee) in stacks.into_iter().cartesian_product(callees.into_iter()) {
-                test_oog(caller(stack, true), callee);
-            }
-        }
-
-        #[test]
-        fn staticcall_gadget_nested() {
-            let callers = vec![
-                caller(
-                    Stack {
-                        gas: 100000,
-                        ..Default::default()
-                    },
-                    true,
-                ),
-                caller(
-                    Stack {
-                        gas: 100000,
-                        ..Default::default()
-                    },
-                    false,
-                ),
-            ];
-            let callees = vec![
-                // Success
-                callee(bytecode! { PUSH1(0) PUSH1(0) RETURN }),
-                // Failure
-                callee(bytecode! { PUSH1(0) PUSH1(0) REVERT }),
-            ];
-
-            for (caller, callee) in callers.into_iter().cartesian_product(callees.into_iter()) {
-                test_ok(caller, callee);
-            }
-        }
-
-        #[test]
-        fn staticcall_gadget_recursive() {
-            test_ok(
-                Account {
-                    address: Address::repeat_byte(0xfe),
-                    balance: Word::from(10).pow(20.into()),
-                    code: bytecode! {
-                        PUSH1(0)
-                        PUSH1(0)
-                        PUSH1(0)
-                        PUSH1(0)
-                        PUSH1(0)
-                        PUSH32(Address::repeat_byte(0xff).to_word())
-                        PUSH2(10000)
-                        STATICCALL
-                        STOP
-                    }
-                    .into(),
-                    ..Default::default()
-                },
-                // The following bytecode calls itself recursively if gas_left is greater than 100,
-                // and halts with REVERT if gas_left is odd, otherwise just halts
-                // with STOP.
-                callee(bytecode! {
-                    GAS
-                    PUSH1(100)
-                    GT
-                    PUSH1(43)
-                    JUMPI
-
-                    PUSH1(0)
-                    PUSH1(0)
-                    PUSH1(0)
-                    PUSH1(0)
-                    PUSH1(0)
-                    PUSH20(Address::repeat_byte(0xff).to_word())
-                    PUSH1(132)
-                    GAS
-                    SUB
-                    STATICCALL
-
-                    JUMPDEST // 43
-                    GAS
-                    PUSH1(1)
-                    AND
-                    PUSH1(56)
-                    JUMPI
-
-                    PUSH1(0)
-                    PUSH1(0)
-                    REVERT
-
-                    JUMPDEST // 56
-                    STOP
-                }),
-            );
-        }
+            },
+            callee(callee_bytecode),
+        );
     }
 }
