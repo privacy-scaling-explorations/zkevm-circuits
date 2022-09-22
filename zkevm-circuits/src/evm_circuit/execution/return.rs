@@ -14,7 +14,7 @@ use crate::{
     util::Expr,
 };
 use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId};
-use eth_types::{Field, ToScalar};
+use eth_types::{Field, ToScalar, Word};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
@@ -47,7 +47,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
 
         let offset = cb.query_cell();
         let length = cb.query_rlc();
-        cb.stack_pop(offset.expr());
+        cb.stack_pop(offset.expr()); // how is this passing?????
         cb.stack_pop(length.expr());
         let range = MemoryAddressGadget::construct(cb, offset, length);
 
@@ -87,34 +87,34 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
             )
         });
 
-        cb.condition(
-            not::expr(is_create.expr()) * not::expr(is_root.expr()) * range.has_length(),
-            |cb| {
-                let source_id = cb.curr.state.call_id.expr();
-                let source_tag = CopyDataType::Memory.expr();
-                let destination_id = caller_id.expr();
-                let destination_tag = CopyDataType::Memory.expr();
-                let source_address_start = range.offset();
-                let source_address_end = range.offset() + copy_length.clone();
-                let destination_address_start = return_data_offset.expr();
-                let rlc_acc = 0.expr();
-                let rw_counter_start =
-                    cb.curr.state.rw_counter.expr() + cb.rw_counter_offset().expr();
-                cb.copy_table_lookup(
-                    source_id,
-                    source_tag,
-                    destination_id,
-                    destination_tag,
-                    source_address_start,
-                    source_address_end,
-                    destination_address_start,
-                    copy_length.clone(),
-                    rlc_acc,
-                    rw_counter_start,
-                    copy_length.clone() + copy_length,
-                );
-            },
-        );
+        // cb.condition(
+        //     not::expr(is_create.expr()) * not::expr(is_root.expr()) *
+        // range.has_length(),     |cb| {
+        //         let source_id = cb.curr.state.call_id.expr();
+        //         let source_tag = CopyDataType::Memory.expr();
+        //         let destination_id = caller_id.expr();
+        //         let destination_tag = CopyDataType::Memory.expr();
+        //         let source_address_start = range.offset();
+        //         let source_address_end = range.offset() + copy_length.clone();
+        //         let destination_address_start = return_data_offset.expr();
+        //         let rlc_acc = 0.expr();
+        //         let rw_counter_start =
+        //             cb.curr.state.rw_counter.expr() + cb.rw_counter_offset().expr();
+        //         cb.copy_table_lookup(
+        //             source_id,
+        //             source_tag,
+        //             destination_id,
+        //             destination_tag,
+        //             source_address_start,
+        //             source_address_end,
+        //             destination_address_start,
+        //             copy_length.clone(),
+        //             rlc_acc,
+        //             rw_counter_start,
+        //             copy_length.clone() + copy_length,
+        //         );
+        //     },
+        // );
 
         cb.condition(
             is_create.expr() * is_success.expr() * range.has_length(),
@@ -152,7 +152,15 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
             Value::known(F::from(step.opcode.unwrap().as_u64())),
         )?;
 
-        let [memory_offset, length] = [0, 1].map(|i| block.rws[step.rw_indices[i]].stack_value());
+        let [mut memory_offset, length] =
+            [0, 1].map(|i| block.rws[step.rw_indices[i]].stack_value());
+        dbg!(memory_offset, length);
+        // if length.is_zero() {
+        //     memory_offset = Word::zero();
+        // }
+
+        // there might be an issue if this is constructed with length = 0, but it does
+        // have a have_length, method, so that seems unlikely.
         self.range
             .assign(region, offset, memory_offset, length, block.randomness)?;
 
@@ -196,13 +204,12 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::evm_circuit::{
-        test::run_test_circuit, test_util::run_test_circuits, witness::block_convert,
-    };
+    use crate::test_util::run_test_circuits;
     use eth_types::{
         address, bytecode, evm_types::OpcodeId, geth_types::Account, Address, Bytecode, ToWord,
         Word,
     };
+    use itertools::Itertools;
     use mock::TestContext;
 
     const CALLEE_ADDRESS: Address = Address::repeat_byte(0xff);
@@ -215,8 +222,8 @@ mod test {
             PUSH32(memory_value)
             PUSH1(memory_address)
             MSTORE
-            PUSH32(offset)
             PUSH32(length)
+            PUSH32(offset)
         };
         code.write_op(if is_return {
             OpcodeId::RETURN
@@ -226,22 +233,19 @@ mod test {
         code
     }
 
-    fn caller_bytecode(call_return_data_length: u64, call_return_data_offset: u64) -> Bytecode {
-        let call_value = 0;
-        let call_gas = 4000;
+    fn caller_bytecode(return_data_offset: u64, return_data_length: u64) -> Bytecode {
+        dbg!(return_data_offset, return_data_length);
         bytecode! {
-            PUSH32(call_return_data_length)
-            PUSH32(call_return_data_offset)
-            PUSH32(0)
-            PUSH32(0)
-            PUSH32(call_value)
+            PUSH32(return_data_length)
+            PUSH32(return_data_offset)
+            PUSH32(0) // call data length
+            PUSH32(0) // call data offset
+            PUSH32(0) // value
             PUSH32(CALLEE_ADDRESS.to_word())
-            PUSH32(call_gas)
+            PUSH32(4000) // gas
             CALL
             STOP
         }
-        // what happens is that it reverts immediately, without being able to
-        // enter the inner call at all..
     }
 
     #[test]
@@ -264,29 +268,33 @@ mod test {
 
     #[test]
     fn test_return_nonroot() {
-        let callee_offset = 10;
-        let callee_length = 10;
-
-        let caller_offset = 20;
-        let caller_length = 20;
-
-        for is_return in [true, false] {
+        let test_parameters = [
+            ((0, 0), (0, 0)),
+            ((0, 10), (0, 10)),
+            ((0, 10), (0, 20)),
+            ((0, 20), (0, 10)),
+            ((0, 10), (20, 10)),
+            ((0, 10), (1000, 0)),
+            ((1000, 0), (0, 10)),
+            ((1000, 0), (1000, 0)),
+        ];
+        for (((callee_offset, callee_length), (caller_offset, caller_length)), is_return) in
+            test_parameters.iter().cartesian_product(&[true, false])
+        {
             let callee = Account {
                 address: CALLEE_ADDRESS,
-                code: callee_bytecode(is_return, callee_offset, callee_length).into(),
+                code: callee_bytecode(*is_return, *callee_offset, *callee_length).into(),
                 nonce: Word::one(),
                 ..Default::default()
             };
-            let call_argument_offset = 5; // these are flipped or something...
-            let call_argument_length = 5; //
             let caller = Account {
                 address: CALLER_ADDRESS,
-                code: caller_bytecode(call_argument_offset, call_argument_length).into(),
+                code: caller_bytecode(*caller_offset, *caller_length).into(),
                 nonce: Word::one(),
                 ..Default::default()
             };
 
-            let block = TestContext::<3, 1>::new(
+            let test_context = TestContext::<3, 1>::new(
                 None,
                 |accs| {
                     accs[0]
@@ -304,25 +312,19 @@ mod test {
                 |block, _tx| block.number(0xcafeu64),
             )
             .unwrap();
-            let block_data = bus_mapping::mock::BlockData::new_from_geth_data(block.into());
-            let mut builder = block_data.new_circuit_input_builder();
-            builder
-                .handle_block(&block_data.eth_block, &block_data.geth_traces)
-                .unwrap();
 
             assert_eq!(
-                run_test_circuit(block_convert(&builder.block, &builder.code_db)),
+                run_test_circuits(test_context, None),
                 Ok(()),
-                "{}",
-                dbg!(is_return)
+                "(callee_offset, callee_length, caller_offset, caller_length, is_return) = {:?}",
+                (
+                    *callee_offset,
+                    *callee_length,
+                    *caller_offset,
+                    *caller_length,
+                    *is_return
+                )
             );
         }
     }
-
-    // test_root_return
-    // test_nonroot_return
-    // test_memory_expansion....
-    //
-
-    // test_
 }

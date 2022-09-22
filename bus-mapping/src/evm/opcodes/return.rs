@@ -36,6 +36,8 @@ impl Opcode for Return {
         }
 
         let call = state.call()?.clone();
+        // assert_eq!(offset, call.return_data_offset.into());
+        // assert_eq!(length, call.return_data_length.into());
         let is_root = call.is_root;
         for (field, value) in [
             (CallContextField::IsRoot, is_root.to_word()),
@@ -43,6 +45,7 @@ impl Opcode for Return {
             (CallContextField::IsSuccess, call.is_success.to_word()),
             (CallContextField::CallerId, call.caller_id.into()),
             (
+                // these two are wrong and should be for the caller?
                 CallContextField::ReturnDataOffset,
                 call.return_data_offset.into(),
             ),
@@ -51,8 +54,11 @@ impl Opcode for Return {
                 call.return_data_length.into(),
             ),
         ] {
+            // should these be caller?
             state.call_context_read(&mut exec_step, call.call_id, field, value);
         }
+
+        dbg!(call.return_data_offset, call.return_data_length);
 
         if !is_root {
             state.handle_restore_context(steps, &mut exec_step)?;
@@ -75,7 +81,7 @@ impl Opcode for Return {
                     },
                 )?;
             }
-        } else if !is_root {
+        } else if !is_root && length > 0 {
             let caller_ctx = state.caller_ctx_mut()?;
             let return_offset = call.return_data_offset.try_into().unwrap();
 
@@ -85,6 +91,9 @@ impl Opcode for Return {
             caller_ctx.return_data.resize(length, 0);
             caller_ctx.return_data[0..copy_len]
                 .copy_from_slice(&memory.0[offset..offset + copy_len]);
+
+            // how are these being set?????
+            dbg!(copy_len, call.return_data_offset, call.return_data_length);
 
             if length > 0 {
                 handle_copy(

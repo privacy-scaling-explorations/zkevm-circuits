@@ -101,6 +101,8 @@ impl<F: Field> MemoryAddressGadget<F> {
         memory_length: U256,
         randomness: F,
     ) -> Result<u64, Error> {
+        dbg!(memory_offset, memory_length);
+
         let memory_offset_bytes = memory_offset.to_le_bytes();
         let memory_length_bytes = memory_length.to_le_bytes();
         let memory_length_is_zero = memory_length.is_zero();
@@ -109,6 +111,8 @@ impl<F: Field> MemoryAddressGadget<F> {
             offset,
             Value::known(Word::random_linear_combine(memory_offset_bytes, randomness)),
         )?;
+        // this is so crazy... the offset rlc is the non-zero value, but the bytes are 0
+        // if the length is 0....
         self.memory_offset_bytes.assign(
             region,
             offset,
@@ -118,7 +122,7 @@ impl<F: Field> MemoryAddressGadget<F> {
                 memory_offset_bytes[..N_BYTES_MEMORY_ADDRESS]
                     .try_into()
                     .unwrap()
-            }),
+            }), // this assigns 0 if the length is 0.....
         )?;
         self.memory_length.assign(
             region,
