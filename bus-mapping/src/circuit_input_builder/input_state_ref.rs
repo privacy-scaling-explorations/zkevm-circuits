@@ -96,11 +96,7 @@ impl<'a> CircuitInputStateRef<'a> {
     /// reference to the stored operation ([`OperationRef`]) inside the
     /// bus-mapping instance of the current [`ExecStep`].  Then increase the
     /// block_ctx [`RWCounter`](crate::operation::RWCounter) by one.
-    pub fn push_op<T: Op + std::fmt::Debug>(&mut self, step: &mut ExecStep, rw: RW, op: T) {
-        if self.block_ctx.rwc == 131.into() {
-            dbg!(op.clone());
-            // panic!();
-        }
+    pub fn push_op<T: Op>(&mut self, step: &mut ExecStep, rw: RW, op: T) {
         let op_ref =
             self.block
                 .container
@@ -632,8 +628,6 @@ impl<'a> CircuitInputStateRef<'a> {
                 CallKind::Call | CallKind::CallCode => {
                     let call_data = get_call_memory_offset_length(step, 3)?;
                     let return_data = get_call_memory_offset_length(step, 5)?;
-                    dbg!(call_data);
-                    dbg!(return_data);
                     (call_data.0, call_data.1, return_data.0, return_data.1)
                 }
                 CallKind::DelegateCall | CallKind::StaticCall => {
