@@ -31,7 +31,7 @@ use halo2_proofs::{circuit::Value, plonk::Error};
 use keccak256::EMPTY_HASH_LE;
 
 #[derive(Clone, Debug)]
-pub(crate) struct CallStaticCallGadget<F, const IS_CALL: bool> {
+pub(crate) struct CallOpGadget<F, const IS_CALL: bool> {
     opcode: Cell<F>,
     tx_id: Cell<F>,
     reversion_info: ReversionInfo<F>,
@@ -60,7 +60,7 @@ pub(crate) struct CallStaticCallGadget<F, const IS_CALL: bool> {
     capped_callee_gas_left: MinMaxGadget<F, N_BYTES_GAS>,
 }
 
-impl<F: Field, const IS_CALL: bool> ExecutionGadget<F> for CallStaticCallGadget<F, IS_CALL> {
+impl<F: Field, const IS_CALL: bool> ExecutionGadget<F> for CallOpGadget<F, IS_CALL> {
     const NAME: &'static str = if IS_CALL { "CALL" } else { "STATICCALL" };
 
     const EXECUTION_STATE: ExecutionState = if IS_CALL {
@@ -394,7 +394,7 @@ impl<F: Field, const IS_CALL: bool> ExecutionGadget<F> for CallStaticCallGadget<
     }
 }
 
-impl<F: Field, const IS_CALL: bool> CallStaticCallGadget<F, IS_CALL> {
+impl<F: Field, const IS_CALL: bool> CallOpGadget<F, IS_CALL> {
     fn assign_common_exec_step(
         &self,
         region: &mut CachedRegion<'_, '_, F>,

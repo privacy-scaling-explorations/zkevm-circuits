@@ -31,11 +31,11 @@ mod bitwise;
 mod block_ctx;
 mod blockhash;
 mod byte;
-mod call_staticcall;
 mod calldatacopy;
 mod calldataload;
 mod calldatasize;
 mod caller;
+mod callop;
 mod callvalue;
 mod chainid;
 mod codecopy;
@@ -85,11 +85,11 @@ use bitwise::BitwiseGadget;
 use block_ctx::{BlockCtxU160Gadget, BlockCtxU256Gadget, BlockCtxU64Gadget};
 use blockhash::BlockHashGadget;
 use byte::ByteGadget;
-use call_staticcall::CallStaticCallGadget;
 use calldatacopy::CallDataCopyGadget;
 use calldataload::CallDataLoadGadget;
 use calldatasize::CallDataSizeGadget;
 use caller::CallerGadget;
+use callop::CallOpGadget;
 use callvalue::CallValueGadget;
 use chainid::ChainIdGadget;
 use codecopy::CodeCopyGadget;
@@ -175,7 +175,7 @@ pub(crate) struct ExecutionConfig<F> {
     address_gadget: AddressGadget<F>,
     bitwise_gadget: BitwiseGadget<F>,
     byte_gadget: ByteGadget<F>,
-    call_gadget: CallStaticCallGadget<F, true>,
+    call_gadget: CallOpGadget<F, true>,
     call_value_gadget: CallValueGadget<F>,
     calldatacopy_gadget: CallDataCopyGadget<F>,
     calldataload_gadget: CallDataLoadGadget<F>,
@@ -208,7 +208,7 @@ pub(crate) struct ExecutionConfig<F> {
     selfbalance_gadget: SelfbalanceGadget<F>,
     sha3_gadget: Sha3Gadget<F>,
     shl_shr_gadget: ShlShrGadget<F>,
-    staticcall_gadget: CallStaticCallGadget<F, false>,
+    staticcall_gadget: CallOpGadget<F, false>,
     balance_gadget: DummyGadget<F, 1, 1, { ExecutionState::BALANCE }>,
     exp_gadget: DummyGadget<F, 2, 1, { ExecutionState::EXP }>,
     sar_gadget: DummyGadget<F, 2, 1, { ExecutionState::SAR }>,
