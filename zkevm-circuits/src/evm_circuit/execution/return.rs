@@ -50,7 +50,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
 
         let offset = cb.query_cell();
         let length = cb.query_rlc();
-        cb.stack_pop(offset.expr()); // how is this passing?????
+        cb.stack_pop(offset.expr());
         cb.stack_pop(length.expr());
         let range = MemoryAddressGadget::construct(cb, offset, length);
 
@@ -70,7 +70,6 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
             is_success.expr() * OpcodeId::RETURN.expr()
                 + not::expr(is_success.expr()) * OpcodeId::REVERT.expr(),
         );
-
         cb.condition(is_root.expr(), |cb| {
             cb.require_next_state(ExecutionState::EndTx);
         });
@@ -159,8 +158,6 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
         )?;
 
         let [memory_offset, length] = [0, 1].map(|i| block.rws[step.rw_indices[i]].stack_value());
-        // there might be an issue if this is constructed with length = 0, but it does
-        // have a have_length, method, so that seems unlikely.
         self.range
             .assign(region, offset, memory_offset, length, block.randomness)?;
 
@@ -273,7 +270,6 @@ mod test {
         }
     }
 
-    // (0, 10, 1000, 0, true)
     #[test]
     fn test_return_nonroot() {
         let test_parameters = [
@@ -281,7 +277,6 @@ mod test {
             ((0, 10), (0, 10)),
             ((0, 10), (0, 20)),
             ((0, 20), (0, 10)),
-            ((0, 10), (20, 10)),
             ((0, 10), (1000, 0)),
             ((1000, 0), (0, 10)),
             ((1000, 0), (1000, 0)),
