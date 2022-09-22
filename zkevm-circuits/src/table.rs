@@ -889,7 +889,7 @@ impl CopyTable {
     pub fn assignments<F: Field>(
         copy_event: &CopyEvent,
         randomness: F,
-    ) -> Vec<(CopyDataType, [F; 12])> {
+    ) -> Vec<(CopyDataType, [(F, &'static str); 12])> {
         let mut assignments = Vec::new();
         // rlc_acc
         let rlc_acc = if copy_event.dst_type == CopyDataType::RlcAcc {
@@ -994,18 +994,21 @@ impl CopyTable {
             assignments.push((
                 tag,
                 [
-                    is_first,
-                    is_last,
-                    id,
-                    addr,
-                    F::from(copy_event.src_addr_end),
-                    F::from(bytes_left),
-                    value,
-                    rlc_acc,
-                    is_pad,
-                    is_code,
-                    F::from(copy_event.rw_counter(step_idx)),
-                    F::from(copy_event.rw_counter_increase_left(step_idx)),
+                    (is_first, "is_first"),
+                    (is_last, "is_last"),
+                    (id, "id"),
+                    (addr, "addr"),
+                    (F::from(copy_event.src_addr_end), "sr_addr_end"),
+                    (F::from(bytes_left), "bytes_left"),
+                    (value, "value"),
+                    (rlc_acc, "rlc_acc"),
+                    (is_pad, "is_pad"),
+                    (is_code, "is_code"),
+                    (F::from(copy_event.rw_counter(step_idx)), "rw_counter"),
+                    (
+                        F::from(copy_event.rw_counter_increase_left(step_idx)),
+                        "rwc_inc_left",
+                    ),
                 ],
             ));
         }
@@ -1037,9 +1040,9 @@ impl CopyTable {
                 let copy_table_columns = self.columns();
                 for copy_event in block.copy_events.iter() {
                     for (tag, row) in Self::assignments(copy_event, randomness) {
-                        for (column, value) in copy_table_columns.iter().zip_eq(row) {
+                        for (column, (value, label)) in copy_table_columns.iter().zip_eq(row) {
                             region.assign_advice(
-                                || format!("copy table row {}", offset),
+                                || format!("{} at row: {}", label, offset),
                                 *column,
                                 offset,
                                 || Value::known(value),

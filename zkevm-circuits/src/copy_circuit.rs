@@ -476,19 +476,6 @@ impl<F: Field> CopyCircuit<F> {
         tag_chip: &BinaryNumberChip<F, CopyDataType, 3>,
         lt_chip: &LtChip<F, 8>,
     ) -> Result<(), Error> {
-        let _advice_labels = [
-            format!("assign is_first {}", offset),
-            format!("assign is_last {}", offset),
-            format!("assign id {}", offset),
-            format!("assign addr {}", offset),
-            format!("assign sr_addr_end {}", offset),
-            format!("assign value {}", offset),
-            format!("assign rlc_acc {}", offset),
-            format!("assign is_pad {}", offset),
-            format!("assign is_code {}", offset),
-            format!("assign rw_counter {}", offset),
-            format!("assign rwc_inc_left {}", offset),
-        ];
         // q_enable
         region.assign_fixed(
             || "q_enable",
