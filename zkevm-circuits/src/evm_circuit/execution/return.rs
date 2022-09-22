@@ -75,8 +75,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
             cb.require_next_state(ExecutionState::EndTx);
         });
 
-        let copy_length =
-            MinMaxGadget::construct(cb, return_data_length.expr(), range.length());
+        let copy_length = MinMaxGadget::construct(cb, return_data_length.expr(), range.length());
         let copy_length_is_zero = IsZeroGadget::construct(cb, copy_length.min());
         let copy_rw_increase = copy_length.min() + copy_length.min();
 
