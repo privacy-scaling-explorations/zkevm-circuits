@@ -98,7 +98,7 @@ impl<F: Field, const IS_CALL: bool> ExecutionGadget<F> for CallStaticCallGadget<
         let callee_call_id = cb.curr.state.rw_counter.clone();
 
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
-        let mut reversion_info = cb.reversion_info(None);
+        let mut reversion_info = cb.reversion_info_read(None);
         let [current_address, is_static, depth] = [
             CallContextFieldTag::CalleeAddress,
             CallContextFieldTag::IsStatic,
@@ -149,7 +149,7 @@ impl<F: Field, const IS_CALL: bool> ExecutionGadget<F> for CallStaticCallGadget<
         );
 
         // Propagate rw_counter_end_of_reversion and is_persistent
-        let mut callee_reversion_info = cb.reversion_info(Some(callee_call_id.expr()));
+        let mut callee_reversion_info = cb.reversion_info_write(Some(callee_call_id.expr()));
         cb.require_equal(
             "callee_is_persistent == is_persistent ⋅ is_success",
             callee_reversion_info.is_persistent(),
@@ -303,12 +303,12 @@ impl<F: Field, const IS_CALL: bool> ExecutionGadget<F> for CallStaticCallGadget<
                 (CallContextFieldTag::ReturnDataOffset, rd_address.offset()),
                 (CallContextFieldTag::ReturnDataLength, rd_address.length()),
             ] {
-                cb.call_context_lookup(false.expr(), Some(callee_call_id.expr()), field_tag, value);
+                cb.call_context_lookup(true.expr(), Some(callee_call_id.expr()), field_tag, value);
             }
 
             if IS_CALL {
                 cb.call_context_lookup(
-                    false.expr(),
+                    true.expr(),
                     Some(callee_call_id.expr()),
                     CallContextFieldTag::Value,
                     value.as_ref().unwrap().expr(),
@@ -325,7 +325,7 @@ impl<F: Field, const IS_CALL: bool> ExecutionGadget<F> for CallStaticCallGadget<
                 (CallContextFieldTag::IsCreate, 0.expr()),
                 (CallContextFieldTag::CodeHash, callee_code_hash.expr()),
             ] {
-                cb.call_context_lookup(false.expr(), Some(callee_call_id.expr()), field_tag, value);
+                cb.call_context_lookup(true.expr(), Some(callee_call_id.expr()), field_tag, value);
             }
 
             // Give gas stipend if value is not zero
