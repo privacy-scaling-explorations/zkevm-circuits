@@ -1,5 +1,8 @@
-use crate::{state_circuit::StateCircuit, witness::Block};
-use bus_mapping::mock::BlockData;
+use crate::{
+    state_circuit::StateCircuit,
+    witness::{block_convert, Block},
+};
+use bus_mapping::{circuit_input_builder::CIRCUITS_PARAMS_DEFAULT, mock::BlockData};
 use eth_types::geth_types::{GethData, Transaction};
 use ethers_core::types::{NameOrAddress, TransactionRequest};
 use ethers_core::utils::keccak256;
@@ -38,7 +41,8 @@ pub fn run_test_circuits<const NACC: usize, const NTX: usize>(
     config: Option<BytecodeTestConfig>,
 ) -> Result<(), Vec<VerifyFailure>> {
     let block: GethData = test_ctx.into();
-    let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+    let mut builder = BlockData::new_from_geth_data_params(block.clone(), CIRCUITS_PARAMS_DEFAULT)
+        .new_circuit_input_builder();
     builder
         .handle_block(&block.eth_block, &block.geth_traces)
         .unwrap();
@@ -49,16 +53,32 @@ pub fn run_test_circuits<const NACC: usize, const NTX: usize>(
     println!("xxx Block Wit\n{:#?}", block);
 
     // finish required tests according to config using this witness block
-    test_circuits_using_witness_block(block, config.unwrap_or_default())
+    test_circuits_witness_block::<{ CIRCUITS_PARAMS_DEFAULT.max_rws }>(
+        block,
+        config.unwrap_or_default(),
+    )
 }
 
-pub fn test_circuits_using_witness_block(
+pub fn test_circuits_block_geth_data_default(block: GethData) -> Result<(), Vec<VerifyFailure>> {
+    let mut builder = BlockData::new_from_geth_data_params(block.clone(), CIRCUITS_PARAMS_DEFAULT)
+        .new_circuit_input_builder();
+    builder
+        .handle_block(&block.eth_block, &block.geth_traces)
+        .unwrap();
+    let block = block_convert(&builder.block, &builder.code_db);
+    test_circuits_witness_block::<{ CIRCUITS_PARAMS_DEFAULT.max_rws }>(
+        block,
+        BytecodeTestConfig::default(),
+    )
+}
+
+pub fn test_circuits_witness_block<const MAX_RWS: usize>(
     block: Block<Fr>,
     config: BytecodeTestConfig,
 ) -> Result<(), Vec<VerifyFailure>> {
     // run evm circuit test
     if config.enable_evm_circuit_test {
-        crate::evm_circuit::test::run_test_circuit(block.clone())?;
+        crate::evm_circuit::test::run_test_circuit::<Fr, MAX_RWS>(block.clone())?;
     }
 
     // run state circuit test

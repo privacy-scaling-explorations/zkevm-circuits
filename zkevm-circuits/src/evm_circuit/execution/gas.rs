@@ -90,7 +90,7 @@ mod test {
         evm_circuit::{test::run_test_circuit, witness::block_convert},
         test_util::{run_test_circuits, BytecodeTestConfig},
     };
-    use bus_mapping::mock::BlockData;
+    use bus_mapping::{circuit_input_builder::CIRCUITS_PARAMS_DEFAULT, mock::BlockData};
     use eth_types::{address, bytecode, geth_types::GethData, Word};
     use mock::TestContext;
 
@@ -146,7 +146,9 @@ mod test {
         .unwrap()
         .into();
 
-        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+        let mut builder =
+            BlockData::new_from_geth_data_params(block.clone(), CIRCUITS_PARAMS_DEFAULT)
+                .new_circuit_input_builder();
         builder
             .handle_block(&block.eth_block, &block.geth_traces)
             .expect("could not handle block tx");
@@ -158,6 +160,6 @@ mod test {
         assert_eq!(block.txs.len(), 1);
         assert_eq!(block.txs[0].steps.len(), 4);
         block.txs[0].steps[2].gas_left -= 1;
-        assert!(run_test_circuit(block).is_err());
+        assert!(run_test_circuit::<_, { CIRCUITS_PARAMS_DEFAULT.max_rws }>(block).is_err());
     }
 }

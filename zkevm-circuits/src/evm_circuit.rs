@@ -155,9 +155,12 @@ pub mod test {
         evm_circuit::{table::FixedTableTag, witness::Block, EvmCircuit},
         table::{BlockTable, BytecodeTable, CopyTable, KeccakTable, RwTable, TxTable},
         util::power_of_randomness_from_instance,
+        witness::block_convert,
     };
-    use bus_mapping::evm::OpcodeId;
-    use eth_types::{Field, Word};
+    use bus_mapping::{
+        circuit_input_builder::CIRCUITS_PARAMS_DEFAULT, evm::OpcodeId, mock::BlockData,
+    };
+    use eth_types::{geth_types::GethData, Field, Word};
     use halo2_proofs::{
         circuit::{Layouter, SimpleFloorPlanner},
         dev::{MockProver, VerifyFailure},
@@ -344,6 +347,19 @@ pub mod test {
         }
     }
 
+    pub fn run_test_circuit_geth_data_default<F: Field>(
+        block: GethData,
+    ) -> Result<(), Vec<VerifyFailure>> {
+        let mut builder =
+            BlockData::new_from_geth_data_params(block.clone(), CIRCUITS_PARAMS_DEFAULT)
+                .new_circuit_input_builder();
+        builder
+            .handle_block(&block.eth_block, &block.geth_traces)
+            .unwrap();
+        let block = block_convert(&builder.block, &builder.code_db);
+        run_test_circuit::<_, { CIRCUITS_PARAMS_DEFAULT.max_rws }>(block)
+    }
+
     pub fn run_test_circuit<F: Field, const MAX_RWS: usize>(
         block: Block<F>,
     ) -> Result<(), Vec<VerifyFailure>> {
@@ -397,7 +413,7 @@ mod evm_circuit_stats {
 
     #[test]
     pub fn empty_evm_circuit() {
-        run_test_circuit(Block::<Fr>::default()).unwrap();
+        run_test_circuit::<_, 16>(Block::<Fr>::default()).unwrap();
     }
 
     /// This function prints to stdout a table with all the implemented states

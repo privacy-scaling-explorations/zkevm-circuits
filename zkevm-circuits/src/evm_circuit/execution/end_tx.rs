@@ -309,19 +309,13 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::evm_circuit::{test::run_test_circuit, witness::block_convert};
+    use crate::evm_circuit::test::run_test_circuit_geth_data_default;
     use eth_types::{self, bytecode, geth_types::GethData};
+    use halo2_proofs::halo2curves::bn256::Fr;
     use mock::{eth, test_ctx::helpers::account_0_code_account_1_no_code, TestContext};
 
     fn test_ok(block: GethData) {
-        let block_data = bus_mapping::mock::BlockData::new_from_geth_data(block);
-        let mut builder = block_data.new_circuit_input_builder();
-        builder
-            .handle_block(&block_data.eth_block, &block_data.geth_traces)
-            .unwrap();
-        let block = block_convert(&builder.block, &builder.code_db);
-
-        assert_eq!(run_test_circuit(block), Ok(()));
+        assert_eq!(run_test_circuit_geth_data_default::<Fr>(block), Ok(()));
     }
 
     #[test]
