@@ -15,6 +15,7 @@ use halo2_proofs::{
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, Selector},
     poly::Rotation,
 };
+use itertools::Itertools;
 
 use crate::util::build_tx_log_address;
 use crate::{
@@ -386,72 +387,88 @@ impl<F: Field> CopyCircuit<F> {
         let tag_chip = BinaryNumberChip::construct(self.copy_table.tag);
         let lt_chip = LtChip::construct(self.addr_lt_addr_end);
 
+        let copy_table_columns = self.copy_table.columns();
         layouter.assign_region(
             || "assign copy table",
             |mut region| {
                 let mut offset = 0;
                 for copy_event in block.copy_events.iter() {
-                    let rlc_acc = if copy_event.dst_type == CopyDataType::RlcAcc {
-                        let values = copy_event
-                            .bytes
-                            .iter()
-                            .map(|(value, _is_code)| *value)
-                            .collect::<Vec<u8>>();
-                        rlc::value(values.iter().rev(), randomness)
-                    } else {
-                        F::zero()
-                    };
-                    let mut value_acc = F::zero();
-                    for (step_idx, (is_read_step, copy_step)) in copy_event
-                        .bytes
-                        .iter()
-                        .flat_map(|(value, is_code)| {
-                            let read_step = CopyStep {
-                                value: *value,
-                                is_code: if copy_event.src_type == CopyDataType::Bytecode {
-                                    Some(*is_code)
-                                } else {
-                                    None
-                                },
-                            };
-                            let write_step = CopyStep {
-                                value: *value,
-                                is_code: if copy_event.dst_type == CopyDataType::Bytecode {
-                                    Some(*is_code)
-                                } else {
-                                    None
-                                },
-                            };
-                            once((true, read_step)).chain(once((false, write_step)))
-                        })
-                        .enumerate()
-                    {
-                        let value = if copy_event.dst_type == CopyDataType::RlcAcc {
-                            if is_read_step {
-                                F::from(copy_step.value as u64)
-                            } else {
-                                value_acc =
-                                    value_acc * randomness + F::from(copy_step.value as u64);
-                                value_acc
-                            }
-                        } else {
-                            F::from(copy_step.value as u64)
-                        };
-                        self.assign_step(
-                            &mut region,
-                            offset,
-                            randomness,
-                            copy_event,
-                            step_idx,
-                            &copy_step,
-                            value,
-                            rlc_acc,
-                            &tag_chip,
-                            &lt_chip,
-                        )?;
+                    for (tag, row) in CopyTable::assignments(copy_event, randomness) {
+                        for (column, (value, label)) in copy_table_columns.iter().zip_eq(row) {
+                            region.assign_advice(
+                                || format!("{} at row: {}", label, offset),
+                                *column,
+                                offset,
+                                || Value::known(value),
+                            )?;
+                        }
+                        // TODO assign lt chip
+                        tag_chip.assign(&mut region, offset, &tag)?;
                         offset += 1;
                     }
                 }
+                // for copy_event in block.copy_events.iter() {
+                //     let rlc_acc = if copy_event.dst_type == CopyDataType::RlcAcc {
+                //         let values = copy_event
+                //             .bytes
+                //             .iter()
+                //             .map(|(value, _is_code)| *value)
+                //             .collect::<Vec<u8>>();
+                //         rlc::value(values.iter().rev(), randomness)
+                //     } else {
+                //         F::zero()
+                //     };
+                //     let mut value_acc = F::zero();
+                //     for (step_idx, (is_read_step, copy_step)) in copy_event
+                //         .bytes
+                //         .iter()
+                //         .flat_map(|(value, is_code)| {
+                //             let read_step = CopyStep {
+                //                 value: *value,
+                //                 is_code: if copy_event.src_type == CopyDataType::Bytecode {
+                //                     Some(*is_code)
+                //                 } else {
+                //                     None
+                //                 },
+                //             };
+                //             let write_step = CopyStep {
+                //                 value: *value,
+                //                 is_code: if copy_event.dst_type == CopyDataType::Bytecode {
+                //                     Some(*is_code)
+                //                 } else {
+                //                     None
+                //                 },
+                //             };
+                //             once((true, read_step)).chain(once((false, write_step)))
+                //         })
+                //         .enumerate()
+                //     {
+                //         let value = if copy_event.dst_type == CopyDataType::RlcAcc {
+                //             if is_read_step {
+                //                 F::from(copy_step.value as u64)
+                //             } else {
+                //                 value_acc =
+                //                     value_acc * randomness + F::from(copy_step.value as u64);
+                //                 value_acc
+                //             }
+                //         } else {
+                //             F::from(copy_step.value as u64)
+                //         };
+                //         self.assign_step(
+                //             &mut region,
+                //             offset,
+                //             randomness,
+                //             copy_event,
+                //             step_idx,
+                //             &copy_step,
+                //             value,
+                //             rlc_acc,
+                //             &tag_chip,
+                //             &lt_chip,
+                //         )?;
+                //         offset += 1;
+                //     }
+                // }
                 // pad two rows in the end to satisfy Halo2 cell assignment check
                 for _ in 0..2 {
                     self.assign_padding_row(&mut region, offset, &tag_chip)?;

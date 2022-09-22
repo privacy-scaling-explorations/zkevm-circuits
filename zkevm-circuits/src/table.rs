@@ -998,7 +998,7 @@ impl CopyTable {
                     (is_last, "is_last"),
                     (id, "id"),
                     (addr, "addr"),
-                    (F::from(copy_event.src_addr_end), "sr_addr_end"),
+                    (F::from(copy_event.src_addr_end), "src_addr_end"),
                     (F::from(bytes_left), "bytes_left"),
                     (value, "value"),
                     (rlc_acc, "rlc_acc"),
@@ -1060,7 +1060,7 @@ impl CopyTable {
 }
 
 impl CopyTable {
-    fn columns(&self) -> Vec<Column<Advice>> {
+    pub(crate) fn columns(&self) -> Vec<Column<Advice>> {
         vec![
             self.is_first,
             self.is_last,
