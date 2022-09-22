@@ -1,5 +1,4 @@
 use halo2_proofs::{
-    circuit::Chip,
     plonk::{Advice, Column, ConstraintSystem, Expression, Fixed},
     poly::Rotation,
 };
@@ -8,16 +7,20 @@ use std::marker::PhantomData;
 
 use crate::{helpers::get_bool_constraint, account_leaf::AccountLeafCols, storage_leaf::StorageLeafCols, columns::{ProofTypeCols, DenoteCols}, branch::BranchCols};
 
-#[derive(Clone, Debug)]
-pub(crate) struct SelectorsConfig {}
+/*
+It needs to be ensured:
+ - The selectors denoting the row type are boolean values.
+ - For sets of selectors that are mutually exclusive, it needs to be ensured that
+   their sum is 1 (for example the selector for the proof type).
+ - The proper order of rows.
+*/
 
-// Ensures selectors are booleans and the proper order of rows.
-pub(crate) struct SelectorsChip<F> {
-    config: SelectorsConfig,
+#[derive(Clone, Debug)]
+pub(crate) struct SelectorsConfig<F> {
     _marker: PhantomData<F>,
 }
 
-impl<F: FieldExt> SelectorsChip<F> {
+impl<F: FieldExt> SelectorsConfig<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         proof_type: ProofTypeCols<F>,
@@ -28,8 +31,8 @@ impl<F: FieldExt> SelectorsChip<F> {
         account_leaf: AccountLeafCols<F>,
         storage_leaf: StorageLeafCols<F>,
         denoter: DenoteCols<F>,
-    ) -> SelectorsConfig {
-        let config = SelectorsConfig {};
+    ) -> Self {
+        let config = SelectorsConfig { _marker: PhantomData };
         let one = Expression::Constant(F::one());
 
         meta.create_gate("selectors boolean", |meta| {
@@ -47,6 +50,7 @@ impl<F: FieldExt> SelectorsChip<F> {
 
             let is_account_leaf_key_s = meta.query_advice(account_leaf.is_key_s, Rotation::cur());
             let is_account_leaf_key_c = meta.query_advice(account_leaf.is_key_c, Rotation::cur());
+            let is_non_existing_account_row = meta.query_advice(account_leaf.is_non_existing_account_row, Rotation::cur());
             let is_account_leaf_nonce_balance_s =
                 meta.query_advice(account_leaf.is_nonce_balance_s, Rotation::cur());
             let is_account_leaf_nonce_balance_c =
@@ -58,6 +62,11 @@ impl<F: FieldExt> SelectorsChip<F> {
             let is_account_leaf_in_added_branch =
                 meta.query_advice(account_leaf.is_in_added_branch, Rotation::cur());
 
+            let is_leaf_in_added_branch =
+                meta.query_advice(storage_leaf.is_in_added_branch, Rotation::cur());
+            let is_extension_node_s = meta.query_advice(branch.is_extension_node_s, Rotation::cur());
+            let is_extension_node_c = meta.query_advice(branch.is_extension_node_c, Rotation::cur());
+
             let sel1 = meta.query_advice(denoter.sel1, Rotation::cur());
             let sel2 = meta.query_advice(denoter.sel2, Rotation::cur());
 
@@ -68,8 +77,34 @@ impl<F: FieldExt> SelectorsChip<F> {
             let is_account_delete_mod = meta.query_advice(proof_type.is_account_delete_mod, Rotation::cur());
             let is_non_existing_account_proof = meta.query_advice(proof_type.is_non_existing_account_proof, Rotation::cur());
 
-            let is_non_existing_account_row = meta.query_advice(account_leaf.is_non_existing_account_row, Rotation::cur());
+            let is_modified = meta.query_advice(branch.is_modified, Rotation::cur());
+            let is_at_drifted_pos = meta.query_advice(branch.is_at_drifted_pos, Rotation::cur());
 
+            /*
+            The type of the row needs to be set (if all selectors would be 0 for a row, then all constraints
+            would be switched off).
+            */
+            constraints.push((
+                "Type of the row is set",
+                q_enable.clone() 
+                * (is_branch_init_cur.clone() + is_branch_child_cur.clone()
+                    + is_extension_node_s.clone() + is_extension_node_c.clone()
+                    + is_leaf_s_key.clone() + is_leaf_c_key.clone() + is_leaf_s_value.clone() + is_leaf_c_value.clone()
+                    + is_leaf_in_added_branch.clone()
+                    + is_account_leaf_key_s.clone() + is_account_leaf_key_c.clone()
+                    + is_non_existing_account_row.clone()
+                    + is_account_leaf_nonce_balance_s.clone() + is_account_leaf_nonce_balance_c.clone()
+                    + is_account_leaf_storage_codehash_s.clone() + is_account_leaf_storage_codehash_c.clone()
+                    + is_account_leaf_in_added_branch.clone()
+                    - one.clone())
+            ));
+
+            /*
+            It needs to be ensured that all selectors are boolean. To trigger the constraints for
+            a specific row the selectors could be of any nonnegative value, but being booleans
+            it makes it easier to write the constraints that ensure the subsets of constraints are
+            mutually exclusive and the constraints to ensure the proper order of rows.
+            */
             constraints.push((
                 "bool check not_first_level",
                 get_bool_constraint(q_enable.clone(), not_first_level),
@@ -137,15 +172,7 @@ impl<F: FieldExt> SelectorsChip<F> {
             constraints.push((
                 "bool check branch sel2",
                 get_bool_constraint(q_enable.clone() * is_branch_child_cur, sel2.clone()),
-            ));
-
-            let is_modified = meta.query_advice(branch.is_modified, Rotation::cur());
-            let is_at_drifted_pos = meta.query_advice(branch.is_at_drifted_pos, Rotation::cur());
-            let is_leaf_in_added_branch =
-                meta.query_advice(storage_leaf.is_in_added_branch, Rotation::cur());
-            let is_extension_node_s = meta.query_advice(branch.is_extension_node_s, Rotation::cur());
-            let is_extension_node_c = meta.query_advice(branch.is_extension_node_c, Rotation::cur());
-
+            )); 
             constraints.push((
                 "bool check is_modified",
                 get_bool_constraint(q_enable.clone(), is_modified.clone()),
@@ -196,8 +223,11 @@ impl<F: FieldExt> SelectorsChip<F> {
                 get_bool_constraint(q_enable.clone(), is_non_existing_account_proof.clone()),
             )); 
 
+            /*
+            The type of the proof needs to be set.
+            */
             constraints.push((
-                "is_storage_mod + is_nonce_mod + is_balance_mod + is_account_delete_mod + is_non_existing_account = 1",
+                "is_storage_mod + is_nonce_mod + is_balance_mod + is_account_delete_mod + is_non_existing_account + is_codehash_mod = 1",
                 q_enable.clone()
                     * (is_storage_mod + is_nonce_mod + is_balance_mod + is_account_delete_mod + is_non_existing_account_proof + is_codehash_mod
                         - one.clone()),
@@ -207,7 +237,7 @@ impl<F: FieldExt> SelectorsChip<F> {
         });
 
         meta.create_gate(
-            "rows order & lookup selectors do not change in rows corresponding to one modification",
+            "Rows order ensured & proof type cannot change in rows corresponding to one modification",
             |meta| {
                 let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
                 let mut constraints = vec![];
@@ -271,111 +301,182 @@ impl<F: FieldExt> SelectorsChip<F> {
                 let is_non_existing_account_row_cur =
                     meta.query_advice(account_leaf.is_non_existing_account_row, Rotation::cur());
 
-
-                // Branch init can start after another branch (means after extension node C)
-                // or after account leaf in added branch (account -> storage proof)
-                // or after storage leaf in added branch (after key/value proof ends).
-                // Also, it can be in the first row.
+                /*
+                Branch init can start:
+                 - after another branch (means after extension node C)
+                 - after account leaf (account -> storage proof)
+                 - after storage leaf (after storage mod proof ends)
+                 - it can be in the first row.
+                */
                 constraints.push((
-                    "branch init after",
+                    "Branch init can appear only after certain row types",
                     q_not_first.clone()
-                        * (is_branch_init_cur.clone() - is_extension_node_c_prev.clone())
+                        * (is_branch_init_cur.clone() - is_extension_node_c_prev.clone()) // after branch
                         * (is_branch_init_cur.clone()
-                            - is_account_leaf_in_added_branch_prev.clone())
-                        * (is_branch_init_cur.clone() - is_leaf_in_added_branch_prev.clone()),
+                            - is_account_leaf_in_added_branch_prev.clone()) // after account leaf
+                        * (is_branch_init_cur.clone() - is_leaf_in_added_branch_prev.clone()), // after storage leaf
                 ));
 
-                // Internal branch selectors are checked in branch.rs.
+                // Internal branch selectors (`is_init`, `is_last_child`) are checked in `branch.rs`.
 
-                // Extension node rows follow branch rows:
+                /*
+                Extension node S row follows the last branch row.
+                */
                 constraints.push((
-                    "last branch -> extension node S",
+                    "Last branch row -> extension node S",
                     q_not_first.clone() * (is_last_branch_child_prev - is_extension_node_s_cur),
                 ));
+
+                /*
+                Extension node C row follows the extension node S row.
+                */
                 constraints.push((
-                    "extension node S -> extension node C",
+                    "Extension node S -> extension node C",
                     q_not_first.clone() * (is_extension_node_s_prev - is_extension_node_c_cur),
                 ));
 
-                // Account leaf:
+                /*
+                Account leaf key S can appear after extension node C (last branch row) or after
+                the last storage leaf row (if only one account in the trie).
+                */
                 constraints.push((
-                    "account leaf key follows extension node C",
+                    "Account leaf key S can appear only after certain row types",
                     q_not_first.clone()
-                // if this is in the first row (leaf without branch), the constraint is still ok
+                    * (is_leaf_in_added_branch_cur.clone() - is_account_leaf_key_s_cur.clone())
                     * (is_extension_node_c_prev.clone() - is_account_leaf_key_s_cur.clone())
-                    * is_account_leaf_key_s_cur.clone(),
+                    * is_account_leaf_key_s_cur.clone(), // this is to check it only when we are in the account leaf key S
                 ));
+
+                /*
+                Account leaf key C can appear only after account leaf key S.
+                */
                 constraints.push((
-                    "account leaf key s -> account leaf key c",
+                    "Account leaf key S -> account leaf key C",
                     q_not_first.clone() * (is_account_leaf_key_s_prev - is_account_leaf_key_c_cur),
                 ));
+
+                /*
+                Non existing account row can appear only after account leaf key C row.
+                */
                 constraints.push((
-                    "account leaf key c -> non existing account row",
+                    "Account leaf key C -> non existing account row",
                     q_not_first.clone()
                         * (is_account_leaf_key_c_prev - is_non_existing_account_row_cur),
                 ));
+
+                /*
+                Account leaf nonce balance S row can appear only after non existing account row.
+                */
                 constraints.push((
-                    "non existing account row -> account leaf nonce balance S",
+                    "Non existing account row -> account leaf nonce balance S",
                     q_not_first.clone()
                         * (is_non_existing_account_row_prev - is_account_leaf_nonce_balance_s_cur),
                 ));
+
+                /*
+                Account leaf nonce balance C row can appear only after account leaf nonce balance S row. 
+                */
                 constraints.push((
-                    "account leaf nonce balance S -> account leaf nonce balance C",
+                    "Account leaf nonce balance S -> account leaf nonce balance C",
                     q_not_first.clone()
                         * (is_account_leaf_nonce_balance_s_prev
                             - is_account_leaf_nonce_balance_c_cur),
                 ));
+
+                /*
+                Account leaf storage codehash S row can appear only after account leaf nonce balance C row. 
+                */
                 constraints.push((
-                    "account leaf nonce balance C -> account leaf storage codehash S",
+                    "Account leaf nonce balance C -> account leaf storage codehash S",
                     q_not_first.clone()
                         * (is_account_leaf_nonce_balance_c_prev
                             - is_account_leaf_storage_codehash_s_cur),
                 ));
+
+                /*
+                Account leaf storage codehash C row can appear only after account leaf storage codehash S row. 
+                */
                 constraints.push((
-                    "account leaf storage codehash S -> account leaf storage codehash C",
+                    "Account leaf storage codehash S -> account leaf storage codehash C",
                     q_not_first.clone()
                         * (is_account_leaf_storage_codehash_s_prev
                             - is_account_leaf_storage_codehash_c_cur),
                 ));
+
+                /*
+                Account leaf in added branch row can appear only after account leaf storage codehash C row. 
+                */
                 constraints.push((
-                    "account leaf storage codehash C -> account leaf added in branch",
+                    "Account leaf storage codehash C -> account leaf added in branch",
                     q_not_first.clone()
                         * (is_account_leaf_storage_codehash_c_prev
                             - is_account_leaf_in_added_branch_cur),
                 ));
 
-                // Storage leaf
+                /*
+                Storage leaf key S row can appear after extension node C row or after account leaf storage
+                codehash C.
+                */
                 constraints.push((
-                    "storage leaf key follows extension node C or account leaf storage codehash c",
+                    "Storage leaf key S follows extension node C or account leaf storage codehash C",
                     q_not_first.clone()
                     * (is_extension_node_c_prev - is_leaf_s_key_cur.clone())
                     * (is_account_leaf_in_added_branch_prev - is_leaf_s_key_cur.clone()) // when storage leaf without branch
                     * is_leaf_s_key_cur,
                 ));
+
+                /*
+                Storage leaf value S row can appear only after storage leaf key S row.
+                */
                 constraints.push((
-                    "leaf key S -> leaf value S",
+                    "Storage leaf key S -> storage leaf value S",
                     q_not_first.clone() * (is_leaf_s_key_prev - is_leaf_s_value_cur),
                 ));
+
+                /*
+                Storage leaf key C row can appear only after storage leaf value S row.
+                */
                 constraints.push((
-                    "leaf value S -> leaf key C",
+                    "Storage leaf value S -> storage leaf key C",
                     q_not_first.clone() * (is_leaf_s_value_prev - is_leaf_c_key_cur),
                 ));
+
+                /*
+                Storage leaf value C row can appear only after storage leaf key C row.
+                */
                 constraints.push((
-                    "leaf key C -> leaf value C",
+                    "Storage leaf key C -> storage leaf value C",
                     q_not_first.clone() * (is_leaf_c_key_prev - is_leaf_c_value_cur),
                 ));
+
+                /*
+                Storage leaf in added branch row can appear only after storage leaf value C row.
+                */
                 constraints.push((
-                    "leaf value C -> leaf in added branch",
+                    "Storage leaf value C -> storage leaf in added branch",
                     q_not_first.clone() * (is_leaf_c_value_prev - is_leaf_in_added_branch_cur),
                 ));
 
-                // Note that these constraints do not prevent attacks like putting account leaf
-                // rows more than once - however, doing this would lead into failure
-                // of the constraints responsible for address (or storage if storage
-                // rows are added) RLC.
-                // Also, these constraints do not guarantee there is an account proof before
-                // storage proof - constraints for this are implemented using address_rlc column
-                // to be changed to the proper value only in the account leaf key row.
+                let q_enable = meta.query_fixed(q_enable, Rotation::cur());
+                /*
+                In the first row only account leaf key S row or branch init row can occur.
+                */
+                constraints.push((
+                    "In the first row only certain row types can occur",
+                    q_enable.clone() // without this (1 - q_not_first) = 1 after the proof ends
+                    * (one.clone() - q_not_first.clone())
+                    * (one.clone() - is_account_leaf_key_s_cur.clone())
+                    * (one.clone() - is_branch_init_cur.clone()),
+                ));
+
+                /*
+                Note that these constraints do not prevent attacks like putting account leaf
+                rows more than once - however, doing this would lead into failure
+                of the constraints responsible for address RLC (or key RLC if storage rows).
+                Also, these constraints do not guarantee there is an account proof before
+                storage proof - constraints for this are implemented using address_rlc column
+                to be changed to the proper value only in the account leaf key row.
+                */
 
                 let is_storage_mod_prev = meta.query_advice(proof_type.is_storage_mod, Rotation::prev());
                 let is_storage_mod_cur = meta.query_advice(proof_type.is_storage_mod, Rotation::cur());
@@ -392,8 +493,12 @@ impl<F: FieldExt> SelectorsChip<F> {
 
                 let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
 
+                /*
+                The following constraints ensure that the proof type does not change except in the first row
+                of the first level.
+                */
                 constraints.push((
-                    "is_storage_mod does not change in not first level",
+                    "is_storage_mod does not change outside first level",
                     q_not_first.clone()
                         * not_first_level.clone()
                         * (is_storage_mod_cur.clone() - is_storage_mod_prev.clone()),
@@ -487,25 +592,5 @@ impl<F: FieldExt> SelectorsChip<F> {
         );
 
         config
-    }
-
-    pub fn construct(config: SelectorsConfig) -> Self {
-        Self {
-            config,
-            _marker: PhantomData,
-        }
-    }
-}
-
-impl<F: FieldExt> Chip<F> for SelectorsChip<F> {
-    type Config = SelectorsConfig;
-    type Loaded = ();
-
-    fn config(&self) -> &Self::Config {
-        &self.config
-    }
-
-    fn loaded(&self) -> &Self::Loaded {
-        &()
     }
 }

@@ -22,7 +22,7 @@ use crate::{
         HASH_WIDTH, IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS, KECCAK_INPUT_WIDTH,
         KECCAK_OUTPUT_WIDTH,
     },
-    selectors::SelectorsChip,
+    selectors::SelectorsConfig,
 };
 
 /*
@@ -252,7 +252,7 @@ impl<F: FieldExt> MPTConfig<F> {
  
         let address_rlc = meta.advice_column();
 
-        SelectorsChip::<F>::configure(
+        SelectorsConfig::<F>::configure(
             meta,
             proof_type.clone(),
             q_enable,
