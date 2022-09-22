@@ -232,7 +232,7 @@ impl<F: Field, const IS_CALL: bool> ExecutionGadget<F> for CallOpGadget<F, IS_CA
                     has_value.clone() * GAS_STIPEND_CALL_WITH_VALUE.expr() - gas_cost.clone(),
                 ),
                 memory_word_size: To(memory_expansion.next_memory_word_size()),
-                reversible_write_counter: Delta(if IS_CALL { 3.expr() } else { 3.expr() }),
+                reversible_write_counter: Delta(3.expr()),
                 ..StepStateTransition::default()
             });
         });
@@ -311,7 +311,7 @@ impl<F: Field, const IS_CALL: bool> ExecutionGadget<F> for CallOpGadget<F, IS_CA
                 is_create: To(false.expr()),
                 code_hash: To(callee_code_hash.expr()),
                 gas_left: To(callee_gas_left),
-                reversible_write_counter: To(if IS_CALL { 2.expr() } else { 2.expr() }),
+                reversible_write_counter: To(2.expr()),
                 ..StepStateTransition::new_context()
             });
         });
