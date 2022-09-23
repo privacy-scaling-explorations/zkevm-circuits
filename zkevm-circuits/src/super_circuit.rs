@@ -240,6 +240,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
             self.block.randomness,
         )?;
         // --- Tx Circuit ---
+        config.tx_circuit.load(&mut layouter)?;
         self.tx_circuit.assign(&config.tx_circuit, &mut layouter)?;
         // --- Bytecode Circuit ---
         let bytecodes: Vec<UnrolledBytecode<F>> = self

@@ -73,6 +73,11 @@ impl<F: Field> TxCircuitConfig<F> {
         }
     }
 
+    /// Load ECDSA RangeChip table.
+    pub fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
+        self.sign_verify.load_range(layouter)
+    }
+
     /// Assigns a tx circuit row and returns the assigned cell of the value in
     /// the row.
     fn assign_row(
@@ -311,7 +316,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
     ) -> Result<(), Error> {
         let challenges = Challenges::mock(Value::known(self.randomness));
 
-        config.sign_verify.load_range(&mut layouter)?;
+        config.load(&mut layouter)?;
         self.assign(&config, &mut layouter)?;
         config.keccak_table.dev_load(
             &mut layouter,
