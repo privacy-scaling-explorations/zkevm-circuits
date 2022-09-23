@@ -117,7 +117,7 @@ impl<F: FieldExt> SelectorsConfig<F> {
             ));
             constraints.push((
                 "bool check is_branch_init",
-                get_bool_constraint(q_enable.clone(), is_branch_init_cur.clone()),
+                get_bool_constraint(q_enable.clone(), is_branch_init_cur),
             ));
             constraints.push((
                 "bool check is_branch_child",
@@ -125,79 +125,79 @@ impl<F: FieldExt> SelectorsConfig<F> {
             ));
             constraints.push((
                 "bool check is_last branch_child",
-                get_bool_constraint(q_enable.clone(), is_last_branch_child_cur.clone()),
+                get_bool_constraint(q_enable.clone(), is_last_branch_child_cur),
             ));
             constraints.push((
                 "bool check is_leaf_s",
-                get_bool_constraint(q_enable.clone(), is_leaf_s_key.clone()),
+                get_bool_constraint(q_enable.clone(), is_leaf_s_key),
             ));
             constraints.push((
                 "bool check is_leaf_c",
-                get_bool_constraint(q_enable.clone(), is_leaf_c_key.clone()),
+                get_bool_constraint(q_enable.clone(), is_leaf_c_key),
             ));
             constraints.push((
                 "bool check is_leaf_s_value",
-                get_bool_constraint(q_enable.clone(), is_leaf_s_value.clone()),
+                get_bool_constraint(q_enable.clone(), is_leaf_s_value),
             ));
             constraints.push((
                 "bool check is_leaf_c_value",
-                get_bool_constraint(q_enable.clone(), is_leaf_c_value.clone()),
+                get_bool_constraint(q_enable.clone(), is_leaf_c_value),
             ));
             constraints.push((
                 "bool check is_account_leaf_key_s",
-                get_bool_constraint(q_enable.clone(), is_account_leaf_key_s.clone()),
+                get_bool_constraint(q_enable.clone(), is_account_leaf_key_s),
             ));
             constraints.push((
                 "bool check is_account_leaf_key_c",
-                get_bool_constraint(q_enable.clone(), is_account_leaf_key_c.clone()),
+                get_bool_constraint(q_enable.clone(), is_account_leaf_key_c),
             ));
             constraints.push((
                 "bool check is_account_nonce_balance_s",
-                get_bool_constraint(q_enable.clone(), is_account_leaf_nonce_balance_s.clone()),
+                get_bool_constraint(q_enable.clone(), is_account_leaf_nonce_balance_s),
             ));
             constraints.push((
                 "bool check is_account_nonce_balance_c",
-                get_bool_constraint(q_enable.clone(), is_account_leaf_nonce_balance_c.clone()),
+                get_bool_constraint(q_enable.clone(), is_account_leaf_nonce_balance_c),
             ));
             constraints.push((
                 "bool check is_account_storage_codehash_s",
-                get_bool_constraint(q_enable.clone(), is_account_leaf_storage_codehash_s.clone()),
+                get_bool_constraint(q_enable.clone(), is_account_leaf_storage_codehash_s),
             ));
             constraints.push((
                 "bool check is_account_storage_codehash_c",
-                get_bool_constraint(q_enable.clone(), is_account_leaf_storage_codehash_c.clone()),
+                get_bool_constraint(q_enable.clone(), is_account_leaf_storage_codehash_c),
             ));
             constraints.push((
                 "bool check is_account_leaf_in_added_branch",
-                get_bool_constraint(q_enable.clone(), is_account_leaf_in_added_branch.clone()),
+                get_bool_constraint(q_enable.clone(), is_account_leaf_in_added_branch),
             ));
             constraints.push((
                 "bool check branch sel1",
-                get_bool_constraint(q_enable.clone() * is_branch_child_cur.clone(), sel1.clone()),
+                get_bool_constraint(q_enable.clone() * is_branch_child_cur.clone(), sel1),
             ));
             constraints.push((
                 "bool check branch sel2",
-                get_bool_constraint(q_enable.clone() * is_branch_child_cur, sel2.clone()),
+                get_bool_constraint(q_enable.clone() * is_branch_child_cur, sel2),
             )); 
             constraints.push((
                 "bool check is_modified",
-                get_bool_constraint(q_enable.clone(), is_modified.clone()),
+                get_bool_constraint(q_enable.clone(), is_modified),
             ));
             constraints.push((
                 "bool check is_at_drifted_pos",
-                get_bool_constraint(q_enable.clone(), is_at_drifted_pos.clone()),
+                get_bool_constraint(q_enable.clone(), is_at_drifted_pos),
             ));
             constraints.push((
                 "bool check is_leaf_in_added_branch",
-                get_bool_constraint(q_enable.clone(), is_leaf_in_added_branch.clone()),
+                get_bool_constraint(q_enable.clone(), is_leaf_in_added_branch),
             ));
             constraints.push((
                 "bool check is_extension_node_s",
-                get_bool_constraint(q_enable.clone(), is_extension_node_s.clone()),
+                get_bool_constraint(q_enable.clone(), is_extension_node_s),
             ));
             constraints.push((
                 "bool check is_extension_node_c",
-                get_bool_constraint(q_enable.clone(), is_extension_node_c.clone()),
+                get_bool_constraint(q_enable.clone(), is_extension_node_c),
             ));
 
             constraints.push((
@@ -222,7 +222,7 @@ impl<F: FieldExt> SelectorsConfig<F> {
             ));
             constraints.push((
                 "bool check is_non_existing_account_row",
-                get_bool_constraint(q_enable.clone(), is_non_existing_account_row.clone()),
+                get_bool_constraint(q_enable.clone(), is_non_existing_account_row),
             ));
             constraints.push((
                 "bool check is_non_existing_account_proof",
@@ -234,7 +234,7 @@ impl<F: FieldExt> SelectorsConfig<F> {
             */
             constraints.push((
                 "is_storage_mod + is_nonce_mod + is_balance_mod + is_account_delete_mod + is_non_existing_account + is_codehash_mod = 1",
-                q_enable.clone()
+                q_enable
                     * (is_storage_mod + is_nonce_mod + is_balance_mod + is_account_delete_mod + is_non_existing_account_proof + is_codehash_mod
                         - one.clone()),
             ));
@@ -320,7 +320,7 @@ impl<F: FieldExt> SelectorsConfig<F> {
                         * (is_branch_init_cur.clone() - is_extension_node_c_prev.clone()) // after branch
                         * (is_branch_init_cur.clone()
                             - is_account_leaf_in_added_branch_prev.clone()) // after account leaf
-                        * (is_branch_init_cur.clone() - is_leaf_in_added_branch_prev.clone()), // after storage leaf
+                        * (is_branch_init_cur.clone() - is_leaf_in_added_branch_prev), // after storage leaf
                 ));
 
                 // Internal branch selectors (`is_init`, `is_last_child`) are checked in `branch.rs`.
@@ -469,7 +469,7 @@ impl<F: FieldExt> SelectorsConfig<F> {
                 */
                 constraints.push((
                     "In the first row only certain row types can occur",
-                    q_enable.clone() // without this (1 - q_not_first) = 1 after the proof ends
+                    q_enable // without this (1 - q_not_first) = 1 after the proof ends
                     * (one.clone() - q_not_first.clone())
                     * (one.clone() - is_account_leaf_key_s_cur.clone())
                     * (one.clone() - is_branch_init_cur.clone()),
@@ -586,11 +586,11 @@ impl<F: FieldExt> SelectorsConfig<F> {
                 ));
                 constraints.push((
                     "is_account_delete_mod does not change inside first level except in the first row",
-                    q_not_first.clone()
-                        * (one.clone() - not_first_level.clone())
-                        * (one.clone() - is_branch_init_cur.clone())
-                        * (one.clone() - is_account_leaf_key_s_cur.clone())
-                        * (is_non_existing_account_proof_cur.clone() - is_non_existing_account_proof_prev.clone()),
+                    q_not_first
+                        * (one.clone() - not_first_level)
+                        * (one.clone() - is_branch_init_cur)
+                        * (one.clone() - is_account_leaf_key_s_cur)
+                        * (is_non_existing_account_proof_cur - is_non_existing_account_proof_prev),
                 ));
 
                 constraints
