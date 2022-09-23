@@ -4,7 +4,7 @@
 
 use bus_mapping::circuit_input_builder::{CopyDataType, CopyEvent, CopyStep, NumberOrHash};
 
-use eth_types::{Field, ToAddress, ToScalar, U256};
+use eth_types::{Field, ToScalar};
 use gadgets::{
     binary_number::BinaryNumberChip,
     less_than::{LtChip, LtConfig, LtInstruction},
@@ -17,6 +17,7 @@ use halo2_proofs::{
 };
 use std::iter::once;
 
+use crate::util::build_tx_log_address;
 use crate::{
     evm_circuit::{
         util::{constraint_builder::BaseConstraintBuilder, rlc, RandomLinearCombination},
@@ -532,12 +533,13 @@ impl<F: Field> CopyCircuit<F> {
             } + (u64::try_from(step_idx).unwrap() - if is_read { 0 } else { 1 }) / 2u64;
 
         let addr = if !is_read && copy_event.dst_type == CopyDataType::TxLog {
-            (U256::from(copy_step_addr)
-                + (U256::from(TxLogFieldTag::Data as u64) << 32)
-                + (U256::from(copy_event.log_id.unwrap()) << 48))
-                .to_address()
-                .to_scalar()
-                .unwrap()
+            build_tx_log_address(
+                copy_step_addr,
+                TxLogFieldTag::Data,
+                copy_event.log_id.unwrap(),
+            )
+            .to_scalar()
+            .unwrap()
         } else {
             F::from(copy_step_addr)
         };
@@ -741,7 +743,7 @@ pub mod dev {
     use crate::{
         evm_circuit::witness::Block,
         table::{BytecodeTable, RwTable, TxTable},
-        util::power_of_randomness_from_instance,
+        util::{power_of_randomness_from_instance, Challenges},
     };
 
     #[derive(Clone)]
@@ -810,6 +812,8 @@ pub mod dev {
             config: Self::Config,
             mut layouter: impl Layouter<F>,
         ) -> Result<(), halo2_proofs::plonk::Error> {
+            let challenges = Challenges::mock(Value::known(self.randomness));
+
             config
                 .tx_table
                 .load(&mut layouter, &self.block.txs, self.randomness)?;
@@ -822,7 +826,7 @@ pub mod dev {
             config.bytecode_table.load(
                 &mut layouter,
                 self.block.bytecodes.values(),
-                self.randomness,
+                &challenges,
             )?;
             config
                 .copy_circuit
