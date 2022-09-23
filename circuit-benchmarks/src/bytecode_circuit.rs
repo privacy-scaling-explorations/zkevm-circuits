@@ -30,20 +30,20 @@ mod tests {
             .parse()
             .expect("Cannot parse DEGREE env var as u32");
 
-        let bytecodes_len: u32 = var("BTYECODES_LEN")
-            .unwrap_or_else(|_| "1".to_string())
-            .parse()
-            .expect("Cannot parse BTYECODES_LEN env var as u32");
+        // Contract code size exceeds 24576 bytes may not be deployable on Mainnet.
+        const MAX_BYTECODE_LEN: usize = 24576;
 
         let randomness = get_randomness();
         let num_rows = 1 << degree;
         const NUM_BLINDING_ROWS: usize = 7 - 1;
         let max_bytecode_row_num = num_rows - NUM_BLINDING_ROWS;
+        let bytecode_len = std::cmp::min(MAX_BYTECODE_LEN, max_bytecode_row_num);
+        let bytecodes_num: usize = max_bytecode_row_num / bytecode_len;
         let instance = vec![randomness; max_bytecode_row_num];
 
         // Create the circuit
         let bytecode_circuit = BytecodeCircuitTester::<Fr>::new(
-            fillup_codebytes(bytecodes_len, max_bytecode_row_num as u32, randomness),
+            fillup_codebytes(bytecodes_num, bytecode_len, randomness),
             2usize.pow(degree),
             randomness,
         );
@@ -112,19 +112,19 @@ mod tests {
         end_timer!(start3);
     }
 
+    /// fill bytecodes_num * bytecode_len bytes to the witness table
     fn fillup_codebytes<F: Field>(
-        bytecodes_len: u32,
-        max_bytecode_row_num: u32,
+        bytecodes_num: usize,
+        bytecode_len: usize,
         randomness: F,
     ) -> Vec<UnrolledBytecode<F>> {
-        if bytecodes_len == 0 {
+        if bytecodes_num == 0 {
             vec![]
         } else {
-            let codebytes_size: usize = (max_bytecode_row_num / bytecodes_len) as usize;
-            assert!(codebytes_size >= 1);
-            (0..max_bytecode_row_num)
-                .collect::<Vec<u32>>()
-                .chunks(codebytes_size)
+            assert!(bytecode_len >= 1);
+            (0..bytecodes_num * bytecode_len)
+                .collect::<Vec<usize>>()
+                .chunks(bytecode_len)
                 .map(|idx_range| {
                     idx_range
                         .iter()
