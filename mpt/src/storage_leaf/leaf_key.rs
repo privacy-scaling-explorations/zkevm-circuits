@@ -87,6 +87,7 @@ pub(crate) struct LeafKeyConfig<F> {
 }
 
 impl<F: FieldExt> LeafKeyConfig<F> {
+    #[allow(clippy::too_many_arguments)]
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         q_enable: impl Fn(&mut VirtualCells<'_, F>) -> Expression<F> + Copy,
@@ -166,12 +167,12 @@ impl<F: FieldExt> LeafKeyConfig<F> {
             */
             constraints.push((
                 "flag1 is boolean",
-                get_bool_constraint(q_enable.clone(), flag1.clone()),
+                get_bool_constraint(q_enable.clone(), flag1),
             ));
 
             constraints.push((
                 "flag2 is boolean",
-                get_bool_constraint(q_enable.clone(), flag2.clone()),
+                get_bool_constraint(q_enable.clone(), flag2),
             ));
 
             // If leaf in last level, it contains only s_rlp1 and s_rlp2, while s_main.bytes
@@ -224,7 +225,7 @@ impl<F: FieldExt> LeafKeyConfig<F> {
             let q_enable = q_enable(meta);
             let flag1 = meta.query_advice(accs.s_mod_node_rlc, Rotation::cur());
             let flag2 = meta.query_advice(accs.c_mod_node_rlc, Rotation::cur());
-            let is_short = (one.clone() - flag1.clone()) * flag2.clone();
+            let is_short = (one.clone() - flag1) * flag2;
 
             q_enable * is_short
         };
@@ -232,7 +233,7 @@ impl<F: FieldExt> LeafKeyConfig<F> {
             let q_enable = q_enable(meta);
             let flag1 = meta.query_advice(accs.s_mod_node_rlc, Rotation::cur());
             let flag2 = meta.query_advice(accs.c_mod_node_rlc, Rotation::cur());
-            let is_long = flag1.clone() * (one.clone() - flag2.clone());
+            let is_long = flag1 * (one.clone() - flag2);
 
             q_enable * is_long
         };
@@ -319,7 +320,7 @@ impl<F: FieldExt> LeafKeyConfig<F> {
                 let last_level = flag1.clone() * flag2.clone();
                 let is_long = flag1.clone() * (one.clone() - flag2.clone());
                 let is_short = (one.clone() - flag1.clone()) * flag2.clone();
-                let one_nibble = (one.clone() - flag1.clone()) * (one.clone() - flag2.clone());
+                let one_nibble = (one.clone() - flag1) * (one.clone() - flag2);
 
                 let is_leaf_in_first_storage_level =
                     meta.query_advice(is_account_leaf_in_added_branch, Rotation(rot_into_account));
@@ -402,7 +403,7 @@ impl<F: FieldExt> LeafKeyConfig<F> {
                 ));
 
                 let s_bytes1 = meta.query_advice(s_main.bytes[1], Rotation::cur());
-                key_rlc_acc_short = key_rlc_acc_short + s_bytes1.clone() * key_mult.clone();
+                key_rlc_acc_short = key_rlc_acc_short + s_bytes1 * key_mult.clone();
 
                 for ind in 2..HASH_WIDTH {
                     let s = meta.query_advice(s_main.bytes[ind], Rotation::cur());
@@ -413,7 +414,7 @@ impl<F: FieldExt> LeafKeyConfig<F> {
                 // c_rlp1 can appear if no branch above the leaf
                 let c_rlp1 = meta.query_advice(c_main.rlp1, Rotation::cur());
                 key_rlc_acc_short =
-                    key_rlc_acc_short + c_rlp1.clone() * key_mult.clone() * r_table[30].clone();
+                    key_rlc_acc_short + c_rlp1.clone() * key_mult * r_table[30].clone();
 
                 let key_rlc = meta.query_advice(accs.key.rlc, Rotation::cur());
 
@@ -457,7 +458,7 @@ impl<F: FieldExt> LeafKeyConfig<F> {
                 constraints.push((
                     "Leaf key acc s_bytes1 = 32 (long)",
                     q_enable.clone()
-                        * (s_bytes1.clone() - c32.clone())
+                        * (s_bytes1 - c32.clone())
                         * is_c1.clone()
                         * (one.clone() - is_branch_placeholder.clone())
                         * is_long.clone(),
@@ -473,11 +474,11 @@ impl<F: FieldExt> LeafKeyConfig<F> {
                 }
 
                 key_rlc_acc_long =
-                    key_rlc_acc_long + c_rlp1.clone() * key_mult.clone() * r_table[29].clone();
+                    key_rlc_acc_long + c_rlp1 * key_mult.clone() * r_table[29].clone();
                 // c_rlp2 can appear if no branch above the leaf
                 let c_rlp2 = meta.query_advice(c_main.rlp2, Rotation::cur());
                 key_rlc_acc_long =
-                    key_rlc_acc_long + c_rlp2 * key_mult.clone() * r_table[30].clone();
+                    key_rlc_acc_long + c_rlp2 * key_mult * r_table[30].clone();
 
                 /*
                 We need to ensure the leaf key RLC is computed properly. We take the key RLC value
@@ -535,8 +536,8 @@ impl<F: FieldExt> LeafKeyConfig<F> {
                 ));
 
                 let s_rlp2 = meta.query_advice(s_main.rlp2, Rotation::cur());
-                let key_rlc_one_nibble = key_rlc_acc_start.clone()
-                    + (s_rlp2 - c48.clone()) * key_mult_start.clone();
+                let key_rlc_one_nibble = key_rlc_acc_start
+                    + (s_rlp2 - c48.clone()) * key_mult_start;
 
                 /*
                 We need to ensure the leaf key RLC is computed properly.
@@ -554,7 +555,7 @@ impl<F: FieldExt> LeafKeyConfig<F> {
                 constraints.push((
                     "Key RLC (one nibble)",
                     q_enable.clone()
-                        * (key_rlc_one_nibble - key_rlc.clone())
+                        * (key_rlc_one_nibble - key_rlc)
                         * (one.clone() - is_branch_placeholder.clone())
                         * one_nibble.clone(),
                 ));
@@ -570,9 +571,9 @@ impl<F: FieldExt> LeafKeyConfig<F> {
 
                 let s_rlp2 = meta.query_advice(s_main.rlp2, Rotation::cur());
                 let leaf_nibbles_long = ((s_bytes0.clone() - c128.clone() - one.clone()) * (one.clone() + one.clone())) * is_c1.clone() +
-                    ((s_bytes0.clone() - c128.clone()) * (one.clone() + one.clone()) - one.clone()) * is_c16.clone();
-                let leaf_nibbles_short = ((s_rlp2.clone() - c128.clone() - one.clone()) * (one.clone() + one.clone())) * is_c1.clone() +
-                    ((s_rlp2.clone() - c128.clone()) * (one.clone() + one.clone()) - one.clone()) * is_c16.clone();
+                    ((s_bytes0 - c128.clone()) * (one.clone() + one.clone()) - one.clone()) * is_c16.clone();
+                let leaf_nibbles_short = ((s_rlp2.clone() - c128.clone() - one.clone()) * (one.clone() + one.clone())) * is_c1 +
+                    ((s_rlp2 - c128.clone()) * (one.clone() + one.clone()) - one.clone()) * is_c16;
                 let leaf_nibbles_last_level = Expression::Constant(F::zero()); 
                 let leaf_nibbles_one_nibble = one.clone(); 
 
@@ -587,10 +588,10 @@ impl<F: FieldExt> LeafKeyConfig<F> {
                 constraints.push((
                     "Total number of storage address nibbles is 64 (not first level, not branch placeholder)",
                     q_enable
-                        * (one.clone() - is_branch_placeholder.clone())
+                        * (one.clone() - is_branch_placeholder)
                         // Note: we need to check the number of nibbles being 64 for non_existing_account_proof too
                         // (even if the address being checked here might be the address of the wrong leaf)
-                        * (nibbles_count.clone() + leaf_nibbles.clone() - c64.clone()),
+                        * (nibbles_count + leaf_nibbles - c64.clone()),
                 ));
 
                 constraints
@@ -632,7 +633,7 @@ impl<F: FieldExt> LeafKeyConfig<F> {
             let flag2 = meta.query_advice(accs.c_mod_node_rlc, Rotation::cur());
             let is_long = flag1.clone() * (one.clone() - flag2.clone());
             let is_short = (one.clone() - flag1.clone()) * flag2.clone();
-            let one_nibble = (one.clone() - flag1.clone()) * (one.clone() - flag2.clone());
+            let one_nibble = (one.clone() - flag1) * (one.clone() - flag2);
 
             // Note: key RLC is in the first branch node (not branch init).
             let rot_level_above = rot_into_init + 1 - BRANCH_ROWS_NUM;
@@ -703,7 +704,7 @@ impl<F: FieldExt> LeafKeyConfig<F> {
             ));
 
             let s_bytes1 = meta.query_advice(s_main.bytes[1], Rotation::cur());
-            key_rlc_acc_short = key_rlc_acc_short + s_bytes1.clone() * key_mult.clone();
+            key_rlc_acc_short = key_rlc_acc_short + s_bytes1 * key_mult.clone();
 
             for ind in 2..HASH_WIDTH {
                 let s = meta.query_advice(s_main.bytes[ind], Rotation::cur());
@@ -744,8 +745,8 @@ impl<F: FieldExt> LeafKeyConfig<F> {
 
             // If `is_c16 = 1`, we have nibble+48 in `s_main.bytes[1]`.
             let s_bytes1 = meta.query_advice(s_main.bytes[1], Rotation::cur());
-            let mut key_rlc_acc_long = key_rlc_acc_start.clone()
-                + (s_bytes1.clone() - c48.clone()) * key_mult_start.clone() * is_c16.clone();
+            let mut key_rlc_acc_long = key_rlc_acc_start
+                + (s_bytes1.clone() - c48.clone()) * key_mult_start * is_c16.clone();
 
             /*
             If `is_c1 = 1` which means there is an even number of nibbles stored in a leaf,
@@ -754,7 +755,7 @@ impl<F: FieldExt> LeafKeyConfig<F> {
             constraints.push((
                 "Leaf key acc s_bytes1 (long)",
                 q_enable.clone()
-                    * (s_bytes1.clone() - c32.clone())
+                    * (s_bytes1 - c32.clone())
                     * is_c1.clone()
                     * is_branch_placeholder.clone()
                     * (one.clone() - is_leaf_in_first_level.clone())
@@ -771,10 +772,10 @@ impl<F: FieldExt> LeafKeyConfig<F> {
             }
 
             key_rlc_acc_long =
-                key_rlc_acc_long + c_rlp1.clone() * key_mult.clone() * r_table[29].clone();
+                key_rlc_acc_long + c_rlp1 * key_mult.clone() * r_table[29].clone();
 
             let c_rlp2 = meta.query_advice(c_main.rlp2, Rotation::cur());
-            key_rlc_acc_long = key_rlc_acc_long + c_rlp2.clone() * key_mult * r_table[30].clone();
+            key_rlc_acc_long = key_rlc_acc_long + c_rlp2 * key_mult * r_table[30].clone();
 
             /*
             When `is_long` the first key byte is at `s_main.bytes[1]`. We retrieve the key RLC from the
@@ -793,7 +794,7 @@ impl<F: FieldExt> LeafKeyConfig<F> {
             constraints.push((
                 "Key RLC (long)",
                 q_enable.clone()
-                    * (key_rlc_acc_long - key_rlc.clone())
+                    * (key_rlc_acc_long - key_rlc)
                     * is_branch_placeholder.clone()
                     * (one.clone() - is_leaf_in_first_level.clone())
                     * is_long.clone(),
@@ -808,13 +809,13 @@ impl<F: FieldExt> LeafKeyConfig<F> {
             let leaf_nibbles_long = ((s_bytes0.clone() - c128.clone() - one.clone())
                 * (one.clone() + one.clone()))
                 * is_c1.clone()
-                + ((s_bytes0.clone() - c128.clone()) * (one.clone() + one.clone()) - one.clone())
+                + ((s_bytes0 - c128.clone()) * (one.clone() + one.clone()) - one.clone())
                     * is_c16.clone();
             let leaf_nibbles_short = ((s_rlp2.clone() - c128.clone() - one.clone())
                 * (one.clone() + one.clone()))
-                * is_c1.clone()
-                + ((s_rlp2.clone() - c128.clone()) * (one.clone() + one.clone()) - one.clone())
-                    * is_c16.clone();
+                * is_c1
+                + ((s_rlp2 - c128.clone()) * (one.clone() + one.clone()) - one.clone())
+                    * is_c16;
             let leaf_nibbles_one_nibble = one.clone();
 
             let leaf_nibbles = leaf_nibbles_long * is_long
@@ -824,7 +825,7 @@ impl<F: FieldExt> LeafKeyConfig<F> {
             let nibbles_count = meta.query_advice(
                 s_main.bytes[NIBBLES_COUNTER_POS - RLP_NUM],
                 Rotation(rot_into_init - BRANCH_ROWS_NUM),
-            ) * (one.clone() - is_first_storage_level.clone());
+            ) * (one.clone() - is_first_storage_level);
 
             /*
             Checking the total number of nibbles is to prevent having short addresses
@@ -840,9 +841,9 @@ impl<F: FieldExt> LeafKeyConfig<F> {
             constraints.push((
                 "Total number of account address nibbles is 64 (after placeholder)",
                 q_enable
-                    * is_branch_placeholder.clone()
-                    * (one.clone() - is_leaf_in_first_level.clone())
-                    * (nibbles_count.clone() + leaf_nibbles.clone() - c64.clone()),
+                    * is_branch_placeholder
+                    * (one.clone() - is_leaf_in_first_level)
+                    * (nibbles_count + leaf_nibbles - c64.clone()),
             ));
 
             constraints
