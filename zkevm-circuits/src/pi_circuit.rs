@@ -180,7 +180,6 @@ pub struct PiCircuitConfig<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: u
     calldata_gas_cost: Column<Advice>,
     is_final: Column<Advice>,
 
-
     raw_public_inputs: Column<Advice>,
     rpi_rlc_acc: Column<Advice>,
     rand_rpi: Column<Advice>,
@@ -202,10 +201,10 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
         let q_tx_calldata = meta.complex_selector();
         let q_calldata_start = meta.complex_selector();
         // Tx Table
-        let tx_id = tx_table.tx_id.clone();
-        let tx_value = tx_table.value.clone();
-        let tag = tx_table.tag.clone();
-        let index = tx_table.index.clone();
+        let tx_id = tx_table.tx_id;
+        let tx_value = tx_table.value;
+        let tag = tx_table.tag;
+        let index = tx_table.index;
         let tx_id_inv = meta.advice_column();
         let tx_value_inv = meta.advice_column();
         let calldata_gas_cost = meta.advice_column();
@@ -303,7 +302,8 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
             "tx_table.tx_value[i] == raw_public_inputs[offset + 2* tx_table_len + i]",
             |meta| {
                 // (row.q_tx_calldata | row.q_tx_table) * row.tx_table.tx_value
-                // == (row.q_tx_calldata | row.q_tx_table) * row_offset_tx_table_tx_value.raw_public_inputs
+                // == (row.q_tx_calldata | row.q_tx_table) *
+                // row_offset_tx_table_tx_value.raw_public_inputs
                 let q_tx_table = meta.query_selector(q_tx_table);
                 let tx_value = meta.query_advice(tx_value, Rotation::cur());
                 let q_tx_calldata = meta.query_selector(q_tx_calldata);
@@ -501,23 +501,48 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
     }
 
     fn assign_tx_empty_row(&self, region: &mut Region<'_, F>, offset: usize) -> Result<(), Error> {
-        region.assign_advice(|| "tx_id", self.tx_table.tx_id, offset, || Value::known(F::zero()))?;
-        region.assign_advice(|| "tx_id_inv", self.tx_id_inv, offset, || Value::known(F::zero()))?;
+        region.assign_advice(
+            || "tx_id",
+            self.tx_table.tx_id,
+            offset,
+            || Value::known(F::zero()),
+        )?;
+        region.assign_advice(
+            || "tx_id_inv",
+            self.tx_id_inv,
+            offset,
+            || Value::known(F::zero()),
+        )?;
         region.assign_advice(
             || "tag",
             self.tx_table.tag,
             offset,
             || Value::known(F::from(TxFieldTag::Null as u64)),
         )?;
-        region.assign_advice(|| "index", self.tx_table.index, offset, || Value::known(F::zero()))?;
-        region.assign_advice(|| "tx_value", self.tx_table.value, offset, || Value::known(F::zero()))?;
+        region.assign_advice(
+            || "index",
+            self.tx_table.index,
+            offset,
+            || Value::known(F::zero()),
+        )?;
+        region.assign_advice(
+            || "tx_value",
+            self.tx_table.value,
+            offset,
+            || Value::known(F::zero()),
+        )?;
         region.assign_advice(
             || "tx_value_inv",
             self.tx_value_inv,
             offset,
             || Value::known(F::zero()),
         )?;
-        region.assign_advice(|| "is_final", self.is_final, offset, || Value::known(F::zero()))?;
+        region.assign_advice(
+            || "is_final",
+            self.is_final,
+            offset,
+            || Value::known(F::zero()),
+        )?;
         region.assign_advice(
             || "gas_cost",
             self.calldata_gas_cost,
@@ -574,7 +599,12 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
             offset,
             || Value::known(tx_value),
         )?;
-        region.assign_advice(|| "tx_id_inv", self.tx_id_inv, offset, || Value::known(tx_id_inv))?;
+        region.assign_advice(
+            || "tx_id_inv",
+            self.tx_id_inv,
+            offset,
+            || Value::known(tx_id_inv),
+        )?;
         region.assign_advice(
             || "tx_value_inverse",
             self.tx_value_inv,
@@ -646,15 +676,30 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
         self.q_tx_calldata.enable(region, calldata_offset)?;
 
         // Assign vals to Tx_table
-        region.assign_advice(|| "tx_id", self.tx_table.tx_id, calldata_offset, || Value::known(tx_id))?;
+        region.assign_advice(
+            || "tx_id",
+            self.tx_table.tx_id,
+            calldata_offset,
+            || Value::known(tx_id),
+        )?;
         region.assign_advice(
             || "tx_id_inv",
             self.tx_id_inv,
             calldata_offset,
             || Value::known(tx_id_inv),
         )?;
-        region.assign_advice(|| "tag", self.tx_table.tag, calldata_offset, || Value::known(tag))?;
-        region.assign_advice(|| "index", self.tx_table.index, calldata_offset, || Value::known(index))?;
+        region.assign_advice(
+            || "tag",
+            self.tx_table.tag,
+            calldata_offset,
+            || Value::known(tag),
+        )?;
+        region.assign_advice(
+            || "index",
+            self.tx_table.index,
+            calldata_offset,
+            || Value::known(index),
+        )?;
         region.assign_advice(
             || "tx_value",
             self.tx_table.value,
@@ -1108,11 +1153,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
                     let mut gas_cost = F::zero();
                     for (index, byte) in tx.call_data.0.iter().enumerate() {
                         assert!(calldata_count < MAX_CALLDATA);
-                        let is_final = if index == call_data_length - 1 {
-                            true
-                        } else {
-                            false
-                        };
+                        let is_final = index == call_data_length - 1;
                         gas_cost += if *byte == 0 {
                             F::from(ZERO_BYTE_GAS_COST)
                         } else {
