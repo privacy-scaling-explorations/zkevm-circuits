@@ -93,7 +93,6 @@ impl<F: FieldExt> LeafKeyConfig<F> {
         s_main: MainCols<F>,
         c_main: MainCols<F>,
         accs: AccumulatorCols<F>,
-        denoter: DenoteCols<F>, // sel1 stores key_rlc_prev, sel2 stores key_rlc_mult_prev
         is_account_leaf_in_added_branch: Column<Advice>,
         r_table: Vec<Expression<F>>,
         fixed_table: [Column<Fixed>; 3],

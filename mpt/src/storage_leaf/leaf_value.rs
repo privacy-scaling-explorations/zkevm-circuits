@@ -79,7 +79,14 @@ kind of case we have:
  `flag1: 0, flag0: 1`: `one_nibble`
 
 The constraints in `leaf_value.rs` apply to `LEAF_VALUE_S` and `LEAF_VALUE_C` rows.
-The constraints ensure the hash of a storage leaf is in a parent branch and that the RLP of the leaf is correct.
+The constraints ensure the hash of a storage leaf is in a parent branch and that the RLP
+of the leaf is correct.
+
+Lookups: the storage leaf value row is the row prepared for the lookup; however, note that here are no
+checks for example for the root because the constraints to ensure `start_root` and `final_root` does not
+change (except in the first row of the modification) are in `proof_chain.rs` and the constraints to ensure
+the lookup roots correspond to the roots of the trie are in the first level nodes
+(`account_leaf_storage_codehash.rs` or `branch_hash_in_parent.rs`).
 */
 
 #[derive(Clone, Debug)]
@@ -90,7 +97,6 @@ pub(crate) struct LeafValueConfig<F> {
 impl<F: FieldExt> LeafValueConfig<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
-        inter_root: Column<Advice>,
         q_not_first: Column<Fixed>,
         not_first_level: Column<Advice>,
         is_leaf_value: Column<Advice>,
@@ -121,8 +127,8 @@ impl<F: FieldExt> LeafValueConfig<F> {
         let mut rot_into_init = -LEAF_VALUE_S_IND - BRANCH_ROWS_NUM;
         let mut rot_into_account = -2;
         if !is_s {
-            rot_into_init = rot_into_init - 2;
-            rot_into_account = rot_into_account - 2;
+            rot_into_init -= 2;
+            rot_into_account -= 2;
         }
         let one = Expression::Constant(F::one());
 
@@ -146,7 +152,7 @@ impl<F: FieldExt> LeafValueConfig<F> {
             let last_level = flag1.clone() * flag2.clone();
             let is_leaf_long = flag1.clone() * (one.clone() - flag2.clone());
             let is_leaf_short = (one.clone() - flag1.clone()) * flag2.clone();
-            let one_nibble = (one.clone() - flag1.clone()) * (one.clone() - flag2.clone());
+            let one_nibble = (one.clone() - flag1) * (one.clone() - flag2);
 
             let s_rlp1_prev = meta.query_advice(s_main.rlp1, Rotation::prev());
             let s_rlp1_cur = meta.query_advice(s_main.rlp1, Rotation::cur());
@@ -190,8 +196,8 @@ impl<F: FieldExt> LeafValueConfig<F> {
             let mut mult_long = F::one();
             for col in s_main.bytes.iter() {
                 let s = meta.query_advice(*col, Rotation::cur());
-                value_rlc_long = value_rlc_long + s * mult_long.clone();
-                mult_long = mult_long * acc_r;
+                value_rlc_long = value_rlc_long + s * mult_long;
+                mult_long *= acc_r;
             }
 
             let leaf_value_rlc =
@@ -199,8 +205,8 @@ impl<F: FieldExt> LeafValueConfig<F> {
 
             let leaf_rlc_long = leaf_rlc_prev.clone()
                 + s_rlp1_cur.clone() * leaf_mult_prev.clone()
-                + s_rlp2_cur.clone() * leaf_mult_prev.clone() * acc_r.clone()
-                + value_rlc_long.clone() * leaf_mult_prev.clone() * acc_r.clone() * acc_r;
+                + s_rlp2_cur.clone() * leaf_mult_prev.clone() * acc_r
+                + value_rlc_long * leaf_mult_prev.clone() * acc_r * acc_r;
             let leaf_rlc = leaf_rlc_long * is_long.clone()
                 + (leaf_rlc_prev + s_rlp1_cur.clone() * leaf_mult_prev) * is_short.clone();
 
@@ -295,7 +301,7 @@ impl<F: FieldExt> LeafValueConfig<F> {
                 + c128.clone()
                 - one.clone();
             let long_remainder = s_rlp2_prev - s_bytes0_prev + c128.clone() - one.clone();
-            let long_value_len = s_rlp2_cur.clone() - c128.clone() + one.clone() + one.clone();
+            let long_value_len = s_rlp2_cur.clone() - c128 + one.clone() + one.clone();
 
             let short_short_check = short_remainder.clone() - one.clone();
             let long_long_check = long_remainder - long_value_len.clone();
@@ -349,7 +355,7 @@ impl<F: FieldExt> LeafValueConfig<F> {
             */
             constraints.push((
                 "RLP leaf long value long",
-                q_enable.clone() * long_long_check * is_leaf_long.clone() * is_long.clone(),
+                q_enable.clone() * long_long_check * is_leaf_long * is_long.clone(),
             ));
 
             /*
@@ -362,7 +368,7 @@ impl<F: FieldExt> LeafValueConfig<F> {
             */
             constraints.push((
                 "RLP leaf short value long",
-                q_enable.clone() * short_long_check * is_leaf_short.clone() * is_long.clone(),
+                q_enable.clone() * short_long_check * is_leaf_short * is_long.clone(),
             ));
 
             /*
@@ -387,11 +393,11 @@ impl<F: FieldExt> LeafValueConfig<F> {
                 q_enable.clone()
                     * (s_rlp1_prev.clone() - Expression::Constant(F::from(194)))
                     * (last_level.clone() + one_nibble.clone())
-                    * is_short.clone(),
+                    * is_short,
             ));
 
             let last_level_or_one_nibblelong_check =
-                s_rlp1_prev.clone() - c192.clone() - one.clone() - long_value_len;
+                s_rlp1_prev - c192 - one.clone() - long_value_len;
 
             /*
             When the leaf is in the last level of the trie and the value is long or there is one nibble in the key,
@@ -408,10 +414,10 @@ impl<F: FieldExt> LeafValueConfig<F> {
             */
             constraints.push((
                 "RLP check last level or one nibble & long value",
-                q_enable.clone()
+                q_enable
                     * last_level_or_one_nibblelong_check
-                    * (last_level.clone() + one_nibble)
-                    * is_long.clone(),
+                    * (last_level + one_nibble)
+                    * is_long,
             ));
 
             constraints
@@ -462,22 +468,22 @@ impl<F: FieldExt> LeafValueConfig<F> {
                 }
                 let hash_rlc = bytes_expr_into_rlc(&sc_hash, acc_r);
 
-                let mut constraints = vec![];
-                constraints.push((
+                let mut constraints = vec![
+                (
                     not_first_level.clone()
                         * is_leaf.clone()
                         * (one.clone() - is_placeholder.clone())
                         * is_account_leaf_in_added_branch.clone()
                         * acc,
                     meta.query_fixed(keccak_table[0], Rotation::cur()),
-                ));
+                )];
 
                 constraints.push((
-                    not_first_level.clone()
-                        * is_leaf.clone()
+                    not_first_level
+                        * is_leaf
                         * (one.clone() - is_placeholder)
-                        * is_account_leaf_in_added_branch.clone()
-                        * hash_rlc.clone(),
+                        * is_account_leaf_in_added_branch
+                        * hash_rlc,
                     meta.query_fixed(keccak_table[1], Rotation::cur()),
                 ));
 
@@ -594,8 +600,8 @@ impl<F: FieldExt> LeafValueConfig<F> {
                 }
                 let hash_rlc = bytes_expr_into_rlc(&sc_hash, acc_r);
 
-                let mut constraints = vec![];
-                constraints.push((
+                let mut constraints = vec![
+                (
                     not_first_level.clone()
                     * is_leaf.clone()
                     * (one.clone() - is_account_leaf_in_added_branch.clone()) // if account is directly above storage leaf, there is no placeholder branch
@@ -603,15 +609,15 @@ impl<F: FieldExt> LeafValueConfig<F> {
                     * is_branch_placeholder.clone()
                     * acc,
                     meta.query_fixed(keccak_table[0], Rotation::cur()),
-                ));
+                )];
 
                 constraints.push((
-                    not_first_level.clone()
-                    * is_leaf.clone()
-                    * (one.clone() - is_account_leaf_in_added_branch.clone()) // if account is directly above storage leaf, there is no placeholder branch
-                    * is_account_leaf_in_added_branch_placeholder.clone()
-                    * is_branch_placeholder.clone()
-                    * hash_rlc.clone(),
+                    not_first_level
+                    * is_leaf
+                    * (one.clone() - is_account_leaf_in_added_branch) // if account is directly above storage leaf, there is no placeholder branch
+                    * is_account_leaf_in_added_branch_placeholder
+                    * is_branch_placeholder
+                    * hash_rlc,
                     meta.query_fixed(keccak_table[1], Rotation::cur()),
                 ));
 
@@ -650,8 +656,8 @@ impl<F: FieldExt> LeafValueConfig<F> {
             If `sel = 1`, the leaf is only a placeholder (the leaf is being added or deleted)
             and we do not check the hash of it.
             */
-            let mut constraints = vec![];
-            constraints.push((
+            let mut constraints = vec![
+            (
                 q_enable.clone()
                     * rlc
                     * (one.clone() - placeholder_leaf.clone())
@@ -659,19 +665,19 @@ impl<F: FieldExt> LeafValueConfig<F> {
                     * (one.clone() - not_hashed.clone())
                     * (one.clone() - is_branch_placeholder.clone()),
                 meta.query_fixed(keccak_table[0], Rotation::cur()),
-            ));
+            )];
             let mut mod_node_hash_rlc_cur = meta.query_advice(accs.s_mod_node_rlc, Rotation(rot));
             if !is_s {
                 mod_node_hash_rlc_cur = meta.query_advice(accs.c_mod_node_rlc, Rotation(rot));
             }
             let keccak_table_i = meta.query_fixed(keccak_table[1], Rotation::cur());
             constraints.push((
-                q_enable.clone()
+                q_enable
                     * mod_node_hash_rlc_cur
-                    * (one.clone() - placeholder_leaf.clone())
-                    * (one.clone() - is_leaf_without_branch.clone())
-                    * (one.clone() - not_hashed.clone())
-                    * (one.clone() - is_branch_placeholder.clone()),
+                    * (one.clone() - placeholder_leaf)
+                    * (one.clone() - is_leaf_without_branch)
+                    * (one.clone() - not_hashed)
+                    * (one.clone() - is_branch_placeholder),
                 keccak_table_i,
             ));
 
@@ -716,18 +722,16 @@ impl<F: FieldExt> LeafValueConfig<F> {
                 mod_node_hash_rlc_cur = meta.query_advice(accs.c_mod_node_rlc, Rotation(rot));
             }
 
-            let mut constraints = vec![];
-            constraints.push((
+            vec![
+            (
                 "non-hashed",
-                q_enable.clone()
+                q_enable
                     * (rlc - mod_node_hash_rlc_cur)
-                    * (one.clone() - placeholder_leaf.clone())
-                    * (one.clone() - is_leaf_without_branch.clone())
-                    * not_hashed.clone()
-                    * (one.clone() - is_branch_placeholder.clone()),
-            ));
-
-            constraints
+                    * (one.clone() - placeholder_leaf)
+                    * (one.clone() - is_leaf_without_branch)
+                    * not_hashed
+                    * (one.clone() - is_branch_placeholder),
+            )]
         });
 
         /*
@@ -805,12 +809,12 @@ impl<F: FieldExt> LeafValueConfig<F> {
 
             let keccak_table_i = meta.query_fixed(keccak_table[1], Rotation::cur());
             constraints.push((
-                q_enable.clone()
+                q_enable
                     * mod_node_hash_rlc
-                    * (one.clone() - sel.clone())
-                    * (one.clone() - is_leaf_without_branch_after_placeholder.clone())
-                    * (one.clone() - is_leaf_without_branch.clone())
-                    * is_branch_placeholder.clone(),
+                    * (one.clone() - sel)
+                    * (one.clone() - is_leaf_without_branch_after_placeholder)
+                    * (one.clone() - is_leaf_without_branch)
+                    * is_branch_placeholder,
                 keccak_table_i,
             ));
 

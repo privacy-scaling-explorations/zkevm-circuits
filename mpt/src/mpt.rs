@@ -503,7 +503,6 @@ impl<F: FieldExt> MPTConfig<F> {
             s_main.clone(),
             c_main.clone(),
             accumulators.clone(),
-            denoter.clone(),
             account_leaf.is_in_added_branch,
             r_table.clone(),
             fixed_table.clone(),
@@ -527,7 +526,6 @@ impl<F: FieldExt> MPTConfig<F> {
             s_main.clone(),
             c_main.clone(),
             accumulators.clone(),
-            denoter.clone(),
             account_leaf.is_in_added_branch,
             r_table.clone(),
             fixed_table.clone(),
@@ -555,7 +553,6 @@ impl<F: FieldExt> MPTConfig<F> {
 
         let storage_leaf_value_s = LeafValueConfig::<F>::configure(
             meta,
-            inter_start_root,
             q_not_first,
             not_first_level,
             storage_leaf.is_s_value,
@@ -572,7 +569,6 @@ impl<F: FieldExt> MPTConfig<F> {
 
         let storage_leaf_value_c = LeafValueConfig::<F>::configure(
             meta,
-            inter_final_root,
             q_not_first,
             not_first_level,
             storage_leaf.is_c_value,

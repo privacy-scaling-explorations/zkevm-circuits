@@ -6,7 +6,7 @@ use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
 use crate::{
-    columns::{AccumulatorCols, AccumulatorPair, MainCols},
+    columns::{AccumulatorCols, MainCols},
     helpers::{bytes_expr_into_rlc, get_is_extension_node},
     param::{
         ACCOUNT_LEAF_ROWS, ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND,
