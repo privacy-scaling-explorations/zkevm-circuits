@@ -942,6 +942,7 @@ impl FromStr for OpcodeId {
             "RETURN" => OpcodeId::RETURN,
             "REVERT" => OpcodeId::REVERT,
             "INVALID" => OpcodeId::INVALID(0xfe),
+            "PUSH0" => OpcodeId::INVALID(0x5f),
             "SHA3" | "KECCAK256" => OpcodeId::SHA3,
             "ADDRESS" => OpcodeId::ADDRESS,
             "BALANCE" => OpcodeId::BALANCE,
@@ -991,7 +992,7 @@ impl FromStr for OpcodeId {
                         ));
                     }
                 }
-                return Err(Error::OpcodeParsing);
+                return Err(Error::OpcodeParsing(s.to_string()));
             }
         })
     }

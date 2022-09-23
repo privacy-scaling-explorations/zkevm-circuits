@@ -5,6 +5,7 @@ use bus_mapping::operation::{self, AccountField, CallContextField, TxLogField, T
 use eth_types::{Address, Field, ToAddress, ToLittleEndian, ToScalar, Word, U256};
 use itertools::Itertools;
 
+use crate::util::build_tx_log_address;
 use crate::{
     evm_circuit::util::RandomLinearCombination,
     table::{AccountFieldTag, CallContextFieldTag, RwTableTag, TxLogFieldTag, TxReceiptFieldTag},
@@ -438,12 +439,7 @@ impl Rw {
                 ..
             } => {
                 // make field_tag fit into one limb (16 bits)
-                Some(
-                    (U256::from(*index as u64)
-                        + (U256::from(*field_tag as u64) << 32)
-                        + (U256::from(*log_id) << 48))
-                        .to_address(),
-                )
+                Some(build_tx_log_address(*index as u64, *field_tag, *log_id))
             }
             Self::Start { .. }
             | Self::CallContext { .. }

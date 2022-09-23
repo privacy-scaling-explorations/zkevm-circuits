@@ -1,5 +1,5 @@
 # For any file modification done to the repo, `zkevm-reviewers` team will be requested a review.
-* @appliedzkp/zkevm-reviewers
+* @privacy-scaling-explorations/zkevm-reviewers
 
 # PRs done to `prover` workspace member will require an extra review from @pinkiebell.
 prover/* @pinkiebell
@@ -13,3 +13,6 @@ integration-tests/* @ed255
 # Prs done to `zkevm-circuits/state-circuit` will require an extra review from @miha-stopar
 zkevm-circuits/src/state_circuit/ @miha-stopar
 zkevm-circuits/src/state_circuit.rs @miha-stopar
+
+# Prs done in `testool` will requiere an extra review from @adria0
+testool/* @adria0
