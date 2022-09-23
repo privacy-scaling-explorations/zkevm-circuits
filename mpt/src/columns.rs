@@ -1,10 +1,13 @@
-use std::{marker::PhantomData, convert::TryInto};
-use halo2_proofs::{plonk::{Advice, Column, ConstraintSystem}, arithmetic::FieldExt};
+use halo2_proofs::{
+    arithmetic::FieldExt,
+    plonk::{Advice, Column, ConstraintSystem},
+};
+use std::{convert::TryInto, marker::PhantomData};
 
 use crate::param::HASH_WIDTH;
 
-// This file contains columns that are not specific to any of account leaf, storage leaf, branch, or
-// extension node.
+// This file contains columns that are not specific to any of account leaf,
+// storage leaf, branch, or extension node.
 
 #[derive(Clone, Debug)]
 pub(crate) struct ProofTypeCols<F> {
@@ -13,26 +16,28 @@ pub(crate) struct ProofTypeCols<F> {
     pub(crate) is_balance_mod: Column<Advice>,
     pub(crate) is_codehash_mod: Column<Advice>,
     pub(crate) is_account_delete_mod: Column<Advice>,
-    pub(crate) is_non_existing_account_proof: Column<Advice>, // we only need S or C proof as there is no modification
+    pub(crate) is_non_existing_account_proof: Column<Advice>, /* we only need S or C proof as
+                                                               * there is no modification */
     _marker: PhantomData<F>,
 }
 
 impl<F: FieldExt> ProofTypeCols<F> {
     pub(crate) fn new(meta: &mut ConstraintSystem<F>) -> Self {
         Self {
-            is_storage_mod : meta.advice_column(),
-            is_nonce_mod : meta.advice_column(),
-            is_balance_mod : meta.advice_column(),
-            is_codehash_mod : meta.advice_column(),
-            is_account_delete_mod : meta.advice_column(),
-            is_non_existing_account_proof : meta.advice_column(),
+            is_storage_mod: meta.advice_column(),
+            is_nonce_mod: meta.advice_column(),
+            is_balance_mod: meta.advice_column(),
+            is_codehash_mod: meta.advice_column(),
+            is_account_delete_mod: meta.advice_column(),
+            is_non_existing_account_proof: meta.advice_column(),
             _marker: PhantomData,
         }
     }
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct MainCols<F> { // Main as opposed to other columns which are selectors and RLC accumulators.
+pub(crate) struct MainCols<F> {
+    // Main as opposed to other columns which are selectors and RLC accumulators.
     pub(crate) rlp1: Column<Advice>,
     pub(crate) rlp2: Column<Advice>,
     pub(crate) bytes: [Column<Advice>; HASH_WIDTH],
@@ -79,11 +84,19 @@ pub(crate) struct AccumulatorCols<F> {
     // key.rlc & key.mult used for account address, for storage key,
     // for mult_diff_nonce/mult_diff_balance in account_leaf_nonce_balance
     pub(crate) key: AccumulatorPair<F>, // accumulating RLC for address or key
-    pub(crate) node_mult_diff_s: Column<Advice>, // used when accumulating branch RLC for non-hashed nodes in a branch
-    pub(crate) node_mult_diff_c: Column<Advice>, // used when accumulating branch RLC for non-hashed nodes in a branch
-    pub(crate) mult_diff: Column<Advice>, // power of randomness r: multiplier_curr = multiplier_prev * mult_diff (used for example for diff due to extension node nibbles)
-    pub(crate) s_mod_node_rlc: Column<Advice>, // modified node s_advices RLC, TODO: used also for leaf long/short, check whether some DenoteCol could be used
-    pub(crate) c_mod_node_rlc: Column<Advice>, // modified node c_advices RLC, TODO: used also for leaf long/short, check whether some DenoteCol could be used
+    pub(crate) node_mult_diff_s: Column<Advice>, /* used when accumulating branch RLC for non-hashed
+                                         * nodes in a branch */
+    pub(crate) node_mult_diff_c: Column<Advice>, /* used when accumulating branch RLC for
+                                                  * non-hashed nodes in a branch */
+    pub(crate) mult_diff: Column<Advice>, /* power of randomness r: multiplier_curr =
+                                           * multiplier_prev * mult_diff (used for example for
+                                           * diff due to extension node nibbles) */
+    pub(crate) s_mod_node_rlc: Column<Advice>, /* modified node s_advices RLC, TODO: used also
+                                                * for leaf long/short, check whether some
+                                                * DenoteCol could be used */
+    pub(crate) c_mod_node_rlc: Column<Advice>, /* modified node c_advices RLC, TODO: used also
+                                                * for leaf long/short, check whether some
+                                                * DenoteCol could be used */
     _marker: PhantomData<F>,
 }
 
@@ -119,14 +132,16 @@ pub(crate) struct DenoteCols<F> {
     // in the branch above): whether leaf is just a placeholder
     // sel1 and sel2 in account leaf key specifies whether nonce / balance are short / long (check
     // nonce balance row: offset - 1)
-    pub(crate) sel1: Column<Advice>, // TODO: check LeafKeyChip where sel1 stores key_rlc_prev, sel2 stores key_rlc_mult_prev
+    pub(crate) sel1: Column<Advice>, /* TODO: check LeafKeyChip where sel1 stores key_rlc_prev,
+                                      * sel2 stores key_rlc_mult_prev */
     pub(crate) sel2: Column<Advice>,
     pub(crate) is_node_hashed_s: Column<Advice>,
     pub(crate) is_node_hashed_c: Column<Advice>,
     _marker: PhantomData<F>,
 }
 
-// TODO: check whether sel1, sel2 are sometimes used for accumulated values and fix it.
+// TODO: check whether sel1, sel2 are sometimes used for accumulated values and
+// fix it.
 
 impl<F: FieldExt> DenoteCols<F> {
     pub(crate) fn new(meta: &mut ConstraintSystem<F>) -> Self {

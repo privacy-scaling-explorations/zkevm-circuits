@@ -1,19 +1,31 @@
 use halo2_proofs::{
+    circuit::Region,
     plonk::{Advice, Column, ConstraintSystem, Expression, Fixed, VirtualCells},
-    poly::Rotation, circuit::Region,
+    poly::Rotation,
 };
 use itertools::Itertools;
 use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
 use crate::{
-    helpers::{compute_rlc, get_bool_constraint, bytes_expr_into_rlc, key_len_lookup, get_is_extension_node_one_nibble, get_is_extension_node_even_nibbles, get_is_extension_node_long_odd_nibbles, get_is_extension_node},
+    columns::{AccumulatorCols, MainCols},
+    helpers::{
+        bytes_expr_into_rlc, compute_rlc, get_bool_constraint, get_is_extension_node,
+        get_is_extension_node_even_nibbles, get_is_extension_node_long_odd_nibbles,
+        get_is_extension_node_one_nibble,
+    },
+    mpt::{MPTConfig, ProofVariables},
     param::{
+        ACCOUNT_LEAF_ROWS, ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND,
+        ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND, BRANCH_ROWS_NUM, C_RLP_START, C_START, HASH_WIDTH,
         IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, IS_BRANCH_C_PLACEHOLDER_POS,
-        IS_BRANCH_S_PLACEHOLDER_POS, IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS,
-        IS_EXT_LONG_ODD_C16_POS, IS_EXT_LONG_ODD_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS,
-        KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH, RLP_NUM, IS_S_EXT_LONGER_THAN_55_POS, IS_C_EXT_LONGER_THAN_55_POS, IS_S_EXT_NODE_NON_HASHED_POS, IS_C_EXT_NODE_NON_HASHED_POS, NIBBLES_COUNTER_POS, BRANCH_ROWS_NUM, C_RLP_START, HASH_WIDTH, C_START, ACCOUNT_LEAF_ROWS, ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND, ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND,
-    }, columns::{MainCols, AccumulatorCols}, mpt::{ProofVariables, MPTConfig}, witness_row::MptWitnessRow,
+        IS_BRANCH_S_PLACEHOLDER_POS, IS_C_EXT_LONGER_THAN_55_POS, IS_C_EXT_NODE_NON_HASHED_POS,
+        IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS, IS_EXT_LONG_ODD_C16_POS,
+        IS_EXT_LONG_ODD_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS,
+        IS_S_EXT_LONGER_THAN_55_POS, IS_S_EXT_NODE_NON_HASHED_POS, KECCAK_INPUT_WIDTH,
+        KECCAK_OUTPUT_WIDTH, NIBBLES_COUNTER_POS, RLP_NUM,
+    },
+    witness_row::MptWitnessRow,
 };
 
 use super::BranchCols;
@@ -154,7 +166,9 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
         is_s: bool,
         acc_r: F,
     ) -> Self {
-        let config = ExtensionNodeConfig { _marker: PhantomData };
+        let config = ExtensionNodeConfig {
+            _marker: PhantomData,
+        };
         let one = Expression::Constant(F::from(1_u64));
         let c33 = Expression::Constant(F::from(33));
         let c128 = Expression::Constant(F::from(128));
@@ -165,7 +179,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
         if !is_s {
             rot_into_branch_init = -18;
         }
- 
+
         meta.create_gate("Extension node RLC", |meta| {
             let mut constraints = vec![];
             let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
@@ -199,7 +213,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
             rlc = rlc + s_bytes_rlc;
 
             let acc_s = meta.query_advice(accs.acc_s.rlc, Rotation(rot));
-            
+
             /*
             The intermediate RLC after `s_main` bytes needs to be properly computed.
             */
@@ -238,12 +252,25 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
             let acc_mult_s = meta.query_advice(accs.acc_s.mult, Rotation::cur());
             let c_advices0 = meta.query_advice(c_main.bytes[0], Rotation::cur());
             rlc = acc_s.clone() + c_rlp2 * acc_mult_s.clone();
-            let c_advices_rlc = compute_rlc(meta, c_main.bytes.to_vec(), 0, acc_mult_s.clone(), 0, r_table.clone());
+            let c_advices_rlc = compute_rlc(
+                meta,
+                c_main.bytes.to_vec(),
+                0,
+                acc_mult_s.clone(),
+                0,
+                r_table.clone(),
+            );
             rlc = rlc + c_advices_rlc;
 
             let mut rlc_non_hashed_branch = acc_s + c_advices0 * acc_mult_s.clone();
-            let c_advices_rlc_non_hashed = compute_rlc(meta,
-                c_main.bytes.iter().skip(1).map(|v| *v).collect_vec(), 0, acc_mult_s, 0, r_table);
+            let c_advices_rlc_non_hashed = compute_rlc(
+                meta,
+                c_main.bytes.iter().skip(1).map(|v| *v).collect_vec(),
+                0,
+                acc_mult_s,
+                0,
+                r_table,
+            );
             rlc_non_hashed_branch = rlc_non_hashed_branch + c_advices_rlc_non_hashed;
 
             let acc_c = meta.query_advice(accs.acc_c.rlc, Rotation::cur());
@@ -280,7 +307,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
 
             constraints
         });
- 
+
         meta.create_gate("Extension node selectors & RLP", |meta| {
             let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
             let q_enable = q_enable(meta);
@@ -773,50 +800,50 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
 
             constraints
         });
- 
-        meta.create_gate("Extension node branch hash in extension row (non-hashed branch)", |meta| {
-            let mut constraints = vec![];
-            let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
-            let q_enable = q_enable(meta);
 
-            let c_rlp2 = meta.query_advice(c_main.rlp2, Rotation::cur());
-            // c_rlp2 = 160 when branch is hashed (longer than 31) and c_rlp2 = 0 otherwise
-            let is_branch_hashed = c_rlp2.clone() * c160_inv.clone();
+        meta.create_gate(
+            "Extension node branch hash in extension row (non-hashed branch)",
+            |meta| {
+                let mut constraints = vec![];
+                let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
+                let q_enable = q_enable(meta);
 
-            let mut acc = meta.query_advice(accs.acc_s.rlc, Rotation(-1));
-            let mut mult = meta.query_advice(accs.acc_s.mult, Rotation(-1));
-            if !is_s {
-                acc = meta.query_advice(accs.acc_c.rlc, Rotation(-2));
-                mult = meta.query_advice(accs.acc_c.mult, Rotation(-2));
-            }
-            // TODO: acc currently doesn't have branch ValueNode info (which 128 if nil)
-            let branch_acc = acc + c128.clone() * mult;
+                let c_rlp2 = meta.query_advice(c_main.rlp2, Rotation::cur());
+                // c_rlp2 = 160 when branch is hashed (longer than 31) and c_rlp2 = 0 otherwise
+                let is_branch_hashed = c_rlp2.clone() * c160_inv.clone();
 
-            let mut branch_in_ext = vec![];
-            // Note: extension node has branch hash always in c_advices.
-            for column in c_main.bytes.iter() {
-                branch_in_ext.push(meta.query_advice(*column, Rotation::cur()));
-            }
-            let rlc = bytes_expr_into_rlc(&branch_in_ext, acc_r);
+                let mut acc = meta.query_advice(accs.acc_s.rlc, Rotation(-1));
+                let mut mult = meta.query_advice(accs.acc_s.mult, Rotation(-1));
+                if !is_s {
+                    acc = meta.query_advice(accs.acc_c.rlc, Rotation(-2));
+                    mult = meta.query_advice(accs.acc_c.mult, Rotation(-2));
+                }
+                // TODO: acc currently doesn't have branch ValueNode info (which 128 if nil)
+                let branch_acc = acc + c128.clone() * mult;
 
-            /*
-            Check whether branch is in extension node row (non-hashed branch) -
-            we check that the branch RLC is the same as the extension node branch part RLC
-            (RLC computed over `c_main.bytes`).
+                let mut branch_in_ext = vec![];
+                // Note: extension node has branch hash always in c_advices.
+                for column in c_main.bytes.iter() {
+                    branch_in_ext.push(meta.query_advice(*column, Rotation::cur()));
+                }
+                let rlc = bytes_expr_into_rlc(&branch_in_ext, acc_r);
 
-            Note: there need to be 0s after branch ends in the extension node `c_main.bytes`
-            (see below).
-            */
-            constraints.push((
-                "Non-hashed branch in extension node",
-                q_not_first
-                    * q_enable
-                    * (one.clone() - is_branch_hashed)
-                    * (branch_acc - rlc),
-            ));
+                /*
+                Check whether branch is in extension node row (non-hashed branch) -
+                we check that the branch RLC is the same as the extension node branch part RLC
+                (RLC computed over `c_main.bytes`).
 
-            constraints
-        });
+                Note: there need to be 0s after branch ends in the extension node `c_main.bytes`
+                (see below).
+                */
+                constraints.push((
+                    "Non-hashed branch in extension node",
+                    q_not_first * q_enable * (one.clone() - is_branch_hashed) * (branch_acc - rlc),
+                ));
+
+                constraints
+            },
+        );
 
         let sel_branch_non_hashed = |meta: &mut VirtualCells<F>| {
             let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
@@ -844,7 +871,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                 fixed_table,
             )
         }
-        */  
+        */
 
         /*
         Note: Correspondence between nibbles in C and bytes in S is checked in
@@ -878,10 +905,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                 ));
                 let keccak_table_i = meta.query_fixed(keccak_table[1], Rotation::cur());
                 constraints.push((
-                    q_not_first
-                        * q_enable.clone()
-                        * (one.clone() - not_first_level)
-                        * root,
+                    q_not_first * q_enable.clone() * (one.clone() - not_first_level) * root,
                     keccak_table_i,
                 ));
 
@@ -893,7 +917,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
         When extension node is in the first level of the storage trie, we need to check whether
         `hash(ext_node) = storage_trie_root`. We do this by checking whether
         `(ext_node_RLC, storage_trie_root_RLC)` is in the keccak table.
-        
+
         Note: extension node in the first level cannot be shorter than 32 bytes (it is always hashed).
         */
         meta.lookup_any(
@@ -936,13 +960,21 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                 // Note: storage root is always in `s_main.bytes`.
                 for column in s_main.bytes.iter() {
                     if is_s {
-                        sc_hash
-                            .push(meta.query_advice(*column, 
-                                Rotation(rot_into_branch_init - (ACCOUNT_LEAF_ROWS - ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND))));
+                        sc_hash.push(meta.query_advice(
+                            *column,
+                            Rotation(
+                                rot_into_branch_init
+                                    - (ACCOUNT_LEAF_ROWS - ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND),
+                            ),
+                        ));
                     } else {
-                        sc_hash
-                            .push(meta.query_advice(*column, 
-                                Rotation(rot_into_branch_init - (ACCOUNT_LEAF_ROWS - ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND))));
+                        sc_hash.push(meta.query_advice(
+                            *column,
+                            Rotation(
+                                rot_into_branch_init
+                                    - (ACCOUNT_LEAF_ROWS - ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND),
+                            ),
+                        ));
                     }
                 }
                 let hash_rlc = bytes_expr_into_rlc(&sc_hash, acc_r);
@@ -1036,59 +1068,64 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
             constraints
         });
 
-        meta.create_gate("Extension node in parent branch (non-hashed extension node)", |meta| {
-            let q_enable = q_enable(meta);
-            let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
-            let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
+        meta.create_gate(
+            "Extension node in parent branch (non-hashed extension node)",
+            |meta| {
+                let q_enable = q_enable(meta);
+                let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
+                let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
 
-            let is_account_leaf_in_added_branch = meta.query_advice(
-                is_account_leaf_in_added_branch,
-                Rotation(rot_into_branch_init - 1),
-            );
+                let is_account_leaf_in_added_branch = meta.query_advice(
+                    is_account_leaf_in_added_branch,
+                    Rotation(rot_into_branch_init - 1),
+                );
 
-            // When placeholder extension, we don't check its hash in a parent.
-            let mut is_branch_placeholder = s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM];
-            if !is_s {
-                is_branch_placeholder = s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM];
-            }
-            let is_branch_placeholder =
-                meta.query_advice(is_branch_placeholder, Rotation(rot_into_branch_init));
+                // When placeholder extension, we don't check its hash in a parent.
+                let mut is_branch_placeholder = s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM];
+                if !is_s {
+                    is_branch_placeholder = s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM];
+                }
+                let is_branch_placeholder =
+                    meta.query_advice(is_branch_placeholder, Rotation(rot_into_branch_init));
 
-            let mut is_ext_node_non_hashed = s_main.bytes[IS_S_EXT_NODE_NON_HASHED_POS - RLP_NUM];
-            if !is_s {
-                is_ext_node_non_hashed = s_main.bytes[IS_C_EXT_NODE_NON_HASHED_POS - RLP_NUM];
-            }
-            let is_ext_node_non_hashed =
-                meta.query_advice(is_ext_node_non_hashed, Rotation(rot_into_branch_init));
+                let mut is_ext_node_non_hashed =
+                    s_main.bytes[IS_S_EXT_NODE_NON_HASHED_POS - RLP_NUM];
+                if !is_s {
+                    is_ext_node_non_hashed = s_main.bytes[IS_C_EXT_NODE_NON_HASHED_POS - RLP_NUM];
+                }
+                let is_ext_node_non_hashed =
+                    meta.query_advice(is_ext_node_non_hashed, Rotation(rot_into_branch_init));
 
-            let mut constraints = vec![];
+                let mut constraints = vec![];
 
-            let acc_c = meta.query_advice(accs.acc_c.rlc, Rotation::cur());
-            let mut mod_node_hash_rlc_cur = meta.query_advice(accs.s_mod_node_rlc, Rotation(-21));
-            if !is_s {
-                mod_node_hash_rlc_cur = meta.query_advice(accs.c_mod_node_rlc, Rotation(-21));
-            }
-            
-            /*
-            When an extension node is not hashed, we do not check whether it is in a parent 
-            branch using a lookup (see above), instead we need to check whether the branch child
-            at `modified_node` position is exactly the same as the extension node.
-            */
-            constraints.push((
-                "Non-hashed extension node in parent branch",
+                let acc_c = meta.query_advice(accs.acc_c.rlc, Rotation::cur());
+                let mut mod_node_hash_rlc_cur =
+                    meta.query_advice(accs.s_mod_node_rlc, Rotation(-21));
+                if !is_s {
+                    mod_node_hash_rlc_cur = meta.query_advice(accs.c_mod_node_rlc, Rotation(-21));
+                }
+
+                /*
+                When an extension node is not hashed, we do not check whether it is in a parent
+                branch using a lookup (see above), instead we need to check whether the branch child
+                at `modified_node` position is exactly the same as the extension node.
+                */
+                constraints.push((
+                    "Non-hashed extension node in parent branch",
                     q_not_first.clone()
-                    * not_first_level.clone()
-                    * q_enable.clone()
-                    * (one.clone() - is_account_leaf_in_added_branch.clone())
-                    * (one.clone() - is_branch_placeholder.clone())
-                    * is_ext_node_non_hashed
-                    * (mod_node_hash_rlc_cur - acc_c),
-            ));
+                        * not_first_level.clone()
+                        * q_enable.clone()
+                        * (one.clone() - is_account_leaf_in_added_branch.clone())
+                        * (one.clone() - is_branch_placeholder.clone())
+                        * is_ext_node_non_hashed
+                        * (mod_node_hash_rlc_cur - acc_c),
+                ));
 
-            constraints
-        });
+                constraints
+            },
+        );
 
-        /* 
+        /*
         We need to make sure the total number of nibbles is 64. This constraint ensures the number
         of nibbles used (stored in branch init) is correctly computed - nibbles up until this
         extension node + nibbles in this extension node.
@@ -1113,9 +1150,15 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                     Rotation(rot_into_branch_init),
                 );
 
-                let is_short = get_is_extension_node_one_nibble(meta, s_main.bytes, rot_into_branch_init);
-                let is_even_nibbles = get_is_extension_node_even_nibbles(meta, s_main.bytes, rot_into_branch_init);
-                let is_long_odd_nibbles = get_is_extension_node_long_odd_nibbles(meta, s_main.bytes, rot_into_branch_init);
+                let is_short =
+                    get_is_extension_node_one_nibble(meta, s_main.bytes, rot_into_branch_init);
+                let is_even_nibbles =
+                    get_is_extension_node_even_nibbles(meta, s_main.bytes, rot_into_branch_init);
+                let is_long_odd_nibbles = get_is_extension_node_long_odd_nibbles(
+                    meta,
+                    s_main.bytes,
+                    rot_into_branch_init,
+                );
 
                 /*
                 Note: for regular branches, the constraint that `nibbles_count` increases
@@ -1135,7 +1178,8 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                 nibbles_count_prev needs to be 0 when in first account level or
                 in first storage level
                 */
-                nibbles_count_prev = (one.clone() - is_first_storage_level.clone()) * nibbles_count_prev.clone();
+                nibbles_count_prev =
+                    (one.clone() - is_first_storage_level.clone()) * nibbles_count_prev.clone();
                 nibbles_count_prev = not_first_level.clone() * nibbles_count_prev.clone();
 
                 /*
@@ -1147,11 +1191,15 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                     q_not_first.clone()
                         * q_enable.clone()
                         * is_short.clone()
-                        * (nibbles_count_cur.clone() - nibbles_count_prev.clone() - one.clone() - one.clone()), // -1 for nibble, - 1 is for branch position
+                        * (nibbles_count_cur.clone()
+                            - nibbles_count_prev.clone()
+                            - one.clone()
+                            - one.clone()), // -1 for nibble, - 1 is for branch position
                 ));
 
                 let s_rlp2 = meta.query_advice(s_main.rlp2, Rotation::cur());
-                let mut num_nibbles = (s_rlp2.clone() - c128.clone() - one.clone()) * (one.clone() + one.clone());
+                let mut num_nibbles =
+                    (s_rlp2.clone() - c128.clone() - one.clone()) * (one.clone() + one.clone());
                 /*
                 When there is an even number of nibbles in the extension node,
                 we compute the number of nibbles as: `(s_rlp2 - 128 - 1) * 2`.
@@ -1168,7 +1216,10 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                         * q_enable.clone()
                         * is_even_nibbles.clone()
                         * (one.clone() - is_ext_longer_than_55.clone())
-                        * (nibbles_count_cur.clone() - nibbles_count_prev.clone() - num_nibbles.clone() - one.clone()), // - 1 is for branch position
+                        * (nibbles_count_cur.clone()
+                            - nibbles_count_prev.clone()
+                            - num_nibbles.clone()
+                            - one.clone()), // - 1 is for branch position
                 ));
 
                 num_nibbles = (s_rlp2 - c128.clone()) * (one.clone() + one.clone()) - one.clone();
@@ -1186,11 +1237,15 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                         * q_enable.clone()
                         * is_long_odd_nibbles.clone()
                         * (one.clone() - is_ext_longer_than_55.clone())
-                        * (nibbles_count_cur.clone() - nibbles_count_prev.clone() - num_nibbles.clone() - one.clone()), // - 1 is for branch position
+                        * (nibbles_count_cur.clone()
+                            - nibbles_count_prev.clone()
+                            - num_nibbles.clone()
+                            - one.clone()), // - 1 is for branch position
                 ));
 
                 let s_bytes0 = meta.query_advice(s_main.bytes[0], Rotation::cur());
-                num_nibbles = (s_bytes0.clone() - c128.clone() - one.clone()) * (one.clone() + one.clone());
+                num_nibbles =
+                    (s_bytes0.clone() - c128.clone() - one.clone()) * (one.clone() + one.clone());
 
                 /*
                 When there is an even number of nibbles in the extension node and the extension
@@ -1207,7 +1262,10 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                         * q_enable.clone()
                         * is_even_nibbles.clone()
                         * is_ext_longer_than_55.clone()
-                        * (nibbles_count_cur.clone() - nibbles_count_prev.clone() - num_nibbles.clone() - one.clone()), // - 1 is for branch position
+                        * (nibbles_count_cur.clone()
+                            - nibbles_count_prev.clone()
+                            - num_nibbles.clone()
+                            - one.clone()), // - 1 is for branch position
                 ));
 
                 num_nibbles = (s_bytes0 - c128.clone()) * (one.clone() + one.clone()) - one.clone();
@@ -1253,15 +1311,20 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
     ) {
         if pv.is_extension_node {
             if is_s {
-                // [228,130,0,149,160,114,253,150,133,18,192,156,19,241,162,51,210,24,1,151,16,48,7,177,42,60,49,34,230,254,242,79,132,165,90,75,249]
+                // [228,130,0,149,160,114,253,150,133,18,192,156,19,241,162,51,210,24,1,151,16,
+                // 48,7,177,42,60,49,34,230,254,242,79,132,165,90,75,249]
 
                 // One nibble:
                 // [226,16,160,172,105,12...
                 // Could also be non-hashed branch:
-                // [223,16,221,198,132,32,0,0,0,1,198,132,32,0,0,0,1,128,128,128,128,128,128,128,128,128,128,128,128,128,128,128]
+                // [223,16,221,198,132,32,0,0,0,1,198,132,32,0,0,0,1,128,128,128,128,128,128,
+                // 128,128,128,128,128,128,128,128,128]
 
-                // [247,160,16,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,213,128,194,32,1,128,194,32,1,128,128,128,128,128,128,128,128,128,128,128,128,128]
-                // [248,58,159,16,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,217,128,196,130,32,0,1,128,196,130,32,0,1,128,128,128,128,128,128,128,128,128,128,128,128,128]
+                // [247,160,16,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+                // 213,128,194,32,1,128,194,32,1,128,128,128,128,128,128,128,128,128,128,128,
+                // 128,128] [248,58,159,16,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+                // 0,0,0,0,0,0,0,0,0,0,0,0,217,128,196,130,32,0,1,128,196,130,32,0,1,128,128,
+                // 128,128,128,128,128,128,128,128,128,128,128]
 
                 // Intermediate RLC value and mult (after key)
                 // to know which mult we need to use in c_advices.
@@ -1302,14 +1365,9 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                     len,
                 );
 
-                mpt_config.assign_acc(
-                    region,
-                    pv.acc_s,
-                    pv.acc_mult_s,
-                    pv.acc_c,
-                    F::zero(),
-                    offset,
-                ).ok();
+                mpt_config
+                    .assign_acc(region, pv.acc_s, pv.acc_mult_s, pv.acc_c, F::zero(), offset)
+                    .ok();
             } else {
                 // We use intermediate value from previous row (because
                 // up to acc_s it's about key and this is the same
@@ -1331,21 +1389,18 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                     len,
                 );
 
-                mpt_config.assign_acc(
-                    region,
-                    pv.acc_s,
-                    pv.acc_mult_s,
-                    pv.acc_c,
-                    F::zero(),
-                    offset,
-                ).ok();
+                mpt_config
+                    .assign_acc(region, pv.acc_s, pv.acc_mult_s, pv.acc_c, F::zero(), offset)
+                    .ok();
             }
-            region.assign_advice(
-                || "assign key_rlc".to_string(),
-                mpt_config.accumulators.key.rlc,
-                offset,
-                || Ok(pv.extension_node_rlc),
-            ).ok();
+            region
+                .assign_advice(
+                    || "assign key_rlc".to_string(),
+                    mpt_config.accumulators.key.rlc,
+                    offset,
+                    || Ok(pv.extension_node_rlc),
+                )
+                .ok();
         }
     }
 }

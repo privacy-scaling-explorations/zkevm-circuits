@@ -5,7 +5,7 @@ use halo2_proofs::{
 use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
-use crate::{storage_leaf::StorageLeafCols, account_leaf::AccountLeafCols, columns::ProofTypeCols};
+use crate::{account_leaf::AccountLeafCols, columns::ProofTypeCols, storage_leaf::StorageLeafCols};
 
 /*
 The selector `not_first_level` denotes whether the node is not in the first account trie level.
@@ -56,7 +56,9 @@ impl<F: FieldExt> ProofChainConfig<F> {
         inter_final_root: Column<Advice>,
         address_rlc: Column<Advice>,
     ) -> Self {
-        let config = ProofChainConfig { _marker: PhantomData };
+        let config = ProofChainConfig {
+            _marker: PhantomData,
+        };
 
         meta.create_gate("Proof chaining constraints", |meta| {
             let mut constraints = vec![];

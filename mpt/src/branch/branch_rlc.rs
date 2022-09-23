@@ -1,11 +1,15 @@
 use halo2_proofs::{
-    plonk::{Advice, Column, ConstraintSystem, Expression, VirtualCells, Fixed},
+    plonk::{Advice, Column, ConstraintSystem, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
 use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
-use crate::{param::{HASH_WIDTH, R_TABLE_LEN}, helpers::{mult_diff_lookup}, columns::{MainCols, AccumulatorPair}};
+use crate::{
+    columns::{AccumulatorPair, MainCols},
+    helpers::mult_diff_lookup,
+    param::{HASH_WIDTH, R_TABLE_LEN},
+};
 
 /*
 A branch occupies 19 rows:
@@ -62,7 +66,9 @@ impl<F: FieldExt> BranchRLCConfig<F> {
         r_table: Vec<Expression<F>>,
         fixed_table: [Column<Fixed>; 3],
     ) -> Self {
-        let config = BranchRLCConfig { _marker: PhantomData };
+        let config = BranchRLCConfig {
+            _marker: PhantomData,
+        };
         let c128 = Expression::Constant(F::from(128_u64));
 
         meta.create_gate("Branch RLC", |meta| {
@@ -138,14 +144,16 @@ impl<F: FieldExt> BranchRLCConfig<F> {
                     * (one.clone() - is_node_hashed.clone())
                     * rlp2.clone()
                     * (branch_mult_cur.clone()
-                        - branch_mult_prev.clone() * r_table[R_TABLE_LEN - 1].clone() * r_table[0].clone()),
+                        - branch_mult_prev.clone()
+                            * r_table[R_TABLE_LEN - 1].clone()
+                            * r_table[0].clone()),
             ));
 
             let advices0 = meta.query_advice(main.bytes[0], Rotation::cur());
-            let mut acc = branch_acc_prev.clone() + advices0 * branch_mult_prev.clone(); 
+            let mut acc = branch_acc_prev.clone() + advices0 * branch_mult_prev.clone();
             for ind in 1..HASH_WIDTH {
                 let a = meta.query_advice(main.bytes[ind], Rotation::cur());
-                acc = acc + a * branch_mult_prev.clone() * r_table[ind-1].clone();
+                acc = acc + a * branch_mult_prev.clone() * r_table[ind - 1].clone();
             }
 
             /*
@@ -157,9 +165,7 @@ impl<F: FieldExt> BranchRLCConfig<F> {
             */
             constraints.push((
                 "Branch RLC non-hashed",
-                q_enable.clone()
-                    * is_node_hashed.clone()
-                    * (branch_acc_cur - acc),
+                q_enable.clone() * is_node_hashed.clone() * (branch_acc_cur - acc),
             ));
 
             let node_mult_diff = meta.query_advice(node_mult_diff, Rotation::cur());
@@ -180,7 +186,7 @@ impl<F: FieldExt> BranchRLCConfig<F> {
 
             constraints
         });
-        
+
         let sel = |meta: &mut VirtualCells<F>| {
             let q_enable = q_enable(meta);
             let is_node_hashed = meta.query_advice(is_node_hashed, Rotation::cur());
@@ -192,11 +198,19 @@ impl<F: FieldExt> BranchRLCConfig<F> {
         We need to check that the multiplier in non-hashed nodes changes according to the non-hashed
         node length.
         */
-        mult_diff_lookup(meta, sel, 0, main.bytes[0], node_mult_diff, 192, fixed_table);
-        
+        mult_diff_lookup(
+            meta,
+            sel,
+            0,
+            main.bytes[0],
+            node_mult_diff,
+            192,
+            fixed_table,
+        );
+
         /*
         Note: the constraints for there being 0s after the non-hashed child last byte are in
-        branch_parallel.rs. 
+        branch_parallel.rs.
         */
 
         config

@@ -1,17 +1,21 @@
 use halo2_proofs::{
+    circuit::Region,
     plonk::{Advice, Column, ConstraintSystem, Expression, Fixed, VirtualCells},
-    poly::Rotation, circuit::Region,
+    poly::Rotation,
 };
 use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
 use crate::{
-    helpers::{compute_rlc, get_bool_constraint, key_len_lookup, mult_diff_lookup, range_lookups},
+    columns::{AccumulatorCols, DenoteCols, MainCols},
+    helpers::{compute_rlc, get_bool_constraint, mult_diff_lookup, range_lookups},
     mpt::{FixedTableTag, MPTConfig, ProofVariables},
     param::{
-        BRANCH_ROWS_NUM, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, RLP_NUM,
-        R_TABLE_LEN, HASH_WIDTH, IS_BRANCH_S_PLACEHOLDER_POS, IS_BRANCH_C_PLACEHOLDER_POS, NIBBLES_COUNTER_POS, S_START,
-    }, columns::{MainCols, AccumulatorCols, DenoteCols}, witness_row::{MptWitnessRow, MptWitnessRowType},
+        BRANCH_ROWS_NUM, HASH_WIDTH, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS,
+        IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS, NIBBLES_COUNTER_POS, RLP_NUM,
+        R_TABLE_LEN, S_START,
+    },
+    witness_row::{MptWitnessRow, MptWitnessRowType},
 };
 
 /*
@@ -95,7 +99,9 @@ impl<F: FieldExt> LeafKeyConfig<F> {
         fixed_table: [Column<Fixed>; 3],
         is_s: bool,
     ) -> Self {
-        let config = LeafKeyConfig { _marker: PhantomData };
+        let config = LeafKeyConfig {
+            _marker: PhantomData,
+        };
         let one = Expression::Constant(F::one());
         let c32 = Expression::Constant(F::from(32));
         let c48 = Expression::Constant(F::from(48));
@@ -138,7 +144,7 @@ impl<F: FieldExt> LeafKeyConfig<F> {
             constraints.push((
                 "is_long: s_rlp1 = 248",
                 q_enable.clone() * is_long.clone() * (s_rlp1.clone() - c248),
-            )); 
+            ));
 
             /*
             When `last_level`, there is no nibble stored in the leaf key, it is just the value
@@ -169,11 +175,19 @@ impl<F: FieldExt> LeafKeyConfig<F> {
                 get_bool_constraint(q_enable.clone(), flag2.clone()),
             ));
 
-            // If leaf in last level, it contains only s_rlp1 and s_rlp2, while s_main.bytes are 0.
+            // If leaf in last level, it contains only s_rlp1 and s_rlp2, while s_main.bytes
+            // are 0.
             let rlc_last_level_or_one_nibble = s_rlp1 + s_rlp2 * r_table[0].clone();
 
             let mut rlc = rlc_last_level_or_one_nibble.clone()
-                + compute_rlc(meta, s_main.bytes.to_vec(), 1, one.clone(), 0, r_table.clone());
+                + compute_rlc(
+                    meta,
+                    s_main.bytes.to_vec(),
+                    1,
+                    one.clone(),
+                    0,
+                    r_table.clone(),
+                );
 
             let c_rlp1 = meta.query_advice(c_main.rlp1, Rotation::cur());
             // c_rlp2 can appear if long and if no branch above leaf
@@ -187,11 +201,11 @@ impl<F: FieldExt> LeafKeyConfig<F> {
             We need to ensure that the RLC of the row is computed properly for `is_short` and
             `is_long`. We compare the computed value with the value stored in `accumulators.acc_s.rlc`.
             */
-            constraints.push(("Leaf key RLC (short or long)",
-                q_enable.clone()
-                * (is_short + is_long)
-                * (rlc - acc.clone())));
-            
+            constraints.push((
+                "Leaf key RLC (short or long)",
+                q_enable.clone() * (is_short + is_long) * (rlc - acc.clone()),
+            ));
+
             /*
             We need to ensure that the RLC of the row is computed properly for `last_level` and
             `one_nibble`. We compare the computed value with the value stored in `accumulators.acc_s.rlc`.
@@ -199,10 +213,10 @@ impl<F: FieldExt> LeafKeyConfig<F> {
             `last_level` and `one_nibble` cases have one RLP byte (`s_rlp1`) and one byte (`s_rlp2`)
             where it is 32 (for `last_level`) or `48 + last_nibble` (for `one_nibble`).
             */
-            constraints.push(("Leaf key RLC (last level or one nibble)",
-                q_enable
-                * (last_level + one_nibble)
-                * (rlc_last_level_or_one_nibble - acc)));
+            constraints.push((
+                "Leaf key RLC (last level or one nibble)",
+                q_enable * (last_level + one_nibble) * (rlc_last_level_or_one_nibble - acc),
+            ));
 
             constraints
         });
@@ -267,8 +281,24 @@ impl<F: FieldExt> LeafKeyConfig<F> {
         Note: `last_level` and `one_nibble` have fixed multiplier because the length of the nibbles
         in these cases is fixed.
         */
-        mult_diff_lookup(meta, sel_short, 2, s_main.rlp2, accs.acc_s.mult, 128, fixed_table);
-        mult_diff_lookup(meta, sel_long, 3, s_main.bytes[0], accs.acc_s.mult, 128, fixed_table);
+        mult_diff_lookup(
+            meta,
+            sel_short,
+            2,
+            s_main.rlp2,
+            accs.acc_s.mult,
+            128,
+            fixed_table,
+        );
+        mult_diff_lookup(
+            meta,
+            sel_long,
+            3,
+            s_main.bytes[0],
+            accs.acc_s.mult,
+            128,
+            fixed_table,
+        );
 
         /*
         We need to ensure that the storage leaf is at the key specified in `key_rlc` column (used
@@ -614,11 +644,15 @@ impl<F: FieldExt> LeafKeyConfig<F> {
             let is_leaf_in_first_level =
                 meta.query_advice(is_account_leaf_in_added_branch, Rotation(rot_into_account));
 
-            let mut is_branch_placeholder =
-                meta.query_advice(s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM], Rotation(rot_into_init));
+            let mut is_branch_placeholder = meta.query_advice(
+                s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM],
+                Rotation(rot_into_init),
+            );
             if !is_s {
-                is_branch_placeholder =
-                    meta.query_advice(s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM], Rotation(rot_into_init));
+                is_branch_placeholder = meta.query_advice(
+                    s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
+                    Rotation(rot_into_init),
+                );
             }
 
             /*
@@ -772,15 +806,22 @@ impl<F: FieldExt> LeafKeyConfig<F> {
             */
 
             let s_rlp2 = meta.query_advice(s_main.rlp2, Rotation::cur());
-            let leaf_nibbles_long = ((s_bytes0.clone() - c128.clone() - one.clone()) * (one.clone() + one.clone())) * is_c1.clone() +
-                ((s_bytes0.clone() - c128.clone()) * (one.clone() + one.clone()) - one.clone()) * is_c16.clone();
-            let leaf_nibbles_short = ((s_rlp2.clone() - c128.clone() - one.clone()) * (one.clone() + one.clone())) * is_c1.clone() +
-                ((s_rlp2.clone() - c128.clone()) * (one.clone() + one.clone()) - one.clone()) * is_c16.clone();
-            let leaf_nibbles_one_nibble = one.clone(); 
+            let leaf_nibbles_long = ((s_bytes0.clone() - c128.clone() - one.clone())
+                * (one.clone() + one.clone()))
+                * is_c1.clone()
+                + ((s_bytes0.clone() - c128.clone()) * (one.clone() + one.clone()) - one.clone())
+                    * is_c16.clone();
+            let leaf_nibbles_short = ((s_rlp2.clone() - c128.clone() - one.clone())
+                * (one.clone() + one.clone()))
+                * is_c1.clone()
+                + ((s_rlp2.clone() - c128.clone()) * (one.clone() + one.clone()) - one.clone())
+                    * is_c16.clone();
+            let leaf_nibbles_one_nibble = one.clone();
 
-            let leaf_nibbles = leaf_nibbles_long * is_long + leaf_nibbles_short * is_short
+            let leaf_nibbles = leaf_nibbles_long * is_long
+                + leaf_nibbles_short * is_short
                 + leaf_nibbles_one_nibble * one_nibble;
- 
+
             let nibbles_count = meta.query_advice(
                 s_main.bytes[NIBBLES_COUNTER_POS - RLP_NUM],
                 Rotation(rot_into_init - BRANCH_ROWS_NUM),
@@ -880,32 +921,31 @@ impl<F: FieldExt> LeafKeyConfig<F> {
             // last_level or one_nibble
             len = 2
         }
-        mpt_config.compute_acc_and_mult(
-            &row.bytes,
-            &mut pv.acc_s,
-            &mut pv.acc_mult_s,
-            0,
-            len,
-        );
+        mpt_config.compute_acc_and_mult(&row.bytes, &mut pv.acc_s, &mut pv.acc_mult_s, 0, len);
 
-        mpt_config.assign_acc(
-            region,
-            pv.acc_s,
-            pv.acc_mult_s,
-            F::zero(),
-            F::zero(),
-            offset,
-        ).ok();
+        mpt_config
+            .assign_acc(
+                region,
+                pv.acc_s,
+                pv.acc_mult_s,
+                F::zero(),
+                F::zero(),
+                offset,
+            )
+            .ok();
 
         // note that this assignment needs to be after assign_acc call
-        if row.get_byte(0) < 223 { // when shorter than 32 bytes, the node doesn't get hashed
+        if row.get_byte(0) < 223 {
+            // when shorter than 32 bytes, the node doesn't get hashed
             // not_hashed
-            region.assign_advice(
-                || "assign not_hashed".to_string(),
-                mpt_config.accumulators.acc_c.rlc,
-                offset,
-                || Ok(F::one()),
-            ).ok();
+            region
+                .assign_advice(
+                    || "assign not_hashed".to_string(),
+                    mpt_config.accumulators.acc_c.rlc,
+                    offset,
+                    || Ok(F::one()),
+                )
+                .ok();
         }
 
         // TODO: handle if branch or extension node is added
@@ -929,14 +969,17 @@ impl<F: FieldExt> LeafKeyConfig<F> {
             // the key RLC is already computed using the first two bytes above.
             mpt_config.compute_key_rlc(&row.bytes, &mut key_rlc_new, &mut key_rlc_mult_new, start);
         }
-        region.assign_advice(
-            || "assign key_rlc".to_string(),
-            mpt_config.accumulators.key.rlc,
-            offset,
-            || Ok(key_rlc_new),
-        ).ok();
+        region
+            .assign_advice(
+                || "assign key_rlc".to_string(),
+                mpt_config.accumulators.key.rlc,
+                offset,
+                || Ok(key_rlc_new),
+            )
+            .ok();
 
-        // Store key_rlc into rlc2 to be later set in leaf value C row (to enable lookups):
+        // Store key_rlc into rlc2 to be later set in leaf value C row (to enable
+        // lookups):
         pv.rlc2 = key_rlc_new;
     }
 }

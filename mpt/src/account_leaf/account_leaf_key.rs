@@ -1,17 +1,23 @@
 use halo2_proofs::{
+    circuit::Region,
     plonk::{Advice, Column, ConstraintSystem, Expression, Fixed, VirtualCells},
-    poly::Rotation, circuit::Region,
+    poly::Rotation,
 };
 use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
 use crate::{
-    helpers::{compute_rlc, key_len_lookup, mult_diff_lookup, range_lookups},
+    columns::{AccumulatorCols, MainCols, ProofTypeCols},
+    helpers::{compute_rlc, mult_diff_lookup, range_lookups},
     mpt::{FixedTableTag, MPTConfig, ProofVariables},
     param::{
-        HASH_WIDTH, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS, IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS, IS_EXT_LONG_ODD_C16_POS, IS_EXT_LONG_ODD_C1_POS, 
-        IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS, RLP_NUM, R_TABLE_LEN, S_START, NIBBLES_COUNTER_POS, BRANCH_ROWS_NUM,
-    }, columns::{ProofTypeCols, MainCols, AccumulatorCols}, witness_row::{MptWitnessRow, MptWitnessRowType},
+        BRANCH_ROWS_NUM, HASH_WIDTH, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS,
+        IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS, IS_EXT_LONG_EVEN_C16_POS,
+        IS_EXT_LONG_EVEN_C1_POS, IS_EXT_LONG_ODD_C16_POS, IS_EXT_LONG_ODD_C1_POS,
+        IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS, NIBBLES_COUNTER_POS, RLP_NUM, R_TABLE_LEN,
+        S_START,
+    },
+    witness_row::{MptWitnessRow, MptWitnessRowType},
 };
 
 /*
@@ -90,7 +96,9 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
         sel2: Column<Advice>,
         is_s: bool,
     ) -> Self {
-        let config = AccountLeafKeyConfig { _marker: PhantomData };
+        let config = AccountLeafKeyConfig {
+            _marker: PhantomData,
+        };
         let one = Expression::Constant(F::one());
         let c64 = Expression::Constant(F::from(64));
         let c128 = Expression::Constant(F::from(128));
@@ -117,7 +125,7 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
 
             /*
             Account leaf always starts with 248 because its length is always longer than 55 bytes due to
-            containing two hashes - storage root and codehash, which are both of 32 bytes. 
+            containing two hashes - storage root and codehash, which are both of 32 bytes.
             248 is RLP byte which means there is `1 = 248 - 247` byte specifying the length of the remaining
             list. For example, in [248,112,157,59,...], there are 112 byte after the second byte.
             */
@@ -157,7 +165,7 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
 
             constraints
         });
- 
+
         /*
         /*
         Key RLC is computed over all of `s_main.bytes[1], ..., s_main.bytes[31], c_main.rlp1, c_main.rlp2`
@@ -165,7 +173,7 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
         To prevent changing the key and setting `s_main.bytes[i]` (or `c_main.rlp1/c_main.rlp2`) for
         `i > key_len + 1` to get the desired key RLC, we need to ensure that
         `s_main.bytes[i] = 0` for `i > key_len + 1`.
-        
+
         Note: the key length is always in s_main.bytes[0] here as opposed to storage
         key leaf where it can appear in s_rlp2 too. This is because the account
         leaf contains nonce, balance, ... which makes it always longer than 55 bytes,
@@ -193,14 +201,23 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
         The power of randomness `r` is determined by the key length - the intermediate RLC in the current row
         is computed as (key starts in `s_main.bytes[1]`):
         `rlc = s_main.rlp1 + s_main.rlp2 * r + s_main.bytes[0] * r^2 + key_bytes[0] * r^3 + ... + key_bytes[key_len-1] * r^{key_len + 2}`
-        So the multiplier to be used in the next row is `r^{key_len + 2}`. 
+        So the multiplier to be used in the next row is `r^{key_len + 2}`.
 
         `mult_diff` needs to correspond to the key length + 2 RLP bytes + 1 byte for byte that contains the key length.
         That means `mult_diff` needs to be `r^{key_len+1}` where `key_len = s_main.bytes[0] - 128`.
         */
-        mult_diff_lookup(meta, q_enable, 3, s_main.bytes[0], accs.acc_s.mult, 128, fixed_table);
+        mult_diff_lookup(
+            meta,
+            q_enable,
+            3,
+            s_main.bytes[0],
+            accs.acc_s.mult,
+            128,
+            fixed_table,
+        );
 
-        //  Note: there is no need to check `key_rlc_mult` as it is not used after this row.
+        //  Note: there is no need to check `key_rlc_mult` as it is not used after this
+        // row.
 
         meta.create_gate(
             "Account leaf address RLC & nibbles count (branch not placeholder)",
@@ -385,198 +402,205 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
         to Leaf S `accs.acc_c.rlc` column. So when add nibbles to compute the key RLC (address RLC)
         of the account, we start with `accs.acc_c.rlc` value from the current row.
         */
-        meta.create_gate("Account leaf address RLC & nibbles count (after placeholder)", |meta| {
-            let q_enable = q_enable(meta);
-            let mut constraints = vec![];
+        meta.create_gate(
+            "Account leaf address RLC & nibbles count (after placeholder)",
+            |meta| {
+                let q_enable = q_enable(meta);
+                let mut constraints = vec![];
 
-            let mut is_branch_placeholder = s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM];
-            if !is_s {
-                is_branch_placeholder = s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM];
-            }
-            let is_branch_placeholder = meta.query_advice(
-                is_branch_placeholder,
-                Rotation(rot_into_first_branch_child - 1),
-            );
+                let mut is_branch_placeholder = s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM];
+                if !is_s {
+                    is_branch_placeholder = s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM];
+                }
+                let is_branch_placeholder = meta.query_advice(
+                    is_branch_placeholder,
+                    Rotation(rot_into_first_branch_child - 1),
+                );
 
-            let is_leaf_in_first_level =
-                one.clone() - meta.query_advice(not_first_level, Rotation::cur());
+                let is_leaf_in_first_level =
+                    one.clone() - meta.query_advice(not_first_level, Rotation::cur());
 
-            // let key_rlc_acc_start = meta.query_advice(accs.acc_c.rlc, Rotation::cur());
-            // let key_mult_start = meta.query_advice(accs.acc_c.mult, Rotation::cur());
+                // let key_rlc_acc_start = meta.query_advice(accs.acc_c.rlc, Rotation::cur());
+                // let key_mult_start = meta.query_advice(accs.acc_c.mult, Rotation::cur());
 
-            let is_placeholder_branch_in_first_level =
-                one.clone() - meta.query_advice(not_first_level, Rotation(rot_into_init));
+                let is_placeholder_branch_in_first_level =
+                    one.clone() - meta.query_advice(not_first_level, Rotation(rot_into_init));
 
-            // Note: key RLC is in the first branch node (not branch init).
-            let rot_level_above = rot_into_init + 1 - BRANCH_ROWS_NUM;
+                // Note: key RLC is in the first branch node (not branch init).
+                let rot_level_above = rot_into_init + 1 - BRANCH_ROWS_NUM;
 
-            let key_rlc_acc_start = meta.query_advice(accs.key.rlc, Rotation(rot_level_above))
-                * (one.clone() - is_placeholder_branch_in_first_level.clone());
-            let key_mult_start = meta.query_advice(accs.key.mult, Rotation(rot_level_above))
-                * (one.clone() - is_placeholder_branch_in_first_level.clone())
-                + is_placeholder_branch_in_first_level.clone();
+                let key_rlc_acc_start = meta.query_advice(accs.key.rlc, Rotation(rot_level_above))
+                    * (one.clone() - is_placeholder_branch_in_first_level.clone());
+                let key_mult_start = meta.query_advice(accs.key.mult, Rotation(rot_level_above))
+                    * (one.clone() - is_placeholder_branch_in_first_level.clone())
+                    + is_placeholder_branch_in_first_level.clone();
 
-            // TODO: the expressions below can be simplified
+                // TODO: the expressions below can be simplified
 
-            let sel1p = meta.query_advice(
-                s_main.bytes[IS_BRANCH_C16_POS - RLP_NUM],
-                Rotation(rot_into_first_branch_child - 1),
-            );
-            let sel2p = meta.query_advice(
-                s_main.bytes[IS_BRANCH_C1_POS - RLP_NUM],
-                Rotation(rot_into_first_branch_child - 1),
-            );
+                let sel1p = meta.query_advice(
+                    s_main.bytes[IS_BRANCH_C16_POS - RLP_NUM],
+                    Rotation(rot_into_first_branch_child - 1),
+                );
+                let sel2p = meta.query_advice(
+                    s_main.bytes[IS_BRANCH_C1_POS - RLP_NUM],
+                    Rotation(rot_into_first_branch_child - 1),
+                );
 
-            let c32 = Expression::Constant(F::from(32));
-            let c48 = Expression::Constant(F::from(48));
- 
-            /*
-            sel1/sel2 tells us whether there is an even or odd number of nibbles in the leaf.
-            sel1/sel2 info is need for the computation of the key RLC (see below), in case of a leaf
-            after branch placeholder, sel1/sel2 can be computed as follows.
+                let c32 = Expression::Constant(F::from(32));
+                let c48 = Expression::Constant(F::from(48));
 
-            Note that we cannot rotate back into Branch 1S because we get PoisonedConstraint
-            in extension_node_key.
+                /*
+                sel1/sel2 tells us whether there is an even or odd number of nibbles in the leaf.
+                sel1/sel2 info is need for the computation of the key RLC (see below), in case of a leaf
+                after branch placeholder, sel1/sel2 can be computed as follows.
 
-            Instead, we can rotate into branch parallel to the placeholder branch and compute sel1/sel2 with info from there.
-            Let's denote sel1/sel2 from this branch by sel1p/sel2p.
-    
-            There are a couple of different cases, for example when branch/extension node parallel
-            to the placeholder branch is a regular branch.
-            There is only one nibble taken by Branch 2C, so sel1/sel2 simply turns around compared to sel1p/sel2p:
-            sel1 = sel2p
-            sel2 = sel1p
+                Note that we cannot rotate back into Branch 1S because we get PoisonedConstraint
+                in extension_node_key.
 
-            When branch/extension node parallel to the placeholder branch is an extension node, it depends on the
-            number of nibbles. If there is an odd number of nibbles: sel1 = sel1p, sel2 = sel2p. If there is
-            an even number of nibbles, it turns around.
+                Instead, we can rotate into branch parallel to the placeholder branch and compute sel1/sel2 with info from there.
+                Let's denote sel1/sel2 from this branch by sel1p/sel2p.
 
-            Note: _c16 presents the same info as sel1, _c1 presents the same info as sel2 (this information is doubled 
-            to reduce the degree when handling different cases in extension_node_key).
-            */
+                There are a couple of different cases, for example when branch/extension node parallel
+                to the placeholder branch is a regular branch.
+                There is only one nibble taken by Branch 2C, so sel1/sel2 simply turns around compared to sel1p/sel2p:
+                sel1 = sel2p
+                sel2 = sel1p
 
-            let is_ext_short_c16 = meta.query_advice(
-                s_main.bytes[IS_EXT_SHORT_C16_POS - RLP_NUM],
-                Rotation(rot_into_init),
-            );
-            let is_ext_short_c1 = meta.query_advice(
-                s_main.bytes[IS_EXT_SHORT_C1_POS - RLP_NUM],
-                Rotation(rot_into_init),
-            );
-            let is_ext_long_even_c16 = meta.query_advice(
-                s_main.bytes[IS_EXT_LONG_EVEN_C16_POS - RLP_NUM],
-                Rotation(rot_into_init),
-            );
-            let is_ext_long_even_c1 = meta.query_advice(
-                s_main.bytes[IS_EXT_LONG_EVEN_C1_POS - RLP_NUM],
-                Rotation(rot_into_init),
-            );
-            let is_ext_long_odd_c16 = meta.query_advice(
-                s_main.bytes[IS_EXT_LONG_ODD_C16_POS - RLP_NUM],
-                Rotation(rot_into_init),
-            );
-            let is_ext_long_odd_c1 = meta.query_advice(
-                s_main.bytes[IS_EXT_LONG_ODD_C1_POS - RLP_NUM],
-                Rotation(rot_into_init),
-            );
+                When branch/extension node parallel to the placeholder branch is an extension node, it depends on the
+                number of nibbles. If there is an odd number of nibbles: sel1 = sel1p, sel2 = sel2p. If there is
+                an even number of nibbles, it turns around.
 
-            let is_extension_node = is_ext_short_c16.clone()
-                + is_ext_short_c1.clone()
-                + is_ext_long_even_c16.clone()
-                + is_ext_long_even_c1.clone()
-                + is_ext_long_odd_c16.clone()
-                + is_ext_long_odd_c1.clone();
+                Note: _c16 presents the same info as sel1, _c1 presents the same info as sel2 (this information is doubled
+                to reduce the degree when handling different cases in extension_node_key).
+                */
 
-            let sel1 = (one.clone() - is_extension_node.clone()) * sel2p.clone()
-                + is_ext_short_c16.clone() * sel1p.clone()
-                + is_ext_short_c1.clone() * sel2p.clone()
-                + is_ext_long_even_c16.clone() * sel2p.clone()
-                + is_ext_long_even_c1.clone() * sel1p.clone()
-                + is_ext_long_odd_c16.clone() * sel1p.clone()
-                + is_ext_long_odd_c1.clone() * sel2p.clone();
+                let is_ext_short_c16 = meta.query_advice(
+                    s_main.bytes[IS_EXT_SHORT_C16_POS - RLP_NUM],
+                    Rotation(rot_into_init),
+                );
+                let is_ext_short_c1 = meta.query_advice(
+                    s_main.bytes[IS_EXT_SHORT_C1_POS - RLP_NUM],
+                    Rotation(rot_into_init),
+                );
+                let is_ext_long_even_c16 = meta.query_advice(
+                    s_main.bytes[IS_EXT_LONG_EVEN_C16_POS - RLP_NUM],
+                    Rotation(rot_into_init),
+                );
+                let is_ext_long_even_c1 = meta.query_advice(
+                    s_main.bytes[IS_EXT_LONG_EVEN_C1_POS - RLP_NUM],
+                    Rotation(rot_into_init),
+                );
+                let is_ext_long_odd_c16 = meta.query_advice(
+                    s_main.bytes[IS_EXT_LONG_ODD_C16_POS - RLP_NUM],
+                    Rotation(rot_into_init),
+                );
+                let is_ext_long_odd_c1 = meta.query_advice(
+                    s_main.bytes[IS_EXT_LONG_ODD_C1_POS - RLP_NUM],
+                    Rotation(rot_into_init),
+                );
 
-            let sel2 = one.clone() - sel1.clone();
+                let is_extension_node = is_ext_short_c16.clone()
+                    + is_ext_short_c1.clone()
+                    + is_ext_long_even_c16.clone()
+                    + is_ext_long_even_c1.clone()
+                    + is_ext_long_odd_c16.clone()
+                    + is_ext_long_odd_c1.clone();
 
-            // If sel1 = 1, we have nibble+48 in s_main.bytes[0].
-            let s_advice1 = meta.query_advice(s_main.bytes[1], Rotation::cur());
-            let mut key_rlc_acc = key_rlc_acc_start.clone()
-                + (s_advice1.clone() - c48) * key_mult_start.clone() * sel1.clone();
-            let mut key_mult = key_mult_start.clone() * r_table[0].clone() * sel1.clone();
-            key_mult = key_mult + key_mult_start.clone() * sel2.clone(); // set to key_mult_start if sel2, stays key_mult if sel1
+                let sel1 = (one.clone() - is_extension_node.clone()) * sel2p.clone()
+                    + is_ext_short_c16.clone() * sel1p.clone()
+                    + is_ext_short_c1.clone() * sel2p.clone()
+                    + is_ext_long_even_c16.clone() * sel2p.clone()
+                    + is_ext_long_even_c1.clone() * sel1p.clone()
+                    + is_ext_long_odd_c16.clone() * sel1p.clone()
+                    + is_ext_long_odd_c1.clone() * sel2p.clone();
 
-            // If sel2 = 1, we have 32 in s_main.bytes[1].
-            constraints.push((
-                "Account leaf key acc s_advice1",
-                q_enable.clone()
-                    * (s_advice1 - c32)
+                let sel2 = one.clone() - sel1.clone();
+
+                // If sel1 = 1, we have nibble+48 in s_main.bytes[0].
+                let s_advice1 = meta.query_advice(s_main.bytes[1], Rotation::cur());
+                let mut key_rlc_acc = key_rlc_acc_start.clone()
+                    + (s_advice1.clone() - c48) * key_mult_start.clone() * sel1.clone();
+                let mut key_mult = key_mult_start.clone() * r_table[0].clone() * sel1.clone();
+                key_mult = key_mult + key_mult_start.clone() * sel2.clone(); // set to key_mult_start if sel2, stays key_mult if sel1
+
+                // If sel2 = 1, we have 32 in s_main.bytes[1].
+                constraints.push((
+                    "Account leaf key acc s_advice1",
+                    q_enable.clone()
+                        * (s_advice1 - c32)
+                        * sel2.clone()
+                        * is_branch_placeholder.clone()
+                        * (one.clone() - is_leaf_in_first_level.clone()),
+                ));
+
+                let s_advices2 = meta.query_advice(s_main.bytes[2], Rotation::cur());
+                key_rlc_acc = key_rlc_acc + s_advices2 * key_mult.clone();
+
+                for ind in 3..HASH_WIDTH {
+                    let s = meta.query_advice(s_main.bytes[ind], Rotation::cur());
+                    key_rlc_acc = key_rlc_acc + s * key_mult.clone() * r_table[ind - 3].clone();
+                }
+
+                let c_rlp1 = meta.query_advice(c_main.rlp1, Rotation::cur());
+                let c_rlp2 = meta.query_advice(c_main.rlp2, Rotation::cur());
+                key_rlc_acc = key_rlc_acc + c_rlp1 * key_mult.clone() * r_table[29].clone();
+                key_rlc_acc = key_rlc_acc + c_rlp2 * key_mult * r_table[30].clone();
+
+                let key_rlc = meta.query_advice(accs.key.rlc, Rotation::cur());
+
+                /*
+                Although `key_rlc` is not compared to `address_rlc` in the case when the leaf
+                is below the placeholder branch (`address_rlc` is compared to the parallel leaf `key_rlc`),
+                we still need properly computed `key_rlc` to reuse it in `account_leaf_key_in_added_branch`.
+
+                Note: `key_rlc - address_rlc != 0` when placeholder branch.
+                */
+                constraints.push((
+                    "Account address RLC after branch placeholder",
+                    q_enable.clone()
+                        * is_branch_placeholder.clone()
+                        * (one.clone() - is_leaf_in_first_level.clone())
+                        * (key_rlc_acc.clone() - key_rlc.clone()),
+                ));
+
+                let s_advice0 = meta.query_advice(s_main.bytes[0], Rotation::cur());
+                let leaf_nibbles = ((s_advice0.clone() - c128.clone() - one.clone())
+                    * (one.clone() + one.clone()))
                     * sel2.clone()
-                    * is_branch_placeholder.clone()
-                    * (one.clone() - is_leaf_in_first_level.clone()),
-            ));
+                    + ((s_advice0.clone() - c128.clone()) * (one.clone() + one.clone())
+                        - one.clone())
+                        * sel1.clone();
 
-            let s_advices2 = meta.query_advice(s_main.bytes[2], Rotation::cur());
-            key_rlc_acc = key_rlc_acc + s_advices2 * key_mult.clone();
+                let is_branch_in_first_level = one.clone()
+                    - meta.query_advice(not_first_level, Rotation(rot_into_first_branch_child));
 
-            for ind in 3..HASH_WIDTH {
-                let s = meta.query_advice(s_main.bytes[ind], Rotation::cur());
-                key_rlc_acc = key_rlc_acc + s * key_mult.clone() * r_table[ind - 3].clone();
-            }
+                /*
+                Note that when the leaf is in the first level (but positioned after the placeholder
+                in the circuit), there is no branch above the placeholder branch from where
+                `nibbles_count` is to be retrieved. In that case `nibbles_count = 0`.
+                */
+                let nibbles_count = meta.query_advice(
+                    s_main.bytes[NIBBLES_COUNTER_POS - RLP_NUM],
+                    Rotation(rot_into_init - BRANCH_ROWS_NUM),
+                ) * (one.clone() - is_branch_in_first_level);
 
-            let c_rlp1 = meta.query_advice(c_main.rlp1, Rotation::cur());
-            let c_rlp2 = meta.query_advice(c_main.rlp2, Rotation::cur());
-            key_rlc_acc = key_rlc_acc + c_rlp1 * key_mult.clone() * r_table[29].clone();
-            key_rlc_acc = key_rlc_acc + c_rlp2 * key_mult * r_table[30].clone();
+                constraints.push((
+                    "Total number of account address nibbles is 64 (after placeholder)",
+                    q_enable
+                        * is_branch_placeholder.clone()
+                        * (one.clone() - is_leaf_in_first_level.clone())
+                        * (nibbles_count.clone() + leaf_nibbles.clone() - c64.clone()),
+                ));
 
-            let key_rlc = meta.query_advice(accs.key.rlc, Rotation::cur());
-
-            /*
-            Although `key_rlc` is not compared to `address_rlc` in the case when the leaf
-            is below the placeholder branch (`address_rlc` is compared to the parallel leaf `key_rlc`), 
-            we still need properly computed `key_rlc` to reuse it in `account_leaf_key_in_added_branch`.
-
-            Note: `key_rlc - address_rlc != 0` when placeholder branch.
-            */
-            constraints.push((
-                "Account address RLC after branch placeholder",
-                q_enable.clone()
-                    * is_branch_placeholder.clone()
-                    * (one.clone() - is_leaf_in_first_level.clone())
-                    * (key_rlc_acc.clone() - key_rlc.clone()),
-            ));
-
-            let s_advice0 = meta.query_advice(s_main.bytes[0], Rotation::cur());
-            let leaf_nibbles = ((s_advice0.clone() - c128.clone() - one.clone()) * (one.clone() + one.clone())) * sel2.clone() +
-                ((s_advice0.clone() - c128.clone()) * (one.clone() + one.clone()) - one.clone()) * sel1.clone();
-                
-            let is_branch_in_first_level = one.clone()
-                - meta.query_advice(not_first_level, Rotation(rot_into_first_branch_child));
-
-            /*
-            Note that when the leaf is in the first level (but positioned after the placeholder
-            in the circuit), there is no branch above the placeholder branch from where
-            `nibbles_count` is to be retrieved. In that case `nibbles_count = 0`.
-            */
-            let nibbles_count = meta.query_advice(
-                s_main.bytes[NIBBLES_COUNTER_POS - RLP_NUM],
-                Rotation(rot_into_init - BRANCH_ROWS_NUM),
-            ) * (one.clone() - is_branch_in_first_level);
-
-            constraints.push((
-                "Total number of account address nibbles is 64 (after placeholder)",
-                q_enable
-                    * is_branch_placeholder.clone()
-                    * (one.clone() - is_leaf_in_first_level.clone())
-                    * (nibbles_count.clone() + leaf_nibbles.clone() - c64.clone()),
-            ));
-
-            constraints
-        });
+                constraints
+            },
+        );
 
         if !is_s {
             meta.create_gate("Account delete", |meta| {
                 /*
                 We need to make sure there is no leaf when account is deleted. Two possible cases:
-                1. Account leaf is deleted and there is a nil object in branch. In this case we have 
+                1. Account leaf is deleted and there is a nil object in branch. In this case we have
                    a placeholder leaf.
                 2. Account leaf is deleted from a branch with two leaves, the remaining leaf moves one level up
                    and replaces the branch. In this case we have a branch placeholder.
@@ -591,15 +615,17 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
                 let mut constraints = vec![];
                 let q_enable = q_enable(meta);
                 // is_leaf_placeholder is stored in branch children: sel1 for S, sel2 for C.
-                let is_leaf_placeholder = meta.query_advice(sel2, Rotation(rot_into_init+1));
-                let is_account_delete_mod = meta.query_advice(proof_type.is_account_delete_mod, Rotation::cur());
+                let is_leaf_placeholder = meta.query_advice(sel2, Rotation(rot_into_init + 1));
+                let is_account_delete_mod =
+                    meta.query_advice(proof_type.is_account_delete_mod, Rotation::cur());
                 let is_branch_placeholder = meta.query_advice(
                     s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
                     Rotation(rot_into_init),
                 );
 
-                // Note: this constraint suffices because the proper transition from branch to a leaf (2. case)
-                // is checked by constraints in account_leaf_key_in_added_branch.
+                // Note: this constraint suffices because the proper transition from branch to a
+                // leaf (2. case) is checked by constraints in
+                // account_leaf_key_in_added_branch.
                 constraints.push((
                     "If account delete, there is either a placeholder leaf or a placeholder branch",
                     q_enable.clone()
@@ -672,21 +698,17 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
         }
 
         mpt_config.compute_key_rlc(&row.bytes, &mut key_rlc_new, &mut key_rlc_mult_new, S_START);
-        region.assign_advice(
-            || "assign key_rlc".to_string(),
-            mpt_config.accumulators.key.rlc,
-            offset,
-            || Ok(key_rlc_new),
-        ).ok();
+        region
+            .assign_advice(
+                || "assign key_rlc".to_string(),
+                mpt_config.accumulators.key.rlc,
+                offset,
+                || Ok(key_rlc_new),
+            )
+            .ok();
 
-        mpt_config.assign_acc(
-            region,
-            acc,
-            acc_mult,
-            F::zero(),
-            F::zero(),
-            offset,
-        ).ok();
+        mpt_config
+            .assign_acc(region, acc, acc_mult, F::zero(), F::zero(), offset)
+            .ok();
     }
 }
-

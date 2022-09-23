@@ -1,16 +1,20 @@
 use halo2_proofs::{
+    circuit::Region,
     plonk::{Advice, Column, ConstraintSystem, Expression, Fixed, VirtualCells},
-    poly::Rotation, circuit::Region,
+    poly::Rotation,
 };
 use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
 use crate::{
-    helpers::{key_len_lookup, range_lookups},
+    columns::{AccumulatorCols, MainCols},
+    helpers::range_lookups,
     mpt::{FixedTableTag, MPTConfig},
     param::{
-        HASH_WIDTH, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, RLP_NUM, ACCOUNT_NON_EXISTING_IND, BRANCH_ROWS_NUM,
-    }, witness_row::MptWitnessRow, columns::{MainCols, AccumulatorCols},
+        ACCOUNT_NON_EXISTING_IND, BRANCH_ROWS_NUM, HASH_WIDTH, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS,
+        RLP_NUM,
+    },
+    witness_row::MptWitnessRow,
 };
 
 /*
@@ -89,12 +93,15 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
         s_main: MainCols<F>,
         c_main: MainCols<F>,
         accs: AccumulatorCols<F>,
-        sel1: Column<Advice>, // should be the same as sel2 as both parallel proofs are the same for non_existing_account_proof
+        sel1: Column<Advice>, /* should be the same as sel2 as both parallel proofs are the same
+                               * for non_existing_account_proof */
         r_table: Vec<Expression<F>>,
         fixed_table: [Column<Fixed>; 3],
         address_rlc: Column<Advice>,
     ) -> Self {
-        let config = AccountNonExistingConfig { _marker: PhantomData };
+        let config = AccountNonExistingConfig {
+            _marker: PhantomData,
+        };
         let one = Expression::Constant(F::one());
         let c32 = Expression::Constant(F::from(32));
         // key rlc is in the first branch node
@@ -102,12 +109,12 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
 
         let add_wrong_leaf_constraints =
             |meta: &mut VirtualCells<F>,
-            constraints: &mut Vec<(&str, Expression<F>)>,
-            q_enable: Expression<F>,
-            c_rlp1_cur: Expression<F>,
-            c_rlp2_cur: Expression<F>,
-            correct_level: Expression<F>,
-            is_wrong_leaf: Expression<F> | {
+             constraints: &mut Vec<(&str, Expression<F>)>,
+             q_enable: Expression<F>,
+             c_rlp1_cur: Expression<F>,
+             c_rlp2_cur: Expression<F>,
+             correct_level: Expression<F>,
+             is_wrong_leaf: Expression<F>| {
                 let sum = meta.query_advice(accs.key.rlc, Rotation::cur());
                 let sum_prev = meta.query_advice(accs.key.mult, Rotation::cur());
                 let diff_inv = meta.query_advice(accs.acc_s.rlc, Rotation::cur());
@@ -119,8 +126,10 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
                 let mut sum_prev_check = Expression::Constant(F::zero());
                 let mut mult = r_table[0].clone();
                 for ind in 1..HASH_WIDTH {
-                    sum_check = sum_check + meta.query_advice(s_main.bytes[ind], Rotation::cur()) * mult.clone();
-                    sum_prev_check = sum_prev_check + meta.query_advice(s_main.bytes[ind], Rotation::prev()) * mult.clone();
+                    sum_check = sum_check
+                        + meta.query_advice(s_main.bytes[ind], Rotation::cur()) * mult.clone();
+                    sum_prev_check = sum_prev_check
+                        + meta.query_advice(s_main.bytes[ind], Rotation::prev()) * mult.clone();
                     mult = mult * r_table[0].clone();
                 }
                 sum_check = sum_check + c_rlp1_cur * mult.clone();
@@ -290,81 +299,93 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
         above. That is because when there is a branch (with nil object) in the first level,
         it automatically means the account leaf is not in the first level.
         */
-        meta.create_gate("Non existing account proof leaf address RLC (leaf in first level)", |meta| {
-            let q_enable = q_enable(meta);
-            let mut constraints = vec![];
+        meta.create_gate(
+            "Non existing account proof leaf address RLC (leaf in first level)",
+            |meta| {
+                let q_enable = q_enable(meta);
+                let mut constraints = vec![];
 
-            let is_leaf_in_first_level =
-                one.clone() - meta.query_advice(not_first_level, Rotation::cur());
-            
-            let is_wrong_leaf = meta.query_advice(s_main.rlp1, Rotation::cur());
+                let is_leaf_in_first_level =
+                    one.clone() - meta.query_advice(not_first_level, Rotation::cur());
 
-            // Note: when leaf is in the first level, the key stored in the leaf is always of length 33 -
-            // the first byte being 32 (when after branch, the information whether there the key is odd or even
-            // is in s_main.bytes[IS_BRANCH_C16_POS - LAYOUT_OFFSET] (see sel1/sel2).
+                let is_wrong_leaf = meta.query_advice(s_main.rlp1, Rotation::cur());
 
-            let s_advice1 = meta.query_advice(s_main.bytes[1], Rotation::cur());
-            let mut key_rlc_acc = Expression::Constant(F::zero());
+                // Note: when leaf is in the first level, the key stored in the leaf is always
+                // of length 33 - the first byte being 32 (when after branch,
+                // the information whether there the key is odd or even
+                // is in s_main.bytes[IS_BRANCH_C16_POS - LAYOUT_OFFSET] (see sel1/sel2).
 
-            constraints.push((
-                "Account leaf key acc s_advice1",
-                q_enable.clone()
-                * (s_advice1 - c32)
-                * is_wrong_leaf.clone()
-                * is_leaf_in_first_level.clone(),
-            ));
+                let s_advice1 = meta.query_advice(s_main.bytes[1], Rotation::cur());
+                let mut key_rlc_acc = Expression::Constant(F::zero());
 
-            let s_advices2 = meta.query_advice(s_main.bytes[2], Rotation::cur());
-            key_rlc_acc = key_rlc_acc + s_advices2;
+                constraints.push((
+                    "Account leaf key acc s_advice1",
+                    q_enable.clone()
+                        * (s_advice1 - c32)
+                        * is_wrong_leaf.clone()
+                        * is_leaf_in_first_level.clone(),
+                ));
 
-            for ind in 3..HASH_WIDTH {
-                let s = meta.query_advice(s_main.bytes[ind], Rotation::cur());
-                key_rlc_acc = key_rlc_acc + s * r_table[ind - 3].clone();
-            }
+                let s_advices2 = meta.query_advice(s_main.bytes[2], Rotation::cur());
+                key_rlc_acc = key_rlc_acc + s_advices2;
 
-            let c_rlp1_cur = meta.query_advice(c_main.rlp1, Rotation::cur());
-            let c_rlp2_cur = meta.query_advice(c_main.rlp2, Rotation::cur());
-            key_rlc_acc = key_rlc_acc + c_rlp1_cur.clone() * r_table[29].clone();
-            key_rlc_acc = key_rlc_acc + c_rlp2_cur.clone() * r_table[30].clone();
+                for ind in 3..HASH_WIDTH {
+                    let s = meta.query_advice(s_main.bytes[ind], Rotation::cur());
+                    key_rlc_acc = key_rlc_acc + s * r_table[ind - 3].clone();
+                }
 
-            let address_rlc = meta.query_advice(address_rlc, Rotation::cur());
+                let c_rlp1_cur = meta.query_advice(c_main.rlp1, Rotation::cur());
+                let c_rlp2_cur = meta.query_advice(c_main.rlp2, Rotation::cur());
+                key_rlc_acc = key_rlc_acc + c_rlp1_cur.clone() * r_table[29].clone();
+                key_rlc_acc = key_rlc_acc + c_rlp2_cur.clone() * r_table[30].clone();
 
-            constraints.push((
-                "Computed account address RLC same as value in address_rlc column",
-                q_enable.clone()
-                * is_leaf_in_first_level.clone()
-                * is_wrong_leaf.clone()
-                * (key_rlc_acc.clone() - address_rlc.clone()),
-            ));
+                let address_rlc = meta.query_advice(address_rlc, Rotation::cur());
 
-            add_wrong_leaf_constraints(meta, &mut constraints, q_enable.clone(), c_rlp1_cur,
-                c_rlp2_cur, is_leaf_in_first_level.clone(), is_wrong_leaf.clone());
+                constraints.push((
+                    "Computed account address RLC same as value in address_rlc column",
+                    q_enable.clone()
+                        * is_leaf_in_first_level.clone()
+                        * is_wrong_leaf.clone()
+                        * (key_rlc_acc.clone() - address_rlc.clone()),
+                ));
 
-            constraints
-        });
+                add_wrong_leaf_constraints(
+                    meta,
+                    &mut constraints,
+                    q_enable.clone(),
+                    c_rlp1_cur,
+                    c_rlp2_cur,
+                    is_leaf_in_first_level.clone(),
+                    is_wrong_leaf.clone(),
+                );
 
-        meta.create_gate("Address of wrong leaf and the enquired address are of the same length", |meta| {
-            let q_enable = q_enable(meta);
-            let mut constraints = vec![];
+                constraints
+            },
+        );
 
-            let is_wrong_leaf = meta.query_advice(s_main.rlp1, Rotation::cur());
-            let s_advice0_prev = meta.query_advice(s_main.bytes[0], Rotation::prev());
-            let s_advice0_cur = meta.query_advice(s_main.bytes[0], Rotation::cur());
+        meta.create_gate(
+            "Address of wrong leaf and the enquired address are of the same length",
+            |meta| {
+                let q_enable = q_enable(meta);
+                let mut constraints = vec![];
 
-            /*
-            This constraint is to prevent the attacker to prove that some account does not exist by setting
-            some arbitrary number of nibbles in the account leaf which would lead to a desired RLC.
-            */
-            constraints.push((
-                "The number of nibbles in the wrong leaf and the enquired address are the same",
-                q_enable.clone()
-                * is_wrong_leaf
-                * (s_advice0_cur - s_advice0_prev),
-            ));
+                let is_wrong_leaf = meta.query_advice(s_main.rlp1, Rotation::cur());
+                let s_advice0_prev = meta.query_advice(s_main.bytes[0], Rotation::prev());
+                let s_advice0_cur = meta.query_advice(s_main.bytes[0], Rotation::cur());
 
-            constraints
-        });
-         
+                /*
+                This constraint is to prevent the attacker to prove that some account does not exist by setting
+                some arbitrary number of nibbles in the account leaf which would lead to a desired RLC.
+                */
+                constraints.push((
+                    "The number of nibbles in the wrong leaf and the enquired address are the same",
+                    q_enable.clone() * is_wrong_leaf * (s_advice0_cur - s_advice0_prev),
+                ));
+
+                constraints
+            },
+        );
+
         /*
         /*
         Key RLC is computed over all of `s_main.bytes[1], ..., s_main.bytes[31], c_main.rlp1, c_main.rlp2`
@@ -433,8 +454,8 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
         let mut sum_prev = F::zero();
         let mut mult = mpt_config.acc_r;
         for i in 0..key_len {
-            sum += F::from(row.get_byte(3+i) as u64) * mult ;
-            sum_prev += F::from(row_prev.get_byte(3+i) as u64) * mult;
+            sum += F::from(row.get_byte(3 + i) as u64) * mult;
+            sum_prev += F::from(row_prev.get_byte(3 + i) as u64) * mult;
             mult *= mpt_config.acc_r;
         }
         let mut diff_inv = F::zero();
@@ -442,23 +463,29 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
             diff_inv = F::invert(&(sum - sum_prev)).unwrap();
         }
 
-        region.assign_advice(
-            || "assign sum".to_string(),
-            mpt_config.accumulators.key.rlc,
-            offset,
-            || Ok(sum),
-        ).ok();
-        region.assign_advice(
-            || "assign sum prev".to_string(),
-            mpt_config.accumulators.key.mult,
-            offset,
-            || Ok(sum_prev),
-        ).ok();
-        region.assign_advice(
-            || "assign diff inv".to_string(),
-            mpt_config.accumulators.acc_s.rlc,
-            offset,
-            || Ok(diff_inv),
-        ).ok();
+        region
+            .assign_advice(
+                || "assign sum".to_string(),
+                mpt_config.accumulators.key.rlc,
+                offset,
+                || Ok(sum),
+            )
+            .ok();
+        region
+            .assign_advice(
+                || "assign sum prev".to_string(),
+                mpt_config.accumulators.key.mult,
+                offset,
+                || Ok(sum_prev),
+            )
+            .ok();
+        region
+            .assign_advice(
+                || "assign diff inv".to_string(),
+                mpt_config.accumulators.acc_s.rlc,
+                offset,
+                || Ok(diff_inv),
+            )
+            .ok();
     }
 }

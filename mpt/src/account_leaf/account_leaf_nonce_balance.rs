@@ -8,12 +8,14 @@ use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
 use crate::{
-    helpers::{compute_rlc, get_bool_constraint, key_len_lookup, mult_diff_lookup, range_lookups},
-    mpt::{FixedTableTag, ProofVariables, MPTConfig},
+    columns::{AccumulatorCols, DenoteCols, MainCols, ProofTypeCols},
+    helpers::{compute_rlc, get_bool_constraint, mult_diff_lookup, range_lookups},
+    mpt::{FixedTableTag, MPTConfig, ProofVariables},
     param::{
         ACCOUNT_LEAF_KEY_C_IND, ACCOUNT_LEAF_KEY_S_IND, ACCOUNT_LEAF_NONCE_BALANCE_C_IND,
-        ACCOUNT_LEAF_NONCE_BALANCE_S_IND, HASH_WIDTH, ACCOUNT_NON_EXISTING_IND, S_START, C_START,
-    }, columns::{ProofTypeCols, MainCols, AccumulatorCols, DenoteCols}, witness_row::{MptWitnessRow, MptWitnessRowType},
+        ACCOUNT_LEAF_NONCE_BALANCE_S_IND, ACCOUNT_NON_EXISTING_IND, C_START, HASH_WIDTH, S_START,
+    },
+    witness_row::{MptWitnessRow, MptWitnessRowType},
 };
 
 /*
@@ -64,13 +66,16 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
         q_enable: impl Fn(&mut VirtualCells<'_, F>) -> Expression<F> + Copy,
         s_main: MainCols<F>,
         c_main: MainCols<F>,
-        accs: AccumulatorCols<F>, // accs.acc_c.rlc contains mult_diff_nonce; accs.key.mult for mult_diff_balance
+        accs: AccumulatorCols<F>, /* accs.acc_c.rlc contains mult_diff_nonce; accs.key.mult for
+                                   * mult_diff_balance */
         r_table: Vec<Expression<F>>,
         denoter: DenoteCols<F>,
         fixed_table: [Column<Fixed>; 3],
         is_s: bool,
     ) -> Self {
-        let config = AccountLeafNonceBalanceConfig { _marker: PhantomData, };
+        let config = AccountLeafNonceBalanceConfig {
+            _marker: PhantomData,
+        };
         let one = Expression::Constant(F::one());
         let c128 = Expression::Constant(F::from(128));
 
@@ -94,10 +99,12 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
             // 184     80      248     78      nonce      balance
 
             let mut rot = -(ACCOUNT_LEAF_NONCE_BALANCE_S_IND - ACCOUNT_LEAF_KEY_S_IND);
-            let mut rot_into_non_existing = -(ACCOUNT_LEAF_NONCE_BALANCE_S_IND - ACCOUNT_NON_EXISTING_IND);
+            let mut rot_into_non_existing =
+                -(ACCOUNT_LEAF_NONCE_BALANCE_S_IND - ACCOUNT_NON_EXISTING_IND);
             if !is_s {
                 rot = -(ACCOUNT_LEAF_NONCE_BALANCE_C_IND - ACCOUNT_LEAF_KEY_C_IND);
-                rot_into_non_existing = -(ACCOUNT_LEAF_NONCE_BALANCE_C_IND - ACCOUNT_NON_EXISTING_IND);
+                rot_into_non_existing =
+                    -(ACCOUNT_LEAF_NONCE_BALANCE_C_IND - ACCOUNT_NON_EXISTING_IND);
             }
             let c248 = Expression::Constant(F::from(248));
 
@@ -108,14 +115,8 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
             let mult_diff_nonce = meta.query_advice(accs.acc_c.rlc, Rotation::cur());
             let mult_diff_balance = meta.query_advice(accs.key.mult, Rotation::cur());
 
-            let is_nonce_long = meta.query_advice(
-                denoter.sel1,
-                Rotation(rot),
-            );
-            let is_balance_long = meta.query_advice(
-                denoter.sel2,
-                Rotation(rot),
-            );
+            let is_nonce_long = meta.query_advice(denoter.sel1, Rotation(rot));
+            let is_balance_long = meta.query_advice(denoter.sel2, Rotation(rot));
 
             /*
             If nonce (same holds for balance) is smaller or equal to 128, then it will occupy only one byte:
@@ -199,14 +200,16 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
             Other wrong leaf related constraints are in other gates.
             */
             let is_wrong_leaf = meta.query_advice(s_main.rlp1, Rotation(rot_into_non_existing));
-            let is_non_existing_account_proof = meta.query_advice(proof_type.is_non_existing_account_proof, Rotation::cur());
+            let is_non_existing_account_proof =
+                meta.query_advice(proof_type.is_non_existing_account_proof, Rotation::cur());
             constraints.push((
                 "is_wrong_leaf is bool",
                 get_bool_constraint(q_enable.clone(), is_wrong_leaf.clone()),
             ));
 
-            // Note: some is_wrong_leaf constraints are in this chip because account_non_existing chip
-            // only triggers constraints for non_existing_account proof (see q_enable).
+            // Note: some is_wrong_leaf constraints are in this chip because
+            // account_non_existing chip only triggers constraints for
+            // non_existing_account proof (see q_enable).
             constraints.push((
                 "is_wrong_leaf needs to be 0 when not in non_existing_account proof",
                 q_enable.clone()
@@ -214,8 +217,8 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
                     * is_wrong_leaf.clone(),
             ));
 
-            // Note: (is_non_existing_account_proof.clone() - is_wrong_leaf.clone() - one.clone())
-            // cannot be 0 when is_non_existing_account_proof = 0.
+            // Note: (is_non_existing_account_proof.clone() - is_wrong_leaf.clone() -
+            // one.clone()) cannot be 0 when is_non_existing_account_proof = 0.
             let s_rlp1 = meta.query_advice(s_main.rlp1, Rotation::cur());
             let rlp_len = meta.query_advice(s_main.rlp2, Rotation(rot));
             let s_rlp2 = meta.query_advice(s_main.rlp2, Rotation::cur());
@@ -227,7 +230,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
 
             let c_rlp1 = meta.query_advice(c_main.rlp1, Rotation::cur());
             let c_rlp2 = meta.query_advice(c_main.rlp2, Rotation::cur());
-            
+
             expr = expr + c_rlp1.clone() * acc_mult_prev.clone() * r_table[rind].clone();
             rind += 1;
             expr = expr + c_rlp2.clone() * acc_mult_prev.clone() * r_table[rind].clone();
@@ -243,7 +246,9 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
                     r_table.clone(),
                 );
 
-            let nonce_rlc = (s_advices0_cur.clone() + nonce_value_long_rlc.clone() * r_table[0].clone()) * is_nonce_long.clone()
+            let nonce_rlc = (s_advices0_cur.clone()
+                + nonce_value_long_rlc.clone() * r_table[0].clone())
+                * is_nonce_long.clone()
                 + s_advices0_cur.clone() * (one.clone() - is_nonce_long.clone());
 
             let nonce_stored = meta.query_advice(accs.s_mod_node_rlc, Rotation::cur());
@@ -255,7 +260,9 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
             */
             constraints.push((
                 "Nonce RLC long",
-                q_enable.clone() * is_nonce_long.clone() * (nonce_value_long_rlc.clone() - nonce_stored.clone()),
+                q_enable.clone()
+                    * is_nonce_long.clone()
+                    * (nonce_value_long_rlc.clone() - nonce_stored.clone()),
             ));
 
             /*
@@ -264,7 +271,9 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
             */
             constraints.push((
                 "Nonce RLC short",
-                q_enable.clone() * (one.clone() - is_nonce_long.clone()) * (s_advices0_cur.clone() - nonce_stored.clone()),
+                q_enable.clone()
+                    * (one.clone() - is_nonce_long.clone())
+                    * (s_advices0_cur.clone() - nonce_stored.clone()),
             ));
 
             expr = expr + nonce_rlc * r_table[rind].clone() * acc_mult_prev.clone();
@@ -282,7 +291,9 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
                     r_table.clone(),
                 );
 
-            let balance_rlc = (c_advices0_cur.clone() + balance_value_long_rlc.clone() * r_table[0].clone()) * is_balance_long.clone()
+            let balance_rlc = (c_advices0_cur.clone()
+                + balance_value_long_rlc.clone() * r_table[0].clone())
+                * is_balance_long.clone()
                 + c_advices0_cur.clone() * (one.clone() - is_balance_long.clone());
 
             /*
@@ -294,17 +305,21 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
             */
             constraints.push((
                 "Balance RLC long",
-                q_enable.clone() * is_balance_long.clone() * (balance_value_long_rlc.clone() - balance_stored.clone()),
+                q_enable.clone()
+                    * is_balance_long.clone()
+                    * (balance_value_long_rlc.clone() - balance_stored.clone()),
             ));
 
             /*
-            Similarly as in `Balance RLP long` constraint, 
+            Similarly as in `Balance RLP long` constraint,
             `Balance RLP short` constraint ensures the RLC of a balance is computed properly when
             balance is short.
             */
             constraints.push((
                 "Balance RLC short",
-                q_enable.clone() * (one.clone() - is_balance_long.clone()) * (c_advices0_cur.clone() - balance_stored.clone()),
+                q_enable.clone()
+                    * (one.clone() - is_balance_long.clone())
+                    * (c_advices0_cur.clone() - balance_stored.clone()),
             ));
 
             if !is_s {
@@ -313,8 +328,9 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
                 let balance_s_from_prev = meta.query_advice(accs.c_mod_node_rlc, Rotation::prev());
                 let balance_s_from_cur = meta.query_advice(denoter.sel2, Rotation::cur());
 
-                // Note: when nonce or balance is 0, the actual value in the RLP encoding is 128!
-                // TODO: when finalizing lookups, having 128 instead of 0 needs to be taken into account.
+                // Note: when nonce or balance is 0, the actual value in the RLP encoding is
+                // 128! TODO: when finalizing lookups, having 128 instead of 0
+                // needs to be taken into account.
 
                 /*
                 To enable lookup for nonce modification we need to have S nonce and C nonce in the same row.
@@ -338,8 +354,10 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
                 let is_storage_mod = meta.query_advice(proof_type.is_storage_mod, Rotation::cur());
                 let is_nonce_mod = meta.query_advice(proof_type.is_nonce_mod, Rotation::cur());
                 let is_balance_mod = meta.query_advice(proof_type.is_balance_mod, Rotation::cur());
-                let is_codehash_mod = meta.query_advice(proof_type.is_codehash_mod, Rotation::cur());
-                let is_account_delete_mod = meta.query_advice(proof_type.is_account_delete_mod, Rotation::cur());
+                let is_codehash_mod =
+                    meta.query_advice(proof_type.is_codehash_mod, Rotation::cur());
+                let is_account_delete_mod =
+                    meta.query_advice(proof_type.is_account_delete_mod, Rotation::cur());
 
                 /*
                 We need to ensure there is only one modification at a time. If there is storage or
@@ -352,7 +370,9 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
                 constraints.push((
                     "If storage / balance / codehash modification: S nonce = C nonce",
                     q_enable.clone()
-                        * (is_storage_mod.clone() + is_balance_mod.clone() + is_codehash_mod.clone())
+                        * (is_storage_mod.clone()
+                            + is_balance_mod.clone()
+                            + is_codehash_mod.clone())
                         * (one.clone() - is_account_delete_mod.clone())
                         * (nonce_s_from_cur.clone() - nonce_stored.clone()),
                 ));
@@ -378,12 +398,9 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
 
             let acc = meta.query_advice(accs.acc_s.rlc, Rotation::cur());
             /*
-            Computed RLC after nonce balance row is the same as the stored RLC value. 
+            Computed RLC after nonce balance row is the same as the stored RLC value.
             */
-            constraints.push((
-                "Leaf nonce balance RLC",
-                q_enable.clone() * (expr - acc)
-            ));
+            constraints.push(("Leaf nonce balance RLC", q_enable.clone() * (expr - acc)));
 
             let acc_mult_final = meta.query_advice(accs.acc_s.mult, Rotation::cur());
 
@@ -434,7 +451,6 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
                         - acc_mult_prev.clone() * mult_diff_nonce.clone()),
             ));
 
-
             /*
             When nonce is short (occupying only one byte), we know in advance that `mult_diff_nonce = r^5`
             as there are `s_main.rlp1`, `s_main.rlp2`, `c_main.rlp1`, `c_main.rlp2`, and `s_main.bytes[0]` bytes
@@ -450,7 +466,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
             /*
             We need to prepare the multiplier that will be needed in the next row: `acc_mult_final`.
             We have the multiplier after nonce bytes were added to the RLC: `acc_mult_after_nonce`.
-            Now, `acc_mult_final` depends on the number of balance bytes. 
+            Now, `acc_mult_final` depends on the number of balance bytes.
             `rlc_after_balance = rlc_after_nonce + b1 * acc_mult_after_nonce + ...
                 + bl * acc_mult_after_nonce * r^{l-1}`
             Where `b1,...,bl` are `l` balance bytes. As with nonce, we do not know the length of balance bytes
@@ -475,8 +491,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
                 "Leaf balance RLC mult (balance short)",
                 q_enable.clone()
                     * (one.clone() - is_balance_long.clone())
-                    * (acc_mult_final.clone()
-                        - acc_mult_after_nonce.clone() * r_table[0].clone()),
+                    * (acc_mult_final.clone() - acc_mult_after_nonce.clone() * r_table[0].clone()),
             ));
 
             // RLP:
@@ -513,9 +528,12 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
             because the account address is computed using nibbles and this account address needs
             to be as required by a lookup.
             */
-            constraints.push(("Leaf nonce balance s_main.rlp1 = 184.", q_enable.clone()
-                * (is_non_existing_account_proof.clone() - is_wrong_leaf.clone() - one.clone())
-                * (s_rlp1.clone() - c184)));
+            constraints.push((
+                "Leaf nonce balance s_main.rlp1 = 184.",
+                q_enable.clone()
+                    * (is_non_existing_account_proof.clone() - is_wrong_leaf.clone() - one.clone())
+                    * (s_rlp1.clone() - c184),
+            ));
 
             /*
             `c_main.rlp1` needs to always be 248. This is RLP byte meaning that behind this byte
@@ -556,8 +574,8 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
             constraints.push((
                 "Leaf nonce balance s_main.rlp2 - c_main.rlp2",
                 q_enable.clone()
-                * (is_non_existing_account_proof.clone() - is_wrong_leaf.clone() - one.clone())
-                * (s_rlp2.clone() - c_rlp2.clone() - one.clone() - one.clone()),
+                    * (is_non_existing_account_proof.clone() - is_wrong_leaf.clone() - one.clone())
+                    * (s_rlp2.clone() - c_rlp2.clone() - one.clone() - one.clone()),
             ));
 
             /*
@@ -567,8 +585,8 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
             constraints.push((
                 "Lean nonce balance c_main.rlp2",
                 q_enable.clone()
-                * (is_non_existing_account_proof.clone() - is_wrong_leaf.clone() - one.clone())
-                * (c_rlp2.clone() - nonce_len - balance_len - c66),
+                    * (is_non_existing_account_proof.clone() - is_wrong_leaf.clone() - one.clone())
+                    * (c_rlp2.clone() - nonce_len - balance_len - c66),
             ));
 
             /*
@@ -622,8 +640,9 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
         */
         mult_diff_lookup(
             meta,
-            q_enable_nonce_long, /* mult_diff_nonce is acc_r when is_nonce_short (mult_diff doesn't
-                                  * need to be checked as it's not used) */
+            q_enable_nonce_long, /* mult_diff_nonce is acc_r when is_nonce_short (mult_diff
+                                  * doesn't need to be checked
+                                  * as it's not used) */
             5, /* 4 for s_rlp1, s_rlp2, c_rlp1, c_rlp1; 1 for byte with length
                 * info */
             s_main.bytes[0],
@@ -743,67 +762,102 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
         offset: usize,
     ) {
         let mut nonce_len: usize = 1;
-        // Note: when nonce or balance is 0, the actual value stored in RLP encoding is 128.
+        // Note: when nonce or balance is 0, the actual value stored in RLP encoding is
+        // 128.
         if row.get_byte(S_START) > 128 {
             nonce_len = row.get_byte(S_START) as usize - 128 + 1; // +1 for byte with length info
-            region.assign_advice(
-                || "assign sel1".to_string(),
-                mpt_config.denoter.sel1,
-                offset
-                    - (ACCOUNT_LEAF_NONCE_BALANCE_S_IND
-                        - ACCOUNT_LEAF_KEY_S_IND)
-                        as usize,
-                || Ok(F::one()),
-            ).ok();
+            region
+                .assign_advice(
+                    || "assign sel1".to_string(),
+                    mpt_config.denoter.sel1,
+                    offset - (ACCOUNT_LEAF_NONCE_BALANCE_S_IND - ACCOUNT_LEAF_KEY_S_IND) as usize,
+                    || Ok(F::one()),
+                )
+                .ok();
         } else {
-            region.assign_advice(
-                || "assign sel1".to_string(),
-                mpt_config.denoter.sel1,
-                offset
-                    - (ACCOUNT_LEAF_NONCE_BALANCE_C_IND
-                        - ACCOUNT_LEAF_KEY_C_IND)
-                        as usize,
-                || Ok(F::zero()),
-            ).ok();
+            region
+                .assign_advice(
+                    || "assign sel1".to_string(),
+                    mpt_config.denoter.sel1,
+                    offset - (ACCOUNT_LEAF_NONCE_BALANCE_C_IND - ACCOUNT_LEAF_KEY_C_IND) as usize,
+                    || Ok(F::zero()),
+                )
+                .ok();
         }
 
         let mut balance_len: usize = 1;
         if row.get_byte(C_START) > 128 {
             balance_len = row.get_byte(C_START) as usize - 128 + 1; // +1 for byte with length info
-            region.assign_advice(
-                || "assign sel2".to_string(),
-                mpt_config.denoter.sel2,
-                offset
-                    - (ACCOUNT_LEAF_NONCE_BALANCE_S_IND
-                        - ACCOUNT_LEAF_KEY_S_IND)
-                        as usize,
-                || Ok(F::one()),
-            ).ok();
+            region
+                .assign_advice(
+                    || "assign sel2".to_string(),
+                    mpt_config.denoter.sel2,
+                    offset - (ACCOUNT_LEAF_NONCE_BALANCE_S_IND - ACCOUNT_LEAF_KEY_S_IND) as usize,
+                    || Ok(F::one()),
+                )
+                .ok();
         } else {
-            region.assign_advice(
-                || "assign sel2".to_string(),
-                mpt_config.denoter.sel2,
-                offset
-                    - (ACCOUNT_LEAF_NONCE_BALANCE_C_IND
-                        - ACCOUNT_LEAF_KEY_C_IND)
-                        as usize,
-                || Ok(F::zero()),
-            ).ok();
+            region
+                .assign_advice(
+                    || "assign sel2".to_string(),
+                    mpt_config.denoter.sel2,
+                    offset - (ACCOUNT_LEAF_NONCE_BALANCE_C_IND - ACCOUNT_LEAF_KEY_C_IND) as usize,
+                    || Ok(F::zero()),
+                )
+                .ok();
         }
 
         // nonce value RLC and balance value RLC:
         pv.rlc1 = F::zero();
         pv.rlc2 = F::zero();
-        // Note: Below, it first computes and assigns the nonce RLC and balance RLC without
-        // RLP specific byte (there is a RLP specific byte when nonce/balance RLP length > 1).
+        // Note: Below, it first computes and assigns the nonce RLC and balance RLC
+        // without RLP specific byte (there is a RLP specific byte when
+        // nonce/balance RLP length > 1).
         if nonce_len == 1 && balance_len == 1 {
-            mpt_config.compute_rlc_and_assign(region, &row.bytes, pv, offset, S_START, C_START, HASH_WIDTH, HASH_WIDTH).ok();
+            mpt_config
+                .compute_rlc_and_assign(
+                    region, &row.bytes, pv, offset, S_START, C_START, HASH_WIDTH, HASH_WIDTH,
+                )
+                .ok();
         } else if nonce_len > 1 && balance_len == 1 {
-            mpt_config.compute_rlc_and_assign(region, &row.bytes, pv, offset, S_START+1, C_START, HASH_WIDTH-1, HASH_WIDTH).ok();
+            mpt_config
+                .compute_rlc_and_assign(
+                    region,
+                    &row.bytes,
+                    pv,
+                    offset,
+                    S_START + 1,
+                    C_START,
+                    HASH_WIDTH - 1,
+                    HASH_WIDTH,
+                )
+                .ok();
         } else if nonce_len == 1 && balance_len > 1 {
-            mpt_config.compute_rlc_and_assign(region, &row.bytes, pv, offset, S_START, C_START+1, HASH_WIDTH, HASH_WIDTH-1).ok();
+            mpt_config
+                .compute_rlc_and_assign(
+                    region,
+                    &row.bytes,
+                    pv,
+                    offset,
+                    S_START,
+                    C_START + 1,
+                    HASH_WIDTH,
+                    HASH_WIDTH - 1,
+                )
+                .ok();
         } else if nonce_len > 1 && balance_len > 1 {
-            mpt_config.compute_rlc_and_assign(region, &row.bytes, pv, offset, S_START+1, C_START+1, HASH_WIDTH-1, HASH_WIDTH-1).ok();
+            mpt_config
+                .compute_rlc_and_assign(
+                    region,
+                    &row.bytes,
+                    pv,
+                    offset,
+                    S_START + 1,
+                    C_START + 1,
+                    HASH_WIDTH - 1,
+                    HASH_WIDTH - 1,
+                )
+                .ok();
         }
 
         let mut acc_account;
@@ -814,25 +868,28 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
 
             acc_account = pv.acc_account_s;
             acc_mult_account = pv.acc_mult_account_s;
-            
         } else {
             acc_account = pv.acc_account_c;
             acc_mult_account = pv.acc_mult_account_c;
 
             // assign nonce S
-            region.assign_advice(
-                || "assign sel1".to_string(),
-                mpt_config.denoter.sel1,
-                offset,
-                || Ok(pv.nonce_value_s),
-            ).ok();
+            region
+                .assign_advice(
+                    || "assign sel1".to_string(),
+                    mpt_config.denoter.sel1,
+                    offset,
+                    || Ok(pv.nonce_value_s),
+                )
+                .ok();
             // assign balance S
-            region.assign_advice(
-                || "assign sel2".to_string(),
-                mpt_config.denoter.sel2,
-                offset,
-                || Ok(pv.balance_value_s),
-            ).ok();
+            region
+                .assign_advice(
+                    || "assign sel2".to_string(),
+                    mpt_config.denoter.sel2,
+                    offset,
+                    || Ok(pv.balance_value_s),
+                )
+                .ok();
         }
 
         // s_rlp1, s_rlp2
@@ -867,7 +924,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
             - sel1/sel2: 1/0 (how to check: sel1*(1-sel2))
             - sel1/sel2: 1/1 (how to check: sel1*sel2)
         */
-        
+
         mpt_config.compute_acc_and_mult(
             &row.bytes,
             &mut acc_account,
@@ -886,8 +943,8 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
         // the multiplier if we store acc_mult both after nonce and after
         // balance.
         let acc_mult_tmp = acc_mult_account;
-        
-        // balance contribution to leaf RLC 
+
+        // balance contribution to leaf RLC
         mpt_config.compute_acc_and_mult(
             &row.bytes,
             &mut acc_account,
@@ -901,27 +958,34 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
             mult_diff_c *= mpt_config.acc_r;
         }
 
-        mpt_config.assign_acc(
-            region,
-            acc_account,
-            acc_mult_account,
-            F::zero(),
-            acc_mult_tmp,
-            offset,
-        ).ok();
+        mpt_config
+            .assign_acc(
+                region,
+                acc_account,
+                acc_mult_account,
+                F::zero(),
+                acc_mult_tmp,
+                offset,
+            )
+            .ok();
 
-        region.assign_advice(
-            || "assign mult diff".to_string(),
-            mpt_config.accumulators.acc_c.rlc, // assigning key_rlc leads into PoisonedConstraint
-            offset,
-            || Ok(mult_diff_s),
-        ).ok();
-        region.assign_advice(
-            || "assign mult diff".to_string(),
-            mpt_config.accumulators.key.mult,
-            offset,
-            || Ok(mult_diff_c),
-        ).ok();
+        region
+            .assign_advice(
+                || "assign mult diff".to_string(),
+                mpt_config.accumulators.acc_c.rlc, /* assigning key_rlc leads into
+                                                    * PoisonedConstraint */
+                offset,
+                || Ok(mult_diff_s),
+            )
+            .ok();
+        region
+            .assign_advice(
+                || "assign mult diff".to_string(),
+                mpt_config.accumulators.key.mult,
+                offset,
+                || Ok(mult_diff_c),
+            )
+            .ok();
         if row.get_type() == MptWitnessRowType::AccountLeafNonceBalanceS {
             pv.acc_nonce_balance_s = acc_account;
             pv.acc_mult_nonce_balance_s = acc_mult_account;
@@ -930,5 +994,4 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
             pv.acc_mult_nonce_balance_c = acc_mult_account;
         }
     }
-
 }

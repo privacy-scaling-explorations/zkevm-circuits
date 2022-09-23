@@ -6,8 +6,14 @@ use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
 use crate::{
-    helpers::{get_is_extension_node, bytes_expr_into_rlc},
-    param::{KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH, IS_BRANCH_S_PLACEHOLDER_POS, RLP_NUM, IS_BRANCH_C_PLACEHOLDER_POS, IS_S_BRANCH_NON_HASHED_POS, IS_C_BRANCH_NON_HASHED_POS, ACCOUNT_LEAF_ROWS, ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND, ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND}, columns::{MainCols, AccumulatorPair, AccumulatorCols},
+    columns::{AccumulatorCols, AccumulatorPair, MainCols},
+    helpers::{bytes_expr_into_rlc, get_is_extension_node},
+    param::{
+        ACCOUNT_LEAF_ROWS, ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND,
+        ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND, IS_BRANCH_C_PLACEHOLDER_POS,
+        IS_BRANCH_S_PLACEHOLDER_POS, IS_C_BRANCH_NON_HASHED_POS, IS_S_BRANCH_NON_HASHED_POS,
+        KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH, RLP_NUM,
+    },
 };
 
 /*
@@ -82,14 +88,16 @@ impl<F: FieldExt> BranchHashInParentConfig<F> {
         acc_r: F,
         is_s: bool,
     ) -> Self {
-        let config = BranchHashInParentConfig { _marker: PhantomData };
+        let config = BranchHashInParentConfig {
+            _marker: PhantomData,
+        };
         let one = Expression::Constant(F::from(1_u64));
 
         /*
         When branch is in the first level of the account trie, we need to check whether
         `hash(branch) = account_trie_root`. We do this by checking whether
         `(branch_RLC, account_trie_root_RLC)` is in the keccak table.
-        
+
         Note: branch in the first level cannot be shorter than 32 bytes (it is always hashed).
         */
         meta.lookup_any(
@@ -107,8 +115,8 @@ impl<F: FieldExt> BranchHashInParentConfig<F> {
                 );
                 if !is_s {
                     is_branch_placeholder = meta.query_advice(
-                    s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
-                    Rotation(-16),
+                        s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
+                        Rotation(-16),
                     );
                 }
 
@@ -139,7 +147,7 @@ impl<F: FieldExt> BranchHashInParentConfig<F> {
                 let keccak_table_i = meta.query_fixed(keccak_table[1], Rotation::cur());
                 constraints.push((
                     q_not_first
-                        * is_last_branch_child 
+                        * is_last_branch_child
                         * (one.clone() - is_extension_node.clone())
                         * (one.clone() - is_branch_placeholder.clone())
                         * (one.clone() - not_first_level)
@@ -155,7 +163,7 @@ impl<F: FieldExt> BranchHashInParentConfig<F> {
         When branch is in the first level of the storage trie, we need to check whether
         `hash(branch) = storage_trie_root`. We do this by checking whether
         `(branch_RLC, storage_trie_root_RLC)` is in the keccak table.
-        
+
         Note: branch in the first level cannot be shorter than 32 bytes (it is always hashed).
         */
         meta.lookup_any(
@@ -204,13 +212,21 @@ impl<F: FieldExt> BranchHashInParentConfig<F> {
                 // Note: storage root is always in s_main.bytes.
                 for column in s_main.bytes.iter() {
                     if is_s {
-                        sc_hash
-                            .push(meta.query_advice(*column,
-                                Rotation(rot_into_branch_init - (ACCOUNT_LEAF_ROWS - ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND))));
+                        sc_hash.push(meta.query_advice(
+                            *column,
+                            Rotation(
+                                rot_into_branch_init
+                                    - (ACCOUNT_LEAF_ROWS - ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND),
+                            ),
+                        ));
                     } else {
-                        sc_hash
-                            .push(meta.query_advice(*column, 
-                                Rotation(rot_into_branch_init - (ACCOUNT_LEAF_ROWS - ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND))));
+                        sc_hash.push(meta.query_advice(
+                            *column,
+                            Rotation(
+                                rot_into_branch_init
+                                    - (ACCOUNT_LEAF_ROWS - ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND),
+                            ),
+                        ));
                     }
                 }
                 let hash_rlc = bytes_expr_into_rlc(&sc_hash, acc_r);
@@ -262,8 +278,8 @@ impl<F: FieldExt> BranchHashInParentConfig<F> {
             );
             if !is_s {
                 is_branch_placeholder = meta.query_advice(
-                s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
-                Rotation(-16),
+                    s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
+                    Rotation(-16),
                 );
             }
 
@@ -273,8 +289,8 @@ impl<F: FieldExt> BranchHashInParentConfig<F> {
             );
             if !is_s {
                 is_branch_non_hashed = meta.query_advice(
-                s_main.bytes[IS_C_BRANCH_NON_HASHED_POS - RLP_NUM],
-                Rotation(-16),
+                    s_main.bytes[IS_C_BRANCH_NON_HASHED_POS - RLP_NUM],
+                    Rotation(-16),
                 );
             }
 
@@ -349,8 +365,8 @@ impl<F: FieldExt> BranchHashInParentConfig<F> {
             );
             if !is_s {
                 is_branch_placeholder = meta.query_advice(
-                s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
-                Rotation(-16),
+                    s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
+                    Rotation(-16),
                 );
             }
 
@@ -360,8 +376,8 @@ impl<F: FieldExt> BranchHashInParentConfig<F> {
             );
             if !is_s {
                 is_branch_non_hashed = meta.query_advice(
-                s_main.bytes[IS_C_BRANCH_NON_HASHED_POS - RLP_NUM],
-                Rotation(-16),
+                    s_main.bytes[IS_C_BRANCH_NON_HASHED_POS - RLP_NUM],
+                    Rotation(-16),
                 );
             }
 
@@ -397,7 +413,7 @@ impl<F: FieldExt> BranchHashInParentConfig<F> {
                     * is_branch_non_hashed.clone()
                     * (one.clone() - is_extension_node.clone())
                     * (mod_node_hash_rlc_cur - branch_acc),
-                ));
+            ));
 
             constraints
         });

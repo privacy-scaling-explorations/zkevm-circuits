@@ -1,8 +1,22 @@
-use std::{convert::{TryFrom, TryInto}, marker::PhantomData};
-use halo2_proofs::{circuit::Region, plonk::Error, arithmetic::FieldExt};
+use halo2_proofs::{arithmetic::FieldExt, circuit::Region, plonk::Error};
 use num_enum::TryFromPrimitive;
+use std::{
+    convert::{TryFrom, TryInto},
+    marker::PhantomData,
+};
 
-use crate::{param::{NOT_FIRST_LEVEL_POS, IS_NON_EXISTING_ACCOUNT_POS, COUNTER_WITNESS_LEN, HASH_WIDTH, IS_STORAGE_MOD_POS, S_START, C_START, RLP_NUM, WITNESS_ROW_WIDTH, S_RLP_START, C_RLP_START, IS_NONCE_MOD_POS, IS_BALANCE_MOD_POS, IS_ACCOUNT_DELETE_MOD_POS, IS_CODEHASH_MOD_POS}, account_leaf::AccountLeaf, storage_leaf::StorageLeaf, branch::Branch, mpt::{MPTConfig, ProofVariables}, helpers::bytes_into_rlc};
+use crate::{
+    account_leaf::AccountLeaf,
+    branch::Branch,
+    helpers::bytes_into_rlc,
+    mpt::{MPTConfig, ProofVariables},
+    param::{
+        COUNTER_WITNESS_LEN, C_RLP_START, C_START, HASH_WIDTH, IS_ACCOUNT_DELETE_MOD_POS,
+        IS_BALANCE_MOD_POS, IS_CODEHASH_MOD_POS, IS_NONCE_MOD_POS, IS_NON_EXISTING_ACCOUNT_POS,
+        IS_STORAGE_MOD_POS, NOT_FIRST_LEVEL_POS, RLP_NUM, S_RLP_START, S_START, WITNESS_ROW_WIDTH,
+    },
+    storage_leaf::StorageLeaf,
+};
 
 #[derive(Eq, PartialEq, TryFromPrimitive)]
 #[repr(u8)]
@@ -21,13 +35,13 @@ pub(crate) enum MptWitnessRowType {
     AccountLeafRootCodehashC = 11,
     StorageLeafSValue = 13,
     StorageLeafCValue = 14,
-    NeighbouringStorageLeaf = 15, 
+    NeighbouringStorageLeaf = 15,
     ExtensionNodeS = 16,
     ExtensionNodeC = 17,
-    AccountNonExisting = 18
+    AccountNonExisting = 18,
 }
 
-pub(crate) struct MptWitnessRow<F>{
+pub(crate) struct MptWitnessRow<F> {
     pub(crate) bytes: Vec<u8>,
     _marker: PhantomData<F>,
 }
@@ -64,59 +78,51 @@ impl<F: FieldExt> MptWitnessRow<F> {
         self.get_byte_rev(IS_STORAGE_MOD_POS)
     }
 
-    pub(crate) fn s_root_bytes(&self) -> &[u8] { 
+    pub(crate) fn s_root_bytes(&self) -> &[u8] {
         &self.bytes[self.bytes.len()
             - 4 * HASH_WIDTH
             - COUNTER_WITNESS_LEN
             - IS_NON_EXISTING_ACCOUNT_POS
-            .. self.bytes.len() - 4 * HASH_WIDTH
-                - COUNTER_WITNESS_LEN
-                - IS_NON_EXISTING_ACCOUNT_POS
+            ..self.bytes.len() - 4 * HASH_WIDTH - COUNTER_WITNESS_LEN - IS_NON_EXISTING_ACCOUNT_POS
                 + HASH_WIDTH]
     }
 
-    pub(crate) fn c_root_bytes(&self) -> &[u8] { 
+    pub(crate) fn c_root_bytes(&self) -> &[u8] {
         &self.bytes[self.bytes.len()
             - 3 * HASH_WIDTH
             - COUNTER_WITNESS_LEN
             - IS_NON_EXISTING_ACCOUNT_POS
-            .. self.bytes.len() - 3 * HASH_WIDTH
-                - COUNTER_WITNESS_LEN
-                - IS_NON_EXISTING_ACCOUNT_POS
+            ..self.bytes.len() - 3 * HASH_WIDTH - COUNTER_WITNESS_LEN - IS_NON_EXISTING_ACCOUNT_POS
                 + HASH_WIDTH]
     }
 
-    pub(crate) fn address_bytes(&self) -> &[u8] { 
+    pub(crate) fn address_bytes(&self) -> &[u8] {
         &self.bytes[self.bytes.len()
             - 2 * HASH_WIDTH
             - COUNTER_WITNESS_LEN
             - IS_NON_EXISTING_ACCOUNT_POS
-            .. self.bytes.len() - 2 * HASH_WIDTH
-                - COUNTER_WITNESS_LEN
-                - IS_NON_EXISTING_ACCOUNT_POS
+            ..self.bytes.len() - 2 * HASH_WIDTH - COUNTER_WITNESS_LEN - IS_NON_EXISTING_ACCOUNT_POS
                 + HASH_WIDTH]
     }
 
-    pub(crate) fn counter_bytes(&self) -> &[u8] { 
+    pub(crate) fn counter_bytes(&self) -> &[u8] {
         &self.bytes[self.bytes.len()
             - HASH_WIDTH
             - COUNTER_WITNESS_LEN
             - IS_NON_EXISTING_ACCOUNT_POS
-            .. self.bytes.len() - HASH_WIDTH
-                - COUNTER_WITNESS_LEN
-                - IS_NON_EXISTING_ACCOUNT_POS
+            ..self.bytes.len() - HASH_WIDTH - COUNTER_WITNESS_LEN - IS_NON_EXISTING_ACCOUNT_POS
                 + COUNTER_WITNESS_LEN]
     }
 
-    pub(crate) fn s_hash_bytes(&self) -> &[u8] { 
+    pub(crate) fn s_hash_bytes(&self) -> &[u8] {
         &self.bytes[S_START..S_START + HASH_WIDTH]
-    } 
+    }
 
-    pub(crate) fn c_hash_bytes(&self) -> &[u8] { 
+    pub(crate) fn c_hash_bytes(&self) -> &[u8] {
         &self.bytes[C_START..C_START + HASH_WIDTH]
     }
 
-    pub(crate) fn main(&self) -> &[u8] { 
+    pub(crate) fn main(&self) -> &[u8] {
         &self.bytes[0..self.bytes.len() - 1]
     }
 
@@ -383,12 +389,11 @@ impl<F: FieldExt> MptWitnessRow<F> {
 
         // not all columns may be needed
         let get_val = |curr_ind: usize| {
-            let val;
-            if curr_ind >= row.len() {
-                val = 0;
+            let val = if curr_ind >= row.len() {
+                0
             } else {
-                val = row[curr_ind];
-            }
+                row[curr_ind]
+            };
 
             val as u64
         };
@@ -416,34 +421,27 @@ impl<F: FieldExt> MptWitnessRow<F> {
             )?;
         }
         Ok(())
-    } 
+    }
 
     pub(crate) fn assign_branch_row(
         &self,
         region: &mut Region<'_, F>,
         mpt_config: &MPTConfig<F>,
-        node_index: u8,
-        key: u8,
-        key_rlc: F,
-        key_rlc_mult: F,
-        mult_diff: F,
-        s_mod_node_hash_rlc: F,
-        c_mod_node_hash_rlc: F,
-        drifted_pos: u8,
-        s_rlp1: i32,
-        c_rlp1: i32,
+        pv: &ProofVariables<F>,
         offset: usize,
     ) -> Result<(), Error> {
         let row = self.main();
 
         let account_leaf = AccountLeaf::default();
         let storage_leaf = StorageLeaf::default();
-        let mut branch = Branch::default();
-        branch.is_branch_child = true;
-        branch.is_last_branch_child = node_index == 15;
-        branch.node_index = node_index;
-        branch.modified_node = key;
-        branch.drifted_pos = drifted_pos;
+        let branch = Branch {
+            is_branch_child: true,
+            is_last_branch_child: pv.node_index == 15,
+            node_index: pv.node_index,
+            modified_node: pv.modified_node,
+            drifted_pos: pv.drifted_pos,
+            ..Default::default()
+        };
 
         self.assign(
             region,
@@ -458,48 +456,66 @@ impl<F: FieldExt> MptWitnessRow<F> {
             || "s_mod_node_hash_rlc",
             mpt_config.accumulators.s_mod_node_rlc,
             offset,
-            || Ok(s_mod_node_hash_rlc),
+            || Ok(pv.s_mod_node_hash_rlc),
         )?;
         region.assign_advice(
             || "c_mod_node_hash_rlc",
             mpt_config.accumulators.c_mod_node_rlc,
             offset,
-            || Ok(c_mod_node_hash_rlc),
+            || Ok(pv.c_mod_node_hash_rlc),
         )?;
 
-        region.assign_advice(|| "key rlc", mpt_config.accumulators.key.rlc, offset, || Ok(key_rlc))?;
+        region.assign_advice(
+            || "key rlc",
+            mpt_config.accumulators.key.rlc,
+            offset,
+            || Ok(pv.key_rlc),
+        )?;
         region.assign_advice(
             || "key rlc mult",
             mpt_config.accumulators.key.mult,
             offset,
-            || Ok(key_rlc_mult),
+            || Ok(pv.key_rlc_mult),
         )?;
-        region.assign_advice(|| "mult diff", mpt_config.accumulators.mult_diff, offset, || Ok(mult_diff))?;
+        region.assign_advice(
+            || "mult diff",
+            mpt_config.accumulators.mult_diff,
+            offset,
+            || Ok(pv.mult_diff),
+        )?;
 
         region.assign_advice(
             || "s_rlp1",
             mpt_config.s_main.rlp1,
             offset,
-            || Ok(F::from(s_rlp1 as u64)),
+            || Ok(F::from(pv.rlp_len_rem_s as u64)),
         )?;
         region.assign_advice(
             || "c_rlp1",
             mpt_config.c_main.rlp1,
             offset,
-            || Ok(F::from(c_rlp1 as u64)),
+            || Ok(F::from(pv.rlp_len_rem_c as u64)),
         )?;
 
         region.assign_advice(
             || "is_node_hashed_s",
             mpt_config.denoter.is_node_hashed_s,
             offset,
-            || Ok(F::from((row[S_RLP_START + 1] == 0 && row[S_START] > 192) as u64)),
+            || {
+                Ok(F::from(
+                    (row[S_RLP_START + 1] == 0 && row[S_START] > 192) as u64,
+                ))
+            },
         )?;
         region.assign_advice(
             || "is_node_hashed_c",
             mpt_config.denoter.is_node_hashed_c,
             offset,
-            || Ok(F::from((row[C_RLP_START + 1] == 0 && row[C_START] > 192) as u64)),
+            || {
+                Ok(F::from(
+                    (row[C_RLP_START + 1] == 0 && row[C_START] > 192) as u64,
+                ))
+            },
         )?;
 
         Ok(())
@@ -516,8 +532,8 @@ impl<F: FieldExt> MptWitnessRow<F> {
         pv: &ProofVariables<F>,
         offset: usize,
     ) -> Result<(), Error> {
-        let s_root_rlc = bytes_into_rlc(self.s_root_bytes(), mpt_config.acc_r,);
-        let c_root_rlc = bytes_into_rlc(self.c_root_bytes(), mpt_config.acc_r,);
+        let s_root_rlc = bytes_into_rlc(self.s_root_bytes(), mpt_config.acc_r);
+        let c_root_rlc = bytes_into_rlc(self.c_root_bytes(), mpt_config.acc_r);
 
         region.assign_advice(
             || "inter start root",
@@ -545,7 +561,7 @@ impl<F: FieldExt> MptWitnessRow<F> {
             prevent omitting account proof (and having only storage proof
             with the appropriate address RLC)
             */
-            let address_rlc = bytes_into_rlc(self.address_bytes(), mpt_config.acc_r,);
+            let address_rlc = bytes_into_rlc(self.address_bytes(), mpt_config.acc_r);
 
             region.assign_advice(
                 || "address RLC",
@@ -554,7 +570,7 @@ impl<F: FieldExt> MptWitnessRow<F> {
                 || Ok(address_rlc),
             )?;
         }
-        
+
         region.assign_advice(
             || "is_storage_mod",
             mpt_config.proof_type.is_storage_mod,
@@ -589,7 +605,11 @@ impl<F: FieldExt> MptWitnessRow<F> {
             || "is_non_existing_account",
             mpt_config.proof_type.is_non_existing_account_proof,
             offset,
-            || Ok(F::from(self.get_byte_rev(IS_NON_EXISTING_ACCOUNT_POS) as u64)),
+            || {
+                Ok(F::from(
+                    self.get_byte_rev(IS_NON_EXISTING_ACCOUNT_POS) as u64
+                ))
+            },
         )?;
 
         Ok(())

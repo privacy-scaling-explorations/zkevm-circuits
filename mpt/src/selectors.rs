@@ -5,7 +5,13 @@ use halo2_proofs::{
 use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
-use crate::{helpers::get_bool_constraint, account_leaf::AccountLeafCols, storage_leaf::StorageLeafCols, columns::{ProofTypeCols, DenoteCols}, branch::BranchCols};
+use crate::{
+    account_leaf::AccountLeafCols,
+    branch::BranchCols,
+    columns::{DenoteCols, ProofTypeCols},
+    helpers::get_bool_constraint,
+    storage_leaf::StorageLeafCols,
+};
 
 /*
 It needs to be ensured:
@@ -32,7 +38,9 @@ impl<F: FieldExt> SelectorsConfig<F> {
         storage_leaf: StorageLeafCols<F>,
         denoter: DenoteCols<F>,
     ) -> Self {
-        let config = SelectorsConfig { _marker: PhantomData };
+        let config = SelectorsConfig {
+            _marker: PhantomData,
+        };
         let one = Expression::Constant(F::one());
 
         meta.create_gate("selectors boolean", |meta| {

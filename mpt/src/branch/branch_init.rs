@@ -1,11 +1,15 @@
 use halo2_proofs::{
-    plonk::{ConstraintSystem, Expression, VirtualCells, Column, Fixed},
+    plonk::{Column, ConstraintSystem, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
 use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
-use crate::{helpers::{get_bool_constraint, range_lookups}, columns::{MainCols, AccumulatorCols}, mpt::FixedTableTag};
+use crate::{
+    columns::{AccumulatorCols, MainCols},
+    helpers::{get_bool_constraint, range_lookups},
+    mpt::FixedTableTag,
+};
 
 /*
 A branch occupies 19 rows:
@@ -88,7 +92,9 @@ impl<F: FieldExt> BranchInitConfig<F> {
         acc_r: F,
         fixed_table: [Column<Fixed>; 3],
     ) -> Self {
-        let config = BranchInitConfig { _marker: PhantomData };
+        let config = BranchInitConfig {
+            _marker: PhantomData,
+        };
         let one = Expression::Constant(F::one());
 
         // Short RLP, meta data contains two bytes: 248, 81
@@ -130,19 +136,19 @@ impl<F: FieldExt> BranchInitConfig<F> {
 
             constraints.push((
                 "Branch init s1 boolean",
-                get_bool_constraint(q_enable.clone(), s1.clone())
+                get_bool_constraint(q_enable.clone(), s1.clone()),
             ));
             constraints.push((
                 "Branch init c1 boolean",
-                get_bool_constraint(q_enable.clone(), c1.clone())
+                get_bool_constraint(q_enable.clone(), c1.clone()),
             ));
             constraints.push((
                 "Branch init s2 boolean",
-                get_bool_constraint(q_enable.clone(), s2.clone())
+                get_bool_constraint(q_enable.clone(), s2.clone()),
             ));
             constraints.push((
                 "Branch init c2 boolean",
-                get_bool_constraint(q_enable.clone(), c2.clone())
+                get_bool_constraint(q_enable.clone(), c2.clone()),
             ));
 
             let s_rlp1 = meta.query_advice(s_main.bytes[2], Rotation::cur());
@@ -156,7 +162,9 @@ impl<F: FieldExt> BranchInitConfig<F> {
             let mult_one = Expression::Constant(acc_r);
             constraints.push((
                 "Branch accumulator S row 0 (1)",
-                q_enable.clone() * one_rlp_byte_s.clone() * (s_rlp1.clone() - branch_acc_s_cur.clone()),
+                q_enable.clone()
+                    * one_rlp_byte_s.clone()
+                    * (s_rlp1.clone() - branch_acc_s_cur.clone()),
             ));
             constraints.push((
                 "Branch mult S row 0 (1)",
@@ -164,7 +172,9 @@ impl<F: FieldExt> BranchInitConfig<F> {
             ));
             constraints.push((
                 "Branch accumulator C row 0 (1)",
-                q_enable.clone() * one_rlp_byte_c.clone() * (c_rlp1.clone() - branch_acc_c_cur.clone()),
+                q_enable.clone()
+                    * one_rlp_byte_c.clone()
+                    * (c_rlp1.clone() - branch_acc_c_cur.clone()),
             ));
             constraints.push((
                 "Branch mult C row 0 (1)",
@@ -244,4 +254,3 @@ impl<F: FieldExt> BranchInitConfig<F> {
         config
     }
 }
-

@@ -1,14 +1,21 @@
 use halo2_proofs::{
+    circuit::Region,
     plonk::{Advice, Column, ConstraintSystem, Expression, Fixed, VirtualCells},
-    poly::Rotation, circuit::Region,
+    poly::Rotation,
 };
 use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
 use crate::{
-    helpers::{get_bool_constraint, key_len_lookup, range_lookups, bytes_expr_into_rlc},
+    columns::{AccumulatorCols, DenoteCols, MainCols},
+    helpers::{bytes_expr_into_rlc, get_bool_constraint, range_lookups},
     mpt::{FixedTableTag, MPTConfig, ProofVariables},
-    param::{BRANCH_ROWS_NUM, KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH, HASH_WIDTH, LEAF_VALUE_S_IND, ACCOUNT_LEAF_ROWS, ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND, ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND, LEAF_VALUE_C_IND}, columns::{MainCols, AccumulatorCols, DenoteCols}, witness_row::{MptWitnessRow, MptWitnessRowType},
+    param::{
+        ACCOUNT_LEAF_ROWS, ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND,
+        ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND, BRANCH_ROWS_NUM, HASH_WIDTH, KECCAK_INPUT_WIDTH,
+        KECCAK_OUTPUT_WIDTH, LEAF_VALUE_C_IND, LEAF_VALUE_S_IND,
+    },
+    witness_row::{MptWitnessRow, MptWitnessRowType},
 };
 
 /*
@@ -102,7 +109,9 @@ impl<F: FieldExt> LeafValueConfig<F> {
         acc_r: F,
         fixed_table: [Column<Fixed>; 3],
     ) -> Self {
-        let config = LeafValueConfig { _marker: PhantomData };
+        let config = LeafValueConfig {
+            _marker: PhantomData,
+        };
 
         /*
         A rotation into any branch child is ok as `s_mod_node_hash_rlc` and `c_mod_node_hash_rlc` are the same
@@ -210,13 +219,13 @@ impl<F: FieldExt> LeafValueConfig<F> {
                 "Leaf value RLC",
                 q_enable.clone() * (acc_c_cur - leaf_value_rlc),
             ));
- 
+
             if !is_s {
                 let key_c_rlc_from_prev = meta.query_advice(accs.key.rlc, Rotation(-1));
                 let key_c_rlc_from_cur = meta.query_advice(accs.key.mult, Rotation::cur());
                 let leaf_value_s_rlc_from_prev = meta.query_advice(accs.acc_c.rlc, Rotation(-2));
                 let leaf_value_s_rlc_from_cur = meta.query_advice(accs.mult_diff, Rotation::cur());
-                
+
                 /*
                 To enable external lookups we need to have the following information in the same row:
                  - key RLC:                       we copy it to `sel1` column from the leaf key C row
@@ -233,7 +242,7 @@ impl<F: FieldExt> LeafValueConfig<F> {
                     q_enable.clone() * (leaf_value_s_rlc_from_prev - leaf_value_s_rlc_from_cur),
                 ));
             }
- 
+
             let mut sel = meta.query_advice(denoter.sel1, Rotation(rot));
             if !is_s {
                 sel = meta.query_advice(denoter.sel2, Rotation(rot));
@@ -244,7 +253,7 @@ impl<F: FieldExt> LeafValueConfig<F> {
             /*
             `sel` column in branch children rows determines whether the `modified_node` is empty child.
             For example when adding a new storage leaf to the trie, we have an empty child in `S` proof
-            and non-empty in `C` proof. 
+            and non-empty in `C` proof.
             When there is an empty child, we have a placeholder leaf under the last branch.
 
             If `sel = 1` which means an empty child, we need to ensure that the value is set to 0
@@ -366,11 +375,11 @@ impl<F: FieldExt> LeafValueConfig<F> {
             ));
 
             /*
-            When the leaf is in the last level of the trie and the value is short, 
+            When the leaf is in the last level of the trie and the value is short,
             we need to ensure that `s_main.rlp2 = 32`.
 
             Note that in this case we do not have the length of the key stored in `s_main.rlp2` or `s_main.bytes[0]`.
-            
+
             Example: `[194,32,1]`
             */
             constraints.push((
@@ -381,8 +390,8 @@ impl<F: FieldExt> LeafValueConfig<F> {
                     * is_short.clone(),
             ));
 
-            let last_level_or_one_nibblelong_check = s_rlp1_prev.clone() - c192.clone()
-                - one.clone() - long_value_len;
+            let last_level_or_one_nibblelong_check =
+                s_rlp1_prev.clone() - c192.clone() - one.clone() - long_value_len;
 
             /*
             When the leaf is in the last level of the trie and the value is long or there is one nibble in the key,
@@ -404,7 +413,7 @@ impl<F: FieldExt> LeafValueConfig<F> {
                     * (last_level.clone() + one_nibble)
                     * is_long.clone(),
             ));
- 
+
             constraints
         });
 
@@ -420,10 +429,12 @@ impl<F: FieldExt> LeafValueConfig<F> {
                 let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
                 let is_leaf = meta.query_advice(is_leaf_value, Rotation::cur());
 
-                let mut rot_into_storage_root = -LEAF_VALUE_S_IND - (ACCOUNT_LEAF_ROWS - ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND);
+                let mut rot_into_storage_root =
+                    -LEAF_VALUE_S_IND - (ACCOUNT_LEAF_ROWS - ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND);
                 let mut rot_into_last_account_row = -LEAF_VALUE_S_IND - 1;
                 if !is_s {
-                    rot_into_storage_root = -LEAF_VALUE_C_IND - (ACCOUNT_LEAF_ROWS - ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND);
+                    rot_into_storage_root = -LEAF_VALUE_C_IND
+                        - (ACCOUNT_LEAF_ROWS - ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND);
                     rot_into_last_account_row = -LEAF_VALUE_C_IND - 1;
                 }
 
@@ -447,9 +458,7 @@ impl<F: FieldExt> LeafValueConfig<F> {
                 let mut sc_hash = vec![];
                 // Note: storage root is always in `s_main.bytes`.
                 for column in s_main.bytes.iter() {
-                    sc_hash.push(
-                        meta.query_advice(*column, Rotation(rot_into_storage_root)),
-                    );
+                    sc_hash.push(meta.query_advice(*column, Rotation(rot_into_storage_root)));
                 }
                 let hash_rlc = bytes_expr_into_rlc(&sc_hash, acc_r);
 
@@ -487,44 +496,48 @@ impl<F: FieldExt> LeafValueConfig<F> {
         meta.create_gate(
             "Hash of the only storage leaf which is placeholder requires empty storage root",
             |meta| {
-            let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
-            let mut constraints = vec![];
+                let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
+                let mut constraints = vec![];
 
-            let mut rot_into_storage_root = -LEAF_VALUE_S_IND - (ACCOUNT_LEAF_ROWS - ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND);
-            let mut rot_into_last_account_row = -LEAF_VALUE_S_IND - 1;
-            let mut is_placeholder = meta.query_advice(denoter.sel1, Rotation(rot));
-            if !is_s {
-                rot_into_storage_root = -LEAF_VALUE_C_IND - (ACCOUNT_LEAF_ROWS - ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND);
-                rot_into_last_account_row = -LEAF_VALUE_C_IND - 1;
-                is_placeholder = meta.query_advice(denoter.sel2, Rotation(rot));
-            }
+                let mut rot_into_storage_root =
+                    -LEAF_VALUE_S_IND - (ACCOUNT_LEAF_ROWS - ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND);
+                let mut rot_into_last_account_row = -LEAF_VALUE_S_IND - 1;
+                let mut is_placeholder = meta.query_advice(denoter.sel1, Rotation(rot));
+                if !is_s {
+                    rot_into_storage_root = -LEAF_VALUE_C_IND
+                        - (ACCOUNT_LEAF_ROWS - ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND);
+                    rot_into_last_account_row = -LEAF_VALUE_C_IND - 1;
+                    is_placeholder = meta.query_advice(denoter.sel2, Rotation(rot));
+                }
 
-            let is_leaf = meta.query_advice(is_leaf_value, Rotation::cur());
-            
-            // Only check if there is an account above the leaf.
-            let is_account_leaf_above = meta.query_advice(
-                is_account_leaf_in_added_branch,
-                Rotation(rot_into_last_account_row),
-            );
-    
-            let empty_trie_hash: Vec<u8> = vec![
-                86, 232, 31, 23, 27, 204, 85, 166, 255, 131, 69, 230, 146, 192, 248, 110, 91, 72,
-                224, 27, 153, 108, 173, 192, 1, 98, 47, 181, 227, 99, 180, 33,
-            ];
-            for (ind, col) in s_main.bytes.iter().enumerate() {
-                let s = meta.query_advice(*col, Rotation(rot_into_storage_root));
-                constraints.push((
-                    "If placeholder leaf without branch (sel = 1), then storage trie is empty",
-                    q_not_first.clone()
-                        * is_placeholder.clone()
-                        * is_account_leaf_above.clone()
-                        * is_leaf.clone()
-                        * (s.clone() - Expression::Constant(F::from(empty_trie_hash[ind] as u64))),
-                ));
-            }
+                let is_leaf = meta.query_advice(is_leaf_value, Rotation::cur());
 
-            constraints
-        });
+                // Only check if there is an account above the leaf.
+                let is_account_leaf_above = meta.query_advice(
+                    is_account_leaf_in_added_branch,
+                    Rotation(rot_into_last_account_row),
+                );
+
+                let empty_trie_hash: Vec<u8> = vec![
+                    86, 232, 31, 23, 27, 204, 85, 166, 255, 131, 69, 230, 146, 192, 248, 110, 91,
+                    72, 224, 27, 153, 108, 173, 192, 1, 98, 47, 181, 227, 99, 180, 33,
+                ];
+                for (ind, col) in s_main.bytes.iter().enumerate() {
+                    let s = meta.query_advice(*col, Rotation(rot_into_storage_root));
+                    constraints.push((
+                        "If placeholder leaf without branch (sel = 1), then storage trie is empty",
+                        q_not_first.clone()
+                            * is_placeholder.clone()
+                            * is_account_leaf_above.clone()
+                            * is_leaf.clone()
+                            * (s.clone()
+                                - Expression::Constant(F::from(empty_trie_hash[ind] as u64))),
+                    ));
+                }
+
+                constraints
+            },
+        );
 
         /*
         If there is no branch or extension node in the storage trie (just a leaf)
@@ -540,65 +553,75 @@ impl<F: FieldExt> LeafValueConfig<F> {
         meta.lookup_any(
             "Hash of the only storage leaf which is after a placeholder is storage trie root",
             |meta| {
-            let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
+                let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
 
-            // Check in leaf value row.
-            let mut rot_into_storage_root = -LEAF_VALUE_S_IND - (ACCOUNT_LEAF_ROWS - ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND) - BRANCH_ROWS_NUM;
-            let mut rot_into_last_account_row = -LEAF_VALUE_S_IND - 1;
-            let mut rot_into_last_account_row_placeholder = -LEAF_VALUE_S_IND - 1 - BRANCH_ROWS_NUM;
-            let is_leaf = meta.query_advice(is_leaf_value, Rotation::cur());
+                // Check in leaf value row.
+                let mut rot_into_storage_root = -LEAF_VALUE_S_IND
+                    - (ACCOUNT_LEAF_ROWS - ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND)
+                    - BRANCH_ROWS_NUM;
+                let mut rot_into_last_account_row = -LEAF_VALUE_S_IND - 1;
+                let mut rot_into_last_account_row_placeholder =
+                    -LEAF_VALUE_S_IND - 1 - BRANCH_ROWS_NUM;
+                let is_leaf = meta.query_advice(is_leaf_value, Rotation::cur());
 
-            let is_branch_placeholder =
-                meta.query_advice(is_branch_placeholder, Rotation(rot_into_init));
+                let is_branch_placeholder =
+                    meta.query_advice(is_branch_placeholder, Rotation(rot_into_init));
 
-            if !is_s {
-                rot_into_storage_root = -LEAF_VALUE_C_IND - (ACCOUNT_LEAF_ROWS - ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND) - BRANCH_ROWS_NUM;
-                rot_into_last_account_row = -LEAF_VALUE_C_IND - 1;
-                rot_into_last_account_row_placeholder = -LEAF_VALUE_C_IND - 1 - BRANCH_ROWS_NUM;
-            }
+                if !is_s {
+                    rot_into_storage_root = -LEAF_VALUE_C_IND
+                        - (ACCOUNT_LEAF_ROWS - ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND)
+                        - BRANCH_ROWS_NUM;
+                    rot_into_last_account_row = -LEAF_VALUE_C_IND - 1;
+                    rot_into_last_account_row_placeholder = -LEAF_VALUE_C_IND - 1 - BRANCH_ROWS_NUM;
+                }
 
-            // Only check if there is an account above the leaf.
-            let is_account_leaf_in_added_branch_placeholder =
-                meta.query_advice(is_account_leaf_in_added_branch, Rotation(rot_into_last_account_row_placeholder));
-            let is_account_leaf_in_added_branch =
-                meta.query_advice(is_account_leaf_in_added_branch, Rotation(rot_into_last_account_row));
+                // Only check if there is an account above the leaf.
+                let is_account_leaf_in_added_branch_placeholder = meta.query_advice(
+                    is_account_leaf_in_added_branch,
+                    Rotation(rot_into_last_account_row_placeholder),
+                );
+                let is_account_leaf_in_added_branch = meta.query_advice(
+                    is_account_leaf_in_added_branch,
+                    Rotation(rot_into_last_account_row),
+                );
 
-            let acc = meta.query_advice(accs.acc_s.rlc, Rotation::cur());
+                let acc = meta.query_advice(accs.acc_s.rlc, Rotation::cur());
 
-            let mut sc_hash = vec![];
-            // Note: storage root is always in `s_main.bytes`.
-            for column in s_main.bytes.iter() {
-                sc_hash.push(meta.query_advice(*column, Rotation(rot_into_storage_root)));
-            }
-            let hash_rlc = bytes_expr_into_rlc(&sc_hash, acc_r);
+                let mut sc_hash = vec![];
+                // Note: storage root is always in `s_main.bytes`.
+                for column in s_main.bytes.iter() {
+                    sc_hash.push(meta.query_advice(*column, Rotation(rot_into_storage_root)));
+                }
+                let hash_rlc = bytes_expr_into_rlc(&sc_hash, acc_r);
 
-            let mut constraints = vec![];
-            constraints.push((
-                not_first_level.clone()
+                let mut constraints = vec![];
+                constraints.push((
+                    not_first_level.clone()
                     * is_leaf.clone()
                     * (one.clone() - is_account_leaf_in_added_branch.clone()) // if account is directly above storage leaf, there is no placeholder branch
                     * is_account_leaf_in_added_branch_placeholder.clone()
                     * is_branch_placeholder.clone()
                     * acc,
-                meta.query_fixed(keccak_table[0], Rotation::cur()),
-            ));
+                    meta.query_fixed(keccak_table[0], Rotation::cur()),
+                ));
 
-            constraints.push((
-                not_first_level.clone()
+                constraints.push((
+                    not_first_level.clone()
                     * is_leaf.clone()
                     * (one.clone() - is_account_leaf_in_added_branch.clone()) // if account is directly above storage leaf, there is no placeholder branch
                     * is_account_leaf_in_added_branch_placeholder.clone()
                     * is_branch_placeholder.clone()
                     * hash_rlc.clone(),
-                meta.query_fixed(keccak_table[1], Rotation::cur()),
-            ));
+                    meta.query_fixed(keccak_table[1], Rotation::cur()),
+                ));
 
-            constraints
-        });
+                constraints
+            },
+        );
 
         /*
         It needs to be checked that the hash of a leaf is in the parent node. We do this by a lookup
-        into keccak table: `lookup(leaf_hash_rlc, parent_node_mod_child_rlc)`. 
+        into keccak table: `lookup(leaf_hash_rlc, parent_node_mod_child_rlc)`.
         */
         meta.lookup_any("Leaf hash in parent", |meta| {
             let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
@@ -618,7 +641,8 @@ impl<F: FieldExt> LeafValueConfig<F> {
             let is_branch_placeholder =
                 meta.query_advice(is_branch_placeholder, Rotation(rot_into_init));
 
-            // For leaf without branch, the constraints are in `storage_root_in_account_leaf.rs`.
+            // For leaf without branch, the constraints are in
+            // `storage_root_in_account_leaf.rs`.
             let is_leaf_without_branch =
                 meta.query_advice(is_account_leaf_in_added_branch, Rotation(rot_into_account));
 
@@ -758,8 +782,8 @@ impl<F: FieldExt> LeafValueConfig<F> {
             If `sel = 1`, there is no leaf at this position (value is being added or
             deleted) and we do not check the hash of it.
             */
-            let mut constraints = vec![];
-            constraints.push((
+            let mut constraints = vec![
+            (
                 q_enable.clone()
                     * rlc
                     * (one.clone() - sel.clone())
@@ -767,7 +791,7 @@ impl<F: FieldExt> LeafValueConfig<F> {
                     * (one.clone() - is_leaf_without_branch.clone())
                     * is_branch_placeholder.clone(),
                 meta.query_fixed(keccak_table[0], Rotation::cur()),
-            ));
+            )];
             let mut mod_node_hash_rlc = meta.query_advice(
                 accs.s_mod_node_rlc,
                 Rotation(rot_into_init - 3), /* -3 to get from init branch into the previous
@@ -881,7 +905,7 @@ impl<F: FieldExt> LeafValueConfig<F> {
         let mut typ = "short";
         if is_long {
             typ = "long";
-        } 
+        }
         mpt_config.assign_long_short(region, typ, offset).ok();
 
         // Leaf RLC
@@ -909,12 +933,12 @@ impl<F: FieldExt> LeafValueConfig<F> {
         );
 
         let empty_trie_hash: Vec<u8> = vec![
-            86, 232, 31, 23, 27, 204, 85, 166, 255, 131, 69, 230, 146, 192,
-            248, 110, 91, 72, 224, 27, 153, 108, 173, 192, 1, 98, 47, 181,
-            227, 99, 180, 33,
+            86, 232, 31, 23, 27, 204, 85, 166, 255, 131, 69, 230, 146, 192, 248, 110, 91, 72, 224,
+            27, 153, 108, 173, 192, 1, 98, 47, 181, 227, 99, 180, 33,
         ];
         if is_s {
-            // Store leaf value RLC into rlc1 to be later set in leaf value C row (to enable lookups):
+            // Store leaf value RLC into rlc1 to be later set in leaf value C row (to enable
+            // lookups):
             pv.rlc1 = pv.acc_c;
 
             /*
@@ -931,26 +955,32 @@ impl<F: FieldExt> LeafValueConfig<F> {
                 && row_prev.s_hash_bytes() == empty_trie_hash
             {
                 // Leaf is without branch and it is just a placeholder.
-                region.assign_advice(
-                    || "assign sel1".to_string(),
-                    mpt_config.denoter.sel1,
-                    offset,
-                    || Ok(F::one()),
-                ).ok();
+                region
+                    .assign_advice(
+                        || "assign sel1".to_string(),
+                        mpt_config.denoter.sel1,
+                        offset,
+                        || Ok(F::one()),
+                    )
+                    .ok();
             }
         } else {
-            region.assign_advice(
-                || "assign key_rlc into key_rlc_mult".to_string(),
-                mpt_config.accumulators.key.mult,
-                offset,
-                || Ok(pv.rlc2),
-            ).ok();
-            region.assign_advice(
-                || "assign leaf value S into mult_diff".to_string(),
-                mpt_config.accumulators.mult_diff,
-                offset,
-                || Ok(pv.rlc1),
-            ).ok();
+            region
+                .assign_advice(
+                    || "assign key_rlc into key_rlc_mult".to_string(),
+                    mpt_config.accumulators.key.mult,
+                    offset,
+                    || Ok(pv.rlc2),
+                )
+                .ok();
+            region
+                .assign_advice(
+                    || "assign leaf value S into mult_diff".to_string(),
+                    mpt_config.accumulators.mult_diff,
+                    offset,
+                    || Ok(pv.rlc1),
+                )
+                .ok();
 
             /*
             account leaf storage codehash S
@@ -966,22 +996,26 @@ impl<F: FieldExt> LeafValueConfig<F> {
                 && row_prev.s_hash_bytes() == empty_trie_hash
             {
                 // Leaf is without branch and it is just a placeholder.
-                region.assign_advice(
-                    || "assign sel2".to_string(),
-                    mpt_config.denoter.sel2,
-                    offset,
-                    || Ok(F::one()),
-                ).ok();
+                region
+                    .assign_advice(
+                        || "assign sel2".to_string(),
+                        mpt_config.denoter.sel2,
+                        offset,
+                        || Ok(F::one()),
+                    )
+                    .ok();
             }
         }
 
-        mpt_config.assign_acc(
-            region,
-            pv.acc_s, // leaf RLC
-            pv.acc_mult_s,
-            pv.acc_c, // leaf value RLC
-            F::zero(),
-            offset,
-        ).ok();
+        mpt_config
+            .assign_acc(
+                region,
+                pv.acc_s, // leaf RLC
+                pv.acc_mult_s,
+                pv.acc_c, // leaf value RLC
+                F::zero(),
+                offset,
+            )
+            .ok();
     }
 }

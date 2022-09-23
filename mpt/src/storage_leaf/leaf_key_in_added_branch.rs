@@ -1,5 +1,5 @@
 use halo2_proofs::{
-    circuit::{Region},
+    circuit::Region,
     plonk::{Advice, Column, ConstraintSystem, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
@@ -7,12 +7,17 @@ use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
 use crate::{
+    columns::{AccumulatorCols, MainCols},
     helpers::{
-        compute_rlc, get_bool_constraint, key_len_lookup,
-        mult_diff_lookup, range_lookups, get_is_extension_node, get_is_extension_node_one_nibble,
+        compute_rlc, get_bool_constraint, get_is_extension_node, get_is_extension_node_one_nibble,
+        mult_diff_lookup, range_lookups,
     },
     mpt::{FixedTableTag, MPTConfig, ProofVariables},
-    param::{IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, LEAF_DRIFTED_IND, BRANCH_ROWS_NUM, LEAF_KEY_S_IND, LEAF_KEY_C_IND}, columns::{MainCols, AccumulatorCols}, witness_row::MptWitnessRow,
+    param::{
+        BRANCH_ROWS_NUM, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, LEAF_DRIFTED_IND, LEAF_KEY_C_IND,
+        LEAF_KEY_S_IND,
+    },
+    witness_row::MptWitnessRow,
 };
 
 use crate::param::{
@@ -66,7 +71,9 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
         fixed_table: [Column<Fixed>; 3],
         keccak_table: [Column<Fixed>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
     ) -> Self {
-        let config = LeafKeyInAddedBranchConfig { _marker: PhantomData };
+        let config = LeafKeyInAddedBranchConfig {
+            _marker: PhantomData,
+        };
 
         let one = Expression::Constant(F::one());
         let c16 = Expression::Constant(F::from(16_u64));
@@ -124,7 +131,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                 "flag2 is boolean",
                 get_bool_constraint(q_enable.clone(), flag2.clone()),
             ));
-            
+
             let is_branch_s_placeholder = meta.query_advice(
                 s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM],
                 Rotation(rot_branch_init),
@@ -133,7 +140,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                 s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
                 Rotation(rot_branch_init),
             );
- 
+
             /*
             If leaf is in the first storage level, there cannot be a placeholder branch (it would push the
             leaf into a second level) and we do not need to trigger any checks.
@@ -141,12 +148,19 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
             */
             let is_leaf_in_first_storage_level =
                 meta.query_advice(is_account_leaf_in_added_branch, Rotation(rot_into_account));
-            
 
             let s_rlp2 = meta.query_advice(s_main.rlp2, Rotation::cur());
             let rlc_last_level = s_rlp1 + s_rlp2 * r_table[0].clone();
 
-            let mut rlc = rlc_last_level.clone() + compute_rlc(meta, s_main.bytes.to_vec(), 1, one.clone(), 0, r_table.clone());
+            let mut rlc = rlc_last_level.clone()
+                + compute_rlc(
+                    meta,
+                    s_main.bytes.to_vec(),
+                    1,
+                    one.clone(),
+                    0,
+                    r_table.clone(),
+                );
 
             let c_rlp1 = meta.query_advice(c_main.rlp1, Rotation::cur());
             rlc = rlc + c_rlp1 * r_table[R_TABLE_LEN - 1].clone() * r_table[1].clone();
@@ -159,11 +173,14 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
             We need to ensure that the RLC of the row is computed properly for `is_short` and
             `is_long`. We compare the computed value with the value stored in `accumulators.acc_s.rlc`.
             */
-            constraints.push(("Leaf key acc", q_enable.clone()
+            constraints.push((
+                "Leaf key acc",
+                q_enable.clone()
                     * (is_short + is_long) // activate if is_short or is_long
                     * (one.clone() - is_leaf_in_first_storage_level.clone())
                     * (is_branch_s_placeholder.clone() + is_branch_c_placeholder.clone()) // drifted leaf appears only when there is a placeholder branch
-                    * (rlc - acc.clone())));
+                    * (rlc - acc.clone()),
+            ));
 
             /*
             We need to ensure that the RLC of the row is computed properly for `last_level` and
@@ -172,11 +189,14 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
             `last_level` and `one_nibble` cases have one RLP byte (`s_rlp1`) and one byte (`s_rlp2`)
             where it is 32 (for `last_level`) or `48 + last_nibble` (for `one_nibble`).
             */
-            constraints.push(("Leaf key acc last level", q_enable
+            constraints.push((
+                "Leaf key acc last level",
+                q_enable
                     * (last_level + one_nibble)
                     * (one.clone() - is_leaf_in_first_storage_level.clone())
                     * (is_branch_s_placeholder.clone() + is_branch_c_placeholder.clone()) // drifted leaf appears only when there is a placeholder branch
-                    * (rlc_last_level - acc)));
+                    * (rlc_last_level - acc),
+            ));
 
             constraints
         });
@@ -198,7 +218,9 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
             let flag2 = meta.query_advice(accs.c_mod_node_rlc, Rotation::cur());
             let is_short = (one.clone() - flag1.clone()) * flag2.clone();
 
-            q_enable * is_short * (is_branch_s_placeholder + is_branch_c_placeholder)
+            q_enable
+                * is_short
+                * (is_branch_s_placeholder + is_branch_c_placeholder)
                 * (one.clone() - is_leaf_in_first_storage_level.clone())
         };
         let sel_long = |meta: &mut VirtualCells<F>| {
@@ -218,7 +240,9 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
             let flag2 = meta.query_advice(accs.c_mod_node_rlc, Rotation::cur());
             let is_long = flag1.clone() * (one.clone() - flag2.clone());
 
-            q_enable * is_long * (is_branch_s_placeholder + is_branch_c_placeholder)
+            q_enable
+                * is_long
+                * (is_branch_s_placeholder + is_branch_c_placeholder)
                 * (one.clone() - is_leaf_in_first_storage_level.clone())
         };
 
@@ -264,8 +288,24 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
         Note: `last_level` and `one_nibble` have fixed multiplier because the length of the nibbles
         in these cases is fixed.
         */
-        mult_diff_lookup(meta, sel_short, 2, s_main.rlp2, accs.acc_s.mult, 128, fixed_table);
-        mult_diff_lookup(meta, sel_long, 3, s_main.bytes[0], accs.acc_s.mult, 128, fixed_table);
+        mult_diff_lookup(
+            meta,
+            sel_short,
+            2,
+            s_main.rlp2,
+            accs.acc_s.mult,
+            128,
+            fixed_table,
+        );
+        mult_diff_lookup(
+            meta,
+            sel_long,
+            3,
+            s_main.bytes[0],
+            accs.acc_s.mult,
+            128,
+            fixed_table,
+        );
 
         /*
         We need to ensure that the drifted leaf has the proper key RLC. It needs to be the same as the key RLC
@@ -280,7 +320,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
         Drifted leaf (leaf in added branch)
 
         Add case (S branch is placeholder):
-          Branch S           || Branch C             
+          Branch S           || Branch C
           Placeholder branch || Added branch
           Leaf S             || Leaf C
                              || Drifted leaf (this is Leaf S drifted into Added branch)
@@ -292,10 +332,10 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
         then adding the bytes in Drifted leaf row.
 
         Delete case (C branch is placeholder):
-          Branch S                        || Branch C             
+          Branch S                        || Branch C
           Branch to be deleted            || Placeholder branch
           Leaf S (leaf to be deleted)     || Leaf C
-          Leaf to be drifted one level up || 
+          Leaf to be drifted one level up ||
         */
         meta.create_gate("Storage drifted leaf key RLC", |meta| {
             let q_enable = q_enable(meta);
@@ -316,24 +356,33 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
 
             We need the intermediate key RLC right before `drifted_pos` is added to it.
             If the branch parallel to the placeholder branch is an extension node,
-            we have the intermediate RLC stored in the extension node `accumulators.key.rlc`. 
+            we have the intermediate RLC stored in the extension node `accumulators.key.rlc`.
             If it is a regular branch, we need to go one branch above to retrieve the RLC (if there is no level above,
             we take 0).
             */
-            let key_rlc_cur = meta.query_advice(accs.key.rlc, Rotation(-LEAF_DRIFTED_IND-1)) * is_ext_node.clone()
-                + (meta.query_advice(accs.key.rlc, Rotation(rot_branch_init - BRANCH_ROWS_NUM + 1)) * (one.clone() - is_branch_placeholder_in_first_level.clone()))
-                * (one.clone() - is_ext_node.clone());
- 
+            let key_rlc_cur = meta.query_advice(accs.key.rlc, Rotation(-LEAF_DRIFTED_IND - 1))
+                * is_ext_node.clone()
+                + (meta.query_advice(
+                    accs.key.rlc,
+                    Rotation(rot_branch_init - BRANCH_ROWS_NUM + 1),
+                ) * (one.clone() - is_branch_placeholder_in_first_level.clone()))
+                    * (one.clone() - is_ext_node.clone());
+
             /*
             Note: Branch key RLC is in the first branch child row (not in branch init). We need to go
             in the branch above the placeholder branch.
             */
-            let branch_above_placeholder_mult = meta.query_advice(accs.key.mult, Rotation(rot_branch_init - BRANCH_ROWS_NUM + 1))
-                * (one.clone() - is_branch_placeholder_in_first_level.clone())
+            let branch_above_placeholder_mult = meta.query_advice(
+                accs.key.mult,
+                Rotation(rot_branch_init - BRANCH_ROWS_NUM + 1),
+            ) * (one.clone()
+                - is_branch_placeholder_in_first_level.clone())
                 + is_branch_placeholder_in_first_level;
 
-            // When we have only one nibble in the extension node, `mult_diff` is not used (and set).
-            let is_one_nibble = get_is_extension_node_one_nibble(meta, s_main.bytes, rot_branch_init);
+            // When we have only one nibble in the extension node, `mult_diff` is not used
+            // (and set).
+            let is_one_nibble =
+                get_is_extension_node_one_nibble(meta, s_main.bytes, rot_branch_init);
 
             /*
             `mult_diff` is the power of multiplier `r` and it corresponds to the number of nibbles in the extension node.
@@ -341,9 +390,13 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
             `meta.query_advice(accs.key.mult, Rotation(-ACCOUNT_DRIFTED_LEAF_IND-1))` as we always use `mult_diff` also in `extension_node_key.rs`.
             */
             let mult_diff = meta.query_advice(accs.mult_diff, Rotation(rot_branch_init + 1));
-            let mut key_rlc_mult =
-                branch_above_placeholder_mult.clone() * mult_diff.clone() * is_ext_node.clone() * (one.clone() - is_one_nibble.clone())
-                + branch_above_placeholder_mult.clone() * is_ext_node.clone() * is_one_nibble.clone()
+            let mut key_rlc_mult = branch_above_placeholder_mult.clone()
+                * mult_diff.clone()
+                * is_ext_node.clone()
+                * (one.clone() - is_one_nibble.clone())
+                + branch_above_placeholder_mult.clone()
+                    * is_ext_node.clone()
+                    * is_one_nibble.clone()
                 + branch_above_placeholder_mult * (one.clone() - is_ext_node);
 
             /*
@@ -381,16 +434,18 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
             We retrieve `key_rlc` from the leaf before it drifted into a newly added branch. This RLC
             need to be the same as the drifted leaf key RLC.
             */
-            let leaf_key_s_rlc = meta.query_advice(accs.key.rlc, Rotation(-(LEAF_DRIFTED_IND - LEAF_KEY_S_IND)));
-            let leaf_key_c_rlc = meta.query_advice(accs.key.rlc, Rotation(-(LEAF_DRIFTED_IND - LEAF_KEY_C_IND))); 
+            let leaf_key_s_rlc =
+                meta.query_advice(accs.key.rlc, Rotation(-(LEAF_DRIFTED_IND - LEAF_KEY_S_IND)));
+            let leaf_key_c_rlc =
+                meta.query_advice(accs.key.rlc, Rotation(-(LEAF_DRIFTED_IND - LEAF_KEY_C_IND)));
 
             let is_leaf_in_first_storage_level =
                 meta.query_advice(is_account_leaf_in_added_branch, Rotation(rot_into_account));
 
             // Any rotation that lands into branch children can be used.
             let drifted_pos = meta.query_advice(drifted_pos, Rotation(-17));
-            let drifted_pos_mult =
-                key_rlc_mult.clone() * c16.clone() * is_c16.clone() + key_rlc_mult.clone() * is_c1.clone();
+            let drifted_pos_mult = key_rlc_mult.clone() * c16.clone() * is_c16.clone()
+                + key_rlc_mult.clone() * is_c1.clone();
 
             let key_rlc_start = key_rlc_cur.clone() + drifted_pos.clone() * drifted_pos_mult;
 
@@ -560,7 +615,8 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                     * is_branch_s_placeholder.clone()
                     * last_level.clone()
                     * (one.clone() - is_leaf_in_first_storage_level.clone())
-                    * (leaf_key_s_rlc.clone() - key_rlc_start.clone()), // no nibbles in drifted leaf
+                    * (leaf_key_s_rlc.clone() - key_rlc_start.clone()), /* no nibbles in drifted
+                                                                         * leaf */
             ));
 
             /*
@@ -579,10 +635,12 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                     * is_branch_c_placeholder.clone()
                     * last_level.clone()
                     * (one.clone() - is_leaf_in_first_storage_level.clone())
-                    * (leaf_key_c_rlc.clone() - key_rlc_start.clone()), // no nibbles in drifted leaf
+                    * (leaf_key_c_rlc.clone() - key_rlc_start.clone()), /* no nibbles in drifted
+                                                                         * leaf */
             ));
 
-            let key_rlc_one_nibble = key_rlc_start.clone() + (s_rlp2 - c48.clone()) * key_rlc_mult.clone();
+            let key_rlc_one_nibble =
+                key_rlc_start.clone() + (s_rlp2 - c48.clone()) * key_rlc_mult.clone();
 
             /*
             When `S` placeholder, `leaf_key_s_rlc` is the key RLC of the leaf before it drifted down
@@ -633,7 +691,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
         Drifted leaf (leaf in added branch)
 
         Add case (S branch is placeholder):
-          Branch S           || Branch C             
+          Branch S           || Branch C
           Placeholder branch || Added branch
           Leaf S             || Leaf C
                              || Drifted leaf (this is Leaf S drifted into Added branch)
@@ -641,81 +699,84 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
         We need to compute the RLC of the drifted leaf. We compute the intermediate RLC
         from the bytes in `LEAF_DRIFTED` row. And we retrieve the value from `LEAF_VALUE_S` row
         (where there is the same leaf, but before it drifted down into a new branch).
-        
+
         Then we execute the lookup into a keccak table: `lookup(leaf_rlc, branch_child_at_drifted_pos_rlc)`.
         */
-        meta.lookup_any("Leaf key in added branch: neighbour leaf in the added branch (S)", |meta| {
-            let q_enable = q_enable(meta);
-            let mut constraints = vec![];
+        meta.lookup_any(
+            "Leaf key in added branch: neighbour leaf in the added branch (S)",
+            |meta| {
+                let q_enable = q_enable(meta);
+                let mut constraints = vec![];
 
-            let mut rlc = meta.query_advice(accs.acc_s.rlc, Rotation::cur());
-            let acc_mult = meta.query_advice(accs.acc_s.mult, Rotation::cur());
+                let mut rlc = meta.query_advice(accs.acc_s.rlc, Rotation::cur());
+                let acc_mult = meta.query_advice(accs.acc_s.mult, Rotation::cur());
 
-            // If branch placeholder in `S`, the leaf value is 3 rows above.
-            let rot_val = -3;
+                // If branch placeholder in `S`, the leaf value is 3 rows above.
+                let rot_val = -3;
 
-            let s_rlp1 = meta.query_advice(s_main.rlp1, Rotation(rot_val));
-            rlc = rlc + s_rlp1 * acc_mult.clone();
+                let s_rlp1 = meta.query_advice(s_main.rlp1, Rotation(rot_val));
+                rlc = rlc + s_rlp1 * acc_mult.clone();
 
-            let s_rlp2 = meta.query_advice(s_main.rlp2, Rotation(rot_val));
-            rlc = rlc + s_rlp2 * acc_mult.clone() * r_table[0].clone();
+                let s_rlp2 = meta.query_advice(s_main.rlp2, Rotation(rot_val));
+                rlc = rlc + s_rlp2 * acc_mult.clone() * r_table[0].clone();
 
-            // TODO: use already computed RLC value in leaf row
-            rlc = rlc
-                + compute_rlc(
-                    meta,
-                    s_main.bytes.to_vec(),
-                    1,
-                    acc_mult.clone(),
-                    rot_val,
-                    r_table.clone(),
+                // TODO: use already computed RLC value in leaf row
+                rlc = rlc
+                    + compute_rlc(
+                        meta,
+                        s_main.bytes.to_vec(),
+                        1,
+                        acc_mult.clone(),
+                        rot_val,
+                        r_table.clone(),
+                    );
+                // Note: value does not reach c_rlp1.
+
+                let is_leaf_in_first_storage_level =
+                    meta.query_advice(is_account_leaf_in_added_branch, Rotation(rot_into_account));
+
+                // Any rotation that lands into branch children can be used.
+                let rot = -17;
+                let is_branch_s_placeholder = meta.query_advice(
+                    s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM],
+                    Rotation(-23),
                 );
-            // Note: value does not reach c_rlp1.
 
-            let is_leaf_in_first_storage_level =
-                meta.query_advice(is_account_leaf_in_added_branch, Rotation(rot_into_account));
+                constraints.push((
+                    q_enable.clone()
+                        * rlc
+                        * is_branch_s_placeholder.clone()
+                        * (one.clone() - is_leaf_in_first_storage_level.clone()),
+                    meta.query_fixed(keccak_table[0], Rotation::cur()),
+                ));
 
-            // Any rotation that lands into branch children can be used.
-            let rot = -17;
-            let is_branch_s_placeholder = meta.query_advice(
-                s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM],
-                Rotation(-23),
-            );
+                /*
+                `s_mod_node_hash_rlc` in the placeholder branch stores the hash of a neighbour leaf.
+                This is because `c_mod_node_hash_rlc` in the added branch stores the hash of
+                `modified_node` (the leaf that has been added):
 
-            constraints.push((
-                q_enable.clone()
-                    * rlc
-                    * is_branch_s_placeholder.clone()
-                    * (one.clone() - is_leaf_in_first_storage_level.clone()),
-                meta.query_fixed(keccak_table[0], Rotation::cur()),
-            ));
+                Add case (S branch is placeholder):
+                  Branch S           || Branch C
+                  Placeholder branch (`s_mod_node_hash_rlc` stores `drifted_pos` node hash) || Added branch (`c_mod_node_hash_rlc` stores `modified_node` hash)
+                  Leaf S             || Leaf C
+                                     || Drifted leaf (this is Leaf S drifted into Added branch)
 
-            /*
-            `s_mod_node_hash_rlc` in the placeholder branch stores the hash of a neighbour leaf.
-            This is because `c_mod_node_hash_rlc` in the added branch stores the hash of
-            `modified_node` (the leaf that has been added):
+                That the stored value corresponds to the value in the non-placeholder branch at `drifted_pos`
+                is checked in `branch_parallel.rs`.
+                */
+                let s_mod_node_hash_rlc = meta.query_advice(accs.s_mod_node_rlc, Rotation(rot));
+                let keccak_table_i = meta.query_fixed(keccak_table[1], Rotation::cur());
+                constraints.push((
+                    q_enable.clone()
+                        * s_mod_node_hash_rlc
+                        * is_branch_s_placeholder.clone()
+                        * (one.clone() - is_leaf_in_first_storage_level),
+                    keccak_table_i,
+                ));
 
-            Add case (S branch is placeholder):
-              Branch S           || Branch C             
-              Placeholder branch (`s_mod_node_hash_rlc` stores `drifted_pos` node hash) || Added branch (`c_mod_node_hash_rlc` stores `modified_node` hash)
-              Leaf S             || Leaf C
-                                 || Drifted leaf (this is Leaf S drifted into Added branch)
-
-            That the stored value corresponds to the value in the non-placeholder branch at `drifted_pos`
-            is checked in `branch_parallel.rs`.
-            */
-            let s_mod_node_hash_rlc = meta.query_advice(accs.s_mod_node_rlc, Rotation(rot));
-            let keccak_table_i = meta.query_fixed(keccak_table[1], Rotation::cur());
-            constraints.push((
-                q_enable.clone()
-                    * s_mod_node_hash_rlc
-                    * is_branch_s_placeholder.clone()
-                    * (one.clone() - is_leaf_in_first_storage_level),
-                keccak_table_i,
-            ));
-
-            constraints
-        });
+                constraints
+            },
+        );
 
         /*
         It needs to be ensured that the hash of the drifted leaf is in the parent branch
@@ -729,89 +790,92 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
         Drifted leaf (leaf in added branch)
 
         Delete case (C branch is placeholder):
-          Branch S                        || Branch C             
+          Branch S                        || Branch C
           Branch to be deleted            || Placeholder branch
           Leaf S (leaf to be deleted)     || Leaf C
-          Leaf to be drifted one level up || 
-        
+          Leaf to be drifted one level up ||
+
         We need to compute the RLC of the leaf that is a neighbour leaf of the leaf that is to be deleted.
         We compute the intermediate RLC from the bytes in `LEAF_DRIFTED` row.
         And we retrieve the value from `LEAF_VALUE_C` row
         (where there is the same leaf, but after it was moved one level up because of the deleted branch).
-        
+
         Then we execute the lookup into a keccak table: `lookup(leaf_rlc, branch_child_at_drifted_pos_rlc)`.
         */
-        meta.lookup_any("Leaf key in added branch: neighbour leaf in the deleted branch (C)", |meta| {
-            let q_enable = q_enable(meta);
-            let mut constraints = vec![];
+        meta.lookup_any(
+            "Leaf key in added branch: neighbour leaf in the deleted branch (C)",
+            |meta| {
+                let q_enable = q_enable(meta);
+                let mut constraints = vec![];
 
-            let mut rlc = meta.query_advice(accs.acc_s.rlc, Rotation::cur());
-            let acc_mult = meta.query_advice(accs.acc_s.mult, Rotation::cur());
+                let mut rlc = meta.query_advice(accs.acc_s.rlc, Rotation::cur());
+                let acc_mult = meta.query_advice(accs.acc_s.mult, Rotation::cur());
 
-            // If branch placeholder in C, value is 1 above.
-            let rot_val = -1;
+                // If branch placeholder in C, value is 1 above.
+                let rot_val = -1;
 
-            let s_rlp1 = meta.query_advice(s_main.rlp1, Rotation(rot_val));
-            rlc = rlc + s_rlp1 * acc_mult.clone();
+                let s_rlp1 = meta.query_advice(s_main.rlp1, Rotation(rot_val));
+                rlc = rlc + s_rlp1 * acc_mult.clone();
 
-            let s_rlp2 = meta.query_advice(s_main.rlp2, Rotation(rot_val));
-            rlc = rlc + s_rlp2 * acc_mult.clone() * r_table[0].clone();
+                let s_rlp2 = meta.query_advice(s_main.rlp2, Rotation(rot_val));
+                rlc = rlc + s_rlp2 * acc_mult.clone() * r_table[0].clone();
 
-            rlc = rlc
-                + compute_rlc(
-                    meta,
-                    s_main.bytes.to_vec(),
-                    1,
-                    acc_mult.clone(),
-                    rot_val,
-                    r_table.clone(),
+                rlc = rlc
+                    + compute_rlc(
+                        meta,
+                        s_main.bytes.to_vec(),
+                        1,
+                        acc_mult.clone(),
+                        rot_val,
+                        r_table.clone(),
+                    );
+                // Note: value does not reach `c_rlp1`.
+
+                let is_leaf_in_first_storage_level =
+                    meta.query_advice(is_account_leaf_in_added_branch, Rotation(rot_into_account));
+
+                // Any rotation that lands into branch children can be used.
+                let rot = -17;
+                let is_branch_c_placeholder = meta.query_advice(
+                    s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
+                    Rotation(-23),
                 );
-            // Note: value does not reach `c_rlp1`.
 
-            let is_leaf_in_first_storage_level =
-                meta.query_advice(is_account_leaf_in_added_branch, Rotation(rot_into_account));
+                constraints.push((
+                    q_enable.clone()
+                        * rlc
+                        * is_branch_c_placeholder.clone()
+                        * (one.clone() - is_leaf_in_first_storage_level.clone()),
+                    meta.query_fixed(keccak_table[0], Rotation::cur()),
+                ));
 
-            // Any rotation that lands into branch children can be used.
-            let rot = -17;
-            let is_branch_c_placeholder = meta.query_advice(
-                s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
-                Rotation(-23),
-            );
+                /*
+                `c_mod_node_hash_rlc` in the placeholder branch stores the hash of a neighbour leaf.
+                This is because `s_mod_node_hash_rlc` in the deleted branch stores the hash of
+                `modified_node` (the leaf that is to be deleted):
 
-            constraints.push((
-                q_enable.clone()
-                    * rlc
-                    * is_branch_c_placeholder.clone()
-                    * (one.clone() - is_leaf_in_first_storage_level.clone()),
-                meta.query_fixed(keccak_table[0], Rotation::cur()),
-            ));
+                Delete case (C branch is placeholder):
+                  Branch S                        || Branch C
+                  Branch to be deleted (`s_mod_node_hash_rlc` stores `modified_node` hash) || Placeholder branch (`c_mod_node_hash_rlc` stores `drifted_pos` node hash)
+                  Leaf S (leaf to be deleted)     || Leaf C
+                  Leaf to be drifted one level up ||
 
-            /*
-            `c_mod_node_hash_rlc` in the placeholder branch stores the hash of a neighbour leaf.
-            This is because `s_mod_node_hash_rlc` in the deleted branch stores the hash of
-            `modified_node` (the leaf that is to be deleted):
+                That the stored value corresponds to the value in the non-placeholder branch at `drifted_pos`
+                is checked in `branch_parallel.rs`.
+                */
+                let c_mod_node_hash_rlc = meta.query_advice(accs.c_mod_node_rlc, Rotation(rot));
+                let keccak_table_i = meta.query_fixed(keccak_table[1], Rotation::cur());
+                constraints.push((
+                    q_enable.clone()
+                        * c_mod_node_hash_rlc
+                        * is_branch_c_placeholder.clone()
+                        * (one - is_leaf_in_first_storage_level),
+                    keccak_table_i,
+                ));
 
-            Delete case (C branch is placeholder):
-              Branch S                        || Branch C             
-              Branch to be deleted (`s_mod_node_hash_rlc` stores `modified_node` hash) || Placeholder branch (`c_mod_node_hash_rlc` stores `drifted_pos` node hash)
-              Leaf S (leaf to be deleted)     || Leaf C
-              Leaf to be drifted one level up || 
-            
-            That the stored value corresponds to the value in the non-placeholder branch at `drifted_pos`
-            is checked in `branch_parallel.rs`.
-            */
-            let c_mod_node_hash_rlc = meta.query_advice(accs.c_mod_node_rlc, Rotation(rot));
-            let keccak_table_i = meta.query_fixed(keccak_table[1], Rotation::cur());
-            constraints.push((
-                q_enable.clone()
-                    * c_mod_node_hash_rlc
-                    * is_branch_c_placeholder.clone()
-                    * (one - is_leaf_in_first_storage_level),
-                keccak_table_i,
-            ));
-
-            constraints
-        });
+                constraints
+            },
+        );
 
         /*
         Range lookups ensure that `s_main`, `c_main.rlp1`, `c_main.rlp2` columns are all bytes (between 0 - 255).
@@ -862,21 +926,17 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
         } else {
             len = (row.get_byte(1) - 128) as usize + 2;
         }
-        mpt_config.compute_acc_and_mult(
-            &row.bytes,
-            &mut pv.acc_s,
-            &mut pv.acc_mult_s,
-            0,
-            len,
-        );
+        mpt_config.compute_acc_and_mult(&row.bytes, &mut pv.acc_s, &mut pv.acc_mult_s, 0, len);
 
-        mpt_config.assign_acc(
-            region,
-            pv.acc_s,
-            pv.acc_mult_s,
-            F::zero(),
-            F::zero(),
-            offset,
-        ).ok();
+        mpt_config
+            .assign_acc(
+                region,
+                pv.acc_s,
+                pv.acc_mult_s,
+                F::zero(),
+                F::zero(),
+                offset,
+            )
+            .ok();
     }
 }

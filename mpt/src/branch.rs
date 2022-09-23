@@ -1,25 +1,36 @@
 pub mod branch_hash_in_parent;
+pub mod branch_init;
 pub mod branch_key;
 pub mod branch_parallel;
 pub mod branch_rlc;
-pub mod branch_init;
 pub mod extension_node;
 pub mod extension_node_key;
 
 use halo2_proofs::{
-    plonk::{Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells, Advice},
-    poly::Rotation, circuit::Region,
+    circuit::Region,
+    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
+    poly::Rotation,
 };
 use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
 use crate::{
-    helpers::{get_bool_constraint, range_lookups, get_is_extension_node, bytes_into_rlc, bytes_expr_into_rlc},
+    account_leaf::AccountLeaf,
+    columns::{AccumulatorCols, DenoteCols, MainCols},
+    helpers::{
+        bytes_expr_into_rlc, bytes_into_rlc, get_bool_constraint, get_is_extension_node,
+        range_lookups,
+    },
     mpt::{FixedTableTag, MPTConfig, ProofVariables},
     param::{
-        BRANCH_0_C_START, BRANCH_0_S_START, IS_BRANCH_C_PLACEHOLDER_POS,
-        IS_BRANCH_S_PLACEHOLDER_POS, RLP_NUM, NIBBLES_COUNTER_POS, BRANCH_ROWS_NUM, BRANCH_0_KEY_POS, DRIFTED_POS, IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS, IS_EXT_LONG_ODD_C16_POS, IS_EXT_LONG_ODD_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS, S_RLP_START, S_START, C_RLP_START, C_START, HASH_WIDTH, IS_S_BRANCH_NON_HASHED_POS, IS_C_BRANCH_NON_HASHED_POS,
-    }, witness_row::MptWitnessRow, storage_leaf::StorageLeaf, account_leaf::AccountLeaf, columns::{MainCols, DenoteCols, AccumulatorCols},
+        BRANCH_0_C_START, BRANCH_0_KEY_POS, BRANCH_0_S_START, BRANCH_ROWS_NUM, C_RLP_START,
+        C_START, DRIFTED_POS, HASH_WIDTH, IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS,
+        IS_C_BRANCH_NON_HASHED_POS, IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS,
+        IS_EXT_LONG_ODD_C16_POS, IS_EXT_LONG_ODD_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS,
+        IS_S_BRANCH_NON_HASHED_POS, NIBBLES_COUNTER_POS, RLP_NUM, S_RLP_START, S_START,
+    },
+    storage_leaf::StorageLeaf,
+    witness_row::MptWitnessRow,
 };
 
 /*
@@ -63,7 +74,7 @@ pub(crate) struct Branch {
     pub(crate) is_branch_child: bool,
     pub(crate) is_last_branch_child: bool,
     pub(crate) node_index: u8,
-    pub(crate) is_modified: bool, 
+    pub(crate) is_modified: bool,
     pub(crate) modified_node: u8,
     pub(crate) is_at_drifted_pos: bool,
     pub(crate) drifted_pos: u8,
@@ -77,14 +88,17 @@ pub(crate) struct BranchCols<F> {
     pub(crate) is_child: Column<Advice>,
     pub(crate) is_last_child: Column<Advice>,
     pub(crate) node_index: Column<Advice>,
-    pub(crate) is_modified: Column<Advice>,   // whether this branch node is modified
+    pub(crate) is_modified: Column<Advice>, // whether this branch node is modified
     pub(crate) modified_node: Column<Advice>, // index of the modified node
     pub(crate) is_at_drifted_pos: Column<Advice>, // needed when leaf is turned into branch
-    pub(crate) drifted_pos: Column<Advice>,   /* needed when leaf is turned into branch - first nibble of
-                                    * the key stored in a leaf (because the existing leaf will
-                                    * jump to this position in added branch) */
-    pub(crate) is_extension_node_s: Column<Advice>, /* contains extension node key (s_advices) and hash of
-                                          * the branch (c_advices) */
+    pub(crate) drifted_pos: Column<Advice>, /* needed when leaf is turned into branch - first
+                                             * nibble of
+                                             * the key stored in a leaf (because the existing
+                                             * leaf will
+                                             * jump to this position in added branch) */
+    pub(crate) is_extension_node_s: Column<Advice>, /* contains extension node key (s_advices)
+                                                     * and hash of
+                                                     * the branch (c_advices) */
     pub(crate) is_extension_node_c: Column<Advice>,
     _marker: PhantomData<F>,
 }
@@ -92,16 +106,16 @@ pub(crate) struct BranchCols<F> {
 impl<F: FieldExt> BranchCols<F> {
     pub(crate) fn new(meta: &mut ConstraintSystem<F>) -> Self {
         Self {
-            is_init : meta.advice_column(),
-            is_child : meta.advice_column(),
-            is_last_child : meta.advice_column(),
-            node_index : meta.advice_column(),
-            is_modified : meta.advice_column(),
-            modified_node : meta.advice_column(),
-            is_at_drifted_pos : meta.advice_column(),
-            drifted_pos : meta.advice_column(),
-            is_extension_node_s : meta.advice_column(),
-            is_extension_node_c : meta.advice_column(),
+            is_init: meta.advice_column(),
+            is_child: meta.advice_column(),
+            is_last_child: meta.advice_column(),
+            node_index: meta.advice_column(),
+            is_modified: meta.advice_column(),
+            modified_node: meta.advice_column(),
+            is_at_drifted_pos: meta.advice_column(),
+            drifted_pos: meta.advice_column(),
+            is_extension_node_s: meta.advice_column(),
+            is_extension_node_c: meta.advice_column(),
             _marker: PhantomData,
         }
     }
@@ -127,7 +141,9 @@ impl<F: FieldExt> BranchConfig<F> {
         fixed_table: [Column<Fixed>; 3],
         acc_r: F,
     ) -> Self {
-        let config = BranchConfig { _marker: PhantomData };
+        let config = BranchConfig {
+            _marker: PhantomData,
+        };
         let one = Expression::Constant(F::one());
         let c320 = Expression::Constant(F::from(320));
 
@@ -300,17 +316,25 @@ impl<F: FieldExt> BranchConfig<F> {
 
             let rlp_byte0_s =
                 meta.query_advice(s_main.bytes[BRANCH_0_S_START - RLP_NUM], Rotation::prev());
-            let rlp_byte1_s =
-                meta.query_advice(s_main.bytes[BRANCH_0_S_START - RLP_NUM + 1], Rotation::prev());
-            let rlp_byte2_s =
-                meta.query_advice(s_main.bytes[BRANCH_0_S_START - RLP_NUM + 2], Rotation::prev());
+            let rlp_byte1_s = meta.query_advice(
+                s_main.bytes[BRANCH_0_S_START - RLP_NUM + 1],
+                Rotation::prev(),
+            );
+            let rlp_byte2_s = meta.query_advice(
+                s_main.bytes[BRANCH_0_S_START - RLP_NUM + 2],
+                Rotation::prev(),
+            );
 
             let rlp_byte0_c =
                 meta.query_advice(s_main.bytes[BRANCH_0_C_START - RLP_NUM], Rotation::prev());
-            let rlp_byte1_c =
-                meta.query_advice(s_main.bytes[BRANCH_0_C_START - RLP_NUM + 1], Rotation::prev());
-            let rlp_byte2_c =
-                meta.query_advice(s_main.bytes[BRANCH_0_C_START - RLP_NUM + 2], Rotation::prev());
+            let rlp_byte1_c = meta.query_advice(
+                s_main.bytes[BRANCH_0_C_START - RLP_NUM + 1],
+                Rotation::prev(),
+            );
+            let rlp_byte2_c = meta.query_advice(
+                s_main.bytes[BRANCH_0_C_START - RLP_NUM + 2],
+                Rotation::prev(),
+            );
 
             let one = Expression::Constant(F::one());
             let c32 = Expression::Constant(F::from(32_u64));
@@ -339,12 +363,15 @@ impl<F: FieldExt> BranchConfig<F> {
 
             // The following value can be either 1 or 33 (if hashed node),
             // depending on whether it's empty or non-empty row.
-            let mut bytes_num_in_row_s = s_rlp2_cur.clone() * c160_inv.clone() * c32.clone() + one.clone();
+            let mut bytes_num_in_row_s =
+                s_rlp2_cur.clone() * c160_inv.clone() * c32.clone() + one.clone();
             let mut bytes_num_in_row_c = c_rlp2_cur.clone() * c160_inv * c32 + one.clone();
 
-            bytes_num_in_row_s = is_node_hashed_s.clone() * (s_advices0_cur.clone() - c192.clone() + one.clone())
+            bytes_num_in_row_s = is_node_hashed_s.clone()
+                * (s_advices0_cur.clone() - c192.clone() + one.clone())
                 + (one.clone() - is_node_hashed_s.clone()) * bytes_num_in_row_s.clone();
-            bytes_num_in_row_c = is_node_hashed_c.clone() * (c_advices0_cur.clone() - c192.clone() + one.clone())
+            bytes_num_in_row_c = is_node_hashed_c.clone()
+                * (c_advices0_cur.clone() - c192.clone() + one.clone())
                 + (one.clone() - is_node_hashed_c.clone()) * bytes_num_in_row_c.clone();
 
             /*
@@ -362,7 +389,7 @@ impl<F: FieldExt> BranchConfig<F> {
             then `s_rlp1` in this row will have `s_rlp1 = 81 - 33`.
             */
 
-            /* 
+            /*
             We check that the first branch children has properly stored the number of the remaining
             bytes. For example, if there are 81 bytes in the branch and the first branch child
             contains 1 byte, then it needs to store the value `80 = 81 - 1`.
@@ -372,17 +399,22 @@ impl<F: FieldExt> BranchConfig<F> {
                 q_not_first.clone()
                     * is_branch_init_prev.clone()
                     * one_rlp_byte_s
-                    * (rlp_byte0_s.clone() - c192.clone() - bytes_num_in_row_s.clone() - s_rlp1_cur.clone()),
+                    * (rlp_byte0_s.clone()
+                        - c192.clone()
+                        - bytes_num_in_row_s.clone()
+                        - s_rlp1_cur.clone()),
             ));
             constraints.push((
                 "First branch children RLP length (one RLP meta byte C)",
                 q_not_first.clone()
                     * is_branch_init_prev.clone()
                     * one_rlp_byte_c
-                    * (rlp_byte0_c.clone() - c192.clone() - bytes_num_in_row_c.clone() - c_rlp1_cur.clone()),
+                    * (rlp_byte0_c.clone()
+                        - c192.clone()
+                        - bytes_num_in_row_c.clone()
+                        - c_rlp1_cur.clone()),
             ));
-            
-            
+
             constraints.push((
                 "First branch children RLP length (two RLP meta bytes S)",
                 q_not_first.clone()
@@ -397,7 +429,7 @@ impl<F: FieldExt> BranchConfig<F> {
                     * two_rlp_bytes_c
                     * (rlp_byte1_c.clone() - bytes_num_in_row_c.clone() - c_rlp1_cur.clone()),
             ));
- 
+
             constraints.push((
                 "First branch children RLP length (three RLP meta bytes S)",
                 q_not_first.clone()
@@ -412,15 +444,17 @@ impl<F: FieldExt> BranchConfig<F> {
                 q_not_first.clone()
                     * is_branch_init_prev.clone()
                     * three_rlp_bytes_c
-                    * (rlp_byte1_c * c256 + rlp_byte2_c - bytes_num_in_row_c.clone() - c_rlp1_cur.clone()),
+                    * (rlp_byte1_c * c256 + rlp_byte2_c
+                        - bytes_num_in_row_c.clone()
+                        - c_rlp1_cur.clone()),
             ));
 
             // is_branch_child with node_index > 0
             let is_branch_child_cur = meta.query_advice(branch.is_child, Rotation::cur());
             let s_rlp1_prev = meta.query_advice(s_main.rlp1, Rotation::prev());
             let c_rlp1_prev = meta.query_advice(c_main.rlp1, Rotation::prev());
-            
-            /* 
+
+            /*
             We check that the non-first branch children has properly stored the number of the remaining
             bytes. For example, if there are 81 bytes in the branch, the first branch child
             contains 1 byte, the second child contains 33 bytes, then the third child
@@ -746,10 +780,14 @@ impl<F: FieldExt> BranchConfig<F> {
                 s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
                 Rotation::cur(),
             );
-            let is_branch_non_hashed_s =
-                meta.query_advice(s_main.bytes[IS_S_BRANCH_NON_HASHED_POS - RLP_NUM], Rotation::cur());
-            let is_branch_non_hashed_c =
-                meta.query_advice(s_main.bytes[IS_C_BRANCH_NON_HASHED_POS - RLP_NUM], Rotation::cur());
+            let is_branch_non_hashed_s = meta.query_advice(
+                s_main.bytes[IS_S_BRANCH_NON_HASHED_POS - RLP_NUM],
+                Rotation::cur(),
+            );
+            let is_branch_non_hashed_c = meta.query_advice(
+                s_main.bytes[IS_C_BRANCH_NON_HASHED_POS - RLP_NUM],
+                Rotation::cur(),
+            );
 
             let q_enable = meta.query_fixed(q_enable, Rotation::cur());
 
@@ -816,18 +854,14 @@ impl<F: FieldExt> BranchConfig<F> {
             let is_extension_node = get_is_extension_node(meta, s_main.bytes, 0);
 
             // Only check if there is an account above the branch.
-            let is_account_leaf_in_added_branch = meta.query_advice(
-                is_account_leaf_in_added_branch,
-                Rotation(-1),
-            );
+            let is_account_leaf_in_added_branch =
+                meta.query_advice(is_account_leaf_in_added_branch, Rotation(-1));
 
-            let nibbles_count_cur = meta.query_advice(
-                s_main.bytes[NIBBLES_COUNTER_POS - RLP_NUM],
-                Rotation::cur(),
-            );
+            let nibbles_count_cur =
+                meta.query_advice(s_main.bytes[NIBBLES_COUNTER_POS - RLP_NUM], Rotation::cur());
             let nibbles_count_prev = meta.query_advice(
                 s_main.bytes[NIBBLES_COUNTER_POS - RLP_NUM],
-                Rotation(- BRANCH_ROWS_NUM),
+                Rotation(-BRANCH_ROWS_NUM),
             );
 
             constraints.push((
@@ -844,7 +878,7 @@ impl<F: FieldExt> BranchConfig<F> {
         });
 
         /*
-        If we are in the first level of the trie, `nibbles_count` needs to be 1. 
+        If we are in the first level of the trie, `nibbles_count` needs to be 1.
         */
         meta.create_gate("Branch number of nibbles (first level)", |meta| {
             let mut constraints = vec![];
@@ -854,17 +888,13 @@ impl<F: FieldExt> BranchConfig<F> {
             let is_extension_node = get_is_extension_node(meta, s_main.bytes, 0);
 
             // Only check if there is an account above the branch.
-            let is_account_leaf_in_added_branch = meta.query_advice(
-                is_account_leaf_in_added_branch,
-                Rotation(-1),
-            );
+            let is_account_leaf_in_added_branch =
+                meta.query_advice(is_account_leaf_in_added_branch, Rotation(-1));
 
-            let nibbles_count_cur = meta.query_advice(
-                s_main.bytes[NIBBLES_COUNTER_POS - RLP_NUM],
-                Rotation::cur(),
-            );
+            let nibbles_count_cur =
+                meta.query_advice(s_main.bytes[NIBBLES_COUNTER_POS - RLP_NUM], Rotation::cur());
 
-            /* 
+            /*
             If branch is in the first level of the account trie, `nibbles_count` needs to be 1.
             */
             constraints.push((
@@ -875,8 +905,8 @@ impl<F: FieldExt> BranchConfig<F> {
                     * (one.clone() - not_first_level.clone())
                     * (nibbles_count_cur.clone() - one.clone()),
             ));
-    
-            /* 
+
+            /*
             If branch is in the first level of the storage trie, `nibbles_count` needs to be 1.
             */
             constraints.push((
@@ -890,7 +920,7 @@ impl<F: FieldExt> BranchConfig<F> {
 
             constraints
         });
-        
+
         /*
         Range lookups ensure that `s_main.bytes` and `c_main.bytes` columns are all bytes (between 0 - 255).
 
@@ -906,7 +936,7 @@ impl<F: FieldExt> BranchConfig<F> {
             let is_branch_child = meta.query_advice(branch.is_child, Rotation::cur());
 
             q_not_first * (one.clone() - is_branch_init) * is_branch_child
-        }; 
+        };
         range_lookups(
             meta,
             sel,
@@ -941,22 +971,30 @@ impl<F: FieldExt> BranchConfig<F> {
 
         // Get the child that is being changed and convert it to words to enable
         // lookups:
-        let mut s_hash = witness[offset + 1 + pv.modified_node as usize].s_hash_bytes().to_vec();
-        let mut c_hash = witness[offset + 1 + pv.modified_node as usize].c_hash_bytes().to_vec();
+        let mut s_hash = witness[offset + 1 + pv.modified_node as usize]
+            .s_hash_bytes()
+            .to_vec();
+        let mut c_hash = witness[offset + 1 + pv.modified_node as usize]
+            .c_hash_bytes()
+            .to_vec();
         pv.s_mod_node_hash_rlc = bytes_into_rlc(&s_hash, mpt_config.acc_r);
         pv.c_mod_node_hash_rlc = bytes_into_rlc(&c_hash, mpt_config.acc_r);
 
         if row.get_byte(IS_BRANCH_S_PLACEHOLDER_POS) == 1 {
             // We put hash of a node that moved down to the added branch.
             // This is needed to check the hash of leaf_in_added_branch.
-            s_hash = witness[offset + 1 + pv.drifted_pos as usize].s_hash_bytes().to_vec();
+            s_hash = witness[offset + 1 + pv.drifted_pos as usize]
+                .s_hash_bytes()
+                .to_vec();
             pv.s_mod_node_hash_rlc = bytes_into_rlc(&s_hash, mpt_config.acc_r);
             pv.is_branch_s_placeholder = true
         } else {
             pv.is_branch_s_placeholder = false
         }
         if row.get_byte(IS_BRANCH_C_PLACEHOLDER_POS) == 1 {
-            c_hash = witness[offset + 1 + pv.drifted_pos as usize].c_hash_bytes().to_vec();
+            c_hash = witness[offset + 1 + pv.drifted_pos as usize]
+                .c_hash_bytes()
+                .to_vec();
             pv.c_mod_node_hash_rlc = bytes_into_rlc(&c_hash, mpt_config.acc_r);
             pv.is_branch_c_placeholder = true
         } else {
@@ -981,7 +1019,7 @@ impl<F: FieldExt> BranchConfig<F> {
             region,
             mpt_config,
             account_leaf,
-            storage_leaf, 
+            storage_leaf,
             branch,
             offset,
         )?;
@@ -1000,14 +1038,14 @@ impl<F: FieldExt> BranchConfig<F> {
         pv.acc_mult_s = mpt_config.acc_r;
 
         if s_len[0] == 249 {
-            pv.acc_s += F::from(s_len[1]) * pv.acc_mult_s; 
+            pv.acc_s += F::from(s_len[1]) * pv.acc_mult_s;
             pv.acc_mult_s *= mpt_config.acc_r;
             pv.acc_s += F::from(s_len[2]) * pv.acc_mult_s;
             pv.acc_mult_s *= mpt_config.acc_r;
 
             pv.rlp_len_rem_s = s_len[1] as i32 * 256 + s_len[2] as i32;
         } else if s_len[0] == 248 {
-            pv.acc_s += F::from(s_len[1]) * pv.acc_mult_s; 
+            pv.acc_s += F::from(s_len[1]) * pv.acc_mult_s;
             pv.acc_mult_s *= mpt_config.acc_r;
 
             pv.rlp_len_rem_s = s_len[1] as i32;
@@ -1044,25 +1082,23 @@ impl<F: FieldExt> BranchConfig<F> {
             offset,
         )?;
 
-        pv.is_even = row.get_byte(IS_EXT_LONG_EVEN_C16_POS)
-            + row.get_byte(IS_EXT_LONG_EVEN_C1_POS)
-            == 1;
+        pv.is_even =
+            row.get_byte(IS_EXT_LONG_EVEN_C16_POS) + row.get_byte(IS_EXT_LONG_EVEN_C1_POS) == 1;
         pv.is_odd = row.get_byte(IS_EXT_LONG_ODD_C16_POS)
             + row.get_byte(IS_EXT_LONG_ODD_C1_POS)
             + row.get_byte(IS_EXT_SHORT_C16_POS)
             + row.get_byte(IS_EXT_SHORT_C1_POS)
             == 1;
-        pv.is_short = row.get_byte(IS_EXT_SHORT_C16_POS)
-            + row.get_byte(IS_EXT_SHORT_C1_POS)
-            == 1;
+        pv.is_short = row.get_byte(IS_EXT_SHORT_C16_POS) + row.get_byte(IS_EXT_SHORT_C1_POS) == 1;
         pv.is_long = row.get_byte(IS_EXT_LONG_EVEN_C16_POS)
             + row.get_byte(IS_EXT_LONG_EVEN_C1_POS)
             + row.get_byte(IS_EXT_LONG_ODD_C16_POS)
             + row.get_byte(IS_EXT_LONG_ODD_C1_POS)
             == 1;
         pv.is_extension_node = pv.is_even == true || pv.is_odd == true;
- 
-        // Assign how many nibbles have been used in the previous extension node + branch.
+
+        // Assign how many nibbles have been used in the previous extension node +
+        // branch.
         pv.nibbles_num = pv.nibbles_num + 1; // one nibble is used for position in branch
         if pv.is_extension_node {
             // Get into extension node S
@@ -1071,13 +1107,15 @@ impl<F: FieldExt> BranchConfig<F> {
             if row_ext.get_byte(1) <= 32 {
                 ext_nibbles = 1
             } else if row_ext.get_byte(0) < 248 {
-                if row_ext.get_byte(2) == 0 { // even number of nibbles
+                if row_ext.get_byte(2) == 0 {
+                    // even number of nibbles
                     ext_nibbles = ((row_ext.get_byte(1) - 128) as usize - 1) * 2;
                 } else {
                     ext_nibbles = (row_ext.get_byte(1) - 128) as usize * 2 - 1;
                 }
             } else {
-                if row_ext.get_byte(3) == 0 { // even number of nibbles
+                if row_ext.get_byte(3) == 0 {
+                    // even number of nibbles
                     ext_nibbles = ((row_ext.get_byte(2) - 128) as usize - 1) * 2;
                 } else {
                     ext_nibbles = (row_ext.get_byte(2) - 128) as usize * 2 - 1;
@@ -1091,8 +1129,8 @@ impl<F: FieldExt> BranchConfig<F> {
             mpt_config.s_main.bytes[NIBBLES_COUNTER_POS - RLP_NUM],
             offset,
             || Ok(F::from(pv.nibbles_num as u64)),
-        )?; 
- 
+        )?;
+
         Ok(())
     }
 
@@ -1108,7 +1146,7 @@ impl<F: FieldExt> BranchConfig<F> {
 
         let mut node_mult_diff_s = F::one();
         let mut node_mult_diff_c = F::one();
-        
+
         if row.get_byte(S_RLP_START + 1) == 160 {
             pv.rlp_len_rem_s -= 33;
         } else if row.get_byte(S_RLP_START + 1) == 0 && row.get_byte(S_START) > 192 {
@@ -1176,8 +1214,8 @@ impl<F: FieldExt> BranchConfig<F> {
                             &mut pv.extension_node_rlc,
                             &mut pv.key_rlc_mult,
                             key_len_pos + 2, /* first position behind key_len_pos
-                                * is 0 (because is_even), we start
-                                * with the next one */
+                                              * is 0 (because is_even), we start
+                                              * with the next one */
                             key_len,
                         );
                         pv.mult_diff = F::one();
@@ -1186,9 +1224,8 @@ impl<F: FieldExt> BranchConfig<F> {
                         }
                         pv.key_rlc = pv.extension_node_rlc;
                         // branch part:
-                        pv.key_rlc += F::from(pv.modified_node as u64)
-                            * F::from(16)
-                            * pv.key_rlc_mult;
+                        pv.key_rlc +=
+                            F::from(pv.modified_node as u64) * F::from(16) * pv.key_rlc_mult;
                         // key_rlc_mult stays the same
                         pv.key_rlc_sel = !pv.key_rlc_sel;
                     } else if pv.is_odd && pv.is_long {
@@ -1202,7 +1239,7 @@ impl<F: FieldExt> BranchConfig<F> {
                         let key_len = ext_row.get_byte(key_len_pos) as usize - 128;
 
                         pv.mult_diff = F::one();
-                        for k in 0..key_len-1 {
+                        for k in 0..key_len - 1 {
                             let second_nibble = ext_row_c.get_byte(S_START + k);
                             let first_nibble =
                                 (ext_row.get_byte(key_len_pos + 2 + k) - second_nibble) / 16;
@@ -1210,32 +1247,26 @@ impl<F: FieldExt> BranchConfig<F> {
                                 first_nibble * 16 + second_nibble,
                                 ext_row.get_byte(key_len_pos + 2 + k),
                             );
-                            pv.extension_node_rlc +=
-                                F::from(first_nibble as u64) * pv.key_rlc_mult;
+                            pv.extension_node_rlc += F::from(first_nibble as u64) * pv.key_rlc_mult;
 
                             pv.key_rlc_mult *= mpt_config.acc_r;
                             pv.mult_diff *= mpt_config.acc_r;
 
                             pv.extension_node_rlc +=
-                                F::from(second_nibble as u64)
-                                    * F::from(16)
-                                    * pv.key_rlc_mult;
+                                F::from(second_nibble as u64) * F::from(16) * pv.key_rlc_mult;
                         }
 
                         pv.key_rlc = pv.extension_node_rlc;
                         // branch part:
-                        pv.key_rlc +=
-                            F::from(pv.modified_node as u64) * pv.key_rlc_mult;
+                        pv.key_rlc += F::from(pv.modified_node as u64) * pv.key_rlc_mult;
                         pv.key_rlc_mult *= mpt_config.acc_r;
                     } else if pv.is_short {
-                        pv.extension_node_rlc +=
-                            F::from((ext_row.get_byte(1) - 16) as u64)
-                                * F::from(16)
-                                * pv.key_rlc_mult;
+                        pv.extension_node_rlc += F::from((ext_row.get_byte(1) - 16) as u64)
+                            * F::from(16)
+                            * pv.key_rlc_mult;
                         pv.key_rlc = pv.extension_node_rlc;
                         // branch part:
-                        pv.key_rlc +=
-                            F::from(pv.modified_node as u64) * pv.key_rlc_mult;
+                        pv.key_rlc += F::from(pv.modified_node as u64) * pv.key_rlc_mult;
                         pv.key_rlc_mult *= mpt_config.acc_r;
                         pv.mult_diff = mpt_config.acc_r;
                     }
@@ -1254,26 +1285,24 @@ impl<F: FieldExt> BranchConfig<F> {
                                 first_nibble * 16 + second_nibble,
                                 ext_row.get_byte(key_len_pos + 2 + k),
                             );
-                            pv.extension_node_rlc +=
-                                F::from(first_nibble as u64) * pv.key_rlc_mult;
+                            pv.extension_node_rlc += F::from(first_nibble as u64) * pv.key_rlc_mult;
 
                             pv.key_rlc_mult *= mpt_config.acc_r;
                             pv.mult_diff *= mpt_config.acc_r;
 
-                            pv.extension_node_rlc += F::from(16)
-                                * F::from(second_nibble as u64)
-                                * pv.key_rlc_mult;
+                            pv.extension_node_rlc +=
+                                F::from(16) * F::from(second_nibble as u64) * pv.key_rlc_mult;
                         }
 
                         pv.key_rlc = pv.extension_node_rlc;
                         // branch part:
-                        pv.key_rlc +=
-                            F::from(pv.modified_node as u64) * pv.key_rlc_mult;
+                        pv.key_rlc += F::from(pv.modified_node as u64) * pv.key_rlc_mult;
                         pv.key_rlc_mult *= mpt_config.acc_r;
                         pv.key_rlc_sel = !pv.key_rlc_sel;
                     } else if pv.is_odd && pv.is_long {
                         pv.extension_node_rlc +=
-                            F::from((ext_row.get_byte(key_len_pos + 1) - 16) as u64) * pv.key_rlc_mult;
+                            F::from((ext_row.get_byte(key_len_pos + 1) - 16) as u64)
+                                * pv.key_rlc_mult;
 
                         pv.key_rlc_mult *= mpt_config.acc_r;
 
@@ -1284,9 +1313,9 @@ impl<F: FieldExt> BranchConfig<F> {
                             &mut pv.extension_node_rlc,
                             &mut pv.key_rlc_mult,
                             key_len_pos + 2, /* the first position after key_len_pos
-                                * is single nibble which is taken into
-                                * account above, we start
-                                * with fourth */
+                                              * is single nibble which is taken into
+                                              * account above, we start
+                                              * with fourth */
                             key_len - 1, // one byte is occupied by single nibble
                         );
                         pv.mult_diff = F::one();
@@ -1295,9 +1324,8 @@ impl<F: FieldExt> BranchConfig<F> {
                         }
                         pv.key_rlc = pv.extension_node_rlc;
                         // branch part:
-                        pv.key_rlc += F::from(pv.modified_node as u64)
-                            * F::from(16)
-                            * pv.key_rlc_mult;
+                        pv.key_rlc +=
+                            F::from(pv.modified_node as u64) * F::from(16) * pv.key_rlc_mult;
                         // key_rlc_mult stays the same
                     } else if pv.is_short {
                         pv.extension_node_rlc +=
@@ -1307,68 +1335,39 @@ impl<F: FieldExt> BranchConfig<F> {
 
                         pv.key_rlc_mult *= mpt_config.acc_r;
                         // branch part:
-                        pv.key_rlc += F::from(pv.modified_node as u64)
-                            * F::from(16)
-                            * pv.key_rlc_mult;
+                        pv.key_rlc +=
+                            F::from(pv.modified_node as u64) * F::from(16) * pv.key_rlc_mult;
                         pv.mult_diff = mpt_config.acc_r;
                     }
                 }
             } else {
                 if pv.key_rlc_sel {
-                    pv.key_rlc += F::from(pv.modified_node as u64)
-                        * F::from(16)
-                        * pv.key_rlc_mult;
+                    pv.key_rlc += F::from(pv.modified_node as u64) * F::from(16) * pv.key_rlc_mult;
                     // key_rlc_mult stays the same
                 } else {
-                    pv.key_rlc +=
-                        F::from(pv.modified_node as u64) * pv.key_rlc_mult;
+                    pv.key_rlc += F::from(pv.modified_node as u64) * pv.key_rlc_mult;
                     pv.key_rlc_mult *= mpt_config.acc_r;
                 }
                 pv.key_rlc_sel = !pv.key_rlc_sel;
             }
-            row.assign_branch_row(
-                region,
-                mpt_config,
-                pv.node_index,
-                pv.modified_node,
-                pv.key_rlc,
-                pv.key_rlc_mult,
-                pv.mult_diff,
-                pv.s_mod_node_hash_rlc,
-                pv.c_mod_node_hash_rlc,
-                pv.drifted_pos,
-                pv.rlp_len_rem_s,
-                pv.rlp_len_rem_c,
-                offset,
-            )?;
+            row.assign_branch_row(region, mpt_config, pv, offset)?;
         } else {
-            row.assign_branch_row(
-                region,
-                mpt_config,
-                pv.node_index,
-                pv.modified_node,
-                F::zero(),
-                F::zero(),
-                F::zero(),
-                pv.s_mod_node_hash_rlc,
-                pv.c_mod_node_hash_rlc,
-                pv.drifted_pos,
-                pv.rlp_len_rem_s,
-                pv.rlp_len_rem_c,
-                offset,
-            )?;
+            row.assign_branch_row(region, mpt_config, pv, offset)?;
         }
-        // sel1 is to distinguish whether the S node is empty.
-        // sel2 is to distinguish whether the C node is empty.
-        // Note that 128 comes from the RLP byte denoting empty leaf.
-        // Having 128 for *_mod_node_hash_rlc means there is no node at
-        // this position in branch - for example,
-        // s_mode_node_hash_rlc = 128 and c_words is some other value
-        // when new value is added to the trie
-        // (as opposed to just updating the value).
-        // Note that there is a potential attack if a leaf node
-        // is found with hash [128, 0, ..., 0],
-        // but the probability is negligible.
+
+        /*
+        `sel1` is to distinguish whether the S node at `modified_node` position is empty.
+        `sel2` is to distinguish whether the C node at `modified_node` position is empty.
+        Note that 128 comes from the RLP byte denoting empty leaf.
+        Having 128 for `*_mod_node_hash_rlc` means there is no node at
+        this position in branch - for example,
+        `s_mode_node_hash_rlc = 128` and `c_words` is some other value
+        when new value is added to the trie
+        (as opposed to just updating the value).
+        Note that there is a potential attack if a leaf node
+        is found with hash `[128, 0, ..., 0]`,
+        but the probability is negligible.
+        */
         let mut sel1 = F::zero();
         let mut sel2 = F::zero();
         if pv.s_mod_node_hash_rlc == F::from(128 as u64) {
@@ -1402,10 +1401,7 @@ impl<F: FieldExt> BranchConfig<F> {
         let c160 = F::from(160_u64);
 
         let compute_branch_acc_and_mult =
-            |branch_acc: &mut F,
-                branch_mult: &mut F,
-                rlp_start: usize,
-                start: usize| {
+            |branch_acc: &mut F, branch_mult: &mut F, rlp_start: usize, start: usize| {
                 if row.get_byte(rlp_start + 1) == 0 && row.get_byte(start) == 128 {
                     *branch_acc += c128 * *branch_mult;
                     *branch_mult *= mpt_config.acc_r;
@@ -1413,8 +1409,7 @@ impl<F: FieldExt> BranchConfig<F> {
                     *branch_acc += c160 * *branch_mult;
                     *branch_mult *= mpt_config.acc_r;
                     for i in 0..HASH_WIDTH {
-                        *branch_acc +=
-                            F::from(row.get_byte(start + i) as u64) * *branch_mult;
+                        *branch_acc += F::from(row.get_byte(start + i) as u64) * *branch_mult;
                         *branch_mult *= mpt_config.acc_r;
                     }
                 } else {
@@ -1422,8 +1417,7 @@ impl<F: FieldExt> BranchConfig<F> {
                     *branch_mult *= mpt_config.acc_r;
                     let len = row.get_byte(start) as usize - 192;
                     for i in 0..len {
-                        *branch_acc +=
-                            F::from(row.get_byte(start + 1 + i) as u64) * *branch_mult;
+                        *branch_acc += F::from(row.get_byte(start + 1 + i) as u64) * *branch_mult;
                         *branch_mult *= mpt_config.acc_r;
                     }
                 }
@@ -1431,18 +1425,8 @@ impl<F: FieldExt> BranchConfig<F> {
 
         // TODO: add branch ValueNode info
 
-        compute_branch_acc_and_mult(
-            &mut pv.acc_s,
-            &mut pv.acc_mult_s,
-            S_RLP_START,
-            S_START,
-        );
-        compute_branch_acc_and_mult(
-            &mut pv.acc_c,
-            &mut pv.acc_mult_c,
-            C_RLP_START,
-            C_START,
-        );
+        compute_branch_acc_and_mult(&mut pv.acc_s, &mut pv.acc_mult_s, S_RLP_START, S_START);
+        compute_branch_acc_and_mult(&mut pv.acc_c, &mut pv.acc_mult_c, C_RLP_START, C_START);
         mpt_config.assign_acc(
             region,
             pv.acc_s,

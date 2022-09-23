@@ -1,15 +1,14 @@
 use halo2_proofs::{
     plonk::{Advice, Column, ConstraintSystem, Expression, Fixed, VirtualCells},
-    poly::{Rotation},
+    poly::Rotation,
 };
 use pairing::arithmetic::FieldExt;
 
 use crate::{
-    mpt::{FixedTableTag},
+    mpt::FixedTableTag,
     param::{
         HASH_WIDTH, IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS, IS_EXT_LONG_ODD_C16_POS,
-        IS_EXT_LONG_ODD_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS, RLP_NUM,
-        R_TABLE_LEN,
+        IS_EXT_LONG_ODD_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS, RLP_NUM, R_TABLE_LEN,
     },
 };
 
@@ -107,7 +106,16 @@ pub fn key_len_lookup<F: FieldExt>(
     len_offset: usize,
     fixed_table: [Column<Fixed>; 3],
 ) {
-   key_len_lookup_rot_len(meta, q_enable, ind, key_len_col, column, len_offset, 0, fixed_table);
+    key_len_lookup_rot_len(
+        meta,
+        q_enable,
+        ind,
+        key_len_col,
+        column,
+        len_offset,
+        0,
+        fixed_table,
+    );
 }
 
 /*
@@ -199,9 +207,7 @@ pub fn get_is_extension_node<F: FieldExt>(
     let is_ext_node_even_nibbles = get_is_extension_node_even_nibbles(meta, s_advices, rot);
     let is_ext_node_long_odd_nibbles = get_is_extension_node_long_odd_nibbles(meta, s_advices, rot);
 
-    is_ext_short
-        + is_ext_node_even_nibbles
-        + is_ext_node_long_odd_nibbles
+    is_ext_short + is_ext_node_even_nibbles + is_ext_node_long_odd_nibbles
 }
 
 pub fn get_is_extension_node_one_nibble<F: FieldExt>(
@@ -209,14 +215,10 @@ pub fn get_is_extension_node_one_nibble<F: FieldExt>(
     s_advices: [Column<Advice>; HASH_WIDTH],
     rot: i32,
 ) -> Expression<F> {
-    let is_ext_short_c16 = meta.query_advice(
-        s_advices[IS_EXT_SHORT_C16_POS - RLP_NUM],
-        Rotation(rot),
-    );
-    let is_ext_short_c1 = meta.query_advice(
-        s_advices[IS_EXT_SHORT_C1_POS - RLP_NUM],
-        Rotation(rot),
-    );
+    let is_ext_short_c16 =
+        meta.query_advice(s_advices[IS_EXT_SHORT_C16_POS - RLP_NUM], Rotation(rot));
+    let is_ext_short_c1 =
+        meta.query_advice(s_advices[IS_EXT_SHORT_C1_POS - RLP_NUM], Rotation(rot));
 
     is_ext_short_c16 + is_ext_short_c1
 }
@@ -226,14 +228,10 @@ pub fn get_is_extension_node_even_nibbles<F: FieldExt>(
     s_advices: [Column<Advice>; HASH_WIDTH],
     rot: i32,
 ) -> Expression<F> {
-    let is_ext_long_even_c16 = meta.query_advice(
-        s_advices[IS_EXT_LONG_EVEN_C16_POS - RLP_NUM],
-        Rotation(rot),
-    );
-    let is_ext_long_even_c1 = meta.query_advice(
-        s_advices[IS_EXT_LONG_EVEN_C1_POS - RLP_NUM],
-        Rotation(rot),
-    );
+    let is_ext_long_even_c16 =
+        meta.query_advice(s_advices[IS_EXT_LONG_EVEN_C16_POS - RLP_NUM], Rotation(rot));
+    let is_ext_long_even_c1 =
+        meta.query_advice(s_advices[IS_EXT_LONG_EVEN_C1_POS - RLP_NUM], Rotation(rot));
 
     is_ext_long_even_c16 + is_ext_long_even_c1
 }
@@ -243,14 +241,10 @@ pub fn get_is_extension_node_long_odd_nibbles<F: FieldExt>(
     s_advices: [Column<Advice>; HASH_WIDTH],
     rot: i32,
 ) -> Expression<F> {
-    let is_ext_long_odd_c16 = meta.query_advice(
-        s_advices[IS_EXT_LONG_ODD_C16_POS - RLP_NUM],
-        Rotation(rot),
-    );
-    let is_ext_long_odd_c1 = meta.query_advice(
-        s_advices[IS_EXT_LONG_ODD_C1_POS - RLP_NUM],
-        Rotation(rot),
-    );
+    let is_ext_long_odd_c16 =
+        meta.query_advice(s_advices[IS_EXT_LONG_ODD_C16_POS - RLP_NUM], Rotation(rot));
+    let is_ext_long_odd_c1 =
+        meta.query_advice(s_advices[IS_EXT_LONG_ODD_C1_POS - RLP_NUM], Rotation(rot));
 
     is_ext_long_odd_c16 + is_ext_long_odd_c1
 }
@@ -276,4 +270,3 @@ pub(crate) fn bytes_expr_into_rlc<F: FieldExt>(message: &[Expression<F>], r: F) 
 
     rlc
 }
-

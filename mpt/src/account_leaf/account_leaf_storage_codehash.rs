@@ -1,18 +1,22 @@
 use halo2_proofs::{
+    circuit::Region,
     plonk::{Advice, Column, ConstraintSystem, Expression, Fixed, VirtualCells},
-    poly::Rotation, circuit::Region,
+    poly::Rotation,
 };
 use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
 use crate::{
+    columns::{AccumulatorCols, DenoteCols, MainCols, ProofTypeCols},
     helpers::range_lookups,
     mpt::{FixedTableTag, MPTConfig, ProofVariables},
     param::{
-        ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND, ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND, BRANCH_ROWS_NUM,
-        EXTENSION_ROWS_NUM, IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS,
-        KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH, RLP_NUM, ACCOUNT_NON_EXISTING_IND, S_START, C_START, HASH_WIDTH,
-    }, columns::{ProofTypeCols, MainCols, AccumulatorCols, DenoteCols}, witness_row::{MptWitnessRow, MptWitnessRowType},
+        ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND, ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND,
+        ACCOUNT_NON_EXISTING_IND, BRANCH_ROWS_NUM, C_START, EXTENSION_ROWS_NUM, HASH_WIDTH,
+        IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS, KECCAK_INPUT_WIDTH,
+        KECCAK_OUTPUT_WIDTH, RLP_NUM, S_START,
+    },
+    witness_row::{MptWitnessRow, MptWitnessRowType},
 };
 
 /*
@@ -76,10 +80,13 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
         keccak_table: [Column<Fixed>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
         is_s: bool,
     ) -> Self {
-        let config = AccountLeafStorageCodehashConfig { _marker: PhantomData };
+        let config = AccountLeafStorageCodehashConfig {
+            _marker: PhantomData,
+        };
         let one = Expression::Constant(F::one());
 
-        // Note: We do not need to check `acc_mult` because it is not used after this row.
+        // Note: We do not need to check `acc_mult` because it is not used after this
+        // row.
 
         /*
         Note: differently as in storage leaf value (see empty_trie there), the placeholder
@@ -100,9 +107,11 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
             We have codehash in `c_main.bytes`.
             */
 
-            let mut rot_into_non_existing = -(ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND - ACCOUNT_NON_EXISTING_IND);
+            let mut rot_into_non_existing =
+                -(ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND - ACCOUNT_NON_EXISTING_IND);
             if !is_s {
-                rot_into_non_existing = -(ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND - ACCOUNT_NON_EXISTING_IND);
+                rot_into_non_existing =
+                    -(ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND - ACCOUNT_NON_EXISTING_IND);
             }
 
             /*
@@ -117,7 +126,8 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
             */
 
             let is_wrong_leaf = meta.query_advice(s_main.rlp1, Rotation(rot_into_non_existing));
-            let is_non_existing_account_proof = meta.query_advice(proof_type.is_non_existing_account_proof, Rotation::cur());
+            let is_non_existing_account_proof =
+                meta.query_advice(proof_type.is_non_existing_account_proof, Rotation::cur());
 
             let c160 = Expression::Constant(F::from(160));
             let rot = -2;
@@ -128,24 +138,24 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
 
             /*
             `s_main.rlp2` stores the RLP length of the hash of storage root. The hash output length is 32
-            and thus `s_main.rlp2` needs to be `160 = 128 + 32`. 
+            and thus `s_main.rlp2` needs to be `160 = 128 + 32`.
             */
             constraints.push((
                 "Account leaf storage codehash s_main.rlp2 = 160",
                 q_enable.clone()
-                * (is_non_existing_account_proof.clone() - is_wrong_leaf.clone() - one.clone())
-                * (s_rlp2.clone() - c160.clone()),
+                    * (is_non_existing_account_proof.clone() - is_wrong_leaf.clone() - one.clone())
+                    * (s_rlp2.clone() - c160.clone()),
             ));
 
             /*
             `c_main.rlp2` stores the RLP length of the codehash. The hash output length is 32
-            and thus `c_main.rlp2` needs to be `160 = 128 + 32`. 
+            and thus `c_main.rlp2` needs to be `160 = 128 + 32`.
             */
             constraints.push((
                 "Account leaf storage codehash c_main.rlp2 = 160",
                 q_enable.clone()
-                * (is_non_existing_account_proof.clone() - is_wrong_leaf.clone() - one.clone())
-                * (c_rlp2.clone() - c160),
+                    * (is_non_existing_account_proof.clone() - is_wrong_leaf.clone() - one.clone())
+                    * (c_rlp2.clone() - c160),
             ));
 
             let mut expr = acc_prev + s_rlp2 * acc_mult_prev.clone();
@@ -223,11 +233,13 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
                 let is_storage_mod = meta.query_advice(proof_type.is_storage_mod, Rotation::cur());
                 let is_nonce_mod = meta.query_advice(proof_type.is_nonce_mod, Rotation::cur());
                 let is_balance_mod = meta.query_advice(proof_type.is_balance_mod, Rotation::cur());
-                let is_codehash_mod = meta.query_advice(proof_type.is_codehash_mod, Rotation::cur());
-                let is_account_delete_mod = meta.query_advice(proof_type.is_account_delete_mod, Rotation::cur());
+                let is_codehash_mod =
+                    meta.query_advice(proof_type.is_codehash_mod, Rotation::cur());
+                let is_account_delete_mod =
+                    meta.query_advice(proof_type.is_account_delete_mod, Rotation::cur());
 
                 /*
-                If the modification is nonce or balance modification, the storage root needs to 
+                If the modification is nonce or balance modification, the storage root needs to
                 stay the same.
 
                 Note: For `is_non_existing_account_proof` we do not need this constraint,
@@ -269,10 +281,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
             computed in the `ACCOUNT_LEAF_NONCE_BALANCE_*` row and add the bytes from the current row.
             The computed RLC needs to be the same as the stored value in `acc_s` row.
             */
-            constraints.push((
-                "Account leaf storage codehash RLC",
-                q_enable
-                    * (expr - acc)));
+            constraints.push(("Account leaf storage codehash RLC", q_enable * (expr - acc)));
 
             constraints
         });
@@ -330,7 +339,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
 
             let is_account_leaf_storage_codehash =
                 meta.query_advice(is_account_leaf_storage_codehash, Rotation::cur());
- 
+
             // Rotate into any of the brach children rows:
             let mut is_placeholder_leaf = meta.query_advice(
                 denoter.sel1,
@@ -394,60 +403,58 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
         (a placeholder leaf appears when there is no leaf at certain position, while branch placeholder
         appears when there is a leaf and it drifts down into a newly added branch).
         */
-        meta.lookup_any(
-            "Hash of an account leaf when branch placeholder",
-            |meta| {
-                let account_not_first_level = meta.query_advice(not_first_level, Rotation::cur());
-                // Any rotation that lands into branch can be used instead of -17.
-                let branch_placeholder_not_in_first_level = meta.query_advice(not_first_level, Rotation(-17));
+        meta.lookup_any("Hash of an account leaf when branch placeholder", |meta| {
+            let account_not_first_level = meta.query_advice(not_first_level, Rotation::cur());
+            // Any rotation that lands into branch can be used instead of -17.
+            let branch_placeholder_not_in_first_level =
+                meta.query_advice(not_first_level, Rotation(-17));
 
-                let is_account_leaf_storage_codehash =
-                    meta.query_advice(is_account_leaf_storage_codehash, Rotation::cur());
+            let is_account_leaf_storage_codehash =
+                meta.query_advice(is_account_leaf_storage_codehash, Rotation::cur());
 
-                // Rotate into branch init:
-                let mut is_branch_placeholder = meta.query_advice(
-                    s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM],
-                    Rotation(-ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND - BRANCH_ROWS_NUM),
+            // Rotate into branch init:
+            let mut is_branch_placeholder = meta.query_advice(
+                s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM],
+                Rotation(-ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND - BRANCH_ROWS_NUM),
+            );
+            if !is_s {
+                is_branch_placeholder = meta.query_advice(
+                    s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
+                    Rotation(-ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND - BRANCH_ROWS_NUM),
                 );
-                if !is_s {
-                    is_branch_placeholder = meta.query_advice(
-                        s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
-                        Rotation(-ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND - BRANCH_ROWS_NUM),
-                    );
-                }
+            }
 
-                // Note: accumulated in s (not in c) for c:
-                let acc_s = meta.query_advice(accs.acc_s.rlc, Rotation::cur());
+            // Note: accumulated in s (not in c) for c:
+            let acc_s = meta.query_advice(accs.acc_s.rlc, Rotation::cur());
 
-                let mut constraints = vec![];
-                constraints.push((
-                    account_not_first_level.clone()
-                        * branch_placeholder_not_in_first_level.clone()
-                        * is_branch_placeholder.clone()
-                        * is_account_leaf_storage_codehash.clone()
-                        * acc_s,
-                    meta.query_fixed(keccak_table[0], Rotation::cur()),
-                ));
-                // Any rotation that lands into branch can be used instead of -17.
-                let mut mod_node_hash_rlc_cur_prev =
-                    meta.query_advice(accs.s_mod_node_rlc, Rotation(-17 - BRANCH_ROWS_NUM));
-                if !is_s {
-                    mod_node_hash_rlc_cur_prev =
-                        meta.query_advice(accs.c_mod_node_rlc, Rotation(-17 - BRANCH_ROWS_NUM));
-                }
-                let keccak_table_i = meta.query_fixed(keccak_table[1], Rotation::cur());
-                constraints.push((
-                    account_not_first_level.clone()
-                        * branch_placeholder_not_in_first_level.clone()
-                        * is_branch_placeholder.clone()
-                        * is_account_leaf_storage_codehash.clone()
-                        * mod_node_hash_rlc_cur_prev,
-                    keccak_table_i.clone(),
-                ));
+            let mut constraints = vec![];
+            constraints.push((
+                account_not_first_level.clone()
+                    * branch_placeholder_not_in_first_level.clone()
+                    * is_branch_placeholder.clone()
+                    * is_account_leaf_storage_codehash.clone()
+                    * acc_s,
+                meta.query_fixed(keccak_table[0], Rotation::cur()),
+            ));
+            // Any rotation that lands into branch can be used instead of -17.
+            let mut mod_node_hash_rlc_cur_prev =
+                meta.query_advice(accs.s_mod_node_rlc, Rotation(-17 - BRANCH_ROWS_NUM));
+            if !is_s {
+                mod_node_hash_rlc_cur_prev =
+                    meta.query_advice(accs.c_mod_node_rlc, Rotation(-17 - BRANCH_ROWS_NUM));
+            }
+            let keccak_table_i = meta.query_fixed(keccak_table[1], Rotation::cur());
+            constraints.push((
+                account_not_first_level.clone()
+                    * branch_placeholder_not_in_first_level.clone()
+                    * is_branch_placeholder.clone()
+                    * is_account_leaf_storage_codehash.clone()
+                    * mod_node_hash_rlc_cur_prev,
+                keccak_table_i.clone(),
+            ));
 
-                constraints
-            },
-        );
+            constraints
+        });
 
         /*
         When there is a placeholder branch above the account leaf (it means the account leaf
@@ -459,8 +466,8 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
             |meta| {
                 let account_not_first_level = meta.query_advice(not_first_level, Rotation::cur());
                 // Any rotation that lands into branch can be used instead of -17.
-                let branch_placeholder_in_first_level = one.clone()
-                    - meta.query_advice(not_first_level, Rotation(-17));
+                let branch_placeholder_in_first_level =
+                    one.clone() - meta.query_advice(not_first_level, Rotation(-17));
 
                 let is_account_leaf_storage_codehash =
                     meta.query_advice(is_account_leaf_storage_codehash, Rotation::cur());
@@ -557,30 +564,42 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
             // storage root RLC and code hash RLC
             pv.rlc1 = F::zero();
             pv.rlc2 = F::zero();
-            mpt_config.compute_rlc_and_assign(region, &row.bytes, pv, offset, S_START, C_START, HASH_WIDTH, HASH_WIDTH).ok();
+            mpt_config
+                .compute_rlc_and_assign(
+                    region, &row.bytes, pv, offset, S_START, C_START, HASH_WIDTH, HASH_WIDTH,
+                )
+                .ok();
         } else {
             pv.acc_s = pv.acc_nonce_balance_c;
             pv.acc_mult_s = pv.acc_mult_nonce_balance_c;
 
             // assign storage root S
-            region.assign_advice(
-                || "assign sel1".to_string(),
-                mpt_config.denoter.sel1,
-                offset,
-                || Ok(pv.rlc1),
-            ).ok();
+            region
+                .assign_advice(
+                    || "assign sel1".to_string(),
+                    mpt_config.denoter.sel1,
+                    offset,
+                    || Ok(pv.rlc1),
+                )
+                .ok();
             // assign code hash S
-            region.assign_advice(
-                || "assign sel2".to_string(),
-                mpt_config.denoter.sel2,
-                offset,
-                || Ok(pv.rlc2),
-            ).ok();
+            region
+                .assign_advice(
+                    || "assign sel2".to_string(),
+                    mpt_config.denoter.sel2,
+                    offset,
+                    || Ok(pv.rlc2),
+                )
+                .ok();
 
             // assign storage root RLC and code hash RLC for this row
             pv.rlc1 = F::zero();
             pv.rlc2 = F::zero();
-            mpt_config.compute_rlc_and_assign(region, &row.bytes, pv, offset, S_START, C_START, HASH_WIDTH, HASH_WIDTH).ok();
+            mpt_config
+                .compute_rlc_and_assign(
+                    region, &row.bytes, pv, offset, S_START, C_START, HASH_WIDTH, HASH_WIDTH,
+                )
+                .ok();
         }
         // storage
         mpt_config.compute_acc_and_mult(
@@ -598,14 +617,15 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
             C_START - 1,
             HASH_WIDTH + 1,
         );
-        mpt_config.assign_acc(
-            region,
-            pv.acc_s,
-            pv.acc_mult_s,
-            F::zero(),
-            F::zero(),
-            offset,
-        ).ok();
+        mpt_config
+            .assign_acc(
+                region,
+                pv.acc_s,
+                pv.acc_mult_s,
+                F::zero(),
+                F::zero(),
+                offset,
+            )
+            .ok();
     }
 }
-

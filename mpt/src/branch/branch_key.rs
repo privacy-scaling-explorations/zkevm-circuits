@@ -5,10 +5,14 @@ use halo2_proofs::{
 use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
-use crate::{param::{
-    IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS, IS_EXT_LONG_ODD_C16_POS,
-    IS_EXT_LONG_ODD_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS, RLP_NUM, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS,
-}, columns::{MainCols, AccumulatorPair}};
+use crate::{
+    columns::{AccumulatorPair, MainCols},
+    param::{
+        IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS,
+        IS_EXT_LONG_ODD_C16_POS, IS_EXT_LONG_ODD_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS,
+        RLP_NUM,
+    },
+};
 
 use super::BranchCols;
 
@@ -114,7 +118,9 @@ impl<F: FieldExt> BranchKeyConfig<F> {
         acc_pair: AccumulatorPair<F>, // used first for account address, then for storage key
         acc_r: F,
     ) -> Self {
-        let config = BranchKeyConfig { _marker: PhantomData };
+        let config = BranchKeyConfig {
+            _marker: PhantomData,
+        };
         let one = Expression::Constant(F::one());
 
         meta.create_gate("Branch key RLC", |meta| {
@@ -138,10 +144,8 @@ impl<F: FieldExt> BranchKeyConfig<F> {
             let is_branch_init_prev = meta.query_advice(branch.is_init, Rotation::prev());
             let modified_node_cur = meta.query_advice(branch.modified_node, Rotation::cur());
 
-            let is_ext_short_c16 = meta.query_advice(
-                s_main.bytes[IS_EXT_SHORT_C16_POS - RLP_NUM],
-                Rotation(-1),
-            );
+            let is_ext_short_c16 =
+                meta.query_advice(s_main.bytes[IS_EXT_SHORT_C16_POS - RLP_NUM], Rotation(-1));
             let is_ext_short_c1 =
                 meta.query_advice(s_main.bytes[IS_EXT_SHORT_C1_POS - RLP_NUM], Rotation(-1));
             let is_ext_long_even_c16 = meta.query_advice(
@@ -156,10 +160,8 @@ impl<F: FieldExt> BranchKeyConfig<F> {
                 s_main.bytes[IS_EXT_LONG_ODD_C16_POS - RLP_NUM],
                 Rotation(-1),
             );
-            let is_ext_long_odd_c1 = meta.query_advice(
-                s_main.bytes[IS_EXT_LONG_ODD_C1_POS - RLP_NUM],
-                Rotation(-1),
-            );
+            let is_ext_long_odd_c1 =
+                meta.query_advice(s_main.bytes[IS_EXT_LONG_ODD_C1_POS - RLP_NUM], Rotation(-1));
 
             let is_extension_key_even = is_ext_long_even_c16.clone() + is_ext_long_even_c1.clone();
             let is_extension_key_odd = is_ext_long_odd_c16.clone()
@@ -179,10 +181,13 @@ impl<F: FieldExt> BranchKeyConfig<F> {
             // If sel2 = 1, then modified_node is multiplied by 1.
             // NOTE: modified_node presents nibbles: n0, n1, ...
             // key_rlc = (n0 * 16 + n1) + (n2 * 16 + n3) * r + (n4 * 16 + n5) * r^2 + ...
-            let sel1_prev = meta.query_advice(s_main.bytes[IS_BRANCH_C16_POS - RLP_NUM], Rotation(-20));
+            let sel1_prev =
+                meta.query_advice(s_main.bytes[IS_BRANCH_C16_POS - RLP_NUM], Rotation(-20));
             // Rotation(-20) lands into previous branch init.
-            let sel1_cur = meta.query_advice(s_main.bytes[IS_BRANCH_C16_POS - RLP_NUM], Rotation::prev());
-            let sel2_cur = meta.query_advice(s_main.bytes[IS_BRANCH_C1_POS - RLP_NUM], Rotation::prev());
+            let sel1_cur =
+                meta.query_advice(s_main.bytes[IS_BRANCH_C16_POS - RLP_NUM], Rotation::prev());
+            let sel2_cur =
+                meta.query_advice(s_main.bytes[IS_BRANCH_C1_POS - RLP_NUM], Rotation::prev());
 
             let key_rlc_prev = meta.query_advice(acc_pair.rlc, Rotation(-19));
             let key_rlc_cur = meta.query_advice(acc_pair.rlc, Rotation::cur());
@@ -206,7 +211,7 @@ impl<F: FieldExt> BranchKeyConfig<F> {
                         - modified_node_cur.clone() * c16.clone()
                             * key_rlc_mult_prev.clone()),
             ));
-    
+
             /*
             When we are not in the first level and when sel2, the intermediate key RLC needs to be
             computed by adding `modified_node * mult_prev` to the previous intermediate key RLC.
@@ -268,7 +273,7 @@ impl<F: FieldExt> BranchKeyConfig<F> {
                     * is_branch_init_prev.clone()
                     * (key_rlc_cur.clone() - modified_node_cur.clone() * c16.clone()),
             ));
-    
+
             /*
             In the first level, address RLC mult is simply 1.
             */
@@ -368,7 +373,7 @@ impl<F: FieldExt> BranchKeyConfig<F> {
             ));
 
             /*
-            `sel1/sel2` get turned around when odd number of nibbles. 
+            `sel1/sel2` get turned around when odd number of nibbles.
             */
             constraints.push((
                 "Account first level sel1 = 0 (extension node odd key)",
