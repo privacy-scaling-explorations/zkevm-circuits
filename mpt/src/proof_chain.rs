@@ -107,7 +107,7 @@ impl<F: FieldExt> ProofChainConfig<F> {
             */
             constraints.push((
                 "First row needs to have not_first_level = 0 (branch init)",
-                q_enable.clone() * (one.clone() - q_not_first.clone()) * is_branch_init.clone() * not_first_level_cur.clone(),
+                q_enable * (one.clone() - q_not_first.clone()) * is_branch_init.clone() * not_first_level_cur.clone(),
             ));
 
             /*
@@ -158,8 +158,8 @@ impl<F: FieldExt> ProofChainConfig<F> {
                 q_not_first.clone() // for the first row, we already have a constraint for not_first_level = 0
                     * is_branch_init.clone()
                     * (one.clone() - not_first_level_cur.clone())
-                    * is_non_storage_mod_proof_type_prev.clone()
-                    * (one.clone() - is_account_leaf_last_row_prev.clone()),
+                    * is_non_storage_mod_proof_type_prev
+                    * (one.clone() - is_account_leaf_last_row_prev),
             ));
 
             /*
@@ -189,7 +189,7 @@ impl<F: FieldExt> ProofChainConfig<F> {
                 "start_root can change only when in the first row of the first level",
                 q_not_first.clone()
                     * (not_first_level_prev.clone() - not_first_level_cur.clone() - one.clone())
-                    * (start_root_cur.clone() - start_root_prev.clone()),
+                    * (start_root_cur.clone() - start_root_prev),
             ));
 
             /*
@@ -201,7 +201,7 @@ impl<F: FieldExt> ProofChainConfig<F> {
                 "final_root can change only when in the first row of the first level",
                 q_not_first.clone()
                     * (not_first_level_prev.clone() - not_first_level_cur.clone() - one.clone())
-                    * (final_root_cur.clone() - final_root_prev.clone()),
+                    * (final_root_cur - final_root_prev.clone()),
             ));
 
             /*
@@ -213,7 +213,7 @@ impl<F: FieldExt> ProofChainConfig<F> {
                 q_not_first.clone()
                     * not_first_level_prev.clone()
                     * (one.clone() - not_first_level_cur.clone())
-                    * (final_root_prev.clone() - start_root_cur.clone()),
+                    * (final_root_prev - start_root_cur),
             )); 
 
             /*
@@ -225,7 +225,7 @@ impl<F: FieldExt> ProofChainConfig<F> {
                 "not_first_level 0 -> 1 in branch init after the first level",
                 q_not_first.clone()
                     * is_branch_init.clone()
-                    * (one.clone() - not_first_level_prev.clone())
+                    * (one.clone() - not_first_level_prev)
                     * (not_first_level_cur.clone() - one.clone()),
             ));
  
@@ -272,7 +272,7 @@ impl<F: FieldExt> ProofChainConfig<F> {
                 "address_rlc is 0 in first row of first level when in storage leaf",
                 q_not_first.clone()
                     * (one.clone() - not_first_level_cur.clone())
-                    * is_storage_leaf_key_s.clone()
+                    * is_storage_leaf_key_s
                     * address_rlc_cur.clone()
             ));
 
@@ -282,10 +282,10 @@ impl<F: FieldExt> ProofChainConfig<F> {
             */
             constraints.push((
                 "address_rlc does not change except at is_account_leaf_key_s or branch init in first level",
-                q_not_first.clone()
-                    * (one.clone() - is_account_leaf_key_s.clone())
-                    * (is_branch_init.clone() - not_first_level_cur.clone() - one.clone()) // address_rlc goes back to 0 in branch init in first level
-                    * (address_rlc_cur.clone() - address_rlc_prev.clone())
+                q_not_first
+                    * (one.clone() - is_account_leaf_key_s)
+                    * (is_branch_init - not_first_level_cur - one) // address_rlc goes back to 0 in branch init in first level
+                    * (address_rlc_cur - address_rlc_prev)
             ));
 
             // TODO: check public roots to match with first and last inter roots
