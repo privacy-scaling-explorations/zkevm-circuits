@@ -531,7 +531,7 @@ impl<F: Field> CopyCircuit<F> {
                 copy_event.dst_addr
             } + (u64::try_from(step_idx).unwrap() - if is_read { 0 } else { 1 }) / 2u64;
 
-        let addr = if is_read && copy_event.dst_type == CopyDataType::TxLog {
+        let addr = if !is_read && copy_event.dst_type == CopyDataType::TxLog {
             (U256::from(copy_step_addr)
                 + (U256::from(TxLogFieldTag::Data as u64) << 32)
                 + (U256::from(copy_event.log_id.unwrap()) << 48))
