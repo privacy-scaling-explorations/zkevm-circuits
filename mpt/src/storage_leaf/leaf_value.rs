@@ -95,6 +95,7 @@ pub(crate) struct LeafValueConfig<F> {
 }
 
 impl<F: FieldExt> LeafValueConfig<F> {
+    #[allow(clippy::too_many_arguments)]
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         position_cols: PositionCols<F>,

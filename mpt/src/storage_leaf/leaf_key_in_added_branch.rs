@@ -59,6 +59,7 @@ pub(crate) struct LeafKeyInAddedBranchConfig<F> {
 }
 
 impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
+    #[allow(clippy::too_many_arguments)]
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         q_enable: impl Fn(&mut VirtualCells<'_, F>) -> Expression<F> + Copy,
@@ -125,11 +126,11 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
             */
             constraints.push((
                 "flag1 is boolean",
-                get_bool_constraint(q_enable.clone(), flag1.clone()),
+                get_bool_constraint(q_enable.clone(), flag1),
             ));
             constraints.push((
                 "flag2 is boolean",
-                get_bool_constraint(q_enable.clone(), flag2.clone()),
+                get_bool_constraint(q_enable.clone(), flag2),
             ));
 
             let is_branch_s_placeholder = meta.query_advice(
@@ -193,8 +194,8 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                 "Leaf key acc last level",
                 q_enable
                     * (last_level + one_nibble)
-                    * (one.clone() - is_leaf_in_first_storage_level.clone())
-                    * (is_branch_s_placeholder.clone() + is_branch_c_placeholder.clone()) // drifted leaf appears only when there is a placeholder branch
+                    * (one.clone() - is_leaf_in_first_storage_level)
+                    * (is_branch_s_placeholder + is_branch_c_placeholder) // drifted leaf appears only when there is a placeholder branch
                     * (rlc_last_level - acc),
             ));
 
@@ -216,12 +217,12 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
 
             let flag1 = meta.query_advice(accs.s_mod_node_rlc, Rotation::cur());
             let flag2 = meta.query_advice(accs.c_mod_node_rlc, Rotation::cur());
-            let is_short = (one.clone() - flag1.clone()) * flag2.clone();
+            let is_short = (one.clone() - flag1) * flag2;
 
             q_enable
                 * is_short
                 * (is_branch_s_placeholder + is_branch_c_placeholder)
-                * (one.clone() - is_leaf_in_first_storage_level.clone())
+                * (one.clone() - is_leaf_in_first_storage_level)
         };
         let sel_long = |meta: &mut VirtualCells<F>| {
             let q_enable = q_enable(meta);
@@ -238,12 +239,12 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
 
             let flag1 = meta.query_advice(accs.s_mod_node_rlc, Rotation::cur());
             let flag2 = meta.query_advice(accs.c_mod_node_rlc, Rotation::cur());
-            let is_long = flag1.clone() * (one.clone() - flag2.clone());
+            let is_long = flag1 * (one.clone() - flag2);
 
             q_enable
                 * is_long
                 * (is_branch_s_placeholder + is_branch_c_placeholder)
-                * (one.clone() - is_leaf_in_first_storage_level.clone())
+                * (one.clone() - is_leaf_in_first_storage_level)
         };
 
         /*
@@ -391,12 +392,12 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
             */
             let mult_diff = meta.query_advice(accs.mult_diff, Rotation(rot_branch_init + 1));
             let mut key_rlc_mult = branch_above_placeholder_mult.clone()
-                * mult_diff.clone()
+                * mult_diff
                 * is_ext_node.clone()
                 * (one.clone() - is_one_nibble.clone())
                 + branch_above_placeholder_mult.clone()
                     * is_ext_node.clone()
-                    * is_one_nibble.clone()
+                    * is_one_nibble
                 + branch_above_placeholder_mult * (one.clone() - is_ext_node);
 
             /*
@@ -415,7 +416,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
             let flag2 = meta.query_advice(accs.c_mod_node_rlc, Rotation::cur());
             let last_level = flag1.clone() * flag2.clone();
             let is_long = flag1.clone() * (one.clone() - flag2.clone());
-            let is_short = (one.clone() - flag1.clone()) * flag2.clone();
+            let is_short = (one.clone() - flag1) * flag2;
 
             /*
             Key RLC of the drifted leaf needs to be the same as key RLC of the leaf
@@ -447,7 +448,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
             let drifted_pos_mult = key_rlc_mult.clone() * c16.clone() * is_c16.clone()
                 + key_rlc_mult.clone() * is_c1.clone();
 
-            let key_rlc_start = key_rlc_cur.clone() + drifted_pos.clone() * drifted_pos_mult;
+            let key_rlc_start = key_rlc_cur + drifted_pos * drifted_pos_mult;
 
             // If `is_c16 = 1`, we have one nibble+48 in `s_main.bytes[0]`.
             let s_bytes0 = meta.query_advice(s_main.bytes[0], Rotation::cur());
@@ -474,7 +475,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
             ));
 
             let mut key_rlc_short = key_rlc_start.clone()
-                + (s_bytes0.clone() - c48.clone()) * is_c16.clone() * key_rlc_mult.clone();
+                + (s_bytes0 - c48.clone()) * is_c16.clone() * key_rlc_mult.clone();
 
             for ind in 1..HASH_WIDTH {
                 let s = meta.query_advice(s_main.bytes[ind], Rotation::cur());
@@ -517,9 +518,9 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                 "Drifted leaf key RLC C (short)",
                 q_enable.clone()
                     * is_branch_c_placeholder.clone()
-                    * is_short.clone()
+                    * is_short
                     * (one.clone() - is_leaf_in_first_storage_level.clone())
-                    * (leaf_key_c_rlc.clone() - key_rlc_short.clone()),
+                    * (leaf_key_c_rlc.clone() - key_rlc_short),
             ));
 
             // Long:
@@ -538,13 +539,13 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                 "Leaf key acc s_bytes1 = 32 (long)",
                 q_enable.clone()
                     * (s_bytes1.clone() - c32.clone())
-                    * is_c1.clone()
+                    * is_c1
                     * (one.clone() - is_leaf_in_first_storage_level.clone())
                     * is_long.clone(),
             ));
 
             let mut key_rlc_long = key_rlc_start.clone()
-                + (s_bytes1.clone() - c48.clone()) * is_c16.clone() * key_rlc_mult.clone();
+                + (s_bytes1 - c48.clone()) * is_c16 * key_rlc_mult.clone();
 
             for ind in 2..HASH_WIDTH {
                 let s = meta.query_advice(s_main.bytes[ind], Rotation::cur());
@@ -554,7 +555,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
 
             key_rlc_mult = key_rlc_mult * r_table[0].clone();
             let c_rlp1 = meta.query_advice(c_main.rlp1, Rotation::cur());
-            key_rlc_long = key_rlc_long + c_rlp1.clone() * key_rlc_mult.clone();
+            key_rlc_long = key_rlc_long + c_rlp1 * key_rlc_mult.clone();
 
             /*
             When `S` placeholder, `leaf_key_s_rlc` is the key RLC of the leaf before it drifted down
@@ -581,9 +582,9 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                 "Drifted leaf key RLC C (long)",
                 q_enable.clone()
                     * is_branch_c_placeholder.clone()
-                    * is_long.clone()
+                    * is_long
                     * (one.clone() - is_leaf_in_first_storage_level.clone())
-                    * (leaf_key_c_rlc.clone() - key_rlc_long.clone()),
+                    * (leaf_key_c_rlc.clone() - key_rlc_long),
             ));
 
             // Last level:
@@ -640,7 +641,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
             ));
 
             let key_rlc_one_nibble =
-                key_rlc_start.clone() + (s_rlp2 - c48.clone()) * key_rlc_mult.clone();
+                key_rlc_start + (s_rlp2 - c48.clone()) * key_rlc_mult;
 
             /*
             When `S` placeholder, `leaf_key_s_rlc` is the key RLC of the leaf before it drifted down
@@ -652,10 +653,10 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
             constraints.push((
                 "Drifted leaf key RLC S (one nibble)",
                 q_enable.clone()
-                    * is_branch_s_placeholder.clone()
+                    * is_branch_s_placeholder
                     * last_level.clone()
                     * (one.clone() - is_leaf_in_first_storage_level.clone())
-                    * (leaf_key_s_rlc.clone() - key_rlc_one_nibble.clone()),
+                    * (leaf_key_s_rlc - key_rlc_one_nibble.clone()),
             ));
 
             /*
@@ -669,11 +670,11 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
             */
             constraints.push((
                 "Drifted leaf key RLC C (one nibble)",
-                q_enable.clone()
-                    * is_branch_c_placeholder.clone()
-                    * last_level.clone()
-                    * (one.clone() - is_leaf_in_first_storage_level.clone())
-                    * (leaf_key_c_rlc.clone() - key_rlc_one_nibble),
+                q_enable
+                    * is_branch_c_placeholder
+                    * last_level
+                    * (one.clone() - is_leaf_in_first_storage_level)
+                    * (leaf_key_c_rlc - key_rlc_one_nibble),
             ));
 
             constraints
@@ -726,7 +727,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                         meta,
                         s_main.bytes.to_vec(),
                         1,
-                        acc_mult.clone(),
+                        acc_mult,
                         rot_val,
                         r_table.clone(),
                     );
@@ -767,9 +768,9 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                 let s_mod_node_hash_rlc = meta.query_advice(accs.s_mod_node_rlc, Rotation(rot));
                 let keccak_table_i = meta.query_fixed(keccak_table[1], Rotation::cur());
                 constraints.push((
-                    q_enable.clone()
+                    q_enable
                         * s_mod_node_hash_rlc
-                        * is_branch_s_placeholder.clone()
+                        * is_branch_s_placeholder
                         * (one.clone() - is_leaf_in_first_storage_level),
                     keccak_table_i,
                 ));
@@ -825,7 +826,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                         meta,
                         s_main.bytes.to_vec(),
                         1,
-                        acc_mult.clone(),
+                        acc_mult,
                         rot_val,
                         r_table.clone(),
                     );
@@ -866,9 +867,9 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                 let c_mod_node_hash_rlc = meta.query_advice(accs.c_mod_node_rlc, Rotation(rot));
                 let keccak_table_i = meta.query_fixed(keccak_table[1], Rotation::cur());
                 constraints.push((
-                    q_enable.clone()
+                    q_enable
                         * c_mod_node_hash_rlc
-                        * is_branch_c_placeholder.clone()
+                        * is_branch_c_placeholder
                         * (one - is_leaf_in_first_storage_level),
                     keccak_table_i,
                 ));
@@ -920,12 +921,11 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
 
         pv.acc_s = F::zero();
         pv.acc_mult_s = F::one();
-        let len: usize;
-        if row.get_byte(0) == 248 {
-            len = (row.get_byte(2) - 128) as usize + 3;
+        let len = if row.get_byte(0) == 248 {
+            (row.get_byte(2) - 128) as usize + 3
         } else {
-            len = (row.get_byte(1) - 128) as usize + 2;
-        }
+            (row.get_byte(1) - 128) as usize + 2
+        };
         mpt_config.compute_acc_and_mult(&row.bytes, &mut pv.acc_s, &mut pv.acc_mult_s, 0, len);
 
         mpt_config
