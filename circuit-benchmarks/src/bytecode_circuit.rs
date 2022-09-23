@@ -128,8 +128,11 @@ mod tests {
                 .map(|idx_range| {
                     idx_range
                         .iter()
-                        .filter_map(|v| OpcodeId::try_from(*v as u8).ok())
-                        .map(|opcode| opcode.as_u8())
+                        .map(|v| {
+                            OpcodeId::try_from(*v as u8)
+                                .unwrap_or_else(|_| OpcodeId::STOP)
+                                .as_u8()
+                        })
                         .collect::<Vec<u8>>()
                 })
                 .map(|bytes| unroll(bytes, randomness))
