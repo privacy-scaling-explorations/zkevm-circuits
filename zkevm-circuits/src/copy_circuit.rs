@@ -912,6 +912,26 @@ mod tests {
         builder
     }
 
+    fn gen_tx_log_data() -> CircuitInputBuilder {
+        let code = bytecode! {
+            PUSH32(200)         // value
+            PUSH32(0)           // offset
+            MSTORE
+            PUSH32(Word::MAX)   // topic
+            PUSH1(32)           // length
+            PUSH1(0)            // offset
+            LOG1
+            STOP
+        };
+        let test_ctx = TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap();
+        let block: GethData = test_ctx.into();
+        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+        builder
+            .handle_block(&block.eth_block, &block.geth_traces)
+            .unwrap();
+        builder
+    }
+
     #[test]
     fn copy_circuit_valid_calldatacopy() {
         let builder = gen_calldatacopy_data();
@@ -931,6 +951,13 @@ mod tests {
         let builder = gen_sha3_data();
         let block = block_convert(&builder.block, &builder.code_db);
         assert_eq!(test_copy_circuit(20, block), Ok(()));
+    }
+
+    #[test]
+    fn copy_circuit_tx_log() {
+        let builder = gen_tx_log_data();
+        let block = block_convert(&builder.block, &builder.code_db);
+        assert_eq!(test_copy_circuit(10, block), Ok(()));
     }
 
     // // TODO: replace these with deterministic failure tests
