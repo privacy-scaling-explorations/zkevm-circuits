@@ -7,7 +7,7 @@ use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
 use crate::{
-    columns::{AccumulatorCols, MainCols, ProofTypeCols},
+    columns::{AccumulatorCols, MainCols, ProofTypeCols, PositionCols},
     helpers::{compute_rlc, mult_diff_lookup, range_lookups},
     mpt::{FixedTableTag, MPTConfig, ProofVariables},
     param::{
@@ -86,7 +86,7 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
         meta: &mut ConstraintSystem<F>,
         proof_type: ProofTypeCols<F>,
         q_enable: impl Fn(&mut VirtualCells<'_, F>) -> Expression<F> + Copy,
-        not_first_level: Column<Advice>,
+        position_cols: PositionCols<F>,
         s_main: MainCols<F>,
         c_main: MainCols<F>,
         accs: AccumulatorCols<F>,
@@ -226,7 +226,7 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
                 let mut constraints = vec![];
 
                 let is_leaf_in_first_level =
-                    one.clone() - meta.query_advice(not_first_level, Rotation::cur());
+                    one.clone() - meta.query_advice(position_cols.not_first_level, Rotation::cur());
 
                 let mut is_branch_placeholder =
                     s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM];
@@ -418,13 +418,13 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
                 );
 
                 let is_leaf_in_first_level =
-                    one.clone() - meta.query_advice(not_first_level, Rotation::cur());
+                    one.clone() - meta.query_advice(position_cols.not_first_level, Rotation::cur());
 
                 // let key_rlc_acc_start = meta.query_advice(accs.acc_c.rlc, Rotation::cur());
                 // let key_mult_start = meta.query_advice(accs.acc_c.mult, Rotation::cur());
 
                 let is_placeholder_branch_in_first_level =
-                    one.clone() - meta.query_advice(not_first_level, Rotation(rot_into_init));
+                    one.clone() - meta.query_advice(position_cols.not_first_level, Rotation(rot_into_init));
 
                 // Note: key RLC is in the first branch node (not branch init).
                 let rot_level_above = rot_into_init + 1 - BRANCH_ROWS_NUM;
@@ -572,7 +572,7 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
                         * sel1.clone();
 
                 let is_branch_in_first_level = one.clone()
-                    - meta.query_advice(not_first_level, Rotation(rot_into_first_branch_child));
+                    - meta.query_advice(position_cols.not_first_level, Rotation(rot_into_first_branch_child));
 
                 /*
                 Note that when the leaf is in the first level (but positioned after the placeholder

@@ -22,9 +22,8 @@ use crate::{
         branch_rlc::BranchRLCConfig, extension_node::ExtensionNodeConfig,
         extension_node_key::ExtensionNodeKeyConfig, Branch, BranchCols, BranchConfig,
     },
-    columns::{AccumulatorCols, DenoteCols, MainCols, ProofTypeCols},
+    columns::{AccumulatorCols, DenoteCols, MainCols, ProofTypeCols, PositionCols},
     helpers::{bytes_into_rlc, get_is_extension_node},
-    param::RLP_NUM,
     proof_chain::ProofChainConfig,
     storage_leaf::{
         leaf_key::LeafKeyConfig, leaf_key_in_added_branch::LeafKeyInAddedBranchConfig,
@@ -34,8 +33,7 @@ use crate::{
 };
 use crate::{
     param::{
-        HASH_WIDTH, IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS, KECCAK_INPUT_WIDTH,
-        KECCAK_OUTPUT_WIDTH,
+        HASH_WIDTH, KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH,
     },
     selectors::SelectorsConfig,
 };
@@ -70,9 +68,7 @@ use crate::{
 #[derive(Clone, Debug)]
 pub struct MPTConfig<F> {
     pub(crate) proof_type: ProofTypeCols<F>,
-    pub(crate) q_enable: Column<Fixed>,
-    pub(crate) q_not_first: Column<Fixed>, // not first row
-    pub(crate) not_first_level: Column<Advice>,
+    pub(crate) position_cols: PositionCols<F>,
     pub(crate) inter_start_root: Column<Advice>,
     pub(crate) inter_final_root: Column<Advice>,
     pub(crate) accumulators: AccumulatorCols<F>,
@@ -209,9 +205,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                                      // and q_not_first; not_first_level
                                                      // constraints would need to be added there too)
 
-        let q_enable = meta.fixed_column();
-        let q_not_first = meta.fixed_column();
-        let not_first_level = meta.advice_column();
+        let position_cols = PositionCols::new(meta);
 
         // having 2 to enable key RLC check (not using 1 to enable proper checks of mult
         // too) TODO: generate from commitments
@@ -282,9 +276,7 @@ impl<F: FieldExt> MPTConfig<F> {
         SelectorsConfig::<F>::configure(
             meta,
             proof_type.clone(),
-            q_enable,
-            q_not_first,
-            not_first_level,
+            position_cols.clone(),
             branch.clone(),
             account_leaf.clone(),
             storage_leaf.clone(),
@@ -294,9 +286,7 @@ impl<F: FieldExt> MPTConfig<F> {
         ProofChainConfig::<F>::configure(
             meta,
             proof_type.clone(),
-            q_enable,
-            q_not_first,
-            not_first_level,
+            position_cols.clone(),
             branch.is_init,
             account_leaf.clone(),
             storage_leaf.clone(),
@@ -307,9 +297,7 @@ impl<F: FieldExt> MPTConfig<F> {
 
         let branch_config = BranchConfig::<F>::configure(
             meta,
-            q_enable,
-            q_not_first,
-            not_first_level,
+            position_cols.clone(),
             account_leaf.is_in_added_branch,
             s_main.clone(),
             c_main.clone(),
@@ -322,8 +310,7 @@ impl<F: FieldExt> MPTConfig<F> {
 
         BranchKeyConfig::<F>::configure(
             meta,
-            q_not_first,
-            not_first_level,
+            position_cols.clone(),
             branch.clone(),
             account_leaf.is_in_added_branch,
             s_main.clone(),
@@ -333,8 +320,7 @@ impl<F: FieldExt> MPTConfig<F> {
 
         BranchParallelConfig::<F>::configure(
             meta,
-            q_enable,
-            q_not_first,
+            position_cols.clone(),
             branch.clone(),
             accumulators.s_mod_node_rlc,
             s_main.clone(),
@@ -344,8 +330,7 @@ impl<F: FieldExt> MPTConfig<F> {
 
         BranchParallelConfig::<F>::configure(
             meta,
-            q_enable,
-            q_not_first,
+            position_cols.clone(),
             branch.clone(),
             accumulators.c_mod_node_rlc,
             c_main.clone(),
@@ -356,8 +341,7 @@ impl<F: FieldExt> MPTConfig<F> {
         BranchHashInParentConfig::<F>::configure(
             meta,
             inter_start_root,
-            not_first_level,
-            q_not_first,
+            position_cols.clone(),
             account_leaf.is_in_added_branch,
             branch.is_last_child,
             s_main.clone(),
@@ -370,8 +354,7 @@ impl<F: FieldExt> MPTConfig<F> {
         BranchHashInParentConfig::<F>::configure(
             meta,
             inter_final_root,
-            not_first_level,
-            q_not_first,
+            position_cols.clone(),
             account_leaf.is_in_added_branch,
             branch.is_last_child,
             s_main.clone(),
@@ -392,8 +375,7 @@ impl<F: FieldExt> MPTConfig<F> {
                 is_extension_node_s * is_extension_node
             },
             inter_start_root,
-            not_first_level,
-            q_not_first,
+            position_cols.clone(),
             account_leaf.is_in_added_branch,
             branch.clone(),
             s_main.clone(),
@@ -416,8 +398,7 @@ impl<F: FieldExt> MPTConfig<F> {
                 is_extension_node_c * is_extension_node
             },
             inter_final_root,
-            not_first_level,
-            q_not_first,
+            position_cols.clone(),
             account_leaf.is_in_added_branch,
             branch.clone(),
             s_main.clone(),
@@ -431,8 +412,7 @@ impl<F: FieldExt> MPTConfig<F> {
 
         ExtensionNodeKeyConfig::<F>::configure(
             meta,
-            q_not_first,
-            not_first_level,
+            position_cols.clone(),
             branch.clone(),
             account_leaf.is_in_added_branch,
             s_main.clone(),
@@ -446,7 +426,7 @@ impl<F: FieldExt> MPTConfig<F> {
             meta,
             |meta| {
                 meta.query_advice(branch.is_init, Rotation::cur())
-                    * meta.query_fixed(q_enable, Rotation::cur())
+                    * meta.query_fixed(position_cols.q_enable, Rotation::cur())
             },
             s_main.clone(),
             accumulators.clone(),
@@ -457,7 +437,7 @@ impl<F: FieldExt> MPTConfig<F> {
         BranchRLCConfig::<F>::configure(
             meta,
             |meta| {
-                let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
+                let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
                 let is_branch_child = meta.query_advice(branch.is_child, Rotation::cur());
 
                 q_not_first * is_branch_child
@@ -473,7 +453,7 @@ impl<F: FieldExt> MPTConfig<F> {
         BranchRLCConfig::<F>::configure(
             meta,
             |meta| {
-                let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
+                let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
                 let is_branch_child = meta.query_advice(branch.is_child, Rotation::cur());
 
                 q_not_first * is_branch_child
@@ -489,8 +469,8 @@ impl<F: FieldExt> MPTConfig<F> {
         let storage_leaf_key_s = LeafKeyConfig::<F>::configure(
             meta,
             |meta| {
-                let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
-                let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
+                let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
+                let not_first_level = meta.query_advice(position_cols.not_first_level, Rotation::cur());
                 let is_leaf_s = meta.query_advice(storage_leaf.is_s_key, Rotation::cur());
 
                 // NOTE/TODO: If having only storage proof is to be allowed, then this needs to
@@ -512,8 +492,8 @@ impl<F: FieldExt> MPTConfig<F> {
         let storage_leaf_key_c = LeafKeyConfig::<F>::configure(
             meta,
             |meta| {
-                let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
-                let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
+                let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
+                let not_first_level = meta.query_advice(position_cols.not_first_level, Rotation::cur());
                 let is_leaf_c = meta.query_advice(storage_leaf.is_c_key, Rotation::cur());
 
                 // NOTE/TODO: If having only storage proof is to be allowed, then this needs to
@@ -535,8 +515,8 @@ impl<F: FieldExt> MPTConfig<F> {
         let storage_leaf_key_in_added_branch = LeafKeyInAddedBranchConfig::<F>::configure(
             meta,
             |meta| {
-                let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
-                let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
+                let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
+                let not_first_level = meta.query_advice(position_cols.not_first_level, Rotation::cur());
                 let is_leaf = meta.query_advice(storage_leaf.is_in_added_branch, Rotation::cur());
 
                 q_not_first * not_first_level * is_leaf
@@ -553,15 +533,13 @@ impl<F: FieldExt> MPTConfig<F> {
 
         let storage_leaf_value_s = LeafValueConfig::<F>::configure(
             meta,
-            q_not_first,
-            not_first_level,
+            position_cols.clone(),
             storage_leaf.is_s_value,
             s_main.clone(),
             keccak_table,
             accumulators.clone(),
             denoter.clone(),
             account_leaf.is_in_added_branch,
-            s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM],
             true,
             acc_r,
             fixed_table.clone(),
@@ -569,15 +547,13 @@ impl<F: FieldExt> MPTConfig<F> {
 
         let storage_leaf_value_c = LeafValueConfig::<F>::configure(
             meta,
-            q_not_first,
-            not_first_level,
+            position_cols.clone(),
             storage_leaf.is_c_value,
             s_main.clone(),
             keccak_table,
             accumulators.clone(),
             denoter.clone(),
             account_leaf.is_in_added_branch,
-            s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
             false,
             acc_r,
             fixed_table.clone(),
@@ -587,13 +563,13 @@ impl<F: FieldExt> MPTConfig<F> {
             meta,
             proof_type.clone(),
             |meta| {
-                let q_enable = meta.query_fixed(q_enable, Rotation::cur());
+                let q_enable = meta.query_fixed(position_cols.q_enable, Rotation::cur());
                 let is_account_leaf_key_s =
                     meta.query_advice(account_leaf.is_key_s, Rotation::cur());
 
                 q_enable * is_account_leaf_key_s
             },
-            not_first_level,
+            position_cols.clone(),
             s_main.clone(),
             c_main.clone(),
             accumulators.clone(),
@@ -608,13 +584,13 @@ impl<F: FieldExt> MPTConfig<F> {
             meta,
             proof_type.clone(),
             |meta| {
-                let q_enable = meta.query_fixed(q_enable, Rotation::cur());
+                let q_enable = meta.query_fixed(position_cols.q_enable, Rotation::cur());
                 let is_account_leaf_key_c =
                     meta.query_advice(account_leaf.is_key_c, Rotation::cur());
 
                 q_enable * is_account_leaf_key_c
             },
-            not_first_level,
+            position_cols.clone(),
             s_main.clone(),
             c_main.clone(),
             accumulators.clone(),
@@ -628,7 +604,7 @@ impl<F: FieldExt> MPTConfig<F> {
         let account_non_existing = AccountNonExistingConfig::<F>::configure(
             meta,
             |meta| {
-                let q_enable = meta.query_fixed(q_enable, Rotation::cur());
+                let q_enable = meta.query_fixed(position_cols.q_enable, Rotation::cur());
                 let is_account_non_existing_row =
                     meta.query_advice(account_leaf.is_non_existing_account_row, Rotation::cur());
                 let is_account_non_existing_proof =
@@ -636,7 +612,7 @@ impl<F: FieldExt> MPTConfig<F> {
 
                 q_enable * is_account_non_existing_row * is_account_non_existing_proof
             },
-            not_first_level,
+            position_cols.not_first_level,
             s_main.clone(),
             c_main.clone(),
             accumulators.clone(),
@@ -650,7 +626,7 @@ impl<F: FieldExt> MPTConfig<F> {
             meta,
             proof_type.clone(),
             |meta| {
-                let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
+                let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
                 let is_account_leaf_nonce_balance_s =
                     meta.query_advice(account_leaf.is_nonce_balance_s, Rotation::cur());
                 q_not_first * is_account_leaf_nonce_balance_s
@@ -668,7 +644,7 @@ impl<F: FieldExt> MPTConfig<F> {
             meta,
             proof_type.clone(),
             |meta| {
-                let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
+                let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
                 let is_account_leaf_nonce_balance_c =
                     meta.query_advice(account_leaf.is_nonce_balance_c, Rotation::cur());
                 q_not_first * is_account_leaf_nonce_balance_c
@@ -686,8 +662,7 @@ impl<F: FieldExt> MPTConfig<F> {
             meta,
             proof_type.clone(),
             inter_start_root,
-            q_not_first,
-            not_first_level,
+            position_cols.clone(),
             account_leaf.is_storage_codehash_s,
             s_main.clone(),
             c_main.clone(),
@@ -703,8 +678,7 @@ impl<F: FieldExt> MPTConfig<F> {
             meta,
             proof_type.clone(),
             inter_final_root,
-            q_not_first,
-            not_first_level,
+            position_cols.clone(),
             account_leaf.is_storage_codehash_c,
             s_main.clone(),
             c_main.clone(),
@@ -719,14 +693,14 @@ impl<F: FieldExt> MPTConfig<F> {
         let account_leaf_key_in_added_branch = AccountLeafKeyInAddedBranchConfig::<F>::configure(
             meta,
             |meta| {
-                let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
-                let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
+                let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
+                let not_first_level = meta.query_advice(position_cols.not_first_level, Rotation::cur());
                 let is_account_leaf_in_added_branch =
                     meta.query_advice(account_leaf.is_in_added_branch, Rotation::cur());
 
                 q_not_first * not_first_level * is_account_leaf_in_added_branch
             },
-            not_first_level,
+            position_cols.not_first_level,
             s_main.clone(),
             c_main.clone(),
             accumulators.clone(),
@@ -739,9 +713,7 @@ impl<F: FieldExt> MPTConfig<F> {
 
         MPTConfig {
             proof_type,
-            q_enable,
-            q_not_first,
-            not_first_level,
+            position_cols,
             inter_start_root,
             inter_final_root,
             branch,
@@ -964,7 +936,7 @@ impl<F: FieldExt> MPTConfig<F> {
 
                         region.assign_fixed(
                             || "q_enable",
-                            self.q_enable,
+                            self.position_cols.q_enable,
                             offset,
                             || Ok(F::one()),
                         )?;
@@ -977,14 +949,14 @@ impl<F: FieldExt> MPTConfig<F> {
                         let q_not_first = if ind == 0 { F::zero() } else { F::one() };
                         region.assign_fixed(
                             || "not first",
-                            self.q_not_first,
+                            self.position_cols.q_not_first,
                             offset,
                             || Ok(q_not_first),
                         )?;
 
                         region.assign_advice(
                             || "not first level",
-                            self.not_first_level,
+                            self.position_cols.not_first_level,
                             offset,
                             || Ok(F::from(row.not_first_level() as u64)),
                         )?;

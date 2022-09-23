@@ -1,13 +1,15 @@
 use halo2_proofs::{
     arithmetic::FieldExt,
-    plonk::{Advice, Column, ConstraintSystem},
+    plonk::{Advice, Column, ConstraintSystem, Fixed},
 };
 use std::{convert::TryInto, marker::PhantomData};
 
 use crate::param::HASH_WIDTH;
 
-// This file contains columns that are not specific to any of account leaf,
-// storage leaf, branch, or extension node.
+/*
+This file contains columns that are not specific to any of account leaf, storage leaf, branch,
+or extension node.
+*/
 
 #[derive(Clone, Debug)]
 pub(crate) struct ProofTypeCols<F> {
@@ -150,6 +152,26 @@ impl<F: FieldExt> DenoteCols<F> {
             sel2: meta.advice_column(),
             is_node_hashed_s: meta.advice_column(),
             is_node_hashed_c: meta.advice_column(),
+            _marker: PhantomData,
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct PositionCols<F> {
+    pub(crate) q_enable: Column<Fixed>,
+    pub(crate) q_not_first: Column<Fixed>, // not first row
+    pub(crate) not_first_level: Column<Advice>,
+
+    _marker: PhantomData<F>,
+}
+
+impl<F: FieldExt> PositionCols<F> {
+    pub(crate) fn new(meta: &mut ConstraintSystem<F>) -> Self {
+        Self {
+            q_enable: meta.fixed_column(),
+            q_not_first: meta.fixed_column(),
+            not_first_level: meta.advice_column(),
             _marker: PhantomData,
         }
     }

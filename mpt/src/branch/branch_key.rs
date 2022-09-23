@@ -6,7 +6,7 @@ use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
 use crate::{
-    columns::{AccumulatorPair, MainCols},
+    columns::{AccumulatorPair, MainCols, PositionCols},
     param::{
         IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS,
         IS_EXT_LONG_ODD_C16_POS, IS_EXT_LONG_ODD_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS,
@@ -109,9 +109,8 @@ pub(crate) struct BranchKeyConfig<F> {
 impl<F: FieldExt> BranchKeyConfig<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
-        q_not_first: Column<Fixed>,
-        not_first_level: Column<Advice>, /* to avoid rotating back when in the first branch (for
-                                          * key rlc) */
+        position_cols: PositionCols<F>,
+        /* `not_first_level` to avoid rotating back when in the first branch (for key rlc) */
         branch: BranchCols<F>,
         is_account_leaf_in_added_branch: Column<Advice>,
         s_main: MainCols<F>,
@@ -136,8 +135,8 @@ impl<F: FieldExt> BranchKeyConfig<F> {
             previous row.
             */
 
-            let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
-            let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
+            let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
+            let not_first_level = meta.query_advice(position_cols.not_first_level, Rotation::cur());
 
             let mut constraints = vec![];
 

@@ -5,7 +5,7 @@ use halo2_proofs::{
 use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
-use crate::columns::MainCols;
+use crate::columns::{MainCols, PositionCols};
 
 use super::BranchCols;
 
@@ -78,8 +78,7 @@ pub(crate) struct BranchParallelConfig<F> {
 impl<F: FieldExt> BranchParallelConfig<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
-        q_enable: Column<Fixed>,
-        q_not_first: Column<Fixed>,
+        position_cols: PositionCols<F>,
         branch: BranchCols<F>,
         mod_node_hash_rlc: Column<Advice>,
         main: MainCols<F>,
@@ -102,7 +101,7 @@ impl<F: FieldExt> BranchParallelConfig<F> {
         The constraints are in `branch.rs`, see `RLP length` gate.
         */
         meta.create_gate("Empty and non-empty branch children", |meta| {
-            let q_enable = meta.query_fixed(q_enable, Rotation::cur());
+            let q_enable = meta.query_fixed(position_cols.q_enable, Rotation::cur());
             let mut constraints = vec![];
 
             let is_branch_child_cur = meta.query_advice(branch.is_child, Rotation::cur());
@@ -176,7 +175,7 @@ impl<F: FieldExt> BranchParallelConfig<F> {
         meta.create_gate(
             "Branch child RLC & selector for specifying whether the modified node is empty",
             |meta| {
-                let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
+                let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
 
                 let mut constraints = vec![];
                 let is_branch_child_cur = meta.query_advice(branch.is_child, Rotation::cur());
@@ -266,7 +265,7 @@ impl<F: FieldExt> BranchParallelConfig<F> {
         );
 
         let sel = |meta: &mut VirtualCells<F>| {
-            let q_enable = meta.query_fixed(q_enable, Rotation::cur());
+            let q_enable = meta.query_fixed(position_cols.q_enable, Rotation::cur());
             let is_branch_child_cur = meta.query_advice(branch.is_child, Rotation::cur());
             let is_node_hashed = meta.query_advice(is_node_hashed, Rotation::cur());
 

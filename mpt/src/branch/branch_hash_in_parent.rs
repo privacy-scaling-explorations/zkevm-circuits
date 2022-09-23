@@ -6,7 +6,7 @@ use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
 use crate::{
-    columns::{AccumulatorCols, MainCols},
+    columns::{AccumulatorCols, MainCols, PositionCols},
     helpers::{bytes_expr_into_rlc, get_is_extension_node},
     param::{
         ACCOUNT_LEAF_ROWS, ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND,
@@ -78,8 +78,7 @@ impl<F: FieldExt> BranchHashInParentConfig<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         inter_root: Column<Advice>,
-        not_first_level: Column<Advice>,
-        q_not_first: Column<Fixed>,
+        position_cols: PositionCols<F>,
         is_account_leaf_in_added_branch: Column<Advice>,
         is_last_branch_child: Column<Advice>,
         s_main: MainCols<F>,
@@ -104,8 +103,8 @@ impl<F: FieldExt> BranchHashInParentConfig<F> {
             "Branch in first level of account trie - hash compared to root",
             |meta| {
                 let mut constraints = vec![];
-                let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
-                let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
+                let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
+                let not_first_level = meta.query_advice(position_cols.not_first_level, Rotation::cur());
 
                 let is_last_branch_child = meta.query_advice(is_last_branch_child, Rotation::cur());
 
@@ -170,7 +169,7 @@ impl<F: FieldExt> BranchHashInParentConfig<F> {
             "Branch in first level of storage trie - hash compared to the storage root",
             |meta| {
                 // Note: we are in the same row (last branch child) for S and C.
-                let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
+                let not_first_level = meta.query_advice(position_cols.not_first_level, Rotation::cur());
                 let rot_into_branch_init = -16;
                 let mut is_branch_placeholder = meta.query_advice(
                     s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM],
@@ -262,7 +261,7 @@ impl<F: FieldExt> BranchHashInParentConfig<F> {
         `(branch_RLC, parent_branch_modified_node_RLC)` is in the Keccak table.
         */
         meta.lookup_any("Branch hash in parent branch", |meta| {
-            let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
+            let not_first_level = meta.query_advice(position_cols.not_first_level, Rotation::cur());
 
             // -17 because we are in the last branch child (-16 takes us to branch init)
             let is_account_leaf_in_added_branch_prev =
@@ -348,8 +347,8 @@ impl<F: FieldExt> BranchHashInParentConfig<F> {
         `branch_RLC = parent_branch_modified_node_RLC`.
         */
         meta.create_gate("NON-HASHED branch hash in parent branch", |meta| {
-            let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
-            let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
+            let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
+            let not_first_level = meta.query_advice(position_cols.not_first_level, Rotation::cur());
 
             // -17 because we are in the last branch child (-16 takes us to branch init)
             let is_account_leaf_in_added_branch_prev =

@@ -8,7 +8,7 @@ use std::marker::PhantomData;
 use crate::{
     account_leaf::AccountLeafCols,
     branch::BranchCols,
-    columns::{DenoteCols, ProofTypeCols},
+    columns::{DenoteCols, ProofTypeCols, PositionCols},
     helpers::get_bool_constraint,
     storage_leaf::StorageLeafCols,
 };
@@ -30,9 +30,7 @@ impl<F: FieldExt> SelectorsConfig<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         proof_type: ProofTypeCols<F>,
-        q_enable: Column<Fixed>,
-        q_not_first: Column<Fixed>,
-        not_first_level: Column<Advice>,
+        position_cols: PositionCols<F>,
         branch: BranchCols<F>,
         account_leaf: AccountLeafCols<F>,
         storage_leaf: StorageLeafCols<F>,
@@ -44,10 +42,10 @@ impl<F: FieldExt> SelectorsConfig<F> {
         let one = Expression::Constant(F::one());
 
         meta.create_gate("selectors boolean", |meta| {
-            let q_enable = meta.query_fixed(q_enable, Rotation::cur());
+            let q_enable = meta.query_fixed(position_cols.q_enable, Rotation::cur());
             let mut constraints = vec![];
 
-            let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
+            let not_first_level = meta.query_advice(position_cols.not_first_level, Rotation::cur());
             let is_branch_init_cur = meta.query_advice(branch.is_init, Rotation::cur());
             let is_branch_child_cur = meta.query_advice(branch.is_child, Rotation::cur());
             let is_last_branch_child_cur = meta.query_advice(branch.is_last_child, Rotation::cur());
@@ -247,7 +245,7 @@ impl<F: FieldExt> SelectorsConfig<F> {
         meta.create_gate(
             "Rows order ensured & proof type cannot change in rows corresponding to one modification",
             |meta| {
-                let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
+                let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
                 let mut constraints = vec![];
 
                 let is_branch_init_cur = meta.query_advice(branch.is_init, Rotation::cur());
@@ -465,7 +463,7 @@ impl<F: FieldExt> SelectorsConfig<F> {
                     q_not_first.clone() * (is_leaf_c_value_prev - is_leaf_in_added_branch_cur),
                 ));
 
-                let q_enable = meta.query_fixed(q_enable, Rotation::cur());
+                let q_enable = meta.query_fixed(position_cols.q_enable, Rotation::cur());
                 /*
                 In the first row only account leaf key S row or branch init row can occur.
                 */
@@ -499,7 +497,7 @@ impl<F: FieldExt> SelectorsConfig<F> {
                 let is_non_existing_account_proof_cur = meta.query_advice(proof_type.is_non_existing_account_proof, Rotation::prev());
                 let is_non_existing_account_proof_prev = meta.query_advice(proof_type.is_non_existing_account_proof, Rotation::cur());
 
-                let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
+                let not_first_level = meta.query_advice(position_cols.not_first_level, Rotation::cur());
 
                 /*
                 The following constraints ensure that the proof type does not change except in the first row

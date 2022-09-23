@@ -7,7 +7,7 @@ use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
 use crate::{
-    columns::{AccumulatorCols, DenoteCols, MainCols, ProofTypeCols},
+    columns::{AccumulatorCols, DenoteCols, MainCols, ProofTypeCols, PositionCols},
     helpers::range_lookups,
     mpt::{FixedTableTag, MPTConfig, ProofVariables},
     param::{
@@ -68,8 +68,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
         meta: &mut ConstraintSystem<F>,
         proof_type: ProofTypeCols<F>,
         inter_root: Column<Advice>,
-        q_not_first: Column<Fixed>,
-        not_first_level: Column<Advice>,
+        position_cols: PositionCols<F>,
         is_account_leaf_storage_codehash: Column<Advice>,
         s_main: MainCols<F>,
         c_main: MainCols<F>,
@@ -94,7 +93,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
         at least a genesis account.
         */
         meta.create_gate("Account leaf storage codehash", |meta| {
-            let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
+            let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
             let q_enable = q_not_first.clone()
                 * meta.query_advice(is_account_leaf_storage_codehash, Rotation::cur());
 
@@ -297,8 +296,8 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
             "Account first level leaf without branch - compared to state root",
             |meta| {
                 let mut constraints = vec![];
-                let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
-                let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
+                let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
+                let not_first_level = meta.query_advice(position_cols.not_first_level, Rotation::cur());
 
                 let is_account_leaf_storage_codehash =
                     meta.query_advice(is_account_leaf_storage_codehash, Rotation::cur());
@@ -335,7 +334,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
         a placeholder leaf, it is added only to maintain the parallel layout.
         */
         meta.lookup_any("Hash of an account leaf in a branch", |meta| {
-            let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
+            let not_first_level = meta.query_advice(position_cols.not_first_level, Rotation::cur());
 
             let is_account_leaf_storage_codehash =
                 meta.query_advice(is_account_leaf_storage_codehash, Rotation::cur());
@@ -404,10 +403,10 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
         appears when there is a leaf and it drifts down into a newly added branch).
         */
         meta.lookup_any("Hash of an account leaf when branch placeholder", |meta| {
-            let account_not_first_level = meta.query_advice(not_first_level, Rotation::cur());
+            let account_not_first_level = meta.query_advice(position_cols.not_first_level, Rotation::cur());
             // Any rotation that lands into branch can be used instead of -17.
             let branch_placeholder_not_in_first_level =
-                meta.query_advice(not_first_level, Rotation(-17));
+                meta.query_advice(position_cols.not_first_level, Rotation(-17));
 
             let is_account_leaf_storage_codehash =
                 meta.query_advice(is_account_leaf_storage_codehash, Rotation::cur());
@@ -464,10 +463,10 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
         meta.lookup_any(
             "Hash of an account leaf compared to root when branch placeholder in the first level",
             |meta| {
-                let account_not_first_level = meta.query_advice(not_first_level, Rotation::cur());
+                let account_not_first_level = meta.query_advice(position_cols.not_first_level, Rotation::cur());
                 // Any rotation that lands into branch can be used instead of -17.
                 let branch_placeholder_in_first_level =
-                    one.clone() - meta.query_advice(not_first_level, Rotation(-17));
+                    one.clone() - meta.query_advice(position_cols.not_first_level, Rotation(-17));
 
                 let is_account_leaf_storage_codehash =
                     meta.query_advice(is_account_leaf_storage_codehash, Rotation::cur());
@@ -512,7 +511,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
         );
 
         let sel = |meta: &mut VirtualCells<F>| {
-            let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
+            let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
             let q_enable = q_not_first.clone()
                 * meta.query_advice(is_account_leaf_storage_codehash, Rotation::cur());
 

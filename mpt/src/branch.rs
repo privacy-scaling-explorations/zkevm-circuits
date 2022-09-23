@@ -16,7 +16,7 @@ use std::marker::PhantomData;
 
 use crate::{
     account_leaf::AccountLeaf,
-    columns::{AccumulatorCols, DenoteCols, MainCols},
+    columns::{AccumulatorCols, DenoteCols, MainCols, PositionCols},
     helpers::{
         bytes_expr_into_rlc, bytes_into_rlc, get_bool_constraint, get_is_extension_node,
         range_lookups,
@@ -129,9 +129,7 @@ pub(crate) struct BranchConfig<F> {
 impl<F: FieldExt> BranchConfig<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
-        q_enable: Column<Fixed>,
-        q_not_first: Column<Fixed>,
-        not_first_level: Column<Advice>,
+        position_cols: PositionCols<F>,
         is_account_leaf_in_added_branch: Column<Advice>,
         s_main: MainCols<F>,
         c_main: MainCols<F>,
@@ -155,7 +153,7 @@ impl<F: FieldExt> BranchConfig<F> {
         meta.create_gate(
             "Branch S and C equal at NON modified_node position & only two non-nil nodes when placeholder",
             |meta| {
-                let q_enable = meta.query_fixed(q_enable, Rotation::cur());
+                let q_enable = meta.query_fixed(position_cols.q_enable, Rotation::cur());
                 let mut constraints = vec![];
 
                 let is_branch_child_cur = meta.query_advice(branch.is_child, Rotation::cur());
@@ -272,7 +270,7 @@ impl<F: FieldExt> BranchConfig<F> {
            rlp1, rlp2: 0, 1 means 3 RLP bytes
         */
         meta.create_gate("RLP length", |meta| {
-            let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
+            let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
             let mut constraints = vec![];
 
             let is_branch_init_prev = meta.query_advice(branch.is_init, Rotation::prev());
@@ -496,7 +494,7 @@ impl<F: FieldExt> BranchConfig<F> {
         });
 
         meta.create_gate("Branch children selectors", |meta| {
-            let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
+            let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
 
             let mut constraints = vec![];
             let is_branch_child_prev = meta.query_advice(branch.is_child, Rotation::prev());
@@ -789,7 +787,7 @@ impl<F: FieldExt> BranchConfig<F> {
                 Rotation::cur(),
             );
 
-            let q_enable = meta.query_fixed(q_enable, Rotation::cur());
+            let q_enable = meta.query_fixed(position_cols.q_enable, Rotation::cur());
 
             /*
             `is_branch_placeholder_s` needs to be boolean.
@@ -848,8 +846,8 @@ impl<F: FieldExt> BranchConfig<F> {
         */
         meta.create_gate("Branch number of nibbles (not first level)", |meta| {
             let mut constraints = vec![];
-            let q_enable = meta.query_fixed(q_enable, Rotation::cur());
-            let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
+            let q_enable = meta.query_fixed(position_cols.q_enable, Rotation::cur());
+            let not_first_level = meta.query_advice(position_cols.not_first_level, Rotation::cur());
             let is_branch_init_cur = meta.query_advice(branch.is_init, Rotation::cur());
             let is_extension_node = get_is_extension_node(meta, s_main.bytes, 0);
 
@@ -882,8 +880,8 @@ impl<F: FieldExt> BranchConfig<F> {
         */
         meta.create_gate("Branch number of nibbles (first level)", |meta| {
             let mut constraints = vec![];
-            let q_enable = meta.query_fixed(q_enable, Rotation::cur());
-            let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
+            let q_enable = meta.query_fixed(position_cols.q_enable, Rotation::cur());
+            let not_first_level = meta.query_advice(position_cols.not_first_level, Rotation::cur());
             let is_branch_init_cur = meta.query_advice(branch.is_init, Rotation::cur());
             let is_extension_node = get_is_extension_node(meta, s_main.bytes, 0);
 
@@ -931,7 +929,7 @@ impl<F: FieldExt> BranchConfig<F> {
         Range lookups for extension node rows are in `extension_node_key.rs`.
         */
         let sel = |meta: &mut VirtualCells<F>| {
-            let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
+            let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
             let is_branch_init = meta.query_advice(branch.is_init, Rotation::cur());
             let is_branch_child = meta.query_advice(branch.is_child, Rotation::cur());
 

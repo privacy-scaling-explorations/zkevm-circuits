@@ -5,7 +5,7 @@ use halo2_proofs::{
 use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
-use crate::{account_leaf::AccountLeafCols, columns::ProofTypeCols, storage_leaf::StorageLeafCols};
+use crate::{account_leaf::AccountLeafCols, columns::{ProofTypeCols, PositionCols}, storage_leaf::StorageLeafCols};
 
 /*
 The selector `not_first_level` denotes whether the node is not in the first account trie level.
@@ -46,9 +46,7 @@ impl<F: FieldExt> ProofChainConfig<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         proof_type: ProofTypeCols<F>,
-        q_enable: Column<Fixed>,
-        q_not_first: Column<Fixed>,
-        not_first_level: Column<Advice>,
+        position_cols: PositionCols<F>,
         is_branch_init: Column<Advice>,
         account_leaf: AccountLeafCols<F>,
         storage_leaf: StorageLeafCols<F>,
@@ -63,10 +61,10 @@ impl<F: FieldExt> ProofChainConfig<F> {
         meta.create_gate("Proof chaining constraints", |meta| {
             let mut constraints = vec![];
 
-            let q_enable = meta.query_fixed(q_enable, Rotation::cur());
-            let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
-            let not_first_level_prev = meta.query_advice(not_first_level, Rotation::prev());
-            let not_first_level_cur = meta.query_advice(not_first_level, Rotation::cur());
+            let q_enable = meta.query_fixed(position_cols.q_enable, Rotation::cur());
+            let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
+            let not_first_level_prev = meta.query_advice(position_cols.not_first_level, Rotation::prev());
+            let not_first_level_cur = meta.query_advice(position_cols.not_first_level, Rotation::cur());
             let is_branch_init = meta.query_advice(is_branch_init, Rotation::cur());
             let is_account_leaf_key_s = meta.query_advice(account_leaf.is_key_s, Rotation::cur());
             let is_storage_leaf_key_s = meta.query_advice(storage_leaf.is_s_key, Rotation::cur());

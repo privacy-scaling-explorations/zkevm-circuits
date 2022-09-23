@@ -7,7 +7,7 @@ use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
 use crate::{
-    columns::{AccumulatorCols, MainCols},
+    columns::{AccumulatorCols, MainCols, PositionCols},
     helpers::{compute_rlc, get_is_extension_node, range_lookups},
     mpt::FixedTableTag,
     param::{
@@ -97,8 +97,7 @@ Using this approach we do not need to store C RLP & key, but it will increase th
 impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
-        q_not_first: Column<Fixed>,
-        not_first_level: Column<Advice>, /* to avoid rotating back when in the first branch (for
+        position_cols: PositionCols<F>, /* `not_first_level` to avoid rotating back when in the first branch (for
                                           * key rlc) */
         branch: BranchCols<F>,
         is_account_leaf_in_added_branch: Column<Advice>,
@@ -131,9 +130,9 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
             modified_node * key_rlc_mult_prev * r * 16
         */
         meta.create_gate("Extension node key RLC", |meta| {
-            let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
+            let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
             let not_first_level =
-                meta.query_advice(not_first_level, Rotation::cur());
+                meta.query_advice(position_cols.not_first_level, Rotation::cur());
 
             let mut constraints = vec![];
 
@@ -822,7 +821,7 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
         */
         meta.lookup_any("Extension node key mult_diff", |meta| {
             let mut constraints = vec![];
-            let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
+            let not_first_level = meta.query_advice(position_cols.not_first_level, Rotation::cur());
 
             let is_extension_c_row = meta.query_advice(branch.is_extension_node_c, Rotation::cur());
 
@@ -908,7 +907,7 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
         for ind in 0..HASH_WIDTH - 1 {
             meta.lookup_any("Extension node second_nibble", |meta| {
                 let mut constraints = vec![];
-                let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
+                let not_first_level = meta.query_advice(position_cols.not_first_level, Rotation::cur());
 
                 let sel1 = meta.query_advice(
                     s_main.bytes[IS_BRANCH_C16_POS - RLP_NUM],

@@ -8,7 +8,7 @@ use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
 use crate::{
-    columns::{AccumulatorCols, MainCols},
+    columns::{AccumulatorCols, MainCols, PositionCols},
     helpers::{
         bytes_expr_into_rlc, compute_rlc, get_bool_constraint, get_is_extension_node,
         get_is_extension_node_even_nibbles, get_is_extension_node_long_odd_nibbles,
@@ -154,8 +154,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
         meta: &mut ConstraintSystem<F>,
         q_enable: impl Fn(&mut VirtualCells<'_, F>) -> Expression<F>,
         inter_root: Column<Advice>,
-        not_first_level: Column<Advice>,
-        q_not_first: Column<Fixed>,
+        position_cols: PositionCols<F>,
         is_account_leaf_in_added_branch: Column<Advice>,
         branch: BranchCols<F>,
         s_main: MainCols<F>,
@@ -182,7 +181,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
 
         meta.create_gate("Extension node RLC", |meta| {
             let mut constraints = vec![];
-            let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
+            let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
             let q_enable = q_enable(meta);
             let is_branch_init_prev = meta.query_advice(branch.is_init, Rotation::prev());
 
@@ -309,7 +308,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
         });
 
         meta.create_gate("Extension node selectors & RLP", |meta| {
-            let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
+            let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
             let q_enable = q_enable(meta);
             let mut constraints = vec![];
 
@@ -758,7 +757,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
         */
         meta.lookup_any("Extension node branch hash in extension row", |meta| {
             let q_enable = q_enable(meta);
-            let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
+            let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
             let is_branch_init_prev = meta.query_advice(branch.is_init, Rotation::prev());
 
             let c_rlp2 = meta.query_advice(c_main.rlp2, Rotation::cur());
@@ -805,7 +804,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
             "Extension node branch hash in extension row (non-hashed branch)",
             |meta| {
                 let mut constraints = vec![];
-                let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
+                let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
                 let q_enable = q_enable(meta);
 
                 let c_rlp2 = meta.query_advice(c_main.rlp2, Rotation::cur());
@@ -846,7 +845,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
         );
 
         let sel_branch_non_hashed = |meta: &mut VirtualCells<F>| {
-            let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
+            let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
             let q_enable = q_enable(meta);
 
             let c_rlp2 = meta.query_advice(c_main.rlp2, Rotation::cur());
@@ -890,8 +889,8 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                 let q_enable = q_enable(meta);
                 let mut constraints = vec![];
 
-                let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
-                let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
+                let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
+                let not_first_level = meta.query_advice(position_cols.not_first_level, Rotation::cur());
 
                 let acc_c = meta.query_advice(accs.acc_c.rlc, Rotation::cur());
                 let root = meta.query_advice(inter_root, Rotation::cur());
@@ -923,7 +922,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
         meta.lookup_any(
             "Extension node in first level of storage trie - hash compared to the storage root",
             |meta| {
-                let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
+                let not_first_level = meta.query_advice(position_cols.not_first_level, Rotation::cur());
 
                 let mut rot_into_branch_init = -17;
                 let mut rot_into_last_branch_child = -1;
@@ -1013,7 +1012,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
         */
         meta.lookup_any("Extension node hash in parent branch", |meta| {
             let q_enable = q_enable(meta);
-            let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
+            let not_first_level = meta.query_advice(position_cols.not_first_level, Rotation::cur());
 
             let is_account_leaf_in_added_branch = meta.query_advice(
                 is_account_leaf_in_added_branch,
@@ -1072,8 +1071,8 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
             "Extension node in parent branch (non-hashed extension node)",
             |meta| {
                 let q_enable = q_enable(meta);
-                let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
-                let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
+                let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
+                let not_first_level = meta.query_advice(position_cols.not_first_level, Rotation::cur());
 
                 let is_account_leaf_in_added_branch = meta.query_advice(
                     is_account_leaf_in_added_branch,
@@ -1135,9 +1134,9 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
         if is_s {
             meta.create_gate("Extension node number of nibbles", |meta| {
                 let mut constraints = vec![];
-                let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
+                let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
                 let q_enable = q_enable(meta);
-                let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
+                let not_first_level = meta.query_advice(position_cols.not_first_level, Rotation::cur());
 
                 // Only check if there is an account above the branch.
                 let is_first_storage_level = meta.query_advice(
