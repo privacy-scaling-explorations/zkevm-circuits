@@ -2,7 +2,7 @@ use super::Opcode;
 use crate::circuit_input_builder::{
     CircuitInputStateRef, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
 };
-use crate::operation::{AccountField, CallContextField, MemoryOp, TxAccessListAccountOp, RW};
+use crate::operation::{AccountField, CallContextField, TxAccessListAccountOp, RW};
 use crate::state_db::Account;
 use crate::Error;
 use eth_types::{GethExecStep, ToAddress, ToWord, U256};
@@ -132,13 +132,7 @@ fn gen_copy_steps(
     for idx in 0..bytes_left {
         let addr = src_addr + idx;
         let value = if addr < src_addr_end {
-            let byte = code[addr as usize];
-            state.push_op(
-                exec_step,
-                RW::READ,
-                MemoryOp::new(state.call()?.caller_id, addr.into(), byte),
-            );
-            byte
+            code[addr as usize]
         } else {
             0
         };
@@ -192,13 +186,13 @@ mod extcodecopy_tests {
         circuit_input_builder::{CopyDataType, ExecState, NumberOrHash},
         mock::BlockData,
         operation::{
-            AccountField, AccountOp, CallContextField, CallContextOp, StackOp,
+            AccountField, AccountOp, CallContextField, CallContextOp, MemoryOp, StackOp,
             TxAccessListAccountOp, RW,
         },
     };
     use eth_types::{address, bytecode, Bytecode, Bytes, ToWord, Word};
     use eth_types::{
-        evm_types::{OpcodeId, StackAddress},
+        evm_types::{MemoryAddress, OpcodeId, StackAddress},
         geth_types::GethData,
         H256, U256,
     };
@@ -415,6 +409,29 @@ mod extcodecopy_tests {
 
         let expected_call_id = transaction.calls()[step.call_index].call_id;
 
+        assert_eq!(
+            (0..copy_size)
+                .map(|idx| &builder.block.container.memory[idx])
+                .map(|op| (op.rw(), op.op().clone()))
+                .collect::<Vec<(RW, MemoryOp)>>(),
+            (0..copy_size)
+                .map(|idx| {
+                    (
+                        RW::WRITE,
+                        MemoryOp::new(
+                            expected_call_id,
+                            MemoryAddress::from(memory_offset + idx),
+                            if data_offset + idx < bytecode_ext.to_vec().len() {
+                                bytecode_ext.to_vec()[data_offset + idx]
+                            } else {
+                                0
+                            },
+                        ),
+                    )
+                })
+                .collect::<Vec<(RW, MemoryOp)>>(),
+        );
+
         let copy_events = builder.block.copy_events.clone();
         assert_eq!(copy_events.len(), 1);
         assert_eq!(copy_events[0].bytes.len(), copy_size);
@@ -439,45 +456,21 @@ mod extcodecopy_tests {
 
     #[test]
     fn cold_empty_account() {
-        test_ok(
-            Bytes::from([]),
-            false,
-            0x0usize,
-            0x0usize,
-            0x30usize,
-        );
+        test_ok(Bytes::from([]), false, 0x0usize, 0x0usize, 0x30usize);
     }
 
     #[test]
     fn warm_empty_account() {
-        test_ok(
-            Bytes::from([]),
-            true,
-            0x0usize,
-            0x0usize,
-            0x30usize,
-        );
+        test_ok(Bytes::from([]), true, 0x0usize, 0x0usize, 0x30usize);
     }
 
     #[test]
     fn cold_non_empty_account() {
-        test_ok(
-            Bytes::from([10, 40]),
-            false,
-            0x0usize,
-            0x0usize,
-            0x30usize,
-        );
+        test_ok(Bytes::from([10, 40]), false, 0x0usize, 0x0usize, 0x30usize);
     }
 
     #[test]
     fn warm_non_empty_account() {
-        test_ok(
-            Bytes::from([10, 40]),
-            true,
-            0x0usize,
-            0x0usize,
-            0x30usize,
-        );
+        test_ok(Bytes::from([10, 40]), true, 0x0usize, 0x0usize, 0x30usize);
     }
 }
