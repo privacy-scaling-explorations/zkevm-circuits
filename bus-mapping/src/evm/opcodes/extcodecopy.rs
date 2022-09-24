@@ -1,8 +1,11 @@
 use super::Opcode;
-use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep, CopyEvent, CopyDataType, NumberOrHash};
-use crate::operation::{TxAccessListAccountOp, RW, MemoryOp};
+use crate::circuit_input_builder::{
+    CircuitInputStateRef, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
+};
+use crate::operation::{AccountField, CallContextField, MemoryOp, TxAccessListAccountOp, RW};
+use crate::state_db::Account;
 use crate::Error;
-use eth_types::{GethExecStep, ToAddress};
+use eth_types::{GethExecStep, ToAddress, ToWord, U256};
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Extcodecopy;
@@ -60,27 +63,17 @@ fn gen_extcodecopy_step(
 ) -> Result<ExecStep, Error> {
     let mut exec_step = state.new_step(geth_step)?;
 
-    let address = geth_step.stack.nth_last(0)?;
+    let external_address = geth_step.stack.nth_last(0)?.to_address();
     let dest_offset = geth_step.stack.nth_last(1)?;
     let offset = geth_step.stack.nth_last(2)?;
     let length = geth_step.stack.nth_last(3)?;
 
-    let is_warm = state
-        .sdb
-        .check_account_in_access_list(&address.to_address());
-    state.push_op_reversible(
-        &mut exec_step,
-        RW::WRITE,
-        TxAccessListAccountOp {
-            tx_id: state.tx_ctx.id(),
-            address: address.to_address(),
-            is_warm: true,
-            is_warm_prev: is_warm,
-        },
-    )?;
-
     // stack reads
-    state.stack_read(&mut exec_step, geth_step.stack.nth_last_filled(0), address)?;
+    state.stack_read(
+        &mut exec_step,
+        geth_step.stack.nth_last_filled(0),
+        external_address.to_word(),
+    )?;
     state.stack_read(
         &mut exec_step,
         geth_step.stack.nth_last_filled(1),
@@ -88,6 +81,41 @@ fn gen_extcodecopy_step(
     )?;
     state.stack_read(&mut exec_step, geth_step.stack.nth_last_filled(2), offset)?;
     state.stack_read(&mut exec_step, geth_step.stack.nth_last_filled(3), length)?;
+
+    for (field, value) in [
+        (CallContextField::TxId, U256::from(state.tx_ctx.id())),
+        (
+            CallContextField::RwCounterEndOfReversion,
+            U256::from(state.call()?.rw_counter_end_of_reversion as u64),
+        ),
+        (
+            CallContextField::IsPersistent,
+            U256::from(state.call()?.is_persistent as u64),
+        ),
+    ] {
+        state.call_context_read(&mut exec_step, state.call()?.call_id, field, value);
+    }
+
+    let is_warm = state.sdb.check_account_in_access_list(&external_address);
+    state.push_op_reversible(
+        &mut exec_step,
+        RW::WRITE,
+        TxAccessListAccountOp {
+            tx_id: state.tx_ctx.id(),
+            address: external_address,
+            is_warm: true,
+            is_warm_prev: is_warm,
+        },
+    )?;
+
+    let &Account { code_hash, .. } = state.sdb.get_account(&external_address).1;
+    state.account_read(
+        &mut exec_step,
+        external_address,
+        AccountField::CodeHash,
+        code_hash.to_word(),
+        code_hash.to_word(),
+    )?;
     Ok(exec_step)
 }
 
@@ -105,9 +133,10 @@ fn gen_copy_steps(
         let addr = src_addr + idx;
         let value = if addr < src_addr_end {
             let byte = code[addr as usize];
-            state.push_op(exec_step,
+            state.push_op(
+                exec_step,
                 RW::READ,
-                MemoryOp::new(state.call()?.caller_id, addr.into(), byte)
+                MemoryOp::new(state.call()?.caller_id, addr.into(), byte),
             );
             byte
         } else {
@@ -129,7 +158,7 @@ fn gen_copy_event(
     let memory_offset = geth_step.stack.nth_last(1)?.as_u64();
     let data_offset = geth_step.stack.nth_last(2)?.as_u64();
     let length = geth_step.stack.nth_last(3)?.as_u64();
-    
+
     let mut exec_step = gen_extcodecopy_step(state, geth_step)?;
     let code_hash = state.sdb.get_account(&external_address).1.code_hash;
     let code = state.code(code_hash)?;
@@ -141,9 +170,9 @@ fn gen_copy_event(
         memory_offset,
         src_addr_end,
         length,
-        code
+        code,
     )?;
-    Ok(CopyEvent { 
+    Ok(CopyEvent {
         src_addr: data_offset,
         src_addr_end,
         src_type: CopyDataType::Bytecode,
@@ -153,63 +182,77 @@ fn gen_copy_event(
         dst_id: NumberOrHash::Number(state.call()?.call_id),
         log_id: None,
         rw_counter_start,
-        bytes: copy_steps
+        bytes: copy_steps,
     })
 }
 
 #[cfg(test)]
 mod extcodecopy_tests {
-    use crate::mock::BlockData;
-    use eth_types::geth_types::GethData;
-    use eth_types::{bytecode, word};
-    use mock::test_ctx::helpers::{account_0_code_account_1_no_code, tx_from_1_to_0};
+    use crate::{
+        circuit_input_builder::{CopyDataType, ExecState, NumberOrHash},
+        mock::BlockData,
+        operation::{
+            AccountField, AccountOp, CallContextField, CallContextOp, StackOp,
+            TxAccessListAccountOp, RW,
+        },
+    };
+    use eth_types::{address, bytecode, Bytecode, Bytes, ToWord, Word};
+    use eth_types::{
+        evm_types::{OpcodeId, StackAddress},
+        geth_types::GethData,
+        H256, U256,
+    };
+    use ethers_core::utils::keccak256;
     use mock::TestContext;
 
-    #[test]
-    fn test_ok() {
-        // // deployed contract
-        // PUSH1 0x20
-        // PUSH1 0
-        // PUSH1 0
-        // CALLDATACOPY
-        // PUSH1 0x20
-        // PUSH1 0
-        // RETURN
-        //
-        // bytecode: 0x6020600060003760206000F3
-        //
-        // // constructor
-        // PUSH12 0x6020600060003760206000F3
-        // PUSH1 0
-        // MSTORE
-        // PUSH1 0xC
-        // PUSH1 0x14
-        // RETURN
-        //
-        // bytecode: 0x6B6020600060003760206000F3600052600C6014F3
-        let code = bytecode! {
-            PUSH21(word!("6B6020600060003760206000F3600052600C6014F3"))
-            PUSH1(0)
-            MSTORE
-
-            PUSH1 (0x15)
-            PUSH1 (0xB)
-            PUSH1 (0)
-            CREATE
-
-            PUSH1 (0x20)
-            PUSH1 (0x0)
-            PUSH1 (0x20)
-            DUP4
+    fn test_ok(
+        code_ext: Bytes,
+        is_warm: bool,
+        data_offset: usize,
+        memory_offset: usize,
+        copy_size: usize,
+    ) {
+        let external_address = address!("0xaabbccddee000000000000000000000000000000");
+        let mut code = Bytecode::default();
+        if is_warm {
+            code.append(&bytecode! {
+                PUSH20(external_address.to_word())
+                EXTCODEHASH
+                POP
+            })
+        }
+        code.append(&bytecode! {
+            PUSH1 (copy_size)
+            PUSH1 (data_offset)
+            PUSH1 (memory_offset)
+            PUSH20 (external_address.to_word())
             EXTCODECOPY
-
             STOP
-        };
+        });
+
+        let mut bytecode_ext = Bytecode::default();
+        for (_, value) in code_ext.to_vec().iter().enumerate() {
+            bytecode_ext.write(*value, false);
+        }
+        let code_hash = keccak256(code_ext.clone());
+
         // Get the execution steps from the external tracer
-        let block: GethData = TestContext::<2, 1>::new(
+        let block: GethData = TestContext::<3, 1>::new(
             None,
-            account_0_code_account_1_no_code(code),
-            tx_from_1_to_0,
+            |accs| {
+                accs[0]
+                    .address(address!("0x0000000000000000000000000000000000000010"))
+                    .code(code.clone());
+
+                accs[1].address(external_address).code(bytecode_ext.clone());
+
+                accs[2]
+                    .address(address!("0x0000000000000000000000000000000000cafe01"))
+                    .balance(Word::from(1u64 << 20));
+            },
+            |mut txs, accs| {
+                txs[0].to(accs[0].address).from(accs[2].address);
+            },
             |block, _tx| block.number(0xcafeu64),
         )
         .unwrap()
@@ -219,5 +262,222 @@ mod extcodecopy_tests {
         builder
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
+
+        assert!(builder.sdb.add_account_to_access_list(external_address));
+
+        let tx_id = 1;
+        let transaction = &builder.block.txs()[tx_id - 1];
+        let call_id = transaction.calls()[0].call_id;
+
+        let indices = transaction
+            .steps()
+            .iter()
+            .filter(|step| step.exec_state == ExecState::Op(OpcodeId::EXTCODECOPY))
+            .last()
+            .unwrap()
+            .bus_mapping_instance
+            .clone();
+        let container = &builder.block.container;
+        assert_eq!(
+            {
+                let operation = &container.stack[indices[0].as_usize()];
+                (operation.rw(), operation.op())
+            },
+            (
+                RW::READ,
+                &StackOp {
+                    call_id,
+                    address: StackAddress::from(1020u32),
+                    value: external_address.to_word()
+                }
+            )
+        );
+        assert_eq!(
+            {
+                let operation = &container.stack[indices[1].as_usize()];
+                (operation.rw(), operation.op())
+            },
+            (
+                RW::READ,
+                &StackOp {
+                    call_id,
+                    address: StackAddress::from(1021u32),
+                    value: memory_offset.into()
+                }
+            )
+        );
+        assert_eq!(
+            {
+                let operation = &container.stack[indices[2].as_usize()];
+                (operation.rw(), operation.op())
+            },
+            (
+                RW::READ,
+                &StackOp {
+                    call_id,
+                    address: StackAddress::from(1022u32),
+                    value: data_offset.into()
+                }
+            )
+        );
+        assert_eq!(
+            {
+                let operation = &container.stack[indices[3].as_usize()];
+                (operation.rw(), operation.op())
+            },
+            (
+                RW::READ,
+                &StackOp {
+                    call_id,
+                    address: StackAddress::from(1023u32),
+                    value: copy_size.into()
+                }
+            )
+        );
+        assert_eq!(
+            {
+                let operation = &container.call_context[indices[4].as_usize()];
+                (operation.rw(), operation.op())
+            },
+            (
+                RW::READ,
+                &CallContextOp {
+                    call_id,
+                    field: CallContextField::TxId,
+                    value: tx_id.into()
+                }
+            )
+        );
+        assert_eq!(
+            {
+                let operation = &container.call_context[indices[5].as_usize()];
+                (operation.rw(), operation.op())
+            },
+            (
+                RW::READ,
+                &CallContextOp {
+                    call_id,
+                    field: CallContextField::RwCounterEndOfReversion,
+                    value: U256::zero()
+                }
+            )
+        );
+        assert_eq!(
+            {
+                let operation = &container.call_context[indices[6].as_usize()];
+                (operation.rw(), operation.op())
+            },
+            (
+                RW::READ,
+                &CallContextOp {
+                    call_id,
+                    field: CallContextField::IsPersistent,
+                    value: U256::one()
+                }
+            )
+        );
+        assert_eq!(
+            {
+                let operation = &container.tx_access_list_account[indices[7].as_usize()];
+                (operation.rw(), operation.op())
+            },
+            (
+                RW::WRITE,
+                &TxAccessListAccountOp {
+                    tx_id,
+                    address: external_address,
+                    is_warm: true,
+                    is_warm_prev: is_warm
+                }
+            )
+        );
+        assert_eq!(
+            {
+                let operation = &container.account[indices[8].as_usize()];
+                (operation.rw(), operation.op())
+            },
+            (
+                RW::READ,
+                &AccountOp {
+                    address: external_address,
+                    field: AccountField::CodeHash,
+                    value: Word::from(code_hash),
+                    value_prev: Word::from(code_hash),
+                }
+            )
+        );
+
+        let step = transaction
+            .steps()
+            .iter()
+            .find(|step| step.exec_state == ExecState::Op(OpcodeId::EXTCODECOPY))
+            .unwrap();
+
+        let expected_call_id = transaction.calls()[step.call_index].call_id;
+
+        let copy_events = builder.block.copy_events.clone();
+        assert_eq!(copy_events.len(), 1);
+        assert_eq!(copy_events[0].bytes.len(), copy_size);
+        assert_eq!(copy_events[0].src_id, NumberOrHash::Hash(H256(code_hash)));
+        assert_eq!(copy_events[0].src_addr as usize, data_offset);
+        assert_eq!(copy_events[0].src_addr_end as usize, code_ext.len());
+        assert_eq!(copy_events[0].src_type, CopyDataType::Bytecode);
+        assert_eq!(
+            copy_events[0].dst_id,
+            NumberOrHash::Number(expected_call_id)
+        );
+        assert_eq!(copy_events[0].dst_addr as usize, memory_offset);
+        assert_eq!(copy_events[0].dst_type, CopyDataType::Memory);
+        assert!(copy_events[0].log_id.is_none());
+
+        for (idx, (value, is_code)) in copy_events[0].bytes.iter().enumerate() {
+            let bytecode_element = bytecode_ext.get(idx).unwrap_or_default();
+            assert_eq!(*value, bytecode_element.value);
+            assert_eq!(*is_code, bytecode_element.is_code);
+        }
+    }
+
+    #[test]
+    fn cold_empty_account() {
+        test_ok(
+            Bytes::from([]),
+            false,
+            0x0usize,
+            0x0usize,
+            0x30usize,
+        );
+    }
+
+    #[test]
+    fn warm_empty_account() {
+        test_ok(
+            Bytes::from([]),
+            true,
+            0x0usize,
+            0x0usize,
+            0x30usize,
+        );
+    }
+
+    #[test]
+    fn cold_non_empty_account() {
+        test_ok(
+            Bytes::from([10, 40]),
+            false,
+            0x0usize,
+            0x0usize,
+            0x30usize,
+        );
+    }
+
+    #[test]
+    fn warm_non_empty_account() {
+        test_ok(
+            Bytes::from([10, 40]),
+            true,
+            0x0usize,
+            0x0usize,
+            0x30usize,
+        );
     }
 }
