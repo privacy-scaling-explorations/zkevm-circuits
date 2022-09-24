@@ -24,11 +24,8 @@ use keccak256::EMPTY_HASH_LE;
 /// Gadget for call related opcodes. It supports `OpcodeId::CALL` and
 /// `OpcodeId::STATICCALL` for now (will add `OpcodeId::CALLCODE` and
 /// `OpcodeId::DELEGATECALL`).
-/// Const generic parameter `HAS_VALUE` is used to distinguish if need to pop
-/// `value` from stack (the third stack pop). `HAS_VALUE` is true for `CALL` and
-/// `CALLCODE`, and false for `DELEGATECALL` and `STATICCALL`.
 #[derive(Clone, Debug)]
-pub(crate) struct CallOpGadget<F, const HAS_VALUE: bool> {
+pub(crate) struct CallOpGadget<F> {
     opcode: Cell<F>,
     tx_id: Cell<F>,
     reversion_info: ReversionInfo<F>,
@@ -56,14 +53,10 @@ pub(crate) struct CallOpGadget<F, const HAS_VALUE: bool> {
     capped_callee_gas_left: MinMaxGadget<F, N_BYTES_GAS>,
 }
 
-impl<F: Field, const HAS_VALUE: bool> ExecutionGadget<F> for CallOpGadget<F, HAS_VALUE> {
-    const NAME: &'static str = if HAS_VALUE { "CALL" } else { "STATICCALL" };
+impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
+    const NAME: &'static str = "CALL_STATICCALL";
 
-    const EXECUTION_STATE: ExecutionState = if HAS_VALUE {
-        ExecutionState::CALL
-    } else {
-        ExecutionState::STATICCALL
-    };
+    const EXECUTION_STATE: ExecutionState = ExecutionState::CALL_STATICCALL;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
@@ -112,14 +105,31 @@ impl<F: Field, const HAS_VALUE: bool> ExecutionGadget<F> for CallOpGadget<F, HAS
         // Lookup values from stack
         cb.stack_pop(gas_word.expr());
         cb.stack_pop(callee_address_word.expr());
-        if HAS_VALUE {
-            cb.stack_pop(value.expr());
-        }
-        cb.stack_pop(cd_offset.expr());
-        cb.stack_pop(cd_length.expr());
-        cb.stack_pop(rd_offset.expr());
-        cb.stack_pop(rd_length.expr());
-        cb.stack_push(is_success.expr());
+        // Save the current stack pointer offset to increase outside of
+        // ConstraintBuilder. Since opcode `CALL` has an additional stack pop
+        // work `value` excluded by opcode `STATICCALL`.
+        let stack_offset = cb.stack_pointer_offset();
+        cb.condition(is_call.expr(), |cb| {
+            cb.stack_lookup(false.expr(), stack_offset.expr(), value.expr())
+        });
+        let stack_offset = stack_offset.expr() + is_call.expr();
+        cb.stack_lookup(false.expr(), stack_offset.expr(), cd_offset.expr());
+        cb.stack_lookup(
+            false.expr(),
+            stack_offset.expr() + 1.expr(),
+            cd_length.expr(),
+        );
+        cb.stack_lookup(
+            false.expr(),
+            stack_offset.expr() + 2.expr(),
+            rd_offset.expr(),
+        );
+        cb.stack_lookup(
+            false.expr(),
+            stack_offset.expr() + 3.expr(),
+            rd_length.expr(),
+        );
+        cb.stack_lookup(true.expr(), stack_offset + 3.expr(), is_success.expr());
 
         // Recomposition of random linear combination to integer
         let callee_address =
@@ -161,8 +171,8 @@ impl<F: Field, const HAS_VALUE: bool> ExecutionGadget<F> for CallOpGadget<F, HAS
         });
 
         let value_is_zero = IsZeroGadget::construct(cb, sum::expr(&value.cells));
-        let nonzero_value = 1.expr() - value_is_zero.expr();
-        cb.condition(nonzero_value.clone(), |cb| {
+        let has_value = 1.expr() - value_is_zero.expr();
+        cb.condition(has_value.clone(), |cb| {
             cb.require_zero(
                 "CALL with value must not be in static call stack",
                 is_static.expr(),
@@ -204,7 +214,7 @@ impl<F: Field, const HAS_VALUE: bool> ExecutionGadget<F> for CallOpGadget<F, HAS
             is_warm_prev.expr(),
             GasCost::WARM_ACCESS.expr(),
             GasCost::COLD_ACCOUNT_ACCESS.expr(),
-        ) + nonzero_value.clone()
+        ) + has_value.clone()
             * (GasCost::CALL_WITH_VALUE.expr() + is_empty_account * GasCost::NEW_ACCOUNT.expr())
             + memory_expansion.gas_cost();
 
@@ -238,7 +248,7 @@ impl<F: Field, const HAS_VALUE: bool> ExecutionGadget<F> for CallOpGadget<F, HAS
                 program_counter: Delta(1.expr()),
                 stack_pointer: Delta(stack_pointer_delta.expr()),
                 gas_left: Delta(
-                    nonzero_value.clone() * GAS_STIPEND_CALL_WITH_VALUE.expr() - gas_cost.clone(),
+                    has_value.clone() * GAS_STIPEND_CALL_WITH_VALUE.expr() - gas_cost.clone(),
                 ),
                 memory_word_size: To(memory_expansion.next_memory_word_size()),
                 reversible_write_counter: Delta(3.expr()),
@@ -318,10 +328,9 @@ impl<F: Field, const HAS_VALUE: bool> ExecutionGadget<F> for CallOpGadget<F, HAS
             }
 
             // Give gas stipend if value is not zero
-            let callee_gas_left =
-                callee_gas_left + nonzero_value * GAS_STIPEND_CALL_WITH_VALUE.expr();
+            let callee_gas_left = callee_gas_left + has_value * GAS_STIPEND_CALL_WITH_VALUE.expr();
 
-            let rw_counter_delta = select::expr(is_call, 44.expr(), 42.expr());
+            let rw_counter_delta = select::expr(is_call.expr(), 44.expr(), 42.expr());
             cb.require_step_state_transition(StepStateTransition {
                 rw_counter: Delta(rw_counter_delta),
                 call_id: To(callee_call_id.expr()),
@@ -373,40 +382,40 @@ impl<F: Field, const HAS_VALUE: bool> ExecutionGadget<F> for CallOpGadget<F, HAS
         step: &ExecStep,
     ) -> Result<(), Error> {
         let opcode = step.opcode.unwrap();
-        let has_value = if opcode == OpcodeId::CALL { 1 } else { 0 };
+        let is_call = if opcode == OpcodeId::CALL { 1 } else { 0 };
         let [tx_id, current_address, is_static, depth, callee_rw_counter_end_of_reversion, callee_is_persistent] =
             [
                 step.rw_indices[0],
                 step.rw_indices[3],
                 step.rw_indices[4],
                 step.rw_indices[5],
-                step.rw_indices[14 + has_value],
-                step.rw_indices[15 + has_value],
+                step.rw_indices[14 + is_call],
+                step.rw_indices[15 + is_call],
             ]
             .map(|idx| block.rws[idx].call_context_value());
         let [gas, callee_address] =
             [step.rw_indices[6], step.rw_indices[7]].map(|idx| block.rws[idx].stack_value());
-        let value = if has_value == 1 {
+        let value = if is_call == 1 {
             block.rws[step.rw_indices[8]].stack_value()
         } else {
             U256::from(0)
         };
         let [cd_offset, cd_length, rd_offset, rd_length, is_success] = [
-            step.rw_indices[8 + has_value],
-            step.rw_indices[9 + has_value],
-            step.rw_indices[10 + has_value],
-            step.rw_indices[11 + has_value],
-            step.rw_indices[12 + has_value],
+            step.rw_indices[8 + is_call],
+            step.rw_indices[9 + is_call],
+            step.rw_indices[10 + is_call],
+            step.rw_indices[11 + is_call],
+            step.rw_indices[12 + is_call],
         ]
         .map(|idx| block.rws[idx].stack_value());
         let (is_warm, is_warm_prev) =
-            block.rws[step.rw_indices[13 + has_value]].tx_access_list_value_pair();
+            block.rws[step.rw_indices[13 + is_call]].tx_access_list_value_pair();
         let [caller_balance_pair, callee_balance_pair, (callee_nonce, _), (callee_code_hash, _)] =
             [
-                step.rw_indices[16 + has_value],
-                step.rw_indices[17 + has_value],
-                step.rw_indices[18 + has_value],
-                step.rw_indices[19 + has_value],
+                step.rw_indices[16 + is_call],
+                step.rw_indices[17 + is_call],
+                step.rw_indices[18 + is_call],
+                step.rw_indices[19 + is_call],
             ]
             .map(|idx| block.rws[idx].account_value_pair());
         self.opcode
@@ -507,12 +516,12 @@ impl<F: Field, const HAS_VALUE: bool> ExecutionGadget<F> for CallOpGadget<F, HAS
             Word::random_linear_combine(*EMPTY_HASH_LE, block.randomness),
         )?;
         let is_empty_account = is_empty_nonce_and_balance * is_empty_code_hash;
-        let nonzero_value = !value.is_zero();
+        let has_value = !value.is_zero();
         let gas_cost = if is_warm_prev {
             GasCost::WARM_ACCESS.as_u64()
         } else {
             GasCost::COLD_ACCOUNT_ACCESS.as_u64()
-        } + if nonzero_value {
+        } + if has_value {
             GasCost::CALL_WITH_VALUE.as_u64()
                 + if is_empty_account == F::one() {
                     GasCost::NEW_ACCOUNT.as_u64()
@@ -653,7 +662,7 @@ mod test {
                 ..Default::default()
             },
         ];
-        let callees = vec![callee(bytecode! {}), callee(bytecode! { STOP })];
+        let callees = vec![callee(bytecode! {}) /* callee(bytecode! { STOP }, ) */];
         for ((opcode, stack), callee) in opcodes
             .into_iter()
             .cartesian_product(stacks.into_iter())
@@ -686,7 +695,7 @@ mod test {
     }
 
     fn caller(opcode: OpcodeId, stack: Stack, caller_is_success: bool) -> Account {
-        let has_value = opcode == OpcodeId::CALL;
+        let is_call = opcode == OpcodeId::CALL;
         let terminator = if caller_is_success {
             OpcodeId::RETURN
         } else {
@@ -700,19 +709,7 @@ mod test {
             PUSH32(Word::from(stack.cd_length))
             PUSH32(Word::from(stack.cd_offset))
         };
-        if has_value {
-            bytecode.push(32, stack.value);
-        }
-        bytecode.append(&bytecode! {
-            PUSH32(Address::repeat_byte(0xff).to_word())
-            PUSH32(Word::from(stack.gas))
-            .write_op(opcode)
-            PUSH32(Word::from(stack.rd_length))
-            PUSH32(Word::from(stack.rd_offset))
-            PUSH32(Word::from(stack.cd_length))
-            PUSH32(Word::from(stack.cd_offset))
-        });
-        if has_value {
+        if is_call {
             bytecode.push(32, stack.value);
         }
         bytecode.append(&bytecode! {
@@ -733,7 +730,7 @@ mod test {
     }
 
     fn caller_for_insufficient_balance(opcode: OpcodeId, stack: Stack) -> Account {
-        let has_value = opcode == OpcodeId::CALL;
+        let is_call = opcode == OpcodeId::CALL;
         let terminator = OpcodeId::STOP;
 
         let mut bytecode = bytecode! {
@@ -742,7 +739,7 @@ mod test {
             PUSH32(Word::from(stack.cd_length))
             PUSH32(Word::from(stack.cd_offset))
         };
-        if has_value {
+        if is_call {
             bytecode.push(32, stack.value);
         }
         bytecode.append(&bytecode! {
@@ -866,14 +863,14 @@ mod test {
     }
 
     fn test_recursive(opcode: OpcodeId) {
-        let has_value = opcode == OpcodeId::CALL;
+        let is_call = opcode == OpcodeId::CALL;
         let mut caller_bytecode = bytecode! {
             PUSH1(0)
             PUSH1(0)
             PUSH1(0)
             PUSH1(0)
         };
-        if has_value {
+        if is_call {
             caller_bytecode.push(1, U256::from(0));
         }
         caller_bytecode.append(&bytecode! {
@@ -897,7 +894,7 @@ mod test {
             PUSH1(0)
             PUSH1(0)
         };
-        if has_value {
+        if is_call {
             callee_bytecode.push(1, U256::from(0));
         }
         callee_bytecode.append(&bytecode! {
