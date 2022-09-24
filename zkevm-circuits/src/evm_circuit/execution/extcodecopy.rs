@@ -194,15 +194,19 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
         let code_hash = block.rws[step.rw_indices[8]]
             .table_assignment(block.randomness)
             .value;
-        self.code_hash.assign(region, offset, Value::known(code_hash))?;
+        self.code_hash
+            .assign(region, offset, Value::known(code_hash))?;
 
         let (code, _) = block.rws[step.rw_indices[8]].account_value_pair();
         let bytecode = block
             .bytecodes
             .get(&code)
             .expect("could not find external bytecode");
-        self.code_size
-            .assign(region, offset, Value::known(F::from(bytecode.bytes.len() as u64)))?;
+        self.code_size.assign(
+            region,
+            offset,
+            Value::known(F::from(bytecode.bytes.len() as u64)),
+        )?;
 
         self.copy_rwc_inc.assign(
             region,
