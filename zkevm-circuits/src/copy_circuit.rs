@@ -2,9 +2,9 @@
 //! copied bytes while execution opcodes such as CALLDATACOPY, CODECOPY, LOGS,
 //! etc.
 
-use bus_mapping::circuit_input_builder::{CopyDataType, CopyEvent, CopyStep, NumberOrHash};
+use bus_mapping::circuit_input_builder::{CopyDataType, NumberOrHash};
 
-use eth_types::{Field, ToScalar};
+use eth_types::Field;
 use gadgets::{
     binary_number::BinaryNumberChip,
     less_than::{LtChip, LtConfig, LtInstruction},
@@ -12,7 +12,7 @@ use gadgets::{
 };
 use halo2_proofs::{
     circuit::{Layouter, Region, Value},
-    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, Selector},
+    plonk::{Column, ConstraintSystem, Error, Expression, Fixed, Selector},
     poly::Rotation,
 };
 use itertools::Itertools;
@@ -20,12 +20,10 @@ use itertools::Itertools;
 use crate::util::build_tx_log_address;
 use crate::{
     evm_circuit::{
-        util::{constraint_builder::BaseConstraintBuilder, rlc, RandomLinearCombination},
+        util::{constraint_builder::BaseConstraintBuilder, RandomLinearCombination},
         witness::Block,
     },
-    table::{
-        BytecodeFieldTag, CopyTable, LookupTable, RwTableTag, TxContextFieldTag, TxLogFieldTag,
-    },
+    table::{BytecodeFieldTag, CopyTable, LookupTable, RwTableTag, TxContextFieldTag},
 };
 
 /// Encode the type `NumberOrHash` into a field element
@@ -54,18 +52,9 @@ pub struct CopyCircuit<F> {
     /// Whether this row denotes a step. A read row is a step and a write row is
     /// not.
     pub q_step: Selector,
-    /// Whether the row is the last read-write pair for a copy event.
-    pub is_last: Column<Advice>,
     /// The Copy Table contains the columns that are exposed via the lookup
     /// expressions
     pub copy_table: CopyTable,
-    /// The value copied in this copy step.
-    pub value: Column<Advice>,
-    /// In case of a bytecode tag, this denotes whether or not the copied byte
-    /// is an opcode or push data byte.
-    pub is_code: Column<Advice>,
-    /// Whether the row is padding.
-    pub is_pad: Column<Advice>,
     /// Lt chip to check: src_addr < src_addr_end.
     /// Since `src_addr` and `src_addr_end` are u64, 8 bytes are sufficient for
     /// the Lt chip.
@@ -85,10 +74,10 @@ impl<F: Field> CopyCircuit<F> {
         randomness: Expression<F>,
     ) -> Self {
         let q_step = meta.complex_selector();
-        let is_last = meta.advice_column();
-        let value = meta.advice_column();
-        let is_code = meta.advice_column();
-        let is_pad = meta.advice_column();
+        let is_last = copy_table.is_last;
+        let value = copy_table.value;
+        let is_code = copy_table.is_code;
+        let is_pad = copy_table.is_pad;
         let is_first = copy_table.is_first;
         let id = copy_table.id;
         let addr = copy_table.addr;
@@ -366,12 +355,8 @@ impl<F: Field> CopyCircuit<F> {
         });
 
         Self {
-            q_enable,
             q_step,
-            is_last,
-            value,
-            is_code,
-            is_pad,
+            q_enable,
             addr_lt_addr_end,
             copy_table,
         }
@@ -393,82 +378,51 @@ impl<F: Field> CopyCircuit<F> {
             |mut region| {
                 let mut offset = 0;
                 for copy_event in block.copy_events.iter() {
-                    for (tag, row) in CopyTable::assignments(copy_event, randomness) {
-                        for (column, (value, label)) in copy_table_columns.iter().zip_eq(row) {
-                            region.assign_advice(
-                                || format!("{} at row: {}", label, offset),
-                                *column,
+                    for (step_idx, (tag, row)) in CopyTable::assignments(copy_event, randomness)
+                        .iter()
+                        .enumerate()
+                    {
+                        let is_read = step_idx % 2 == 0;
+                        // q_step
+                        if is_read {
+                            self.q_step.enable(&mut region, offset)?;
+                        }
+                        for (column, &(value, label)) in copy_table_columns.iter().zip_eq(row) {
+                            // Leave sr_addr_end and bytes_left unassigned when !is_read
+                            if !is_read && (label == "src_addr_end" || label == "bytes_left") {
+                                ();
+                            } else {
+                                region.assign_advice(
+                                    || format!("{} at row: {}", label, offset),
+                                    *column,
+                                    offset,
+                                    || Value::known(value),
+                                )?;
+                            }
+                        }
+                        // q_enable
+                        region.assign_fixed(
+                            || "q_enable",
+                            self.q_enable,
+                            offset,
+                            || Value::known(F::one()),
+                        )?;
+                        tag_chip.assign(&mut region, offset, &tag)?;
+                        // lt chip
+                        if is_read {
+                            lt_chip.assign(
+                                &mut region,
                                 offset,
-                                || Value::known(value),
+                                F::from(
+                                    copy_event.src_addr + u64::try_from(step_idx).unwrap() / 2u64,
+                                ),
+                                F::from(copy_event.src_addr_end),
                             )?;
                         }
-                        // TODO assign lt chip
-                        tag_chip.assign(&mut region, offset, &tag)?;
+
                         offset += 1;
                     }
                 }
-                // for copy_event in block.copy_events.iter() {
-                //     let rlc_acc = if copy_event.dst_type == CopyDataType::RlcAcc {
-                //         let values = copy_event
-                //             .bytes
-                //             .iter()
-                //             .map(|(value, _is_code)| *value)
-                //             .collect::<Vec<u8>>();
-                //         rlc::value(values.iter().rev(), randomness)
-                //     } else {
-                //         F::zero()
-                //     };
-                //     let mut value_acc = F::zero();
-                //     for (step_idx, (is_read_step, copy_step)) in copy_event
-                //         .bytes
-                //         .iter()
-                //         .flat_map(|(value, is_code)| {
-                //             let read_step = CopyStep {
-                //                 value: *value,
-                //                 is_code: if copy_event.src_type == CopyDataType::Bytecode {
-                //                     Some(*is_code)
-                //                 } else {
-                //                     None
-                //                 },
-                //             };
-                //             let write_step = CopyStep {
-                //                 value: *value,
-                //                 is_code: if copy_event.dst_type == CopyDataType::Bytecode {
-                //                     Some(*is_code)
-                //                 } else {
-                //                     None
-                //                 },
-                //             };
-                //             once((true, read_step)).chain(once((false, write_step)))
-                //         })
-                //         .enumerate()
-                //     {
-                //         let value = if copy_event.dst_type == CopyDataType::RlcAcc {
-                //             if is_read_step {
-                //                 F::from(copy_step.value as u64)
-                //             } else {
-                //                 value_acc =
-                //                     value_acc * randomness + F::from(copy_step.value as u64);
-                //                 value_acc
-                //             }
-                //         } else {
-                //             F::from(copy_step.value as u64)
-                //         };
-                //         self.assign_step(
-                //             &mut region,
-                //             offset,
-                //             randomness,
-                //             copy_event,
-                //             step_idx,
-                //             &copy_step,
-                //             value,
-                //             rlc_acc,
-                //             &tag_chip,
-                //             &lt_chip,
-                //         )?;
-                //         offset += 1;
-                //     }
-                // }
                 // pad two rows in the end to satisfy Halo2 cell assignment check
                 for _ in 0..2 {
                     self.assign_padding_row(&mut region, offset, &tag_chip)?;
@@ -479,6 +433,7 @@ impl<F: Field> CopyCircuit<F> {
         )
     }
 
+<<<<<<< HEAD
     #[allow(clippy::too_many_arguments)]
     fn assign_step(
         &self,
@@ -642,6 +597,8 @@ impl<F: Field> CopyCircuit<F> {
         Ok(())
     }
 
+=======
+>>>>>>> 7c59d298 (Move `CopyCircuit` columns to `CopyTable`)
     fn assign_padding_row(
         &self,
         region: &mut Region<F>,
@@ -665,7 +622,7 @@ impl<F: Field> CopyCircuit<F> {
         // is_last
         region.assign_advice(
             || format!("assign is_last {}", offset),
-            self.is_last,
+            self.copy_table.is_last,
             offset,
             || Value::known(F::zero()),
         )?;
@@ -700,7 +657,7 @@ impl<F: Field> CopyCircuit<F> {
         // value
         region.assign_advice(
             || format!("assign value {}", offset),
-            self.value,
+            self.copy_table.value,
             offset,
             || Value::known(F::zero()),
         )?;
@@ -714,14 +671,14 @@ impl<F: Field> CopyCircuit<F> {
         // is_code
         region.assign_advice(
             || format!("assign is_code {}", offset),
-            self.is_code,
+            self.copy_table.is_code,
             offset,
             || Value::known(F::zero()),
         )?;
         // is_pad
         region.assign_advice(
             || format!("assign is_pad {}", offset),
-            self.is_pad,
+            self.copy_table.is_pad,
             offset,
             || Value::known(F::zero()),
         )?;

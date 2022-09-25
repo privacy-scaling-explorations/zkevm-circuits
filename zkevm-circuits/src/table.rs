@@ -937,22 +937,20 @@ impl CopyTable {
             };
 
             // id
-            let id = {
-                let id = if is_read_step {
-                    &copy_event.src_id
-                } else {
-                    &copy_event.dst_id
-                };
-                number_or_hash_to_field(id, randomness)
+            let id = if is_read_step {
+                number_or_hash_to_field(&copy_event.src_id, randomness)
+            } else {
+                number_or_hash_to_field(&copy_event.dst_id, randomness)
             };
 
-            // addr
+            // tag binary bumber chip
             let tag = if is_read_step {
                 copy_event.src_type
             } else {
                 copy_event.dst_type
             };
 
+            // addr
             let copy_step_addr: u64 =
                 if is_read_step {
                     copy_event.src_addr
