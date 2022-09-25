@@ -728,6 +728,18 @@ mod test {
             PUSH32(Address::repeat_byte(0xff).to_word())
             PUSH32(Word::from(stack.gas))
             .write_op(opcode)
+            PUSH32(Word::from(stack.rd_length))
+            PUSH32(Word::from(stack.rd_offset))
+            PUSH32(Word::from(stack.cd_length))
+            PUSH32(Word::from(stack.cd_offset))
+        });
+        if is_call {
+            bytecode.push(32, stack.value);
+        }
+        bytecode.append(&bytecode! {
+            PUSH32(Address::repeat_byte(0xff).to_word())
+            PUSH32(Word::from(stack.gas))
+            .write_op(opcode)
             PUSH1(0)
             PUSH1(0)
             .write_op(terminator)
