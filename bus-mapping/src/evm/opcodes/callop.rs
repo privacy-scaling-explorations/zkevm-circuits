@@ -53,7 +53,6 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                 CallContextField::CalleeAddress,
                 current_call.address.to_word(),
             ),
-            (CallContextField::IsStatic, (call.is_static as u64).into()),
             (CallContextField::Depth, current_call.depth.into()),
         ] {
             state.call_context_read(&mut exec_step, current_call.call_id, field, value);
@@ -94,6 +93,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                 CallContextField::IsPersistent,
                 (call.is_persistent as u64).into(),
             ),
+            (CallContextField::IsStatic, (call.is_static as u64).into()),
         ] {
             state.call_context_write(&mut exec_step, call.call_id, field, value);
         }

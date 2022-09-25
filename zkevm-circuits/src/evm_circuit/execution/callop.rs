@@ -30,7 +30,6 @@ pub(crate) struct CallOpGadget<F> {
     tx_id: Cell<F>,
     reversion_info: ReversionInfo<F>,
     current_address: Cell<F>,
-    is_static: Cell<F>,
     depth: Cell<F>,
     gas: Word<F>,
     callee_address: Word<F>,
@@ -39,6 +38,7 @@ pub(crate) struct CallOpGadget<F> {
     gas_is_u64: IsZeroGadget<F>,
     is_warm: Cell<F>,
     is_warm_prev: Cell<F>,
+    is_static: Cell<F>,
     callee_reversion_info: ReversionInfo<F>,
     value_is_zero: IsZeroGadget<F>,
     cd_address: MemoryAddressGadget<F>,
@@ -89,16 +89,11 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
 
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
         let mut reversion_info = cb.reversion_info_read(None);
-        let [current_address, is_static, depth] = [
+        let [current_address, depth] = [
             CallContextFieldTag::CalleeAddress,
-            CallContextFieldTag::IsStatic,
             CallContextFieldTag::Depth,
         ]
         .map(|field_tag| cb.call_context(None, field_tag));
-
-        cb.condition(1.expr() - is_call.expr(), |cb| {
-            cb.require_zero("is_static == 1 for STATICCALL", 1.expr() - is_static.expr())
-        });
 
         cb.range_lookup(depth.expr(), 1024);
 
@@ -169,6 +164,20 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 reversion_info.rw_counter_of_reversion(),
             );
         });
+
+        // Lookup and verify is_static
+        let is_static = cb.query_bool();
+        cb.call_context_lookup(
+            true.expr(),
+            Some(callee_call_id.expr()),
+            CallContextFieldTag::IsStatic,
+            is_static.expr(),
+        );
+        cb.require_equal(
+            "is_call + is_static == 1",
+            is_call.expr() + is_static.expr(),
+            1.expr(),
+        );
 
         let value_is_zero = IsZeroGadget::construct(cb, sum::expr(&value.cells));
         let has_value = 1.expr() - value_is_zero.expr();
@@ -383,33 +392,33 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
     ) -> Result<(), Error> {
         let opcode = step.opcode.unwrap();
         let is_call = if opcode == OpcodeId::CALL { 1 } else { 0 };
-        let [tx_id, current_address, is_static, depth, callee_rw_counter_end_of_reversion, callee_is_persistent] =
+        let [tx_id, current_address, depth, callee_rw_counter_end_of_reversion, callee_is_persistent, callee_is_static] =
             [
                 step.rw_indices[0],
                 step.rw_indices[3],
                 step.rw_indices[4],
-                step.rw_indices[5],
+                step.rw_indices[13 + is_call],
                 step.rw_indices[14 + is_call],
                 step.rw_indices[15 + is_call],
             ]
             .map(|idx| block.rws[idx].call_context_value());
         let [gas, callee_address] =
-            [step.rw_indices[6], step.rw_indices[7]].map(|idx| block.rws[idx].stack_value());
+            [step.rw_indices[5], step.rw_indices[6]].map(|idx| block.rws[idx].stack_value());
         let value = if is_call == 1 {
-            block.rws[step.rw_indices[8]].stack_value()
+            block.rws[step.rw_indices[7]].stack_value()
         } else {
             U256::from(0)
         };
         let [cd_offset, cd_length, rd_offset, rd_length, is_success] = [
+            step.rw_indices[7 + is_call],
             step.rw_indices[8 + is_call],
             step.rw_indices[9 + is_call],
             step.rw_indices[10 + is_call],
             step.rw_indices[11 + is_call],
-            step.rw_indices[12 + is_call],
         ]
         .map(|idx| block.rws[idx].stack_value());
         let (is_warm, is_warm_prev) =
-            block.rws[step.rw_indices[13 + is_call]].tx_access_list_value_pair();
+            block.rws[step.rw_indices[12 + is_call]].tx_access_list_value_pair();
         let [caller_balance_pair, callee_balance_pair, (callee_nonce, _), (callee_code_hash, _)] =
             [
                 step.rw_indices[16 + is_call],
@@ -437,8 +446,11 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     .expect("unexpected Address -> Scalar conversion failure"),
             ),
         )?;
-        self.is_static
-            .assign(region, offset, Value::known(F::from(is_static.low_u64())))?;
+        self.is_static.assign(
+            region,
+            offset,
+            Value::known(F::from(callee_is_static.low_u64())),
+        )?;
         self.depth
             .assign(region, offset, Value::known(F::from(depth.low_u64())))?;
         self.gas.assign(region, offset, Some(gas.to_le_bytes()))?;
@@ -621,8 +633,8 @@ mod test {
 
     #[test]
     fn callop_simple() {
-        let opcodes = vec![OpcodeId::CALL, OpcodeId::STATICCALL];
-        let stacks = vec![
+        let opcodes = [OpcodeId::CALL, OpcodeId::STATICCALL];
+        let stacks = [
             // With nothing
             Stack::default(),
             // With value
@@ -662,7 +674,7 @@ mod test {
                 ..Default::default()
             },
         ];
-        let callees = vec![callee(bytecode! {}) /* callee(bytecode! { STOP }, ) */];
+        let callees = [callee(bytecode! {}), callee(bytecode! { STOP })];
         for ((opcode, stack), callee) in opcodes
             .into_iter()
             .cartesian_product(stacks.into_iter())
@@ -758,7 +770,7 @@ mod test {
     }
 
     fn test_nested(opcode: OpcodeId) {
-        let callers = vec![
+        let callers = [
             caller(
                 opcode,
                 Stack {
@@ -776,7 +788,7 @@ mod test {
                 false,
             ),
         ];
-        let callees = vec![
+        let callees = [
             // Success
             callee(bytecode! { PUSH1(0) PUSH1(0) RETURN }),
             // Failure
