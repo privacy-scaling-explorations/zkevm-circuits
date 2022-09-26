@@ -127,6 +127,7 @@ pub(crate) struct BranchConfig<F> {
 }
 
 impl<F: FieldExt> BranchConfig<F> {
+    #[allow(clippy::too_many_arguments)]
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         position_cols: PositionCols<F>,
@@ -235,13 +236,13 @@ impl<F: FieldExt> BranchConfig<F> {
                     "Only two nil-nodes when placeholder branch S",
                     q_enable.clone()
                     * is_last_child.clone()
-                    * is_branch_placeholder_c.clone() // C is correct here
+                    * is_branch_placeholder_c // C is correct here
                     * (sum_rlp2_s - c320.clone()) // There are constraints which ensure there is only 0 or 160 at rlp2 for branch children.
                 ));
                 constraints.push((
                     "Only two nil-nodes when placeholder branch C",
-                    q_enable.clone()
-                    * is_last_child.clone()
+                    q_enable
+                    * is_last_child
                     * is_branch_placeholder_s // S is correct here
                     * (sum_rlp2_c - c320)
                 ));
@@ -306,11 +307,11 @@ impl<F: FieldExt> BranchConfig<F> {
 
             let one_rlp_byte_s = s1.clone() * s2.clone();
             let two_rlp_bytes_s = s1.clone() * (one.clone() - s2.clone());
-            let three_rlp_bytes_s = (one.clone() - s1.clone()) * s2.clone();
+            let three_rlp_bytes_s = (one.clone() - s1) * s2;
 
             let one_rlp_byte_c = c1.clone() * c2.clone();
             let two_rlp_bytes_c = c1.clone() * (one.clone() - c2.clone());
-            let three_rlp_bytes_c = (one.clone() - c1.clone()) * c2.clone();
+            let three_rlp_bytes_c = (one.clone() - c1) * c2;
 
             let rlp_byte0_s =
                 meta.query_advice(s_main.bytes[BRANCH_0_S_START - RLP_NUM], Rotation::prev());
@@ -362,15 +363,15 @@ impl<F: FieldExt> BranchConfig<F> {
             // The following value can be either 1 or 33 (if hashed node),
             // depending on whether it's empty or non-empty row.
             let mut bytes_num_in_row_s =
-                s_rlp2_cur.clone() * c160_inv.clone() * c32.clone() + one.clone();
-            let mut bytes_num_in_row_c = c_rlp2_cur.clone() * c160_inv * c32 + one.clone();
+                s_rlp2_cur * c160_inv.clone() * c32.clone() + one.clone();
+            let mut bytes_num_in_row_c = c_rlp2_cur * c160_inv * c32 + one.clone();
 
             bytes_num_in_row_s = is_node_hashed_s.clone()
-                * (s_advices0_cur.clone() - c192.clone() + one.clone())
-                + (one.clone() - is_node_hashed_s.clone()) * bytes_num_in_row_s.clone();
+                * (s_advices0_cur - c192.clone() + one.clone())
+                + (one.clone() - is_node_hashed_s) * bytes_num_in_row_s.clone();
             bytes_num_in_row_c = is_node_hashed_c.clone()
-                * (c_advices0_cur.clone() - c192.clone() + one.clone())
-                + (one.clone() - is_node_hashed_c.clone()) * bytes_num_in_row_c.clone();
+                * (c_advices0_cur - c192.clone() + one.clone())
+                + (one.clone() - is_node_hashed_c) * bytes_num_in_row_c.clone();
 
             /*
             One RLP byte:
@@ -397,7 +398,7 @@ impl<F: FieldExt> BranchConfig<F> {
                 q_not_first.clone()
                     * is_branch_init_prev.clone()
                     * one_rlp_byte_s
-                    * (rlp_byte0_s.clone()
+                    * (rlp_byte0_s
                         - c192.clone()
                         - bytes_num_in_row_s.clone()
                         - s_rlp1_cur.clone()),
@@ -407,8 +408,8 @@ impl<F: FieldExt> BranchConfig<F> {
                 q_not_first.clone()
                     * is_branch_init_prev.clone()
                     * one_rlp_byte_c
-                    * (rlp_byte0_c.clone()
-                        - c192.clone()
+                    * (rlp_byte0_c
+                        - c192
                         - bytes_num_in_row_c.clone()
                         - c_rlp1_cur.clone()),
             ));
@@ -463,12 +464,12 @@ impl<F: FieldExt> BranchConfig<F> {
                 q_not_first.clone()
                     * is_branch_child_cur.clone()
                     * (one.clone() - is_branch_init_prev.clone())
-                    * (s_rlp1_prev - bytes_num_in_row_s.clone() - s_rlp1_cur.clone()),
+                    * (s_rlp1_prev - bytes_num_in_row_s - s_rlp1_cur.clone()),
             ));
             constraints.push((
                 "Branch children node_index > 0 RLP C",
                 q_not_first.clone()
-                    * is_branch_child_cur.clone()
+                    * is_branch_child_cur
                     * (one.clone() - is_branch_init_prev)
                     * (c_rlp1_prev - bytes_num_in_row_c - c_rlp1_cur.clone()),
             ));

@@ -7,7 +7,7 @@ use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
 use crate::{
-    columns::{AccumulatorCols, DenoteCols, MainCols},
+    columns::{AccumulatorCols, MainCols},
     helpers::{compute_rlc, get_bool_constraint, mult_diff_lookup, range_lookups},
     mpt::{FixedTableTag, MPTConfig, ProofValues},
     param::{

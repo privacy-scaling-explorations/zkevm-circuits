@@ -9,7 +9,7 @@ use std::marker::PhantomData;
 use crate::{
     columns::{AccumulatorCols, DenoteCols, MainCols},
     helpers::{
-        compute_rlc, get_is_extension_node, get_is_extension_node_one_nibble, key_len_lookup,
+        compute_rlc, get_is_extension_node, get_is_extension_node_one_nibble,
         mult_diff_lookup, range_lookups,
     },
     mpt::{FixedTableTag, MPTConfig, ProofValues},

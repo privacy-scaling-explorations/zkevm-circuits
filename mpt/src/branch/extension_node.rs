@@ -844,7 +844,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
             },
         );
 
-        let sel_branch_non_hashed = |meta: &mut VirtualCells<F>| {
+        let _sel_branch_non_hashed = |meta: &mut VirtualCells<F>| {
             let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
             let q_enable = q_enable(meta);
 

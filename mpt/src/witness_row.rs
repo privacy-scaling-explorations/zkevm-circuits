@@ -1,7 +1,7 @@
 use halo2_proofs::{arithmetic::FieldExt, circuit::Region, plonk::Error};
 use num_enum::TryFromPrimitive;
 use std::{
-    convert::{TryFrom, TryInto},
+    convert::{TryFrom},
     marker::PhantomData,
 };
 

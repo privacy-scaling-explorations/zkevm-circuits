@@ -1,5 +1,5 @@
 use halo2_proofs::{
-    plonk::{Advice, Column, ConstraintSystem, Expression, Fixed, VirtualCells},
+    plonk::{Advice, Column, ConstraintSystem, Expression, VirtualCells},
     poly::Rotation,
 };
 use pairing::arithmetic::FieldExt;
@@ -264,7 +264,7 @@ impl<F: FieldExt> BranchParallelConfig<F> {
             },
         );
 
-        let sel = |meta: &mut VirtualCells<F>| {
+        let _sel = |meta: &mut VirtualCells<F>| {
             let q_enable = meta.query_fixed(position_cols.q_enable, Rotation::cur());
             let is_branch_child_cur = meta.query_advice(branch.is_child, Rotation::cur());
             let is_node_hashed = meta.query_advice(is_node_hashed, Rotation::cur());

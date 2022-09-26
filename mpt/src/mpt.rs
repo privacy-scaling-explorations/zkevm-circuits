@@ -193,7 +193,7 @@ impl<F: FieldExt> ProofValues<F> {
 
 impl<F: FieldExt> MPTConfig<F> {
     pub(crate) fn configure(meta: &mut ConstraintSystem<F>) -> Self {
-        let pub_root = meta.instance_column();
+        let _pub_root = meta.instance_column();
         let inter_start_root = meta.advice_column(); // state root before modification - first level S hash needs to be the same as
                                                      // start_root (works also if only storage proof, without account proof, but if
                                                      // this is to be allowed LeafKeyChip needs to be changed - careful with q_enable
@@ -1359,21 +1359,19 @@ mod tests {
 
     use halo2_proofs::{
         circuit::{Layouter, SimpleFloorPlanner},
-        dev::{MockProver, VerifyFailure},
+        dev::{MockProver},
         plonk::{
-            create_proof, keygen_pk, keygen_vk, verify_proof, Advice, Circuit, Column,
+            Circuit,
             ConstraintSystem, Error,
         },
-        poly::commitment::Params,
-        transcript::{Blake2bRead, Blake2bWrite, Challenge255},
     };
 
-    use ark_std::{end_timer, rand::SeedableRng, start_timer};
+    
     use pairing::{
         arithmetic::FieldExt,
-        bn256::{Bn256, Fr as Fp},
+        bn256::{Fr as Fp},
     };
-    use rand_xorshift::XorShiftRng;
+    
     use std::{fs, marker::PhantomData};
 
     #[test]

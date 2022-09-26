@@ -95,6 +95,7 @@ Using this approach we do not need to store C RLP & key, but it will increase th
 */
 
 impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
+    #[allow(clippy::too_many_arguments)]
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         position_cols: PositionCols<F>, /* `not_first_level` to avoid rotating back when in the first branch (for
@@ -232,7 +233,7 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
                 q_not_first.clone()
                     * is_extension_c_row.clone()
                     * is_extension_node.clone()
-                    * (key_rlc_ext_node_cur.clone() - key_rlc_ext_node_prev.clone()),
+                    * (key_rlc_ext_node_cur.clone() - key_rlc_ext_node_prev),
             ));
 
             let s_rlp2 = meta.query_advice(s_main.rlp2, Rotation::prev());
@@ -241,7 +242,7 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
 
             let after_first_level = not_first_level.clone()
                     * (one.clone() - is_first_storage_level.clone())
-                    * is_extension_node.clone()
+                    * is_extension_node
                     * is_extension_c_row.clone();
 
             /*
@@ -294,7 +295,7 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
             */
             long_even_sel1_rlc = long_even_sel1_rlc.clone() + compute_rlc(
                 meta,
-                s_main.bytes.iter().skip(2).map(|v| *v).collect_vec(),
+                s_main.bytes.iter().skip(2).copied().collect_vec(),
                 0,
                 mult_prev.clone(),
                 -1,
@@ -311,7 +312,7 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
                     q_not_first.clone()
                     * is_ext_long_even_c16.clone()
                     * is_extension_c_row.clone()
-                    * (key_rlc_ext_node_cur.clone() - long_even_sel1_rlc.clone())
+                    * (key_rlc_ext_node_cur.clone() - long_even_sel1_rlc)
             ));
 
             /*
@@ -351,7 +352,7 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
             constraints.push((
                 "Long even sel1 extension node > branch key RLC mult",
                     q_not_first.clone()
-                    * is_ext_long_even_c16.clone()
+                    * is_ext_long_even_c16
                     * is_extension_c_row.clone()
                     * (key_rlc_mult_branch.clone() - mult_prev.clone() * mult_diff.clone())
                     // mult_diff is checked in a lookup below
@@ -445,7 +446,7 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
                     q_not_first.clone()
                         * is_ext_long_odd_c1.clone()
                         * is_extension_c_row.clone()
-                        * (key_rlc_ext_node_cur.clone() - long_odd_sel2_rlc.clone())
+                        * (key_rlc_ext_node_cur.clone() - long_odd_sel2_rlc)
             ));
 
             /*
@@ -483,7 +484,7 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
                         // mult_diff is checked in a lookup below
             ));
 
-            let short_sel1_rlc = rlc_prev.clone() +
+            let short_sel1_rlc = rlc_prev +
                 (s_rlp2.clone() - c16.clone()) * mult_prev.clone(); // -16 because of hexToCompact
 
             /*
@@ -500,7 +501,7 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
                     q_not_first.clone()
                         * is_ext_short_c16.clone()
                         * is_extension_c_row.clone()
-                        * (key_rlc_ext_node_cur.clone() - short_sel1_rlc.clone())
+                        * (key_rlc_ext_node_cur.clone() - short_sel1_rlc)
             ));
 
             /*
@@ -528,7 +529,7 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
                     q_not_first.clone()
                         * is_ext_short_c16.clone()
                         * is_extension_c_row.clone()
-                        * (key_rlc_mult_branch.clone() - mult_prev.clone() * r_table[0].clone())
+                        * (key_rlc_mult_branch.clone() - mult_prev * r_table[0].clone())
             ));
 
             /* 
@@ -603,7 +604,7 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
                         q_not_first.clone()
                         * after_first_level.clone()
                         * is_ext_long_even_c1.clone()
-                        * (key_rlc_ext_node_cur.clone() - long_even_sel2_rlc.clone())
+                        * (key_rlc_ext_node_cur.clone() - long_even_sel2_rlc)
             ));
 
             /*
@@ -628,7 +629,7 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
                 "Long even sel2 extension node > branch key RLC mult",
                         q_not_first.clone()
                         * after_first_level
-                        * is_ext_long_even_c1.clone()
+                        * is_ext_long_even_c1
                         * (key_rlc_mult_branch.clone() - key_rlc_mult_prev_branch.clone() * mult_diff.clone() * r_table[0].clone())
                         // mult_diff is checked in a lookup below
             ));
@@ -638,14 +639,14 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
                     * not_first_level.clone()
                     * (one.clone() - is_first_storage_level.clone())
                     * is_extension_c_row.clone()
-                    * (is_ext_long_odd_c16.clone() + is_ext_long_odd_c1.clone());
+                    * (is_ext_long_odd_c16 + is_ext_long_odd_c1);
     
             let mut long_odd_sel1_rlc = key_rlc_prev_branch.clone() +
                 (s_bytes0 - c16.clone()) * key_rlc_mult_prev_branch.clone();
             // skip 1 because s_main.bytes[0] has already been taken into account
             long_odd_sel1_rlc = long_odd_sel1_rlc.clone() + compute_rlc(
                 meta,
-                s_main.bytes.iter().skip(1).map(|v| *v).collect_vec(),
+                s_main.bytes.iter().skip(1).copied().collect_vec(),
                 0,
                 key_rlc_mult_prev_branch.clone(),
                 -1,
@@ -665,7 +666,7 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
                 "Long odd sel1 extension node key RLC",
                     long_odd.clone() // no need for check_extension here
                     * sel1.clone()
-                    * (key_rlc_ext_node_cur.clone() - long_odd_sel1_rlc.clone())
+                    * (key_rlc_ext_node_cur.clone() - long_odd_sel1_rlc)
             ));
 
             /*
@@ -686,19 +687,19 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
             */
             constraints.push((
                 "Long odd sel1 extension node > branch key RLC mult",
-                    long_odd.clone()
-                    * sel1.clone()
-                    * (key_rlc_mult_branch.clone() - key_rlc_mult_prev_branch.clone() * mult_diff.clone())
+                    long_odd
+                    * sel1
+                    * (key_rlc_mult_branch.clone() - key_rlc_mult_prev_branch.clone() * mult_diff)
                     // mult_diff is checked in a lookup below
             ));
 
             let short = q_not_first.clone()
-                * not_first_level.clone()
-                * (one.clone() - is_first_storage_level.clone())
-                * is_extension_c_row.clone()
+                * not_first_level
+                * (one.clone() - is_first_storage_level)
+                * is_extension_c_row
                 * (is_ext_short_c16.clone() + is_ext_short_c1.clone());
 
-            let short_sel2_rlc = key_rlc_prev_branch.clone() +
+            let short_sel2_rlc = key_rlc_prev_branch +
                 c16.clone() * (s_rlp2 - c16.clone()) * key_rlc_mult_prev_branch.clone(); // -16 because of hexToCompact
 
             /*
@@ -713,7 +714,7 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
                 "Short sel2 extension node key RLC",
                     short.clone() // no need for check_extension here
                     * sel2.clone()
-                    * (key_rlc_ext_node_cur.clone() - short_sel2_rlc.clone())
+                    * (key_rlc_ext_node_cur.clone() - short_sel2_rlc)
             ));
 
             /*
@@ -729,8 +730,8 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
                 "Short sel2 branch extension node > branch key RLC",
                     short.clone()
                     * sel2.clone()
-                    * (key_rlc_branch.clone() - key_rlc_ext_node_cur.clone() -
-                        modified_node_cur.clone() * key_rlc_mult_prev_branch.clone())
+                    * (key_rlc_branch - key_rlc_ext_node_cur -
+                        modified_node_cur * key_rlc_mult_prev_branch.clone())
             ));
 
             /*
@@ -742,9 +743,9 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
             */
             constraints.push((
                 "Short sel2 branch extension node > branch key RLC mult",
-                    short.clone()
-                    * sel2.clone()
-                    * (key_rlc_mult_branch.clone() - key_rlc_mult_prev_branch.clone() * r_table[0].clone())
+                    short
+                    * sel2
+                    * (key_rlc_mult_branch - key_rlc_mult_prev_branch * r_table[0].clone())
             ));
 
             let is_extension_s_row =
@@ -786,8 +787,8 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
                 Rotation(rot_into_branch_init),
             );
 
-            (one.clone() - is_account_leaf_in_added_branch_prev.clone())
-                * is_extension_c_row.clone()
+            (one.clone() - is_account_leaf_in_added_branch_prev)
+                * is_extension_c_row
                 * (is_ext_long_even_c16 + is_ext_long_even_c1)
         };
 
@@ -807,8 +808,8 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
                 Rotation(rot_into_branch_init),
             );
 
-            (one.clone() - is_account_leaf_in_added_branch_prev.clone())
-                * is_extension_c_row.clone()
+            (one.clone() - is_account_leaf_in_added_branch_prev)
+                * is_extension_c_row
                 * (is_ext_long_odd_c16 + is_ext_long_odd_c1)
         };
 
@@ -858,11 +859,11 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
                 + is_ext_long_odd_c1.clone();
             let is_long = is_ext_long_even_c16.clone()
                 + is_ext_long_even_c1.clone()
-                + is_ext_long_odd_c16.clone()
+                + is_ext_long_odd_c16
                 + is_ext_long_odd_c1.clone();
-            let is_short = is_ext_short_c16.clone() + is_ext_short_c1.clone();
+            let is_short = is_ext_short_c16 + is_ext_short_c1;
 
-            let is_even = is_ext_long_even_c16.clone() + is_ext_long_even_c1.clone();
+            let is_even = is_ext_long_even_c16 + is_ext_long_even_c1;
             let s_rlp2 = meta.query_advice(s_main.rlp2, Rotation::prev());
             // key_len = s_rlp2 - 128 - 1   if long even
             // key_len = s_rlp2 - 128 - 1   if is_ext_long_odd_c1
@@ -871,7 +872,7 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
             let key_len = (s_rlp2
                 - c128.clone()
                 - one.clone() * is_even
-                - one.clone() * is_ext_long_odd_c1.clone())
+                - one.clone() * is_ext_long_odd_c1)
                 * is_long
                 + is_short;
 
@@ -890,10 +891,10 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
                 meta.query_fixed(fixed_table[1], Rotation::cur()),
             ));
             constraints.push((
-                is_extension_c_row.clone()
-                    * is_extension_node.clone()
+                is_extension_c_row
+                    * is_extension_node
                     * mult_diff
-                    * not_first_level.clone(),
+                    * not_first_level,
                 meta.query_fixed(fixed_table[2], Rotation::cur()),
             ));
 
@@ -940,7 +941,7 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
             });
         }
 
-        let sel_long = |meta: &mut VirtualCells<F>| {
+        let _sel_long = |meta: &mut VirtualCells<F>| {
             let is_extension_s_row = meta.query_advice(branch.is_extension_node_s, Rotation::cur());
 
             let is_ext_long_even_c16 = meta.query_advice(
@@ -959,10 +960,10 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
                 s_main.bytes[IS_EXT_LONG_ODD_C1_POS - RLP_NUM],
                 Rotation(rot_into_branch_init),
             );
-            let is_long = is_ext_long_even_c16.clone()
-                + is_ext_long_even_c1.clone()
-                + is_ext_long_odd_c16.clone()
-                + is_ext_long_odd_c1.clone();
+            let is_long = is_ext_long_even_c16
+                + is_ext_long_even_c1
+                + is_ext_long_odd_c16
+                + is_ext_long_odd_c1;
 
             is_extension_s_row * is_long
         };
