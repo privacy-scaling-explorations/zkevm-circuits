@@ -118,12 +118,12 @@ pub enum FixedTableTag {
 #[derive(Default)]
 /*
 Some values are accumulating through the rows (or block of rows) and we need to access the previous value
-to continue the calculation, for this reason the previous values are stored in ProofVariables struct.
-Such accumulated value is for example key_rlc which stores the intermediate key RLC (in each branch
+to continue the calculation, for this reason the previous values are stored in `ProofValues` struct.
+Such accumulated value is for example `key_rlc` which stores the intermediate key RLC (in each branch
 and extension node block a new intermediate key RLC is computed).
-Also, for example, modified_node is given in branch init but needed to be set in every branch children row.
+Also, for example, `modified_node` is given in branch init but needed to be set in every branch children row.
 */
-pub(crate) struct ProofVariables<F> {
+pub(crate) struct ProofValues<F> {
     pub(crate) modified_node: u8, /* branch child that is being changed, it is the same in all
                                    * branch children rows */
     pub(crate) s_mod_node_hash_rlc: F, /* hash rlc of the modified_node for S proof, it is the
@@ -178,7 +178,7 @@ pub(crate) struct ProofVariables<F> {
     pub(crate) nibbles_num: usize,
 }
 
-impl<F: FieldExt> ProofVariables<F> {
+impl<F: FieldExt> ProofValues<F> {
     fn new() -> Self {
         Self {
             key_rlc_mult: F::one(),
@@ -248,26 +248,30 @@ impl<F: FieldExt> MPTConfig<F> {
             .try_into()
             .unwrap();
 
-        // NOTE: key_rlc_mult wouldn't be needed if we would have
-        // big endian instead of little endian. However, then it would be much more
-        // difficult to handle the accumulator when we iterate over the key.
-        // At some point (but we don't know this point at compile time), key ends
-        // and from there on the values in the row need to be 0s.
-        // However, if we are computing rlc using little endian:
-        // rlc = rlc + row[i] * acc_r,
-        // rlc will stay the same once r[i] = 0.
-        // If big endian would be used:
-        // rlc = rlc * acc_r + row[i],
-        // the rlc would be multiplied by acc_r when row[i] = 0.
+        /*
+        Note: `key_rlc_mult` would not be needed if we would have
+        big endian instead of little endian. However, then it would be much more
+        difficult to handle the accumulator when we iterate over the key.
+        At some point (but we do not know this point at compile time), the key ends
+        and from there on the values in the row need to be 0s.
+        However, if we are computing the RLC using little endian:
+        `rlc = rlc + row[i] * acc_r`,
+        `rlc` will stay the same once r[i] = 0.
+        If big endian would be used:
+        `rlc = rlc * acc_r + row[i]`,
+        `rlc` would be multiplied by `acc_r` when `row[i] = 0`.
+        */
 
         let accumulators = AccumulatorCols::new(meta);
 
-        // NOTE: acc_s.mult and acc_c.mult wouldn't be needed if we would have
-        // big endian instead of little endian. However, then it would be much more
-        // difficult to handle the accumulator when we iterate over the row.
-        // For example, big endian would mean to compute acc = acc * mult_r + row[i],
-        // but we don't want acc to be multiplied by mult_r when row[i] = 0 where
-        // the stream already ended and 0s are only to fulfill the row.
+        /*
+        Note: `acc_s.mult` and `acc_c.mult` would not be needed if we would have
+        big endian instead of little endian. However, then it would be much more
+        difficult to handle the accumulator when we iterate over the row.
+        For example, big endian would mean to compute `acc = acc * mult_r + row[i]`,
+        but we do not want `acc` to be multiplied by `mult_r` when `row[i] = 0` where
+        the stream already ended and 0s are only to fulfill the row.
+        */
 
         let denoter = DenoteCols::new(meta);
 
@@ -799,7 +803,7 @@ impl<F: FieldExt> MPTConfig<F> {
         &self,
         region: &mut Region<'_, F>,
         row: &Vec<u8>,
-        pv: &mut ProofVariables<F>,
+        pv: &mut ProofValues<F>,
         offset: usize,
         s_start: usize,
         c_start: usize,
@@ -917,7 +921,7 @@ impl<F: FieldExt> MPTConfig<F> {
                 || "MPT",
                 |mut region| {
                     let mut offset = 0;
-                    let mut pv = ProofVariables::new();
+                    let mut pv = ProofValues::new();
 
                     // filter out rows that are just to be hashed
                     for (ind, row) in witness
@@ -930,7 +934,7 @@ impl<F: FieldExt> MPTConfig<F> {
                             let not_first_level_prev = row_prev.not_first_level();
                             let not_first_level_cur = row.not_first_level();
                             if not_first_level_cur == 0 && not_first_level_prev == 1 {
-                                pv = ProofVariables::new();
+                                pv = ProofValues::new();
                             }
                         }
 
@@ -1011,8 +1015,24 @@ impl<F: FieldExt> MPTConfig<F> {
                                 pv.key_rlc_mult_prev = F::one();
                                 pv.key_rlc_sel = true;
                                 pv.nibbles_num = 0;
-                                // TODO: check whether all constraints are
-                                // implemented (extension_node_rlc ...)
+                                /*
+                                Note: The constraints for ensuring that in the first account and first storage level
+                                the key RLC is 0 and the key RLC mult is 1 are in:
+                                 - `account_leaf_key.rs` for when the node in the first level is an account leaf
+                                 - `branch_key.rs` for when the node in the first level is a branch
+                                 - `extension_node_key.rs` for when the node in the first level is an extension node.
+
+                                Similarly for `sel`. For `key_rlc_prev` and `key_rlc_mult_prev` there are no
+                                columns, these values are used for internal computation, like for `key_rlc`
+                                after the branch placeholder (when we need to reach back to the branch above
+                                the placeholder).
+
+                                The constraints for ensuring that in the first account and first storage level
+                                `nibbles_num` is 0 are in:
+                                 - `account_leaf_key.rs` for when the node in the first level is an account leaf
+                                 - `branch.rs` for when the node in the first level is a branch
+                                 - `extension_node.rs` for when the node in the first level is an extension node.
+                                */
                             } else if row.get_type() == MptWitnessRowType::StorageLeafSValue {
                                 storage_leaf.is_s_value = true;
                             } else if row.get_type() == MptWitnessRowType::StorageLeafCValue {
@@ -1270,7 +1290,7 @@ impl<F: FieldExt> MPTConfig<F> {
                         offset,
                         || Ok(mult),
                     )?;
-                    mult = mult * self.acc_r;
+                    mult *= self.acc_r;
 
                     offset += 1;
                 }

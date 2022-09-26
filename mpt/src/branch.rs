@@ -21,7 +21,7 @@ use crate::{
         bytes_expr_into_rlc, bytes_into_rlc, get_bool_constraint, get_is_extension_node,
         range_lookups,
     },
-    mpt::{FixedTableTag, MPTConfig, ProofVariables},
+    mpt::{FixedTableTag, MPTConfig, ProofValues},
     param::{
         BRANCH_0_C_START, BRANCH_0_KEY_POS, BRANCH_0_S_START, BRANCH_ROWS_NUM, C_RLP_START,
         C_START, DRIFTED_POS, HASH_WIDTH, IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS,
@@ -958,7 +958,7 @@ impl<F: FieldExt> BranchConfig<F> {
         region: &mut Region<'_, F>,
         witness: &[MptWitnessRow<F>],
         mpt_config: &MPTConfig<F>,
-        pv: &mut ProofVariables<F>,
+        pv: &mut ProofValues<F>,
         offset: usize,
     ) -> Result<(), Error> {
         let row = &witness[offset];
@@ -1137,7 +1137,7 @@ impl<F: FieldExt> BranchConfig<F> {
         region: &mut Region<'_, F>,
         witness: &[MptWitnessRow<F>],
         mpt_config: &MPTConfig<F>,
-        pv: &mut ProofVariables<F>,
+        pv: &mut ProofValues<F>,
         offset: usize,
     ) -> Result<(), Error> {
         let row = &witness[offset];

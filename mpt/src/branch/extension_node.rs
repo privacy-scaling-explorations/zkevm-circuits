@@ -14,7 +14,7 @@ use crate::{
         get_is_extension_node_even_nibbles, get_is_extension_node_long_odd_nibbles,
         get_is_extension_node_one_nibble,
     },
-    mpt::{MPTConfig, ProofVariables},
+    mpt::{MPTConfig, ProofValues},
     param::{
         ACCOUNT_LEAF_ROWS, ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND,
         ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND, BRANCH_ROWS_NUM, C_RLP_START, C_START, HASH_WIDTH,
@@ -1303,7 +1303,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
         &self,
         region: &mut Region<'_, F>,
         mpt_config: &MPTConfig<F>,
-        pv: &mut ProofVariables<F>,
+        pv: &mut ProofValues<F>,
         row: &MptWitnessRow<F>,
         offset: usize,
         is_s: bool,

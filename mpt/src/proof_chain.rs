@@ -43,6 +43,7 @@ pub(crate) struct ProofChainConfig<F> {
 }
 
 impl<F: FieldExt> ProofChainConfig<F> {
+    #[allow(clippy::too_many_arguments)]
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         proof_type: ProofTypeCols<F>,

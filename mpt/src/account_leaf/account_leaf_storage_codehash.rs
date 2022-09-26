@@ -9,7 +9,7 @@ use std::marker::PhantomData;
 use crate::{
     columns::{AccumulatorCols, DenoteCols, MainCols, ProofTypeCols, PositionCols},
     helpers::range_lookups,
-    mpt::{FixedTableTag, MPTConfig, ProofVariables},
+    mpt::{FixedTableTag, MPTConfig, ProofValues},
     param::{
         ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND, ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND,
         ACCOUNT_NON_EXISTING_IND, BRANCH_ROWS_NUM, C_START, EXTENSION_ROWS_NUM, HASH_WIDTH,
@@ -552,7 +552,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
         &self,
         region: &mut Region<'_, F>,
         mpt_config: &MPTConfig<F>,
-        pv: &mut ProofVariables<F>,
+        pv: &mut ProofValues<F>,
         row: &MptWitnessRow<F>,
         offset: usize,
     ) {

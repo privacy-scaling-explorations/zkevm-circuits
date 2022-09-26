@@ -9,7 +9,7 @@ use crate::{
     account_leaf::AccountLeaf,
     branch::Branch,
     helpers::bytes_into_rlc,
-    mpt::{MPTConfig, ProofVariables},
+    mpt::{MPTConfig, ProofValues},
     param::{
         COUNTER_WITNESS_LEN, C_RLP_START, C_START, HASH_WIDTH, IS_ACCOUNT_DELETE_MOD_POS,
         IS_BALANCE_MOD_POS, IS_CODEHASH_MOD_POS, IS_NONCE_MOD_POS, IS_NON_EXISTING_ACCOUNT_POS,
@@ -427,7 +427,7 @@ impl<F: FieldExt> MptWitnessRow<F> {
         &self,
         region: &mut Region<'_, F>,
         mpt_config: &MPTConfig<F>,
-        pv: &ProofVariables<F>,
+        pv: &ProofValues<F>,
         offset: usize,
     ) -> Result<(), Error> {
         let row = self.main();
@@ -529,7 +529,7 @@ impl<F: FieldExt> MptWitnessRow<F> {
         &self,
         region: &mut Region<'_, F>,
         mpt_config: &MPTConfig<F>,
-        pv: &ProofVariables<F>,
+        pv: &ProofValues<F>,
         offset: usize,
     ) -> Result<(), Error> {
         let s_root_rlc = bytes_into_rlc(self.s_root_bytes(), mpt_config.acc_r);

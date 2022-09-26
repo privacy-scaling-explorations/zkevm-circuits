@@ -9,7 +9,7 @@ use std::marker::PhantomData;
 use crate::{
     columns::{AccumulatorCols, MainCols, ProofTypeCols, PositionCols},
     helpers::{compute_rlc, mult_diff_lookup, range_lookups},
-    mpt::{FixedTableTag, MPTConfig, ProofVariables},
+    mpt::{FixedTableTag, MPTConfig, ProofValues},
     param::{
         BRANCH_ROWS_NUM, HASH_WIDTH, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS,
         IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS, IS_EXT_LONG_EVEN_C16_POS,
@@ -665,7 +665,7 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
         &self,
         region: &mut Region<'_, F>,
         mpt_config: &MPTConfig<F>,
-        pv: &mut ProofVariables<F>,
+        pv: &mut ProofValues<F>,
         row: &MptWitnessRow<F>,
         offset: usize,
     ) {

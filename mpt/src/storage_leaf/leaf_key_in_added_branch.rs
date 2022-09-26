@@ -12,7 +12,7 @@ use crate::{
         compute_rlc, get_bool_constraint, get_is_extension_node, get_is_extension_node_one_nibble,
         mult_diff_lookup, range_lookups,
     },
-    mpt::{FixedTableTag, MPTConfig, ProofVariables},
+    mpt::{FixedTableTag, MPTConfig, ProofValues},
     param::{
         BRANCH_ROWS_NUM, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, LEAF_DRIFTED_IND, LEAF_KEY_C_IND,
         LEAF_KEY_S_IND,
@@ -903,7 +903,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
         &self,
         region: &mut Region<'_, F>,
         mpt_config: &MPTConfig<F>,
-        pv: &mut ProofVariables<F>,
+        pv: &mut ProofValues<F>,
         row: &MptWitnessRow<F>,
         offset: usize,
     ) {

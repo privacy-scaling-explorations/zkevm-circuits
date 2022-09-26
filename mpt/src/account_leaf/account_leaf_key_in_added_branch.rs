@@ -12,7 +12,7 @@ use crate::{
         compute_rlc, get_is_extension_node, get_is_extension_node_one_nibble, key_len_lookup,
         mult_diff_lookup, range_lookups,
     },
-    mpt::{FixedTableTag, MPTConfig, ProofVariables},
+    mpt::{FixedTableTag, MPTConfig, ProofValues},
     param::{
         ACCOUNT_DRIFTED_LEAF_IND, ACCOUNT_LEAF_KEY_C_IND, ACCOUNT_LEAF_KEY_S_IND,
         ACCOUNT_LEAF_NONCE_BALANCE_C_IND, ACCOUNT_LEAF_NONCE_BALANCE_S_IND,
@@ -600,7 +600,7 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
         &self,
         region: &mut Region<'_, F>,
         mpt_config: &MPTConfig<F>,
-        pv: &mut ProofVariables<F>,
+        pv: &mut ProofValues<F>,
         row: &Vec<u8>,
         offset: usize,
     ) {
