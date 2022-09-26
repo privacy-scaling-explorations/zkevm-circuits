@@ -1,8 +1,11 @@
 use bus_mapping::evm::OpcodeId;
 use eth_types::{Field, ToLittleEndian, Word};
+use halo2_proofs::circuit::Value;
 use sha3::{Digest, Keccak256};
 
-use crate::{evm_circuit::util::RandomLinearCombination, table::BytecodeFieldTag};
+use crate::{
+    evm_circuit::util::RandomLinearCombination, table::BytecodeFieldTag, util::Challenges,
+};
 
 /// Bytecode
 #[derive(Clone, Debug)]
@@ -21,18 +24,22 @@ impl Bytecode {
     }
 
     /// Assignments for bytecode table
-    pub fn table_assignments<F: Field>(&self, randomness: F) -> Vec<[F; 5]> {
+    pub fn table_assignments<F: Field>(
+        &self,
+        challenges: &Challenges<Value<F>>,
+    ) -> Vec<[Value<F>; 5]> {
         let n = 1 + self.bytes.len();
         let mut rows = Vec::with_capacity(n);
-        let hash =
-            RandomLinearCombination::random_linear_combine(self.hash.to_le_bytes(), randomness);
+        let hash = challenges.evm_word().map(|challenge| {
+            RandomLinearCombination::random_linear_combine(self.hash.to_le_bytes(), challenge)
+        });
 
         rows.push([
             hash,
-            F::from(BytecodeFieldTag::Length as u64),
-            F::zero(),
-            F::zero(),
-            F::from(self.bytes.len() as u64),
+            Value::known(F::from(BytecodeFieldTag::Length as u64)),
+            Value::known(F::zero()),
+            Value::known(F::zero()),
+            Value::known(F::from(self.bytes.len() as u64)),
         ]);
 
         let mut push_data_left = 0;
@@ -46,10 +53,10 @@ impl Bytecode {
             }
             rows.push([
                 hash,
-                F::from(BytecodeFieldTag::Byte as u64),
-                F::from(idx as u64),
-                F::from(is_code as u64),
-                F::from(*byte as u64),
+                Value::known(F::from(BytecodeFieldTag::Byte as u64)),
+                Value::known(F::from(idx as u64)),
+                Value::known(F::from(is_code as u64)),
+                Value::known(F::from(*byte as u64)),
             ])
         }
         rows
