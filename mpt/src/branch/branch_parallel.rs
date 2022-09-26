@@ -203,7 +203,7 @@ impl<F: FieldExt> BranchParallelConfig<F> {
                     q_not_first.clone()
                     * is_branch_child_cur.clone()
                     * node_index_cur.clone() // ignore if node_index = 0 (there is no previous)
-                    * (mod_node_hash_cur.clone() - mod_node_hash_rlc_prev),
+                    * (mod_node_hash_cur - mod_node_hash_rlc_prev),
                 ));
 
                 let is_modified = meta.query_advice(branch.is_modified, Rotation::cur());
@@ -254,9 +254,9 @@ impl<F: FieldExt> BranchParallelConfig<F> {
                 */
                 constraints.push((
                     "Selector for the modified child being empty the same for all branch children",
-                    q_not_first.clone()
-                    * is_branch_child_cur.clone()
-                    * node_index_cur.clone() // ignore if node_index = 0 (there is no previous)
+                    q_not_first
+                    * is_branch_child_cur
+                    * node_index_cur // ignore if node_index = 0 (there is no previous)
                     * (sel_cur - sel_prev),
                 ));
 

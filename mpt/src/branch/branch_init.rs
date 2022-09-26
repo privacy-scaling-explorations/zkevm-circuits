@@ -136,19 +136,19 @@ impl<F: FieldExt> BranchInitConfig<F> {
 
             constraints.push((
                 "Branch init s1 boolean",
-                get_bool_constraint(q_enable.clone(), s1.clone()),
+                get_bool_constraint(q_enable.clone(), s1),
             ));
             constraints.push((
                 "Branch init c1 boolean",
-                get_bool_constraint(q_enable.clone(), c1.clone()),
+                get_bool_constraint(q_enable.clone(), c1),
             ));
             constraints.push((
                 "Branch init s2 boolean",
-                get_bool_constraint(q_enable.clone(), s2.clone()),
+                get_bool_constraint(q_enable.clone(), s2),
             ));
             constraints.push((
                 "Branch init c2 boolean",
-                get_bool_constraint(q_enable.clone(), c2.clone()),
+                get_bool_constraint(q_enable.clone(), c2),
             ));
 
             let s_rlp1 = meta.query_advice(s_main.bytes[2], Rotation::cur());
@@ -178,7 +178,7 @@ impl<F: FieldExt> BranchInitConfig<F> {
             ));
             constraints.push((
                 "Branch mult C row 0 (1)",
-                q_enable.clone() * one_rlp_byte_c * (mult_one.clone() - branch_mult_s_cur.clone()),
+                q_enable.clone() * one_rlp_byte_c * (mult_one - branch_mult_s_cur.clone()),
             ));
 
             let acc_s_two = s_rlp1.clone() + s_rlp2.clone() * acc_r;

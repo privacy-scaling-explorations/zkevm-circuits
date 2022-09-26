@@ -56,6 +56,7 @@ pub(crate) struct BranchRLCConfig<F> {
 }
 
 impl<F: FieldExt> BranchRLCConfig<F> {
+    #[allow(clippy::too_many_arguments)]
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         q_enable: impl Fn(&mut VirtualCells<'_, F>) -> Expression<F>,
@@ -141,8 +142,8 @@ impl<F: FieldExt> BranchRLCConfig<F> {
             constraints.push((
                 "Branch RLC mult non-empty hashed",
                 q_enable.clone()
-                    * (one.clone() - is_node_hashed.clone())
-                    * rlp2.clone()
+                    * (one - is_node_hashed.clone())
+                    * rlp2
                     * (branch_mult_cur.clone()
                         - branch_mult_prev.clone()
                             * r_table[R_TABLE_LEN - 1].clone()
@@ -150,7 +151,7 @@ impl<F: FieldExt> BranchRLCConfig<F> {
             ));
 
             let advices0 = meta.query_advice(main.bytes[0], Rotation::cur());
-            let mut acc = branch_acc_prev.clone() + advices0 * branch_mult_prev.clone();
+            let mut acc = branch_acc_prev + advices0 * branch_mult_prev.clone();
             for ind in 1..HASH_WIDTH {
                 let a = meta.query_advice(main.bytes[ind], Rotation::cur());
                 acc = acc + a * branch_mult_prev.clone() * r_table[ind - 1].clone();
@@ -179,8 +180,8 @@ impl<F: FieldExt> BranchRLCConfig<F> {
             */
             constraints.push((
                 "Branch RLC mult non-hashed",
-                q_enable.clone()
-                    * is_node_hashed.clone()
+                q_enable
+                    * is_node_hashed
                     * (branch_mult_cur - branch_mult_prev * node_mult_diff * r_table[0].clone()), // * r_table[0] because of the first (length) byte
             ));
 

@@ -162,11 +162,11 @@ impl<F: FieldExt> BranchKeyConfig<F> {
             let is_ext_long_odd_c1 =
                 meta.query_advice(s_main.bytes[IS_EXT_LONG_ODD_C1_POS - RLP_NUM], Rotation(-1));
 
-            let is_extension_key_even = is_ext_long_even_c16.clone() + is_ext_long_even_c1.clone();
-            let is_extension_key_odd = is_ext_long_odd_c16.clone()
-                + is_ext_long_odd_c1.clone()
-                + is_ext_short_c16.clone()
-                + is_ext_short_c1.clone();
+            let is_extension_key_even = is_ext_long_even_c16 + is_ext_long_even_c1;
+            let is_extension_key_odd = is_ext_long_odd_c16
+                + is_ext_long_odd_c1
+                + is_ext_short_c16
+                + is_ext_short_c1;
 
             let is_extension_node = is_extension_key_even.clone() + is_extension_key_odd.clone();
 
@@ -330,7 +330,7 @@ impl<F: FieldExt> BranchKeyConfig<F> {
                 "sel1 + sel2 = 1",
                 q_not_first.clone()
                     * is_branch_init_prev.clone()
-                    * (sel1_cur.clone() + sel2_cur.clone() - one.clone()),
+                    * (sel1_cur.clone() + sel2_cur - one.clone()),
             ));
 
             /*
@@ -429,7 +429,7 @@ impl<F: FieldExt> BranchKeyConfig<F> {
                     * not_first_level.clone()
                     * is_branch_init_prev.clone()
                     * (one.clone() - is_account_leaf_in_added_branch_prev.clone()) // When this is 0, we check as for the first level key rlc.
-                    * (one.clone() - is_extension_node.clone())
+                    * (one.clone() - is_extension_node)
                     * (sel1_cur.clone() + sel1_prev.clone() - one.clone()),
             ));
 
@@ -442,7 +442,7 @@ impl<F: FieldExt> BranchKeyConfig<F> {
                     * not_first_level.clone()
                     * is_branch_init_prev.clone()
                     * (one.clone() - is_account_leaf_in_added_branch_prev.clone()) // When this is 0, we check as for the first level key rlc.
-                    * is_extension_key_even.clone()
+                    * is_extension_key_even
                     * (sel1_cur.clone() + sel1_prev.clone() - one.clone()),
             ));
 
@@ -451,12 +451,12 @@ impl<F: FieldExt> BranchKeyConfig<F> {
             */
             constraints.push((
                 "sel1 stays the same (extension odd key)",
-                q_not_first.clone()
-                    * not_first_level.clone()
-                    * is_branch_init_prev.clone()
-                    * (one.clone() - is_account_leaf_in_added_branch_prev.clone()) // When this is 0, we check as for the first level key rlc.
-                    * is_extension_key_odd.clone()
-                    * (sel1_cur.clone() - sel1_prev.clone()),
+                q_not_first
+                    * not_first_level
+                    * is_branch_init_prev
+                    * (one - is_account_leaf_in_added_branch_prev) // When this is 0, we check as for the first level key rlc.
+                    * is_extension_key_odd
+                    * (sel1_cur - sel1_prev),
             ));
 
             constraints

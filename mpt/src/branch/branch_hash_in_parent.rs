@@ -75,6 +75,7 @@ pub(crate) struct BranchHashInParentConfig<F> {
 }
 
 impl<F: FieldExt> BranchHashInParentConfig<F> {
+    #[allow(clippy::too_many_arguments)]
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         inter_root: Column<Advice>,
@@ -147,8 +148,8 @@ impl<F: FieldExt> BranchHashInParentConfig<F> {
                 constraints.push((
                     q_not_first
                         * is_last_branch_child
-                        * (one.clone() - is_extension_node.clone())
-                        * (one.clone() - is_branch_placeholder.clone())
+                        * (one.clone() - is_extension_node)
+                        * (one.clone() - is_branch_placeholder)
                         * (one.clone() - not_first_level)
                         * root,
                     keccak_table_i,
@@ -229,8 +230,7 @@ impl<F: FieldExt> BranchHashInParentConfig<F> {
                     }
                 }
                 let hash_rlc = bytes_expr_into_rlc(&sc_hash, acc_r);
-                let mut constraints = vec![];
-                constraints.push((
+                let mut constraints = vec![(
                     not_first_level.clone()
                         * (one.clone() - is_extension_node.clone())
                         * is_last_branch_child.clone()
@@ -238,14 +238,14 @@ impl<F: FieldExt> BranchHashInParentConfig<F> {
                         * (one.clone() - is_branch_placeholder.clone())
                         * branch_acc, // TODO: replace with acc once ValueNode is added
                     meta.query_fixed(keccak_table[0], Rotation::cur()),
-                ));
+                )];
 
                 constraints.push((
-                    not_first_level.clone()
-                        * (one.clone() - is_extension_node.clone())
-                        * is_last_branch_child.clone()
-                        * is_account_leaf_in_added_branch.clone()
-                        * (one.clone() - is_branch_placeholder.clone())
+                    not_first_level
+                        * (one.clone() - is_extension_node)
+                        * is_last_branch_child
+                        * is_account_leaf_in_added_branch
+                        * (one.clone() - is_branch_placeholder)
                         * hash_rlc,
                     meta.query_fixed(keccak_table[1], Rotation::cur()),
                 ));
@@ -306,8 +306,7 @@ impl<F: FieldExt> BranchHashInParentConfig<F> {
             let mult = meta.query_advice(acc_pair.mult, Rotation::cur());
             let branch_acc = acc + c128 * mult;
 
-            let mut constraints = vec![];
-            constraints.push((
+            let mut constraints = vec![(
                 not_first_level.clone()
                     * is_last_branch_child.clone()
                     * (one.clone() - is_account_leaf_in_added_branch_prev.clone()) // we don't check this in the first storage level
@@ -316,7 +315,7 @@ impl<F: FieldExt> BranchHashInParentConfig<F> {
                     * (one.clone() - is_extension_node.clone())
                     * branch_acc, // TODO: replace with acc once ValueNode is added
                 meta.query_fixed(keccak_table[0], Rotation::cur()),
-            ));
+            )];
 
             let mut mod_node_hash_rlc = accs.clone().s_mod_node_rlc;
             if !is_s {
@@ -327,13 +326,13 @@ impl<F: FieldExt> BranchHashInParentConfig<F> {
             let mod_node_hash_rlc_cur = meta.query_advice(mod_node_hash_rlc, Rotation(-19));
             let keccak_table_i = meta.query_fixed(keccak_table[1], Rotation::cur());
             constraints.push((
-                not_first_level.clone()
-                        * is_last_branch_child.clone()
+                not_first_level
+                        * is_last_branch_child
                         * (one.clone()
-                            - is_account_leaf_in_added_branch_prev.clone()) // we don't check this in the first storage level
-                        * (one.clone() - is_branch_placeholder.clone())
-                        * (one.clone() - is_branch_non_hashed.clone())
-                        * (one.clone() - is_extension_node.clone())
+                            - is_account_leaf_in_added_branch_prev) // we don't check this in the first storage level
+                        * (one.clone() - is_branch_placeholder)
+                        * (one.clone() - is_branch_non_hashed)
+                        * (one.clone() - is_extension_node)
                         * mod_node_hash_rlc_cur,
                 keccak_table_i,
             ));
@@ -404,13 +403,13 @@ impl<F: FieldExt> BranchHashInParentConfig<F> {
             constraints.push((
                 "Non-hashed branch in branch",
                 q_not_first
-                    * not_first_level.clone()
-                    * is_last_branch_child.clone()
+                    * not_first_level
+                    * is_last_branch_child
                     * (one.clone()
-                        - is_account_leaf_in_added_branch_prev.clone()) // we don't check this in the first storage level
-                    * (one.clone() - is_branch_placeholder.clone())
-                    * is_branch_non_hashed.clone()
-                    * (one.clone() - is_extension_node.clone())
+                        - is_account_leaf_in_added_branch_prev) // we don't check this in the first storage level
+                    * (one.clone() - is_branch_placeholder)
+                    * is_branch_non_hashed
+                    * (one - is_extension_node)
                     * (mod_node_hash_rlc_cur - branch_acc),
             ));
 
