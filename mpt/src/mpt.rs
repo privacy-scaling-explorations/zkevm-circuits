@@ -213,7 +213,7 @@ impl<F: FieldExt> MPTConfig<F> {
 
         let one = Expression::Constant(F::one());
         let mut r_table = vec![];
-        let mut r = one.clone();
+        let mut r = one;
         for _ in 0..HASH_WIDTH {
             r = r * acc_r;
             r_table.push(r.clone());
@@ -308,7 +308,7 @@ impl<F: FieldExt> MPTConfig<F> {
             accumulators.clone(),
             branch.clone(),
             denoter.clone(),
-            fixed_table.clone(),
+            fixed_table,
             acc_r,
         );
 
@@ -422,7 +422,7 @@ impl<F: FieldExt> MPTConfig<F> {
             s_main.clone(),
             c_main.clone(),
             accumulators.clone(),
-            fixed_table.clone(),
+            fixed_table,
             r_table.clone(),
         );
 
@@ -489,7 +489,7 @@ impl<F: FieldExt> MPTConfig<F> {
             accumulators.clone(),
             account_leaf.is_in_added_branch,
             r_table.clone(),
-            fixed_table.clone(),
+            fixed_table,
             true,
         );
 
@@ -512,7 +512,7 @@ impl<F: FieldExt> MPTConfig<F> {
             accumulators.clone(),
             account_leaf.is_in_added_branch,
             r_table.clone(),
-            fixed_table.clone(),
+            fixed_table,
             false,
         );
 
@@ -531,8 +531,8 @@ impl<F: FieldExt> MPTConfig<F> {
             branch.drifted_pos,
             account_leaf.is_in_added_branch,
             r_table.clone(),
-            fixed_table.clone(),
-            keccak_table.clone(),
+            fixed_table,
+            keccak_table,
         );
 
         let storage_leaf_value_s = LeafValueConfig::<F>::configure(
@@ -546,7 +546,7 @@ impl<F: FieldExt> MPTConfig<F> {
             account_leaf.is_in_added_branch,
             true,
             acc_r,
-            fixed_table.clone(),
+            fixed_table,
         );
 
         let storage_leaf_value_c = LeafValueConfig::<F>::configure(
@@ -560,7 +560,7 @@ impl<F: FieldExt> MPTConfig<F> {
             account_leaf.is_in_added_branch,
             false,
             acc_r,
-            fixed_table.clone(),
+            fixed_table,
         );
 
         let account_leaf_key_s = AccountLeafKeyConfig::<F>::configure(
@@ -578,7 +578,7 @@ impl<F: FieldExt> MPTConfig<F> {
             c_main.clone(),
             accumulators.clone(),
             r_table.clone(),
-            fixed_table.clone(),
+            fixed_table,
             address_rlc,
             denoter.sel2,
             true,
@@ -599,7 +599,7 @@ impl<F: FieldExt> MPTConfig<F> {
             c_main.clone(),
             accumulators.clone(),
             r_table.clone(),
-            fixed_table.clone(),
+            fixed_table,
             address_rlc,
             denoter.sel2,
             false,
@@ -622,7 +622,7 @@ impl<F: FieldExt> MPTConfig<F> {
             accumulators.clone(),
             denoter.sel1,
             r_table.clone(),
-            fixed_table.clone(),
+            fixed_table,
             address_rlc,
         );
 
@@ -640,7 +640,7 @@ impl<F: FieldExt> MPTConfig<F> {
             accumulators.clone(),
             r_table.clone(),
             denoter.clone(),
-            fixed_table.clone(),
+            fixed_table,
             true,
         );
 
@@ -658,7 +658,7 @@ impl<F: FieldExt> MPTConfig<F> {
             accumulators.clone(),
             r_table.clone(),
             denoter.clone(),
-            fixed_table.clone(),
+            fixed_table,
             false,
         );
 
@@ -672,7 +672,7 @@ impl<F: FieldExt> MPTConfig<F> {
             c_main.clone(),
             acc_r,
             accumulators.clone(),
-            fixed_table.clone(),
+            fixed_table,
             denoter.clone(),
             keccak_table,
             true,
@@ -688,7 +688,7 @@ impl<F: FieldExt> MPTConfig<F> {
             c_main.clone(),
             acc_r,
             accumulators.clone(),
-            fixed_table.clone(),
+            fixed_table,
             denoter.clone(),
             keccak_table,
             false,
@@ -711,8 +711,8 @@ impl<F: FieldExt> MPTConfig<F> {
             branch.drifted_pos,
             denoter.clone(),
             r_table.clone(),
-            fixed_table.clone(),
-            keccak_table.clone(),
+            fixed_table,
+            keccak_table,
         );
 
         MPTConfig {
@@ -753,7 +753,7 @@ impl<F: FieldExt> MPTConfig<F> {
 
     pub(crate) fn compute_key_rlc(
         &self,
-        row: &Vec<u8>,
+        row: &[u8],
         key_rlc: &mut F,
         key_rlc_mult: &mut F,
         start: usize,
@@ -787,7 +787,7 @@ impl<F: FieldExt> MPTConfig<F> {
 
     pub(crate) fn compute_acc_and_mult(
         &self,
-        row: &Vec<u8>,
+        row: &[u8],
         acc: &mut F,
         mult: &mut F,
         start: usize,
@@ -802,15 +802,13 @@ impl<F: FieldExt> MPTConfig<F> {
     pub(crate) fn compute_rlc_and_assign(
         &self,
         region: &mut Region<'_, F>,
-        row: &Vec<u8>,
+        row: &[u8],
         pv: &mut ProofValues<F>,
         offset: usize,
-        s_start: usize,
-        c_start: usize,
-        len_s: usize,
-        len_c: usize,
+        s_start_len: (usize, usize),
+        c_start_len: (usize, usize),
     ) -> Result<(), Error> {
-        self.compute_acc_and_mult(row, &mut pv.rlc1, &mut F::one(), s_start, len_s);
+        self.compute_acc_and_mult(row, &mut pv.rlc1, &mut F::one(), s_start_len.0, s_start_len.1);
         region.assign_advice(
             || "assign s_mod_node_hash_rlc".to_string(),
             self.accumulators.s_mod_node_rlc,
@@ -818,7 +816,7 @@ impl<F: FieldExt> MPTConfig<F> {
             || Ok(pv.rlc1),
         )?;
 
-        self.compute_acc_and_mult(row, &mut pv.rlc2, &mut F::one(), c_start, len_c);
+        self.compute_acc_and_mult(row, &mut pv.rlc2, &mut F::one(), c_start_len.0, c_start_len.1);
         region.assign_advice(
             || "assign c_mod_node_hash_rlc".to_string(),
             self.accumulators.c_mod_node_rlc,
@@ -1096,7 +1094,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                     &mut region,
                                     self,
                                     &mut pv,
-                                    &row,
+                                    row,
                                     offset,
                                 );
                             } else if row.get_type() == MptWitnessRowType::AccountLeafKeyC {
@@ -1104,7 +1102,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                     &mut region,
                                     self,
                                     &mut pv,
-                                    &row,
+                                    row,
                                     offset,
                                 );
                             } else if row.get_type() == MptWitnessRowType::AccountLeafNonceBalanceS
@@ -1150,7 +1148,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                     &mut region,
                                     self,
                                     &mut pv,
-                                    &row,
+                                    row,
                                     offset,
                                 );
                             } else if row.get_type() == MptWitnessRowType::ExtensionNodeS {
@@ -1158,7 +1156,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                     &mut region,
                                     self,
                                     &mut pv,
-                                    &row,
+                                    row,
                                     offset,
                                     true,
                                 );
@@ -1167,7 +1165,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                     &mut region,
                                     self,
                                     &mut pv,
-                                    &row,
+                                    row,
                                     offset,
                                     false,
                                 );
@@ -1188,7 +1186,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                 self.account_non_existing.assign(
                                     &mut region,
                                     self,
-                                    &witness,
+                                    witness,
                                     offset,
                                 );
                             }
@@ -1228,9 +1226,7 @@ impl<F: FieldExt> MPTConfig<F> {
         layouter.assign_region(
             || "keccak table",
             |mut region| {
-                let mut offset = 0;
-
-                for t in to_be_hashed.iter() {
+                for (offset, t) in to_be_hashed.iter().enumerate() {
                     let hash = self.compute_keccak(t);
                     let mut rlc = F::zero();
                     let mut mult = F::one();
@@ -1254,8 +1250,6 @@ impl<F: FieldExt> MPTConfig<F> {
                         offset,
                         || Ok(hash_rlc),
                     )?;
-
-                    offset += 1;
                 }
 
                 Ok(())

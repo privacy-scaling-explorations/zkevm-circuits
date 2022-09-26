@@ -816,7 +816,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
         if nonce_len == 1 && balance_len == 1 {
             mpt_config
                 .compute_rlc_and_assign(
-                    region, &row.bytes, pv, offset, S_START, C_START, HASH_WIDTH, HASH_WIDTH,
+                    region, &row.bytes, pv, offset, (S_START, HASH_WIDTH), (C_START, HASH_WIDTH),
                 )
                 .ok();
         } else if nonce_len > 1 && balance_len == 1 {
@@ -826,10 +826,8 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
                     &row.bytes,
                     pv,
                     offset,
-                    S_START + 1,
-                    C_START,
-                    HASH_WIDTH - 1,
-                    HASH_WIDTH,
+                    (S_START + 1, HASH_WIDTH - 1),
+                    (C_START, HASH_WIDTH),
                 )
                 .ok();
         } else if nonce_len == 1 && balance_len > 1 {
@@ -839,10 +837,8 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
                     &row.bytes,
                     pv,
                     offset,
-                    S_START,
-                    C_START + 1,
-                    HASH_WIDTH,
-                    HASH_WIDTH - 1,
+                    (S_START, HASH_WIDTH),
+                    (C_START + 1, HASH_WIDTH - 1),
                 )
                 .ok();
         } else if nonce_len > 1 && balance_len > 1 {
@@ -852,10 +848,8 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
                     &row.bytes,
                     pv,
                     offset,
-                    S_START + 1,
-                    C_START + 1,
-                    HASH_WIDTH - 1,
-                    HASH_WIDTH - 1,
+                    (S_START + 1, HASH_WIDTH - 1),
+                    (C_START + 1, HASH_WIDTH - 1),
                 )
                 .ok();
         }

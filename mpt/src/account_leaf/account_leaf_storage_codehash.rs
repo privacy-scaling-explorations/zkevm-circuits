@@ -565,7 +565,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
             pv.rlc2 = F::zero();
             mpt_config
                 .compute_rlc_and_assign(
-                    region, &row.bytes, pv, offset, S_START, C_START, HASH_WIDTH, HASH_WIDTH,
+                    region, &row.bytes, pv, offset, (S_START, HASH_WIDTH), (C_START, HASH_WIDTH),
                 )
                 .ok();
         } else {
@@ -596,7 +596,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
             pv.rlc2 = F::zero();
             mpt_config
                 .compute_rlc_and_assign(
-                    region, &row.bytes, pv, offset, S_START, C_START, HASH_WIDTH, HASH_WIDTH,
+                    region, &row.bytes, pv, offset, (S_START, HASH_WIDTH), (C_START, HASH_WIDTH),
                 )
                 .ok();
         }
