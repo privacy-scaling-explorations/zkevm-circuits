@@ -1379,6 +1379,8 @@ pub(crate) struct SarWordsGadget<F> {
     shf_div64_eq3: IsEqualGadget<F>,
     // a64s_lo[idx] < p_lo
     a64s_lo_lt_p_lo: [LtGadget<F, 16>; 4],
+    // a64s_hi[idx] < p_hi
+    a64s_hi_lt_p_hi: [LtGadget<F, 16>; 4],
 }
 
 impl<F: Field> SarWordsGadget<F> {
@@ -1427,6 +1429,13 @@ impl<F: Field> SarWordsGadget<F> {
         let a64s_lo_lt_p_lo = array_init(|idx| {
             let lt = LtGadget::construct(cb, a64s_lo[idx].expr(), p_lo.expr());
             cb.require_equal("a64s_lo[idx] < p_lo", lt.expr(), 1.expr());
+            lt
+        });
+
+        // a64s_hi[idx] < p_hi
+        let a64s_hi_lt_p_hi = array_init(|idx| {
+            let lt = LtGadget::construct(cb, a64s_hi[idx].expr(), p_hi.expr());
+            cb.require_equal("a64s_hi[idx] < p_hi", lt.expr(), 1.expr());
             lt
         });
 
@@ -1525,6 +1534,7 @@ impl<F: Field> SarWordsGadget<F> {
             shf_div64_eq2,
             shf_div64_eq3,
             a64s_lo_lt_p_lo,
+            a64s_hi_lt_p_hi,
         }
     }
 
@@ -1637,6 +1647,11 @@ impl<F: Field> SarWordsGadget<F> {
             .iter()
             .zip(a64s_lo.iter())
             .map(|(lt, val)| lt.assign(region, offset, F::from_u128(*val), F::from_u128(p_lo)))
+            .collect::<Result<Vec<_>, _>>()?;
+        self.a64s_hi_lt_p_hi
+            .iter()
+            .zip(a64s_hi.iter())
+            .map(|(lt, val)| lt.assign(region, offset, F::from_u128(*val), F::from_u128(p_hi)))
             .collect::<Result<Vec<_>, _>>()?;
         Ok(())
     }
