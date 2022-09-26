@@ -825,6 +825,9 @@ impl DynamicTableColumns for KeccakTable {
 /// TxLogs and TxCallData.
 #[derive(Clone, Copy, Debug)]
 pub struct CopyTable {
+    /// Whether this row denotes a step. A read row is a step and a write row is
+    /// not.
+    pub q_step: Selector,
     /// Whether the row is the first read-write pair for a copy event.
     pub is_first: Column<Advice>,
     /// Whether the row is the last read-write pair for a copy event.
@@ -869,6 +872,7 @@ impl CopyTable {
     /// Construct a new CopyTable
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>, q_enable: Column<Fixed>) -> Self {
         Self {
+            q_step: meta.complex_selector(),
             is_first: meta.advice_column(),
             is_last: meta.advice_column(),
             id: meta.advice_column(),

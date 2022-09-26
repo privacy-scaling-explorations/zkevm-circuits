@@ -12,7 +12,7 @@ use gadgets::{
 };
 use halo2_proofs::{
     circuit::{Layouter, Region, Value},
-    plonk::{Column, ConstraintSystem, Error, Expression, Fixed, Selector},
+    plonk::{Column, ConstraintSystem, Error, Expression, Fixed},
     poly::Rotation,
 };
 use itertools::Itertools;
@@ -49,9 +49,6 @@ pub fn number_or_hash_to_field<F: Field>(v: &NumberOrHash, randomness: F) -> F {
 pub struct CopyCircuit<F> {
     /// Whether the row is enabled or not.
     pub q_enable: Column<Fixed>,
-    /// Whether this row denotes a step. A read row is a step and a write row is
-    /// not.
-    pub q_step: Selector,
     /// The Copy Table contains the columns that are exposed via the lookup
     /// expressions
     pub copy_table: CopyTable,
@@ -73,7 +70,7 @@ impl<F: Field> CopyCircuit<F> {
         q_enable: Column<Fixed>,
         randomness: Expression<F>,
     ) -> Self {
-        let q_step = meta.complex_selector();
+        let q_step = copy_table.q_step;
         let is_last = copy_table.is_last;
         let value = copy_table.value;
         let is_code = copy_table.is_code;
@@ -355,7 +352,6 @@ impl<F: Field> CopyCircuit<F> {
         });
 
         Self {
-            q_step,
             q_enable,
             addr_lt_addr_end,
             copy_table,
@@ -385,12 +381,11 @@ impl<F: Field> CopyCircuit<F> {
                         let is_read = step_idx % 2 == 0;
                         // q_step
                         if is_read {
-                            self.q_step.enable(&mut region, offset)?;
+                            self.copy_table.q_step.enable(&mut region, offset)?;
                         }
                         for (column, &(value, label)) in copy_table_columns.iter().zip_eq(row) {
                             // Leave sr_addr_end and bytes_left unassigned when !is_read
                             if !is_read && (label == "src_addr_end" || label == "bytes_left") {
-                                ();
                             } else {
                                 region.assign_advice(
                                     || format!("{} at row: {}", label, offset),
@@ -407,7 +402,7 @@ impl<F: Field> CopyCircuit<F> {
                             offset,
                             || Value::known(F::one()),
                         )?;
-                        tag_chip.assign(&mut region, offset, &tag)?;
+                        tag_chip.assign(&mut region, offset, tag)?;
                         // lt chip
                         if is_read {
                             lt_chip.assign(
