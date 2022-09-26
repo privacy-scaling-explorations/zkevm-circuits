@@ -135,7 +135,7 @@ impl<const N_ARGS: usize> Opcode for Call<N_ARGS> {
             CodeSource::Address(address) => address,
             _ => unreachable!(),
         };
-        state.account_read(
+        state.account_write(
             &mut exec_step,
             code_source,
             AccountField::CodeHash,

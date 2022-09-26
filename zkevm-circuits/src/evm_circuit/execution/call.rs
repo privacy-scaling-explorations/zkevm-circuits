@@ -167,12 +167,22 @@ impl<F: Field> ExecutionGadget<F> for CallGadget<F> {
         );
 
         // Verify gas cost
-        let [callee_nonce, callee_code_hash] = [AccountFieldTag::Nonce, AccountFieldTag::CodeHash]
-            .map(|field_tag| {
-                let value = cb.query_cell();
-                cb.account_read(callee_address.clone(), field_tag, value.expr());
-                value
-            });
+        let callee_nonce = cb.query_cell();
+        cb.account_read(
+            callee_address.clone(),
+            AccountFieldTag::Nonce,
+            callee_nonce.expr(),
+        );
+
+        let callee_code_hash = cb.query_cell();
+        cb.account_write(
+            callee_address.clone(),
+            AccountFieldTag::CodeHash,
+            callee_code_hash.expr(),
+            callee_code_hash.expr(),
+            None,
+        );
+
         let is_empty_nonce_and_balance = BatchedIsZeroGadget::construct(
             cb,
             [

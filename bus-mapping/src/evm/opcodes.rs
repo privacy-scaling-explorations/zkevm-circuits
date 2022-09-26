@@ -404,7 +404,7 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
             Ok(exec_step)
         }
         (_, _, is_empty_code_hash) => {
-            state.account_read(
+            state.account_write(
                 &mut exec_step,
                 call.address,
                 AccountField::CodeHash,

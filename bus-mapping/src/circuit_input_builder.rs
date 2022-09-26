@@ -231,7 +231,9 @@ impl<'a> CircuitInputBuilder {
     ) -> Result<(), Error> {
         let mut tx = self.new_tx(eth_tx, !geth_trace.failed)?;
         let mut tx_ctx = TransactionContext::new(eth_tx, geth_trace, is_last_tx)?;
-        log::trace!("handle_tx tx {:?} tx_ctx {:?}", tx, tx_ctx);
+        let mut debug_tx = tx.clone();
+        debug_tx.input.clear();
+        log::trace!("handle_tx tx {:?}", debug_tx);
         if let Some(al) = &eth_tx.access_list {
             for item in &al.0 {
                 self.sdb.add_account_to_access_list(item.address);

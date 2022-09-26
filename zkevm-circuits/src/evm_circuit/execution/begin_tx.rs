@@ -147,10 +147,12 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 
         // Read code_hash of callee
         let code_hash = cb.query_cell();
-        cb.account_read(
+        cb.account_write(
             tx_callee_address.expr(),
             AccountFieldTag::CodeHash,
             code_hash.expr(),
+            code_hash.expr(),
+            Some(&mut reversion_info),
         );
 
         // Setup first call's context.
