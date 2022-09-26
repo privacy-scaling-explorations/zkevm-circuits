@@ -70,11 +70,11 @@ pub fn range_lookups<F: FieldExt>(
 
             let s = meta.query_advice(col, Rotation::cur());
             constraints.push((
-                Expression::Constant(F::from(tag.clone() as u64)),
+                Expression::Constant(F::from(tag as u64)),
                 meta.query_fixed(fixed_table[0], Rotation::cur()),
             ));
             constraints.push((
-                q_enable.clone() * s,
+                q_enable * s,
                 meta.query_fixed(fixed_table[1], Rotation::cur()),
             ));
 
@@ -106,45 +106,20 @@ pub fn key_len_lookup<F: FieldExt>(
     len_offset: usize,
     fixed_table: [Column<Fixed>; 3],
 ) {
-    key_len_lookup_rot_len(
-        meta,
-        q_enable,
-        ind,
-        key_len_col,
-        column,
-        len_offset,
-        0,
-        fixed_table,
-    );
-}
-
-/*
-Like key_len_lookup, but rotates to retrieve the length of the stream.
-*/
-pub fn key_len_lookup_rot_len<F: FieldExt>(
-    meta: &mut ConstraintSystem<F>,
-    q_enable: impl Fn(&mut VirtualCells<'_, F>) -> Expression<F>,
-    ind: usize,
-    key_len_col: Column<Advice>,
-    column: Column<Advice>,
-    len_offset: usize,
-    rot_len: i32,
-    fixed_table: [Column<Fixed>; 3],
-) {
     meta.lookup_any("key_len_lookup", |meta| {
         let mut constraints = vec![];
         let q_enable = q_enable(meta);
 
         let s = meta.query_advice(column, Rotation::cur());
         let offset = Expression::Constant(F::from(len_offset as u64));
-        let key_len = meta.query_advice(key_len_col, Rotation(rot_len)) - offset;
+        let key_len = meta.query_advice(key_len_col, Rotation::cur()) - offset;
         let key_len_rem = key_len - Expression::Constant(F::from(ind as u64));
         constraints.push((
             Expression::Constant(F::from(FixedTableTag::RangeKeyLen256 as u64)),
             meta.query_fixed(fixed_table[0], Rotation::cur()),
         ));
         constraints.push((
-            q_enable.clone() * s * key_len_rem,
+            q_enable * s * key_len_rem,
             meta.query_fixed(fixed_table[1], Rotation::cur()),
         ));
 
@@ -179,7 +154,7 @@ pub fn mult_diff_lookup<F: FieldExt>(
             meta.query_fixed(fixed_table[1], Rotation::cur()),
         ));
         constraints.push((
-            q_enable.clone() * mult_diff,
+            q_enable * mult_diff,
             meta.query_fixed(fixed_table[2], Rotation::cur()),
         ));
 
@@ -192,7 +167,7 @@ pub fn get_bool_constraint<F: FieldExt>(
     expr: Expression<F>,
 ) -> Expression<F> {
     let one = Expression::Constant(F::from(1_u64));
-    q_enable * expr.clone() * (one - expr.clone())
+    q_enable * expr.clone() * (one - expr)
 }
 
 pub fn get_is_extension_node<F: FieldExt>(
@@ -200,9 +175,12 @@ pub fn get_is_extension_node<F: FieldExt>(
     s_advices: [Column<Advice>; HASH_WIDTH],
     rot: i32,
 ) -> Expression<F> {
-    // To reduce the expression degree, we pack together multiple information.
-    // Constraints on selectors are in extension_node.
-    // NOTE: even and odd refers to number of nibbles that are compactly encoded.
+    /*
+    To reduce the expression degree, we pack together multiple information.
+    Constraints for the selectors are in `extension_node.rs`.
+
+    Note: even and odd refers to number of nibbles that are compactly encoded.
+    */
     let is_ext_short = get_is_extension_node_one_nibble(meta, s_advices, rot);
     let is_ext_node_even_nibbles = get_is_extension_node_even_nibbles(meta, s_advices, rot);
     let is_ext_node_long_odd_nibbles = get_is_extension_node_long_odd_nibbles(meta, s_advices, rot);
@@ -249,22 +227,22 @@ pub fn get_is_extension_node_long_odd_nibbles<F: FieldExt>(
     is_ext_long_odd_c16 + is_ext_long_odd_c1
 }
 
-pub(crate) fn bytes_into_rlc<F: FieldExt>(message: &[u8], r: F) -> F {
+pub(crate) fn bytes_into_rlc<F: FieldExt>(expressions: &[u8], r: F) -> F {
     let mut rlc = F::zero();
     let mut mult = F::one();
-    for i in 0..message.len() {
-        rlc += F::from(message[i] as u64) * mult;
+    for expr in expressions.iter() {
+        rlc += F::from(*expr as u64) * mult;
         mult *= r;
     }
 
     rlc
 }
 
-pub(crate) fn bytes_expr_into_rlc<F: FieldExt>(message: &[Expression<F>], r: F) -> Expression<F> {
+pub(crate) fn bytes_expr_into_rlc<F: FieldExt>(expressions: &[Expression<F>], r: F) -> Expression<F> {
     let mut rlc = Expression::Constant(F::zero());
     let mut mult = F::one();
-    for i in 0..message.len() {
-        rlc = rlc + message[i].clone() * mult;
+    for expr in expressions.iter() {
+        rlc = rlc + expr.clone() * mult;
         mult *= r;
     }
 

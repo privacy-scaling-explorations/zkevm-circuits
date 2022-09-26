@@ -469,8 +469,8 @@ impl<F: FieldExt> BranchConfig<F> {
                 "Branch children node_index > 0 RLP C",
                 q_not_first.clone()
                     * is_branch_child_cur.clone()
-                    * (one.clone() - is_branch_init_prev.clone())
-                    * (c_rlp1_prev - bytes_num_in_row_c.clone() - c_rlp1_cur.clone()),
+                    * (one.clone() - is_branch_init_prev)
+                    * (c_rlp1_prev - bytes_num_in_row_c - c_rlp1_cur.clone()),
             ));
 
             /*
@@ -483,11 +483,11 @@ impl<F: FieldExt> BranchConfig<F> {
                 "Branch last child RLP length S",
                 q_not_first.clone()
                     * is_last_branch_child.clone()
-                    * (s_rlp1_cur.clone() - one.clone()),
+                    * (s_rlp1_cur - one.clone()),
             ));
             constraints.push((
                 "Branch last child RLP length C",
-                q_not_first.clone() * is_last_branch_child.clone() * (c_rlp1_cur.clone() - one),
+                q_not_first * is_last_branch_child * (c_rlp1_cur - one),
             ));
 
             constraints
@@ -566,7 +566,7 @@ impl<F: FieldExt> BranchConfig<F> {
             constraints.push((
                 "is_last_child when node_index = 15",
                 q_not_first.clone()
-                    * (one.clone() - is_branch_init_prev.clone()) // ignore if previous row was is_branch_init (here is_branch_child changes too)
+                    * (one.clone() - is_branch_init_prev) // ignore if previous row was is_branch_init (here is_branch_child changes too)
                     * (is_last_branch_child_prev - one.clone())
                     * (is_branch_child_prev
                         - is_branch_child_cur.clone()), /* for this to work properly make sure
@@ -595,7 +595,7 @@ impl<F: FieldExt> BranchConfig<F> {
             constraints.push((
                 "modified_node the same for all branch children",
                 q_not_first.clone()
-                    * is_branch_child_cur.clone()
+                    * is_branch_child_cur
                     * node_index_cur // ignore if node_index = 0
                     * (modified_node_cur.clone() - modified_node_prev),
             ));
@@ -624,10 +624,10 @@ impl<F: FieldExt> BranchConfig<F> {
                 "drifted_pos the same for all branch children",
                 q_not_first.clone()
                     * (one.clone()
-                        - is_branch_placeholder_s.clone()
-                        - is_branch_placeholder_c.clone())
+                        - is_branch_placeholder_s
+                        - is_branch_placeholder_c)
                     * node_index_cur.clone() // ignore if node_index = 0
-                    * (drifted_pos_prev.clone() - drifted_pos_cur.clone()),
+                    * (drifted_pos_prev - drifted_pos_cur),
             ));
 
             let is_last_branch_child = meta.query_advice(branch.is_last_child, Rotation::cur());
@@ -742,8 +742,8 @@ impl<F: FieldExt> BranchConfig<F> {
                 "is_modified = 1 only for modified node",
                 q_not_first.clone()
                     * is_branch_child_cur.clone()
-                    * is_modified.clone()
-                    * (node_index_cur.clone() - modified_node_cur.clone()),
+                    * is_modified
+                    * (node_index_cur.clone() - modified_node_cur),
             ));
 
             /* 
@@ -753,10 +753,10 @@ impl<F: FieldExt> BranchConfig<F> {
             */
             constraints.push((
                 "is_at_drifted_pos = 1 only for drifted node",
-                q_not_first.clone()
-                    * is_branch_child_cur.clone()
-                    * is_at_drifted_pos.clone()
-                    * (node_index_cur.clone() - drifted_pos.clone()),
+                q_not_first
+                    * is_branch_child_cur
+                    * is_at_drifted_pos
+                    * (node_index_cur - drifted_pos),
             ));
 
             constraints
@@ -796,7 +796,7 @@ impl<F: FieldExt> BranchConfig<F> {
                 "Bool check is_branch_placeholder_s",
                 get_bool_constraint(
                     q_enable.clone() * is_branch_init_cur.clone(),
-                    is_branch_placeholder_s.clone(),
+                    is_branch_placeholder_s,
                 ),
             ));
 
@@ -807,7 +807,7 @@ impl<F: FieldExt> BranchConfig<F> {
                 "Bool check is_branch_placeholder_c",
                 get_bool_constraint(
                     q_enable.clone() * is_branch_init_cur.clone(),
-                    is_branch_placeholder_c.clone(),
+                    is_branch_placeholder_c,
                 ),
             ));
 
@@ -818,7 +818,7 @@ impl<F: FieldExt> BranchConfig<F> {
                 "Bool check is_branch_non_hashed_s",
                 get_bool_constraint(
                     q_enable.clone() * is_branch_init_cur.clone(),
-                    is_branch_non_hashed_s.clone(),
+                    is_branch_non_hashed_s,
                 ),
             ));
 
@@ -828,8 +828,8 @@ impl<F: FieldExt> BranchConfig<F> {
             constraints.push((
                 "Bool check is_branch_non_hashed_c",
                 get_bool_constraint(
-                    q_enable.clone() * is_branch_init_cur.clone(),
-                    is_branch_non_hashed_c.clone(),
+                    q_enable * is_branch_init_cur,
+                    is_branch_non_hashed_c,
                 ),
             ));
 
@@ -864,12 +864,12 @@ impl<F: FieldExt> BranchConfig<F> {
 
             constraints.push((
                 "nibbles_count",
-                q_enable.clone()
-                    * is_branch_init_cur.clone()
-                    * (one.clone() - is_extension_node.clone()) // extension node counterpart constraint is in extension_node.rs
+                q_enable
+                    * is_branch_init_cur
+                    * (one.clone() - is_extension_node) // extension node counterpart constraint is in extension_node.rs
                     * (one.clone() - is_account_leaf_in_added_branch)
-                    * not_first_level.clone()
-                    * (nibbles_count_cur.clone() - nibbles_count_prev.clone() - one.clone()),
+                    * not_first_level
+                    * (nibbles_count_cur - nibbles_count_prev - one.clone()),
             ));
 
             constraints
@@ -900,7 +900,7 @@ impl<F: FieldExt> BranchConfig<F> {
                 q_enable.clone()
                     * is_branch_init_cur.clone()
                     * (one.clone() - is_extension_node.clone()) // extension node counterpart constraint is in extension_node.rs
-                    * (one.clone() - not_first_level.clone())
+                    * (one.clone() - not_first_level)
                     * (nibbles_count_cur.clone() - one.clone()),
             ));
 
@@ -909,11 +909,11 @@ impl<F: FieldExt> BranchConfig<F> {
             */
             constraints.push((
                 "nibbles_count first level storage",
-                q_enable.clone()
-                    * is_branch_init_cur.clone()
-                    * (one.clone() - is_extension_node.clone()) // extension node counterpart constraint is in extension_node.rs
+                q_enable
+                    * is_branch_init_cur
+                    * (one.clone() - is_extension_node) // extension node counterpart constraint is in extension_node.rs
                     * is_account_leaf_in_added_branch
-                    * (nibbles_count_cur.clone() - one.clone()),
+                    * (nibbles_count_cur - one.clone()),
             ));
 
             constraints
@@ -998,10 +998,11 @@ impl<F: FieldExt> BranchConfig<F> {
         } else {
             pv.is_branch_c_placeholder = false
         }
-        // If no placeholder branch, we set drifted_pos = modified_node. This
-        // is needed just to make some other constraints (s_mod_node_hash_rlc
-        // and c_mod_node_hash_rlc correspond to the proper node) easier to
-        // write.
+        /*
+        If no placeholder branch, we set `drifted_pos = modified_node`. This
+        is needed just to make some other constraints (`s_mod_node_hash_rlc`
+        and `c_mod_node_hash_rlc` correspond to the proper node) easier to write.
+        */
         if row.get_byte(IS_BRANCH_S_PLACEHOLDER_POS) == 0
             && row.get_byte(IS_BRANCH_C_PLACEHOLDER_POS) == 0
         {
@@ -1010,8 +1011,7 @@ impl<F: FieldExt> BranchConfig<F> {
 
         let account_leaf = AccountLeaf::default();
         let storage_leaf = StorageLeaf::default();
-        let mut branch = Branch::default();
-        branch.is_branch_init = true;
+        let branch = Branch { is_branch_init: true, ..Default::default() };
 
         row.assign(
             region,
@@ -1093,11 +1093,11 @@ impl<F: FieldExt> BranchConfig<F> {
             + row.get_byte(IS_EXT_LONG_ODD_C16_POS)
             + row.get_byte(IS_EXT_LONG_ODD_C1_POS)
             == 1;
-        pv.is_extension_node = pv.is_even == true || pv.is_odd == true;
+        pv.is_extension_node = pv.is_even || pv.is_odd;
 
         // Assign how many nibbles have been used in the previous extension node +
         // branch.
-        pv.nibbles_num = pv.nibbles_num + 1; // one nibble is used for position in branch
+        pv.nibbles_num += 1; // one nibble is used for position in branch
         if pv.is_extension_node {
             // Get into extension node S
             let row_ext = &witness[offset + BRANCH_ROWS_NUM as usize - 2];
@@ -1368,10 +1368,10 @@ impl<F: FieldExt> BranchConfig<F> {
         */
         let mut sel1 = F::zero();
         let mut sel2 = F::zero();
-        if pv.s_mod_node_hash_rlc == F::from(128 as u64) {
+        if pv.s_mod_node_hash_rlc == F::from(128_u64) {
             sel1 = F::one();
         }
-        if pv.c_mod_node_hash_rlc == F::from(128 as u64) {
+        if pv.c_mod_node_hash_rlc == F::from(128_u64) {
             sel2 = F::one();
         }
 
