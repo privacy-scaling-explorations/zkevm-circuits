@@ -86,7 +86,7 @@ mod tests {
             Challenge255<G1Affine>,
             ChaCha20Rng,
             Blake2bWrite<Vec<u8>, G1Affine, Challenge255<G1Affine>>,
-            TxCircuit<Fr, 2, 1024>,
+            TxCircuit<Fr, MAX_TXS, MAX_CALLDATA>,
         >(
             &general_params,
             &pk,
