@@ -150,6 +150,7 @@ Key extension is [0].
 */
 
 impl<F: FieldExt> ExtensionNodeConfig<F> {
+    #[allow(clippy::too_many_arguments)]
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         q_enable: impl Fn(&mut VirtualCells<'_, F>) -> Expression<F>,
@@ -264,7 +265,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
             let mut rlc_non_hashed_branch = acc_s + c_advices0 * acc_mult_s.clone();
             let c_advices_rlc_non_hashed = compute_rlc(
                 meta,
-                c_main.bytes.iter().skip(1).map(|v| *v).collect_vec(),
+                c_main.bytes.iter().skip(1).copied().collect_vec(),
                 0,
                 acc_mult_s,
                 0,
@@ -299,7 +300,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                 "Non-hashed extension node RLC",
                 q_not_first
                     * q_enable
-                    * (one.clone() - is_branch_init_prev.clone())
+                    * (one.clone() - is_branch_init_prev)
                     * (one.clone() - is_branch_hashed)
                     * (rlc_non_hashed_branch - acc_c),
             ));
@@ -449,7 +450,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                     q_not_first.clone()
                         * q_enable.clone()
                         * (one.clone() - is_branch_init_prev.clone()),
-                    is_ext_node_non_hashed.clone(),
+                    is_ext_node_non_hashed,
                 ),
             ));
 
@@ -519,17 +520,17 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
             constrain_sel(is_branch_c1.clone(), is_ext_short_c1.clone());
             constrain_sel(is_branch_c16.clone(), is_ext_long_even_c16.clone());
             constrain_sel(is_branch_c1.clone(), is_ext_long_even_c1.clone());
-            constrain_sel(is_branch_c16.clone(), is_ext_long_odd_c16.clone());
-            constrain_sel(is_branch_c1.clone(), is_ext_long_odd_c1.clone());
+            constrain_sel(is_branch_c16, is_ext_long_odd_c16.clone());
+            constrain_sel(is_branch_c1, is_ext_long_odd_c1.clone());
  
             // In C we have nibbles, we check below only for S.
             if is_s {
                 let s_rlp1 = meta.query_advice(s_main.rlp1, Rotation::cur());
                 let s_bytes0 = meta.query_advice(s_main.bytes[0], Rotation::cur());
 
-                let is_short = is_ext_short_c16.clone() + is_ext_short_c1.clone();
-                let is_even_nibbles = is_ext_long_even_c16.clone() + is_ext_long_even_c1.clone();
-                let is_long_odd_nibbles = is_ext_long_odd_c16.clone()+ is_ext_long_odd_c1.clone();
+                let is_short = is_ext_short_c16 + is_ext_short_c1;
+                let is_even_nibbles = is_ext_long_even_c16 + is_ext_long_even_c1;
+                let is_long_odd_nibbles = is_ext_long_odd_c16 + is_ext_long_odd_c1;
 
                 /*
                 This constraint prevents the attacker to set the number of nibbles to be even
@@ -595,7 +596,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                     q_not_first.clone()
                         * q_enable.clone()
                         // when one nibble, extension node cannot be longer that 55
-                        * is_short.clone()
+                        * is_short
                         * (one.clone() - is_branch_hashed.clone())
                         * (s_rlp1.clone() - c192.clone() - one.clone() - (c_bytes0.clone() - c192.clone()) - one.clone()),
                 ));
@@ -635,7 +636,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                     q_not_first.clone()
                         * q_enable.clone()
                         * (one.clone() - is_ext_longer_than_55.clone())
-                        * (is_even_nibbles.clone() + is_long_odd_nibbles.clone())
+                        * (is_even_nibbles + is_long_odd_nibbles)
                         * (one.clone() - is_branch_hashed.clone())
                         * (s_rlp1.clone() - c192.clone() - (s_rlp2.clone() - c128.clone()) - one.clone()
                             - (c_bytes0.clone() - c192.clone()) - one.clone()),
@@ -683,7 +684,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                         * q_enable.clone()
                         * is_ext_longer_than_55.clone()
                         * is_branch_hashed.clone()
-                        * (s_rlp2.clone() - (s_bytes0.clone() - c128.clone()) - one.clone() - c33.clone()),
+                        * (s_rlp2 - (s_bytes0.clone() - c128.clone()) - one.clone() - c33.clone()),
                 ));
 
                 /*
@@ -699,12 +700,12 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                 // TODO: test
                 constraints.push((
                     "Non-hashed branch & ext longer than 55 RLP",
-                    q_not_first.clone()
-                        * q_enable.clone()
-                        * is_ext_longer_than_55.clone()
-                        * (one.clone() - is_branch_hashed.clone())
-                        * (s_rlp1.clone() - (s_bytes0 - c128.clone()) - one.clone()
-                            - (c_bytes0.clone() - c192.clone()) - one.clone()),
+                    q_not_first
+                        * q_enable
+                        * is_ext_longer_than_55
+                        * (one.clone() - is_branch_hashed)
+                        * (s_rlp1 - (s_bytes0 - c128.clone()) - one.clone()
+                            - (c_bytes0 - c192.clone()) - one.clone()),
                 ));
 
                 /*
@@ -772,15 +773,14 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
             // TODO: acc currently doesn't have branch ValueNode info (which 128 if nil)
             let branch_acc = acc + c128.clone() * mult;
 
-            let mut constraints = vec![];
-            constraints.push((
+            let mut constraints = vec![(
                 q_not_first.clone()
                     * q_enable.clone()
                     * (one.clone() - is_branch_init_prev.clone())
                     * is_branch_hashed.clone()
                     * branch_acc, // TODO: replace with acc once ValueNode is added
                 meta.query_fixed(keccak_table[0], Rotation::cur()),
-            ));
+            )];
 
             let mut sc_hash = vec![];
             // Note: extension node has branch hash always in c_advices.
@@ -789,11 +789,11 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
             }
             let hash_rlc = bytes_expr_into_rlc(&sc_hash, acc_r);
             constraints.push((
-                q_not_first.clone()
-                    * q_enable.clone()
+                q_not_first
+                    * q_enable
                     * (one.clone() - is_branch_init_prev)
-                    * is_branch_hashed.clone()
-                    * hash_rlc.clone(),
+                    * is_branch_hashed
+                    * hash_rlc,
                 meta.query_fixed(keccak_table[1], Rotation::cur()),
             ));
 
@@ -809,7 +809,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
 
                 let c_rlp2 = meta.query_advice(c_main.rlp2, Rotation::cur());
                 // c_rlp2 = 160 when branch is hashed (longer than 31) and c_rlp2 = 0 otherwise
-                let is_branch_hashed = c_rlp2.clone() * c160_inv.clone();
+                let is_branch_hashed = c_rlp2 * c160_inv.clone();
 
                 let mut acc = meta.query_advice(accs.acc_s.rlc, Rotation(-1));
                 let mut mult = meta.query_advice(accs.acc_s.mult, Rotation(-1));
@@ -850,7 +850,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
 
             let c_rlp2 = meta.query_advice(c_main.rlp2, Rotation::cur());
             // c_rlp2 = 160 when branch is hashed (longer than 31) and c_rlp2 = 0 otherwise
-            let is_branch_hashed = c_rlp2.clone() * c160_inv.clone();
+            let is_branch_hashed = c_rlp2 * c160_inv.clone();
 
             q_not_first * q_enable * (one.clone() - is_branch_hashed)
         };
@@ -904,7 +904,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                 ));
                 let keccak_table_i = meta.query_fixed(keccak_table[1], Rotation::cur());
                 constraints.push((
-                    q_not_first * q_enable.clone() * (one.clone() - not_first_level) * root,
+                    q_not_first * q_enable * (one.clone() - not_first_level) * root,
                     keccak_table_i,
                 ));
 
@@ -978,8 +978,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                 }
                 let hash_rlc = bytes_expr_into_rlc(&sc_hash, acc_r);
 
-                let mut constraints = vec![];
-                constraints.push((
+                let mut constraints = vec![(
                     not_first_level.clone()
                         * is_extension_node.clone()
                         * is_after_last_branch_child.clone()
@@ -987,14 +986,14 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                         * (one.clone() - is_branch_placeholder.clone())
                         * acc,
                     meta.query_fixed(keccak_table[0], Rotation::cur()),
-                ));
+                )];
                 constraints.push((
-                    not_first_level.clone()
-                        * is_extension_node.clone()
-                        * is_after_last_branch_child.clone()
-                        * is_account_leaf_in_added_branch.clone()
-                        * (one.clone() - is_branch_placeholder.clone())
-                        * hash_rlc.clone(),
+                    not_first_level
+                        * is_extension_node
+                        * is_after_last_branch_child
+                        * is_account_leaf_in_added_branch
+                        * (one.clone() - is_branch_placeholder)
+                        * hash_rlc,
                     meta.query_fixed(keccak_table[1], Rotation::cur()),
                 ));
 
@@ -1055,10 +1054,10 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
 
             let keccak_table_i = meta.query_fixed(keccak_table[1], Rotation::cur());
             constraints.push((
-                not_first_level.clone()
-                    * q_enable.clone()
-                    * (one.clone() - is_account_leaf_in_added_branch.clone())
-                    * (one.clone() - is_branch_placeholder.clone())
+                not_first_level
+                    * q_enable
+                    * (one.clone() - is_account_leaf_in_added_branch)
+                    * (one.clone() - is_branch_placeholder)
                     * (one.clone() - is_ext_node_non_hashed)
                     * mod_node_hash_rlc_cur,
                 keccak_table_i,
@@ -1111,11 +1110,11 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                 */
                 constraints.push((
                     "Non-hashed extension node in parent branch",
-                    q_not_first.clone()
-                        * not_first_level.clone()
-                        * q_enable.clone()
-                        * (one.clone() - is_account_leaf_in_added_branch.clone())
-                        * (one.clone() - is_branch_placeholder.clone())
+                    q_not_first
+                        * not_first_level
+                        * q_enable
+                        * (one.clone() - is_account_leaf_in_added_branch)
+                        * (one.clone() - is_branch_placeholder)
                         * is_ext_node_non_hashed
                         * (mod_node_hash_rlc_cur - acc_c),
                 ));
@@ -1178,8 +1177,8 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                 in first storage level
                 */
                 nibbles_count_prev =
-                    (one.clone() - is_first_storage_level.clone()) * nibbles_count_prev.clone();
-                nibbles_count_prev = not_first_level.clone() * nibbles_count_prev.clone();
+                    (one.clone() - is_first_storage_level) * nibbles_count_prev.clone();
+                nibbles_count_prev = not_first_level * nibbles_count_prev.clone();
 
                 /*
                 When there is only one nibble in the extension node, `nibbles_count` changes
@@ -1189,7 +1188,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                     "Nibbles number when one nibble",
                     q_not_first.clone()
                         * q_enable.clone()
-                        * is_short.clone()
+                        * is_short
                         * (nibbles_count_cur.clone()
                             - nibbles_count_prev.clone()
                             - one.clone()
@@ -1259,7 +1258,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                     "Nibbles num when even number of nibbles & ext longer than 55",
                     q_not_first.clone()
                         * q_enable.clone()
-                        * is_even_nibbles.clone()
+                        * is_even_nibbles
                         * is_ext_longer_than_55.clone()
                         * (nibbles_count_cur.clone()
                             - nibbles_count_prev.clone()
@@ -1283,11 +1282,11 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                 */
                 constraints.push((
                     "Nibbles num when odd number (>1) of nibbles & ext longer than 55",
-                    q_not_first.clone()
-                        * q_enable.clone()
-                        * is_long_odd_nibbles.clone()
-                        * is_ext_longer_than_55.clone()
-                        * (nibbles_count_cur - nibbles_count_prev - num_nibbles - one.clone()), // - 1 is for branch position
+                    q_not_first
+                        * q_enable
+                        * is_long_odd_nibbles
+                        * is_ext_longer_than_55
+                        * (nibbles_count_cur - nibbles_count_prev - num_nibbles - one), // - 1 is for branch position
                 ));
 
                 constraints
