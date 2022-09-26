@@ -86,6 +86,7 @@ pub(crate) struct AccountNonExistingConfig<F> {
 }
 
 impl<F: FieldExt> AccountNonExistingConfig<F> {
+    #[allow(clippy::too_many_arguments)]
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         q_enable: impl Fn(&mut VirtualCells<'_, F>) -> Expression<F> + Copy,
@@ -136,7 +137,7 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
                 sum_prev_check = sum_prev_check + c_rlp1_prev * mult.clone();
                 mult = mult * r_table[0].clone();
                 sum_check = sum_check + c_rlp2_cur * mult.clone();
-                sum_prev_check = sum_prev_check + c_rlp2_prev * mult.clone();
+                sum_prev_check = sum_prev_check + c_rlp2_prev * mult;
 
                 /*
                 We compute the RLC of the key bytes in the ACCOUNT_NON_EXISTING row. We check whether the computed
@@ -147,7 +148,7 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
                     q_enable.clone()
                         * correct_level.clone()
                         * is_wrong_leaf.clone()
-                        * (sum.clone() - sum_check.clone()),
+                        * (sum.clone() - sum_check),
                 ));
 
                 /*
@@ -159,7 +160,7 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
                     q_enable.clone()
                         * correct_level.clone()
                         * is_wrong_leaf.clone()
-                        * (sum_prev.clone() - sum_prev_check.clone()),
+                        * (sum_prev.clone() - sum_prev_check),
                 ));
 
                 /*
@@ -168,9 +169,9 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
                 */
                 constraints.push((
                     "Address of a leaf is different than address being inquired (corresponding to address_rlc)",
-                    q_enable.clone()
-                        * correct_level.clone()
-                        * is_wrong_leaf.clone()
+                    q_enable
+                        * correct_level
+                        * is_wrong_leaf
                         * (one.clone() - (sum - sum_prev) * diff_inv),
                 ));
             };
@@ -216,10 +217,10 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
 
                 // If c16 = 1, we have nibble+48 in s_main.bytes[0].
                 let s_advice1 = meta.query_advice(s_main.bytes[1], Rotation::cur());
-                let mut key_rlc_acc = key_rlc_acc_start.clone()
+                let mut key_rlc_acc = key_rlc_acc_start
                     + (s_advice1.clone() - c48) * key_mult_start.clone() * c16.clone();
                 let mut key_mult = key_mult_start.clone() * r_table[0].clone() * c16;
-                key_mult = key_mult + key_mult_start.clone() * c1.clone(); // set to key_mult_start if sel2, stays key_mult if sel1
+                key_mult = key_mult + key_mult_start * c1.clone(); // set to key_mult_start if sel2, stays key_mult if sel1
 
                 /*
                 If there is an even number of nibbles stored in a leaf, `s_advice1` needs to be 32.
@@ -266,7 +267,7 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
                     q_enable.clone()
                         * (one.clone() - is_leaf_in_first_level.clone())
                         * is_wrong_leaf.clone()
-                        * (key_rlc_acc.clone() - address_rlc.clone()),
+                        * (key_rlc_acc - address_rlc),
                 ));
 
                 add_wrong_leaf_constraints(meta, &mut constraints, q_enable.clone(), c_rlp1_cur,
@@ -282,8 +283,8 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
                 */
                 constraints.push((
                     "Nil object in parent branch",
-                    q_enable.clone()
-                        * (one.clone() - is_leaf_in_first_level.clone())
+                    q_enable
+                        * (one.clone() - is_leaf_in_first_level)
                         * (one.clone() - is_wrong_leaf)
                         * (one.clone() - is_nil_object),
                 ));
@@ -346,17 +347,17 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
                     q_enable.clone()
                         * is_leaf_in_first_level.clone()
                         * is_wrong_leaf.clone()
-                        * (key_rlc_acc.clone() - address_rlc.clone()),
+                        * (key_rlc_acc - address_rlc),
                 ));
 
                 add_wrong_leaf_constraints(
                     meta,
                     &mut constraints,
-                    q_enable.clone(),
+                    q_enable,
                     c_rlp1_cur,
                     c_rlp2_cur,
-                    is_leaf_in_first_level.clone(),
-                    is_wrong_leaf.clone(),
+                    is_leaf_in_first_level,
+                    is_wrong_leaf,
                 );
 
                 constraints
@@ -379,7 +380,7 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
                 */
                 constraints.push((
                     "The number of nibbles in the wrong leaf and the enquired address are the same",
-                    q_enable.clone() * is_wrong_leaf * (s_advice0_cur - s_advice0_prev),
+                    q_enable * is_wrong_leaf * (s_advice0_cur - s_advice0_prev),
                 ));
 
                 constraints

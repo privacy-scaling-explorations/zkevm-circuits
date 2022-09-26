@@ -60,6 +60,7 @@ pub(crate) struct AccountLeafNonceBalanceConfig<F> {
 }
 
 impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
+    #[allow(clippy::too_many_arguments)]
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         proof_type: ProofTypeCols<F>,
@@ -236,10 +237,10 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
             expr = expr + c_rlp2.clone() * acc_mult_prev.clone() * r_table[rind].clone();
             rind += 1;
 
-            let nonce_value_long_rlc = s_advices1_cur.clone()
+            let nonce_value_long_rlc = s_advices1_cur
                 + compute_rlc(
                     meta,
-                    s_main.bytes.iter().skip(2).map(|v| *v).collect_vec(),
+                    s_main.bytes.iter().skip(2).copied().collect_vec(),
                     0,
                     one.clone(),
                     0,
@@ -262,7 +263,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
                 "Nonce RLC long",
                 q_enable.clone()
                     * is_nonce_long.clone()
-                    * (nonce_value_long_rlc.clone() - nonce_stored.clone()),
+                    * (nonce_value_long_rlc - nonce_stored.clone()),
             ));
 
             /*
@@ -281,10 +282,10 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
             let c_advices0_cur = meta.query_advice(c_main.bytes[0], Rotation::cur());
             let c_advices1_cur = meta.query_advice(c_main.bytes[1], Rotation::cur());
             let balance_stored = meta.query_advice(accs.c_mod_node_rlc, Rotation::cur());
-            let balance_value_long_rlc = c_advices1_cur.clone()
+            let balance_value_long_rlc = c_advices1_cur
                 + compute_rlc(
                     meta,
-                    c_main.bytes.iter().skip(2).map(|v| *v).collect_vec(),
+                    c_main.bytes.iter().skip(2).copied().collect_vec(),
                     0,
                     one.clone(),
                     0,
@@ -307,7 +308,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
                 "Balance RLC long",
                 q_enable.clone()
                     * is_balance_long.clone()
-                    * (balance_value_long_rlc.clone() - balance_stored.clone()),
+                    * (balance_value_long_rlc - balance_stored.clone()),
             ));
 
             /*
@@ -338,7 +339,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
                 */
                 constraints.push((
                     "S nonce RLC is correctly copied to C row",
-                    q_enable.clone() * (nonce_s_from_prev.clone() - nonce_s_from_cur.clone()),
+                    q_enable.clone() * (nonce_s_from_prev - nonce_s_from_cur.clone()),
                 ));
 
                 /*
@@ -347,7 +348,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
                 */
                 constraints.push((
                     "S balance RLC is correctly copied to C row",
-                    q_enable.clone() * (balance_s_from_prev.clone() - balance_s_from_cur.clone()),
+                    q_enable.clone() * (balance_s_from_prev - balance_s_from_cur.clone()),
                 ));
 
                 // Check there is only one modification at once:
@@ -371,10 +372,10 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
                     "If storage / balance / codehash modification: S nonce = C nonce",
                     q_enable.clone()
                         * (is_storage_mod.clone()
-                            + is_balance_mod.clone()
+                            + is_balance_mod
                             + is_codehash_mod.clone())
                         * (one.clone() - is_account_delete_mod.clone())
-                        * (nonce_s_from_cur.clone() - nonce_stored.clone()),
+                        * (nonce_s_from_cur - nonce_stored),
                 ));
 
                 /*
@@ -388,9 +389,9 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
                 constraints.push((
                     "If storage / nonce / codehash modification: S balance = C balance",
                     q_enable.clone()
-                        * (is_storage_mod.clone() + is_nonce_mod.clone() + is_codehash_mod)
-                        * (one.clone() - is_account_delete_mod.clone())
-                        * (balance_s_from_cur.clone() - balance_stored.clone()),
+                        * (is_storage_mod + is_nonce_mod + is_codehash_mod)
+                        * (one.clone() - is_account_delete_mod)
+                        * (balance_s_from_cur - balance_stored),
                 ));
             }
 
@@ -448,7 +449,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
                 q_enable.clone()
                     * is_nonce_long.clone()
                     * (acc_mult_after_nonce.clone()
-                        - acc_mult_prev.clone() * mult_diff_nonce.clone()),
+                        - acc_mult_prev.clone() * mult_diff_nonce),
             ));
 
             /*
@@ -460,7 +461,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
                 "Leaf nonce RLC mult (nonce short)",
                 q_enable.clone()
                     * (one.clone() - is_nonce_long.clone())
-                    * (acc_mult_after_nonce.clone() - acc_mult_prev.clone() * r_table[4].clone()), // r_table[4] because of s_rlp1, s_rlp2, c_rlp1, c_rlp2, and 1 for nonce_len = 1
+                    * (acc_mult_after_nonce.clone() - acc_mult_prev * r_table[4].clone()), // r_table[4] because of s_rlp1, s_rlp2, c_rlp1, c_rlp2, and 1 for nonce_len = 1
             ));
 
             /*
@@ -480,7 +481,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
                 q_enable.clone()
                     * is_balance_long.clone()
                     * (acc_mult_final.clone()
-                        - acc_mult_after_nonce.clone() * mult_diff_balance.clone()),
+                        - acc_mult_after_nonce.clone() * mult_diff_balance),
             ));
 
             /*
@@ -491,7 +492,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
                 "Leaf balance RLC mult (balance short)",
                 q_enable.clone()
                     * (one.clone() - is_balance_long.clone())
-                    * (acc_mult_final.clone() - acc_mult_after_nonce.clone() * r_table[0].clone()),
+                    * (acc_mult_final - acc_mult_after_nonce * r_table[0].clone()),
             ));
 
             // RLP:
@@ -500,11 +501,11 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
             let nonce_long_len = s_advices0_cur - c128.clone() + one.clone();
 
             let nonce_len =
-                nonce_long_len * is_nonce_long.clone() + (one.clone() - is_nonce_long.clone());
+                nonce_long_len * is_nonce_long.clone() + (one.clone() - is_nonce_long);
 
             let balance_long_len = c_advices0_cur - c128.clone() + one.clone();
             let balance_len = balance_long_len * is_balance_long.clone()
-                + (one.clone() - is_balance_long.clone());
+                + (one.clone() - is_balance_long);
 
             /*
             s_rlp1  s_rlp2  c_rlp1  c_rlp2  s_main.bytes  c_main.bytes
@@ -532,7 +533,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
                 "Leaf nonce balance s_main.rlp1 = 184.",
                 q_enable.clone()
                     * (is_non_existing_account_proof.clone() - is_wrong_leaf.clone() - one.clone())
-                    * (s_rlp1.clone() - c184),
+                    * (s_rlp1 - c184),
             ));
 
             /*
@@ -558,7 +559,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
                 // This is because `is_wrong_leaf` can be 1 only when `is_non_existing_account_proof = 1`
                 // (see the constraint above).
                 * (is_non_existing_account_proof.clone() - is_wrong_leaf.clone() - one.clone())
-                * (c_rlp1.clone() - c248.clone()),
+                * (c_rlp1 - c248),
             ));
 
             /*
@@ -586,7 +587,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
                 "Lean nonce balance c_main.rlp2",
                 q_enable.clone()
                     * (is_non_existing_account_proof.clone() - is_wrong_leaf.clone() - one.clone())
-                    * (c_rlp2.clone() - nonce_len - balance_len - c66),
+                    * (c_rlp2 - nonce_len - balance_len - c66),
             ));
 
             /*
@@ -607,8 +608,8 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
             */
             constraints.push((
                 "Account leaf RLP length",
-                q_enable.clone()
-                    * (is_non_existing_account_proof.clone() - is_wrong_leaf.clone() - one.clone())
+                q_enable
+                    * (is_non_existing_account_proof - is_wrong_leaf - one.clone())
                     * (rlp_len - key_len - one.clone() - s_rlp2 - one.clone() - one.clone()),
             ));
 

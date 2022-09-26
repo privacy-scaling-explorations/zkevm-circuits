@@ -82,6 +82,7 @@ pub(crate) struct AccountLeafKeyConfig<F> {
 }
 
 impl<F: FieldExt> AccountLeafKeyConfig<F> {
+    #[allow(clippy::too_many_arguments)]
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         proof_type: ProofTypeCols<F>,
@@ -151,8 +152,8 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
 
             let c_rlp1 = meta.query_advice(c_main.rlp1, Rotation::cur());
             let c_rlp2 = meta.query_advice(c_main.rlp2, Rotation::cur());
-            expr = expr + c_rlp1.clone() * r_table[R_TABLE_LEN - 1].clone() * r_table[1].clone();
-            expr = expr + c_rlp2.clone() * r_table[R_TABLE_LEN - 1].clone() * r_table[2].clone();
+            expr = expr + c_rlp1 * r_table[R_TABLE_LEN - 1].clone() * r_table[1].clone();
+            expr = expr + c_rlp2 * r_table[R_TABLE_LEN - 1].clone() * r_table[2].clone();
 
             let acc = meta.query_advice(accs.acc_s.rlc, Rotation::cur());
 
@@ -161,7 +162,7 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
             The RLC after account leaf key row is stored in `acc` column. We check the stored value
             is computed correctly.
             */
-            constraints.push(("Leaf key RLC", q_enable.clone() * (expr - acc)));
+            constraints.push(("Leaf key RLC", q_enable * (expr - acc)));
 
             constraints
         });
@@ -290,10 +291,10 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
 
                 // If sel1 = 1, we have nibble+48 in s_main.bytes[0].
                 let s_advice1 = meta.query_advice(s_main.bytes[1], Rotation::cur());
-                let mut key_rlc_acc = key_rlc_acc_start.clone()
+                let mut key_rlc_acc = key_rlc_acc_start
                     + (s_advice1.clone() - c48) * key_mult_start.clone() * is_c16.clone();
                 let mut key_mult = key_mult_start.clone() * r_table[0].clone() * is_c16.clone();
-                key_mult = key_mult + key_mult_start.clone() * is_c1.clone(); // set to key_mult_start if sel2, stays key_mult if sel1
+                key_mult = key_mult + key_mult_start * is_c1.clone(); // set to key_mult_start if sel2, stays key_mult if sel1
 
                 /*
                 If there is an even number of nibbles in the leaf, `s_main.bytes[1]` need to be 32.
@@ -339,7 +340,7 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
                     "Account address RLC",
                     q_enable.clone()
                         * (one.clone() - is_branch_placeholder.clone())
-                        * (key_rlc_acc.clone() - key_rlc.clone()),
+                        * (key_rlc_acc - key_rlc.clone()),
                 ));
 
                 let is_non_existing_account_proof =
@@ -357,13 +358,13 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
                     "Computed account address RLC same as value in address_rlc column",
                     q_enable.clone()
                         * (one.clone() - is_branch_placeholder.clone())
-                        * (one.clone() - is_non_existing_account_proof.clone())
-                        * (key_rlc.clone() - address_rlc.clone()),
+                        * (one.clone() - is_non_existing_account_proof)
+                        * (key_rlc - address_rlc),
                 ));
 
                 let s_bytes0 = meta.query_advice(s_main.bytes[0], Rotation::cur());
-                let leaf_nibbles = ((s_bytes0.clone() - c128.clone() - one.clone()) * (one.clone() + one.clone())) * is_c1.clone() +
-                    ((s_bytes0.clone() - c128.clone()) * (one.clone() + one.clone()) - one.clone()) * is_c16.clone();
+                let leaf_nibbles = ((s_bytes0.clone() - c128.clone() - one.clone()) * (one.clone() + one.clone())) * is_c1 +
+                    ((s_bytes0 - c128.clone()) * (one.clone() + one.clone()) - one.clone()) * is_c16;
 
                 let mut nibbles_count = meta.query_advice(
                     s_main.bytes[NIBBLES_COUNTER_POS - RLP_NUM],
@@ -381,10 +382,10 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
                 constraints.push((
                     "Total number of account address nibbles is 64 (not first level, not branch placeholder)",
                     q_enable
-                        * (one.clone() - is_branch_placeholder.clone())
+                        * (one.clone() - is_branch_placeholder)
                         // Note: we need to check the number of nibbles being 64 for non_existing_account_proof too
                         // (even if the address being checked here might is the address of the wrong leaf)
-                        * (nibbles_count.clone() + leaf_nibbles.clone() - c64.clone()),
+                        * (nibbles_count + leaf_nibbles - c64.clone()),
                 ));
 
                 constraints
@@ -433,7 +434,7 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
                     * (one.clone() - is_placeholder_branch_in_first_level.clone());
                 let key_mult_start = meta.query_advice(accs.key.mult, Rotation(rot_level_above))
                     * (one.clone() - is_placeholder_branch_in_first_level.clone())
-                    + is_placeholder_branch_in_first_level.clone();
+                    + is_placeholder_branch_in_first_level;
 
                 // TODO: the expressions below can be simplified
 
@@ -506,22 +507,22 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
                     + is_ext_long_odd_c16.clone()
                     + is_ext_long_odd_c1.clone();
 
-                let sel1 = (one.clone() - is_extension_node.clone()) * sel2p.clone()
-                    + is_ext_short_c16.clone() * sel1p.clone()
-                    + is_ext_short_c1.clone() * sel2p.clone()
-                    + is_ext_long_even_c16.clone() * sel2p.clone()
-                    + is_ext_long_even_c1.clone() * sel1p.clone()
-                    + is_ext_long_odd_c16.clone() * sel1p.clone()
-                    + is_ext_long_odd_c1.clone() * sel2p.clone();
+                let sel1 = (one.clone() - is_extension_node) * sel2p.clone()
+                    + is_ext_short_c16 * sel1p.clone()
+                    + is_ext_short_c1 * sel2p.clone()
+                    + is_ext_long_even_c16 * sel2p.clone()
+                    + is_ext_long_even_c1 * sel1p.clone()
+                    + is_ext_long_odd_c16 * sel1p
+                    + is_ext_long_odd_c1 * sel2p;
 
                 let sel2 = one.clone() - sel1.clone();
 
                 // If sel1 = 1, we have nibble+48 in s_main.bytes[0].
                 let s_advice1 = meta.query_advice(s_main.bytes[1], Rotation::cur());
-                let mut key_rlc_acc = key_rlc_acc_start.clone()
+                let mut key_rlc_acc = key_rlc_acc_start
                     + (s_advice1.clone() - c48) * key_mult_start.clone() * sel1.clone();
                 let mut key_mult = key_mult_start.clone() * r_table[0].clone() * sel1.clone();
-                key_mult = key_mult + key_mult_start.clone() * sel2.clone(); // set to key_mult_start if sel2, stays key_mult if sel1
+                key_mult = key_mult + key_mult_start * sel2.clone(); // set to key_mult_start if sel2, stays key_mult if sel1
 
                 // If sel2 = 1, we have 32 in s_main.bytes[1].
                 constraints.push((
@@ -560,16 +561,16 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
                     q_enable.clone()
                         * is_branch_placeholder.clone()
                         * (one.clone() - is_leaf_in_first_level.clone())
-                        * (key_rlc_acc.clone() - key_rlc.clone()),
+                        * (key_rlc_acc - key_rlc),
                 ));
 
                 let s_advice0 = meta.query_advice(s_main.bytes[0], Rotation::cur());
                 let leaf_nibbles = ((s_advice0.clone() - c128.clone() - one.clone())
                     * (one.clone() + one.clone()))
-                    * sel2.clone()
-                    + ((s_advice0.clone() - c128.clone()) * (one.clone() + one.clone())
+                    * sel2
+                    + ((s_advice0 - c128.clone()) * (one.clone() + one.clone())
                         - one.clone())
-                        * sel1.clone();
+                        * sel1;
 
                 let is_branch_in_first_level = one.clone()
                     - meta.query_advice(position_cols.not_first_level, Rotation(rot_into_first_branch_child));
@@ -587,9 +588,9 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
                 constraints.push((
                     "Total number of account address nibbles is 64 (after placeholder)",
                     q_enable
-                        * is_branch_placeholder.clone()
-                        * (one.clone() - is_leaf_in_first_level.clone())
-                        * (nibbles_count.clone() + leaf_nibbles.clone() - c64.clone()),
+                        * is_branch_placeholder
+                        * (one.clone() - is_leaf_in_first_level)
+                        * (nibbles_count + leaf_nibbles - c64.clone()),
                 ));
 
                 constraints
@@ -628,10 +629,10 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
                 // account_leaf_key_in_added_branch.
                 constraints.push((
                     "If account delete, there is either a placeholder leaf or a placeholder branch",
-                    q_enable.clone()
-                        * is_account_delete_mod.clone()
-                        * (one.clone() - is_leaf_placeholder.clone())
-                        * (one.clone() - is_branch_placeholder.clone()),
+                    q_enable
+                        * is_account_delete_mod
+                        * (one.clone() - is_leaf_placeholder)
+                        * (one.clone() - is_branch_placeholder),
                 ));
 
                 constraints
