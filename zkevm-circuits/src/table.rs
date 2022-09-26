@@ -8,7 +8,8 @@ use crate::util::Challenges;
 use crate::witness::{
     Block, BlockContext, Bytecode, MptUpdateRow, MptUpdates, Rw, RwMap, RwRow, Transaction,
 };
-use bus_mapping::circuit_input_builder::{CopyDataType, CopyEvent};
+use bus_mapping::circuit_input_builder::{CopyDataType, CopyEvent, CopyStep};
+use core::iter::once;
 use eth_types::{Field, ToLittleEndian, ToScalar, Word};
 use gadgets::binary_number::{BinaryNumberChip, BinaryNumberConfig};
 use halo2_proofs::{
