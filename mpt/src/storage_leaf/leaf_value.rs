@@ -311,7 +311,7 @@ impl<F: FieldExt> LeafValueConfig<F> {
             bytes) cannot go over 55 bytes.
             */
 
-            let long_value_check = s_rlp1_cur - s_rlp2_cur + one.clone();
+            let long_value_check = s_rlp1_cur - s_rlp2_cur - one.clone();
 
             /*
             When the leaf is short (first key byte in `s_main.bytes[0]` in the leaf key row) and the value
