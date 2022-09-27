@@ -17,7 +17,7 @@ eth-types = { path = "../eth-types" }
 gadgets = { path = "../gadgets" }
 ethers-core = "0.17.0"
 ethers-signers = "0.17.0"
-mock = { path = "../mock" }
+mock = { path = "../mock", optional = true }
 strum = "0.24"
 strum_macros = "0.24"
 rand_xorshift = "0.3"
@@ -47,4 +47,4 @@ rand_chacha = "0.3"
 
 [features]
 default = []
-test = []
+test = ["mock"]

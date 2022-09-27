@@ -139,21 +139,23 @@ impl BlockContext {
                     F::from(cum_num_txs as u64),
                 ],
             ],
-            self.history_hashes
-                .iter()
-                .rev()
-                .enumerate()
-                .map(|(idx, hash)| {
-                    [
-                        F::from(BlockContextFieldTag::BlockHash as u64),
-                        (self.number - idx - 1).to_scalar().unwrap(),
-                        RandomLinearCombination::random_linear_combine(
-                            hash.to_le_bytes(),
-                            randomness,
-                        ),
-                    ]
-                })
-                .collect(),
+            {
+                let len_history = self.history_hashes.len();
+                self.history_hashes
+                    .iter()
+                    .enumerate()
+                    .map(|(idx, hash)| {
+                        [
+                            F::from(BlockContextFieldTag::BlockHash as u64),
+                            (self.number - len_history + idx).to_scalar().unwrap(),
+                            RandomLinearCombination::random_linear_combine(
+                                hash.to_le_bytes(),
+                                randomness,
+                            ),
+                        ]
+                    })
+                    .collect()
+            },
         ]
         .concat()
     }
