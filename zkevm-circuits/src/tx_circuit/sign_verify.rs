@@ -768,11 +768,8 @@ mod sign_verify_tests {
         sign(randomness, sk, msg_hash)
     }
 
-    // High memory usage test.  Run in serial with:
-    // `cargo test [...] serial_ -- --ignored --test-threads 1`
-    #[ignore]
     #[test]
-    fn serial_test_sign_verify() {
+    fn sign_verify() {
         // Vectors using `XorShiftRng::seed_from_u64(1)`
         // sk: 0x771bd7bf6c6414b9370bb8559d46e1cedb479b1836ea3c2e59a54c343b0d0495
         // pk: (

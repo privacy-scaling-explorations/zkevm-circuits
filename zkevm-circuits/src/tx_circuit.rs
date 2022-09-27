@@ -378,11 +378,8 @@ mod tx_circuit_tests {
         prover.verify()
     }
 
-    // High memory usage test.  Run in serial with:
-    // `cargo test [...] serial_ -- --ignored --test-threads 1`
-    #[ignore]
     #[test]
-    fn serial_test_tx_circuit_2tx() {
+    fn tx_circuit_2tx() {
         const NUM_TXS: usize = 2;
         const MAX_TXS: usize = 2;
         const MAX_CALLDATA: usize = 32;
@@ -401,11 +398,8 @@ mod tx_circuit_tests {
         );
     }
 
-    // High memory usage test.  Run in serial with:
-    // `cargo test [...] serial_ -- --ignored --test-threads 1`
-    #[ignore]
     #[test]
-    fn serial_test_tx_circuit_1tx() {
+    fn tx_circuit_1tx() {
         const MAX_TXS: usize = 1;
         const MAX_CALLDATA: usize = 32;
 
@@ -420,11 +414,8 @@ mod tx_circuit_tests {
         );
     }
 
-    // High memory usage test.  Run in serial with:
-    // `cargo test [...] serial_ -- --ignored --test-threads 1`
-    #[ignore]
     #[test]
-    fn serial_test_tx_circuit_bad_address() {
+    fn tx_circuit_bad_address() {
         const MAX_TXS: usize = 1;
         const MAX_CALLDATA: usize = 32;
 
