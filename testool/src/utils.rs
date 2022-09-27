@@ -3,6 +3,7 @@ use std::str::FromStr;
 use anyhow::{bail, Result};
 use eth_types::{GethExecTrace, U256};
 use prettytable::Table;
+use std::process::Command;
 
 #[derive(Debug, Eq, PartialEq, PartialOrd)]
 pub enum MainnetFork {
@@ -142,6 +143,16 @@ pub fn print_trace(trace: GethExecTrace) -> Result<()> {
     Ok(())
 }
 
+
+pub fn current_git_commit() -> Result<String> {
+        let output = Command::new("git")
+            .args(&["rev-parse", "HEAD"])
+            .output()
+            .unwrap();
+        let git_hash = String::from_utf8(output.stdout).unwrap();
+        let git_hash = git_hash[..7].to_string();
+    Ok(git_hash)
+} 
 #[cfg(test)]
 mod test {
     use super::*;

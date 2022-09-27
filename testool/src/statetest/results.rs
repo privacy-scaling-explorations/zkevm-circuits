@@ -48,12 +48,12 @@ pub struct DiffEntry {
 }
 
 pub struct Diffs {
-    info: String,
+    previous: String,
     tests: Vec<DiffEntry>,
 }
 
 impl Diffs {
-    pub fn gen_info(&self) -> Vec<String> {
+    pub fn gen_info(&self) -> (String, Table) {
         let mut stat: HashMap<ResultLevel, isize> = HashMap::new();
         let mut stat_news = 0isize;
 
@@ -66,26 +66,33 @@ impl Diffs {
             }
         }
 
-        let mut buff = String::default();
-        buff.push_str(&format!("new: {:+} ", stat_news));
+        let mut summary = String::default();
+        if stat_news > 0 {
+            summary.push_str(&format!("new: {:+} ", stat_news));
+        }
         for (lvl, n) in stat {
-            buff.push_str(&format!("/ {:?}: {:+} ", lvl, n));
+            summary.push_str(&format!("/ {:?}: {:+} ", lvl, n));
+        }
+        if summary.is_empty() {
+            summary.push_str("No changes");
         }
 
-        let mut out = Vec::new();
-        out.push(format!("DIFFS {}\n", self.info));
-        out.push(buff);
+        summary.push_str(&format!(" [diff from {}]", self.previous));
+
+        let mut table = Table::new();
         for t in &self.tests {
             if let Some(prev) = &t.prev {
                 let curr = t.curr.as_ref().unwrap();
-                out.push(format!(
-                    "{} : {:?}({}) => {:?}({})\n",
-                    t.id, prev.level, prev.details, curr.level, curr.details
-                ));
+                table.add_row(row![t.id,
+                    format!(
+                        "{:?}({}) => {:?}({})",
+                        prev.level, prev.details, curr.level, curr.details
+                    ),
+                ]);
             }
         }
-
-        out
+        table.add_row(row!["Summary", summary]);
+        (summary, table)
     }
 }
 
@@ -100,7 +107,9 @@ impl Report {
     pub fn print_tty(&self) -> Result<()> {
         self.by_folder.print_tty(false)?;
         self.by_result.print_tty(false)?;
-        println!("{:#?}", self.diffs.gen_info());
+        let (_, files_diff) = self.diffs.gen_info();
+        files_diff.print_tty(false)?;
+
         Ok(())
     }
     pub fn gen_html(&self) -> Result<String> {
@@ -108,14 +117,16 @@ impl Report {
         let reg = Handlebars::new();
         let mut by_folder = Vec::new();
         let mut by_result = Vec::new();
+        let mut diffs = Vec::new();
 
         self.by_folder.print_html(&mut by_folder)?;
         self.by_result.print_html(&mut by_result)?;
+        self.diffs.gen_info().1.print_html(&mut diffs)?;
 
         let data = &json!({
                 "by_folder": String::from_utf8(by_folder)?,
                 "by_result" : String::from_utf8(by_result)? ,
-                "diffs" : self.diffs.gen_info(),
+                "diffs" : String::from_utf8(diffs)?,
                 "all_results" : self.tests
         });
 
@@ -174,12 +185,12 @@ impl Results {
         let mut count_by_result: HashMap<String, usize> = HashMap::new();
 
         let mut diffs = Diffs {
-            info: String::default(),
+            previous: "<no previous commit>".into(),
             tests: Vec::new(),
         };
         let mut prev_results = None;
         if let Some((prev_info, p_results)) = previous {
-            diffs.info = prev_info;
+            diffs.previous = prev_info;
             prev_results = Some(p_results);
         }
 
@@ -222,7 +233,7 @@ impl Results {
         // generate tables
 
         let mut by_folder = Table::new();
-        let mut header = vec![String::from("path")];
+        let mut header = vec![String::from("By path")];
 
         let levels: Vec<_> = ResultLevel::iter().collect();
 
@@ -260,6 +271,7 @@ impl Results {
         by_folder.add_row(Row::from_iter(cells));
 
         let mut by_result = Table::new();
+        by_result.add_row(row!["By type", "Count"]);
         let mut info = Vec::new();
         for (result, count) in count_by_result {
             info.push((count, result));

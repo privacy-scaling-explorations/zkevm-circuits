@@ -2,7 +2,7 @@
 
 The `testool` is a binary cli that focus on provide tools for testing.
 
-To use it, just compile with `cargo --release build` and run `../target/release/testool`.
+To use it, just compile with `cargo build --release` and run `../target/release/testool`.
 
 This tool at this moment has 2 main functionalities: run raw bytecode and run ethereum tests.
 
@@ -35,21 +35,38 @@ Official ethereum tests are mantained by the foundation but you can write your o
 
 ### Configuration file
 
-The `Config.toml` configuration defines which files and tests to process. It could contain the following sections:
+The `Config.toml` configuration defines which files and tests to process.
 
+#### Defining test suites
+
+In the config file you define `[[suite]]`s that defines how tests will be executed.
+
+- `id` is the identifier of the suite. The default suite is called `default`.
 - `max_steps` the maximum number of executed opcodes. If this is reached, the test is marked to be ignored.
 - `max_gas` the maximum gas of a test. If the is reached, the test is marked to be ignored.
 - `unimplemented_opcodes`, if any of these opcodes are found in the execution trace, the test is marked to be ignored.
-- `[[ignore_test]]` defines a set of tests to be ignored. Usually is because this test panics. Note that this tests are executed in `--ci` mode.
+- you should define also only one of these paramers:
+   - `allow_tests` with the list of tests or testsets to execute. All others will be excluded. Test sets should be prefixed with `&`
+   - `ignore_tests` with the list of test or testsets to ignore. All others will be included. Test sets should be prefixed with `&`
+
+#### Test sets
+
+Test sets are created by using the `[[set]]` section and should define
+- `id` the identification of the set (without any `&`). Note that ids can be duplicated, this means that are tests with the same id are joined together when used. 
+- `desc` a description of the test set
+- `tests` a list of tests
+
+#### Skipping the execution of problematic tests
+
+Sometimes there are some files or specific tests that we want to disable at all. Those are defined with:
+
 - `[[skip_test]]` defines a set of tests that are always ignored.
 - `[[skip_path]]` defined a set of files/folders that are always ignored. This is usefull sice sometimes there are some tests with weird encodings.
 
-### Executing the tests in CI
+### Generating reports
 
-The execution of the tests in CI are done by running the tool with `--ci` parameter. When this is specified:
+When the command line parameter `--report` is defined, it automatically: 
 
-- All tests are executed, only the tests/files specified with `[[skip_]]` in the `Config.toml` are excluded.
-- Tests are executed in parallel, only EVM circuit.
 - After the execution, a two files are created in the `report` folder. They are
    - `<timestamp>-<git_commit>.hml` with the browseable results of the execution.
    - `<timestamp>-<git_commit>.csv` with the raw results of the execution
@@ -59,7 +76,6 @@ The execution of the tests in CI are done by running the tool with `--ci` parame
 
 Usually we have to debug and run the tests manually to check if everything works ok. We provide a set of command line parameters to help tis.
 
-- `testool --ethtest <path> --ethtest-all --ethtest-cache` to execute all tests, and keeping the results (cache) CSV file. If you delete entries from the cache file, and re-run the tool again, only the deleted tests will be executed again
+- `testool [--suite xxx] --cache` to execute all tests, and keeping the results (cache) CSV file. If you delete entries from the cache file, and re-run the tool again, only the deleted tests will be executed again
 
-- `testool --ethtest <path> --ethtest-id <test_id>` only executed the selected test (even if cached, or ignored). Use `RUST_BACKTRACE=1` here to check if anything fails. Also gives a dumop of the test as also to the geth steps executed.
-
+- `testool [--suite xxx] --inspect <test_id>` only executed the selected test (even if cached, or ignored). Use `RUST_BACKTRACE=1` here to check if anything fails. Also gives a dumop of the test as also to the geth steps executed.

@@ -9,11 +9,12 @@ use anyhow::{bail, Result};
 use clap::Parser;
 use compiler::Compiler;
 use config::Config;
-use statetest::{load_statetests_suite, run_statetests_suite, Results, StateTest, StateTestConfig};
+use statetest::{load_statetests_suite, run_statetests_suite, Results, StateTest, CircuitsConfig};
 use std::path::PathBuf;
-use std::process::Command;
 use std::time::SystemTime;
 use zkevm_circuits::test_util::BytecodeTestConfig;
+
+use crate::config::TestSuite;
 
 const REPORT_FOLDER: &str = "report";
 const CODEHASH_FILE: &str = "./codehash.txt";
@@ -25,34 +26,21 @@ extern crate prettytable;
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
 struct Args {
-    /// (Ethereum tests) path
-    #[clap(long, default_value = "tests/src/GeneralStateTestsFiller/**")]
-    ethtest: String,
+    /// Suite (by default is "default")
+    #[clap(long, default_value = "default")]
+    suite: String,
 
-    /// (Ethereum tests) execute one test and dump the results
+    /// Execute only one test and dump the results
     #[clap(long)]
-    ethtest_id: Option<String>,
+    inspect: Option<String>,
 
-    /// (Ethereum tests) Cache execution results
+    /// Cache execution results
     #[clap(long)]
-    ethtest_cache: bool,
+    cache: bool,
 
-    /// (Ethereum tests) Run all ignored tests (skipped ones are not executed)
+    /// Generates log and and html file with info.
     #[clap(long)]
-    ethtest_all: bool,
-
-    /// (Ethereum tests) CI mode: generates log and and html file with info.
-    /// Doesn't skip any test.
-    #[clap(long)]
-    ci: bool,
-
-    /// Do not run any circuits
-    #[clap(long)]
-    skip_circuit: bool,
-
-    /// Do not run state circuit
-    #[clap(long)]
-    skip_state_circuit: bool,
+    report: bool,
 
     /// Raw execute bytecode, can be hex `6001` or asm `PUSH1(60); PUSH1(60)`
     #[clap(long)]
@@ -65,12 +53,12 @@ struct Args {
 
 const RESULT_CACHE: &str = "result.cache";
 
-fn run_single_test(test: StateTest, config: StateTestConfig) -> Result<()> {
+fn run_single_test(test: StateTest, circuits_config: CircuitsConfig) -> Result<()> {
     println!("{}", &test);
 
     let trace = test.clone().geth_trace()?;
     crate::utils::print_trace(trace)?;
-    println!("result={:?}", test.run(config));
+    println!("result={:?}", test.run(TestSuite::default(), circuits_config));
 
     Ok(())
 }
@@ -118,34 +106,27 @@ fn main() -> Result<()> {
     //  RAYON_NUM_THREADS=1 RUST_BACKTRACE=1 cargo run -- --path
     // "tests/src/GeneralStateTestsFiller/**/" --skip-state-circuit
 
-    let mut config = Config::load()?;
+    let config = Config::load()?;
+    let circuits_config = CircuitsConfig::default();
+
     let args = Args::parse();
 
-    let bytecode_test_config = BytecodeTestConfig {
-        enable_state_circuit_test: !args.skip_state_circuit,
-        ..Default::default()
-    };
-
-    let statetest_config = StateTestConfig {
-        run_circuit: !args.skip_circuit,
-        bytecode_test_config: bytecode_test_config.clone(),
-        global: config.clone(),
-    };
-
     if let Some(raw) = &args.raw {
-        run_bytecode(raw, bytecode_test_config)?;
+        run_bytecode(raw, circuits_config.bytecode_test_config)?;
         return Ok(());
     }
 
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
+    log::info!("Using suite '{}'", args.suite);
     log::info!("Parsing and compliling tests...");
     let compiler = Compiler::new(true, Some(PathBuf::from(CODEHASH_FILE)))?;
-
-    if let Some(test_id) = args.ethtest_id {
-        // test only one
-        config.skip_test.clear();
-        let state_tests = load_statetests_suite(&args.ethtest, config, compiler)?;
+    let suite = config.suite(&args.suite)?.clone();
+    let state_tests = load_statetests_suite(&suite.path, config, compiler)?;
+    log::info!("{} tests collected in {}", state_tests.len(), suite.path);
+   
+    if let Some(test_id) = args.inspect {
+        // Test only one and return
         let mut state_tests: Vec<_> = state_tests
             .into_iter()
             .filter(|t| t.id == test_id)
@@ -153,19 +134,18 @@ fn main() -> Result<()> {
         if state_tests.is_empty() {
             bail!("test '{}' not found", test_id);
         }
-        run_single_test(state_tests.remove(0), statetest_config)?;
-    } else if args.ci {
-        // ci mode
-        config.skip_test.clear();
-        let path = "tests/src/GeneralStateTestsFiller/**/*";
+        run_single_test(state_tests.remove(0), circuits_config)?;
+        return Ok(());
+    };
 
-        let state_tests = load_statetests_suite(path, config, compiler)?;
-        let output = Command::new("git")
-            .args(&["rev-parse", "HEAD"])
-            .output()
-            .unwrap();
-        let git_hash = String::from_utf8(output.stdout).unwrap();
-        let git_hash = &git_hash[..7].to_string();
+   
+    if args.report {
+
+        if args.cache {
+            bail!("--cache is not compartible with --report");
+        }
+    
+        let git_hash = utils::current_git_commit()?;
         let timestamp = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
             .unwrap()
@@ -176,9 +156,10 @@ fn main() -> Result<()> {
         let html_filename = format!("{}/{}.{}.html", REPORT_FOLDER, timestamp, git_hash);
 
         let mut results = Results::with_cache(PathBuf::from(csv_filename))?;
-        run_statetests_suite(state_tests, statetest_config, &mut results)?;
 
-        // filter non-csv files and files from the same commit
+        run_statetests_suite(state_tests, &circuits_config, &suite, &mut results)?;
+  
+         // filter non-csv files and files from the same commit
         let mut files: Vec<_> = std::fs::read_dir(REPORT_FOLDER)
             .unwrap()
             .filter_map(|f| {
@@ -187,6 +168,7 @@ fn main() -> Result<()> {
                     .then_some(filename)
             })
             .collect();
+
         files.sort_by(|f, s| s.cmp(f));
         let previous = if !files.is_empty() {
             let file = files.remove(0);
@@ -197,22 +179,21 @@ fn main() -> Result<()> {
             None
         };
 
-        std::fs::write(&html_filename, results.report(previous).gen_html()?)?;
+        let report = results.report(previous);
+        std::fs::write(&html_filename, report.gen_html()?)?;
 
         println!("{}", html_filename);
+    
     } else {
-        // manual
-        if args.ethtest_all {
-            config.skip_test.clear();
-        }
-        let state_tests = load_statetests_suite(&args.ethtest, config, compiler)?;
-        let mut results = if args.ethtest_cache {
+
+        let mut results = if args.cache {
             Results::with_cache(PathBuf::from(RESULT_CACHE))?
         } else {
             Results::default()
         };
+        
         log::info!("Executing...");
-        run_statetests_suite(state_tests, statetest_config, &mut results)?;
+        run_statetests_suite(state_tests, &circuits_config, &suite, &mut results)?;
         log::info!("Generating report...");
         results.report(None).print_tty()?;
     }

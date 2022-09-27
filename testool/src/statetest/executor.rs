@@ -1,4 +1,4 @@
-use crate::config::Config;
+use crate::config::TestSuite;
 use anyhow::Context;
 use bus_mapping::circuit_input_builder::CircuitInputBuilder;
 use bus_mapping::mock::BlockData;
@@ -51,28 +51,9 @@ impl StateTestError {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct StateTestConfig {
-    pub run_circuit: bool,
+#[derive(Default, Debug, Clone)]
+pub struct CircuitsConfig {
     pub bytecode_test_config: BytecodeTestConfig,
-    pub global: Config,
-}
-
-impl Default for StateTestConfig {
-    fn default() -> Self {
-        Self {
-            run_circuit: true,
-            bytecode_test_config: BytecodeTestConfig::default(),
-            global: Config {
-                max_gas: 1000000,
-                max_steps: 2048,
-                unimplemented_opcodes: Vec::new(),
-                skip_path: Vec::new(),
-                skip_test: Vec::new(),
-                ignore_test: Vec::new(),
-            },
-        }
-    }
 }
 
 #[derive(PartialEq, Eq, Debug, Clone)]
@@ -354,7 +335,7 @@ impl StateTest {
         Ok(geth_traces.remove(0))
     }
 
-    pub fn run(self, config: StateTestConfig) -> Result<(), StateTestError> {
+    pub fn run(self, suite: TestSuite, circuits_config: CircuitsConfig) -> Result<(), StateTestError> {
         // get the geth traces
 
         let (_, trace_config, post) = self.clone().into_traceconfig();
@@ -380,7 +361,7 @@ impl StateTest {
         let geth_traces =
             geth_traces.map_err(|err| StateTestError::CircuitInput(err.to_string()))?;
 
-        if geth_traces[0].struct_logs.len() as u64 > config.global.max_steps {
+        if geth_traces[0].struct_logs.len() as u64 > suite.max_steps {
             return Err(StateTestError::SkipTestMaxSteps(
                 geth_traces[0].struct_logs.len(),
             ));
@@ -393,7 +374,7 @@ impl StateTest {
         if let Some(step) = geth_traces[0]
             .struct_logs
             .iter()
-            .find(|step| config.global.unimplemented_opcodes.contains(&step.op))
+            .find(|step| suite.unimplemented_opcodes.contains(&step.op))
         {
             return Err(StateTestError::SkipUnimplemented(format!(
                 "OPCODE {:?}",
@@ -411,7 +392,7 @@ impl StateTest {
             }
         }
 
-        if geth_traces[0].gas.0 > config.global.max_gas {
+        if geth_traces[0].gas.0 > suite.max_gas {
             return Err(StateTestError::SkipTestMaxGasLimit(geth_traces[0].gas.0));
         }
 
@@ -430,10 +411,8 @@ impl StateTest {
         let builder = Self::create_input_builder(trace_config, geth_traces)?;
 
         Self::check_post(&builder, &post)?;
-
-        if config.run_circuit {
-            Self::test_circuit(self, &builder, config.bytecode_test_config);
-        }
+        Self::test_circuit(self, &builder, circuits_config.bytecode_test_config);
+        
         Ok(())
     }
 

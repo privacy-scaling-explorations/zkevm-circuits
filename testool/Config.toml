@@ -1,6 +1,8 @@
+[[suite]]
+id="default"
+path="tests/src/GeneralStateTestsFiller/**/*"
 max_gas = 500000
 max_steps = 1000
-
 unimplemented_opcodes = [
     "EXP",
     "SAR",
@@ -20,20 +22,32 @@ unimplemented_opcodes = [
     "STATICCALL",
     "SELFDESTRUCT"
 ]
+ignore_tests=["&tofix"]
 
-# ignored tests, must fix  ---------------------------------------------------------------
+[[suite]]
+id = "ci"
+path="tests/src/GeneralStateTestsFiller/**/*"
+max_gas = 500000
+max_steps = 1000
+unimplemented_opcodes = []
+allow_tests=["mulmod_d0(mm_1_2_2)_g0_v0"]
 
-[[ignore_test]]
+# must fix  ------------------------------------------------------------------------------
+
+[[set]]
+id  = "tofix"
 desc = "***panicked at 'circuit should pass', contraint error"
-ids=["random_d3(random3)_g0_v0","random_d4(random4)_g0_v0"]
+tests=["random_d3(random3)_g0_v0","random_d4(random4)_g0_v0"]
 
-[[ignore_test]]
+[[set]]
+id = "tofix"
 desc = "***incorrect rw witness."
-ids = ["invalidAddr_d31(ok)_g0_v0"]
+tests = ["invalidAddr_d31(ok)_g0_v0"]
 
-[[ignore_test]]
+[[set]]
+id = "tofix"
 desc = "gen_associated_ops memory check error"
-ids = [
+tests = [
     "callDataCopyOffset_d0_g0_v0",
     "calldatacopy_dejavu2_d0_g0_v0",
     "codeCopyOffset_d0_g0_v0",
@@ -59,17 +73,19 @@ ids = [
 	"bufferSrcOffset_d6(ok)_g0_v0"
 ]
 
-[[ignore_test]]
+[[set]]
+id = "tofix"
 desc = "NotEnoughRowsAvailable { current_k: 12 }"
-ids = [
+tests = [
     "oog_d2(success)_g0_v0", 
     "oog_d4(success)_g0_v0",
     "push32withoutByte_d0_g0_v0"
 ]
 
-[[ignore_test]]
+[[set]]
+id = "tofix"
 desc = "a an inexistent contract at address is called, but parse_call() (or alike) does not support it yet"
-ids = [
+tests = [
     "invalidAddr_d41(ok)_g0_v0",
     "underflowTest_d91(CALL-7)_g0_v0",
     "CallToNameRegistratorAddressTooBigRight_d0_g0_v0",
@@ -78,23 +94,26 @@ ids = [
     "randomStatetest138_d0_g0_v0",
 ]
 
-[[ignore_test]]
+[[set]]
+id = "tofix"
 desc = "Integer overflow when casting to u64"
-ids = ["envInfo_d3(codecopy_neg_offset)_g0_v0", "codecopy_dejavu2_d0_g0_v0","randomStatetest222_d0_g0_v0"]
+tests = ["envInfo_d3(codecopy_neg_offset)_g0_v0", "codecopy_dejavu2_d0_g0_v0","randomStatetest222_d0_g0_v0"]
 
-[[ignore_test]]
+[[set]]
+id = "tofix"
 desc = "call with value and not enough value to send"
-ids= ["callWithHighValue_d0_g0_v0"]
+tests= ["callWithHighValue_d0_g0_v0"]
 
-[[ignore_test]]
+[[set]]
+id = "tofix"
 desc = "Fully implement PUSHn #633"
-ids = ["randomStatetest0_d0_g0_v0"]
+tests = ["randomStatetest0_d0_g0_v0"]
 
 # skipped tests, do not need to be fixed  --------------------------------------------------
 
-[[skip_test]]
+[[skip_tests]]
 desc = "maximum geth trace size (10MB)"
-ids = [
+tests = [
     "randomStatetest163_d0_g0_v0",
     "randomStatetest150_d0_g0_v0",
     "randomStatetest154_d0_g0_v0",
@@ -178,7 +197,7 @@ ids = [
 
 # ignored paths -------------------------------------------------------------------------
 
-[[skip_path]]
+[[skip_paths]]
 desc = "unimplemented"
 paths = [
     "EIP1559",
@@ -187,7 +206,7 @@ paths = [
     "stZeroKnowledge"
 ]
 
-[[skip_path]]
+[[skip_paths]]
 desc = "too big"
 paths = [
     "stTimeConsuming",
@@ -196,7 +215,7 @@ paths = [
     "50000"
 ]
 
-[[skip_path]]
+[[skip_paths]]
 desc = "defines asm"
 paths = [ 
     "stackLimitGas_1023Filler.json",
@@ -215,7 +234,7 @@ paths = [
     "chainIdGasCostFiller.json"
 ]
 
-[[skip_path]]
+[[skip_paths]]
 desc = "bad json"
 paths = [
     "Opcodes_TransactionInitFiller",
@@ -229,7 +248,7 @@ paths = [
     "ValueOverflowFiller" # weird 0x:biginteger 0x...
 ]
 
-[[skip_path]]
+[[skip_paths]]
 desc = "uses :solidity"
 paths = [
     "RevertRemoteSubCallStorageOOGFiller.yml",
