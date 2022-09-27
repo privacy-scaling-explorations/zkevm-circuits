@@ -20,7 +20,7 @@ mod tests {
     use rand_xorshift::XorShiftRng;
     use std::env::var;
     use zkevm_circuits::bytecode_circuit::bytecode_unroller::{unroll, UnrolledBytecode};
-    use zkevm_circuits::bytecode_circuit::dev::{get_randomness, BytecodeCircuitTester};
+    use zkevm_circuits::bytecode_circuit::dev::BytecodeCircuitTester;
 
     #[cfg_attr(not(feature = "benches"), ignore)]
     #[test]
@@ -33,19 +33,16 @@ mod tests {
         // Contract code size exceeds 24576 bytes may not be deployable on Mainnet.
         const MAX_BYTECODE_LEN: usize = 24576;
 
-        let randomness = get_randomness();
         let num_rows = 1 << degree;
         const NUM_BLINDING_ROWS: usize = 7 - 1;
         let max_bytecode_row_num = num_rows - NUM_BLINDING_ROWS;
         let bytecode_len = std::cmp::min(MAX_BYTECODE_LEN, max_bytecode_row_num);
         let bytecodes_num: usize = max_bytecode_row_num / bytecode_len;
-        let instance = vec![randomness; max_bytecode_row_num];
 
         // Create the circuit
         let bytecode_circuit = BytecodeCircuitTester::<Fr>::new(
-            fillup_codebytes(bytecodes_num, bytecode_len, randomness),
+            fillup_codebytes(bytecodes_num, bytecode_len),
             2usize.pow(degree),
-            randomness,
         );
 
         // Initialize the polynomial commitment parameters
@@ -82,7 +79,7 @@ mod tests {
             &general_params,
             &pk,
             &[bytecode_circuit],
-            &[&[instance.as_slice()][..]][..],
+            &[&[]],
             rng,
             &mut transcript,
         )
@@ -105,7 +102,7 @@ mod tests {
             &verifier_params,
             pk.get_vk(),
             strategy,
-            &[&[instance.as_slice()][..]][..],
+            &[&[]],
             &mut verifier_transcript,
         )
         .expect("failed to verify bench circuit");
@@ -116,7 +113,6 @@ mod tests {
     fn fillup_codebytes<F: Field>(
         bytecodes_num: usize,
         bytecode_len: usize,
-        randomness: F,
     ) -> Vec<UnrolledBytecode<F>> {
         let mut codebytes = vec![];
         (0..bytecodes_num).for_each(|_| {
@@ -127,7 +123,7 @@ mod tests {
                         .as_u8()
                 })
                 .collect::<Vec<u8>>();
-            let unrolled_bytes = unroll(bytecodes, randomness);
+            let unrolled_bytes = unroll::<F>(bytecodes);
             codebytes.push(unrolled_bytes);
         });
         codebytes

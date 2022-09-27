@@ -31,7 +31,3 @@ pub mod packed_multi_keccak;
 #[cfg(test)]
 #[cfg(feature = "benches")]
 pub mod bytecode_circuit;
-
-#[cfg(test)]
-#[cfg(feature = "benches")]
-pub mod pi_circuit;

@@ -23,7 +23,7 @@ pub(crate) fn query_expression<F: FieldExt, T>(
     expr.unwrap()
 }
 
-pub fn random_linear_combine_word<F: FieldExt>(bytes: [u8; 32], randomness: F) -> F {
+pub(crate) fn random_linear_combine_word<F: FieldExt>(bytes: [u8; 32], randomness: F) -> F {
     crate::evm_circuit::util::Word::random_linear_combine(bytes, randomness)
 }
 

@@ -17,7 +17,7 @@ pub struct BytecodeCircuitTester<F: Field> {
 
 impl<F: Field> BytecodeCircuitTester<F> {
     /// new BytecodeCircuitTester
-    pub fn new(bytecodes: Vec<UnrolledBytecode<F>>, size: usize, randomness: F) -> Self {
+    pub fn new(bytecodes: Vec<UnrolledBytecode<F>>, size: usize) -> Self {
         BytecodeCircuitTester { bytecodes, size }
     }
 }
