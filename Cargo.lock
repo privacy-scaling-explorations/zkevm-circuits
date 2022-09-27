@@ -441,7 +441,6 @@ dependencies = [
  "ethers-core",
  "ethers-signers",
  "halo2_proofs 0.2.0",
- "hex",
  "itertools",
  "keccak256",
  "mock",

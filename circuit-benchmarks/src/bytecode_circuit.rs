@@ -26,7 +26,7 @@ mod tests {
     #[test]
     fn bench_bytecode_circuit_prover() {
         let degree: u32 = var("DEGREE")
-            .unwrap_or_else(|_| "12".to_string())
+            .unwrap_or_else(|_| "15".to_string())
             .parse()
             .expect("Cannot parse DEGREE env var as u32");
 
@@ -118,25 +118,18 @@ mod tests {
         bytecode_len: usize,
         randomness: F,
     ) -> Vec<UnrolledBytecode<F>> {
-        if bytecodes_num == 0 {
-            vec![]
-        } else {
-            assert!(bytecode_len >= 1);
-            (0..bytecodes_num * bytecode_len)
-                .collect::<Vec<usize>>()
-                .chunks(bytecode_len)
-                .map(|idx_range| {
-                    idx_range
-                        .iter()
-                        .map(|v| {
-                            OpcodeId::try_from(*v as u8)
-                                .unwrap_or_else(|_| OpcodeId::STOP)
-                                .as_u8()
-                        })
-                        .collect::<Vec<u8>>()
+        let mut codebytes = vec![];
+        (0..bytecodes_num).for_each(|_| {
+            let bytecodes = (0..bytecode_len)
+                .map(|v| {
+                    OpcodeId::try_from(v as u8)
+                        .unwrap_or_else(|_| OpcodeId::STOP)
+                        .as_u8()
                 })
-                .map(|bytes| unroll(bytes, randomness))
-                .collect()
-        }
+                .collect::<Vec<u8>>();
+            let unrolled_bytes = unroll(bytecodes, randomness);
+            codebytes.push(unrolled_bytes);
+        });
+        codebytes
     }
 }
