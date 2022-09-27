@@ -447,9 +447,9 @@ impl<F: FieldExt> LeafValueConfig<F> {
                 Note: if leaf is a placeholder, the root in the account leaf needs to be the empty trie hash
                 (see the gate below).
                 */
-                let mut is_placeholder = meta.query_advice(denoter.sel1, Rotation(rot));
+                let mut is_placeholder = meta.query_advice(denoter.sel1, Rotation::cur());
                 if !is_s {
-                    is_placeholder = meta.query_advice(denoter.sel2, Rotation(rot));
+                    is_placeholder = meta.query_advice(denoter.sel2, Rotation::cur());
                 }
 
                 // Only check if there is an account above the leaf.
@@ -507,12 +507,12 @@ impl<F: FieldExt> LeafValueConfig<F> {
                 let mut rot_into_storage_root =
                     -LEAF_VALUE_S_IND - (ACCOUNT_LEAF_ROWS - ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND);
                 let mut rot_into_last_account_row = -LEAF_VALUE_S_IND - 1;
-                let mut is_placeholder = meta.query_advice(denoter.sel1, Rotation(rot));
+                let mut is_placeholder = meta.query_advice(denoter.sel1, Rotation::cur());
                 if !is_s {
                     rot_into_storage_root = -LEAF_VALUE_C_IND
                         - (ACCOUNT_LEAF_ROWS - ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND);
                     rot_into_last_account_row = -LEAF_VALUE_C_IND - 1;
-                    is_placeholder = meta.query_advice(denoter.sel2, Rotation(rot));
+                    is_placeholder = meta.query_advice(denoter.sel2, Rotation::cur());
                 }
 
                 let is_leaf = meta.query_advice(is_leaf_value, Rotation::cur());
