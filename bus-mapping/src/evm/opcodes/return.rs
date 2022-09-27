@@ -35,56 +35,65 @@ impl Opcode for Return {
         }
 
         let call = state.call()?.clone();
-        let is_root = call.is_root;
         for (field, value) in [
-            (CallContextField::IsRoot, is_root.to_word()),
-            (CallContextField::IsCreate, call.is_create().to_word()),
-            (CallContextField::IsSuccess, call.is_success.to_word()),
-            (CallContextField::CallerId, call.caller_id.into()),
-            (
-                CallContextField::ReturnDataOffset,
-                call.return_data_offset.into(),
-            ),
-            (
-                CallContextField::ReturnDataLength,
-                call.return_data_length.into(),
-            ),
+            (CallContextField::IsRoot, call.is_root),
+            (CallContextField::IsCreate, call.is_create()),
+            (CallContextField::IsSuccess, call.is_success),
         ] {
-            state.call_context_read(&mut exec_step, call.call_id, field, value);
+            state.call_context_read(&mut exec_step, call.call_id, field, value.to_word());
         }
 
-        if !is_root {
+        let offset = offset.as_usize();
+        let length = length.as_usize();
+
+        // Case A in the spec.
+        if call.is_create() && call.is_success && length > 0 {
+            // Note: handle_return updates state.code_db. All we need to do here is push the
+            // copy event.
+            handle_create(
+                state,
+                &mut exec_step,
+                Source {
+                    id: call.call_id,
+                    offset,
+                    length,
+                },
+            )?;
+        }
+
+        // No additional bus mapping is needed for case B.
+
+        // Case C in the specs.
+        if !call.is_root {
             state.handle_restore_context(steps, &mut exec_step)?;
         }
 
-        // can we use ref here?
-        let memory = state.call_ctx()?.memory.clone();
-        let offset = offset.as_usize();
-        let length = length.as_usize();
-        if call.is_create() && call.is_success {
-            // Note: handle_return updates state.code_db. All we need to do here is push the
-            // copy event.
-            if length > 0 {
-                handle_create(
-                    state,
-                    &mut exec_step,
-                    Source {
-                        id: call.call_id,
-                        offset,
-                        length,
-                    },
-                )?;
+        // Case D in the specs.
+        if !call.is_root && !call.is_create() {
+            for (field, value) in [
+                (
+                    CallContextField::CallerId,
+                    u64::try_from(call.caller_id).unwrap(),
+                ),
+                (CallContextField::ReturnDataOffset, call.return_data_offset),
+                (CallContextField::ReturnDataLength, call.return_data_length),
+            ] {
+                state.call_context_read(&mut exec_step, call.call_id, field, value.into());
             }
-        } else if !is_root && length > 0 {
-            let caller_ctx = state.caller_ctx_mut()?;
-            let return_offset = call.return_data_offset.try_into().unwrap();
-            let copy_length = std::cmp::min(call.return_data_length.try_into().unwrap(), length);
+
+            let return_data_length = usize::try_from(call.return_data_length).unwrap();
+            let copy_length = std::cmp::min(return_data_length, length);
             if copy_length > 0 {
+                // reconstruction
+                let callee_memory = state.call_ctx()?.memory.clone();
+                let caller_ctx = state.caller_ctx_mut()?;
+                let return_offset = call.return_data_offset.try_into().unwrap();
+
                 caller_ctx.memory.0[return_offset..return_offset + copy_length]
-                    .copy_from_slice(&memory.0[offset..offset + copy_length]);
+                    .copy_from_slice(&callee_memory.0[offset..offset + copy_length]);
                 caller_ctx.return_data.resize(length, 0);
                 caller_ctx.return_data[0..copy_length]
-                    .copy_from_slice(&memory.0[offset..offset + copy_length]);
+                    .copy_from_slice(&callee_memory.0[offset..offset + copy_length]);
 
                 handle_copy(
                     state,
@@ -96,8 +105,8 @@ impl Opcode for Return {
                     },
                     Destination {
                         id: call.caller_id,
-                        offset: call.return_data_offset.try_into().unwrap(),
-                        length: call.return_data_length.try_into().unwrap(),
+                        offset: return_offset,
+                        length: return_data_length,
                     },
                 )?;
             }
@@ -151,7 +160,7 @@ fn handle_copy(
         src_type: CopyDataType::Memory,
         src_id: NumberOrHash::Number(source.id),
         src_addr: source.offset.try_into().unwrap(),
-        src_addr_end: (source.offset + copy_length).try_into().unwrap(),
+        src_addr_end: (source.offset + source.length).try_into().unwrap(),
         dst_type: CopyDataType::Memory,
         dst_id: NumberOrHash::Number(destination.id),
         dst_addr: destination.offset.try_into().unwrap(),

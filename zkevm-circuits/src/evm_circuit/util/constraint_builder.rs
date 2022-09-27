@@ -1114,6 +1114,8 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         rw_counter: Expression<F>,
         rwc_inc: Expression<F>,
     ) {
+        // TODO: eliminate rw_counter argument since we have self.rw_counter_offset
+        // already. TODO: increment rw_counter_offset by rwc_inc.
         self.add_lookup(
             "copy lookup",
             Lookup::CopyTable {

@@ -99,13 +99,14 @@ pub(crate) struct RestoreContextGadget<F> {
 impl<F: Field> RestoreContextGadget<F> {
     pub(crate) fn construct(
         cb: &mut ConstraintBuilder<F>,
-        is_success: Expression<F>,
-        copy_lookup_rw_counter_increase: Expression<F>,
+        is_success: Expression<F>,                      // just remove this?
+        copy_lookup_rw_counter_increase: Expression<F>, // try to set it up so this is always 0?
         return_data_offset: Expression<F>,
         return_data_length: Expression<F>,
     ) -> Self {
         // Read caller's context for restore
         let caller_id = cb.call_context(None, CallContextFieldTag::CallerId);
+        // TODO: lookup is_success here instead of taking in as argument.
         let [caller_is_root, caller_is_create, caller_code_hash, caller_program_counter, caller_stack_pointer, caller_gas_left, caller_memory_word_size, caller_reversible_write_counter] =
             [
                 CallContextFieldTag::IsRoot,

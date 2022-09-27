@@ -31,7 +31,8 @@ pub(crate) struct ReturnGadget<F> {
     restore_context: RestoreContextGadget<F>,
 
     copy_length: MinMaxGadget<F, N_BYTES_MEMORY_ADDRESS>,
-    copy_length_is_zero: IsZeroGadget<F>,
+    copy_rw_increase: Cell<F>,
+    copy_rw_increase_is_zero: IsZeroGadget<F>,
 
     caller_id: Cell<F>, // can you get this out of restore_context?
     return_data_offset: Cell<F>,
@@ -54,13 +55,10 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
         cb.stack_pop(length.expr());
         let range = MemoryAddressGadget::construct(cb, offset, length);
 
-        let [is_root, is_create, is_success, caller_id, return_data_offset, return_data_length] = [
+        let [is_root, is_create, is_success] = [
             CallContextFieldTag::IsRoot,
             CallContextFieldTag::IsCreate,
             CallContextFieldTag::IsSuccess,
-            CallContextFieldTag::CallerId,
-            CallContextFieldTag::ReturnDataOffset,
-            CallContextFieldTag::ReturnDataLength,
         ]
         .map(|field_tag| cb.call_context(None, field_tag));
 
@@ -70,62 +68,103 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
             is_success.expr() * OpcodeId::RETURN.expr()
                 + not::expr(is_success.expr()) * OpcodeId::REVERT.expr(),
         );
+
+        // There are 4 cases non-mutually exclusive, A to D, to handle, depending on if
+        // the call is, or is not, a create, root, or successful. See the specs at
+        // https://github.com/privacy-scaling-explorations/zkevm-specs/blob/master/specs/opcode/F3RETURN.md
+        // for more details.
+
+        // These are globally defined because they are used across multiple cases.
+        let copy_rw_increase = cb.query_cell();
+        let copy_rw_increase_is_zero = IsZeroGadget::construct(cb, copy_rw_increase.expr());
+
+        // Case A in the specs.
+        cb.condition(is_create.expr() * is_success.expr(), |cb| {
+            cb.require_equal(
+                "increase rw counter once for each memory to bytecode byte copied",
+                copy_rw_increase.expr(),
+                range.length(),
+            );
+        });
+        cb.condition(
+            is_create.expr() * is_success.expr() * not::expr(copy_rw_increase_is_zero.expr()),
+            |_cb| {
+                // TODO: copy_table_lookup for contract creation.
+            },
+        );
+
+        // Case B in the specs.
         cb.condition(is_root.expr(), |cb| {
             cb.require_next_state(ExecutionState::EndTx);
         });
 
-        let copy_length = MinMaxGadget::construct(cb, return_data_length.expr(), range.length());
-        let copy_length_is_zero = IsZeroGadget::construct(cb, copy_length.min());
-        let copy_rw_increase = copy_length.min() + copy_length.min();
-
+        // Case C in the specs.
+        // TODO: have copy_table_lookup update rw_counter expression so that this can go
+        // at the end of the constraints.
         let restore_context = cb.condition(not::expr(is_root.expr()), |cb| {
-            cb.require_next_state_not(ExecutionState::EndTx);
             RestoreContextGadget::construct(
                 cb,
                 is_success.expr(),
-                copy_rw_increase.clone(),
+                3.expr() + copy_rw_increase.expr(),
                 range.offset(),
                 range.length(),
             )
         });
 
+        // Case D in the specs.
+        let (caller_id, return_data_offset, return_data_length, copy_length) = cb.condition(
+            not::expr(is_create.expr()) * not::expr(is_root.expr()),
+            |cb| {
+                let [caller_id, return_data_offset, return_data_length] = [
+                    CallContextFieldTag::CallerId,
+                    CallContextFieldTag::ReturnDataOffset,
+                    CallContextFieldTag::ReturnDataLength,
+                ]
+                .map(|field_tag| cb.call_context(None, field_tag));
+                let copy_length =
+                    MinMaxGadget::construct(cb, return_data_length.expr(), range.length());
+                cb.require_equal(
+                    "increase rw counter twice for each memory to memory byte copied",
+                    copy_length.min() + copy_length.min(),
+                    copy_rw_increase.expr(),
+                );
+                (
+                    caller_id,
+                    return_data_offset,
+                    return_data_length,
+                    copy_length,
+                )
+            },
+        );
         cb.condition(
             not::expr(is_create.expr())
                 * not::expr(is_root.expr())
-                * not::expr(copy_length_is_zero.expr()),
+                * not::expr(copy_rw_increase_is_zero.expr()),
             |cb| {
-                let source_id = cb.curr.state.call_id.expr();
-                let source_tag = CopyDataType::Memory.expr();
-                let destination_id = caller_id.expr();
-                let destination_tag = CopyDataType::Memory.expr();
-                let source_address_start = range.offset();
-                let source_address_end = range.offset() + copy_length.min();
-                let destination_address_start = return_data_offset.expr();
-                let rlc_acc = 0.expr();
-                let rw_counter_start =
-                    cb.curr.state.rw_counter.expr() + cb.rw_counter_offset().expr();
                 cb.copy_table_lookup(
-                    source_id,
-                    source_tag,
-                    destination_id,
-                    destination_tag,
-                    source_address_start,
-                    source_address_end,
-                    destination_address_start,
+                    cb.curr.state.call_id.expr(),
+                    CopyDataType::Memory.expr(),
+                    caller_id.expr(),
+                    CopyDataType::Memory.expr(),
+                    range.offset(),
+                    range.address(),
+                    return_data_offset.expr(),
                     copy_length.min(),
-                    rlc_acc,
-                    rw_counter_start,
-                    copy_rw_increase,
+                    0.expr(),
+                    cb.curr.state.rw_counter.expr() + cb.rw_counter_offset().expr(),
+                    copy_rw_increase.expr(),
                 );
             },
         );
 
-        cb.condition(
-            is_create.expr() * is_success.expr() * range.has_length(),
-            |_cb| {
-                // TODO: copy_table_lookup for contract creation
-            },
-        );
+        // Without this, copy_rw_increase would be unconstrained for non-create root
+        // calls.
+        cb.condition(not::expr(is_create.expr()) * is_root.expr(), |cb| {
+            cb.require_zero(
+                "rw counter is 0 if there is no copy event",
+                copy_rw_increase.expr(),
+            );
+        });
 
         Self {
             opcode,
@@ -135,7 +174,8 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
             is_success,
             caller_id,
             copy_length,
-            copy_length_is_zero,
+            copy_rw_increase,
+            copy_rw_increase_is_zero,
             return_data_offset,
             return_data_length,
             restore_context,
@@ -169,37 +209,45 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
             cell.assign(region, offset, Value::known(value.to_scalar().unwrap()))?;
         }
 
-        for (cell, value) in [
-            (
-                &self.caller_id,
-                F::from(u64::try_from(call.caller_id).unwrap()),
-            ),
-            (&self.return_data_length, call.return_data_length.into()),
-            (&self.return_data_offset, call.return_data_offset.into()),
-        ] {
-            cell.assign(region, offset, Value::known(value))?;
+        if !call.is_root && !call.is_create {
+            for (cell, value) in [
+                (
+                    &self.caller_id,
+                    F::from(u64::try_from(call.caller_id).unwrap()),
+                ),
+                (&self.return_data_length, call.return_data_length.into()),
+                (&self.return_data_offset, call.return_data_offset.into()),
+            ] {
+                cell.assign(region, offset, Value::known(value))?;
+            }
+
+            self.copy_length.assign(
+                region,
+                offset,
+                F::from(call.return_data_length),
+                F::from(length.as_u64()),
+            )?;
         }
+
+        let copy_rw_increase = if call.is_create {
+            length.as_u64()
+        } else if !call.is_root {
+            dbg!(2 * std::cmp::min(call.return_data_length, length.as_u64()));
+            2 * std::cmp::min(call.return_data_length, length.as_u64())
+        } else {
+            0
+        };
+        self.copy_rw_increase
+            .assign(region, offset, Value::known(F::from(copy_rw_increase)))?;
+        self.copy_rw_increase_is_zero
+            .assign(region, offset, F::from(copy_rw_increase))?;
 
         if !call.is_root {
-            self.restore_context
-                .assign(region, offset, block, call, step, 8)?;
+            self.restore_context.assign(
+                region, offset, block, call, step,
+                5, // 5 + usize::try_from(copy_rw_increase).unwrap(),
+            )?;
         }
-
-        self.copy_length.assign(
-            region,
-            offset,
-            F::from(call.return_data_length),
-            F::from(length.as_u64()),
-        )?;
-        self.copy_length_is_zero.assign(
-            region,
-            offset,
-            F::from(std::cmp::min(call.return_data_length, length.as_u64())),
-        )?;
-
-        let opcode = step.opcode.unwrap();
-        self.opcode
-            .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
 
         Ok(())
     }
@@ -237,7 +285,6 @@ mod test {
     }
 
     fn caller_bytecode(return_data_offset: u64, return_data_length: u64) -> Bytecode {
-        dbg!(return_data_offset, return_data_length);
         bytecode! {
             PUSH32(return_data_length)
             PUSH32(return_data_offset)
@@ -284,6 +331,16 @@ mod test {
         for (((callee_offset, callee_length), (caller_offset, caller_length)), is_return) in
             test_parameters.iter().cartesian_product(&[true, false])
         {
+            dbg!(
+                "(callee_offset, callee_length, caller_offset, caller_length, is_return) = {:?}",
+                (
+                    *callee_offset,
+                    *callee_length,
+                    *caller_offset,
+                    *caller_length,
+                    *is_return
+                )
+            );
             let callee = Account {
                 address: CALLEE_ADDRESS,
                 code: callee_bytecode(*is_return, *callee_offset, *callee_length).into(),
