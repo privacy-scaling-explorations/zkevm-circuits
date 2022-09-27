@@ -79,7 +79,6 @@ pub struct MPTConfig<F> {
     pub(crate) storage_leaf: StorageLeafCols<F>,
     pub(crate) denoter: DenoteCols<F>,
     pub(crate) acc_r: F,
-    r_table: Vec<Expression<F>>,
     keccak_table: [Column<Fixed>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
     fixed_table: [Column<Fixed>; 3],
     pub(crate) address_rlc: Column<Advice>, /* The same in all rows of a modification. The same
@@ -192,7 +191,7 @@ impl<F: FieldExt> ProofValues<F> {
 }
 
 impl<F: FieldExt> MPTConfig<F> {
-    pub(crate) fn configure(meta: &mut ConstraintSystem<F>) -> Self {
+    pub fn configure(meta: &mut ConstraintSystem<F>) -> Self {
         let _pub_root = meta.instance_column();
         let inter_start_root = meta.advice_column(); // state root before modification - first level S hash needs to be the same as
                                                      // start_root (works also if only storage proof, without account proof, but if
@@ -260,6 +259,9 @@ impl<F: FieldExt> MPTConfig<F> {
         If big endian would be used:
         `rlc = rlc * acc_r + row[i]`,
         `rlc` would be multiplied by `acc_r` when `row[i] = 0`.
+
+        However, we need to ensure there are truly 0s after the RLP stream ends, this is done
+        by `key_len_lookup` calls.
         */
 
         let accumulators = AccumulatorCols::new(meta);
@@ -728,7 +730,6 @@ impl<F: FieldExt> MPTConfig<F> {
             accumulators,
             acc_r,
             denoter,
-            r_table,
             keccak_table,
             fixed_table,
             address_rlc,
@@ -912,8 +913,7 @@ impl<F: FieldExt> MPTConfig<F> {
         Ok(())
     }
 
-    // TODO: split assign
-    pub(crate) fn assign(&self, mut layouter: impl Layouter<F>, witness: &[MptWitnessRow<F>]) {
+    pub fn assign(&self, mut layouter: impl Layouter<F>, witness: &[MptWitnessRow<F>]) {
         layouter
             .assign_region(
                 || "MPT",
@@ -1365,7 +1365,6 @@ mod tests {
             ConstraintSystem, Error,
         },
     };
-
     
     use pairing::{
         arithmetic::FieldExt,

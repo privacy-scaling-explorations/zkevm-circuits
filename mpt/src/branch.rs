@@ -74,9 +74,7 @@ pub(crate) struct Branch {
     pub(crate) is_branch_child: bool,
     pub(crate) is_last_branch_child: bool,
     pub(crate) node_index: u8,
-    pub(crate) is_modified: bool,
     pub(crate) modified_node: u8,
-    pub(crate) is_at_drifted_pos: bool,
     pub(crate) drifted_pos: u8,
     pub(crate) is_extension_node_s: bool,
     pub(crate) is_extension_node_c: bool,
@@ -1112,13 +1110,11 @@ impl<F: FieldExt> BranchConfig<F> {
                 } else {
                     ext_nibbles = (row_ext.get_byte(1) - 128) as usize * 2 - 1;
                 }
+            } else if row_ext.get_byte(3) == 0 {
+                // even number of nibbles
+                ext_nibbles = ((row_ext.get_byte(2) - 128) as usize - 1) * 2;
             } else {
-                if row_ext.get_byte(3) == 0 {
-                    // even number of nibbles
-                    ext_nibbles = ((row_ext.get_byte(2) - 128) as usize - 1) * 2;
-                } else {
-                    ext_nibbles = (row_ext.get_byte(2) - 128) as usize * 2 - 1;
-                }
+                ext_nibbles = (row_ext.get_byte(2) - 128) as usize * 2 - 1;
             }
 
             pv.nibbles_num += ext_nibbles;
@@ -1269,75 +1265,73 @@ impl<F: FieldExt> BranchConfig<F> {
                         pv.key_rlc_mult *= mpt_config.acc_r;
                         pv.mult_diff = mpt_config.acc_r;
                     }
-                } else {
-                    if pv.is_even && pv.is_long {
-                        // extension node part:
-                        let ext_row_c = &witness[offset + 17];
-                        let key_len = ext_row.get_byte(key_len_pos) as usize - 128 - 1; // -1 because the first byte is 0 (is_even)
+                } else if pv.is_even && pv.is_long {
+                    // extension node part:
+                    let ext_row_c = &witness[offset + 17];
+                    let key_len = ext_row.get_byte(key_len_pos) as usize - 128 - 1; // -1 because the first byte is 0 (is_even)
 
-                        pv.mult_diff = F::one();
-                        for k in 0..key_len {
-                            let second_nibble = ext_row_c.get_byte(S_START + k);
-                            let first_nibble =
-                                (ext_row.get_byte(key_len_pos + 2 + k) - second_nibble) / 16;
-                            assert_eq!(
-                                first_nibble * 16 + second_nibble,
-                                ext_row.get_byte(key_len_pos + 2 + k),
-                            );
-                            pv.extension_node_rlc += F::from(first_nibble as u64) * pv.key_rlc_mult;
-
-                            pv.key_rlc_mult *= mpt_config.acc_r;
-                            pv.mult_diff *= mpt_config.acc_r;
-
-                            pv.extension_node_rlc +=
-                                F::from(16) * F::from(second_nibble as u64) * pv.key_rlc_mult;
-                        }
-
-                        pv.key_rlc = pv.extension_node_rlc;
-                        // branch part:
-                        pv.key_rlc += F::from(pv.modified_node as u64) * pv.key_rlc_mult;
-                        pv.key_rlc_mult *= mpt_config.acc_r;
-                        pv.key_rlc_sel = !pv.key_rlc_sel;
-                    } else if pv.is_odd && pv.is_long {
-                        pv.extension_node_rlc +=
-                            F::from((ext_row.get_byte(key_len_pos + 1) - 16) as u64)
-                                * pv.key_rlc_mult;
-
-                        pv.key_rlc_mult *= mpt_config.acc_r;
-
-                        let key_len = ext_row.get_byte(key_len_pos) as usize - 128;
-
-                        mpt_config.compute_acc_and_mult(
-                            &ext_row.bytes,
-                            &mut pv.extension_node_rlc,
-                            &mut pv.key_rlc_mult,
-                            key_len_pos + 2, /* the first position after key_len_pos
-                                              * is single nibble which is taken into
-                                              * account above, we start
-                                              * with fourth */
-                            key_len - 1, // one byte is occupied by single nibble
+                    pv.mult_diff = F::one();
+                    for k in 0..key_len {
+                        let second_nibble = ext_row_c.get_byte(S_START + k);
+                        let first_nibble =
+                            (ext_row.get_byte(key_len_pos + 2 + k) - second_nibble) / 16;
+                        assert_eq!(
+                            first_nibble * 16 + second_nibble,
+                            ext_row.get_byte(key_len_pos + 2 + k),
                         );
-                        pv.mult_diff = F::one();
-                        for _ in 0..key_len {
-                            pv.mult_diff *= mpt_config.acc_r;
-                        }
-                        pv.key_rlc = pv.extension_node_rlc;
-                        // branch part:
-                        pv.key_rlc +=
-                            F::from(pv.modified_node as u64) * F::from(16) * pv.key_rlc_mult;
-                        // key_rlc_mult stays the same
-                    } else if pv.is_short {
-                        pv.extension_node_rlc +=
-                            F::from((ext_row.get_byte(1) - 16) as u64) * pv.key_rlc_mult;
-
-                        pv.key_rlc = pv.extension_node_rlc;
+                        pv.extension_node_rlc += F::from(first_nibble as u64) * pv.key_rlc_mult;
 
                         pv.key_rlc_mult *= mpt_config.acc_r;
-                        // branch part:
-                        pv.key_rlc +=
-                            F::from(pv.modified_node as u64) * F::from(16) * pv.key_rlc_mult;
-                        pv.mult_diff = mpt_config.acc_r;
+                        pv.mult_diff *= mpt_config.acc_r;
+
+                        pv.extension_node_rlc +=
+                            F::from(16) * F::from(second_nibble as u64) * pv.key_rlc_mult;
                     }
+
+                    pv.key_rlc = pv.extension_node_rlc;
+                    // branch part:
+                    pv.key_rlc += F::from(pv.modified_node as u64) * pv.key_rlc_mult;
+                    pv.key_rlc_mult *= mpt_config.acc_r;
+                    pv.key_rlc_sel = !pv.key_rlc_sel;
+                } else if pv.is_odd && pv.is_long {
+                    pv.extension_node_rlc +=
+                        F::from((ext_row.get_byte(key_len_pos + 1) - 16) as u64)
+                            * pv.key_rlc_mult;
+
+                    pv.key_rlc_mult *= mpt_config.acc_r;
+
+                    let key_len = ext_row.get_byte(key_len_pos) as usize - 128;
+
+                    mpt_config.compute_acc_and_mult(
+                        &ext_row.bytes,
+                        &mut pv.extension_node_rlc,
+                        &mut pv.key_rlc_mult,
+                        key_len_pos + 2, /* the first position after key_len_pos
+                                            * is single nibble which is taken into
+                                            * account above, we start
+                                            * with fourth */
+                        key_len - 1, // one byte is occupied by single nibble
+                    );
+                    pv.mult_diff = F::one();
+                    for _ in 0..key_len {
+                        pv.mult_diff *= mpt_config.acc_r;
+                    }
+                    pv.key_rlc = pv.extension_node_rlc;
+                    // branch part:
+                    pv.key_rlc +=
+                        F::from(pv.modified_node as u64) * F::from(16) * pv.key_rlc_mult;
+                    // key_rlc_mult stays the same
+                } else if pv.is_short {
+                    pv.extension_node_rlc +=
+                        F::from((ext_row.get_byte(1) - 16) as u64) * pv.key_rlc_mult;
+
+                    pv.key_rlc = pv.extension_node_rlc;
+
+                    pv.key_rlc_mult *= mpt_config.acc_r;
+                    // branch part:
+                    pv.key_rlc +=
+                        F::from(pv.modified_node as u64) * F::from(16) * pv.key_rlc_mult;
+                    pv.mult_diff = mpt_config.acc_r;
                 }
             } else {
                 if pv.key_rlc_sel {

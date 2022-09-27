@@ -41,13 +41,13 @@ pub(crate) enum MptWitnessRowType {
     AccountNonExisting = 18,
 }
 
-pub(crate) struct MptWitnessRow<F> {
+pub struct MptWitnessRow<F> {
     pub(crate) bytes: Vec<u8>,
     _marker: PhantomData<F>,
 }
 
 impl<F: FieldExt> MptWitnessRow<F> {
-    pub(crate) fn new(bytes: Vec<u8>) -> Self {
+    pub fn new(bytes: Vec<u8>) -> Self {
         Self {
             bytes,
             _marker: PhantomData,
@@ -59,7 +59,7 @@ impl<F: FieldExt> MptWitnessRow<F> {
     }
 
     pub(crate) fn get_byte_rev(&self, rev_index: usize) -> u8 {
-        self.bytes[self.bytes.len() - rev_index]
+        self.bytes[self.len() - rev_index]
     }
 
     pub(crate) fn get_byte(&self, index: usize) -> u8 {
@@ -72,10 +72,6 @@ impl<F: FieldExt> MptWitnessRow<F> {
 
     pub(crate) fn not_first_level(&self) -> u8 {
         self.get_byte_rev(NOT_FIRST_LEVEL_POS)
-    }
-
-    pub(crate) fn is_storage_mod(&self) -> u8 {
-        self.get_byte_rev(IS_STORAGE_MOD_POS)
     }
 
     pub(crate) fn s_root_bytes(&self) -> &[u8] {
@@ -103,15 +99,6 @@ impl<F: FieldExt> MptWitnessRow<F> {
             - IS_NON_EXISTING_ACCOUNT_POS
             ..self.bytes.len() - 2 * HASH_WIDTH - COUNTER_WITNESS_LEN - IS_NON_EXISTING_ACCOUNT_POS
                 + HASH_WIDTH]
-    }
-
-    pub(crate) fn counter_bytes(&self) -> &[u8] {
-        &self.bytes[self.bytes.len()
-            - HASH_WIDTH
-            - COUNTER_WITNESS_LEN
-            - IS_NON_EXISTING_ACCOUNT_POS
-            ..self.bytes.len() - HASH_WIDTH - COUNTER_WITNESS_LEN - IS_NON_EXISTING_ACCOUNT_POS
-                + COUNTER_WITNESS_LEN]
     }
 
     pub(crate) fn s_hash_bytes(&self) -> &[u8] {
