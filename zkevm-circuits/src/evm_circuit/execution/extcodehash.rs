@@ -44,7 +44,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
         cb.stack_pop(external_address.expr());
 
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
-        let mut reversion_info = cb.reversion_info(None);
+        let mut reversion_info = cb.reversion_info_read(None);
 
         let is_warm = cb.query_bool();
         cb.account_access_list_write(

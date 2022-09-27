@@ -7,7 +7,9 @@
 pub mod sign_verify;
 
 use crate::table::{KeccakTable, TxFieldTag, TxTable};
-use crate::util::{power_of_randomness_from_instance, random_linear_combine_word as rlc};
+use crate::util::{
+    power_of_randomness_from_instance, random_linear_combine_word as rlc, Challenges,
+};
 use bus_mapping::circuit_input_builder::keccak_inputs_tx_circuit;
 use eth_types::{
     sign_types::SignData,
@@ -69,6 +71,11 @@ impl<F: Field> TxCircuitConfig<F> {
             keccak_table,
             _marker: PhantomData,
         }
+    }
+
+    /// Load ECDSA RangeChip table.
+    pub fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
+        self.sign_verify.load_range(layouter)
     }
 
     /// Assigns a tx circuit row and returns the assigned cell of the value in
@@ -307,7 +314,9 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
         config: Self::Config,
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
-        config.sign_verify.load_range(&mut layouter)?;
+        let challenges = Challenges::mock(Value::known(self.randomness));
+
+        config.load(&mut layouter)?;
         self.assign(&config, &mut layouter)?;
         config.keccak_table.dev_load(
             &mut layouter,
@@ -315,7 +324,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
                 error!("keccak_inputs_tx_circuit error: {:?}", e);
                 Error::Synthesis
             })?,
-            self.randomness,
+            &challenges,
         )
     }
 }

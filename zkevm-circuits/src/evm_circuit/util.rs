@@ -3,7 +3,7 @@ use crate::{
         param::{LOOKUP_CONFIG, N_BYTES_MEMORY_ADDRESS},
         table::Table,
     },
-    util::Expr,
+    util::{query_expression, Expr},
 };
 use eth_types::U256;
 use halo2_proofs::{
@@ -217,8 +217,8 @@ impl<F: FieldExt> CellManager<F> {
         // Setup the columns and query the cells
         let width = advices.len();
         let mut cells = Vec::with_capacity(height * width);
-        let mut columns = Vec::with_capacity(height);
-        meta.create_gate("Query rows for step", |meta| {
+        let mut columns = Vec::with_capacity(width);
+        query_expression(meta, |meta| {
             for c in 0..width {
                 for r in 0..height {
                     cells.push(Cell::new(meta, advices[c], height_offset + r));
@@ -230,7 +230,6 @@ impl<F: FieldExt> CellManager<F> {
                     expr: cells[c * height].expr(),
                 });
             }
-            vec![0.expr()]
         });
 
         // Mark columns used for lookups

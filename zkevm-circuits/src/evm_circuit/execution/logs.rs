@@ -15,7 +15,7 @@ use crate::{
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::{CallContextFieldTag, RwTableTag, TxLogFieldTag},
-    util::Expr,
+    util::{build_tx_log_expression, Expr},
 };
 use array_init::array_init;
 use bus_mapping::circuit_input_builder::CopyDataType;
@@ -126,8 +126,11 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
         );
 
         let copy_rwc_inc = cb.query_cell();
-        let dst_addr = (1u64 << 32).expr() * TxLogFieldTag::Data.expr()
-            + (1u64 << 48).expr() * (cb.curr.state.log_id.expr() + 1.expr());
+        let dst_addr = build_tx_log_expression(
+            0.expr(),
+            TxLogFieldTag::Data.expr(),
+            cb.curr.state.log_id.expr() + 1.expr(),
+        );
         let cond = memory_address.has_length() * is_persistent.expr();
         cb.condition(cond.clone(), |cb| {
             cb.copy_table_lookup(

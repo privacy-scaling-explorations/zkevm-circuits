@@ -13,7 +13,6 @@ use eth_types::{
 };
 use keccak256::EMPTY_HASH;
 use log::warn;
-use std::cmp::max;
 
 /// Placeholder structure used to implement [`Opcode`] trait over it
 /// corresponding to the `OpcodeId::CALL` `OpcodeId`.
@@ -34,21 +33,7 @@ impl Opcode for Call {
         let ret_length = geth_step.stack.nth_last(6)?.as_usize();
 
         // we need to keep the memory until parse_call complete
-        let call_ctx = state.call_ctx_mut()?;
-        let args_minimal = if args_length != 0 {
-            args_offset + args_length
-        } else {
-            0
-        };
-        let ret_minimal = if ret_length != 0 {
-            ret_offset + ret_length
-        } else {
-            0
-        };
-        if args_minimal != 0 || ret_minimal != 0 {
-            let minimal_length = max(args_minimal, ret_minimal);
-            call_ctx.memory.extend_at_least(minimal_length);
-        }
+        state.call_expand_memory(args_offset, args_length, ret_offset, ret_length)?;
 
         let tx_id = state.tx_ctx.id();
         let call = state.parse_call(geth_step)?;
@@ -113,7 +98,7 @@ impl Opcode for Call {
                 (call.is_persistent as u64).into(),
             ),
         ] {
-            state.call_context_read(&mut exec_step, call.call_id, field, value);
+            state.call_context_write(&mut exec_step, call.call_id, field, value);
         }
 
         state.transfer(
@@ -248,7 +233,7 @@ impl Opcode for Call {
                     (CallContextField::IsCreate, 0.into()),
                     (CallContextField::CodeHash, call.code_hash.to_word()),
                 ] {
-                    state.call_context_read(&mut exec_step, call.call_id, field, value);
+                    state.call_context_write(&mut exec_step, call.call_id, field, value);
                 }
 
                 Ok(vec![exec_step])

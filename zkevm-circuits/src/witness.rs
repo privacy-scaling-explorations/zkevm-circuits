@@ -8,6 +8,8 @@ mod bytecode;
 pub use bytecode::Bytecode;
 mod call;
 pub use call::Call;
+mod mpt;
+pub use mpt::{MptUpdate, MptUpdateRow, MptUpdates};
 mod rw;
 pub use rw::{Rw, RwMap, RwRow};
 mod step;
