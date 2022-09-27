@@ -545,7 +545,7 @@ impl BytecodeTable {
     /// Construct a new BytecodeTable
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
         let [tag, index, is_code, value] = array::from_fn(|_| meta.advice_column());
-        let code_hash = meta.advice_column_in(SecondPhase);
+        let code_hash = meta.advice_column();
         Self {
             code_hash,
             tag,
@@ -733,9 +733,9 @@ impl KeccakTable {
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
         Self {
             is_enabled: meta.advice_column(),
-            input_rlc: meta.advice_column_in(SecondPhase),
+            input_rlc: meta.advice_column(),
             input_len: meta.advice_column(),
-            output_rlc: meta.advice_column_in(SecondPhase),
+            output_rlc: meta.advice_column(),
         }
     }
 

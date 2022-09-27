@@ -160,7 +160,7 @@ pub mod test {
     use crate::{
         evm_circuit::{table::FixedTableTag, witness::Block, EvmCircuit},
         table::{BlockTable, BytecodeTable, CopyTable, KeccakTable, RwTable, TxTable},
-        util::{power_of_randomness_from_instance, Challenges},
+        util::Challenges,
         util::DEFAULT_RAND,
     };
     use bus_mapping::evm::OpcodeId;

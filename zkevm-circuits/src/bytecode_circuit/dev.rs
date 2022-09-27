@@ -1,11 +1,10 @@
 use super::bytecode_unroller::{unroll, Config, UnrolledBytecode};
 use crate::table::{BytecodeTable, KeccakTable};
 use crate::util::Challenges;
-use crate::util::DEFAULT_RAND;
 use eth_types::Field;
 use halo2_proofs::{
     circuit::Layouter,
-    plonk::{ConstraintSystem, Error, Expression},
+    plonk::{ConstraintSystem, Error},
 };
 use halo2_proofs::{circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit};
 
@@ -16,8 +15,6 @@ pub struct BytecodeCircuitTester<F: Field> {
     pub bytecodes: Vec<UnrolledBytecode<F>>,
     /// size
     pub size: usize,
-    /// randomness
-    pub randomness: F,
 }
 
 impl<F: Field> Circuit<F> for BytecodeCircuitTester<F> {
@@ -30,11 +27,6 @@ impl<F: Field> Circuit<F> for BytecodeCircuitTester<F> {
 
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
         let bytecode_table = BytecodeTable::construct(meta);
-        let randomness: [Expression<F>; 31] = (1..32)
-            .map(|exp| Expression::Constant(F::from_u128(DEFAULT_RAND).pow(&[exp, 0, 0, 0])))
-            .collect::<Vec<_>>()
-            .try_into()
-            .unwrap();
 
         let keccak_table = KeccakTable::construct(meta);
         let challenges = Challenges::construct(meta);
