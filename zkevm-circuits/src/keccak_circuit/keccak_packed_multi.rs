@@ -358,7 +358,7 @@ impl<F: Field> Circuit<F> for KeccakPackedCircuit<F> {
     }
 
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-        KeccakPackedConfig::configure(meta, KeccakPackedCircuit::r())
+        KeccakPackedConfig::configure(meta, Expression::Constant(KeccakPackedCircuit::r()))
     }
 
     fn synthesize(
@@ -784,7 +784,7 @@ mod transform_to {
 }
 
 impl<F: Field> KeccakPackedConfig<F> {
-    pub(crate) fn configure(meta: &mut ConstraintSystem<F>, r: F) -> Self {
+    pub(crate) fn configure(meta: &mut ConstraintSystem<F>, r: Expression<F>) -> Self {
         let q_enable = meta.fixed_column();
         let q_first = meta.fixed_column();
         let q_round = meta.fixed_column();
@@ -1291,7 +1291,7 @@ impl<F: Field> KeccakPackedConfig<F> {
                     );
                 });
             }
-            let rlc = compose_rlc::expr(&hash_bytes, r);
+            let rlc = compose_rlc::expr(&hash_bytes, r.clone());
             cb.condition(start_new_hash, |cb| {
                 cb.require_equal(
                     "hash rlc check",
@@ -1470,7 +1470,7 @@ impl<F: Field> KeccakPackedConfig<F> {
                     new_data_rlc = select::expr(
                         is_padding.expr(),
                         new_data_rlc.clone(),
-                        new_data_rlc.clone() * r + byte.expr.clone(),
+                        new_data_rlc.clone() * r.clone() + byte.expr.clone(),
                     );
                     if idx < data_rlcs.len() - 1 {
                         cb.require_equal(
