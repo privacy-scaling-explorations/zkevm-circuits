@@ -386,21 +386,6 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                 get_is_extension_node_one_nibble(meta, s_main.bytes, rot_branch_init);
 
             /*
-            `mult_diff` is the power of multiplier `r` and it corresponds to the number of nibbles in the extension node.
-            We need `mult_diff` because there is nothing stored in
-            `meta.query_advice(accs.key.mult, Rotation(-ACCOUNT_DRIFTED_LEAF_IND-1))` as we always use `mult_diff` also in `extension_node_key.rs`.
-            */
-            let mult_diff = meta.query_advice(accs.mult_diff, Rotation(rot_branch_init + 1));
-            let mut key_rlc_mult = branch_above_placeholder_mult.clone()
-                * mult_diff
-                * is_ext_node.clone()
-                * (one.clone() - is_one_nibble.clone())
-                + branch_above_placeholder_mult.clone()
-                    * is_ext_node.clone()
-                    * is_one_nibble
-                + branch_above_placeholder_mult * (one.clone() - is_ext_node);
-
-            /*
             `is_c16` and `is_c1` determine whether `drifted_pos` needs to be multiplied by 16 or 1.
             */
             let is_c16 = meta.query_advice(
@@ -411,6 +396,24 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                 s_main.bytes[IS_BRANCH_C1_POS - RLP_NUM],
                 Rotation(rot_branch_init),
             );
+
+            /*
+            `mult_diff` is the power of multiplier `r` and it corresponds to the number of nibbles in the extension node.
+            We need `mult_diff` because there is nothing stored in
+            `meta.query_advice(accs.key.mult, Rotation(-ACCOUNT_DRIFTED_LEAF_IND-1))` as we always use `mult_diff` in `extension_node_key.rs`.
+            */
+            let mult_diff = meta.query_advice(accs.mult_diff, Rotation(rot_branch_init + 1));
+            let mut key_rlc_mult = branch_above_placeholder_mult.clone()
+                * mult_diff
+                * is_ext_node.clone()
+                * (one.clone() - is_one_nibble.clone())
+                + branch_above_placeholder_mult.clone()
+                    * is_ext_node.clone()
+                    * is_one_nibble.clone() * is_c1.clone()
+                + branch_above_placeholder_mult.clone()
+                    * is_ext_node.clone()
+                    * is_one_nibble * r_table[0].clone() * is_c16.clone()
+                + branch_above_placeholder_mult * (one.clone() - is_ext_node); 
 
             let flag1 = meta.query_advice(accs.s_mod_node_rlc, Rotation::cur());
             let flag2 = meta.query_advice(accs.c_mod_node_rlc, Rotation::cur());
