@@ -71,10 +71,6 @@ impl Opcode for Return {
         // Case D in the specs.
         if !call.is_root && !call.is_create() {
             for (field, value) in [
-                (
-                    CallContextField::CallerId,
-                    u64::try_from(call.caller_id).unwrap(),
-                ),
                 (CallContextField::ReturnDataOffset, call.return_data_offset),
                 (CallContextField::ReturnDataLength, call.return_data_length),
             ] {

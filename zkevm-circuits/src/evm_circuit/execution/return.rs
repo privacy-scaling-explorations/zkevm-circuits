@@ -34,7 +34,6 @@ pub(crate) struct ReturnGadget<F> {
     copy_rw_increase: Cell<F>,
     copy_rw_increase_is_zero: IsZeroGadget<F>,
 
-    caller_id: Cell<F>, // can you get this out of restore_context?
     return_data_offset: Cell<F>,
     return_data_length: Cell<F>,
 }
@@ -105,18 +104,17 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
             RestoreContextGadget::construct(
                 cb,
                 is_success.expr(),
-                3.expr() + copy_rw_increase.expr(),
+                2.expr() + copy_rw_increase.expr(),
                 range.offset(),
                 range.length(),
             )
         });
 
         // Case D in the specs.
-        let (caller_id, return_data_offset, return_data_length, copy_length) = cb.condition(
+        let (return_data_offset, return_data_length, copy_length) = cb.condition(
             not::expr(is_create.expr()) * not::expr(is_root.expr()),
             |cb| {
-                let [caller_id, return_data_offset, return_data_length] = [
-                    CallContextFieldTag::CallerId,
+                let [return_data_offset, return_data_length] = [
                     CallContextFieldTag::ReturnDataOffset,
                     CallContextFieldTag::ReturnDataLength,
                 ]
@@ -128,12 +126,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
                     copy_length.min() + copy_length.min(),
                     copy_rw_increase.expr(),
                 );
-                (
-                    caller_id,
-                    return_data_offset,
-                    return_data_length,
-                    copy_length,
-                )
+                (return_data_offset, return_data_length, copy_length)
             },
         );
         cb.condition(
@@ -144,7 +137,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
                 cb.copy_table_lookup(
                     cb.curr.state.call_id.expr(),
                     CopyDataType::Memory.expr(),
-                    caller_id.expr(),
+                    cb.next.state.call_id.expr(),
                     CopyDataType::Memory.expr(),
                     range.offset(),
                     range.address(),
@@ -172,7 +165,6 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
             is_root,
             is_create,
             is_success,
-            caller_id,
             copy_length,
             copy_rw_increase,
             copy_rw_increase_is_zero,
@@ -211,10 +203,6 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
 
         if !call.is_root && !call.is_create {
             for (cell, value) in [
-                (
-                    &self.caller_id,
-                    F::from(u64::try_from(call.caller_id).unwrap()),
-                ),
                 (&self.return_data_length, call.return_data_length.into()),
                 (&self.return_data_offset, call.return_data_offset.into()),
             ] {
@@ -232,7 +220,6 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
         let copy_rw_increase = if call.is_create {
             length.as_u64()
         } else if !call.is_root {
-            dbg!(2 * std::cmp::min(call.return_data_length, length.as_u64()));
             2 * std::cmp::min(call.return_data_length, length.as_u64())
         } else {
             0
@@ -243,10 +230,8 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
             .assign(region, offset, F::from(copy_rw_increase))?;
 
         if !call.is_root {
-            self.restore_context.assign(
-                region, offset, block, call, step,
-                5, // 5 + usize::try_from(copy_rw_increase).unwrap(),
-            )?;
+            self.restore_context
+                .assign(region, offset, block, call, step, 5)?;
         }
 
         Ok(())
@@ -331,16 +316,6 @@ mod test {
         for (((callee_offset, callee_length), (caller_offset, caller_length)), is_return) in
             test_parameters.iter().cartesian_product(&[true, false])
         {
-            dbg!(
-                "(callee_offset, callee_length, caller_offset, caller_length, is_return) = {:?}",
-                (
-                    *callee_offset,
-                    *callee_length,
-                    *caller_offset,
-                    *caller_length,
-                    *is_return
-                )
-            );
             let callee = Account {
                 address: CALLEE_ADDRESS,
                 code: callee_bytecode(*is_return, *callee_offset, *callee_length).into(),
