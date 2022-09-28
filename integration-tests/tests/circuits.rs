@@ -23,12 +23,15 @@ use rand_chacha::ChaCha20Rng;
 use std::marker::PhantomData;
 use zkevm_circuits::bytecode_circuit::dev::test_bytecode_circuit;
 use zkevm_circuits::copy_circuit::dev::test_copy_circuit;
+use zkevm_circuits::evm_circuit::test::TestCircuit;
 use zkevm_circuits::evm_circuit::witness::RwMap;
 use zkevm_circuits::evm_circuit::{test::run_test_circuit, witness::block_convert};
+use zkevm_circuits::keccak_circuit::keccak_bit::multi_keccak;
 use zkevm_circuits::state_circuit::StateCircuit;
 use zkevm_circuits::tx_circuit::{
     sign_verify::SignVerifyChip, Secp256k1Affine, TxCircuit, POW_RAND_SIZE, VERIF_HEIGHT,
 };
+use zkevm_circuits::util::DEFAULT_RAND;
 
 lazy_static! {
     pub static ref GEN_DATA: GenDataOutput = GenDataOutput::load();
@@ -63,6 +66,35 @@ async fn test_evm_circuit_all_block() {
     let end: usize = *END_BLOCK;
     for blk in start..=end {
         test_evm_circuit_block(blk as u64).await;
+    }
+}
+
+#[tokio::test]
+async fn test_print_circuits_size() {
+    log_init();
+    let start: usize = *START_BLOCK;
+    let end: usize = *END_BLOCK;
+    for block_num in start..=end {
+        log::info!("test circuits size, block number: {}", block_num);
+        let cli = get_client();
+        let cli = BuilderClient::new(cli).await.unwrap();
+        let (builder, _) = cli.gen_inputs(block_num as u64).await.unwrap();
+
+        if builder.block.txs.is_empty() {
+            log::info!("skip empty block");
+            return;
+        }
+
+        let block = block_convert(&builder.block, &builder.code_db);
+        let evm_rows = TestCircuit::get_num_rows_required(&block);
+        let keccak_inputs = builder.keccak_inputs().unwrap();
+        let keccak_rows = multi_keccak(&keccak_inputs, Fr::from_u128(DEFAULT_RAND)).len();
+        log::info!(
+            "block number: {}, evm row {}, keccak row {}",
+            block_num,
+            evm_rows,
+            keccak_rows
+        );
     }
 }
 
