@@ -826,13 +826,8 @@ impl DynamicTableColumns for KeccakTable {
 /// TxLogs and TxCallData.
 #[derive(Clone, Copy, Debug)]
 pub struct CopyTable {
-    /// Whether this row denotes a step. A read row is a step and a write row is
-    /// not.
-    pub q_step: Selector,
     /// Whether the row is the first read-write pair for a copy event.
     pub is_first: Column<Advice>,
-    /// Whether the row is the last read-write pair for a copy event.
-    pub is_last: Column<Advice>,
     /// The relevant ID for the read-write row, represented as a random linear
     /// combination. The ID may be one of the below:
     /// 1. Call ID/Caller ID for CopyDataType::Memory
@@ -847,18 +842,11 @@ pub struct CopyTable {
     pub src_addr_end: Column<Advice>,
     /// The number of bytes left to be copied.
     pub bytes_left: Column<Advice>,
-    /// The value copied in this copy step.
-    pub value: Column<Advice>,
     /// An accumulator value in the RLC representation. This is used for
     /// specific purposes, for instance, when `tag == CopyDataType::RlcAcc`.
     /// Having an additional column for the `rlc_acc` simplifies the lookup
     /// to copy table.
     pub rlc_acc: Column<Advice>,
-    /// Whether the row is padding.
-    pub is_pad: Column<Advice>,
-    /// In case of a bytecode tag, this denotes whether or not the copied byte
-    /// is an opcode or push data byte.
-    pub is_code: Column<Advice>,
     /// The associated read-write counter for this row.
     pub rw_counter: Column<Advice>,
     /// Decrementing counter denoting reverse read-write counter.
@@ -873,28 +861,23 @@ impl CopyTable {
     /// Construct a new CopyTable
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>, q_enable: Column<Fixed>) -> Self {
         Self {
-            q_step: meta.complex_selector(),
             is_first: meta.advice_column(),
-            is_last: meta.advice_column(),
             id: meta.advice_column(),
             tag: BinaryNumberChip::configure(meta, q_enable, None),
             addr: meta.advice_column(),
             src_addr_end: meta.advice_column(),
             bytes_left: meta.advice_column(),
-            value: meta.advice_column(),
             rlc_acc: meta.advice_column(),
-            is_pad: meta.advice_column(),
-            is_code: meta.advice_column(),
             rw_counter: meta.advice_column(),
             rwc_inc_left: meta.advice_column(),
         }
     }
 
-    /// Generate the copy table assignments from a copy event.
+    /// Generate the copy table and copy circuit assignments from a copy event.
     pub fn assignments<F: Field>(
         copy_event: &CopyEvent,
         randomness: F,
-    ) -> Vec<(CopyDataType, [(F, &'static str); 12])> {
+    ) -> Vec<(CopyDataType, [(F, &'static str); 8], [(F, &'static str); 4])> {
         let mut assignments = Vec::new();
         // rlc_acc
         let rlc_acc = if copy_event.dst_type == CopyDataType::RlcAcc {
@@ -998,20 +981,22 @@ impl CopyTable {
                 tag,
                 [
                     (is_first, "is_first"),
-                    (is_last, "is_last"),
                     (id, "id"),
                     (addr, "addr"),
                     (F::from(copy_event.src_addr_end), "src_addr_end"),
                     (F::from(bytes_left), "bytes_left"),
-                    (value, "value"),
                     (rlc_acc, "rlc_acc"),
-                    (is_pad, "is_pad"),
-                    (is_code, "is_code"),
                     (F::from(copy_event.rw_counter(step_idx)), "rw_counter"),
                     (
                         F::from(copy_event.rw_counter_increase_left(step_idx)),
                         "rwc_inc_left",
                     ),
+                ],
+                [
+                    (is_last, "is_last"),
+                    (value, "value"),
+                    (is_pad, "is_pad"),
+                    (is_code, "is_code"),
                 ],
             ));
         }
@@ -1042,7 +1027,7 @@ impl CopyTable {
                 let tag_chip = BinaryNumberChip::construct(self.tag);
                 let copy_table_columns = self.columns();
                 for copy_event in block.copy_events.iter() {
-                    for (tag, row) in Self::assignments(copy_event, randomness) {
+                    for (tag, row, _) in Self::assignments(copy_event, randomness) {
                         for (column, (value, label)) in copy_table_columns.iter().zip_eq(row) {
                             region.assign_advice(
                                 || format!("{} at row: {}", label, offset),
@@ -1066,15 +1051,11 @@ impl CopyTable {
     pub(crate) fn columns(&self) -> Vec<Column<Advice>> {
         vec![
             self.is_first,
-            self.is_last,
             self.id,
             self.addr,
             self.src_addr_end,
             self.bytes_left,
-            self.value,
             self.rlc_acc,
-            self.is_pad,
-            self.is_code,
             self.rw_counter,
             self.rwc_inc_left,
         ]
