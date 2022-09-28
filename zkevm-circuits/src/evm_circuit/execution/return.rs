@@ -16,7 +16,7 @@ use crate::{
     util::Expr,
 };
 use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId};
-use eth_types::{Field, ToScalar};
+use eth_types::Field;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
@@ -25,8 +25,6 @@ pub(crate) struct ReturnGadget<F> {
 
     range: MemoryAddressGadget<F>,
 
-    is_root: Cell<F>,
-    is_create: Cell<F>,
     is_success: Cell<F>,
     restore_context: RestoreContextGadget<F>,
 
@@ -54,13 +52,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
         cb.stack_pop(length.expr());
         let range = MemoryAddressGadget::construct(cb, offset, length);
 
-        let [is_root, is_create, is_success] = [
-            CallContextFieldTag::IsRoot,
-            CallContextFieldTag::IsCreate,
-            CallContextFieldTag::IsSuccess,
-        ]
-        .map(|field_tag| cb.call_context(None, field_tag));
-
+        let is_success = cb.call_context(None, CallContextFieldTag::IsSuccess);
         cb.require_equal(
             "if is_success, opcode is RETURN. if not, opcode is REVERT",
             opcode.expr(),
@@ -72,13 +64,15 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
         // the call is, or is not, a create, root, or successful. See the specs at
         // https://github.com/privacy-scaling-explorations/zkevm-specs/blob/master/specs/opcode/F3RETURN.md
         // for more details.
+        let is_create = cb.curr.state.is_create.expr();
+        let is_root = cb.curr.state.is_root.expr();
 
         // These are globally defined because they are used across multiple cases.
         let copy_rw_increase = cb.query_cell();
         let copy_rw_increase_is_zero = IsZeroGadget::construct(cb, copy_rw_increase.expr());
 
         // Case A in the specs.
-        cb.condition(is_create.expr() * is_success.expr(), |cb| {
+        cb.condition(is_create.clone() * is_success.expr(), |cb| {
             cb.require_equal(
                 "increase rw counter once for each memory to bytecode byte copied",
                 copy_rw_increase.expr(),
@@ -86,7 +80,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
             );
         });
         cb.condition(
-            is_create.expr() * is_success.expr() * not::expr(copy_rw_increase_is_zero.expr()),
+            is_create.clone() * is_success.expr() * not::expr(copy_rw_increase_is_zero.expr()),
             |_cb| {
                 // TODO: copy_table_lookup for contract creation.
             },
@@ -118,7 +112,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
 
         // Case D in the specs.
         let (return_data_offset, return_data_length, copy_length) = cb.condition(
-            not::expr(is_create.expr()) * not::expr(is_root.expr()),
+            not::expr(is_create.clone()) * not::expr(is_root.clone()),
             |cb| {
                 let [return_data_offset, return_data_length] = [
                     CallContextFieldTag::ReturnDataOffset,
@@ -136,8 +130,8 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
             },
         );
         cb.condition(
-            not::expr(is_create.expr())
-                * not::expr(is_root.expr())
+            not::expr(is_create.clone())
+                * not::expr(is_root.clone())
                 * not::expr(copy_rw_increase_is_zero.expr()),
             |cb| {
                 cb.copy_table_lookup(
@@ -158,7 +152,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
 
         // Without this, copy_rw_increase would be unconstrained for non-create root
         // calls.
-        cb.condition(not::expr(is_create.expr()) * is_root.expr(), |cb| {
+        cb.condition(not::expr(is_create) * is_root, |cb| {
             cb.require_zero(
                 "rw counter is 0 if there is no copy event",
                 copy_rw_increase.expr(),
@@ -168,8 +162,6 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
         Self {
             opcode,
             range,
-            is_root,
-            is_create,
             is_success,
             copy_length,
             copy_rw_increase,
@@ -199,13 +191,8 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
         self.range
             .assign(region, offset, memory_offset, length, block.randomness)?;
 
-        for (cell, value) in [
-            (&self.is_root, call.is_root),
-            (&self.is_create, call.is_create),
-            (&self.is_success, call.is_success),
-        ] {
-            cell.assign(region, offset, Value::known(value.to_scalar().unwrap()))?;
-        }
+        self.is_success
+            .assign(region, offset, Value::known(call.is_success.into()))?;
 
         if !call.is_root && !call.is_create {
             for (cell, value) in [
@@ -237,7 +224,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
 
         if !call.is_root {
             self.restore_context
-                .assign(region, offset, block, call, step, 5)?;
+                .assign(region, offset, block, call, step, 3)?;
         }
 
         Ok(())

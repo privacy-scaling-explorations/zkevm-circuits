@@ -35,13 +35,12 @@ impl Opcode for Return {
         }
 
         let call = state.call()?.clone();
-        for (field, value) in [
-            (CallContextField::IsRoot, call.is_root),
-            (CallContextField::IsCreate, call.is_create()),
-            (CallContextField::IsSuccess, call.is_success),
-        ] {
-            state.call_context_read(&mut exec_step, call.call_id, field, value.to_word());
-        }
+        state.call_context_read(
+            &mut exec_step,
+            call.call_id,
+            CallContextField::IsSuccess,
+            call.is_success.to_word(),
+        );
 
         let offset = offset.as_usize();
         let length = length.as_usize();
