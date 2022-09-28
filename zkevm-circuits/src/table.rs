@@ -857,6 +857,9 @@ pub struct CopyTable {
     pub tag: BinaryNumberConfig<CopyDataType, 3>,
 }
 
+type CopyTableRow<F> = [(F, &'static str); 8];
+type CopyCircuitRow<F> = [(F, &'static str); 4];
+
 impl CopyTable {
     /// Construct a new CopyTable
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>, q_enable: Column<Fixed>) -> Self {
@@ -877,7 +880,7 @@ impl CopyTable {
     pub fn assignments<F: Field>(
         copy_event: &CopyEvent,
         randomness: F,
-    ) -> Vec<(CopyDataType, [(F, &'static str); 8], [(F, &'static str); 4])> {
+    ) -> Vec<(CopyDataType, CopyTableRow<F>, CopyCircuitRow<F>)> {
         let mut assignments = Vec::new();
         // rlc_acc
         let rlc_acc = if copy_event.dst_type == CopyDataType::RlcAcc {
