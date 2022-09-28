@@ -95,6 +95,12 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
         // Case B in the specs.
         cb.condition(is_root.expr(), |cb| {
             cb.require_next_state(ExecutionState::EndTx);
+            cb.call_context_lookup(
+                false.expr(),
+                None,
+                CallContextFieldTag::IsPersistent,
+                is_success.expr(),
+            );
         });
 
         // Case C in the specs.

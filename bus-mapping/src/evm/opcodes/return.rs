@@ -61,7 +61,15 @@ impl Opcode for Return {
             )?;
         }
 
-        // No additional bus mapping is needed for case B.
+        // Case B in the specs.
+        if call.is_root {
+            state.call_context_read(
+                &mut exec_step,
+                call.call_id,
+                CallContextField::IsPersistent,
+                call.is_persistent.to_word(),
+            );
+        }
 
         // Case C in the specs.
         if !call.is_root {
