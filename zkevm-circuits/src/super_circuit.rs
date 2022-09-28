@@ -67,8 +67,7 @@ use halo2_proofs::{
 
 use super::copy_circuit::CopyCircuit;
 use crate::{
-    keccak_circuit::keccak_bit::{KeccakBitCircuit, KeccakBitConfig},
-    tx_circuit::sign_verify::POW_RAND_SIZE,
+    keccak_circuit::keccak_bit::KeccakBitConfig, tx_circuit::sign_verify::POW_RAND_SIZE,
     witness::block_convert,
 };
 use bus_mapping::mock::BlockData;
@@ -150,10 +149,11 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
         let q_copy_table = meta.fixed_column();
         let copy_table = CopyTable::construct(meta, q_copy_table);
 
-        let keccak_circuit = KeccakBitCircuit::configure(meta);
+        let power_of_randomness = power_of_randomness_from_instance(meta);
+
+        let keccak_circuit = KeccakBitConfig::configure(meta, power_of_randomness[0].clone());
         let keccak_table = keccak_circuit.keccak_table.clone();
 
-        let power_of_randomness = power_of_randomness_from_instance(meta);
         let evm_circuit = EvmCircuit::configure(
             meta,
             power_of_randomness[..31].to_vec().try_into().unwrap(),
