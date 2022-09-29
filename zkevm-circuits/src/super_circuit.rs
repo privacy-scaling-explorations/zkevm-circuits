@@ -48,36 +48,33 @@
 //!   - [x] Tx Circuit
 //!   - [ ] MPT Circuit
 
-use crate::state_circuit::StateCircuitConfig;
-use crate::tx_circuit::{TxCircuit, TxCircuitConfig};
-
 use crate::bytecode_circuit::bytecode_unroller::{
     unroll, Config as BytecodeConfig, UnrolledBytecode,
 };
-
+use crate::copy_circuit::CopyCircuit;
 use crate::evm_circuit::{table::FixedTableTag, EvmCircuit};
+use crate::keccak_circuit::keccak_packed_multi::KeccakPackedConfig as KeccakConfig;
+use crate::state_circuit::StateCircuitConfig;
 use crate::table::{BlockTable, BytecodeTable, CopyTable, MptTable, RwTable, TxTable};
+use crate::tx_circuit::{sign_verify::POW_RAND_SIZE, TxCircuit, TxCircuitConfig};
 use crate::util::{power_of_randomness_from_instance, Challenges};
-use crate::witness::Block;
-use eth_types::Field;
-use halo2_proofs::{
-    circuit::{Layouter, SimpleFloorPlanner, Value},
-    plonk::{Circuit, ConstraintSystem, Error},
-};
+use crate::witness::{block_convert, Block};
 
-use super::copy_circuit::CopyCircuit;
-use crate::{
-    keccak_circuit::keccak_bit::KeccakBitConfig, tx_circuit::sign_verify::POW_RAND_SIZE,
-    witness::block_convert,
-};
 use bus_mapping::mock::BlockData;
 use eth_types::geth_types::{self, GethData};
+use eth_types::Field;
+
 use halo2_proofs::arithmetic::{CurveAffine, Field as Halo2Field};
 use halo2_proofs::halo2curves::{
     bn256::Fr,
     group::{Curve, Group},
     secp256k1::Secp256k1Affine,
 };
+use halo2_proofs::{
+    circuit::{Layouter, SimpleFloorPlanner, Value},
+    plonk::{Circuit, ConstraintSystem, Error},
+};
+
 use rand::RngCore;
 use strum::IntoEnumIterator;
 
@@ -95,7 +92,7 @@ pub struct SuperCircuitConfig<F: Field, const MAX_TXS: usize, const MAX_CALLDATA
     tx_circuit: TxCircuitConfig<F>,
     bytecode_circuit: BytecodeConfig<F>,
     copy_circuit: CopyCircuit<F>,
-    keccak_circuit: KeccakBitConfig<F>,
+    keccak_circuit: KeccakConfig<F>,
 }
 
 /// The Super Circuit contains all the zkEVM circuits
@@ -151,7 +148,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
 
         let power_of_randomness = power_of_randomness_from_instance(meta);
 
-        let keccak_circuit = KeccakBitConfig::configure(meta, power_of_randomness[0].clone());
+        let keccak_circuit = KeccakConfig::configure(meta, power_of_randomness[0].clone());
         let keccak_table = keccak_circuit.keccak_table.clone();
 
         let evm_circuit = EvmCircuit::configure(
