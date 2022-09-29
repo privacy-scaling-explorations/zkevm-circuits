@@ -72,6 +72,8 @@ When the command line parameter `--report` is defined, it automatically:
    - `<timestamp>-<git_commit>.csv` with the raw results of the execution
 - The HTML file also contains the diff with the previous result. The previous result file is the more recent csv file with different commit from the current one
 
+NOTE: if you do not execute with `--report` the tool will exit the process with `1` if there is any test that is not working.
+
 ### Manually executing the tests
 
 Usually we have to debug and run the tests manually to check if everything works ok. We provide a set of command line parameters to help tis.

@@ -9,7 +9,7 @@ use anyhow::{bail, Result};
 use clap::Parser;
 use compiler::Compiler;
 use config::Config;
-use statetest::{load_statetests_suite, run_statetests_suite, Results, StateTest, CircuitsConfig};
+use statetest::{load_statetests_suite, run_statetests_suite, CircuitsConfig, Results, StateTest};
 use std::path::PathBuf;
 use std::time::SystemTime;
 use zkevm_circuits::test_util::BytecodeTestConfig;
@@ -58,7 +58,10 @@ fn run_single_test(test: StateTest, circuits_config: CircuitsConfig) -> Result<(
 
     let trace = test.clone().geth_trace()?;
     crate::utils::print_trace(trace)?;
-    println!("result={:?}", test.run(TestSuite::default(), circuits_config));
+    println!(
+        "result={:?}",
+        test.run(TestSuite::default(), circuits_config)
+    );
 
     Ok(())
 }
@@ -124,7 +127,7 @@ fn main() -> Result<()> {
     let suite = config.suite(&args.suite)?.clone();
     let state_tests = load_statetests_suite(&suite.path, config, compiler)?;
     log::info!("{} tests collected in {}", state_tests.len(), suite.path);
-   
+
     if let Some(test_id) = args.inspect {
         // Test only one and return
         let mut state_tests: Vec<_> = state_tests
@@ -138,13 +141,11 @@ fn main() -> Result<()> {
         return Ok(());
     };
 
-   
     if args.report {
-
         if args.cache {
             bail!("--cache is not compartible with --report");
         }
-    
+
         let git_hash = utils::current_git_commit()?;
         let timestamp = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
@@ -158,8 +159,8 @@ fn main() -> Result<()> {
         let mut results = Results::with_cache(PathBuf::from(csv_filename))?;
 
         run_statetests_suite(state_tests, &circuits_config, &suite, &mut results)?;
-  
-         // filter non-csv files and files from the same commit
+
+        // filter non-csv files and files from the same commit
         let mut files: Vec<_> = std::fs::read_dir(REPORT_FOLDER)
             .unwrap()
             .filter_map(|f| {
@@ -183,19 +184,23 @@ fn main() -> Result<()> {
         std::fs::write(&html_filename, report.gen_html()?)?;
 
         println!("{}", html_filename);
-    
     } else {
-
         let mut results = if args.cache {
             Results::with_cache(PathBuf::from(RESULT_CACHE))?
         } else {
             Results::default()
         };
-        
+
         log::info!("Executing...");
         run_statetests_suite(state_tests, &circuits_config, &suite, &mut results)?;
+        let success = results.success();
+
         log::info!("Generating report...");
         results.report(None).print_tty()?;
+
+        if !success {
+            std::process::exit(1);
+        }
     }
 
     Ok(())

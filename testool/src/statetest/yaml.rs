@@ -745,7 +745,7 @@ arith:
         let mut tc = YamlStateTestBuilder::new(&mut Compiler::default())
             .load_yaml("", &Template::default().to_string())?;
         let t1 = tc.remove(0);
-        t1.run(TestSuite::default(),CircuitsConfig::default())?;
+        t1.run(TestSuite::default(), CircuitsConfig::default())?;
         Ok(())
     }
     #[test]
@@ -759,7 +759,8 @@ arith:
             .to_string(),
         )?;
         assert_eq!(
-            tc.remove(0).run(TestSuite::default(),CircuitsConfig::default()),
+            tc.remove(0)
+                .run(TestSuite::default(), CircuitsConfig::default()),
             Err(StateTestError::StorageMismatch {
                 slot: U256::from(0u8),
                 expected: U256::from(2u8),
@@ -780,7 +781,8 @@ arith:
             .to_string(),
         )?;
         assert_eq!(
-            tc.remove(0).run(TestSuite::default(),CircuitsConfig::default()),
+            tc.remove(0)
+                .run(TestSuite::default(), CircuitsConfig::default()),
             Err(StateTestError::BalanceMismatch {
                 expected: U256::from(1000000000002u64),
                 found: U256::from(1000000000001u64)
@@ -801,7 +803,8 @@ arith:
             .to_string(),
         )?;
         assert_eq!(
-            tc.remove(0).run(TestSuite::default(),CircuitsConfig::default()),
+            tc.remove(0)
+                .run(TestSuite::default(), CircuitsConfig::default()),
             Err(StateTestError::CodeMismatch {
                 expected: Bytes::from(&[0x60, 0x02, 0x00]),
                 found: Bytes::from(&[0x60, 0x01, 0x00])
@@ -823,7 +826,8 @@ arith:
         )?;
 
         assert_eq!(
-            tc.remove(0).run(TestSuite::default(),CircuitsConfig::default()),
+            tc.remove(0)
+                .run(TestSuite::default(), CircuitsConfig::default()),
             Err(StateTestError::NonceMismatch {
                 expected: U256::from(2),
                 found: U256::from(0)
@@ -864,7 +868,10 @@ arith:
             }
             .to_string(),
         )?;
-        assert!(tc.remove(0).run(TestSuite::default(),CircuitsConfig::default()).is_err());
+        assert!(tc
+            .remove(0)
+            .run(TestSuite::default(), CircuitsConfig::default())
+            .is_err());
         Ok(())
     }
 }

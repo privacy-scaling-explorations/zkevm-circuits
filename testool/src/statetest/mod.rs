@@ -4,7 +4,7 @@ mod results;
 mod suite;
 mod yaml;
 
-pub use executor::{StateTest, CircuitsConfig, StateTestError};
+pub use executor::{CircuitsConfig, StateTest, StateTestError};
 pub use json::JsonStateTestBuilder;
 pub use results::Results;
 pub use suite::{load_statetests_suite, run_statetests_suite};

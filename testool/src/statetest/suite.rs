@@ -1,11 +1,11 @@
 use super::JsonStateTestBuilder;
 use super::Results;
-use super::{StateTest, CircuitsConfig};
+use super::{CircuitsConfig, StateTest};
 use crate::compiler::Compiler;
 use crate::config::{Config, TestSuite};
 use crate::statetest::results::{ResultInfo, ResultLevel};
 use crate::statetest::YamlStateTestBuilder;
-use anyhow::{Result, Context};
+use anyhow::{Context, Result};
 use rayon::prelude::*;
 use std::sync::Arc;
 use std::sync::RwLock;
@@ -21,7 +21,11 @@ pub fn load_statetests_suite(
     let files = glob::glob(path)
         .context("failted to read glob")?
         .filter_map(|v| v.ok())
-        .filter(|f| !skip_paths.iter().any(|e| f.as_path().to_string_lossy().contains(*e))); 
+        .filter(|f| {
+            !skip_paths
+                .iter()
+                .any(|e| f.as_path().to_string_lossy().contains(*e))
+        });
 
     let mut tests = Vec::new();
     for file in files {
@@ -38,7 +42,7 @@ pub fn load_statetests_suite(
                 "json" => JsonStateTestBuilder::new(&mut compiler).load_json(&path, &src)?,
                 _ => unreachable!(),
             };
-            
+
             tcs.retain(|v| !skip_tests.contains(&&v.id));
             tests.append(&mut tcs);
         }
@@ -52,7 +56,6 @@ pub fn run_statetests_suite(
     suite: &TestSuite,
     results: &mut Results,
 ) -> Result<()> {
-
     // Filter already cached entries
     let tcs: Vec<StateTest> = tcs
         .into_iter()
@@ -63,7 +66,6 @@ pub fn run_statetests_suite(
 
     // for each test
     tcs.into_par_iter().for_each(|ref tc| {
-
         if !suite.allowed(&tc.id) {
             results
                 .write()
@@ -83,7 +85,8 @@ pub fn run_statetests_suite(
         std::panic::set_hook(Box::new(|_info| {}));
 
         log::debug!("running test {}/{}...", tc.path, tc.id);
-        let result = std::panic::catch_unwind(|| tc.clone().run(suite.clone(), circuits_config.clone()));
+        let result =
+            std::panic::catch_unwind(|| tc.clone().run(suite.clone(), circuits_config.clone()));
 
         // handle panic
         let result = match result {

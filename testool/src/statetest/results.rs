@@ -83,7 +83,8 @@ impl Diffs {
         for t in &self.tests {
             if let Some(prev) = &t.prev {
                 let curr = t.curr.as_ref().unwrap();
-                table.add_row(row![t.id,
+                table.add_row(row![
+                    t.id,
                     format!(
                         "{:?}({}) => {:?}({})",
                         prev.level, prev.details, curr.level, curr.details
@@ -290,6 +291,13 @@ impl Results {
         }
     }
 
+    pub fn success(&self) -> bool {
+        !self
+            .tests
+            .values()
+            .any(|result| result.level == ResultLevel::Fail || result.level == ResultLevel::Panic)
+    }
+
     pub fn contains(&self, test: &str) -> bool {
         self.tests.contains_key(test)
     }
@@ -297,14 +305,23 @@ impl Results {
     #[allow(clippy::map_entry)]
     pub fn insert(&mut self, test_id: String, result: ResultInfo) -> Result<()> {
         if !self.tests.contains_key(&test_id) {
-            log::info!(
-                "{} {}/{} {}",
-                result.level.display_string(),
-                result.path,
-                test_id,
-                result.details
-            );
-
+            if result.level == ResultLevel::Ignored {
+                log::debug!(
+                    "{} {}/{} {}",
+                    result.level.display_string(),
+                    result.path,
+                    test_id,
+                    result.details
+                );
+            } else {
+                log::info!(
+                    "{} {}/{} {}",
+                    result.level.display_string(),
+                    result.path,
+                    test_id,
+                    result.details
+                );
+            }
             let entry = format!(
                 "{:?};{};{};{}\n",
                 result.level, test_id, result.path, result.details

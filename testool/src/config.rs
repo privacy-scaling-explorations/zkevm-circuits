@@ -59,31 +59,35 @@ impl Config {
         let mut config: Config = toml::from_str(&content).context("parsing toml")?;
 
         // Append all tests defined in sets into the tests
-        config.suite = config.suite.clone().into_iter().map(|mut suite| {
-            let (allow,defined) = match (&suite.allow_tests, &suite.ignore_tests) {
-                (Some(allow), None) => (true, allow),
-                (None, Some(ignore)) => (false, ignore),
-                _ => bail!("ignore_tests or allow_tests should be specified"),
-            };
-            let mut all = Vec::new();  
-            for test_name in defined  {
-                if let Some(setname) = test_name.strip_prefix('&') {
-                    let set: Vec<_> = config.set.iter().filter(|ts| ts.id == setname).collect();
-                    ensure!(!set.is_empty(), "no tests sets found for id '{}'", setname);
-                    set.iter()
-                        .for_each(|ts| all.append(&mut ts.tests.clone()));
-                } else {
-                    all.push(test_name.clone());
+        config.suite = config
+            .suite
+            .clone()
+            .into_iter()
+            .map(|mut suite| {
+                let (allow, defined) = match (&suite.allow_tests, &suite.ignore_tests) {
+                    (Some(allow), None) => (true, allow),
+                    (None, Some(ignore)) => (false, ignore),
+                    _ => bail!("ignore_tests or allow_tests should be specified"),
+                };
+                let mut all = Vec::new();
+                for test_name in defined {
+                    if let Some(setname) = test_name.strip_prefix('&') {
+                        let set: Vec<_> = config.set.iter().filter(|ts| ts.id == setname).collect();
+                        ensure!(!set.is_empty(), "no tests sets found for id '{}'", setname);
+                        set.iter().for_each(|ts| all.append(&mut ts.tests.clone()));
+                    } else {
+                        all.push(test_name.clone());
+                    }
                 }
-            }
-            all.sort();
-            if allow {
-                suite.allow_tests = Some(all);
-            } else {
-                suite.ignore_tests = Some(all);
-            }
-            Ok(suite)
-        }).collect::<Result<_>>()?;
+                all.sort();
+                if allow {
+                    suite.allow_tests = Some(all);
+                } else {
+                    suite.ignore_tests = Some(all);
+                }
+                Ok(suite)
+            })
+            .collect::<Result<_>>()?;
         Ok(config)
     }
     pub fn suite(&self, name: &str) -> Result<&TestSuite> {

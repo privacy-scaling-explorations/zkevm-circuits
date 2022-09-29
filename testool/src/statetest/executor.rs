@@ -335,7 +335,11 @@ impl StateTest {
         Ok(geth_traces.remove(0))
     }
 
-    pub fn run(self, suite: TestSuite, circuits_config: CircuitsConfig) -> Result<(), StateTestError> {
+    pub fn run(
+        self,
+        suite: TestSuite,
+        circuits_config: CircuitsConfig,
+    ) -> Result<(), StateTestError> {
         // get the geth traces
 
         let (_, trace_config, post) = self.clone().into_traceconfig();
@@ -412,7 +416,7 @@ impl StateTest {
 
         Self::check_post(&builder, &post)?;
         Self::test_circuit(self, &builder, circuits_config.bytecode_test_config);
-        
+
         Ok(())
     }
 
