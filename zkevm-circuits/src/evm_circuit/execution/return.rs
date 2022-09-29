@@ -2,11 +2,14 @@ use crate::evm_circuit::util::memory_gadget::MemoryAddressGadget;
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::N_BYTES_MEMORY_ADDRESS,
+        param::{N_BYTES_MEMORY_ADDRESS, STACK_CAPACITY},
         step::ExecutionState,
         util::{
             common_gadget::RestoreContextGadget,
-            constraint_builder::ConstraintBuilder,
+            constraint_builder::{
+                ConstraintBuilder, StepStateTransition,
+                Transition::{Any, Delta, To},
+            },
             math_gadget::{IsZeroGadget, MinMaxGadget},
             not, CachedRegion, Cell,
         },
@@ -95,6 +98,19 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
                 CallContextFieldTag::IsPersistent,
                 is_success.expr(),
             );
+            cb.require_step_state_transition(StepStateTransition {
+                program_counter: To(0.expr()),
+                stack_pointer: To(STACK_CAPACITY.expr()),
+                rw_counter: Delta(
+                    cb.rw_counter_offset()
+                        + not::expr(is_success.expr())
+                            * cb.curr.state.reversible_write_counter.expr(),
+                ),
+                reversible_write_counter: To(0.expr()),
+                memory_word_size: Any,
+                gas_left: Any,
+                ..StepStateTransition::default()
+            });
         });
 
         // Case C in the specs.
@@ -181,6 +197,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
+        dbg!(step.reversible_write_counter);
         self.opcode.assign(
             region,
             offset,
