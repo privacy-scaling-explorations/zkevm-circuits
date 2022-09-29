@@ -1,8 +1,7 @@
-use crate::evm_circuit::util::memory_gadget::MemoryAddressGadget;
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::{N_BYTES_MEMORY_ADDRESS, STACK_CAPACITY},
+        param::{N_BYTES_MEMORY_ADDRESS, N_BYTES_MEMORY_WORD_SIZE, STACK_CAPACITY},
         step::ExecutionState,
         util::{
             common_gadget::RestoreContextGadget,
@@ -11,6 +10,7 @@ use crate::{
                 Transition::{Any, Delta, To},
             },
             math_gadget::{IsZeroGadget, MinMaxGadget},
+            memory_gadget::{MemoryAddressGadget, MemoryExpansionGadget},
             not, CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
@@ -37,6 +37,8 @@ pub(crate) struct ReturnGadget<F> {
 
     return_data_offset: Cell<F>,
     return_data_length: Cell<F>,
+
+    memory_expansion: MemoryExpansionGadget<F, 1, N_BYTES_MEMORY_WORD_SIZE>,
 }
 
 // TODO: rename this is reflect the fact that is handles REVERT as well.
@@ -73,6 +75,12 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
         // These are globally defined because they are used across multiple cases.
         let copy_rw_increase = cb.query_cell();
         let copy_rw_increase_is_zero = IsZeroGadget::construct(cb, copy_rw_increase.expr());
+
+        let memory_expansion = MemoryExpansionGadget::construct(
+            cb,
+            cb.curr.state.memory_word_size.expr(),
+            [range.address()],
+        );
 
         // Case A in the specs.
         cb.condition(is_create.clone() * is_success.expr(), |cb| {
@@ -185,6 +193,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
             return_data_offset,
             return_data_length,
             restore_context,
+            memory_expansion,
         }
     }
 
@@ -205,8 +214,11 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
         )?;
 
         let [memory_offset, length] = [0, 1].map(|i| block.rws[step.rw_indices[i]].stack_value());
-        self.range
+        let range = self
+            .range
             .assign(region, offset, memory_offset, length, block.randomness)?;
+        self.memory_expansion
+            .assign(region, offset, step.memory_word_size(), [range])?;
 
         self.is_success
             .assign(region, offset, Value::known(call.is_success.into()))?;
