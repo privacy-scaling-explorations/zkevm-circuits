@@ -1,23 +1,23 @@
 use halo2_proofs::{
-    circuit::Region,
+    circuit::{Region, Value},
     plonk::{Advice, Column, ConstraintSystem, Expression, Fixed, VirtualCells},
     poly::Rotation,
+    arithmetic::FieldExt,
 };
-use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
 use crate::{
-    columns::{AccumulatorCols, MainCols, ProofTypeCols, PositionCols},
-    helpers::{compute_rlc, mult_diff_lookup, range_lookups},
-    mpt::{FixedTableTag, MPTConfig, ProofValues},
-    param::{
+    mpt_circuit::columns::{AccumulatorCols, MainCols, ProofTypeCols, PositionCols},
+    mpt_circuit::helpers::{compute_rlc, mult_diff_lookup, range_lookups},
+    mpt_circuit::{FixedTableTag, MPTConfig, ProofValues},
+    mpt_circuit::param::{
         BRANCH_ROWS_NUM, HASH_WIDTH, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS,
         IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS, IS_EXT_LONG_EVEN_C16_POS,
         IS_EXT_LONG_EVEN_C1_POS, IS_EXT_LONG_ODD_C16_POS, IS_EXT_LONG_ODD_C1_POS,
         IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS, NIBBLES_COUNTER_POS, RLP_NUM, R_TABLE_LEN,
         S_START,
     },
-    witness_row::{MptWitnessRow, MptWitnessRowType},
+    mpt_circuit::witness_row::{MptWitnessRow, MptWitnessRowType},
 };
 
 /*
@@ -704,7 +704,7 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
                 || "assign key_rlc".to_string(),
                 mpt_config.accumulators.key.rlc,
                 offset,
-                || Ok(key_rlc_new),
+                || Value::known(key_rlc_new),
             )
             .ok();
 

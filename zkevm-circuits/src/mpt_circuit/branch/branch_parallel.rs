@@ -1,11 +1,11 @@
 use halo2_proofs::{
     plonk::{Advice, Column, ConstraintSystem, Expression, VirtualCells},
     poly::Rotation,
+    arithmetic::FieldExt,
 };
-use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
-use crate::columns::{MainCols, PositionCols};
+use crate::mpt_circuit::columns::{MainCols, PositionCols};
 
 use super::BranchCols;
 

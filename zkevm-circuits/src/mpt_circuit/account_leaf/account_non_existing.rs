@@ -1,20 +1,20 @@
 use halo2_proofs::{
-    circuit::Region,
+    circuit::{Region, Value},
     plonk::{Advice, Column, ConstraintSystem, Expression, Fixed, VirtualCells},
     poly::Rotation,
+    arithmetic::FieldExt,
 };
-use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
 use crate::{
-    columns::{AccumulatorCols, MainCols},
-    helpers::range_lookups,
-    mpt::{FixedTableTag, MPTConfig},
-    param::{
+    mpt_circuit::columns::{AccumulatorCols, MainCols},
+    mpt_circuit::helpers::range_lookups,
+    mpt_circuit::{FixedTableTag, MPTConfig},
+    mpt_circuit::param::{
         ACCOUNT_NON_EXISTING_IND, BRANCH_ROWS_NUM, HASH_WIDTH, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS,
         RLP_NUM,
     },
-    witness_row::MptWitnessRow,
+    mpt_circuit::witness_row::MptWitnessRow,
 };
 
 /*
@@ -469,7 +469,7 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
                 || "assign sum".to_string(),
                 mpt_config.accumulators.key.rlc,
                 offset,
-                || Ok(sum),
+                || Value::known(sum),
             )
             .ok();
         region
@@ -477,7 +477,7 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
                 || "assign sum prev".to_string(),
                 mpt_config.accumulators.key.mult,
                 offset,
-                || Ok(sum_prev),
+                || Value::known(sum_prev),
             )
             .ok();
         region
@@ -485,7 +485,7 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
                 || "assign diff inv".to_string(),
                 mpt_config.accumulators.acc_s.rlc,
                 offset,
-                || Ok(diff_inv),
+                || Value::known(diff_inv),
             )
             .ok();
     }

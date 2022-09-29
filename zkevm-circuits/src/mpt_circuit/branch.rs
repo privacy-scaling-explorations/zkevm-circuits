@@ -7,30 +7,30 @@ pub mod extension_node;
 pub mod extension_node_key;
 
 use halo2_proofs::{
-    circuit::Region,
+    circuit::{Region, Value},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
+    arithmetic::FieldExt,
 };
-use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
 use crate::{
-    account_leaf::AccountLeaf,
-    columns::{AccumulatorCols, DenoteCols, MainCols, PositionCols},
-    helpers::{
+    mpt_circuit::account_leaf::AccountLeaf,
+    mpt_circuit::columns::{AccumulatorCols, DenoteCols, MainCols, PositionCols},
+    mpt_circuit::helpers::{
         bytes_expr_into_rlc, bytes_into_rlc, get_bool_constraint, get_is_extension_node,
         range_lookups,
     },
-    mpt::{FixedTableTag, MPTConfig, ProofValues},
-    param::{
+    mpt_circuit::{FixedTableTag, MPTConfig, ProofValues},
+    mpt_circuit::param::{
         BRANCH_0_C_START, BRANCH_0_KEY_POS, BRANCH_0_S_START, BRANCH_ROWS_NUM, C_RLP_START,
         C_START, DRIFTED_POS, HASH_WIDTH, IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS,
         IS_C_BRANCH_NON_HASHED_POS, IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS,
         IS_EXT_LONG_ODD_C16_POS, IS_EXT_LONG_ODD_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS,
         IS_S_BRANCH_NON_HASHED_POS, NIBBLES_COUNTER_POS, RLP_NUM, S_RLP_START, S_START,
     },
-    storage_leaf::StorageLeaf,
-    witness_row::MptWitnessRow,
+    mpt_circuit::storage_leaf::StorageLeaf,
+    mpt_circuit::witness_row::MptWitnessRow,
 };
 
 /*
@@ -1123,7 +1123,7 @@ impl<F: FieldExt> BranchConfig<F> {
             || "assign number of nibbles".to_string(),
             mpt_config.s_main.bytes[NIBBLES_COUNTER_POS - RLP_NUM],
             offset,
-            || Ok(F::from(pv.nibbles_num as u64)),
+            || Value::known(F::from(pv.nibbles_num as u64)),
         )?;
 
         Ok(())
@@ -1169,13 +1169,13 @@ impl<F: FieldExt> BranchConfig<F> {
             || "node_mult_diff_s".to_string(),
             mpt_config.accumulators.node_mult_diff_s,
             offset,
-            || Ok(node_mult_diff_s),
+            || Value::known(node_mult_diff_s),
         )?;
         region.assign_advice(
             || "node_mult_diff_c".to_string(),
             mpt_config.accumulators.node_mult_diff_c,
             offset,
-            || Ok(node_mult_diff_c),
+            || Value::known(node_mult_diff_c),
         )?;
 
         if pv.node_index == 0 {
@@ -1374,13 +1374,13 @@ impl<F: FieldExt> BranchConfig<F> {
             || "assign sel1".to_string(),
             mpt_config.denoter.sel1,
             offset,
-            || Ok(sel1),
+            || Value::known(sel1),
         )?;
         region.assign_advice(
             || "assign sel2".to_string(),
             mpt_config.denoter.sel2,
             offset,
-            || Ok(sel2),
+            || Value::known(sel2),
         )?;
 
         // reassign (it was assigned to 0 in assign_row) branch_acc and
@@ -1434,13 +1434,13 @@ impl<F: FieldExt> BranchConfig<F> {
             || "assign key_rlc".to_string(),
             mpt_config.accumulators.key.rlc,
             offset,
-            || Ok(pv.key_rlc),
+            || Value::known(pv.key_rlc),
         )?;
         region.assign_advice(
             || "assign key_rlc_mult".to_string(),
             mpt_config.accumulators.key.mult,
             offset,
-            || Ok(pv.key_rlc_mult),
+            || Value::known(pv.key_rlc_mult),
         )?;
 
         pv.node_index += 1;

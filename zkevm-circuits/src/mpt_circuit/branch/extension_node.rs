@@ -1,21 +1,21 @@
 use halo2_proofs::{
-    circuit::Region,
+    circuit::{Region, Value},
     plonk::{Advice, Column, ConstraintSystem, Expression, Fixed, VirtualCells},
     poly::Rotation,
+    arithmetic::FieldExt,
 };
 use itertools::Itertools;
-use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
 use crate::{
-    columns::{AccumulatorCols, MainCols, PositionCols},
-    helpers::{
+    mpt_circuit::columns::{AccumulatorCols, MainCols, PositionCols},
+    mpt_circuit::helpers::{
         bytes_expr_into_rlc, compute_rlc, get_bool_constraint, get_is_extension_node,
         get_is_extension_node_even_nibbles, get_is_extension_node_long_odd_nibbles,
         get_is_extension_node_one_nibble,
     },
-    mpt::{MPTConfig, ProofValues},
-    param::{
+    mpt_circuit::{MPTConfig, ProofValues},
+    mpt_circuit::param::{
         ACCOUNT_LEAF_ROWS, ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND,
         ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND, BRANCH_ROWS_NUM, C_RLP_START, C_START, HASH_WIDTH,
         IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, IS_BRANCH_C_PLACEHOLDER_POS,
@@ -25,7 +25,7 @@ use crate::{
         IS_S_EXT_LONGER_THAN_55_POS, IS_S_EXT_NODE_NON_HASHED_POS, KECCAK_INPUT_WIDTH,
         KECCAK_OUTPUT_WIDTH, NIBBLES_COUNTER_POS, RLP_NUM,
     },
-    witness_row::MptWitnessRow,
+    mpt_circuit::witness_row::MptWitnessRow,
 };
 
 use super::BranchCols;
@@ -1396,7 +1396,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                     || "assign key_rlc".to_string(),
                     mpt_config.accumulators.key.rlc,
                     offset,
-                    || Ok(pv.extension_node_rlc),
+                    || Value::known(pv.extension_node_rlc),
                 )
                 .ok();
         }

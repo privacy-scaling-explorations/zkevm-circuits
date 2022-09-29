@@ -1,13 +1,13 @@
 use halo2_proofs::{
     plonk::{Advice, Column, ConstraintSystem, Expression},
     poly::Rotation,
+    arithmetic::FieldExt,
 };
-use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
 use crate::{
-    columns::{AccumulatorPair, MainCols, PositionCols},
-    param::{
+    mpt_circuit::columns::{AccumulatorPair, MainCols, PositionCols},
+    mpt_circuit::param::{
         IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS,
         IS_EXT_LONG_ODD_C16_POS, IS_EXT_LONG_ODD_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS,
         RLP_NUM,

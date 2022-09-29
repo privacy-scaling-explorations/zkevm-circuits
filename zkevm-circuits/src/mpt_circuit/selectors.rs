@@ -1,16 +1,16 @@
 use halo2_proofs::{
     plonk::{ConstraintSystem, Expression},
     poly::Rotation,
+    arithmetic::FieldExt,
 };
-use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
 use crate::{
-    account_leaf::AccountLeafCols,
-    branch::BranchCols,
-    columns::{DenoteCols, ProofTypeCols, PositionCols},
-    helpers::get_bool_constraint,
-    storage_leaf::StorageLeafCols,
+    mpt_circuit::account_leaf::AccountLeafCols,
+    mpt_circuit::branch::BranchCols,
+    mpt_circuit::columns::{DenoteCols, ProofTypeCols, PositionCols},
+    mpt_circuit::helpers::get_bool_constraint,
+    mpt_circuit::storage_leaf::StorageLeafCols,
 };
 
 /*

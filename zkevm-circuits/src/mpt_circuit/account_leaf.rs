@@ -4,8 +4,10 @@ pub mod account_leaf_nonce_balance;
 pub mod account_leaf_storage_codehash;
 pub mod account_non_existing;
 
-use halo2_proofs::plonk::{Advice, Column, ConstraintSystem};
-use pairing::arithmetic::FieldExt;
+use halo2_proofs::{
+    plonk::{Advice, Column, ConstraintSystem},
+    arithmetic::FieldExt,
+};
 use std::marker::PhantomData;
 
 #[derive(Clone, Debug)]

@@ -1,21 +1,21 @@
 use halo2_proofs::{
-    circuit::Region,
+    circuit::{Region, Value},
     plonk::{Column, ConstraintSystem, Expression, Fixed, VirtualCells},
     poly::Rotation,
+    arithmetic::FieldExt,
 };
 use itertools::Itertools;
-use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
 use crate::{
-    columns::{AccumulatorCols, DenoteCols, MainCols, ProofTypeCols},
-    helpers::{compute_rlc, get_bool_constraint, mult_diff_lookup, range_lookups},
-    mpt::{FixedTableTag, MPTConfig, ProofValues},
-    param::{
+    mpt_circuit::columns::{AccumulatorCols, DenoteCols, MainCols, ProofTypeCols},
+    mpt_circuit::helpers::{compute_rlc, get_bool_constraint, mult_diff_lookup, range_lookups},
+    mpt_circuit::{FixedTableTag, MPTConfig, ProofValues},
+    mpt_circuit::param::{
         ACCOUNT_LEAF_KEY_C_IND, ACCOUNT_LEAF_KEY_S_IND, ACCOUNT_LEAF_NONCE_BALANCE_C_IND,
         ACCOUNT_LEAF_NONCE_BALANCE_S_IND, ACCOUNT_NON_EXISTING_IND, C_START, HASH_WIDTH, S_START,
     },
-    witness_row::{MptWitnessRow, MptWitnessRowType},
+    mpt_circuit::witness_row::{MptWitnessRow, MptWitnessRowType},
 };
 
 /*
@@ -772,7 +772,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
                     || "assign sel1".to_string(),
                     mpt_config.denoter.sel1,
                     offset - (ACCOUNT_LEAF_NONCE_BALANCE_S_IND - ACCOUNT_LEAF_KEY_S_IND) as usize,
-                    || Ok(F::one()),
+                    || Value::known(F::one()),
                 )
                 .ok();
         } else {
@@ -781,7 +781,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
                     || "assign sel1".to_string(),
                     mpt_config.denoter.sel1,
                     offset - (ACCOUNT_LEAF_NONCE_BALANCE_C_IND - ACCOUNT_LEAF_KEY_C_IND) as usize,
-                    || Ok(F::zero()),
+                    || Value::known(F::zero()),
                 )
                 .ok();
         }
@@ -794,7 +794,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
                     || "assign sel2".to_string(),
                     mpt_config.denoter.sel2,
                     offset - (ACCOUNT_LEAF_NONCE_BALANCE_S_IND - ACCOUNT_LEAF_KEY_S_IND) as usize,
-                    || Ok(F::one()),
+                    || Value::known(F::one()),
                 )
                 .ok();
         } else {
@@ -803,7 +803,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
                     || "assign sel2".to_string(),
                     mpt_config.denoter.sel2,
                     offset - (ACCOUNT_LEAF_NONCE_BALANCE_C_IND - ACCOUNT_LEAF_KEY_C_IND) as usize,
-                    || Ok(F::zero()),
+                    || Value::known(F::zero()),
                 )
                 .ok();
         }
@@ -873,7 +873,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
                     || "assign sel1".to_string(),
                     mpt_config.denoter.sel1,
                     offset,
-                    || Ok(pv.nonce_value_s),
+                    || Value::known(pv.nonce_value_s),
                 )
                 .ok();
             // assign balance S
@@ -882,7 +882,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
                     || "assign sel2".to_string(),
                     mpt_config.denoter.sel2,
                     offset,
-                    || Ok(pv.balance_value_s),
+                    || Value::known(pv.balance_value_s),
                 )
                 .ok();
         }
@@ -970,7 +970,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
                 mpt_config.accumulators.acc_c.rlc, /* assigning key_rlc leads into
                                                     * PoisonedConstraint */
                 offset,
-                || Ok(mult_diff_s),
+                || Value::known(mult_diff_s),
             )
             .ok();
         region
@@ -978,7 +978,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
                 || "assign mult diff".to_string(),
                 mpt_config.accumulators.key.mult,
                 offset,
-                || Ok(mult_diff_c),
+                || Value::known(mult_diff_c),
             )
             .ok();
         if row.get_type() == MptWitnessRowType::AccountLeafNonceBalanceS {

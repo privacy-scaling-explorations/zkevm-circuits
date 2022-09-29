@@ -4,7 +4,7 @@ use halo2_proofs::{
 };
 use std::{convert::TryInto, marker::PhantomData};
 
-use crate::param::HASH_WIDTH;
+use crate::mpt_circuit::param::HASH_WIDTH;
 
 /*
 This file contains columns that are not specific to any of account leaf, storage leaf, branch,

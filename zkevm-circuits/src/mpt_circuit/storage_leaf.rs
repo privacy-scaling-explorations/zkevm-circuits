@@ -2,8 +2,10 @@ pub mod leaf_key;
 pub mod leaf_key_in_added_branch;
 pub mod leaf_value;
 
-use halo2_proofs::plonk::{Advice, Column, ConstraintSystem};
-use pairing::arithmetic::FieldExt;
+use halo2_proofs::{
+    plonk::{Advice, Column, ConstraintSystem},
+    arithmetic::FieldExt, 
+};
 use std::marker::PhantomData;
 
 #[derive(Clone, Debug)]

@@ -1,14 +1,14 @@
 use halo2_proofs::{
     plonk::{Advice, Column, ConstraintSystem, Expression, Fixed, VirtualCells},
     poly::Rotation,
+    arithmetic::FieldExt,
 };
-use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
 use crate::{
-    columns::{AccumulatorPair, MainCols},
-    helpers::mult_diff_lookup,
-    param::{HASH_WIDTH, R_TABLE_LEN},
+    mpt_circuit::columns::{AccumulatorPair, MainCols},
+    mpt_circuit::helpers::mult_diff_lookup,
+    mpt_circuit::param::{HASH_WIDTH, R_TABLE_LEN},
 };
 
 /*

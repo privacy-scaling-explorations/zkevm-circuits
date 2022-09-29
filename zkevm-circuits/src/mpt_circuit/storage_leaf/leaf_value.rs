@@ -1,21 +1,21 @@
 use halo2_proofs::{
-    circuit::Region,
+    circuit::{Region, Value},
     plonk::{Advice, Column, ConstraintSystem, Expression, Fixed, VirtualCells},
     poly::Rotation,
+    arithmetic::FieldExt,
 };
-use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
 use crate::{
-    columns::{AccumulatorCols, DenoteCols, MainCols, PositionCols},
-    helpers::{bytes_expr_into_rlc, get_bool_constraint, range_lookups},
-    mpt::{FixedTableTag, MPTConfig, ProofValues},
-    param::{
+    mpt_circuit::columns::{AccumulatorCols, DenoteCols, MainCols, PositionCols},
+    mpt_circuit::helpers::{bytes_expr_into_rlc, get_bool_constraint, range_lookups},
+    mpt_circuit::{FixedTableTag, MPTConfig, ProofValues},
+    mpt_circuit::param::{
         ACCOUNT_LEAF_ROWS, ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND,
         ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND, BRANCH_ROWS_NUM, HASH_WIDTH, KECCAK_INPUT_WIDTH,
         KECCAK_OUTPUT_WIDTH, LEAF_VALUE_C_IND, LEAF_VALUE_S_IND, IS_BRANCH_S_PLACEHOLDER_POS, RLP_NUM, IS_BRANCH_C_PLACEHOLDER_POS,
     },
-    witness_row::{MptWitnessRow, MptWitnessRowType},
+    mpt_circuit::witness_row::{MptWitnessRow, MptWitnessRowType},
 };
 
 /*
@@ -979,7 +979,7 @@ impl<F: FieldExt> LeafValueConfig<F> {
                         || "assign sel1".to_string(),
                         mpt_config.denoter.sel1,
                         offset,
-                        || Ok(F::one()),
+                        || Value::known(F::one()),
                     )
                     .ok();
             }
@@ -989,7 +989,7 @@ impl<F: FieldExt> LeafValueConfig<F> {
                     || "assign key_rlc into key_rlc_mult".to_string(),
                     mpt_config.accumulators.key.mult,
                     offset,
-                    || Ok(pv.rlc2),
+                    || Value::known(pv.rlc2),
                 )
                 .ok();
             region
@@ -997,7 +997,7 @@ impl<F: FieldExt> LeafValueConfig<F> {
                     || "assign leaf value S into mult_diff".to_string(),
                     mpt_config.accumulators.mult_diff,
                     offset,
-                    || Ok(pv.rlc1),
+                    || Value::known(pv.rlc1),
                 )
                 .ok();
 
@@ -1020,7 +1020,7 @@ impl<F: FieldExt> LeafValueConfig<F> {
                         || "assign sel2".to_string(),
                         mpt_config.denoter.sel2,
                         offset,
-                        || Ok(F::one()),
+                        || Value::known(F::one()),
                     )
                     .ok();
             }

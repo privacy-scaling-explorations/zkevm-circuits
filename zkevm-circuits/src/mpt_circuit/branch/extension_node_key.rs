@@ -1,16 +1,16 @@
 use halo2_proofs::{
     plonk::{Advice, Column, ConstraintSystem, Expression, Fixed, VirtualCells},
     poly::Rotation,
+    arithmetic::FieldExt,
 };
 use itertools::Itertools;
-use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
 use crate::{
-    columns::{AccumulatorCols, MainCols, PositionCols},
-    helpers::{compute_rlc, get_is_extension_node, range_lookups},
-    mpt::FixedTableTag,
-    param::{
+    mpt_circuit::columns::{AccumulatorCols, MainCols, PositionCols},
+    mpt_circuit::helpers::{compute_rlc, get_is_extension_node, range_lookups},
+    mpt_circuit::FixedTableTag,
+    mpt_circuit::param::{
         BRANCH_ROWS_NUM, EXTENSION_ROWS_NUM, HASH_WIDTH, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS,
         IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS, IS_EXT_LONG_ODD_C16_POS,
         IS_EXT_LONG_ODD_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS, RLP_NUM,

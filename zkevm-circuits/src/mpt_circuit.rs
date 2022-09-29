@@ -1,42 +1,50 @@
+//! The MPT circuit implementation.
 use halo2_proofs::{
-    circuit::{Layouter, Region},
+    circuit::{Layouter, Region, Value},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed},
+    arithmetic::FieldExt,
     poly::Rotation,
 };
 use keccak256::plain::Keccak;
-use pairing::arithmetic::FieldExt;
 
 use std::convert::TryInto;
 
-use crate::{
-    account_leaf::{
-        account_leaf_key::AccountLeafKeyConfig,
-        account_leaf_key_in_added_branch::AccountLeafKeyInAddedBranchConfig,
-        account_leaf_nonce_balance::AccountLeafNonceBalanceConfig,
-        account_leaf_storage_codehash::AccountLeafStorageCodehashConfig,
-        account_non_existing::AccountNonExistingConfig, AccountLeaf, AccountLeafCols,
-    },
-    branch::{
-        branch_hash_in_parent::BranchHashInParentConfig, branch_init::BranchInitConfig,
-        branch_key::BranchKeyConfig, branch_parallel::BranchParallelConfig,
-        branch_rlc::BranchRLCConfig, extension_node::ExtensionNodeConfig,
-        extension_node_key::ExtensionNodeKeyConfig, Branch, BranchCols, BranchConfig,
-    },
-    columns::{AccumulatorCols, DenoteCols, MainCols, ProofTypeCols, PositionCols},
-    helpers::{bytes_into_rlc, get_is_extension_node},
-    proof_chain::ProofChainConfig,
-    storage_leaf::{
-        leaf_key::LeafKeyConfig, leaf_key_in_added_branch::LeafKeyInAddedBranchConfig,
-        leaf_value::LeafValueConfig, StorageLeaf, StorageLeafCols,
-    },
-    witness_row::{MptWitnessRow, MptWitnessRowType},
+mod account_leaf;
+mod branch;
+mod columns;
+mod helpers;
+mod proof_chain;
+mod storage_leaf;
+mod witness_row;
+mod param;
+mod selectors;
+
+use account_leaf::{
+    account_leaf_key::AccountLeafKeyConfig,
+    account_leaf_key_in_added_branch::AccountLeafKeyInAddedBranchConfig,
+    account_leaf_nonce_balance::AccountLeafNonceBalanceConfig,
+    account_leaf_storage_codehash::AccountLeafStorageCodehashConfig,
+    account_non_existing::AccountNonExistingConfig, AccountLeaf, AccountLeafCols,
 };
-use crate::{
-    param::{
-        HASH_WIDTH, KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH,
-    },
-    selectors::SelectorsConfig,
+use branch::{
+    branch_hash_in_parent::BranchHashInParentConfig, branch_init::BranchInitConfig,
+    branch_key::BranchKeyConfig, branch_parallel::BranchParallelConfig,
+    branch_rlc::BranchRLCConfig, extension_node::ExtensionNodeConfig,
+    extension_node_key::ExtensionNodeKeyConfig, Branch, BranchCols, BranchConfig,
 };
+use columns::{AccumulatorCols, DenoteCols, MainCols, ProofTypeCols, PositionCols};
+use helpers::{bytes_into_rlc, get_is_extension_node};
+use proof_chain::ProofChainConfig;
+use storage_leaf::{
+    leaf_key::LeafKeyConfig, leaf_key_in_added_branch::LeafKeyInAddedBranchConfig,
+    leaf_value::LeafValueConfig, StorageLeaf, StorageLeafCols,
+};
+use witness_row::{MptWitnessRow, MptWitnessRowType};
+
+use param::{
+    HASH_WIDTH, KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH,
+};
+use selectors::SelectorsConfig;
 
 /*
     MPT circuit contains S and C columns (other columns are mostly selectors).
@@ -65,6 +73,7 @@ use crate::{
     nodes) down to the leaf.
 */
 
+/// Merkle Patricia Trie config.
 #[derive(Clone, Debug)]
 pub struct MPTConfig<F> {
     pub(crate) proof_type: ProofTypeCols<F>,
@@ -106,11 +115,16 @@ pub struct MPTConfig<F> {
     storage_leaf_key_in_added_branch: LeafKeyInAddedBranchConfig<F>,
 }
 
+/// Enumerator to determine the type of row in the fixed table.
 #[derive(Clone, Copy, Debug)]
 pub enum FixedTableTag {
+    /// Power of randomness: [1, r], [2, r^2],...
     RMult,
+    /// 0 - 15
     Range16,
+    /// 0 - 255
     Range256,
+    /// For checking there are 0s after the RLP stream ends 
     RangeKeyLen256,
 }
 
@@ -191,6 +205,7 @@ impl<F: FieldExt> ProofValues<F> {
 }
 
 impl<F: FieldExt> MPTConfig<F> {
+    /// Configure MPT Circuit
     pub fn configure(meta: &mut ConstraintSystem<F>) -> Self {
         let _pub_root = meta.instance_column();
         let inter_start_root = meta.advice_column(); // state root before modification - first level S hash needs to be the same as
@@ -814,7 +829,7 @@ impl<F: FieldExt> MPTConfig<F> {
             || "assign s_mod_node_hash_rlc".to_string(),
             self.accumulators.s_mod_node_rlc,
             offset,
-            || Ok(pv.rlc1),
+            || Value::known(pv.rlc1),
         )?;
 
         self.compute_acc_and_mult(row, &mut pv.rlc2, &mut F::one(), c_start_len.0, c_start_len.1);
@@ -822,7 +837,7 @@ impl<F: FieldExt> MPTConfig<F> {
             || "assign c_mod_node_hash_rlc".to_string(),
             self.accumulators.c_mod_node_rlc,
             offset,
-            || Ok(pv.rlc2),
+            || Value::known(pv.rlc2),
         )?;
 
         Ok(())
@@ -841,28 +856,28 @@ impl<F: FieldExt> MPTConfig<F> {
             || "assign acc_s".to_string(),
             self.accumulators.acc_s.rlc,
             offset,
-            || Ok(acc_s),
+            || Value::known(acc_s),
         )?;
 
         region.assign_advice(
             || "assign acc_mult_s".to_string(),
             self.accumulators.acc_s.mult,
             offset,
-            || Ok(acc_mult_s),
+            || Value::known(acc_mult_s),
         )?;
 
         region.assign_advice(
             || "assign acc_c".to_string(),
             self.accumulators.acc_c.rlc,
             offset,
-            || Ok(acc_c),
+            || Value::known(acc_c),
         )?;
 
         region.assign_advice(
             || "assign acc_mult_c".to_string(),
             self.accumulators.acc_c.mult,
             offset,
-            || Ok(acc_mult_c),
+            || Value::known(acc_mult_c),
         )?;
 
         Ok(())
@@ -898,7 +913,7 @@ impl<F: FieldExt> MPTConfig<F> {
                 || "assign s_modified_node_rlc".to_string(),
                 self.accumulators.s_mod_node_rlc,
                 offset,
-                || Ok(F::from(flag1 as u64)),
+                || Value::known(F::from(flag1 as u64)),
             )
             .ok();
         region
@@ -906,13 +921,14 @@ impl<F: FieldExt> MPTConfig<F> {
                 || "assign c_modified_node_rlc".to_string(),
                 self.accumulators.c_mod_node_rlc,
                 offset,
-                || Ok(F::from(flag2 as u64)),
+                || Value::known(F::from(flag2 as u64)),
             )
             .ok();
 
         Ok(())
     }
 
+    /// Make the assignments to the MPTCircuit
     pub fn assign(&self, mut layouter: impl Layouter<F>, witness: &[MptWitnessRow<F>]) {
         layouter
             .assign_region(
@@ -940,7 +956,7 @@ impl<F: FieldExt> MPTConfig<F> {
                             || "q_enable",
                             self.position_cols.q_enable,
                             offset,
-                            || Ok(F::one()),
+                            || Value::known(F::one()),
                         )?;
 
                         if row.get_type() == MptWitnessRowType::AccountLeafKeyS {
@@ -953,14 +969,14 @@ impl<F: FieldExt> MPTConfig<F> {
                             || "not first",
                             self.position_cols.q_not_first,
                             offset,
-                            || Ok(q_not_first),
+                            || Value::known(q_not_first),
                         )?;
 
                         region.assign_advice(
                             || "not first level",
                             self.position_cols.not_first_level,
                             offset,
-                            || Ok(F::from(row.not_first_level() as u64)),
+                            || Value::known(F::from(row.not_first_level() as u64)),
                         )?;
 
                         row.assign_lookup_columns(&mut region, self, &pv, offset)?;
@@ -1201,6 +1217,7 @@ impl<F: FieldExt> MPTConfig<F> {
             .ok();
     }
 
+    /// Load fixed tables.
     pub fn load(
         &self,
         _layouter: &mut impl Layouter<F>,
@@ -1240,7 +1257,7 @@ impl<F: FieldExt> MPTConfig<F> {
                         || "Keccak table",
                         self.keccak_table[0],
                         offset,
-                        || Ok(rlc),
+                        || Value::known(rlc),
                     )?;
 
                     let hash_rlc = bytes_into_rlc(&hash, self.acc_r);
@@ -1248,7 +1265,7 @@ impl<F: FieldExt> MPTConfig<F> {
                         || "Keccak table",
                         self.keccak_table[1],
                         offset,
-                        || Ok(hash_rlc),
+                        || Value::known(hash_rlc),
                     )?;
                 }
 
@@ -1268,21 +1285,21 @@ impl<F: FieldExt> MPTConfig<F> {
                         || "fixed table",
                         self.fixed_table[0],
                         offset,
-                        || Ok(F::from(FixedTableTag::RMult as u64)),
+                        || Value::known(F::from(FixedTableTag::RMult as u64)),
                     )?;
 
                     region.assign_fixed(
                         || "fixed table",
                         self.fixed_table[1],
                         offset,
-                        || Ok(F::from(ind as u64)),
+                        || Value::known(F::from(ind as u64)),
                     )?;
 
                     region.assign_fixed(
                         || "fixed table",
                         self.fixed_table[2],
                         offset,
-                        || Ok(mult),
+                        || Value::known(mult),
                     )?;
                     mult *= self.acc_r;
 
@@ -1294,14 +1311,14 @@ impl<F: FieldExt> MPTConfig<F> {
                         || "fixed table",
                         self.fixed_table[0],
                         offset,
-                        || Ok(F::from(FixedTableTag::Range256 as u64)),
+                        || Value::known(F::from(FixedTableTag::Range256 as u64)),
                     )?;
 
                     region.assign_fixed(
                         || "fixed table",
                         self.fixed_table[1],
                         offset,
-                        || Ok(F::from(ind as u64)),
+                        || Value::known(F::from(ind as u64)),
                     )?;
 
                     offset += 1;
@@ -1313,14 +1330,14 @@ impl<F: FieldExt> MPTConfig<F> {
                         || "fixed table",
                         self.fixed_table[0],
                         offset,
-                        || Ok(F::from(FixedTableTag::RangeKeyLen256 as u64)),
+                        || Value::known(F::from(FixedTableTag::RangeKeyLen256 as u64)),
                     )?;
 
                     region.assign_fixed(
                         || "fixed table",
                         self.fixed_table[1],
                         offset,
-                        || Ok(F::from(ind as u64)),
+                        || Value::known(F::from(ind as u64)),
                     )?;
 
                     offset += 1;
@@ -1332,14 +1349,14 @@ impl<F: FieldExt> MPTConfig<F> {
                         || "fixed table",
                         self.fixed_table[0],
                         offset,
-                        || Ok(F::from(FixedTableTag::Range16 as u64)),
+                        || Value::known(F::from(FixedTableTag::Range16 as u64)),
                     )?;
 
                     region.assign_fixed(
                         || "fixed table",
                         self.fixed_table[1],
                         offset,
-                        || Ok(F::from(ind as u64)),
+                        || Value::known(F::from(ind as u64)),
                     )?;
 
                     offset += 1;
@@ -1353,23 +1370,20 @@ impl<F: FieldExt> MPTConfig<F> {
 
 #[cfg(test)]
 mod tests {
-    use crate::param::IS_NON_EXISTING_ACCOUNT_POS;
+    use param::IS_NON_EXISTING_ACCOUNT_POS;
 
     use super::*;
 
     use halo2_proofs::{
         circuit::{Layouter, SimpleFloorPlanner},
-        dev::{MockProver},
+        dev::MockProver,
         plonk::{
             Circuit,
             ConstraintSystem, Error,
         },
+        halo2curves::{bn256::Fr},
     };
-    
-    use pairing::{
-        arithmetic::FieldExt,
-        bn256::{Fr as Fp},
-    };
+    use eth_types::Field;
     
     use std::{fs, marker::PhantomData};
 
@@ -1381,7 +1395,7 @@ mod tests {
             witness: Vec<Vec<u8>>,
         }
 
-        impl<F: FieldExt> Circuit<F> for MyCircuit<F> {
+        impl<F: Field> Circuit<F> for MyCircuit<F> {
             type Config = MPTConfig<F>;
             type FloorPlanner = SimpleFloorPlanner;
 
@@ -1418,7 +1432,9 @@ mod tests {
         }
 
         // for debugging:
-        let path = "mpt/tests";
+        println!("asl;dfja;slidflkdjsfal;sdfjasldfk");
+        println!("{:?}", std::env::current_dir());
+        let path = "src/mpt_circuit/tests";
         // let path = "tests";
         let files = fs::read_dir(path).unwrap();
         files
@@ -1437,13 +1453,13 @@ mod tests {
                 let file = std::fs::File::open(path.clone());
                 let reader = std::io::BufReader::new(file.unwrap());
                 let w: Vec<Vec<u8>> = serde_json::from_reader(reader).unwrap();
-                let circuit = MyCircuit::<Fp> {
+                let circuit = MyCircuit::<Fr> {
                     _marker: PhantomData,
                     witness: w.clone(),
                 };
 
                 let mut pub_root = vec![];
-                let acc_r = Fp::one() + Fp::one();
+                let acc_r = Fr::one() + Fr::one();
                 for row in w.iter().filter(|r| r[r.len() - 1] != 5) {
                     let l = row.len();
                     let pub_root_rlc = bytes_into_rlc(
@@ -1456,7 +1472,7 @@ mod tests {
                 }
 
                 println!("{:?}", path);
-                let prover = MockProver::<Fp>::run(9, &circuit, vec![pub_root]).unwrap();
+                let prover = MockProver::run(9, &circuit, vec![pub_root]).unwrap();
                 assert_eq!(prover.verify(), Ok(()));
 
                 /*

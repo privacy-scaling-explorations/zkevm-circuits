@@ -2,23 +2,28 @@ use halo2_proofs::{
     circuit::Region,
     plonk::{Advice, Column, ConstraintSystem, Expression, Fixed, VirtualCells},
     poly::Rotation,
+    arithmetic::FieldExt,
 };
-use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
 use crate::{
-    columns::{AccumulatorCols, DenoteCols, MainCols},
-    helpers::{
+    mpt_circuit::columns::{AccumulatorCols, DenoteCols, MainCols},
+    mpt_circuit::helpers::{
         compute_rlc, get_is_extension_node, get_is_extension_node_one_nibble,
         mult_diff_lookup, range_lookups,
     },
-    mpt::{FixedTableTag, MPTConfig, ProofValues},
-    param::{
+    mpt_circuit::{FixedTableTag, MPTConfig, ProofValues},
+    mpt_circuit::param::{
         ACCOUNT_DRIFTED_LEAF_IND, ACCOUNT_LEAF_KEY_C_IND, ACCOUNT_LEAF_KEY_S_IND,
         ACCOUNT_LEAF_NONCE_BALANCE_C_IND, ACCOUNT_LEAF_NONCE_BALANCE_S_IND,
         ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND, ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND, BRANCH_ROWS_NUM,
         IS_BRANCH_C16_POS, IS_BRANCH_C1_POS,
     },
+};
+
+use crate::mpt_circuit::param::{
+    HASH_WIDTH, IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS, KECCAK_INPUT_WIDTH,
+    KECCAK_OUTPUT_WIDTH, RLP_NUM, R_TABLE_LEN,
 };
 
 /*
@@ -49,11 +54,6 @@ an existing leaf. This appears when an existing leaf and a newly added leaf have
 In this case, a new branch is created and both leaves (existing and newly added) appear in the new branch.
 `ACCOUNT_LEAF_DRIFTED` row contains the key bytes of the existing leaf once it drifted down to the new branch.
 */
-
-use crate::param::{
-    HASH_WIDTH, IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS, KECCAK_INPUT_WIDTH,
-    KECCAK_OUTPUT_WIDTH, RLP_NUM, R_TABLE_LEN,
-};
 
 #[derive(Clone, Debug)]
 pub(crate) struct AccountLeafKeyInAddedBranchConfig<F> {

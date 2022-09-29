@@ -1,11 +1,15 @@
 use halo2_proofs::{
     plonk::{Advice, Column, ConstraintSystem, Expression},
     poly::Rotation,
+    arithmetic::FieldExt,
 };
-use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
-use crate::{account_leaf::AccountLeafCols, columns::{ProofTypeCols, PositionCols}, storage_leaf::StorageLeafCols};
+use crate::{
+    mpt_circuit::account_leaf::AccountLeafCols,
+    mpt_circuit::columns::{ProofTypeCols, PositionCols},
+    mpt_circuit::storage_leaf::StorageLeafCols
+};
 
 /*
 The selector `not_first_level` denotes whether the node is not in the first account trie level.

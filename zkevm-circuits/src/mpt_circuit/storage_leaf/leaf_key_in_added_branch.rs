@@ -2,25 +2,25 @@ use halo2_proofs::{
     circuit::Region,
     plonk::{Advice, Column, ConstraintSystem, Expression, Fixed, VirtualCells},
     poly::Rotation,
+    arithmetic::FieldExt,
 };
-use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
 use crate::{
-    columns::{AccumulatorCols, MainCols},
-    helpers::{
+    mpt_circuit::columns::{AccumulatorCols, MainCols},
+    mpt_circuit::helpers::{
         compute_rlc, get_bool_constraint, get_is_extension_node, get_is_extension_node_one_nibble,
         mult_diff_lookup, range_lookups,
     },
-    mpt::{FixedTableTag, MPTConfig, ProofValues},
-    param::{
+    mpt_circuit::{FixedTableTag, MPTConfig, ProofValues},
+    mpt_circuit::param::{
         BRANCH_ROWS_NUM, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, LEAF_DRIFTED_IND, LEAF_KEY_C_IND,
         LEAF_KEY_S_IND,
     },
-    witness_row::MptWitnessRow,
+    mpt_circuit::witness_row::MptWitnessRow,
 };
 
-use crate::param::{
+use crate::mpt_circuit::param::{
     HASH_WIDTH, IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS, KECCAK_INPUT_WIDTH,
     KECCAK_OUTPUT_WIDTH, RLP_NUM, R_TABLE_LEN,
 };

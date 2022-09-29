@@ -1,22 +1,22 @@
 use halo2_proofs::{
-    circuit::Region,
+    circuit::{Region, Value},
     plonk::{Advice, Column, ConstraintSystem, Expression, Fixed, VirtualCells},
     poly::Rotation,
+    arithmetic::FieldExt,
 };
-use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
 use crate::{
-    columns::{AccumulatorCols, DenoteCols, MainCols, ProofTypeCols, PositionCols},
-    helpers::range_lookups,
-    mpt::{FixedTableTag, MPTConfig, ProofValues},
-    param::{
+    mpt_circuit::columns::{AccumulatorCols, DenoteCols, MainCols, ProofTypeCols, PositionCols},
+    mpt_circuit::helpers::range_lookups,
+    mpt_circuit::{FixedTableTag, MPTConfig, ProofValues},
+    mpt_circuit::param::{
         ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND, ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND,
         ACCOUNT_NON_EXISTING_IND, BRANCH_ROWS_NUM, C_START, EXTENSION_ROWS_NUM, HASH_WIDTH,
         IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS, KECCAK_INPUT_WIDTH,
         KECCAK_OUTPUT_WIDTH, RLP_NUM, S_START,
     },
-    witness_row::{MptWitnessRow, MptWitnessRowType},
+    mpt_circuit::witness_row::{MptWitnessRow, MptWitnessRowType},
 };
 
 /*
@@ -573,7 +573,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
                     || "assign sel1".to_string(),
                     mpt_config.denoter.sel1,
                     offset,
-                    || Ok(pv.rlc1),
+                    || Value::known(pv.rlc1),
                 )
                 .ok();
             // assign code hash S
@@ -582,7 +582,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
                     || "assign sel2".to_string(),
                     mpt_config.denoter.sel2,
                     offset,
-                    || Ok(pv.rlc2),
+                    || Value::known(pv.rlc2),
                 )
                 .ok();
 
