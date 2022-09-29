@@ -106,7 +106,7 @@ impl SignVerifyConfig {
 
         // Ref. spec SignVerifyChip 1. Verify that keccak(pub_key_bytes) = pub_key_hash
         // by keccak table lookup, where pub_key_bytes is built from the pub_key
-        // in the ecdsa_chi
+        // in the ecdsa_chip.
         let q_keccak = meta.complex_selector();
         meta.lookup_any("keccak", |meta| {
             // When address is 0, we disable the signature verification by using a dummy pk,
@@ -164,7 +164,9 @@ impl SignVerifyConfig {
         // |   1   |                                                   0 |     0 |     0 |     0 |  be[0] |  be[1] |
         // |   1   |                                  be[0]*r^1 +  be[1] | be[2] | be[3] | be[4] |  be[5] |  be[6] |
         // |   1   | be[0]*r^6  + be[1]*r^5  + ... +  be[5]*r^1 +  be[6] | be[7] | be[8] | be[9] | be[10] | be[11] |
-        // |   1   | be[0]*r^11 + be[1]*r^10 + ... + be[10]*r^1 + be[11] |       |       |       |        |        |
+        // |   0   | be[0]*r^11 + be[1]*r^10 + ... + be[10]*r^1 + be[11] |       |       |       |        |        |
+        //
+        // Note that the first row of zeros will be enforced by copy constraint.
         meta.create_gate(name, |meta| {
             let q_rlc = meta.query_selector(q_rlc);
             let [a, b, c, d, e] = main_gate_config
@@ -430,6 +432,8 @@ impl<F: Field, const MAX_VERIF: usize> SignVerifyChip<F, MAX_VERIF> {
         assigned_ecdsa: &AssignedECDSA<F>,
         challenges: &Challenges<Value<F>>,
     ) -> Result<AssignedSignatureVerify<F>, Error> {
+        let main_gate = chips.main_gate;
+
         let (padding, sign_data) = match sign_data {
             Some(sign_data) => (false, sign_data.clone()),
             None => (true, SignData::default()),
@@ -437,13 +441,15 @@ impl<F: Field, const MAX_VERIF: usize> SignVerifyChip<F, MAX_VERIF> {
 
         let pk_le = pk_bytes_le(&sign_data.pk);
         let pk_be = pk_bytes_swap_endianness(&pk_le);
-        let pk_hash: [_; 32] = (!padding)
+        let pk_hash = (!padding)
             .then(|| {
                 let mut keccak = Keccak::default();
                 keccak.update(&pk_be);
-                keccak.digest().try_into().expect("vec to array of size 32")
+                let hash: [_; 32] = keccak.digest().try_into().expect("vec to array of size 32");
+                hash
             })
-            .unwrap_or_default();
+            .unwrap_or_default()
+            .map(|byte| Value::known(F::from(byte as u64)));
         let pk_hash_hi = pk_hash[..12].to_vec();
         // Ref. spec SignVerifyChip 2. Verify that the first 20 bytes of the
         // pub_key_hash equal the address
@@ -452,44 +458,38 @@ impl<F: Field, const MAX_VERIF: usize> SignVerifyChip<F, MAX_VERIF> {
                 iter::successors(Some(F::one()), |coeff| Some(F::from(256) * coeff))
                     .take(20)
                     .collect_vec();
-            let (address, pk_hash_lo) = chips.main_gate.decompose(
-                ctx,
-                &pk_hash[12..]
-                    .iter()
-                    .zip(powers_of_256.into_iter().rev())
-                    .map(|(byte, coeff)| {
-                        maingate::Term::Unassigned(Value::known(F::from(*byte as u64)), coeff)
-                    })
-                    .collect_vec(),
-                F::zero(),
-                |_, _| Ok(()),
-            )?;
+            let terms = pk_hash[12..]
+                .iter()
+                .zip(powers_of_256.into_iter().rev())
+                .map(|(byte, coeff)| maingate::Term::Unassigned(*byte, coeff))
+                .collect_vec();
+            let (address, pk_hash_lo) =
+                main_gate.decompose(ctx, &terms, F::zero(), |_, _| Ok(()))?;
 
             (
                 address,
                 pk_hash_lo
                     .into_iter()
                     .zip(pk_hash[12..].iter())
-                    .map(|(assigned, byte)| {
-                        Term::assigned(assigned.cell(), Value::known(F::from(*byte as u64)))
-                    })
+                    .map(|(assigned, byte)| Term::assigned(assigned.cell(), *byte))
                     .collect_vec(),
             )
         };
-        let is_address_zero = chips.main_gate.is_zero(ctx, &address)?;
+        let is_address_zero = main_gate.is_zero(ctx, &address)?;
 
         // Ref. spec SignVerifyChip 3. Verify that the signed message in the ecdsa_chip
         // with RLC encoding corresponds to msg_hash_rlc
         let msg_hash_rlc = {
-            let zero = chips.main_gate.assign_constant(ctx, F::zero())?;
+            let zero = main_gate.assign_constant(ctx, F::zero())?;
             let assigned_msg_hash_le = assigned_ecdsa
                 .msg_hash_le
                 .iter()
-                .map(|byte| chips.main_gate.select(ctx, &zero, byte, &is_address_zero))
+                .map(|byte| main_gate.select(ctx, &zero, byte, &is_address_zero))
                 .collect::<Result<Vec<_>, _>>()?;
             let msg_hash_le = (!padding)
                 .then(|| sign_data.msg_hash.to_bytes())
-                .unwrap_or_default();
+                .unwrap_or_default()
+                .map(|byte| Value::known(F::from(byte as u64)));
             self.assign_rlc_le(
                 config,
                 ctx,
@@ -500,9 +500,7 @@ impl<F: Field, const MAX_VERIF: usize> SignVerifyChip<F, MAX_VERIF> {
                 assigned_msg_hash_le
                     .iter()
                     .zip(msg_hash_le)
-                    .map(|(assigned, byte)| {
-                        Term::assigned(assigned.cell(), Value::known(F::from(byte as u64)))
-                    }),
+                    .map(|(assigned, byte)| Term::assigned(assigned.cell(), byte)),
             )?
         };
 
@@ -512,7 +510,8 @@ impl<F: Field, const MAX_VERIF: usize> SignVerifyChip<F, MAX_VERIF> {
                 .chain(&assigned_ecdsa.pk_x_le);
             let pk_le = iter::empty()
                 .chain(sign_data.pk.y.to_bytes())
-                .chain(sign_data.pk.x.to_bytes());
+                .chain(sign_data.pk.x.to_bytes())
+                .map(|byte| Value::known(F::from(byte as u64)));
             self.assign_rlc_le(
                 config,
                 ctx,
@@ -520,9 +519,9 @@ impl<F: Field, const MAX_VERIF: usize> SignVerifyChip<F, MAX_VERIF> {
                 "pk_hash",
                 config.q_rlc_keccak_input,
                 challenges.keccak_input(),
-                assigned_pk_le.zip(pk_le).map(|(assigned, byte)| {
-                    Term::assigned(assigned.cell(), Value::known(F::from(byte as u64)))
-                }),
+                assigned_pk_le
+                    .zip(pk_le)
+                    .map(|(assigned, byte)| Term::assigned(assigned.cell(), byte)),
             )?
         };
 
@@ -533,12 +532,9 @@ impl<F: Field, const MAX_VERIF: usize> SignVerifyChip<F, MAX_VERIF> {
             "pk_hash_rlc",
             config.q_rlc_evm_word,
             challenges.evm_word(),
-            iter::empty().chain(pk_hash_lo.into_iter().rev()).chain(
-                pk_hash_hi
-                    .into_iter()
-                    .rev()
-                    .map(|byte| Term::unassigned(Value::known(F::from(byte as u64)))),
-            ),
+            iter::empty()
+                .chain(pk_hash_lo.into_iter().rev())
+                .chain(pk_hash_hi.into_iter().rev().map(Term::unassigned)),
         )?;
 
         self.enable_keccak_lookup(config, ctx, &is_address_zero, &pk_rlc, &pk_hash_rlc)?;
