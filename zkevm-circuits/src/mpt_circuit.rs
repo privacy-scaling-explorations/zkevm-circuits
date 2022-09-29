@@ -1432,8 +1432,6 @@ mod tests {
         }
 
         // for debugging:
-        println!("asl;dfja;slidflkdjsfal;sdfjasldfk");
-        println!("{:?}", std::env::current_dir());
         let path = "src/mpt_circuit/tests";
         // let path = "tests";
         let files = fs::read_dir(path).unwrap();
