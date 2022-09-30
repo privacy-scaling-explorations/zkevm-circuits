@@ -114,9 +114,9 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
                         + not::expr(is_success.expr())
                             * cb.curr.state.reversible_write_counter.expr(),
                 ),
+                gas_left: Delta(-memory_expansion.gas_cost()),
                 reversible_write_counter: To(0.expr()),
-                memory_word_size: Any,
-                gas_left: Any,
+                memory_word_size: To(0.expr()),
                 ..StepStateTransition::default()
             });
         });
