@@ -128,7 +128,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
             RestoreContextGadget::construct(
                 cb,
                 is_success.expr(),
-                2.expr() + copy_rw_increase.expr(),
+                2.expr() * not::expr(is_create.clone()) + copy_rw_increase.expr(),
                 range.offset(),
                 range.length(),
                 memory_expansion.gas_cost(),
