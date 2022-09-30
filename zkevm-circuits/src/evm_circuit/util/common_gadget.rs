@@ -103,6 +103,7 @@ impl<F: Field> RestoreContextGadget<F> {
         copy_lookup_rw_counter_increase: Expression<F>,
         return_data_offset: Expression<F>,
         return_data_length: Expression<F>,
+        memory_expansion_cost: Expression<F>,
     ) -> Self {
         // Read caller's context for restore
         let caller_id = cb.call_context(None, CallContextFieldTag::CallerId);
@@ -137,13 +138,13 @@ impl<F: Field> RestoreContextGadget<F> {
             cb.call_context_lookup(true.expr(), Some(caller_id.expr()), field_tag, value);
         }
 
-        // Consume all gas_left if call halts in exception
-        let gas_left = if cb.execution_state().halts_in_exception() {
-            caller_gas_left.expr()
+        let gas_refund = if cb.execution_state().halts_in_exception() {
+            0.expr() // no gas refund if call halts in exception
         } else {
-            caller_gas_left.expr() + cb.curr.state.gas_left.expr()
+            cb.curr.state.gas_left.expr() - memory_expansion_cost
         };
-        // TODO: Do we need to constrain the gas cost of the return here?
+
+        let gas_left = caller_gas_left.expr() + gas_refund;
 
         // Accumulate reversible_write_counter in case this call stack reverts in the
         // future even it itself succeeds. Note that when sub-call halts in
@@ -165,7 +166,7 @@ impl<F: Field> RestoreContextGadget<F> {
             code_hash: To(caller_code_hash.expr()),
             program_counter: To(caller_program_counter.expr()),
             stack_pointer: To(caller_stack_pointer.expr()),
-            gas_left: To(gas_left.expr()),
+            gas_left: To(gas_left),
             memory_word_size: To(caller_memory_word_size.expr()),
             reversible_write_counter: To(reversible_write_counter),
             log_id: Same,

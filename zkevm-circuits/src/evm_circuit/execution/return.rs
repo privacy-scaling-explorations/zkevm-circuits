@@ -131,6 +131,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
                 2.expr() + copy_rw_increase.expr(),
                 range.offset(),
                 range.length(),
+                memory_expansion.gas_cost(),
             )
         });
 
@@ -331,6 +332,7 @@ mod test {
             ((0, 10), (0, 10)),
             ((0, 10), (0, 20)),
             ((0, 20), (0, 10)),
+            ((64, 1), (0, 10)), // Expands memory in RETURN/REVERT opcode
             ((0, 10), (1000, 0)),
             ((1000, 0), (0, 10)),
             ((1000, 0), (1000, 0)),

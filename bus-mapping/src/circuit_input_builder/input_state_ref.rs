@@ -16,7 +16,7 @@ use crate::{
     Error,
 };
 use eth_types::{
-    evm_types::{Gas, MemoryAddress, OpcodeId, StackAddress},
+    evm_types::{gas_utils::memory_expansion_gas_cost, Gas, MemoryAddress, OpcodeId, StackAddress},
     Address, GethExecStep, ToAddress, ToBigEndian, ToWord, Word, H256,
 };
 use ethers_core::utils::{get_contract_address, get_create2_address};
@@ -843,7 +843,36 @@ impl<'a> CircuitInputStateRef<'a> {
 
         let geth_step = &steps[0];
         let geth_step_next = &steps[1];
-        let caller_gas_left = geth_step_next.gas.0 - geth_step.gas.0;
+
+        let [last_callee_return_data_offset, last_callee_return_data_length] = match geth_step.op {
+            OpcodeId::STOP => [Word::zero(); 2],
+            OpcodeId::REVERT | OpcodeId::RETURN => {
+                // TODO: move this back into the return bus mapping.
+                let offset = geth_step.stack.nth_last(0)?;
+                let length = geth_step.stack.nth_last(1)?;
+                // This is the convention we are using for memory addresses so that there is no
+                // memory expansion cost when the length is 0.
+                if length.is_zero() {
+                    [Word::zero(); 2]
+                } else {
+                    [offset, length]
+                }
+            }
+            _ => unreachable!(),
+        };
+
+        let curr_memory_word_size = (exec_step.memory_size as u64) / 32;
+        let next_memory_word_size = if !last_callee_return_data_length.is_zero() {
+            (last_callee_return_data_offset + last_callee_return_data_length + 31).as_u64() / 32
+        } else {
+            curr_memory_word_size
+        };
+
+        let memory_expansion_gas_cost =
+            memory_expansion_gas_cost(curr_memory_word_size, next_memory_word_size);
+        let gas_refund = geth_step.gas.0 - memory_expansion_gas_cost;
+        let caller_gas_left = geth_step_next.gas.0 - gas_refund;
+
         for (field, value) in [
             (CallContextField::IsRoot, (caller.is_root as u64).into()),
             (
@@ -869,22 +898,6 @@ impl<'a> CircuitInputStateRef<'a> {
             self.call_context_read(exec_step, caller.call_id, field, value);
         }
 
-        let [last_callee_return_data_offset, last_callee_return_data_length] = match geth_step.op {
-            OpcodeId::STOP => [Word::zero(); 2],
-            OpcodeId::REVERT | OpcodeId::RETURN => {
-                // TODO: move this back into the return bus mapping.
-                let offset = geth_step.stack.nth_last(0)?;
-                let length = geth_step.stack.nth_last(1)?;
-                // This is the convention we are using for memory addresses so that there is no
-                // memory expansion cost when the length is 0.
-                if length.is_zero() {
-                    [Word::zero(); 2]
-                } else {
-                    [offset, length]
-                }
-            }
-            _ => unreachable!(),
-        };
         for (field, value) in [
             (CallContextField::LastCalleeId, call.call_id.into()),
             (
