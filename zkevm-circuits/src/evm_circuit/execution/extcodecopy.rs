@@ -9,7 +9,7 @@ use crate::{
             },
             from_bytes,
             memory_gadget::{MemoryAddressGadget, MemoryCopierGasGadget, MemoryExpansionGadget},
-            not, CachedRegion, Cell, MemoryAddress, RandomLinearCombination,
+            not, select, CachedRegion, Cell, MemoryAddress, RandomLinearCombination,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -88,8 +88,11 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
             memory_expansion.gas_cost(),
         );
         let gas_cost = memory_copier_gas.gas_cost()
-            + is_warm.expr() * GasCost::WARM_ACCESS.expr()
-            + (1.expr() - is_warm.expr()) * GasCost::COLD_ACCOUNT_ACCESS.expr();
+            + select::expr(
+                is_warm.expr(),
+                GasCost::WARM_ACCESS.expr(),
+                GasCost::COLD_ACCOUNT_ACCESS.expr(),
+            );
 
         let copy_rwc_inc = cb.query_cell();
         cb.condition(memory_address.has_length(), |cb| {

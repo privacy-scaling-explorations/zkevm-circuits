@@ -55,8 +55,11 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
         cb.account_read(address, AccountFieldTag::CodeHash, code_hash.expr());
         cb.stack_push(code_hash.expr());
 
-        let gas_cost = is_warm.expr() * GasCost::WARM_ACCESS.expr()
-            + (1.expr() - is_warm.expr()) * GasCost::COLD_ACCOUNT_ACCESS.expr();
+        let gas_cost = select::expr(
+            is_warm.expr(),
+            GasCost::WARM_ACCESS.expr(),
+            GasCost::COLD_ACCOUNT_ACCESS.expr(),
+        );
         let step_state_transition = StepStateTransition {
             rw_counter: Delta(cb.rw_counter_offset()),
             program_counter: Delta(1.expr()),
