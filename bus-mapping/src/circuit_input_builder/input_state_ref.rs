@@ -847,7 +847,6 @@ impl<'a> CircuitInputStateRef<'a> {
         let [last_callee_return_data_offset, last_callee_return_data_length] = match geth_step.op {
             OpcodeId::STOP => [Word::zero(); 2],
             OpcodeId::REVERT | OpcodeId::RETURN => {
-                // TODO: move this back into the return bus mapping.
                 let offset = geth_step.stack.nth_last(0)?;
                 let length = geth_step.stack.nth_last(1)?;
                 // This is the convention we are using for memory addresses so that there is no

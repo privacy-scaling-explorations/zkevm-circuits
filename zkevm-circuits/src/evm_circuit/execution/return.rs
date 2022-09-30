@@ -7,7 +7,7 @@ use crate::{
             common_gadget::RestoreContextGadget,
             constraint_builder::{
                 ConstraintBuilder, StepStateTransition,
-                Transition::{Any, Delta, To},
+                Transition::{Delta, To},
             },
             math_gadget::{IsZeroGadget, MinMaxGadget},
             memory_gadget::{MemoryAddressGadget, MemoryExpansionGadget},
