@@ -862,7 +862,11 @@ impl<'a> CircuitInputStateRef<'a> {
 
         let curr_memory_word_size = (exec_step.memory_size as u64) / 32;
         let next_memory_word_size = if !last_callee_return_data_length.is_zero() {
-            (last_callee_return_data_offset + last_callee_return_data_length + 31).as_u64() / 32
+            std::cmp::max(
+                (last_callee_return_data_offset + last_callee_return_data_length + 31).as_u64()
+                    / 32,
+                curr_memory_word_size,
+            )
         } else {
             curr_memory_word_size
         };
