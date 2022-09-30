@@ -100,7 +100,8 @@ impl<F: Field> RestoreContextGadget<F> {
     pub(crate) fn construct(
         cb: &mut ConstraintBuilder<F>,
         is_success: Expression<F>,
-        copy_lookup_rw_counter_increase: Expression<F>,
+        // Expression for the number of rw lookups that occur after this gadget is constructed.
+        subsequent_rw_lookups: Expression<F>,
         return_data_offset: Expression<F>,
         return_data_length: Expression<F>,
         memory_expansion_cost: Expression<F>,
@@ -154,7 +155,7 @@ impl<F: Field> RestoreContextGadget<F> {
             + is_success.clone() * cb.curr.state.reversible_write_counter.expr();
 
         let rw_counter_offset = cb.rw_counter_offset()
-            + copy_lookup_rw_counter_increase
+            + subsequent_rw_lookups
             + not::expr(is_success.expr()) * cb.curr.state.reversible_write_counter.expr();
 
         // Do step state transition
