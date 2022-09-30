@@ -26,7 +26,7 @@ mod tests {
     #[test]
     fn bench_bytecode_circuit_prover() {
         let degree: u32 = var("DEGREE")
-            .unwrap_or_else(|_| "15".to_string())
+            .unwrap_or("15".to_string())
             .parse()
             .expect("Cannot parse DEGREE env var as u32");
 
@@ -119,7 +119,7 @@ mod tests {
             let bytecodes = (0..bytecode_len)
                 .map(|v| {
                     OpcodeId::try_from(v as u8)
-                        .unwrap_or_else(|_| OpcodeId::STOP)
+                        .unwrap_or(OpcodeId::STOP)
                         .as_u8()
                 })
                 .collect::<Vec<u8>>();
