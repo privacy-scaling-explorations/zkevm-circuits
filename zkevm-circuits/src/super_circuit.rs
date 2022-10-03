@@ -217,13 +217,14 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
         let challenges = Challenges::mock(Value::known(self.block.randomness));
 
         // --- EVM Circuit ---
+        let rws = self.block.rws.table_assignments();
         config
             .evm_circuit
             .load_fixed_table(&mut layouter, self.fixed_table_tags.clone())?;
         config.evm_circuit.load_byte_table(&mut layouter)?;
         config.rw_table.load(
             &mut layouter,
-            &self.block.rws.table_assignments(),
+            &rws,
             self.block.state_circuit_pad_to,
             self.block.randomness,
         )?;
@@ -238,7 +239,6 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
             .evm_circuit
             .assign_block(&mut layouter, &self.block)?;
         // --- State Circuit ---
-        let rws = self.block.rws.table_assignments();
         config.mpt_table.load(
             &mut layouter,
             &MptUpdates::mock_from(&rws),

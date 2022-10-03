@@ -110,6 +110,7 @@ impl<F: Field> TxCircuitConfig<F> {
     /// Get number of rows required.
     pub fn get_num_rows_required(num_tx: usize) -> usize {
         let num_rows_range_table = 1 << 18;
+        // Number of rows required to verify a transaction.
         let num_rows_per_tx = 140436;
         (num_tx * num_rows_per_tx).max(num_rows_range_table)
     }
