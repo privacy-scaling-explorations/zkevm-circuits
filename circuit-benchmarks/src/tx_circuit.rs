@@ -78,7 +78,10 @@ mod tests {
         let instance_slices: Vec<&[Fr]> = instance.iter().map(|v| &v[..]).collect();
 
         // Bench proof generation time
-        let proof_message = format!("Packed Multi-Keccak Proof generation with {} rows", DEGREE);
+        let proof_message = format!(
+            "Packed Multi-Keccak Proof generation with degree = {}",
+            DEGREE
+        );
         let start2 = start_timer!(|| proof_message);
         create_proof::<
             KZGCommitmentScheme<Bn256>,
