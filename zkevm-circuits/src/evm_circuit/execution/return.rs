@@ -11,7 +11,7 @@ use crate::{
             },
             math_gadget::{IsZeroGadget, MinMaxGadget},
             memory_gadget::{MemoryAddressGadget, MemoryExpansionGadget},
-            not, CachedRegion, Cell,
+            not, CachedRegion, Cell, RandomLinearCombination,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -19,7 +19,8 @@ use crate::{
     util::Expr,
 };
 use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId};
-use eth_types::Field;
+use eth_types::{H256, Field};
+use ethers_core::utils::keccak256;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
@@ -96,19 +97,19 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
             is_create.clone() * is_success.expr() * not::expr(copy_rw_increase_is_zero.expr()),
             |cb| {
                 let code_hash = cb.query_cell();
-                // cb.copy_table_lookup(
-                //     cb.curr.state.call_id.expr(),
-                //     CopyDataType::Memory.expr(),
-                //     code_hash.expr(),
-                //     CopyDataType::Bytecode.expr(),
-                //     range.offset(),
-                //     range.address(),
-                //     0.expr(),
-                //     range.length(),
-                //     0.expr(),
-                //     cb.curr.state.rw_counter.expr() + cb.rw_counter_offset().expr(),
-                //     copy_rw_increase.expr(),
-                // );
+                cb.copy_table_lookup(
+                    cb.curr.state.call_id.expr(),
+                    CopyDataType::Memory.expr(),
+                    code_hash.expr(),
+                    CopyDataType::Bytecode.expr(),
+                    range.offset(),
+                    range.address(),
+                    0.expr(),
+                    range.length(),
+                    0.expr(),
+                    cb.curr.state.rw_counter.expr() + cb.rw_counter_offset().expr(),
+                    copy_rw_increase.expr(),
+                );
                 code_hash
             },
         );
@@ -128,8 +129,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
                 rw_counter: Delta(
                     cb.rw_counter_offset()
                         + not::expr(is_success.expr())
-                            * cb.curr.state.reversible_write_counter.expr()
-                        + is_success.expr() * is_create.expr() * copy_rw_increase.expr(),
+                            * cb.curr.state.reversible_write_counter.expr(),
                 ),
                 gas_left: Delta(-memory_expansion.gas_cost()),
                 reversible_write_counter: To(0.expr()),
@@ -255,6 +255,24 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
                 offset,
                 F::from(call.return_data_length),
                 F::from(length.as_u64()),
+            )?;
+        }
+
+        if call.is_create {
+            let values: Vec<_> = (3..3 + length.as_usize())
+                .map(|i| block.rws[step.rw_indices[i]].memory_value())
+                .collect();
+            let mut code_hash = keccak256(&values);
+            dbg!(H256(code_hash));
+            code_hash.reverse();
+            dbg!(H256(code_hash));
+            self.code_hash.assign(
+                region,
+                offset,
+                Value::known(RandomLinearCombination::random_linear_combine(
+                    code_hash,
+                    block.randomness,
+                )),
             )?;
         }
 

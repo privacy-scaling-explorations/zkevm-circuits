@@ -181,6 +181,7 @@ fn handle_create(
 ) -> Result<(), Error> {
     let values = state.call_ctx()?.memory.0[source.offset..source.offset + source.length].to_vec();
     let code_hash = NumberOrHash::Hash(H256(keccak256(&values)));
+    dbg!(H256(keccak256(&values)));
     state.block.sha3_inputs.push(values.clone());
 
     let bytes: Vec<_> = Bytecode::from(values)
