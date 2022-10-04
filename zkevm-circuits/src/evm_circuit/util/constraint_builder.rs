@@ -1109,6 +1109,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         rw_counter: Expression<F>,
         rwc_inc: Expression<F>,
     ) {
+        self.rw_counter_offset = self.rw_counter_offset.clone() + rwc_inc.clone();
         self.add_lookup(
             "copy lookup",
             Lookup::CopyTable {
