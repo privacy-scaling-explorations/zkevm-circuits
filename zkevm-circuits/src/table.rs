@@ -8,7 +8,8 @@ use crate::util::Challenges;
 use crate::witness::{
     Block, BlockContext, Bytecode, MptUpdateRow, MptUpdates, Rw, RwMap, RwRow, Transaction,
 };
-use bus_mapping::circuit_input_builder::{CopyDataType, CopyEvent};
+use bus_mapping::circuit_input_builder::{CopyDataType, CopyEvent, CopyStep};
+use core::iter::once;
 use eth_types::{Field, ToLittleEndian, ToScalar, Word};
 use gadgets::binary_number::{BinaryNumberChip, BinaryNumberConfig};
 use halo2_proofs::{
@@ -856,6 +857,9 @@ pub struct CopyTable {
     pub tag: BinaryNumberConfig<CopyDataType, 3>,
 }
 
+type CopyTableRow<F> = [(F, &'static str); 8];
+type CopyCircuitRow<F> = [(F, &'static str); 4];
+
 impl CopyTable {
     /// Construct a new CopyTable
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>, q_enable: Column<Fixed>) -> Self {
@@ -872,12 +876,13 @@ impl CopyTable {
         }
     }
 
-    /// Generate the copy table assignments from a copy event.
+    /// Generate the copy table and copy circuit assignments from a copy event.
     pub fn assignments<F: Field>(
         copy_event: &CopyEvent,
         randomness: F,
-    ) -> Vec<(CopyDataType, [F; 8])> {
+    ) -> Vec<(CopyDataType, CopyTableRow<F>, CopyCircuitRow<F>)> {
         let mut assignments = Vec::new();
+        // rlc_acc
         let rlc_acc = if copy_event.dst_type == CopyDataType::RlcAcc {
             let values = copy_event
                 .bytes
@@ -888,35 +893,62 @@ impl CopyTable {
         } else {
             F::zero()
         };
-        for (step_idx, is_read_step) in copy_event
+        let mut value_acc = F::zero();
+        for (step_idx, (is_read_step, copy_step)) in copy_event
             .bytes
             .iter()
-            .flat_map(|_| vec![true, false].into_iter())
+            .flat_map(|(value, is_code)| {
+                let read_step = CopyStep {
+                    value: *value,
+                    is_code: if copy_event.src_type == CopyDataType::Bytecode {
+                        Some(*is_code)
+                    } else {
+                        None
+                    },
+                };
+                let write_step = CopyStep {
+                    value: *value,
+                    is_code: if copy_event.dst_type == CopyDataType::Bytecode {
+                        Some(*is_code)
+                    } else {
+                        None
+                    },
+                };
+                once((true, read_step)).chain(once((false, write_step)))
+            })
             .enumerate()
         {
             // is_first
             let is_first = if step_idx == 0 { F::one() } else { F::zero() };
-            // id
-            let id = {
-                let id = if is_read_step {
-                    &copy_event.src_id
-                } else {
-                    &copy_event.dst_id
-                };
-                number_or_hash_to_field(id, randomness)
+            // is last
+            let is_last = if step_idx == copy_event.bytes.len() * 2 - 1 {
+                F::one()
+            } else {
+                F::zero()
             };
-            // addr
+
+            // id
+            let id = if is_read_step {
+                number_or_hash_to_field(&copy_event.src_id, randomness)
+            } else {
+                number_or_hash_to_field(&copy_event.dst_id, randomness)
+            };
+
+            // tag binary bumber chip
             let tag = if is_read_step {
                 copy_event.src_type
             } else {
                 copy_event.dst_type
             };
+
+            // addr
             let copy_step_addr: u64 =
                 if is_read_step {
                     copy_event.src_addr
                 } else {
                     copy_event.dst_addr
                 } + (u64::try_from(step_idx).unwrap() - if is_read_step { 0 } else { 1 }) / 2u64;
+
             let addr = if tag == CopyDataType::TxLog {
                 build_tx_log_address(
                     copy_step_addr,
@@ -929,18 +961,45 @@ impl CopyTable {
                 F::from(copy_step_addr)
             };
 
+            // bytes_left
             let bytes_left = u64::try_from(copy_event.bytes.len() * 2 - step_idx).unwrap() / 2;
+            // value
+            let value = if copy_event.dst_type == CopyDataType::RlcAcc {
+                if is_read_step {
+                    F::from(copy_step.value as u64)
+                } else {
+                    value_acc = value_acc * randomness + F::from(copy_step.value as u64);
+                    value_acc
+                }
+            } else {
+                F::from(copy_step.value as u64)
+            };
+            // is_pad
+            let is_pad = F::from(is_read_step && copy_step_addr >= copy_event.src_addr_end);
+
+            // is_code
+            let is_code = copy_step.is_code.map_or(F::zero(), |v| F::from(v));
+
             assignments.push((
                 tag,
                 [
-                    is_first,
-                    id,
-                    addr,
-                    F::from(copy_event.src_addr_end),
-                    F::from(bytes_left),
-                    rlc_acc,
-                    F::from(copy_event.rw_counter(step_idx)),
-                    F::from(copy_event.rw_counter_increase_left(step_idx)),
+                    (is_first, "is_first"),
+                    (id, "id"),
+                    (addr, "addr"),
+                    (F::from(copy_event.src_addr_end), "src_addr_end"),
+                    (F::from(bytes_left), "bytes_left"),
+                    (rlc_acc, "rlc_acc"),
+                    (F::from(copy_event.rw_counter(step_idx)), "rw_counter"),
+                    (
+                        F::from(copy_event.rw_counter_increase_left(step_idx)),
+                        "rwc_inc_left",
+                    ),
+                ],
+                [
+                    (is_last, "is_last"),
+                    (value, "value"),
+                    (is_pad, "is_pad"),
+                    (is_code, "is_code"),
                 ],
             ));
         }
@@ -971,10 +1030,10 @@ impl CopyTable {
                 let tag_chip = BinaryNumberChip::construct(self.tag);
                 let copy_table_columns = self.columns();
                 for copy_event in block.copy_events.iter() {
-                    for (tag, row) in Self::assignments(copy_event, randomness) {
-                        for (column, value) in copy_table_columns.iter().zip_eq(row) {
+                    for (tag, row, _) in Self::assignments(copy_event, randomness) {
+                        for (column, (value, label)) in copy_table_columns.iter().zip_eq(row) {
                             region.assign_advice(
-                                || format!("copy table row {}", offset),
+                                || format!("{} at row: {}", label, offset),
                                 *column,
                                 offset,
                                 || Value::known(value),
@@ -992,7 +1051,7 @@ impl CopyTable {
 }
 
 impl CopyTable {
-    fn columns(&self) -> Vec<Column<Advice>> {
+    pub(crate) fn columns(&self) -> Vec<Column<Advice>> {
         vec![
             self.is_first,
             self.id,
