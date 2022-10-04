@@ -238,12 +238,12 @@ pub(crate) fn bytes_into_rlc<F: FieldExt>(expressions: &[u8], r: F) -> F {
     rlc
 }
 
-pub(crate) fn bytes_expr_into_rlc<F: FieldExt>(expressions: &[Expression<F>], r: F) -> Expression<F> {
+pub(crate) fn bytes_expr_into_rlc<F: FieldExt>(expressions: &[Expression<F>], r: Expression<F>) -> Expression<F> {
     let mut rlc = Expression::Constant(F::zero());
-    let mut mult = F::one();
+    let mut mult = Expression::Constant(F::one());
     for expr in expressions.iter() {
-        rlc = rlc + expr.clone() * mult;
-        mult *= r;
+        rlc = rlc + expr.clone() * mult.clone();
+        mult = mult * r.clone();
     }
 
     rlc

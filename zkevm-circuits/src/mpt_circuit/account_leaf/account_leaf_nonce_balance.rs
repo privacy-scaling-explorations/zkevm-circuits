@@ -931,7 +931,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
         let mut mult_diff_s = F::one();
         for _ in 0..nonce_len + 4 {
             // + 4 because of s_rlp1, s_rlp2, c_rlp1, c_rlp2
-            mult_diff_s *= mpt_config.acc_r;
+            mult_diff_s *= mpt_config.randomness;
         }
 
         // It's easier to constrain (in account_leaf_nonce_balance.rs)
@@ -950,7 +950,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
 
         let mut mult_diff_c = F::one();
         for _ in 0..balance_len {
-            mult_diff_c *= mpt_config.acc_r;
+            mult_diff_c *= mpt_config.randomness;
         }
 
         mpt_config

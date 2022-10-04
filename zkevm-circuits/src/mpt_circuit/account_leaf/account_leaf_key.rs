@@ -677,7 +677,7 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
         let key_len = (row.get_byte(2) - 128) as usize;
         for b in row.bytes.iter().take(3 + key_len) {
             acc += F::from(*b as u64) * acc_mult;
-            acc_mult *= mpt_config.acc_r;
+            acc_mult *= mpt_config.randomness;
         }
 
         if row.get_type() == MptWitnessRowType::AccountLeafKeyS {

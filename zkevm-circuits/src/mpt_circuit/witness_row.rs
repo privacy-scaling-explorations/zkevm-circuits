@@ -519,8 +519,8 @@ impl<F: FieldExt> MptWitnessRow<F> {
         pv: &ProofValues<F>,
         offset: usize,
     ) -> Result<(), Error> {
-        let s_root_rlc = bytes_into_rlc(self.s_root_bytes(), mpt_config.acc_r);
-        let c_root_rlc = bytes_into_rlc(self.c_root_bytes(), mpt_config.acc_r);
+        let s_root_rlc = bytes_into_rlc(self.s_root_bytes(), mpt_config.randomness);
+        let c_root_rlc = bytes_into_rlc(self.c_root_bytes(), mpt_config.randomness);
 
         region.assign_advice(
             || "inter start root",
@@ -548,7 +548,7 @@ impl<F: FieldExt> MptWitnessRow<F> {
             prevent omitting account proof (and having only storage proof
             with the appropriate address RLC)
             */
-            let address_rlc = bytes_into_rlc(self.address_bytes(), mpt_config.acc_r);
+            let address_rlc = bytes_into_rlc(self.address_bytes(), mpt_config.randomness);
 
             region.assign_advice(
                 || "address RLC",

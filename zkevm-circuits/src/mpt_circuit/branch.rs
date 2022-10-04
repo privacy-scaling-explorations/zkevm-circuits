@@ -136,7 +136,7 @@ impl<F: FieldExt> BranchConfig<F> {
         branch: BranchCols<F>,
         denoter: DenoteCols<F>,
         fixed_table: [Column<Fixed>; 3],
-        acc_r: F,
+        randomness: Expression<F>,
     ) -> Self {
         let config = BranchConfig {
             _marker: PhantomData,
@@ -648,8 +648,8 @@ impl<F: FieldExt> BranchConfig<F> {
                 for column in c_main.bytes.iter() {
                     c_hash.push(meta.query_advice(*column, Rotation(-15+ind)));
                 }
-                let s_hash_rlc = bytes_expr_into_rlc(&s_hash, acc_r);
-                let c_hash_rlc = bytes_expr_into_rlc(&c_hash, acc_r);
+                let s_hash_rlc = bytes_expr_into_rlc(&s_hash, randomness.clone());
+                let c_hash_rlc = bytes_expr_into_rlc(&c_hash, randomness.clone());
 
                 let is_modified = meta.query_advice(branch.is_modified, Rotation(-15+ind));
                 let is_at_drifted_pos = meta.query_advice(branch.is_at_drifted_pos, Rotation(-15+ind));
@@ -974,8 +974,8 @@ impl<F: FieldExt> BranchConfig<F> {
         let mut c_hash = witness[offset + 1 + pv.modified_node as usize]
             .c_hash_bytes()
             .to_vec();
-        pv.s_mod_node_hash_rlc = bytes_into_rlc(&s_hash, mpt_config.acc_r);
-        pv.c_mod_node_hash_rlc = bytes_into_rlc(&c_hash, mpt_config.acc_r);
+        pv.s_mod_node_hash_rlc = bytes_into_rlc(&s_hash, mpt_config.randomness);
+        pv.c_mod_node_hash_rlc = bytes_into_rlc(&c_hash, mpt_config.randomness);
 
         if row.get_byte(IS_BRANCH_S_PLACEHOLDER_POS) == 1 {
             // We put hash of a node that moved down to the added branch.
@@ -983,7 +983,7 @@ impl<F: FieldExt> BranchConfig<F> {
             s_hash = witness[offset + 1 + pv.drifted_pos as usize]
                 .s_hash_bytes()
                 .to_vec();
-            pv.s_mod_node_hash_rlc = bytes_into_rlc(&s_hash, mpt_config.acc_r);
+            pv.s_mod_node_hash_rlc = bytes_into_rlc(&s_hash, mpt_config.randomness);
             pv.is_branch_s_placeholder = true
         } else {
             pv.is_branch_s_placeholder = false
@@ -992,7 +992,7 @@ impl<F: FieldExt> BranchConfig<F> {
             c_hash = witness[offset + 1 + pv.drifted_pos as usize]
                 .c_hash_bytes()
                 .to_vec();
-            pv.c_mod_node_hash_rlc = bytes_into_rlc(&c_hash, mpt_config.acc_r);
+            pv.c_mod_node_hash_rlc = bytes_into_rlc(&c_hash, mpt_config.randomness);
             pv.is_branch_c_placeholder = true
         } else {
             pv.is_branch_c_placeholder = false
@@ -1032,18 +1032,18 @@ impl<F: FieldExt> BranchConfig<F> {
 
         let s_len = [0, 1, 2].map(|i| row.get_byte(BRANCH_0_S_START + i) as u64);
         pv.acc_s = F::from(s_len[0]);
-        pv.acc_mult_s = mpt_config.acc_r;
+        pv.acc_mult_s = mpt_config.randomness;
 
         if s_len[0] == 249 {
             pv.acc_s += F::from(s_len[1]) * pv.acc_mult_s;
-            pv.acc_mult_s *= mpt_config.acc_r;
+            pv.acc_mult_s *= mpt_config.randomness;
             pv.acc_s += F::from(s_len[2]) * pv.acc_mult_s;
-            pv.acc_mult_s *= mpt_config.acc_r;
+            pv.acc_mult_s *= mpt_config.randomness;
 
             pv.rlp_len_rem_s = s_len[1] as i32 * 256 + s_len[2] as i32;
         } else if s_len[0] == 248 {
             pv.acc_s += F::from(s_len[1]) * pv.acc_mult_s;
-            pv.acc_mult_s *= mpt_config.acc_r;
+            pv.acc_mult_s *= mpt_config.randomness;
 
             pv.rlp_len_rem_s = s_len[1] as i32;
         } else {
@@ -1052,18 +1052,18 @@ impl<F: FieldExt> BranchConfig<F> {
 
         let c_len = [0, 1, 2].map(|i| row.get_byte(BRANCH_0_C_START + i) as u64);
         pv.acc_c = F::from(c_len[0]);
-        pv.acc_mult_c = mpt_config.acc_r;
+        pv.acc_mult_c = mpt_config.randomness;
 
         if c_len[0] == 249 {
             pv.acc_c += F::from(c_len[1]) * pv.acc_mult_c;
-            pv.acc_mult_c *= mpt_config.acc_r;
+            pv.acc_mult_c *= mpt_config.randomness;
             pv.acc_c += F::from(c_len[2]) * pv.acc_mult_c;
-            pv.acc_mult_c *= mpt_config.acc_r;
+            pv.acc_mult_c *= mpt_config.randomness;
 
             pv.rlp_len_rem_c = c_len[1] as i32 * 256 + c_len[2] as i32;
         } else if c_len[0] == 248 {
             pv.acc_c += F::from(c_len[1]) * pv.acc_mult_c;
-            pv.acc_mult_c *= mpt_config.acc_r;
+            pv.acc_mult_c *= mpt_config.randomness;
 
             pv.rlp_len_rem_c = c_len[1] as i32;
         } else {
@@ -1148,7 +1148,7 @@ impl<F: FieldExt> BranchConfig<F> {
             let len = row.get_byte(S_START) as i32 - 192;
             pv.rlp_len_rem_s -= len + 1;
             for _ in 0..len {
-                node_mult_diff_s *= mpt_config.acc_r;
+                node_mult_diff_s *= mpt_config.randomness;
             }
         } else if row.get_byte(S_RLP_START + 1) == 0 {
             pv.rlp_len_rem_s -= 1;
@@ -1159,7 +1159,7 @@ impl<F: FieldExt> BranchConfig<F> {
             let len = row.get_byte(C_START) as i32 - 192;
             pv.rlp_len_rem_c -= len + 1;
             for _ in 0..len {
-                node_mult_diff_c *= mpt_config.acc_r;
+                node_mult_diff_c *= mpt_config.randomness;
             }
         } else if row.get_byte(C_RLP_START + 1) == 0 {
             pv.rlp_len_rem_c -= 1;
@@ -1215,7 +1215,7 @@ impl<F: FieldExt> BranchConfig<F> {
                         );
                         pv.mult_diff = F::one();
                         for _ in 0..key_len {
-                            pv.mult_diff *= mpt_config.acc_r;
+                            pv.mult_diff *= mpt_config.randomness;
                         }
                         pv.key_rlc = pv.extension_node_rlc;
                         // branch part:
@@ -1244,8 +1244,8 @@ impl<F: FieldExt> BranchConfig<F> {
                             );
                             pv.extension_node_rlc += F::from(first_nibble as u64) * pv.key_rlc_mult;
 
-                            pv.key_rlc_mult *= mpt_config.acc_r;
-                            pv.mult_diff *= mpt_config.acc_r;
+                            pv.key_rlc_mult *= mpt_config.randomness;
+                            pv.mult_diff *= mpt_config.randomness;
 
                             pv.extension_node_rlc +=
                                 F::from(second_nibble as u64) * F::from(16) * pv.key_rlc_mult;
@@ -1254,7 +1254,7 @@ impl<F: FieldExt> BranchConfig<F> {
                         pv.key_rlc = pv.extension_node_rlc;
                         // branch part:
                         pv.key_rlc += F::from(pv.modified_node as u64) * pv.key_rlc_mult;
-                        pv.key_rlc_mult *= mpt_config.acc_r;
+                        pv.key_rlc_mult *= mpt_config.randomness;
                     } else if pv.is_short {
                         pv.extension_node_rlc += F::from((ext_row.get_byte(1) - 16) as u64)
                             * F::from(16)
@@ -1262,8 +1262,8 @@ impl<F: FieldExt> BranchConfig<F> {
                         pv.key_rlc = pv.extension_node_rlc;
                         // branch part:
                         pv.key_rlc += F::from(pv.modified_node as u64) * pv.key_rlc_mult;
-                        pv.key_rlc_mult *= mpt_config.acc_r;
-                        pv.mult_diff = mpt_config.acc_r;
+                        pv.key_rlc_mult *= mpt_config.randomness;
+                        pv.mult_diff = mpt_config.randomness;
                     }
                 } else if pv.is_even && pv.is_long {
                     // extension node part:
@@ -1281,8 +1281,8 @@ impl<F: FieldExt> BranchConfig<F> {
                         );
                         pv.extension_node_rlc += F::from(first_nibble as u64) * pv.key_rlc_mult;
 
-                        pv.key_rlc_mult *= mpt_config.acc_r;
-                        pv.mult_diff *= mpt_config.acc_r;
+                        pv.key_rlc_mult *= mpt_config.randomness;
+                        pv.mult_diff *= mpt_config.randomness;
 
                         pv.extension_node_rlc +=
                             F::from(16) * F::from(second_nibble as u64) * pv.key_rlc_mult;
@@ -1291,14 +1291,14 @@ impl<F: FieldExt> BranchConfig<F> {
                     pv.key_rlc = pv.extension_node_rlc;
                     // branch part:
                     pv.key_rlc += F::from(pv.modified_node as u64) * pv.key_rlc_mult;
-                    pv.key_rlc_mult *= mpt_config.acc_r;
+                    pv.key_rlc_mult *= mpt_config.randomness;
                     pv.key_rlc_sel = !pv.key_rlc_sel;
                 } else if pv.is_odd && pv.is_long {
                     pv.extension_node_rlc +=
                         F::from((ext_row.get_byte(key_len_pos + 1) - 16) as u64)
                             * pv.key_rlc_mult;
 
-                    pv.key_rlc_mult *= mpt_config.acc_r;
+                    pv.key_rlc_mult *= mpt_config.randomness;
 
                     let key_len = ext_row.get_byte(key_len_pos) as usize - 128;
 
@@ -1314,7 +1314,7 @@ impl<F: FieldExt> BranchConfig<F> {
                     );
                     pv.mult_diff = F::one();
                     for _ in 0..key_len {
-                        pv.mult_diff *= mpt_config.acc_r;
+                        pv.mult_diff *= mpt_config.randomness;
                     }
                     pv.key_rlc = pv.extension_node_rlc;
                     // branch part:
@@ -1327,11 +1327,11 @@ impl<F: FieldExt> BranchConfig<F> {
 
                     pv.key_rlc = pv.extension_node_rlc;
 
-                    pv.key_rlc_mult *= mpt_config.acc_r;
+                    pv.key_rlc_mult *= mpt_config.randomness;
                     // branch part:
                     pv.key_rlc +=
                         F::from(pv.modified_node as u64) * F::from(16) * pv.key_rlc_mult;
-                    pv.mult_diff = mpt_config.acc_r;
+                    pv.mult_diff = mpt_config.randomness;
                 }
             } else {
                 if pv.key_rlc_sel {
@@ -1339,7 +1339,7 @@ impl<F: FieldExt> BranchConfig<F> {
                     // key_rlc_mult stays the same
                 } else {
                     pv.key_rlc += F::from(pv.modified_node as u64) * pv.key_rlc_mult;
-                    pv.key_rlc_mult *= mpt_config.acc_r;
+                    pv.key_rlc_mult *= mpt_config.randomness;
                 }
                 pv.key_rlc_sel = !pv.key_rlc_sel;
             }
@@ -1397,21 +1397,21 @@ impl<F: FieldExt> BranchConfig<F> {
             |branch_acc: &mut F, branch_mult: &mut F, rlp_start: usize, start: usize| {
                 if row.get_byte(rlp_start + 1) == 0 && row.get_byte(start) == 128 {
                     *branch_acc += c128 * *branch_mult;
-                    *branch_mult *= mpt_config.acc_r;
+                    *branch_mult *= mpt_config.randomness;
                 } else if row.get_byte(rlp_start + 1) == 160 {
                     *branch_acc += c160 * *branch_mult;
-                    *branch_mult *= mpt_config.acc_r;
+                    *branch_mult *= mpt_config.randomness;
                     for i in 0..HASH_WIDTH {
                         *branch_acc += F::from(row.get_byte(start + i) as u64) * *branch_mult;
-                        *branch_mult *= mpt_config.acc_r;
+                        *branch_mult *= mpt_config.randomness;
                     }
                 } else {
                     *branch_acc += F::from(row.get_byte(start) as u64) * *branch_mult;
-                    *branch_mult *= mpt_config.acc_r;
+                    *branch_mult *= mpt_config.randomness;
                     let len = row.get_byte(start) as usize - 192;
                     for i in 0..len {
                         *branch_acc += F::from(row.get_byte(start + 1 + i) as u64) * *branch_mult;
-                        *branch_mult *= mpt_config.acc_r;
+                        *branch_mult *= mpt_config.randomness;
                     }
                 }
             };

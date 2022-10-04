@@ -111,7 +111,7 @@ impl<F: FieldExt> LeafValueConfig<F> {
         denoter: DenoteCols<F>,
         is_account_leaf_in_added_branch: Column<Advice>,
         is_s: bool,
-        acc_r: F,
+        randomness: Expression<F>,
         fixed_table: [Column<Fixed>; 3],
     ) -> Self {
         let config = LeafValueConfig {
@@ -192,11 +192,11 @@ impl<F: FieldExt> LeafValueConfig<F> {
             let s_rlp2_cur = meta.query_advice(s_main.rlp2, Rotation::cur());
 
             let mut value_rlc_long = Expression::Constant(F::zero());
-            let mut mult_long = F::one();
+            let mut mult_long = Expression::Constant(F::one());
             for col in s_main.bytes.iter() {
                 let s = meta.query_advice(*col, Rotation::cur());
-                value_rlc_long = value_rlc_long + s * mult_long;
-                mult_long *= acc_r;
+                value_rlc_long = value_rlc_long + s * mult_long.clone();
+                mult_long = mult_long * randomness.clone();
             }
 
             let leaf_value_rlc =
@@ -204,8 +204,8 @@ impl<F: FieldExt> LeafValueConfig<F> {
 
             let leaf_rlc_long = leaf_rlc_prev.clone()
                 + s_rlp1_cur.clone() * leaf_mult_prev.clone()
-                + s_rlp2_cur.clone() * leaf_mult_prev.clone() * acc_r
-                + value_rlc_long * leaf_mult_prev.clone() * acc_r * acc_r;
+                + s_rlp2_cur.clone() * leaf_mult_prev.clone() * randomness.clone()
+                + value_rlc_long * leaf_mult_prev.clone() * randomness.clone() * randomness.clone();
             let leaf_rlc = leaf_rlc_long * is_long.clone()
                 + (leaf_rlc_prev + s_rlp1_cur.clone() * leaf_mult_prev) * is_short.clone();
 
@@ -465,7 +465,7 @@ impl<F: FieldExt> LeafValueConfig<F> {
                 for column in s_main.bytes.iter() {
                     sc_hash.push(meta.query_advice(*column, Rotation(rot_into_storage_root)));
                 }
-                let hash_rlc = bytes_expr_into_rlc(&sc_hash, acc_r);
+                let hash_rlc = bytes_expr_into_rlc(&sc_hash, randomness.clone());
 
                 let mut constraints = vec![
                 (
@@ -601,7 +601,7 @@ impl<F: FieldExt> LeafValueConfig<F> {
                 for column in s_main.bytes.iter() {
                     sc_hash.push(meta.query_advice(*column, Rotation(rot_into_storage_root)));
                 }
-                let hash_rlc = bytes_expr_into_rlc(&sc_hash, acc_r);
+                let hash_rlc = bytes_expr_into_rlc(&sc_hash, randomness.clone());
 
                 let mut constraints = vec![
                 (
@@ -760,16 +760,16 @@ impl<F: FieldExt> LeafValueConfig<F> {
 
             let s_rlp1 = meta.query_advice(s_main.rlp1, Rotation::cur());
             rlc = rlc + s_rlp1 * mult.clone();
-            mult = mult * acc_r;
+            mult = mult * randomness.clone();
 
             let s_rlp2 = meta.query_advice(s_main.rlp2, Rotation::cur());
             rlc = rlc + s_rlp2 * mult.clone();
-            mult = mult * acc_r;
+            mult = mult * randomness.clone();
 
             for col in s_main.bytes.iter() {
                 let s = meta.query_advice(*col, Rotation::cur());
                 rlc = rlc + s * mult.clone();
-                mult = mult * acc_r;
+                mult = mult * randomness.clone();
             }
 
             let mut sel = meta.query_advice(denoter.sel1, Rotation(rot));

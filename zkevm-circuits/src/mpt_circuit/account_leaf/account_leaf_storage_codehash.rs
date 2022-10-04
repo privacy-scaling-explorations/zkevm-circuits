@@ -73,7 +73,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
         is_account_leaf_storage_codehash: Column<Advice>,
         s_main: MainCols<F>,
         c_main: MainCols<F>,
-        acc_r: F,
+        randomness: Expression<F>,
         accs: AccumulatorCols<F>,
         fixed_table: [Column<Fixed>; 3],
         denoter: DenoteCols<F>,
@@ -165,7 +165,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
             for col in s_main.bytes.iter() {
                 let s = meta.query_advice(*col, Rotation::cur());
                 storage_root_rlc = storage_root_rlc + s * curr_r.clone();
-                curr_r = curr_r * acc_r;
+                curr_r = curr_r * randomness.clone();
             }
             let storage_root_stored = meta.query_advice(accs.s_mod_node_rlc, Rotation::cur());
 
@@ -180,19 +180,19 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
                 q_enable.clone() * (storage_root_rlc.clone() - storage_root_stored.clone()),
             ));
 
-            expr = expr + storage_root_rlc * acc_mult_prev.clone() * acc_r;
+            expr = expr + storage_root_rlc * acc_mult_prev.clone() * randomness.clone();
 
-            curr_r = curr_r * acc_mult_prev * acc_r;
+            curr_r = curr_r * acc_mult_prev * randomness.clone();
 
             expr = expr + c_rlp2 * curr_r.clone();
-            let old_curr_r = curr_r * acc_r;
+            let old_curr_r = curr_r * randomness.clone();
 
             curr_r = one.clone();
             let mut codehash_rlc = Expression::Constant(F::zero());
             for col in c_main.bytes.iter() {
                 let c = meta.query_advice(*col, Rotation::cur());
                 codehash_rlc = codehash_rlc + c * curr_r.clone();
-                curr_r = curr_r * acc_r;
+                curr_r = curr_r * randomness.clone();
             }
             let codehash_stored = meta.query_advice(accs.c_mod_node_rlc, Rotation::cur());
 

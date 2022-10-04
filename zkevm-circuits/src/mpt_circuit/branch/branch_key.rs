@@ -115,7 +115,7 @@ impl<F: FieldExt> BranchKeyConfig<F> {
         is_account_leaf_in_added_branch: Column<Advice>,
         s_main: MainCols<F>,
         acc_pair: AccumulatorPair<F>, // used first for account address, then for storage key
-        acc_r: F,
+        randomness: Expression<F>,
     ) -> Self {
         let config = BranchKeyConfig {
             _marker: PhantomData,
@@ -258,7 +258,7 @@ impl<F: FieldExt> BranchKeyConfig<F> {
                     * (one.clone() - is_account_leaf_in_added_branch_prev.clone()) // When this is 0, we check as for the first level key rlc.
                     * (one.clone() - is_extension_node.clone())
                     * sel2_cur.clone()
-                    * (key_rlc_mult_cur.clone() - key_rlc_mult_prev * acc_r),
+                    * (key_rlc_mult_cur.clone() - key_rlc_mult_prev * randomness),
             ));
 
             /*

@@ -89,7 +89,7 @@ impl<F: FieldExt> BranchInitConfig<F> {
         q_enable: impl Fn(&mut VirtualCells<'_, F>) -> Expression<F> + Copy,
         s_main: MainCols<F>,
         accs: AccumulatorCols<F>,
-        acc_r: F,
+        randomness: Expression<F>,
         fixed_table: [Column<Fixed>; 3],
     ) -> Self {
         let config = BranchInitConfig {
@@ -159,7 +159,6 @@ impl<F: FieldExt> BranchInitConfig<F> {
             let c_rlp2 = meta.query_advice(s_main.bytes[6], Rotation::cur());
             let c_rlp3 = meta.query_advice(s_main.bytes[7], Rotation::cur());
 
-            let mult_one = Expression::Constant(acc_r);
             constraints.push((
                 "Branch accumulator S row 0 (1)",
                 q_enable.clone()
@@ -168,7 +167,7 @@ impl<F: FieldExt> BranchInitConfig<F> {
             ));
             constraints.push((
                 "Branch mult S row 0 (1)",
-                q_enable.clone() * one_rlp_byte_s * (mult_one.clone() - branch_mult_s_cur.clone()),
+                q_enable.clone() * one_rlp_byte_s * (randomness.clone() - branch_mult_s_cur.clone()),
             ));
             constraints.push((
                 "Branch accumulator C row 0 (1)",
@@ -178,55 +177,53 @@ impl<F: FieldExt> BranchInitConfig<F> {
             ));
             constraints.push((
                 "Branch mult C row 0 (1)",
-                q_enable.clone() * one_rlp_byte_c * (mult_one - branch_mult_s_cur.clone()),
+                q_enable.clone() * one_rlp_byte_c * (randomness.clone() - branch_mult_s_cur.clone()),
             ));
 
-            let acc_s_two = s_rlp1.clone() + s_rlp2.clone() * acc_r;
+            let acc_s_two = s_rlp1.clone() + s_rlp2.clone() * randomness.clone();
             constraints.push((
                 "Branch accumulator S row 0 (2)",
                 q_enable.clone() * two_rlp_bytes_s.clone() * (acc_s_two - branch_acc_s_cur.clone()),
             ));
 
-            let mult_s_two = Expression::Constant(acc_r * acc_r);
+            let mult_two = randomness.clone() * randomness.clone();
             constraints.push((
                 "Branch mult S row 0 (2)",
-                q_enable.clone() * two_rlp_bytes_s * (mult_s_two - branch_mult_s_cur.clone()),
+                q_enable.clone() * two_rlp_bytes_s * (mult_two.clone() - branch_mult_s_cur.clone()),
             ));
 
-            let acc_c_two = c_rlp1.clone() + c_rlp2.clone() * acc_r;
+            let acc_c_two = c_rlp1.clone() + c_rlp2.clone() * randomness.clone();
             constraints.push((
                 "Branch accumulator C row 0 (2)",
                 q_enable.clone() * two_rlp_bytes_c.clone() * (acc_c_two - branch_acc_c_cur.clone()),
             ));
 
-            let mult_c_two = Expression::Constant(acc_r * acc_r);
             constraints.push((
                 "Branch mult C row 0 (2)",
-                q_enable.clone() * two_rlp_bytes_c * (mult_c_two - branch_mult_c_cur.clone()),
+                q_enable.clone() * two_rlp_bytes_c * (mult_two - branch_mult_c_cur.clone()),
             ));
 
-            let acc_s_three = s_rlp1 + s_rlp2 * acc_r + s_rlp3 * acc_r * acc_r;
+            let acc_s_three = s_rlp1 + s_rlp2 * randomness.clone() + s_rlp3 * randomness.clone() * randomness.clone();
             constraints.push((
                 "Branch accumulator S row 0 (3)",
                 q_enable.clone() * three_rlp_bytes_s.clone() * (acc_s_three - branch_acc_s_cur),
             ));
 
-            let mult_s_three = Expression::Constant(acc_r * acc_r * acc_r);
+            let mult_three = randomness.clone() * randomness.clone() * randomness.clone();
             constraints.push((
                 "Branch mult S row 0 (3)",
-                q_enable.clone() * three_rlp_bytes_s * (mult_s_three - branch_mult_s_cur),
+                q_enable.clone() * three_rlp_bytes_s * (mult_three.clone() - branch_mult_s_cur),
             ));
 
-            let acc_c_three = c_rlp1 + c_rlp2 * acc_r + c_rlp3 * acc_r * acc_r;
+            let acc_c_three = c_rlp1 + c_rlp2 * randomness.clone() + c_rlp3 * randomness.clone() * randomness.clone();
             constraints.push((
                 "Branch accumulator C row 0 (3)",
                 q_enable.clone() * three_rlp_bytes_c.clone() * (acc_c_three - branch_acc_c_cur),
             ));
 
-            let mult_c_three = Expression::Constant(acc_r * acc_r * acc_r);
             constraints.push((
                 "Branch mult C row 0 (3)",
-                q_enable * three_rlp_bytes_c * (mult_c_three - branch_mult_c_cur),
+                q_enable * three_rlp_bytes_c * (mult_three - branch_mult_c_cur),
             ));
 
             constraints

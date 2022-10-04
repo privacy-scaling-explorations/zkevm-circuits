@@ -46,6 +46,8 @@ use param::{
 };
 use selectors::SelectorsConfig;
 
+use crate::util::power_of_randomness_from_instance;
+
 /*
     MPT circuit contains S and C columns (other columns are mostly selectors).
 
@@ -87,7 +89,6 @@ pub struct MPTConfig<F> {
     pub(crate) account_leaf: AccountLeafCols<F>,
     pub(crate) storage_leaf: StorageLeafCols<F>,
     pub(crate) denoter: DenoteCols<F>,
-    pub(crate) acc_r: F,
     keccak_table: [Column<Fixed>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
     fixed_table: [Column<Fixed>; 3],
     pub(crate) address_rlc: Column<Advice>, /* The same in all rows of a modification. The same
@@ -113,6 +114,7 @@ pub struct MPTConfig<F> {
     storage_leaf_value_s: LeafValueConfig<F>,
     storage_leaf_value_c: LeafValueConfig<F>,
     storage_leaf_key_in_added_branch: LeafKeyInAddedBranchConfig<F>,
+    pub(crate) randomness: F,
 }
 
 /// Enumerator to determine the type of row in the fixed table.
@@ -207,7 +209,9 @@ impl<F: FieldExt> ProofValues<F> {
 impl<F: FieldExt> MPTConfig<F> {
     /// Configure MPT Circuit
     pub fn configure(meta: &mut ConstraintSystem<F>) -> Self {
-        let _pub_root = meta.instance_column();
+        // let _pub_root = meta.instance_column();
+        let power_of_randomness: [Expression<F>; HASH_WIDTH] = power_of_randomness_from_instance(meta);
+
         let inter_start_root = meta.advice_column(); // state root before modification - first level S hash needs to be the same as
                                                      // start_root (works also if only storage proof, without account proof, but if
                                                      // this is to be allowed LeafKeyChip needs to be changed - careful with q_enable
@@ -221,25 +225,7 @@ impl<F: FieldExt> MPTConfig<F> {
 
         let position_cols = PositionCols::new(meta);
 
-        // having 2 to enable key RLC check (not using 1 to enable proper checks of mult
-        // too) TODO: generate from commitments
-        let acc_r = F::one() + F::one(); // Note: it needs to be set to the same value in test
-
-        let one = Expression::Constant(F::one());
-        let mut r_table = vec![];
-        let mut r = one;
-        for _ in 0..HASH_WIDTH {
-            r = r * acc_r;
-            r_table.push(r.clone());
-        }
-
-        // TODO: r_table constraints
-
-        // TODO: in many cases different rotations can be used - for example, when
-        // getting back into s_mod_node_hash_rlc or c_mod_node_hash_rlc to get
-        // the hash (all 16 branch children contain the same hash in
-        // s_mod_node_hash_rlc and c_mod_node_hash_rlc), so we can choose the
-        // rotations smartly to have at least as possible of them
+        let r_table = power_of_randomness.to_vec();
 
         let proof_type = ProofTypeCols::new(meta);
         let account_leaf = AccountLeafCols::new(meta);
@@ -269,11 +255,11 @@ impl<F: FieldExt> MPTConfig<F> {
         At some point (but we do not know this point at compile time), the key ends
         and from there on the values in the row need to be 0s.
         However, if we are computing the RLC using little endian:
-        `rlc = rlc + row[i] * acc_r`,
+        `rlc = rlc + row[i] * r`,
         `rlc` will stay the same once r[i] = 0.
         If big endian would be used:
-        `rlc = rlc * acc_r + row[i]`,
-        `rlc` would be multiplied by `acc_r` when `row[i] = 0`.
+        `rlc = rlc * r + row[i]`,
+        `rlc` would be multiplied by `r` when `row[i] = 0`.
 
         However, we need to ensure there are truly 0s after the RLP stream ends, this is done
         by `key_len_lookup` calls.
@@ -326,7 +312,7 @@ impl<F: FieldExt> MPTConfig<F> {
             branch.clone(),
             denoter.clone(),
             fixed_table,
-            acc_r,
+            power_of_randomness[0].clone(),
         );
 
         BranchKeyConfig::<F>::configure(
@@ -336,7 +322,7 @@ impl<F: FieldExt> MPTConfig<F> {
             account_leaf.is_in_added_branch,
             s_main.clone(),
             accumulators.key.clone(),
-            acc_r,
+            power_of_randomness[0].clone(),
         );
 
         BranchParallelConfig::<F>::configure(
@@ -368,7 +354,7 @@ impl<F: FieldExt> MPTConfig<F> {
             s_main.clone(),
             accumulators.clone(),
             keccak_table,
-            acc_r,
+            power_of_randomness[0].clone(),
             true,
         );
 
@@ -381,7 +367,7 @@ impl<F: FieldExt> MPTConfig<F> {
             s_main.clone(),
             accumulators.clone(),
             keccak_table,
-            acc_r,
+            power_of_randomness[0].clone(),
             false,
         );
 
@@ -405,7 +391,7 @@ impl<F: FieldExt> MPTConfig<F> {
             keccak_table,
             r_table.clone(),
             true,
-            acc_r,
+            power_of_randomness[0].clone(),
         );
 
         let ext_node_config_c = ExtensionNodeConfig::<F>::configure(
@@ -428,7 +414,7 @@ impl<F: FieldExt> MPTConfig<F> {
             keccak_table,
             r_table.clone(),
             false,
-            acc_r,
+            power_of_randomness[0].clone(),
         );
 
         ExtensionNodeKeyConfig::<F>::configure(
@@ -451,7 +437,7 @@ impl<F: FieldExt> MPTConfig<F> {
             },
             s_main.clone(),
             accumulators.clone(),
-            acc_r,
+            power_of_randomness[0].clone(),
             fixed_table,
         );
 
@@ -562,7 +548,7 @@ impl<F: FieldExt> MPTConfig<F> {
             denoter.clone(),
             account_leaf.is_in_added_branch,
             true,
-            acc_r,
+            power_of_randomness[0].clone(),
             fixed_table,
         );
 
@@ -576,7 +562,7 @@ impl<F: FieldExt> MPTConfig<F> {
             denoter.clone(),
             account_leaf.is_in_added_branch,
             false,
-            acc_r,
+            power_of_randomness[0].clone(),
             fixed_table,
         );
 
@@ -687,7 +673,7 @@ impl<F: FieldExt> MPTConfig<F> {
             account_leaf.is_storage_codehash_s,
             s_main.clone(),
             c_main.clone(),
-            acc_r,
+            power_of_randomness[0].clone(),
             accumulators.clone(),
             fixed_table,
             denoter.clone(),
@@ -703,7 +689,7 @@ impl<F: FieldExt> MPTConfig<F> {
             account_leaf.is_storage_codehash_c,
             s_main.clone(),
             c_main.clone(),
-            acc_r,
+            power_of_randomness[0].clone(),
             accumulators.clone(),
             fixed_table,
             denoter.clone(),
@@ -732,6 +718,7 @@ impl<F: FieldExt> MPTConfig<F> {
             keccak_table,
         );
 
+        let randomness = F::zero();
         MPTConfig {
             proof_type,
             position_cols,
@@ -743,7 +730,6 @@ impl<F: FieldExt> MPTConfig<F> {
             account_leaf,
             storage_leaf,
             accumulators,
-            acc_r,
             denoter,
             keccak_table,
             fixed_table,
@@ -764,6 +750,7 @@ impl<F: FieldExt> MPTConfig<F> {
             storage_leaf_value_s,
             storage_leaf_value_c,
             storage_leaf_key_in_added_branch,
+            randomness,
         }
     }
 
@@ -778,7 +765,7 @@ impl<F: FieldExt> MPTConfig<F> {
         // If odd number of nibbles, we have nibble+48 in s_advices[0].
         if !even_num_of_nibbles {
             *key_rlc += F::from((row[start + 1] - 48) as u64) * *key_rlc_mult;
-            *key_rlc_mult *= self.acc_r;
+            *key_rlc_mult *= self.randomness;
 
             let len = row[start] as usize - 128;
             self.compute_acc_and_mult(
@@ -811,7 +798,7 @@ impl<F: FieldExt> MPTConfig<F> {
     ) {
         for i in 0..len {
             *acc += F::from(row[start + i] as u64) * *mult;
-            *mult *= self.acc_r;
+            *mult *= self.randomness;
         }
     }
 
@@ -1250,7 +1237,7 @@ impl<F: FieldExt> MPTConfig<F> {
 
                     for (_, i) in t.iter().enumerate() {
                         rlc += F::from(*i as u64) * mult;
-                        mult *= self.acc_r;
+                        mult *= self.randomness;
                     }
 
                     region.assign_fixed(
@@ -1260,7 +1247,7 @@ impl<F: FieldExt> MPTConfig<F> {
                         || Value::known(rlc),
                     )?;
 
-                    let hash_rlc = bytes_into_rlc(&hash, self.acc_r);
+                    let hash_rlc = bytes_into_rlc(&hash, self.randomness);
                     region.assign_fixed(
                         || "Keccak table",
                         self.keccak_table[1],
@@ -1301,7 +1288,7 @@ impl<F: FieldExt> MPTConfig<F> {
                         offset,
                         || Value::known(mult),
                     )?;
-                    mult *= self.acc_r;
+                    mult *= self.randomness;
 
                     offset += 1;
                 }
@@ -1381,7 +1368,7 @@ mod tests {
             Circuit,
             ConstraintSystem, Error,
         },
-        halo2curves::{bn256::Fr},
+        halo2curves::bn256::Fr,
     };
     use eth_types::Field;
     
@@ -1393,6 +1380,7 @@ mod tests {
         struct MyCircuit<F> {
             _marker: PhantomData<F>,
             witness: Vec<Vec<u8>>,
+            randomness: F,
         }
 
         impl<F: Field> Circuit<F> for MyCircuit<F> {
@@ -1409,7 +1397,7 @@ mod tests {
 
             fn synthesize(
                 &self,
-                config: Self::Config,
+                mut config: Self::Config,
                 mut layouter: impl Layouter<F>,
             ) -> Result<(), Error> {
                 let mut to_be_hashed = vec![];
@@ -1424,6 +1412,7 @@ mod tests {
                     }
                 }
 
+                config.randomness = self.randomness;
                 config.load(&mut layouter, to_be_hashed)?;
                 config.assign(layouter, &witness_rows);
 
@@ -1451,13 +1440,10 @@ mod tests {
                 let file = std::fs::File::open(path.clone());
                 let reader = std::io::BufReader::new(file.unwrap());
                 let w: Vec<Vec<u8>> = serde_json::from_reader(reader).unwrap();
-                let circuit = MyCircuit::<Fr> {
-                    _marker: PhantomData,
-                    witness: w.clone(),
-                };
-
+ 
                 let mut pub_root = vec![];
                 let acc_r = Fr::one() + Fr::one();
+                let mut count = 0;
                 for row in w.iter().filter(|r| r[r.len() - 1] != 5) {
                     let l = row.len();
                     let pub_root_rlc = bytes_into_rlc(
@@ -1467,10 +1453,24 @@ mod tests {
                     );
 
                     pub_root.push(pub_root_rlc);
+                    count += 1;
                 }
+                // TODO: add pub_root to instances
+                
+                let randomness = Fr::one() + Fr::one();
+                let instance: Vec<Vec<Fr>> = (1..HASH_WIDTH+1)
+                    .map(|exp| vec![randomness.pow(&[exp as u64, 0, 0, 0]); count])
+                    .collect();
+
+                let circuit = MyCircuit::<Fr> {
+                    _marker: PhantomData,
+                    witness: w.clone(),
+                    randomness,
+                };
 
                 println!("{:?}", path);
-                let prover = MockProver::run(9, &circuit, vec![pub_root]).unwrap();
+                // let prover = MockProver::run(9, &circuit, vec![pub_root]).unwrap();
+                let prover = MockProver::run(9, &circuit, instance).unwrap();
                 assert_eq!(prover.verify(), Ok(()));
 
                 /*

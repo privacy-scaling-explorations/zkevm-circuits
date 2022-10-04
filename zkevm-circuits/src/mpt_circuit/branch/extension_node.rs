@@ -164,7 +164,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
         keccak_table: [Column<Fixed>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
         r_table: Vec<Expression<F>>,
         is_s: bool,
-        acc_r: F,
+        randomness: Expression<F>,
     ) -> Self {
         let config = ExtensionNodeConfig {
             _marker: PhantomData,
@@ -787,7 +787,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
             for column in c_main.bytes.iter() {
                 sc_hash.push(meta.query_advice(*column, Rotation::cur()));
             }
-            let hash_rlc = bytes_expr_into_rlc(&sc_hash, acc_r);
+            let hash_rlc = bytes_expr_into_rlc(&sc_hash, randomness.clone());
             constraints.push((
                 q_not_first
                     * q_enable
@@ -825,7 +825,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                 for column in c_main.bytes.iter() {
                     branch_in_ext.push(meta.query_advice(*column, Rotation::cur()));
                 }
-                let rlc = bytes_expr_into_rlc(&branch_in_ext, acc_r);
+                let rlc = bytes_expr_into_rlc(&branch_in_ext, randomness.clone());
 
                 /*
                 Check whether branch is in extension node row (non-hashed branch) -
@@ -976,7 +976,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                         ));
                     }
                 }
-                let hash_rlc = bytes_expr_into_rlc(&sc_hash, acc_r);
+                let hash_rlc = bytes_expr_into_rlc(&sc_hash, randomness.clone());
 
                 let mut constraints = vec![(
                     not_first_level.clone()

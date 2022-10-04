@@ -85,7 +85,7 @@ impl<F: FieldExt> BranchHashInParentConfig<F> {
         s_main: MainCols<F>,
         accs: AccumulatorCols<F>,
         keccak_table: [Column<Fixed>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
-        acc_r: F,
+        randomness: Expression<F>,
         is_s: bool,
     ) -> Self {
         let config = BranchHashInParentConfig {
@@ -229,7 +229,7 @@ impl<F: FieldExt> BranchHashInParentConfig<F> {
                         ));
                     }
                 }
-                let hash_rlc = bytes_expr_into_rlc(&sc_hash, acc_r);
+                let hash_rlc = bytes_expr_into_rlc(&sc_hash, randomness);
                 let mut constraints = vec![(
                     not_first_level.clone()
                         * (one.clone() - is_extension_node.clone())

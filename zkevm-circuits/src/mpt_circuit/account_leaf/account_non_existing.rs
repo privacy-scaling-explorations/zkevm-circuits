@@ -453,11 +453,11 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
         let key_len = row_prev.get_byte(2) as usize - 128;
         let mut sum = F::zero();
         let mut sum_prev = F::zero();
-        let mut mult = mpt_config.acc_r;
+        let mut mult = mpt_config.randomness;
         for i in 0..key_len {
             sum += F::from(row.get_byte(3 + i) as u64) * mult;
             sum_prev += F::from(row_prev.get_byte(3 + i) as u64) * mult;
-            mult *= mpt_config.acc_r;
+            mult *= mpt_config.randomness;
         }
         let mut diff_inv = F::zero();
         if sum != sum_prev {
