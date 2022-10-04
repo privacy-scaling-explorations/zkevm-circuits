@@ -23,7 +23,7 @@ use crate::{
 
 use crate::mpt_circuit::param::{
     HASH_WIDTH, IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS, KECCAK_INPUT_WIDTH,
-    KECCAK_OUTPUT_WIDTH, RLP_NUM, R_TABLE_LEN,
+    KECCAK_OUTPUT_WIDTH, RLP_NUM, POWER_OF_RANDOMNESS_LEN,
 };
 
 /*
@@ -73,7 +73,7 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
                                    * in extension_node_key */
         drifted_pos: Column<Advice>,
         denoter: DenoteCols<F>,
-        r_table: Vec<Expression<F>>,
+        power_of_randomness: [Expression<F>; HASH_WIDTH],
         fixed_table: [Column<Fixed>; 3],
         keccak_table: [Column<Fixed>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
     ) -> Self {
@@ -123,7 +123,7 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
 
                 let mut ind = 0;
                 let mut expr =
-                    s_rlp1 + meta.query_advice(s_main.rlp2, Rotation::cur()) * r_table[ind].clone();
+                    s_rlp1 + meta.query_advice(s_main.rlp2, Rotation::cur()) * power_of_randomness[ind].clone();
                 ind += 1;
 
                 expr = expr
@@ -133,15 +133,15 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
                         ind,
                         one.clone(),
                         0,
-                        r_table.clone(),
+                        power_of_randomness.clone(),
                     );
 
                 let c_rlp1 = meta.query_advice(c_main.rlp1, Rotation::cur());
                 let c_rlp2 = meta.query_advice(c_main.rlp2, Rotation::cur());
                 expr =
-                    expr + c_rlp1 * r_table[R_TABLE_LEN - 1].clone() * r_table[1].clone();
+                    expr + c_rlp1 * power_of_randomness[POWER_OF_RANDOMNESS_LEN - 1].clone() * power_of_randomness[1].clone();
                 expr =
-                    expr + c_rlp2 * r_table[R_TABLE_LEN - 1].clone() * r_table[2].clone();
+                    expr + c_rlp2 * power_of_randomness[POWER_OF_RANDOMNESS_LEN - 1].clone() * power_of_randomness[2].clone();
 
                 let acc = meta.query_advice(accs.acc_s.rlc, Rotation::cur());
 
@@ -332,7 +332,7 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
                     * is_one_nibble.clone() * is_c1.clone()
                 + branch_above_placeholder_mult.clone()
                     * is_ext_node.clone()
-                    * is_one_nibble * r_table[0].clone() * is_c16.clone()
+                    * is_one_nibble * power_of_randomness[0].clone() * is_c16.clone()
                 + branch_above_placeholder_mult * (one.clone() - is_ext_node); 
 
             /*
@@ -381,16 +381,16 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
 
             for ind in 2..HASH_WIDTH {
                 let s = meta.query_advice(s_main.bytes[ind], Rotation::cur());
-                key_rlc_mult = key_rlc_mult * r_table[0].clone();
+                key_rlc_mult = key_rlc_mult * power_of_randomness[0].clone();
                 key_rlc = key_rlc + s * key_rlc_mult.clone();
             }
 
-            key_rlc_mult = key_rlc_mult * r_table[0].clone();
+            key_rlc_mult = key_rlc_mult * power_of_randomness[0].clone();
             let c_rlp1 = meta.query_advice(c_main.rlp1, Rotation::cur());
             key_rlc = key_rlc + c_rlp1 * key_rlc_mult.clone();
 
             let c_rlp2 = meta.query_advice(c_main.rlp2, Rotation::cur());
-            key_rlc = key_rlc + c_rlp2 * key_rlc_mult * r_table[0].clone();
+            key_rlc = key_rlc + c_rlp2 * key_rlc_mult * power_of_randomness[0].clone();
 
             /*
             Note: no need to distinguish between `is_c16` and `is_c1` here as it was already
@@ -455,14 +455,14 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
             let s_rlp2_nonce = meta.query_advice(s_main.rlp2, Rotation(nonce_rot));
             let mut rind = 0;
 
-            rlc = rlc + s_rlp2_nonce * acc_mult.clone() * r_table[rind].clone();
+            rlc = rlc + s_rlp2_nonce * acc_mult.clone() * power_of_randomness[rind].clone();
             rind += 1;
 
             let c_rlp1_nonce = meta.query_advice(c_main.rlp1, Rotation(nonce_rot));
             let c_rlp2_nonce = meta.query_advice(c_main.rlp2, Rotation(nonce_rot));
-            rlc = rlc + c_rlp1_nonce * acc_mult.clone() * r_table[rind].clone();
+            rlc = rlc + c_rlp1_nonce * acc_mult.clone() * power_of_randomness[rind].clone();
             rind += 1;
-            rlc = rlc + c_rlp2_nonce * acc_mult.clone() * r_table[rind].clone();
+            rlc = rlc + c_rlp2_nonce * acc_mult.clone() * power_of_randomness[rind].clone();
             rind += 1;
 
             let mut is_nonce_long = meta.query_advice(
@@ -488,15 +488,15 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
 
             let s_advices0_nonce = meta.query_advice(s_main.bytes[0], Rotation(nonce_rot));
             let nonce_stored = meta.query_advice(accs.s_mod_node_rlc, Rotation(nonce_rot));
-            let nonce_rlc = (s_advices0_nonce + nonce_stored.clone() * r_table[0].clone())
+            let nonce_rlc = (s_advices0_nonce + nonce_stored.clone() * power_of_randomness[0].clone())
                 * is_nonce_long.clone()
                 + nonce_stored * (one.clone() - is_nonce_long);
-            rlc = rlc + nonce_rlc * r_table[rind].clone() * acc_mult.clone();
+            rlc = rlc + nonce_rlc * power_of_randomness[rind].clone() * acc_mult.clone();
 
             let c_advices0_nonce = meta.query_advice(c_main.bytes[0], Rotation(nonce_rot));
             let balance_stored = meta.query_advice(accs.c_mod_node_rlc, Rotation(nonce_rot));
             let balance_rlc = (c_advices0_nonce
-                + balance_stored.clone() * r_table[0].clone())
+                + balance_stored.clone() * power_of_randomness[0].clone())
                 * is_balance_long.clone()
                 + balance_stored * (one.clone() - is_balance_long);
             let mut curr_r = mult_diff_nonce * acc_mult;
@@ -511,15 +511,15 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
 
             let storage_root_stored =
                 meta.query_advice(accs.s_mod_node_rlc, Rotation(storage_codehash_rot));
-            curr_r = curr_r * r_table[0].clone();
+            curr_r = curr_r * power_of_randomness[0].clone();
             rlc = rlc + storage_root_stored * curr_r.clone();
 
-            curr_r = curr_r * r_table[31].clone();
+            curr_r = curr_r * power_of_randomness[31].clone();
             rlc = rlc + c_rlp2_storage * curr_r.clone();
 
             let codehash_stored =
                 meta.query_advice(accs.c_mod_node_rlc, Rotation(storage_codehash_rot));
-            rlc = rlc + codehash_stored * curr_r * r_table[0].clone();
+            rlc = rlc + codehash_stored * curr_r * power_of_randomness[0].clone();
 
             // Any rotation that lands into branch children can be used.
             let rot = -17;

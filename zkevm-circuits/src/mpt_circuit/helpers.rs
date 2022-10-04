@@ -8,7 +8,7 @@ use crate::{
     mpt_circuit::FixedTableTag,
     mpt_circuit::param::{
         HASH_WIDTH, IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS, IS_EXT_LONG_ODD_C16_POS,
-        IS_EXT_LONG_ODD_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS, RLP_NUM, R_TABLE_LEN,
+        IS_EXT_LONG_ODD_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS, RLP_NUM, POWER_OF_RANDOMNESS_LEN,
     },
 };
 
@@ -34,18 +34,18 @@ pub fn compute_rlc<F: FieldExt>(
     mut rind: usize,
     mult: Expression<F>,
     rotation: i32,
-    r_table: Vec<Expression<F>>,
+    power_of_randomness: [Expression<F>; HASH_WIDTH],
 ) -> Expression<F> {
     let mut r_wrapped = false;
     let mut rlc = Expression::Constant(F::zero());
     for col in advices.iter() {
         let s = meta.query_advice(*col, Rotation(rotation));
         if !r_wrapped {
-            rlc = rlc + s * r_table[rind].clone() * mult.clone();
+            rlc = rlc + s * power_of_randomness[rind].clone() * mult.clone();
         } else {
-            rlc = rlc + s * r_table[rind].clone() * r_table[R_TABLE_LEN - 1].clone() * mult.clone();
+            rlc = rlc + s * power_of_randomness[rind].clone() * power_of_randomness[POWER_OF_RANDOMNESS_LEN - 1].clone() * mult.clone();
         }
-        if rind == R_TABLE_LEN - 1 {
+        if rind == POWER_OF_RANDOMNESS_LEN - 1 {
             rind = 0;
             r_wrapped = true;
         } else {

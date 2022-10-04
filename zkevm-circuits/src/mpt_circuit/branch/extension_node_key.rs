@@ -106,7 +106,7 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
         c_main: MainCols<F>,
         accs: AccumulatorCols<F>, // accs.key used first for account address, then for storage key
         fixed_table: [Column<Fixed>; 3],
-        r_table: Vec<Expression<F>>,
+        power_of_randomness: [Expression<F>; HASH_WIDTH],
     ) -> Self {
         let config = ExtensionNodeKeyConfig {
             _marker: PhantomData,
@@ -299,7 +299,7 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
                 0,
                 mult_prev.clone(),
                 -1,
-                r_table.clone(),
+                power_of_randomness.clone(),
             );
 
             /*
@@ -427,7 +427,7 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
 
                 long_odd_sel2_rlc = long_odd_sel2_rlc +
                     first_nibble.clone() * mult_prev.clone() * mult.clone();
-                mult = mult * r_table[0].clone();
+                mult = mult * power_of_randomness[0].clone();
 
                 long_odd_sel2_rlc = long_odd_sel2_rlc +
                     second_nibble.clone() * c16.clone() * mult_prev.clone() * mult.clone();
@@ -480,7 +480,7 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
                     q_not_first.clone()
                         * is_ext_long_odd_c1.clone()
                         * is_extension_c_row.clone()
-                        * (key_rlc_mult_branch.clone() - mult_prev.clone() * mult_diff.clone() * r_table[0].clone())
+                        * (key_rlc_mult_branch.clone() - mult_prev.clone() * mult_diff.clone() * power_of_randomness[0].clone())
                         // mult_diff is checked in a lookup below
             ));
 
@@ -517,7 +517,7 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
                         * is_ext_short_c16.clone()
                         * is_extension_c_row.clone()
                         * (key_rlc_branch.clone() - key_rlc_ext_node_cur.clone() -
-                            c16.clone() * modified_node_cur.clone() * mult_prev.clone() * r_table[0].clone())
+                            c16.clone() * modified_node_cur.clone() * mult_prev.clone() * power_of_randomness[0].clone())
             ));
 
             /*
@@ -529,7 +529,7 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
                     q_not_first.clone()
                         * is_ext_short_c16.clone()
                         * is_extension_c_row.clone()
-                        * (key_rlc_mult_branch.clone() - mult_prev.clone() * r_table[0].clone())
+                        * (key_rlc_mult_branch.clone() - mult_prev.clone() * power_of_randomness[0].clone())
             ));
 
             /* 
@@ -588,7 +588,7 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
 
                 long_even_sel2_rlc = long_even_sel2_rlc +
                     first_nibble.clone() * mult_prev.clone() * mult.clone();
-                mult = mult * r_table[0].clone();
+                mult = mult * power_of_randomness[0].clone();
 
                 long_even_sel2_rlc = long_even_sel2_rlc +
                     second_nibble.clone() * c16.clone() * mult_prev.clone() * mult.clone();
@@ -630,7 +630,7 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
                         q_not_first.clone()
                         * after_first_level
                         * is_ext_long_even_c1
-                        * (key_rlc_mult_branch.clone() - mult_prev.clone() * mult_diff.clone() * r_table[0].clone())
+                        * (key_rlc_mult_branch.clone() - mult_prev.clone() * mult_diff.clone() * power_of_randomness[0].clone())
                         // mult_diff is checked in a lookup below
             ));
 
@@ -650,7 +650,7 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
                 0,
                 mult_prev.clone(),
                 -1,
-                r_table.clone(),
+                power_of_randomness.clone(),
             );
 
             /*
@@ -745,7 +745,7 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
                 "Short sel2 branch extension node > branch key RLC mult",
                     short
                     * sel2
-                    * (key_rlc_mult_branch - mult_prev * r_table[0].clone())
+                    * (key_rlc_mult_branch - mult_prev * power_of_randomness[0].clone())
             ));
 
             let is_extension_s_row =

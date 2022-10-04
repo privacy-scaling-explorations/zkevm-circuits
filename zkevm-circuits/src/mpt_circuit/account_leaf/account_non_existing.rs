@@ -96,7 +96,7 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
         accs: AccumulatorCols<F>,
         sel1: Column<Advice>, /* should be the same as sel2 as both parallel proofs are the same
                                * for non_existing_account_proof */
-        r_table: Vec<Expression<F>>,
+        power_of_randomness: [Expression<F>; HASH_WIDTH],
         fixed_table: [Column<Fixed>; 3],
         address_rlc: Column<Advice>,
     ) -> Self {
@@ -125,17 +125,17 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
 
                 let mut sum_check = Expression::Constant(F::zero());
                 let mut sum_prev_check = Expression::Constant(F::zero());
-                let mut mult = r_table[0].clone();
+                let mut mult = power_of_randomness[0].clone();
                 for ind in 1..HASH_WIDTH {
                     sum_check = sum_check
                         + meta.query_advice(s_main.bytes[ind], Rotation::cur()) * mult.clone();
                     sum_prev_check = sum_prev_check
                         + meta.query_advice(s_main.bytes[ind], Rotation::prev()) * mult.clone();
-                    mult = mult * r_table[0].clone();
+                    mult = mult * power_of_randomness[0].clone();
                 }
                 sum_check = sum_check + c_rlp1_cur * mult.clone();
                 sum_prev_check = sum_prev_check + c_rlp1_prev * mult.clone();
-                mult = mult * r_table[0].clone();
+                mult = mult * power_of_randomness[0].clone();
                 sum_check = sum_check + c_rlp2_cur * mult.clone();
                 sum_prev_check = sum_prev_check + c_rlp2_prev * mult;
 
@@ -219,7 +219,7 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
                 let s_advice1 = meta.query_advice(s_main.bytes[1], Rotation::cur());
                 let mut key_rlc_acc = key_rlc_acc_start
                     + (s_advice1.clone() - c48) * key_mult_start.clone() * c16.clone();
-                let mut key_mult = key_mult_start.clone() * r_table[0].clone() * c16;
+                let mut key_mult = key_mult_start.clone() * power_of_randomness[0].clone() * c16;
                 key_mult = key_mult + key_mult_start * c1.clone(); // set to key_mult_start if sel2, stays key_mult if sel1
 
                 /*
@@ -239,13 +239,13 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
 
                 for ind in 3..HASH_WIDTH {
                     let s = meta.query_advice(s_main.bytes[ind], Rotation::cur());
-                    key_rlc_acc = key_rlc_acc + s * key_mult.clone() * r_table[ind - 3].clone();
+                    key_rlc_acc = key_rlc_acc + s * key_mult.clone() * power_of_randomness[ind - 3].clone();
                 }
 
                 let c_rlp1_cur = meta.query_advice(c_main.rlp1, Rotation::cur());
                 let c_rlp2_cur = meta.query_advice(c_main.rlp2, Rotation::cur());
-                key_rlc_acc = key_rlc_acc + c_rlp1_cur.clone() * key_mult.clone() * r_table[29].clone();
-                key_rlc_acc = key_rlc_acc + c_rlp2_cur.clone() * key_mult * r_table[30].clone();
+                key_rlc_acc = key_rlc_acc + c_rlp1_cur.clone() * key_mult.clone() * power_of_randomness[29].clone();
+                key_rlc_acc = key_rlc_acc + c_rlp2_cur.clone() * key_mult * power_of_randomness[30].clone();
 
                 let address_rlc = meta.query_advice(address_rlc, Rotation::cur());
 
@@ -332,13 +332,13 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
 
                 for ind in 3..HASH_WIDTH {
                     let s = meta.query_advice(s_main.bytes[ind], Rotation::cur());
-                    key_rlc_acc = key_rlc_acc + s * r_table[ind - 3].clone();
+                    key_rlc_acc = key_rlc_acc + s * power_of_randomness[ind - 3].clone();
                 }
 
                 let c_rlp1_cur = meta.query_advice(c_main.rlp1, Rotation::cur());
                 let c_rlp2_cur = meta.query_advice(c_main.rlp2, Rotation::cur());
-                key_rlc_acc = key_rlc_acc + c_rlp1_cur.clone() * r_table[29].clone();
-                key_rlc_acc = key_rlc_acc + c_rlp2_cur.clone() * r_table[30].clone();
+                key_rlc_acc = key_rlc_acc + c_rlp1_cur.clone() * power_of_randomness[29].clone();
+                key_rlc_acc = key_rlc_acc + c_rlp2_cur.clone() * power_of_randomness[30].clone();
 
                 let address_rlc = meta.query_advice(address_rlc, Rotation::cur());
 

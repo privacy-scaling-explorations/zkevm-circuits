@@ -14,7 +14,7 @@ use crate::{
         BRANCH_ROWS_NUM, HASH_WIDTH, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS,
         IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS, IS_EXT_LONG_EVEN_C16_POS,
         IS_EXT_LONG_EVEN_C1_POS, IS_EXT_LONG_ODD_C16_POS, IS_EXT_LONG_ODD_C1_POS,
-        IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS, NIBBLES_COUNTER_POS, RLP_NUM, R_TABLE_LEN,
+        IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS, NIBBLES_COUNTER_POS, RLP_NUM, POWER_OF_RANDOMNESS_LEN,
         S_START,
     },
     mpt_circuit::witness_row::{MptWitnessRow, MptWitnessRowType},
@@ -91,7 +91,7 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
         s_main: MainCols<F>,
         c_main: MainCols<F>,
         accs: AccumulatorCols<F>,
-        r_table: Vec<Expression<F>>,
+        power_of_randomness: [Expression<F>; HASH_WIDTH],
         fixed_table: [Column<Fixed>; 3],
         address_rlc: Column<Advice>,
         sel2: Column<Advice>,
@@ -137,7 +137,7 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
 
             let mut ind = 0;
             let mut expr =
-                s_rlp1 + meta.query_advice(s_main.rlp2, Rotation::cur()) * r_table[ind].clone();
+                s_rlp1 + meta.query_advice(s_main.rlp2, Rotation::cur()) * power_of_randomness[ind].clone();
             ind += 1;
 
             expr = expr
@@ -147,13 +147,13 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
                     ind,
                     one.clone(),
                     0,
-                    r_table.clone(),
+                    power_of_randomness.clone(),
                 );
 
             let c_rlp1 = meta.query_advice(c_main.rlp1, Rotation::cur());
             let c_rlp2 = meta.query_advice(c_main.rlp2, Rotation::cur());
-            expr = expr + c_rlp1 * r_table[R_TABLE_LEN - 1].clone() * r_table[1].clone();
-            expr = expr + c_rlp2 * r_table[R_TABLE_LEN - 1].clone() * r_table[2].clone();
+            expr = expr + c_rlp1 * power_of_randomness[POWER_OF_RANDOMNESS_LEN - 1].clone() * power_of_randomness[1].clone();
+            expr = expr + c_rlp2 * power_of_randomness[POWER_OF_RANDOMNESS_LEN - 1].clone() * power_of_randomness[2].clone();
 
             let acc = meta.query_advice(accs.acc_s.rlc, Rotation::cur());
 
@@ -293,7 +293,7 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
                 let s_advice1 = meta.query_advice(s_main.bytes[1], Rotation::cur());
                 let mut key_rlc_acc = key_rlc_acc_start
                     + (s_advice1.clone() - c48) * key_mult_start.clone() * is_c16.clone();
-                let mut key_mult = key_mult_start.clone() * r_table[0].clone() * is_c16.clone();
+                let mut key_mult = key_mult_start.clone() * power_of_randomness[0].clone() * is_c16.clone();
                 key_mult = key_mult + key_mult_start * is_c1.clone(); // set to key_mult_start if sel2, stays key_mult if sel1
 
                 /*
@@ -312,13 +312,13 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
 
                 for ind in 3..HASH_WIDTH {
                     let s = meta.query_advice(s_main.bytes[ind], Rotation::cur());
-                    key_rlc_acc = key_rlc_acc + s * key_mult.clone() * r_table[ind - 3].clone();
+                    key_rlc_acc = key_rlc_acc + s * key_mult.clone() * power_of_randomness[ind - 3].clone();
                 }
 
                 let c_rlp1 = meta.query_advice(c_main.rlp1, Rotation::cur());
                 let c_rlp2 = meta.query_advice(c_main.rlp2, Rotation::cur());
-                key_rlc_acc = key_rlc_acc + c_rlp1 * key_mult.clone() * r_table[29].clone();
-                key_rlc_acc = key_rlc_acc + c_rlp2 * key_mult * r_table[30].clone();
+                key_rlc_acc = key_rlc_acc + c_rlp1 * key_mult.clone() * power_of_randomness[29].clone();
+                key_rlc_acc = key_rlc_acc + c_rlp2 * key_mult * power_of_randomness[30].clone();
 
                 let key_rlc = meta.query_advice(accs.key.rlc, Rotation::cur());
                 let address_rlc = meta.query_advice(address_rlc, Rotation::cur());
@@ -521,7 +521,7 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
                 let s_advice1 = meta.query_advice(s_main.bytes[1], Rotation::cur());
                 let mut key_rlc_acc = key_rlc_acc_start
                     + (s_advice1.clone() - c48) * key_mult_start.clone() * sel1.clone();
-                let mut key_mult = key_mult_start.clone() * r_table[0].clone() * sel1.clone();
+                let mut key_mult = key_mult_start.clone() * power_of_randomness[0].clone() * sel1.clone();
                 key_mult = key_mult + key_mult_start * sel2.clone(); // set to key_mult_start if sel2, stays key_mult if sel1
 
                 // If sel2 = 1, we have 32 in s_main.bytes[1].
@@ -539,13 +539,13 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
 
                 for ind in 3..HASH_WIDTH {
                     let s = meta.query_advice(s_main.bytes[ind], Rotation::cur());
-                    key_rlc_acc = key_rlc_acc + s * key_mult.clone() * r_table[ind - 3].clone();
+                    key_rlc_acc = key_rlc_acc + s * key_mult.clone() * power_of_randomness[ind - 3].clone();
                 }
 
                 let c_rlp1 = meta.query_advice(c_main.rlp1, Rotation::cur());
                 let c_rlp2 = meta.query_advice(c_main.rlp2, Rotation::cur());
-                key_rlc_acc = key_rlc_acc + c_rlp1 * key_mult.clone() * r_table[29].clone();
-                key_rlc_acc = key_rlc_acc + c_rlp2 * key_mult * r_table[30].clone();
+                key_rlc_acc = key_rlc_acc + c_rlp1 * key_mult.clone() * power_of_randomness[29].clone();
+                key_rlc_acc = key_rlc_acc + c_rlp2 * key_mult * power_of_randomness[30].clone();
 
                 let key_rlc = meta.query_advice(accs.key.rlc, Rotation::cur());
 

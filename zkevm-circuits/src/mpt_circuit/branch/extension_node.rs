@@ -162,9 +162,8 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
         c_main: MainCols<F>,
         accs: AccumulatorCols<F>,
         keccak_table: [Column<Fixed>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
-        r_table: Vec<Expression<F>>,
+        power_of_randomness: [Expression<F>; HASH_WIDTH],
         is_s: bool,
-        randomness: Expression<F>,
     ) -> Self {
         let config = ExtensionNodeConfig {
             _marker: PhantomData,
@@ -200,7 +199,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
             let s_rlp1 = meta.query_advice(s_main.rlp1, Rotation(rot));
             let mut rlc = s_rlp1;
             let s_rlp2 = meta.query_advice(s_main.rlp2, Rotation(rot));
-            rlc = rlc + s_rlp2 * r_table[0].clone();
+            rlc = rlc + s_rlp2 * power_of_randomness[0].clone();
 
             let s_bytes_rlc = compute_rlc(
                 meta,
@@ -208,7 +207,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                 1,
                 one.clone(),
                 rot,
-                r_table.clone(),
+                power_of_randomness.clone(),
             );
             rlc = rlc + s_bytes_rlc;
 
@@ -258,7 +257,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                 0,
                 acc_mult_s.clone(),
                 0,
-                r_table.clone(),
+                power_of_randomness.clone(),
             );
             rlc = rlc + c_advices_rlc;
 
@@ -269,7 +268,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                 0,
                 acc_mult_s,
                 0,
-                r_table,
+                power_of_randomness.clone(),
             );
             rlc_non_hashed_branch = rlc_non_hashed_branch + c_advices_rlc_non_hashed;
 
@@ -787,7 +786,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
             for column in c_main.bytes.iter() {
                 sc_hash.push(meta.query_advice(*column, Rotation::cur()));
             }
-            let hash_rlc = bytes_expr_into_rlc(&sc_hash, randomness.clone());
+            let hash_rlc = bytes_expr_into_rlc(&sc_hash, power_of_randomness[0].clone());
             constraints.push((
                 q_not_first
                     * q_enable
@@ -825,7 +824,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                 for column in c_main.bytes.iter() {
                     branch_in_ext.push(meta.query_advice(*column, Rotation::cur()));
                 }
-                let rlc = bytes_expr_into_rlc(&branch_in_ext, randomness.clone());
+                let rlc = bytes_expr_into_rlc(&branch_in_ext, power_of_randomness[0].clone());
 
                 /*
                 Check whether branch is in extension node row (non-hashed branch) -
@@ -976,7 +975,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                         ));
                     }
                 }
-                let hash_rlc = bytes_expr_into_rlc(&sc_hash, randomness.clone());
+                let hash_rlc = bytes_expr_into_rlc(&sc_hash, power_of_randomness[0].clone());
 
                 let mut constraints = vec![(
                     not_first_level.clone()

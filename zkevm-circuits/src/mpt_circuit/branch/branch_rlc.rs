@@ -8,7 +8,7 @@ use std::marker::PhantomData;
 use crate::{
     mpt_circuit::columns::{AccumulatorPair, MainCols},
     mpt_circuit::helpers::mult_diff_lookup,
-    mpt_circuit::param::{HASH_WIDTH, R_TABLE_LEN},
+    mpt_circuit::param::{HASH_WIDTH, POWER_OF_RANDOMNESS_LEN},
 };
 
 /*
@@ -64,7 +64,7 @@ impl<F: FieldExt> BranchRLCConfig<F> {
         branch_acc: AccumulatorPair<F>,
         is_node_hashed: Column<Advice>,
         node_mult_diff: Column<Advice>,
-        r_table: Vec<Expression<F>>,
+        power_of_randomness: [Expression<F>; HASH_WIDTH],
         fixed_table: [Column<Fixed>; 3],
     ) -> Self {
         let config = BranchRLCConfig {
@@ -114,13 +114,13 @@ impl<F: FieldExt> BranchRLCConfig<F> {
                 q_enable.clone()
                     * (one.clone() - is_node_hashed.clone())
                     * (c160.clone() - rlp2.clone())
-                    * (branch_mult_cur.clone() - branch_mult_prev.clone() * r_table[0].clone()),
+                    * (branch_mult_cur.clone() - branch_mult_prev.clone() * power_of_randomness[0].clone()),
             ));
 
             let mut expr = c160 * branch_mult_prev.clone();
             for (ind, col) in main.bytes.iter().enumerate() {
                 let s = meta.query_advice(*col, Rotation::cur());
-                expr = expr + s * branch_mult_prev.clone() * r_table[ind].clone();
+                expr = expr + s * branch_mult_prev.clone() * power_of_randomness[ind].clone();
             }
 
             /*
@@ -146,15 +146,15 @@ impl<F: FieldExt> BranchRLCConfig<F> {
                     * rlp2
                     * (branch_mult_cur.clone()
                         - branch_mult_prev.clone()
-                            * r_table[R_TABLE_LEN - 1].clone()
-                            * r_table[0].clone()),
+                            * power_of_randomness[POWER_OF_RANDOMNESS_LEN - 1].clone()
+                            * power_of_randomness[0].clone()),
             ));
 
             let advices0 = meta.query_advice(main.bytes[0], Rotation::cur());
             let mut acc = branch_acc_prev + advices0 * branch_mult_prev.clone();
             for ind in 1..HASH_WIDTH {
                 let a = meta.query_advice(main.bytes[ind], Rotation::cur());
-                acc = acc + a * branch_mult_prev.clone() * r_table[ind - 1].clone();
+                acc = acc + a * branch_mult_prev.clone() * power_of_randomness[ind - 1].clone();
             }
 
             /*
@@ -182,7 +182,7 @@ impl<F: FieldExt> BranchRLCConfig<F> {
                 "Branch RLC mult non-hashed",
                 q_enable
                     * is_node_hashed
-                    * (branch_mult_cur - branch_mult_prev * node_mult_diff * r_table[0].clone()), // * r_table[0] because of the first (length) byte
+                    * (branch_mult_cur - branch_mult_prev * node_mult_diff * power_of_randomness[0].clone()), // * power_of_randomness[0] because of the first (length) byte
             ));
 
             constraints

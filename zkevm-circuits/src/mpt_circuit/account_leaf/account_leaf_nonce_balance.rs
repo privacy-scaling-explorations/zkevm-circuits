@@ -69,7 +69,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
         c_main: MainCols<F>,
         accs: AccumulatorCols<F>, /* accs.acc_c.rlc contains mult_diff_nonce; accs.key.mult for
                                    * mult_diff_balance */
-        r_table: Vec<Expression<F>>,
+        power_of_randomness: [Expression<F>; HASH_WIDTH],
         denoter: DenoteCols<F>,
         fixed_table: [Column<Fixed>; 3],
         is_s: bool,
@@ -226,15 +226,15 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
 
             let mut expr = acc_prev + s_rlp1.clone() * acc_mult_prev.clone();
             let mut rind = 0;
-            expr = expr + s_rlp2.clone() * acc_mult_prev.clone() * r_table[rind].clone();
+            expr = expr + s_rlp2.clone() * acc_mult_prev.clone() * power_of_randomness[rind].clone();
             rind += 1;
 
             let c_rlp1 = meta.query_advice(c_main.rlp1, Rotation::cur());
             let c_rlp2 = meta.query_advice(c_main.rlp2, Rotation::cur());
 
-            expr = expr + c_rlp1.clone() * acc_mult_prev.clone() * r_table[rind].clone();
+            expr = expr + c_rlp1.clone() * acc_mult_prev.clone() * power_of_randomness[rind].clone();
             rind += 1;
-            expr = expr + c_rlp2.clone() * acc_mult_prev.clone() * r_table[rind].clone();
+            expr = expr + c_rlp2.clone() * acc_mult_prev.clone() * power_of_randomness[rind].clone();
             rind += 1;
 
             let nonce_value_long_rlc = s_advices1_cur
@@ -244,11 +244,11 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
                     0,
                     one.clone(),
                     0,
-                    r_table.clone(),
+                    power_of_randomness.clone(),
                 );
 
             let nonce_rlc = (s_advices0_cur.clone()
-                + nonce_value_long_rlc.clone() * r_table[0].clone())
+                + nonce_value_long_rlc.clone() * power_of_randomness[0].clone())
                 * is_nonce_long.clone()
                 + s_advices0_cur.clone() * (one.clone() - is_nonce_long.clone());
 
@@ -277,7 +277,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
                     * (s_advices0_cur.clone() - nonce_stored.clone()),
             ));
 
-            expr = expr + nonce_rlc * r_table[rind].clone() * acc_mult_prev.clone();
+            expr = expr + nonce_rlc * power_of_randomness[rind].clone() * acc_mult_prev.clone();
 
             let c_advices0_cur = meta.query_advice(c_main.bytes[0], Rotation::cur());
             let c_advices1_cur = meta.query_advice(c_main.bytes[1], Rotation::cur());
@@ -289,11 +289,11 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
                     0,
                     one.clone(),
                     0,
-                    r_table.clone(),
+                    power_of_randomness.clone(),
                 );
 
             let balance_rlc = (c_advices0_cur.clone()
-                + balance_value_long_rlc.clone() * r_table[0].clone())
+                + balance_value_long_rlc.clone() * power_of_randomness[0].clone())
                 * is_balance_long.clone()
                 + c_advices0_cur.clone() * (one.clone() - is_balance_long.clone());
 
@@ -461,7 +461,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
                 "Leaf nonce RLC mult (nonce short)",
                 q_enable.clone()
                     * (one.clone() - is_nonce_long.clone())
-                    * (acc_mult_after_nonce.clone() - acc_mult_prev * r_table[4].clone()), // r_table[4] because of s_rlp1, s_rlp2, c_rlp1, c_rlp2, and 1 for nonce_len = 1
+                    * (acc_mult_after_nonce.clone() - acc_mult_prev * power_of_randomness[4].clone()), // r_table[4] because of s_rlp1, s_rlp2, c_rlp1, c_rlp2, and 1 for nonce_len = 1
             ));
 
             /*
@@ -492,7 +492,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
                 "Leaf balance RLC mult (balance short)",
                 q_enable.clone()
                     * (one.clone() - is_balance_long.clone())
-                    * (acc_mult_final - acc_mult_after_nonce * r_table[0].clone()),
+                    * (acc_mult_final - acc_mult_after_nonce * power_of_randomness[0].clone()),
             ));
 
             // RLP:

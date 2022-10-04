@@ -19,7 +19,7 @@ pub const WITNESS_ROW_WIDTH: usize = 2 * HASH_WIDTH + 2 * RLP_NUM; // number of 
 pub const BRANCH_ROWS_NUM: i32 = 19;
 pub const EXTENSION_ROWS_NUM: i32 = 2; // how many extension rows
 
-pub const R_TABLE_LEN: usize = 32; // how many elements has an array of powers of randomness r
+pub const POWER_OF_RANDOMNESS_LEN: usize = 32; // how many elements has an array of powers of randomness r
 
 // branch init row:
 // the first 4 bytes are used for specifying how many RLP specific bytes this

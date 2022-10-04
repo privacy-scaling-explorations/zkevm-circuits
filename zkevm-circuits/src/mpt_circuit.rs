@@ -225,8 +225,6 @@ impl<F: FieldExt> MPTConfig<F> {
 
         let position_cols = PositionCols::new(meta);
 
-        let r_table = power_of_randomness.to_vec();
-
         let proof_type = ProofTypeCols::new(meta);
         let account_leaf = AccountLeafCols::new(meta);
         let storage_leaf = StorageLeafCols::new(meta);
@@ -389,9 +387,8 @@ impl<F: FieldExt> MPTConfig<F> {
             c_main.clone(),
             accumulators.clone(),
             keccak_table,
-            r_table.clone(),
+            power_of_randomness.clone(),
             true,
-            power_of_randomness[0].clone(),
         );
 
         let ext_node_config_c = ExtensionNodeConfig::<F>::configure(
@@ -412,9 +409,8 @@ impl<F: FieldExt> MPTConfig<F> {
             c_main.clone(),
             accumulators.clone(),
             keccak_table,
-            r_table.clone(),
+            power_of_randomness.clone(),
             false,
-            power_of_randomness[0].clone(),
         );
 
         ExtensionNodeKeyConfig::<F>::configure(
@@ -426,7 +422,7 @@ impl<F: FieldExt> MPTConfig<F> {
             c_main.clone(),
             accumulators.clone(),
             fixed_table,
-            r_table.clone(),
+            power_of_randomness.clone(),
         );
 
         BranchInitConfig::<F>::configure(
@@ -453,7 +449,7 @@ impl<F: FieldExt> MPTConfig<F> {
             accumulators.acc_s.clone(),
             denoter.is_node_hashed_s,
             accumulators.node_mult_diff_s,
-            r_table.clone(),
+            power_of_randomness.clone(),
             fixed_table,
         );
 
@@ -469,7 +465,7 @@ impl<F: FieldExt> MPTConfig<F> {
             accumulators.acc_c.clone(),
             denoter.is_node_hashed_c,
             accumulators.node_mult_diff_c,
-            r_table.clone(),
+            power_of_randomness.clone(),
             fixed_table,
         );
 
@@ -491,7 +487,7 @@ impl<F: FieldExt> MPTConfig<F> {
             c_main.clone(),
             accumulators.clone(),
             account_leaf.is_in_added_branch,
-            r_table.clone(),
+            power_of_randomness.clone(),
             fixed_table,
             true,
         );
@@ -514,7 +510,7 @@ impl<F: FieldExt> MPTConfig<F> {
             c_main.clone(),
             accumulators.clone(),
             account_leaf.is_in_added_branch,
-            r_table.clone(),
+            power_of_randomness.clone(),
             fixed_table,
             false,
         );
@@ -533,7 +529,7 @@ impl<F: FieldExt> MPTConfig<F> {
             accumulators.clone(),
             branch.drifted_pos,
             account_leaf.is_in_added_branch,
-            r_table.clone(),
+            power_of_randomness.clone(),
             fixed_table,
             keccak_table,
         );
@@ -580,7 +576,7 @@ impl<F: FieldExt> MPTConfig<F> {
             s_main.clone(),
             c_main.clone(),
             accumulators.clone(),
-            r_table.clone(),
+            power_of_randomness.clone(),
             fixed_table,
             address_rlc,
             denoter.sel2,
@@ -601,7 +597,7 @@ impl<F: FieldExt> MPTConfig<F> {
             s_main.clone(),
             c_main.clone(),
             accumulators.clone(),
-            r_table.clone(),
+            power_of_randomness.clone(),
             fixed_table,
             address_rlc,
             denoter.sel2,
@@ -624,7 +620,7 @@ impl<F: FieldExt> MPTConfig<F> {
             c_main.clone(),
             accumulators.clone(),
             denoter.sel1,
-            r_table.clone(),
+            power_of_randomness.clone(),
             fixed_table,
             address_rlc,
         );
@@ -641,7 +637,7 @@ impl<F: FieldExt> MPTConfig<F> {
             s_main.clone(),
             c_main.clone(),
             accumulators.clone(),
-            r_table.clone(),
+            power_of_randomness.clone(),
             denoter.clone(),
             fixed_table,
             true,
@@ -659,7 +655,7 @@ impl<F: FieldExt> MPTConfig<F> {
             s_main.clone(),
             c_main.clone(),
             accumulators.clone(),
-            r_table.clone(),
+            power_of_randomness.clone(),
             denoter.clone(),
             fixed_table,
             false,
@@ -713,7 +709,7 @@ impl<F: FieldExt> MPTConfig<F> {
             accumulators.clone(),
             branch.drifted_pos,
             denoter.clone(),
-            r_table.clone(),
+            power_of_randomness.clone(),
             fixed_table,
             keccak_table,
         );
