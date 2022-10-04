@@ -204,6 +204,14 @@ impl SignVerifyConfig {
     }
 }
 
+/// Term provides a wrapper of possible assigned cell with value or unassigned
+/// value. It's similar to `AssignedCell` but with explicitly set value.
+///
+/// The reason to use `Term` instead of `AssignedCell` is because the value of
+/// `AssignedCell` will always be `Value::unknown()` if the columns is not in
+/// current phase, even the value assigned is not. And this behavior is due to
+/// the fact that the `to` function in `assign_fixed` and `assign_advice` is
+/// `FnMut` and will be guaranteed to be only called once.
 #[derive(Clone, Debug)]
 pub(crate) enum Term<F> {
     Assigned(Cell, Value<F>),
@@ -369,7 +377,7 @@ impl<F: Field, const MAX_VERIF: usize> SignVerifyChip<F, MAX_VERIF> {
             .chain(inputs_le.into_iter().rev())
             .collect_vec();
 
-        let mut rlc = challenge.map(|_| F::zero());
+        let mut rlc = Value::known(F::zero());
         for (chunk_idx, chunk) in inputs_be.chunks_exact(columns.len()).enumerate() {
             ctx.enable(q_rlc)?;
             let assigned_rlc = ctx.assign_advice(|| "{name}_rlc[{chunk_idx}]", config.rlc, rlc)?;
