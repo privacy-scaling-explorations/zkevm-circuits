@@ -314,7 +314,7 @@ impl<const MAX_TXS: usize, const MAX_CALLDATA: usize> SuperCircuit<Fr, MAX_TXS, 
         let fixed_table_tags: Vec<FixedTableTag> = FixedTableTag::iter().collect();
         let log2_ceil = |n| u32::BITS - (n as u32).leading_zeros() - (n & (n - 1) == 0) as u32;
 
-        let get_num_rows_required = Self::get_num_rows_required(&block);
+        let num_rows_required = Self::get_num_rows_required(&block);
 
         let k = log2_ceil(
             64 + fixed_table_tags
@@ -328,7 +328,7 @@ impl<const MAX_TXS: usize, const MAX_CALLDATA: usize> SuperCircuit<Fr, MAX_TXS, 
             .map(|(_, bytecode)| bytecode.bytes.len())
             .sum::<usize>();
         let k = k.max(log2_ceil(64 + bytecodes_len));
-        let k = k.max(log2_ceil(64 + get_num_rows_required));
+        let k = k.max(log2_ceil(64 + num_rows_required));
         log::debug!("super circuit uses k = {}", k);
 
         let aux_generator = <Secp256k1Affine as CurveAffine>::CurveExt::random(rng).to_affine();
