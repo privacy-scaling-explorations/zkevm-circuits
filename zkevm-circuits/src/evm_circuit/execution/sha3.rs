@@ -81,7 +81,7 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
         );
 
         let step_state_transition = StepStateTransition {
-            rw_counter: Transition::Delta(cb.rw_counter_offset() + copy_rwc_inc.expr()),
+            rw_counter: Transition::Delta(cb.rw_counter_offset()),
             program_counter: Transition::Delta(1.expr()),
             stack_pointer: Transition::Delta(1.expr()),
             memory_word_size: Transition::To(memory_expansion.next_memory_word_size()),

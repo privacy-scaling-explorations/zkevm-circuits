@@ -139,7 +139,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
         // State transition
         let step_state_transition = StepStateTransition {
             // 1 tx id lookup + 3 stack pop + option(calldatalength lookup)
-            rw_counter: Delta(cb.rw_counter_offset() + copy_rwc_inc.expr()),
+            rw_counter: Delta(cb.rw_counter_offset()),
             program_counter: Delta(1.expr()),
             stack_pointer: Delta(3.expr()),
             gas_left: Delta(
