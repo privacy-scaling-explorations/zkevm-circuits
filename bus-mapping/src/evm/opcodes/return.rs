@@ -180,7 +180,9 @@ fn handle_create(
     source: Source,
 ) -> Result<(), Error> {
     let values = state.call_ctx()?.memory.0[source.offset..source.offset + source.length].to_vec();
-    let dst_id = NumberOrHash::Hash(H256(keccak256(&values)));
+    let code_hash = NumberOrHash::Hash(H256(keccak256(&values)));
+    state.block.sha3_inputs.push(values.clone());
+
     let bytes: Vec<_> = Bytecode::from(values)
         .code
         .iter()
@@ -189,6 +191,7 @@ fn handle_create(
 
     let rw_counter_start = state.block_ctx.rwc;
     for (i, (byte, _)) in bytes.iter().enumerate() {
+        // dbg!(byte);
         state.push_op(
             step,
             RW::READ,
@@ -203,7 +206,7 @@ fn handle_create(
         src_addr: source.offset.try_into().unwrap(),
         src_addr_end: (source.offset + source.length).try_into().unwrap(),
         dst_type: CopyDataType::Bytecode,
-        dst_id,
+        dst_id: code_hash,
         dst_addr: 0,
         log_id: None,
         bytes,

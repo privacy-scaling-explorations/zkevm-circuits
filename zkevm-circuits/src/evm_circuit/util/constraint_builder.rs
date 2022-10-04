@@ -507,10 +507,10 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         is_code: Expression<F>,
     ) {
         let is_root_create = self.curr.state.is_root.expr() * self.curr.state.is_create.expr();
-        self.add_constraint(
-            "The opcode source when is_root and is_create (Root creation transaction) is not determined yet",
-            is_root_create.clone(),
-        );
+        // self.add_constraint(
+        //     "The opcode source when is_root and is_create (Root creation transaction)
+        // is not determined yet",     is_root_create.clone(),
+        // );
         self.add_lookup(
             "Opcode lookup",
             Lookup::Bytecode {

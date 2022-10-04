@@ -39,6 +39,8 @@ pub(crate) struct ReturnGadget<F> {
     return_data_length: Cell<F>,
 
     memory_expansion: MemoryExpansionGadget<F, 1, N_BYTES_MEMORY_WORD_SIZE>,
+
+    code_hash: Cell<F>,
 }
 
 // TODO: rename this is reflect the fact that is handles REVERT as well.
@@ -90,10 +92,24 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
                 range.length(),
             );
         });
-        cb.condition(
+        let code_hash = cb.condition(
             is_create.clone() * is_success.expr() * not::expr(copy_rw_increase_is_zero.expr()),
-            |_cb| {
-                // TODO: copy_table_lookup for contract creation.
+            |cb| {
+                let code_hash = cb.query_cell();
+                // cb.copy_table_lookup(
+                //     cb.curr.state.call_id.expr(),
+                //     CopyDataType::Memory.expr(),
+                //     code_hash.expr(),
+                //     CopyDataType::Bytecode.expr(),
+                //     range.offset(),
+                //     range.address(),
+                //     0.expr(),
+                //     range.length(),
+                //     0.expr(),
+                //     cb.curr.state.rw_counter.expr() + cb.rw_counter_offset().expr(),
+                //     copy_rw_increase.expr(),
+                // );
+                code_hash
             },
         );
 
@@ -112,7 +128,8 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
                 rw_counter: Delta(
                     cb.rw_counter_offset()
                         + not::expr(is_success.expr())
-                            * cb.curr.state.reversible_write_counter.expr(),
+                            * cb.curr.state.reversible_write_counter.expr()
+                        + is_success.expr() * is_create.expr() * copy_rw_increase.expr(),
                 ),
                 gas_left: Delta(-memory_expansion.gas_cost()),
                 reversible_write_counter: To(0.expr()),
@@ -139,6 +156,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
         let (return_data_offset, return_data_length, copy_length) = cb.condition(
             not::expr(is_create.clone()) * not::expr(is_root.clone()),
             |cb| {
+                // these may need to go in case C? see https://eips.ethereum.org/EIPS/eip-211
                 let [return_data_offset, return_data_length] = [
                     CallContextFieldTag::ReturnDataOffset,
                     CallContextFieldTag::ReturnDataLength,
@@ -195,6 +213,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
             return_data_length,
             restore_context,
             memory_expansion,
+            code_hash,
         }
     }
 
@@ -207,7 +226,6 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        dbg!(step.reversible_write_counter);
         self.opcode.assign(
             region,
             offset,
@@ -269,20 +287,20 @@ mod test {
         Word,
     };
     use itertools::Itertools;
-    use mock::TestContext;
+    use mock::{eth, TestContext, MOCK_ACCOUNTS};
 
     const CALLEE_ADDRESS: Address = Address::repeat_byte(0xff);
     const CALLER_ADDRESS: Address = Address::repeat_byte(0x34);
 
     fn callee_bytecode(is_return: bool, offset: u64, length: u64) -> Bytecode {
         let memory_address = 2;
-        let memory_value = Word::MAX;
+        let memory_value = 549;
         let mut code = bytecode! {
-            PUSH32(memory_value)
+            PUSH2(memory_value)
             PUSH1(memory_address)
             MSTORE
-            PUSH32(length)
-            PUSH32(offset)
+            PUSH2(length)
+            PUSH2(offset)
         };
         code.write_op(if is_return {
             OpcodeId::RETURN
@@ -307,7 +325,7 @@ mod test {
     }
 
     #[test]
-    fn test_return_root() {
+    fn test_noncreate_root() {
         let test_parameters = [(0, 0), (0, 10), (300, 20), (1000, 0)];
         for ((offset, length), is_return) in
             test_parameters.iter().cartesian_product(&[true, false])
@@ -385,5 +403,41 @@ mod test {
                 )
             );
         }
+    }
+
+    #[test]
+    fn test_root_create() {
+        let initialization_code = callee_bytecode(true, 0, 10);
+        assert_eq!(initialization_code.code.len(), 13);
+
+        let something = Word::from_big_endian(&initialization_code.code());
+        let creater_code = bytecode! {
+            PUSH13(something)
+            PUSH1(0)
+            MSTORE
+            PUSH1(100)
+            PUSH1(0)
+            RETURN
+        };
+
+        assert_eq!(
+            run_test_circuits(
+                TestContext::<1, 1>::new(
+                    None,
+                    |accs| {
+                        accs[0].address(MOCK_ACCOUNTS[0]).balance(eth(10));
+                    },
+                    |mut txs, accs| {
+                        txs[0]
+                            .from(accs[0].address)
+                            .input(creater_code.code().into());
+                    },
+                    |block, _| block,
+                )
+                .unwrap(),
+                None
+            ),
+            Ok(()),
+        );
     }
 }

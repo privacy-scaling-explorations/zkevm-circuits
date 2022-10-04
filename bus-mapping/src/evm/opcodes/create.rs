@@ -33,7 +33,7 @@ impl<const IS_CREATE2: bool> Opcode for DummyCreate<IS_CREATE2> {
 
         // Quote from [EIP-2929](https://eips.ethereum.org/EIPS/eip-2929)
         // > When a CREATE or CREATE2 opcode is called,
-        // > immediately (ie. before checks are done to determine
+        // > immediately (i.e. before checks are done to determine
         // > whether or not the address is unclaimed)
         // > add the address being created to accessed_addresses,
         // > but gas costs of CREATE and CREATE2 are unchanged

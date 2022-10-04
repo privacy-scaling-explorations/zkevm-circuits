@@ -331,6 +331,7 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
     )?;
 
     // Add caller and callee into access list
+    dbg!(call.caller_address, call.address);
     for address in [call.caller_address, call.address] {
         state.sdb.add_account_to_access_list(address);
         state.tx_accesslist_account_write(
@@ -377,6 +378,46 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
         // 1. Creation transaction.
         (true, _, _) => {
             warn!("Creation transaction is left unimplemented");
+            dbg!("Creation transaction is left unimplemented");
+
+            state.account_read(
+                &mut exec_step,
+                call.address,
+                AccountField::CodeHash,
+                call.code_hash.to_word(),
+                call.code_hash.to_word(),
+            )?;
+
+            // somehow there's another missing one here?????
+            dbg!(call.call_data_length);
+            dbg!(&state.tx);
+            for (field, value) in [
+                (CallContextField::Depth, call.depth.into()),
+                (
+                    CallContextField::CallerAddress,
+                    call.caller_address.to_word(),
+                ),
+                (CallContextField::CalleeAddress, call.address.to_word()),
+                (
+                    CallContextField::CallDataOffset,
+                    call.call_data_offset.into(),
+                ),
+                (
+                    CallContextField::CallDataLength,
+                    // call.call_data_length.into(),
+                    state.tx.input.len().into(),
+                ),
+                (CallContextField::Value, call.value),
+                (CallContextField::IsStatic, (call.is_static as usize).into()),
+                (CallContextField::LastCalleeId, 0.into()),
+                (CallContextField::LastCalleeReturnDataOffset, 0.into()),
+                (CallContextField::LastCalleeReturnDataLength, 0.into()),
+                (CallContextField::IsRoot, 1.into()),
+                (CallContextField::IsCreate, 1.into()),
+                (CallContextField::CodeHash, call.code_hash.to_word()),
+            ] {
+                state.call_context_write(&mut exec_step, call.call_id, field, value);
+            }
             Ok(exec_step)
         }
         // 2. Call to precompiled.
@@ -550,6 +591,7 @@ impl Opcode for DummyCall {
         state: &mut CircuitInputStateRef,
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
+        panic!();
         dummy_gen_call_ops(state, geth_steps)
     }
 }
@@ -558,6 +600,7 @@ fn dummy_gen_call_ops(
     state: &mut CircuitInputStateRef,
     geth_steps: &[GethExecStep],
 ) -> Result<Vec<ExecStep>, Error> {
+    panic!();
     let geth_step = &geth_steps[0];
     let mut exec_step = state.new_step(geth_step)?;
 
