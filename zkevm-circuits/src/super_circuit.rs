@@ -48,36 +48,33 @@
 //!   - [x] Tx Circuit
 //!   - [ ] MPT Circuit
 
-use crate::state_circuit::StateCircuitConfig;
-use crate::tx_circuit::{TxCircuit, TxCircuitConfig};
-
 use crate::bytecode_circuit::bytecode_unroller::{
     unroll, Config as BytecodeConfig, UnrolledBytecode,
 };
-
+use crate::copy_circuit::CopyCircuit;
 use crate::evm_circuit::{table::FixedTableTag, EvmCircuit};
+use crate::keccak_circuit::keccak_packed_multi::KeccakPackedConfig as KeccakConfig;
+use crate::state_circuit::StateCircuitConfig;
 use crate::table::{BlockTable, BytecodeTable, CopyTable, MptTable, RwTable, TxTable};
+use crate::tx_circuit::{TxCircuit, TxCircuitConfig};
 use crate::util::{power_of_randomness_from_instance, Challenges};
-use crate::witness::Block;
-use eth_types::Field;
-use halo2_proofs::{
-    circuit::{Layouter, SimpleFloorPlanner, Value},
-    plonk::{Circuit, ConstraintSystem, Error},
-};
+use crate::witness::{block_convert, Block};
 
-use super::copy_circuit::CopyCircuit;
-use crate::{
-    keccak_circuit::keccak_bit::KeccakBitConfig, tx_circuit::sign_verify::POW_RAND_SIZE,
-    witness::block_convert,
-};
 use bus_mapping::mock::BlockData;
 use eth_types::geth_types::{self, GethData};
+use eth_types::Field;
+
 use halo2_proofs::arithmetic::{CurveAffine, Field as Halo2Field};
 use halo2_proofs::halo2curves::{
     bn256::Fr,
     group::{Curve, Group},
     secp256k1::Secp256k1Affine,
 };
+use halo2_proofs::{
+    circuit::{Layouter, SimpleFloorPlanner, Value},
+    plonk::{Circuit, ConstraintSystem, Error},
+};
+
 use rand::RngCore;
 use strum::IntoEnumIterator;
 
@@ -95,7 +92,7 @@ pub struct SuperCircuitConfig<F: Field, const MAX_TXS: usize, const MAX_CALLDATA
     tx_circuit: TxCircuitConfig<F>,
     bytecode_circuit: BytecodeConfig<F>,
     copy_circuit: CopyCircuit<F>,
-    keccak_circuit: KeccakBitConfig<F>,
+    keccak_circuit: KeccakConfig<F>,
 }
 
 /// The Super Circuit contains all the zkEVM circuits
@@ -149,14 +146,14 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
         let q_copy_table = meta.fixed_column();
         let copy_table = CopyTable::construct(meta, q_copy_table);
 
-        let power_of_randomness = power_of_randomness_from_instance(meta);
+        let power_of_randomness: [_; 31] = power_of_randomness_from_instance(meta);
 
-        let keccak_circuit = KeccakBitConfig::configure(meta, power_of_randomness[0].clone());
+        let keccak_circuit = KeccakConfig::configure(meta, power_of_randomness[0].clone());
         let keccak_table = keccak_circuit.keccak_table.clone();
 
         let evm_circuit = EvmCircuit::configure(
             meta,
-            power_of_randomness[..31].to_vec().try_into().unwrap(),
+            power_of_randomness.clone(),
             &tx_table,
             &rw_table,
             &bytecode_table,
@@ -164,12 +161,9 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
             &copy_table,
             &keccak_table,
         );
-        let state_circuit = StateCircuitConfig::configure(
-            meta,
-            power_of_randomness[..31].to_vec().try_into().unwrap(),
-            &rw_table,
-            &mpt_table,
-        );
+        let state_circuit =
+            StateCircuitConfig::configure(meta, power_of_randomness.clone(), &rw_table, &mpt_table);
+        let challenges = Challenges::mock(power_of_randomness[0].clone());
 
         Self::Config {
             tx_table: tx_table.clone(),
@@ -191,15 +185,15 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
             ),
             tx_circuit: TxCircuitConfig::new(
                 meta,
-                power_of_randomness.clone(),
                 tx_table,
                 keccak_table.clone(),
+                challenges.clone(),
             ),
             bytecode_circuit: BytecodeConfig::configure(
                 meta,
                 bytecode_table,
                 keccak_table,
-                Challenges::mock(power_of_randomness[0].clone()),
+                challenges,
             ),
             keccak_circuit,
         }
@@ -241,7 +235,8 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
         )?;
         // --- Tx Circuit ---
         config.tx_circuit.load(&mut layouter)?;
-        self.tx_circuit.assign(&config.tx_circuit, &mut layouter)?;
+        self.tx_circuit
+            .assign(&config.tx_circuit, &mut layouter, &challenges)?;
         // --- Bytecode Circuit ---
         let bytecodes: Vec<UnrolledBytecode<F>> = self
             .block
@@ -322,14 +317,14 @@ impl<const MAX_TXS: usize, const MAX_CALLDATA: usize> SuperCircuit<Fr, MAX_TXS, 
         let k = k + 1;
         log::debug!("super circuit uses k = {}", k);
 
-        let mut instance: Vec<Vec<Fr>> = (1..POW_RAND_SIZE + 1)
+        let mut instance: Vec<Vec<Fr>> = (1..32)
             .map(|exp| vec![block.randomness.pow_vartime(&[exp as u64, 0, 0, 0]); (1 << k) - 64])
             .collect();
         // SignVerifyChip -> ECDSAChip -> MainGate instance column
         instance.push(vec![]);
 
         let chain_id = block.context.chain_id;
-        let tx_circuit = TxCircuit::new(aux_generator, block.randomness, chain_id.as_u64(), txs);
+        let tx_circuit = TxCircuit::new(aux_generator, chain_id.as_u64(), txs);
 
         let circuit = SuperCircuit::<_, MAX_TXS, MAX_CALLDATA> {
             block,

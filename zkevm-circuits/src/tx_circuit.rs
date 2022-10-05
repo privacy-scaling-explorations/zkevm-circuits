@@ -7,9 +7,7 @@
 pub mod sign_verify;
 
 use crate::table::{KeccakTable, TxFieldTag, TxTable};
-use crate::util::{
-    power_of_randomness_from_instance, random_linear_combine_word as rlc, Challenges,
-};
+use crate::util::{random_linear_combine_word as rlc, Challenges};
 use bus_mapping::circuit_input_builder::keccak_inputs_tx_circuit;
 use eth_types::{
     sign_types::SignData,
@@ -32,7 +30,6 @@ pub use halo2_proofs::halo2curves::{
     },
     secp256k1::{self, Secp256k1Affine, Secp256k1Compressed},
 };
-pub use sign_verify::{POW_RAND_SIZE, VERIF_HEIGHT};
 
 /// Config for TxCircuit
 #[derive(Clone, Debug)]
@@ -41,7 +38,7 @@ pub struct TxCircuitConfig<F: Field> {
     tag: Column<Advice>,
     index: Column<Advice>,
     value: Column<Advice>,
-    sign_verify: SignVerifyConfig<F>,
+    sign_verify: SignVerifyConfig,
     keccak_table: KeccakTable,
     _marker: PhantomData<F>,
 }
@@ -50,9 +47,9 @@ impl<F: Field> TxCircuitConfig<F> {
     /// Return a new TxCircuitConfig
     pub fn new(
         meta: &mut ConstraintSystem<F>,
-        power_of_randomness: [Expression<F>; sign_verify::POW_RAND_SIZE],
         tx_table: TxTable,
         keccak_table: KeccakTable,
+        challenges: Challenges<Expression<F>>,
     ) -> Self {
         let tx_id = tx_table.tx_id;
         let tag = tx_table.tag;
@@ -60,7 +57,7 @@ impl<F: Field> TxCircuitConfig<F> {
         let value = tx_table.value;
         meta.enable_equality(value);
 
-        let sign_verify = SignVerifyConfig::new(meta, power_of_randomness, keccak_table.clone());
+        let sign_verify = SignVerifyConfig::new(meta, keccak_table.clone(), challenges);
 
         Self {
             tx_id,
@@ -87,7 +84,7 @@ impl<F: Field> TxCircuitConfig<F> {
         tx_id: usize,
         tag: TxFieldTag,
         index: usize,
-        value: F,
+        value: Value<F>,
     ) -> Result<AssignedCell<F, F>, Error> {
         region.assign_advice(
             || "tx_id",
@@ -107,7 +104,7 @@ impl<F: Field> TxCircuitConfig<F> {
             offset,
             || Value::known(F::from(index as u64)),
         )?;
-        region.assign_advice(|| "value", self.value, offset, || Value::known(value))
+        region.assign_advice(|| "value", self.value, offset, || value)
     }
 }
 
@@ -116,8 +113,6 @@ impl<F: Field> TxCircuitConfig<F> {
 pub struct TxCircuit<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> {
     /// SignVerify chip
     pub sign_verify: SignVerifyChip<F, MAX_TXS>,
-    /// Randomness for RLC encoding
-    pub randomness: F,
     /// List of Transactions
     pub txs: Vec<Transaction>,
     /// Chain ID
@@ -128,19 +123,13 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
     TxCircuit<F, MAX_TXS, MAX_CALLDATA>
 {
     /// Return a new TxCircuit
-    pub fn new(
-        aux_generator: Secp256k1Affine,
-        randomness: F,
-        chain_id: u64,
-        txs: Vec<Transaction>,
-    ) -> Self {
+    pub fn new(aux_generator: Secp256k1Affine, chain_id: u64, txs: Vec<Transaction>) -> Self {
         TxCircuit::<F, MAX_TXS, MAX_CALLDATA> {
             sign_verify: SignVerifyChip {
                 aux_generator,
                 window_size: 2,
                 _marker: PhantomData,
             },
-            randomness,
             txs,
             chain_id,
         }
@@ -151,6 +140,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
         &self,
         config: &TxCircuitConfig<F>,
         layouter: &mut impl Layouter<F>,
+        challenges: &Challenges<Value<F>>,
     ) -> Result<(), Error> {
         assert!(self.txs.len() <= MAX_TXS);
         let sign_datas: Vec<SignData> = self
@@ -166,18 +156,24 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
 
         let assigned_sig_verifs =
             self.sign_verify
-                .assign(&config.sign_verify, layouter, self.randomness, &sign_datas)?;
+                .assign(&config.sign_verify, layouter, &sign_datas, challenges)?;
 
         layouter.assign_region(
             || "tx table",
             |mut region| {
                 let mut offset = 0;
                 // Empty entry
-                config.assign_row(&mut region, offset, 0, TxFieldTag::Null, 0, F::zero())?;
+                config.assign_row(
+                    &mut region,
+                    offset,
+                    0,
+                    TxFieldTag::Null,
+                    0,
+                    Value::known(F::zero()),
+                )?;
                 offset += 1;
                 // Assign al Tx fields except for call data
                 let tx_default = Transaction::default();
-                // for i in 0..MAX_TXS
                 for (i, assigned_sig_verif) in assigned_sig_verifs.iter().enumerate() {
                     let tx = if i < self.txs.len() {
                         &self.txs[i]
@@ -185,67 +181,79 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
                         &tx_default
                     };
 
-                    let address_cell = assigned_sig_verif.address.cell();
-                    let msg_hash_rlc_cell = assigned_sig_verif.msg_hash_rlc.cell();
-                    let mut msg_hash_rlc_value = F::zero();
-                    assigned_sig_verif.msg_hash_rlc.value().map(|f| {
-                        msg_hash_rlc_value = *f;
-                        f
-                    });
-                    for (tag, value) in &[
+                    for (tag, value) in [
                         (
                             TxFieldTag::Nonce,
-                            rlc(tx.nonce.to_le_bytes(), self.randomness),
+                            challenges
+                                .evm_word()
+                                .map(|challenge| rlc(tx.nonce.to_le_bytes(), challenge)),
                         ),
-                        (TxFieldTag::Gas, F::from(tx.gas_limit.as_u64())),
+                        (
+                            TxFieldTag::Gas,
+                            Value::known(F::from(tx.gas_limit.as_u64())),
+                        ),
                         (
                             TxFieldTag::GasPrice,
-                            rlc(tx.gas_price.to_le_bytes(), self.randomness),
+                            challenges
+                                .evm_word()
+                                .map(|challenge| rlc(tx.gas_price.to_le_bytes(), challenge)),
                         ),
                         (
                             TxFieldTag::CallerAddress,
-                            tx.from.to_scalar().expect("tx.from too big"),
+                            Value::known(tx.from.to_scalar().expect("tx.from too big")),
                         ),
                         (
                             TxFieldTag::CalleeAddress,
-                            tx.to
-                                .unwrap_or_else(Address::zero)
-                                .to_scalar()
-                                .expect("tx.to too big"),
+                            Value::known(
+                                tx.to
+                                    .unwrap_or_else(Address::zero)
+                                    .to_scalar()
+                                    .expect("tx.to too big"),
+                            ),
                         ),
-                        (TxFieldTag::IsCreate, F::from(tx.to.is_none() as u64)),
+                        (
+                            TxFieldTag::IsCreate,
+                            Value::known(F::from(tx.to.is_none() as u64)),
+                        ),
                         (
                             TxFieldTag::Value,
-                            rlc(tx.value.to_le_bytes(), self.randomness),
+                            challenges
+                                .evm_word()
+                                .map(|challenge| rlc(tx.value.to_le_bytes(), challenge)),
                         ),
                         (
                             TxFieldTag::CallDataLength,
-                            F::from(tx.call_data.0.len() as u64),
+                            Value::known(F::from(tx.call_data.0.len() as u64)),
                         ),
                         (
                             TxFieldTag::CallDataGasCost,
-                            F::from(
+                            Value::known(F::from(
                                 tx.call_data
                                     .0
                                     .iter()
                                     .fold(0, |acc, byte| acc + if *byte == 0 { 4 } else { 16 }),
-                            ),
+                            )),
                         ),
-                        (TxFieldTag::TxSignHash, msg_hash_rlc_value),
+                        (
+                            TxFieldTag::TxSignHash,
+                            assigned_sig_verif.msg_hash_rlc.value().copied(),
+                        ),
                     ] {
                         let assigned_cell =
-                            config.assign_row(&mut region, offset, i + 1, *tag, 0, *value)?;
+                            config.assign_row(&mut region, offset, i + 1, tag, 0, value)?;
                         offset += 1;
 
                         // Ref. spec 0. Copy constraints using fixed offsets between the tx rows and
                         // the SignVerifyChip
                         match tag {
-                            TxFieldTag::CallerAddress => {
-                                region.constrain_equal(assigned_cell.cell(), address_cell)?
-                            }
-                            TxFieldTag::TxSignHash => {
-                                region.constrain_equal(assigned_cell.cell(), msg_hash_rlc_cell)?
-                            }
+                            TxFieldTag::CallerAddress => region.constrain_equal(
+                                assigned_cell.cell(),
+                                assigned_sig_verif.address.cell(),
+                            )?,
+                            TxFieldTag::TxSignHash => region.constrain_equal(
+                                assigned_cell.cell(),
+                                assigned_sig_verif.msg_hash_rlc.cell(),
+                            )?,
                             _ => (),
                         }
                     }
@@ -262,7 +270,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
                             i + 1, // tx_id
                             TxFieldTag::CallData,
                             index,
-                            F::from(*byte as u64),
+                            Value::known(F::from(*byte as u64)),
                         )?;
                         offset += 1;
                         calldata_count += 1;
@@ -275,7 +283,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
                         0, // tx_id
                         TxFieldTag::CallData,
                         0,
-                        F::zero(),
+                        Value::known(F::zero()),
                     )?;
                     offset += 1;
                 }
@@ -289,7 +297,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
 impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
     for TxCircuit<F, MAX_TXS, MAX_CALLDATA>
 {
-    type Config = TxCircuitConfig<F>;
+    type Config = (TxCircuitConfig<F>, Challenges);
     type FloorPlanner = SimpleFloorPlanner;
 
     fn without_witnesses(&self) -> Self {
@@ -297,27 +305,27 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
     }
 
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-        let tx_table = TxTable {
-            tx_id: meta.advice_column(),
-            tag: meta.advice_column(),
-            index: meta.advice_column(),
-            value: meta.advice_column(),
+        let tx_table = TxTable::construct(meta);
+        let keccak_table = KeccakTable::construct(meta);
+        let challenges = Challenges::construct(meta);
+
+        let config = {
+            let challenges = challenges.exprs(meta);
+            TxCircuitConfig::new(meta, tx_table, keccak_table, challenges)
         };
 
-        let power_of_randomness = power_of_randomness_from_instance(meta);
-        let keccak_table = KeccakTable::construct(meta);
-        TxCircuitConfig::new(meta, power_of_randomness, tx_table, keccak_table)
+        (config, challenges)
     }
 
     fn synthesize(
         &self,
-        config: Self::Config,
+        (config, challenges): Self::Config,
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
-        let challenges = Challenges::mock(Value::known(self.randomness));
+        let challenges = challenges.values(&mut layouter);
 
         config.load(&mut layouter)?;
-        self.assign(&config, &mut layouter)?;
+        self.assign(&config, &mut layouter, &challenges)?;
         config.keccak_table.dev_load(
             &mut layouter,
             &keccak_inputs_tx_circuit(&self.txs[..], self.chain_id).map_err(|e| {
@@ -352,35 +360,26 @@ mod tx_circuit_tests {
         let aux_generator =
             <Secp256k1Affine as CurveAffine>::CurveExt::random(&mut rng).to_affine();
 
-        let randomness = F::random(&mut rng);
-        let mut instance: Vec<Vec<F>> = (1..POW_RAND_SIZE + 1)
-            .map(|exp| vec![randomness.pow(&[exp as u64, 0, 0, 0]); txs.len() * VERIF_HEIGHT])
-            .collect();
         // SignVerifyChip -> ECDSAChip -> MainGate instance column
-        instance.push(vec![]);
         let circuit = TxCircuit::<F, MAX_TXS, MAX_CALLDATA> {
             sign_verify: SignVerifyChip {
                 aux_generator,
                 window_size: 2,
                 _marker: PhantomData,
             },
-            randomness,
             txs,
             chain_id,
         };
 
-        let prover = match MockProver::run(k, &circuit, instance) {
+        let prover = match MockProver::run(k, &circuit, vec![vec![]]) {
             Ok(prover) => prover,
             Err(e) => panic!("{:#?}", e),
         };
         prover.verify()
     }
 
-    // High memory usage test.  Run in serial with:
-    // `cargo test [...] serial_ -- --ignored --test-threads 1`
-    #[ignore]
     #[test]
-    fn serial_test_tx_circuit_2tx() {
+    fn tx_circuit_2tx() {
         const NUM_TXS: usize = 2;
         const MAX_TXS: usize = 2;
         const MAX_CALLDATA: usize = 32;
@@ -399,11 +398,8 @@ mod tx_circuit_tests {
         );
     }
 
-    // High memory usage test.  Run in serial with:
-    // `cargo test [...] serial_ -- --ignored --test-threads 1`
-    #[ignore]
     #[test]
-    fn serial_test_tx_circuit_1tx() {
+    fn tx_circuit_1tx() {
         const MAX_TXS: usize = 1;
         const MAX_CALLDATA: usize = 32;
 
@@ -418,11 +414,8 @@ mod tx_circuit_tests {
         );
     }
 
-    // High memory usage test.  Run in serial with:
-    // `cargo test [...] serial_ -- --ignored --test-threads 1`
-    #[ignore]
     #[test]
-    fn serial_test_tx_circuit_bad_address() {
+    fn tx_circuit_bad_address() {
         const MAX_TXS: usize = 1;
         const MAX_CALLDATA: usize = 32;
 
