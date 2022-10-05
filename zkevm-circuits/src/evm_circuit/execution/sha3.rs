@@ -59,7 +59,6 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
                 0.expr(), // dst_addr for CopyDataType::RlcAcc is 0.
                 memory_address.length(),
                 rlc_acc.expr(),
-                cb.curr.state.rw_counter.expr() + cb.rw_counter_offset(),
                 copy_rwc_inc.expr(),
             );
         });
