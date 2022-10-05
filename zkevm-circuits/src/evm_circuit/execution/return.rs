@@ -19,7 +19,7 @@ use crate::{
     util::Expr,
 };
 use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId};
-use eth_types::{Field, H256};
+use eth_types::Field;
 use ethers_core::utils::keccak256;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
@@ -258,14 +258,12 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
             )?;
         }
 
-        if call.is_create {
+        if call.is_create && call.is_success {
             let values: Vec<_> = (3..3 + length.as_usize())
                 .map(|i| block.rws[step.rw_indices[i]].memory_value())
                 .collect();
             let mut code_hash = keccak256(&values);
-            dbg!(H256(code_hash));
             code_hash.reverse();
-            dbg!(H256(code_hash));
             self.code_hash.assign(
                 region,
                 offset,
@@ -276,7 +274,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
             )?;
         }
 
-        let copy_rw_increase = if call.is_create {
+        let copy_rw_increase = if call.is_create && call.is_success {
             length.as_u64()
         } else if !call.is_root {
             2 * std::cmp::min(call.return_data_length, length.as_u64())
@@ -425,6 +423,35 @@ mod test {
 
     #[test]
     fn test_root_create() {
+        let test_parameters = [(0, 0), (0, 10), (300, 20), (1000, 0)];
+        for ((offset, length), is_return) in
+            test_parameters.iter().cartesian_product(&[true, false])
+        {
+            dbg!(offset, length, is_return);
+            let tx_input = callee_bytecode(*is_return, *offset, *length).code();
+            assert_eq!(
+                run_test_circuits(
+                    TestContext::<1, 1>::new(
+                        None,
+                        |accs| {
+                            accs[0].address(MOCK_ACCOUNTS[0]).balance(eth(10));
+                        },
+                        |mut txs, accs| {
+                            txs[0].from(accs[0].address).input(tx_input.into());
+                        },
+                        |block, _| block,
+                    )
+                    .unwrap(),
+                    None
+                ),
+                Ok(()),
+                "(offset, length, is_return) = {:?}",
+                (*offset, *length, *is_return),
+            );
+        }
+    }
+
+    fn test_root_create_old() {
         let initialization_code = callee_bytecode(true, 0, 10);
         assert_eq!(initialization_code.code.len(), 13);
 

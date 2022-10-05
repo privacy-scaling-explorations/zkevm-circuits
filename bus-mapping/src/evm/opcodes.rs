@@ -591,7 +591,6 @@ impl Opcode for DummyCall {
         state: &mut CircuitInputStateRef,
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
-        panic!();
         dummy_gen_call_ops(state, geth_steps)
     }
 }
@@ -600,7 +599,6 @@ fn dummy_gen_call_ops(
     state: &mut CircuitInputStateRef,
     geth_steps: &[GethExecStep],
 ) -> Result<Vec<ExecStep>, Error> {
-    panic!();
     let geth_step = &geth_steps[0];
     let mut exec_step = state.new_step(geth_step)?;
 

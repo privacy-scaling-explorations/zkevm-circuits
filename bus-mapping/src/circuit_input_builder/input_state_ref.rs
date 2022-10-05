@@ -430,7 +430,7 @@ impl<'a> CircuitInputStateRef<'a> {
             },
         )?;
 
-        let (found, receiver_account) = self.sdb.get_account(&receiver);
+        let (_found, receiver_account) = self.sdb.get_account(&receiver);
         // if !found {
         //     dbg!("asdfw43fasdas");
         //     // we're here.......
