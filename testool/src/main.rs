@@ -153,8 +153,14 @@ fn main() -> Result<()> {
             .as_secs();
 
         std::fs::create_dir_all(REPORT_FOLDER)?;
-        let csv_filename = format!("{}/{}.{}.csv", REPORT_FOLDER, timestamp, git_hash);
-        let html_filename = format!("{}/{}.{}.html", REPORT_FOLDER, timestamp, git_hash);
+        let csv_filename = format!(
+            "{}/{}.{}.{}.csv",
+            REPORT_FOLDER, args.suite, timestamp, git_hash
+        );
+        let html_filename = format!(
+            "{}/{}.{}.{}.html",
+            REPORT_FOLDER, args.suite, timestamp, git_hash
+        );
 
         let mut results = Results::with_cache(PathBuf::from(csv_filename))?;
 
@@ -165,8 +171,10 @@ fn main() -> Result<()> {
             .unwrap()
             .filter_map(|f| {
                 let filename = f.unwrap().file_name().to_str().unwrap().to_string();
-                (filename.ends_with(".csv") && !filename.contains(&format!(".{}.", git_hash)))
-                    .then_some(filename)
+                (filename.starts_with(&format!("{}.", args.suite))
+                    && filename.ends_with(".csv")
+                    && !filename.contains(&format!(".{}.", git_hash)))
+                .then_some(filename)
             })
             .collect();
 

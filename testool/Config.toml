@@ -1,5 +1,5 @@
 [[suite]]
-id="default"
+id="nightly"
 path="tests/src/GeneralStateTestsFiller/**/*"
 max_gas = 500000
 max_steps = 1000
@@ -25,7 +25,7 @@ unimplemented_opcodes = [
 ignore_tests=["&tofix"]
 
 [[suite]]
-id = "ci"
+id = "light"
 path="tests/src/GeneralStateTestsFiller/**/*"
 max_gas = 500000
 max_steps = 1000
