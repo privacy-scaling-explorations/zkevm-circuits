@@ -106,6 +106,14 @@ impl<F: Field> TxCircuitConfig<F> {
         )?;
         region.assign_advice(|| "value", self.value, offset, || value)
     }
+
+    /// Get number of rows required.
+    pub fn get_num_rows_required(num_tx: usize) -> usize {
+        let num_rows_range_table = 1 << 18;
+        // Number of rows required to verify a transaction.
+        let num_rows_per_tx = 140436;
+        (num_tx * num_rows_per_tx).max(num_rows_range_table)
+    }
 }
 
 /// Tx Circuit for verifying transaction signatures

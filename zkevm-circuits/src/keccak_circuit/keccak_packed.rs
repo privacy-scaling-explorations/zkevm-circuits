@@ -975,7 +975,8 @@ impl<F: Field> KeccakPackedConfig<F> {
                     ));
                 }
             }
-            let rlc = compose_rlc::expr(&hash_bytes, r.clone());
+            let hash_bytes_le = hash_bytes.into_iter().rev().collect::<Vec<_>>();
+            let rlc = compose_rlc::expr(&hash_bytes_le, r.clone());
             cb.condition(start_new_hash, |cb| {
                 cb.require_equal(
                     "hash rlc check",
@@ -1596,13 +1597,13 @@ fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: &[u8], r: F) {
             // The rlc of the hash
             let is_final = is_final_block && round == NUM_ROUNDS;
             let hash_rlc = if is_final {
-                let hash_bytes = s
+                let hash_bytes_le = s
                     .into_iter()
                     .take(4)
-                    .map(|a| to_bytes::value(&unpack(a[0])))
-                    .take(4)
-                    .concat();
-                rlc::value(&hash_bytes, r)
+                    .flat_map(|a| to_bytes::value(&unpack(a[0])))
+                    .rev()
+                    .collect::<Vec<_>>();
+                rlc::value(&hash_bytes_le, r)
             } else {
                 F::zero()
             };
