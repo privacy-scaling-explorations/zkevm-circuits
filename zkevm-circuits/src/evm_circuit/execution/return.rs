@@ -207,7 +207,6 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        dbg!(step.reversible_write_counter);
         self.opcode.assign(
             region,
             offset,

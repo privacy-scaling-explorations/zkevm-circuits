@@ -45,7 +45,7 @@ pub struct LoggerConfig {
 impl Default for LoggerConfig {
     fn default() -> Self {
         Self {
-            enable_memory: false,
+            enable_memory: true,
             disable_stack: false,
             disable_storage: false,
             enable_return_data: true,
