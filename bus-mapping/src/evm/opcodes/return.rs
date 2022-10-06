@@ -1,175 +1,213 @@
-use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
-use crate::evm::Opcode;
-use crate::Error;
-use eth_types::GethExecStep;
+use super::Opcode;
+use crate::circuit_input_builder::{CopyDataType, CopyEvent, NumberOrHash};
+use crate::operation::MemoryOp;
+use crate::{
+    circuit_input_builder::CircuitInputStateRef,
+    evm::opcodes::ExecStep,
+    operation::{CallContextField, RW},
+    Error,
+};
+use eth_types::{Bytecode, GethExecStep, ToWord, H256};
+use ethers_core::utils::keccak256;
 
 #[derive(Debug, Copy, Clone)]
 pub(crate) struct Return;
 
+// TODO: rename to indicate this handles REVERT (and maybe STOP)?
 impl Opcode for Return {
     fn gen_associated_ops(
         state: &mut CircuitInputStateRef,
-        geth_steps: &[GethExecStep],
+        steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
-        let geth_step = &geth_steps[0];
-        let exec_step = state.new_step(geth_step)?;
+        let step = &steps[0];
+        let mut exec_step = state.new_step(step)?;
 
-        let current_call = state.call()?.clone();
-        let offset = geth_step.stack.nth_last(0)?.as_usize();
-        let length = geth_step.stack.nth_last(1)?.as_usize();
+        let offset = step.stack.nth_last(0)?;
+        let length = step.stack.nth_last(1)?;
+        state.stack_read(&mut exec_step, step.stack.nth_last_filled(0), offset)?;
+        state.stack_read(&mut exec_step, step.stack.nth_last_filled(1), length)?;
 
-        // can we use ref here?
-        let memory = state.call_ctx()?.memory.clone();
-        // skip reconstruction for root-level return/revert
-        if !current_call.is_root {
-            if !current_call.is_create() {
-                // handle normal return/revert
-                // copy return data
-                // update to the caller memory
+        if !length.is_zero() {
+            state
+                .call_ctx_mut()?
+                .memory
+                .extend_at_least((offset.low_u64() + length.low_u64()).try_into().unwrap());
+        }
+
+        let call = state.call()?.clone();
+        state.call_context_read(
+            &mut exec_step,
+            call.call_id,
+            CallContextField::IsSuccess,
+            call.is_success.to_word(),
+        );
+
+        let offset = offset.as_usize();
+        let length = length.as_usize();
+
+        // Case A in the spec.
+        if call.is_create() && call.is_success && length > 0 {
+            // Note: handle_return updates state.code_db. All we need to do here is push the
+            // copy event.
+            handle_create(
+                state,
+                &mut exec_step,
+                Source {
+                    id: call.call_id,
+                    offset,
+                    length,
+                },
+            )?;
+        }
+
+        // Case B in the specs.
+        if call.is_root {
+            state.call_context_read(
+                &mut exec_step,
+                call.call_id,
+                CallContextField::IsPersistent,
+                call.is_persistent.to_word(),
+            );
+        }
+
+        // Case C in the specs.
+        if !call.is_root {
+            state.handle_restore_context(steps, &mut exec_step)?;
+        }
+
+        // Case D in the specs.
+        if !call.is_root && !call.is_create() {
+            for (field, value) in [
+                (CallContextField::ReturnDataOffset, call.return_data_offset),
+                (CallContextField::ReturnDataLength, call.return_data_length),
+            ] {
+                state.call_context_read(&mut exec_step, call.call_id, field, value.into());
+            }
+
+            let return_data_length = usize::try_from(call.return_data_length).unwrap();
+            let copy_length = std::cmp::min(return_data_length, length);
+            if copy_length > 0 {
+                // reconstruction
+                let callee_memory = state.call_ctx()?.memory.clone();
                 let caller_ctx = state.caller_ctx_mut()?;
-                let return_offset = current_call.return_data_offset as usize;
-                // already resized in Call::reconstruct_memory
-                // caller_ctx.memory.extend_at_least(return_offset + length);
-                let copy_len = std::cmp::min(current_call.return_data_length as usize, length);
-                caller_ctx.memory.0[return_offset..return_offset + copy_len]
-                    .copy_from_slice(&memory.0[offset..offset + copy_len]);
-                caller_ctx.return_data.resize(length as usize, 0);
-                caller_ctx.return_data[0..copy_len]
-                    .copy_from_slice(&memory.0[offset..offset + copy_len]);
-            } else {
-                // dealing with contract creation
-                assert!(offset + length <= memory.0.len());
-                let code = memory.0[offset..offset + length].to_vec();
-                state.code_db.insert(code);
+                let return_offset = call.return_data_offset.try_into().unwrap();
+
+                caller_ctx.memory.0[return_offset..return_offset + copy_length]
+                    .copy_from_slice(&callee_memory.0[offset..offset + copy_length]);
+                caller_ctx.return_data.resize(length, 0);
+                caller_ctx.return_data[0..copy_length]
+                    .copy_from_slice(&callee_memory.0[offset..offset + copy_length]);
+
+                handle_copy(
+                    state,
+                    &mut exec_step,
+                    Source {
+                        id: call.call_id,
+                        offset,
+                        length,
+                    },
+                    Destination {
+                        id: call.caller_id,
+                        offset: return_offset,
+                        length: return_data_length,
+                    },
+                )?;
             }
         }
 
-        state.handle_return(&geth_steps[0])?;
+        state.handle_return(step)?;
         Ok(vec![exec_step])
     }
 }
 
-#[cfg(test)]
-mod return_tests {
-    use crate::mock::BlockData;
-    use eth_types::geth_types::GethData;
-    use eth_types::{bytecode, word};
-    use mock::test_ctx::helpers::{account_0_code_account_1_no_code, tx_from_1_to_0};
-    use mock::TestContext;
+struct Source {
+    id: usize,
+    offset: usize,
+    length: usize,
+}
 
-    #[test]
-    fn test_ok() {
-        // // deployed contract
-        // PUSH1 0x20
-        // PUSH1 0
-        // PUSH1 0
-        // CALLDATACOPY
-        // PUSH1 0x20
-        // PUSH1 0
-        // RETURN
-        //
-        // bytecode: 0x6020600060003760206000F3
-        //
-        // // constructor
-        // PUSH12 0x6020600060003760206000F3
-        // PUSH1 0
-        // MSTORE
-        // PUSH1 0xC
-        // PUSH1 0x14
-        // RETURN
-        //
-        // bytecode: 0x6B6020600060003760206000F3600052600C6014F3
-        let code = bytecode! {
-            PUSH21(word!("6B6020600060003760206000F3600052600C6014F3"))
-            PUSH1(0)
-            MSTORE
+struct Destination {
+    id: usize,
+    offset: usize,
+    length: usize,
+}
 
-            PUSH1 (0x15)
-            PUSH1 (0xB)
-            PUSH1 (0)
-            CREATE
+fn handle_copy(
+    state: &mut CircuitInputStateRef,
+    step: &mut ExecStep,
+    source: Source,
+    destination: Destination,
+) -> Result<(), Error> {
+    let copy_length = std::cmp::min(source.length, destination.length);
+    let bytes: Vec<_> = state.call_ctx()?.memory.0[source.offset..source.offset + copy_length]
+        .iter()
+        .map(|byte| (*byte, false))
+        .collect();
 
-            PUSH1 (0x20)
-            PUSH1 (0x20)
-            PUSH1 (0x20)
-            PUSH1 (0)
-            PUSH1 (0)
-            DUP6
-            PUSH2 (0xFFFF)
-            CALL
-            STOP
-        };
-        // Get the execution steps from the external tracer
-        let block: GethData = TestContext::<2, 1>::new(
-            None,
-            account_0_code_account_1_no_code(code),
-            tx_from_1_to_0,
-            |block, _tx| block.number(0xcafeu64),
-        )
-        .unwrap()
-        .into();
-
-        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
-        builder
-            .handle_block(&block.eth_block, &block.geth_traces)
-            .unwrap();
+    let rw_counter_start = state.block_ctx.rwc;
+    for (i, (byte, _is_code)) in bytes.iter().enumerate() {
+        state.push_op(
+            step,
+            RW::READ,
+            MemoryOp::new(source.id, (source.offset + i).into(), *byte),
+        );
+        state.push_op(
+            step,
+            RW::WRITE,
+            MemoryOp::new(destination.id, (destination.offset + i).into(), *byte),
+        );
     }
 
-    #[test]
-    fn test_revert() {
-        // // deployed contract
-        // PUSH1 0x20
-        // PUSH1 0
-        // PUSH1 0
-        // CALLDATACOPY
-        // PUSH1 0x20
-        // PUSH1 0
-        // REVERT
-        //
-        // bytecode: 0x6020600060003760206000FD
-        //
-        // // constructor
-        // PUSH12 0x6020600060003760206000FD
-        // PUSH1 0
-        // MSTORE
-        // PUSH1 0xC
-        // PUSH1 0x14
-        // RETURN
-        //
-        // bytecode: 0x6B6020600060003760206000FD600052600C6014F3
-        let code = bytecode! {
-            PUSH21(word!("6B6020600060003760206000FD600052600C6014F3"))
-            PUSH1(0)
-            MSTORE
+    state.push_copy(CopyEvent {
+        rw_counter_start,
+        src_type: CopyDataType::Memory,
+        src_id: NumberOrHash::Number(source.id),
+        src_addr: source.offset.try_into().unwrap(),
+        src_addr_end: (source.offset + source.length).try_into().unwrap(),
+        dst_type: CopyDataType::Memory,
+        dst_id: NumberOrHash::Number(destination.id),
+        dst_addr: destination.offset.try_into().unwrap(),
+        log_id: None,
+        bytes,
+    });
 
-            PUSH1 (0x15)
-            PUSH1 (0xB)
-            PUSH1 (0)
-            CREATE
+    Ok(())
+}
 
-            PUSH1 (0x20)
-            PUSH1 (0x20)
-            PUSH1 (0x20)
-            PUSH1 (0)
-            PUSH1 (0)
-            DUP6
-            PUSH2 (0xFFFF)
-            CALL
-            STOP
-        };
-        // Get the execution steps from the external tracer
-        let block: GethData = TestContext::<2, 1>::new(
-            None,
-            account_0_code_account_1_no_code(code),
-            tx_from_1_to_0,
-            |block, _tx| block.number(0xcafeu64),
-        )
-        .unwrap()
-        .into();
+fn handle_create(
+    state: &mut CircuitInputStateRef,
+    step: &mut ExecStep,
+    source: Source,
+) -> Result<(), Error> {
+    let values = state.call_ctx()?.memory.0[source.offset..source.offset + source.length].to_vec();
+    let dst_id = NumberOrHash::Hash(H256(keccak256(&values)));
+    let bytes: Vec<_> = Bytecode::from(values)
+        .code
+        .iter()
+        .map(|element| (element.value, element.is_code))
+        .collect();
 
-        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
-        builder
-            .handle_block(&block.eth_block, &block.geth_traces)
-            .unwrap();
+    let rw_counter_start = state.block_ctx.rwc;
+    for (i, (byte, _)) in bytes.iter().enumerate() {
+        state.push_op(
+            step,
+            RW::READ,
+            MemoryOp::new(source.id, (source.offset + i).into(), *byte),
+        );
     }
+
+    state.push_copy(CopyEvent {
+        rw_counter_start,
+        src_type: CopyDataType::Memory,
+        src_id: NumberOrHash::Number(source.id),
+        src_addr: source.offset.try_into().unwrap(),
+        src_addr_end: (source.offset + source.length).try_into().unwrap(),
+        dst_type: CopyDataType::Bytecode,
+        dst_id,
+        dst_addr: 0,
+        log_id: None,
+        bytes,
+    });
+
+    Ok(())
 }
