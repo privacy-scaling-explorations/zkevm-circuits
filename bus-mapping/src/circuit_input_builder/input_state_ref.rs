@@ -430,12 +430,7 @@ impl<'a> CircuitInputStateRef<'a> {
             },
         )?;
 
-        let (_found, receiver_account) = self.sdb.get_account(&receiver);
-        // if !found {
-        //     dbg!("asdfw43fasdas");
-        //     // we're here.......
-        //     return Err(Error::AccountNotFound(receiver));
-        // }
+        let (_, receiver_account) = self.sdb.get_account(&receiver);
         let receiver_balance_prev = receiver_account.balance;
         let receiver_balance = receiver_account.balance + value;
         self.push_op_reversible(
@@ -548,7 +543,6 @@ impl<'a> CircuitInputStateRef<'a> {
         let sender = self.call()?.address;
         let (found, account) = self.sdb.get_account(&sender);
         if !found {
-            dbg!("asdfwa3fasda");
             return Err(Error::AccountNotFound(sender));
         }
         Ok(get_contract_address(sender, account.nonce))
@@ -620,7 +614,6 @@ impl<'a> CircuitInputStateRef<'a> {
                 };
                 let (found, account) = self.sdb.get_account(&code_address);
                 if !found {
-                    dbg!("asdlkfajw;lrkjas;dlf");
                     return Err(Error::AccountNotFound(code_address));
                 }
                 (CodeSource::Address(code_address), account.code_hash)
@@ -813,7 +806,6 @@ impl<'a> CircuitInputStateRef<'a> {
             let code_hash = self.code_db.insert(code);
             let (found, callee_account) = self.sdb.get_account_mut(&call.address);
             if !found {
-                dbg!("as;lkdfjaw;4lkfjas;df");
                 return Err(Error::AccountNotFound(call.address));
             }
             callee_account.code_hash = code_hash;
@@ -1067,7 +1059,6 @@ impl<'a> CircuitInputStateRef<'a> {
             let sender = self.call()?.address;
             let (found, account) = self.sdb.get_account(&sender);
             if !found {
-                dbg!("a;slkfj3q;rlkajwd;lf");
                 return Err(Error::AccountNotFound(sender));
             }
             if account.balance < value {
