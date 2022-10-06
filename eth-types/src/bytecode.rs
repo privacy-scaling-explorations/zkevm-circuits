@@ -22,7 +22,8 @@ pub struct BytecodeElement {
 /// EVM Bytecode
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct Bytecode {
-    code: Vec<BytecodeElement>,
+    /// Vector for bytecode elements.
+    pub code: Vec<BytecodeElement>,
     num_opcodes: usize,
     markers: HashMap<String, usize>,
 }
