@@ -80,7 +80,6 @@ mod return_tests {
             PUSH1(0)
             MSTORE
 
-            PUSH1 (0x15)
             PUSH1 (0xB)
             PUSH1 (0)
             CREATE
@@ -144,7 +143,6 @@ mod return_tests {
             PUSH1(0)
             MSTORE
 
-            PUSH1 (0x15)
             PUSH1 (0xB)
             PUSH1 (0)
             CREATE

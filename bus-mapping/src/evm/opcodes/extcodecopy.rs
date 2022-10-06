@@ -122,7 +122,6 @@ mod extcodecopy_tests {
             PUSH1(0)
             MSTORE
 
-            PUSH1 (0x15)
             PUSH1 (0xB)
             PUSH1 (0)
             CREATE
