@@ -58,6 +58,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
         let range = MemoryAddressGadget::construct(cb, offset, length);
 
         let is_success = cb.call_context(None, CallContextFieldTag::IsSuccess);
+        cb.require_boolean("is_success is boolean", is_success.expr());
         cb.require_equal(
             "if is_success, opcode is RETURN. if not, opcode is REVERT",
             opcode.expr(),
