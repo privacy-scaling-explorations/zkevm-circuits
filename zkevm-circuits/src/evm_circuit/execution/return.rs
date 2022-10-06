@@ -40,7 +40,6 @@ pub(crate) struct ReturnGadget<F> {
     return_data_length: Cell<F>,
 
     memory_expansion: MemoryExpansionGadget<F, 1, N_BYTES_MEMORY_WORD_SIZE>,
-
     code_hash: Cell<F>,
 }
 
@@ -61,6 +60,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
         let range = MemoryAddressGadget::construct(cb, offset, length);
 
         let is_success = cb.call_context(None, CallContextFieldTag::IsSuccess);
+        cb.require_boolean("is_success is boolean", is_success.expr());
         cb.require_equal(
             "if is_success, opcode is RETURN. if not, opcode is REVERT",
             opcode.expr(),
@@ -156,7 +156,6 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
         let (return_data_offset, return_data_length, copy_length) = cb.condition(
             not::expr(is_create.clone()) * not::expr(is_root.clone()),
             |cb| {
-                // these may need to go in case C? see https://eips.ethereum.org/EIPS/eip-211
                 let [return_data_offset, return_data_length] = [
                     CallContextFieldTag::ReturnDataOffset,
                     CallContextFieldTag::ReturnDataLength,

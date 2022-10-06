@@ -896,7 +896,7 @@ impl<'a> CircuitInputStateRef<'a> {
             (CallContextField::GasLeft, caller_gas_left.into()),
             (
                 CallContextField::MemorySize,
-                geth_step_next.memory.word_size().into(),
+                self.caller_ctx()?.memory.word_size().into(),
             ),
             (
                 CallContextField::ReversibleWriteCounter,
