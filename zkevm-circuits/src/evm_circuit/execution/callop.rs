@@ -103,7 +103,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         cb.stack_pop(callee_address_word.expr());
         // Save the current stack pointer offset to increase outside of
         // ConstraintBuilder. Since opcode `CALL` has an additional stack pop
-        // work `value` excluded by opcode `STATICCALL`.
+        // `value` excluded by opcode `STATICCALL`.
         let stack_offset = cb.stack_pointer_offset();
         cb.condition(is_call.expr(), |cb| {
             cb.stack_lookup(false.expr(), stack_offset.expr(), value.expr())
@@ -174,6 +174,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 is_static.expr(),
             );
         });
+
         // Verify transfer
         let transfer = TransferGadget::construct(
             cb,
@@ -182,6 +183,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             value.clone(),
             &mut callee_reversion_info,
         );
+
         // Verify gas cost
         let [callee_nonce, callee_code_hash] = [AccountFieldTag::Nonce, AccountFieldTag::CodeHash]
             .map(|field_tag| {
