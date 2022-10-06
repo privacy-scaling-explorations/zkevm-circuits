@@ -422,6 +422,11 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         );
     }
 
+    pub(crate) fn require_next_state_not(&mut self, execution_state: ExecutionState) {
+        let next_state = self.next.execution_state_selector([execution_state]);
+        self.add_constraint("Constrain next execution state not", next_state.expr());
+    }
+
     pub(crate) fn require_step_state_transition(
         &mut self,
         step_state_transition: StepStateTransition<F>,
@@ -1109,6 +1114,8 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         rw_counter: Expression<F>,
         rwc_inc: Expression<F>,
     ) {
+        // TODO: eliminate rw_counter argument since we have self.rw_counter_offset
+        // already. TODO: increment rw_counter_offset by rwc_inc.
         self.add_lookup(
             "copy lookup",
             Lookup::CopyTable {
