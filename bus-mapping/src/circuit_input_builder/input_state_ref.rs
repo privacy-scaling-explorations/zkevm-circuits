@@ -16,8 +16,8 @@ use crate::{
     Error,
 };
 use eth_types::{
-    evm_types::{Gas, MemoryAddress, OpcodeId, StackAddress},
-    Address, GethExecStep, ToAddress, ToBigEndian, Word, H256,
+    evm_types::{gas_utils::memory_expansion_gas_cost, Gas, MemoryAddress, OpcodeId, StackAddress},
+    Address, GethExecStep, ToAddress, ToBigEndian, ToWord, Word, H256,
 };
 use ethers_core::utils::{get_contract_address, get_create2_address};
 use std::cmp::max;
@@ -814,12 +814,106 @@ impl<'a> CircuitInputStateRef<'a> {
             callee_account.code_hash = code_hash;
         }
 
-        // Handle reversion if this call doens't end successfully
-        if !self.call()?.is_success {
+        // Handle reversion if this call doesn't end successfully
+        if !call.is_success {
             self.handle_reversion();
         }
 
         self.tx_ctx.pop_call_ctx();
+
+        Ok(())
+    }
+
+    /// Bus mapping for the RestoreContextGadget as used in RETURN.
+    // TODO: unify this with restore context bus mapping for STOP.
+    // TODO: unify this with the `handle return function above.`
+    pub fn handle_restore_context(
+        &mut self,
+        steps: &[GethExecStep],
+        exec_step: &mut ExecStep,
+    ) -> Result<(), Error> {
+        let call = self.call()?.clone();
+        let caller = self.caller()?.clone();
+        self.call_context_read(
+            exec_step,
+            call.call_id,
+            CallContextField::CallerId,
+            caller.call_id.into(),
+        );
+
+        let geth_step = &steps[0];
+        let geth_step_next = &steps[1];
+
+        let [last_callee_return_data_offset, last_callee_return_data_length] = match geth_step.op {
+            OpcodeId::STOP => [Word::zero(); 2],
+            OpcodeId::REVERT | OpcodeId::RETURN => {
+                let offset = geth_step.stack.nth_last(0)?;
+                let length = geth_step.stack.nth_last(1)?;
+                // This is the convention we are using for memory addresses so that there is no
+                // memory expansion cost when the length is 0.
+                if length.is_zero() {
+                    [Word::zero(); 2]
+                } else {
+                    [offset, length]
+                }
+            }
+            _ => unreachable!(),
+        };
+
+        let curr_memory_word_size = (exec_step.memory_size as u64) / 32;
+        let next_memory_word_size = if !last_callee_return_data_length.is_zero() {
+            std::cmp::max(
+                (last_callee_return_data_offset + last_callee_return_data_length + 31).as_u64()
+                    / 32,
+                curr_memory_word_size,
+            )
+        } else {
+            curr_memory_word_size
+        };
+
+        let memory_expansion_gas_cost =
+            memory_expansion_gas_cost(curr_memory_word_size, next_memory_word_size);
+        let gas_refund = geth_step.gas.0 - memory_expansion_gas_cost;
+        let caller_gas_left = geth_step_next.gas.0 - gas_refund;
+
+        for (field, value) in [
+            (CallContextField::IsRoot, (caller.is_root as u64).into()),
+            (
+                CallContextField::IsCreate,
+                (caller.is_create() as u64).into(),
+            ),
+            (CallContextField::CodeHash, caller.code_hash.to_word()),
+            (CallContextField::ProgramCounter, geth_step_next.pc.0.into()),
+            (
+                CallContextField::StackPointer,
+                geth_step_next.stack.stack_pointer().0.into(),
+            ),
+            (CallContextField::GasLeft, caller_gas_left.into()),
+            (
+                CallContextField::MemorySize,
+                self.caller_ctx()?.memory.word_size().into(),
+            ),
+            (
+                CallContextField::ReversibleWriteCounter,
+                self.caller_ctx()?.reversible_write_counter.into(),
+            ),
+        ] {
+            self.call_context_read(exec_step, caller.call_id, field, value);
+        }
+
+        for (field, value) in [
+            (CallContextField::LastCalleeId, call.call_id.into()),
+            (
+                CallContextField::LastCalleeReturnDataOffset,
+                last_callee_return_data_offset,
+            ),
+            (
+                CallContextField::LastCalleeReturnDataLength,
+                last_callee_return_data_length,
+            ),
+        ] {
+            self.call_context_write(exec_step, caller.call_id, field, value);
+        }
 
         Ok(())
     }
