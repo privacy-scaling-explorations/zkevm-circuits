@@ -730,14 +730,14 @@ impl KeccakTable {
     ) -> Vec<[Value<F>; 4]> {
         let input_rlc = challenges
             .keccak_input()
-            .map(|challenge| rlc::value(input.iter().rev(), challenge));
+            .map(|challenge| rlc::value(input.iter(), challenge)); // input.iter().rev()
         let input_len = F::from(input.len() as u64);
         let mut keccak = Keccak::default();
         keccak.update(input);
         let output = keccak.digest();
         let output_rlc = challenges.evm_word().map(|challenge| {
             RandomLinearCombination::<F, 32>::random_linear_combine(
-                Word::from_big_endian(output.as_slice()).to_le_bytes(),
+                Word::from_little_endian(output.as_slice()).to_le_bytes(), // from_big_endian
                 challenge,
             )
         });

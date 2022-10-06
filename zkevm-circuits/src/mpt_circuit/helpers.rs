@@ -12,8 +12,10 @@ use crate::{
     },
 };
 
+use super::{columns::MainCols, param::{BRANCH_0_S_START, BRANCH_0_C_START}};
+
 // Turn 32 hash cells into 4 cells containing keccak words.
-pub fn into_words_expr<F: FieldExt>(hash: Vec<Expression<F>>) -> Vec<Expression<F>> {
+pub(crate) fn into_words_expr<F: FieldExt>(hash: Vec<Expression<F>>) -> Vec<Expression<F>> {
     let mut words = vec![];
     for i in 0..4 {
         let mut word = Expression::Constant(F::zero());
@@ -28,7 +30,7 @@ pub fn into_words_expr<F: FieldExt>(hash: Vec<Expression<F>>) -> Vec<Expression<
     words
 }
 
-pub fn compute_rlc<F: FieldExt>(
+pub(crate) fn compute_rlc<F: FieldExt>(
     meta: &mut VirtualCells<F>,
     advices: Vec<Column<Advice>>,
     mut rind: usize,
@@ -56,7 +58,7 @@ pub fn compute_rlc<F: FieldExt>(
     rlc
 }
 
-pub fn range_lookups<F: FieldExt>(
+pub(crate) fn range_lookups<F: FieldExt>(
     meta: &mut ConstraintSystem<F>,
     q_enable: impl Fn(&mut VirtualCells<'_, F>) -> Expression<F>,
     columns: Vec<Column<Advice>>,
@@ -97,7 +99,7 @@ pub fn range_lookups<F: FieldExt>(
 // 0) (key_len - 5) * byte < 33 * 255 (Note that this will be true only if byte
 // = 0) (key_len - 6) * byte < 33 * 255 (Note that this will be true only if
 // byte = 0) ...
-pub fn key_len_lookup<F: FieldExt>(
+pub(crate) fn key_len_lookup<F: FieldExt>(
     meta: &mut ConstraintSystem<F>,
     q_enable: impl Fn(&mut VirtualCells<'_, F>) -> Expression<F>,
     ind: usize,
@@ -127,7 +129,7 @@ pub fn key_len_lookup<F: FieldExt>(
     });
 }
 
-pub fn mult_diff_lookup<F: FieldExt>(
+pub(crate) fn mult_diff_lookup<F: FieldExt>(
     meta: &mut ConstraintSystem<F>,
     q_enable: impl Fn(&mut VirtualCells<'_, F>) -> Expression<F>,
     addition: usize,
@@ -162,7 +164,7 @@ pub fn mult_diff_lookup<F: FieldExt>(
     });
 }
 
-pub fn get_bool_constraint<F: FieldExt>(
+pub(crate) fn get_bool_constraint<F: FieldExt>(
     q_enable: Expression<F>,
     expr: Expression<F>,
 ) -> Expression<F> {
@@ -170,7 +172,7 @@ pub fn get_bool_constraint<F: FieldExt>(
     q_enable * expr.clone() * (one - expr)
 }
 
-pub fn get_is_extension_node<F: FieldExt>(
+pub(crate) fn get_is_extension_node<F: FieldExt>(
     meta: &mut VirtualCells<F>,
     s_advices: [Column<Advice>; HASH_WIDTH],
     rot: i32,
@@ -188,7 +190,7 @@ pub fn get_is_extension_node<F: FieldExt>(
     is_ext_short + is_ext_node_even_nibbles + is_ext_node_long_odd_nibbles
 }
 
-pub fn get_is_extension_node_one_nibble<F: FieldExt>(
+pub(crate) fn get_is_extension_node_one_nibble<F: FieldExt>(
     meta: &mut VirtualCells<F>,
     s_advices: [Column<Advice>; HASH_WIDTH],
     rot: i32,
@@ -201,7 +203,7 @@ pub fn get_is_extension_node_one_nibble<F: FieldExt>(
     is_ext_short_c16 + is_ext_short_c1
 }
 
-pub fn get_is_extension_node_even_nibbles<F: FieldExt>(
+pub(crate) fn get_is_extension_node_even_nibbles<F: FieldExt>(
     meta: &mut VirtualCells<F>,
     s_advices: [Column<Advice>; HASH_WIDTH],
     rot: i32,
@@ -214,7 +216,7 @@ pub fn get_is_extension_node_even_nibbles<F: FieldExt>(
     is_ext_long_even_c16 + is_ext_long_even_c1
 }
 
-pub fn get_is_extension_node_long_odd_nibbles<F: FieldExt>(
+pub(crate) fn get_is_extension_node_long_odd_nibbles<F: FieldExt>(
     meta: &mut VirtualCells<F>,
     s_advices: [Column<Advice>; HASH_WIDTH],
     rot: i32,
@@ -247,4 +249,52 @@ pub(crate) fn bytes_expr_into_rlc<F: FieldExt>(expressions: &[Expression<F>], r:
     }
 
     rlc
+}
+
+pub(crate) fn get_branch_len<F: FieldExt>(
+    meta: &mut VirtualCells<F>,
+    s_main: MainCols<F>,
+    rot_into_branch_init: i32,
+    is_s: bool,
+) -> Expression<F> {
+    let one = Expression::Constant(F::from(1_u64));
+    let mut s1 = meta.query_advice(s_main.rlp1, Rotation(rot_into_branch_init));
+    let mut s2 = meta.query_advice(s_main.rlp2, Rotation(rot_into_branch_init));
+    if !is_s {
+        s1 = meta.query_advice(s_main.bytes[0], Rotation(rot_into_branch_init));
+        s2 = meta.query_advice(s_main.bytes[1], Rotation(rot_into_branch_init));
+    }
+
+    let one_rlp_byte = s1.clone() * s2.clone();
+    let two_rlp_bytes = s1.clone() * (one.clone() - s2.clone());
+    let three_rlp_bytes = (one.clone() - s1) * s2;
+
+    let mut rlp_byte0 =
+        meta.query_advice(s_main.bytes[BRANCH_0_S_START - RLP_NUM], Rotation(rot_into_branch_init));
+    let mut rlp_byte1 = meta.query_advice(
+        s_main.bytes[BRANCH_0_S_START - RLP_NUM + 1],
+        Rotation(rot_into_branch_init),
+    );
+    let mut rlp_byte2 = meta.query_advice(
+        s_main.bytes[BRANCH_0_S_START - RLP_NUM + 2],
+        Rotation(rot_into_branch_init),
+    );
+
+    if !is_s {
+        rlp_byte0 =
+            meta.query_advice(s_main.bytes[BRANCH_0_C_START - RLP_NUM], Rotation(rot_into_branch_init));
+        rlp_byte1 = meta.query_advice(
+            s_main.bytes[BRANCH_0_C_START - RLP_NUM + 1],
+            Rotation(rot_into_branch_init),
+        );
+        rlp_byte2 = meta.query_advice(
+            s_main.bytes[BRANCH_0_C_START - RLP_NUM + 2],
+            Rotation(rot_into_branch_init),
+        );
+    }
+
+    let c256 = Expression::Constant(F::from(256_u64));
+    one_rlp_byte * (rlp_byte0.clone() + one.clone())
+        + two_rlp_bytes * (rlp_byte1.clone() + one.clone() + one.clone())
+        + three_rlp_bytes * (rlp_byte1 * c256 + rlp_byte2 + one.clone() + one.clone() + one.clone())
 }

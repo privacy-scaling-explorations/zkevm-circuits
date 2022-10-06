@@ -1,5 +1,5 @@
 use halo2_proofs::{
-    plonk::{Advice, Column, ConstraintSystem, Expression, Fixed},
+    plonk::{Advice, Column, ConstraintSystem, Expression},
     poly::Rotation,
     arithmetic::FieldExt,
 };
@@ -8,12 +8,11 @@ use std::marker::PhantomData;
 use crate::{
     mpt_circuit::columns::{AccumulatorCols, MainCols, PositionCols},
     mpt_circuit::helpers::{bytes_expr_into_rlc, get_is_extension_node},
-    mpt_circuit::param::{
+    mpt_circuit::{param::{
         ACCOUNT_LEAF_ROWS, ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND,
         ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND, IS_BRANCH_C_PLACEHOLDER_POS,
-        IS_BRANCH_S_PLACEHOLDER_POS, IS_C_BRANCH_NON_HASHED_POS, IS_S_BRANCH_NON_HASHED_POS,
-        KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH, RLP_NUM,
-    },
+        IS_BRANCH_S_PLACEHOLDER_POS, IS_C_BRANCH_NON_HASHED_POS, IS_S_BRANCH_NON_HASHED_POS, RLP_NUM, BRANCH_0_S_START, BRANCH_0_C_START,
+    }, helpers::get_branch_len}, table::KeccakTable,
 };
 
 /*
@@ -84,7 +83,7 @@ impl<F: FieldExt> BranchHashInParentConfig<F> {
         is_last_branch_child: Column<Advice>,
         s_main: MainCols<F>,
         accs: AccumulatorCols<F>,
-        keccak_table: [Column<Fixed>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
+        keccak_table: KeccakTable,
         randomness: Expression<F>,
         is_s: bool,
     ) -> Self {
@@ -92,6 +91,7 @@ impl<F: FieldExt> BranchHashInParentConfig<F> {
             _marker: PhantomData,
         };
         let one = Expression::Constant(F::from(1_u64));
+        let rot_into_branch_init = -16;
 
         /*
         When branch is in the first level of the account trie, we need to check whether
@@ -103,7 +103,6 @@ impl<F: FieldExt> BranchHashInParentConfig<F> {
         meta.lookup_any(
             "Branch in first level of account trie - hash compared to root",
             |meta| {
-                let mut constraints = vec![];
                 let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
                 let not_first_level = meta.query_advice(position_cols.not_first_level, Rotation::cur());
 
@@ -135,27 +134,28 @@ impl<F: FieldExt> BranchHashInParentConfig<F> {
 
                 let root = meta.query_advice(inter_root, Rotation::cur());
 
-                constraints.push((
-                    q_not_first.clone()
-                        * is_last_branch_child.clone()
-                        * (one.clone() - is_extension_node.clone())
-                        * (one.clone() - not_first_level.clone())
-                        * (one.clone() - is_branch_placeholder.clone())
-                        * branch_acc, // TODO: replace with acc once ValueNode is added
-                    meta.query_fixed(keccak_table[0], Rotation::cur()),
-                ));
-                let keccak_table_i = meta.query_fixed(keccak_table[1], Rotation::cur());
-                constraints.push((
-                    q_not_first
-                        * is_last_branch_child
-                        * (one.clone() - is_extension_node)
-                        * (one.clone() - is_branch_placeholder)
-                        * (one.clone() - not_first_level)
-                        * root,
-                    keccak_table_i,
-                ));
+                let selector = q_not_first.clone()
+                    * is_last_branch_child.clone()
+                    * (one.clone() - is_extension_node.clone())
+                    * (one.clone() - not_first_level.clone())
+                    * (one.clone() - is_branch_placeholder.clone());
+                
+                let branch_len = get_branch_len(meta, s_main.clone(), rot_into_branch_init, is_s);
+                                
+                let mut table_map = Vec::new();
+                let keccak_is_enabled = meta.query_advice(keccak_table.is_enabled, Rotation::cur());
+                table_map.push((selector.clone(), keccak_is_enabled));
 
-                constraints
+                let keccak_input_rlc = meta.query_advice(keccak_table.input_rlc, Rotation::cur());
+                table_map.push((selector.clone() * branch_acc, keccak_input_rlc));
+
+                let keccak_input_len = meta.query_advice(keccak_table.input_len, Rotation::cur());
+                table_map.push((selector.clone() * branch_len, keccak_input_len));
+
+                let keccak_output_rlc = meta.query_advice(keccak_table.output_rlc, Rotation::cur());
+                table_map.push((selector.clone() * root, keccak_output_rlc));
+
+                table_map
             },
         );
 
@@ -171,7 +171,6 @@ impl<F: FieldExt> BranchHashInParentConfig<F> {
             |meta| {
                 // Note: we are in the same row (last branch child) for S and C.
                 let not_first_level = meta.query_advice(position_cols.not_first_level, Rotation::cur());
-                let rot_into_branch_init = -16;
                 let mut is_branch_placeholder = meta.query_advice(
                     s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM],
                     Rotation(rot_into_branch_init),
@@ -206,7 +205,7 @@ impl<F: FieldExt> BranchHashInParentConfig<F> {
                 if !is_s {
                     mult = meta.query_advice(accs.acc_c.mult, Rotation::cur());
                 }
-                let branch_acc = acc + c128 * mult;
+                let branch_acc = acc + c128 * mult; // TODO: replace with acc once ValueNode is added
 
                 let mut sc_hash = vec![];
                 // Note: storage root is always in s_main.bytes.
@@ -230,27 +229,29 @@ impl<F: FieldExt> BranchHashInParentConfig<F> {
                     }
                 }
                 let hash_rlc = bytes_expr_into_rlc(&sc_hash, randomness);
-                let mut constraints = vec![(
-                    not_first_level.clone()
-                        * (one.clone() - is_extension_node.clone())
-                        * is_last_branch_child.clone()
-                        * is_account_leaf_in_added_branch.clone()
-                        * (one.clone() - is_branch_placeholder.clone())
-                        * branch_acc, // TODO: replace with acc once ValueNode is added
-                    meta.query_fixed(keccak_table[0], Rotation::cur()),
-                )];
 
-                constraints.push((
-                    not_first_level
-                        * (one.clone() - is_extension_node)
-                        * is_last_branch_child
-                        * is_account_leaf_in_added_branch
-                        * (one.clone() - is_branch_placeholder)
-                        * hash_rlc,
-                    meta.query_fixed(keccak_table[1], Rotation::cur()),
-                ));
+                let selector = not_first_level.clone()
+                    * (one.clone() - is_extension_node.clone())
+                    * is_last_branch_child.clone()
+                    * is_account_leaf_in_added_branch.clone()
+                    * (one.clone() - is_branch_placeholder.clone());
 
-                constraints
+                let branch_len = get_branch_len(meta, s_main.clone(), rot_into_branch_init, is_s);
+
+                let mut table_map = Vec::new();
+                let keccak_is_enabled = meta.query_advice(keccak_table.is_enabled, Rotation::cur());
+                table_map.push((selector.clone(), keccak_is_enabled));
+
+                let keccak_input_rlc = meta.query_advice(keccak_table.input_rlc, Rotation::cur());
+                table_map.push((selector.clone() * branch_acc, keccak_input_rlc));
+
+                let keccak_input_len = meta.query_advice(keccak_table.input_len, Rotation::cur());
+                table_map.push((selector.clone() * branch_len, keccak_input_len));
+
+                let keccak_output_rlc = meta.query_advice(keccak_table.output_rlc, Rotation::cur());
+                table_map.push((selector.clone() * hash_rlc, keccak_output_rlc));
+
+                table_map
             },
         );
 
@@ -306,16 +307,12 @@ impl<F: FieldExt> BranchHashInParentConfig<F> {
             let mult = meta.query_advice(acc_pair.mult, Rotation::cur());
             let branch_acc = acc + c128 * mult;
 
-            let mut constraints = vec![(
-                not_first_level.clone()
-                    * is_last_branch_child.clone()
-                    * (one.clone() - is_account_leaf_in_added_branch_prev.clone()) // we don't check this in the first storage level
-                    * (one.clone() - is_branch_placeholder.clone())
-                    * (one.clone() - is_branch_non_hashed.clone())
-                    * (one.clone() - is_extension_node.clone())
-                    * branch_acc, // TODO: replace with acc once ValueNode is added
-                meta.query_fixed(keccak_table[0], Rotation::cur()),
-            )];
+            let selector = not_first_level.clone()
+                * is_last_branch_child.clone()
+                * (one.clone() - is_account_leaf_in_added_branch_prev.clone()) // we don't check this in the first storage level
+                * (one.clone() - is_branch_placeholder.clone())
+                * (one.clone() - is_branch_non_hashed.clone())
+                * (one.clone() - is_extension_node.clone());
 
             let mut mod_node_hash_rlc = accs.clone().s_mod_node_rlc;
             if !is_s {
@@ -324,20 +321,23 @@ impl<F: FieldExt> BranchHashInParentConfig<F> {
 
             // Any rotation that lands into branch can be used instead of -19.
             let mod_node_hash_rlc_cur = meta.query_advice(mod_node_hash_rlc, Rotation(-19));
-            let keccak_table_i = meta.query_fixed(keccak_table[1], Rotation::cur());
-            constraints.push((
-                not_first_level
-                        * is_last_branch_child
-                        * (one.clone()
-                            - is_account_leaf_in_added_branch_prev) // we don't check this in the first storage level
-                        * (one.clone() - is_branch_placeholder)
-                        * (one.clone() - is_branch_non_hashed)
-                        * (one.clone() - is_extension_node)
-                        * mod_node_hash_rlc_cur,
-                keccak_table_i,
-            ));
 
-            constraints
+            let branch_len = get_branch_len(meta, s_main.clone(), rot_into_branch_init, is_s);
+
+            let mut table_map = Vec::new();
+            let keccak_is_enabled = meta.query_advice(keccak_table.is_enabled, Rotation::cur());
+            table_map.push((selector.clone(), keccak_is_enabled));
+
+            let keccak_input_rlc = meta.query_advice(keccak_table.input_rlc, Rotation::cur());
+            table_map.push((selector.clone() * branch_acc, keccak_input_rlc));
+
+            let keccak_input_len = meta.query_advice(keccak_table.input_len, Rotation::cur());
+            table_map.push((selector.clone() * branch_len, keccak_input_len));
+
+            let keccak_output_rlc = meta.query_advice(keccak_table.output_rlc, Rotation::cur());
+            table_map.push((selector.clone() * mod_node_hash_rlc_cur, keccak_output_rlc));
+
+            table_map            
         });
 
         /*

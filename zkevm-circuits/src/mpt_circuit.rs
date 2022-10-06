@@ -46,7 +46,7 @@ use param::{
 };
 use selectors::SelectorsConfig;
 
-use crate::util::power_of_randomness_from_instance;
+use crate::{util::power_of_randomness_from_instance, table::KeccakTable};
 
 /*
     MPT circuit contains S and C columns (other columns are mostly selectors).
@@ -89,7 +89,7 @@ pub struct MPTConfig<F> {
     pub(crate) account_leaf: AccountLeafCols<F>,
     pub(crate) storage_leaf: StorageLeafCols<F>,
     pub(crate) denoter: DenoteCols<F>,
-    keccak_table: [Column<Fixed>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
+    keccak_table: KeccakTable,
     fixed_table: [Column<Fixed>; 3],
     pub(crate) address_rlc: Column<Advice>, /* The same in all rows of a modification. The same
                                              * as
@@ -98,6 +98,7 @@ pub struct MPTConfig<F> {
                                              * enable lookup for storage key/value (to have
                                              * address RLC in
                                              * the same row as storage key/value). */
+    /*
     account_leaf_key_s: AccountLeafKeyConfig<F>,
     account_leaf_key_c: AccountLeafKeyConfig<F>,
     account_leaf_nonce_balance_s: AccountLeafNonceBalanceConfig<F>,
@@ -106,7 +107,9 @@ pub struct MPTConfig<F> {
     account_leaf_storage_codehash_c: AccountLeafStorageCodehashConfig<F>,
     account_leaf_key_in_added_branch: AccountLeafKeyInAddedBranchConfig<F>,
     account_non_existing: AccountNonExistingConfig<F>,
+    */
     branch_config: BranchConfig<F>,
+    /*
     ext_node_config_s: ExtensionNodeConfig<F>,
     ext_node_config_c: ExtensionNodeConfig<F>,
     storage_leaf_key_s: LeafKeyConfig<F>,
@@ -114,6 +117,7 @@ pub struct MPTConfig<F> {
     storage_leaf_value_s: LeafValueConfig<F>,
     storage_leaf_value_c: LeafValueConfig<F>,
     storage_leaf_key_in_added_branch: LeafKeyInAddedBranchConfig<F>,
+    */
     pub(crate) randomness: F,
 }
 
@@ -208,7 +212,10 @@ impl<F: FieldExt> ProofValues<F> {
 
 impl<F: FieldExt> MPTConfig<F> {
     /// Configure MPT Circuit
-    pub fn configure(meta: &mut ConstraintSystem<F>) -> Self {
+    pub fn configure(
+        meta: &mut ConstraintSystem<F>,
+        keccak_table: KeccakTable,
+    ) -> Self {
         // let _pub_root = meta.instance_column();
         let power_of_randomness: [Expression<F>; HASH_WIDTH] = power_of_randomness_from_instance(meta);
 
@@ -232,13 +239,6 @@ impl<F: FieldExt> MPTConfig<F> {
 
         let s_main = MainCols::new(meta);
         let c_main = MainCols::new(meta);
-
-        let keccak_table: [Column<Fixed>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH] = (0
-            ..KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH)
-            .map(|_| meta.fixed_column())
-            .collect::<Vec<_>>()
-            .try_into()
-            .unwrap();
 
         let fixed_table: [Column<Fixed>; 3] = (0..3)
             .map(|_| meta.fixed_column())
@@ -351,7 +351,7 @@ impl<F: FieldExt> MPTConfig<F> {
             branch.is_last_child,
             s_main.clone(),
             accumulators.clone(),
-            keccak_table,
+            keccak_table.clone(),
             power_of_randomness[0].clone(),
             true,
         );
@@ -364,11 +364,12 @@ impl<F: FieldExt> MPTConfig<F> {
             branch.is_last_child,
             s_main.clone(),
             accumulators.clone(),
-            keccak_table,
+            keccak_table.clone(),
             power_of_randomness[0].clone(),
             false,
         );
 
+        /*
         let ext_node_config_s = ExtensionNodeConfig::<F>::configure(
             meta,
             |meta| {
@@ -713,6 +714,7 @@ impl<F: FieldExt> MPTConfig<F> {
             fixed_table,
             keccak_table,
         );
+        */
 
         let randomness = F::zero();
         MPTConfig {
@@ -730,6 +732,7 @@ impl<F: FieldExt> MPTConfig<F> {
             keccak_table,
             fixed_table,
             address_rlc,
+            /*
             account_leaf_key_s,
             account_leaf_key_c,
             account_leaf_nonce_balance_s,
@@ -738,7 +741,9 @@ impl<F: FieldExt> MPTConfig<F> {
             account_leaf_storage_codehash_c,
             account_leaf_key_in_added_branch,
             account_non_existing,
+            */
             branch_config,
+            /* 
             ext_node_config_s,
             ext_node_config_c,
             storage_leaf_key_s,
@@ -746,6 +751,7 @@ impl<F: FieldExt> MPTConfig<F> {
             storage_leaf_value_s,
             storage_leaf_value_c,
             storage_leaf_key_in_added_branch,
+            */
             randomness,
         }
     }
@@ -1053,6 +1059,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                 offset,
                             )?;
 
+                            /*
                             // Storage leaf key
                             if row.get_type() == MptWitnessRowType::StorageLeafSKey {
                                 self.storage_leaf_key_s.assign(
@@ -1189,6 +1196,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                     offset,
                                 );
                             }
+                            */
 
                             offset += 1;
                         }
@@ -1200,61 +1208,10 @@ impl<F: FieldExt> MPTConfig<F> {
             .ok();
     }
 
-    /// Load fixed tables.
-    pub fn load(
-        &self,
-        _layouter: &mut impl Layouter<F>,
-        to_be_hashed: Vec<Vec<u8>>,
-    ) -> Result<(), Error> {
-        self.load_keccak_table(_layouter, to_be_hashed).ok();
-        self.load_fixed_table(_layouter).ok();
-
-        Ok(())
-    }
-
     fn compute_keccak(&self, msg: &[u8]) -> Vec<u8> {
         let mut keccak = Keccak::default();
         keccak.update(msg);
         keccak.digest()
-    }
-
-    fn load_keccak_table(
-        &self,
-        layouter: &mut impl Layouter<F>,
-        to_be_hashed: Vec<Vec<u8>>,
-    ) -> Result<(), Error> {
-        layouter.assign_region(
-            || "keccak table",
-            |mut region| {
-                for (offset, t) in to_be_hashed.iter().enumerate() {
-                    let hash = self.compute_keccak(t);
-                    let mut rlc = F::zero();
-                    let mut mult = F::one();
-
-                    for (_, i) in t.iter().enumerate() {
-                        rlc += F::from(*i as u64) * mult;
-                        mult *= self.randomness;
-                    }
-
-                    region.assign_fixed(
-                        || "Keccak table",
-                        self.keccak_table[0],
-                        offset,
-                        || Value::known(rlc),
-                    )?;
-
-                    let hash_rlc = bytes_into_rlc(&hash, self.randomness);
-                    region.assign_fixed(
-                        || "Keccak table",
-                        self.keccak_table[1],
-                        offset,
-                        || Value::known(hash_rlc),
-                    )?;
-                }
-
-                Ok(())
-            },
-        )
     }
 
     fn load_fixed_table(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
@@ -1353,7 +1310,10 @@ impl<F: FieldExt> MPTConfig<F> {
 
 #[cfg(test)]
 mod tests {
+    use ethers_core::k256::pkcs8::der::Encode;
     use param::IS_NON_EXISTING_ACCOUNT_POS;
+
+    use crate::util::Challenges;
 
     use super::*;
 
@@ -1388,7 +1348,8 @@ mod tests {
             }
 
             fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-                MPTConfig::configure(meta)
+                let keccak_table = KeccakTable::construct(meta);
+                MPTConfig::configure(meta, keccak_table)
             }
 
             fn synthesize(
@@ -1408,8 +1369,15 @@ mod tests {
                     }
                 }
 
+                let challenges = Challenges::mock(Value::known(self.randomness));
+                config.keccak_table.dev_load(
+                    &mut layouter,
+                    &to_be_hashed,
+                    &challenges,
+                ).ok();
+
                 config.randomness = self.randomness;
-                config.load(&mut layouter, to_be_hashed)?;
+                config.load_fixed_table(&mut layouter).ok();
                 config.assign(layouter, &witness_rows);
 
                 Ok(())
