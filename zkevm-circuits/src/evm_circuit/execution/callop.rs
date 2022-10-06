@@ -30,6 +30,7 @@ pub(crate) struct CallOpGadget<F> {
     tx_id: Cell<F>,
     reversion_info: ReversionInfo<F>,
     current_address: Cell<F>,
+    is_static: Cell<F>,
     depth: Cell<F>,
     gas: Word<F>,
     callee_address: Word<F>,
@@ -38,7 +39,6 @@ pub(crate) struct CallOpGadget<F> {
     gas_is_u64: IsZeroGadget<F>,
     is_warm: Cell<F>,
     is_warm_prev: Cell<F>,
-    is_static: Cell<F>,
     callee_reversion_info: ReversionInfo<F>,
     value_is_zero: IsZeroGadget<F>,
     cd_address: MemoryAddressGadget<F>,
@@ -89,8 +89,9 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
 
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
         let mut reversion_info = cb.reversion_info_read(None);
-        let [current_address, depth] = [
+        let [current_address, is_static, depth] = [
             CallContextFieldTag::CalleeAddress,
+            CallContextFieldTag::IsStatic,
             CallContextFieldTag::Depth,
         ]
         .map(|field_tag| cb.call_context(None, field_tag));
@@ -164,20 +165,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 reversion_info.rw_counter_of_reversion(),
             );
         });
-
-        // Lookup and verify is_static
-        let is_static = cb.query_bool();
-        cb.call_context_lookup(
-            true.expr(),
-            Some(callee_call_id.expr()),
-            CallContextFieldTag::IsStatic,
-            is_static.expr(),
-        );
-        cb.require_equal(
-            "is_call + is_static == 1",
-            is_call.expr() + is_static.expr(),
-            1.expr(),
-        );
 
         let value_is_zero = IsZeroGadget::construct(cb, sum::expr(&value.cells));
         let has_value = 1.expr() - value_is_zero.expr();
@@ -303,29 +290,12 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 (CallContextFieldTag::CallDataLength, cd_address.length()),
                 (CallContextFieldTag::ReturnDataOffset, rd_address.offset()),
                 (CallContextFieldTag::ReturnDataLength, rd_address.length()),
-            ] {
-                cb.call_context_lookup(true.expr(), Some(callee_call_id.expr()), field_tag, value);
-            }
-        });
-
-        // Make it outside of the previous condition since nested condition is not
-        // supported.
-        cb.condition(
-            is_call.expr() * (1.expr() - is_empty_code_hash.expr()),
-            |cb| {
-                cb.call_context_lookup(
-                    true.expr(),
-                    Some(callee_call_id.expr()),
-                    CallContextFieldTag::Value,
-                    value.expr(),
-                )
-            },
-        );
-
-        cb.condition(1.expr() - is_empty_code_hash.expr(), |cb| {
-            for (field_tag, value) in [
+                (CallContextFieldTag::Value, value.expr()),
                 (CallContextFieldTag::IsSuccess, is_success.expr()),
-                (CallContextFieldTag::IsStatic, is_static.expr()),
+                (
+                    CallContextFieldTag::IsStatic,
+                    select::expr(is_call.expr(), is_static.expr(), 1.expr()),
+                ),
                 (CallContextFieldTag::LastCalleeId, 0.expr()),
                 (CallContextFieldTag::LastCalleeReturnDataOffset, 0.expr()),
                 (CallContextFieldTag::LastCalleeReturnDataLength, 0.expr()),
@@ -339,7 +309,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             // Give gas stipend if value is not zero
             let callee_gas_left = callee_gas_left + has_value * GAS_STIPEND_CALL_WITH_VALUE.expr();
 
-            let rw_counter_delta = select::expr(is_call.expr(), 44.expr(), 42.expr());
+            let rw_counter_delta = select::expr(is_call.expr(), 44.expr(), 43.expr());
             cb.require_step_state_transition(StepStateTransition {
                 rw_counter: Delta(rw_counter_delta),
                 call_id: To(callee_call_id.expr()),
@@ -392,33 +362,33 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
     ) -> Result<(), Error> {
         let opcode = step.opcode.unwrap();
         let is_call = if opcode == OpcodeId::CALL { 1 } else { 0 };
-        let [tx_id, current_address, depth, callee_rw_counter_end_of_reversion, callee_is_persistent, callee_is_static] =
+        let [tx_id, current_address, is_static, depth, callee_rw_counter_end_of_reversion, callee_is_persistent] =
             [
                 step.rw_indices[0],
                 step.rw_indices[3],
                 step.rw_indices[4],
-                step.rw_indices[13 + is_call],
+                step.rw_indices[5],
                 step.rw_indices[14 + is_call],
                 step.rw_indices[15 + is_call],
             ]
             .map(|idx| block.rws[idx].call_context_value());
         let [gas, callee_address] =
-            [step.rw_indices[5], step.rw_indices[6]].map(|idx| block.rws[idx].stack_value());
+            [step.rw_indices[6], step.rw_indices[7]].map(|idx| block.rws[idx].stack_value());
         let value = if is_call == 1 {
-            block.rws[step.rw_indices[7]].stack_value()
+            block.rws[step.rw_indices[8]].stack_value()
         } else {
             U256::from(0)
         };
         let [cd_offset, cd_length, rd_offset, rd_length, is_success] = [
-            step.rw_indices[7 + is_call],
             step.rw_indices[8 + is_call],
             step.rw_indices[9 + is_call],
             step.rw_indices[10 + is_call],
             step.rw_indices[11 + is_call],
+            step.rw_indices[12 + is_call],
         ]
         .map(|idx| block.rws[idx].stack_value());
         let (is_warm, is_warm_prev) =
-            block.rws[step.rw_indices[12 + is_call]].tx_access_list_value_pair();
+            block.rws[step.rw_indices[13 + is_call]].tx_access_list_value_pair();
         let [caller_balance_pair, callee_balance_pair, (callee_nonce, _), (callee_code_hash, _)] =
             [
                 step.rw_indices[16 + is_call],
@@ -449,7 +419,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         self.is_static.assign(
             region,
             offset,
-            Value::known(F::from(callee_is_static.low_u64())),
+            Value::known(F::from(if is_call == 1 { is_static.low_u64() } else { 1 })),
         )?;
         self.depth
             .assign(region, offset, Value::known(F::from(depth.low_u64())))?;
