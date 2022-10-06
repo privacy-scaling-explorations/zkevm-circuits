@@ -418,11 +418,8 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     .expect("unexpected Address -> Scalar conversion failure"),
             ),
         )?;
-        self.is_static.assign(
-            region,
-            offset,
-            Value::known(F::from(if is_call == 1 { is_static.low_u64() } else { 1 })),
-        )?;
+        self.is_static
+            .assign(region, offset, Value::known(F::from(is_static.low_u64())))?;
         self.depth
             .assign(region, offset, Value::known(F::from(depth.low_u64())))?;
         self.gas.assign(region, offset, Some(gas.to_le_bytes()))?;
