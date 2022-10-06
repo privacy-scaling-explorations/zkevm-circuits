@@ -451,6 +451,7 @@ mod test {
         }
     }
 
+    #[test]
     fn test_root_create_old() {
         let initialization_code = callee_bytecode(true, 0, 10);
         assert_eq!(initialization_code.code.len(), 13);
@@ -470,7 +471,7 @@ mod test {
                 TestContext::<1, 1>::new(
                     None,
                     |accs| {
-                        accs[0].address(MOCK_ACCOUNTS[0]).balance(eth(10));
+                        accs[0].balance(eth(10));
                     },
                     |mut txs, accs| {
                         txs[0]
@@ -484,5 +485,45 @@ mod test {
             ),
             Ok(()),
         );
+    }
+
+    #[test]
+    fn test_nonroot_create() {
+        let initialization_code = callee_bytecode(true, 0, 10);
+        let root_code = bytecode! {
+            PUSH32(Word::from_little_endian(&initialization_code.code()))
+            PUSH1(0)
+            MSTORE
+            PUSH32(32)
+            PUSH32(0)
+            CREATE
+        };
+
+        let caller = Account {
+            address: CALLER_ADDRESS,
+            code: root_code.into(),
+            nonce: Word::one(),
+            ..Default::default()
+        };
+
+        let test_context = TestContext::<3, 1>::new(
+            None,
+            |accs| {
+                accs[0]
+                .address(MOCK_ACCOUNTS[0]) // why is this needed?
+                .balance(eth(10));
+                accs[1].account(&caller);
+            },
+            |mut txs, accs| {
+                txs[0]
+                    .from(accs[0].address)
+                    .to(accs[1].address)
+                    .gas(100000u64.into());
+            },
+            |block, _| block,
+        )
+        .unwrap();
+
+        assert_eq!(run_test_circuits(test_context, None), Ok(()),);
     }
 }

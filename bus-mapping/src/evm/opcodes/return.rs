@@ -49,6 +49,7 @@ impl Opcode for Return {
         if call.is_create() && call.is_success && length > 0 {
             // Note: handle_return updates state.code_db. All we need to do here is push the
             // copy event.
+            dbg!("asdfasefasdf yayyyyy");
             handle_create(
                 state,
                 &mut exec_step,
@@ -73,6 +74,7 @@ impl Opcode for Return {
         // Case C in the specs.
         if !call.is_root {
             state.handle_restore_context(steps, &mut exec_step)?;
+            dbg!("as;dlkfjawe;lkjasdfa");
         }
 
         // Case D in the specs.
@@ -116,6 +118,7 @@ impl Opcode for Return {
         }
 
         state.handle_return(step)?;
+        panic!();
         Ok(vec![exec_step])
     }
 }
