@@ -13,16 +13,15 @@ use crate::{
         mult_diff_lookup, range_lookups,
     },
     mpt_circuit::{FixedTableTag, MPTConfig, ProofValues},
-    mpt_circuit::param::{
+    mpt_circuit::{param::{
         BRANCH_ROWS_NUM, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, LEAF_DRIFTED_IND, LEAF_KEY_C_IND,
         LEAF_KEY_S_IND,
-    },
-    mpt_circuit::witness_row::MptWitnessRow,
+    }, helpers::get_leaf_len},
+    mpt_circuit::witness_row::MptWitnessRow, table::KeccakTable,
 };
 
 use crate::mpt_circuit::param::{
-    HASH_WIDTH, IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS, KECCAK_INPUT_WIDTH,
-    KECCAK_OUTPUT_WIDTH, RLP_NUM, POWER_OF_RANDOMNESS_LEN,
+    HASH_WIDTH, IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS, RLP_NUM, POWER_OF_RANDOMNESS_LEN,
 };
 
 /*
@@ -70,7 +69,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
         is_account_leaf_in_added_branch: Column<Advice>,
         power_of_randomness: [Expression<F>; HASH_WIDTH],
         fixed_table: [Column<Fixed>; 3],
-        keccak_table: [Column<Fixed>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
+        keccak_table: KeccakTable,
     ) -> Self {
         let config = LeafKeyInAddedBranchConfig {
             _marker: PhantomData,
@@ -710,7 +709,6 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
             "Leaf key in added branch: neighbour leaf in the added branch (S)",
             |meta| {
                 let q_enable = q_enable(meta);
-                let mut constraints = vec![];
 
                 let mut rlc = meta.query_advice(accs.acc_s.rlc, Rotation::cur());
                 let acc_mult = meta.query_advice(accs.acc_s.mult, Rotation::cur());
@@ -746,14 +744,6 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                     Rotation(-23),
                 );
 
-                constraints.push((
-                    q_enable.clone()
-                        * rlc
-                        * is_branch_s_placeholder.clone()
-                        * (one.clone() - is_leaf_in_first_storage_level.clone()),
-                    meta.query_fixed(keccak_table[0], Rotation::cur()),
-                ));
-
                 /*
                 `s_mod_node_hash_rlc` in the placeholder branch stores the hash of a neighbour leaf.
                 This is because `c_mod_node_hash_rlc` in the added branch stores the hash of
@@ -769,16 +759,28 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                 is checked in `branch_parallel.rs`.
                 */
                 let s_mod_node_hash_rlc = meta.query_advice(accs.s_mod_node_rlc, Rotation(rot));
-                let keccak_table_i = meta.query_fixed(keccak_table[1], Rotation::cur());
-                constraints.push((
-                    q_enable
-                        * s_mod_node_hash_rlc
-                        * is_branch_s_placeholder
-                        * (one.clone() - is_leaf_in_first_storage_level),
-                    keccak_table_i,
-                ));
 
-                constraints
+                let selector = q_enable.clone()
+                    * is_branch_s_placeholder.clone()
+                    * (one.clone() - is_leaf_in_first_storage_level.clone());
+
+                let mut table_map = Vec::new();
+                let keccak_is_enabled = meta.query_advice(keccak_table.is_enabled, Rotation::cur());
+                table_map.push((selector.clone(), keccak_is_enabled));
+
+                let keccak_input_rlc = meta.query_advice(keccak_table.input_rlc, Rotation::cur());
+                table_map.push((selector.clone() * rlc, keccak_input_rlc));
+
+                let rot_into_leaf_key = 0;
+                let len = get_leaf_len(meta, s_main.clone(), accs.clone(), rot_into_leaf_key);
+
+                let keccak_input_len = meta.query_advice(keccak_table.input_len, Rotation::cur());
+                table_map.push((selector.clone() * len, keccak_input_len));
+
+                let keccak_output_rlc = meta.query_advice(keccak_table.output_rlc, Rotation::cur());
+                table_map.push((selector.clone() * s_mod_node_hash_rlc, keccak_output_rlc));
+
+                table_map
             },
         );
 
@@ -810,7 +812,6 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
             "Leaf key in added branch: neighbour leaf in the deleted branch (C)",
             |meta| {
                 let q_enable = q_enable(meta);
-                let mut constraints = vec![];
 
                 let mut rlc = meta.query_advice(accs.acc_s.rlc, Rotation::cur());
                 let acc_mult = meta.query_advice(accs.acc_s.mult, Rotation::cur());
@@ -845,14 +846,6 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                     Rotation(-23),
                 );
 
-                constraints.push((
-                    q_enable.clone()
-                        * rlc
-                        * is_branch_c_placeholder.clone()
-                        * (one.clone() - is_leaf_in_first_storage_level.clone()),
-                    meta.query_fixed(keccak_table[0], Rotation::cur()),
-                ));
-
                 /*
                 `c_mod_node_hash_rlc` in the placeholder branch stores the hash of a neighbour leaf.
                 This is because `s_mod_node_hash_rlc` in the deleted branch stores the hash of
@@ -868,16 +861,28 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                 is checked in `branch_parallel.rs`.
                 */
                 let c_mod_node_hash_rlc = meta.query_advice(accs.c_mod_node_rlc, Rotation(rot));
-                let keccak_table_i = meta.query_fixed(keccak_table[1], Rotation::cur());
-                constraints.push((
-                    q_enable
-                        * c_mod_node_hash_rlc
-                        * is_branch_c_placeholder
-                        * (one - is_leaf_in_first_storage_level),
-                    keccak_table_i,
-                ));
 
-                constraints
+                let selector = q_enable.clone()
+                    * is_branch_c_placeholder.clone()
+                    * (one.clone() - is_leaf_in_first_storage_level.clone());
+
+                let mut table_map = Vec::new();
+                let keccak_is_enabled = meta.query_advice(keccak_table.is_enabled, Rotation::cur());
+                table_map.push((selector.clone(), keccak_is_enabled));
+
+                let keccak_input_rlc = meta.query_advice(keccak_table.input_rlc, Rotation::cur());
+                table_map.push((selector.clone() * rlc, keccak_input_rlc));
+
+                let rot_into_leaf_key = 0;
+                let len = get_leaf_len(meta, s_main.clone(), accs.clone(), rot_into_leaf_key);
+
+                let keccak_input_len = meta.query_advice(keccak_table.input_len, Rotation::cur());
+                table_map.push((selector.clone() * len, keccak_input_len));
+
+                let keccak_output_rlc = meta.query_advice(keccak_table.output_rlc, Rotation::cur());
+                table_map.push((selector.clone() * c_mod_node_hash_rlc, keccak_output_rlc));
+
+                table_map
             },
         );
 

@@ -109,13 +109,11 @@ pub struct MPTConfig<F> {
     branch_config: BranchConfig<F>,
     ext_node_config_s: ExtensionNodeConfig<F>,
     ext_node_config_c: ExtensionNodeConfig<F>,
-    /*
     storage_leaf_key_s: LeafKeyConfig<F>,
     storage_leaf_key_c: LeafKeyConfig<F>,
     storage_leaf_value_s: LeafValueConfig<F>,
     storage_leaf_value_c: LeafValueConfig<F>,
     storage_leaf_key_in_added_branch: LeafKeyInAddedBranchConfig<F>,
-    */
     pub(crate) randomness: F,
 }
 
@@ -467,7 +465,6 @@ impl<F: FieldExt> MPTConfig<F> {
             fixed_table,
         );
 
-        /*
         let storage_leaf_key_s = LeafKeyConfig::<F>::configure(
             meta,
             |meta| {
@@ -560,7 +557,6 @@ impl<F: FieldExt> MPTConfig<F> {
             power_of_randomness[0].clone(),
             fixed_table,
         );
-        */
 
         let account_leaf_key_s = AccountLeafKeyConfig::<F>::configure(
             meta,
@@ -741,13 +737,11 @@ impl<F: FieldExt> MPTConfig<F> {
             branch_config,
             ext_node_config_s,
             ext_node_config_c,
-            /* 
             storage_leaf_key_s,
             storage_leaf_key_c,
             storage_leaf_value_s,
             storage_leaf_value_c,
             storage_leaf_key_in_added_branch,
-            */
             randomness,
         }
     }
@@ -1055,7 +1049,6 @@ impl<F: FieldExt> MPTConfig<F> {
                                 offset,
                             )?;
 
-                            /*
                             // Storage leaf key
                             if row.get_type() == MptWitnessRowType::StorageLeafSKey {
                                 self.storage_leaf_key_s.assign(
@@ -1092,8 +1085,6 @@ impl<F: FieldExt> MPTConfig<F> {
                                     false,
                                 );
                             } else if row.get_type() == MptWitnessRowType::AccountLeafKeyS {
-                            */
-                            if row.get_type() == MptWitnessRowType::AccountLeafKeyS {
                                 self.account_leaf_key_s.assign(
                                     &mut region,
                                     self,
@@ -1145,7 +1136,6 @@ impl<F: FieldExt> MPTConfig<F> {
                                     row,
                                     offset,
                                 );
-                            /*
                             } else if row.get_type() == MptWitnessRowType::NeighbouringStorageLeaf
                                 && row.get_byte(1) != 0
                             {
@@ -1156,7 +1146,6 @@ impl<F: FieldExt> MPTConfig<F> {
                                     row,
                                     offset,
                                 );
-                            */
                             } else if row.get_type() == MptWitnessRowType::ExtensionNodeS {
                                 self.ext_node_config_s.assign(
                                     &mut region,

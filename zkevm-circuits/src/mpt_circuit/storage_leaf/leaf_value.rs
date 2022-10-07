@@ -10,12 +10,12 @@ use crate::{
     mpt_circuit::columns::{AccumulatorCols, DenoteCols, MainCols, PositionCols},
     mpt_circuit::helpers::{bytes_expr_into_rlc, get_bool_constraint, range_lookups},
     mpt_circuit::{FixedTableTag, MPTConfig, ProofValues},
-    mpt_circuit::param::{
+    mpt_circuit::{param::{
         ACCOUNT_LEAF_ROWS, ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND,
-        ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND, BRANCH_ROWS_NUM, HASH_WIDTH, KECCAK_INPUT_WIDTH,
-        KECCAK_OUTPUT_WIDTH, LEAF_VALUE_C_IND, LEAF_VALUE_S_IND, IS_BRANCH_S_PLACEHOLDER_POS, RLP_NUM, IS_BRANCH_C_PLACEHOLDER_POS,
-    },
-    mpt_circuit::witness_row::{MptWitnessRow, MptWitnessRowType},
+        ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND, BRANCH_ROWS_NUM, HASH_WIDTH,
+        LEAF_VALUE_C_IND, LEAF_VALUE_S_IND, IS_BRANCH_S_PLACEHOLDER_POS, RLP_NUM, IS_BRANCH_C_PLACEHOLDER_POS, LEAF_KEY_S_IND, LEAF_KEY_C_IND,
+    }, helpers::get_leaf_len},
+    mpt_circuit::witness_row::{MptWitnessRow, MptWitnessRowType}, table::KeccakTable,
 };
 
 /*
@@ -50,7 +50,7 @@ These two cases are denoted by `is_short` and `is_long`. There are two other cas
 distinguish: `last_level` when the leaf is in the last level and has no nibbles, `one_nibble` when
 the leaf has only one nibble.
 
-`is_long`:
+`is_long` (`C` is long, while `S` is short):
 [226 160 59 138 106 70 105 186 37 13 38 205 122 69 158 202 157 33 95 131 7 227 58 235 229 3 121 188 90 54 23 236 52 68 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 2]
 [1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 13]
 [248 67 160 59 138 106 70 105 186 37 13 38 205 122 69 158 202 157 33 95 131 7 227 58 235 229 3 121 188 90 54 23 236 52 68 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 3]
@@ -101,7 +101,7 @@ impl<F: FieldExt> LeafValueConfig<F> {
         position_cols: PositionCols<F>,
         is_leaf_value: Column<Advice>,
         s_main: MainCols<F>,
-        keccak_table: [Column<Fixed>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
+        keccak_table: KeccakTable,
         /*
         - key_rlc_mult (accs.key.mult) to store key_rlc from previous row (to enable lookup)
         - mult_diff to store leaf value S RLC from two rows above (to enable lookup)
@@ -130,6 +130,7 @@ impl<F: FieldExt> LeafValueConfig<F> {
             rot_into_account -= 2;
         }
         let one = Expression::Constant(F::one());
+        let c192 = Expression::Constant(F::from(192));
 
         /*
         We need the RLC of the whole leaf for a lookup that ensures the leaf is in the parent branch.
@@ -143,7 +144,6 @@ impl<F: FieldExt> LeafValueConfig<F> {
             let mut constraints = vec![];
 
             let c128 = Expression::Constant(F::from(128));
-            let c192 = Expression::Constant(F::from(192));
             let is_long = meta.query_advice(accs.s_mod_node_rlc, Rotation::cur());
             let is_short = meta.query_advice(accs.c_mod_node_rlc, Rotation::cur());
             let flag1 = meta.query_advice(accs.s_mod_node_rlc, Rotation::prev());
@@ -396,7 +396,7 @@ impl<F: FieldExt> LeafValueConfig<F> {
             ));
 
             let last_level_or_one_nibblelong_check =
-                s_rlp1_prev - c192 - one.clone() - long_value_len;
+                s_rlp1_prev - c192.clone() - one.clone() - long_value_len;
 
             /*
             When the leaf is in the last level of the trie and the value is long or there is one nibble in the key,
@@ -467,26 +467,28 @@ impl<F: FieldExt> LeafValueConfig<F> {
                 }
                 let hash_rlc = bytes_expr_into_rlc(&sc_hash, randomness.clone());
 
-                let mut constraints = vec![
-                (
-                    not_first_level.clone()
-                        * is_leaf.clone()
-                        * (one.clone() - is_placeholder.clone())
-                        * is_account_leaf_in_added_branch.clone()
-                        * acc,
-                    meta.query_fixed(keccak_table[0], Rotation::cur()),
-                )];
+                let selector = not_first_level.clone()
+                    * is_leaf.clone()
+                    * (one.clone() - is_placeholder.clone())
+                    * is_account_leaf_in_added_branch.clone();
 
-                constraints.push((
-                    not_first_level
-                        * is_leaf
-                        * (one.clone() - is_placeholder)
-                        * is_account_leaf_in_added_branch
-                        * hash_rlc,
-                    meta.query_fixed(keccak_table[1], Rotation::cur()),
-                ));
+                let mut table_map = Vec::new();
+                let keccak_is_enabled = meta.query_advice(keccak_table.is_enabled, Rotation::cur());
+                table_map.push((selector.clone(), keccak_is_enabled));
 
-                constraints
+                let keccak_input_rlc = meta.query_advice(keccak_table.input_rlc, Rotation::cur());
+                table_map.push((selector.clone() * acc, keccak_input_rlc));
+
+                let rot_into_leaf_key = -1;
+                let len = get_leaf_len(meta, s_main.clone(), accs.clone(), rot_into_leaf_key);
+                
+                let keccak_input_len = meta.query_advice(keccak_table.input_len, Rotation::cur());
+                table_map.push((selector.clone() * len, keccak_input_len));
+
+                let keccak_output_rlc = meta.query_advice(keccak_table.output_rlc, Rotation::cur());
+                table_map.push((selector.clone() * hash_rlc, keccak_output_rlc));
+
+                table_map
             },
         );
 
@@ -603,28 +605,29 @@ impl<F: FieldExt> LeafValueConfig<F> {
                 }
                 let hash_rlc = bytes_expr_into_rlc(&sc_hash, randomness.clone());
 
-                let mut constraints = vec![
-                (
-                    not_first_level.clone()
+                let selector = not_first_level.clone()
                     * is_leaf.clone()
                     * (one.clone() - is_account_leaf_in_added_branch.clone()) // if account is directly above storage leaf, there is no placeholder branch
                     * is_account_leaf_in_added_branch_placeholder.clone()
-                    * is_branch_placeholder.clone()
-                    * acc,
-                    meta.query_fixed(keccak_table[0], Rotation::cur()),
-                )];
+                    * is_branch_placeholder.clone();
 
-                constraints.push((
-                    not_first_level
-                    * is_leaf
-                    * (one.clone() - is_account_leaf_in_added_branch) // if account is directly above storage leaf, there is no placeholder branch
-                    * is_account_leaf_in_added_branch_placeholder
-                    * is_branch_placeholder
-                    * hash_rlc,
-                    meta.query_fixed(keccak_table[1], Rotation::cur()),
-                ));
+                let mut table_map = Vec::new();
+                let keccak_is_enabled = meta.query_advice(keccak_table.is_enabled, Rotation::cur());
+                table_map.push((selector.clone(), keccak_is_enabled));
 
-                constraints
+                let keccak_input_rlc = meta.query_advice(keccak_table.input_rlc, Rotation::cur());
+                table_map.push((selector.clone() * acc, keccak_input_rlc));
+
+                let rot_into_leaf_key = -1;
+                let len = get_leaf_len(meta, s_main.clone(), accs.clone(), rot_into_leaf_key);
+
+                let keccak_input_len = meta.query_advice(keccak_table.input_len, Rotation::cur());
+                table_map.push((selector.clone() * len, keccak_input_len));
+
+                let keccak_output_rlc = meta.query_advice(keccak_table.output_rlc, Rotation::cur());
+                table_map.push((selector.clone() * hash_rlc, keccak_output_rlc));
+
+                table_map
             },
         );
 
@@ -663,32 +666,35 @@ impl<F: FieldExt> LeafValueConfig<F> {
             If `sel = 1`, the leaf is only a placeholder (the leaf is being added or deleted)
             and we do not check the hash of it.
             */
-            let mut constraints = vec![
-            (
-                q_enable.clone()
-                    * rlc
-                    * (one.clone() - placeholder_leaf.clone())
-                    * (one.clone() - is_leaf_without_branch.clone())
-                    * (one.clone() - not_hashed.clone())
-                    * (one.clone() - is_branch_placeholder.clone()),
-                meta.query_fixed(keccak_table[0], Rotation::cur()),
-            )];
+
             let mut mod_node_hash_rlc_cur = meta.query_advice(accs.s_mod_node_rlc, Rotation(rot));
             if !is_s {
                 mod_node_hash_rlc_cur = meta.query_advice(accs.c_mod_node_rlc, Rotation(rot));
             }
-            let keccak_table_i = meta.query_fixed(keccak_table[1], Rotation::cur());
-            constraints.push((
-                q_enable
-                    * mod_node_hash_rlc_cur
-                    * (one.clone() - placeholder_leaf)
-                    * (one.clone() - is_leaf_without_branch)
-                    * (one.clone() - not_hashed)
-                    * (one.clone() - is_branch_placeholder),
-                keccak_table_i,
-            ));
 
-            constraints
+            let selector = q_enable.clone()
+                * (one.clone() - placeholder_leaf.clone())
+                * (one.clone() - is_leaf_without_branch.clone())
+                * (one.clone() - not_hashed.clone())
+                * (one.clone() - is_branch_placeholder.clone());
+
+            let mut table_map = Vec::new();
+            let keccak_is_enabled = meta.query_advice(keccak_table.is_enabled, Rotation::cur());
+            table_map.push((selector.clone(), keccak_is_enabled));
+
+            let keccak_input_rlc = meta.query_advice(keccak_table.input_rlc, Rotation::cur());
+            table_map.push((selector.clone() * rlc, keccak_input_rlc));
+
+            let rot_into_leaf_key = -1;
+            let len = get_leaf_len(meta, s_main.clone(), accs.clone(), rot_into_leaf_key);
+
+            let keccak_input_len = meta.query_advice(keccak_table.input_len, Rotation::cur());
+            table_map.push((selector.clone() * len, keccak_input_len));
+
+            let keccak_output_rlc = meta.query_advice(keccak_table.output_rlc, Rotation::cur());
+            table_map.push((selector.clone() * mod_node_hash_rlc_cur, keccak_output_rlc));
+
+            table_map
         });
 
         /*
@@ -801,16 +807,7 @@ impl<F: FieldExt> LeafValueConfig<F> {
             If `sel = 1`, there is no leaf at this position (value is being added or
             deleted) and we do not check the hash of it.
             */
-            let mut constraints = vec![
-            (
-                q_enable.clone()
-                    * rlc
-                    * (one.clone() - sel.clone())
-                    * (one.clone() - is_leaf_without_branch_after_placeholder.clone())
-                    * (one.clone() - is_leaf_without_branch.clone())
-                    * is_branch_placeholder.clone(),
-                meta.query_fixed(keccak_table[0], Rotation::cur()),
-            )];
+
             let mut mod_node_hash_rlc = meta.query_advice(
                 accs.s_mod_node_rlc,
                 Rotation(rot_into_init - 3), /* -3 to get from init branch into the previous
@@ -822,18 +819,29 @@ impl<F: FieldExt> LeafValueConfig<F> {
                     meta.query_advice(accs.c_mod_node_rlc, Rotation(rot_into_init - 3));
             }
 
-            let keccak_table_i = meta.query_fixed(keccak_table[1], Rotation::cur());
-            constraints.push((
-                q_enable
-                    * mod_node_hash_rlc
-                    * (one.clone() - sel)
-                    * (one.clone() - is_leaf_without_branch_after_placeholder)
-                    * (one.clone() - is_leaf_without_branch)
-                    * is_branch_placeholder,
-                keccak_table_i,
-            ));
+            let selector = q_enable.clone()
+                * (one.clone() - sel.clone())
+                * (one.clone() - is_leaf_without_branch_after_placeholder.clone())
+                * (one.clone() - is_leaf_without_branch.clone())
+                * is_branch_placeholder.clone();
 
-            constraints
+            let mut table_map = Vec::new();
+            let keccak_is_enabled = meta.query_advice(keccak_table.is_enabled, Rotation::cur());
+            table_map.push((selector.clone(), keccak_is_enabled));
+
+            let keccak_input_rlc = meta.query_advice(keccak_table.input_rlc, Rotation::cur());
+            table_map.push((selector.clone() * rlc, keccak_input_rlc));
+
+            let rot_into_leaf_key = -1;
+            let len = get_leaf_len(meta, s_main.clone(), accs.clone(), rot_into_leaf_key);
+
+            let keccak_input_len = meta.query_advice(keccak_table.input_len, Rotation::cur());
+            table_map.push((selector.clone() * len, keccak_input_len));
+
+            let keccak_output_rlc = meta.query_advice(keccak_table.output_rlc, Rotation::cur());
+            table_map.push((selector.clone() * mod_node_hash_rlc, keccak_output_rlc));
+
+            table_map
         });
 
         /*

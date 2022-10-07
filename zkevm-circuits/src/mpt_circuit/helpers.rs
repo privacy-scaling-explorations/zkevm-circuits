@@ -12,7 +12,7 @@ use crate::{
     },
 };
 
-use super::{columns::MainCols, param::{BRANCH_0_S_START, BRANCH_0_C_START}};
+use super::{columns::{MainCols, AccumulatorCols}, param::{BRANCH_0_S_START, BRANCH_0_C_START}};
 
 // Turn 32 hash cells into 4 cells containing keccak words.
 pub(crate) fn into_words_expr<F: FieldExt>(hash: Vec<Expression<F>>) -> Vec<Expression<F>> {
@@ -297,4 +297,23 @@ pub(crate) fn get_branch_len<F: FieldExt>(
     one_rlp_byte * (rlp_byte0.clone() + one.clone())
         + two_rlp_bytes * (rlp_byte1.clone() + one.clone() + one.clone())
         + three_rlp_bytes * (rlp_byte1 * c256 + rlp_byte2 + one.clone() + one.clone() + one.clone())
+}
+
+pub(crate) fn get_leaf_len<F: FieldExt>(
+    meta: &mut VirtualCells<F>,
+    s_main: MainCols<F>,
+    accs: AccumulatorCols<F>,
+    rot_into_leaf_key: i32,
+) -> Expression<F> {
+    let one = Expression::Constant(F::from(1_u64));
+    let c192 = Expression::Constant(F::from(192_u64));
+    let flag1 = meta.query_advice(accs.s_mod_node_rlc, Rotation(rot_into_leaf_key));
+    let flag2 = meta.query_advice(accs.c_mod_node_rlc, Rotation(rot_into_leaf_key));
+    let is_leaf_long = flag1.clone() * (one.clone() - flag2.clone());
+
+    let rlp1 = meta.query_advice(s_main.rlp1, Rotation(rot_into_leaf_key));
+    let rlp2 = meta.query_advice(s_main.rlp2, Rotation(rot_into_leaf_key));
+
+    is_leaf_long.clone() * (rlp2.clone() + one.clone() + one.clone())
+        + (one.clone() - is_leaf_long) * (rlp1.clone() - c192 + one)
 }
