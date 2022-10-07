@@ -15,7 +15,7 @@ use crate::{
         get_is_extension_node_one_nibble,
     },
     mpt_circuit::{MPTConfig, ProofValues},
-    mpt_circuit::param::{
+    mpt_circuit::{param::{
         ACCOUNT_LEAF_ROWS, ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND,
         ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND, BRANCH_ROWS_NUM, C_RLP_START, C_START, HASH_WIDTH,
         IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, IS_BRANCH_C_PLACEHOLDER_POS,
@@ -24,7 +24,7 @@ use crate::{
         IS_EXT_LONG_ODD_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS,
         IS_S_EXT_LONGER_THAN_55_POS, IS_S_EXT_NODE_NON_HASHED_POS, KECCAK_INPUT_WIDTH,
         KECCAK_OUTPUT_WIDTH, NIBBLES_COUNTER_POS, RLP_NUM,
-    },
+    }, helpers::get_branch_len},
     mpt_circuit::witness_row::MptWitnessRow, table::KeccakTable,
 };
 
@@ -755,7 +755,6 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
         the extension node row. That means `(branch_RLC, extension_node_hash_RLC`) needs to
         be in a keccak table.
         */
-        /* 
         meta.lookup_any("Extension node branch hash in extension row", |meta| {
             let q_enable = q_enable(meta);
             let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
@@ -773,33 +772,35 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
             // TODO: acc currently doesn't have branch ValueNode info (which 128 if nil)
             let branch_acc = acc + c128.clone() * mult;
 
-            let mut constraints = vec![(
-                q_not_first.clone()
-                    * q_enable.clone()
-                    * (one.clone() - is_branch_init_prev.clone())
-                    * is_branch_hashed.clone()
-                    * branch_acc, // TODO: replace with acc once ValueNode is added
-                meta.query_fixed(keccak_table[0], Rotation::cur()),
-            )];
-
             let mut sc_hash = vec![];
             // Note: extension node has branch hash always in c_advices.
             for column in c_main.bytes.iter() {
                 sc_hash.push(meta.query_advice(*column, Rotation::cur()));
             }
             let hash_rlc = bytes_expr_into_rlc(&sc_hash, power_of_randomness[0].clone());
-            constraints.push((
-                q_not_first
-                    * q_enable
-                    * (one.clone() - is_branch_init_prev)
-                    * is_branch_hashed
-                    * hash_rlc,
-                meta.query_fixed(keccak_table[1], Rotation::cur()),
-            ));
 
-            constraints
+            let selector = q_not_first.clone()
+                * q_enable.clone()
+                * (one.clone() - is_branch_init_prev.clone())
+                * is_branch_hashed.clone();
+
+            let mut table_map = Vec::new();
+            let keccak_is_enabled = meta.query_advice(keccak_table.is_enabled, Rotation::cur());
+            table_map.push((selector.clone(), keccak_is_enabled));
+
+            let keccak_input_rlc = meta.query_advice(keccak_table.input_rlc, Rotation::cur());
+            table_map.push((selector.clone() * branch_acc, keccak_input_rlc));
+
+            let branch_len = get_branch_len(meta, s_main.clone(), rot_into_branch_init, is_s);
+
+            let keccak_input_len = meta.query_advice(keccak_table.input_len, Rotation::cur());
+            table_map.push((selector.clone() * branch_len, keccak_input_len));
+
+            let keccak_output_rlc = meta.query_advice(keccak_table.output_rlc, Rotation::cur());
+            table_map.push((selector.clone() * hash_rlc, keccak_output_rlc));
+
+            table_map
         });
-        */
 
         meta.create_gate(
             "Extension node branch hash in extension row (non-hashed branch)",
@@ -884,12 +885,10 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
 
         Note: the branch counterpart is implemented in `branch_hash_in_parent.rs`.
         */
-        /*
         meta.lookup_any(
             "Account first level extension node hash - compared to root",
             |meta| {
                 let q_enable = q_enable(meta);
-                let mut constraints = vec![];
 
                 let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
                 let not_first_level = meta.query_advice(position_cols.not_first_level, Rotation::cur());
@@ -897,23 +896,33 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                 let acc_c = meta.query_advice(accs.acc_c.rlc, Rotation::cur());
                 let root = meta.query_advice(inter_root, Rotation::cur());
 
-                constraints.push((
-                    q_not_first.clone()
-                        * q_enable.clone()
-                        * (one.clone() - not_first_level.clone())
-                        * acc_c,
-                    meta.query_fixed(keccak_table[0], Rotation::cur()),
-                ));
-                let keccak_table_i = meta.query_fixed(keccak_table[1], Rotation::cur());
-                constraints.push((
-                    q_not_first * q_enable * (one.clone() - not_first_level) * root,
-                    keccak_table_i,
-                ));
+                let selector = q_not_first.clone()
+                    * q_enable.clone()
+                    * (one.clone() - not_first_level.clone());
 
-                constraints
+                let mut table_map = Vec::new();
+                let keccak_is_enabled = meta.query_advice(keccak_table.is_enabled, Rotation::cur());
+                table_map.push((selector.clone(), keccak_is_enabled));
+
+                let keccak_input_rlc = meta.query_advice(keccak_table.input_rlc, Rotation::cur());
+                table_map.push((selector.clone() * acc_c, keccak_input_rlc));
+
+
+                let mut rot = 0;
+                if !is_s {
+                    rot = -1;
+                }
+                let ext_len = meta.query_advice(s_main.rlp1, Rotation(rot)) - c192.clone() + one.clone();
+
+                let keccak_input_len = meta.query_advice(keccak_table.input_len, Rotation::cur());
+                table_map.push((selector.clone() * ext_len, keccak_input_len));
+
+                let keccak_output_rlc = meta.query_advice(keccak_table.output_rlc, Rotation::cur());
+                table_map.push((selector.clone() * root, keccak_output_rlc));
+
+                table_map
             },
         );
-        */
 
         /*
         When extension node is in the first level of the storage trie, we need to check whether
@@ -922,7 +931,6 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
 
         Note: extension node in the first level cannot be shorter than 32 bytes (it is always hashed).
         */
-        /*
         meta.lookup_any(
             "Extension node in first level of storage trie - hash compared to the storage root",
             |meta| {
@@ -982,29 +990,34 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                 }
                 let hash_rlc = bytes_expr_into_rlc(&sc_hash, power_of_randomness[0].clone());
 
-                let mut constraints = vec![(
-                    not_first_level.clone()
-                        * is_extension_node.clone()
-                        * is_after_last_branch_child.clone()
-                        * is_account_leaf_in_added_branch.clone()
-                        * (one.clone() - is_branch_placeholder.clone())
-                        * acc,
-                    meta.query_fixed(keccak_table[0], Rotation::cur()),
-                )];
-                constraints.push((
-                    not_first_level
-                        * is_extension_node
-                        * is_after_last_branch_child
-                        * is_account_leaf_in_added_branch
-                        * (one.clone() - is_branch_placeholder)
-                        * hash_rlc,
-                    meta.query_fixed(keccak_table[1], Rotation::cur()),
-                ));
+                let selector = not_first_level.clone()
+                    * is_extension_node.clone()
+                    * is_after_last_branch_child.clone()
+                    * is_account_leaf_in_added_branch.clone()
+                    * (one.clone() - is_branch_placeholder.clone());
 
-                constraints
+                let mut table_map = Vec::new();
+                let keccak_is_enabled = meta.query_advice(keccak_table.is_enabled, Rotation::cur());
+                table_map.push((selector.clone(), keccak_is_enabled));
+
+                let keccak_input_rlc = meta.query_advice(keccak_table.input_rlc, Rotation::cur());
+                table_map.push((selector.clone() * acc, keccak_input_rlc));
+
+                let mut rot = 0;
+                if !is_s {
+                    rot = -1;
+                }
+                let ext_len = meta.query_advice(s_main.rlp1, Rotation(rot)) - c192.clone() + one.clone();
+
+                let keccak_input_len = meta.query_advice(keccak_table.input_len, Rotation::cur());
+                table_map.push((selector.clone() * ext_len, keccak_input_len));
+
+                let keccak_output_rlc = meta.query_advice(keccak_table.output_rlc, Rotation::cur());
+                table_map.push((selector.clone() * hash_rlc, keccak_output_rlc));
+
+                table_map
             },
         );
-        */
 
         /*
         Check whether the extension node hash is in the parent branch.
@@ -1014,7 +1027,6 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
 
         Note: do not check if it is in the first storage level (see `storage_root_in_account_leaf.rs`).
         */
-        /*
         meta.lookup_any("Extension node hash in parent branch", |meta| {
             let q_enable = q_enable(meta);
             let not_first_level = meta.query_advice(position_cols.not_first_level, Rotation::cur());
@@ -1039,18 +1051,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
             let is_ext_node_non_hashed =
                 meta.query_advice(is_ext_node_non_hashed, Rotation(rot_into_branch_init));
 
-            let mut constraints = vec![];
-
             let acc_c = meta.query_advice(accs.acc_c.rlc, Rotation::cur());
-            constraints.push((
-                not_first_level.clone()
-                    * q_enable.clone()
-                    * (one.clone() - is_account_leaf_in_added_branch.clone())
-                    * (one.clone() - is_branch_placeholder.clone())
-                    * (one.clone() - is_ext_node_non_hashed.clone())
-                    * acc_c,
-                meta.query_fixed(keccak_table[0], Rotation::cur()),
-            ));
 
             // Any rotation that lands into branch can be used instead of -21.
             let mut mod_node_hash_rlc_cur = meta.query_advice(accs.s_mod_node_rlc, Rotation(-21));
@@ -1058,20 +1059,33 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                 mod_node_hash_rlc_cur = meta.query_advice(accs.c_mod_node_rlc, Rotation(-21));
             }
 
-            let keccak_table_i = meta.query_fixed(keccak_table[1], Rotation::cur());
-            constraints.push((
-                not_first_level
-                    * q_enable
-                    * (one.clone() - is_account_leaf_in_added_branch)
-                    * (one.clone() - is_branch_placeholder)
-                    * (one.clone() - is_ext_node_non_hashed)
-                    * mod_node_hash_rlc_cur,
-                keccak_table_i,
-            ));
+            let selector = not_first_level.clone()
+                * q_enable.clone()
+                * (one.clone() - is_account_leaf_in_added_branch.clone())
+                * (one.clone() - is_branch_placeholder.clone())
+                * (one.clone() - is_ext_node_non_hashed.clone());
 
-            constraints
+            let mut table_map = Vec::new();
+            let keccak_is_enabled = meta.query_advice(keccak_table.is_enabled, Rotation::cur());
+            table_map.push((selector.clone(), keccak_is_enabled));
+
+            let keccak_input_rlc = meta.query_advice(keccak_table.input_rlc, Rotation::cur());
+            table_map.push((selector.clone() * acc_c, keccak_input_rlc));
+
+            let mut rot = 0;
+            if !is_s {
+                rot = -1;
+            }
+            let ext_len = meta.query_advice(s_main.rlp1, Rotation(rot)) - c192.clone() + one.clone();
+
+            let keccak_input_len = meta.query_advice(keccak_table.input_len, Rotation::cur());
+            table_map.push((selector.clone() * ext_len, keccak_input_len));
+
+            let keccak_output_rlc = meta.query_advice(keccak_table.output_rlc, Rotation::cur());
+            table_map.push((selector.clone() * mod_node_hash_rlc_cur, keccak_output_rlc));
+
+            table_map
         });
-        */
 
         meta.create_gate(
             "Extension node in parent branch (non-hashed extension node)",
