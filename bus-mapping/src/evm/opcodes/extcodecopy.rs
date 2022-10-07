@@ -128,17 +128,20 @@ fn gen_copy_steps(
     bytes_left: u64,
     code: Bytecode,
 ) -> Result<Vec<(u8, bool)>, Error> {
-    code.code
-        .iter()
-        .enumerate()
-        .filter(|(idx, _)| idx < &(bytes_left as usize))
-        .map(|(idx, b)| {
-            let addr = src_addr + idx as u64;
-            let value = if addr < src_addr_end { b.value } else { 0 };
-            state.memory_write(exec_step, (dst_addr + idx as u64).into(), value)?;
-            Ok((value, b.is_code))
-        })
-        .collect::<Result<Vec<_>, _>>()
+    let mut copy_steps = Vec::with_capacity(bytes_left as usize);
+    for idx in 0..bytes_left {
+        let addr = src_addr + idx;
+        let step = if addr < src_addr_end {
+            let code = code.code.get(addr as usize).unwrap();
+            (code.value, code.is_code)
+        } else {
+            (0, false)
+        };
+        copy_steps.push(step);
+        state.memory_write(exec_step, (dst_addr + idx).into(), step.0)?;
+    }
+
+    Ok(copy_steps)
 }
 
 fn gen_copy_event(
