@@ -675,6 +675,30 @@ impl OpcodeId {
                 | OpcodeId::EXTCODECOPY
         )
     }
+
+    /// Returns PUSHn opcode from parameter n.
+    pub fn push_n(n: usize) -> Result<Self, Error> {
+        if (1..=32).contains(&n) {
+            Ok(OpcodeId::try_from(OpcodeId::PUSH1.as_u8() + ((n - 1) as u8)).unwrap())
+        } else {
+            Err(Error::InvalidOpConversion)
+        }
+    }
+
+    /// If operation has size returns it, otherwise 0.
+    pub fn usize(&self) -> usize {
+        if self.is_push() {
+            (self.as_u8() - OpcodeId::PUSH1.as_u8() + 1) as usize
+        } else if self.is_dup() {
+            (self.as_u8() - OpcodeId::DUP1.as_u8() + 1) as usize
+        } else if self.is_swap() {
+            (self.as_u8() - OpcodeId::SWAP1.as_u8() + 1) as usize
+        } else if self.is_log() {
+            (self.as_u8() - OpcodeId::LOG0.as_u8()) as usize
+        } else {
+            0
+        }
+    }
 }
 
 impl TryFrom<u8> for OpcodeId {

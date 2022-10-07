@@ -45,11 +45,12 @@ impl Bytecode {
         let mut push_data_left = 0;
         for (idx, byte) in self.bytes.iter().enumerate() {
             let mut is_code = true;
+            let op = OpcodeId::try_from(*byte).unwrap();
             if push_data_left > 0 {
                 is_code = false;
                 push_data_left -= 1;
-            } else if (OpcodeId::PUSH1.as_u8()..=OpcodeId::PUSH32.as_u8()).contains(byte) {
-                push_data_left = *byte as usize - (OpcodeId::PUSH1.as_u8() - 1) as usize;
+            } else if op.is_push() {
+                push_data_left = op.usize() - 2; // are we sure it is -2??
             }
             rows.push([
                 hash,

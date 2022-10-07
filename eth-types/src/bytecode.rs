@@ -99,7 +99,7 @@ impl Bytecode {
         debug_assert!((1..=32).contains(&n), "invalid push");
 
         // Write the op code
-        self.write_op_internal(OpcodeId::PUSH1.as_u8() + ((n - 1) as u8));
+        self.write_op((OpcodeId::push_n(n)).unwrap());
 
         let mut bytes = [0u8; 32];
         value.to_little_endian(&mut bytes);
@@ -225,9 +225,7 @@ impl OpcodeWithData {
     pub fn opcode(&self) -> OpcodeId {
         match self {
             OpcodeWithData::Opcode(op) => *op,
-            OpcodeWithData::Push(n, _) => {
-                OpcodeId::try_from(OpcodeId::PUSH1.as_u8() + (*n as u8) - 1).unwrap()
-            }
+            OpcodeWithData::Push(n, _) => OpcodeId::push_n(*n).unwrap(),
         }
     }
 }
@@ -276,7 +274,7 @@ impl<'a> Iterator for BytecodeIterator<'a> {
         self.0.next().map(|byte| {
             if let Ok(op) = OpcodeId::try_from(byte.value) {
                 if op.is_push() {
-                    let n = op.as_u8() - OpcodeId::PUSH1.as_u8() + 1;
+                    let n = op.usize();
                     let mut value = vec![0u8; n as usize];
                     for value_byte in value.iter_mut() {
                         *value_byte = self.0.next().unwrap().value;
@@ -301,7 +299,7 @@ impl From<Vec<u8>> for Bytecode {
             if let Ok(op) = OpcodeId::try_from(*byte) {
                 code.write_op(op);
                 if op.is_push() {
-                    let n = (op.as_u8() - OpcodeId::PUSH1.as_u8() + 1) as usize;
+                    let n = op.usize();
                     for _ in 0..n {
                         match input_iter.next() {
                             Some(v) => {
@@ -342,10 +340,8 @@ macro_rules! bytecode_internal {
     // PUSHX op codes
     ($code:ident, $x:ident ($v:expr) $($rest:tt)*) => {{
         debug_assert!($crate::evm_types::OpcodeId::$x.is_push(), "invalid push");
-        let n = $crate::evm_types::OpcodeId::$x.as_u8()
-            - $crate::evm_types::OpcodeId::PUSH1.as_u8()
-            + 1;
-        $code.push(n as usize, $v.into());
+        let n = $crate::evm_types::OpcodeId::$x.usize();
+        $code.push(n, $v.into());
         $crate::bytecode_internal!($code, $($rest)*);
     }};
     // Default opcode without any inputs
