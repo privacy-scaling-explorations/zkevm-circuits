@@ -66,8 +66,8 @@ pub struct ExtraValues {
 pub struct PublicData {
     /// chain id
     pub chain_id: Word,
-    /// History hashes contains the most recent 256 block hashes in history, where
-    /// the latest one is at history_hashes[history_hashes.len() - 1].
+    /// History hashes contains the most recent 256 block hashes in history,
+    /// where the latest one is at history_hashes[history_hashes.len() - 1].
     pub history_hashes: Vec<Word>,
     /// Block from geth
     pub eth_block: Block<eth_types::Transaction>,
