@@ -1362,6 +1362,7 @@ mod tests {
                     &mut layouter,
                     &to_be_hashed,
                     &challenges,
+                    false,
                 ).ok();
 
                 config.randomness = self.randomness;

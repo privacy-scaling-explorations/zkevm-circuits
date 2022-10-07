@@ -315,7 +315,7 @@ pub mod test {
 
             config
                 .keccak_table
-                .dev_load(&mut layouter, &self.block.sha3_inputs, &challenges)?;
+                .dev_load(&mut layouter, &self.block.sha3_inputs, &challenges, true)?;
 
             config
                 .evm_circuit

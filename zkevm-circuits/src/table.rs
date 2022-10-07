@@ -727,20 +727,35 @@ impl KeccakTable {
     pub fn assignments<F: Field>(
         input: &[u8],
         challenges: &Challenges<Value<F>>,
+        is_big_endian: bool,
     ) -> Vec<[Value<F>; 4]> {
-        let input_rlc = challenges
+        
+        let mut input_rlc = challenges
             .keccak_input()
-            .map(|challenge| rlc::value(input.iter(), challenge)); // input.iter().rev()
+            .map(|challenge| rlc::value(input.iter().rev(), challenge));
+        if !is_big_endian {
+            let mut input_rlc = challenges
+                .keccak_input()
+                .map(|challenge| rlc::value(input.iter(), challenge));
+        }
         let input_len = F::from(input.len() as u64);
         let mut keccak = Keccak::default();
         keccak.update(input);
         let output = keccak.digest();
-        let output_rlc = challenges.evm_word().map(|challenge| {
+        let mut output_rlc = challenges.evm_word().map(|challenge| {
             RandomLinearCombination::<F, 32>::random_linear_combine(
-                Word::from_little_endian(output.as_slice()).to_le_bytes(), // from_big_endian
+                Word::from_big_endian(output.as_slice()).to_le_bytes(),
                 challenge,
             )
         });
+        if !is_big_endian {
+            output_rlc = challenges.evm_word().map(|challenge| {
+                RandomLinearCombination::<F, 32>::random_linear_combine(
+                    Word::from_little_endian(output.as_slice()).to_le_bytes(),
+                    challenge,
+                )
+            });   
+        }
 
         vec![[
             Value::known(F::one()),
@@ -775,6 +790,7 @@ impl KeccakTable {
         layouter: &mut impl Layouter<F>,
         inputs: impl IntoIterator<Item = &'a Vec<u8>> + Clone,
         challenges: &Challenges<Value<F>>,
+        is_big_endian: bool,
     ) -> Result<(), Error> {
         layouter.assign_region(
             || "keccak table",
@@ -792,7 +808,7 @@ impl KeccakTable {
 
                 let keccak_table_columns = self.columns();
                 for input in inputs.clone() {
-                    for row in Self::assignments(input, challenges) {
+                    for row in Self::assignments(input, challenges, is_big_endian) {
                         // let mut column_index = 0;
                         for (column, value) in keccak_table_columns.iter().zip_eq(row) {
                             region.assign_advice(

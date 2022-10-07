@@ -341,6 +341,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
                 Error::Synthesis
             })?,
             &challenges,
+            true,
         )
     }
 }
