@@ -145,7 +145,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
             RestoreContextGadget::construct(
                 cb,
                 is_success.expr(),
-                2.expr() * not::expr(is_create.clone()) + copy_rw_increase.expr(),
+                not::expr(is_create.clone()) * (2.expr() + copy_rw_increase.expr()),
                 range.offset(),
                 range.length(),
                 memory_expansion.gas_cost(),
@@ -285,8 +285,15 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
             .assign(region, offset, F::from(copy_rw_increase))?;
 
         if !call.is_root {
-            self.restore_context
-                .assign(region, offset, block, call, step, 3)?;
+            let rw_counter_offset = 3 + if call.is_create { copy_rw_increase } else { 0 };
+            self.restore_context.assign(
+                region,
+                offset,
+                block,
+                call,
+                step,
+                rw_counter_offset.try_into().unwrap(),
+            )?;
         }
 
         Ok(())
@@ -297,8 +304,8 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
 mod test {
     use crate::test_util::run_test_circuits;
     use eth_types::{
-        address, bytecode, evm_types::OpcodeId, geth_types::Account, Address, Bytecode, ToWord,
-        Word,
+        address, bytecode, evm_types::OpcodeId, geth_types::Account, word, Address, Bytecode,
+        ToWord, Word,
     };
     use itertools::Itertools;
     use mock::{eth, TestContext, MOCK_ACCOUNTS};
@@ -489,13 +496,64 @@ mod test {
     fn test_nonroot_create() {
         let initialization_code = callee_bytecode(true, 0, 10);
         let root_code = bytecode! {
-            PUSH32(Word::from_little_endian(&initialization_code.code()))
+            PUSH32(Word::from_big_endian(&initialization_code.code()))
             PUSH1(0)
             MSTORE
             PUSH32(32)
             PUSH32(0)
             CREATE
+            STOP
         };
+
+        let deployed = bytecode! {
+            PUSH1(0x20)
+            PUSH1(0)
+            PUSH1(0)
+            CALLDATACOPY
+            PUSH1(0x20)
+            PUSH1(0)
+            RETURN
+        };
+
+        assert_eq!(
+            Word::from_big_endian(&deployed.code()),
+            word!("0x6020600060003760206000F3")
+        );
+
+        dbg!("asdfasdfa3211asd");
+        dbg!(Word::from_big_endian(&initialization_code.code()));
+        dbg!("q345");
+
+        let initializer = bytecode! {
+            // PUSH30(Word::from_big_endian(&initialization_code.code()))
+            PUSH12(Word::from_big_endian(&deployed.code()))
+            PUSH1(0)
+            MSTORE
+            PUSH1(0xC)
+            PUSH1(0x14)
+            RETURN
+        };
+
+        dbg!("asdfasdfasd");
+
+        assert_eq!(
+            Word::from_big_endian(&initializer.code()),
+            word!("0x6B6020600060003760206000F3600052600C6014F3")
+        );
+
+        let root_code = bytecode! {
+            PUSH21(Word::from_big_endian(&initializer.code()))
+            PUSH1(0)
+            MSTORE
+
+            PUSH1 (0x15)
+            PUSH1 (0xB)
+            PUSH1 (0)
+            CREATE
+            STOP
+        };
+
+        dbg!("1341234123");
 
         let caller = Account {
             address: CALLER_ADDRESS,
@@ -504,12 +562,14 @@ mod test {
             ..Default::default()
         };
 
+        dbg!("asdfasdfasd");
+
         let test_context = TestContext::<3, 1>::new(
             None,
             |accs| {
                 accs[0]
-                .address(MOCK_ACCOUNTS[0]) // why is this needed?
-                .balance(eth(10));
+                    .address(MOCK_ACCOUNTS[0]) // why is this needed?
+                    .balance(eth(10));
                 accs[1].account(&caller);
             },
             |mut txs, accs| {
@@ -521,6 +581,8 @@ mod test {
             |block, _| block,
         )
         .unwrap();
+
+        dbg!("asdfasdfasd");
 
         assert_eq!(run_test_circuits(test_context, None), Ok(()),);
     }

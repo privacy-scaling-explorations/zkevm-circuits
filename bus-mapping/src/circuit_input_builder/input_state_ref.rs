@@ -870,7 +870,17 @@ impl<'a> CircuitInputStateRef<'a> {
 
         let memory_expansion_gas_cost =
             memory_expansion_gas_cost(curr_memory_word_size, next_memory_word_size);
-        let gas_refund = geth_step.gas.0 - memory_expansion_gas_cost;
+        dbg!(geth_step.gas.0, memory_expansion_gas_cost);
+
+        let code_deposit_cost = if call.is_create() {
+            200 * last_callee_return_data_length.as_u64()
+        } else {
+            0
+        };
+
+        let gas_refund = geth_step.gas.0 - memory_expansion_gas_cost - code_deposit_cost;
+        dbg!(geth_step_next);
+        dbg!(gas_refund);
         let caller_gas_left = geth_step_next.gas.0 - gas_refund;
 
         for (field, value) in [

@@ -133,7 +133,7 @@ impl<F: Field> RestoreContextGadget<F> {
             ),
             (
                 CallContextFieldTag::LastCalleeReturnDataLength,
-                return_data_length,
+                return_data_length.clone(),
             ),
         ] {
             cb.call_context_lookup(true.expr(), Some(caller_id.expr()), field_tag, value);
@@ -142,7 +142,7 @@ impl<F: Field> RestoreContextGadget<F> {
         let gas_refund = if cb.execution_state().halts_in_exception() {
             0.expr() // no gas refund if call halts in exception
         } else {
-            cb.curr.state.gas_left.expr() - memory_expansion_cost
+            cb.curr.state.gas_left.expr() - memory_expansion_cost - 200.expr() * return_data_length
         };
 
         let gas_left = caller_gas_left.expr() + gas_refund;
