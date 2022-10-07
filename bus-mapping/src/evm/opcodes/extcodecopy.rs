@@ -5,7 +5,7 @@ use crate::circuit_input_builder::{
 use crate::operation::{AccountField, CallContextField, TxAccessListAccountOp, RW};
 use crate::state_db::Account;
 use crate::Error;
-use eth_types::{GethExecStep, ToAddress, ToWord, U256};
+use eth_types::{Bytecode, GethExecStep, ToAddress, ToWord, U256};
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Extcodecopy;
@@ -126,21 +126,19 @@ fn gen_copy_steps(
     dst_addr: u64,
     src_addr_end: u64,
     bytes_left: u64,
-    code: Vec<u8>,
+    code: Bytecode,
 ) -> Result<Vec<(u8, bool)>, Error> {
-    let mut copy_steps = Vec::with_capacity(bytes_left as usize);
-    for idx in 0..bytes_left {
-        let addr = src_addr + idx;
-        let value = if addr < src_addr_end {
-            code[addr as usize]
-        } else {
-            0
-        };
-        copy_steps.push((value, false));
-        state.memory_write(exec_step, (dst_addr + idx).into(), value)?;
-    }
-
-    Ok(copy_steps)
+    code.code
+        .iter()
+        .enumerate()
+        .filter(|(idx, _)| idx < &(bytes_left as usize))
+        .map(|(idx, b)| {
+            let addr = src_addr + idx as u64;
+            let value = if addr < src_addr_end { b.value } else { 0 };
+            state.memory_write(exec_step, (dst_addr + idx as u64).into(), value)?;
+            Ok((value, b.is_code))
+        })
+        .collect::<Result<Vec<_>, _>>()
 }
 
 fn gen_copy_event(
@@ -155,8 +153,8 @@ fn gen_copy_event(
 
     let mut exec_step = gen_extcodecopy_step(state, geth_step)?;
     let code_hash = state.sdb.get_account(&external_address).1.code_hash;
-    let code = state.code(code_hash)?;
-    let src_addr_end = code.len() as u64;
+    let code: Bytecode = state.code(code_hash)?.into();
+    let src_addr_end = code.code.len() as u64;
     let copy_steps = gen_copy_steps(
         state,
         &mut exec_step,
