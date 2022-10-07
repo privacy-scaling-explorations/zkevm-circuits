@@ -32,7 +32,13 @@ impl BlockData {
         CircuitInputBuilder::new(
             self.sdb.clone(),
             self.code_db.clone(),
-            Block::new(self.chain_id, self.history_hashes.clone(), &self.eth_block).unwrap(),
+            Block::new(
+                self.chain_id,
+                self.history_hashes.clone(),
+                Word::default(),
+                &self.eth_block,
+            )
+            .unwrap(),
         )
     }
 

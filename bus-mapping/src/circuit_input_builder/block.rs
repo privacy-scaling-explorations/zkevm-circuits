@@ -67,6 +67,9 @@ pub struct Block {
     pub copy_events: Vec<CopyEvent>,
     /// Inputs to the SHA3 opcode
     pub sha3_inputs: Vec<Vec<u8>>,
+    /// State root of the previous block
+    pub prev_state_root: Word,
+
     code: HashMap<Hash, Vec<u8>>,
 }
 
@@ -75,6 +78,7 @@ impl Block {
     pub fn new<TX>(
         chain_id: Word,
         history_hashes: Vec<Word>,
+        prev_state_root: Word,
         eth_block: &eth_types::Block<TX>,
     ) -> Result<Self, Error> {
         if eth_block.base_fee_per_gas.is_none() {
@@ -103,6 +107,7 @@ impl Block {
             txs: Vec::new(),
             copy_events: Vec::new(),
             code: HashMap::new(),
+            prev_state_root,
             sha3_inputs: Vec::new(),
         })
     }
