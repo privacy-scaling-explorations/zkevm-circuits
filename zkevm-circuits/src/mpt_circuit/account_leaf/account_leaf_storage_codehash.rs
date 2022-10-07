@@ -13,10 +13,9 @@ use crate::{
     mpt_circuit::param::{
         ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND, ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND,
         ACCOUNT_NON_EXISTING_IND, BRANCH_ROWS_NUM, C_START, EXTENSION_ROWS_NUM, HASH_WIDTH,
-        IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS, KECCAK_INPUT_WIDTH,
-        KECCAK_OUTPUT_WIDTH, RLP_NUM, S_START,
+        IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS, RLP_NUM, S_START, ACCOUNT_LEAF_KEY_S_IND, ACCOUNT_LEAF_KEY_C_IND,
     },
-    mpt_circuit::witness_row::{MptWitnessRow, MptWitnessRowType},
+    mpt_circuit::witness_row::{MptWitnessRow, MptWitnessRowType}, table::KeccakTable,
 };
 
 /*
@@ -77,7 +76,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
         accs: AccumulatorCols<F>,
         fixed_table: [Column<Fixed>; 3],
         denoter: DenoteCols<F>,
-        keccak_table: [Column<Fixed>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
+        keccak_table: KeccakTable,
         is_s: bool,
     ) -> Self {
         let config = AccountLeafStorageCodehashConfig {
@@ -296,7 +295,6 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
         meta.lookup_any(
             "Account first level leaf without branch - compared to state root",
             |meta| {
-                let mut constraints = vec![];
                 let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
                 let not_first_level = meta.query_advice(position_cols.not_first_level, Rotation::cur());
 
@@ -306,23 +304,31 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
                 let rlc = meta.query_advice(accs.acc_s.rlc, Rotation::cur());
                 let root = meta.query_advice(inter_root, Rotation::cur());
 
-                constraints.push((
-                    q_not_first.clone()
-                        * is_account_leaf_storage_codehash.clone()
-                        * (one.clone() - not_first_level.clone())
-                        * rlc,
-                    meta.query_fixed(keccak_table[0], Rotation::cur()),
-                ));
-                let keccak_table_i = meta.query_fixed(keccak_table[1], Rotation::cur());
-                constraints.push((
-                    q_not_first
-                        * is_account_leaf_storage_codehash
-                        * (one.clone() - not_first_level)
-                        * root,
-                    keccak_table_i,
-                ));
+                let selector = q_not_first.clone()
+                    * is_account_leaf_storage_codehash.clone()
+                    * (one.clone() - not_first_level.clone());
 
-                constraints
+                let mut table_map = Vec::new();
+                let keccak_is_enabled = meta.query_advice(keccak_table.is_enabled, Rotation::cur());
+                table_map.push((selector.clone(), keccak_is_enabled));
+
+                // TODO: uncomment when all assign functions are uncommented again
+                /*
+                let keccak_input_rlc = meta.query_advice(keccak_table.input_rlc, Rotation::cur());
+                table_map.push((selector.clone() * rlc, keccak_input_rlc));
+                */
+
+                let mut account_len = meta.query_advice(s_main.rlp2, Rotation(-(ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND - ACCOUNT_LEAF_KEY_S_IND))) + one.clone() + one.clone();
+                if !is_s {
+                    account_len = meta.query_advice(s_main.rlp2, Rotation(-(ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND - ACCOUNT_LEAF_KEY_C_IND))) + one.clone() + one.clone();
+                }
+                let keccak_input_len = meta.query_advice(keccak_table.input_len, Rotation::cur());
+                table_map.push((selector.clone() * account_len, keccak_input_len));
+
+                let keccak_output_rlc = meta.query_advice(keccak_table.output_rlc, Rotation::cur());
+                table_map.push((selector.clone() * root, keccak_output_rlc));
+
+                table_map
             },
         );
 
@@ -366,31 +372,39 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
 
             // Note: accumulated in s (not in c) for c:
             let acc_s = meta.query_advice(accs.acc_s.rlc, Rotation::cur());
-
-            let mut constraints = vec![(
-                not_first_level.clone()
-                    * (one.clone() - is_branch_placeholder.clone())
-                    * (one.clone() - is_placeholder_leaf.clone())
-                    * is_account_leaf_storage_codehash.clone()
-                    * acc_s,
-                meta.query_fixed(keccak_table[0], Rotation::cur()),
-            )];
             // Any rotation that lands into branch can be used instead of -17.
             let mut mod_node_hash_rlc_cur = meta.query_advice(accs.s_mod_node_rlc, Rotation(-17));
             if !is_s {
                 mod_node_hash_rlc_cur = meta.query_advice(accs.c_mod_node_rlc, Rotation(-17));
             }
-            let keccak_table_i = meta.query_fixed(keccak_table[1], Rotation::cur());
-            constraints.push((
-                not_first_level
-                    * (one.clone() - is_branch_placeholder)
-                    * (one.clone() - is_placeholder_leaf)
-                    * is_account_leaf_storage_codehash
-                    * mod_node_hash_rlc_cur,
-                keccak_table_i,
-            ));
 
-            constraints
+            let selector = not_first_level.clone()
+                * (one.clone() - is_branch_placeholder.clone())
+                * (one.clone() - is_placeholder_leaf.clone())
+                * is_account_leaf_storage_codehash.clone();
+
+            let mut table_map = Vec::new();
+            let keccak_is_enabled = meta.query_advice(keccak_table.is_enabled, Rotation::cur());
+            table_map.push((selector.clone(), keccak_is_enabled));
+
+            // TODO: uncomment when all assign functions are uncommented again
+            /*
+            let keccak_input_rlc = meta.query_advice(keccak_table.input_rlc, Rotation::cur());
+            table_map.push((selector.clone() * acc_s, keccak_input_rlc));
+            */
+
+            let mut account_len = meta.query_advice(s_main.rlp2, Rotation(-(ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND - ACCOUNT_LEAF_KEY_S_IND))) + one.clone() + one.clone();
+            if !is_s {
+                account_len = meta.query_advice(s_main.rlp2, Rotation(-(ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND - ACCOUNT_LEAF_KEY_C_IND))) + one.clone() + one.clone();
+            }
+
+            let keccak_input_len = meta.query_advice(keccak_table.input_len, Rotation::cur());
+            table_map.push((selector.clone() * account_len, keccak_input_len));
+
+            let keccak_output_rlc = meta.query_advice(keccak_table.output_rlc, Rotation::cur());
+            table_map.push((selector.clone() * mod_node_hash_rlc_cur, keccak_output_rlc));
+
+            table_map
         });
 
         /*
@@ -423,17 +437,14 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
                 );
             }
 
-            // Note: accumulated in s (not in c) for c:
-            let acc_s = meta.query_advice(accs.acc_s.rlc, Rotation::cur());
+            let selector = account_not_first_level.clone()
+                * branch_placeholder_not_in_first_level.clone()
+                * is_branch_placeholder.clone()
+                * is_account_leaf_storage_codehash.clone();
 
-            let mut constraints = vec![(
-                account_not_first_level.clone()
-                    * branch_placeholder_not_in_first_level.clone()
-                    * is_branch_placeholder.clone()
-                    * is_account_leaf_storage_codehash.clone()
-                    * acc_s,
-                meta.query_fixed(keccak_table[0], Rotation::cur()),
-            )];
+            // Note: accumulated in s (not in c) for c:
+            let acc_s = meta.query_advice(accs.acc_s.rlc, Rotation::cur()); 
+
             // Any rotation that lands into branch can be used instead of -17.
             let mut mod_node_hash_rlc_cur_prev =
                 meta.query_advice(accs.s_mod_node_rlc, Rotation(-17 - BRANCH_ROWS_NUM));
@@ -441,17 +452,29 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
                 mod_node_hash_rlc_cur_prev =
                     meta.query_advice(accs.c_mod_node_rlc, Rotation(-17 - BRANCH_ROWS_NUM));
             }
-            let keccak_table_i = meta.query_fixed(keccak_table[1], Rotation::cur());
-            constraints.push((
-                account_not_first_level
-                    * branch_placeholder_not_in_first_level
-                    * is_branch_placeholder
-                    * is_account_leaf_storage_codehash
-                    * mod_node_hash_rlc_cur_prev,
-                keccak_table_i,
-            ));
 
-            constraints
+            let mut table_map = Vec::new();
+            let keccak_is_enabled = meta.query_advice(keccak_table.is_enabled, Rotation::cur());
+            table_map.push((selector.clone(), keccak_is_enabled));
+
+            // TODO: uncomment when all assign functions are uncommented again
+            /*
+            let keccak_input_rlc = meta.query_advice(keccak_table.input_rlc, Rotation::cur());
+            table_map.push((selector.clone() * acc_s, keccak_input_rlc));
+            */
+
+            let mut account_len = meta.query_advice(s_main.rlp2, Rotation(-(ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND - ACCOUNT_LEAF_KEY_S_IND))) + one.clone() + one.clone();
+            if !is_s {
+                account_len = meta.query_advice(s_main.rlp2, Rotation(-(ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND - ACCOUNT_LEAF_KEY_C_IND))) + one.clone() + one.clone();
+            }
+
+            let keccak_input_len = meta.query_advice(keccak_table.input_len, Rotation::cur());
+            table_map.push((selector.clone() * account_len, keccak_input_len));
+
+            let keccak_output_rlc = meta.query_advice(keccak_table.output_rlc, Rotation::cur());
+            table_map.push((selector.clone() * mod_node_hash_rlc_cur_prev, keccak_output_rlc));
+
+            table_map
         });
 
         /*
@@ -482,29 +505,38 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
                     );
                 }
 
+                let selector = account_not_first_level.clone()
+                    * branch_placeholder_in_first_level.clone()
+                    * is_branch_placeholder.clone()
+                    * is_account_leaf_storage_codehash.clone();
+
                 // Note: accumulated in s (not in c) for c:
                 let acc_s = meta.query_advice(accs.acc_s.rlc, Rotation::cur());
 
-                let mut constraints = vec![(
-                    account_not_first_level.clone()
-                        * branch_placeholder_in_first_level.clone()
-                        * is_branch_placeholder.clone()
-                        * is_account_leaf_storage_codehash.clone()
-                        * acc_s,
-                    meta.query_fixed(keccak_table[0], Rotation::cur()),
-                )];
                 let root = meta.query_advice(inter_root, Rotation::cur());
-                let keccak_table_i = meta.query_fixed(keccak_table[1], Rotation::cur());
-                constraints.push((
-                    account_not_first_level
-                        * branch_placeholder_in_first_level
-                        * is_branch_placeholder
-                        * is_account_leaf_storage_codehash
-                        * root,
-                    keccak_table_i,
-                ));
 
-                constraints
+                let mut table_map = Vec::new();
+                let keccak_is_enabled = meta.query_advice(keccak_table.is_enabled, Rotation::cur());
+                table_map.push((selector.clone(), keccak_is_enabled));
+
+                // TODO: uncomment when all assign functions are uncommented again
+                /*
+                let keccak_input_rlc = meta.query_advice(keccak_table.input_rlc, Rotation::cur());
+                table_map.push((selector.clone() * acc_s, keccak_input_rlc));
+                */
+
+                let mut account_len = meta.query_advice(s_main.rlp2, Rotation(-(ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND - ACCOUNT_LEAF_KEY_S_IND))) + one.clone() + one.clone();
+                if !is_s {
+                    account_len = meta.query_advice(s_main.rlp2, Rotation(-(ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND - ACCOUNT_LEAF_KEY_C_IND))) + one.clone() + one.clone();
+                }
+
+                let keccak_input_len = meta.query_advice(keccak_table.input_len, Rotation::cur());
+                table_map.push((selector.clone() * account_len, keccak_input_len));
+
+                let keccak_output_rlc = meta.query_advice(keccak_table.output_rlc, Rotation::cur());
+                table_map.push((selector.clone() * root, keccak_output_rlc));
+
+                table_map
             },
         );
 

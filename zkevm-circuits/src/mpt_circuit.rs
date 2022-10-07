@@ -103,8 +103,10 @@ pub struct MPTConfig<F> {
     account_leaf_key_c: AccountLeafKeyConfig<F>,
     account_leaf_nonce_balance_s: AccountLeafNonceBalanceConfig<F>,
     account_leaf_nonce_balance_c: AccountLeafNonceBalanceConfig<F>,
+    */
     account_leaf_storage_codehash_s: AccountLeafStorageCodehashConfig<F>,
     account_leaf_storage_codehash_c: AccountLeafStorageCodehashConfig<F>,
+    /*
     account_leaf_key_in_added_branch: AccountLeafKeyInAddedBranchConfig<F>,
     account_non_existing: AccountNonExistingConfig<F>,
     */
@@ -661,6 +663,7 @@ impl<F: FieldExt> MPTConfig<F> {
             fixed_table,
             false,
         );
+        */
 
         let account_leaf_storage_codehash_s = AccountLeafStorageCodehashConfig::<F>::configure(
             meta,
@@ -674,7 +677,7 @@ impl<F: FieldExt> MPTConfig<F> {
             accumulators.clone(),
             fixed_table,
             denoter.clone(),
-            keccak_table,
+            keccak_table.clone(),
             true,
         );
 
@@ -690,10 +693,11 @@ impl<F: FieldExt> MPTConfig<F> {
             accumulators.clone(),
             fixed_table,
             denoter.clone(),
-            keccak_table,
+            keccak_table.clone(),
             false,
         );
 
+        /*
         let account_leaf_key_in_added_branch = AccountLeafKeyInAddedBranchConfig::<F>::configure(
             meta,
             |meta| {
@@ -737,8 +741,10 @@ impl<F: FieldExt> MPTConfig<F> {
             account_leaf_key_c,
             account_leaf_nonce_balance_s,
             account_leaf_nonce_balance_c,
+            */
             account_leaf_storage_codehash_s,
             account_leaf_storage_codehash_c,
+            /*
             account_leaf_key_in_added_branch,
             account_non_existing,
             */
@@ -1130,6 +1136,8 @@ impl<F: FieldExt> MPTConfig<F> {
                                     offset,
                                 );
                             } else if row.get_type() == MptWitnessRowType::AccountLeafRootCodehashS
+                            */
+                            if row.get_type() == MptWitnessRowType::AccountLeafRootCodehashS
                             {
                                 self.account_leaf_storage_codehash_s.assign(
                                     &mut region,
@@ -1147,6 +1155,8 @@ impl<F: FieldExt> MPTConfig<F> {
                                     row,
                                     offset,
                                 );
+                            }
+                            /*
                             } else if row.get_type() == MptWitnessRowType::NeighbouringStorageLeaf
                                 && row.get_byte(1) != 0
                             {
