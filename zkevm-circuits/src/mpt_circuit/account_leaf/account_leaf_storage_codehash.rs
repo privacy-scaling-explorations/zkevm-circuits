@@ -312,11 +312,8 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
                 let keccak_is_enabled = meta.query_advice(keccak_table.is_enabled, Rotation::cur());
                 table_map.push((selector.clone(), keccak_is_enabled));
 
-                // TODO: uncomment when all assign functions are uncommented again
-                /*
                 let keccak_input_rlc = meta.query_advice(keccak_table.input_rlc, Rotation::cur());
                 table_map.push((selector.clone() * rlc, keccak_input_rlc));
-                */
 
                 let mut account_len = meta.query_advice(s_main.rlp2, Rotation(-(ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND - ACCOUNT_LEAF_KEY_S_IND))) + one.clone() + one.clone();
                 if !is_s {
@@ -387,11 +384,8 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
             let keccak_is_enabled = meta.query_advice(keccak_table.is_enabled, Rotation::cur());
             table_map.push((selector.clone(), keccak_is_enabled));
 
-            // TODO: uncomment when all assign functions are uncommented again
-            /*
             let keccak_input_rlc = meta.query_advice(keccak_table.input_rlc, Rotation::cur());
             table_map.push((selector.clone() * acc_s, keccak_input_rlc));
-            */
 
             let mut account_len = meta.query_advice(s_main.rlp2, Rotation(-(ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND - ACCOUNT_LEAF_KEY_S_IND))) + one.clone() + one.clone();
             if !is_s {
@@ -457,11 +451,8 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
             let keccak_is_enabled = meta.query_advice(keccak_table.is_enabled, Rotation::cur());
             table_map.push((selector.clone(), keccak_is_enabled));
 
-            // TODO: uncomment when all assign functions are uncommented again
-            /*
             let keccak_input_rlc = meta.query_advice(keccak_table.input_rlc, Rotation::cur());
             table_map.push((selector.clone() * acc_s, keccak_input_rlc));
-            */
 
             let mut account_len = meta.query_advice(s_main.rlp2, Rotation(-(ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND - ACCOUNT_LEAF_KEY_S_IND))) + one.clone() + one.clone();
             if !is_s {
@@ -519,11 +510,8 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
                 let keccak_is_enabled = meta.query_advice(keccak_table.is_enabled, Rotation::cur());
                 table_map.push((selector.clone(), keccak_is_enabled));
 
-                // TODO: uncomment when all assign functions are uncommented again
-                /*
                 let keccak_input_rlc = meta.query_advice(keccak_table.input_rlc, Rotation::cur());
                 table_map.push((selector.clone() * acc_s, keccak_input_rlc));
-                */
 
                 let mut account_len = meta.query_advice(s_main.rlp2, Rotation(-(ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND - ACCOUNT_LEAF_KEY_S_IND))) + one.clone() + one.clone();
                 if !is_s {

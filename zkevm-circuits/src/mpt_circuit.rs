@@ -98,22 +98,18 @@ pub struct MPTConfig<F> {
                                              * enable lookup for storage key/value (to have
                                              * address RLC in
                                              * the same row as storage key/value). */
-    /*
     account_leaf_key_s: AccountLeafKeyConfig<F>,
     account_leaf_key_c: AccountLeafKeyConfig<F>,
     account_leaf_nonce_balance_s: AccountLeafNonceBalanceConfig<F>,
     account_leaf_nonce_balance_c: AccountLeafNonceBalanceConfig<F>,
-    */
     account_leaf_storage_codehash_s: AccountLeafStorageCodehashConfig<F>,
     account_leaf_storage_codehash_c: AccountLeafStorageCodehashConfig<F>,
-    /*
     account_leaf_key_in_added_branch: AccountLeafKeyInAddedBranchConfig<F>,
     account_non_existing: AccountNonExistingConfig<F>,
-    */
     branch_config: BranchConfig<F>,
-    /*
     ext_node_config_s: ExtensionNodeConfig<F>,
     ext_node_config_c: ExtensionNodeConfig<F>,
+    /*
     storage_leaf_key_s: LeafKeyConfig<F>,
     storage_leaf_key_c: LeafKeyConfig<F>,
     storage_leaf_value_s: LeafValueConfig<F>,
@@ -371,7 +367,6 @@ impl<F: FieldExt> MPTConfig<F> {
             false,
         );
 
-        /*
         let ext_node_config_s = ExtensionNodeConfig::<F>::configure(
             meta,
             |meta| {
@@ -389,7 +384,7 @@ impl<F: FieldExt> MPTConfig<F> {
             s_main.clone(),
             c_main.clone(),
             accumulators.clone(),
-            keccak_table,
+            keccak_table.clone(),
             power_of_randomness.clone(),
             true,
         );
@@ -411,7 +406,7 @@ impl<F: FieldExt> MPTConfig<F> {
             s_main.clone(),
             c_main.clone(),
             accumulators.clone(),
-            keccak_table,
+            keccak_table.clone(),
             power_of_randomness.clone(),
             false,
         );
@@ -472,6 +467,7 @@ impl<F: FieldExt> MPTConfig<F> {
             fixed_table,
         );
 
+        /*
         let storage_leaf_key_s = LeafKeyConfig::<F>::configure(
             meta,
             |meta| {
@@ -534,7 +530,7 @@ impl<F: FieldExt> MPTConfig<F> {
             account_leaf.is_in_added_branch,
             power_of_randomness.clone(),
             fixed_table,
-            keccak_table,
+            keccak_table.clone(),
         );
 
         let storage_leaf_value_s = LeafValueConfig::<F>::configure(
@@ -542,7 +538,7 @@ impl<F: FieldExt> MPTConfig<F> {
             position_cols.clone(),
             storage_leaf.is_s_value,
             s_main.clone(),
-            keccak_table,
+            keccak_table.clone(),
             accumulators.clone(),
             denoter.clone(),
             account_leaf.is_in_added_branch,
@@ -556,7 +552,7 @@ impl<F: FieldExt> MPTConfig<F> {
             position_cols.clone(),
             storage_leaf.is_c_value,
             s_main.clone(),
-            keccak_table,
+            keccak_table.clone(),
             accumulators.clone(),
             denoter.clone(),
             account_leaf.is_in_added_branch,
@@ -564,6 +560,7 @@ impl<F: FieldExt> MPTConfig<F> {
             power_of_randomness[0].clone(),
             fixed_table,
         );
+        */
 
         let account_leaf_key_s = AccountLeafKeyConfig::<F>::configure(
             meta,
@@ -663,7 +660,6 @@ impl<F: FieldExt> MPTConfig<F> {
             fixed_table,
             false,
         );
-        */
 
         let account_leaf_storage_codehash_s = AccountLeafStorageCodehashConfig::<F>::configure(
             meta,
@@ -697,7 +693,6 @@ impl<F: FieldExt> MPTConfig<F> {
             false,
         );
 
-        /*
         let account_leaf_key_in_added_branch = AccountLeafKeyInAddedBranchConfig::<F>::configure(
             meta,
             |meta| {
@@ -716,9 +711,8 @@ impl<F: FieldExt> MPTConfig<F> {
             denoter.clone(),
             power_of_randomness.clone(),
             fixed_table,
-            keccak_table,
+            keccak_table.clone(),
         );
-        */
 
         let randomness = F::zero();
         MPTConfig {
@@ -736,22 +730,18 @@ impl<F: FieldExt> MPTConfig<F> {
             keccak_table,
             fixed_table,
             address_rlc,
-            /*
             account_leaf_key_s,
             account_leaf_key_c,
             account_leaf_nonce_balance_s,
             account_leaf_nonce_balance_c,
-            */
             account_leaf_storage_codehash_s,
             account_leaf_storage_codehash_c,
-            /*
             account_leaf_key_in_added_branch,
             account_non_existing,
-            */
             branch_config,
-            /* 
             ext_node_config_s,
             ext_node_config_c,
+            /* 
             storage_leaf_key_s,
             storage_leaf_key_c,
             storage_leaf_value_s,
@@ -1102,6 +1092,8 @@ impl<F: FieldExt> MPTConfig<F> {
                                     false,
                                 );
                             } else if row.get_type() == MptWitnessRowType::AccountLeafKeyS {
+                            */
+                            if row.get_type() == MptWitnessRowType::AccountLeafKeyS {
                                 self.account_leaf_key_s.assign(
                                     &mut region,
                                     self,
@@ -1136,8 +1128,6 @@ impl<F: FieldExt> MPTConfig<F> {
                                     offset,
                                 );
                             } else if row.get_type() == MptWitnessRowType::AccountLeafRootCodehashS
-                            */
-                            if row.get_type() == MptWitnessRowType::AccountLeafRootCodehashS
                             {
                                 self.account_leaf_storage_codehash_s.assign(
                                     &mut region,
@@ -1155,7 +1145,6 @@ impl<F: FieldExt> MPTConfig<F> {
                                     row,
                                     offset,
                                 );
-                            }
                             /*
                             } else if row.get_type() == MptWitnessRowType::NeighbouringStorageLeaf
                                 && row.get_byte(1) != 0
@@ -1167,6 +1156,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                     row,
                                     offset,
                                 );
+                            */
                             } else if row.get_type() == MptWitnessRowType::ExtensionNodeS {
                                 self.ext_node_config_s.assign(
                                     &mut region,
@@ -1206,7 +1196,6 @@ impl<F: FieldExt> MPTConfig<F> {
                                     offset,
                                 );
                             }
-                            */
 
                             offset += 1;
                         }

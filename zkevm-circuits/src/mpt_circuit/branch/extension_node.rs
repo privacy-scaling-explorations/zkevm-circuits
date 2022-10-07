@@ -25,7 +25,7 @@ use crate::{
         IS_S_EXT_LONGER_THAN_55_POS, IS_S_EXT_NODE_NON_HASHED_POS, KECCAK_INPUT_WIDTH,
         KECCAK_OUTPUT_WIDTH, NIBBLES_COUNTER_POS, RLP_NUM,
     },
-    mpt_circuit::witness_row::MptWitnessRow,
+    mpt_circuit::witness_row::MptWitnessRow, table::KeccakTable,
 };
 
 use super::BranchCols;
@@ -161,7 +161,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
         s_main: MainCols<F>,
         c_main: MainCols<F>,
         accs: AccumulatorCols<F>,
-        keccak_table: [Column<Fixed>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
+        keccak_table: KeccakTable,
         power_of_randomness: [Expression<F>; HASH_WIDTH],
         is_s: bool,
     ) -> Self {
@@ -755,6 +755,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
         the extension node row. That means `(branch_RLC, extension_node_hash_RLC`) needs to
         be in a keccak table.
         */
+        /* 
         meta.lookup_any("Extension node branch hash in extension row", |meta| {
             let q_enable = q_enable(meta);
             let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
@@ -798,6 +799,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
 
             constraints
         });
+        */
 
         meta.create_gate(
             "Extension node branch hash in extension row (non-hashed branch)",
@@ -882,6 +884,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
 
         Note: the branch counterpart is implemented in `branch_hash_in_parent.rs`.
         */
+        /*
         meta.lookup_any(
             "Account first level extension node hash - compared to root",
             |meta| {
@@ -910,6 +913,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                 constraints
             },
         );
+        */
 
         /*
         When extension node is in the first level of the storage trie, we need to check whether
@@ -918,6 +922,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
 
         Note: extension node in the first level cannot be shorter than 32 bytes (it is always hashed).
         */
+        /*
         meta.lookup_any(
             "Extension node in first level of storage trie - hash compared to the storage root",
             |meta| {
@@ -999,6 +1004,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                 constraints
             },
         );
+        */
 
         /*
         Check whether the extension node hash is in the parent branch.
@@ -1008,6 +1014,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
 
         Note: do not check if it is in the first storage level (see `storage_root_in_account_leaf.rs`).
         */
+        /*
         meta.lookup_any("Extension node hash in parent branch", |meta| {
             let q_enable = q_enable(meta);
             let not_first_level = meta.query_advice(position_cols.not_first_level, Rotation::cur());
@@ -1064,6 +1071,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
 
             constraints
         });
+        */
 
         meta.create_gate(
             "Extension node in parent branch (non-hashed extension node)",

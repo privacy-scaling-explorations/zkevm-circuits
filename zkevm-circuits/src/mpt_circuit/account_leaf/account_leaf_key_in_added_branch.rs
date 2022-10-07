@@ -18,12 +18,11 @@ use crate::{
         ACCOUNT_LEAF_NONCE_BALANCE_C_IND, ACCOUNT_LEAF_NONCE_BALANCE_S_IND,
         ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND, ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND, BRANCH_ROWS_NUM,
         IS_BRANCH_C16_POS, IS_BRANCH_C1_POS,
-    },
+    }, table::KeccakTable,
 };
 
 use crate::mpt_circuit::param::{
-    HASH_WIDTH, IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS, KECCAK_INPUT_WIDTH,
-    KECCAK_OUTPUT_WIDTH, RLP_NUM, POWER_OF_RANDOMNESS_LEN,
+    HASH_WIDTH, IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS, RLP_NUM, POWER_OF_RANDOMNESS_LEN,
 };
 
 /*
@@ -75,7 +74,7 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
         denoter: DenoteCols<F>,
         power_of_randomness: [Expression<F>; HASH_WIDTH],
         fixed_table: [Column<Fixed>; 3],
-        keccak_table: [Column<Fixed>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
+        keccak_table: KeccakTable,
     ) -> Self {
         let config = AccountLeafKeyInAddedBranchConfig {
             _marker: PhantomData,
@@ -534,10 +533,18 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
                 );
             }
 
-            constraints.push((
-                q_enable.clone() * rlc * is_branch_placeholder.clone(),
-                meta.query_fixed(keccak_table[0], Rotation::cur()),
-            ));
+            let selector = q_enable.clone() * is_branch_placeholder.clone();
+
+            let keccak_is_enabled = meta.query_advice(keccak_table.is_enabled, Rotation::cur());
+            constraints.push((selector.clone(), keccak_is_enabled));
+
+            let keccak_input_rlc = meta.query_advice(keccak_table.input_rlc, Rotation::cur());
+            constraints.push((selector.clone() * rlc, keccak_input_rlc));
+
+            let account_len = meta.query_advice(s_main.rlp2, Rotation::cur()) + one.clone() + one.clone();
+
+            let keccak_input_len = meta.query_advice(keccak_table.input_len, Rotation::cur());
+            constraints.push((selector.clone() * account_len, keccak_input_len));
 
             /*
             `s(c)_mod_node_hash_rlc` in placeholder branch contains hash of a drifted leaf
@@ -548,11 +555,9 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
             if !is_s {
                 mod_node_hash_rlc = meta.query_advice(accs.c_mod_node_rlc, Rotation(rot));
             }
-            let keccak_table_i = meta.query_fixed(keccak_table[1], Rotation::cur());
-            constraints.push((
-                q_enable * mod_node_hash_rlc * is_branch_placeholder,
-                keccak_table_i,
-            ));
+
+            let keccak_output_rlc = meta.query_advice(keccak_table.output_rlc, Rotation::cur());
+            constraints.push((selector.clone() * mod_node_hash_rlc, keccak_output_rlc));
         };
 
         /*
