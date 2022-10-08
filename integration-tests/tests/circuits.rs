@@ -144,8 +144,12 @@ pub async fn test_super_circuit_block(block_num: u64) {
     let cli = BuilderClient::new(cli).await.unwrap();
     let (builder, eth_block) = cli.gen_inputs(block_num).await.unwrap();
 
-    let (k, circuit, instance) =
-        SuperCircuit::<_, 4, 255>::build_from_circuit_input_builder(builder, eth_block, &mut ChaCha20Rng::seed_from_u64(2)).unwrap();
+    let (k, circuit, instance) = SuperCircuit::<_, 4, 255>::build_from_circuit_input_builder(
+        builder,
+        eth_block,
+        &mut ChaCha20Rng::seed_from_u64(2),
+    )
+    .unwrap();
     let prover = MockProver::run(k, &circuit, instance).unwrap();
     let res = prover.verify();
     if let Err(err) = res {

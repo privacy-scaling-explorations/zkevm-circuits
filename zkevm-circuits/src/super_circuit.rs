@@ -71,13 +71,11 @@ use crate::{
     tx_circuit::sign_verify::POW_RAND_SIZE,
     witness::block_convert,
 };
-use bus_mapping::mock::BlockData;
 use bus_mapping::circuit_input_builder::CircuitInputBuilder;
-use eth_types::{
-    {geth_types::Transaction},
-};
+use bus_mapping::mock::BlockData;
+use eth_types::geth_types::Transaction;
 
-use eth_types::geth_types::{GethData};
+use eth_types::geth_types::GethData;
 use halo2_proofs::arithmetic::{CurveAffine, Field as Halo2Field};
 use halo2_proofs::halo2curves::{
     bn256::Fr,
@@ -289,8 +287,8 @@ impl<const MAX_TXS: usize, const MAX_CALLDATA: usize> SuperCircuit<Fr, MAX_TXS, 
         return Self::build_from_circuit_input_builder(builder, geth_data.eth_block, rng);
     }
 
-    /// From CircuitInputBuilder, generate a SuperCircuit instance with all of the
-    /// sub-circuits filled with their corresponding witnesses.
+    /// From CircuitInputBuilder, generate a SuperCircuit instance with all of
+    /// the sub-circuits filled with their corresponding witnesses.
     ///
     /// Also, return with it the minimum required SRS degree for the circuit and
     /// the Public Inputs needed.
@@ -333,7 +331,11 @@ impl<const MAX_TXS: usize, const MAX_CALLDATA: usize> SuperCircuit<Fr, MAX_TXS, 
         instance.push(vec![]);
 
         let chain_id = block.context.chain_id;
-        let txs: Vec<Transaction> = eth_block.transactions.iter().map(|tx| Transaction::from(tx)).collect();
+        let txs: Vec<Transaction> = eth_block
+            .transactions
+            .iter()
+            .map(|tx| Transaction::from(tx))
+            .collect();
         let tx_circuit = TxCircuit::new(aux_generator, block.randomness, chain_id.as_u64(), txs);
 
         let circuit = SuperCircuit::<_, MAX_TXS, MAX_CALLDATA> {
@@ -348,7 +350,6 @@ impl<const MAX_TXS: usize, const MAX_CALLDATA: usize> SuperCircuit<Fr, MAX_TXS, 
         };
         Ok((k, circuit, instance))
     }
-
 }
 
 #[cfg(test)]
