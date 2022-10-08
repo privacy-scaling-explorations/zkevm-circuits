@@ -78,13 +78,13 @@ mod sstore;
 mod stop;
 mod swap;
 
+use self::sha3::Sha3Gadget;
 use add_sub::AddSubGadget;
 use addmod::AddModGadget;
 use address::AddressGadget;
 use begin_tx::BeginTxGadget;
 use bitwise::BitwiseGadget;
 use block_ctx::{BlockCtxU160Gadget, BlockCtxU256Gadget, BlockCtxU64Gadget};
-use blockhash::BlockHashGadget;
 use byte::ByteGadget;
 use call::CallGadget;
 use calldatacopy::CallDataCopyGadget;
@@ -210,7 +210,7 @@ pub(crate) struct ExecutionConfig<F> {
     return_gadget: ReturnGadget<F>,
     sdiv_smod_gadget: SignedDivModGadget<F>,
     selfbalance_gadget: SelfbalanceGadget<F>,
-    sha3_gadget: DummyGadget<F, 0, 0, { ExecutionState::SHA3 }>,
+    sha3_gadget: Sha3Gadget<F>,
     shl_shr_gadget: ShlShrGadget<F>,
     balance_gadget: DummyGadget<F, 1, 1, { ExecutionState::BALANCE }>,
     exp_gadget: DummyGadget<F, 2, 1, { ExecutionState::EXP }>,
@@ -231,7 +231,7 @@ pub(crate) struct ExecutionConfig<F> {
     sstore_gadget: SstoreGadget<F>,
     stop_gadget: StopGadget<F>,
     swap_gadget: SwapGadget<F>,
-    blockhash_gadget: BlockHashGadget<F>,
+    blockhash_gadget: DummyGadget<F, 1, 1, { ExecutionState::BLOCKHASH }>,
     block_ctx_u64_gadget: BlockCtxU64Gadget<F>,
     block_ctx_u160_gadget: BlockCtxU160Gadget<F>,
     block_ctx_u256_gadget: BlockCtxU256Gadget<F>,
