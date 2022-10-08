@@ -101,7 +101,7 @@ mod evm_circ_benches {
         let mut transcript = Blake2bWrite::<_, G1Affine, Challenge255<_>>::init(vec![]);
 
         // Bench proof generation time
-        let proof_message = format!("EVM circuit Proof generation with {} rows", degree);
+        let proof_message = format!("EVM circuit Proof generation with degree = {}", degree);
         let start2 = start_timer!(|| proof_message);
         create_proof::<
             KZGCommitmentScheme<Bn256>,

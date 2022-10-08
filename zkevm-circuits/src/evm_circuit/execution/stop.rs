@@ -82,7 +82,7 @@ impl<F: Field> ExecutionGadget<F> for StopGadget<F> {
 
         // When it's an internal call
         let restore_context = cb.condition(1.expr() - cb.curr.state.is_root.expr(), |cb| {
-            RestoreContextGadget::construct(cb, 1.expr(), 0.expr(), 0.expr())
+            RestoreContextGadget::construct(cb, true.expr(), 0.expr(), 0.expr(), 0.expr(), 0.expr())
         });
 
         Self {
@@ -122,8 +122,10 @@ impl<F: Field> ExecutionGadget<F> for StopGadget<F> {
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
 
-        self.restore_context
-            .assign(region, offset, block, call, step)?;
+        if !call.is_root {
+            self.restore_context
+                .assign(region, offset, block, call, step, 1)?;
+        }
 
         Ok(())
     }
