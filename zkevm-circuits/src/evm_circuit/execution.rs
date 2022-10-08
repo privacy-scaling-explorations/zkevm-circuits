@@ -20,10 +20,7 @@ use halo2_proofs::{
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector, VirtualCells},
     poly::Rotation,
 };
-use std::{
-    collections::HashMap,
-    iter::{self},
-};
+use std::{collections::HashMap, iter};
 use strum::IntoEnumIterator;
 
 mod add_sub;
@@ -1118,7 +1115,7 @@ impl<F: Field> ExecutionConfig<F> {
 
         for (idx, assigned_rw_value) in assigned_rw_values.iter().enumerate() {
             if step.rw_indices.is_empty() {
-                break;
+                panic!("unexpected step.rw_indices is empty")
             }
             let rw_idx = step.rw_indices[idx];
             let rw = block.rws[rw_idx];

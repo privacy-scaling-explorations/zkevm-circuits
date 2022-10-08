@@ -226,7 +226,7 @@ mod test {
         let terminator = OpcodeId::REVERT;
 
         let stack = Stack {
-            gas: 200,
+            gas: 10,
             cd_offset: 64,
             cd_length: 320,
             rd_offset: 0,

@@ -487,7 +487,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
     // constant gas
     pub(crate) fn constant_gas_lookup(&mut self, opcode: Expression<F>, gas: Expression<F>) {
         self.add_lookup(
-            "constant gas ",
+            "constant gas",
             Lookup::Fixed {
                 tag: FixedTableTag::ConstantGasCost.expr(),
                 values: [opcode, gas, 0.expr()],

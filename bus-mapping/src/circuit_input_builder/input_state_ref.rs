@@ -1060,10 +1060,10 @@ impl<'a> CircuitInputStateRef<'a> {
 
         let geth_step_next = &geth_steps[1];
         let caller_ctx = self.caller_ctx()?;
-        let caller_gas_left = if geth_step_next.gas.0 == 0 {
-            0
-        } else {
+        let caller_gas_left = if call.is_success {
             geth_step_next.gas.0 - geth_step.gas.0
+        } else {
+            geth_step_next.gas.0
         };
 
         for (field, value) in [
