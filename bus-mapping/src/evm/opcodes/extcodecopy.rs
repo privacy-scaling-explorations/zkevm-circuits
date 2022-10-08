@@ -227,7 +227,7 @@ mod extcodecopy_tests {
 
         let mut bytecode_ext = Bytecode::default();
         for (_, value) in code_ext.to_vec().iter().enumerate() {
-            bytecode_ext.write(*value, false);
+            bytecode_ext.write(*value, true);
         }
         let code_hash = keccak256(code_ext.clone());
 
@@ -239,7 +239,7 @@ mod extcodecopy_tests {
                     .address(address!("0x0000000000000000000000000000000000000010"))
                     .code(code.clone());
 
-                accs[1].address(external_address).code(bytecode_ext.clone());
+                accs[1].address(external_address).code(code_ext.clone());
 
                 accs[2]
                     .address(address!("0x0000000000000000000000000000000000cafe01"))
