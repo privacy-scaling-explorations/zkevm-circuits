@@ -57,8 +57,10 @@ pub(crate) mod address_high {
     }
 }
 
-/// Convert the dynamic memory offset and length from random linear combiation
-/// to integer. It handles the "no expansion" feature when length is zero.
+/// Convert the dynamic memory offset and length from random linear combination
+/// to integer. It handles the "no expansion" feature by setting the
+/// `memory_offset_bytes` to zero when `memory_length` is zero. In this case,
+/// the RLC value for `memory_offset` need not match the bytes.
 #[derive(Clone, Debug)]
 pub(crate) struct MemoryAddressGadget<F> {
     memory_offset: Cell<F>,

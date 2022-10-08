@@ -27,8 +27,8 @@ mod tests {
             .parse()
             .expect("Cannot parse DEGREE env var as u32");
 
-        // Create the circuit
-        let mut circuit = KeccakPackedCircuit::new(2usize.pow(degree));
+        // Create the circuit. Leave last dozens of rows for blinding.
+        let mut circuit = KeccakPackedCircuit::new(2usize.pow(degree) - 64);
 
         // Use the complete circuit
         let inputs = vec![(0u8..135).collect::<Vec<_>>(); circuit.capacity()];
@@ -54,7 +54,7 @@ mod tests {
         let mut transcript = Blake2bWrite::<_, G1Affine, Challenge255<_>>::init(vec![]);
 
         // Bench proof generation time
-        let proof_message = format!("Packed Keccak Proof generation with {} rows", degree);
+        let proof_message = format!("Packed Keccak Proof generation with degree = {}", degree);
         let start2 = start_timer!(|| proof_message);
         create_proof::<
             KZGCommitmentScheme<Bn256>,

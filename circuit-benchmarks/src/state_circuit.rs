@@ -53,7 +53,7 @@ mod tests {
         let instances: Vec<&[Fr]> = instance.iter().map(|v| v.as_slice()).collect();
 
         // Bench proof generation time
-        let proof_message = format!("State Circuit Proof generation with {} rows", degree);
+        let proof_message = format!("State Circuit Proof generation with degree = {}", degree);
         let start2 = start_timer!(|| proof_message);
         create_proof::<
             KZGCommitmentScheme<Bn256>,

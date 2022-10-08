@@ -12,11 +12,13 @@ use eth_types::{
 use ethers_core::types::Block;
 use halo2_proofs::plonk::Instance;
 
+use crate::table::BlockTable;
 use crate::table::TxFieldTag;
+use crate::table::TxTable;
 use crate::util::random_linear_combine_word as rlc;
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter, Region, SimpleFloorPlanner, Value},
-    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Fixed, Selector},
+    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Selector},
     poly::Rotation,
 };
 
@@ -156,14 +158,9 @@ impl PublicData {
 #[derive(Clone, Debug)]
 pub struct PiCircuitConfig<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> {
     q_block_table: Selector,
-    block_value: Column<Advice>,
-
+    block_table: BlockTable,
     q_tx_table: Selector,
-    tx_id: Column<Advice>,
-    tag: Column<Fixed>,
-    index: Column<Advice>,
-    tx_value: Column<Advice>,
-
+    tx_table: TxTable,
     raw_public_inputs: Column<Advice>,
     rpi_rlc_acc: Column<Advice>,
     rand_rpi: Column<Advice>,
@@ -178,17 +175,10 @@ pub struct PiCircuitConfig<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: u
 impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
     PiCircuitConfig<F, MAX_TXS, MAX_CALLDATA>
 {
-    fn new(meta: &mut ConstraintSystem<F>) -> Self {
+    fn new(meta: &mut ConstraintSystem<F>, block_table: BlockTable, tx_table: TxTable) -> Self {
         let q_block_table = meta.selector();
-        // BlockTable
-        let block_value = meta.advice_column();
 
         let q_tx_table = meta.selector();
-        // Tx Table
-        let tx_id = meta.advice_column();
-        let tag = meta.fixed_column();
-        let index = meta.advice_column();
-        let tx_value = meta.advice_column();
 
         let raw_public_inputs = meta.advice_column();
         let rpi_rlc_acc = meta.advice_column();
@@ -205,7 +195,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
 
         // 0.0 rpi_rlc_acc[0] == RLC(raw_public_inputs, rand_rpi)
         meta.create_gate(
-            "rpi_rlc_acc[i] = rand_rpi * rpi_rlc_acc[i+1] + raw_public_inputs[i] ",
+            "rpi_rlc_acc[i] = rand_rpi * rpi_rlc_acc[i+1] + raw_public_inputs[i]",
             |meta| {
                 // q_not_end * row.rpi_rlc_acc ==
                 // (q_not_end * row_next.rpi_rlc_acc * row.rand_rpi + row.raw_public_inputs )
@@ -239,9 +229,9 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
 
         // 0.2 Block table -> value column match with raw_public_inputs at expected
         // offset
-        meta.create_gate("", |meta| {
+        meta.create_gate("block_table[i] = raw_public_inputs[offset + i]", |meta| {
             let q_block_table = meta.query_selector(q_block_table);
-            let block_value = meta.query_advice(block_value, Rotation::cur());
+            let block_value = meta.query_advice(block_table.value, Rotation::cur());
             let rpi_block_value = meta.query_advice(raw_public_inputs, Rotation::cur());
             vec![q_block_table * (block_value - rpi_block_value)]
         });
@@ -257,7 +247,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
                 // row.q_tx_table * row.tx_table.tx_id
                 // == row.q_tx_table * row_offset_tx_table_tx_id.raw_public_inputs
                 let q_tx_table = meta.query_selector(q_tx_table);
-                let tx_id = meta.query_advice(tx_id, Rotation::cur());
+                let tx_id = meta.query_advice(tx_table.tx_id, Rotation::cur());
                 let rpi_tx_id = meta.query_advice(raw_public_inputs, Rotation(offset as i32));
 
                 vec![q_tx_table * (tx_id - rpi_tx_id)]
@@ -270,7 +260,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
                 // row.q_tx_table * row.tx_table.tx_index
                 // == row.q_tx_table * row_offset_tx_table_tx_index.raw_public_inputs
                 let q_tx_table = meta.query_selector(q_tx_table);
-                let tx_index = meta.query_advice(index, Rotation::cur());
+                let tx_index = meta.query_advice(tx_table.index, Rotation::cur());
                 let rpi_tx_index =
                     meta.query_advice(raw_public_inputs, Rotation((offset + tx_table_len) as i32));
 
@@ -284,7 +274,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
                 // row.q_tx_table * row.tx_table.tx_value
                 // == row.q_tx_table * row_offset_tx_table_tx_value.raw_public_inputs
                 let q_tx_table = meta.query_selector(q_tx_table);
-                let tx_value = meta.query_advice(tx_value, Rotation::cur());
+                let tx_value = meta.query_advice(tx_table.value, Rotation::cur());
                 let rpi_tx_value = meta.query_advice(
                     raw_public_inputs,
                     Rotation((offset + 2 * tx_table_len) as i32),
@@ -296,12 +286,9 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
 
         Self {
             q_block_table,
-            block_value,
+            block_table,
             q_tx_table,
-            tx_id,
-            tag,
-            index,
-            tx_value,
+            tx_table,
             raw_public_inputs,
             rpi_rlc_acc,
             rand_rpi,
@@ -335,17 +322,26 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
         let tx_id = F::from(tx_id as u64);
         let tag = F::from(tag as u64);
         let index = F::from(index as u64);
-        let tx_value = tx_value;
 
         self.q_tx_table.enable(region, offset)?;
 
         // Assign vals to Tx_table
-        region.assign_advice(|| "tx_id", self.tx_id, offset, || Value::known(tx_id))?;
-        region.assign_fixed(|| "tag", self.tag, offset, || Value::known(tag))?;
-        region.assign_advice(|| "index", self.index, offset, || Value::known(index))?;
+        region.assign_advice(
+            || "tx_id",
+            self.tx_table.tx_id,
+            offset,
+            || Value::known(tx_id),
+        )?;
+        region.assign_advice(|| "tag", self.tx_table.tag, offset, || Value::known(tag))?;
+        region.assign_advice(
+            || "index",
+            self.tx_table.index,
+            offset,
+            || Value::known(index),
+        )?;
         region.assign_advice(
             || "tx_value",
-            self.tx_value,
+            self.tx_table.value,
             offset,
             || Value::known(tx_value),
         )?;
@@ -404,7 +400,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
         // zero row
         region.assign_advice(
             || "zero",
-            self.block_value,
+            self.block_table.value,
             offset,
             || Value::known(F::zero()),
         )?;
@@ -421,7 +417,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
         let coinbase = block_values.coinbase.to_scalar().unwrap();
         region.assign_advice(
             || "coinbase",
-            self.block_value,
+            self.block_table.value,
             offset,
             || Value::known(coinbase),
         )?;
@@ -438,7 +434,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
         let gas_limit = F::from(block_values.gas_limit);
         region.assign_advice(
             || "gas_limit",
-            self.block_value,
+            self.block_table.value,
             offset,
             || Value::known(gas_limit),
         )?;
@@ -455,7 +451,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
         let number = F::from(block_values.number);
         region.assign_advice(
             || "number",
-            self.block_value,
+            self.block_table.value,
             offset,
             || Value::known(number),
         )?;
@@ -472,7 +468,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
         let timestamp = F::from(block_values.timestamp);
         region.assign_advice(
             || "timestamp",
-            self.block_value,
+            self.block_table.value,
             offset,
             || Value::known(timestamp),
         )?;
@@ -489,7 +485,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
         let difficulty = rlc(block_values.difficulty.to_le_bytes(), randomness);
         region.assign_advice(
             || "difficulty",
-            self.block_value,
+            self.block_table.value,
             offset,
             || Value::known(difficulty),
         )?;
@@ -506,7 +502,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
         let base_fee = rlc(block_values.base_fee.to_le_bytes(), randomness);
         region.assign_advice(
             || "base_fee",
-            self.block_value,
+            self.block_table.value,
             offset,
             || Value::known(base_fee),
         )?;
@@ -523,7 +519,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
         let chain_id = F::from(block_values.chain_id);
         region.assign_advice(
             || "chain_id",
-            self.block_value,
+            self.block_table.value,
             offset,
             || Value::known(chain_id),
         )?;
@@ -540,7 +536,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
             let prev_hash = rlc(prev_hash.to_fixed_bytes(), randomness);
             region.assign_advice(
                 || "prev_hash",
-                self.block_value,
+                self.block_table.value,
                 offset,
                 || Value::known(prev_hash),
             )?;
@@ -691,7 +687,9 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
     }
 
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-        PiCircuitConfig::new(meta)
+        let block_table = BlockTable::construct(meta);
+        let tx_table = TxTable::construct(meta);
+        PiCircuitConfig::new(meta, block_table, tx_table)
     }
 
     fn synthesize(

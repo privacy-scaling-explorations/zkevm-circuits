@@ -4,7 +4,7 @@ use bus_mapping::circuit_input_builder::BuilderClient;
 use bus_mapping::operation::OperationContainer;
 use eth_types::geth_types;
 use halo2_proofs::{
-    arithmetic::{CurveAffine, Field, FieldExt},
+    arithmetic::CurveAffine,
     dev::MockProver,
     halo2curves::{
         bn256::Fr,
@@ -24,9 +24,7 @@ use zkevm_circuits::evm_circuit::witness::RwMap;
 use zkevm_circuits::evm_circuit::{test::run_test_circuit, witness::block_convert};
 use zkevm_circuits::state_circuit::StateCircuit;
 use zkevm_circuits::super_circuit::SuperCircuit;
-use zkevm_circuits::tx_circuit::{
-    sign_verify::SignVerifyChip, Secp256k1Affine, TxCircuit, POW_RAND_SIZE, VERIF_HEIGHT,
-};
+use zkevm_circuits::tx_circuit::{sign_verify::SignVerifyChip, Secp256k1Affine, TxCircuit};
 
 lazy_static! {
     pub static ref GEN_DATA: GenDataOutput = GenDataOutput::load();
@@ -90,31 +88,23 @@ async fn test_tx_circuit_block(block_num: u64) {
     let mut rng = ChaCha20Rng::seed_from_u64(2);
     let aux_generator = <Secp256k1Affine as CurveAffine>::CurveExt::random(&mut rng).to_affine();
 
-    let randomness = Fr::random(&mut rng);
-    let mut instance: Vec<Vec<Fr>> = (1..POW_RAND_SIZE + 1)
-        .map(|exp| vec![randomness.pow(&[exp as u64, 0, 0, 0]); txs.len() * VERIF_HEIGHT])
-        .collect();
-
-    instance.push(vec![]);
     let circuit = TxCircuit::<Fr, 4, { 4 * (4 + 32 + 32) }> {
         sign_verify: SignVerifyChip {
             aux_generator,
             window_size: 2,
             _marker: PhantomData,
         },
-        randomness,
         txs,
         chain_id: CHAIN_ID,
     };
 
-    let prover = MockProver::run(DEGREE, &circuit, instance).unwrap();
+    let prover = MockProver::run(DEGREE, &circuit, vec![vec![]]).unwrap();
 
     prover.verify().expect("tx_circuit verification failed");
 }
 
 pub async fn test_bytecode_circuit_block(block_num: u64) {
     const DEGREE: u32 = 16;
-    let randomness = Fr::from(123456);
 
     log::info!("test bytecode circuit, block number: {}", block_num);
     let cli = get_client();
@@ -122,7 +112,7 @@ pub async fn test_bytecode_circuit_block(block_num: u64) {
     let (builder, _) = cli.gen_inputs(block_num).await.unwrap();
     let bytecodes: Vec<Vec<u8>> = builder.code_db.0.values().cloned().collect();
 
-    test_bytecode_circuit(DEGREE, bytecodes, randomness);
+    test_bytecode_circuit::<Fr>(DEGREE, bytecodes);
 }
 
 pub async fn test_copy_circuit_block(block_num: u64) {
