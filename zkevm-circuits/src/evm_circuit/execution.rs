@@ -11,7 +11,7 @@ use crate::{
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::LookupTable,
-    util::Expr,
+    util::{query_expression, Expr},
 };
 use eth_types::Field;
 use halo2_proofs::{
@@ -559,11 +559,8 @@ impl<F: Field> ExecutionConfig<F> {
         let gadget = G::configure(&mut cb);
 
         // Enforce the step height for this opcode
-        let mut num_rows_until_next_step_next = 0.expr();
-        meta.create_gate("query num rows", |meta| {
-            num_rows_until_next_step_next =
-                meta.query_advice(num_rows_until_next_step, Rotation::next());
-            vec![0.expr()]
+        let num_rows_until_next_step_next = query_expression(meta, |meta| {
+            meta.query_advice(num_rows_until_next_step, Rotation::next())
         });
         cb.require_equal(
             "num_rows_until_next_step_next := height - 1",

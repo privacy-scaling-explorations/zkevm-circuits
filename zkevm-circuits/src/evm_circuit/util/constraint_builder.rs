@@ -9,7 +9,7 @@ use crate::{
         AccountFieldTag, BytecodeFieldTag, CallContextFieldTag, RwTableTag, TxContextFieldTag,
         TxLogFieldTag, TxReceiptFieldTag,
     },
-    util::Expr,
+    util::{build_tx_log_expression, Expr},
 };
 use eth_types::Field;
 use halo2_proofs::{
@@ -420,6 +420,11 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
             "Constrain next execution state",
             1.expr() - next_state.expr(),
         );
+    }
+
+    pub(crate) fn require_next_state_not(&mut self, execution_state: ExecutionState) {
+        let next_state = self.next.execution_state_selector([execution_state]);
+        self.add_constraint("Constrain next execution state not", next_state.expr());
     }
 
     pub(crate) fn require_step_state_transition(
@@ -1066,7 +1071,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
             RwTableTag::TxLog,
             RwValues::new(
                 tx_id,
-                index + (1u64 << 32).expr() * field_tag.expr() + (1u64 << 48).expr() * log_id,
+                build_tx_log_expression(index, field_tag.expr(), log_id),
                 0.expr(),
                 0.expr(),
                 value,
@@ -1120,6 +1125,8 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         rw_counter: Expression<F>,
         rwc_inc: Expression<F>,
     ) {
+        // TODO: eliminate rw_counter argument since we have self.rw_counter_offset
+        // already. TODO: increment rw_counter_offset by rwc_inc.
         self.add_lookup(
             "copy lookup",
             Lookup::CopyTable {

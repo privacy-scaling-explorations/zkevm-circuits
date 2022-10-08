@@ -81,7 +81,10 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGConstantGadget<F> {
         let restore_context = cb.condition(1.expr() - cb.curr.state.is_root.expr(), |cb| {
             RestoreContextGadget::construct(
                 cb,
-                2.expr() + cb.curr.state.reversible_write_counter.expr(),
+                0.expr(),
+                // rw_offset is handled in construct internally
+                0.expr(),
+                0.expr(),
                 0.expr(),
                 0.expr(),
             )
@@ -121,7 +124,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGConstantGadget<F> {
         )?;
 
         self.restore_context
-            .assign(region, offset, block, call, step)?;
+            .assign(region, offset, block, call, step, 2)?;
 
         Ok(())
     }
