@@ -90,7 +90,6 @@ impl Opcode for Return {
                 // reconstruction
                 let callee_memory = state.call_ctx()?.memory.clone();
                 let caller_ctx = state.caller_ctx_mut()?;
-                caller_ctx.return_data = memory.0[offset..offset + length].to_vec();
                 let return_offset = call.return_data_offset.try_into().unwrap();
 
                 caller_ctx.memory.0[return_offset..return_offset + copy_length]

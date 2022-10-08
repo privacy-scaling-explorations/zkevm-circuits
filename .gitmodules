@@ -2,10 +2,8 @@
 	update = none
 	path = testool/tests
 	url = https://github.com/ethereum/tests
-	update = none
 
 [submodule "integration-tests/contracts/vendor/openzeppelin-contracts"]
 	update = none
 	path = integration-tests/contracts/vendor/openzeppelin-contracts
 	url = https://github.com/OpenZeppelin/openzeppelin-contracts
-	update = none

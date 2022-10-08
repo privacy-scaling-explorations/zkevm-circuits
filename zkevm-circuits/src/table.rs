@@ -111,7 +111,7 @@ impl TxTable {
             tx_id: meta.advice_column(),
             tag: meta.advice_column(),
             index: meta.advice_column(),
-            value: meta.advice_column_in(SecondPhase),
+            value: meta.advice_column(),
         }
     }
 

@@ -1,9 +1,9 @@
 #![cfg(feature = "circuits")]
 
 use bus_mapping::circuit_input_builder::BuilderClient;
-
 use bus_mapping::operation::OperationContainer;
 use eth_types::geth_types;
+use halo2_proofs::arithmetic::FieldExt;
 use halo2_proofs::{
     arithmetic::CurveAffine,
     dev::MockProver,

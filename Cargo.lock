@@ -1006,7 +1006,7 @@ dependencies = [
 [[package]]
 name = "ecc"
 version = "0.1.0"
-source = "git+https://github.com/scroll-tech/halo2wrong?branch=scroll-dev-0902#46658f34ec33dbdc913667d5c1a8af617d543257"
+source = "git+https://github.com/scroll-tech/halo2wrong?branch=scroll-dev-1010#5a7f1a422316f71852bdc367792844106a536970"
 dependencies = [
  "group",
  "integer",
@@ -1020,7 +1020,7 @@ dependencies = [
 [[package]]
 name = "ecdsa"
 version = "0.1.0"
-source = "git+https://github.com/scroll-tech/halo2wrong?branch=scroll-dev-0902#46658f34ec33dbdc913667d5c1a8af617d543257"
+source = "git+https://github.com/scroll-tech/halo2wrong?branch=scroll-dev-1010#5a7f1a422316f71852bdc367792844106a536970"
 dependencies = [
  "ecc",
  "group",
@@ -1855,7 +1855,7 @@ dependencies = [
 [[package]]
 name = "halo2wrong"
 version = "0.1.0"
-source = "git+https://github.com/scroll-tech/halo2wrong?branch=scroll-dev-0902#46658f34ec33dbdc913667d5c1a8af617d543257"
+source = "git+https://github.com/scroll-tech/halo2wrong?branch=scroll-dev-1010#5a7f1a422316f71852bdc367792844106a536970"
 dependencies = [
  "group",
  "halo2_proofs",
@@ -2124,7 +2124,7 @@ dependencies = [
 [[package]]
 name = "integer"
 version = "0.1.0"
-source = "git+https://github.com/scroll-tech/halo2wrong?branch=scroll-dev-0902#46658f34ec33dbdc913667d5c1a8af617d543257"
+source = "git+https://github.com/scroll-tech/halo2wrong?branch=scroll-dev-1010#5a7f1a422316f71852bdc367792844106a536970"
 dependencies = [
  "group",
  "maingate",
@@ -2358,7 +2358,7 @@ dependencies = [
 [[package]]
 name = "maingate"
 version = "0.1.0"
-source = "git+https://github.com/scroll-tech/halo2wrong?branch=scroll-dev-0902#46658f34ec33dbdc913667d5c1a8af617d543257"
+source = "git+https://github.com/scroll-tech/halo2wrong?branch=scroll-dev-1010#5a7f1a422316f71852bdc367792844106a536970"
 dependencies = [
  "group",
  "halo2wrong",
