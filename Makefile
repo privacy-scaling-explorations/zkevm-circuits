@@ -34,9 +34,6 @@ evm_bench: ## Run Evm Circuit benchmarks
 state_bench: ## Run State Circuit benchmarks
 	@cargo test --profile bench bench_state_circuit_prover -p circuit-benchmarks --features benches  -- --nocapture
 
-keccak_round_bench: ## Run State Circuit benchmarks
-	@cargo test --profile bench bench_keccak_round -p circuit-benchmarks --features benches  -- --nocapture
-
 bit_keccak_bench: ## Run Bit Keccak Circuit benchmarks
 	@cargo test --profile bench bench_bit_keccak_circuit_prover -p circuit-benchmarks --features benches  -- --nocapture
 
