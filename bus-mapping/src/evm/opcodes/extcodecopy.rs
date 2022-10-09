@@ -225,10 +225,7 @@ mod extcodecopy_tests {
             STOP
         });
 
-        let mut bytecode_ext = Bytecode::default();
-        for (_, value) in code_ext.to_vec().iter().enumerate() {
-            bytecode_ext.write(*value, true);
-        }
+        let bytecode_ext = Bytecode::from(code_ext.to_vec());
         let code_hash = keccak256(code_ext.clone());
 
         // Get the execution steps from the external tracer
