@@ -94,7 +94,6 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
                 dst_memory_addr.offset(),
                 dst_memory_addr.length(),
                 0.expr(), // for CODECOPY, rlc_acc is 0
-                cb.curr.state.rw_counter.expr() + cb.rw_counter_offset().expr(),
                 copy_rwc_inc.expr(),
             );
         });

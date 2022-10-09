@@ -125,7 +125,6 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
                 memory_address.offset(),
                 memory_address.length(),
                 0.expr(), // for CALLDATACOPY rlc_acc is 0
-                cb.curr.state.rw_counter.expr() + cb.rw_counter_offset().expr(),
                 copy_rwc_inc.expr(),
             );
         });

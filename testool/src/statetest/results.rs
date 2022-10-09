@@ -251,12 +251,14 @@ impl Results {
         }
         let sum: usize = totals.iter().sum();
         let mut cells = vec!["TOTAL".to_string()];
-        cells.append(
-            &mut totals
-                .iter()
-                .map(|n| format!("{} ({}%)", n, (100 * n) / sum))
-                .collect(),
-        );
+        if sum != 0 {
+            cells.append(
+                &mut totals
+                    .iter()
+                    .map(|n| format!("{} ({}%)", n, (100 * n) / sum))
+                    .collect(),
+            );
+        }
         by_folder.add_row(Row::from_iter(cells));
 
         let mut by_result = Table::new();
