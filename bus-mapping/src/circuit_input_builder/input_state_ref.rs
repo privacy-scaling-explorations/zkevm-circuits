@@ -545,6 +545,8 @@ impl<'a> CircuitInputStateRef<'a> {
         if !found {
             return Err(Error::AccountNotFound(sender));
         }
+        // do you have to fix this?
+        // dunno if the state circuit fixes have been ported over...
         Ok(get_contract_address(sender, account.nonce))
     }
 

@@ -302,7 +302,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::test_util::run_test_circuits;
+    use crate::test_util::{run_test_circuits, BytecodeTestConfig};
     use eth_types::{
         address, bytecode, evm_types::OpcodeId, geth_types::Account, word, Address, Bytecode,
         ToWord, Word,
@@ -494,16 +494,16 @@ mod test {
 
     #[test]
     fn test_nonroot_create() {
-        let initialization_code = callee_bytecode(true, 0, 10);
-        let root_code = bytecode! {
-            PUSH32(Word::from_big_endian(&initialization_code.code()))
-            PUSH1(0)
-            MSTORE
-            PUSH32(32)
-            PUSH32(0)
-            CREATE
-            STOP
-        };
+        // let initialization_code = callee_bytecode(true, 0, 10);
+        // let root_code = bytecode! {
+        //     PUSH32(Word::from_big_endian(&initialization_code.code()))
+        //     PUSH1(0)
+        //     MSTORE
+        //     PUSH32(32)
+        //     PUSH32(0)
+        //     CREATE
+        //     STOP
+        // };
 
         let deployed = bytecode! {
             PUSH1(0x20)
@@ -520,9 +520,9 @@ mod test {
             word!("0x6020600060003760206000F3")
         );
 
-        dbg!("asdfasdfa3211asd");
-        dbg!(Word::from_big_endian(&initialization_code.code()));
-        dbg!("q345");
+        // dbg!("asdfasdfa3211asd");
+        // dbg!(Word::from_big_endian(&initialization_code.code()));
+        // dbg!("q345");
 
         let initializer = bytecode! {
             // PUSH30(Word::from_big_endian(&initialization_code.code()))
@@ -584,6 +584,11 @@ mod test {
 
         dbg!("asdfasdfasd");
 
-        assert_eq!(run_test_circuits(test_context, None), Ok(()),);
+        assert_eq!(run_test_circuits(test_context, Some(
+            BytecodeTestConfig{
+                enable_state_circuit_test: false,
+                ..Default::default()
+            }
+        )), Ok(()),);
     }
 }

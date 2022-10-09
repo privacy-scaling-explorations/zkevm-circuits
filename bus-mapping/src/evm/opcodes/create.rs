@@ -2,7 +2,7 @@ use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
 use crate::evm::Opcode;
 use crate::operation::{AccountField, AccountOp, TxAccessListAccountOp, RW};
 use crate::Error;
-use eth_types::GethExecStep;
+use eth_types::{GethExecStep, ToWord};
 use keccak256::EMPTY_HASH;
 
 #[derive(Debug, Copy, Clone)]
@@ -13,7 +13,6 @@ impl<const IS_CREATE2: bool> Opcode for DummyCreate<IS_CREATE2> {
         state: &mut CircuitInputStateRef,
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
-        // panic!();
         // TODO: replace dummy create here
         let geth_step = &geth_steps[0];
 
@@ -29,6 +28,28 @@ impl<const IS_CREATE2: bool> Opcode for DummyCreate<IS_CREATE2> {
 
         let mut exec_step = state.new_step(geth_step)?;
 
+        let n_pop = if IS_CREATE2 { 4 } else { 3 };
+        for i in 0..n_pop {
+            state.stack_read(
+                &mut exec_step,
+                geth_step.stack.nth_last_filled(i),
+                geth_step.stack.nth_last(i)?,
+            )?;
+        }
+
+        // I think something is still wrong here.
+        let address = if IS_CREATE2 {
+            state.create2_address(&geth_steps[0])?
+        } else {
+            state.create_address()?
+        };
+
+        state.stack_write(
+            &mut exec_step,
+            geth_step.stack.nth_last_filled(0),
+            address.to_word(),
+        )?;
+
         let tx_id = state.tx_ctx.id();
         let call = state.parse_call(geth_step)?;
 
@@ -38,11 +59,6 @@ impl<const IS_CREATE2: bool> Opcode for DummyCreate<IS_CREATE2> {
         // > whether or not the address is unclaimed)
         // > add the address being created to accessed_addresses,
         // > but gas costs of CREATE and CREATE2 are unchanged
-        let address = if IS_CREATE2 {
-            state.create2_address(&geth_steps[0])?
-        } else {
-            state.create_address()?
-        };
         let is_warm = state.sdb.check_account_in_access_list(&address);
         state.push_op_reversible(
             &mut exec_step,

@@ -55,8 +55,8 @@ impl<F: Field, const N_POP: usize, const N_PUSH: usize, const S: ExecutionState>
         // using DummyGadget.
         // See `bus-mapping/src/evm/opcodes.rs`
         if step.rw_indices.len() != N_POP + N_PUSH {
-            log::warn!("DummyGadget: wrong number of rw indices for {:?}", step);
-            return Ok(());
+            log::error!("DummyGadget: wrong number of rw indices for {:?}", step);
+            // return Ok(());
         }
 
         for i in 0..N_POP {
@@ -65,6 +65,7 @@ impl<F: Field, const N_POP: usize, const N_PUSH: usize, const S: ExecutionState>
         }
         for i in 0..N_PUSH {
             let value = block.rws[step.rw_indices[N_POP + i]].stack_value();
+            dbg!(value);
             self.pushes[i].assign(region, offset, Some(value.to_le_bytes()))?;
         }
         Ok(())

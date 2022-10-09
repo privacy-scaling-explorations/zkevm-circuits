@@ -20,7 +20,10 @@ use halo2_proofs::{
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector, VirtualCells},
     poly::Rotation,
 };
-use std::{collections::HashMap, iter};
+use std::{
+    collections::{BTreeSet, HashMap},
+    iter,
+};
 use strum::IntoEnumIterator;
 
 mod add_sub;
@@ -215,7 +218,7 @@ pub(crate) struct ExecutionConfig<F> {
     extcodecopy_gadget: DummyGadget<F, 4, 0, { ExecutionState::EXTCODECOPY }>,
     returndatasize_gadget: DummyGadget<F, 0, 1, { ExecutionState::RETURNDATASIZE }>,
     returndatacopy_gadget: DummyGadget<F, 3, 0, { ExecutionState::RETURNDATACOPY }>,
-    create_gadget: DummyGadget<F, 3, 1, { ExecutionState::CREATE }>,
+    create_gadget: DummyGadget<F, 0, 0, { ExecutionState::CREATE }>,
     callcode_gadget: DummyGadget<F, 7, 1, { ExecutionState::CALLCODE }>,
     delegatecall_gadget: DummyGadget<F, 6, 1, { ExecutionState::DELEGATECALL }>,
     create2_gadget: DummyGadget<F, 4, 1, { ExecutionState::CREATE2 }>,
@@ -1110,19 +1113,25 @@ impl<F: Field> ExecutionConfig<F> {
             }
         }
 
-        for (idx, assigned_rw_value) in assigned_rw_values.iter().enumerate() {
-            let rw_idx = step.rw_indices[idx];
-            let rw = block.rws[rw_idx];
-            let table_assignments = rw.table_assignment(block.randomness);
-            let rlc = table_assignments.rlc(block.randomness);
-            if rlc != assigned_rw_value.1 {
-                log::error!(
-                    "incorrect rw witness. lookup input name: \"{}\". rw: {:?}, rw index: {:?}, {}th rw of step {:?}",
-                    assigned_rw_value.0,
-                    rw,
-                    rw_idx,
-                    idx,
-                    step.execution_state);
+        let rlc_assignments: BTreeSet<_> = block
+            .rws
+            .table_assignments()
+            .iter()
+            .map(|rw| rw.table_assignment(block.randomness).rlc(block.randomness))
+            .collect();
+
+        for assigned_rw_value in assigned_rw_values.iter() {
+            if !rlc_assignments.contains(&assigned_rw_value.1) {
+                log::error!("{} {:?}", assigned_rw_value.0, step.execution_state);
+                // log::error!(
+                //     "incorrect rw witness. lookup input name: \"{}\". rw:
+                // {:?}, rw index: {:?}, {}th rw of step {:?}",
+                //     assigned_rw_value.0,
+                //     rw,
+                //     rw_idx,
+                //     idx,
+                //     step.execution_state
+                // );
             }
         }
     }
