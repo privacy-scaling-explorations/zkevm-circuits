@@ -303,7 +303,7 @@ impl<const MAX_TXS: usize, const MAX_CALLDATA: usize> SuperCircuit<Fr, MAX_TXS, 
             .handle_block(&geth_data.eth_block, &geth_data.geth_traces)
             .expect("could not handle block tx");
 
-        Ok(Self::build_from_circuit_input_builder(builder, geth_data.eth_block, rng).unwrap())
+        Self::build_from_circuit_input_builder(builder, geth_data.eth_block, rng)
     }
 
     /// From CircuitInputBuilder, generate a SuperCircuit instance with all of
