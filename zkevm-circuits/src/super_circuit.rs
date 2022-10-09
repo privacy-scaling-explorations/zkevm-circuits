@@ -64,9 +64,9 @@ use bus_mapping::circuit_input_builder::CircuitInputBuilder;
 use bus_mapping::mock::BlockData;
 use eth_types::geth_types::Transaction;
 
-use eth_types::geth_types::GethData;
-use halo2_proofs::arithmetic::CurveAffine;
+use eth_types::geth_types::{self, GethData};
 use eth_types::Field;
+use halo2_proofs::arithmetic::CurveAffine;
 
 use halo2_proofs::halo2curves::{
     bn256::Fr,
@@ -303,7 +303,7 @@ impl<const MAX_TXS: usize, const MAX_CALLDATA: usize> SuperCircuit<Fr, MAX_TXS, 
             .handle_block(&geth_data.eth_block, &geth_data.geth_traces)
             .expect("could not handle block tx");
 
-        return Self::build_from_circuit_input_builder(builder, geth_data.eth_block, rng);
+        Ok(Self::build_from_circuit_input_builder(builder, geth_data.eth_block, rng).unwrap())
     }
 
     /// From CircuitInputBuilder, generate a SuperCircuit instance with all of
@@ -346,7 +346,7 @@ impl<const MAX_TXS: usize, const MAX_CALLDATA: usize> SuperCircuit<Fr, MAX_TXS, 
         let txs: Vec<Transaction> = eth_block
             .transactions
             .iter()
-            .map(|tx| Transaction::from(tx))
+            .map(geth_types::Transaction::from)
             .collect();
         let tx_circuit = TxCircuit::new(aux_generator, chain_id.as_u64(), txs);
 
