@@ -348,7 +348,7 @@ mod test {
     }
 
     #[test]
-    fn test_noncreate_root() {
+    fn test_return_root_noncreate() {
         let test_parameters = [(0, 0), (0, 10), (300, 20), (1000, 0)];
         for ((offset, length), is_return) in
             test_parameters.iter().cartesian_product(&[true, false])
@@ -367,7 +367,7 @@ mod test {
     }
 
     #[test]
-    fn test_return_nonroot() {
+    fn test_return_nonroot_noncreate() {
         let test_parameters = [
             ((0, 0), (0, 0)),
             ((0, 10), (0, 10)),
@@ -429,12 +429,11 @@ mod test {
     }
 
     #[test]
-    fn test_root_create() {
+    fn test_return_root_create() {
         let test_parameters = [(0, 0), (0, 10), (300, 20), (1000, 0)];
         for ((offset, length), is_return) in
             test_parameters.iter().cartesian_product(&[true, false])
         {
-            dbg!(offset, length, is_return);
             let tx_input = callee_bytecode(*is_return, *offset, *length).code();
             assert_eq!(
                 run_test_circuits(
@@ -459,130 +458,59 @@ mod test {
     }
 
     #[test]
-    fn test_root_create_old() {
-        let initialization_code = callee_bytecode(true, 0, 10);
-        assert_eq!(initialization_code.code.len(), 13);
+    fn test_return_nonroot_create() {
+        let test_parameters = [(0, 0), (0, 10), (300, 20), (1000, 0)];
+        for ((offset, length), is_return) in
+            test_parameters.iter().cartesian_product(&[true, false])
+        {
+            let initializer = callee_bytecode(*is_return, *offset, *length);
 
-        let something = Word::from_big_endian(&initialization_code.code());
-        let creater_code = bytecode! {
-            PUSH13(something)
-            PUSH1(0)
-            MSTORE
-            PUSH1(100)
-            PUSH1(0)
-            RETURN
-        };
+            let root_code = bytecode! {
+                PUSH32(Word::from_big_endian(&initializer.code()))
+                PUSH1(0)
+                MSTORE
 
-        assert_eq!(
-            run_test_circuits(
-                TestContext::<1, 1>::new(
-                    None,
-                    |accs| {
-                        accs[0].balance(eth(10));
-                    },
-                    |mut txs, accs| {
-                        txs[0]
-                            .from(accs[0].address)
-                            .input(creater_code.code().into());
-                    },
-                    |block, _| block,
-                )
-                .unwrap(),
-                None
-            ),
-            Ok(()),
-        );
-    }
+                PUSH1 (32) // length?
+                PUSH1 (0) // offset?
+                CREATE
+                STOP
+            };
 
-    #[test]
-    fn test_nonroot_create() {
-        // let initialization_code = callee_bytecode(true, 0, 10);
-        // let root_code = bytecode! {
-        //     PUSH32(Word::from_big_endian(&initialization_code.code()))
-        //     PUSH1(0)
-        //     MSTORE
-        //     PUSH32(32)
-        //     PUSH32(0)
-        //     CREATE
-        //     STOP
-        // };
+            let caller = Account {
+                address: CALLER_ADDRESS,
+                code: root_code.into(),
+                nonce: Word::one(),
+                ..Default::default()
+            };
 
-        let deployed = bytecode! {
-            PUSH1(0x20)
-            PUSH1(0)
-            PUSH1(0)
-            CALLDATACOPY
-            PUSH1(0x20)
-            PUSH1(0)
-            RETURN
-        };
+            let test_context = TestContext::<2, 1>::new(
+                None,
+                |accs| {
+                    accs[0].balance(eth(10));
+                    accs[1].account(&caller);
+                },
+                |mut txs, accs| {
+                    txs[0]
+                        .from(accs[0].address)
+                        .to(accs[1].address)
+                        .gas(100000u64.into());
+                },
+                |block, _| block,
+            )
+            .unwrap();
 
-        assert_eq!(
-            Word::from_big_endian(&deployed.code()),
-            word!("0x6020600060003760206000F3")
-        );
-
-        let initializer = bytecode! {
-            // PUSH30(Word::from_big_endian(&initialization_code.code()))
-            PUSH12(Word::from_big_endian(&deployed.code()))
-            PUSH1(0)
-            MSTORE
-            PUSH1(0xC)
-            PUSH1(0x14)
-            RETURN
-        };
-
-        assert_eq!(
-            Word::from_big_endian(&initializer.code()),
-            word!("0x6B6020600060003760206000F3600052600C6014F3")
-        );
-
-        let root_code = bytecode! {
-            PUSH21(Word::from_big_endian(&initializer.code()))
-            PUSH1(0)
-            MSTORE
-
-            PUSH1 (0x15)
-            PUSH1 (0xB)
-            PUSH1 (0)
-            CREATE
-            STOP
-        };
-
-        let caller = Account {
-            address: CALLER_ADDRESS,
-            code: root_code.into(),
-            nonce: Word::one(),
-            ..Default::default()
-        };
-
-        let test_context = TestContext::<3, 1>::new(
-            None,
-            |accs| {
-                accs[0]
-                    .address(MOCK_ACCOUNTS[0]) // why is this needed?
-                    .balance(eth(10));
-                accs[1].account(&caller);
-            },
-            |mut txs, accs| {
-                txs[0]
-                    .from(accs[0].address)
-                    .to(accs[1].address)
-                    .gas(100000u64.into());
-            },
-            |block, _| block,
-        )
-        .unwrap();
-
-        assert_eq!(
-            run_test_circuits(
-                test_context,
-                Some(BytecodeTestConfig {
-                    enable_state_circuit_test: false,
-                    ..Default::default()
-                })
-            ),
-            Ok(()),
-        );
+            assert_eq!(
+                run_test_circuits(
+                    test_context,
+                    Some(BytecodeTestConfig {
+                        enable_state_circuit_test: false,
+                        ..Default::default()
+                    })
+                ),
+                Ok(()),
+                "(offset, length, is_return) = {:?}",
+                (*offset, *length, *is_return),
+            );
+        }
     }
 }
