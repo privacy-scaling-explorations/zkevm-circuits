@@ -110,6 +110,8 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
                     cb.curr.state.rw_counter.expr() + cb.rw_counter_offset().expr(),
                     copy_rw_increase.expr(),
                 );
+                // We don't need to place any additional constraints on code_hash because the
+                // copy circuit enforces that it is the hash of the bytes in the copy lookup.
                 code_hash
             },
         );
@@ -520,10 +522,6 @@ mod test {
             word!("0x6020600060003760206000F3")
         );
 
-        // dbg!("asdfasdfa3211asd");
-        // dbg!(Word::from_big_endian(&initialization_code.code()));
-        // dbg!("q345");
-
         let initializer = bytecode! {
             // PUSH30(Word::from_big_endian(&initialization_code.code()))
             PUSH12(Word::from_big_endian(&deployed.code()))
@@ -533,8 +531,6 @@ mod test {
             PUSH1(0x14)
             RETURN
         };
-
-        dbg!("asdfasdfasd");
 
         assert_eq!(
             Word::from_big_endian(&initializer.code()),
@@ -553,16 +549,12 @@ mod test {
             STOP
         };
 
-        dbg!("1341234123");
-
         let caller = Account {
             address: CALLER_ADDRESS,
             code: root_code.into(),
             nonce: Word::one(),
             ..Default::default()
         };
-
-        dbg!("asdfasdfasd");
 
         let test_context = TestContext::<3, 1>::new(
             None,
@@ -582,13 +574,15 @@ mod test {
         )
         .unwrap();
 
-        dbg!("asdfasdfasd");
-
-        assert_eq!(run_test_circuits(test_context, Some(
-            BytecodeTestConfig{
-                enable_state_circuit_test: false,
-                ..Default::default()
-            }
-        )), Ok(()),);
+        assert_eq!(
+            run_test_circuits(
+                test_context,
+                Some(BytecodeTestConfig {
+                    enable_state_circuit_test: false,
+                    ..Default::default()
+                })
+            ),
+            Ok(()),
+        );
     }
 }
