@@ -834,11 +834,6 @@ mod tests {
             STOP
         };
         let code_ext = rand_bytes(0x0fffusize);
-        let mut bytecode_ext = Bytecode::default();
-        for (i, value) in code_ext.to_vec().iter().enumerate() {
-            let is_code = i % 2 == 0;
-            bytecode_ext.write(*value, is_code);
-        }
         let test_ctx = TestContext::<3, 1>::new(
             None,
             |accs| {
@@ -846,7 +841,7 @@ mod tests {
                     .address(address!("0x0000000000000000000000000000000000000010"))
                     .code(code.clone());
 
-                accs[1].address(external_address).code(bytecode_ext.clone());
+                accs[1].address(external_address).code(code_ext.clone());
 
                 accs[2]
                     .address(address!("0x0000000000000000000000000000000000cafe01"))
