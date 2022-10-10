@@ -260,7 +260,6 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                     .expect("unexpected Address -> Scalar conversion failure"),
             ),
         )?;
-        dbg!(tx.callee_address, tx.caller_address);
         self.tx_callee_address.assign(
             region,
             offset,
