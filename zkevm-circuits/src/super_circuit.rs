@@ -233,9 +233,6 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
             .block_table
             .load(&mut layouter, &self.block.context, self.block.randomness)?;
         config
-            .copy_table
-            .load(&mut layouter, &self.block, self.block.randomness)?;
-        config
             .evm_circuit
             .assign_block(&mut layouter, &self.block)?;
         // --- State Circuit ---
