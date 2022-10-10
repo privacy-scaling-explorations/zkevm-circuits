@@ -143,7 +143,6 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
                 dst_addr,
                 memory_address.length(),
                 0.expr(), // for LOGN, rlc_acc is 0
-                cb.curr.state.rw_counter.expr() + cb.rw_counter_offset().expr(),
                 copy_rwc_inc.expr(),
             );
         });
@@ -161,7 +160,7 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
         // State transition
 
         let step_state_transition = StepStateTransition {
-            rw_counter: Delta(cb.rw_counter_offset() + copy_rwc_inc.expr()),
+            rw_counter: Delta(cb.rw_counter_offset()),
             program_counter: Delta(1.expr()),
             stack_pointer: Delta(2.expr() + topic_count),
             memory_word_size: To(memory_expansion.next_memory_word_size()),
