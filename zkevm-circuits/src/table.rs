@@ -734,7 +734,7 @@ impl KeccakTable {
             .keccak_input()
             .map(|challenge| rlc::value(input.iter().rev(), challenge));
         if !is_big_endian {
-            let mut input_rlc = challenges
+            input_rlc = challenges
                 .keccak_input()
                 .map(|challenge| rlc::value(input.iter(), challenge));
         }
