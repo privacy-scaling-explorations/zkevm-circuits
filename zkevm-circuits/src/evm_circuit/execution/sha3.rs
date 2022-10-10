@@ -59,7 +59,6 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
                 0.expr(), // dst_addr for CopyDataType::RlcAcc is 0.
                 memory_address.length(),
                 rlc_acc.expr(),
-                cb.curr.state.rw_counter.expr() + cb.rw_counter_offset(),
                 copy_rwc_inc.expr(),
             );
         });
@@ -81,7 +80,7 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
         );
 
         let step_state_transition = StepStateTransition {
-            rw_counter: Transition::Delta(cb.rw_counter_offset() + copy_rwc_inc.expr()),
+            rw_counter: Transition::Delta(cb.rw_counter_offset()),
             program_counter: Transition::Delta(1.expr()),
             stack_pointer: Transition::Delta(1.expr()),
             memory_word_size: Transition::To(memory_expansion.next_memory_word_size()),
