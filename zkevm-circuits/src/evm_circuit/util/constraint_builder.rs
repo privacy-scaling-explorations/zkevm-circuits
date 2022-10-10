@@ -507,10 +507,6 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         is_code: Expression<F>,
     ) {
         let is_root_create = self.curr.state.is_root.expr() * self.curr.state.is_create.expr();
-        // self.add_constraint(
-        //     "The opcode source when is_root and is_create (Root creation transaction)
-        // is not determined yet",     is_root_create.clone(),
-        // );
         self.add_lookup(
             "Opcode lookup",
             Lookup::Bytecode {
@@ -1113,11 +1109,6 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         rlc_acc: Expression<F>,
         rwc_inc: Expression<F>,
     ) {
-        self.rw_counter_offset = self.rw_counter_offset.clone()
-            + match &self.condition {
-                None => 1.expr(),
-                Some(c) => c.clone(),
-            } * rwc_inc.clone();
         self.add_lookup(
             "copy lookup",
             Lookup::CopyTable {
