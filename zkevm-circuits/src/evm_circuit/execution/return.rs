@@ -107,7 +107,6 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
                     0.expr(),
                     range.length(),
                     0.expr(),
-                    cb.curr.state.rw_counter.expr() + cb.rw_counter_offset().expr(),
                     copy_rw_increase.expr(),
                 );
                 // We don't need to place any additional constraints on code_hash because the
@@ -306,7 +305,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
 mod test {
     use crate::test_util::{run_test_circuits, BytecodeTestConfig};
     use eth_types::{
-        address, bytecode, evm_types::OpcodeId, geth_types::Account, word, Address, Bytecode,
+        address, bytecode, evm_types::OpcodeId, geth_types::Account, Address, Bytecode,
         ToWord, Word,
     };
     use itertools::Itertools;
