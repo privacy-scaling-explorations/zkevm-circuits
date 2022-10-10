@@ -908,7 +908,9 @@ impl<F: FieldExt> MPTConfig<F> {
     }
 
     /// Make the assignments to the MPTCircuit
-    pub fn assign(&self, mut layouter: impl Layouter<F>, witness: &[MptWitnessRow<F>]) {
+    pub fn assign(&mut self, mut layouter: impl Layouter<F>, witness: &[MptWitnessRow<F>], randomness: F) {
+        self.randomness = randomness;
+
         layouter
             .assign_region(
                 || "MPT",
@@ -1202,7 +1204,7 @@ impl<F: FieldExt> MPTConfig<F> {
         keccak.digest()
     }
 
-    fn load_fixed_table(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
+    fn load_fixed_table(&self, layouter: &mut impl Layouter<F>, randomness: F) -> Result<(), Error> {
         layouter.assign_region(
             || "fixed table",
             |mut region| {
@@ -1229,7 +1231,7 @@ impl<F: FieldExt> MPTConfig<F> {
                         offset,
                         || Value::known(mult),
                     )?;
-                    mult *= self.randomness;
+                    mult *= randomness;
 
                     offset += 1;
                 }
@@ -1344,9 +1346,8 @@ impl<F: Field> Circuit<F> for MPTCircuit<F> {
             false,
         ).ok();
 
-        config.randomness = self.randomness;
-        config.load_fixed_table(&mut layouter).ok();
-        config.assign(layouter, &witness_rows);
+        config.load_fixed_table(&mut layouter, self.randomness).ok();
+        config.assign(layouter, &witness_rows, self.randomness);
 
         Ok(())
     }
