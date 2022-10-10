@@ -1,7 +1,8 @@
 //! The MPT circuit implementation.
+use eth_types::Field;
 use halo2_proofs::{
-    circuit::{Layouter, Region, Value},
-    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed},
+    circuit::{Layouter, Region, Value, SimpleFloorPlanner},
+    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, Circuit},
     arithmetic::FieldExt,
     poly::Rotation,
 };
@@ -42,11 +43,11 @@ use storage_leaf::{
 use witness_row::{MptWitnessRow, MptWitnessRowType};
 
 use param::{
-    HASH_WIDTH, KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH,
+    HASH_WIDTH,
 };
 use selectors::SelectorsConfig;
 
-use crate::{util::power_of_randomness_from_instance, table::KeccakTable};
+use crate::{util::{power_of_randomness_from_instance, Challenges}, table::KeccakTable};
 
 /*
     MPT circuit contains S and C columns (other columns are mostly selectors).
@@ -210,11 +211,10 @@ impl<F: FieldExt> MPTConfig<F> {
     /// Configure MPT Circuit
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
+        power_of_randomness: [Expression<F>; HASH_WIDTH],
         keccak_table: KeccakTable,
     ) -> Self {
         // let _pub_root = meta.instance_column();
-        let power_of_randomness: [Expression<F>; HASH_WIDTH] = power_of_randomness_from_instance(meta);
-
         let inter_start_root = meta.advice_column(); // state root before modification - first level S hash needs to be the same as
                                                      // start_root (works also if only storage proof, without account proof, but if
                                                      // this is to be allowed LeafKeyChip needs to be changed - careful with q_enable
@@ -1296,83 +1296,77 @@ impl<F: FieldExt> MPTConfig<F> {
     }
 }
 
+#[derive(Default)]
+struct MPTCircuit<F> {
+    witness: Vec<Vec<u8>>,
+    randomness: F,
+}
+
+impl<F: Field> Circuit<F> for MPTCircuit<F> {
+    type Config = MPTConfig<F>;
+    type FloorPlanner = SimpleFloorPlanner;
+
+    fn without_witnesses(&self) -> Self {
+        Self::default()
+    }
+
+    fn configure(
+        meta: &mut ConstraintSystem<F>,
+    ) -> Self::Config {
+        let keccak_table = KeccakTable::construct(meta);
+        let power_of_randomness: [Expression<F>; HASH_WIDTH] = power_of_randomness_from_instance(meta);
+
+        MPTConfig::configure(meta, power_of_randomness, keccak_table)
+    }
+
+    fn synthesize(
+        &self,
+        mut config: Self::Config,
+        mut layouter: impl Layouter<F>,
+    ) -> Result<(), Error> {
+        let mut to_be_hashed = vec![];
+
+        let mut witness_rows = vec![];
+        for row in self.witness.iter() {
+            if row[row.len() - 1] == 5 {
+                to_be_hashed.push(row[0..row.len() - 1].to_vec());
+            } else {
+                let row = MptWitnessRow::new(row[0..row.len()].to_vec());
+                witness_rows.push(row);
+            }
+        }
+
+        let challenges = Challenges::mock(Value::known(self.randomness));
+        config.keccak_table.dev_load(
+            &mut layouter,
+            &to_be_hashed,
+            &challenges,
+            false,
+        ).ok();
+
+        config.randomness = self.randomness;
+        config.load_fixed_table(&mut layouter).ok();
+        config.assign(layouter, &witness_rows);
+
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use ethers_core::k256::pkcs8::der::Encode;
     use param::IS_NON_EXISTING_ACCOUNT_POS;
-
-    use crate::util::Challenges;
 
     use super::*;
 
     use halo2_proofs::{
-        circuit::{Layouter, SimpleFloorPlanner},
         dev::MockProver,
-        plonk::{
-            Circuit,
-            ConstraintSystem, Error,
-        },
         halo2curves::bn256::Fr,
     };
-    use eth_types::Field;
     
-    use std::{fs, marker::PhantomData};
+    use std::fs;
 
     #[test]
-    fn test_mpt() {
-        #[derive(Default)]
-        struct MyCircuit<F> {
-            _marker: PhantomData<F>,
-            witness: Vec<Vec<u8>>,
-            randomness: F,
-        }
-
-        impl<F: Field> Circuit<F> for MyCircuit<F> {
-            type Config = MPTConfig<F>;
-            type FloorPlanner = SimpleFloorPlanner;
-
-            fn without_witnesses(&self) -> Self {
-                Self::default()
-            }
-
-            fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-                let keccak_table = KeccakTable::construct(meta);
-                MPTConfig::configure(meta, keccak_table)
-            }
-
-            fn synthesize(
-                &self,
-                mut config: Self::Config,
-                mut layouter: impl Layouter<F>,
-            ) -> Result<(), Error> {
-                let mut to_be_hashed = vec![];
-
-                let mut witness_rows = vec![];
-                for row in self.witness.iter() {
-                    if row[row.len() - 1] == 5 {
-                        to_be_hashed.push(row[0..row.len() - 1].to_vec());
-                    } else {
-                        let row = MptWitnessRow::new(row[0..row.len()].to_vec());
-                        witness_rows.push(row);
-                    }
-                }
-
-                let challenges = Challenges::mock(Value::known(self.randomness));
-                config.keccak_table.dev_load(
-                    &mut layouter,
-                    &to_be_hashed,
-                    &challenges,
-                    false,
-                ).ok();
-
-                config.randomness = self.randomness;
-                config.load_fixed_table(&mut layouter).ok();
-                config.assign(layouter, &witness_rows);
-
-                Ok(())
-            }
-        }
-
+    fn test_mpt() { 
         // for debugging:
         let path = "src/mpt_circuit/tests";
         // let path = "tests";
@@ -1415,8 +1409,7 @@ mod tests {
                     .map(|exp| vec![randomness.pow(&[exp as u64, 0, 0, 0]); count])
                     .collect();
 
-                let circuit = MyCircuit::<Fr> {
-                    _marker: PhantomData,
+                let circuit = MPTCircuit::<Fr> {
                     witness: w.clone(),
                     randomness,
                 };

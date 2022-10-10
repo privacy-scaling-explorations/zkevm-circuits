@@ -1,8 +1,6 @@
 // Currently using 32 - each hash byte goes into its own cell, this might be
 // compressed for optimization purposes in the future.
 pub const HASH_WIDTH: usize = 32; // number of columns used for hash output
-pub const KECCAK_INPUT_WIDTH: usize = 1;
-pub const KECCAK_OUTPUT_WIDTH: usize = 1;
 // for S: RLP_NUM cells + HASH_WIDTH cells
 // for C: RLP_NUM cells + HASH_WIDTH cells
 pub const RLP_NUM: usize = 2; // how many bytes are RLP specific before hash output starts in branch children
