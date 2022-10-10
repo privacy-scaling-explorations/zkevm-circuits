@@ -47,7 +47,6 @@ impl Opcode for Return {
 
         // Case A in the spec.
         if call.is_create() && call.is_success && length > 0 {
-            // panic!();
             // Note: handle_return updates state.code_db. All we need to do here is push the
             // copy event.
             handle_create(
@@ -73,7 +72,6 @@ impl Opcode for Return {
 
         // Case C in the specs.
         if !call.is_root {
-            // panic!();
             state.handle_restore_context(steps, &mut exec_step)?;
         }
 
