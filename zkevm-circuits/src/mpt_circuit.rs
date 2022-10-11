@@ -34,7 +34,7 @@ use branch::{
     extension_node_key::ExtensionNodeKeyConfig, Branch, BranchCols, BranchConfig,
 };
 use columns::{AccumulatorCols, DenoteCols, MainCols, ProofTypeCols, PositionCols};
-use helpers::{bytes_into_rlc, get_is_extension_node};
+use helpers::get_is_extension_node;
 use proof_chain::ProofChainConfig;
 use storage_leaf::{
     leaf_key::LeafKeyConfig, leaf_key_in_added_branch::LeafKeyInAddedBranchConfig,
@@ -1356,6 +1356,8 @@ impl<F: Field> Circuit<F> for MPTCircuit<F> {
 #[cfg(test)]
 mod tests {
     use param::IS_NON_EXISTING_ACCOUNT_POS;
+
+    use crate::mpt_circuit::helpers::bytes_into_rlc;
 
     use super::*;
 

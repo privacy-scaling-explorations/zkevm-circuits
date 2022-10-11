@@ -258,6 +258,8 @@ pub(crate) fn get_branch_len<F: FieldExt>(
     is_s: bool,
 ) -> Expression<F> {
     let one = Expression::Constant(F::from(1_u64));
+    let c192 = Expression::Constant(F::from(192_u64));
+
     let mut s1 = meta.query_advice(s_main.rlp1, Rotation(rot_into_branch_init));
     let mut s2 = meta.query_advice(s_main.rlp2, Rotation(rot_into_branch_init));
     if !is_s {
@@ -294,7 +296,7 @@ pub(crate) fn get_branch_len<F: FieldExt>(
     }
 
     let c256 = Expression::Constant(F::from(256_u64));
-    one_rlp_byte * (rlp_byte0.clone() + one.clone())
+    one_rlp_byte * (rlp_byte0.clone() - c192 + one.clone())
         + two_rlp_bytes * (rlp_byte1.clone() + one.clone() + one.clone())
         + three_rlp_bytes * (rlp_byte1 * c256 + rlp_byte2 + one.clone() + one.clone() + one.clone())
 }
