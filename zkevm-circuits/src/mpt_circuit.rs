@@ -83,6 +83,8 @@ pub struct MPTConfig<F> {
     pub(crate) position_cols: PositionCols<F>,
     pub(crate) inter_start_root: Column<Advice>,
     pub(crate) inter_final_root: Column<Advice>,
+    pub(crate) value_prev: Column<Advice>,
+    pub(crate) value: Column<Advice>,
     pub(crate) accumulators: AccumulatorCols<F>,
     pub(crate) branch: BranchCols<F>,
     pub(crate) s_main: MainCols<F>,
@@ -225,6 +227,9 @@ impl<F: FieldExt> MPTConfig<F> {
                                                      // this is to be allowed LeafKeyChip needs to be changed - careful with q_enable
                                                      // and q_not_first; not_first_level
                                                      // constraints would need to be added there too)
+
+        let value_prev = meta.advice_column();
+        let value = meta.advice_column();
 
         let position_cols = PositionCols::new(meta);
 
@@ -716,6 +721,8 @@ impl<F: FieldExt> MPTConfig<F> {
             position_cols,
             inter_start_root,
             inter_final_root,
+            value_prev,
+            value,
             branch,
             s_main,
             c_main,

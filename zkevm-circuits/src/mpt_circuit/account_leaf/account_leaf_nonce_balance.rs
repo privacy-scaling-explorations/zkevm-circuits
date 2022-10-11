@@ -53,6 +53,14 @@ The whole account leaf looks like:
 [0,160,86,232,31,23,27,204,85,166,255,131,69,230,146,192,248,110,91,72,224,27,153,108,173,192,1,98,47,181,227,99,180,33,0,160,197,210,70,1,134,247,35,60,146,126,125,178,220,199,3,192,229,0,182,83,202,130,39,59,123,250,216,4,93,133,164,122]
 [0,160,86,232,31,23,27,204,85,166,255,131,69,230,146,192,248,110,91,72,224,27,153,108,173,192,1,98,47,181,227,99,180,33,0,160,197,210,70,1,134,247,35,60,146,126,125,178,220,199,3,192,229,0,182,83,202,130,39,59,123,250,216,4,93,133,164,122]
 [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+
+Lookups:
+We have nonce and balance in the same row - to enable lookups into the same columns (`value_prev`, `value`),
+we enable nonce lookup in `ACCOUNT_NON_EXISTING` row and balance lookup in `ACCOUNT_LEAF_NONCE_BALANCE_C` row.
+This means we copy address RLC, nonce previous RLC, and nonce current RLC to `ACCOUNT_NON_EXISTING` row.
+Constraints are added to ensure everything is properly copied.
+
+For balance lookup we only need to copy balance previous RLC to `ACCOUNT_LEAF_NONCE_BALANCE_C` row.
 */
 #[derive(Clone, Debug)]
 pub(crate) struct AccountLeafNonceBalanceConfig<F> {
@@ -323,24 +331,28 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
                     * (c_advices0_cur.clone() - balance_stored.clone()),
             ));
 
-            if !is_s {
+            if is_s {
+                // TODO: constraints for NON_EXISTING_ACCOUNT row
+                /*
+                To enable lookup for nonce modification we need to have S nonce and C nonce in the same row.
+                For this reason, S nonce RLC is copied to `sel1` column in C row.
+                */
+                /*
                 let nonce_s_from_prev = meta.query_advice(accs.s_mod_node_rlc, Rotation::prev());
                 let nonce_s_from_cur = meta.query_advice(denoter.sel1, Rotation::cur());
+                constraints.push((
+                    "S nonce RLC is correctly copied to C row",
+                    q_enable.clone() * (nonce_s_from_prev - nonce_s_from_cur.clone()),
+                ));
+                */
+            } else {
+                let nonce_s_from_prev = meta.query_advice(accs.s_mod_node_rlc, Rotation::prev());
                 let balance_s_from_prev = meta.query_advice(accs.c_mod_node_rlc, Rotation::prev());
                 let balance_s_from_cur = meta.query_advice(denoter.sel2, Rotation::cur());
 
                 // Note: when nonce or balance is 0, the actual value in the RLP encoding is
                 // 128! TODO: when finalizing lookups, having 128 instead of 0
                 // needs to be taken into account.
-
-                /*
-                To enable lookup for nonce modification we need to have S nonce and C nonce in the same row.
-                For this reason, S nonce RLC is copied to `sel1` column in C row.
-                */
-                constraints.push((
-                    "S nonce RLC is correctly copied to C row",
-                    q_enable.clone() * (nonce_s_from_prev - nonce_s_from_cur.clone()),
-                ));
 
                 /*
                 To enable lookup for balance modification we need to have S balance and C balance in the same row.
@@ -375,7 +387,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
                             + is_balance_mod
                             + is_codehash_mod.clone())
                         * (one.clone() - is_account_delete_mod.clone())
-                        * (nonce_s_from_cur - nonce_stored),
+                        * (nonce_s_from_prev - nonce_stored),
                 ));
 
                 /*
@@ -763,8 +775,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
         offset: usize,
     ) {
         let mut nonce_len: usize = 1;
-        // Note: when nonce or balance is 0, the actual value stored in RLP encoding is
-        // 128.
+        // Note: when nonce or balance is 0, the actual value stored in RLP encoding is 128.
         if row.get_byte(S_START) > 128 {
             nonce_len = row.get_byte(S_START) as usize - 128 + 1; // +1 for byte with length info
             region
@@ -863,19 +874,30 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
 
             acc_account = pv.acc_account_s;
             acc_mult_account = pv.acc_mult_account_s;
+
+            // Assign nonce_s_rlc (nonce previous) in ACCOUNT_NON_EXISTING row.
+            region
+                .assign_advice(
+                    || "assign nonce S".to_string(),
+                    mpt_config.value_prev,
+                    offset - (ACCOUNT_LEAF_NONCE_BALANCE_S_IND - ACCOUNT_NON_EXISTING_IND) as usize,
+                    || Value::known(pv.rlc1), // rlc1 is nonce
+                )
+                .ok();
         } else {
             acc_account = pv.acc_account_c;
             acc_mult_account = pv.acc_mult_account_c;
 
-            // assign nonce S
+            // Assign nonce_c_rlc (nonce current) in ACCOUNT_NON_EXISTING row.
             region
                 .assign_advice(
-                    || "assign sel1".to_string(),
-                    mpt_config.denoter.sel1,
-                    offset,
-                    || Value::known(pv.nonce_value_s),
+                    || "assign nonce C".to_string(),
+                    mpt_config.value,
+                    offset - (ACCOUNT_LEAF_NONCE_BALANCE_C_IND - ACCOUNT_NON_EXISTING_IND) as usize,
+                    || Value::known(pv.rlc1), // rlc1 is nonce
                 )
                 .ok();
+
             // assign balance S
             region
                 .assign_advice(
