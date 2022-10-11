@@ -11,8 +11,19 @@ This file contains columns that are not specific to any of account leaf, storage
 or extension node.
 */
 
+/*
+proof_type:
+NonceMod = 1
+BalanceMod = 2
+CodeHashMod = 3
+NonExistingAccountProof = 4
+AccountDeleteMod = 5
+StorageMod = 6
+NonExistingStorageProof = 7
+*/
 #[derive(Clone, Debug)]
 pub(crate) struct ProofTypeCols<F> {
+    pub(crate) proof_type: Column<Advice>, // between 1 and 6, should correspond to the columns below (it enables lookups with less columns)
     pub(crate) is_storage_mod: Column<Advice>,
     pub(crate) is_nonce_mod: Column<Advice>,
     pub(crate) is_balance_mod: Column<Advice>,
@@ -26,6 +37,7 @@ pub(crate) struct ProofTypeCols<F> {
 impl<F: FieldExt> ProofTypeCols<F> {
     pub(crate) fn new(meta: &mut ConstraintSystem<F>) -> Self {
         Self {
+            proof_type: meta.advice_column(),
             is_storage_mod: meta.advice_column(),
             is_nonce_mod: meta.advice_column(),
             is_balance_mod: meta.advice_column(),

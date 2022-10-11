@@ -76,6 +76,7 @@ impl<F: FieldExt> SelectorsConfig<F> {
             let sel1 = meta.query_advice(denoter.sel1, Rotation::cur());
             let sel2 = meta.query_advice(denoter.sel2, Rotation::cur());
 
+            let proof_type_cur = meta.query_advice(proof_type.proof_type, Rotation::cur());
             let is_storage_mod = meta.query_advice(proof_type.is_storage_mod, Rotation::cur());
             let is_nonce_mod = meta.query_advice(proof_type.is_nonce_mod, Rotation::cur());
             let is_balance_mod = meta.query_advice(proof_type.is_balance_mod, Rotation::cur());
@@ -234,9 +235,34 @@ impl<F: FieldExt> SelectorsConfig<F> {
             */
             constraints.push((
                 "is_storage_mod + is_nonce_mod + is_balance_mod + is_account_delete_mod + is_non_existing_account + is_codehash_mod = 1",
-                q_enable
-                    * (is_storage_mod + is_nonce_mod + is_balance_mod + is_account_delete_mod + is_non_existing_account_proof + is_codehash_mod
+                q_enable.clone()
+                    * (is_storage_mod.clone() + is_nonce_mod.clone() + is_balance_mod.clone()
+                    + is_account_delete_mod.clone() + is_non_existing_account_proof.clone() + is_codehash_mod.clone()
                         - one.clone()),
+            ));
+
+            /*
+            `proof_type` corresponds to `is_storage_mode, is_nonce_mod, ...`.
+
+            The correspondence is:
+            is_nonce_mod = 1
+            is_balance_mod = 2
+            is_codehash_mod = 3
+            is_non_existing_account_proof = 4
+            is_account_delete_mod = 5
+            is_storage_mod = 6
+            non_existing_storage_proof = 7 // TODO
+            */
+            constraints.push((
+                "Proof type corresponds to boolean proof type selectors",
+                q_enable
+                    * (is_nonce_mod * (proof_type_cur.clone() - one.clone())
+                    + is_balance_mod * (proof_type_cur.clone() - Expression::Constant(F::from(2_u64)))
+                    + is_codehash_mod * (proof_type_cur.clone() - Expression::Constant(F::from(3_u64)))
+                    + is_non_existing_account_proof * (proof_type_cur.clone() - Expression::Constant(F::from(4_u64)))
+                    + is_account_delete_mod * (proof_type_cur.clone() - Expression::Constant(F::from(5_u64)))
+                    + is_storage_mod * (proof_type_cur - Expression::Constant(F::from(6_u64)))
+                ),
             ));
 
             constraints
@@ -484,6 +510,8 @@ impl<F: FieldExt> SelectorsConfig<F> {
                 to be changed to the proper value only in the account leaf key row.
                 */
 
+                let proof_type_prev = meta.query_advice(proof_type.proof_type, Rotation::prev());
+                let proof_type_cur = meta.query_advice(proof_type.proof_type, Rotation::cur());
                 let is_storage_mod_prev = meta.query_advice(proof_type.is_storage_mod, Rotation::prev());
                 let is_storage_mod_cur = meta.query_advice(proof_type.is_storage_mod, Rotation::cur());
                 let is_nonce_mod_prev = meta.query_advice(proof_type.is_nonce_mod, Rotation::prev());
@@ -503,6 +531,21 @@ impl<F: FieldExt> SelectorsConfig<F> {
                 The following constraints ensure that the proof type does not change except in the first row
                 of the first level.
                 */
+                constraints.push((
+                    "proof_type does not change outside first level",
+                    q_not_first.clone()
+                        * not_first_level.clone()
+                        * (proof_type_cur.clone() - proof_type_prev.clone()),
+                ));
+                constraints.push((
+                    "proof_type does not change inside first level except in the first row",
+                    q_not_first.clone()
+                        * (one.clone() - not_first_level.clone())
+                        * (one.clone() - is_branch_init_cur.clone())
+                        * (one.clone() - is_account_leaf_key_s_cur.clone())
+                        * (proof_type_cur - proof_type_prev),
+                ));
+
                 constraints.push((
                     "is_storage_mod does not change outside first level",
                     q_not_first.clone()

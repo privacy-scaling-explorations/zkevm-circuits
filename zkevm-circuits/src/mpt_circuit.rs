@@ -918,7 +918,6 @@ impl<F: FieldExt> MPTConfig<F> {
                     let mut offset = 0;
                     let mut pv = ProofValues::new();
 
-                    // filter out rows that are just to be hashed
                     for (ind, row) in witness
                         .iter()
                         .filter(|r| r.get_type() != MptWitnessRowType::HashToBeComputed)
