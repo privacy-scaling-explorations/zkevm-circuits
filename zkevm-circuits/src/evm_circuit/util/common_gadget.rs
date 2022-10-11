@@ -9,7 +9,7 @@ use crate::{
                 Transition::{Delta, Same, To},
             },
             math_gadget::{AddWordsGadget, RangeCheckGadget},
-            Cell, Word,
+            not, Cell, Word,
         },
     },
     table::{AccountFieldTag, CallContextFieldTag},
@@ -99,9 +99,12 @@ pub(crate) struct RestoreContextGadget<F> {
 impl<F: Field> RestoreContextGadget<F> {
     pub(crate) fn construct(
         cb: &mut ConstraintBuilder<F>,
-        rw_counter_delta: Expression<F>,
+        is_success: Expression<F>,
+        // Expression for the number of rw lookups that occur after this gadget is constructed.
+        subsequent_rw_lookups: Expression<F>,
         return_data_offset: Expression<F>,
         return_data_length: Expression<F>,
+        memory_expansion_cost: Expression<F>,
     ) -> Self {
         // Read caller's context for restore
         let caller_id = cb.call_context(None, CallContextFieldTag::CallerId);
@@ -136,33 +139,35 @@ impl<F: Field> RestoreContextGadget<F> {
             cb.call_context_lookup(true.expr(), Some(caller_id.expr()), field_tag, value);
         }
 
-        // Consume all gas_left if call halts in exception
-        let gas_left = if cb.execution_state().halts_in_exception() {
-            caller_gas_left.expr()
+        let gas_refund = if cb.execution_state().halts_in_exception() {
+            0.expr() // no gas refund if call halts in exception
         } else {
-            caller_gas_left.expr() + cb.curr.state.gas_left.expr()
+            cb.curr.state.gas_left.expr() - memory_expansion_cost
         };
+
+        let gas_left = caller_gas_left.expr() + gas_refund;
 
         // Accumulate reversible_write_counter in case this call stack reverts in the
         // future even it itself succeeds. Note that when sub-call halts in
         // failure, we don't need to accumulate reversible_write_counter because
         // what happened in the sub-call has been reverted.
-        let reversible_write_counter = if cb.execution_state().halts_in_success() {
-            caller_reversible_write_counter.expr() + cb.curr.state.reversible_write_counter.expr()
-        } else {
-            caller_reversible_write_counter.expr()
-        };
+        let reversible_write_counter = caller_reversible_write_counter.expr()
+            + is_success.clone() * cb.curr.state.reversible_write_counter.expr();
+
+        let rw_counter_offset = cb.rw_counter_offset()
+            + subsequent_rw_lookups
+            + not::expr(is_success.expr()) * cb.curr.state.reversible_write_counter.expr();
 
         // Do step state transition
         cb.require_step_state_transition(StepStateTransition {
-            rw_counter: Delta(rw_counter_delta + 12.expr()),
+            rw_counter: Delta(rw_counter_offset),
             call_id: To(caller_id.expr()),
             is_root: To(caller_is_root.expr()),
             is_create: To(caller_is_create.expr()),
             code_hash: To(caller_code_hash.expr()),
             program_counter: To(caller_program_counter.expr()),
             stack_pointer: To(caller_stack_pointer.expr()),
-            gas_left: To(gas_left.expr()),
+            gas_left: To(gas_left),
             memory_word_size: To(caller_memory_word_size.expr()),
             reversible_write_counter: To(reversible_write_counter),
             log_id: Same,
@@ -188,23 +193,15 @@ impl<F: Field> RestoreContextGadget<F> {
         block: &Block<F>,
         call: &Call,
         step: &ExecStep,
+        rw_offset: usize,
     ) -> Result<(), Error> {
         let [caller_id, caller_is_root, caller_is_create, caller_code_hash, caller_program_counter, caller_stack_pointer, caller_gas_left, caller_memory_word_size, caller_reversible_write_counter] =
             if call.is_root {
                 [U256::zero(); 9]
             } else {
-                [
-                    step.rw_indices[1],
-                    step.rw_indices[2],
-                    step.rw_indices[3],
-                    step.rw_indices[4],
-                    step.rw_indices[5],
-                    step.rw_indices[6],
-                    step.rw_indices[7],
-                    step.rw_indices[8],
-                    step.rw_indices[9],
-                ]
-                .map(|idx| block.rws[idx].call_context_value())
+                [0, 1, 2, 3, 4, 5, 6, 7, 8]
+                    .map(|i| step.rw_indices[i + rw_offset])
+                    .map(|idx| block.rws[idx].call_context_value())
             };
 
         for (cell, value) in [

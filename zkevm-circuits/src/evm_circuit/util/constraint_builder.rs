@@ -422,6 +422,11 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         );
     }
 
+    pub(crate) fn require_next_state_not(&mut self, execution_state: ExecutionState) {
+        let next_state = self.next.execution_state_selector([execution_state]);
+        self.add_constraint("Constrain next execution state not", next_state.expr());
+    }
+
     pub(crate) fn require_step_state_transition(
         &mut self,
         step_state_transition: StepStateTransition<F>,
@@ -1106,9 +1111,10 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         dst_addr: Expression<F>,
         length: Expression<F>,
         rlc_acc: Expression<F>,
-        rw_counter: Expression<F>,
         rwc_inc: Expression<F>,
     ) {
+        // TODO: eliminate rw_counter argument since we have self.rw_counter_offset
+        // already. TODO: increment rw_counter_offset by rwc_inc.
         self.add_lookup(
             "copy lookup",
             Lookup::CopyTable {
@@ -1122,10 +1128,15 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
                 dst_addr,
                 length,
                 rlc_acc,
-                rw_counter,
-                rwc_inc,
+                rw_counter: self.curr.state.rw_counter.expr() + self.rw_counter_offset(),
+                rwc_inc: rwc_inc.clone(),
             },
         );
+        self.rw_counter_offset = self.rw_counter_offset.clone()
+            + match &self.condition {
+                Some(condition) => condition.clone(),
+                None => 1.expr(),
+            } * rwc_inc;
     }
 
     // Keccak Table
