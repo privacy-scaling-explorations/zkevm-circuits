@@ -1,4 +1,4 @@
-use super::executor::{AccountMatch, Env, StateTest};
+use super::spec::{AccountMatch, Env, StateTest};
 use crate::abi;
 use crate::utils::MainnetFork;
 use crate::Compiler;

@@ -1,7 +1,7 @@
 use std::str::FromStr;
 
 use anyhow::{bail, Result};
-use eth_types::{GethExecTrace, U256};
+use eth_types::{bytecode::OpcodeWithData, Bytecode, GethExecTrace, U256};
 use prettytable::Table;
 use std::process::Command;
 
@@ -152,6 +152,32 @@ pub fn current_git_commit() -> Result<String> {
     let git_hash = git_hash[..7].to_string();
     Ok(git_hash)
 }
+
+pub fn bytecode_of(code: &str) -> anyhow::Result<Bytecode> {
+    let bytecode = if let Ok(bytes) = hex::decode(code) {
+        match Bytecode::try_from(bytes.clone()) {
+            Ok(bytecode) => {
+                for op in bytecode.iter() {
+                    println!("{}", op.to_string());
+                }
+                bytecode
+            }
+            Err(err) => {
+                println!("Failed to parse bytecode {:?}", err);
+                Bytecode::from_raw_unchecked(bytes)
+            }
+        }
+    } else {
+        let mut bytecode = Bytecode::default();
+        for op in code.split(',') {
+            let op = OpcodeWithData::from_str(op.trim()).unwrap();
+            bytecode.append_op(op);
+        }
+        bytecode
+    };
+    Ok(bytecode)
+}
+
 #[cfg(test)]
 mod test {
     use super::*;

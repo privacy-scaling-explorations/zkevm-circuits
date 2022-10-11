@@ -1,3 +1,4 @@
+use super::executor::run_test;
 use super::JsonStateTestBuilder;
 use super::Results;
 use super::{CircuitsConfig, StateTest};
@@ -85,8 +86,9 @@ pub fn run_statetests_suite(
         std::panic::set_hook(Box::new(|_info| {}));
 
         log::debug!("running test {}/{}...", tc.path, tc.id);
-        let result =
-            std::panic::catch_unwind(|| tc.clone().run(suite.clone(), circuits_config.clone()));
+        let result = std::panic::catch_unwind(|| {
+            run_test(tc.clone(), suite.clone(), circuits_config.clone())
+        });
 
         // handle panic
         let result = match result {

@@ -9,10 +9,12 @@ use anyhow::{bail, Result};
 use clap::Parser;
 use compiler::Compiler;
 use config::Config;
-use statetest::{load_statetests_suite, run_statetests_suite, CircuitsConfig, Results, StateTest};
+use statetest::{
+    geth_trace, load_statetests_suite, run_statetests_suite, run_test, CircuitsConfig, Results,
+    StateTest,
+};
 use std::path::PathBuf;
 use std::time::SystemTime;
-use zkevm_circuits::test_util::BytecodeTestConfig;
 
 use crate::config::TestSuite;
 
@@ -56,51 +58,12 @@ const RESULT_CACHE: &str = "result.cache";
 fn run_single_test(test: StateTest, circuits_config: CircuitsConfig) -> Result<()> {
     println!("{}", &test);
 
-    let trace = test.clone().geth_trace()?;
+    let trace = geth_trace(test.clone())?;
     crate::utils::print_trace(trace)?;
     println!(
         "result={:?}",
-        test.run(TestSuite::default(), circuits_config)
+        run_test(test, TestSuite::default(), circuits_config)
     );
-
-    Ok(())
-}
-
-fn run_bytecode(code: &str, bytecode_test_config: BytecodeTestConfig) -> Result<()> {
-    use eth_types::bytecode;
-    use mock::TestContext;
-    use std::str::FromStr;
-    use zkevm_circuits::test_util::run_test_circuits;
-
-    let bytecode = if let Ok(bytes) = hex::decode(code) {
-        match bytecode::Bytecode::try_from(bytes.clone()) {
-            Ok(bytecode) => {
-                for op in bytecode.iter() {
-                    println!("{}", op.to_string());
-                }
-                bytecode
-            }
-            Err(err) => {
-                println!("Failed to parse bytecode {:?}", err);
-                bytecode::Bytecode::from_raw_unchecked(bytes)
-            }
-        }
-    } else {
-        let mut bytecode = bytecode::Bytecode::default();
-        for op in code.split(';') {
-            let op = bytecode::OpcodeWithData::from_str(op.trim()).unwrap();
-            bytecode.append_op(op);
-        }
-        println!("{}\n", hex::encode(bytecode.code()));
-        bytecode
-    };
-
-    let result = run_test_circuits(
-        TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode)?,
-        Some(bytecode_test_config),
-    );
-
-    println!("Execution result is : {:?}", result);
 
     Ok(())
 }
@@ -115,7 +78,8 @@ fn main() -> Result<()> {
     let args = Args::parse();
 
     if let Some(raw) = &args.raw {
-        run_bytecode(raw, circuits_config.bytecode_test_config)?;
+        let test = StateTest::parse_oneline_spec(raw)?;
+        run_single_test(test, circuits_config)?;
         return Ok(());
     }
 
