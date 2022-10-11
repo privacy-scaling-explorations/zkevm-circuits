@@ -106,7 +106,6 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
                 memory_address.offset(),
                 memory_address.length(),
                 0.expr(),
-                cb.curr.state.rw_counter.expr() + cb.rw_counter_offset().expr(),
                 copy_rwc_inc.expr(),
             );
         });
@@ -118,7 +117,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
         });
 
         let step_state_transition = StepStateTransition {
-            rw_counter: Transition::Delta(cb.rw_counter_offset() + copy_rwc_inc.expr()),
+            rw_counter: Transition::Delta(cb.rw_counter_offset()),
             program_counter: Transition::Delta(1.expr()),
             stack_pointer: Transition::Delta(4.expr()),
             memory_word_size: Transition::To(memory_expansion.next_memory_word_size()),
