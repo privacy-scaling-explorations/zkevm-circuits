@@ -558,37 +558,6 @@ impl<F: FieldExt> MptWitnessRow<F> {
             )?;
         }
 
-        /*
-        NonceMod = 1
-        BalanceMod = 2
-        CodeHashMod = 3
-        NonExistingAccountProof = 4
-        AccountDeleteMod = 5
-        StorageMod = 6
-        NonExistingStorageProof = 7 // TODO
-        */
-
-        let mut proof_type = 0;
-        if self.get_byte_rev(IS_NONCE_MOD_POS) == 1 {
-            proof_type = 1;
-        } else if self.get_byte_rev(IS_BALANCE_MOD_POS) == 1 {
-            proof_type = 2;
-        } else if self.get_byte_rev(IS_CODEHASH_MOD_POS) == 1 {
-            proof_type = 3;
-        } else if self.get_byte_rev(IS_NON_EXISTING_ACCOUNT_POS) == 1 {
-            proof_type = 4;
-        } else if self.get_byte_rev(IS_ACCOUNT_DELETE_MOD_POS) == 1 {
-            proof_type = 5;
-        } else if self.get_byte_rev(IS_STORAGE_MOD_POS) == 1 {
-            proof_type = 6;
-        }
-        region.assign_advice(
-            || "proof_type",
-            mpt_config.proof_type.proof_type,
-            offset,
-            || Value::known(F::from(proof_type as u64)),
-        )?;
-
         region.assign_advice(
             || "is_storage_mod",
             mpt_config.proof_type.is_storage_mod,

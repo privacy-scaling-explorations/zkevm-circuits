@@ -1,6 +1,6 @@
 use halo2_proofs::{
     circuit::{Region, Value},
-    plonk::{Column, ConstraintSystem, Expression, Fixed, VirtualCells},
+    plonk::{Column, ConstraintSystem, Expression, Fixed, VirtualCells, Advice},
     poly::Rotation,
     arithmetic::FieldExt,
 };
@@ -77,6 +77,8 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
         c_main: MainCols<F>,
         accs: AccumulatorCols<F>, /* accs.acc_c.rlc contains mult_diff_nonce; accs.key.mult for
                                    * mult_diff_balance */
+        value_prev: Column<Advice>,
+        value: Column<Advice>,
         power_of_randomness: [Expression<F>; HASH_WIDTH],
         denoter: DenoteCols<F>,
         fixed_table: [Column<Fixed>; 3],
@@ -332,27 +334,37 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
             ));
 
             if is_s {
-                // TODO: constraints for NON_EXISTING_ACCOUNT row
+                let nonce_s_from_non_existing_account_row =
+                    meta.query_advice(value_prev, Rotation(-(ACCOUNT_LEAF_NONCE_BALANCE_S_IND - ACCOUNT_NON_EXISTING_IND)));
+
                 /*
                 To enable lookup for nonce modification we need to have S nonce and C nonce in the same row.
-                For this reason, S nonce RLC is copied to `sel1` column in C row.
+                For this reason, S nonce RLC is copied to `value_prev` column in `NON_EXISTING_ACCOUNT` row.
                 */
-                /*
-                let nonce_s_from_prev = meta.query_advice(accs.s_mod_node_rlc, Rotation::prev());
-                let nonce_s_from_cur = meta.query_advice(denoter.sel1, Rotation::cur());
                 constraints.push((
-                    "S nonce RLC is correctly copied to C row",
-                    q_enable.clone() * (nonce_s_from_prev - nonce_s_from_cur.clone()),
+                    "S nonce RLC is correctly copied to NON_EXISTING_ACCOUNT row",
+                    q_enable.clone() * (nonce_s_from_non_existing_account_row - nonce_stored.clone()),
                 ));
-                */
             } else {
-                let nonce_s_from_prev = meta.query_advice(accs.s_mod_node_rlc, Rotation::prev());
+                let nonce_s_stored = meta.query_advice(accs.s_mod_node_rlc, Rotation::prev());
                 let balance_s_from_prev = meta.query_advice(accs.c_mod_node_rlc, Rotation::prev());
                 let balance_s_from_cur = meta.query_advice(denoter.sel2, Rotation::cur());
 
                 // Note: when nonce or balance is 0, the actual value in the RLP encoding is
                 // 128! TODO: when finalizing lookups, having 128 instead of 0
                 // needs to be taken into account.
+
+                let nonce_c_from_non_existing_account_row =
+                    meta.query_advice(value, Rotation(-(ACCOUNT_LEAF_NONCE_BALANCE_C_IND - ACCOUNT_NON_EXISTING_IND)));
+
+                /*
+                To enable lookup for nonce modification we need to have S nonce and C nonce in the same row.
+                For this reason, C nonce RLC is copied to `value` column in `NON_EXISTING_ACCOUNT` row.
+                */
+                constraints.push((
+                    "C nonce RLC is correctly copied to NON_EXISTING_ACCOUNT row",
+                    q_enable.clone() * (nonce_c_from_non_existing_account_row - nonce_stored.clone()),
+                ));
 
                 /*
                 To enable lookup for balance modification we need to have S balance and C balance in the same row.
@@ -387,7 +399,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
                             + is_balance_mod
                             + is_codehash_mod.clone())
                         * (one.clone() - is_account_delete_mod.clone())
-                        * (nonce_s_from_prev - nonce_stored),
+                        * (nonce_s_stored - nonce_stored),
                 ));
 
                 /*
@@ -905,6 +917,15 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
                     mpt_config.denoter.sel2,
                     offset,
                     || Value::known(pv.balance_value_s),
+                )
+                .ok();
+
+            region
+                .assign_advice(
+                    || "assign which lookup type enabled".to_string(),
+                    mpt_config.proof_type.proof_type,
+                    offset,
+                    || Value::known(F::from(2_u64)),
                 )
                 .ok();
         }

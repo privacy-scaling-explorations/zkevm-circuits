@@ -9,7 +9,7 @@ use std::marker::PhantomData;
 use crate::{
     mpt_circuit::columns::{AccumulatorCols, MainCols},
     mpt_circuit::helpers::range_lookups,
-    mpt_circuit::{FixedTableTag, MPTConfig},
+    mpt_circuit::{FixedTableTag, MPTConfig, param::IS_NONCE_MOD_POS},
     mpt_circuit::param::{
         ACCOUNT_NON_EXISTING_IND, BRANCH_ROWS_NUM, HASH_WIDTH, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS,
         RLP_NUM,
@@ -78,6 +78,10 @@ proving that the account does not exist at the address which starts with the sam
 in the rows above (except for the `ACCOUNT_NON_EXISTING` row) and continues with nibbles `ACCOUNT_NON_EXISTING` row.
 
 Note that the selector (being 1 in this case) at `s_main.rlp1` specifies whether it is wrong leaf or nil case.
+
+Lookups:
+We have nonce and balance in the same row - to enable lookups into the same columns (`value_prev`, `value`),
+we enable nonce lookup in `ACCOUNT_NON_EXISTING` row and balance lookup in `ACCOUNT_LEAF_NONCE_BALANCE_C` row.
 */
 
 #[derive(Clone, Debug)]
@@ -488,5 +492,16 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
                 || Value::known(diff_inv),
             )
             .ok();
+
+        if row.get_byte_rev(IS_NONCE_MOD_POS) == 1 {
+            region
+                .assign_advice(
+                    || "assign lookup enabled".to_string(),
+                    mpt_config.proof_type.proof_type,
+                    offset,
+                    || Value::known(F::one()), // nonce lookup enabled in this row if it is nonce_mod proof
+                )
+                .ok();
+        }
     }
 }
