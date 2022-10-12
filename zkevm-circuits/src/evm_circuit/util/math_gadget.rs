@@ -1334,3 +1334,295 @@ impl<F: Field> AbsWordGadget<F> {
         &self.is_neg
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::marker::PhantomData;
+
+    use super::util::StoredExpression;
+    use super::*;
+    use crate::evm_circuit::param::{MAX_STEP_HEIGHT, STEP_WIDTH};
+    use crate::evm_circuit::step::Step;
+    use crate::evm_circuit::{Advice, Column};
+    use crate::{evm_circuit::step::ExecutionState, util::power_of_randomness_from_instance};
+    use eth_types::Word;
+    use halo2_proofs::arithmetic::FieldExt;
+    use halo2_proofs::circuit::Layouter;
+    use halo2_proofs::halo2curves::bn256::Fr;
+    use halo2_proofs::plonk::{ConstraintSystem, Selector};
+    use halo2_proofs::plonk::{Error, Expression};
+    use halo2_proofs::poly::Rotation;
+    use halo2_proofs::{circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit};
+
+    trait MathGadgetContainer<F: Field>: Clone {
+        const NAME: &'static str;
+
+        fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self
+        where
+            Self: Sized;
+
+        fn assign_gadget_container(
+            &self,
+            input_words: &Vec<Word>,
+            region: &mut CachedRegion<'_, '_, F>,
+        ) -> Result<(), Error>;
+    }
+
+    #[derive(Debug, Clone)]
+    struct UnitTestMathGadgetBaseCircuitConfig<F: Field, G>
+    where
+        G: MathGadgetContainer<F>,
+    {
+        q_usable: Selector,
+        advices: [Column<Advice>; STEP_WIDTH],
+        step: Step<F>,
+        stored_expressions: Vec<StoredExpression<F>>,
+        math_gadget_container: G,
+        _marker: PhantomData<F>,
+        power_of_randomness: [Expression<F>; 31],
+    }
+
+    struct UnitTestMathGadgetBaseCircuit<F, G> {
+        size: usize,
+        input_words: Vec<Word>,
+        randomness: F,
+        _marker: PhantomData<G>,
+    }
+
+    impl<F: Field, G> UnitTestMathGadgetBaseCircuit<F, G> {
+        fn new(size: usize, input_words: Vec<Word>, randomness: F) -> Self {
+            UnitTestMathGadgetBaseCircuit {
+                size,
+                input_words,
+                randomness,
+                _marker: PhantomData,
+            }
+        }
+    }
+
+    impl<F: Field, G: MathGadgetContainer<F>> Circuit<F> for UnitTestMathGadgetBaseCircuit<F, G> {
+        type Config = UnitTestMathGadgetBaseCircuitConfig<F, G>;
+        type FloorPlanner = SimpleFloorPlanner;
+
+        fn without_witnesses(&self) -> Self {
+            UnitTestMathGadgetBaseCircuit {
+                size: 0,
+                input_words: vec![],
+                randomness: F::zero(),
+                _marker: PhantomData,
+            }
+        }
+
+        fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
+            let q_usable = meta.selector();
+            let advices = [(); STEP_WIDTH].map(|_| meta.advice_column());
+            let step_curr = Step::new(meta, advices, 0);
+            let step_next = Step::new(meta, advices, MAX_STEP_HEIGHT);
+            let power_of_randomness = power_of_randomness_from_instance(meta);
+
+            let mut cb = ConstraintBuilder::new(
+                step_curr.clone(),
+                step_next.clone(),
+                &power_of_randomness,
+                ExecutionState::STOP,
+            );
+            let math_gadget_container = G::configure_gadget_container(&mut cb);
+            let (constraints, _, stored_expressions, _) = cb.build();
+
+            if !constraints.is_empty() {
+                meta.create_gate(G::NAME, |meta| {
+                    let q_usable = meta.query_selector(q_usable);
+                    constraints
+                        .into_iter()
+                        .map(move |(name, constraint)| (name, q_usable.clone() * constraint))
+                });
+            }
+
+            UnitTestMathGadgetBaseCircuitConfig::<F, G> {
+                q_usable: q_usable,
+                advices: advices,
+                step: step_curr,
+                stored_expressions: stored_expressions,
+                math_gadget_container: math_gadget_container,
+                _marker: PhantomData,
+                power_of_randomness,
+            }
+        }
+
+        fn synthesize(
+            &self,
+            config: Self::Config,
+            mut layouter: impl Layouter<F>,
+        ) -> Result<(), Error> {
+            layouter.assign_region(
+                || "assign test container",
+                |mut region| {
+                    let offset = 0;
+                    config.q_usable.enable(&mut region, offset)?;
+                    let power_of_randomness = [(); 31].map(|_| F::one());
+                    let cached_region = &mut CachedRegion::<'_, '_, F>::new(
+                        &mut region,
+                        power_of_randomness,
+                        STEP_WIDTH,
+                        MAX_STEP_HEIGHT * 3,
+                        config.advices[0].index(), // TODO
+                        offset,
+                    );
+                    config.step.state.execution_state.assign(
+                        cached_region,
+                        offset,
+                        ExecutionState::STOP as usize,
+                    )?;
+                    config
+                        .math_gadget_container
+                        .assign_gadget_container(&self.input_words, cached_region)?;
+                    for stored_expr in &config.stored_expressions {
+                        stored_expr.assign(cached_region, offset)?;
+                    }
+                    Ok(())
+                },
+            )
+        }
+    }
+
+    const K: usize = 9;
+
+    fn test_math_gadget_container<F: Field>(
+        circuit: impl Circuit<F>,
+        instances: Vec<Vec<F>>,
+        expected_success: bool,
+    ) {
+        let prover = MockProver::<F>::run(K as u32, &circuit, instances).unwrap();
+        if expected_success {
+            assert_eq!(prover.verify(), Ok(()));
+        } else {
+            assert_ne!(prover.verify(), Ok(()));
+        }
+    }
+
+    #[test]
+    fn mod_works() {
+        #[derive(Clone)]
+        struct ModGadgetTestContainer<F> {
+            mod_gadget: ModGadget<F>,
+            a: util::Word<F>,
+            n: util::Word<F>,
+            r: util::Word<F>,
+        }
+
+        impl<F: Field> MathGadgetContainer<F> for ModGadgetTestContainer<F> {
+            const NAME: &'static str = "ModGadget";
+
+            fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
+                let a = cb.query_word();
+                let n = cb.query_word();
+                let r = cb.query_word();
+                let mod_gadget = ModGadget::<F>::construct(cb, [&a, &n, &r]);
+                ModGadgetTestContainer {
+                    mod_gadget,
+                    a,
+                    n,
+                    r,
+                }
+            }
+
+            fn assign_gadget_container(
+                &self,
+                input_words: &Vec<Word>,
+                region: &mut CachedRegion<'_, '_, F>,
+            ) -> Result<(), Error> {
+                let a = input_words[0];
+                let n = input_words[1];
+                let a_reduced = input_words[2];
+                let offset = 0;
+
+                self.a.assign(region, offset, Some(a.to_le_bytes()))?;
+                self.n.assign(region, offset, Some(n.to_le_bytes()))?;
+                self.r
+                    .assign(region, offset, Some(a_reduced.to_le_bytes()))?;
+                self.mod_gadget.assign(region, 0, a, n, a_reduced, F::one())
+            }
+        }
+
+        let randomness = Fr::from(123456u64);
+        let power_of_randomness: Vec<Vec<Fr>> = (1..32)
+            .map(|exp| vec![randomness.pow(&[exp, 0, 0, 0]); (1 << K) - 64])
+            .collect();
+
+        let circuit = UnitTestMathGadgetBaseCircuit::<Fr, ModGadgetTestContainer<Fr>>::new(
+            K,
+            vec![Word::from(1), Word::from(1), Word::from(0)],
+            randomness,
+        );
+        test_math_gadget_container(circuit, power_of_randomness.clone(), true);
+
+        let circuit = UnitTestMathGadgetBaseCircuit::<Fr, ModGadgetTestContainer<Fr>>::new(
+            K,
+            vec![Word::from(1), Word::from(1), Word::from(1)],
+            randomness,
+        );
+        test_math_gadget_container(circuit, power_of_randomness, false);
+    }
+
+    #[test]
+    fn muladd_works() {
+        #[derive(Clone)]
+        struct TestContainer<F> {
+            math_gadget: MulAddWordsGadget<F>,
+            inputs: [util::Word<F>; 4],
+        }
+
+        impl<F: Field> MathGadgetContainer<F> for TestContainer<F> {
+            const NAME: &'static str = "MulAddGadget";
+
+            fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
+                let a = cb.query_word();
+                let b = cb.query_word();
+                let c = cb.query_word();
+                let d = cb.query_word();
+                let math_gadget = MulAddWordsGadget::<F>::construct(cb, [&a, &b, &c, &d]);
+                TestContainer {
+                    math_gadget,
+                    inputs: [a, b, c, d],
+                }
+            }
+
+            fn assign_gadget_container(
+                &self,
+                input_words: &Vec<Word>,
+                region: &mut CachedRegion<'_, '_, F>,
+            ) -> Result<(), Error> {
+                let words = [
+                    input_words[0],
+                    input_words[1],
+                    input_words[2],
+                    input_words[3],
+                ];
+                let offset = 0;
+                self.inputs[0].assign(region, offset, Some(input_words[0].to_le_bytes()))?;
+                self.inputs[1].assign(region, offset, Some(input_words[1].to_le_bytes()))?;
+                self.inputs[2].assign(region, offset, Some(input_words[2].to_le_bytes()))?;
+                self.inputs[3].assign(region, offset, Some(input_words[3].to_le_bytes()))?;
+                self.math_gadget.assign(region, offset, words)
+            }
+        }
+
+        let randomness = Fr::from(123456u64);
+        let power_of_randomness: Vec<Vec<Fr>> = (1..32)
+            .map(|exp| vec![randomness.pow(&[exp, 0, 0, 0]); (1 << K) - 64])
+            .collect();
+        let circuit = UnitTestMathGadgetBaseCircuit::<Fr, TestContainer<Fr>>::new(
+            K,
+            vec![Word::from(1), Word::from(1), Word::from(1), Word::from(2)],
+            randomness,
+        );
+        test_math_gadget_container(circuit, power_of_randomness.clone(), true);
+
+        let circuit = UnitTestMathGadgetBaseCircuit::<Fr, TestContainer<Fr>>::new(
+            K,
+            vec![Word::from(10), Word::from(1), Word::from(1), Word::from(2)],
+            randomness,
+        );
+        test_math_gadget_container(circuit, power_of_randomness, false);
+    }
+}
