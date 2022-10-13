@@ -37,6 +37,8 @@ pub struct Block<F> {
     /// When 0, the EVM circuit contains as many rows for all steps + 1 row
     /// for EndBlock.
     pub evm_circuit_pad_to: usize,
+    /// Pad exponentiation circuit to make selectors fixed.
+    pub exp_circuit_pad_to: usize,
     /// Circuit Setup Parameters
     pub circuits_params: CircuitsParams,
     /// Inputs to the SHA3 opcode

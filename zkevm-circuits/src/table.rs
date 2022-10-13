@@ -1102,6 +1102,8 @@ impl<F: Field> LookupTable<F> for CopyTable {
 /// Lookup table within the Exponentiation circuit.
 #[derive(Clone, Copy, Debug)]
 pub struct ExpTable {
+    /// Whether the row is the start of a step.
+    pub is_step: Column<Advice>,
     /// An identifier for every exponentiation trace, at the moment this is the
     /// read-write counter at the time of the lookups done to the
     /// exponentiation table.
@@ -1109,8 +1111,6 @@ pub struct ExpTable {
     /// Whether this row is the last row in the exponentiation operation's
     /// trace.
     pub is_last: Column<Advice>,
-    /// Whether this row is reserved for padding.
-    pub is_pad: Column<Advice>,
     /// The integer base of the exponentiation.
     pub base_limb: Column<Advice>,
     /// The integer exponent of the exponentiation.
@@ -1123,9 +1123,9 @@ impl ExpTable {
     /// Get the list of columns associated with the exponentiation table.
     pub fn columns(&self) -> Vec<Column<Advice>> {
         vec![
+            self.is_step,
             self.identifier,
             self.is_last,
-            self.is_pad,
             self.base_limb,
             self.exponent_lo_hi,
             self.exponentiation_lo_hi,
@@ -1137,9 +1137,9 @@ impl ExpTable {
     /// Construct the Exponentiation table.
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
         Self {
+            is_step: meta.advice_column(),
             identifier: meta.advice_column(),
             is_last: meta.advice_column(),
-            is_pad: meta.advice_column(),
             base_limb: meta.advice_column(),
             exponent_lo_hi: meta.advice_column(),
             exponentiation_lo_hi: meta.advice_column(),
@@ -1159,15 +1159,14 @@ impl ExpTable {
             } else {
                 F::zero()
             };
-            let is_pad = F::zero();
             let (exp_lo, exp_hi) = split_u256(&exp_step.d);
             let (exponent_lo, exponent_hi) = split_u256(&exponent);
 
             // row 1
             assignments.push([
+                F::one(),
                 identifier,
                 is_last,
-                is_pad,
                 base_limbs[0].as_u64().into(),
                 exponent_lo
                     .to_scalar()
@@ -1178,9 +1177,9 @@ impl ExpTable {
             ]);
             // row 2
             assignments.push([
+                F::zero(),
                 identifier,
                 F::zero(),
-                is_pad,
                 base_limbs[1].as_u64().into(),
                 exponent_hi
                     .to_scalar()
@@ -1191,22 +1190,32 @@ impl ExpTable {
             ]);
             // row 3
             assignments.push([
+                F::zero(),
                 identifier,
                 F::zero(),
-                is_pad,
                 base_limbs[2].as_u64().into(),
                 F::zero(),
                 F::zero(),
             ]);
             // row 4
             assignments.push([
+                F::zero(),
                 identifier,
                 F::zero(),
-                is_pad,
                 base_limbs[3].as_u64().into(),
                 F::zero(),
                 F::zero(),
             ]);
+            for _ in ROWS_PER_STEP..OFFSET_INCREMENT {
+                assignments.push([
+                    F::zero(),
+                    F::zero(),
+                    F::zero(),
+                    F::zero(),
+                    F::zero(),
+                    F::zero(),
+                ]);
+            }
 
             // update intermediate exponent.
             let (exponent_div2, remainder) = exponent.div_mod(U256::from(2));
@@ -1244,16 +1253,6 @@ impl ExpTable {
                         }
                         offset += 1;
                     }
-                    for i in ROWS_PER_STEP..OFFSET_INCREMENT {
-                        for column in exp_table_columns.iter() {
-                            region.assign_advice(
-                                || format!("exponentiation table: empty row: {}", offset + i),
-                                *column,
-                                offset + i,
-                                || Value::known(F::zero()),
-                            )?;
-                        }
-                    }
                 }
                 Ok(())
             },
@@ -1264,9 +1263,9 @@ impl ExpTable {
 impl<F: Field> LookupTable<F> for ExpTable {
     fn table_exprs(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>> {
         vec![
+            meta.query_advice(self.is_step, Rotation::cur()),
             meta.query_advice(self.identifier, Rotation::cur()),
             meta.query_advice(self.is_last, Rotation::cur()),
-            meta.query_advice(self.is_pad, Rotation::cur()),
             meta.query_advice(self.base_limb, Rotation::cur()),
             meta.query_advice(self.base_limb, Rotation::next()),
             meta.query_advice(self.base_limb, Rotation(2)),

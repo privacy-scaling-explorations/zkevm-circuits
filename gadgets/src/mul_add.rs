@@ -17,7 +17,7 @@
 use eth_types::{Field, ToLittleEndian, Word};
 use halo2_proofs::{
     circuit::{Region, Value},
-    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
+    plonk::{Advice, Column, ConstraintSystem, Error, Expression, VirtualCells},
     poly::Rotation,
 };
 
@@ -55,7 +55,10 @@ pub struct MulAddChip<F> {
 impl<F: Field> MulAddChip<F> {
     /// Configure the MulAdd chip.
     #[allow(clippy::too_many_arguments)]
-    pub fn configure(meta: &mut ConstraintSystem<F>, q_step: Selector) -> MulAddConfig<F> {
+    pub fn configure(
+        meta: &mut ConstraintSystem<F>,
+        q_enable: impl FnOnce(&mut VirtualCells<'_, F>) -> Expression<F>,
+    ) -> MulAddConfig<F> {
         let col0 = meta.advice_column();
         let col1 = meta.advice_column();
         let col2 = meta.advice_column();
@@ -64,7 +67,7 @@ impl<F: Field> MulAddChip<F> {
         let mut overflow = 0.expr();
 
         meta.create_gate("mul add gate", |meta| {
-            let q_step = meta.query_selector(q_step);
+            let q_enable = q_enable(meta);
 
             let a_limbs =
                 [col0, col1, col2, col3].map(|column| meta.query_advice(column, Rotation::cur()));
@@ -115,7 +118,7 @@ impl<F: Field> MulAddChip<F> {
 
             [check_a, check_b]
                 .into_iter()
-                .map(move |poly| q_step.clone() * poly)
+                .map(move |poly| q_enable.clone() * poly)
         });
 
         MulAddConfig {
@@ -182,6 +185,12 @@ impl<F: Field> MulAddChip<F> {
                 || Value::known(F::from(value.as_u64())),
             )?;
         }
+        region.assign_advice(
+            || format!("unused col: {}", offset),
+            self.config.col4,
+            offset,
+            || Value::known(F::zero()),
+        )?;
 
         // b limbs.
         for (i, (column, value)) in [
@@ -201,6 +210,12 @@ impl<F: Field> MulAddChip<F> {
                 || Value::known(F::from(value.as_u64())),
             )?;
         }
+        region.assign_advice(
+            || format!("unused col {}", offset + 1),
+            self.config.col4,
+            offset + 1,
+            || Value::known(F::zero()),
+        )?;
 
         // c_lo, c_hi, d_lo, d_hi.
         region.assign_advice(
@@ -227,6 +242,12 @@ impl<F: Field> MulAddChip<F> {
             offset + 2,
             || Value::known(F::from_u128(d_hi.as_u128())),
         )?;
+        region.assign_advice(
+            || format!("unused col: {}", offset + 2),
+            self.config.col4,
+            offset + 2,
+            || Value::known(F::zero()),
+        )?;
 
         // carry_lo.
         for (i, ((col, rot), val)) in [
@@ -251,6 +272,12 @@ impl<F: Field> MulAddChip<F> {
                 || Value::known(F::from(*val as u64)),
             )?;
         }
+        region.assign_advice(
+            || format!("unused col: {}", offset + 4),
+            self.config.col4,
+            offset + 4,
+            || Value::known(F::zero()),
+        )?;
 
         // carry_hi.
         for (i, ((col, rot), val)) in [
@@ -275,6 +302,12 @@ impl<F: Field> MulAddChip<F> {
                 || Value::known(F::from(*val as u64)),
             )?;
         }
+        region.assign_advice(
+            || format!("unused col: {}", offset + 6),
+            self.config.col4,
+            offset + 6,
+            || Value::known(F::zero()),
+        )?;
 
         Ok(())
     }
@@ -348,7 +381,7 @@ mod test {
 
             fn configure(meta: &mut halo2_proofs::plonk::ConstraintSystem<F>) -> Self::Config {
                 let q_enable = meta.complex_selector();
-                let mul_config = MulAddChip::configure(meta, q_enable);
+                let mul_config = MulAddChip::configure(meta, |meta| meta.query_selector(q_enable));
                 Self::Config {
                     q_enable,
                     mul_config,
