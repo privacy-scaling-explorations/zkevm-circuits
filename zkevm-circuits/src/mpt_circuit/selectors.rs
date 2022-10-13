@@ -302,7 +302,7 @@ impl<F: FieldExt> SelectorsConfig<F> {
             non_existing_storage_proof = 7 // TODO
             */
             constraints.push((
-                "Nonce lookup enabled in NON_EXISTING_ACCOUNT row when is_nonce_mod proof",
+                "Nonce lookup enabled in ACCOUNT_LEAF_NONCE_BALANCE_S row when is_nonce_mod proof",
                 q_enable.clone()
                     * (is_nonce_mod * is_account_leaf_nonce_balance_s * (proof_type_cur.clone() - one.clone())),
             ));
@@ -317,7 +317,7 @@ impl<F: FieldExt> SelectorsConfig<F> {
                     * (is_codehash_mod * is_account_leaf_storage_codehash_c * (proof_type_cur.clone() - Expression::Constant(F::from(3_u64)))),
             ));
             constraints.push((
-                "Non existing account lookup enabled in ACCOUNT_LEAF_NONCE_BALANCE_C row when is_non_existing_account proof",
+                "Non existing account lookup enabled in ACCOUNT_NON_EXISTING row when is_non_existing_account proof",
                 q_enable.clone()
                     * (is_non_existing_account_proof * is_non_existing_account_row * (proof_type_cur.clone() - Expression::Constant(F::from(4_u64)))),
             ));

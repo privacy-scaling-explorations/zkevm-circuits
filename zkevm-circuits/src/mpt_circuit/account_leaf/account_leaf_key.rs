@@ -9,7 +9,7 @@ use std::marker::PhantomData;
 use crate::{
     mpt_circuit::columns::{AccumulatorCols, MainCols, ProofTypeCols, PositionCols},
     mpt_circuit::helpers::{compute_rlc, mult_diff_lookup, range_lookups},
-    mpt_circuit::{FixedTableTag, MPTConfig, ProofValues},
+    mpt_circuit::{FixedTableTag, MPTConfig, ProofValues, param::IS_ACCOUNT_DELETE_MOD_POS},
     mpt_circuit::param::{
         BRANCH_ROWS_NUM, HASH_WIDTH, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS,
         IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS, IS_EXT_LONG_EVEN_C16_POS,
@@ -74,6 +74,9 @@ There are two main scenarios when an account is added to the trie:
  There does not exist an account which has the same address to the some point.
  In this case, the `getProof` response does not end with a leaf, but with a branch.
  To preserve the layout, a placeholder account leaf is added.
+
+Lookups:
+The `is_account_delete_mod` lookup is enabled in `ACCOUNT_LEAF_KEY_S` row.
 */
 
 #[derive(Clone, Debug)]
@@ -682,10 +685,21 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
 
         if row.get_type() == MptWitnessRowType::AccountLeafKeyS {
             pv.acc_account_s = acc;
-            pv.acc_mult_account_s = acc_mult
+            pv.acc_mult_account_s = acc_mult;
+
+            if row.get_byte_rev(IS_ACCOUNT_DELETE_MOD_POS) == 1 {
+                region
+                    .assign_advice(
+                        || "assign lookup enabled".to_string(),
+                        mpt_config.proof_type.proof_type,
+                        offset,
+                        || Value::known(F::from(5_u64)), // account delete mod lookup enabled in this row if it is is_account_delete proof
+                    )
+                    .ok();
+            }
         } else {
             pv.acc_account_c = acc;
-            pv.acc_mult_account_c = acc_mult
+            pv.acc_mult_account_c = acc_mult;
         }
 
         // For leaf S and leaf C we need to start with the same rlc.

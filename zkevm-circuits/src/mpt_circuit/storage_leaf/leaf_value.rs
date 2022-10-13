@@ -13,7 +13,7 @@ use crate::{
     mpt_circuit::{param::{
         ACCOUNT_LEAF_ROWS, ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND,
         ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND, BRANCH_ROWS_NUM, HASH_WIDTH,
-        LEAF_VALUE_C_IND, LEAF_VALUE_S_IND, IS_BRANCH_S_PLACEHOLDER_POS, RLP_NUM, IS_BRANCH_C_PLACEHOLDER_POS, LEAF_KEY_S_IND, LEAF_KEY_C_IND,
+        LEAF_VALUE_C_IND, LEAF_VALUE_S_IND, IS_BRANCH_S_PLACEHOLDER_POS, RLP_NUM, IS_BRANCH_C_PLACEHOLDER_POS, LEAF_KEY_S_IND, LEAF_KEY_C_IND, IS_STORAGE_MOD_POS,
     }, helpers::get_leaf_len},
     mpt_circuit::witness_row::{MptWitnessRow, MptWitnessRowType}, table::KeccakTable,
 };
@@ -82,11 +82,13 @@ The constraints in `leaf_value.rs` apply to `LEAF_VALUE_S` and `LEAF_VALUE_C` ro
 The constraints ensure the hash of a storage leaf is in a parent branch and that the RLP
 of the leaf is correct.
 
-Lookups: the storage leaf value row is the row prepared for the lookup; however, note that here are no
-checks for example for the root because the constraints to ensure `start_root` and `final_root` does not
-change (except in the first row of the modification) are in `proof_chain.rs` and the constraints to ensure
-the lookup roots correspond to the roots of the trie are in the first level nodes
-(`account_leaf_storage_codehash.rs` or `branch_hash_in_parent.rs`).
+Lookups:
+The `is_storage_mod` lookup is enabled in `LEAF_VALUE_C` row.
+
+Note that there are no checks for example for the root as the constraints to ensure `start_root`
+and `final_root` does not change (except in the first row of the modification) are in `proof_chain.rs`
+and the constraints to ensure the lookup roots correspond to the roots of the trie are in the first
+level nodes (`account_leaf_storage_codehash.rs` or `branch_hash_in_parent.rs`).
 */
 
 #[derive(Clone, Debug)]
@@ -110,6 +112,8 @@ impl<F: FieldExt> LeafValueConfig<F> {
         accs: AccumulatorCols<F>,
         denoter: DenoteCols<F>,
         is_account_leaf_in_added_branch: Column<Advice>,
+        value_prev: Column<Advice>,
+        value: Column<Advice>,
         is_s: bool,
         randomness: Expression<F>,
         fixed_table: [Column<Fixed>; 3],
@@ -1044,5 +1048,16 @@ impl<F: FieldExt> LeafValueConfig<F> {
                 offset,
             )
             .ok();
+
+        if !is_s && row.get_byte_rev(IS_STORAGE_MOD_POS) == 1 {
+            region
+                .assign_advice(
+                    || "assign lookup enabled".to_string(),
+                    mpt_config.proof_type.proof_type,
+                    offset,
+                    || Value::known(F::from(6_u64)), // storage mod lookup enabled in this row if it is is_storage_mod proof
+                )
+                .ok();
+        }
     }
 }

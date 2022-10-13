@@ -13,7 +13,7 @@ use crate::{
     mpt_circuit::param::{
         ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND, ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND,
         ACCOUNT_NON_EXISTING_IND, BRANCH_ROWS_NUM, C_START, EXTENSION_ROWS_NUM, HASH_WIDTH,
-        IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS, RLP_NUM, S_START, ACCOUNT_LEAF_KEY_S_IND, ACCOUNT_LEAF_KEY_C_IND,
+        IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS, RLP_NUM, S_START, ACCOUNT_LEAF_KEY_S_IND, ACCOUNT_LEAF_KEY_C_IND, IS_CODEHASH_MOD_POS,
     },
     mpt_circuit::witness_row::{MptWitnessRow, MptWitnessRowType}, table::KeccakTable,
 };
@@ -55,6 +55,9 @@ The whole account leaf looks like:
 [0,160,86,232,31,23,27,204,85,166,255,131,69,230,146,192,248,110,91,72,224,27,153,108,173,192,1,98,47,181,227,99,180,33,0,160,197,210,70,1,134,247,35,60,146,126,125,178,220,199,3,192,229,0,182,83,202,130,39,59,123,250,216,4,93,133,164,122]
 [0,160,86,232,31,23,27,204,85,166,255,131,69,230,146,192,248,110,91,72,224,27,153,108,173,192,1,98,47,181,227,99,180,33,0,160,197,210,70,1,134,247,35,60,146,126,125,178,220,199,3,192,229,0,182,83,202,130,39,59,123,250,216,4,93,133,164,122]
 [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+
+Lookups:
+The `is_codehash_mod` lookup is enabled in `ACCOUNT_LEAF_STORAGE_CODEHASH_C` row.
 */
 
 #[derive(Clone, Debug)]
@@ -74,6 +77,8 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
         c_main: MainCols<F>,
         randomness: Expression<F>,
         accs: AccumulatorCols<F>,
+        value_prev: Column<Advice>,
+        value: Column<Advice>,
         fixed_table: [Column<Fixed>; 3],
         denoter: DenoteCols<F>,
         keccak_table: KeccakTable,
@@ -207,22 +212,32 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
             ));
 
             if !is_s {
-                let storage_root_s_from_prev =
-                    meta.query_advice(accs.s_mod_node_rlc, Rotation::prev());
-                let storage_root_s_from_cur = meta.query_advice(denoter.sel1, Rotation::cur());
-                let codehash_s_from_cur = meta.query_advice(denoter.sel2, Rotation::cur());
+                let codehash_s_from_prev =
+                    meta.query_advice(accs.c_mod_node_rlc, Rotation::prev());
+                let storage_root_s_from_prev = meta.query_advice(accs.s_mod_node_rlc, Rotation::prev());
+                let codehash_s_from_cur = meta.query_advice(value_prev, Rotation::cur());
+                let codehash_c_in_value= meta.query_advice(value, Rotation::cur());
 
                 /*
-                To enable lookup for storage root modification we need to have S storage root
-                and C storage root in the same row.
-                For this reason, S storage root RLC is copied to `sel1` column in C row.
-
-                Note: we do not need such constraint for codehash as the codehash never changes.
+                To enable lookup for codehash modification we need to have S codehash
+                and C codehash in the same row.
+                For this reason, S codehash RLC is copied to `value_prev` column in C row.
                 */
                 constraints.push((
-                    "S storage root RLC is correctly copied to C row",
+                    "S codehash RLC is correctly copied to C row",
                     q_enable.clone()
-                        * (storage_root_s_from_prev - storage_root_s_from_cur.clone()),
+                        * (codehash_s_from_prev - codehash_c_in_value),
+                ));
+
+                /*
+                To enable lookup for codehash modification we need to have S codehash
+                and C codehash in the same row (`value_prev`, `value` columns).
+                C codehash RLC is copied to `value` column in C row.
+                */
+                constraints.push((
+                    "C codehash RLC is correctly copied to value row",
+                    q_enable.clone()
+                        * (codehash_stored.clone() - codehash_s_from_cur.clone()),
                 ));
 
                 // Note: we do not check whether codehash is copied properly as only one of the
@@ -250,7 +265,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
                     q_enable.clone()
                         * (is_nonce_mod.clone() + is_balance_mod.clone() + is_codehash_mod)
                         * (one.clone() - is_account_delete_mod.clone())
-                        * (storage_root_s_from_cur - storage_root_stored),
+                        * (storage_root_s_from_prev - storage_root_stored),
                 ));
 
                 /*
@@ -587,20 +602,11 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
             pv.acc_s = pv.acc_nonce_balance_c;
             pv.acc_mult_s = pv.acc_mult_nonce_balance_c;
 
-            // assign storage root S
-            region
-                .assign_advice(
-                    || "assign sel1".to_string(),
-                    mpt_config.denoter.sel1,
-                    offset,
-                    || Value::known(pv.rlc1),
-                )
-                .ok();
             // assign code hash S
             region
                 .assign_advice(
-                    || "assign sel2".to_string(),
-                    mpt_config.denoter.sel2,
+                    || "assign value prev".to_string(),
+                    mpt_config.value_prev,
                     offset,
                     || Value::known(pv.rlc2),
                 )
@@ -614,6 +620,27 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
                     region, &row.bytes, pv, offset, (S_START, HASH_WIDTH), (C_START, HASH_WIDTH),
                 )
                 .ok();
+
+            // assign code hash C in value column
+            region
+                .assign_advice(
+                    || "assign value".to_string(),
+                    mpt_config.value,
+                    offset,
+                    || Value::known(pv.rlc2),
+                )
+                .ok();
+
+            if row.get_byte_rev(IS_CODEHASH_MOD_POS) == 1 {
+                region
+                    .assign_advice(
+                        || "assign lookup enabled".to_string(),
+                        mpt_config.proof_type.proof_type,
+                        offset,
+                        || Value::known(F::from(3_u64)), // codehash mod lookup enabled in this row if it is is_codehash_mod proof
+                    )
+                    .ok();
+            }
         }
         // storage
         mpt_config.compute_acc_and_mult(
@@ -640,6 +667,6 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
                 F::zero(),
                 offset,
             )
-            .ok();
+            .ok(); 
     }
 }
