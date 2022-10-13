@@ -78,6 +78,16 @@ pub struct PublicData {
 }
 
 impl PublicData {
+    // pub fn from_block_data(bd: &BlockData) -> Self {
+    //     let geth_data = GethData {
+    //         chain_id: bd.chain_id,
+    //         history_hashes: bd.history_hashes,
+    //         eth_block: bd.eth_block,
+    //         geth_traces: bd.geth_traces ,
+    //         accounts: bd.sdb.get_acco,
+    //     }
+    // }
+
     /// Returns struct with values for the block table
     pub fn get_block_table_values(&self) -> BlockValues {
         let mut history_hashes: Vec<H256> = self
@@ -165,7 +175,8 @@ pub struct PiCircuitConfig<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: u
 impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
     PiCircuitConfig<F, MAX_TXS, MAX_CALLDATA>
 {
-    fn new(meta: &mut ConstraintSystem<F>, block_table: BlockTable, tx_table: TxTable) -> Self {
+    /// Return a new PiCircuitConfig
+    pub fn new(meta: &mut ConstraintSystem<F>, block_table: BlockTable, tx_table: TxTable) -> Self {
         let q_block_table = meta.selector();
 
         let q_tx_table = meta.selector();
@@ -666,6 +677,18 @@ pub struct PiCircuit<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> 
     pub public_data: PublicData,
 }
 
+impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
+    PiCircuit<F, MAX_TXS, MAX_CALLDATA>
+{
+    /// Creates a new PiCircuit
+    pub fn new(randomness: impl Into<F>, rand_rpi: impl Into<F>, public_data: PublicData) -> Self {
+        Self {
+            randomness: randomness.into(),
+            rand_rpi: rand_rpi.into(),
+            public_data,
+        }
+    }
+}
 impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
     for PiCircuit<F, MAX_TXS, MAX_CALLDATA>
 {

@@ -54,6 +54,7 @@ use crate::bytecode_circuit::bytecode_unroller::{
 use crate::copy_circuit::CopyCircuit;
 use crate::evm_circuit::{table::FixedTableTag, EvmCircuit};
 use crate::keccak_circuit::keccak_packed_multi::KeccakPackedConfig as KeccakConfig;
+use crate::pi_circuit::{PiCircuit, PiCircuitConfig, PublicData};
 use crate::state_circuit::StateCircuitConfig;
 use crate::table::{BlockTable, BytecodeTable, CopyTable, MptTable, RwTable, TxTable};
 use crate::tx_circuit::{TxCircuit, TxCircuitConfig};
@@ -64,6 +65,7 @@ use bus_mapping::mock::BlockData;
 use eth_types::geth_types::{self, GethData};
 use eth_types::Field;
 
+use ethers_core::types::{H256, U256, U64};
 use halo2_proofs::arithmetic::CurveAffine;
 use halo2_proofs::halo2curves::{
     bn256::Fr,
@@ -97,6 +99,7 @@ pub struct SuperCircuitConfig<F: Field, const MAX_TXS: usize, const MAX_CALLDATA
     bytecode_circuit: BytecodeConfig<F>,
     copy_circuit: CopyCircuit<F>,
     keccak_circuit: KeccakConfig<F>,
+    pi_circuit: PiCircuitConfig<F, MAX_TXS, MAX_CALLDATA>,
 }
 
 /// The Super Circuit contains all the zkEVM circuits
@@ -118,6 +121,9 @@ pub struct SuperCircuit<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usiz
     // bytecodes: Vec<UnrolledBytecode<F>>,
     /// The maximium size for the underlying bytecode circuit.
     pub bytecode_size: usize,
+    // TODO Check
+    /// Public Input Circuit
+    pub pi_circuit: PiCircuit<F, MAX_TXS, MAX_CALLDATA>,
 }
 
 impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
@@ -173,6 +179,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
         );
         let state_circuit =
             StateCircuitConfig::configure(meta, power_of_randomness.clone(), &rw_table, &mpt_table);
+        let pi_circuit = PiCircuitConfig::new(meta, block_table.clone(), tx_table.clone());
         let challenges = Challenges::mock(power_of_randomness[0].clone());
 
         Self::Config {
@@ -206,6 +213,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
                 challenges,
             ),
             keccak_circuit,
+            pi_circuit,
         }
     }
 
@@ -276,6 +284,8 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
         config
             .copy_circuit
             .assign_block(&mut layouter, &self.block, self.block.randomness)?;
+        // --- Public Input Circuit ---
+        self.pi_circuit.synthesize(config.pi_circuit, layouter)?;
         Ok(())
     }
 }
@@ -290,7 +300,7 @@ impl<const MAX_TXS: usize, const MAX_CALLDATA: usize> SuperCircuit<Fr, MAX_TXS, 
         geth_data: GethData,
         rng: &mut (impl RngCore + Clone),
     ) -> Result<(u32, Self, Vec<Vec<Fr>>), bus_mapping::Error> {
-        let txs = geth_data
+        let txs: Vec<_> = geth_data
             .eth_block
             .transactions
             .iter()
@@ -330,7 +340,31 @@ impl<const MAX_TXS: usize, const MAX_CALLDATA: usize> SuperCircuit<Fr, MAX_TXS, 
 
         let aux_generator = <Secp256k1Affine as CurveAffine>::CurveExt::random(rng).to_affine();
         let chain_id = block.context.chain_id;
-        let tx_circuit = TxCircuit::new(aux_generator, chain_id.as_u64(), txs);
+        let tx_circuit = TxCircuit::new(aux_generator, chain_id.as_u64(), txs.clone());
+
+        // NOTE: There is no implemented From<U256> for U64
+        let into_u64 = |val: eth_types::Word| -> U64 {
+            let U256(ref arr) = val;
+            if arr[3] | arr[2] | arr[1] != 0 {
+                panic!("Could not convert block number into U64");
+            }
+            U64([arr[0]])
+        };
+
+        let public_data = PublicData {
+            txs,
+            extra: geth_data,
+            block_constants: geth_types::BlockConstants {
+                coinbase: block.context.coinbase,
+                timestamp: block.context.timestamp,
+                number: into_u64(block.context.number),
+                difficulty: block.context.difficulty,
+                gas_limit: block.context.gas_limit.into(),
+                base_fee: block.context.base_fee,
+            },
+            prev_state_root: H256::default(),
+        };
+        let pi_circuit = PiCircuit::new(MOCK_RANDOMNESS, MOCK_RANDOMNESS + 1, public_data);
 
         let circuit = Self {
             block,
@@ -341,6 +375,7 @@ impl<const MAX_TXS: usize, const MAX_CALLDATA: usize> SuperCircuit<Fr, MAX_TXS, 
             // rows for the Bytecode Circuit because otherwise it penalizes significantly the
             // MockProver verification time.
             bytecode_size: bytecodes_len + 64,
+            pi_circuit,
         };
 
         let instance = circuit.instance();
