@@ -522,6 +522,7 @@ impl<'a> YamlStateTestBuilder<'a> {
 mod test {
     use super::*;
     use crate::config::TestSuite;
+    use crate::statetest::run_test;
     use crate::statetest::CircuitsConfig;
     use crate::statetest::StateTestError;
     use eth_types::address;
@@ -745,7 +746,7 @@ arith:
         let mut tc = YamlStateTestBuilder::new(&mut Compiler::default())
             .load_yaml("", &Template::default().to_string())?;
         let t1 = tc.remove(0);
-        t1.run(TestSuite::default(), CircuitsConfig::default())?;
+        run_test(t1, TestSuite::default(), CircuitsConfig::default())?;
         Ok(())
     }
     #[test]
@@ -759,8 +760,11 @@ arith:
             .to_string(),
         )?;
         assert_eq!(
-            tc.remove(0)
-                .run(TestSuite::default(), CircuitsConfig::default()),
+            run_test(
+                tc.remove(0),
+                TestSuite::default(),
+                CircuitsConfig::default()
+            ),
             Err(StateTestError::StorageMismatch {
                 slot: U256::from(0u8),
                 expected: U256::from(2u8),
@@ -781,8 +785,11 @@ arith:
             .to_string(),
         )?;
         assert_eq!(
-            tc.remove(0)
-                .run(TestSuite::default(), CircuitsConfig::default()),
+            run_test(
+                tc.remove(0),
+                TestSuite::default(),
+                CircuitsConfig::default()
+            ),
             Err(StateTestError::BalanceMismatch {
                 expected: U256::from(1000000000002u64),
                 found: U256::from(1000000000001u64)
@@ -803,8 +810,11 @@ arith:
             .to_string(),
         )?;
         assert_eq!(
-            tc.remove(0)
-                .run(TestSuite::default(), CircuitsConfig::default()),
+            run_test(
+                tc.remove(0),
+                TestSuite::default(),
+                CircuitsConfig::default()
+            ),
             Err(StateTestError::CodeMismatch {
                 expected: Bytes::from(&[0x60, 0x02, 0x00]),
                 found: Bytes::from(&[0x60, 0x01, 0x00])
@@ -826,8 +836,11 @@ arith:
         )?;
 
         assert_eq!(
-            tc.remove(0)
-                .run(TestSuite::default(), CircuitsConfig::default()),
+            run_test(
+                tc.remove(0),
+                TestSuite::default(),
+                CircuitsConfig::default()
+            ),
             Err(StateTestError::NonceMismatch {
                 expected: U256::from(2),
                 found: U256::from(0)
@@ -852,7 +865,7 @@ arith:
         let mut config = CircuitsConfig::default();
         config.bytecode_test_config.enable_state_circuit_test = false;
 
-        tc.remove(0).run(TestSuite::default(), config)?;
+        run_test(tc.remove(0), TestSuite::default(), config)?;
         Ok(())
     }
 
@@ -868,10 +881,12 @@ arith:
             }
             .to_string(),
         )?;
-        assert!(tc
-            .remove(0)
-            .run(TestSuite::default(), CircuitsConfig::default())
-            .is_err());
+        assert!(run_test(
+            tc.remove(0),
+            TestSuite::default(),
+            CircuitsConfig::default()
+        )
+        .is_err());
         Ok(())
     }
 }

@@ -44,9 +44,9 @@ struct Args {
     #[clap(long)]
     report: bool,
 
-    /// Raw execute bytecode, can be hex `6001` or asm `PUSH1(60); PUSH1(60)`
+    /// Run statetest in oneliner spec
     #[clap(long)]
-    raw: Option<String>,
+    oneliner: Option<String>,
 
     /// Verbose
     #[clap(short, long)]
@@ -77,8 +77,8 @@ fn main() -> Result<()> {
 
     let args = Args::parse();
 
-    if let Some(raw) = &args.raw {
-        let test = StateTest::parse_oneline_spec(raw)?;
+    if let Some(oneliner) = &args.oneliner {
+        let test = StateTest::parse_oneline_spec(oneliner)?;
         run_single_test(test, circuits_config)?;
         return Ok(());
     }

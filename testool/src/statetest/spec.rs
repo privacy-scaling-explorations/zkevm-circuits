@@ -83,8 +83,12 @@ impl std::fmt::Display for StateTest {
 
         use prettytable::Table;
         let mut table = Table::new();
-        table.add_row(row!["id", self.id]);
-        table.add_row(row!["path", self.path]);
+        if !self.id.is_empty() {
+            table.add_row(row!["id", self.id]);
+        }
+        if !self.path.is_empty() {
+            table.add_row(row!["path", self.path]);
+        }
         table.add_row(row!["coinbase", format!("{:?}", self.env.current_coinbase)]);
 
         table.add_row(row![
@@ -174,10 +178,16 @@ impl StateTest {
 
         let mut param = tx.split(' ');
 
-        // tx params
-        let mut tx = param.next().ok_or(anyhow!("bad params"))?.split(";");
+        // parse tx parameters
+        let mut tx = param
+            .next()
+            .ok_or_else(|| anyhow!("bad params"))?
+            .split(';');
         let is_create = {
-            match tx.next().ok_or(anyhow!("no call or create specified"))? {
+            match tx
+                .next()
+                .ok_or_else(|| anyhow!("no call or create specified"))?
+            {
                 "call" => false,
                 "create" => true,
                 _ => bail!("no call or create specified"),
@@ -186,11 +196,12 @@ impl StateTest {
         let data = hex::decode(tx.next().unwrap_or(""))?;
         let value = parse_u256(tx.next().unwrap_or("0"))?;
         let gas_limit = u64::from_str(tx.next().unwrap_or("10000000"))?;
-
-        let mut to = None;
         let secret_key = Bytes::from(&[1u8; 32]);
         let from = secret_key_to_address(&SigningKey::from_bytes(&secret_key.to_vec())?);
+
         let mut pre = HashMap::<Address, Account>::new();
+
+        // setup tx.origin (from) account
         pre.insert(
             from,
             Account {
@@ -201,11 +212,16 @@ impl StateTest {
                 storage: HashMap::new(),
             },
         );
-        while let Some(account) = param.next() {
+
+        // parse rest accounts
+        let mut to = None;
+        for account in param {
             let mut account = account.split(';');
+
+            // parse address, code, balance
             let address = account
                 .next()
-                .ok_or(anyhow!("Invalid account"))?
+                .ok_or_else(|| anyhow!("Invalid account"))?
                 .replace("0x", "");
             let address = format!("{:0>40}", address);
             let address = Address::from_str(&address)?;
@@ -215,10 +231,12 @@ impl StateTest {
             let code = crate::utils::bytecode_of(account.next().unwrap_or(""))?;
             let balance = Word::from_str(account.next().unwrap_or("0"))?;
             let mut storage = HashMap::<U256, U256>::new();
-            while let Some(key_value) = account.next() {
+
+            // parse storage (if any)
+            for key_value in account {
                 let (key, value) = key_value
                     .split_once(':')
-                    .ok_or(anyhow!("Invalid storage spec"))?;
+                    .ok_or_else(|| anyhow!("Invalid storage spec"))?;
                 storage.insert(parse_u256(key)?, parse_u256(value)?);
             }
             pre.insert(

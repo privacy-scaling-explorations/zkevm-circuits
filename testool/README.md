@@ -6,12 +6,29 @@ To use it, just compile with `cargo build --release` and run `../target/release/
 
 This tool at this moment has 2 main functionalities: run raw bytecode and run ethereum tests.
 
-## Run raw bytecode
+## Run oneliner spec
 
-You can run the bytecode with `--raw`
+The oneliner spec is invoked by using `--oneliner` parameter
 
-- By typing the raw hex encoding, e.g. `--raw 60016001`
-- By typing it in assembly, e.g. `--raw "PUSH1(01); PUSH1(01)"`
+The spec has the following form
+
+`txparams` `account`1 `account`2 ... `account`n
+
+where 
+
+- `txparams` have the form `call|create`;`calldata`;`value`;`gas`
+  - if `create`is specified the `to` field in the tx is left blank, is not the first account specified is used as the contract to call
+  - `calldata`,`value` and `gas` are optional
+- `account` have the form `address`;`code`;`balance`;`slot`1:`value`1;..`slot`n..`value`n
+  - `address` can be shortened, eg.`10` and `0x10` is expanded to `0x....10`
+  - `code` is optional, and can be specified in hex or in asm (`PUSH1(1),PUSH1(1),MLOAD`)
+  - `balance` and `value` areoptional
+  - `slot` and `value` can be specified multiple times 
+
+example
+
+- `call 12;60016002`: call contract `0x...12` that contains the code PUSH1(1) PUSH1(2)
+- `call;;2000 12;PUSH1(0),SLOAD,CALLVALUE,EQ,PUSH1(1),SSTORE;;00:2000`: callthe contract and send 2000 as value, and compare with the stored value (2000) in the slot 0, write into slot 1 
 
 ## Run the ethereum tests
 
