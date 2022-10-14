@@ -654,7 +654,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
 }
 
 /// Public Inputs Circuit
-#[derive(Default)]
+#[derive(Clone, Default, Debug)]
 pub struct PiCircuit<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> {
     /// Randomness for RLC encdoing
     pub randomness: F,
