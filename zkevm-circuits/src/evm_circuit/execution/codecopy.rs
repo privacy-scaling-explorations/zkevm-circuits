@@ -94,7 +94,6 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
                 dst_memory_addr.offset(),
                 dst_memory_addr.length(),
                 0.expr(), // for CODECOPY, rlc_acc is 0
-                cb.curr.state.rw_counter.expr() + cb.rw_counter_offset().expr(),
                 copy_rwc_inc.expr(),
             );
         });
@@ -107,7 +106,7 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
 
         // Expected state transition.
         let step_state_transition = StepStateTransition {
-            rw_counter: Transition::Delta(cb.rw_counter_offset() + copy_rwc_inc.expr()),
+            rw_counter: Transition::Delta(cb.rw_counter_offset()),
             program_counter: Transition::Delta(1.expr()),
             stack_pointer: Transition::Delta(3.expr()),
             memory_word_size: Transition::To(memory_expansion.next_memory_word_size()),

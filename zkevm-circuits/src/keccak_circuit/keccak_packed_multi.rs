@@ -8,6 +8,7 @@ use crate::keccak_circuit::util::{
     rotate, scatter, target_part_sizes, to_bytes, unpack, BIT_SIZE, NUM_WORDS_TO_ABSORB,
     NUM_WORDS_TO_SQUEEZE, RATE, RATE_IN_BITS, RHO_MATRIX, ROUND_CST,
 };
+use crate::table::KeccakTable;
 use crate::{evm_circuit::util::constraint_builder::BaseConstraintBuilder, util::Expr};
 use eth_types::Field;
 use gadgets::util::{and, select, sum};
@@ -18,7 +19,6 @@ use halo2_proofs::{
     plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, TableColumn},
     poly::Rotation,
 };
-use itertools::Itertools;
 use log::{debug, info};
 use std::{env::var, marker::PhantomData, vec};
 
@@ -321,10 +321,8 @@ pub struct KeccakPackedConfig<F> {
     q_round_last: Column<Fixed>,
     q_padding: Column<Fixed>,
     q_padding_last: Column<Fixed>,
-    is_final: Column<Advice>,
-    length: Column<Advice>,
-    data_rlc: Column<Advice>,
-    hash_rlc: Column<Advice>,
+    /// The columns for other circuits to lookup Keccak hash results
+    pub keccak_table: KeccakTable,
     cell_manager: CellManager<F>,
     round_cst: Column<Fixed>,
     normalize_3: [TableColumn; 2],
@@ -358,7 +356,7 @@ impl<F: Field> Circuit<F> for KeccakPackedCircuit<F> {
     }
 
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-        KeccakPackedConfig::configure(meta, KeccakPackedCircuit::r())
+        KeccakPackedConfig::configure(meta, Expression::Constant(KeccakPackedCircuit::r()))
     }
 
     fn synthesize(
@@ -367,7 +365,7 @@ impl<F: Field> Circuit<F> for KeccakPackedCircuit<F> {
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
         config.load(&mut layouter)?;
-        config.assign(layouter, self.size, &self.witness)?;
+        config.assign(&mut layouter, &self.witness)?;
         Ok(())
     }
 }
@@ -391,11 +389,6 @@ impl<F: Field> KeccakPackedCircuit<F> {
     /// Sets the witness using the data to be hashed
     pub fn generate_witness(&mut self, inputs: &[Vec<u8>]) {
         self.witness = multi_keccak(inputs, KeccakPackedCircuit::r());
-    }
-
-    /// Sets the witness using the witness data directly
-    fn set_witness(&mut self, witness: &[KeccakRow<F>]) {
-        self.witness = witness.to_vec();
     }
 }
 
@@ -784,7 +777,7 @@ mod transform_to {
 }
 
 impl<F: Field> KeccakPackedConfig<F> {
-    pub(crate) fn configure(meta: &mut ConstraintSystem<F>, r: F) -> Self {
+    pub(crate) fn configure(meta: &mut ConstraintSystem<F>, r: Expression<F>) -> Self {
         let q_enable = meta.fixed_column();
         let q_first = meta.fixed_column();
         let q_round = meta.fixed_column();
@@ -792,11 +785,14 @@ impl<F: Field> KeccakPackedConfig<F> {
         let q_round_last = meta.fixed_column();
         let q_padding = meta.fixed_column();
         let q_padding_last = meta.fixed_column();
-        let is_final = meta.advice_column();
         let round_cst = meta.fixed_column();
-        let length = meta.advice_column();
-        let data_rlc = meta.advice_column();
-        let hash_rlc = meta.advice_column();
+
+        let keccak_table = KeccakTable::construct(meta);
+        let is_final = keccak_table.is_enabled;
+        let length = keccak_table.input_len;
+        let data_rlc = keccak_table.input_rlc;
+        let hash_rlc = keccak_table.output_rlc;
+
         let normalize_3 = array_init::array_init(|_| meta.lookup_table_column());
         let normalize_4 = array_init::array_init(|_| meta.lookup_table_column());
         let normalize_6 = array_init::array_init(|_| meta.lookup_table_column());
@@ -1291,7 +1287,8 @@ impl<F: Field> KeccakPackedConfig<F> {
                     );
                 });
             }
-            let rlc = compose_rlc::expr(&hash_bytes, r);
+            let hash_bytes_le = hash_bytes.into_iter().rev().collect::<Vec<_>>();
+            let rlc = compose_rlc::expr(&hash_bytes_le, r.clone());
             cb.condition(start_new_hash, |cb| {
                 cb.require_equal(
                     "hash rlc check",
@@ -1470,7 +1467,7 @@ impl<F: Field> KeccakPackedConfig<F> {
                     new_data_rlc = select::expr(
                         is_padding.expr(),
                         new_data_rlc.clone(),
-                        new_data_rlc.clone() * r + byte.expr.clone(),
+                        new_data_rlc.clone() * r.clone() + byte.expr.clone(),
                     );
                     if idx < data_rlcs.len() - 1 {
                         cb.require_equal(
@@ -1529,10 +1526,7 @@ impl<F: Field> KeccakPackedConfig<F> {
             q_round_last,
             q_padding,
             q_padding_last,
-            is_final,
-            length,
-            data_rlc,
-            hash_rlc,
+            keccak_table,
             cell_manager,
             round_cst,
             normalize_3,
@@ -1544,10 +1538,20 @@ impl<F: Field> KeccakPackedConfig<F> {
         }
     }
 
+    /// Sets the witness using the data to be hashed
+    pub fn assign_from_witness(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        inputs: &[Vec<u8>],
+        r: F,
+    ) -> Result<(), Error> {
+        let witness = multi_keccak(inputs, r);
+        self.assign(layouter, &witness)
+    }
+
     pub(crate) fn assign(
         &self,
-        mut layouter: impl Layouter<F>,
-        _size: usize,
+        layouter: &mut impl Layouter<F>,
         witness: &[KeccakRow<F>],
     ) -> Result<(), Error> {
         layouter.assign_region(
@@ -1589,20 +1593,16 @@ impl<F: Field> KeccakPackedConfig<F> {
             )?;
         }
 
-        // Keccak data
-        for (name, column, value) in &[
-            ("is_final", self.is_final, F::from(row.is_final)),
-            ("length", self.length, F::from(row.length as u64)),
-            ("data_rlc", self.data_rlc, row.data_rlc),
-            ("hash_rlc", self.hash_rlc, row.hash_rlc),
-        ] {
-            region.assign_advice(
-                || format!("assign {} {}", name, offset),
-                *column,
-                offset,
-                || Value::known(*value),
-            )?;
-        }
+        self.keccak_table.assign_row(
+            region,
+            offset,
+            [
+                F::from(row.is_final),
+                row.data_rlc,
+                F::from(row.length as u64),
+                row.hash_rlc,
+            ],
+        )?;
 
         // Cell values
         for (idx, (bit, column)) in row
@@ -1927,13 +1927,13 @@ fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: &[u8], r: F) {
             // The rlc of the hash
             let is_final = is_final_block && round == NUM_ROUNDS;
             hash_rlc = if is_final {
-                let hash_bytes = s
+                let hash_bytes_le = s
                     .into_iter()
                     .take(4)
-                    .map(|a| to_bytes::value(&unpack(a[0])))
-                    .take(4)
-                    .concat();
-                rlc::value(&hash_bytes, r)
+                    .flat_map(|a| to_bytes::value(&unpack(a[0])))
+                    .rev()
+                    .collect::<Vec<_>>();
+                rlc::value(&hash_bytes_le, r)
             } else {
                 F::zero()
             };

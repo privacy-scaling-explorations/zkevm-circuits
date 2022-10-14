@@ -15,7 +15,10 @@ use eth_types::Field;
 use gadgets::util::{and, select, sum, xor};
 use halo2_proofs::{
     circuit::{Layouter, Region, SimpleFloorPlanner, Value},
-    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Fixed, TableColumn, VirtualCells},
+    plonk::{
+        Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, TableColumn,
+        VirtualCells,
+    },
     poly::Rotation,
 };
 use itertools::Itertools;
@@ -100,7 +103,7 @@ impl<F: Field> Circuit<F> for KeccakBitCircuit<F> {
     }
 
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-        KeccakBitConfig::configure(meta, KeccakBitCircuit::r())
+        KeccakBitConfig::configure(meta, Expression::Constant(KeccakBitCircuit::r()))
     }
 
     fn synthesize(
@@ -137,7 +140,7 @@ impl<F: Field> KeccakBitCircuit<F> {
 }
 
 impl<F: Field> KeccakBitConfig<F> {
-    pub(crate) fn configure(meta: &mut ConstraintSystem<F>, r: F) -> Self {
+    pub(crate) fn configure(meta: &mut ConstraintSystem<F>, r: Expression<F>) -> Self {
         let num_bits_per_theta_lookup = get_num_bits_per_theta_lookup();
         info!("num_bits_per_theta_lookup: {}", num_bits_per_theta_lookup);
 
@@ -369,13 +372,13 @@ impl<F: Field> KeccakBitConfig<F> {
         meta.create_gate("squeeze", |meta| {
             let mut cb = BaseConstraintBuilder::new(MAX_DEGREE);
             // Squeeze out the hash
-            let hash_bytes = s
+            let hash_bytes_le = s
                 .into_iter()
                 .take(4)
-                .map(|a| to_bytes::expr(&a[0]))
-                .take(4)
-                .concat();
-            let rlc = compose_rlc::expr(&hash_bytes, r);
+                .flat_map(|a| to_bytes::expr(&a[0]))
+                .rev()
+                .collect::<Vec<_>>();
+            let rlc = compose_rlc::expr(&hash_bytes_le, r.clone());
             cb.condition(start_new_hash(meta, Rotation::cur()), |cb| {
                 cb.require_equal(
                     "hash rlc check",
@@ -543,7 +546,7 @@ impl<F: Field> KeccakBitConfig<F> {
                     new_data_rlc = select::expr(
                         meta.query_advice(*is_padding, Rotation::cur()),
                         new_data_rlc.clone(),
-                        new_data_rlc.clone() * r + byte.clone(),
+                        new_data_rlc.clone() * r.clone() + byte.clone(),
                     );
                     if idx < data_rlcs.len() - 1 {
                         let next_data_rlc = meta.query_advice(data_rlcs[idx + 1], Rotation::cur());
@@ -886,13 +889,13 @@ fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: &[u8], r: F) {
 
             // Squeeze
             let hash_rlc = if is_final {
-                let hash_bytes = s
+                let hash_bytes_le = s
                     .into_iter()
                     .take(4)
-                    .map(|a| to_bytes::value(&a[0]))
-                    .take(4)
-                    .concat();
-                rlc::value(&hash_bytes, r)
+                    .flat_map(|a| to_bytes::value(&a[0]))
+                    .rev()
+                    .collect::<Vec<_>>();
+                rlc::value(&hash_bytes_le, r)
             } else {
                 F::zero()
             };
