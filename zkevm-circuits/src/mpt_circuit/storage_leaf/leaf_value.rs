@@ -106,8 +106,6 @@ impl<F: FieldExt> LeafValueConfig<F> {
         keccak_table: KeccakTable,
         /*
         - key_rlc_mult (accs.key.mult) to store key_rlc from previous row (to enable lookup)
-        - mult_diff to store leaf value S RLC from two rows above (to enable lookup)
-        TODO: check whether some other column can be used instead of mult_diff
         */
         accs: AccumulatorCols<F>,
         denoter: DenoteCols<F>,
@@ -226,20 +224,21 @@ impl<F: FieldExt> LeafValueConfig<F> {
             */
             constraints.push((
                 "Leaf value RLC",
-                q_enable.clone() * (acc_c_cur - leaf_value_rlc),
+                q_enable.clone() * (acc_c_cur.clone() - leaf_value_rlc),
             ));
 
             if !is_s {
                 let key_c_rlc_from_prev = meta.query_advice(accs.key.rlc, Rotation(-1));
                 let key_c_rlc_from_cur = meta.query_advice(accs.key.mult, Rotation::cur());
                 let leaf_value_s_rlc_from_prev = meta.query_advice(accs.acc_c.rlc, Rotation(-2));
-                let leaf_value_s_rlc_from_cur = meta.query_advice(accs.mult_diff, Rotation::cur());
+                let leaf_value_s_rlc_from_cur = meta.query_advice(value_prev, Rotation::cur());
+                let leaf_value_c_rlc_in_value = meta.query_advice(value, Rotation::cur());
 
                 /*
                 To enable external lookups we need to have the following information in the same row:
-                 - key RLC:                       we copy it to `sel1` column from the leaf key C row
-                 - previous (`S`) leaf value RLC: we copy it to `sel2` column from the leaf value `S` row
-                 - current (`C`) leaf value RLC:  stored in `acc_c` column
+                 - key RLC:                       we copy it to `accs.key.mult` column from the leaf key C row
+                 - previous (`S`) leaf value RLC: we copy it to `value_prev` column from the leaf value `S` row
+                 - current (`C`) leaf value RLC:  stored in `acc_c` column, we copy it to `value` column
                 */
                 constraints.push((
                     "Leaf key C RLC properly copied",
@@ -249,6 +248,11 @@ impl<F: FieldExt> LeafValueConfig<F> {
                 constraints.push((
                     "Leaf value S RLC properly copied",
                     q_enable.clone() * (leaf_value_s_rlc_from_prev - leaf_value_s_rlc_from_cur),
+                ));
+
+                constraints.push((
+                    "Leaf value C RLC properly copied to value column",
+                    q_enable.clone() * (acc_c_cur - leaf_value_c_rlc_in_value),
                 ));
             }
 
@@ -995,7 +999,7 @@ impl<F: FieldExt> LeafValueConfig<F> {
                     )
                     .ok();
             }
-        } else {
+        } else { 
             region
                 .assign_advice(
                     || "assign key_rlc into key_rlc_mult".to_string(),
@@ -1006,8 +1010,8 @@ impl<F: FieldExt> LeafValueConfig<F> {
                 .ok();
             region
                 .assign_advice(
-                    || "assign leaf value S into mult_diff".to_string(),
-                    mpt_config.accumulators.mult_diff,
+                    || "assign leaf value S into value_prev".to_string(),
+                    mpt_config.value_prev,
                     offset,
                     || Value::known(pv.rlc1),
                 )
@@ -1046,6 +1050,15 @@ impl<F: FieldExt> LeafValueConfig<F> {
                 pv.acc_c, // leaf value RLC
                 F::zero(),
                 offset,
+            )
+            .ok();
+
+        region
+            .assign_advice(
+                || "assign leaf value C into value".to_string(),
+                mpt_config.value,
+                offset,
+                || Value::known(pv.acc_c),
             )
             .ok();
 
