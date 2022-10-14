@@ -226,7 +226,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
                 constraints.push((
                     "S codehash RLC is correctly copied to C row",
                     q_enable.clone()
-                        * (codehash_s_from_prev - codehash_c_in_value),
+                        * (codehash_s_from_prev - codehash_s_from_cur.clone()),
                 ));
 
                 /*
@@ -237,7 +237,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
                 constraints.push((
                     "C codehash RLC is correctly copied to value row",
                     q_enable.clone()
-                        * (codehash_stored.clone() - codehash_s_from_cur.clone()),
+                        * (codehash_stored.clone() - codehash_c_in_value.clone()),
                 ));
 
                 // Note: we do not check whether codehash is copied properly as only one of the
