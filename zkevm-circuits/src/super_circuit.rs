@@ -100,7 +100,7 @@ pub struct SuperCircuitConfig<F: Field, const MAX_TXS: usize, const MAX_CALLDATA
 }
 
 /// The Super Circuit contains all the zkEVM circuits
-#[derive(Default, Debug)]
+#[derive(Clone, Default, Debug)]
 pub struct SuperCircuit<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> {
     // EVM Circuit
     /// Block witness. Usually derived via
@@ -343,9 +343,16 @@ impl<const MAX_TXS: usize, const MAX_CALLDATA: usize> SuperCircuit<Fr, MAX_TXS, 
             bytecode_size: bytecodes_len + 64,
         };
 
+        let instance = circuit.instance();
+        Ok((k, circuit, instance))
+    }
+
+    /// Returns suitable inputs for the SuperCircuit.
+    pub fn instance(&self) -> Vec<Vec<Fr>> {
         // SignVerifyChip -> ECDSAChip -> MainGate instance column
-        let instances = vec![vec![]];
-        Ok((k, circuit, instances))
+        let instance = vec![vec![]];
+
+        instance
     }
 }
 
