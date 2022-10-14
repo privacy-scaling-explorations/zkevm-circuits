@@ -59,6 +59,7 @@ use crate::evm_circuit::{table::FixedTableTag, EvmCircuit};
 use crate::table::{BlockTable, BytecodeTable, CopyTable, MptTable, RwTable, TxTable};
 use crate::util::{power_of_randomness_from_instance, Challenges};
 use crate::witness::Block;
+use bus_mapping::circuit_input_builder::CircuitInputBuilder;
 use eth_types::Field;
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
@@ -233,6 +234,8 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
         config
             .evm_circuit
             .assign_block(&mut layouter, &self.block)?;
+        
+        dbg!("RWS",&self.block.rws.table_assignments());
         config.state_circuit.assign(
             &mut layouter,
             &self.block.rws.table_assignments(),
@@ -276,10 +279,11 @@ impl<const MAX_TXS: usize, const MAX_CALLDATA: usize> SuperCircuit<Fr, MAX_TXS, 
     ///
     /// Also, return with it the minimum required SRS degree for the circuit and
     /// the Public Inputs needed.
+    #[allow(clippy::type_complexity)]
     pub fn build(
         geth_data: GethData,
         rng: &mut (impl RngCore + Clone),
-    ) -> Result<(u32, Self, Vec<Vec<Fr>>), bus_mapping::Error> {
+    ) -> Result<(u32, Self, Vec<Vec<Fr>>, CircuitInputBuilder), bus_mapping::Error> {
         let txs = geth_data
             .eth_block
             .transactions
@@ -340,7 +344,7 @@ impl<const MAX_TXS: usize, const MAX_CALLDATA: usize> SuperCircuit<Fr, MAX_TXS, 
             // MockProver verification time.
             bytecode_size: bytecodes_len + 64,
         };
-        Ok((k, circuit, instance))
+        Ok((k, circuit, instance, builder))
     }
 }
 
@@ -402,7 +406,7 @@ mod super_circuit_tests {
 
         block.sign(&wallets);
 
-        let (k, circuit, instance) =
+        let (k, circuit, instance, _) =
             SuperCircuit::<_, 1, 32>::build(block, &mut ChaCha20Rng::seed_from_u64(2)).unwrap();
         let prover = MockProver::run(k, &circuit, instance).unwrap();
         let res = prover.verify();

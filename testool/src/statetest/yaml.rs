@@ -862,9 +862,7 @@ arith:
             }
             .to_string(),
         )?;
-        let mut config = CircuitsConfig::default();
-        config.bytecode_test_config.enable_state_circuit_test = false;
-
+        let config = CircuitsConfig::default();
         run_test(tc.remove(0), TestSuite::default(), config)?;
         Ok(())
     }

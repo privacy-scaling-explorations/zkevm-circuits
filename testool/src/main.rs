@@ -15,7 +15,7 @@ use statetest::{
 };
 use std::path::PathBuf;
 use std::time::SystemTime;
-
+use strum::EnumString;
 use crate::config::TestSuite;
 
 const REPORT_FOLDER: &str = "report";
@@ -23,6 +23,13 @@ const CODEHASH_FILE: &str = "./codehash.txt";
 
 #[macro_use]
 extern crate prettytable;
+
+#[allow(non_camel_case_types)]
+#[derive(PartialEq, Parser, EnumString, Debug)]
+enum Circuits {
+    basic,
+    sc
+}
 
 /// EVM test vectors utility
 #[derive(Parser, Debug)]
@@ -48,6 +55,10 @@ struct Args {
     #[clap(long)]
     oneliner: Option<String>,
 
+    /// Circuits to execute, can be basic (evm only) or sc (supercircuit)
+    #[clap(long)]
+    circuits : Option<Circuits>,
+
     /// Verbose
     #[clap(short, long)]
     v: bool,
@@ -72,10 +83,12 @@ fn main() -> Result<()> {
     //  RAYON_NUM_THREADS=1 RUST_BACKTRACE=1 cargo run -- --path
     // "tests/src/GeneralStateTestsFiller/**/" --skip-state-circuit
 
-    let config = Config::load()?;
-    let circuits_config = CircuitsConfig::default();
-
     let args = Args::parse();
+    
+    let mut circuits_config = CircuitsConfig::default();
+    if args.circuits == Some(Circuits::sc) {
+        circuits_config.super_circuit = true;
+    }
 
     if let Some(oneliner) = &args.oneliner {
         let test = StateTest::parse_oneline_spec(oneliner)?;
@@ -83,6 +96,8 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
+    let config = Config::load()?;
+    
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
     log::info!("Using suite '{}'", args.suite);

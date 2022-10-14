@@ -1,15 +1,18 @@
 use super::{AccountMatch, StateTest, StateTestResult};
 use crate::config::TestSuite;
-
 use bus_mapping::circuit_input_builder::CircuitInputBuilder;
 use bus_mapping::mock::BlockData;
 use eth_types::{geth_types, Address, Bytes, GethExecTrace, U256, U64};
+use ethers_core::k256::ecdsa::SigningKey;
 use ethers_core::types::TransactionRequest;
-use ethers_signers::LocalWallet;
+use ethers_signers::{LocalWallet, Signer};
 use external_tracer::TraceConfig;
+use halo2_proofs::dev::MockProver;
+use rand::SeedableRng;
+use rand_chacha::ChaCha20Rng;
 use std::{collections::HashMap, str::FromStr};
 use thiserror::Error;
-use zkevm_circuits::test_util::BytecodeTestConfig;
+use zkevm_circuits::super_circuit::SuperCircuit;
 
 const EVMERR_OOG: &str = "out of gas";
 const EVMERR_STACKUNDERFLOW: &str = "stack underflow";
@@ -54,7 +57,7 @@ impl StateTestError {
 
 #[derive(Default, Debug, Clone)]
 pub struct CircuitsConfig {
-    pub bytecode_test_config: BytecodeTestConfig,
+    pub super_circuit: bool,
 }
 
 fn check_post(
@@ -160,16 +163,6 @@ fn into_traceconfig(st: StateTest) -> (String, TraceConfig, StateTestResult) {
     )
 }
 
-fn test_circuit(builder: &CircuitInputBuilder, bytecode_test_config: BytecodeTestConfig) {
-    // build a witness block from trace result
-    let block =
-        zkevm_circuits::evm_circuit::witness::block_convert(&builder.block, &builder.code_db);
-
-    // finish requiered tests according to config using this witness block
-    zkevm_circuits::test_util::test_circuits_using_witness_block(block, bytecode_test_config)
-        .expect("circuit should pass");
-}
-
 pub fn geth_trace(st: StateTest) -> Result<GethExecTrace, StateTestError> {
     let (_, trace_config, _) = into_traceconfig(st);
 
@@ -255,18 +248,6 @@ pub fn run_test(
         ));
     }
 
-    let builder = create_input_builder(trace_config, geth_traces)?;
-
-    check_post(&builder, &post)?;
-    test_circuit(&builder, circuits_config.bytecode_test_config);
-
-    Ok(())
-}
-
-fn create_input_builder(
-    trace_config: TraceConfig,
-    geth_traces: Vec<GethExecTrace>,
-) -> Result<CircuitInputBuilder, StateTestError> {
     let transactions = trace_config
         .transactions
         .into_iter()
@@ -296,8 +277,12 @@ fn create_input_builder(
         ..eth_types::Block::default()
     };
 
+    let wallet: LocalWallet = SigningKey::from_bytes(&st.secret_key).unwrap().into();
+    let mut wallets = HashMap::new();
+    wallets.insert(wallet.address(), wallet.with_chain_id(1u64));
+
     // process the transaction
-    let geth_data = eth_types::geth_types::GethData {
+    let mut geth_data = eth_types::geth_types::GethData {
         chain_id: trace_config.chain_id,
         history_hashes: trace_config.history_hashes.clone(),
         geth_traces: geth_traces.clone(),
@@ -305,11 +290,28 @@ fn create_input_builder(
         eth_block: eth_block.clone(),
     };
 
-    let block_data = BlockData::new_from_geth_data(geth_data);
-    let mut builder = block_data.new_circuit_input_builder();
-    builder
-        .handle_block(&eth_block, &geth_traces)
-        .map_err(|err| StateTestError::CircuitInput(err.to_string()))?;
+    let mut builder;
 
-    Ok(builder)
+    if !circuits_config.super_circuit {
+        let block_data = BlockData::new_from_geth_data(geth_data);
+        builder = block_data.new_circuit_input_builder();
+        builder
+            .handle_block(&eth_block, &geth_traces)
+            .map_err(|err| StateTestError::CircuitInput(err.to_string()))?;
+    } else {
+        geth_data.sign(&wallets);
+
+        let (k, circuit, instance, _builder) =
+            SuperCircuit::<_, 1, 32>::build(geth_data, &mut ChaCha20Rng::seed_from_u64(2)).unwrap();
+        builder = _builder;
+
+        let prover = MockProver::run(k, &circuit, instance).unwrap();
+        prover
+            .verify_par()
+            .map_err(|err| StateTestError::CircuitInput(format!("{:#?}", err)))?;
+    }
+
+    check_post(&builder, &post)?;
+
+    Ok(())
 }
