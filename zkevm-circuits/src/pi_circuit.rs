@@ -831,7 +831,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
     PiCircuit<F, MAX_TXS, MAX_CALLDATA>
 {
     /// Compute the public inputs for this circuit.
-    pub fn public_inputs(&self) -> Vec<F> {
+    pub fn instance(&self) -> Vec<Vec<F>> {
         let rlc_rpi_col =
             raw_public_inputs_col::<F, MAX_TXS, MAX_CALLDATA>(&self.public_data, self.randomness);
         assert_eq!(
@@ -865,7 +865,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
             ),
         ];
 
-        public_inputs
+        vec![public_inputs]
     }
 }
 
@@ -1008,9 +1008,9 @@ mod pi_circuit_test {
             rand_rpi,
             public_data,
         };
-        let public_inputs = circuit.public_inputs();
+        let public_inputs = circuit.instance();
 
-        let prover = match MockProver::run(k, &circuit, vec![public_inputs]) {
+        let prover = match MockProver::run(k, &circuit, public_inputs) {
             Ok(prover) => prover,
             Err(e) => panic!("{:#?}", e),
         };
