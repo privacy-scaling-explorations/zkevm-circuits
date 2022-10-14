@@ -49,6 +49,8 @@ use selectors::SelectorsConfig;
 
 use crate::{util::{power_of_randomness_from_instance, Challenges}, table::KeccakTable};
 
+use self::columns::MPTTable;
+
 /*
     MPT circuit contains S and C columns (other columns are mostly selectors).
 
@@ -118,6 +120,7 @@ pub struct MPTConfig<F> {
     storage_leaf_value_c: LeafValueConfig<F>,
     storage_leaf_key_in_added_branch: LeafKeyInAddedBranchConfig<F>,
     pub(crate) randomness: F,
+    pub(crate) mpt_table: MPTTable,
 }
 
 /// Enumerator to determine the type of row in the fixed table.
@@ -727,6 +730,16 @@ impl<F: FieldExt> MPTConfig<F> {
             keccak_table.clone(),
         );
 
+        let mpt_table = MPTTable {
+            address_rlc,
+            proof_type: proof_type.proof_type,
+            key_rlc: accumulators.key.mult,
+            value_prev,
+            value,
+            root_prev: inter_start_root,
+            root: inter_final_root,
+        };
+
         let randomness = F::zero();
         MPTConfig {
             proof_type,
@@ -762,6 +775,7 @@ impl<F: FieldExt> MPTConfig<F> {
             storage_leaf_value_c,
             storage_leaf_key_in_added_branch,
             randomness,
+            mpt_table,
         }
     }
 

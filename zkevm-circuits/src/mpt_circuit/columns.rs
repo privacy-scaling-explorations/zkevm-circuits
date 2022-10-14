@@ -188,3 +188,14 @@ impl<F: FieldExt> PositionCols<F> {
         }
     }
 }
+
+#[derive(Clone, Debug)]
+pub(crate) struct MPTTable {
+    pub(crate) address_rlc: Column<Advice>,
+    pub(crate) proof_type: Column<Advice>,
+    pub(crate) key_rlc: Column<Advice>,
+    pub(crate) value_prev: Column<Advice>,
+    pub(crate) value: Column<Advice>,
+    pub(crate) root_prev: Column<Advice>,
+    pub(crate) root: Column<Advice>,
+}
