@@ -134,11 +134,11 @@ impl<F: FieldExt> BranchHashInParentConfig<F> {
 
                 let root = meta.query_advice(inter_root, Rotation::cur());
 
-                let selector = q_not_first.clone()
-                    * is_last_branch_child.clone()
-                    * (one.clone() - is_extension_node.clone())
-                    * (one.clone() - not_first_level.clone())
-                    * (one.clone() - is_branch_placeholder.clone());
+                let selector = q_not_first
+                    * is_last_branch_child
+                    * (one.clone() - is_extension_node)
+                    * (one.clone() - not_first_level)
+                    * (one.clone() - is_branch_placeholder);
                 
                 let branch_len = get_branch_len(meta, s_main.clone(), rot_into_branch_init, is_s);
                                 
@@ -153,7 +153,7 @@ impl<F: FieldExt> BranchHashInParentConfig<F> {
                 table_map.push((selector.clone() * branch_len, keccak_input_len));
 
                 let keccak_output_rlc = meta.query_advice(keccak_table.output_rlc, Rotation::cur());
-                table_map.push((selector.clone() * root, keccak_output_rlc));
+                table_map.push((selector * root, keccak_output_rlc));
 
                 table_map
             },
@@ -230,11 +230,11 @@ impl<F: FieldExt> BranchHashInParentConfig<F> {
                 }
                 let hash_rlc = bytes_expr_into_rlc(&sc_hash, randomness);
 
-                let selector = not_first_level.clone()
-                    * (one.clone() - is_extension_node.clone())
-                    * is_last_branch_child.clone()
-                    * is_account_leaf_in_added_branch.clone()
-                    * (one.clone() - is_branch_placeholder.clone());
+                let selector = not_first_level
+                    * (one.clone() - is_extension_node)
+                    * is_last_branch_child
+                    * is_account_leaf_in_added_branch
+                    * (one.clone() - is_branch_placeholder);
 
                 let branch_len = get_branch_len(meta, s_main.clone(), rot_into_branch_init, is_s);
 
@@ -249,7 +249,7 @@ impl<F: FieldExt> BranchHashInParentConfig<F> {
                 table_map.push((selector.clone() * branch_len, keccak_input_len));
 
                 let keccak_output_rlc = meta.query_advice(keccak_table.output_rlc, Rotation::cur());
-                table_map.push((selector.clone() * hash_rlc, keccak_output_rlc));
+                table_map.push((selector * hash_rlc, keccak_output_rlc));
 
                 table_map
             },
@@ -307,12 +307,12 @@ impl<F: FieldExt> BranchHashInParentConfig<F> {
             let mult = meta.query_advice(acc_pair.mult, Rotation::cur());
             let branch_acc = acc + c128 * mult;
 
-            let selector = not_first_level.clone()
-                * is_last_branch_child.clone()
-                * (one.clone() - is_account_leaf_in_added_branch_prev.clone()) // we don't check this in the first storage level
-                * (one.clone() - is_branch_placeholder.clone())
-                * (one.clone() - is_branch_non_hashed.clone())
-                * (one.clone() - is_extension_node.clone());
+            let selector = not_first_level
+                * is_last_branch_child
+                * (one.clone() - is_account_leaf_in_added_branch_prev) // we don't check this in the first storage level
+                * (one.clone() - is_branch_placeholder)
+                * (one.clone() - is_branch_non_hashed)
+                * (one.clone() - is_extension_node);
 
             let mut mod_node_hash_rlc = accs.clone().s_mod_node_rlc;
             if !is_s {
@@ -335,7 +335,7 @@ impl<F: FieldExt> BranchHashInParentConfig<F> {
             table_map.push((selector.clone() * branch_len, keccak_input_len));
 
             let keccak_output_rlc = meta.query_advice(keccak_table.output_rlc, Rotation::cur());
-            table_map.push((selector.clone() * mod_node_hash_rlc_cur, keccak_output_rlc));
+            table_map.push((selector * mod_node_hash_rlc_cur, keccak_output_rlc));
 
             table_map            
         });

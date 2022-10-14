@@ -760,9 +760,9 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                 */
                 let s_mod_node_hash_rlc = meta.query_advice(accs.s_mod_node_rlc, Rotation(rot));
 
-                let selector = q_enable.clone()
-                    * is_branch_s_placeholder.clone()
-                    * (one.clone() - is_leaf_in_first_storage_level.clone());
+                let selector = q_enable
+                    * is_branch_s_placeholder
+                    * (one.clone() - is_leaf_in_first_storage_level);
 
                 let mut table_map = Vec::new();
                 let keccak_is_enabled = meta.query_advice(keccak_table.is_enabled, Rotation::cur());
@@ -778,7 +778,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                 table_map.push((selector.clone() * len, keccak_input_len));
 
                 let keccak_output_rlc = meta.query_advice(keccak_table.output_rlc, Rotation::cur());
-                table_map.push((selector.clone() * s_mod_node_hash_rlc, keccak_output_rlc));
+                table_map.push((selector * s_mod_node_hash_rlc, keccak_output_rlc));
 
                 table_map
             },
@@ -862,9 +862,9 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                 */
                 let c_mod_node_hash_rlc = meta.query_advice(accs.c_mod_node_rlc, Rotation(rot));
 
-                let selector = q_enable.clone()
-                    * is_branch_c_placeholder.clone()
-                    * (one.clone() - is_leaf_in_first_storage_level.clone());
+                let selector = q_enable
+                    * is_branch_c_placeholder
+                    * (one.clone() - is_leaf_in_first_storage_level);
 
                 let mut table_map = Vec::new();
                 let keccak_is_enabled = meta.query_advice(keccak_table.is_enabled, Rotation::cur());
@@ -880,7 +880,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                 table_map.push((selector.clone() * len, keccak_input_len));
 
                 let keccak_output_rlc = meta.query_advice(keccak_table.output_rlc, Rotation::cur());
-                table_map.push((selector.clone() * c_mod_node_hash_rlc, keccak_output_rlc));
+                table_map.push((selector * c_mod_node_hash_rlc, keccak_output_rlc));
 
                 table_map
             },

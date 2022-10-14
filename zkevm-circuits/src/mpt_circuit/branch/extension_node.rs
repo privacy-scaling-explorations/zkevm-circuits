@@ -778,10 +778,10 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
             }
             let hash_rlc = bytes_expr_into_rlc(&sc_hash, power_of_randomness[0].clone());
 
-            let selector = q_not_first.clone()
-                * q_enable.clone()
-                * (one.clone() - is_branch_init_prev.clone())
-                * is_branch_hashed.clone();
+            let selector = q_not_first
+                * q_enable
+                * (one.clone() - is_branch_init_prev)
+                * is_branch_hashed;
 
             let mut table_map = Vec::new();
             let keccak_is_enabled = meta.query_advice(keccak_table.is_enabled, Rotation::cur());
@@ -796,7 +796,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
             table_map.push((selector.clone() * branch_len, keccak_input_len));
 
             let keccak_output_rlc = meta.query_advice(keccak_table.output_rlc, Rotation::cur());
-            table_map.push((selector.clone() * hash_rlc, keccak_output_rlc));
+            table_map.push((selector * hash_rlc, keccak_output_rlc));
 
             table_map
         });
@@ -895,9 +895,9 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                 let acc_c = meta.query_advice(accs.acc_c.rlc, Rotation::cur());
                 let root = meta.query_advice(inter_root, Rotation::cur());
 
-                let selector = q_not_first.clone()
-                    * q_enable.clone()
-                    * (one.clone() - not_first_level.clone());
+                let selector = q_not_first
+                    * q_enable
+                    * (one.clone() - not_first_level);
 
                 let mut table_map = Vec::new();
                 let keccak_is_enabled = meta.query_advice(keccak_table.is_enabled, Rotation::cur());
@@ -905,7 +905,6 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
 
                 let keccak_input_rlc = meta.query_advice(keccak_table.input_rlc, Rotation::cur());
                 table_map.push((selector.clone() * acc_c, keccak_input_rlc));
-
 
                 let mut rot = 0;
                 if !is_s {
@@ -917,7 +916,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                 table_map.push((selector.clone() * ext_len, keccak_input_len));
 
                 let keccak_output_rlc = meta.query_advice(keccak_table.output_rlc, Rotation::cur());
-                table_map.push((selector.clone() * root, keccak_output_rlc));
+                table_map.push((selector * root, keccak_output_rlc));
 
                 table_map
             },
@@ -989,11 +988,11 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                 }
                 let hash_rlc = bytes_expr_into_rlc(&sc_hash, power_of_randomness[0].clone());
 
-                let selector = not_first_level.clone()
-                    * is_extension_node.clone()
-                    * is_after_last_branch_child.clone()
-                    * is_account_leaf_in_added_branch.clone()
-                    * (one.clone() - is_branch_placeholder.clone());
+                let selector = not_first_level
+                    * is_extension_node
+                    * is_after_last_branch_child
+                    * is_account_leaf_in_added_branch
+                    * (one.clone() - is_branch_placeholder);
 
                 let mut table_map = Vec::new();
                 let keccak_is_enabled = meta.query_advice(keccak_table.is_enabled, Rotation::cur());
@@ -1012,7 +1011,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                 table_map.push((selector.clone() * ext_len, keccak_input_len));
 
                 let keccak_output_rlc = meta.query_advice(keccak_table.output_rlc, Rotation::cur());
-                table_map.push((selector.clone() * hash_rlc, keccak_output_rlc));
+                table_map.push((selector * hash_rlc, keccak_output_rlc));
 
                 table_map
             },
@@ -1058,11 +1057,11 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                 mod_node_hash_rlc_cur = meta.query_advice(accs.c_mod_node_rlc, Rotation(-21));
             }
 
-            let selector = not_first_level.clone()
-                * q_enable.clone()
-                * (one.clone() - is_account_leaf_in_added_branch.clone())
-                * (one.clone() - is_branch_placeholder.clone())
-                * (one.clone() - is_ext_node_non_hashed.clone());
+            let selector = not_first_level
+                * q_enable
+                * (one.clone() - is_account_leaf_in_added_branch)
+                * (one.clone() - is_branch_placeholder)
+                * (one.clone() - is_ext_node_non_hashed);
 
             let mut table_map = Vec::new();
             let keccak_is_enabled = meta.query_advice(keccak_table.is_enabled, Rotation::cur());
@@ -1081,7 +1080,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
             table_map.push((selector.clone() * ext_len, keccak_input_len));
 
             let keccak_output_rlc = meta.query_advice(keccak_table.output_rlc, Rotation::cur());
-            table_map.push((selector.clone() * mod_node_hash_rlc_cur, keccak_output_rlc));
+            table_map.push((selector * mod_node_hash_rlc_cur, keccak_output_rlc));
 
             table_map
         });

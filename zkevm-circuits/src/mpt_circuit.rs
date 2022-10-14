@@ -725,7 +725,7 @@ impl<F: FieldExt> MPTConfig<F> {
             accumulators.clone(),
             branch.drifted_pos,
             denoter.clone(),
-            power_of_randomness.clone(),
+            power_of_randomness,
             fixed_table,
             keccak_table.clone(),
         );

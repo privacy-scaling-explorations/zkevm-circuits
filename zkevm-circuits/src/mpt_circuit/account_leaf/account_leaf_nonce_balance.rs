@@ -342,7 +342,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
                 */
                 constraints.push((
                     "S nonce RLC is correctly copied to value_prev column",
-                    q_enable.clone() * (nonce_s_in_value_prev - nonce_stored.clone()),
+                    q_enable.clone() * (nonce_s_in_value_prev - nonce_stored),
                 ));
             } else {
                 let nonce_s_stored = meta.query_advice(accs.s_mod_node_rlc, Rotation::prev());

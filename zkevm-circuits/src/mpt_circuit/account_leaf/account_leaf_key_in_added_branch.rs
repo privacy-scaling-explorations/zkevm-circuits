@@ -533,7 +533,7 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
                 );
             }
 
-            let selector = q_enable.clone() * is_branch_placeholder.clone();
+            let selector = q_enable * is_branch_placeholder;
 
             let keccak_is_enabled = meta.query_advice(keccak_table.is_enabled, Rotation::cur());
             constraints.push((selector.clone(), keccak_is_enabled));
@@ -557,7 +557,7 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
             }
 
             let keccak_output_rlc = meta.query_advice(keccak_table.output_rlc, Rotation::cur());
-            constraints.push((selector.clone() * mod_node_hash_rlc, keccak_output_rlc));
+            constraints.push((selector * mod_node_hash_rlc, keccak_output_rlc));
         };
 
         /*

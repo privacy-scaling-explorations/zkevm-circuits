@@ -237,7 +237,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
                 constraints.push((
                     "C codehash RLC is correctly copied to value row",
                     q_enable.clone()
-                        * (codehash_stored.clone() - codehash_c_in_value.clone()),
+                        * (codehash_stored.clone() - codehash_c_in_value),
                 ));
 
                 // Note: we do not check whether codehash is copied properly as only one of the
@@ -319,9 +319,9 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
                 let rlc = meta.query_advice(accs.acc_s.rlc, Rotation::cur());
                 let root = meta.query_advice(inter_root, Rotation::cur());
 
-                let selector = q_not_first.clone()
-                    * is_account_leaf_storage_codehash.clone()
-                    * (one.clone() - not_first_level.clone());
+                let selector = q_not_first
+                    * is_account_leaf_storage_codehash
+                    * (one.clone() - not_first_level);
 
                 let mut table_map = Vec::new();
                 let keccak_is_enabled = meta.query_advice(keccak_table.is_enabled, Rotation::cur());
@@ -338,7 +338,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
                 table_map.push((selector.clone() * account_len, keccak_input_len));
 
                 let keccak_output_rlc = meta.query_advice(keccak_table.output_rlc, Rotation::cur());
-                table_map.push((selector.clone() * root, keccak_output_rlc));
+                table_map.push((selector * root, keccak_output_rlc));
 
                 table_map
             },
@@ -390,10 +390,10 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
                 mod_node_hash_rlc_cur = meta.query_advice(accs.c_mod_node_rlc, Rotation(-17));
             }
 
-            let selector = not_first_level.clone()
-                * (one.clone() - is_branch_placeholder.clone())
-                * (one.clone() - is_placeholder_leaf.clone())
-                * is_account_leaf_storage_codehash.clone();
+            let selector = not_first_level
+                * (one.clone() - is_branch_placeholder)
+                * (one.clone() - is_placeholder_leaf)
+                * is_account_leaf_storage_codehash;
 
             let mut table_map = Vec::new();
             let keccak_is_enabled = meta.query_advice(keccak_table.is_enabled, Rotation::cur());
@@ -411,7 +411,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
             table_map.push((selector.clone() * account_len, keccak_input_len));
 
             let keccak_output_rlc = meta.query_advice(keccak_table.output_rlc, Rotation::cur());
-            table_map.push((selector.clone() * mod_node_hash_rlc_cur, keccak_output_rlc));
+            table_map.push((selector * mod_node_hash_rlc_cur, keccak_output_rlc));
 
             table_map
         });
@@ -446,10 +446,10 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
                 );
             }
 
-            let selector = account_not_first_level.clone()
-                * branch_placeholder_not_in_first_level.clone()
-                * is_branch_placeholder.clone()
-                * is_account_leaf_storage_codehash.clone();
+            let selector = account_not_first_level
+                * branch_placeholder_not_in_first_level
+                * is_branch_placeholder
+                * is_account_leaf_storage_codehash;
 
             // Note: accumulated in s (not in c) for c:
             let acc_s = meta.query_advice(accs.acc_s.rlc, Rotation::cur()); 
@@ -478,7 +478,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
             table_map.push((selector.clone() * account_len, keccak_input_len));
 
             let keccak_output_rlc = meta.query_advice(keccak_table.output_rlc, Rotation::cur());
-            table_map.push((selector.clone() * mod_node_hash_rlc_cur_prev, keccak_output_rlc));
+            table_map.push((selector * mod_node_hash_rlc_cur_prev, keccak_output_rlc));
 
             table_map
         });
@@ -511,10 +511,10 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
                     );
                 }
 
-                let selector = account_not_first_level.clone()
-                    * branch_placeholder_in_first_level.clone()
-                    * is_branch_placeholder.clone()
-                    * is_account_leaf_storage_codehash.clone();
+                let selector = account_not_first_level
+                    * branch_placeholder_in_first_level
+                    * is_branch_placeholder
+                    * is_account_leaf_storage_codehash;
 
                 // Note: accumulated in s (not in c) for c:
                 let acc_s = meta.query_advice(accs.acc_s.rlc, Rotation::cur());
@@ -537,7 +537,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
                 table_map.push((selector.clone() * account_len, keccak_input_len));
 
                 let keccak_output_rlc = meta.query_advice(keccak_table.output_rlc, Rotation::cur());
-                table_map.push((selector.clone() * root, keccak_output_rlc));
+                table_map.push((selector * root, keccak_output_rlc));
 
                 table_map
             },

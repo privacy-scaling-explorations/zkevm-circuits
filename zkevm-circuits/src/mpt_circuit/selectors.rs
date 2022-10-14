@@ -170,7 +170,7 @@ impl<F: FieldExt> SelectorsConfig<F> {
             ));
             constraints.push((
                 "bool check is_account_leaf_in_added_branch",
-                get_bool_constraint(q_enable.clone(), is_account_leaf_in_added_branch.clone()),
+                get_bool_constraint(q_enable.clone(), is_account_leaf_in_added_branch),
             ));
             constraints.push((
                 "bool check branch sel1",
@@ -328,8 +328,8 @@ impl<F: FieldExt> SelectorsConfig<F> {
             ));
             constraints.push((
                 "Storage mod lookup enabled in STORAGE_LEAF_VALUE_C row when is_storage_mod proof",
-                q_enable.clone()
-                    * (is_storage_mod * is_leaf_c_value * (proof_type_cur.clone() - Expression::Constant(F::from(6_u64)))),
+                q_enable
+                    * (is_storage_mod * is_leaf_c_value * (proof_type_cur - Expression::Constant(F::from(6_u64)))),
             ));
 
             constraints

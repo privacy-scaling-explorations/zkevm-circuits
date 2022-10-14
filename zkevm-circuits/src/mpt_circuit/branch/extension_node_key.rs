@@ -251,7 +251,7 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
             mult_prev = 1 if first level
             mult_prev = key_rlc_mult_prev_level if not first level
             */
-            let mult_prev = after_first_level.clone() * key_rlc_mult_prev_branch.clone() +
+            let mult_prev = after_first_level.clone() * key_rlc_mult_prev_branch +
                 one.clone() - after_first_level.clone();
 
             /*

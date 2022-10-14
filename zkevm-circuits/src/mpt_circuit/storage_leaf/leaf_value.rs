@@ -13,7 +13,7 @@ use crate::{
     mpt_circuit::{param::{
         ACCOUNT_LEAF_ROWS, ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND,
         ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND, BRANCH_ROWS_NUM, HASH_WIDTH,
-        LEAF_VALUE_C_IND, LEAF_VALUE_S_IND, IS_BRANCH_S_PLACEHOLDER_POS, RLP_NUM, IS_BRANCH_C_PLACEHOLDER_POS, LEAF_KEY_S_IND, LEAF_KEY_C_IND, IS_STORAGE_MOD_POS,
+        LEAF_VALUE_C_IND, LEAF_VALUE_S_IND, IS_BRANCH_S_PLACEHOLDER_POS, RLP_NUM, IS_BRANCH_C_PLACEHOLDER_POS, IS_STORAGE_MOD_POS,
     }, helpers::get_leaf_len},
     mpt_circuit::witness_row::{MptWitnessRow, MptWitnessRowType}, table::KeccakTable,
 };
@@ -475,10 +475,10 @@ impl<F: FieldExt> LeafValueConfig<F> {
                 }
                 let hash_rlc = bytes_expr_into_rlc(&sc_hash, randomness.clone());
 
-                let selector = not_first_level.clone()
-                    * is_leaf.clone()
-                    * (one.clone() - is_placeholder.clone())
-                    * is_account_leaf_in_added_branch.clone();
+                let selector = not_first_level
+                    * is_leaf
+                    * (one.clone() - is_placeholder)
+                    * is_account_leaf_in_added_branch;
 
                 let mut table_map = Vec::new();
                 let keccak_is_enabled = meta.query_advice(keccak_table.is_enabled, Rotation::cur());
@@ -494,7 +494,7 @@ impl<F: FieldExt> LeafValueConfig<F> {
                 table_map.push((selector.clone() * len, keccak_input_len));
 
                 let keccak_output_rlc = meta.query_advice(keccak_table.output_rlc, Rotation::cur());
-                table_map.push((selector.clone() * hash_rlc, keccak_output_rlc));
+                table_map.push((selector * hash_rlc, keccak_output_rlc));
 
                 table_map
             },
@@ -613,11 +613,11 @@ impl<F: FieldExt> LeafValueConfig<F> {
                 }
                 let hash_rlc = bytes_expr_into_rlc(&sc_hash, randomness.clone());
 
-                let selector = not_first_level.clone()
-                    * is_leaf.clone()
-                    * (one.clone() - is_account_leaf_in_added_branch.clone()) // if account is directly above storage leaf, there is no placeholder branch
-                    * is_account_leaf_in_added_branch_placeholder.clone()
-                    * is_branch_placeholder.clone();
+                let selector = not_first_level
+                    * is_leaf
+                    * (one.clone() - is_account_leaf_in_added_branch) // if account is directly above storage leaf, there is no placeholder branch
+                    * is_account_leaf_in_added_branch_placeholder
+                    * is_branch_placeholder;
 
                 let mut table_map = Vec::new();
                 let keccak_is_enabled = meta.query_advice(keccak_table.is_enabled, Rotation::cur());
@@ -633,7 +633,7 @@ impl<F: FieldExt> LeafValueConfig<F> {
                 table_map.push((selector.clone() * len, keccak_input_len));
 
                 let keccak_output_rlc = meta.query_advice(keccak_table.output_rlc, Rotation::cur());
-                table_map.push((selector.clone() * hash_rlc, keccak_output_rlc));
+                table_map.push((selector * hash_rlc, keccak_output_rlc));
 
                 table_map
             },
@@ -680,11 +680,11 @@ impl<F: FieldExt> LeafValueConfig<F> {
                 mod_node_hash_rlc_cur = meta.query_advice(accs.c_mod_node_rlc, Rotation(rot));
             }
 
-            let selector = q_enable.clone()
-                * (one.clone() - placeholder_leaf.clone())
-                * (one.clone() - is_leaf_without_branch.clone())
-                * (one.clone() - not_hashed.clone())
-                * (one.clone() - is_branch_placeholder.clone());
+            let selector = q_enable
+                * (one.clone() - placeholder_leaf)
+                * (one.clone() - is_leaf_without_branch)
+                * (one.clone() - not_hashed)
+                * (one.clone() - is_branch_placeholder);
 
             let mut table_map = Vec::new();
             let keccak_is_enabled = meta.query_advice(keccak_table.is_enabled, Rotation::cur());
@@ -700,7 +700,7 @@ impl<F: FieldExt> LeafValueConfig<F> {
             table_map.push((selector.clone() * len, keccak_input_len));
 
             let keccak_output_rlc = meta.query_advice(keccak_table.output_rlc, Rotation::cur());
-            table_map.push((selector.clone() * mod_node_hash_rlc_cur, keccak_output_rlc));
+            table_map.push((selector * mod_node_hash_rlc_cur, keccak_output_rlc));
 
             table_map
         });
@@ -827,11 +827,11 @@ impl<F: FieldExt> LeafValueConfig<F> {
                     meta.query_advice(accs.c_mod_node_rlc, Rotation(rot_into_init - 3));
             }
 
-            let selector = q_enable.clone()
-                * (one.clone() - sel.clone())
-                * (one.clone() - is_leaf_without_branch_after_placeholder.clone())
-                * (one.clone() - is_leaf_without_branch.clone())
-                * is_branch_placeholder.clone();
+            let selector = q_enable
+                * (one.clone() - sel)
+                * (one.clone() - is_leaf_without_branch_after_placeholder)
+                * (one.clone() - is_leaf_without_branch)
+                * is_branch_placeholder;
 
             let mut table_map = Vec::new();
             let keccak_is_enabled = meta.query_advice(keccak_table.is_enabled, Rotation::cur());
@@ -847,7 +847,7 @@ impl<F: FieldExt> LeafValueConfig<F> {
             table_map.push((selector.clone() * len, keccak_input_len));
 
             let keccak_output_rlc = meta.query_advice(keccak_table.output_rlc, Rotation::cur());
-            table_map.push((selector.clone() * mod_node_hash_rlc, keccak_output_rlc));
+            table_map.push((selector * mod_node_hash_rlc, keccak_output_rlc));
 
             table_map
         });
