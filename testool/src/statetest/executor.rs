@@ -12,7 +12,7 @@ use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
 use std::{collections::HashMap, str::FromStr};
 use thiserror::Error;
-use zkevm_circuits::super_circuit::SuperCircuit;
+use zkevm_circuits::{super_circuit::SuperCircuit, test_util::BytecodeTestConfig};
 
 const EVMERR_OOG: &str = "out of gas";
 const EVMERR_STACKUNDERFLOW: &str = "stack underflow";
@@ -22,6 +22,8 @@ const EVMERR_GAS_UINT64OVERFLOW: &str = "gas uint64 overflow";
 pub enum StateTestError {
     #[error("CannotGenerateCircuitInput({0})")]
     CircuitInput(String),
+    #[error("VerifierError({0})")]
+    VerifierError(String),
     #[error("BalanceMismatch(expected:{expected:?}, found:{found:?})")]
     BalanceMismatch { expected: U256, found: U256 },
     #[error("NonceMismatch(expected:{expected:?}, found:{found:?})")]
@@ -294,10 +296,24 @@ pub fn run_test(
 
     if !circuits_config.super_circuit {
         let block_data = BlockData::new_from_geth_data(geth_data);
+        
         builder = block_data.new_circuit_input_builder();
         builder
             .handle_block(&eth_block, &geth_traces)
             .map_err(|err| StateTestError::CircuitInput(err.to_string()))?;
+    
+        let block =
+            zkevm_circuits::evm_circuit::witness::block_convert(&builder.block, &builder.code_db);
+
+        let config  = BytecodeTestConfig {
+            enable_evm_circuit_test : true,
+            enable_state_circuit_test: true,
+            gas_limit: u64::MAX
+        };
+
+        zkevm_circuits::test_util::test_circuits_using_witness_block(block, config)
+            .map_err(|err| StateTestError::VerifierError(format!("{:#?}", err)))?;
+
     } else {
         geth_data.sign(&wallets);
 
@@ -308,7 +324,7 @@ pub fn run_test(
         let prover = MockProver::run(k, &circuit, instance).unwrap();
         prover
             .verify_par()
-            .map_err(|err| StateTestError::CircuitInput(format!("{:#?}", err)))?;
+            .map_err(|err| StateTestError::VerifierError(format!("{:#?}", err)))?;
     }
 
     check_post(&builder, &post)?;

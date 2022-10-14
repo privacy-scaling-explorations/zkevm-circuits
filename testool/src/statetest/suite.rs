@@ -67,16 +67,17 @@ pub fn run_statetests_suite(
 
     // for each test
     tcs.into_par_iter().for_each(|ref tc| {
+        let full_id = format!("{}#{}",tc.id,tc.path);
+
         if !suite.allowed(&tc.id) {
             results
                 .write()
                 .unwrap()
                 .insert(
-                    tc.id.clone(),
+                    full_id,
                     ResultInfo {
                         level: ResultLevel::Ignored,
                         details: "Ignored in config file".to_string(),
-                        path: tc.path.to_string(),
                     },
                 )
                 .unwrap();
@@ -85,7 +86,7 @@ pub fn run_statetests_suite(
 
         std::panic::set_hook(Box::new(|_info| {}));
 
-        log::debug!("running test {}/{}...", tc.path, tc.id);
+        log::debug!("running test {}...", full_id);
         let result = std::panic::catch_unwind(|| {
             run_test(tc.clone(), suite.clone(), circuits_config.clone())
         });
@@ -98,11 +99,10 @@ pub fn run_statetests_suite(
                     .write()
                     .unwrap()
                     .insert(
-                        tc.id.clone(),
+                        full_id,
                         ResultInfo {
                             level: ResultLevel::Panic,
                             details: String::default(),
-                            path: tc.path.to_string(),
                         },
                     )
                     .unwrap();
@@ -116,7 +116,7 @@ pub fn run_statetests_suite(
                 .write()
                 .unwrap()
                 .insert(
-                    tc.id.clone(),
+                    full_id,
                     ResultInfo {
                         level: if err.is_skip() {
                             ResultLevel::Ignored
@@ -124,7 +124,6 @@ pub fn run_statetests_suite(
                             ResultLevel::Fail
                         },
                         details: err.to_string(),
-                        path: tc.path.to_string(),
                     },
                 )
                 .unwrap();
@@ -135,11 +134,10 @@ pub fn run_statetests_suite(
             .write()
             .unwrap()
             .insert(
-                tc.id.clone(),
+                full_id,
                 ResultInfo {
                     level: ResultLevel::Success,
                     details: String::default(),
-                    path: tc.path.to_string(),
                 },
             )
             .unwrap();

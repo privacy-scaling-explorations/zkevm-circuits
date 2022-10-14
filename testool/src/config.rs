@@ -2,6 +2,8 @@ use anyhow::{anyhow, bail, ensure, Context, Result};
 use eth_types::evm_types::OpcodeId;
 use serde::Deserialize;
 
+const CONFIG_FILE : &str = "Config.toml";
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
     pub suite: Vec<TestSuite>,
@@ -55,7 +57,7 @@ impl TestSuite {
 
 impl Config {
     pub fn load() -> Result<Self> {
-        let content = std::fs::read_to_string("./Config.toml")?;
+        let content = std::fs::read_to_string(CONFIG_FILE).context(format!("Unable to open {}",CONFIG_FILE))?;
         let mut config: Config = toml::from_str(&content).context("parsing toml")?;
 
         // Append all tests defined in sets into the tests

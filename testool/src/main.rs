@@ -79,7 +79,7 @@ fn run_single_test(test: StateTest, circuits_config: CircuitsConfig) -> Result<(
     Ok(())
 }
 
-fn main() -> Result<()> {
+fn go() -> Result<()> {
     //  RAYON_NUM_THREADS=1 RUST_BACKTRACE=1 cargo run -- --path
     // "tests/src/GeneralStateTestsFiller/**/" --skip-state-circuit
 
@@ -160,16 +160,16 @@ fn main() -> Result<()> {
         files.sort_by(|f, s| s.cmp(f));
         let previous = if !files.is_empty() {
             let file = files.remove(0);
-            println!("Comparing with previous results in {}", file);
             let path = format!("{}/{}", REPORT_FOLDER, file);
+            println!("Comparing with previous results in {}", path);
             Some((file, Results::from_file(PathBuf::from(path))?))
         } else {
             None
         };
-
         let report = results.report(previous);
         std::fs::write(&html_filename, report.gen_html()?)?;
-
+        
+        report.print_tty()?;
         println!("{}", html_filename);
     } else {
         let mut results = if args.cache {
@@ -191,4 +191,10 @@ fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+fn main() {
+    if let Err(err) = go() {
+        eprintln!("{}",err);
+    }
 }

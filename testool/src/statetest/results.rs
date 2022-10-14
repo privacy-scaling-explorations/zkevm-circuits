@@ -26,7 +26,6 @@ pub enum ResultLevel {
 pub struct ResultInfo {
     pub level: ResultLevel,
     pub details: String,
-    pub path: String,
 }
 
 impl ResultLevel {
@@ -105,6 +104,7 @@ pub struct Report {
 }
 
 impl Report {
+
     pub fn print_tty(&self) -> Result<()> {
         self.by_folder.print_tty(false)?;
         self.by_result.print_tty(false)?;
@@ -149,16 +149,14 @@ impl Results {
         file.read_to_string(&mut buf)?;
         let mut tests = HashMap::new();
         for line in buf.lines().filter(|l| l.len() > 1) {
-            let mut split = line.splitn(4, ';');
+            let mut split = line.splitn(3, ';');
             let level = ResultLevel::from_str(split.next().unwrap()).unwrap();
             let id = split.next().unwrap().to_string();
-            let path = split.next().unwrap().to_string();
             let details = split.next().unwrap().to_string();
             tests.insert(
                 id,
                 ResultInfo {
                     level,
-                    path,
                     details,
                 },
             );
@@ -196,8 +194,10 @@ impl Results {
         }
 
         for (id, info) in &self.tests {
-            let name = &info.path.rsplit_terminator('/').next().unwrap();
-            let folder = &info.path[..info.path.len() - name.len() - 1];
+            let (_, file_path) = id.split_once('#').unwrap();
+            let filename = &file_path.rsplit_terminator('/').next().unwrap();
+            let folder = &file_path[..file_path.len() - filename.len() - 1];
+            
             let result = format!("{:?}_{}", info.level, info.details);
 
             folders.insert(folder);
@@ -309,24 +309,22 @@ impl Results {
         if !self.tests.contains_key(&test_id) {
             if result.level == ResultLevel::Ignored {
                 log::debug!(
-                    "{} {}/{} {}",
+                    "{} {} {}",
                     result.level.display_string(),
-                    result.path,
                     test_id,
                     result.details
                 );
             } else {
                 log::info!(
-                    "{} {}/{} {}",
+                    "{} {} {}",
                     result.level.display_string(),
-                    result.path,
                     test_id,
                     result.details
                 );
             }
             let entry = format!(
-                "{:?};{};{};{}\n",
-                result.level, test_id, result.path, result.details
+                "{:?};{};{}\n",
+                result.level, test_id, result.details
             );
             if let Some(path) = &self.cache {
                 std::fs::OpenOptions::new()
