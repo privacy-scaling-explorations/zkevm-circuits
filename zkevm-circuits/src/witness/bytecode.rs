@@ -49,7 +49,7 @@ impl Bytecode {
                 is_code = false;
                 push_data_left -= 1;
             } else if (OpcodeId::PUSH1.as_u8()..=OpcodeId::PUSH32.as_u8()).contains(byte) {
-                push_data_left = *byte as usize - (OpcodeId::PUSH1.as_u8() - 1) as usize;
+                push_data_left = (*byte - OpcodeId::PUSH1.as_u8() + 1) as usize;
             }
             rows.push([
                 hash,
