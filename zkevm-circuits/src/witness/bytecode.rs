@@ -44,13 +44,17 @@ impl Bytecode {
 
         let mut push_data_left = 0;
         for (idx, byte) in self.bytes.iter().enumerate() {
-            let mut is_code = true;
-            if push_data_left > 0 {
-                is_code = false;
+            let is_code = push_data_left == 0;
+
+            if is_code {
+                let op = OpcodeId::try_from(*byte).unwrap();
+                if op.is_push() {
+                    push_data_left = op.usize();
+                }
+            } else {
                 push_data_left -= 1;
-            } else if (OpcodeId::PUSH1.as_u8()..=OpcodeId::PUSH32.as_u8()).contains(byte) {
-                push_data_left = (*byte - OpcodeId::PUSH1.as_u8() + 1) as usize;
             }
+
             rows.push([
                 hash,
                 Value::known(F::from(BytecodeFieldTag::Byte as u64)),
