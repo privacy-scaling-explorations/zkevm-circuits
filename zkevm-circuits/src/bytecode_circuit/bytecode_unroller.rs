@@ -657,7 +657,10 @@ pub fn unroll<F: Field>(bytes: Vec<u8>) -> UnrolledBytecode<F> {
 }
 
 fn is_push(byte: u8) -> bool {
-    OpcodeId::try_from(byte).unwrap().is_push()
+    match OpcodeId::try_from(byte) {
+        Ok(op) => op.is_push(),
+        Err(_) => false,
+    }
 }
 
 fn get_push_size(byte: u8) -> u64 {
