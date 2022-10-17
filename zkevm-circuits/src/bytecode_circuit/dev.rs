@@ -8,10 +8,18 @@ use halo2_proofs::{
 };
 use halo2_proofs::{circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit};
 
+/// BytecodeCircuitTester
 #[derive(Default)]
-pub(crate) struct BytecodeCircuitTester<F: Field> {
+pub struct BytecodeCircuitTester<F: Field> {
     bytecodes: Vec<UnrolledBytecode<F>>,
     size: usize,
+}
+
+impl<F: Field> BytecodeCircuitTester<F> {
+    /// new BytecodeCircuitTester
+    pub fn new(bytecodes: Vec<UnrolledBytecode<F>>, size: usize) -> Self {
+        BytecodeCircuitTester { bytecodes, size }
+    }
 }
 
 impl<F: Field> Circuit<F> for BytecodeCircuitTester<F> {

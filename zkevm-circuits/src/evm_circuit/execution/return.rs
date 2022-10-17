@@ -170,7 +170,6 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
                     return_data_offset.expr(),
                     copy_length.min(),
                     0.expr(),
-                    cb.curr.state.rw_counter.expr() + cb.rw_counter_offset().expr(),
                     copy_rw_increase.expr(),
                 );
             },

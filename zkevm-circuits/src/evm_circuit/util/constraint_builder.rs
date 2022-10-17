@@ -1111,7 +1111,6 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         dst_addr: Expression<F>,
         length: Expression<F>,
         rlc_acc: Expression<F>,
-        rw_counter: Expression<F>,
         rwc_inc: Expression<F>,
     ) {
         // TODO: eliminate rw_counter argument since we have self.rw_counter_offset
@@ -1129,10 +1128,15 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
                 dst_addr,
                 length,
                 rlc_acc,
-                rw_counter,
-                rwc_inc,
+                rw_counter: self.curr.state.rw_counter.expr() + self.rw_counter_offset(),
+                rwc_inc: rwc_inc.clone(),
             },
         );
+        self.rw_counter_offset = self.rw_counter_offset.clone()
+            + match &self.condition {
+                Some(condition) => condition.clone(),
+                None => 1.expr(),
+            } * rwc_inc;
     }
 
     // Keccak Table
