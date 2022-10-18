@@ -49,7 +49,7 @@ impl Bytecode {
             if is_code {
                 let op = OpcodeId::try_from(*byte).unwrap();
                 if op.is_push() {
-                    push_data_left = op.usize();
+                    push_data_left = op.len();
                 }
             } else {
                 push_data_left -= 1;

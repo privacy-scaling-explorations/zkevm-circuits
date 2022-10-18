@@ -96,7 +96,7 @@ mod test {
     use mock::TestContext;
 
     fn test_ok(opcode: OpcodeId, lhs: Word, rhs: Word) {
-        let n = opcode.usize();
+        let n = opcode.len();
 
         let mut bytecode = bytecode! {
             PUSH32(lhs)
