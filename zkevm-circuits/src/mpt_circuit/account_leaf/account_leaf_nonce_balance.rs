@@ -10,7 +10,7 @@ use std::marker::PhantomData;
 use crate::{
     mpt_circuit::columns::{AccumulatorCols, DenoteCols, MainCols, ProofTypeCols},
     mpt_circuit::helpers::{compute_rlc, get_bool_constraint, mult_diff_lookup, range_lookups},
-    mpt_circuit::{FixedTableTag, MPTConfig, ProofValues, param::{IS_NONCE_MOD_POS, IS_BALANCE_MOD_POS}},
+    mpt_circuit::{FixedTableTag, MPTConfig, ProofValues, param::{IS_NONCE_MOD_POS, IS_BALANCE_MOD_POS}, helpers::key_len_lookup},
     mpt_circuit::param::{
         ACCOUNT_LEAF_KEY_C_IND, ACCOUNT_LEAF_KEY_S_IND, ACCOUNT_LEAF_NONCE_BALANCE_C_IND,
         ACCOUNT_LEAF_NONCE_BALANCE_S_IND, ACCOUNT_NON_EXISTING_IND, C_START, HASH_WIDTH, S_START,
@@ -687,7 +687,6 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
 
         // There are zeros in s_main.bytes after nonce length:
         /*
-        /*
         Nonce RLC is computed over `s_main.bytes[1]`, ..., `s_main.bytes[31]` because we do not know
         the nonce length in advance. To prevent changing the nonce and setting `s_main.bytes[i]` for
         `i > nonce_len + 1` to get the correct nonce RLC, we need to ensure that
@@ -704,7 +703,6 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
                 fixed_table,
             )
         }
-        */
 
         let q_enable_balance_long = |meta: &mut VirtualCells<F>| {
             let q_enable = q_enable(meta);
@@ -739,7 +737,6 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
         );
 
         /*
-        /*
         Balance RLC is computed over `c_main.bytes[1]`, ..., `c_main.bytes[31]` because we do not know
         the balance length in advance. To prevent changing the balance and setting `c_main.bytes[i]` for
         `i > balance_len + 1` to get the correct balance RLC, we need to ensure that
@@ -756,7 +753,6 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
                 fixed_table,
             )
         }
-        */
 
         /*
         Range lookups ensure that `s_main` and `c_main` columns are all bytes (between 0 - 255).

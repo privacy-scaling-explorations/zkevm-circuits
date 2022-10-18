@@ -9,7 +9,7 @@ use std::marker::PhantomData;
 use crate::{
     mpt_circuit::columns::{AccumulatorCols, MainCols},
     mpt_circuit::helpers::{compute_rlc, get_bool_constraint, mult_diff_lookup, range_lookups},
-    mpt_circuit::{FixedTableTag, MPTConfig, ProofValues},
+    mpt_circuit::{FixedTableTag, MPTConfig, ProofValues, helpers::key_len_lookup},
     mpt_circuit::param::{
         BRANCH_ROWS_NUM, HASH_WIDTH, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS,
         IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS, NIBBLES_COUNTER_POS, RLP_NUM,
@@ -239,7 +239,6 @@ impl<F: FieldExt> LeafKeyConfig<F> {
         };
 
         /*
-        /*
         There are 0s in `s_main.bytes` after the last key nibble (this does not need to be checked
         for `last_level` and `one_nibble` as in these cases `s_main.bytes` are not used).
         */
@@ -269,7 +268,6 @@ impl<F: FieldExt> LeafKeyConfig<F> {
         }
         key_len_lookup(meta, sel_long, 32, s_main.bytes[0], c_main.rlp1, 128, fixed_table);
         key_len_lookup(meta, sel_long, 33, s_main.bytes[0], c_main.rlp2, 128, fixed_table);
-        */
 
         /*
         The intermediate RLC value of this row is stored in `accumulators.acc_s.rlc`.

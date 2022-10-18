@@ -1,11 +1,11 @@
 use halo2_proofs::{
-    plonk::{Advice, Column, ConstraintSystem, Expression, VirtualCells},
+    plonk::{Advice, Column, ConstraintSystem, Expression, VirtualCells, Fixed},
     poly::Rotation,
     arithmetic::FieldExt,
 };
 use std::marker::PhantomData;
 
-use crate::mpt_circuit::columns::{MainCols, PositionCols};
+use crate::mpt_circuit::{columns::{MainCols, PositionCols}, helpers::key_len_lookup, param::HASH_WIDTH};
 
 use super::BranchCols;
 
@@ -84,6 +84,7 @@ impl<F: FieldExt> BranchParallelConfig<F> {
         main: MainCols<F>,
         sel: Column<Advice>,
         is_node_hashed: Column<Advice>,
+        fixed_table: [Column<Fixed>; 3],
     ) -> Self {
         let config = BranchParallelConfig {
             _marker: PhantomData,
@@ -264,7 +265,7 @@ impl<F: FieldExt> BranchParallelConfig<F> {
             },
         );
 
-        let _sel = |meta: &mut VirtualCells<F>| {
+        let sel = |meta: &mut VirtualCells<F>| {
             let q_enable = meta.query_fixed(position_cols.q_enable, Rotation::cur());
             let is_branch_child_cur = meta.query_advice(branch.is_child, Rotation::cur());
             let is_node_hashed = meta.query_advice(is_node_hashed, Rotation::cur());
@@ -272,7 +273,6 @@ impl<F: FieldExt> BranchParallelConfig<F> {
             q_enable * is_branch_child_cur * is_node_hashed
         };
 
-        /*
         /*
         When branch child is shorter than 32 bytes it does not get hashed, that means some positions
         in `main.bytes` stay unused. But we need to ensure there are 0s at unused positions to avoid
@@ -289,7 +289,6 @@ impl<F: FieldExt> BranchParallelConfig<F> {
                 fixed_table,
             )
         }
-        */
 
         config
     }

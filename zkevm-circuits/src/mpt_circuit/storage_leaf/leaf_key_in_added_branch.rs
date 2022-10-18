@@ -16,7 +16,7 @@ use crate::{
     mpt_circuit::{param::{
         BRANCH_ROWS_NUM, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, LEAF_DRIFTED_IND, LEAF_KEY_C_IND,
         LEAF_KEY_S_IND,
-    }, helpers::get_leaf_len},
+    }, helpers::{get_leaf_len, key_len_lookup}},
     mpt_circuit::witness_row::MptWitnessRow, table::KeccakTable,
 };
 
@@ -247,7 +247,6 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
         };
 
         /*
-        /*
         There are 0s in `s_main.bytes` after the last key nibble (this does not need to be checked
         for `last_level` and `one_nibble` as in these cases `s_main.bytes` are not used).
         */
@@ -274,8 +273,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                 fixed_table,
             )
         }
-        key_len_lookup(meta, sel_long, 32, s_main.bytes[0], c_rlp1, 128, fixed_table);
-        */
+        key_len_lookup(meta, sel_long, 32, s_main.bytes[0], c_main.rlp1, 128, fixed_table);
 
         /*
         The intermediate RLC value of this row is stored in `accumulators.acc_s.rlc`.

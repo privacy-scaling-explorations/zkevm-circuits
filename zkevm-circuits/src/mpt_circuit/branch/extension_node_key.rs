@@ -8,7 +8,7 @@ use std::marker::PhantomData;
 
 use crate::{
     mpt_circuit::columns::{AccumulatorCols, MainCols, PositionCols},
-    mpt_circuit::helpers::{compute_rlc, get_is_extension_node, range_lookups},
+    mpt_circuit::helpers::{compute_rlc, get_is_extension_node, range_lookups, key_len_lookup},
     mpt_circuit::FixedTableTag,
     mpt_circuit::param::{
         BRANCH_ROWS_NUM, EXTENSION_ROWS_NUM, HASH_WIDTH, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS,
@@ -941,7 +941,7 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
             });
         }
 
-        let _sel_long = |meta: &mut VirtualCells<F>| {
+        let sel_long = |meta: &mut VirtualCells<F>| {
             let is_extension_s_row = meta.query_advice(branch.is_extension_node_s, Rotation::cur());
 
             let is_ext_long_even_c16 = meta.query_advice(
@@ -975,7 +975,6 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
         `s_main.bytes` need to be 0 (the only nibble is in `s_main.rlp2`) - this is checked
         separately.
         */
-        /*
         for ind in 1..HASH_WIDTH {
             key_len_lookup(
                 meta,
@@ -988,7 +987,6 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
             )
         }
         key_len_lookup(meta, sel_long, 32, s_main.bytes[0], c_main.rlp1, 128, fixed_table);
-        */
 
         let sel_s = |meta: &mut VirtualCells<F>| {
             let is_extension_s_row = meta.query_advice(branch.is_extension_node_s, Rotation::cur());

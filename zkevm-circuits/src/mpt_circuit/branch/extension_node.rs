@@ -1,6 +1,6 @@
 use halo2_proofs::{
     circuit::{Region, Value},
-    plonk::{Advice, Column, ConstraintSystem, Expression, Fixed, VirtualCells},
+    plonk::{Advice, Column, ConstraintSystem, Expression, VirtualCells, Fixed},
     poly::Rotation,
     arithmetic::FieldExt,
 };
@@ -23,7 +23,7 @@ use crate::{
         IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS, IS_EXT_LONG_ODD_C16_POS,
         IS_EXT_LONG_ODD_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS,
         IS_S_EXT_LONGER_THAN_55_POS, IS_S_EXT_NODE_NON_HASHED_POS, NIBBLES_COUNTER_POS, RLP_NUM,
-    }, helpers::get_branch_len},
+    }, helpers::{get_branch_len, key_len_lookup}},
     mpt_circuit::witness_row::MptWitnessRow, table::KeccakTable,
 };
 
@@ -162,6 +162,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
         accs: AccumulatorCols<F>,
         keccak_table: KeccakTable,
         power_of_randomness: [Expression<F>; HASH_WIDTH],
+        fixed_table: [Column<Fixed>; 3],
         is_s: bool,
     ) -> Self {
         let config = ExtensionNodeConfig {
@@ -845,7 +846,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
             },
         );
 
-        let _sel_branch_non_hashed = |meta: &mut VirtualCells<F>| {
+        let sel_branch_non_hashed = |meta: &mut VirtualCells<F>| {
             let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
             let q_enable = q_enable(meta);
 
@@ -856,7 +857,6 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
             q_not_first * q_enable * (one.clone() - is_branch_hashed)
         };
 
-        /*
         /*
         There are 0s after non-hashed branch ends in `c_main.bytes`.
         */
@@ -871,7 +871,6 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                 fixed_table,
             )
         }
-        */
 
         /*
         Note: Correspondence between nibbles in C and bytes in S is checked in

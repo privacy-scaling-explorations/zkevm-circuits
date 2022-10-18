@@ -6,7 +6,6 @@ use halo2_proofs::{
     arithmetic::FieldExt,
     poly::Rotation,
 };
-use keccak256::plain::Keccak;
 
 use std::convert::TryInto;
 
@@ -335,6 +334,7 @@ impl<F: FieldExt> MPTConfig<F> {
             s_main.clone(),
             denoter.sel1,
             denoter.is_node_hashed_s,
+            fixed_table,
         );
 
         BranchParallelConfig::<F>::configure(
@@ -345,6 +345,7 @@ impl<F: FieldExt> MPTConfig<F> {
             c_main.clone(),
             denoter.sel2,
             denoter.is_node_hashed_c,
+            fixed_table,
         );
 
         BranchHashInParentConfig::<F>::configure(
@@ -392,6 +393,7 @@ impl<F: FieldExt> MPTConfig<F> {
             accumulators.clone(),
             keccak_table.clone(),
             power_of_randomness.clone(),
+            fixed_table,
             true,
         );
 
@@ -414,6 +416,7 @@ impl<F: FieldExt> MPTConfig<F> {
             accumulators.clone(),
             keccak_table.clone(),
             power_of_randomness.clone(),
+            fixed_table,
             false,
         );
 
@@ -1230,12 +1233,6 @@ impl<F: FieldExt> MPTConfig<F> {
             .ok();
     }
 
-    fn compute_keccak(&self, msg: &[u8]) -> Vec<u8> {
-        let mut keccak = Keccak::default();
-        keccak.update(msg);
-        keccak.digest()
-    }
-
     fn load_fixed_table(&self, layouter: &mut impl Layouter<F>, randomness: F) -> Result<(), Error> {
         layouter.assign_region(
             || "fixed table",
@@ -1286,7 +1283,6 @@ impl<F: FieldExt> MPTConfig<F> {
                     offset += 1;
                 }
 
-                /*
                 for ind in 0..(33 * 255) {
                     region.assign_fixed(
                         || "fixed table",
@@ -1304,7 +1300,6 @@ impl<F: FieldExt> MPTConfig<F> {
 
                     offset += 1;
                 }
-                */
 
                 for ind in 0..16 {
                     region.assign_fixed(
@@ -1451,64 +1446,8 @@ mod tests {
 
                 println!("{:?}", path);
                 // let prover = MockProver::run(9, &circuit, vec![pub_root]).unwrap();
-                let prover = MockProver::run(9, &circuit, instance).unwrap();
+                let prover = MockProver::run(14, &circuit, instance).unwrap();
                 assert_eq!(prover.verify(), Ok(()));
-
-                /*
-                let degree: u32 = 12;
-
-                let rng = XorShiftRng::from_seed([
-                    0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb,
-                    0x37, 0x32, 0x54, 0x06, 0xbc, 0xe5,
-                ]);
-
-                // Bench setup generation
-                let setup_message =
-                    format!("Setup generation with degree = {}", degree);
-                let start1 = start_timer!(|| setup_message);
-                let general_params = Setup::<Bn256>::new(degree, rng);
-                end_timer!(start1);
-
-                let vk = keygen_vk(&general_params, &circuit).unwrap();
-                let pk = keygen_pk(&general_params, vk, &circuit).unwrap();
-
-                // Prove
-                let mut transcript =
-                    Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
-
-                // Bench proof generation time
-                let proof_message =
-                    format!("MPT Proof generation with 2^{} rows", degree);
-                let start2 = start_timer!(|| proof_message);
-                create_proof(
-                    &general_params,
-                    &pk,
-                    &[circuit],
-                    &[&[]],
-                    &mut transcript,
-                )
-                .unwrap();
-                let proof = transcript.finalize();
-                end_timer!(start2);
-
-                // Verify
-                let verifier_params =
-                    Setup::<Bn256>::verifier_params(&general_params, 0)
-                        .unwrap();
-                let mut verifier_transcript =
-                    Blake2bRead::<_, _, Challenge255<_>>::init(&proof[..]);
-
-                // Bench verification time
-                let start3 = start_timer!(|| "MPT Proof verification");
-                verify_proof(
-                    &verifier_params,
-                    pk.get_vk(),
-                    &[&[]],
-                    &mut verifier_transcript,
-                )
-                .unwrap();
-                end_timer!(start3);
-                */
             });
     }
 }

@@ -12,7 +12,7 @@ use crate::{
         compute_rlc, get_is_extension_node, get_is_extension_node_one_nibble,
         mult_diff_lookup, range_lookups,
     },
-    mpt_circuit::{FixedTableTag, MPTConfig, ProofValues},
+    mpt_circuit::{FixedTableTag, MPTConfig, ProofValues, helpers::key_len_lookup},
     mpt_circuit::param::{
         ACCOUNT_DRIFTED_LEAF_IND, ACCOUNT_LEAF_KEY_C_IND, ACCOUNT_LEAF_KEY_S_IND,
         ACCOUNT_LEAF_NONCE_BALANCE_C_IND, ACCOUNT_LEAF_NONCE_BALANCE_S_IND,
@@ -182,7 +182,6 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
         };
 
         /*
-        /*
         Similarly as in account_leaf_key.rs,
         key RLC is computed over `s_main.bytes[1]`, ..., `s_main.bytes[31]` because we do not know
         the key length in advance. To prevent changing the key and setting `s_main.bytes[i]` for
@@ -201,9 +200,8 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
                 fixed_table,
             )
         }
-        key_len_lookup(meta, sel, 32, s_main.bytes[0], c_rlp1, 128, fixed_table);
-        key_len_lookup(meta, sel, 33, s_main.bytes[0], c_rlp2, 128, fixed_table);
-        */
+        key_len_lookup(meta, sel, 32, s_main.bytes[0], c_main.rlp1, 128, fixed_table);
+        key_len_lookup(meta, sel, 33, s_main.bytes[0], c_main.rlp2, 128, fixed_table);
 
         /*
         When the full account RLC is computed (see add_constraints below), we need to know

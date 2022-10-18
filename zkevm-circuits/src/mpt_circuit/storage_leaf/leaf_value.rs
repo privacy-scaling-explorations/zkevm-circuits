@@ -14,7 +14,7 @@ use crate::{
         ACCOUNT_LEAF_ROWS, ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND,
         ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND, BRANCH_ROWS_NUM, HASH_WIDTH,
         LEAF_VALUE_C_IND, LEAF_VALUE_S_IND, IS_BRANCH_S_PLACEHOLDER_POS, RLP_NUM, IS_BRANCH_C_PLACEHOLDER_POS, IS_STORAGE_MOD_POS,
-    }, helpers::get_leaf_len},
+    }, helpers::{get_leaf_len, key_len_lookup}},
     mpt_circuit::witness_row::{MptWitnessRow, MptWitnessRowType}, table::KeccakTable,
 };
 
@@ -882,7 +882,6 @@ impl<F: FieldExt> LeafValueConfig<F> {
         );
 
         /*
-        /*
         There are 0s in `s_main.bytes` after the last value byte.
         */
         for ind in 0..HASH_WIDTH {
@@ -896,7 +895,6 @@ impl<F: FieldExt> LeafValueConfig<F> {
                 fixed_table,
             )
         }
-        */
 
         config
     }

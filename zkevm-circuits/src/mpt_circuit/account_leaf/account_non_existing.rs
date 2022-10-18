@@ -9,7 +9,7 @@ use std::marker::PhantomData;
 use crate::{
     mpt_circuit::columns::{AccumulatorCols, MainCols},
     mpt_circuit::helpers::range_lookups,
-    mpt_circuit::{FixedTableTag, MPTConfig, param::IS_NON_EXISTING_ACCOUNT_POS},
+    mpt_circuit::{FixedTableTag, MPTConfig, param::IS_NON_EXISTING_ACCOUNT_POS, helpers::key_len_lookup},
     mpt_circuit::param::{
         ACCOUNT_NON_EXISTING_IND, BRANCH_ROWS_NUM, HASH_WIDTH, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS,
         RLP_NUM,
@@ -391,7 +391,6 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
         );
 
         /*
-        /*
         Key RLC is computed over all of `s_main.bytes[1], ..., s_main.bytes[31], c_main.rlp1, c_main.rlp2`
         because we do not know the key length in advance.
         To prevent changing the key and setting `s_main.bytes[i]` (or `c_main.rlp1/c_main.rlp2`) for
@@ -420,7 +419,6 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
         }
         key_len_lookup(meta, q_enable, 32, s_main.bytes[0], c_main.rlp1, 128, fixed_table);
         key_len_lookup(meta, q_enable, 33, s_main.bytes[0], c_main.rlp2, 128, fixed_table);
-        */
 
         /*
         Range lookups ensure that `s_main`, `c_main.rlp1`, `c_main.rlp2` columns are all bytes (between 0 - 255).
