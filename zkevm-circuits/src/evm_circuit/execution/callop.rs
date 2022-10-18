@@ -61,7 +61,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
         cb.opcode_lookup(opcode.expr(), 1.expr());
-        let is_call = (OpcodeId::STATICCALL.expr() - opcode.expr()) * F::from(9).invert().unwrap();
+        let is_call = (OpcodeId::STATICCALL.expr() - opcode.expr()) * F::from(OpcodeId::STATICCALL.as_u64() - OpcodeId::CALL.as_u64()).invert().unwrap();
 
         // We do the responsible opcode check explicitly here because we're not
         // using the `SameContextGadget` for `CALL` or `STATICCALL`.
