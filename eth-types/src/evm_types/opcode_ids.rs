@@ -686,6 +686,7 @@ impl OpcodeId {
     }
 
     /// If operation has size returns it, otherwise 0.
+    #[allow(clippy::len_without_is_empty)]
     pub fn len(&self) -> usize {
         if self.is_push() {
             (self.as_u8() - OpcodeId::PUSH1.as_u8() + 1) as usize
