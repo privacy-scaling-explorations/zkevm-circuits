@@ -515,16 +515,6 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         );
     }
 
-    pub(crate) fn pow2_lookup(&mut self, exponent: Expression<F>, exponentiation: Cell<F>) {
-        self.add_lookup(
-            "pow2 lookup",
-            Lookup::Fixed {
-                tag: FixedTableTag::Pow2.expr(),
-                values: [exponent, exponentiation.expr(), 0.expr()],
-            },
-        );
-    }
-
     // Opcode
 
     pub(crate) fn opcode_lookup(&mut self, opcode: Expression<F>, is_code: Expression<F>) {
