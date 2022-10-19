@@ -53,6 +53,10 @@ impl<F: FieldExt> SelectorsConfig<F> {
             let is_leaf_s_value = meta.query_advice(storage_leaf.is_s_value, Rotation::cur());
             let is_leaf_c_key = meta.query_advice(storage_leaf.is_c_key, Rotation::cur());
             let is_leaf_c_value = meta.query_advice(storage_leaf.is_c_value, Rotation::cur());
+            let is_leaf_in_added_branch =
+                meta.query_advice(storage_leaf.is_in_added_branch, Rotation::cur());
+            let is_leaf_non_existing =
+                meta.query_advice(storage_leaf.is_non_existing, Rotation::cur());
 
             let is_account_leaf_key_s = meta.query_advice(account_leaf.is_key_s, Rotation::cur());
             let is_account_leaf_key_c = meta.query_advice(account_leaf.is_key_c, Rotation::cur());
@@ -68,8 +72,6 @@ impl<F: FieldExt> SelectorsConfig<F> {
             let is_account_leaf_in_added_branch =
                 meta.query_advice(account_leaf.is_in_added_branch, Rotation::cur());
 
-            let is_leaf_in_added_branch =
-                meta.query_advice(storage_leaf.is_in_added_branch, Rotation::cur());
             let is_extension_node_s = meta.query_advice(branch.is_extension_node_s, Rotation::cur());
             let is_extension_node_c = meta.query_advice(branch.is_extension_node_c, Rotation::cur());
 
@@ -97,7 +99,7 @@ impl<F: FieldExt> SelectorsConfig<F> {
                 * (is_branch_init_cur.clone() + is_branch_child_cur.clone()
                     + is_extension_node_s.clone() + is_extension_node_c.clone()
                     + is_leaf_s_key.clone() + is_leaf_c_key.clone() + is_leaf_s_value.clone() + is_leaf_c_value.clone()
-                    + is_leaf_in_added_branch.clone()
+                    + is_leaf_in_added_branch.clone() + is_leaf_non_existing.clone()
                     + is_account_leaf_key_s.clone() + is_account_leaf_key_c.clone()
                     + is_non_existing_account_row.clone()
                     + is_account_leaf_nonce_balance_s.clone() + is_account_leaf_nonce_balance_c.clone()
@@ -145,6 +147,15 @@ impl<F: FieldExt> SelectorsConfig<F> {
                 get_bool_constraint(q_enable.clone(), is_leaf_c_value.clone()),
             ));
             constraints.push((
+                "bool check is_leaf_in_added_branch",
+                get_bool_constraint(q_enable.clone(), is_leaf_in_added_branch),
+            ));
+            constraints.push((
+                "bool check is_leaf_non_existing",
+                get_bool_constraint(q_enable.clone(), is_leaf_non_existing),
+            ));
+
+            constraints.push((
                 "bool check is_account_leaf_key_s",
                 get_bool_constraint(q_enable.clone(), is_account_leaf_key_s.clone()),
             ));
@@ -187,11 +198,7 @@ impl<F: FieldExt> SelectorsConfig<F> {
             constraints.push((
                 "bool check is_at_drifted_pos",
                 get_bool_constraint(q_enable.clone(), is_at_drifted_pos),
-            ));
-            constraints.push((
-                "bool check is_leaf_in_added_branch",
-                get_bool_constraint(q_enable.clone(), is_leaf_in_added_branch),
-            ));
+            )); 
             constraints.push((
                 "bool check is_extension_node_s",
                 get_bool_constraint(q_enable.clone(), is_extension_node_s),

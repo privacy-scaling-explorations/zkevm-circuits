@@ -73,7 +73,7 @@ impl<F: FieldExt> ProofChainConfig<F> {
             let is_branch_init = meta.query_advice(is_branch_init, Rotation::cur());
             let is_account_leaf_key_s = meta.query_advice(account_leaf.is_key_s, Rotation::cur());
             let is_storage_leaf_key_s = meta.query_advice(storage_leaf.is_s_key, Rotation::cur());
-            let is_storage_leaf_last_row_prev = meta.query_advice(storage_leaf.is_in_added_branch, Rotation::prev());
+            let is_storage_leaf_last_row_prev = meta.query_advice(storage_leaf.is_non_existing, Rotation::prev());
             let is_account_leaf_last_row_prev = meta.query_advice(account_leaf.is_in_added_branch, Rotation::prev());
 
             let one = Expression::Constant(F::one());

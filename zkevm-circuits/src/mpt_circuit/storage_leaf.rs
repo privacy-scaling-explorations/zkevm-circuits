@@ -21,6 +21,7 @@ pub(crate) struct StorageLeafCols<F> {
      * these row in cases when it is needed too (and
      * constraints happen in this row) */
     pub(crate) is_in_added_branch: Column<Advice>,
+    pub(crate) is_non_existing: Column<Advice>,
     _marker: PhantomData<F>,
 }
 
@@ -32,6 +33,7 @@ impl<F: FieldExt> StorageLeafCols<F> {
             is_c_key: meta.advice_column(),
             is_c_value: meta.advice_column(),
             is_in_added_branch: meta.advice_column(),
+            is_non_existing: meta.advice_column(),
             _marker: PhantomData,
         }
     }
@@ -44,4 +46,5 @@ pub(crate) struct StorageLeaf {
     pub(crate) is_c_key: bool,
     pub(crate) is_c_value: bool,
     pub(crate) is_in_added_branch: bool,
+    pub(crate) is_non_existing: bool,
 }

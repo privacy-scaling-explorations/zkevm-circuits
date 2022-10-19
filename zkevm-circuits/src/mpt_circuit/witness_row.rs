@@ -39,6 +39,7 @@ pub(crate) enum MptWitnessRowType {
     ExtensionNodeS = 16,
     ExtensionNodeC = 17,
     AccountNonExisting = 18,
+    StorageNonExisting = 19,
 }
 
 pub struct MptWitnessRow<F> {
@@ -282,6 +283,18 @@ impl<F: FieldExt> MptWitnessRow<F> {
             offset,
             || Value::known(F::from(storage_leaf.is_c_value as u64)),
         )?;
+        region.assign_advice(
+            || "assign is leaf in added branch".to_string(),
+            mpt_config.storage_leaf.is_in_added_branch,
+            offset,
+            || Value::known(F::from(storage_leaf.is_in_added_branch as u64)),
+        )?;
+        region.assign_advice(
+            || "assign is storage non existing".to_string(),
+            mpt_config.storage_leaf.is_non_existing,
+            offset,
+            || Value::known(F::from(storage_leaf.is_non_existing as u64)),
+        )?;
 
         region.assign_advice(
             || "assign is account leaf key s".to_string(),
@@ -325,13 +338,7 @@ impl<F: FieldExt> MptWitnessRow<F> {
             offset,
             || Value::known(F::from(account_leaf.is_in_added_branch as u64)),
         )?;
-
-        region.assign_advice(
-            || "assign is leaf in added branch".to_string(),
-            mpt_config.storage_leaf.is_in_added_branch,
-            offset,
-            || Value::known(F::from(storage_leaf.is_in_added_branch as u64)),
-        )?;
+ 
         region.assign_advice(
             || "assign is extension node s".to_string(),
             mpt_config.branch.is_extension_node_s,

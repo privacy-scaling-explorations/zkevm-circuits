@@ -1088,6 +1088,8 @@ impl<F: FieldExt> MPTConfig<F> {
                                 storage_leaf.is_c_value = true;
                             } else if row.get_type() == MptWitnessRowType::NeighbouringStorageLeaf {
                                 storage_leaf.is_in_added_branch = true;
+                            } else if row.get_type() == MptWitnessRowType::StorageNonExisting {
+                                storage_leaf.is_non_existing = true;
                             } else if row.get_type() == MptWitnessRowType::ExtensionNodeS {
                                 branch.is_extension_node_s = true;
                             } else if row.get_type() == MptWitnessRowType::ExtensionNodeC {
