@@ -386,7 +386,7 @@ impl<const MAX_TXS: usize, const MAX_CALLDATA: usize> SuperCircuit<Fr, MAX_TXS, 
     /// Returns suitable inputs for the SuperCircuit.
     pub fn instance(&self) -> Vec<Vec<Fr>> {
         // SignVerifyChip -> ECDSAChip -> MainGate instance column
-        let instance = vec![vec![]];
+        let instance = self.pi_circuit.instance();
 
         instance
     }
