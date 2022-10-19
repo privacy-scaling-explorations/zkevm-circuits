@@ -119,6 +119,7 @@ pub struct MPTConfig<F> {
     storage_leaf_value_c: LeafValueConfig<F>,
     storage_leaf_key_in_added_branch: LeafKeyInAddedBranchConfig<F>,
     pub(crate) randomness: F,
+    pub(crate) check_zeros: bool,
     pub(crate) mpt_table: MPTTable,
 }
 
@@ -217,6 +218,7 @@ impl<F: FieldExt> MPTConfig<F> {
         meta: &mut ConstraintSystem<F>,
         power_of_randomness: [Expression<F>; HASH_WIDTH],
         keccak_table: KeccakTable,
+        check_zeros: bool,
     ) -> Self {
         // let _pub_root = meta.instance_column();
         let inter_start_root = meta.advice_column(); // state root before modification - first level S hash needs to be the same as
@@ -335,6 +337,7 @@ impl<F: FieldExt> MPTConfig<F> {
             denoter.sel1,
             denoter.is_node_hashed_s,
             fixed_table,
+            check_zeros,
         );
 
         BranchParallelConfig::<F>::configure(
@@ -346,6 +349,7 @@ impl<F: FieldExt> MPTConfig<F> {
             denoter.sel2,
             denoter.is_node_hashed_c,
             fixed_table,
+            check_zeros,
         );
 
         BranchHashInParentConfig::<F>::configure(
@@ -395,6 +399,7 @@ impl<F: FieldExt> MPTConfig<F> {
             power_of_randomness.clone(),
             fixed_table,
             true,
+            check_zeros,
         );
 
         let ext_node_config_c = ExtensionNodeConfig::<F>::configure(
@@ -418,6 +423,7 @@ impl<F: FieldExt> MPTConfig<F> {
             power_of_randomness.clone(),
             fixed_table,
             false,
+            check_zeros,
         );
 
         ExtensionNodeKeyConfig::<F>::configure(
@@ -430,6 +436,7 @@ impl<F: FieldExt> MPTConfig<F> {
             accumulators.clone(),
             fixed_table,
             power_of_randomness.clone(),
+            check_zeros,
         );
 
         BranchInitConfig::<F>::configure(
@@ -497,6 +504,7 @@ impl<F: FieldExt> MPTConfig<F> {
             power_of_randomness.clone(),
             fixed_table,
             true,
+            check_zeros,
         );
 
         let storage_leaf_key_c = LeafKeyConfig::<F>::configure(
@@ -520,6 +528,7 @@ impl<F: FieldExt> MPTConfig<F> {
             power_of_randomness.clone(),
             fixed_table,
             false,
+            check_zeros,
         );
 
         let storage_leaf_key_in_added_branch = LeafKeyInAddedBranchConfig::<F>::configure(
@@ -539,6 +548,7 @@ impl<F: FieldExt> MPTConfig<F> {
             power_of_randomness.clone(),
             fixed_table,
             keccak_table.clone(),
+            check_zeros,
         );
 
         let storage_leaf_value_s = LeafValueConfig::<F>::configure(
@@ -555,6 +565,7 @@ impl<F: FieldExt> MPTConfig<F> {
             true,
             power_of_randomness[0].clone(),
             fixed_table,
+            check_zeros,
         );
 
         let storage_leaf_value_c = LeafValueConfig::<F>::configure(
@@ -571,6 +582,7 @@ impl<F: FieldExt> MPTConfig<F> {
             false,
             power_of_randomness[0].clone(),
             fixed_table,
+            check_zeros,
         );
 
         let account_leaf_key_s = AccountLeafKeyConfig::<F>::configure(
@@ -592,6 +604,7 @@ impl<F: FieldExt> MPTConfig<F> {
             address_rlc,
             denoter.sel2,
             true,
+            check_zeros,
         );
 
         let account_leaf_key_c = AccountLeafKeyConfig::<F>::configure(
@@ -613,6 +626,7 @@ impl<F: FieldExt> MPTConfig<F> {
             address_rlc,
             denoter.sel2,
             false,
+            check_zeros,
         );
 
         let account_non_existing = AccountNonExistingConfig::<F>::configure(
@@ -634,6 +648,7 @@ impl<F: FieldExt> MPTConfig<F> {
             power_of_randomness.clone(),
             fixed_table,
             address_rlc,
+            check_zeros,
         );
 
         let account_leaf_nonce_balance_s = AccountLeafNonceBalanceConfig::<F>::configure(
@@ -654,6 +669,7 @@ impl<F: FieldExt> MPTConfig<F> {
             denoter.clone(),
             fixed_table,
             true,
+            check_zeros,
         );
 
         let account_leaf_nonce_balance_c = AccountLeafNonceBalanceConfig::<F>::configure(
@@ -674,6 +690,7 @@ impl<F: FieldExt> MPTConfig<F> {
             denoter.clone(),
             fixed_table,
             false,
+            check_zeros,
         );
 
         let account_leaf_storage_codehash_s = AccountLeafStorageCodehashConfig::<F>::configure(
@@ -731,6 +748,7 @@ impl<F: FieldExt> MPTConfig<F> {
             power_of_randomness,
             fixed_table,
             keccak_table.clone(),
+            check_zeros,
         );
 
         let mpt_table = MPTTable {
@@ -778,6 +796,7 @@ impl<F: FieldExt> MPTConfig<F> {
             storage_leaf_value_c,
             storage_leaf_key_in_added_branch,
             randomness,
+            check_zeros,
             mpt_table,
         }
     }
@@ -1283,22 +1302,24 @@ impl<F: FieldExt> MPTConfig<F> {
                     offset += 1;
                 }
 
-                for ind in 0..(33 * 255) {
-                    region.assign_fixed(
-                        || "fixed table",
-                        self.fixed_table[0],
-                        offset,
-                        || Value::known(F::from(FixedTableTag::RangeKeyLen256 as u64)),
-                    )?;
+                if self.check_zeros {
+                    for ind in 0..(33 * 255) {
+                        region.assign_fixed(
+                            || "fixed table",
+                            self.fixed_table[0],
+                            offset,
+                            || Value::known(F::from(FixedTableTag::RangeKeyLen256 as u64)),
+                        )?;
 
-                    region.assign_fixed(
-                        || "fixed table",
-                        self.fixed_table[1],
-                        offset,
-                        || Value::known(F::from(ind as u64)),
-                    )?;
+                        region.assign_fixed(
+                            || "fixed table",
+                            self.fixed_table[1],
+                            offset,
+                            || Value::known(F::from(ind as u64)),
+                        )?;
 
-                    offset += 1;
+                        offset += 1;
+                    }
                 }
 
                 for ind in 0..16 {
@@ -1345,7 +1366,14 @@ impl<F: Field> Circuit<F> for MPTCircuit<F> {
         let keccak_table = KeccakTable::construct(meta);
         let power_of_randomness: [Expression<F>; HASH_WIDTH] = power_of_randomness_from_instance(meta);
 
-        MPTConfig::configure(meta, power_of_randomness, keccak_table)
+        // Some constraints require 2^13 table, for testing purposes these constraints can be disabled
+        // by setting check_zeros to false.
+        // TODO: check_zeros is to be removed once the development is finished
+        let check_zeros = false;
+
+        let mpt_config = MPTConfig::configure(meta, power_of_randomness, keccak_table, check_zeros);
+
+        mpt_config
     }
 
     fn synthesize(
@@ -1446,7 +1474,7 @@ mod tests {
 
                 println!("{:?}", path);
                 // let prover = MockProver::run(9, &circuit, vec![pub_root]).unwrap();
-                let prover = MockProver::run(14, &circuit, instance).unwrap();
+                let prover = MockProver::run(9, &circuit, instance).unwrap();
                 assert_eq!(prover.verify(), Ok(()));
             });
     }

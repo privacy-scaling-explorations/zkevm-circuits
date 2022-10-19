@@ -99,6 +99,7 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
         address_rlc: Column<Advice>,
         sel2: Column<Advice>,
         is_s: bool,
+        check_zeros: bool,
     ) -> Self {
         let config = AccountLeafKeyConfig {
             _marker: PhantomData,
@@ -183,19 +184,21 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
         which makes a RLP to start with 248 (s_rlp1) and having one byte (in s_rlp2)
         for the length of the remaining stream.
         */
-        for ind in 1..HASH_WIDTH {
-            key_len_lookup(
-                meta,
-                q_enable,
-                ind,
-                s_main.bytes[0],
-                s_main.bytes[ind],
-                128,
-                fixed_table,
-            )
+        if check_zeros {
+            for ind in 1..HASH_WIDTH {
+                key_len_lookup(
+                    meta,
+                    q_enable,
+                    ind,
+                    s_main.bytes[0],
+                    s_main.bytes[ind],
+                    128,
+                    fixed_table,
+                )
+            }
+            key_len_lookup(meta, q_enable, 32, s_main.bytes[0], c_main.rlp1, 128, fixed_table);
+            key_len_lookup(meta, q_enable, 33, s_main.bytes[0], c_main.rlp2, 128, fixed_table);
         }
-        key_len_lookup(meta, q_enable, 32, s_main.bytes[0], c_main.rlp1, 128, fixed_table);
-        key_len_lookup(meta, q_enable, 33, s_main.bytes[0], c_main.rlp2, 128, fixed_table);
 
         /*
         When the account intermediate RLC is computed in the next row (nonce balance row), we need

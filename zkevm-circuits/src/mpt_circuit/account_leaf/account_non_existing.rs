@@ -102,6 +102,7 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
         power_of_randomness: [Expression<F>; HASH_WIDTH],
         fixed_table: [Column<Fixed>; 3],
         address_rlc: Column<Advice>,
+        check_zeros: bool,
     ) -> Self {
         let config = AccountNonExistingConfig {
             _marker: PhantomData,
@@ -406,19 +407,21 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
         which makes a RLP to start with 248 (`s_rlp1`) and having one byte (in `s_rlp2`)
         for the length of the remaining stream.
         */
-        for ind in 1..HASH_WIDTH {
-            key_len_lookup(
-                meta,
-                q_enable,
-                ind,
-                s_main.bytes[0],
-                s_main.bytes[ind],
-                128,
-                fixed_table,
-            )
+        if check_zeros {
+            for ind in 1..HASH_WIDTH {
+                key_len_lookup(
+                    meta,
+                    q_enable,
+                    ind,
+                    s_main.bytes[0],
+                    s_main.bytes[ind],
+                    128,
+                    fixed_table,
+                )
+            }
+            key_len_lookup(meta, q_enable, 32, s_main.bytes[0], c_main.rlp1, 128, fixed_table);
+            key_len_lookup(meta, q_enable, 33, s_main.bytes[0], c_main.rlp2, 128, fixed_table);
         }
-        key_len_lookup(meta, q_enable, 32, s_main.bytes[0], c_main.rlp1, 128, fixed_table);
-        key_len_lookup(meta, q_enable, 33, s_main.bytes[0], c_main.rlp2, 128, fixed_table);
 
         /*
         Range lookups ensure that `s_main`, `c_main.rlp1`, `c_main.rlp2` columns are all bytes (between 0 - 255).

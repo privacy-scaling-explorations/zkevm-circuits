@@ -115,6 +115,7 @@ impl<F: FieldExt> LeafValueConfig<F> {
         is_s: bool,
         randomness: Expression<F>,
         fixed_table: [Column<Fixed>; 3],
+        check_zeros: bool,
     ) -> Self {
         let config = LeafValueConfig {
             _marker: PhantomData,
@@ -884,16 +885,18 @@ impl<F: FieldExt> LeafValueConfig<F> {
         /*
         There are 0s in `s_main.bytes` after the last value byte.
         */
-        for ind in 0..HASH_WIDTH {
-            key_len_lookup(
-                meta,
-                sel,
-                ind + 1,
-                s_main.rlp2,
-                s_main.bytes[ind],
-                128,
-                fixed_table,
-            )
+        if check_zeros {
+            for ind in 0..HASH_WIDTH {
+                key_len_lookup(
+                    meta,
+                    sel,
+                    ind + 1,
+                    s_main.rlp2,
+                    s_main.bytes[ind],
+                    128,
+                    fixed_table,
+                )
+            }
         }
 
         config

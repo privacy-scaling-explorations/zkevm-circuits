@@ -70,6 +70,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
         power_of_randomness: [Expression<F>; HASH_WIDTH],
         fixed_table: [Column<Fixed>; 3],
         keccak_table: KeccakTable,
+        check_zeros: bool,
     ) -> Self {
         let config = LeafKeyInAddedBranchConfig {
             _marker: PhantomData,
@@ -250,30 +251,31 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
         There are 0s in `s_main.bytes` after the last key nibble (this does not need to be checked
         for `last_level` and `one_nibble` as in these cases `s_main.bytes` are not used).
         */
-        for ind in 0..HASH_WIDTH {
-            key_len_lookup(
-                meta,
-                sel_short,
-                ind + 1,
-                s_main.rlp2,
-                s_main.bytes[ind],
-                128,
-                fixed_table,
-            )
+        if check_zeros {
+            for ind in 0..HASH_WIDTH {
+                key_len_lookup(
+                    meta,
+                    sel_short,
+                    ind + 1,
+                    s_main.rlp2,
+                    s_main.bytes[ind],
+                    128,
+                    fixed_table,
+                )
+            }
+            for ind in 1..HASH_WIDTH {
+                key_len_lookup(
+                    meta,
+                    sel_long,
+                    ind,
+                    s_main.bytes[0],
+                    s_main.bytes[ind],
+                    128,
+                    fixed_table,
+                )
+            }
+            key_len_lookup(meta, sel_long, 32, s_main.bytes[0], c_main.rlp1, 128, fixed_table);
         }
-
-        for ind in 1..HASH_WIDTH {
-            key_len_lookup(
-                meta,
-                sel_long,
-                ind,
-                s_main.bytes[0],
-                s_main.bytes[ind],
-                128,
-                fixed_table,
-            )
-        }
-        key_len_lookup(meta, sel_long, 32, s_main.bytes[0], c_main.rlp1, 128, fixed_table);
 
         /*
         The intermediate RLC value of this row is stored in `accumulators.acc_s.rlc`.

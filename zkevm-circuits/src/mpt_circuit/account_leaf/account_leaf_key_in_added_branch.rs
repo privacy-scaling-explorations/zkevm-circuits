@@ -75,6 +75,7 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
         power_of_randomness: [Expression<F>; HASH_WIDTH],
         fixed_table: [Column<Fixed>; 3],
         keccak_table: KeccakTable,
+        check_zeros: bool,
     ) -> Self {
         let config = AccountLeafKeyInAddedBranchConfig {
             _marker: PhantomData,
@@ -189,19 +190,21 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
         `s_main.bytes[i] = 0` for `i > key_len + 1`.
         The key can also appear in `c_main.rlp1` and `c_main.rlp2`, so we need to check these two columns too.
         */
-        for ind in 1..HASH_WIDTH {
-            key_len_lookup(
-                meta,
-                q_enable,
-                ind,
-                s_main.bytes[0],
-                s_main.bytes[ind],
-                128,
-                fixed_table,
-            )
+        if check_zeros {
+            for ind in 1..HASH_WIDTH {
+                key_len_lookup(
+                    meta,
+                    q_enable,
+                    ind,
+                    s_main.bytes[0],
+                    s_main.bytes[ind],
+                    128,
+                    fixed_table,
+                )
+            }
+            key_len_lookup(meta, sel, 32, s_main.bytes[0], c_main.rlp1, 128, fixed_table);
+            key_len_lookup(meta, sel, 33, s_main.bytes[0], c_main.rlp2, 128, fixed_table);
         }
-        key_len_lookup(meta, sel, 32, s_main.bytes[0], c_main.rlp1, 128, fixed_table);
-        key_len_lookup(meta, sel, 33, s_main.bytes[0], c_main.rlp2, 128, fixed_table);
 
         /*
         When the full account RLC is computed (see add_constraints below), we need to know

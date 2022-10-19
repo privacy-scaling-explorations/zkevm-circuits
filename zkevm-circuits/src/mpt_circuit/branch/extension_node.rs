@@ -164,6 +164,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
         power_of_randomness: [Expression<F>; HASH_WIDTH],
         fixed_table: [Column<Fixed>; 3],
         is_s: bool,
+        check_zeros: bool,
     ) -> Self {
         let config = ExtensionNodeConfig {
             _marker: PhantomData,
@@ -860,16 +861,18 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
         /*
         There are 0s after non-hashed branch ends in `c_main.bytes`.
         */
-        for ind in 1..HASH_WIDTH {
-            key_len_lookup(
-                meta,
-                sel_branch_non_hashed,
-                ind,
-                c_main.bytes[0],
-                c_main.bytes[ind],
-                192,
-                fixed_table,
-            )
+        if check_zeros {
+            for ind in 1..HASH_WIDTH {
+                key_len_lookup(
+                    meta,
+                    sel_branch_non_hashed,
+                    ind,
+                    c_main.bytes[0],
+                    c_main.bytes[ind],
+                    192,
+                    fixed_table,
+                )
+            }
         }
 
         /*

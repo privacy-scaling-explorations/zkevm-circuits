@@ -107,6 +107,7 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
         accs: AccumulatorCols<F>, // accs.key used first for account address, then for storage key
         fixed_table: [Column<Fixed>; 3],
         power_of_randomness: [Expression<F>; HASH_WIDTH],
+        check_zeros: bool,
     ) -> Self {
         let config = ExtensionNodeKeyConfig {
             _marker: PhantomData,
@@ -975,18 +976,20 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
         `s_main.bytes` need to be 0 (the only nibble is in `s_main.rlp2`) - this is checked
         separately.
         */
-        for ind in 1..HASH_WIDTH {
-            key_len_lookup(
-                meta,
-                sel_long,
-                ind,
-                s_main.bytes[0],
-                s_main.bytes[ind],
-                128,
-                fixed_table,
-            )
+        if check_zeros {
+            for ind in 1..HASH_WIDTH {
+                key_len_lookup(
+                    meta,
+                    sel_long,
+                    ind,
+                    s_main.bytes[0],
+                    s_main.bytes[ind],
+                    128,
+                    fixed_table,
+                )
+            }
+            key_len_lookup(meta, sel_long, 32, s_main.bytes[0], c_main.rlp1, 128, fixed_table);
         }
-        key_len_lookup(meta, sel_long, 32, s_main.bytes[0], c_main.rlp1, 128, fixed_table);
 
         let sel_s = |meta: &mut VirtualCells<F>| {
             let is_extension_s_row = meta.query_advice(branch.is_extension_node_s, Rotation::cur());

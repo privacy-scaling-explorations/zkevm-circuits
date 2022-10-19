@@ -85,6 +85,7 @@ impl<F: FieldExt> BranchParallelConfig<F> {
         sel: Column<Advice>,
         is_node_hashed: Column<Advice>,
         fixed_table: [Column<Fixed>; 3],
+        check_zeros: bool,
     ) -> Self {
         let config = BranchParallelConfig {
             _marker: PhantomData,
@@ -278,16 +279,18 @@ impl<F: FieldExt> BranchParallelConfig<F> {
         in `main.bytes` stay unused. But we need to ensure there are 0s at unused positions to avoid
         attacks on the RLC which is computed taking into account all `main.bytes`.
         */
-        for ind in 1..HASH_WIDTH {
-            key_len_lookup(
-                meta,
-                sel,
-                ind,
-                main.bytes[0],
-                main.bytes[ind],
-                192,
-                fixed_table,
-            )
+        if check_zeros {
+            for ind in 1..HASH_WIDTH {
+                key_len_lookup(
+                    meta,
+                    sel,
+                    ind,
+                    main.bytes[0],
+                    main.bytes[ind],
+                    192,
+                    fixed_table,
+                )
+            }
         }
 
         config

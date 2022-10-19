@@ -82,6 +82,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
         denoter: DenoteCols<F>,
         fixed_table: [Column<Fixed>; 3],
         is_s: bool,
+        check_zeros: bool,
     ) -> Self {
         let config = AccountLeafNonceBalanceConfig {
             _marker: PhantomData,
@@ -692,16 +693,18 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
         `i > nonce_len + 1` to get the correct nonce RLC, we need to ensure that
         `s_main.bytes[i] = 0` for `i > nonce_len + 1`.
         */
-        for ind in 1..HASH_WIDTH {
-            key_len_lookup(
-                meta,
-                q_enable,
-                ind,
-                s_main.bytes[0],
-                s_main.bytes[ind],
-                128,
-                fixed_table,
-            )
+        if check_zeros {
+            for ind in 1..HASH_WIDTH {
+                key_len_lookup(
+                    meta,
+                    q_enable,
+                    ind,
+                    s_main.bytes[0],
+                    s_main.bytes[ind],
+                    128,
+                    fixed_table,
+                )
+            }
         }
 
         let q_enable_balance_long = |meta: &mut VirtualCells<F>| {
@@ -742,16 +745,18 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
         `i > balance_len + 1` to get the correct balance RLC, we need to ensure that
         `c_main.bytes[i] = 0` for `i > balance_len + 1`.
         */
-        for ind in 1..HASH_WIDTH {
-            key_len_lookup(
-                meta,
-                q_enable,
-                ind,
-                c_main.bytes[0],
-                c_main.bytes[ind],
-                128,
-                fixed_table,
-            )
+        if check_zeros {
+            for ind in 1..HASH_WIDTH {
+                key_len_lookup(
+                    meta,
+                    q_enable,
+                    ind,
+                    c_main.bytes[0],
+                    c_main.bytes[ind],
+                    128,
+                    fixed_table,
+                )
+            }
         }
 
         /*
