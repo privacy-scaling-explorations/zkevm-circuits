@@ -946,7 +946,7 @@ fn raw_public_inputs_col<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usi
 
     // Insert Tx table
     offset = 0;
-    assert!(txs.len() < MAX_TXS);
+    assert!(txs.len() <= MAX_TXS);
     let tx_default = TxValues::default();
 
     let tx_table_len = TX_LEN * MAX_TXS + 1 + MAX_CALLDATA;
