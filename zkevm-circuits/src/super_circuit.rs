@@ -72,6 +72,7 @@ use halo2_proofs::halo2curves::{
     group::{Curve, Group},
     secp256k1::Secp256k1Affine,
 };
+use halo2_proofs::plonk::{Column, Instance};
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
     plonk::{Circuit, ConstraintSystem, Error, Expression},
@@ -100,6 +101,7 @@ pub struct SuperCircuitConfig<F: Field, const MAX_TXS: usize, const MAX_CALLDATA
     copy_circuit: CopyCircuit<F>,
     keccak_circuit: KeccakConfig<F>,
     pi_circuit: PiCircuitConfig<F, MAX_TXS, MAX_CALLDATA>,
+    pi: Column<Instance>,
 }
 
 /// The Super Circuit contains all the zkEVM circuits
@@ -180,6 +182,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
         let state_circuit =
             StateCircuitConfig::configure(meta, power_of_randomness.clone(), &rw_table, &mpt_table);
         let pi_circuit = PiCircuitConfig::new(meta, block_table.clone(), tx_table.clone());
+        let pi = pi_circuit.pi();
         let challenges = Challenges::mock(power_of_randomness[0].clone());
 
         Self::Config {
@@ -214,6 +217,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
             ),
             keccak_circuit,
             pi_circuit,
+            pi,
         }
     }
 
