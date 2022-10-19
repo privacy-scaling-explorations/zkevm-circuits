@@ -300,11 +300,6 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
         }
     }
 
-    /// Returns the PI column of the circuit
-    pub fn pi(&self) -> Column<Instance> {
-        self.pi.clone()
-    }
-
     /// Return the number of rows in the circuit
     #[inline]
     fn circuit_len() -> usize {
