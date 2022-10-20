@@ -723,7 +723,10 @@ mod tests {
         // Now add the different push ops
         for n in 1..=32 {
             let data_byte = OpcodeId::PUSH32.as_u8();
-            bytecode.push(n, Word::from_little_endian(&vec![data_byte; n][..]));
+            bytecode.push(
+                n,
+                Word::from_little_endian(&vec![data_byte; n as usize][..]),
+            );
             rows.push(BytecodeRow {
                 code_hash: Word::zero(),
                 tag: Fr::from(BytecodeFieldTag::Byte as u64),

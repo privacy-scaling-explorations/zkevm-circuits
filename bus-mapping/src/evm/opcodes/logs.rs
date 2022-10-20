@@ -99,12 +99,12 @@ fn gen_log_step(
 
     // generates topic operation dynamically
     let topic_count = match exec_step.exec_state {
-        ExecState::Op(op_id) => op_id.len(),
+        ExecState::Op(op_id) => op_id.postfix().unwrap(),
         _ => panic!("currently only handle successful log state"),
     };
 
     for i in 0..topic_count {
-        let topic = geth_step.stack.nth_last(2 + i)?;
+        let topic = geth_step.stack.nth_last(2 + i as usize)?;
         state.stack_read(
             &mut exec_step,
             geth_step.stack.nth_last_filled(stack_index + 1),
@@ -118,7 +118,7 @@ fn gen_log_step(
                 state.tx_ctx.id(),
                 state.tx_ctx.log_id + 1,
                 TxLogField::Topic,
-                i,
+                i as usize,
                 topic,
             )?;
         }

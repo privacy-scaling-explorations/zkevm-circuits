@@ -677,7 +677,7 @@ impl OpcodeId {
     }
 
     /// Returns PUSHn opcode from parameter n.
-    pub fn push_n(n: usize) -> Result<Self, Error> {
+    pub fn push_n(n: u8) -> Result<Self, Error> {
         if (1..=32).contains(&n) {
             Ok(OpcodeId::try_from(OpcodeId::PUSH1.as_u8() + ((n - 1) as u8)).unwrap())
         } else {
@@ -685,17 +685,26 @@ impl OpcodeId {
         }
     }
 
-    /// If operation has size returns it, otherwise 0.
-    #[allow(clippy::len_without_is_empty)]
-    pub fn len(&self) -> usize {
+    /// If operation has postfix returns it, otherwise None.
+    pub fn postfix(&self) -> Option<u8> {
+        if self.is_push() {
+            Some(self.as_u8() - OpcodeId::PUSH1.as_u8() + 1)
+        } else if self.is_dup() {
+            Some(self.as_u8() - OpcodeId::DUP1.as_u8() + 1)
+        } else if self.is_swap() {
+            Some(self.as_u8() - OpcodeId::SWAP1.as_u8() + 1)
+        } else if self.is_log() {
+            Some(self.as_u8() - OpcodeId::LOG0.as_u8())
+        } else {
+            None
+        }
+    }
+
+    /// returns number of bytes used by immediate date, this is only > 0 for
+    /// push opcodes
+    pub fn data_len(&self) -> usize {
         if self.is_push() {
             (self.as_u8() - OpcodeId::PUSH1.as_u8() + 1) as usize
-        } else if self.is_dup() {
-            (self.as_u8() - OpcodeId::DUP1.as_u8() + 1) as usize
-        } else if self.is_swap() {
-            (self.as_u8() - OpcodeId::SWAP1.as_u8() + 1) as usize
-        } else if self.is_log() {
-            (self.as_u8() - OpcodeId::LOG0.as_u8()) as usize
         } else {
             0
         }

@@ -48,9 +48,9 @@ impl Bytecode {
 
             if is_code {
                 let op = OpcodeId::try_from(*byte).unwrap();
-                if op.is_push() {
-                    push_data_left = op.len();
-                }
+
+                // push_data_left will be > 0 only if it is a push opcode
+                push_data_left = op.data_len();
             } else {
                 push_data_left -= 1;
             }

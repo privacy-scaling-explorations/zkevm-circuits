@@ -208,7 +208,7 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
             .assign(region, offset, step.memory_word_size(), [memory_address])?;
 
         let opcode = step.opcode.unwrap();
-        let topic_count = opcode.len();
+        let topic_count = opcode.postfix().unwrap();
         assert!(topic_count <= 4);
 
         let is_persistent = call.is_persistent as u64;
@@ -226,12 +226,12 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
                     block.rws[topic_stack_entry].stack_value().to_le_bytes(),
                     block.randomness,
                 );
-                self.topic_selectors[i].assign(region, offset, Value::known(F::one()))?;
+                self.topic_selectors[i as usize].assign(region, offset, Value::known(F::one()))?;
                 topic_stack_entry.1 += 1;
             } else {
-                self.topic_selectors[i].assign(region, offset, Value::known(F::zero()))?;
+                self.topic_selectors[i as usize].assign(region, offset, Value::known(F::zero()))?;
             }
-            self.topics[i].assign(region, offset, Value::known(topic))?;
+            self.topics[i as usize].assign(region, offset, Value::known(topic))?;
         }
 
         self.contract_address.assign(

@@ -129,12 +129,12 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
         self.value
             .assign(region, offset, Some(value.to_le_bytes()))?;
 
-        let num_additional_pushed = opcode.len() - 1; // are we sure it is -1
+        let num_additional_pushed = opcode.postfix().unwrap() - 1; // are we sure it is -1?
         for (idx, selector) in self.selectors.iter().enumerate() {
             selector.assign(
                 region,
                 offset,
-                Value::known(F::from((idx < num_additional_pushed) as u64)),
+                Value::known(F::from((idx < num_additional_pushed as usize) as u64)),
             )?;
         }
 
@@ -150,7 +150,7 @@ mod test {
     use mock::TestContext;
 
     fn test_ok(opcode: OpcodeId, bytes: &[u8]) {
-        assert!(bytes.len() == opcode.len(),);
+        assert!(bytes.len() == opcode.data_len(),);
 
         let mut bytecode = bytecode! {
             .write_op(opcode)
@@ -239,7 +239,7 @@ mod test {
     }
 
     fn test_stack_overflow(opcode: OpcodeId, bytes: &[u8]) {
-        assert!(bytes.len() == opcode.len(),);
+        assert!(bytes.len() == opcode.data_len(),);
 
         let mut bytecode = bytecode! {
             .write_op(opcode)
