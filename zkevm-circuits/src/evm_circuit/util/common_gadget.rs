@@ -139,8 +139,6 @@ impl<F: Field> RestoreContextGadget<F> {
             cb.call_context_lookup(true.expr(), Some(caller_id.expr()), field_tag, value);
         }
 
-        // TODO: look up definition of is_create. we only want to deduct this cost in
-        // the case of a contract deployment. not sure if that's what goes on here.
         let code_deposit_cost = cb.curr.state.is_create.expr() * 200.expr() * return_data_length;
 
         let gas_refund = if cb.execution_state().halts_in_exception() {
