@@ -397,7 +397,6 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
                 ),
                 (
                     CallContextField::CallDataLength,
-                    // call.call_data_length.into(),
                     state.tx.input.len().into(),
                 ),
                 (CallContextField::Value, call.value),

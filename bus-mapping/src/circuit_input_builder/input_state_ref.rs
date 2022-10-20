@@ -16,7 +16,9 @@ use crate::{
     Error,
 };
 use eth_types::{
-    evm_types::{gas_utils::memory_expansion_gas_cost, Gas, MemoryAddress, OpcodeId, StackAddress},
+    evm_types::{
+        gas_utils::memory_expansion_gas_cost, Gas, GasCost, MemoryAddress, OpcodeId, StackAddress,
+    },
     Address, GethExecStep, ToAddress, ToBigEndian, ToWord, Word, H256,
 };
 use ethers_core::utils::{get_contract_address, get_create2_address};
@@ -871,7 +873,7 @@ impl<'a> CircuitInputStateRef<'a> {
         let memory_expansion_gas_cost =
             memory_expansion_gas_cost(curr_memory_word_size, next_memory_word_size);
         let code_deposit_cost = if call.is_create() {
-            200 * last_callee_return_data_length.as_u64()
+            GasCost::CODE_DEPOSIT_BYTE_COST.as_u64() * last_callee_return_data_length.as_u64()
         } else {
             0
         };
