@@ -218,7 +218,7 @@ pub(crate) struct ExecutionConfig<F> {
     extcodecopy_gadget: DummyGadget<F, 4, 0, { ExecutionState::EXTCODECOPY }>,
     returndatasize_gadget: DummyGadget<F, 0, 1, { ExecutionState::RETURNDATASIZE }>,
     returndatacopy_gadget: DummyGadget<F, 3, 0, { ExecutionState::RETURNDATACOPY }>,
-    create_gadget: DummyGadget<F, 0, 0, { ExecutionState::CREATE }>,
+    create_gadget: DummyGadget<F, 3, 1, { ExecutionState::CREATE }>,
     callcode_gadget: DummyGadget<F, 7, 1, { ExecutionState::CALLCODE }>,
     delegatecall_gadget: DummyGadget<F, 6, 1, { ExecutionState::DELEGATECALL }>,
     create2_gadget: DummyGadget<F, 4, 1, { ExecutionState::CREATE2 }>,

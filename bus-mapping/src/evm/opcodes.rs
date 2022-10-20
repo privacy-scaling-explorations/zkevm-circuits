@@ -377,9 +377,6 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
     ) {
         // 1. Creation transaction.
         (true, _, _) => {
-            warn!("Creation transaction is left unimplemented");
-            dbg!("Creation transaction is left unimplemented");
-
             state.account_read(
                 &mut exec_step,
                 call.address,
@@ -387,10 +384,6 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
                 call.code_hash.to_word(),
                 call.code_hash.to_word(),
             )?;
-
-            // somehow there's another missing one here?????
-            dbg!(call.call_data_length);
-            dbg!(&state.tx);
             for (field, value) in [
                 (CallContextField::Depth, call.depth.into()),
                 (
