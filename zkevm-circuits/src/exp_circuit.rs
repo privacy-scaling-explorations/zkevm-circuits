@@ -3,7 +3,7 @@
 use eth_types::{Field, ToScalar, U256};
 use gadgets::{
     mul_add::{MulAddChip, MulAddConfig},
-    util::{and, not, or, Expr},
+    util::{and, not, Expr},
 };
 use halo2_proofs::{
     circuit::{Layouter, Region, Value},
@@ -118,17 +118,18 @@ impl<F: Field> ExpCircuit<F> {
                 meta.query_advice(exp_table.is_step, Rotation::cur()),
             );
 
+            // is_last is boolean.
+            cb.require_boolean(
+                "is_last is boolean",
+                meta.query_advice(exp_table.is_last, Rotation::cur()),
+            );
+
             cb.gate(meta.query_selector(q_usable))
         });
 
         meta.create_gate("verify all steps", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
-            // is_last is boolean.
-            cb.require_boolean(
-                "is_last is boolean",
-                meta.query_advice(exp_table.is_last, Rotation::cur()),
-            );
             // For every step, the intermediate exponentiation MUST equal the result of
             // the corresponding multiplication.
             cb.require_equal(
@@ -145,11 +146,12 @@ impl<F: Field> ExpCircuit<F> {
             // For every step, the MulAddChip's `c` MUST be 0, considering the equation `a *
             // b + c == d` applied ONLY for multiplication.
             cb.require_zero(
-                "mul_gadget.c == 0",
-                or::expr([
-                    meta.query_advice(mul_gadget.col0, Rotation(2)),
-                    meta.query_advice(mul_gadget.col1, Rotation(2)),
-                ]),
+                "mul_gadget.c == 0 (lo)",
+                meta.query_advice(mul_gadget.col0, Rotation(2)),
+            );
+            cb.require_zero(
+                "mul_gadget.c == 0 (hi)",
+                meta.query_advice(mul_gadget.col1, Rotation(2)),
             );
 
             // The odd/even assignment is boolean.
