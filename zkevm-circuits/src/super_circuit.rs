@@ -340,7 +340,7 @@ impl<const MAX_TXS: usize, const MAX_CALLDATA: usize> SuperCircuit<Fr, MAX_TXS, 
 
         let aux_generator = <Secp256k1Affine as CurveAffine>::CurveExt::random(rng).to_affine();
         let chain_id = block.context.chain_id;
-        let tx_circuit = TxCircuit::new(aux_generator, chain_id.as_u64(), txs.clone());
+        let tx_circuit = TxCircuit::new(aux_generator, chain_id.as_u64(), txs);
 
         // NOTE: There is no implemented From<U256> for U64
         let into_u64 = |val: eth_types::Word| -> U64 {
