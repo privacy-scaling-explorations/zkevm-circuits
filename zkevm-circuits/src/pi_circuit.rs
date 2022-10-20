@@ -3,7 +3,6 @@
 use std::marker::PhantomData;
 
 use eth_types::geth_types::BlockConstants;
-use eth_types::geth_types::GethData;
 use eth_types::sign_types::SignData;
 use eth_types::H256;
 use eth_types::{
@@ -63,41 +62,25 @@ pub struct ExtraValues {
 }
 
 /// PublicData contains all the values that the PiCircuit recieves as input
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct PublicData {
-    /// List of tranactions
-    pub txs: Vec<Transaction>,
-    /// Information of Ethereum block
-    pub extra: GethData,
+    /// chain id
+    pub chain_id: Word,
+    /// History hashes contains the most recent 256 block hashes in history,
+    /// where the latest one is at history_hashes[history_hashes.len() - 1].
+    pub history_hashes: Vec<Word>,
+    /// Block from geth
+    pub eth_block: Block<eth_types::Transaction>,
     /// Constants related to Ethereum block
     pub block_constants: BlockConstants,
     /// Previous block root
     pub prev_state_root: H256,
 }
 
-impl Default for PublicData {
-    fn default() -> Self {
-        let geth_data = GethData {
-            chain_id: Word::default(),
-            history_hashes: Vec::default(),
-            eth_block: Block::default(),
-            geth_traces: Vec::default(),
-            accounts: Vec::default(),
-        };
-        Self {
-            txs: Vec::new(),
-            extra: geth_data,
-            block_constants: BlockConstants::default(),
-            prev_state_root: H256::default(),
-        }
-    }
-}
-
 impl PublicData {
     /// Returns struct with values for the block table
     pub fn get_block_table_values(&self) -> BlockValues {
         let mut history_hashes: Vec<H256> = self
-            .extra
             .history_hashes
             .iter()
             .map(|&hash| H256::from(hash.to_be_bytes()))
@@ -110,7 +93,7 @@ impl PublicData {
             timestamp: self.block_constants.timestamp.as_u64(),
             difficulty: self.block_constants.difficulty,
             base_fee: self.block_constants.base_fee,
-            chain_id: self.extra.chain_id.as_u64(),
+            chain_id: self.chain_id.as_u64(),
             history_hashes,
         }
     }
@@ -118,12 +101,11 @@ impl PublicData {
     /// Returns struct with values for the tx table
     pub fn get_tx_table_values(&self) -> Vec<TxValues> {
         let chain_id: u64 = self
-            .extra
             .chain_id
             .try_into()
             .expect("Error converting chain_id to u64");
         let mut tx_vals = vec![];
-        for tx in &self.txs {
+        for tx in &self.txs() {
             let sign_data: SignData = tx
                 .sign_data(chain_id)
                 .expect("Error computing tx_sign_hash");
@@ -147,10 +129,18 @@ impl PublicData {
     /// Returns struct with the extra values
     pub fn get_extra_values(&self) -> ExtraValues {
         ExtraValues {
-            // block_hash: self.extra.eth_block.hash.unwrap_or_else(H256::zero),
-            state_root: self.extra.eth_block.state_root,
+            // block_hash: self.eth_block.hash.unwrap_or_else(H256::zero),
+            state_root: self.eth_block.state_root,
             prev_state_root: self.prev_state_root,
         }
+    }
+
+    fn txs(&self) -> Vec<Transaction> {
+        self.eth_block
+            .transactions
+            .iter()
+            .map(Transaction::from)
+            .collect()
     }
 }
 
@@ -664,7 +654,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
 }
 
 /// Public Inputs Circuit
-#[derive(Default)]
+#[derive(Clone, Default, Debug)]
 pub struct PiCircuit<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> {
     /// Randomness for RLC encdoing
     pub randomness: F,
@@ -785,7 +775,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
                 }
                 // Tx Table CallData
                 let mut calldata_count = 0;
-                for (i, tx) in self.public_data.txs.iter().enumerate() {
+                for (i, tx) in self.public_data.txs().iter().enumerate() {
                     for (index, byte) in tx.call_data.0.iter().enumerate() {
                         assert!(calldata_count < MAX_CALLDATA);
                         config.assign_tx_row(
@@ -837,6 +827,161 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
     }
 }
 
+impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
+    PiCircuit<F, MAX_TXS, MAX_CALLDATA>
+{
+    /// Compute the public inputs for this circuit.
+    pub fn instance(&self) -> Vec<Vec<F>> {
+        let rlc_rpi_col =
+            raw_public_inputs_col::<F, MAX_TXS, MAX_CALLDATA>(&self.public_data, self.randomness);
+        assert_eq!(
+            rlc_rpi_col.len(),
+            BLOCK_LEN + 1 + EXTRA_LEN + 3 * (TX_LEN * MAX_TXS + 1 + MAX_CALLDATA)
+        );
+
+        // Computation of raw_pulic_inputs
+        let rlc_rpi = rlc_rpi_col
+            .iter()
+            .rev()
+            .fold(F::zero(), |acc, val| acc * self.rand_rpi + val);
+
+        // let block_hash = public_data
+        //     .eth_block
+        //     .hash
+        //     .unwrap_or_else(H256::zero)
+        //     .to_fixed_bytes();
+
+        let public_inputs = vec![
+            self.rand_rpi,
+            rlc_rpi,
+            F::from(self.public_data.chain_id.as_u64()),
+            rlc(
+                self.public_data.eth_block.state_root.to_fixed_bytes(),
+                self.randomness,
+            ),
+            rlc(
+                self.public_data.prev_state_root.to_fixed_bytes(),
+                self.randomness,
+            ),
+        ];
+
+        vec![public_inputs]
+    }
+}
+
+/// Compute the raw_public_inputs column from the verifier's perspective.
+fn raw_public_inputs_col<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>(
+    public_data: &PublicData,
+    randomness: F, // For RLC encoding
+) -> Vec<F> {
+    let block = public_data.get_block_table_values();
+    let extra = public_data.get_extra_values();
+    let txs = public_data.get_tx_table_values();
+
+    let mut offset = 0;
+    let mut result =
+        vec![F::zero(); BLOCK_LEN + 1 + EXTRA_LEN + 3 * (TX_LEN * MAX_TXS + 1 + MAX_CALLDATA)];
+
+    //  Insert Block Values
+    // zero row
+    result[offset] = F::zero();
+    offset += 1;
+    // coinbase
+    let mut coinbase_bytes = [0u8; 32];
+    coinbase_bytes[12..].clone_from_slice(block.coinbase.as_bytes());
+    result[offset] = rlc(coinbase_bytes, randomness);
+    offset += 1;
+    // gas_limit
+    result[offset] = F::from(block.gas_limit);
+    offset += 1;
+    // number
+    result[offset] = F::from(block.number);
+    offset += 1;
+    // timestamp
+    result[offset] = F::from(block.timestamp);
+    offset += 1;
+    // difficulty
+    result[offset] = rlc(block.difficulty.to_le_bytes(), randomness);
+    offset += 1;
+    // base_fee
+    result[offset] = rlc(block.base_fee.to_le_bytes(), randomness);
+    offset += 1;
+    // chain_id
+    result[offset] = F::from(block.chain_id);
+    offset += 1;
+    // Previous block hashes
+    for prev_hash in block.history_hashes {
+        result[offset] = rlc(prev_hash.to_fixed_bytes(), randomness);
+        offset += 1;
+    }
+
+    // Insert Extra Values
+    // block Root
+    result[BLOCK_LEN] = rlc(extra.state_root.to_fixed_bytes(), randomness);
+    // parent block hash
+    result[BLOCK_LEN + 1] = rlc(extra.prev_state_root.to_fixed_bytes(), randomness);
+
+    // Insert Tx table
+    offset = 0;
+    assert!(txs.len() < MAX_TXS);
+    let tx_default = TxValues::default();
+
+    let tx_table_len = TX_LEN * MAX_TXS + 1 + MAX_CALLDATA;
+
+    let id_offset = BLOCK_LEN + 1 + EXTRA_LEN;
+    let index_offset = id_offset + tx_table_len;
+    let value_offset = index_offset + tx_table_len;
+
+    // Insert zero row
+    result[id_offset + offset] = F::zero();
+    result[index_offset + offset] = F::zero();
+    result[value_offset + offset] = F::zero();
+
+    offset += 1;
+
+    for i in 0..MAX_TXS {
+        let tx = if i < txs.len() { &txs[i] } else { &tx_default };
+
+        for val in &[
+            rlc(tx.nonce.to_le_bytes(), randomness),
+            rlc(tx.gas.to_le_bytes(), randomness),
+            rlc(tx.gas_price.to_le_bytes(), randomness),
+            tx.from_addr.to_scalar().expect("tx.from too big"),
+            tx.to_addr.to_scalar().expect("tx.to too big"),
+            F::from(tx.is_create),
+            rlc(tx.value.to_le_bytes(), randomness),
+            F::from(tx.call_data_len),
+            rlc(tx.tx_sign_hash, randomness),
+        ] {
+            result[id_offset + offset] = F::from((i + 1) as u64);
+            result[index_offset + offset] = F::zero();
+            result[value_offset + offset] = *val;
+
+            offset += 1;
+        }
+    }
+    // Tx Table CallData
+    let mut calldata_count = 0;
+    for (i, tx) in public_data.txs().iter().enumerate() {
+        for (index, byte) in tx.call_data.0.iter().enumerate() {
+            assert!(calldata_count < MAX_CALLDATA);
+            result[id_offset + offset] = F::from((i + 1) as u64);
+            result[index_offset + offset] = F::from(index as u64);
+            result[value_offset + offset] = F::from(*byte as u64);
+            offset += 1;
+            calldata_count += 1;
+        }
+    }
+    for _ in calldata_count..MAX_CALLDATA {
+        result[id_offset + offset] = F::zero();
+        result[index_offset + offset] = F::zero();
+        result[value_offset + offset] = F::zero();
+        offset += 1;
+    }
+
+    result
+}
+
 #[cfg(test)]
 mod pi_circuit_test {
     use super::*;
@@ -850,165 +995,22 @@ mod pi_circuit_test {
     use rand::SeedableRng;
     use rand_chacha::ChaCha20Rng;
 
-    /// Compute the raw_public_inputs column from the verifier's perspective.
-    fn raw_public_inputs_col<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>(
-        public_data: &PublicData,
-        randomness: F, // For RLC encoding
-    ) -> Vec<F> {
-        let block = public_data.get_block_table_values();
-        let extra = public_data.get_extra_values();
-        let txs = public_data.get_tx_table_values();
-
-        let mut offset = 0;
-        let mut result =
-            vec![F::zero(); BLOCK_LEN + 1 + EXTRA_LEN + 3 * (TX_LEN * MAX_TXS + 1 + MAX_CALLDATA)];
-
-        //  Insert Block Values
-        // zero row
-        result[offset] = F::zero();
-        offset += 1;
-        // coinbase
-        let mut coinbase_bytes = [0u8; 32];
-        coinbase_bytes[12..].clone_from_slice(block.coinbase.as_bytes());
-        result[offset] = rlc(coinbase_bytes, randomness);
-        offset += 1;
-        // gas_limit
-        result[offset] = F::from(block.gas_limit);
-        offset += 1;
-        // number
-        result[offset] = F::from(block.number);
-        offset += 1;
-        // timestamp
-        result[offset] = F::from(block.timestamp);
-        offset += 1;
-        // difficulty
-        result[offset] = rlc(block.difficulty.to_le_bytes(), randomness);
-        offset += 1;
-        // base_fee
-        result[offset] = rlc(block.base_fee.to_le_bytes(), randomness);
-        offset += 1;
-        // chain_id
-        result[offset] = F::from(block.chain_id);
-        offset += 1;
-        // Previous block hashes
-        for prev_hash in block.history_hashes {
-            result[offset] = rlc(prev_hash.to_fixed_bytes(), randomness);
-            offset += 1;
-        }
-
-        // Insert Extra Values
-        // block Root
-        result[BLOCK_LEN] = rlc(extra.state_root.to_fixed_bytes(), randomness);
-        // parent block hash
-        result[BLOCK_LEN + 1] = rlc(extra.prev_state_root.to_fixed_bytes(), randomness);
-
-        // Insert Tx table
-        offset = 0;
-        assert!(txs.len() < MAX_TXS);
-        let tx_default = TxValues::default();
-
-        let tx_table_len = TX_LEN * MAX_TXS + 1 + MAX_CALLDATA;
-
-        let id_offset = BLOCK_LEN + 1 + EXTRA_LEN;
-        let index_offset = id_offset + tx_table_len;
-        let value_offset = index_offset + tx_table_len;
-
-        // Insert zero row
-        result[id_offset + offset] = F::zero();
-        result[index_offset + offset] = F::zero();
-        result[value_offset + offset] = F::zero();
-
-        offset += 1;
-
-        for i in 0..MAX_TXS {
-            let tx = if i < txs.len() { &txs[i] } else { &tx_default };
-
-            for val in &[
-                rlc(tx.nonce.to_le_bytes(), randomness),
-                rlc(tx.gas.to_le_bytes(), randomness),
-                rlc(tx.gas_price.to_le_bytes(), randomness),
-                tx.from_addr.to_scalar().expect("tx.from too big"),
-                tx.to_addr.to_scalar().expect("tx.to too big"),
-                F::from(tx.is_create),
-                rlc(tx.value.to_le_bytes(), randomness),
-                F::from(tx.call_data_len),
-                rlc(tx.tx_sign_hash, randomness),
-            ] {
-                result[id_offset + offset] = F::from((i + 1) as u64);
-                result[index_offset + offset] = F::zero();
-                result[value_offset + offset] = *val;
-
-                offset += 1;
-            }
-        }
-        // Tx Table CallData
-        let mut calldata_count = 0;
-        for (i, tx) in public_data.txs.iter().enumerate() {
-            for (index, byte) in tx.call_data.0.iter().enumerate() {
-                assert!(calldata_count < MAX_CALLDATA);
-                result[id_offset + offset] = F::from((i + 1) as u64);
-                result[index_offset + offset] = F::from(index as u64);
-                result[value_offset + offset] = F::from(*byte as u64);
-                offset += 1;
-                calldata_count += 1;
-            }
-        }
-        for _ in calldata_count..MAX_CALLDATA {
-            result[id_offset + offset] = F::zero();
-            result[index_offset + offset] = F::zero();
-            result[value_offset + offset] = F::zero();
-            offset += 1;
-        }
-
-        result
-    }
-
     fn run<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>(
         k: u32,
         public_data: PublicData,
     ) -> Result<(), Vec<VerifyFailure>> {
         let mut rng = ChaCha20Rng::seed_from_u64(2);
         let randomness = F::random(&mut rng);
-
         let rand_rpi = F::random(&mut rng);
-        let rlc_rpi_col =
-            raw_public_inputs_col::<F, MAX_TXS, MAX_CALLDATA>(&public_data, randomness);
-        assert_eq!(
-            rlc_rpi_col.len(),
-            BLOCK_LEN + 1 + EXTRA_LEN + 3 * (TX_LEN * MAX_TXS + 1 + MAX_CALLDATA)
-        );
-
-        // Computation of raw_pulic_inputs
-        let rlc_rpi = rlc_rpi_col
-            .iter()
-            .rev()
-            .fold(F::zero(), |acc, val| acc * rand_rpi + val);
-
-        // let block_hash = public_data
-        //     .extra
-        //     .eth_block
-        //     .hash
-        //     .unwrap_or_else(H256::zero)
-        //     .to_fixed_bytes();
-
-        let public_inputs = vec![
-            rand_rpi,
-            rlc_rpi,
-            F::from(public_data.extra.chain_id.as_u64()),
-            rlc(
-                public_data.extra.eth_block.state_root.to_fixed_bytes(),
-                randomness,
-            ),
-            rlc(public_data.prev_state_root.to_fixed_bytes(), randomness),
-        ];
 
         let circuit = PiCircuit::<F, MAX_TXS, MAX_CALLDATA> {
             randomness,
             rand_rpi,
             public_data,
         };
+        let public_inputs = circuit.instance();
 
-        let prover = match MockProver::run(k, &circuit, vec![public_inputs]) {
+        let prover = match MockProver::run(k, &circuit, public_inputs) {
             Ok(prover) => prover,
             Err(e) => panic!("{:#?}", e),
         };
@@ -1034,11 +1036,12 @@ mod pi_circuit_test {
 
         let mut public_data = PublicData::default();
         let chain_id = 1337u64;
-        public_data.extra.chain_id = Word::from(chain_id);
+        public_data.chain_id = Word::from(chain_id);
 
         let n_tx = 2;
         for _ in 0..n_tx {
-            public_data.txs.push(rand_tx(&mut rng, chain_id));
+            let eth_tx = eth_types::Transaction::from(&rand_tx(&mut rng, chain_id));
+            public_data.eth_block.transactions.push(eth_tx);
         }
 
         let k = 13;
