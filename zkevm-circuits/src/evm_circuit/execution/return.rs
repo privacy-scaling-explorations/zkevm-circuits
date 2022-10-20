@@ -303,7 +303,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::test_util::{run_test_circuits, BytecodeTestConfig};
+    use crate::test_util::run_test_circuits;
     use eth_types::{
         address, bytecode, evm_types::OpcodeId, geth_types::Account, Address, Bytecode, ToWord,
         Word,
@@ -469,8 +469,10 @@ mod test {
                 PUSH1(0)
                 MSTORE
 
-                PUSH1 (32) // length?
-                PUSH1 (0) // offset?
+                PUSH1(0)        // offset
+                PUSH1(32)       // length
+                PUSH10(100000)  // value
+
                 CREATE
                 STOP
             };
@@ -479,6 +481,7 @@ mod test {
                 address: CALLER_ADDRESS,
                 code: root_code.into(),
                 nonce: Word::one(),
+                balance: eth(10),
                 ..Default::default()
             };
 
@@ -499,13 +502,7 @@ mod test {
             .unwrap();
 
             assert_eq!(
-                run_test_circuits(
-                    test_context,
-                    Some(BytecodeTestConfig {
-                        enable_state_circuit_test: false,
-                        ..Default::default()
-                    })
-                ),
+                run_test_circuits(test_context, None),
                 Ok(()),
                 "(offset, length, is_return) = {:?}",
                 (*offset, *length, *is_return),
