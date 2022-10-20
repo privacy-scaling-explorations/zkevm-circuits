@@ -104,31 +104,18 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         // Lookup values from stack
         cb.stack_pop(gas_word.expr());
         cb.stack_pop(callee_address_word.expr());
-        // Save the current stack pointer offset to increase outside of
-        // ConstraintBuilder. Since opcode `CALL` has an additional stack pop
-        // `value` excluded by opcode `STATICCALL`.
-        let stack_offset = cb.stack_pointer_offset();
-        cb.condition(is_call.expr(), |cb| {
-            cb.stack_lookup(false.expr(), stack_offset.expr(), value.expr())
-        });
-        let stack_offset = stack_offset.expr() + is_call.expr();
-        cb.stack_lookup(false.expr(), stack_offset.expr(), cd_offset.expr());
-        cb.stack_lookup(
-            false.expr(),
-            stack_offset.expr() + 1.expr(),
+
+        // `CALL` opcode has an additional stack pop `value`.
+        cb.condition(is_call.expr(), |cb| cb.stack_pop(value.expr()));
+
+        [
+            cd_offset.expr(),
             cd_length.expr(),
-        );
-        cb.stack_lookup(
-            false.expr(),
-            stack_offset.expr() + 2.expr(),
             rd_offset.expr(),
-        );
-        cb.stack_lookup(
-            false.expr(),
-            stack_offset.expr() + 3.expr(),
             rd_length.expr(),
-        );
-        cb.stack_lookup(true.expr(), stack_offset + 3.expr(), is_success.expr());
+        ]
+        .map(|expression| cb.stack_pop(expression));
+        cb.stack_push(is_success.expr());
 
         // Recomposition of random linear combination to integer
         let callee_address =
