@@ -106,9 +106,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         cb.stack_pop(callee_address_word.expr());
 
         // `CALL` opcode has an additional stack pop `value`.
-        cb.condition(is_call.expr(), |cb| {
-            cb.stack_pop(value.expr())
-        });
+        cb.condition(is_call.expr(), |cb| cb.stack_pop(value.expr()));
 
         [
             cd_offset.expr(),
