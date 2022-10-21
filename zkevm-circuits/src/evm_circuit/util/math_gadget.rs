@@ -1507,6 +1507,7 @@ mod tests {
     #[test]
     fn mod_works() {
         #[derive(Clone)]
+        /// a % n == r
         struct ModGadgetTestContainer<F> {
             mod_gadget: ModGadget<F>,
             a: util::Word<F>,
@@ -1572,9 +1573,13 @@ mod tests {
     #[test]
     fn muladd_works() {
         #[derive(Clone)]
+        /// a*b + c == d
         struct MulAddGadgetContainer<F> {
             math_gadget: MulAddWordsGadget<F>,
-            inputs: [util::Word<F>; 4],
+            a: util::Word<F>,
+            b: util::Word<F>,
+            c: util::Word<F>,
+            d: util::Word<F>,
         }
 
         impl<F: Field> MathGadgetContainer<F> for MulAddGadgetContainer<F> {
@@ -1588,7 +1593,10 @@ mod tests {
                 let math_gadget = MulAddWordsGadget::<F>::construct(cb, [&a, &b, &c, &d]);
                 MulAddGadgetContainer {
                     math_gadget,
-                    inputs: [a, b, c, d],
+                    a,
+                    b,
+                    c,
+                    d,
                 }
             }
 
@@ -1604,13 +1612,32 @@ mod tests {
                     input_words[3],
                 ];
                 let offset = 0;
-                self.inputs[0].assign(region, offset, Some(input_words[0].to_le_bytes()))?;
-                self.inputs[1].assign(region, offset, Some(input_words[1].to_le_bytes()))?;
-                self.inputs[2].assign(region, offset, Some(input_words[2].to_le_bytes()))?;
-                self.inputs[3].assign(region, offset, Some(input_words[3].to_le_bytes()))?;
+                self.a
+                    .assign(region, offset, Some(input_words[0].to_le_bytes()))?;
+                self.b
+                    .assign(region, offset, Some(input_words[1].to_le_bytes()))?;
+                self.c
+                    .assign(region, offset, Some(input_words[2].to_le_bytes()))?;
+                self.d
+                    .assign(region, offset, Some(input_words[3].to_le_bytes()))?;
                 self.math_gadget.assign(region, offset, words)
             }
         }
+
+        test_math_gadget_container::<Fr, MulAddGadgetContainer<Fr>>(
+            vec![Word::from(0), Word::from(0), Word::from(0), Word::from(0)],
+            true,
+        );
+
+        test_math_gadget_container::<Fr, MulAddGadgetContainer<Fr>>(
+            vec![Word::from(1), Word::from(0), Word::from(0), Word::from(0)],
+            true,
+        );
+
+        test_math_gadget_container::<Fr, MulAddGadgetContainer<Fr>>(
+            vec![Word::from(1), Word::from(1), Word::from(0), Word::from(1)],
+            true,
+        );
 
         test_math_gadget_container::<Fr, MulAddGadgetContainer<Fr>>(
             vec![Word::from(1), Word::from(1), Word::from(1), Word::from(2)],
@@ -1618,7 +1645,7 @@ mod tests {
         );
 
         test_math_gadget_container::<Fr, MulAddGadgetContainer<Fr>>(
-            vec![Word::from(10), Word::from(1), Word::from(1), Word::from(2)],
+            vec![Word::from(10), Word::from(1), Word::from(1), Word::from(3)],
             false,
         );
     }
