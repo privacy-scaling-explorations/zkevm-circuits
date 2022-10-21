@@ -97,6 +97,9 @@ pub const IS_ACCOUNT_DELETE_MOD_POS: usize = 7;
 // row.len() - IS_NON_EXISTING_ACCOUNT_POS holds the information whether the
 // proof shows the account does not exist
 pub const IS_NON_EXISTING_ACCOUNT_POS: usize = 8;
+// row.len() - IS_NON_EXISTING_STORAGE_POS holds the information whether the
+// proof shows the storage does not exist
+pub const IS_NON_EXISTING_STORAGE_POS: usize = 9;
 pub const COUNTER_WITNESS_LEN: usize = 4; // TODO: probably to be removed (state circuit will possess intermediate roots
                                           // instead)
 pub const COUNTER_POS: usize = IS_NON_EXISTING_ACCOUNT_POS + COUNTER_WITNESS_LEN;
@@ -107,6 +110,7 @@ pub const LEAF_VALUE_S_IND: i32 = 1;
 pub const LEAF_KEY_C_IND: i32 = 2;
 pub const LEAF_VALUE_C_IND: i32 = 3;
 pub const LEAF_DRIFTED_IND: i32 = 4;
+pub const LEAF_NON_EXISTING_IND: i32 = 5;
 
 // indexes for account leaf:
 pub const ACCOUNT_LEAF_KEY_S_IND: i32 = 0;

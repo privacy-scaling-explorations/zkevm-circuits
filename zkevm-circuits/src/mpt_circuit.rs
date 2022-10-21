@@ -48,7 +48,7 @@ use selectors::SelectorsConfig;
 
 use crate::{util::{power_of_randomness_from_instance, Challenges}, table::KeccakTable};
 
-use self::columns::MPTTable;
+use self::{columns::MPTTable, storage_leaf::leaf_non_existing::StorageNonExistingConfig};
 
 /*
     MPT circuit contains S and C columns (other columns are mostly selectors).
@@ -118,6 +118,7 @@ pub struct MPTConfig<F> {
     storage_leaf_value_s: LeafValueConfig<F>,
     storage_leaf_value_c: LeafValueConfig<F>,
     storage_leaf_key_in_added_branch: LeafKeyInAddedBranchConfig<F>,
+    storage_non_existing: StorageNonExistingConfig<F>,
     pub(crate) randomness: F,
     pub(crate) check_zeros: bool,
     pub(crate) mpt_table: MPTTable,
@@ -585,6 +586,28 @@ impl<F: FieldExt> MPTConfig<F> {
             check_zeros,
         );
 
+        let storage_non_existing = StorageNonExistingConfig::<F>::configure(
+            meta,
+            |meta| {
+                let q_enable = meta.query_fixed(position_cols.q_enable, Rotation::cur());
+                let is_leaf_non_existing_row =
+                    meta.query_advice(storage_leaf.is_non_existing, Rotation::cur());
+                let is_storage_non_existing_proof =
+                    meta.query_advice(proof_type.is_non_existing_storage_proof, Rotation::cur());
+
+                q_enable * is_leaf_non_existing_row * is_storage_non_existing_proof
+            },
+            s_main.clone(),
+            c_main.clone(),
+            accumulators.clone(),
+            denoter.sel1,
+            account_leaf.is_in_added_branch,
+            power_of_randomness.clone(),
+            fixed_table,
+            address_rlc,
+            check_zeros,
+        );
+
         let account_leaf_key_s = AccountLeafKeyConfig::<F>::configure(
             meta,
             proof_type.clone(),
@@ -795,6 +818,7 @@ impl<F: FieldExt> MPTConfig<F> {
             storage_leaf_value_s,
             storage_leaf_value_c,
             storage_leaf_key_in_added_branch,
+            storage_non_existing,
             randomness,
             check_zeros,
             mpt_table,
@@ -1142,6 +1166,13 @@ impl<F: FieldExt> MPTConfig<F> {
                                     offset,
                                     false,
                                 );
+                            } else if row.get_type() == MptWitnessRowType::StorageNonExisting {
+                                self.storage_non_existing.assign(
+                                    &mut region,
+                                    self,
+                                    witness,
+                                    offset,
+                                );
                             } else if row.get_type() == MptWitnessRowType::AccountLeafKeyS {
                                 self.account_leaf_key_s.assign(
                                     &mut region,
@@ -1412,7 +1443,7 @@ impl<F: Field> Circuit<F> for MPTCircuit<F> {
 
 #[cfg(test)]
 mod tests {
-    use param::IS_NON_EXISTING_ACCOUNT_POS;
+    use param::IS_NON_EXISTING_STORAGE_POS;
 
     use crate::mpt_circuit::helpers::bytes_into_rlc;
 
@@ -1454,8 +1485,8 @@ mod tests {
                 for row in w.iter().filter(|r| r[r.len() - 1] != 5) {
                     let l = row.len();
                     let pub_root_rlc = bytes_into_rlc(
-                        &row[l - HASH_WIDTH - IS_NON_EXISTING_ACCOUNT_POS
-                            ..l - HASH_WIDTH - IS_NON_EXISTING_ACCOUNT_POS + HASH_WIDTH],
+                        &row[l - HASH_WIDTH - IS_NON_EXISTING_STORAGE_POS
+                            ..l - HASH_WIDTH - IS_NON_EXISTING_STORAGE_POS + HASH_WIDTH],
                         acc_r,
                     );
 

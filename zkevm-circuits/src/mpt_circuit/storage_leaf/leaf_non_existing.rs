@@ -9,108 +9,43 @@ use std::marker::PhantomData;
 use crate::{
     mpt_circuit::columns::{AccumulatorCols, MainCols},
     mpt_circuit::helpers::range_lookups,
-    mpt_circuit::{FixedTableTag, MPTConfig, param::{IS_NON_EXISTING_ACCOUNT_POS, ACCOUNT_LEAF_KEY_C_IND}, helpers::key_len_lookup},
+    mpt_circuit::{FixedTableTag, MPTConfig, param::{IS_NON_EXISTING_STORAGE_POS, LEAF_NON_EXISTING_IND, LEAF_KEY_C_IND}, helpers::key_len_lookup},
     mpt_circuit::param::{
-        ACCOUNT_NON_EXISTING_IND, BRANCH_ROWS_NUM, HASH_WIDTH, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS,
-        RLP_NUM,
+        BRANCH_ROWS_NUM, HASH_WIDTH, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, RLP_NUM,
     },
     mpt_circuit::witness_row::MptWitnessRow,
 };
 
-/*
-An account leaf occupies 8 rows.
-Contrary as in the branch rows, the `S` and `C` leaves are not positioned parallel to each other.
-The rows are the following:
-ACCOUNT_LEAF_KEY_S
-ACCOUNT_LEAF_KEY_C
-ACCOUNT_NON_EXISTING
-ACCOUNT_LEAF_NONCE_BALANCE_S
-ACCOUNT_LEAF_NONCE_BALANCE_C
-ACCOUNT_LEAF_STORAGE_CODEHASH_S
-ACCOUNT_LEAF_STORAGE_CODEHASH_C
-ACCOUNT_DRIFTED_LEAF
-
-The constraints in this file apply to ACCOUNT_NON_EXISTING.
-
-For example, the row might be:
-[0,0,0,32,252,237,52,8,133,130,180,167,143,97,28,115,102,25,94,62,148,249,8,6,55,244,16,75,187,208,208,127,251,120,61,73,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
-
-We are proving that there is no account at the specified address. There are two versions of proof:
-    1. A leaf is returned by getProof that is not at the required address (we call this a wrong leaf).
-    In this case, the `ACCOUNT_NON_EXISTING` row contains the nibbles of the address (the nibbles that remain
-    after the nibbles used for traversing through the branches are removed) that was enquired
-    while `ACCOUNT_LEAF_KEY` row contains the nibbles of the wrong leaf. We need to prove that
-    the difference is nonzero. This way we prove that there exists some account which has some
-    number of the starting nibbles the same as the enquired address (the path through branches
-    above the leaf), but at the same time the full address is not the same - the nibbles stored in a leaf differ.
-    2. A branch is the last element of the getProof response and there is a nil object
-    at the address position. Placeholder account leaf is added in this case.
-    In this case, the `ACCOUNT_NON_EXISTING` row contains the same nibbles as `ACCOUNT_LEAF_KEY` and it is
-    not needed. We just need to prove that the branch contains nil object (128) at the enquired address.
-
-The whole account leaf looks like:
-[248,106,161,32,252,237,52,8,133,130,180,167,143,97,28,115,102,25,94,62,148,249,8,6,55,244,16,75,187,208,208,127,251,120,61,73,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
-[248,106,161,32,252,237,52,8,133,130,180,167,143,97,28,115,102,25,94,62,148,249,8,6,55,244,16,75,187,208,208,127,251,120,61,73,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
-[0,0,0,32,252,237,52,8,133,130,180,167,143,97,28,115,102,25,94,62,148,249,8,6,55,244,16,75,187,208,208,127,251,120,61,73,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
-[184,70,128,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,248,68,128,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
-[184,70,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,248,68,128,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
-[0,160,86,232,31,23,27,204,85,166,255,131,69,230,146,192,248,110,91,72,224,27,153,108,173,192,1,98,47,181,227,99,180,33,0,160,197,210,70,1,134,247,35,60,146,126,125,178,220,199,3,192,229,0,182,83,202,130,39,59,123,250,216,4,93,133,164,122]
-[0,160,86,232,31,23,27,204,85,166,255,131,69,230,146,192,248,110,91,72,224,27,153,108,173,192,1,98,47,181,227,99,180,33,0,160,197,210,70,1,134,247,35,60,146,126,125,178,220,199,3,192,229,0,182,83,202,130,39,59,123,250,216,4,93,133,164,122]
-[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
-
-We can observe that the example account leaf above is not for non-existing account proof as the first and third
-rows contain the same nibbles (the difference is solely in RLP specific bytes which are not needed
-in `ACCOUNT_NON_EXISTING` row).
-
-For the example of non-existing account proof account leaf see below:
-
-[248 102 157 55 236 125 29 155 142 209 241 75 145 144 143 254 65 81 209 56 13 192 157 236 195 213 73 132 11 251 149 241 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 6]
-[248 102 157 55 236 125 29 155 142 209 241 75 145 144 143 254 65 81 209 56 13 192 157 236 195 213 73 132 11 251 149 241 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 4]
-[1 0 157 56 133 130 180 167 143 97 28 115 102 25 94 62 148 249 8 6 55 244 16 75 187 208 208 127 251 120 61 73 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 18]
-[184 70 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 248 68 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 7]
-[184 70 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 248 68 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 8]
-[0 160 112 158 181 221 162 20 124 79 184 25 162 13 167 162 146 25 237 242 59 120 184 154 118 137 92 181 187 152 115 82 223 48 0 160 7 190 1 231 231 32 111 227 30 206 233 26 215 93 173 166 90 214 186 67 58 230 71 161 185 51 4 105 247 198 103 124 0 9]
-[0 160 112 158 181 221 162 20 124 79 184 25 162 13 167 162 146 25 237 242 59 120 184 154 118 137 92 181 187 152 115 82 223 48 0 160 7 190 1 231 231 32 111 227 30 206 233 26 215 93 173 166 90 214 186 67 58 230 71 161 185 51 4 105 247 198 103 124 0 11]
-[0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 10]
-
-In this case, the nibbles in the third row are different from the nibbles in the first or second row. Here, we are
-proving that the account does not exist at the address which starts with the same nibbles as the leaf that is
-in the rows above (except for the `ACCOUNT_NON_EXISTING` row) and continues with nibbles `ACCOUNT_NON_EXISTING` row.
-
-Note that the selector (being 1 in this case) at `s_main.rlp1` specifies whether it is wrong leaf or nil case.
-
-Lookups:
-The `is_non_existing_account_proof` lookup is enabled in `ACCOUNT_NON_EXISTING` row.
-*/
+// TODO: adapt for storage non existing (from account_non_existing)
 
 #[derive(Clone, Debug)]
-pub(crate) struct AccountNonExistingConfig<F> {
+pub(crate) struct StorageNonExistingConfig<F> {
     _marker: PhantomData<F>,
 }
 
-impl<F: FieldExt> AccountNonExistingConfig<F> {
+impl<F: FieldExt> StorageNonExistingConfig<F> {
     #[allow(clippy::too_many_arguments)]
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         q_enable: impl Fn(&mut VirtualCells<'_, F>) -> Expression<F> + Copy,
-        not_first_level: Column<Advice>,
         s_main: MainCols<F>,
         c_main: MainCols<F>,
         accs: AccumulatorCols<F>,
         sel1: Column<Advice>, /* should be the same as sel2 as both parallel proofs are the same
                                * for non_existing_account_proof */
+        is_account_leaf_in_added_branch: Column<Advice>,
         power_of_randomness: [Expression<F>; HASH_WIDTH],
         fixed_table: [Column<Fixed>; 3],
         address_rlc: Column<Advice>,
         check_zeros: bool,
     ) -> Self {
-        let config = AccountNonExistingConfig {
+        let config = StorageNonExistingConfig {
             _marker: PhantomData,
         };
         let one = Expression::Constant(F::one());
         let c32 = Expression::Constant(F::from(32));
         // key rlc is in the first branch node
-        let rot_into_first_branch_child = -(ACCOUNT_NON_EXISTING_IND - 1 + BRANCH_ROWS_NUM);
+        let rot_into_first_branch_child = -(LEAF_NON_EXISTING_IND - 1 + BRANCH_ROWS_NUM);
 
         let add_wrong_leaf_constraints =
             |meta: &mut VirtualCells<F>,
@@ -181,23 +116,28 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
             };
 
         /*
-        Checks that account_non_existing_row contains the nibbles that give address_rlc (after considering
+        Checks that storage_non_existing_row contains the nibbles that give key_rlc (after considering
         modified_node in branches/extension nodes above).
-        Note: currently, for non_existing_account proof S and C proofs are the same, thus there is never
+        Note: currently, for non_existing_storage proof S and C proofs are the same, thus there is never
         a placeholder branch.
         */
         meta.create_gate(
-            "Non existing account proof leaf address RLC (leaf not in first level, branch not placeholder)",
+            "Non existing storage proof leaf key RLC (leaf not in first level, branch not placeholder)",
             |meta| {
                 let q_enable = q_enable(meta);
                 let mut constraints = vec![];
 
-                let is_leaf_in_first_level =
-                    one.clone() - meta.query_advice(not_first_level, Rotation::cur());
+                // Check if there is an account above the leaf.
+                let rot_into_last_account_row = -LEAF_NON_EXISTING_IND - 1;
+                let is_leaf_in_first_level = meta.query_advice(
+                    is_account_leaf_in_added_branch,
+                    Rotation(rot_into_last_account_row),
+                );
 
-                // Wrong leaf has a meaning only for non existing account proof. For this proof, there are two cases:
+                // Wrong leaf has a meaning only for non existing storage proof. For this proof, there are two cases:
                 // 1. A leaf is returned that is not at the required address (wrong leaf).
-                // 2. A branch is returned as the last element of getProof and there is nil object at address position. Placeholder account leaf is added in this case.
+                // 2. A branch is returned as the last element of getProof and there is nil object at address position.
+                //    Placeholder account leaf is added in this case.
                 let is_wrong_leaf = meta.query_advice(s_main.rlp1, Rotation::cur());
                 // is_wrong_leaf is checked to be bool in account_leaf_nonce_balance (q_enable in this chip
                 // is true only when non_existing_account).
@@ -251,7 +191,8 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
                 key_rlc_acc = key_rlc_acc + c_rlp1_cur.clone() * key_mult.clone() * power_of_randomness[29].clone();
                 key_rlc_acc = key_rlc_acc + c_rlp2_cur.clone() * key_mult * power_of_randomness[30].clone();
 
-                let address_rlc = meta.query_advice(address_rlc, Rotation::cur());
+                // TODO: needs to be key rlc as used for lookup
+                let key_rlc = meta.query_advice(accs.key.rlc, Rotation::cur());
 
                 /*
                 Differently as for the other proofs, the account-non-existing proof compares `address_rlc`
@@ -267,11 +208,11 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
                 is different).
                 */
                 constraints.push((
-                    "Account address RLC",
+                    "Storage key RLC",
                     q_enable.clone()
                         * (one.clone() - is_leaf_in_first_level.clone())
                         * is_wrong_leaf.clone()
-                        * (key_rlc_acc - address_rlc),
+                        * (key_rlc_acc - key_rlc),
                 ));
 
                 add_wrong_leaf_constraints(meta, &mut constraints, q_enable.clone(), c_rlp1_cur,
@@ -310,8 +251,12 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
                 let q_enable = q_enable(meta);
                 let mut constraints = vec![];
 
-                let is_leaf_in_first_level =
-                    one.clone() - meta.query_advice(not_first_level, Rotation::cur());
+                // Check if there is an account above the leaf.
+                let rot_into_last_account_row = -LEAF_NON_EXISTING_IND - 1;
+                let is_leaf_in_first_level = meta.query_advice(
+                    is_account_leaf_in_added_branch,
+                    Rotation(rot_into_last_account_row),
+                );
 
                 let is_wrong_leaf = meta.query_advice(s_main.rlp1, Rotation::cur());
 
@@ -452,21 +397,24 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
         witness: &[MptWitnessRow<F>],
         offset: usize,
     ) {
-        let leaf_key_c = &witness[offset - (ACCOUNT_NON_EXISTING_IND - ACCOUNT_LEAF_KEY_C_IND) as usize];
+        let row_key_c = &witness[offset - (LEAF_NON_EXISTING_IND - LEAF_KEY_C_IND) as usize];
         let row = &witness[offset];
-        let key_len = leaf_key_c.get_byte(2) as usize - 128;
+        let start = 2; // TODO: handle different cases: short / long / one-nibble / last-level
+        let key_len = row_key_c.get_byte(start - 1) as usize - 128;
         let mut sum = F::zero();
         let mut sum_prev = F::zero();
         let mut mult = mpt_config.randomness;
         for i in 0..key_len {
-            sum += F::from(row.get_byte(3 + i) as u64) * mult;
-            sum_prev += F::from(leaf_key_c.get_byte(3 + i) as u64) * mult;
+            sum += F::from(row.get_byte(start + i) as u64) * mult;
+            sum_prev += F::from(row_key_c.get_byte(start + i) as u64) * mult;
             mult *= mpt_config.randomness;
         }
         let mut diff_inv = F::zero();
         if sum != sum_prev {
             diff_inv = F::invert(&(sum - sum_prev)).unwrap();
         }
+
+        // TODO: compute key rlc and put it into a lookup column
 
         region
             .assign_advice(
@@ -493,13 +441,13 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
             )
             .ok();
 
-        if row.get_byte_rev(IS_NON_EXISTING_ACCOUNT_POS) == 1 {
+        if row.get_byte_rev(IS_NON_EXISTING_STORAGE_POS) == 1 {
             region
                 .assign_advice(
                     || "assign lookup enabled".to_string(),
                     mpt_config.proof_type.proof_type,
                     offset,
-                    || Value::known(F::from(4_u64)), // non existing account lookup enabled in this row if it is non_existing_account proof
+                    || Value::known(F::from(7_u64)), // non existing storage lookup enabled in this row if it is non_existing_storage proof
                 )
                 .ok();
         }

@@ -13,6 +13,7 @@ use crate::{
     mpt_circuit::param::{
         COUNTER_WITNESS_LEN, C_RLP_START, C_START, HASH_WIDTH, IS_ACCOUNT_DELETE_MOD_POS,
         IS_BALANCE_MOD_POS, IS_CODEHASH_MOD_POS, IS_NONCE_MOD_POS, IS_NON_EXISTING_ACCOUNT_POS,
+        IS_NON_EXISTING_STORAGE_POS,
         IS_STORAGE_MOD_POS, NOT_FIRST_LEVEL_POS, RLP_NUM, S_RLP_START, S_START, WITNESS_ROW_WIDTH,
     },
     mpt_circuit::storage_leaf::StorageLeaf,
@@ -79,8 +80,8 @@ impl<F: FieldExt> MptWitnessRow<F> {
         &self.bytes[self.bytes.len()
             - 4 * HASH_WIDTH
             - COUNTER_WITNESS_LEN
-            - IS_NON_EXISTING_ACCOUNT_POS
-            ..self.bytes.len() - 4 * HASH_WIDTH - COUNTER_WITNESS_LEN - IS_NON_EXISTING_ACCOUNT_POS
+            - IS_NON_EXISTING_STORAGE_POS
+            ..self.bytes.len() - 4 * HASH_WIDTH - COUNTER_WITNESS_LEN - IS_NON_EXISTING_STORAGE_POS
                 + HASH_WIDTH]
     }
 
@@ -88,8 +89,8 @@ impl<F: FieldExt> MptWitnessRow<F> {
         &self.bytes[self.bytes.len()
             - 3 * HASH_WIDTH
             - COUNTER_WITNESS_LEN
-            - IS_NON_EXISTING_ACCOUNT_POS
-            ..self.bytes.len() - 3 * HASH_WIDTH - COUNTER_WITNESS_LEN - IS_NON_EXISTING_ACCOUNT_POS
+            - IS_NON_EXISTING_STORAGE_POS
+            ..self.bytes.len() - 3 * HASH_WIDTH - COUNTER_WITNESS_LEN - IS_NON_EXISTING_STORAGE_POS
                 + HASH_WIDTH]
     }
 
@@ -97,8 +98,8 @@ impl<F: FieldExt> MptWitnessRow<F> {
         &self.bytes[self.bytes.len()
             - 2 * HASH_WIDTH
             - COUNTER_WITNESS_LEN
-            - IS_NON_EXISTING_ACCOUNT_POS
-            ..self.bytes.len() - 2 * HASH_WIDTH - COUNTER_WITNESS_LEN - IS_NON_EXISTING_ACCOUNT_POS
+            - IS_NON_EXISTING_STORAGE_POS
+            ..self.bytes.len() - 2 * HASH_WIDTH - COUNTER_WITNESS_LEN - IS_NON_EXISTING_STORAGE_POS
                 + HASH_WIDTH]
     }
 
@@ -309,6 +310,12 @@ impl<F: FieldExt> MptWitnessRow<F> {
             || Value::known(F::from(account_leaf.is_key_c as u64)),
         )?;
         region.assign_advice(
+            || "assign is non existing account row".to_string(),
+            mpt_config.account_leaf.is_non_existing_account_row,
+            offset,
+            || Value::known(F::from(account_leaf.is_non_existing_account_row as u64)),
+        )?;
+        region.assign_advice(
             || "assign is account leaf nonce balance s".to_string(),
             mpt_config.account_leaf.is_nonce_balance_s,
             offset,
@@ -350,13 +357,7 @@ impl<F: FieldExt> MptWitnessRow<F> {
             mpt_config.branch.is_extension_node_c,
             offset,
             || Value::known(F::from(branch.is_extension_node_c as u64)),
-        )?;
-        region.assign_advice(
-            || "assign is non existing account row".to_string(),
-            mpt_config.account_leaf.is_non_existing_account_row,
-            offset,
-            || Value::known(F::from(account_leaf.is_non_existing_account_row as u64)),
-        )?;
+        )?; 
 
         region.assign_advice(
             || "assign s_rlp1".to_string(),
@@ -602,6 +603,16 @@ impl<F: FieldExt> MptWitnessRow<F> {
             || {
                 Value::known(F::from(
                     self.get_byte_rev(IS_NON_EXISTING_ACCOUNT_POS) as u64
+                ))
+            },
+        )?;
+        region.assign_advice(
+            || "is_non_existing_storage",
+            mpt_config.proof_type.is_non_existing_storage_proof,
+            offset,
+            || {
+                Value::known(F::from(
+                    self.get_byte_rev(IS_NON_EXISTING_STORAGE_POS) as u64
                 ))
             },
         )?;

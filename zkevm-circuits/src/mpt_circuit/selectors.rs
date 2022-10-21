@@ -55,7 +55,7 @@ impl<F: FieldExt> SelectorsConfig<F> {
             let is_leaf_c_value = meta.query_advice(storage_leaf.is_c_value, Rotation::cur());
             let is_leaf_in_added_branch =
                 meta.query_advice(storage_leaf.is_in_added_branch, Rotation::cur());
-            let is_leaf_non_existing =
+            let is_non_existing_storage_row =
                 meta.query_advice(storage_leaf.is_non_existing, Rotation::cur());
 
             let is_account_leaf_key_s = meta.query_advice(account_leaf.is_key_s, Rotation::cur());
@@ -85,6 +85,7 @@ impl<F: FieldExt> SelectorsConfig<F> {
             let is_codehash_mod = meta.query_advice(proof_type.is_codehash_mod, Rotation::cur());
             let is_account_delete_mod = meta.query_advice(proof_type.is_account_delete_mod, Rotation::cur());
             let is_non_existing_account_proof = meta.query_advice(proof_type.is_non_existing_account_proof, Rotation::cur());
+            let is_non_existing_storage_proof = meta.query_advice(proof_type.is_non_existing_storage_proof, Rotation::cur());
 
             let is_modified = meta.query_advice(branch.is_modified, Rotation::cur());
             let is_at_drifted_pos = meta.query_advice(branch.is_at_drifted_pos, Rotation::cur());
@@ -99,7 +100,7 @@ impl<F: FieldExt> SelectorsConfig<F> {
                 * (is_branch_init_cur.clone() + is_branch_child_cur.clone()
                     + is_extension_node_s.clone() + is_extension_node_c.clone()
                     + is_leaf_s_key.clone() + is_leaf_c_key.clone() + is_leaf_s_value.clone() + is_leaf_c_value.clone()
-                    + is_leaf_in_added_branch.clone() + is_leaf_non_existing.clone()
+                    + is_leaf_in_added_branch.clone() + is_non_existing_storage_row.clone()
                     + is_account_leaf_key_s.clone() + is_account_leaf_key_c.clone()
                     + is_non_existing_account_row.clone()
                     + is_account_leaf_nonce_balance_s.clone() + is_account_leaf_nonce_balance_c.clone()
@@ -152,7 +153,7 @@ impl<F: FieldExt> SelectorsConfig<F> {
             ));
             constraints.push((
                 "bool check is_leaf_non_existing",
-                get_bool_constraint(q_enable.clone(), is_leaf_non_existing),
+                get_bool_constraint(q_enable.clone(), is_non_existing_storage_row.clone()),
             ));
 
             constraints.push((
@@ -236,6 +237,10 @@ impl<F: FieldExt> SelectorsConfig<F> {
                 "bool check is_non_existing_account_proof",
                 get_bool_constraint(q_enable.clone(), is_non_existing_account_proof.clone()),
             )); 
+            constraints.push((
+                "bool check is_non_existing_storage_proof",
+                get_bool_constraint(q_enable.clone(), is_non_existing_storage_proof.clone()),
+            ));
 
             /*
             The type of the proof needs to be set.
@@ -245,7 +250,7 @@ impl<F: FieldExt> SelectorsConfig<F> {
                 q_enable.clone()
                     * (is_storage_mod.clone() + is_nonce_mod.clone() + is_balance_mod.clone()
                     + is_account_delete_mod.clone() + is_non_existing_account_proof.clone() + is_codehash_mod.clone()
-                        - one.clone()),
+                    + is_non_existing_storage_proof.clone() - one.clone()),
             ));
 
             /*
@@ -279,7 +284,7 @@ impl<F: FieldExt> SelectorsConfig<F> {
                     * proof_type_cur.clone()
                     * is_non_existing_account_proof.clone()
                     * (is_non_existing_account_row.clone() - one.clone())
-            ));
+            )); 
             constraints.push((
                 "proof_type is 0 everywhere except in ACCOUNT_LEAF_KEY_S row when is_account_delete_mod proof",
                 q_enable.clone()
@@ -294,6 +299,13 @@ impl<F: FieldExt> SelectorsConfig<F> {
                     * is_storage_mod.clone()
                     * (is_leaf_c_value.clone() - one.clone())
             ));
+            constraints.push((
+                "proof_type is 0 everywhere except in NON_EXISTING_STORAGE row when is_non_existing_storage proof",
+                q_enable.clone()
+                    * proof_type_cur.clone()
+                    * is_non_existing_storage_proof.clone()
+                    * (is_non_existing_storage_row.clone() - one.clone())
+            ));
 
             /*
             `proof_type` needs to be set to a proper corresponding value in the row where the lookup
@@ -306,7 +318,7 @@ impl<F: FieldExt> SelectorsConfig<F> {
             is_non_existing_account_proof = 4
             is_account_delete_mod = 5
             is_storage_mod = 6
-            non_existing_storage_proof = 7 // TODO
+            is_non_existing_storage_proof = 7 // TODO
             */
             constraints.push((
                 "Nonce lookup enabled in ACCOUNT_LEAF_NONCE_BALANCE_S row when is_nonce_mod proof",
@@ -335,8 +347,13 @@ impl<F: FieldExt> SelectorsConfig<F> {
             ));
             constraints.push((
                 "Storage mod lookup enabled in STORAGE_LEAF_VALUE_C row when is_storage_mod proof",
+                q_enable.clone()
+                    * (is_storage_mod * is_leaf_c_value * (proof_type_cur.clone() - Expression::Constant(F::from(6_u64)))),
+            ));
+            constraints.push((
+                "Non existing storage lookup enabled in STORAGE_NON_EXISTING row when is_non_existing_storage proof",
                 q_enable
-                    * (is_storage_mod * is_leaf_c_value * (proof_type_cur - Expression::Constant(F::from(6_u64)))),
+                    * (is_non_existing_storage_proof * is_non_existing_storage_row * (proof_type_cur - Expression::Constant(F::from(7_u64)))),
             ));
 
             constraints
