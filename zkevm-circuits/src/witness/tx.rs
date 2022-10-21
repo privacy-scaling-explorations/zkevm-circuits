@@ -1,5 +1,6 @@
 use bus_mapping::circuit_input_builder;
 use eth_types::{Address, Field, ToLittleEndian, ToScalar, ToWord, Word};
+use rlp::Encodable;
 
 use crate::{evm_circuit::util::RandomLinearCombination, table::TxContextFieldTag};
 
@@ -116,6 +117,18 @@ impl Transaction {
                 .collect(),
         ]
         .concat()
+    }
+}
+
+impl Encodable for Transaction {
+    fn rlp_append(&self, s: &mut rlp::RlpStream) {
+        s.begin_list(6);
+        s.append(&Word::from(self.nonce));
+        s.append(&self.gas_price);
+        s.append(&Word::from(self.gas));
+        s.append(&self.callee_address);
+        s.append(&self.value);
+        s.append(&self.call_data);
     }
 }
 

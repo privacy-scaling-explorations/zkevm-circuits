@@ -10,6 +10,12 @@ mod call;
 pub use call::Call;
 mod mpt;
 pub use mpt::{MptUpdate, MptUpdateRow, MptUpdates};
+mod receipt;
+pub use receipt::Receipt;
+mod rlp_encode;
+pub use rlp_encode::{
+    RlpDataType, RlpReceiptTag, RlpTxTag, RlpWitnessGen, RlpWitnessRow, N_RECEIPT_TAGS, N_TX_TAGS,
+};
 mod rw;
 pub use rw::{Rw, RwMap, RwRow};
 mod step;
