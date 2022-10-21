@@ -99,7 +99,7 @@ fn gen_log_step(
 
     // generates topic operation dynamically
     let topic_count = match exec_step.exec_state {
-        ExecState::Op(op_id) => op_id.postfix().unwrap(),
+        ExecState::Op(op_id) => op_id.postfix().expect("opcode with postfix"),
         _ => panic!("currently only handle successful log state"),
     };
 

@@ -274,7 +274,7 @@ impl<'a> Iterator for BytecodeIterator<'a> {
         self.0.next().map(|byte| {
             if let Ok(op) = OpcodeId::try_from(byte.value) {
                 if op.is_push() {
-                    let n = op.postfix().unwrap();
+                    let n = op.postfix().expect("opcode with postfix");
                     let mut value = vec![0u8; n as usize];
                     for value_byte in value.iter_mut() {
                         *value_byte = self.0.next().unwrap().value;
@@ -299,7 +299,7 @@ impl From<Vec<u8>> for Bytecode {
             if let Ok(op) = OpcodeId::try_from(*byte) {
                 code.write_op(op);
                 if op.is_push() {
-                    let n = op.postfix().unwrap();
+                    let n = op.postfix().expect("opcode with postfix");
                     for _ in 0..n {
                         match input_iter.next() {
                             Some(v) => {
@@ -340,7 +340,7 @@ macro_rules! bytecode_internal {
     // PUSHX op codes
     ($code:ident, $x:ident ($v:expr) $($rest:tt)*) => {{
         debug_assert!($crate::evm_types::OpcodeId::$x.is_push(), "invalid push");
-        let n = $crate::evm_types::OpcodeId::$x.postfix().unwrap();
+        let n = $crate::evm_types::OpcodeId::$x.postfix().expect("opcode with postfix");
         $code.push(n, $v.into());
         $crate::bytecode_internal!($code, $($rest)*);
     }};

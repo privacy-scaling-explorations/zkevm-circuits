@@ -679,7 +679,7 @@ impl OpcodeId {
     /// Returns PUSHn opcode from parameter n.
     pub fn push_n(n: u8) -> Result<Self, Error> {
         if (1..=32).contains(&n) {
-            Ok(OpcodeId::try_from(OpcodeId::PUSH1.as_u8() + ((n - 1) as u8)).unwrap())
+            OpcodeId::try_from(OpcodeId::PUSH1.as_u8() + n - 1)
         } else {
             Err(Error::InvalidOpConversion)
         }
