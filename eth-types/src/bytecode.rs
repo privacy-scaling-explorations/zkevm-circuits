@@ -99,7 +99,7 @@ impl Bytecode {
         debug_assert!((1..=32).contains(&n), "invalid push");
 
         // Write the op code
-        self.write_op((OpcodeId::push_n(n)).unwrap());
+        self.write_op((OpcodeId::push_n(n)).expect("valid push size"));
 
         let mut bytes = [0u8; 32];
         value.to_little_endian(&mut bytes);
@@ -225,7 +225,7 @@ impl OpcodeWithData {
     pub fn opcode(&self) -> OpcodeId {
         match self {
             OpcodeWithData::Opcode(op) => *op,
-            OpcodeWithData::Push(n, _) => OpcodeId::push_n(*n).unwrap(),
+            OpcodeWithData::Push(n, _) => OpcodeId::push_n(*n).expect("valid push size"),
         }
     }
 }
