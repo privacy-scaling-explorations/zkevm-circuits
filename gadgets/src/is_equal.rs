@@ -99,7 +99,7 @@ mod tests {
     use eth_types::Field;
     use halo2_proofs::{
         arithmetic::FieldExt,
-        circuit::{Layouter, SimpleFloorPlanner},
+        circuit::{Layouter, SimpleFloorPlanner, Value},
         dev::MockProver,
         halo2curves::bn256::Fr as Fp,
         plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Selector, VirtualCells},
@@ -180,13 +180,13 @@ mod tests {
                             || "value",
                             config.value,
                             idx + 1,
-                            || Ok(value.into()),
+                            || Value::known(F::from(value)),
                         )?;
                         region.assign_advice(
                             || "check",
                             config.check,
                             idx + 1,
-                            || Ok((check as u64).into()),
+                            || Value::known(F::from(check as u64)),
                         )?;
                         config.q_enable.enable(&mut region, idx + 1)?;
                         chip.assign(&mut region, idx + 1, value.into(), RHS.into())?;

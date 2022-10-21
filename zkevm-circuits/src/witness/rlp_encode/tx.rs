@@ -125,12 +125,12 @@ impl<F: FieldExt> RlpWitnessGen<F> for Transaction {
 
 #[cfg(test)]
 mod tests {
-    use halo2_proofs::halo2curves::bn256::Fr;
+    use halo2_proofs::{arithmetic::Field, halo2curves::bn256::Fr};
     use num::Zero;
 
     use crate::evm_circuit::{
         test::rand_bytes,
-        witness::{tx::RlpTxTag, witness_gen::RlpWitnessGen, Transaction},
+        witness::{RlpTxTag, RlpWitnessGen, Transaction},
     };
 
     #[test]

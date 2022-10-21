@@ -2566,13 +2566,13 @@ mod tests {
     use halo2_proofs::{
         circuit::{Layouter, SimpleFloorPlanner},
         dev::MockProver,
+        halo2curves::bn256::Fr,
         plonk::{Circuit, ConstraintSystem, Error},
     };
-    use pairing::bn256::Fr;
 
     use crate::evm_circuit::{
         test::rand_bytes,
-        witness::{rlp_witness::RlpWitnessGen, Receipt, Transaction},
+        witness::{Receipt, RlpWitnessGen, Transaction},
     };
 
     use super::Config;
@@ -2695,6 +2695,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn rlp_circuit_receipt_1() {
         let status = 1;
         let cumulative_gas_used = 2u64;
@@ -2723,6 +2724,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn rlp_circuit_receipt_2() {
         let status = 0;
         let cumulative_gas_used = 200_000u64;
