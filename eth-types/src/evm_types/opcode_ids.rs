@@ -700,8 +700,8 @@ impl OpcodeId {
         }
     }
 
-    /// returns number of bytes used by immediate date, this is only > 0 for
-    /// push opcodes
+    /// Returns number of bytes used by immediate data. This is > 0 only for
+    /// push opcodes.
     pub fn data_len(&self) -> usize {
         if self.is_push() {
             (self.as_u8() - OpcodeId::PUSH1.as_u8() + 1) as usize
