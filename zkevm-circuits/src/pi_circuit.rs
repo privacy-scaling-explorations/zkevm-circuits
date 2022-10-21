@@ -407,9 +407,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
         offset += 1;
 
         // coinbase
-        let mut coinbase_bytes = [0u8; 32];
-        coinbase_bytes[12..].clone_from_slice(block_values.coinbase.as_bytes());
-        let coinbase = rlc(coinbase_bytes, randomness);
+        let coinbase = block_values.coinbase.to_scalar().unwrap();
         region.assign_advice(
             || "coinbase",
             self.block_table.value,
@@ -904,9 +902,7 @@ fn raw_public_inputs_col<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usi
     result[offset] = F::zero();
     offset += 1;
     // coinbase
-    let mut coinbase_bytes = [0u8; 32];
-    coinbase_bytes[12..].clone_from_slice(block.coinbase.as_bytes());
-    result[offset] = rlc(coinbase_bytes, randomness);
+    result[offset] = block.coinbase.to_scalar().unwrap();
     offset += 1;
     // gas_limit
     result[offset] = F::from(block.gas_limit);
