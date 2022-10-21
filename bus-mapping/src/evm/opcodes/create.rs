@@ -45,7 +45,7 @@ impl<const IS_CREATE2: bool> Opcode for DummyCreate<IS_CREATE2> {
 
         state.stack_write(
             &mut exec_step,
-            geth_step.stack.nth_last_filled(0),
+            geth_step.stack.nth_last_filled(n_pop - 1),
             address.to_word(),
         )?;
 
