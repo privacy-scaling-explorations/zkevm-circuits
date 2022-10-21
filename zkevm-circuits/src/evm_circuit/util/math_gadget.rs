@@ -1603,12 +1603,6 @@ mod tests {
                 input_words: &[Word],
                 region: &mut CachedRegion<'_, '_, F>,
             ) -> Result<(), Error> {
-                let words = [
-                    input_words[0],
-                    input_words[1],
-                    input_words[2],
-                    input_words[3],
-                ];
                 let offset = 0;
                 self.a
                     .assign(region, offset, Some(input_words[0].to_le_bytes()))?;
@@ -1618,7 +1612,8 @@ mod tests {
                     .assign(region, offset, Some(input_words[2].to_le_bytes()))?;
                 self.d
                     .assign(region, offset, Some(input_words[3].to_le_bytes()))?;
-                self.math_gadget.assign(region, offset, words)
+                self.math_gadget
+                    .assign(region, offset, input_words.try_into().unwrap())
             }
         }
 
