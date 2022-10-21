@@ -1047,3 +1047,38 @@ impl fmt::Display for OpcodeId {
         write!(f, "{:?}", self)
     }
 }
+
+#[cfg(test)]
+mod opcode_ids_tests {
+    use super::*;
+
+    #[test]
+    fn push_n() {
+        assert!(matches!(OpcodeId::push_n(1), Ok(OpcodeId::PUSH1)));
+        assert!(matches!(OpcodeId::push_n(10), Ok(OpcodeId::PUSH10)));
+        assert!(matches!(
+            OpcodeId::push_n(100),
+            Err(Error::InvalidOpConversion)
+        ));
+        assert!(matches!(
+            OpcodeId::push_n(0),
+            Err(Error::InvalidOpConversion)
+        ));
+    }
+
+    #[test]
+    fn postfix() {
+        assert_eq!(OpcodeId::PUSH1.postfix(), Some(1));
+        assert_eq!(OpcodeId::PUSH10.postfix(), Some(10));
+        assert_eq!(OpcodeId::LOG2.postfix(), Some(2));
+        assert_eq!(OpcodeId::CALLCODE.postfix(), None);
+    }
+
+    #[test]
+    fn data_len() {
+        assert_eq!(OpcodeId::PUSH1.data_len(), 1);
+        assert_eq!(OpcodeId::PUSH10.data_len(), 10);
+        assert_eq!(OpcodeId::LOG2.data_len(), 0);
+        assert_eq!(OpcodeId::CALLCODE.data_len(), 0);
+    }
+}
