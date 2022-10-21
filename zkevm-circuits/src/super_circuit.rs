@@ -15,7 +15,7 @@
 //! - [x] Copy Circuit
 //! - [ ] Keccak Circuit
 //! - [ ] MPT Circuit
-//! - [ ] PublicInputs Circuit
+//! - [x] PublicInputs Circuit
 //!
 //! And the following shared tables, with the circuits that use them:
 //!
@@ -30,14 +30,14 @@
 //!   - [x] Tx Circuit
 //!   - [x] EVM Circuit
 //!   - [x] Copy Circuit
-//!   - [ ] PublicInputs Circuit
+//!   - [x] PublicInputs Circuit
 //! - [x] Bytecode Table
 //!   - [x] Bytecode Circuit
 //!   - [x] EVM Circuit
 //!   - [x] Copy Circuit
 //! - [ ] Block Table
 //!   - [ ] EVM Circuit
-//!   - [ ] PublicInputs Circuit
+//!   - [x] PublicInputs Circuit
 //! - [ ] MPT Table
 //!   - [ ] MPT Circuit
 //!   - [ ] State Circuit
