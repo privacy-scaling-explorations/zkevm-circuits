@@ -1346,12 +1346,10 @@ mod tests {
     use crate::evm_circuit::{Advice, Column};
     use crate::{evm_circuit::step::ExecutionState, util::power_of_randomness_from_instance};
     use eth_types::Word;
-    use halo2_proofs::arithmetic::FieldExt;
     use halo2_proofs::circuit::Layouter;
     use halo2_proofs::halo2curves::bn256::Fr;
     use halo2_proofs::plonk::{ConstraintSystem, Selector};
     use halo2_proofs::plonk::{Error, Expression};
-    use halo2_proofs::poly::Rotation;
     use halo2_proofs::{circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit};
 
     trait MathGadgetContainer<F: Field>: Clone {
@@ -1363,7 +1361,7 @@ mod tests {
 
         fn assign_gadget_container(
             &self,
-            input_words: &Vec<Word>,
+            input_words: &[Word],
             region: &mut CachedRegion<'_, '_, F>,
         ) -> Result<(), Error>;
     }
@@ -1422,7 +1420,7 @@ mod tests {
 
             let mut cb = ConstraintBuilder::new(
                 step_curr.clone(),
-                step_next.clone(),
+                step_next,
                 &power_of_randomness,
                 ExecutionState::STOP,
             );
@@ -1439,11 +1437,11 @@ mod tests {
             }
 
             UnitTestMathGadgetBaseCircuitConfig::<F, G> {
-                q_usable: q_usable,
-                advices: advices,
+                q_usable,
+                advices,
                 step: step_curr,
-                stored_expressions: stored_expressions,
-                math_gadget_container: math_gadget_container,
+                stored_expressions,
+                math_gadget_container,
                 _marker: PhantomData,
                 power_of_randomness,
             }
@@ -1533,7 +1531,7 @@ mod tests {
 
             fn assign_gadget_container(
                 &self,
-                input_words: &Vec<Word>,
+                input_words: &[Word],
                 region: &mut CachedRegion<'_, '_, F>,
             ) -> Result<(), Error> {
                 let a = input_words[0];
@@ -1602,7 +1600,7 @@ mod tests {
 
             fn assign_gadget_container(
                 &self,
-                input_words: &Vec<Word>,
+                input_words: &[Word],
                 region: &mut CachedRegion<'_, '_, F>,
             ) -> Result<(), Error> {
                 let words = [
