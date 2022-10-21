@@ -1485,14 +1485,18 @@ mod tests {
         }
     }
 
-    const K: usize = 9;
-
-    fn test_math_gadget_container<F: Field>(
-        circuit: impl Circuit<F>,
-        instances: Vec<Vec<F>>,
+    fn test_math_gadget_container<F: Field, G: MathGadgetContainer<F>>(
+        input_words: Vec<Word>,
         expected_success: bool,
     ) {
-        let prover = MockProver::<F>::run(K as u32, &circuit, instances).unwrap();
+        const K: usize = 9;
+        let randomness = F::from(123456u64);
+        let power_of_randomness: Vec<Vec<F>> = (1..32)
+            .map(|exp| vec![randomness.pow(&[exp, 0, 0, 0]); (1 << K) - 64])
+            .collect();
+        let circuit = UnitTestMathGadgetBaseCircuit::<F, G>::new(K, input_words, randomness);
+
+        let prover = MockProver::<F>::run(K as u32, &circuit, power_of_randomness).unwrap();
         if expected_success {
             assert_eq!(prover.verify(), Ok(()));
         } else {
@@ -1544,35 +1548,36 @@ mod tests {
             }
         }
 
-        let randomness = Fr::from(123456u64);
-        let power_of_randomness: Vec<Vec<Fr>> = (1..32)
-            .map(|exp| vec![randomness.pow(&[exp, 0, 0, 0]); (1 << K) - 64])
-            .collect();
+        test_math_gadget_container::<Fr, ModGadgetTestContainer<Fr>>(
+            vec![Word::from(0), Word::from(0), Word::from(0)],
+            true,
+        );
 
-        let circuit = UnitTestMathGadgetBaseCircuit::<Fr, ModGadgetTestContainer<Fr>>::new(
-            K,
+        test_math_gadget_container::<Fr, ModGadgetTestContainer<Fr>>(
+            vec![Word::from(1), Word::from(0), Word::from(0)],
+            true,
+        );
+
+        test_math_gadget_container::<Fr, ModGadgetTestContainer<Fr>>(
             vec![Word::from(1), Word::from(1), Word::from(0)],
-            randomness,
+            true,
         );
-        test_math_gadget_container(circuit, power_of_randomness.clone(), true);
 
-        let circuit = UnitTestMathGadgetBaseCircuit::<Fr, ModGadgetTestContainer<Fr>>::new(
-            K,
+        test_math_gadget_container::<Fr, ModGadgetTestContainer<Fr>>(
             vec![Word::from(1), Word::from(1), Word::from(1)],
-            randomness,
+            false,
         );
-        test_math_gadget_container(circuit, power_of_randomness, false);
     }
 
     #[test]
     fn muladd_works() {
         #[derive(Clone)]
-        struct TestContainer<F> {
+        struct MulAddGadgetContainer<F> {
             math_gadget: MulAddWordsGadget<F>,
             inputs: [util::Word<F>; 4],
         }
 
-        impl<F: Field> MathGadgetContainer<F> for TestContainer<F> {
+        impl<F: Field> MathGadgetContainer<F> for MulAddGadgetContainer<F> {
             const NAME: &'static str = "MulAddGadget";
 
             fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
@@ -1581,7 +1586,7 @@ mod tests {
                 let c = cb.query_word();
                 let d = cb.query_word();
                 let math_gadget = MulAddWordsGadget::<F>::construct(cb, [&a, &b, &c, &d]);
-                TestContainer {
+                MulAddGadgetContainer {
                     math_gadget,
                     inputs: [a, b, c, d],
                 }
@@ -1607,22 +1612,14 @@ mod tests {
             }
         }
 
-        let randomness = Fr::from(123456u64);
-        let power_of_randomness: Vec<Vec<Fr>> = (1..32)
-            .map(|exp| vec![randomness.pow(&[exp, 0, 0, 0]); (1 << K) - 64])
-            .collect();
-        let circuit = UnitTestMathGadgetBaseCircuit::<Fr, TestContainer<Fr>>::new(
-            K,
+        test_math_gadget_container::<Fr, MulAddGadgetContainer<Fr>>(
             vec![Word::from(1), Word::from(1), Word::from(1), Word::from(2)],
-            randomness,
+            true,
         );
-        test_math_gadget_container(circuit, power_of_randomness.clone(), true);
 
-        let circuit = UnitTestMathGadgetBaseCircuit::<Fr, TestContainer<Fr>>::new(
-            K,
+        test_math_gadget_container::<Fr, MulAddGadgetContainer<Fr>>(
             vec![Word::from(10), Word::from(1), Word::from(1), Word::from(2)],
-            randomness,
+            false,
         );
-        test_math_gadget_container(circuit, power_of_randomness, false);
     }
 }
