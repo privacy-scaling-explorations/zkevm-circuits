@@ -80,12 +80,14 @@ pub struct PublicData {
 impl PublicData {
     /// Returns struct with values for the block table
     pub fn get_block_table_values(&self) -> BlockValues {
-        let mut history_hashes: Vec<H256> = self
-            .history_hashes
-            .iter()
-            .map(|&hash| H256::from(hash.to_be_bytes()))
-            .collect();
-        history_hashes.extend(vec![H256::zero(); 256 - history_hashes.len()]);
+        let history_hashes = [
+            vec![H256::zero(); 256 - self.history_hashes.len()],
+            self.history_hashes
+                .iter()
+                .map(|&hash| H256::from(hash.to_be_bytes()))
+                .collect(),
+        ]
+        .concat();
         BlockValues {
             coinbase: self.block_constants.coinbase,
             gas_limit: self.block_constants.gas_limit.as_u64(),
@@ -405,7 +407,9 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
         offset += 1;
 
         // coinbase
-        let coinbase = block_values.coinbase.to_scalar().unwrap();
+        let mut coinbase_bytes = [0u8; 32];
+        coinbase_bytes[12..].clone_from_slice(block_values.coinbase.as_bytes());
+        let coinbase = rlc(coinbase_bytes, randomness);
         region.assign_advice(
             || "coinbase",
             self.block_table.value,
@@ -930,9 +934,9 @@ fn raw_public_inputs_col<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usi
 
     // Insert Extra Values
     // block Root
-    result[BLOCK_LEN] = rlc(extra.state_root.to_fixed_bytes(), randomness);
+    result[BLOCK_LEN + 1] = rlc(extra.state_root.to_fixed_bytes(), randomness);
     // parent block hash
-    result[BLOCK_LEN + 1] = rlc(extra.prev_state_root.to_fixed_bytes(), randomness);
+    result[BLOCK_LEN + 2] = rlc(extra.prev_state_root.to_fixed_bytes(), randomness);
 
     // Insert Tx table
     offset = 0;
