@@ -12,6 +12,7 @@ use crate::{
     util::{build_tx_log_expression, Expr},
 };
 use eth_types::Field;
+use ethers_core::utils::__serde_json::value;
 use halo2_proofs::{
     circuit::Value,
     plonk::{
@@ -576,6 +577,29 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
                 value,
             },
         )
+    }
+
+    // look up byte code value and is_code at the same time
+    pub(crate) fn bytecode_lookup_pair(
+        &mut self,
+        code_hash: Expression<F>,
+        index: Expression<F>,
+    ) -> (Cell<F>, Cell<F>) {
+        let value = self.query_cell();
+        let is_code = self.query_cell();
+
+        self.add_lookup(
+            "Bytecode (Byte)",
+            Lookup::Bytecode {
+                hash: code_hash,
+                tag: BytecodeFieldTag::Byte.expr(),
+                index: index,
+                is_code: is_code.expr(),
+                value: value.expr(),
+            },
+        );
+
+        (value, is_code)
     }
 
     pub(crate) fn bytecode_length(&mut self, code_hash: Expression<F>) -> Cell<F> {
