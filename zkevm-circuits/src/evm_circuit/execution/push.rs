@@ -129,7 +129,7 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
         self.value
             .assign(region, offset, Some(value.to_le_bytes()))?;
 
-        let num_additional_pushed = opcode.postfix().expect("opcode with postfix") - 1; // are we sure it is -1?
+        let num_additional_pushed = opcode.postfix().expect("opcode with postfix") - 1;
         for (idx, selector) in self.selectors.iter().enumerate() {
             selector.assign(
                 region,
