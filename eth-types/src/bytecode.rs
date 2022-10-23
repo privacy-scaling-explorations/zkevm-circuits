@@ -95,20 +95,20 @@ impl Bytecode {
     }
 
     /// Push
-    pub fn push(&mut self, n: usize, value: Word) -> &mut Self {
+    pub fn push(&mut self, n: u8, value: Word) -> &mut Self {
         debug_assert!((1..=32).contains(&n), "invalid push");
 
         // Write the op code
-        self.write_op_internal(OpcodeId::PUSH1.as_u8() + ((n - 1) as u8));
+        self.write_op((OpcodeId::push_n(n)).expect("valid push size"));
 
         let mut bytes = [0u8; 32];
         value.to_little_endian(&mut bytes);
         // Write the bytes MSB to LSB
         for i in 0..n {
-            self.write(bytes[n - 1 - i], false);
+            self.write(bytes[(n - 1 - i) as usize], false);
         }
         // Check if the full value could be pushed
-        for byte in bytes.iter().skip(n) {
+        for byte in bytes.iter().skip(n as usize) {
             debug_assert!(*byte == 0u8, "value too big for PUSH{}: {}", n, value);
         }
         self
@@ -217,7 +217,7 @@ pub enum OpcodeWithData {
     /// A non-push opcode
     Opcode(OpcodeId),
     /// A push opcode
-    Push(usize, Word),
+    Push(u8, Word),
 }
 
 impl OpcodeWithData {
@@ -225,9 +225,7 @@ impl OpcodeWithData {
     pub fn opcode(&self) -> OpcodeId {
         match self {
             OpcodeWithData::Opcode(op) => *op,
-            OpcodeWithData::Push(n, _) => {
-                OpcodeId::try_from(OpcodeId::PUSH1.as_u8() + (*n as u8) - 1).unwrap()
-            }
+            OpcodeWithData::Push(n, _) => OpcodeId::push_n(*n).expect("valid push size"),
         }
     }
 }
@@ -240,7 +238,7 @@ impl FromStr for OpcodeWithData {
         let err = || Error::InvalidAsmError(op.to_string());
         if let Some(push) = op.strip_prefix("PUSH") {
             let n_value: Vec<_> = push.splitn(3, ['(', ')']).collect();
-            let n = n_value[0].parse::<usize>().map_err(|_| err())?;
+            let n = n_value[0].parse::<u8>().map_err(|_| err())?;
             if n < 1 || n > 32 {
                 return Err(err());
             }
@@ -276,12 +274,12 @@ impl<'a> Iterator for BytecodeIterator<'a> {
         self.0.next().map(|byte| {
             if let Ok(op) = OpcodeId::try_from(byte.value) {
                 if op.is_push() {
-                    let n = op.as_u8() - OpcodeId::PUSH1.as_u8() + 1;
+                    let n = op.postfix().expect("opcode with postfix");
                     let mut value = vec![0u8; n as usize];
                     for value_byte in value.iter_mut() {
                         *value_byte = self.0.next().unwrap().value;
                     }
-                    OpcodeWithData::Push(n as usize, Word::from(value.as_slice()))
+                    OpcodeWithData::Push(n, Word::from(value.as_slice()))
                 } else {
                     OpcodeWithData::Opcode(op)
                 }
@@ -301,7 +299,7 @@ impl From<Vec<u8>> for Bytecode {
             if let Ok(op) = OpcodeId::try_from(*byte) {
                 code.write_op(op);
                 if op.is_push() {
-                    let n = (op.as_u8() - OpcodeId::PUSH1.as_u8() + 1) as usize;
+                    let n = op.postfix().expect("opcode with postfix");
                     for _ in 0..n {
                         match input_iter.next() {
                             Some(v) => {
@@ -342,10 +340,8 @@ macro_rules! bytecode_internal {
     // PUSHX op codes
     ($code:ident, $x:ident ($v:expr) $($rest:tt)*) => {{
         debug_assert!($crate::evm_types::OpcodeId::$x.is_push(), "invalid push");
-        let n = $crate::evm_types::OpcodeId::$x.as_u8()
-            - $crate::evm_types::OpcodeId::PUSH1.as_u8()
-            + 1;
-        $code.push(n as usize, $v.into());
+        let n = $crate::evm_types::OpcodeId::$x.postfix().expect("opcode with postfix");
+        $code.push(n, $v.into());
         $crate::bytecode_internal!($code, $($rest)*);
     }};
     // Default opcode without any inputs
