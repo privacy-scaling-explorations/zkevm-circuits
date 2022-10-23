@@ -46,14 +46,12 @@ impl Bytecode {
         for (idx, byte) in self.bytes.iter().enumerate() {
             let is_code = push_data_left == 0;
 
-            if is_code {
-                let op = OpcodeId::try_from(*byte).expect("byte with valid opcode");
-
+            push_data_left = if is_code {
                 // push_data_left will be > 0 only if it is a push opcode
-                push_data_left = op.data_len();
+                OpcodeId::from(*byte).data_len()
             } else {
-                push_data_left -= 1;
-            }
+                push_data_left - 1
+            };
 
             rows.push([
                 hash,

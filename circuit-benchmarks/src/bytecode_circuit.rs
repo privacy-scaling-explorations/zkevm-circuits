@@ -117,11 +117,7 @@ mod tests {
         let mut codebytes = vec![];
         (0..bytecodes_num).for_each(|_| {
             let bytecodes = (0..bytecode_len)
-                .map(|v| {
-                    OpcodeId::try_from(v as u8)
-                        .unwrap_or(OpcodeId::STOP)
-                        .as_u8()
-                })
+                .map(|v| OpcodeId::from(v as u8).valid_or(OpcodeId::STOP).as_u8())
                 .collect::<Vec<u8>>();
             let unrolled_bytes = unroll::<F>(bytecodes);
             codebytes.push(unrolled_bytes);

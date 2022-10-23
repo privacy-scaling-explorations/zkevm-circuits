@@ -679,7 +679,7 @@ impl OpcodeId {
     /// Returns PUSHn opcode from parameter n.
     pub fn push_n(n: u8) -> Result<Self, Error> {
         if (1..=32).contains(&n) {
-            OpcodeId::try_from(OpcodeId::PUSH1.as_u8() + n - 1)
+            Ok(OpcodeId::from(OpcodeId::PUSH1.as_u8() + n - 1))
         } else {
             Err(Error::InvalidOpConversion)
         }
@@ -709,13 +709,19 @@ impl OpcodeId {
             0
         }
     }
+
+    /// Returns self if valid opcode, returns or if invalid.
+    pub fn valid_or(&self, or: Self) -> Self {
+        match self {
+            OpcodeId::INVALID(_) => or,
+            _ => *self,
+        }
+    }
 }
 
-impl TryFrom<u8> for OpcodeId {
-    type Error = Error;
-
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
-        Ok(match value {
+impl From<u8> for OpcodeId {
+    fn from(value: u8) -> Self {
+        match value {
             0x00u8 => OpcodeId::STOP,
             0x01u8 => OpcodeId::ADD,
             0x02u8 => OpcodeId::MUL,
@@ -859,8 +865,8 @@ impl TryFrom<u8> for OpcodeId {
             0xf4u8 => OpcodeId::DELEGATECALL,
             0xfau8 => OpcodeId::STATICCALL,
             0xffu8 => OpcodeId::SELFDESTRUCT,
-            b => return Err(Error::InvalidOpcodeIdByte(b)),
-        })
+            b => OpcodeId::INVALID(b),
+        }
     }
 }
 
