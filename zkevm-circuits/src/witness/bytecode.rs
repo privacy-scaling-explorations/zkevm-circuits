@@ -47,10 +47,8 @@ impl Bytecode {
             let is_code = push_data_left == 0;
 
             if is_code {
-                let op = OpcodeId::try_from(*byte).expect("byte with valid opcode");
-
-                // push_data_left will be > 0 only if it is a push opcode
-                push_data_left = op.data_len();
+                // push_data_left is 0 for non-push and invalid opcodes.
+                push_data_left = OpcodeId::try_from(*byte).map_or(0, |op| op.data_len());
             } else {
                 push_data_left -= 1;
             }
