@@ -858,10 +858,12 @@ mod test {
         }
         caller_bytecode.append(&bytecode! {
             PUSH32(Address::repeat_byte(0xff).to_word())
-            PUSH2(10000)
+            // gas 10032 for static call
+            PUSH2(10000 + 32*(!is_call as u64))  // 10000 for call
             .write_op(opcode)
             STOP
         });
+        let (jump_dest, gas) = if is_call { (43, 132) } else { (41, 129) };
         // The following bytecode calls itself recursively if gas_left is greater than
         // 100, and halts with REVERT if gas_left is odd, otherwise just halts
         // with STOP.
@@ -869,7 +871,7 @@ mod test {
             GAS
             PUSH1(100)
             GT
-            PUSH1(43)
+            PUSH1(jump_dest) // jump dest
             JUMPI
 
             PUSH1(0)
@@ -877,28 +879,32 @@ mod test {
             PUSH1(0)
             PUSH1(0)
         };
+
         if is_call {
             callee_bytecode.push(1, U256::from(0));
         }
+
         callee_bytecode.append(&bytecode! {
             PUSH20(Address::repeat_byte(0xff).to_word())
-            PUSH1(132)
+            // gas
+            PUSH1(gas)
             GAS
             SUB
             .write_op(opcode)
 
-            JUMPDEST // 43
+            JUMPDEST // 41 for static_call, 43 for call
             GAS
             PUSH1(1)
             AND
-            PUSH1(56)
+            PUSH1(56 - 2 *(!is_call as u8))
             JUMPI
 
             PUSH1(0)
             PUSH1(0)
             REVERT
 
-            JUMPDEST // 56
+            // 56 or 54 for call or static_call
+            JUMPDEST
             STOP
         });
         test_ok(
