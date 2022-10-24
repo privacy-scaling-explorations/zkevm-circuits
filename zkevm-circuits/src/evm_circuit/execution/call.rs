@@ -711,38 +711,57 @@ mod test {
         for (stack, callee) in stacks.into_iter().cartesian_product(callees.into_iter()) {
             test_ok(caller(stack, true), callee);
         }
-    }
+        caller_bytecode.append(&bytecode! {
+            PUSH32(Address::repeat_byte(0xff).to_word())
+            // gas, 10032 for static call
+            PUSH2(10000 + 32*(!is_call as u64))  // 10000 for call
+            .write_op(opcode)
+            STOP
+        });
+        let (jump_dest, gas) = if is_call{ (43, 132) }else{
+            (41, 129)
+        };
+        // The following bytecode calls itself recursively if gas_left is greater than
+        // 100, and halts with REVERT if gas_left is odd, otherwise just halts
+        // with STOP.
+        let mut callee_bytecode = bytecode! {
+            GAS
+            PUSH1(100)
+            GT
+            PUSH1(jump_dest) // jump dest
+            JUMPI
 
-    #[test]
-    fn call_with_insufficient_balance() {
-        let stacks = vec![Stack {
-            // this value is bigger than caller's balance
-            value: Word::from(11).pow(18.into()),
-            ..Default::default()
-        }];
-        let callees = vec![callee(bytecode! {}), callee(bytecode! { STOP })];
-        for (stack, callee) in stacks.into_iter().cartesian_product(callees.into_iter()) {
-            test_ok(caller_for_insufficient_balance(stack), callee);
+            PUSH1(0)
+            PUSH1(0)
+            PUSH1(0)
+            PUSH1(0)
+        };
+
+        if is_call {
+            callee_bytecode.push(1, U256::from(0));
         }
-    }
+    
+        callee_bytecode.append(&bytecode! {
+            PUSH20(Address::repeat_byte(0xff).to_word())
+            // gas
+            PUSH1(gas) 
+            GAS
+            SUB
+            .write_op(opcode)
 
-    #[test]
-    fn call_with_oog() {
-        let stacks = vec![
-            // With gas and memory expansion
-            Stack {
-                gas: 100,
-                cd_offset: 64,
-                cd_length: 320,
-                rd_offset: 0,
-                rd_length: 32,
-                ..Default::default()
-            },
-        ];
+            JUMPDEST // 41 for static_call, 43 for call
+            GAS
+            PUSH1(1)
+            AND
+            PUSH1(56 - 2 *(!is_call as u8))
+            JUMPI
 
-        let bytecode = bytecode! {
-            PUSH32(Word::from(0))
-            PUSH32(Word::from(0))
+            PUSH1(0)
+            PUSH1(0)
+            REVERT
+            
+            // 56 or 54 for call or static_call
+            JUMPDEST 
             STOP
         };
         let callees = vec![callee(bytecode)];
