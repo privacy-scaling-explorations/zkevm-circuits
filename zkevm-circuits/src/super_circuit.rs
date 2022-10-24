@@ -65,7 +65,7 @@ use bus_mapping::mock::BlockData;
 use eth_types::geth_types::{self, GethData};
 use eth_types::Field;
 
-use ethers_core::types::{H256, U256, U64};
+use ethers_core::types::H256;
 use halo2_proofs::arithmetic::CurveAffine;
 use halo2_proofs::halo2curves::{
     bn256::Fr,
