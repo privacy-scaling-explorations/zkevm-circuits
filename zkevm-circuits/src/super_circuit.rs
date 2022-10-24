@@ -341,15 +341,6 @@ impl<const MAX_TXS: usize, const MAX_CALLDATA: usize> SuperCircuit<Fr, MAX_TXS, 
         let chain_id = block.context.chain_id;
         let tx_circuit = TxCircuit::new(aux_generator, chain_id.as_u64(), txs);
 
-        // NOTE: There is no implemented From<U256> for U64
-        let into_u64 = |val: eth_types::Word| -> U64 {
-            let U256(ref arr) = val;
-            if arr[3] | arr[2] | arr[1] != 0 {
-                panic!("Could not convert block number into U64");
-            }
-            U64([arr[0]])
-        };
-
         let public_data = PublicData {
             chain_id: geth_data.chain_id,
             history_hashes: block_data.history_hashes,
@@ -357,7 +348,7 @@ impl<const MAX_TXS: usize, const MAX_CALLDATA: usize> SuperCircuit<Fr, MAX_TXS, 
             block_constants: geth_types::BlockConstants {
                 coinbase: block.context.coinbase,
                 timestamp: block.context.timestamp,
-                number: into_u64(block.context.number),
+                number: block.context.number.as_u64().into(),
                 difficulty: block.context.difficulty,
                 gas_limit: block.context.gas_limit.into(),
                 base_fee: block.context.base_fee,
