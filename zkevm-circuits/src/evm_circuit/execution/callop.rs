@@ -862,7 +862,6 @@ mod test {
             .write_op(opcode)
             STOP
         });
-        let (jump_dest, gas) = if is_call { (43, 132) } else { (41, 129) };
         // The following bytecode calls itself recursively if gas_left is greater than
         // 100, and halts with REVERT if gas_left is odd, otherwise just halts
         // with STOP.
