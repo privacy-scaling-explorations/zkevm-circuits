@@ -272,19 +272,16 @@ impl<'a> Iterator for BytecodeIterator<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         self.0.next().map(|byte| {
-            if let Ok(op) = OpcodeId::try_from(byte.value) {
-                if op.is_push() {
-                    let n = op.postfix().expect("opcode with postfix");
-                    let mut value = vec![0u8; n as usize];
-                    for value_byte in value.iter_mut() {
-                        *value_byte = self.0.next().unwrap().value;
-                    }
-                    OpcodeWithData::Push(n, Word::from(value.as_slice()))
-                } else {
-                    OpcodeWithData::Opcode(op)
+            let op = OpcodeId::from(byte.value);
+            if op.is_push() {
+                let n = op.data_len();
+                let mut value = vec![0u8; n];
+                for value_byte in value.iter_mut() {
+                    *value_byte = self.0.next().unwrap().value;
                 }
+                OpcodeWithData::Push(n as u8, Word::from(value.as_slice()))
             } else {
-                OpcodeWithData::Opcode(OpcodeId::INVALID(byte.value))
+                OpcodeWithData::Opcode(op)
             }
         })
     }
@@ -296,25 +293,22 @@ impl From<Vec<u8>> for Bytecode {
 
         let mut input_iter = input.iter();
         while let Some(byte) = input_iter.next() {
-            if let Ok(op) = OpcodeId::try_from(*byte) {
-                code.write_op(op);
-                if op.is_push() {
-                    let n = op.postfix().expect("opcode with postfix");
-                    for _ in 0..n {
-                        match input_iter.next() {
-                            Some(v) => {
-                                code.write(*v, false);
-                            }
-                            None => {
-                                // out of boundary is allowed
-                                // see also: https://github.com/ethereum/go-ethereum/blob/997f1c4f0abcd78f645e6e7ced6db4b42ad59c9d/core/vm/analysis.go#L65
-                                break;
-                            }
+            let op = OpcodeId::from(*byte);
+            code.write_op(op);
+            if op.is_push() {
+                let n = op.postfix().expect("opcode with postfix");
+                for _ in 0..n {
+                    match input_iter.next() {
+                        Some(v) => {
+                            code.write(*v, false);
+                        }
+                        None => {
+                            // out of boundary is allowed
+                            // see also: https://github.com/ethereum/go-ethereum/blob/997f1c4f0abcd78f645e6e7ced6db4b42ad59c9d/core/vm/analysis.go#L65
+                            break;
                         }
                     }
                 }
-            } else {
-                code.write_op(OpcodeId::INVALID(*byte));
             }
         }
 
