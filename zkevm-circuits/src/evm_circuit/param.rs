@@ -4,6 +4,7 @@ use super::table::Table;
 pub(crate) const STEP_WIDTH: usize = 128;
 /// Step height
 pub const MAX_STEP_HEIGHT: usize = 21;
+pub(crate) const STEP_STATE_HEIGHT: usize = 1;
 pub(crate) const N_CELLS_STEP_STATE: usize = 11;
 
 /// Lookups done per row.
