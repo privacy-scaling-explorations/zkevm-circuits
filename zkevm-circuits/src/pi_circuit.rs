@@ -78,16 +78,6 @@ pub struct PublicData {
 }
 
 impl PublicData {
-    // pub fn from_block_data(bd: &BlockData) -> Self {
-    //     let geth_data = GethData {
-    //         chain_id: bd.chain_id,
-    //         history_hashes: bd.history_hashes,
-    //         eth_block: bd.eth_block,
-    //         geth_traces: bd.geth_traces ,
-    //         accounts: bd.sdb.get_acco,
-    //     }
-    // }
-
     /// Returns struct with values for the block table
     pub fn get_block_table_values(&self) -> BlockValues {
         let mut history_hashes: Vec<H256> = self

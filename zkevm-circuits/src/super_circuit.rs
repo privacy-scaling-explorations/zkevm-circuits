@@ -121,7 +121,6 @@ pub struct SuperCircuit<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usiz
     // bytecodes: Vec<UnrolledBytecode<F>>,
     /// The maximium size for the underlying bytecode circuit.
     pub bytecode_size: usize,
-    // TODO Check
     /// Public Input Circuit
     pub pi_circuit: PiCircuit<F, MAX_TXS, MAX_CALLDATA>,
 }
