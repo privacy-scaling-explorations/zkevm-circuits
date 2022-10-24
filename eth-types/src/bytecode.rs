@@ -274,12 +274,12 @@ impl<'a> Iterator for BytecodeIterator<'a> {
         self.0.next().map(|byte| {
             let op = OpcodeId::from(byte.value);
             if op.is_push() {
-                let n = op.postfix().expect("opcode with postfix");
-                let mut value = vec![0u8; n as usize];
+                let n = op.data_len();
+                let mut value = vec![0u8; n];
                 for value_byte in value.iter_mut() {
                     *value_byte = self.0.next().unwrap().value;
                 }
-                OpcodeWithData::Push(n, Word::from(value.as_slice()))
+                OpcodeWithData::Push(n as u8, Word::from(value.as_slice()))
             } else {
                 OpcodeWithData::Opcode(op)
             }
