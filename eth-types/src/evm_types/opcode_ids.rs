@@ -709,14 +709,6 @@ impl OpcodeId {
             0
         }
     }
-
-    /// Returns self if valid opcode, returns or if invalid.
-    pub fn valid_or(&self, or: Self) -> Self {
-        match self {
-            OpcodeId::INVALID(_) => or,
-            _ => *self,
-        }
-    }
 }
 
 impl From<u8> for OpcodeId {
