@@ -858,8 +858,7 @@ mod test {
         }
         caller_bytecode.append(&bytecode! {
             PUSH32(Address::repeat_byte(0xff).to_word())
-            // gas 10032 for static call
-            PUSH2(10000 + 32*(!is_call as u64))  // 10000 for call
+            PUSH2(if is_call {10000} else {10032})
             .write_op(opcode)
             STOP
         });
@@ -871,7 +870,7 @@ mod test {
             GAS
             PUSH1(100)
             GT
-            PUSH1(jump_dest) // jump dest
+            PUSH1(if is_call {43} else {41}) // jump dest
             JUMPI
 
             PUSH1(0)
@@ -886,8 +885,7 @@ mod test {
 
         callee_bytecode.append(&bytecode! {
             PUSH20(Address::repeat_byte(0xff).to_word())
-            // gas
-            PUSH1(gas)
+            PUSH1(if is_call {132} else {129}) // gas
             GAS
             SUB
             .write_op(opcode)
@@ -896,7 +894,7 @@ mod test {
             GAS
             PUSH1(1)
             AND
-            PUSH1(56 - 2 *(!is_call as u8))
+            PUSH1(if is_call {56} else {54})
             JUMPI
 
             PUSH1(0)
