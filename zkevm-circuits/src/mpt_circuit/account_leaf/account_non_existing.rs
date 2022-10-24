@@ -169,7 +169,7 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
 
                 /*
                 The address in the ACCOUNT_LEAF_KEY row and the address in the ACCOUNT_NON_EXISTING row
-                are indeed different.
+                are different.
                 */
                 constraints.push((
                     "Address of a leaf is different than address being inquired (corresponding to address_rlc)",
@@ -220,26 +220,26 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
                 let c48 = Expression::Constant(F::from(48));
 
                 // If c16 = 1, we have nibble+48 in s_main.bytes[0].
-                let s_advice1 = meta.query_advice(s_main.bytes[1], Rotation::cur());
+                let s_bytes1 = meta.query_advice(s_main.bytes[1], Rotation::cur());
                 let mut key_rlc_acc = key_rlc_acc_start
-                    + (s_advice1.clone() - c48) * key_mult_start.clone() * c16.clone();
+                    + (s_bytes1.clone() - c48) * key_mult_start.clone() * c16.clone();
                 let mut key_mult = key_mult_start.clone() * power_of_randomness[0].clone() * c16;
                 key_mult = key_mult + key_mult_start * c1.clone(); // set to key_mult_start if sel2, stays key_mult if sel1
 
                 /*
-                If there is an even number of nibbles stored in a leaf, `s_advice1` needs to be 32.
+                If there is an even number of nibbles stored in a leaf, `s_bytes1` needs to be 32.
                 */
                 constraints.push((
-                    "Account leaf key acc s_advice1",
+                    "Account leaf key acc s_bytes1",
                     q_enable.clone()
                         * (one.clone() - is_leaf_in_first_level.clone())
                         * is_wrong_leaf.clone()
-                        * (s_advice1 - c32.clone())
+                        * (s_bytes1 - c32.clone())
                         * c1,
                 ));
 
-                let s_advices2 = meta.query_advice(s_main.bytes[2], Rotation::cur());
-                key_rlc_acc = key_rlc_acc + s_advices2 * key_mult.clone();
+                let s_bytes2 = meta.query_advice(s_main.bytes[2], Rotation::cur());
+                key_rlc_acc = key_rlc_acc + s_bytes2 * key_mult.clone();
 
                 for ind in 3..HASH_WIDTH {
                     let s = meta.query_advice(s_main.bytes[ind], Rotation::cur());
@@ -299,7 +299,7 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
 
         /*
         Ensuring that the account does not exist when there is only one account in the state trie.
-        Note 1: The hash of the only account is checked to be the state root in account_leaf_storage_codehash.rs.
+        Note 1: The hash of the only account is checked to be the state root in `account_leaf_storage_codehash.rs`.
         Note 2: There is no nil_object case checked in this gate, because it is covered in the gate
         above. That is because when there is a branch (with nil object) in the first level,
         it automatically means the account leaf is not in the first level.
@@ -320,19 +320,19 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
                 // the information whether there the key is odd or even
                 // is in s_main.bytes[IS_BRANCH_C16_POS - LAYOUT_OFFSET] (see sel1/sel2).
 
-                let s_advice1 = meta.query_advice(s_main.bytes[1], Rotation::cur());
+                let s_bytes1 = meta.query_advice(s_main.bytes[1], Rotation::cur());
                 let mut key_rlc_acc = Expression::Constant(F::zero());
 
                 constraints.push((
                     "Account leaf key acc s_advice1",
                     q_enable.clone()
-                        * (s_advice1 - c32)
+                        * (s_bytes1 - c32)
                         * is_wrong_leaf.clone()
                         * is_leaf_in_first_level.clone(),
                 ));
 
-                let s_advices2 = meta.query_advice(s_main.bytes[2], Rotation::cur());
-                key_rlc_acc = key_rlc_acc + s_advices2;
+                let s_bytes2 = meta.query_advice(s_main.bytes[2], Rotation::cur());
+                key_rlc_acc = key_rlc_acc + s_bytes2;
 
                 for ind in 3..HASH_WIDTH {
                     let s = meta.query_advice(s_main.bytes[ind], Rotation::cur());
@@ -375,8 +375,8 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
                 let mut constraints = vec![];
 
                 let is_wrong_leaf = meta.query_advice(s_main.rlp1, Rotation::cur());
-                let s_advice0_prev = meta.query_advice(s_main.bytes[0], Rotation::prev());
-                let s_advice0_cur = meta.query_advice(s_main.bytes[0], Rotation::cur());
+                let s_bytes0_prev = meta.query_advice(s_main.bytes[0], Rotation::prev());
+                let s_bytes0_cur = meta.query_advice(s_main.bytes[0], Rotation::cur());
 
                 /*
                 This constraint is to prevent the attacker to prove that some account does not exist by setting
@@ -384,7 +384,7 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
                 */
                 constraints.push((
                     "The number of nibbles in the wrong leaf and the enquired address are the same",
-                    q_enable * is_wrong_leaf * (s_advice0_cur - s_advice0_prev),
+                    q_enable * is_wrong_leaf * (s_bytes0_cur - s_bytes0_prev),
                 ));
 
                 constraints

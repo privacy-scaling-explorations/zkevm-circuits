@@ -604,7 +604,6 @@ impl<F: FieldExt> MPTConfig<F> {
             account_leaf.is_in_added_branch,
             power_of_randomness.clone(),
             fixed_table,
-            address_rlc,
             check_zeros,
         );
 
@@ -1170,6 +1169,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                 self.storage_non_existing.assign(
                                     &mut region,
                                     self,
+                                    &mut pv,
                                     witness,
                                     offset,
                                 );
