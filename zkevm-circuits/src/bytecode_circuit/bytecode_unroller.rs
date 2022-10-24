@@ -657,7 +657,10 @@ pub fn unroll<F: Field>(bytes: Vec<u8>) -> UnrolledBytecode<F> {
 }
 
 fn is_push(byte: u8) -> bool {
-    OpcodeId::PUSH1.as_u8() <= byte && byte <= OpcodeId::PUSH32.as_u8()
+    match OpcodeId::try_from(byte) {
+        Ok(op) => op.is_push(),
+        Err(_) => false,
+    }
 }
 
 fn get_push_size(byte: u8) -> u64 {
@@ -720,7 +723,10 @@ mod tests {
         // Now add the different push ops
         for n in 1..=32 {
             let data_byte = OpcodeId::PUSH32.as_u8();
-            bytecode.push(n, Word::from_little_endian(&vec![data_byte; n][..]));
+            bytecode.push(
+                n,
+                Word::from_little_endian(&vec![data_byte; n as usize][..]),
+            );
             rows.push(BytecodeRow {
                 code_hash: Word::zero(),
                 tag: Fr::from(BytecodeFieldTag::Byte as u64),

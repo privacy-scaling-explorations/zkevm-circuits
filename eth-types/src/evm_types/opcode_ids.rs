@@ -675,6 +675,40 @@ impl OpcodeId {
                 | OpcodeId::EXTCODECOPY
         )
     }
+
+    /// Returns PUSHn opcode from parameter n.
+    pub fn push_n(n: u8) -> Result<Self, Error> {
+        if (1..=32).contains(&n) {
+            OpcodeId::try_from(OpcodeId::PUSH1.as_u8() + n - 1)
+        } else {
+            Err(Error::InvalidOpConversion)
+        }
+    }
+
+    /// If operation has postfix returns it, otherwise None.
+    pub fn postfix(&self) -> Option<u8> {
+        if self.is_push() {
+            Some(self.as_u8() - OpcodeId::PUSH1.as_u8() + 1)
+        } else if self.is_dup() {
+            Some(self.as_u8() - OpcodeId::DUP1.as_u8() + 1)
+        } else if self.is_swap() {
+            Some(self.as_u8() - OpcodeId::SWAP1.as_u8() + 1)
+        } else if self.is_log() {
+            Some(self.as_u8() - OpcodeId::LOG0.as_u8())
+        } else {
+            None
+        }
+    }
+
+    /// Returns number of bytes used by immediate data. This is > 0 only for
+    /// push opcodes.
+    pub fn data_len(&self) -> usize {
+        if self.is_push() {
+            (self.as_u8() - OpcodeId::PUSH1.as_u8() + 1) as usize
+        } else {
+            0
+        }
+    }
 }
 
 impl TryFrom<u8> for OpcodeId {
@@ -1011,5 +1045,40 @@ impl<'de> Deserialize<'de> for OpcodeId {
 impl fmt::Display for OpcodeId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{:?}", self)
+    }
+}
+
+#[cfg(test)]
+mod opcode_ids_tests {
+    use super::*;
+
+    #[test]
+    fn push_n() {
+        assert!(matches!(OpcodeId::push_n(1), Ok(OpcodeId::PUSH1)));
+        assert!(matches!(OpcodeId::push_n(10), Ok(OpcodeId::PUSH10)));
+        assert!(matches!(
+            OpcodeId::push_n(100),
+            Err(Error::InvalidOpConversion)
+        ));
+        assert!(matches!(
+            OpcodeId::push_n(0),
+            Err(Error::InvalidOpConversion)
+        ));
+    }
+
+    #[test]
+    fn postfix() {
+        assert_eq!(OpcodeId::PUSH1.postfix(), Some(1));
+        assert_eq!(OpcodeId::PUSH10.postfix(), Some(10));
+        assert_eq!(OpcodeId::LOG2.postfix(), Some(2));
+        assert_eq!(OpcodeId::CALLCODE.postfix(), None);
+    }
+
+    #[test]
+    fn data_len() {
+        assert_eq!(OpcodeId::PUSH1.data_len(), 1);
+        assert_eq!(OpcodeId::PUSH10.data_len(), 10);
+        assert_eq!(OpcodeId::LOG2.data_len(), 0);
+        assert_eq!(OpcodeId::CALLCODE.data_len(), 0);
     }
 }
