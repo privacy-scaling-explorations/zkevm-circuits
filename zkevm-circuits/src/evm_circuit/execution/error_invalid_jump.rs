@@ -23,7 +23,6 @@ use ethers_core::utils::__serde_json::value;
 use gadgets::util::and::expr;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
-use super::call;
 
 #[derive(Clone, Debug)]
 pub(crate) struct ErrorInvalidJumpGadget<F> {
@@ -32,7 +31,7 @@ pub(crate) struct ErrorInvalidJumpGadget<F> {
     code_length: Cell<F>,
     value: Cell<F>,
     is_code: Cell<F>,
-    within_range: LtGadget<F, N_BYTES_PROGRAM_COUNTER>,
+    out_of_range: LtGadget<F, N_BYTES_PROGRAM_COUNTER>,
     is_jump_dest: IsEqualGadget<F>,
     restore_context: RestoreContextGadget<F>,
 }
@@ -58,9 +57,9 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
         let code_length = cb.bytecode_length(cb.curr.state.code_hash.expr());
         let dest_value = from_bytes::expr(&destination.cells);
 
-        let within_range = LtGadget::construct(cb, code_length.expr(), dest_value.clone());
+        let out_of_range = LtGadget::construct(cb, code_length.expr(), dest_value.clone());
         //if not out of range, check `dest` is invalid
-        cb.condition(within_range.expr(), |cb| {
+        cb.condition(1.expr() - out_of_range.expr(), |cb| {
             // TODO: if not out of range, Lookup real value
             cb.bytecode_lookup(
                 cb.curr.state.code_hash.expr(),
@@ -75,9 +74,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
             );
         });
 
-        cb.condition(1.expr() - within_range.expr(), |cb| {
-            cb.require_equal("out_of_range is true", within_range.expr(), 0.expr());
-        });
 
         cb.call_context_lookup(false.expr(), None, CallContextFieldTag::IsSuccess, 0.expr());
 
@@ -112,7 +108,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
             code_length,
             value,
             is_code,
-            within_range,
+            out_of_range,
             is_jump_dest,
             restore_context,
         }
@@ -167,7 +163,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
             F::from(OpcodeId::JUMPDEST.as_u64()),
         )?;
 
-        self.within_range.assign(
+        self.out_of_range.assign(
             region,
             offset,
             F::from(code_length),
@@ -185,9 +181,9 @@ mod test {
     use eth_types::bytecode;
     use mock::TestContext;
 
-    fn test_invalid_jump(destination: usize) {
+    fn test_invalid_jump(destination: usize, out_of_range:bool) {
         let mut bytecode = bytecode! {
-            PUSH32(destination)
+            PUSH32(if out_of_range { destination + 10} else { destination })
             JUMP
         };
 
@@ -211,6 +207,12 @@ mod test {
 
     #[test]
     fn invalid_jump_err() {
-        test_invalid_jump(34);
+        test_invalid_jump(34, false);
     }
+
+    #[test]
+    fn invalid_jump_outofrange() {
+        test_invalid_jump(40, true);
+    }
+    // TODO: add internal call test
 }
