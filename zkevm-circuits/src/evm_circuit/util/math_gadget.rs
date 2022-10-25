@@ -1503,7 +1503,7 @@ mod tests {
     }
 
     #[test]
-    fn iszero_works() {
+    fn test_iszero() {
         #[derive(Clone)]
         /// n != 0
         struct IsZeroGadgetTestContainer<F> {
@@ -1550,7 +1550,7 @@ mod tests {
     }
 
     #[test]
-    fn isequal_works() {
+    fn test_isequal() {
         #[derive(Clone)]
         /// n != 0
         struct IsEqualGadgetTestContainer<F> {
@@ -1624,7 +1624,179 @@ mod tests {
     }
 
     #[test]
-    fn mod_works() {
+    fn test_addwords() {
+        #[derive(Clone)]
+        /// n != 0
+        struct AddWordsTestContainer<F> {
+            addwords_gadget: AddWordsGadget<F, 2, true>,
+            a: util::Word<F>,
+            b: util::Word<F>,
+            sum: util::Word<F>,
+        }
+
+        impl<F: Field> MathGadgetContainer<F> for AddWordsTestContainer<F> {
+            const NAME: &'static str = "IsEqualGadget";
+
+            fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
+                let a = cb.query_word();
+                let b = cb.query_word();
+                let sum = cb.query_word();
+                let addwords_gadget = AddWordsGadget::<F, 2, true>::construct(
+                    cb,
+                    [a.clone(), b.clone()],
+                    sum.clone(),
+                );
+                AddWordsTestContainer {
+                    addwords_gadget,
+                    a,
+                    b,
+                    sum,
+                }
+            }
+
+            fn assign_gadget_container(
+                &self,
+                input_words: &[Word],
+                region: &mut CachedRegion<'_, '_, F>,
+            ) -> Result<(), Error> {
+                let a = input_words[0];
+                let b = input_words[1];
+                let sum = input_words[2];
+                let offset = 0;
+
+                self.a.assign(region, offset, Some(a.to_le_bytes()))?;
+                self.b.assign(region, offset, Some(b.to_le_bytes()))?;
+                self.sum.assign(region, offset, Some(sum.to_le_bytes()))?;
+                self.addwords_gadget.assign(region, 0, [a, b], sum)?;
+
+                Ok(())
+            }
+        }
+
+        test_math_gadget_container::<Fr, AddWordsTestContainer<Fr>>(
+            vec![Word::from(0), Word::from(0), Word::from(0)],
+            true,
+        );
+
+        test_math_gadget_container::<Fr, AddWordsTestContainer<Fr>>(
+            vec![Word::from(1), Word::from(1), Word::from(2)],
+            true,
+        );
+
+        test_math_gadget_container::<Fr, AddWordsTestContainer<Fr>>(
+            vec![Word::from(1000), Word::from(1000), Word::from(2000)],
+            true,
+        );
+
+        test_math_gadget_container::<Fr, AddWordsTestContainer<Fr>>(
+            vec![Word::MAX - 1, Word::from(1), Word::MAX],
+            true,
+        );
+
+        test_math_gadget_container::<Fr, AddWordsTestContainer<Fr>>(
+            vec![Word::MAX, Word::from(1), Word::from(0)],
+            false,
+        );
+
+        test_math_gadget_container::<Fr, AddWordsTestContainer<Fr>>(
+            vec![Word::from(1), Word::from(0), Word::from(0)],
+            false,
+        );
+
+        test_math_gadget_container::<Fr, AddWordsTestContainer<Fr>>(
+            vec![Word::from(0), Word::from(1), Word::from(0)],
+            false,
+        );
+    }
+
+    #[test]
+    fn test_addwords() {
+        #[derive(Clone)]
+        /// n != 0
+        struct AddWordsTestContainer<F> {
+            addwords_gadget: AddWordsGadget<F, 2, true>,
+            a: util::Word<F>,
+            b: util::Word<F>,
+            sum: util::Word<F>,
+        }
+
+        impl<F: Field> MathGadgetContainer<F> for AddWordsTestContainer<F> {
+            const NAME: &'static str = "IsEqualGadget";
+
+            fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
+                let a = cb.query_word();
+                let b = cb.query_word();
+                let sum = cb.query_word();
+                let addwords_gadget = AddWordsGadget::<F, 2, true>::construct(
+                    cb,
+                    [a.clone(), b.clone()],
+                    sum.clone(),
+                );
+                AddWordsTestContainer {
+                    addwords_gadget,
+                    a,
+                    b,
+                    sum,
+                }
+            }
+
+            fn assign_gadget_container(
+                &self,
+                input_words: &[Word],
+                region: &mut CachedRegion<'_, '_, F>,
+            ) -> Result<(), Error> {
+                let a = input_words[0];
+                let b = input_words[1];
+                let sum = input_words[2];
+                let offset = 0;
+
+                self.a.assign(region, offset, Some(a.to_le_bytes()))?;
+                self.b.assign(region, offset, Some(b.to_le_bytes()))?;
+                self.sum.assign(region, offset, Some(sum.to_le_bytes()))?;
+                self.addwords_gadget.assign(region, 0, [a, b], sum)?;
+
+                Ok(())
+            }
+        }
+
+        test_math_gadget_container::<Fr, AddWordsTestContainer<Fr>>(
+            vec![Word::from(0), Word::from(0), Word::from(0)],
+            true,
+        );
+
+        test_math_gadget_container::<Fr, AddWordsTestContainer<Fr>>(
+            vec![Word::from(1), Word::from(1), Word::from(2)],
+            true,
+        );
+
+        test_math_gadget_container::<Fr, AddWordsTestContainer<Fr>>(
+            vec![Word::from(1000), Word::from(1000), Word::from(2000)],
+            true,
+        );
+
+        test_math_gadget_container::<Fr, AddWordsTestContainer<Fr>>(
+            vec![Word::MAX - 1, Word::from(1), Word::MAX],
+            true,
+        );
+
+        test_math_gadget_container::<Fr, AddWordsTestContainer<Fr>>(
+            vec![Word::MAX, Word::from(1), Word::from(0)],
+            false,
+        );
+
+        test_math_gadget_container::<Fr, AddWordsTestContainer<Fr>>(
+            vec![Word::from(1), Word::from(0), Word::from(0)],
+            false,
+        );
+
+        test_math_gadget_container::<Fr, AddWordsTestContainer<Fr>>(
+            vec![Word::from(0), Word::from(1), Word::from(0)],
+            false,
+        );
+    }
+
+    #[test]
+    fn test_mod() {
         #[derive(Clone)]
         /// a % n == r
         struct ModGadgetTestContainer<F> {
@@ -1690,7 +1862,7 @@ mod tests {
     }
 
     #[test]
-    fn muladd_works() {
+    fn test_muladd() {
         #[derive(Clone)]
         /// a*b + c == d
         struct MulAddGadgetContainer<F> {
