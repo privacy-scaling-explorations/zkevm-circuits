@@ -1,7 +1,7 @@
 //! Definition of each opcode of the EVM.
 use crate::{
     circuit_input_builder::{CircuitInputStateRef, ExecStep},
-    error::{ExecError, OogError},
+    error::{ExecError},
     evm::OpcodeId,
     operation::{
         AccountField, CallContextField, TxAccessListAccountOp, TxReceiptField, TxRefundOp, RW,
@@ -264,6 +264,7 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
 fn fn_gen_error_state_associated_ops(error: &ExecError) -> FnGenAssociatedOps {
     match error {
         ExecError::InvalidJump => ErrorInvalidJump::gen_associated_ops,
+        // more future errors place here
         _ => {
             warn!("Using dummy gen_associated_ops for error state {:?}", error);
             Dummy::gen_associated_ops
@@ -299,7 +300,7 @@ pub fn gen_associated_ops(
         None
     };
     if let Some(exec_error) = state.get_step_err(geth_step, next_step).unwrap() {
-        println!(
+        log::warn!(
             "geth error {:?} occurred in  {:?}",
             exec_error, geth_step.op
         );
@@ -307,13 +308,15 @@ pub fn gen_associated_ops(
         exec_step.error = Some(exec_error.clone());
         // for `oog_or_stack_error` error message will be returned by geth_step error
         // field, when this kind of error happens, no more proceeding
-        if geth_step.op.is_call_or_create() && !exec_step.oog_or_stack_error() {
-            let call = state.parse_call(geth_step)?;
-            // Switch to callee's call context
-            state.push_call(call);
-        } else {
-            let fn_gen_error_associated_ops = fn_gen_error_state_associated_ops(&exec_error);
-            return fn_gen_error_associated_ops(state, geth_steps);
+        if !exec_step.oog_or_stack_error(){
+            if geth_step.op.is_call_or_create() {
+                let call = state.parse_call(geth_step)?;
+                // Switch to callee's call context
+                state.push_call(call);
+            }else{
+                let fn_gen_error_associated_ops = fn_gen_error_state_associated_ops(&exec_error);
+                return fn_gen_error_associated_ops(state, geth_steps);
+            } 
         }
 
         state.handle_return(geth_step)?;

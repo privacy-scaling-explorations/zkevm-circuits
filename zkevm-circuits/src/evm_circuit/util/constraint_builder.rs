@@ -12,7 +12,6 @@ use crate::{
     util::{build_tx_log_expression, Expr},
 };
 use eth_types::Field;
-use ethers_core::utils::__serde_json::value;
 use halo2_proofs::{
     circuit::Value,
     plonk::{

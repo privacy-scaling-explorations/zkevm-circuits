@@ -1,6 +1,5 @@
 use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
 use crate::evm::Opcode;
-use crate::operation::{CallContextField, RW};
 use crate::Error;
 use eth_types::{GethExecStep, ToAddress, ToWord /* OpcodeI */};
 
@@ -28,16 +27,18 @@ impl Opcode for ErrorInvalidJump {
             geth_step.stack.last_filled(),
             dest.to_word(),
         )?;
-        let call = state.call().unwrap();
-        state.call_context_read(
-            &mut exec_step,
-            call.call_id,
-            CallContextField::IsSuccess,
-            (call.is_success as u64).into(),
-        );
+        // this is done in gen_restore_context_ops
+        // let call = state.call().unwrap();
+        // state.call_context_read(
+        //     &mut exec_step,
+        //     call.call_id,
+        //     CallContextField::IsSuccess,
+        //     (call.is_success as u64).into(),
+        // );
 
-        state.handle_return(geth_step);
-        state.gen_restore_context_ops(&mut exec_step, geth_steps);
+    
+        state.gen_restore_context_ops(&mut exec_step, geth_steps)?;
+        state.handle_return(geth_step)?;
         Ok(vec![exec_step])
     }
 }

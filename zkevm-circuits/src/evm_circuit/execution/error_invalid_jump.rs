@@ -4,14 +4,14 @@ use crate::{
         param::N_BYTES_PROGRAM_COUNTER,
         step::ExecutionState,
         util::{
-            common_gadget::{RestoreContextGadget, SameContextGadget},
+            common_gadget::{RestoreContextGadget},
             constraint_builder::{
                 ConstraintBuilder, StepStateTransition,
-                Transition::{Delta, Same, To},
+                Transition::{Delta, Same, },
             },
             from_bytes,
             math_gadget::{IsEqualGadget, LtGadget},
-            not, CachedRegion, Cell, RandomLinearCombination,
+            CachedRegion, Cell, RandomLinearCombination,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -19,8 +19,6 @@ use crate::{
     util::Expr,
 };
 use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian};
-use ethers_core::utils::__serde_json::value;
-use gadgets::util::and::expr;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 
@@ -99,7 +97,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
         // When it's an internal call, need to restore caller's state as finishing this
         // call. Restore caller state to next StepState
         let restore_context = cb.condition(1.expr() - cb.curr.state.is_root.expr(), |cb| {
-            RestoreContextGadget::construct(cb, 0.expr(), 2.expr(), 0.expr(), 0.expr(), 0.expr())
+            RestoreContextGadget::construct(cb, 0.expr(), 0.expr(), 0.expr(), 0.expr(), 0.expr())
         });
 
         Self {
@@ -177,9 +175,17 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::{evm_circuit::test::rand_range, test_util::run_test_circuits};
-    use eth_types::bytecode;
+    use crate::test_util::run_test_circuits;
     use mock::TestContext;
+    use eth_types::geth_types::Account;
+    use crate::evm_circuit::test::run_test_circuit;
+    use crate::evm_circuit::witness::block_convert;
+    use eth_types::{address, bytecode, Address, ToWord, Word};
+    use eth_types::evm_types::OpcodeId;
+    use eth_types::bytecode::Bytecode;
+
+
+
 
     fn test_invalid_jump(destination: usize, out_of_range:bool) {
         let mut bytecode = bytecode! {
@@ -214,5 +220,169 @@ mod test {
     fn invalid_jump_outofrange() {
         test_invalid_jump(40, true);
     }
+
     // TODO: add internal call test
+    struct Stack {
+        gas: u64,
+        value: Word,
+        cd_offset: u64,
+        cd_length: u64,
+        rd_offset: u64,
+        rd_length: u64,
+    }
+
+    fn callee(code: Bytecode) -> Account {
+        let code = code.to_vec();
+        let is_empty = code.is_empty();
+        Account {
+            address: Address::repeat_byte(0xff),
+            code: code.into(),
+            nonce: if is_empty { 0 } else { 1 }.into(),
+            balance: if is_empty { 0 } else { 0xdeadbeefu64 }.into(),
+            ..Default::default()
+        }
+    }
+
+    fn caller(opcode: OpcodeId, stack: Stack, caller_is_success: bool) -> Account {
+        let is_call = opcode == OpcodeId::CALL;
+        let terminator = if caller_is_success {
+            OpcodeId::RETURN
+        } else {
+            OpcodeId::REVERT
+        };
+
+        // Call twice for testing both cold and warm access
+        let mut bytecode = bytecode! {
+            PUSH32(Word::from(stack.rd_length))
+            PUSH32(Word::from(stack.rd_offset))
+            PUSH32(Word::from(stack.cd_length))
+            PUSH32(Word::from(stack.cd_offset))
+        };
+        if is_call {
+            bytecode.push(32, stack.value);
+        }
+        bytecode.append(&bytecode! {
+            PUSH32(Address::repeat_byte(0xff).to_word())
+            PUSH32(Word::from(stack.gas))
+            .write_op(opcode)
+            PUSH32(Word::from(stack.rd_length))
+            PUSH32(Word::from(stack.rd_offset))
+            PUSH32(Word::from(stack.cd_length))
+            PUSH32(Word::from(stack.cd_offset))
+        });
+        if is_call {
+            bytecode.push(32, stack.value);
+        }
+        bytecode.append(&bytecode! {
+            PUSH32(Address::repeat_byte(0xff).to_word())
+            PUSH32(Word::from(stack.gas))
+            .write_op(opcode)
+            PUSH1(0)
+            PUSH1(0)
+            .write_op(terminator)
+        });
+
+        Account {
+            address: Address::repeat_byte(0xfe),
+            balance: Word::from(10).pow(20.into()),
+            code: bytecode.to_vec().into(),
+            ..Default::default()
+        }
+    }
+
+    // jump error happen in internal call
+    #[test]
+    fn test_internal_jump_error(){
+        let mut caller_bytecode = bytecode! {
+            PUSH1(0)
+            PUSH1(0)
+            PUSH1(0)
+            PUSH1(0)
+            PUSH1(0)
+        };
+                
+        caller_bytecode.append(&bytecode! {
+            PUSH32(Address::repeat_byte(0xff).to_word())
+            PUSH2(10000)
+            CALL
+            STOP
+        });
+   
+        let mut callee_bytecode = bytecode! {
+            PUSH1(42) // jump dest 43
+            JUMP
+
+            PUSH1(0)
+            PUSH1(0)
+            PUSH1(0)
+            PUSH1(0)
+            PUSH1(0)
+        };
+
+        callee_bytecode.append(&bytecode! {
+            PUSH20(Address::repeat_byte(0xff).to_word())
+            PUSH1(132) // gas
+            CALL
+
+            JUMPDEST 
+            GAS
+            PUSH1(1)
+            AND
+            PUSH1(56)
+            JUMPI
+
+            PUSH1(0)
+            PUSH1(0)
+            REVERT
+
+            JUMPDEST
+            STOP
+        });
+        test_ok(
+            Account {
+                address: Address::repeat_byte(0xfe),
+                balance: Word::from(10).pow(20.into()),
+                code: caller_bytecode.into(),
+                ..Default::default()
+            },
+            callee(callee_bytecode),
+        );
+    }
+
+    fn test_ok(caller: Account, callee: Account) {
+        let block = TestContext::<3, 1>::new(
+            None,
+            |accs| {
+                accs[0]
+                    .address(address!("0x000000000000000000000000000000000000cafe"))
+                    .balance(Word::from(10u64.pow(19)));
+                accs[1]
+                    .address(caller.address)
+                    .code(caller.code)
+                    .nonce(caller.nonce)
+                    .balance(caller.balance);
+                accs[2]
+                    .address(callee.address)
+                    .code(callee.code)
+                    .nonce(callee.nonce)
+                    .balance(callee.balance);
+            },
+            |mut txs, accs| {
+                txs[0]
+                    .from(accs[0].address)
+                    .to(accs[1].address)
+                    .gas(100000.into());
+            },
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap()
+        .into();
+        let block_data = bus_mapping::mock::BlockData::new_from_geth_data(block);
+        let mut builder = block_data.new_circuit_input_builder();
+        builder
+            .handle_block(&block_data.eth_block, &block_data.geth_traces)
+            .unwrap();
+        let block = block_convert(&builder.block, &builder.code_db);
+        assert_eq!(run_test_circuit(block), Ok(()));
+    }
 }

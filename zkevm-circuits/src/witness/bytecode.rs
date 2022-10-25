@@ -64,9 +64,8 @@ impl Bytecode {
         rows
     }
 
-    /// get byte value and is_code
+    /// get byte value and is_code pair
     pub fn get(&self, dest: usize) -> [u8; 2] {
-        let n = 1 + self.bytes.len();
 
         let mut push_data_left = 0;
         for (idx, byte) in self.bytes.iter().enumerate() {
@@ -84,7 +83,7 @@ impl Bytecode {
         }
 
         // here dest > bytecodes len
-        panic!("can not find byte in the bytecodjes list")
+        panic!("can not find byte in the bytecodes list")
     }
 }
 
