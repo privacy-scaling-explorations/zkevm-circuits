@@ -447,23 +447,59 @@ impl<F: FieldExt> StorageNonExistingConfig<F> {
                 let q_enable = q_enable(meta);
                 let mut constraints = vec![];
 
-                // TODO: long leaf
+                let rot =  - (LEAF_NON_EXISTING_IND - LEAF_KEY_C_IND);
+                let flag1 = meta.query_advice(accs.s_mod_node_rlc, Rotation(rot));
+                let flag2 = meta.query_advice(accs.c_mod_node_rlc, Rotation(rot));
+                let is_long = flag1.clone() * (one.clone() - flag2.clone());
+                let is_short = (one.clone() - flag1.clone()) * flag2.clone();
+
                 let is_wrong_leaf = meta.query_advice(s_main.rlp1, Rotation::cur());
-                let len_prev = meta.query_advice(s_main.rlp2, Rotation(-(LEAF_NON_EXISTING_IND - LEAF_KEY_C_IND)));
-                let len_cur = meta.query_advice(s_main.rlp2, Rotation::cur());
+                let len_prev_short = meta.query_advice(s_main.rlp2, Rotation(-(LEAF_NON_EXISTING_IND - LEAF_KEY_C_IND)));
+                let len_cur_short = meta.query_advice(s_main.rlp2, Rotation::cur());
 
                 /*
                 This constraint is to prevent the attacker to prove that some key does not exist by setting
                 some arbitrary number of nibbles in the leaf which would lead to a desired RLC.
                 */
                 constraints.push((
-                    "The number of nibbles in the wrong leaf and the enquired key are the same",
-                    q_enable * is_wrong_leaf * (len_cur - len_prev),
+                    "The number of nibbles in the wrong leaf and the enquired key are the same (short)",
+                    q_enable.clone() * is_wrong_leaf.clone() * is_short * (len_cur_short - len_prev_short),
+                ));
+
+                let len_prev_long = meta.query_advice(s_main.bytes[0], Rotation(-(LEAF_NON_EXISTING_IND - LEAF_KEY_C_IND)));
+                let len_cur_long = meta.query_advice(s_main.bytes[0], Rotation::cur());
+
+                /*
+                This constraint is to prevent the attacker to prove that some key does not exist by setting
+                some arbitrary number of nibbles in the leaf which would lead to a desired RLC.
+                */
+                constraints.push((
+                    "The number of nibbles in the wrong leaf and the enquired key are the same (short)",
+                    q_enable * is_wrong_leaf * is_long * (len_cur_long - len_prev_long),
                 ));
 
                 constraints
             },
         );
+
+        let sel_short = |meta: &mut VirtualCells<F>| {
+            let q_enable = q_enable(meta);
+            let rot =  - (LEAF_NON_EXISTING_IND - LEAF_KEY_C_IND);
+            let flag1 = meta.query_advice(accs.s_mod_node_rlc, Rotation(rot));
+            let flag2 = meta.query_advice(accs.c_mod_node_rlc, Rotation(rot));
+            let is_short = (one.clone() - flag1.clone()) * flag2.clone();
+
+            q_enable * is_short
+        };
+        let sel_long = |meta: &mut VirtualCells<F>| {
+            let q_enable = q_enable(meta);
+            let rot =  - (LEAF_NON_EXISTING_IND - LEAF_KEY_C_IND);
+            let flag1 = meta.query_advice(accs.s_mod_node_rlc, Rotation(rot));
+            let flag2 = meta.query_advice(accs.c_mod_node_rlc, Rotation(rot));
+            let is_long = flag1.clone() * (one.clone() - flag2.clone());
+
+            q_enable * is_long
+        };
 
         /*
         Key RLC is computed over all of `(s_main.bytes[0]), s_main.bytes[1], ..., s_main.bytes[31],
@@ -473,21 +509,27 @@ impl<F: FieldExt> StorageNonExistingConfig<F> {
         `i > key_len + 1` to get the desired key RLC, we need to ensure that
         `s_main.bytes[i] = 0` for `i > key_len + 1`.
 
-        Note that the number of the key bytes in the `ACCOUNT_NON_EXISTING` row needs to be the same as
-        the number of the key bytes in the `ACCOUNT_LEAF_KEY` row.
-
-        Note: the key length is always in s_main.bytes[0] here as opposed to storage
-        key leaf where it can appear in `s_rlp2` too. This is because the account
-        leaf contains nonce, balance, ... which makes it always longer than 55 bytes,
-        which makes a RLP to start with 248 (`s_rlp1`) and having one byte (in `s_rlp2`)
-        for the length of the remaining stream.
+        Note that the number of the key bytes in the `LEAF_NON_EXISTING` row needs to be the same as
+        the number of the key bytes in the `LEAF_KEY` row.
         */
-        // TODO: short/long leaf
         if check_zeros {
+            for ind in 0..HASH_WIDTH {
+                key_len_lookup(
+                    meta,
+                    sel_short,
+                    ind + 1,
+                    s_main.rlp2,
+                    s_main.bytes[ind],
+                    128,
+                    fixed_table,
+                )
+            }
+            key_len_lookup(meta, sel_short, 32, s_main.rlp2, c_main.rlp1, 128, fixed_table);
+
             for ind in 1..HASH_WIDTH {
                 key_len_lookup(
                     meta,
-                    q_enable,
+                    sel_long,
                     ind,
                     s_main.bytes[0],
                     s_main.bytes[ind],
@@ -495,8 +537,8 @@ impl<F: FieldExt> StorageNonExistingConfig<F> {
                     fixed_table,
                 )
             }
-            key_len_lookup(meta, q_enable, 32, s_main.bytes[0], c_main.rlp1, 128, fixed_table);
-            key_len_lookup(meta, q_enable, 33, s_main.bytes[0], c_main.rlp2, 128, fixed_table);
+            key_len_lookup(meta, sel_long, 32, s_main.bytes[0], c_main.rlp1, 128, fixed_table);
+            key_len_lookup(meta, sel_long, 33, s_main.bytes[0], c_main.rlp2, 128, fixed_table);
         }
 
         /*
