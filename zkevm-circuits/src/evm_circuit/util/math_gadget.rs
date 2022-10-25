@@ -1503,6 +1503,127 @@ mod tests {
     }
 
     #[test]
+    fn iszero_works() {
+        #[derive(Clone)]
+        /// n != 0
+        struct IsZeroGadgetTestContainer<F> {
+            z_gadget: IsZeroGadget<F>,
+            n: util::Word<F>,
+        }
+
+        impl<F: Field> MathGadgetContainer<F> for IsZeroGadgetTestContainer<F> {
+            const NAME: &'static str = "IsZeroGadget";
+
+            fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
+                let n = cb.query_word();
+                let z_gadget = IsZeroGadget::<F>::construct(cb, sum::expr(&n.cells));
+                cb.require_equal("Input must not be 0", z_gadget.expr(), 0.expr());
+                IsZeroGadgetTestContainer { z_gadget, n }
+            }
+
+            fn assign_gadget_container(
+                &self,
+                input_words: &[Word],
+                region: &mut CachedRegion<'_, '_, F>,
+            ) -> Result<(), Error> {
+                let n = input_words[0];
+                let offset = 0;
+
+                self.n.assign(region, offset, Some(n.to_le_bytes()))?;
+                self.z_gadget
+                    .assign(region, 0, sum::value(&n.to_le_bytes()))?;
+
+                Ok(())
+            }
+        }
+
+        test_math_gadget_container::<Fr, IsZeroGadgetTestContainer<Fr>>(vec![Word::from(0)], false);
+
+        test_math_gadget_container::<Fr, IsZeroGadgetTestContainer<Fr>>(vec![Word::from(1)], true);
+
+        test_math_gadget_container::<Fr, IsZeroGadgetTestContainer<Fr>>(
+            vec![Word::from(1000)],
+            true,
+        );
+
+        test_math_gadget_container::<Fr, IsZeroGadgetTestContainer<Fr>>(vec![Word::MAX], true);
+    }
+
+    #[test]
+    fn isequal_works() {
+        #[derive(Clone)]
+        /// n != 0
+        struct IsEqualGadgetTestContainer<F> {
+            eq_gadget: IsEqualGadget<F>,
+            a: util::Word<F>,
+            b: util::Word<F>,
+        }
+
+        impl<F: Field> MathGadgetContainer<F> for IsEqualGadgetTestContainer<F> {
+            const NAME: &'static str = "IsEqualGadget";
+
+            fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
+                let a = cb.query_rlc();
+                let b = cb.query_rlc();
+                let eq_gadget =
+                    IsEqualGadget::<F>::construct(cb, sum::expr(&a.cells), sum::expr(&b.cells));
+                cb.require_equal("Inputs must equal", eq_gadget.expr(), 1.expr());
+                IsEqualGadgetTestContainer {
+                    eq_gadget: eq_gadget,
+                    a,
+                    b,
+                }
+            }
+
+            fn assign_gadget_container(
+                &self,
+                input_words: &[Word],
+                region: &mut CachedRegion<'_, '_, F>,
+            ) -> Result<(), Error> {
+                let a = input_words[0];
+                let b = input_words[1];
+                let offset = 0;
+
+                self.a.assign(region, offset, Some(a.to_le_bytes()))?;
+                self.b.assign(region, offset, Some(b.to_le_bytes()))?;
+                self.eq_gadget.assign(
+                    region,
+                    0,
+                    sum::value(&a.to_le_bytes()),
+                    sum::value(&b.to_le_bytes()),
+                )?;
+
+                Ok(())
+            }
+        }
+
+        test_math_gadget_container::<Fr, IsEqualGadgetTestContainer<Fr>>(
+            vec![Word::from(0), Word::from(0)],
+            true,
+        );
+
+        test_math_gadget_container::<Fr, IsEqualGadgetTestContainer<Fr>>(
+            vec![Word::from(1), Word::from(1)],
+            true,
+        );
+
+        test_math_gadget_container::<Fr, IsEqualGadgetTestContainer<Fr>>(
+            vec![Word::from(1000), Word::from(1000)],
+            true,
+        );
+
+        test_math_gadget_container::<Fr, IsEqualGadgetTestContainer<Fr>>(
+            vec![Word::from(1), Word::from(0)],
+            false,
+        );
+
+        test_math_gadget_container::<Fr, IsEqualGadgetTestContainer<Fr>>(
+            vec![Word::from(0), Word::from(1)],
+            false,
+        );
+    }
+
+    #[test]
     fn mod_works() {
         #[derive(Clone)]
         /// a % n == r
