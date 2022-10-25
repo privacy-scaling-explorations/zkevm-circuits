@@ -393,6 +393,7 @@ impl<F: FieldExt> StorageNonExistingConfig<F> {
                     q_enable.clone()
                         * is_leaf_in_first_storage_level.clone()
                         * is_wrong_leaf.clone()
+                        * is_short.clone()
                         * (key_rlc_acc_short - key_rlc.clone()),
                 ));
 
