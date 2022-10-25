@@ -322,7 +322,6 @@ mod test {
         callee_bytecode.append(&bytecode! {
             PUSH20(Address::repeat_byte(0xff).to_word())
             PUSH1(132) // gas
-            CALL
 
             JUMPDEST 
             GAS
