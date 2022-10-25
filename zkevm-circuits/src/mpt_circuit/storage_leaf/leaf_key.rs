@@ -705,7 +705,7 @@ impl<F: FieldExt> LeafKeyConfig<F> {
             ));
 
             let s_bytes1 = meta.query_advice(s_main.bytes[1], Rotation::cur());
-            key_rlc_acc_short = key_rlc_acc_short + s_bytes1 * key_mult.clone();
+            key_rlc_acc_short = key_rlc_acc_short + s_bytes1.clone() * key_mult.clone();
 
             for ind in 2..HASH_WIDTH {
                 let s = meta.query_advice(s_main.bytes[ind], Rotation::cur());
@@ -745,7 +745,6 @@ impl<F: FieldExt> LeafKeyConfig<F> {
             // When long RLP: key starts at `s_main.bytes[1]`:
 
             // If `is_c16 = 1`, we have nibble+48 in `s_main.bytes[1]`.
-            let s_bytes1 = meta.query_advice(s_main.bytes[1], Rotation::cur());
             let mut key_rlc_acc_long = key_rlc_acc_start
                 + (s_bytes1.clone() - c48.clone()) * key_mult_start * is_c16.clone();
 

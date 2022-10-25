@@ -13,8 +13,8 @@ use crate::{
     mpt_circuit::{param::{
         ACCOUNT_LEAF_ROWS, ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND,
         ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND, BRANCH_ROWS_NUM, HASH_WIDTH,
-        LEAF_VALUE_C_IND, LEAF_VALUE_S_IND, IS_BRANCH_S_PLACEHOLDER_POS, RLP_NUM, IS_BRANCH_C_PLACEHOLDER_POS, IS_STORAGE_MOD_POS,
-    }, helpers::{get_leaf_len, key_len_lookup}},
+        LEAF_VALUE_C_IND, LEAF_VALUE_S_IND, IS_BRANCH_S_PLACEHOLDER_POS, RLP_NUM, IS_BRANCH_C_PLACEHOLDER_POS, IS_STORAGE_MOD_POS, LEAF_NON_EXISTING_IND,
+    }, helpers::{get_leaf_len, key_len_lookup}, columns::ProofTypeCols},
     mpt_circuit::witness_row::{MptWitnessRow, MptWitnessRowType}, table::KeccakTable,
 };
 
@@ -100,6 +100,7 @@ impl<F: FieldExt> LeafValueConfig<F> {
     #[allow(clippy::too_many_arguments)]
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
+        proof_type: ProofTypeCols<F>,
         position_cols: PositionCols<F>,
         is_leaf_value: Column<Advice>,
         s_main: MainCols<F>,
@@ -422,11 +423,34 @@ impl<F: FieldExt> LeafValueConfig<F> {
             */
             constraints.push((
                 "RLP check last level or one nibble & long value",
-                q_enable
+                q_enable.clone()
                     * last_level_or_one_nibblelong_check
                     * (last_level + one_nibble)
                     * is_long,
             ));
+
+
+            if !is_s {
+                let is_wrong_leaf = meta.query_advice(s_main.rlp1, Rotation(LEAF_NON_EXISTING_IND - LEAF_VALUE_C_IND));
+                constraints.push((
+                    "is_wrong_leaf is bool",
+                    get_bool_constraint(q_enable.clone(), is_wrong_leaf.clone()),
+                ));
+
+
+                let is_non_existing_storage_proof =
+                    meta.query_advice(proof_type.is_non_existing_storage_proof, Rotation::cur());
+
+                // Note: some is_wrong_leaf constraints are in this config because
+                // leaf_non_existing config only triggers constraints for
+                // non_existing_storage proof (see q_enable).
+                constraints.push((
+                    "is_wrong_leaf needs to be 0 when not in non_existing_account proof",
+                    q_enable.clone()
+                        * (one.clone() - is_non_existing_storage_proof.clone())
+                        * is_wrong_leaf.clone(),
+                ));
+            }
 
             constraints
         });

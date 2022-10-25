@@ -554,6 +554,7 @@ impl<F: FieldExt> MPTConfig<F> {
 
         let storage_leaf_value_s = LeafValueConfig::<F>::configure(
             meta,
+            proof_type.clone(),
             position_cols.clone(),
             storage_leaf.is_s_value,
             s_main.clone(),
@@ -571,6 +572,7 @@ impl<F: FieldExt> MPTConfig<F> {
 
         let storage_leaf_value_c = LeafValueConfig::<F>::configure(
             meta,
+            proof_type.clone(),
             position_cols.clone(),
             storage_leaf.is_c_value,
             s_main.clone(),

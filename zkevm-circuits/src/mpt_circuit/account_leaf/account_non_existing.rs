@@ -199,8 +199,8 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
                 // 1. A leaf is returned that is not at the required address (wrong leaf).
                 // 2. A branch is returned as the last element of getProof and there is nil object at address position. Placeholder account leaf is added in this case.
                 let is_wrong_leaf = meta.query_advice(s_main.rlp1, Rotation::cur());
-                // is_wrong_leaf is checked to be bool in account_leaf_nonce_balance (q_enable in this chip
-                // is true only when non_existing_account).
+                // is_wrong_leaf is checked to be bool in `account_leaf_nonce_balance.rs` (q_enable in this chip
+                // is true only when non_existing_account_proof).
 
                 let key_rlc_acc_start =
                     meta.query_advice(accs.key.rlc, Rotation(rot_into_first_branch_child));

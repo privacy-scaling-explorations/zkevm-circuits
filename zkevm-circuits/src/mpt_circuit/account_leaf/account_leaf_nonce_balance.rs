@@ -218,8 +218,8 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
                 get_bool_constraint(q_enable.clone(), is_wrong_leaf.clone()),
             ));
 
-            // Note: some is_wrong_leaf constraints are in this chip because
-            // account_non_existing chip only triggers constraints for
+            // Note: some is_wrong_leaf constraints are in this config because
+            // account_non_existing config only triggers constraints for
             // non_existing_account proof (see q_enable).
             constraints.push((
                 "is_wrong_leaf needs to be 0 when not in non_existing_account proof",
