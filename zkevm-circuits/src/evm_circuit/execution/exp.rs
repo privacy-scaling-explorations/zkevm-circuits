@@ -174,8 +174,8 @@ impl<F: Field> ExecutionGadget<F> for ExponentiationGadget<F> {
         // Finally we build an expression for the dynamic gas cost.
         let dynamic_gas_cost = 50.expr() * exponent_byte_size.byte_size();
         let step_state_transition = StepStateTransition {
-            rw_counter: Transition::Delta(3.expr()),
-            program_counter: Transition::Delta(1.expr()), // 2 stack pops, 1 stack push
+            rw_counter: Transition::Delta(3.expr()), // 2 stack pops, 1 stack push
+            program_counter: Transition::Delta(1.expr()), 
             stack_pointer: Transition::Delta(1.expr()),
             gas_left: Transition::Delta(
                 -OpcodeId::EXP.constant_gas_cost().expr() - dynamic_gas_cost,
