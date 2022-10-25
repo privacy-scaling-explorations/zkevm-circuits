@@ -284,7 +284,8 @@ impl<F: FieldExt> StorageNonExistingConfig<F> {
                         * is_c1,
                 ));
 
-                key_rlc_acc_long = key_rlc_acc_long + s_bytes1 * key_mult.clone();
+                let s_bytes2 = meta.query_advice(s_main.bytes[2], Rotation::cur());
+                key_rlc_acc_long = key_rlc_acc_long + s_bytes2 * key_mult.clone();
 
                 for ind in 3..HASH_WIDTH {
                     let s = meta.query_advice(s_main.bytes[ind], Rotation::cur());
@@ -406,7 +407,8 @@ impl<F: FieldExt> StorageNonExistingConfig<F> {
                         * is_leaf_in_first_storage_level.clone(),
                 ));
 
-                key_rlc_acc_long = key_rlc_acc_long + s_bytes1;
+                let s_bytes2 = meta.query_advice(s_main.bytes[2], Rotation::cur());
+                key_rlc_acc_long = key_rlc_acc_long + s_bytes2;
 
                 for ind in 3..HASH_WIDTH {
                     let s = meta.query_advice(s_main.bytes[ind], Rotation::cur());
@@ -574,13 +576,8 @@ impl<F: FieldExt> StorageNonExistingConfig<F> {
         let row_key_c = &witness[offset - (LEAF_NON_EXISTING_IND - LEAF_KEY_C_IND) as usize];
         let row = &witness[offset];
 
-        let mut typ = "short";
-        if row_key_c.get_byte(0) == 248 {
-            typ = "long";
-        }
-
         let mut start = S_START - 1;
-        if typ == "long" {
+        if row_key_c.get_byte(0) == 248 {
             start = S_START;
         }
 
@@ -633,11 +630,7 @@ impl<F: FieldExt> StorageNonExistingConfig<F> {
 
         let mut key_rlc_new = pv.key_rlc;
         let mut key_rlc_mult_new = pv.key_rlc_mult;
-        // if typ != "last_level" && typ != "one_nibble" {
-            // If in last level or having only one nibble,
-            // the key RLC is already computed using the first two bytes above.
-            mpt_config.compute_key_rlc(&row.bytes, &mut key_rlc_new, &mut key_rlc_mult_new, start);
-        // }
+        mpt_config.compute_key_rlc(&row.bytes, &mut key_rlc_new, &mut key_rlc_mult_new, start);
     
         region
             .assign_advice(
