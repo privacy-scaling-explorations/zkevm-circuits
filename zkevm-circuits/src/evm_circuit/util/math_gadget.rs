@@ -1552,7 +1552,7 @@ mod tests {
     #[test]
     fn test_isequal() {
         #[derive(Clone)]
-        /// n != 0
+        /// a == b
         struct IsEqualGadgetTestContainer<F> {
             eq_gadget: IsEqualGadget<F>,
             a: util::Word<F>,
@@ -1626,7 +1626,7 @@ mod tests {
     #[test]
     fn test_addwords() {
         #[derive(Clone)]
-        /// n != 0
+        /// sum = a + b
         struct AddWordsTestContainer<F> {
             addwords_gadget: AddWordsGadget<F, 2, true>,
             a: util::Word<F>,
@@ -1712,7 +1712,7 @@ mod tests {
     #[test]
     fn test_mul_word_u64() {
         #[derive(Clone)]
-        /// n != 0
+        /// product = a*(b as u64)
         struct MulWordByU64TestContainer<F> {
             mulwords_u64_gadget: MulWordByU64Gadget<F>,
             a: util::Word<F>,
@@ -1779,6 +1779,120 @@ mod tests {
 
         test_math_gadget_container::<Fr, MulWordByU64TestContainer<Fr>>(
             vec![Word::MAX, Word::from(1), Word::from(1)],
+            false,
+        );
+    }
+
+    #[test]
+    fn test_range_check() {
+        #[derive(Clone)]
+        /// a in [0..1<<32]
+        struct RangeCheckTestContainer<F> {
+            range_check_gadget: RangeCheckGadget<F, 4>,
+            a: Cell<F>,
+        }
+
+        impl<F: Field> MathGadgetContainer<F> for RangeCheckTestContainer<F> {
+            const NAME: &'static str = "RangeCheckGadget";
+
+            fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
+                let a = cb.query_cell();
+                let range_check_gadget = RangeCheckGadget::<F, 4>::construct(cb, a.expr());
+                RangeCheckTestContainer {
+                    range_check_gadget,
+                    a,
+                }
+            }
+
+            fn assign_gadget_container(
+                &self,
+                input_words: &[Word],
+                region: &mut CachedRegion<'_, '_, F>,
+            ) -> Result<(), Error> {
+                let a = input_words[0].to_scalar().unwrap();
+                let offset = 0;
+
+                self.a.assign(region, offset, Value::known(F::from(a)))?;
+                self.range_check_gadget.assign(region, 0, a)?;
+
+                Ok(())
+            }
+        }
+
+        test_math_gadget_container::<Fr, RangeCheckTestContainer<Fr>>(vec![Word::from(0)], true);
+
+        test_math_gadget_container::<Fr, RangeCheckTestContainer<Fr>>(vec![Word::from(1)], true);
+
+        test_math_gadget_container::<Fr, RangeCheckTestContainer<Fr>>(
+            vec![Word::from((1u64 << 32) - 1)],
+            true,
+        );
+
+        test_math_gadget_container::<Fr, RangeCheckTestContainer<Fr>>(
+            vec![Word::from(1u64 << 32)],
+            false,
+        );
+    }
+
+    #[test]
+    fn test_ltword() {
+        #[derive(Clone)]
+        /// a < b
+        struct LtWordTestContainer<F> {
+            ltword_gadget: LtWordGadget<F>,
+            a: util::Word<F>,
+            b: util::Word<F>,
+        }
+
+        impl<F: Field> MathGadgetContainer<F> for LtWordTestContainer<F> {
+            const NAME: &'static str = "LtWordGadget";
+
+            fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
+                let a = cb.query_word();
+                let b = cb.query_word();
+                let ltword_gadget = LtWordGadget::<F>::construct(cb, &a, &b);
+                cb.require_equal("a < b", ltword_gadget.expr(), 1.expr());
+                LtWordTestContainer {
+                    ltword_gadget,
+                    a,
+                    b,
+                }
+            }
+
+            fn assign_gadget_container(
+                &self,
+                input_words: &[Word],
+                region: &mut CachedRegion<'_, '_, F>,
+            ) -> Result<(), Error> {
+                let a = input_words[0];
+                let b = input_words[1];
+                let offset = 0;
+
+                self.a.assign(region, offset, Some(a.to_le_bytes()))?;
+                self.b.assign(region, offset, Some(b.to_le_bytes()))?;
+                self.ltword_gadget.assign(region, 0, a, b)?;
+
+                Ok(())
+            }
+        }
+
+        test_math_gadget_container::<Fr, LtWordTestContainer<Fr>>(
+            vec![Word::from(0), Word::from(1)],
+            true,
+        );
+
+        test_math_gadget_container::<Fr, LtWordTestContainer<Fr>>(
+            vec![Word::from(1), Word::MAX],
+            true,
+        );
+
+        test_math_gadget_container::<Fr, LtWordTestContainer<Fr>>(
+            vec![Word::from(1), Word::from(0)],
+            false,
+        );
+
+        test_math_gadget_container::<Fr, LtWordTestContainer<Fr>>(
+            vec![Word::MAX, Word::MAX],
             false,
         );
     }
