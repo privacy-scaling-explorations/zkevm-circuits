@@ -2037,4 +2037,85 @@ mod tests {
             false,
         );
     }
+
+    #[test]
+    fn test_muladd512() {
+        #[derive(Clone)]
+        /// a * b + c == d * 2**256 + e
+        struct MulAddWords512GadgetContainer<F> {
+            math_gadget: MulAddWords512Gadget<F>,
+            a: util::Word<F>,
+            b: util::Word<F>,
+            d: util::Word<F>,
+            e: util::Word<F>,
+            addend: util::Word<F>,
+        }
+
+        impl<F: Field> MathGadgetContainer<F> for MulAddWords512GadgetContainer<F> {
+            const NAME: &'static str = "MulAddWords512Gadget";
+
+            fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
+                let a = cb.query_word();
+                let b = cb.query_word();
+                let d = cb.query_word();
+                let e= cb.query_word();
+                let addend = cb.query_word();
+                let math_gadget = MulAddWords512Gadget::<F>::construct(cb, [&a, &b, &d, &e], Some(&addend));
+                MulAddWords512GadgetContainer {
+                    math_gadget,
+                    a,
+                    b,
+                    d,
+                    e,
+                    addend,
+                }
+            }
+
+            fn assign_gadget_container(
+                &self,
+                input_words: &[Word],
+                region: &mut CachedRegion<'_, '_, F>,
+            ) -> Result<(), Error> {
+                let offset = 0;
+                self.a
+                    .assign(region, offset, Some(input_words[0].to_le_bytes()))?;
+                self.b
+                    .assign(region, offset, Some(input_words[1].to_le_bytes()))?;
+                self.d
+                    .assign(region, offset, Some(input_words[2].to_le_bytes()))?;
+                self.e
+                    .assign(region, offset, Some(input_words[3].to_le_bytes()))?;
+                self.addend
+                    .assign(region, offset, Some(input_words[4].to_le_bytes()))?;
+                self.math_gadget
+                    .assign(region, offset, [input_words[0], input_words[1], input_words[2], input_words[3]], Some(input_words[4]))
+            }
+        }
+
+        test_math_gadget_container::<Fr, MulAddWords512GadgetContainer<Fr>>(
+            vec![Word::from(0), Word::from(0), Word::from(0), Word::from(0), Word::from(0)],
+            true,
+        );
+
+        test_math_gadget_container::<Fr, MulAddWords512GadgetContainer<Fr>>(
+            vec![Word::from(1), Word::from(0), Word::from(0), Word::from(0), Word::from(0)],
+            true,
+        );
+
+        test_math_gadget_container::<Fr, MulAddWords512GadgetContainer<Fr>>(
+            vec![Word::from(1), Word::from(1), Word::from(0), Word::from(1), Word::from(0)],
+            true,
+        );
+
+        // test_math_gadget_container::<Fr, MulAddWords512GadgetContainer<Fr>>(
+        //     vec![Word::from(1), Word::from(1), Word::from(1), Word::from(2), Word::from(2**256)],
+        //     true,
+        // );
+
+        test_math_gadget_container::<Fr, MulAddWords512GadgetContainer<Fr>>(
+            vec![Word::from(10), Word::from(1), Word::from(1), Word::from(3), Word::from(0)],
+            false,
+        );
+    }
+
 }
