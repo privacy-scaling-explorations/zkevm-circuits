@@ -2024,11 +2024,8 @@ impl<F: Field> Config<F> {
     pub(crate) fn assign<RLP: RlpWitnessGen<F>>(
         &self,
         mut layouter: impl Layouter<F>,
-        witness: &RLP,
+        witnesses: &[RLP],
     ) -> Result<(), Error> {
-        let rows = witness.gen_witness(self.r);
-        let n_rows = rows.len();
-
         let tag_index_cmp_1_chip = ComparatorChip::construct(self.tag_index_cmp_1.clone());
         let tag_index_length_cmp_chip =
             ComparatorChip::construct(self.tag_index_length_cmp.clone());
@@ -2057,185 +2054,192 @@ impl<F: Field> Config<F> {
             || "assign RLP-encoded data",
             |mut region| {
                 // add a dummy row at offset == 0.
-                let offset = 0;
+                let mut offset = 0;
                 self.assign_padding_rows(&mut region, offset)?;
 
-                let mut value_rlc = F::zero();
-                for (idx, row) in rows.iter().enumerate() {
-                    let offset = idx + 1;
+                for witness in witnesses.iter() {
+                    let mut value_rlc = F::zero();
+                    let rows = witness.gen_witness(self.r);
+                    let n_rows = rows.len();
 
-                    // update value accumulator
-                    value_rlc = value_rlc * self.r + F::from(row.value as u64);
-                    // q_usable
-                    self.q_usable.enable(&mut region, offset)?;
-                    // is_first
-                    region.assign_advice(
-                        || format!("assign is_first {}", offset),
-                        self.is_first,
-                        offset,
-                        || Value::known(F::from((offset == 1) as u64)),
-                    )?;
-                    // advices
-                    let rindex = (n_rows + 1 - row.index) as u64;
-                    for (name, column, value) in [
-                        (
-                            "is_last",
-                            self.is_last,
-                            F::from((row.index == n_rows) as u64),
-                        ),
-                        ("index", self.index, F::from(row.index as u64)),
-                        ("rindex", self.rindex, F::from(rindex)),
-                        ("data_type", self.data_type, F::from(row.data_type as u64)),
-                        ("value", self.value, F::from(row.value as u64)),
-                        ("tag", self.tag, F::from(row.tag as u64)),
-                        (
-                            "aux_tag_index[0]",
-                            self.aux_tag_index[0],
-                            F::from(row.aux_tag_index[0] as u64),
-                        ),
-                        (
-                            "aux_tag_index[1]",
-                            self.aux_tag_index[1],
-                            F::from(row.aux_tag_index[1] as u64),
-                        ),
-                        ("tag_index", self.tag_index, F::from(row.tag_index as u64)),
-                        (
-                            "tag_length",
-                            self.tag_length,
+                    for (idx, row) in rows.iter().enumerate() {
+                        offset += 1;
+
+                        // update value accumulator
+                        value_rlc = value_rlc * self.r + F::from(row.value as u64);
+                        // q_usable
+                        self.q_usable.enable(&mut region, offset)?;
+                        // is_first
+                        region.assign_advice(
+                            || format!("assign is_first {}", offset),
+                            self.is_first,
+                            offset,
+                            || Value::known(F::from((idx == 0) as u64)),
+                        )?;
+                        // advices
+                        let rindex = (n_rows + 1 - row.index) as u64;
+                        for (name, column, value) in [
+                            (
+                                "is_last",
+                                self.is_last,
+                                F::from((row.index == n_rows) as u64),
+                            ),
+                            ("index", self.index, F::from(row.index as u64)),
+                            ("rindex", self.rindex, F::from(rindex)),
+                            ("data_type", self.data_type, F::from(row.data_type as u64)),
+                            ("value", self.value, F::from(row.value as u64)),
+                            ("tag", self.tag, F::from(row.tag as u64)),
+                            (
+                                "aux_tag_index[0]",
+                                self.aux_tag_index[0],
+                                F::from(row.aux_tag_index[0] as u64),
+                            ),
+                            (
+                                "aux_tag_index[1]",
+                                self.aux_tag_index[1],
+                                F::from(row.aux_tag_index[1] as u64),
+                            ),
+                            ("tag_index", self.tag_index, F::from(row.tag_index as u64)),
+                            (
+                                "tag_length",
+                                self.tag_length,
+                                F::from(row.tag_length as u64),
+                            ),
+                            (
+                                "aux_tag_length[0]",
+                                self.aux_tag_length[0],
+                                F::from(row.aux_tag_length[0] as u64),
+                            ),
+                            (
+                                "aux_tag_length[1]",
+                                self.aux_tag_length[1],
+                                F::from(row.aux_tag_length[1] as u64),
+                            ),
+                            ("length_acc", self.length_acc, F::from(row.length_acc)),
+                            ("value_rlc", self.value_rlc, value_rlc),
+                            ("hash", self.hash, row.hash),
+                        ] {
+                            region.assign_advice(
+                                || format!("assign {} {}", name, offset),
+                                column,
+                                offset,
+                                || Value::known(value),
+                            )?;
+                        }
+
+                        for (name, column, value) in
+                            self.tag_invs(Some(row.data_type), Some(row.tag))
+                        {
+                            region.assign_advice(
+                                || format!("assign {} {}", name, offset),
+                                column,
+                                offset,
+                                || Value::known(value),
+                            )?;
+                        }
+
+                        tag_index_cmp_1_chip.assign(
+                            &mut region,
+                            offset,
+                            F::one(),
+                            F::from(row.tag_index as u64),
+                        )?;
+                        tag_index_length_cmp_chip.assign(
+                            &mut region,
+                            offset,
+                            F::from(row.tag_index as u64),
                             F::from(row.tag_length as u64),
-                        ),
-                        (
-                            "aux_tag_length[0]",
-                            self.aux_tag_length[0],
-                            F::from(row.aux_tag_length[0] as u64),
-                        ),
-                        (
-                            "aux_tag_length[1]",
-                            self.aux_tag_length[1],
-                            F::from(row.aux_tag_length[1] as u64),
-                        ),
-                        ("length_acc", self.length_acc, F::from(row.length_acc)),
-                        ("value_rlc", self.value_rlc, value_rlc),
-                        ("hash", self.hash, row.hash),
-                    ] {
-                        region.assign_advice(
-                            || format!("assign {} {}", name, offset),
-                            column,
+                        )?;
+                        tag_length_cmp_1_chip.assign(
+                            &mut region,
                             offset,
-                            || Value::known(value),
+                            F::one(),
+                            F::from(row.tag_length as u64),
+                        )?;
+                        tag_index_lt_10_chip.assign(
+                            &mut region,
+                            offset,
+                            F::from(row.tag_index as u64),
+                            F::from(10u64),
+                        )?;
+                        tag_index_lt_34_chip.assign(
+                            &mut region,
+                            offset,
+                            F::from(row.tag_index as u64),
+                            F::from(34u64),
+                        )?;
+                        value_gt_127_chip.assign(
+                            &mut region,
+                            offset,
+                            F::from(127u64),
+                            F::from(row.value as u64),
+                        )?;
+                        value_gt_183_chip.assign(
+                            &mut region,
+                            offset,
+                            F::from(183u64),
+                            F::from(row.value as u64),
+                        )?;
+                        value_gt_191_chip.assign(
+                            &mut region,
+                            offset,
+                            F::from(191u64),
+                            F::from(row.value as u64),
+                        )?;
+                        value_gt_247_chip.assign(
+                            &mut region,
+                            offset,
+                            F::from(247u64),
+                            F::from(row.value as u64),
+                        )?;
+                        value_lt_129_chip.assign(
+                            &mut region,
+                            offset,
+                            F::from(row.value as u64),
+                            F::from(129u64),
+                        )?;
+                        value_lt_184_chip.assign(
+                            &mut region,
+                            offset,
+                            F::from(row.value as u64),
+                            F::from(184u64),
+                        )?;
+                        value_lt_192_chip.assign(
+                            &mut region,
+                            offset,
+                            F::from(row.value as u64),
+                            F::from(192u64),
+                        )?;
+                        value_lt_248_chip.assign(
+                            &mut region,
+                            offset,
+                            F::from(row.value as u64),
+                            F::from(248u64),
+                        )?;
+                        value_lt_256_chip.assign(
+                            &mut region,
+                            offset,
+                            F::from(row.value as u64),
+                            F::from(256u64),
+                        )?;
+                        length_acc_cmp_0_chip.assign(
+                            &mut region,
+                            offset,
+                            F::zero(),
+                            F::from(row.length_acc as u64),
+                        )?;
+                        rindex_gt_1_chip.assign(&mut region, offset, F::one(), F::from(rindex))?;
+                        aux_tag_index_eq_1_chip.assign(
+                            &mut region,
+                            offset,
+                            F::from(row.aux_tag_index[1] as u64),
+                            F::one(),
                         )?;
                     }
-
-                    for (name, column, value) in self.tag_invs(Some(row.data_type), Some(row.tag)) {
-                        region.assign_advice(
-                            || format!("assign {} {}", name, offset),
-                            column,
-                            offset,
-                            || Value::known(value),
-                        )?;
-                    }
-
-                    tag_index_cmp_1_chip.assign(
-                        &mut region,
-                        offset,
-                        F::one(),
-                        F::from(row.tag_index as u64),
-                    )?;
-                    tag_index_length_cmp_chip.assign(
-                        &mut region,
-                        offset,
-                        F::from(row.tag_index as u64),
-                        F::from(row.tag_length as u64),
-                    )?;
-                    tag_length_cmp_1_chip.assign(
-                        &mut region,
-                        offset,
-                        F::one(),
-                        F::from(row.tag_length as u64),
-                    )?;
-                    tag_index_lt_10_chip.assign(
-                        &mut region,
-                        offset,
-                        F::from(row.tag_index as u64),
-                        F::from(10u64),
-                    )?;
-                    tag_index_lt_34_chip.assign(
-                        &mut region,
-                        offset,
-                        F::from(row.tag_index as u64),
-                        F::from(34u64),
-                    )?;
-                    value_gt_127_chip.assign(
-                        &mut region,
-                        offset,
-                        F::from(127u64),
-                        F::from(row.value as u64),
-                    )?;
-                    value_gt_183_chip.assign(
-                        &mut region,
-                        offset,
-                        F::from(183u64),
-                        F::from(row.value as u64),
-                    )?;
-                    value_gt_191_chip.assign(
-                        &mut region,
-                        offset,
-                        F::from(191u64),
-                        F::from(row.value as u64),
-                    )?;
-                    value_gt_247_chip.assign(
-                        &mut region,
-                        offset,
-                        F::from(247u64),
-                        F::from(row.value as u64),
-                    )?;
-                    value_lt_129_chip.assign(
-                        &mut region,
-                        offset,
-                        F::from(row.value as u64),
-                        F::from(129u64),
-                    )?;
-                    value_lt_184_chip.assign(
-                        &mut region,
-                        offset,
-                        F::from(row.value as u64),
-                        F::from(184u64),
-                    )?;
-                    value_lt_192_chip.assign(
-                        &mut region,
-                        offset,
-                        F::from(row.value as u64),
-                        F::from(192u64),
-                    )?;
-                    value_lt_248_chip.assign(
-                        &mut region,
-                        offset,
-                        F::from(row.value as u64),
-                        F::from(248u64),
-                    )?;
-                    value_lt_256_chip.assign(
-                        &mut region,
-                        offset,
-                        F::from(row.value as u64),
-                        F::from(256u64),
-                    )?;
-                    length_acc_cmp_0_chip.assign(
-                        &mut region,
-                        offset,
-                        F::zero(),
-                        F::from(row.length_acc as u64),
-                    )?;
-                    rindex_gt_1_chip.assign(&mut region, offset, F::one(), F::from(rindex))?;
-                    aux_tag_index_eq_1_chip.assign(
-                        &mut region,
-                        offset,
-                        F::from(row.aux_tag_index[1] as u64),
-                        F::one(),
-                    )?;
                 }
 
                 // end with a dummy row.
-                let offset = n_rows + 1;
+                offset += 1;
                 self.assign_padding_rows(&mut region, offset)?;
 
                 Ok(())
@@ -2246,30 +2250,33 @@ impl<F: Field> Config<F> {
     pub(crate) fn load<RLP: RlpWitnessGen<F>>(
         &self,
         layouter: &mut impl Layouter<F>,
-        witness: &RLP,
+        witnesses: &[RLP],
     ) -> Result<(), Error> {
-        let rows = witness.gen_witness(self.r);
-        let hash_rlc = witness.hash(self.r);
-        let value_rlc = rows.iter().fold(F::zero(), |acc, row| {
-            acc * F::from(256u64) + F::from(row.value as u64)
-        });
-
         layouter.assign_region(
             || "keccak table",
             |mut region| {
-                let offset = 0;
-                for (name, column, value) in &[
-                    ("value_rlc", self.keccak_tuple[0], value_rlc),
-                    ("index", self.keccak_tuple[1], F::from(rows.len() as u64)),
-                    ("rindex", self.keccak_tuple[2], F::one()),
-                    ("hash_rlc", self.keccak_tuple[3], hash_rlc),
-                ] {
-                    region.assign_advice(
-                        || format!("keccak table assign {} {}", name, offset),
-                        *column,
-                        offset,
-                        || Value::known(*value),
-                    )?;
+                let mut offset = 0;
+                for witness in witnesses.iter() {
+                    offset += 1;
+                    let rows = witness.gen_witness(self.r);
+                    let hash_rlc = witness.hash(self.r);
+                    let value_rlc = rows.iter().fold(F::zero(), |acc, row| {
+                        acc * F::from(256u64) + F::from(row.value as u64)
+                    });
+
+                    for (name, column, value) in &[
+                        ("value_rlc", self.keccak_tuple[0], value_rlc),
+                        ("index", self.keccak_tuple[1], F::from(rows.len() as u64)),
+                        ("rindex", self.keccak_tuple[2], F::one()),
+                        ("hash_rlc", self.keccak_tuple[3], hash_rlc),
+                    ] {
+                        region.assign_advice(
+                            || format!("keccak table assign {} {}", name, offset),
+                            *column,
+                            offset,
+                            || Value::known(*value),
+                        )?;
+                    }
                 }
                 Ok(())
             },
@@ -2502,7 +2509,7 @@ mod tests {
 
     #[derive(Default)]
     struct MyCircuit<F, RLP> {
-        input: RLP,
+        inputs: Vec<RLP>,
         size: usize,
         _marker: PhantomData<F>,
     }
@@ -2530,15 +2537,15 @@ mod tests {
             config: Self::Config,
             mut layouter: impl Layouter<F>,
         ) -> Result<(), Error> {
-            config.load(&mut layouter, &self.input)?;
-            config.assign(layouter, &self.input)?;
+            config.load(&mut layouter, self.inputs.as_slice())?;
+            config.assign(layouter, self.inputs.as_slice())?;
             Ok(())
         }
     }
 
-    fn verify<F: Field, RLP: RlpWitnessGen<F>>(k: u32, input: RLP, success: bool) {
+    fn verify<F: Field, RLP: RlpWitnessGen<F>>(k: u32, inputs: Vec<RLP>, success: bool) {
         let circuit = MyCircuit::<F, RLP> {
-            input,
+            inputs,
             size: 2usize.pow(k),
             _marker: PhantomData,
         };
@@ -2557,64 +2564,57 @@ mod tests {
         assert_eq!(err.is_ok(), success);
     }
 
+    fn get_txs() -> [Transaction; 3] {
+        [
+            Transaction {
+                nonce: 0x123u64,
+                gas_price: 100_000_000_000u64.into(),
+                gas: 1_000_000u64,
+                callee_address: mock::MOCK_ACCOUNTS[0],
+                value: U256::from_dec_str("250000000000000000000").unwrap(),
+                call_data: vec![3u8; 3],
+                ..Default::default()
+            },
+            Transaction {
+                nonce: 0x00u64,
+                gas_price: 100_000_000u64.into(),
+                gas: 1_000u64,
+                callee_address: mock::MOCK_ACCOUNTS[1],
+                value: 0.into(),
+                call_data: vec![],
+                ..Default::default()
+            },
+            Transaction {
+                nonce: 0x01u64,
+                gas_price: 100_000_000u64.into(),
+                gas: 1_000u64,
+                callee_address: mock::MOCK_ACCOUNTS[2],
+                value: 10u64.into(),
+                call_data: rand_bytes(200),
+                ..Default::default()
+            },
+        ]
+    }
+
     #[test]
     fn rlp_circuit_tx_1() {
-        let nonce = 0x123u64;
-        let gas_price = 100_000_000_000u64.into();
-        let gas = 1_000_000u64;
-        let callee_address = mock::MOCK_ACCOUNTS[0];
-        let value = U256::from_dec_str("250000000000000000000").unwrap();
-        let call_data = vec![3u8; 3];
-        let tx = Transaction {
-            nonce,
-            gas_price,
-            gas,
-            callee_address,
-            value,
-            call_data,
-            ..Default::default()
-        };
-        verify::<Fr, Transaction>(8, tx, true);
+        verify::<Fr, Transaction>(8, vec![get_txs()[0].clone()], true);
     }
 
     #[test]
     fn rlp_circuit_tx_2() {
-        let nonce = 0x00u64;
-        let gas_price = 100_000_000u64.into();
-        let gas = 1_000u64;
-        let callee_address = mock::MOCK_ACCOUNTS[1];
-        let value = 0.into();
-        let call_data = vec![];
-        let tx = Transaction {
-            nonce,
-            gas_price,
-            gas,
-            callee_address,
-            value,
-            call_data,
-            ..Default::default()
-        };
-        verify::<Fr, Transaction>(8, tx, true);
+        verify::<Fr, Transaction>(8, vec![get_txs()[1].clone()], true);
     }
 
     #[test]
     fn rlp_circuit_tx_3() {
-        let nonce = 0x01u64;
-        let gas_price = 100_000_000u64.into();
-        let gas = 1_000u64;
-        let callee_address = mock::MOCK_ACCOUNTS[2];
-        let value = 10u64.into();
-        let call_data = rand_bytes(200);
-        let tx = Transaction {
-            nonce,
-            gas_price,
-            gas,
-            callee_address,
-            value,
-            call_data,
-            ..Default::default()
-        };
-        verify::<Fr, Transaction>(20, tx, true);
+        verify::<Fr, Transaction>(20, vec![get_txs()[2].clone()], true);
+    }
+
+    #[test]
+    fn rlp_circuit_multi_txs() {
+        let txs = get_txs();
+        verify::<Fr, Transaction>(10, vec![txs[0].clone(), txs[1].clone()], true);
     }
 
     #[test]
@@ -2643,7 +2643,7 @@ mod tests {
             bloom,
             logs,
         };
-        verify::<Fr, Receipt>(9, receipt, true);
+        verify::<Fr, Receipt>(9, vec![receipt], true);
     }
 
     #[test]
@@ -2659,6 +2659,6 @@ mod tests {
             bloom,
             logs,
         };
-        verify::<Fr, Receipt>(9, receipt, true);
+        verify::<Fr, Receipt>(9, vec![receipt], true);
     }
 }
