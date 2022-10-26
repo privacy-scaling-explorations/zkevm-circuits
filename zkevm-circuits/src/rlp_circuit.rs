@@ -7,7 +7,7 @@ use gadgets::{
     less_than::{LtChip, LtConfig, LtInstruction},
 };
 use halo2_proofs::{
-    circuit::{Layouter, Value},
+    circuit::{Layouter, Region, Value},
     plonk::{Advice, Column, ConstraintSystem, Error, Selector, VirtualCells},
     poly::Rotation,
 };
@@ -2056,8 +2056,14 @@ impl<F: Field> Config<F> {
         layouter.assign_region(
             || "assign RLP-encoded data",
             |mut region| {
+                // add a dummy row at offset == 0.
+                let offset = 0;
+                self.assign_padding_rows(&mut region, offset)?;
+
                 let mut value_rlc = F::zero();
-                for (offset, row) in rows.iter().enumerate() {
+                for (idx, row) in rows.iter().enumerate() {
+                    let offset = idx + 1;
+
                     // update value accumulator
                     value_rlc = value_rlc * self.r + F::from(row.value as u64);
                     // q_usable
@@ -2067,7 +2073,7 @@ impl<F: Field> Config<F> {
                         || format!("assign is_first {}", offset),
                         self.is_first,
                         offset,
-                        || Value::known(F::from((offset == 0) as u64)),
+                        || Value::known(F::from((offset == 1) as u64)),
                     )?;
                     // advices
                     let rindex = (n_rows + 1 - row.index) as u64;
@@ -2228,6 +2234,10 @@ impl<F: Field> Config<F> {
                     )?;
                 }
 
+                // end with a dummy row.
+                let offset = n_rows + 1;
+                self.assign_padding_rows(&mut region, offset)?;
+
                 Ok(())
             },
         )
@@ -2264,6 +2274,36 @@ impl<F: Field> Config<F> {
                 Ok(())
             },
         )?;
+
+        Ok(())
+    }
+
+    fn assign_padding_rows(&self, region: &mut Region<'_, F>, offset: usize) -> Result<(), Error> {
+        for column in [
+            self.is_first,
+            self.is_last,
+            self.index,
+            self.data_type,
+            self.tag,
+            self.tag_index,
+            self.tag_length,
+            self.length_acc,
+            self.rindex,
+            self.value,
+            self.value_rlc,
+            self.hash,
+            self.aux_tag_index[0],
+            self.aux_tag_index[1],
+            self.aux_tag_length[0],
+            self.aux_tag_length[1],
+        ] {
+            region.assign_advice(
+                || format!("padding row, offset: {}", offset),
+                column,
+                offset,
+                || Value::known(F::zero()),
+            )?;
+        }
 
         Ok(())
     }
