@@ -513,13 +513,13 @@ mod tests {
     #[test]
     fn exp_circuit_single() {
         test_ok(2.into(), 2.into(), None);
-        //test_ok(3.into(), 7.into(), None);
-        //test_ok(5.into(), 11.into(), None);
-        //test_ok(7.into(), 13.into(), None);
-        //test_ok(11.into(), 17.into(), None);
-        //test_ok(13.into(), 23.into(), None);
-        //test_ok(29.into(), 43.into(), None);
-        //test_ok(41.into(), 259.into(), None);
+        test_ok(3.into(), 7.into(), None);
+        test_ok(5.into(), 11.into(), None);
+        test_ok(7.into(), 13.into(), None);
+        test_ok(11.into(), 17.into(), None);
+        test_ok(13.into(), 23.into(), None);
+        test_ok(29.into(), 43.into(), None);
+        test_ok(41.into(), 259.into(), None);
     }
 
     #[test]
@@ -537,6 +537,10 @@ mod tests {
             (3.into(), 7.into()),
             (5.into(), 11.into()),
             (7.into(), 13.into()),
+            (11.into(), 17.into()),
+            (13.into(), 23.into()),
+            (29.into(), 43.into()),
+            (41.into(), 259.into()),
         ]);
     }
 }
