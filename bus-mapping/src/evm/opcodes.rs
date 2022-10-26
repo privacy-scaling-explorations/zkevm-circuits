@@ -1,7 +1,7 @@
 //! Definition of each opcode of the EVM.
 use crate::{
     circuit_input_builder::{CircuitInputStateRef, ExecStep},
-    error::{ExecError},
+    error::ExecError,
     evm::OpcodeId,
     operation::{
         AccountField, CallContextField, TxAccessListAccountOp, TxReceiptField, TxRefundOp, RW,
@@ -302,21 +302,22 @@ pub fn gen_associated_ops(
     if let Some(exec_error) = state.get_step_err(geth_step, next_step).unwrap() {
         log::warn!(
             "geth error {:?} occurred in  {:?}",
-            exec_error, geth_step.op
+            exec_error,
+            geth_step.op
         );
 
         exec_step.error = Some(exec_error.clone());
         // for `oog_or_stack_error` error message will be returned by geth_step error
         // field, when this kind of error happens, no more proceeding
-        if !exec_step.oog_or_stack_error(){
+        if !exec_step.oog_or_stack_error() {
             if geth_step.op.is_call_or_create() {
                 let call = state.parse_call(geth_step)?;
                 // Switch to callee's call context
                 state.push_call(call);
-            }else{
+            } else {
                 let fn_gen_error_associated_ops = fn_gen_error_state_associated_ops(&exec_error);
                 return fn_gen_error_associated_ops(state, geth_steps);
-            } 
+            }
         }
 
         state.handle_return(geth_step)?;

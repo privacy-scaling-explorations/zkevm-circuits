@@ -4,10 +4,10 @@ use crate::{
         param::N_BYTES_PROGRAM_COUNTER,
         step::ExecutionState,
         util::{
-            common_gadget::{RestoreContextGadget},
+            common_gadget::RestoreContextGadget,
             constraint_builder::{
                 ConstraintBuilder, StepStateTransition,
-                Transition::{Delta, Same, },
+                Transition::{Delta, Same},
             },
             from_bytes,
             math_gadget::{IsEqualGadget, LtGadget},
@@ -20,7 +20,6 @@ use crate::{
 };
 use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian};
 use halo2_proofs::{circuit::Value, plonk::Error};
-
 
 #[derive(Clone, Debug)]
 pub(crate) struct ErrorInvalidJumpGadget<F> {
@@ -45,6 +44,11 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
         let value = cb.query_cell();
         let is_code = cb.query_cell();
 
+        cb.require_in_set(
+            "ErrorInvalidJump only happend in JUMP or JUMPI",
+            opcode.expr(),
+            vec![OpcodeId::JUMP.expr(), OpcodeId::JUMPI.expr()],
+        );
         // initialize is_jump_dest
         let is_jump_dest = IsEqualGadget::construct(cb, value.expr(), OpcodeId::JUMPDEST.expr());
 
@@ -58,7 +62,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
         let out_of_range = LtGadget::construct(cb, code_length.expr(), dest_value.clone());
         //if not out of range, check `dest` is invalid
         cb.condition(1.expr() - out_of_range.expr(), |cb| {
-            // TODO: if not out of range, Lookup real value
+            // if not out of range, Lookup real value
             cb.bytecode_lookup(
                 cb.curr.state.code_hash.expr(),
                 dest_value.clone(),
@@ -71,7 +75,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
                 is_code.expr() * is_jump_dest.expr(),
             );
         });
-
 
         cb.call_context_lookup(false.expr(), None, CallContextFieldTag::IsSuccess, 0.expr());
 
@@ -175,19 +178,16 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::test_util::run_test_circuits;
-    use mock::TestContext;
-    use eth_types::geth_types::Account;
     use crate::evm_circuit::test::run_test_circuit;
     use crate::evm_circuit::witness::block_convert;
-    use eth_types::{address, bytecode, Address, ToWord, Word};
-    use eth_types::evm_types::OpcodeId;
+    use crate::test_util::run_test_circuits;
     use eth_types::bytecode::Bytecode;
+    use eth_types::evm_types::OpcodeId;
+    use eth_types::geth_types::Account;
+    use eth_types::{address, bytecode, Address, ToWord, Word};
+    use mock::TestContext;
 
-
-
-
-    fn test_invalid_jump(destination: usize, out_of_range:bool) {
+    fn test_invalid_jump(destination: usize, out_of_range: bool) {
         let mut bytecode = bytecode! {
             PUSH32(if out_of_range { destination + 10} else { destination })
             JUMP
@@ -292,7 +292,7 @@ mod test {
 
     // jump error happen in internal call
     #[test]
-    fn test_internal_jump_error(){
+    fn test_internal_jump_error() {
         let mut caller_bytecode = bytecode! {
             PUSH1(0)
             PUSH1(0)
@@ -300,14 +300,14 @@ mod test {
             PUSH1(0)
             PUSH1(0)
         };
-                
+
         caller_bytecode.append(&bytecode! {
             PUSH32(Address::repeat_byte(0xff).to_word())
             PUSH2(10000)
             CALL
             STOP
         });
-   
+
         let mut callee_bytecode = bytecode! {
             PUSH1(42) // jump dest 43
             JUMP
@@ -323,7 +323,7 @@ mod test {
             PUSH20(Address::repeat_byte(0xff).to_word())
             PUSH1(132) // gas
 
-            JUMPDEST 
+            JUMPDEST
             GAS
             PUSH1(1)
             AND

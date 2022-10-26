@@ -66,7 +66,6 @@ impl Bytecode {
 
     /// get byte value and is_code pair
     pub fn get(&self, dest: usize) -> [u8; 2] {
-
         let mut push_data_left = 0;
         for (idx, byte) in self.bytes.iter().enumerate() {
             let mut is_code = true;
