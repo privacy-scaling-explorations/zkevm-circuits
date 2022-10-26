@@ -165,7 +165,8 @@ pub struct PiCircuitConfig<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: u
 impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
     PiCircuitConfig<F, MAX_TXS, MAX_CALLDATA>
 {
-    fn new(meta: &mut ConstraintSystem<F>, block_table: BlockTable, tx_table: TxTable) -> Self {
+    /// Return a new PiCircuitConfig
+    pub fn new(meta: &mut ConstraintSystem<F>, block_table: BlockTable, tx_table: TxTable) -> Self {
         let q_block_table = meta.selector();
 
         let q_tx_table = meta.selector();
@@ -666,6 +667,18 @@ pub struct PiCircuit<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> 
     pub public_data: PublicData,
 }
 
+impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
+    PiCircuit<F, MAX_TXS, MAX_CALLDATA>
+{
+    /// Creates a new PiCircuit
+    pub fn new(randomness: impl Into<F>, rand_rpi: impl Into<F>, public_data: PublicData) -> Self {
+        Self {
+            randomness: randomness.into(),
+            rand_rpi: rand_rpi.into(),
+            public_data,
+        }
+    }
+}
 impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
     for PiCircuit<F, MAX_TXS, MAX_CALLDATA>
 {
@@ -923,7 +936,7 @@ fn raw_public_inputs_col<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usi
 
     // Insert Tx table
     offset = 0;
-    assert!(txs.len() < MAX_TXS);
+    assert!(txs.len() <= MAX_TXS);
     let tx_default = TxValues::default();
 
     let tx_table_len = TX_LEN * MAX_TXS + 1 + MAX_CALLDATA;
