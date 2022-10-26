@@ -2,7 +2,7 @@ use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
 use crate::evm::Opcode;
 use crate::operation::{AccountField, AccountOp, TxAccessListAccountOp, RW};
 use crate::Error;
-use eth_types::GethExecStep;
+use eth_types::{GethExecStep, ToWord};
 use keccak256::EMPTY_HASH;
 
 #[derive(Debug, Copy, Clone)]
@@ -28,20 +28,36 @@ impl<const IS_CREATE2: bool> Opcode for DummyCreate<IS_CREATE2> {
 
         let mut exec_step = state.new_step(geth_step)?;
 
-        let tx_id = state.tx_ctx.id();
-        let call = state.parse_call(geth_step)?;
+        let n_pop = if IS_CREATE2 { 4 } else { 3 };
+        for i in 0..n_pop {
+            state.stack_read(
+                &mut exec_step,
+                geth_step.stack.nth_last_filled(i),
+                geth_step.stack.nth_last(i)?,
+            )?;
+        }
 
-        // Quote from [EIP-2929](https://eips.ethereum.org/EIPS/eip-2929)
-        // > When a CREATE or CREATE2 opcode is called,
-        // > immediately (ie. before checks are done to determine
-        // > whether or not the address is unclaimed)
-        // > add the address being created to accessed_addresses,
-        // > but gas costs of CREATE and CREATE2 are unchanged
         let address = if IS_CREATE2 {
             state.create2_address(&geth_steps[0])?
         } else {
             state.create_address()?
         };
+
+        state.stack_write(
+            &mut exec_step,
+            geth_step.stack.nth_last_filled(n_pop - 1),
+            address.to_word(),
+        )?;
+
+        let tx_id = state.tx_ctx.id();
+        let call = state.parse_call(geth_step)?;
+
+        // Quote from [EIP-2929](https://eips.ethereum.org/EIPS/eip-2929)
+        // > When a CREATE or CREATE2 opcode is called,
+        // > immediately (i.e. before checks are done to determine
+        // > whether or not the address is unclaimed)
+        // > add the address being created to accessed_addresses,
+        // > but gas costs of CREATE and CREATE2 are unchanged
         let is_warm = state.sdb.check_account_in_access_list(&address);
         state.push_op_reversible(
             &mut exec_step,

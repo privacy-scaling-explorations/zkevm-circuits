@@ -272,6 +272,7 @@ impl Transaction {
                 code_hash,
                 depth: 1,
                 value: eth_tx.value,
+                call_data_length: eth_tx.input.len().try_into().unwrap(),
                 ..Default::default()
             }
         };
@@ -281,7 +282,9 @@ impl Transaction {
             gas: eth_tx.gas.as_u64(),
             gas_price: eth_tx.gas_price.unwrap_or_default(),
             from: eth_tx.from,
-            to: eth_tx.to.unwrap_or_default(),
+            to: eth_tx
+                .to
+                .unwrap_or_else(|| get_contract_address(eth_tx.from, eth_tx.nonce)),
             value: eth_tx.value,
             input: eth_tx.input.to_vec(),
             calls: vec![call],

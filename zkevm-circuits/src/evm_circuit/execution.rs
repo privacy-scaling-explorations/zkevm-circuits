@@ -11,7 +11,7 @@ use crate::{
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::LookupTable,
-    util::Expr,
+    util::{query_expression, Expr},
 };
 use eth_types::Field;
 use halo2_proofs::{
@@ -20,7 +20,10 @@ use halo2_proofs::{
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector, VirtualCells},
     poly::Rotation,
 };
-use std::{collections::HashMap, iter};
+use std::{
+    collections::{BTreeSet, HashMap},
+    iter,
+};
 use strum::IntoEnumIterator;
 
 mod add_sub;
@@ -31,11 +34,11 @@ mod bitwise;
 mod block_ctx;
 mod blockhash;
 mod byte;
-mod call;
 mod calldatacopy;
 mod calldataload;
 mod calldatasize;
 mod caller;
+mod callop;
 mod callvalue;
 mod chainid;
 mod codecopy;
@@ -85,11 +88,11 @@ use bitwise::BitwiseGadget;
 use block_ctx::{BlockCtxU160Gadget, BlockCtxU256Gadget, BlockCtxU64Gadget};
 use blockhash::BlockHashGadget;
 use byte::ByteGadget;
-use call::CallGadget;
 use calldatacopy::CallDataCopyGadget;
 use calldataload::CallDataLoadGadget;
 use calldatasize::CallDataSizeGadget;
 use caller::CallerGadget;
+use callop::CallOpGadget;
 use callvalue::CallValueGadget;
 use chainid::ChainIdGadget;
 use codecopy::CodeCopyGadget;
@@ -175,7 +178,7 @@ pub(crate) struct ExecutionConfig<F> {
     address_gadget: AddressGadget<F>,
     bitwise_gadget: BitwiseGadget<F>,
     byte_gadget: ByteGadget<F>,
-    call_gadget: CallGadget<F>,
+    call_op_gadget: CallOpGadget<F>,
     call_value_gadget: CallValueGadget<F>,
     calldatacopy_gadget: CallDataCopyGadget<F>,
     calldataload_gadget: CallDataLoadGadget<F>,
@@ -219,7 +222,6 @@ pub(crate) struct ExecutionConfig<F> {
     callcode_gadget: DummyGadget<F, 7, 1, { ExecutionState::CALLCODE }>,
     delegatecall_gadget: DummyGadget<F, 6, 1, { ExecutionState::DELEGATECALL }>,
     create2_gadget: DummyGadget<F, 4, 1, { ExecutionState::CREATE2 }>,
-    staticcall_gadget: DummyGadget<F, 6, 1, { ExecutionState::STATICCALL }>,
     selfdestruct_gadget: DummyGadget<F, 1, 0, { ExecutionState::SELFDESTRUCT }>,
     signed_comparator_gadget: SignedComparatorGadget<F>,
     signextend_gadget: SignextendGadget<F>,
@@ -400,7 +402,7 @@ impl<F: Field> ExecutionConfig<F> {
             addmod_gadget: configure_gadget!(),
             bitwise_gadget: configure_gadget!(),
             byte_gadget: configure_gadget!(),
-            call_gadget: configure_gadget!(),
+            call_op_gadget: configure_gadget!(),
             call_value_gadget: configure_gadget!(),
             calldatacopy_gadget: configure_gadget!(),
             calldataload_gadget: configure_gadget!(),
@@ -445,7 +447,6 @@ impl<F: Field> ExecutionConfig<F> {
             callcode_gadget: configure_gadget!(),
             delegatecall_gadget: configure_gadget!(),
             create2_gadget: configure_gadget!(),
-            staticcall_gadget: configure_gadget!(),
             selfdestruct_gadget: configure_gadget!(),
             shl_shr_gadget: configure_gadget!(),
             signed_comparator_gadget: configure_gadget!(),
@@ -559,11 +560,8 @@ impl<F: Field> ExecutionConfig<F> {
         let gadget = G::configure(&mut cb);
 
         // Enforce the step height for this opcode
-        let mut num_rows_until_next_step_next = 0.expr();
-        meta.create_gate("query num rows", |meta| {
-            num_rows_until_next_step_next =
-                meta.query_advice(num_rows_until_next_step, Rotation::next());
-            vec![0.expr()]
+        let num_rows_until_next_step_next = query_expression(meta, |meta| {
+            meta.query_advice(num_rows_until_next_step, Rotation::next())
         });
         cb.require_equal(
             "num_rows_until_next_step_next := height - 1",
@@ -917,7 +915,7 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::ADDRESS => assign_exec_step!(self.address_gadget),
             ExecutionState::BITWISE => assign_exec_step!(self.bitwise_gadget),
             ExecutionState::BYTE => assign_exec_step!(self.byte_gadget),
-            ExecutionState::CALL => assign_exec_step!(self.call_gadget),
+            ExecutionState::CALL_STATICCALL => assign_exec_step!(self.call_op_gadget),
             ExecutionState::CALLDATACOPY => assign_exec_step!(self.calldatacopy_gadget),
             ExecutionState::CALLDATALOAD => assign_exec_step!(self.calldataload_gadget),
             ExecutionState::CALLDATASIZE => assign_exec_step!(self.calldatasize_gadget),
@@ -965,7 +963,6 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::CALLCODE => assign_exec_step!(self.callcode_gadget),
             ExecutionState::DELEGATECALL => assign_exec_step!(self.delegatecall_gadget),
             ExecutionState::CREATE2 => assign_exec_step!(self.create2_gadget),
-            ExecutionState::STATICCALL => assign_exec_step!(self.staticcall_gadget),
             ExecutionState::SELFDESTRUCT => assign_exec_step!(self.selfdestruct_gadget),
             // end of dummy gadgets
             ExecutionState::SHA3 => assign_exec_step!(self.sha3_gadget),
@@ -1113,19 +1110,16 @@ impl<F: Field> ExecutionConfig<F> {
             }
         }
 
-        for (idx, assigned_rw_value) in assigned_rw_values.iter().enumerate() {
-            let rw_idx = step.rw_indices[idx];
-            let rw = block.rws[rw_idx];
-            let table_assignments = rw.table_assignment(block.randomness);
-            let rlc = table_assignments.rlc(block.randomness);
-            if rlc != assigned_rw_value.1 {
-                log::error!(
-                    "incorrect rw witness. lookup input name: \"{}\". rw: {:?}, rw index: {:?}, {}th rw of step {:?}",
-                    assigned_rw_value.0,
-                    rw,
-                    rw_idx,
-                    idx,
-                    step.execution_state);
+        let rlc_assignments: BTreeSet<_> = block
+            .rws
+            .table_assignments()
+            .iter()
+            .map(|rw| rw.table_assignment(block.randomness).rlc(block.randomness))
+            .collect();
+
+        for (name, value) in assigned_rw_values.iter() {
+            if !rlc_assignments.contains(value) {
+                log::error!("rw lookup error: name: {}, step: {:?}", *name, step);
             }
         }
     }

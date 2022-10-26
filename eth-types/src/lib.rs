@@ -204,6 +204,12 @@ impl<F: Field> ToScalar<F> for Address {
     }
 }
 
+impl<F: Field> ToScalar<F> for bool {
+    fn to_scalar(&self) -> Option<F> {
+        self.to_word().to_scalar()
+    }
+}
+
 /// Struct used to define the storage proof
 #[derive(Debug, Default, Clone, PartialEq, Eq, Deserialize)]
 pub struct StorageProof {
