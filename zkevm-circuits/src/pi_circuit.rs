@@ -20,7 +20,7 @@ use gadgets::is_zero::IsZeroChip;
 use gadgets::util::{not, or, Expr};
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter, Region, SimpleFloorPlanner, Value},
-    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Selector},
+    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Fixed, Selector},
     poly::Rotation,
 };
 
@@ -177,6 +177,8 @@ pub struct PiCircuitConfig<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: u
     tx_table: TxTable,
     tx_id_inv: Column<Advice>,
     tx_value_inv: Column<Advice>,
+    tx_id_diff_inv: Column<Advice>,
+    fixed_u16: Column<Fixed>,
     calldata_gas_cost: Column<Advice>,
     is_final: Column<Advice>,
 
@@ -207,6 +209,8 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
         let index = tx_table.index;
         let tx_id_inv = meta.advice_column();
         let tx_value_inv = meta.advice_column();
+        let tx_id_diff_inv = meta.advice_column();
+        let fixed_u16 = meta.fixed_column();
         let calldata_gas_cost = meta.advice_column();
         let is_final = meta.advice_column();
 
@@ -333,6 +337,32 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
             |meta| meta.query_advice(tx_value, Rotation::cur()),
             tx_value_inv,
         );
+        let _tx_id_diff_is_zero_config = IsZeroChip::configure(
+            meta,
+            |meta| meta.query_selector(q_tx_calldata),
+            |meta| {
+                meta.query_advice(tx_table.tx_id, Rotation::next())
+                    - meta.query_advice(tx_table.tx_id, Rotation::cur())
+            },
+            tx_id_diff_inv,
+        );
+
+        meta.lookup_any("tx_id_diff", |meta| {
+            let tx_id_next = meta.query_advice(tx_id, Rotation::next());
+            let tx_id = meta.query_advice(tx_id, Rotation::cur());
+            let tx_id_inv_next = meta.query_advice(tx_id_inv, Rotation::next());
+            let tx_id_diff_inv = meta.query_advice(tx_id_diff_inv, Rotation::cur());
+            let fixed_u16_table = meta.query_fixed(fixed_u16, Rotation::cur());
+
+            let tx_id_next_nonzero = tx_id_next.expr() * tx_id_inv_next;
+            let tx_id_not_equal_to_next = (tx_id_next.expr() - tx_id.expr()) * tx_id_diff_inv;
+            let tx_id_diff = tx_id_next - tx_id - 1.expr();
+
+            vec![(
+                tx_id_diff * tx_id_next_nonzero * tx_id_not_equal_to_next,
+                fixed_u16_table,
+            )]
+        });
 
         meta.create_gate("calldata constraints", |meta| {
             let q_is_calldata = meta.query_selector(q_tx_calldata);
@@ -340,6 +370,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
             let tx_idx = meta.query_advice(tx_id, Rotation::cur());
             let tx_idx_next = meta.query_advice(tx_id, Rotation::next());
             let tx_idx_inv_next = meta.query_advice(tx_id_inv, Rotation::next());
+            let tx_idx_diff_inv = meta.query_advice(tx_id_diff_inv, Rotation::cur());
             let idx = meta.query_advice(index, Rotation::cur());
             let idx_next = meta.query_advice(index, Rotation::next());
             let value_next = meta.query_advice(tx_value, Rotation::next());
@@ -372,33 +403,27 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
 
             // if tx_id != 0 then
             //    1. tx_id_next == tx_id: idx_next == idx + 1, gas_cost_next == gas_cost +
-            // gas_next, is_final == false,    2. (tx_id_next == tx_id + 1):
-            // idx_next == 0, gas_cost_next == gas_next, is_final == true,    3.
-            // (tx_id_next == 0) ether case 1, case 2 or case 3 holds.
-            let tx_id_constraint = (tx_idx_next.expr() - tx_idx.expr())
-                * (tx_idx_next.expr() - tx_idx.expr() - 1.expr())
-                * tx_idx_next.expr();
+            //       gas_next, is_final == false;
+            //    2. tx_id_next == tx_id + 1 + x (where x is in [0, 2^16)): idx_next == 0,
+            //       gas_cost_next == gas_next, is_final == true;
+            //    3. tx_id_next == 0: is_final == true, idx_next == 0, gas_cost_next == 0;
+            // either case 1, case 2 or case 3 holds.
 
-            let calldata_of_same_tx_constraint = is_tx_id_next_nonzero.expr()
-                * (tx_idx_next.expr() - tx_idx.expr() - 1.expr())
-                * (idx_next.expr() - idx.expr() - 1.expr());
-            let calldata_of_next_tx_constraint = is_tx_id_next_nonzero.expr()
-                * (tx_idx_next.expr() - tx_idx.expr())
-                * idx_next.expr();
+            let tx_id_equal_to_next =
+                1.expr() - (tx_idx_next.expr() - tx_idx.expr()) * tx_idx_diff_inv.expr();
+            let idx_of_same_tx_constraint =
+                tx_id_equal_to_next.clone() * (idx_next.expr() - idx.expr() - 1.expr());
+            let idx_of_next_tx_constraint = (tx_idx_next.expr() - tx_idx.expr()) * idx_next.expr();
 
-            let gas_cost_of_same_tx_constraint = is_tx_id_next_nonzero.expr()
-                * (tx_idx_next.expr() - tx_idx.expr() - 1.expr())
+            let gas_cost_of_same_tx_constraint = tx_id_equal_to_next.clone()
                 * (gas_cost_next.expr() - gas_cost.expr() - gas_next.expr());
             let gas_cost_of_next_tx_constraint = is_tx_id_next_nonzero.expr()
                 * (tx_idx_next.expr() - tx_idx.expr())
                 * (gas_cost_next.expr() - gas_next.expr());
 
-            let is_final_of_same_tx_constraint = is_tx_id_next_nonzero.expr()
-                * (tx_idx_next.expr() - tx_idx.expr() - 1.expr())
-                * is_final.expr();
-            let is_final_of_next_tx_constraint = is_tx_id_next_nonzero.expr()
-                * (tx_idx_next.expr() - tx_idx.expr())
-                * (is_final.expr() - 1.expr());
+            let is_final_of_same_tx_constraint = tx_id_equal_to_next * is_final.expr();
+            let is_final_of_next_tx_constraint =
+                (tx_idx_next.expr() - tx_idx.expr()) * (is_final.expr() - 1.expr());
 
             // if tx_id != 0 then
             //    1. q_calldata_start * (tx_id - 1) == 0 and
@@ -409,14 +434,13 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
                 q_is_calldata.expr() * default_calldata_row_constraint2,
                 q_is_calldata.expr() * default_calldata_row_constraint3,
                 q_is_calldata.expr() * default_calldata_row_constraint4,
-                q_is_calldata.expr() * is_tx_id_nonzero.expr() * tx_id_constraint,
-                q_is_calldata.expr() * is_tx_id_nonzero.expr() * calldata_of_same_tx_constraint,
-                q_is_calldata.expr() * is_tx_id_nonzero.expr() * calldata_of_next_tx_constraint,
+                q_is_calldata.expr() * is_tx_id_nonzero.expr() * idx_of_same_tx_constraint,
+                q_is_calldata.expr() * is_tx_id_nonzero.expr() * idx_of_next_tx_constraint,
                 q_is_calldata.expr() * is_tx_id_nonzero.expr() * gas_cost_of_same_tx_constraint,
                 q_is_calldata.expr() * is_tx_id_nonzero.expr() * gas_cost_of_next_tx_constraint,
                 q_is_calldata.expr() * is_tx_id_nonzero.expr() * is_final_of_same_tx_constraint,
                 q_is_calldata.expr() * is_tx_id_nonzero.expr() * is_final_of_next_tx_constraint,
-                q_calldata_start.expr() * is_tx_id_nonzero.expr() * (tx_idx - 1.expr()),
+                q_calldata_start.expr() * is_tx_id_nonzero.expr() * (idx - 0.expr()),
                 q_calldata_start.expr() * is_tx_id_nonzero.expr() * (gas_cost - gas),
             ]
         });
@@ -481,6 +505,8 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
             tx_table,
             tx_id_inv,
             tx_value_inv,
+            tx_id_diff_inv,
+            fixed_u16,
             calldata_gas_cost,
             is_final,
             raw_public_inputs,
@@ -655,6 +681,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
         region: &mut Region<'_, F>,
         offset: usize,
         tx_id: usize,
+        tx_id_next: usize,
         index: usize,
         tx_value: F,
         is_final: bool,
@@ -663,6 +690,8 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
     ) -> Result<(), Error> {
         let tx_id = F::from(tx_id as u64);
         let tx_id_inv = tx_id.invert().unwrap_or(F::zero());
+        let tx_id_diff = F::from(tx_id_next as u64) - tx_id;
+        let tx_id_diff_inv = tx_id_diff.invert().unwrap_or(F::zero());
         let tag = F::from(TxFieldTag::CallData as u64);
         let index = F::from(index as u64);
         let tx_value = tx_value;
@@ -711,6 +740,12 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
             self.tx_value_inv,
             calldata_offset,
             || Value::known(tx_value_inv),
+        )?;
+        region.assign_advice(
+            || "tx_id_diff_inv",
+            self.tx_id_diff_inv,
+            calldata_offset,
+            || Value::known(tx_id_diff_inv),
         )?;
         region.assign_advice(
             || "is_final",
@@ -1055,6 +1090,21 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
         config: Self::Config,
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
+        layouter.assign_region(
+            || "fixed u16 table",
+            |mut region| {
+                for i in 0..(1 << 16) {
+                    region.assign_fixed(
+                        || format!("row_{}", i),
+                        config.fixed_u16,
+                        i,
+                        || Value::known(F::from(i as u64)),
+                    )?;
+                }
+
+                Ok(())
+            },
+        )?;
         let pi_cells = layouter.assign_region(
             || "region 0",
             |mut region| {
@@ -1159,10 +1209,27 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
                         } else {
                             F::from(NONZERO_BYTE_GAS_COST)
                         };
+                        let tx_id_next = if is_final {
+                            let mut j = i + 1;
+                            while j < self.public_data.txs.len()
+                                && self.public_data.txs[j].call_data.0.is_empty()
+                            {
+                                j += 1;
+                            }
+                            if j >= self.public_data.txs.len() {
+                                0
+                            } else {
+                                j + 1
+                            }
+                        } else {
+                            i + 1
+                        };
+
                         config.assign_tx_calldata_row(
                             &mut region,
                             offset,
                             i + 1,
+                            tx_id_next as usize,
                             index,
                             F::from(*byte as u64),
                             is_final,
@@ -1178,6 +1245,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
                         &mut region,
                         offset,
                         0, // tx_id
+                        0,
                         0,
                         F::zero(),
                         false,
@@ -1405,14 +1473,14 @@ mod pi_circuit_test {
         const MAX_CALLDATA: usize = 8;
         let public_data = PublicData::default();
 
-        let k = 13;
+        let k = 17;
         assert_eq!(run::<Fr, MAX_TXS, MAX_CALLDATA>(k, public_data), Ok(()));
     }
 
     #[test]
     fn test_simple_pi() {
-        const MAX_TXS: usize = 4;
-        const MAX_CALLDATA: usize = 20;
+        const MAX_TXS: usize = 8;
+        const MAX_CALLDATA: usize = 200;
 
         let mut rng = ChaCha20Rng::seed_from_u64(2);
 
@@ -1420,12 +1488,14 @@ mod pi_circuit_test {
         let chain_id = 1337u64;
         public_data.extra.chain_id = Word::from(chain_id);
 
-        let n_tx = 2;
-        for _ in 0..n_tx {
-            public_data.txs.push(rand_tx(&mut rng, chain_id));
+        let n_tx = 4;
+        for i in 0..n_tx {
+            public_data
+                .txs
+                .push(rand_tx(&mut rng, chain_id, i & 2 == 0));
         }
 
-        let k = 13;
+        let k = 17;
         assert_eq!(run::<Fr, MAX_TXS, MAX_CALLDATA>(k, public_data), Ok(()));
     }
 }
