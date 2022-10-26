@@ -20,7 +20,10 @@ use halo2_proofs::{
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector, VirtualCells},
     poly::Rotation,
 };
-use std::{collections::HashMap, iter};
+use std::{
+    collections::{BTreeSet, HashMap},
+    iter,
+};
 use strum::IntoEnumIterator;
 
 mod add_sub;
@@ -1107,19 +1110,16 @@ impl<F: Field> ExecutionConfig<F> {
             }
         }
 
-        for (idx, assigned_rw_value) in assigned_rw_values.iter().enumerate() {
-            let rw_idx = step.rw_indices[idx];
-            let rw = block.rws[rw_idx];
-            let table_assignments = rw.table_assignment(block.randomness);
-            let rlc = table_assignments.rlc(block.randomness);
-            if rlc != assigned_rw_value.1 {
-                log::error!(
-                    "incorrect rw witness. lookup input name: \"{}\". rw: {:?}, rw index: {:?}, {}th rw of step {:?}",
-                    assigned_rw_value.0,
-                    rw,
-                    rw_idx,
-                    idx,
-                    step.execution_state);
+        let rlc_assignments: BTreeSet<_> = block
+            .rws
+            .table_assignments()
+            .iter()
+            .map(|rw| rw.table_assignment(block.randomness).rlc(block.randomness))
+            .collect();
+
+        for (name, value) in assigned_rw_values.iter() {
+            if !rlc_assignments.contains(value) {
+                log::error!("rw lookup error: name: {}, step: {:?}", *name, step);
             }
         }
     }
