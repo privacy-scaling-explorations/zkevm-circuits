@@ -8,7 +8,7 @@ use gadgets::{
 };
 use halo2_proofs::{
     circuit::{Layouter, Value},
-    plonk::{Advice, Column, ConstraintSystem, Error, Fixed, Selector, VirtualCells},
+    plonk::{Advice, Column, ConstraintSystem, Error, Selector, VirtualCells},
     poly::Rotation,
 };
 
@@ -25,16 +25,12 @@ use crate::{
 pub struct Config<F> {
     /// Denotes the randomness.
     r: F,
-    /// Denotes the unusable rows from the layout.
-    minimum_rows: usize,
     /// Denotes whether or not the row is enabled.
-    q_enable: Column<Fixed>,
+    q_usable: Selector,
     /// Denotes whether the row is the first row in the layout.
-    q_first: Column<Fixed>,
-    /// Denotes whether the row is the last row in the layout.
-    q_last: Selector,
+    is_first: Column<Advice>,
     /// Denotes whether the row is the last byte in the RLP-encoded data.
-    is_final: Column<Advice>,
+    is_last: Column<Advice>,
     /// Denotes the index of this row, starting from `1` and ending at `n`
     /// where `n` is the byte length of the RLP-encoded data.
     index: Column<Advice>,
@@ -69,9 +65,6 @@ pub struct Config<F> {
     value_rlc: Column<Advice>,
     /// Denotes the keccak-256 hash of the RLP-encoded data.
     hash: Column<Advice>,
-    /// Denotes whether the row appears after `is_final`, hence the purpose is
-    /// padding.
-    padding: Column<Advice>,
 
     /// Comparison chip to check: 1 <= tag_index.
     tag_index_cmp_1: ComparatorConfig<F, 1>,
@@ -119,10 +112,9 @@ pub struct Config<F> {
 
 impl<F: Field> Config<F> {
     pub(crate) fn configure(meta: &mut ConstraintSystem<F>, r: F) -> Self {
-        let q_enable = meta.fixed_column();
-        let q_first = meta.fixed_column();
-        let q_last = meta.selector();
-        let is_final = meta.advice_column();
+        let q_usable = meta.complex_selector();
+        let is_first = meta.advice_column();
+        let is_last = meta.advice_column();
         let index = meta.advice_column();
         let rindex = meta.advice_column();
         let data_type = meta.advice_column();
@@ -137,16 +129,9 @@ impl<F: Field> Config<F> {
         let length_acc = meta.advice_column();
         let value_rlc = meta.advice_column();
         let hash = meta.advice_column();
-        let padding = meta.advice_column();
 
-        // Enable the comparator and lt chips if the current row is enabled and is not a
-        // padding row.
-        let cmp_lt_enabled = |meta: &mut VirtualCells<F>| {
-            and::expr(vec![
-                meta.query_fixed(q_enable, Rotation::cur()),
-                not::expr(meta.query_advice(padding, Rotation::cur())),
-            ])
-        };
+        // Enable the comparator and lt chips if the current row is enabled.
+        let cmp_lt_enabled = |meta: &mut VirtualCells<F>| meta.query_selector(q_usable);
 
         let tag_index_cmp_1 = ComparatorChip::configure(
             meta,
@@ -806,8 +791,8 @@ impl<F: Field> Config<F> {
                 is_data_prefix(meta) * tindex_eq.clone() * length_acc_eq_0,
                 |cb| {
                     cb.require_equal(
-                        "RlpTxTag::DataPrefix: is_final == 1",
-                        meta.query_advice(is_final, Rotation::cur()),
+                        "RlpTxTag::DataPrefix: is_last == 1",
+                        meta.query_advice(is_last, Rotation::cur()),
                         1.expr(),
                     );
                 },
@@ -913,17 +898,16 @@ impl<F: Field> Config<F> {
             // if tag_index == 1
             cb.condition(is_data(meta) * tindex_eq, |cb| {
                 cb.require_equal(
-                    "RlpTxTag::Data: is_final == 1",
-                    meta.query_advice(is_final, Rotation::cur()),
+                    "RlpTxTag::Data: is_last == 1",
+                    meta.query_advice(is_last, Rotation::cur()),
                     1.expr(),
                 );
             });
 
             cb.gate(and::expr(vec![
-                meta.query_fixed(q_enable, Rotation::cur()),
+                meta.query_selector(q_usable),
                 // Since DataType::Transaction = 0, !data_type = 1.
                 not::expr(meta.query_advice(data_type, Rotation::cur())),
-                not::expr(meta.query_advice(padding, Rotation::cur())),
             ]))
         });
 
@@ -1308,8 +1292,8 @@ impl<F: Field> Config<F> {
 
             cb.condition(is_logs_prefix(meta) * tindex_eq.clone() * length_acc_eq_0.clone(), |cb| {
                 cb.require_equal(
-                    "is_final == 1",
-                    meta.query_advice(is_final, Rotation::cur()),
+                    "is_last == 1",
+                    meta.query_advice(is_last, Rotation::cur()),
                     1.expr(),
                 );
             });
@@ -1900,10 +1884,9 @@ impl<F: Field> Config<F> {
             });
 
             cb.gate(and::expr(vec![
-                meta.query_fixed(q_enable, Rotation::cur()),
+                meta.query_selector(q_usable),
                 // Since DataType::Receipt = 1, data_type = 1.
                 meta.query_advice(data_type, Rotation::cur()),
-                not::expr(meta.query_advice(padding, Rotation::cur())),
             ]))
         });
 
@@ -1912,19 +1895,15 @@ impl<F: Field> Config<F> {
             let mut cb = BaseConstraintBuilder::default();
 
             cb.require_boolean(
-                "is_final is boolean",
-                meta.query_advice(is_final, Rotation::cur()),
-            );
-            cb.require_boolean(
-                "padding is boolean",
-                meta.query_advice(padding, Rotation::cur()),
+                "is_last is boolean",
+                meta.query_advice(is_last, Rotation::cur()),
             );
 
-            cb.gate(meta.query_fixed(q_enable, Rotation::cur()))
+            cb.gate(meta.query_selector(q_usable))
         });
 
         // Constraints for the first row in the layout.
-        meta.create_gate("q_first == 1", |meta| {
+        meta.create_gate("is_first == 1", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
             cb.require_equal(
@@ -1939,13 +1918,13 @@ impl<F: Field> Config<F> {
             );
 
             cb.gate(and::expr(vec![
-                meta.query_fixed(q_enable, Rotation::cur()),
-                meta.query_fixed(q_first, Rotation::cur()),
+                meta.query_selector(q_usable),
+                meta.query_advice(is_first, Rotation::cur()),
             ]))
         });
 
-        // Constraints for every non-padding row except the first row.
-        meta.create_gate("q_first == 0 and padding == 0", |meta| {
+        // Constraints for every row except the first row.
+        meta.create_gate("is_first == 0", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
             cb.require_equal(
@@ -1971,18 +1950,16 @@ impl<F: Field> Config<F> {
             );
 
             cb.gate(and::expr(vec![
-                meta.query_fixed(q_enable, Rotation::cur()),
-                not::expr(meta.query_fixed(q_first, Rotation::cur())),
-                not::expr(meta.query_advice(padding, Rotation::cur())),
+                meta.query_selector(q_usable),
+                not::expr(meta.query_advice(is_first, Rotation::cur())),
             ]))
         });
 
         // Constraints for the last row of the RLP-encoded data.
-        meta.lookup_any("keccak-256 verification for is_final == 1", |meta| {
+        meta.lookup_any("keccak-256 verification for is_last == 1", |meta| {
             let enable = and::expr(vec![
-                meta.query_fixed(q_enable, Rotation::cur()),
-                meta.query_advice(is_final, Rotation::cur()),
-                not::expr(meta.query_advice(padding, Rotation::cur())),
+                meta.query_selector(q_usable),
+                meta.query_advice(is_last, Rotation::cur()),
             ]);
 
             let lookup_columns = vec![value_rlc, index, rindex, hash];
@@ -1998,45 +1975,11 @@ impl<F: Field> Config<F> {
                 .collect()
         });
 
-        // Constraints for every row except the first row.
-        meta.create_gate("q_first == 0", |meta| {
-            let mut cb = BaseConstraintBuilder::default();
-
-            cb.require_boolean(
-                "padding can go 0 -> 1 only once",
-                meta.query_advice(padding, Rotation::cur())
-                    - meta.query_advice(padding, Rotation::prev()),
-            );
-
-            cb.gate(and::expr(vec![
-                meta.query_fixed(q_enable, Rotation::cur()),
-                not::expr(meta.query_fixed(q_first, Rotation::cur())),
-            ]))
-        });
-
-        // Constraints for the last row of the layout.
-        meta.create_gate("q_last == 1", |meta| {
-            let mut cb = BaseConstraintBuilder::default();
-
-            cb.require_equal(
-                "is_final == 1 or padding == 1",
-                or::expr(vec![
-                    meta.query_advice(is_final, Rotation::cur()),
-                    meta.query_advice(padding, Rotation::cur()),
-                ]),
-                1.expr(),
-            );
-
-            cb.gate(meta.query_selector(q_last))
-        });
-
         Self {
             r,
-            minimum_rows: meta.minimum_rows(),
-            q_enable,
-            q_first,
-            q_last,
-            is_final,
+            q_usable,
+            is_first,
+            is_last,
             index,
             rindex,
             data_type,
@@ -2052,7 +1995,6 @@ impl<F: Field> Config<F> {
             value_rlc,
             hash,
             keccak_tuple,
-            padding,
 
             tag_index_cmp_1,
             tag_index_length_cmp,
@@ -2082,11 +2024,8 @@ impl<F: Field> Config<F> {
     pub(crate) fn assign<RLP: RlpWitnessGen<F>>(
         &self,
         mut layouter: impl Layouter<F>,
-        size: usize,
         witness: &RLP,
     ) -> Result<(), Error> {
-        let last_row_offset = size - self.minimum_rows + 1;
-
         let rows = witness.gen_witness(self.r);
         let n_rows = rows.len();
 
@@ -2121,74 +2060,67 @@ impl<F: Field> Config<F> {
                 for (offset, row) in rows.iter().enumerate() {
                     // update value accumulator
                     value_rlc = value_rlc * self.r + F::from(row.value as u64);
-                    // q_enable
-                    region.assign_fixed(
-                        || format!("assign q_enable {}", offset),
-                        self.q_enable,
-                        offset,
-                        || Value::known(F::one()),
-                    )?;
-                    // q_first
-                    region.assign_fixed(
-                        || format!("assign q_first {}", offset),
-                        self.q_first,
+                    // q_usable
+                    self.q_usable.enable(&mut region, offset)?;
+                    // is_first
+                    region.assign_advice(
+                        || format!("assign is_first {}", offset),
+                        self.is_first,
                         offset,
                         || Value::known(F::from((offset == 0) as u64)),
                     )?;
-                    // q_last
-                    if offset == last_row_offset {
-                        self.q_last.enable(&mut region, offset)?;
-                    }
                     // advices
                     let rindex = (n_rows + 1 - row.index) as u64;
                     for (name, column, value) in [
-                        [
-                            (
-                                "is_final",
-                                self.is_final,
-                                F::from((row.index == n_rows) as u64),
-                            ),
-                            ("index", self.index, F::from(row.index as u64)),
-                            ("rindex", self.rindex, F::from(rindex)),
-                            ("data_type", self.data_type, F::from(row.data_type as u64)),
-                            ("value", self.value, F::from(row.value as u64)),
-                            ("tag", self.tag, F::from(row.tag as u64)),
-                            (
-                                "aux_tag_index[0]",
-                                self.aux_tag_index[0],
-                                F::from(row.aux_tag_index[0] as u64),
-                            ),
-                            (
-                                "aux_tag_index[1]",
-                                self.aux_tag_index[1],
-                                F::from(row.aux_tag_index[1] as u64),
-                            ),
-                        ],
-                        [
-                            ("tag_index", self.tag_index, F::from(row.tag_index as u64)),
-                            (
-                                "tag_length",
-                                self.tag_length,
-                                F::from(row.tag_length as u64),
-                            ),
-                            (
-                                "aux_tag_length[0]",
-                                self.aux_tag_length[0],
-                                F::from(row.aux_tag_length[0] as u64),
-                            ),
-                            (
-                                "aux_tag_length[1]",
-                                self.aux_tag_length[1],
-                                F::from(row.aux_tag_length[1] as u64),
-                            ),
-                            ("length_acc", self.length_acc, F::from(row.length_acc)),
-                            ("value_rlc", self.value_rlc, value_rlc),
-                            ("hash", self.hash, row.hash),
-                            ("padding", self.padding, F::zero()),
-                        ],
-                    ]
-                    .join(self.tag_invs(Some(row.data_type), Some(row.tag)).as_slice())
-                    {
+                        (
+                            "is_last",
+                            self.is_last,
+                            F::from((row.index == n_rows) as u64),
+                        ),
+                        ("index", self.index, F::from(row.index as u64)),
+                        ("rindex", self.rindex, F::from(rindex)),
+                        ("data_type", self.data_type, F::from(row.data_type as u64)),
+                        ("value", self.value, F::from(row.value as u64)),
+                        ("tag", self.tag, F::from(row.tag as u64)),
+                        (
+                            "aux_tag_index[0]",
+                            self.aux_tag_index[0],
+                            F::from(row.aux_tag_index[0] as u64),
+                        ),
+                        (
+                            "aux_tag_index[1]",
+                            self.aux_tag_index[1],
+                            F::from(row.aux_tag_index[1] as u64),
+                        ),
+                        ("tag_index", self.tag_index, F::from(row.tag_index as u64)),
+                        (
+                            "tag_length",
+                            self.tag_length,
+                            F::from(row.tag_length as u64),
+                        ),
+                        (
+                            "aux_tag_length[0]",
+                            self.aux_tag_length[0],
+                            F::from(row.aux_tag_length[0] as u64),
+                        ),
+                        (
+                            "aux_tag_length[1]",
+                            self.aux_tag_length[1],
+                            F::from(row.aux_tag_length[1] as u64),
+                        ),
+                        ("length_acc", self.length_acc, F::from(row.length_acc)),
+                        ("value_rlc", self.value_rlc, value_rlc),
+                        ("hash", self.hash, row.hash),
+                    ] {
+                        region.assign_advice(
+                            || format!("assign {} {}", name, offset),
+                            column,
+                            offset,
+                            || Value::known(value),
+                        )?;
+                    }
+
+                    for (name, column, value) in self.tag_invs(Some(row.data_type), Some(row.tag)) {
                         region.assign_advice(
                             || format!("assign {} {}", name, offset),
                             column,
@@ -2294,55 +2226,6 @@ impl<F: Field> Config<F> {
                         F::from(row.aux_tag_index[1] as u64),
                         F::one(),
                     )?;
-                }
-
-                for offset in n_rows..=last_row_offset {
-                    // q_enable
-                    region.assign_fixed(
-                        || format!("assign q_enable {}", offset),
-                        self.q_enable,
-                        offset,
-                        || Value::known(F::one()),
-                    )?;
-                    // q_first
-                    region.assign_fixed(
-                        || format!("assign q_first {}", offset),
-                        self.q_first,
-                        offset,
-                        || Value::known(F::from((offset == 0) as u64)),
-                    )?;
-                    // q_last
-                    if offset == last_row_offset {
-                        self.q_last.enable(&mut region, offset)?;
-                    }
-                    // advices
-                    for (name, column, value) in [
-                        [
-                            ("is_final", self.is_final, F::zero()),
-                            ("index", self.index, F::zero()),
-                            ("rindex", self.rindex, F::zero()),
-                            ("data_type", self.data_type, F::zero()),
-                            ("value", self.value, F::zero()),
-                            ("tag", self.tag, F::zero()),
-                        ],
-                        [
-                            ("tag_index", self.tag_index, F::zero()),
-                            ("tag_length", self.tag_length, F::zero()),
-                            ("length_acc", self.length_acc, F::zero()),
-                            ("value_rlc", self.value_rlc, F::zero()),
-                            ("hash", self.hash, F::zero()),
-                            ("padding", self.padding, F::one()),
-                        ],
-                    ]
-                    .join(self.tag_invs(None, None).as_slice())
-                    {
-                        region.assign_advice(
-                            || format!("assign {} {}", name, offset),
-                            column,
-                            offset,
-                            || Value::known(value),
-                        )?;
-                    }
                 }
 
                 Ok(())
@@ -2608,7 +2491,7 @@ mod tests {
             mut layouter: impl Layouter<F>,
         ) -> Result<(), Error> {
             config.load(&mut layouter, &self.input)?;
-            config.assign(layouter, self.size, &self.input)?;
+            config.assign(layouter, &self.input)?;
             Ok(())
         }
     }
