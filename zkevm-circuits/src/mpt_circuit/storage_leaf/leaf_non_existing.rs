@@ -627,8 +627,6 @@ impl<F: FieldExt> StorageNonExistingConfig<F> {
             )
             .ok();
 
-        println!("{:?}", &row.bytes);
-
         let mut key_rlc_new = pv.key_rlc;
         let mut key_rlc_mult_new = pv.key_rlc_mult;
         mpt_config.compute_key_rlc(&row.bytes, &mut key_rlc_new, &mut key_rlc_mult_new, start);

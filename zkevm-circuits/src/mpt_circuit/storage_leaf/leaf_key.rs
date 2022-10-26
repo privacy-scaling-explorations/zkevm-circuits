@@ -9,7 +9,7 @@ use std::marker::PhantomData;
 use crate::{
     mpt_circuit::columns::{AccumulatorCols, MainCols},
     mpt_circuit::helpers::{compute_rlc, get_bool_constraint, mult_diff_lookup, range_lookups},
-    mpt_circuit::{FixedTableTag, MPTConfig, ProofValues, helpers::key_len_lookup},
+    mpt_circuit::{FixedTableTag, MPTConfig, ProofValues, helpers::key_len_lookup, columns::DenoteCols},
     mpt_circuit::param::{
         BRANCH_ROWS_NUM, HASH_WIDTH, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS,
         IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS, NIBBLES_COUNTER_POS, RLP_NUM,
@@ -95,6 +95,7 @@ impl<F: FieldExt> LeafKeyConfig<F> {
         c_main: MainCols<F>,
         accs: AccumulatorCols<F>,
         is_account_leaf_in_added_branch: Column<Advice>,
+        denoter: DenoteCols<F>,
         power_of_randomness: [Expression<F>; HASH_WIDTH],
         fixed_table: [Column<Fixed>; 3],
         is_s: bool,
@@ -136,6 +137,20 @@ impl<F: FieldExt> LeafKeyConfig<F> {
             let is_short = (one.clone() - flag1.clone()) * flag2.clone();
             let one_nibble = (one.clone() - flag1.clone()) * (one.clone() - flag2.clone());
 
+            let is_leaf_in_first_level =
+                meta.query_advice(is_account_leaf_in_added_branch, Rotation(rot_into_account));
+            let mut sel = meta.query_advice(denoter.sel1, Rotation(rot_into_init + 1));
+            if !is_s {
+                sel = meta.query_advice(denoter.sel2, Rotation(rot_into_init + 1));
+            }
+            let mut leaf_without_branch_and_is_placeholder = meta.query_advice(denoter.sel1, Rotation(1));
+            if !is_s {
+                leaf_without_branch_and_is_placeholder = meta.query_advice(denoter.sel2, Rotation(1));
+            }
+
+            let is_leaf_placeholder = (one.clone() - is_leaf_in_first_level.clone()) * sel
+                + leaf_without_branch_and_is_placeholder;
+
             /*
             When `is_long` (the leaf value is longer than 1 byte), `s_main.rlp1` needs to be 248.
 
@@ -144,7 +159,7 @@ impl<F: FieldExt> LeafKeyConfig<F> {
             */
             constraints.push((
                 "is_long: s_rlp1 = 248",
-                q_enable.clone() * is_long.clone() * (s_rlp1.clone() - c248),
+                q_enable.clone() * (one.clone() - is_leaf_placeholder.clone()) * is_long.clone() * (s_rlp1.clone() - c248),
             ));
 
             /*
@@ -159,7 +174,7 @@ impl<F: FieldExt> LeafKeyConfig<F> {
             */
             constraints.push((
                 "last_level: s_rlp2 = 32",
-                q_enable.clone() * last_level.clone() * (s_rlp2.clone() - c32.clone()),
+                q_enable.clone() * last_level.clone() * (one.clone() - is_leaf_placeholder.clone()) * (s_rlp2.clone() - c32.clone()),
             ));
 
             /*
@@ -204,7 +219,7 @@ impl<F: FieldExt> LeafKeyConfig<F> {
             */
             constraints.push((
                 "Leaf key RLC (short or long)",
-                q_enable.clone() * (is_short + is_long) * (rlc - acc.clone()),
+                q_enable.clone() * (is_short + is_long) * (one.clone() - is_leaf_placeholder.clone()) * (rlc - acc.clone()),
             ));
 
             /*
@@ -216,7 +231,7 @@ impl<F: FieldExt> LeafKeyConfig<F> {
             */
             constraints.push((
                 "Leaf key RLC (last level or one nibble)",
-                q_enable * (last_level + one_nibble) * (rlc_last_level_or_one_nibble - acc),
+                q_enable * (last_level + one_nibble) * (one.clone() - is_leaf_placeholder.clone()) * (rlc_last_level_or_one_nibble - acc),
             ));
 
             constraints
@@ -325,6 +340,17 @@ impl<F: FieldExt> LeafKeyConfig<F> {
 
                 let is_leaf_in_first_storage_level =
                     meta.query_advice(is_account_leaf_in_added_branch, Rotation(rot_into_account));
+                let mut sel = meta.query_advice(denoter.sel1, Rotation(rot_into_init + 1));
+                if !is_s {
+                    sel = meta.query_advice(denoter.sel2, Rotation(rot_into_init + 1));
+                }
+                let mut leaf_without_branch_and_is_placeholder = meta.query_advice(denoter.sel1, Rotation(1));
+                if !is_s {
+                    leaf_without_branch_and_is_placeholder = meta.query_advice(denoter.sel2, Rotation(1));
+                }
+
+                let is_leaf_placeholder = (one.clone() - is_leaf_in_first_storage_level.clone()) * sel
+                    + leaf_without_branch_and_is_placeholder;
 
                 // key rlc is in the first branch node (not branch init)
                 let mut rot = -18;
@@ -398,6 +424,7 @@ impl<F: FieldExt> LeafKeyConfig<F> {
                     "Leaf key RLC s_bytes0 = 32 (short)",
                     q_enable.clone()
                         * (s_bytes0.clone() - c32.clone())
+                        * (one.clone() - is_leaf_placeholder.clone())
                         * is_c1.clone()
                         * (one.clone() - is_branch_placeholder.clone())
                         * is_short.clone(),
@@ -437,6 +464,7 @@ impl<F: FieldExt> LeafKeyConfig<F> {
                     "Key RLC (short)",
                     q_enable.clone()
                         * (key_rlc_acc_short - key_rlc.clone())
+                        * (one.clone() - is_leaf_placeholder.clone())
                         * (one.clone() - is_branch_placeholder.clone())
                         * is_short.clone(),
                 ));
@@ -461,6 +489,7 @@ impl<F: FieldExt> LeafKeyConfig<F> {
                     q_enable.clone()
                         * (s_bytes1 - c32.clone())
                         * is_c1.clone()
+                        * (one.clone() - is_leaf_placeholder.clone())
                         * (one.clone() - is_branch_placeholder.clone())
                         * is_long.clone(),
                 ));
@@ -499,6 +528,7 @@ impl<F: FieldExt> LeafKeyConfig<F> {
                     "Key RLC (long)",
                     q_enable.clone()
                         * (key_rlc_acc_long - key_rlc.clone())
+                        * (one.clone() - is_leaf_placeholder.clone())
                         * (one.clone() - is_branch_placeholder.clone())
                         * is_long.clone(),
                 ));
@@ -513,6 +543,7 @@ impl<F: FieldExt> LeafKeyConfig<F> {
                     "Leaf key acc s_rlp2 = 32 (last level)",
                     q_enable.clone()
                         * (s_rlp2 - c32.clone())
+                        * (one.clone() - is_leaf_placeholder.clone())
                         * (one.clone() - is_branch_placeholder.clone())
                         * last_level.clone(),
                 ));
@@ -532,6 +563,7 @@ impl<F: FieldExt> LeafKeyConfig<F> {
                     "Key RLC (last level)",
                     q_enable.clone()
                         * (key_rlc_acc_start.clone() - key_rlc.clone()) // key_rlc has already been computed
+                        * (one.clone() - is_leaf_placeholder.clone())
                         * (one.clone() - is_branch_placeholder.clone())
                         * last_level.clone(),
                 ));
@@ -557,6 +589,7 @@ impl<F: FieldExt> LeafKeyConfig<F> {
                     "Key RLC (one nibble)",
                     q_enable.clone()
                         * (key_rlc_one_nibble - key_rlc)
+                        * (one.clone() - is_leaf_placeholder.clone())
                         * (one.clone() - is_branch_placeholder.clone())
                         * one_nibble.clone(),
                 ));
@@ -589,6 +622,7 @@ impl<F: FieldExt> LeafKeyConfig<F> {
                 constraints.push((
                     "Total number of storage address nibbles is 64 (not first level, not branch placeholder)",
                     q_enable
+                        * (one.clone() - is_leaf_placeholder.clone())
                         * (one.clone() - is_branch_placeholder)
                         // Note: we need to check the number of nibbles being 64 for non_existing_account_proof too
                         // (even if the address being checked here might be the address of the wrong leaf)
