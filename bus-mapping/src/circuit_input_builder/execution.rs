@@ -253,9 +253,9 @@ impl CopyEvent {
             CopyDataType::RlcAcc | CopyDataType::TxLog => unreachable!(),
         };
         let destination_rw_increase = match self.dst_type {
-            CopyDataType::RlcAcc => 0,
+            CopyDataType::RlcAcc | CopyDataType::Bytecode => 0,
             CopyDataType::TxLog | CopyDataType::Memory => u64::try_from(step_index).unwrap() / 2,
-            CopyDataType::Bytecode | CopyDataType::TxCalldata => unreachable!(),
+            CopyDataType::TxCalldata => unreachable!(),
         };
         source_rw_increase + destination_rw_increase
     }

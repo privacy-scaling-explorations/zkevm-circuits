@@ -28,6 +28,8 @@ hex = "0.4.3"
 pretty_assertions = "1.0.0"
 tokio = { version = "1.13", features = ["macros"] }
 url = "2.2.2"
+mock = { path = "../mock" }
+rand = "0.8"
 
 [features]
 test = ["mock", "rand"]

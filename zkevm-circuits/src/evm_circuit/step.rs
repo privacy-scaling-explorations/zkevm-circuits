@@ -80,12 +80,11 @@ pub enum ExecutionState {
     SWAP, // SWAP1, SWAP2, ..., SWAP16
     LOG,  // LOG0, LOG1, ..., LOG4
     CREATE,
-    CALL,
+    CALL_STATICCALL,
     CALLCODE,
     RETURN,
     DELEGATECALL,
     CREATE2,
-    STATICCALL,
     REVERT,
     SELFDESTRUCT,
     // Error cases
@@ -309,12 +308,11 @@ impl ExecutionState {
                 OpcodeId::LOG4,
             ],
             Self::CREATE => vec![OpcodeId::CREATE],
-            Self::CALL => vec![OpcodeId::CALL],
+            Self::CALL_STATICCALL => vec![OpcodeId::CALL, OpcodeId::STATICCALL],
             Self::CALLCODE => vec![OpcodeId::CALLCODE],
             Self::RETURN => vec![OpcodeId::RETURN],
             Self::DELEGATECALL => vec![OpcodeId::DELEGATECALL],
             Self::CREATE2 => vec![OpcodeId::CREATE2],
-            Self::STATICCALL => vec![OpcodeId::STATICCALL],
             Self::REVERT => vec![OpcodeId::REVERT],
             Self::SELFDESTRUCT => vec![OpcodeId::SELFDESTRUCT],
             _ => vec![],
