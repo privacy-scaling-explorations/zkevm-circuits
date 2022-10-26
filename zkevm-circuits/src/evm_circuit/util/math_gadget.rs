@@ -2201,6 +2201,150 @@ mod tests {
     }
 
     #[test]
+    fn test_constantdivisiongadget() {
+        const N: usize = 4;
+        #[derive(Clone)]
+        /// a < b
+        struct ConstantDivisionTestContainer<F, const DENOMINATOR: u64, const REMINDER: u64> {
+            constdiv_gadget: ConstantDivisionGadget<F, N>,
+            a: Cell<F>,
+        }
+
+        impl<F: Field, const DENOMINATOR: u64, const REMAINDER: u64> MathGadgetContainer<F>
+            for ConstantDivisionTestContainer<F, DENOMINATOR, REMAINDER>
+        {
+            const NAME: &'static str = "ConstantDivisionGadget";
+
+            fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
+                let a = cb.query_cell();
+                let constdiv_gadget =
+                    ConstantDivisionGadget::<F, N>::construct(cb, a.expr(), DENOMINATOR);
+
+                cb.require_equal(
+                    "a == n * denom",
+                    constdiv_gadget.remainder(),
+                    REMAINDER.expr(),
+                );
+
+                ConstantDivisionTestContainer { constdiv_gadget, a }
+            }
+
+            fn assign_gadget_container(
+                &self,
+                input_words: &[Word],
+                region: &mut CachedRegion<'_, '_, F>,
+            ) -> Result<(), Error> {
+                let a = u64::from_le_bytes(input_words[0].to_le_bytes()[..8].try_into().unwrap());
+                let offset = 0;
+
+                self.a.assign(region, offset, Value::known(F::from(a)))?;
+                self.constdiv_gadget.assign(region, offset, a as u128)?;
+
+                Ok(())
+            }
+        }
+
+        test_math_gadget_container::<Fr, ConstantDivisionTestContainer<Fr, 5, 0>>(
+            vec![Word::from(0)],
+            true,
+        );
+
+        test_math_gadget_container::<Fr, ConstantDivisionTestContainer<Fr, 5, 0>>(
+            vec![Word::from(5)],
+            true,
+        );
+
+        // test_math_gadget_container::<Fr, ConstantDivisionTestContainer<Fr, 5,
+        // 1>>(     vec![Word::from(1)],
+        //     true,
+        // );
+
+        // test_math_gadget_container::<Fr, ConstantDivisionTestContainer<Fr, 5,
+        // 4>>(     vec![Word::from(1)],
+        //     false,
+        // );
+
+        // test_math_gadget_container::<Fr, ConstantDivisionTestContainer<Fr, 2,
+        // 0>>(     vec![Word::from(1 << N)],
+        //     true,
+        // );
+    }
+
+    #[test]
+    fn test_minmax() {
+        const N: usize = 4;
+        #[derive(Clone)]
+
+        struct MinMaxTestContainer<F, const MIN_A: bool> {
+            minmax_gadget: MinMaxGadget<F, N>,
+            a: Cell<F>,
+            b: Cell<F>,
+        }
+
+        impl<F: Field, const MIN_A: bool> MathGadgetContainer<F> for MinMaxTestContainer<F, MIN_A> {
+            const NAME: &'static str = "MinMaxGadget";
+
+            fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
+                let a = cb.query_cell();
+                let b = cb.query_cell();
+                let minmax_gadget = MinMaxGadget::<F, N>::construct(cb, a.expr(), b.expr());
+
+                if MIN_A {
+                    cb.require_equal("min == a", minmax_gadget.min(), a.expr());
+                    cb.require_equal("max == b", minmax_gadget.max(), b.expr());
+                } else {
+                    cb.require_equal("min == b", minmax_gadget.min(), b.expr());
+                    cb.require_equal("max == a", minmax_gadget.max(), a.expr());
+                }
+
+                MinMaxTestContainer {
+                    minmax_gadget,
+                    a,
+                    b,
+                }
+            }
+
+            fn assign_gadget_container(
+                &self,
+                input_words: &[Word],
+                region: &mut CachedRegion<'_, '_, F>,
+            ) -> Result<(), Error> {
+                let a = input_words[0].to_scalar().unwrap();
+                let b = input_words[1].to_scalar().unwrap();
+                let offset = 0;
+
+                self.a.assign(region, offset, Value::known(a))?;
+                self.b.assign(region, offset, Value::known(b))?;
+                self.minmax_gadget.assign(region, offset, a, b)?;
+
+                Ok(())
+            }
+        }
+
+        // min == a
+        test_math_gadget_container::<Fr, MinMaxTestContainer<Fr, true>>(
+            vec![Word::from(0), Word::from(0)],
+            true,
+        );
+
+        test_math_gadget_container::<Fr, MinMaxTestContainer<Fr, true>>(
+            vec![Word::from(0), Word::from(1)],
+            true,
+        );
+
+        test_math_gadget_container::<Fr, MinMaxTestContainer<Fr, true>>(
+            vec![Word::from(1), Word::from(0)],
+            false,
+        );
+
+        // min == b
+        test_math_gadget_container::<Fr, MinMaxTestContainer<Fr, false>>(
+            vec![Word::from(1), Word::from(0)],
+            true,
+        );
+    }
+
+    #[test]
     fn test_mod() {
         #[derive(Clone)]
         /// a % n == r
