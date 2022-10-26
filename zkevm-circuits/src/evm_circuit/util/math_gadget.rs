@@ -2022,6 +2022,185 @@ mod tests {
     }
 
     #[test]
+    fn test_comparison() {
+        const N: usize = 4;
+        #[derive(Clone)]
+        /// a < b
+        struct ComparisonTestContainer<F, const CHECK_EQ: bool> {
+            cmp_gadget: ComparisonGadget<F, N>,
+            a: Cell<F>,
+            b: Cell<F>,
+        }
+
+        impl<F: Field, const CHECK_EQ: bool> MathGadgetContainer<F>
+            for ComparisonTestContainer<F, CHECK_EQ>
+        {
+            const NAME: &'static str = "LtWordGadget";
+
+            fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
+                let a = cb.query_cell();
+                let b = cb.query_cell();
+                let cmp_gadget = ComparisonGadget::<F, N>::construct(cb, a.expr(), b.expr());
+                cb.require_equal(
+                    "(a < b) * (a == b) == 0",
+                    cmp_gadget.expr().0 * cmp_gadget.expr().1,
+                    0.expr(),
+                );
+
+                if CHECK_EQ {
+                    cb.require_equal("a == b", cmp_gadget.expr().1, 1.expr());
+                } else {
+                    cb.require_equal("a < b", cmp_gadget.expr().0, 1.expr());
+                }
+
+                ComparisonTestContainer { cmp_gadget, a, b }
+            }
+
+            fn assign_gadget_container(
+                &self,
+                input_words: &[Word],
+                region: &mut CachedRegion<'_, '_, F>,
+            ) -> Result<(), Error> {
+                let a = input_words[0].to_scalar().unwrap();
+                let b = input_words[1].to_scalar().unwrap();
+                let offset = 0;
+
+                self.a.assign(region, offset, Value::known(a))?;
+                self.b.assign(region, offset, Value::known(b))?;
+                self.cmp_gadget.assign(region, offset, a, b)?;
+
+                Ok(())
+            }
+        }
+
+        // a == b check
+        test_math_gadget_container::<Fr, ComparisonTestContainer<Fr, true>>(
+            vec![Word::from(0), Word::from(0)],
+            true,
+        );
+
+        test_math_gadget_container::<Fr, ComparisonTestContainer<Fr, true>>(
+            vec![Word::from(1), Word::from(1)],
+            true,
+        );
+
+        test_math_gadget_container::<Fr, ComparisonTestContainer<Fr, true>>(
+            vec![Word::from(1 << N), Word::from(1 << N)],
+            true,
+        );
+
+        test_math_gadget_container::<Fr, ComparisonTestContainer<Fr, true>>(
+            vec![Word::from(0), Word::from(1 << N)],
+            false,
+        );
+
+        // a < b check
+        test_math_gadget_container::<Fr, ComparisonTestContainer<Fr, false>>(
+            vec![Word::from(0), Word::from(1)],
+            true,
+        );
+
+        test_math_gadget_container::<Fr, ComparisonTestContainer<Fr, false>>(
+            vec![Word::from(1), Word::from(1 << N)],
+            true,
+        );
+
+        test_math_gadget_container::<Fr, ComparisonTestContainer<Fr, false>>(
+            vec![Word::from(1), Word::from(0)],
+            false,
+        );
+
+        test_math_gadget_container::<Fr, ComparisonTestContainer<Fr, false>>(
+            vec![Word::from(10000), Word::from(2 << N)],
+            false,
+        );
+    }
+
+    #[test]
+    fn test_pairselection() {
+        #[derive(Clone)]
+        /// a < b
+        struct PairSelectionTestContainer<F, const SELECT_A: bool> {
+            select_gadget: PairSelectGadget<F>,
+            a: Cell<F>,
+            b: Cell<F>,
+            v: Cell<F>,
+        }
+
+        impl<F: Field, const SELECT_A: bool> MathGadgetContainer<F>
+            for PairSelectionTestContainer<F, SELECT_A>
+        {
+            const NAME: &'static str = "LtWordGadget";
+
+            fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
+                let v = cb.query_cell();
+                let a = cb.query_cell();
+                let b = cb.query_cell();
+                let select_gadget =
+                    PairSelectGadget::<F>::construct(cb, v.expr(), a.expr(), b.expr());
+                cb.require_equal(
+                    "is_a * is_b == 0",
+                    select_gadget.expr().0 * select_gadget.expr().1,
+                    0.expr(),
+                );
+
+                if SELECT_A {
+                    cb.require_equal("is_a == 1", select_gadget.expr().0, 1.expr());
+                } else {
+                    cb.require_equal("is_b == 1", select_gadget.expr().1, 1.expr());
+                }
+
+                PairSelectionTestContainer {
+                    select_gadget,
+                    v,
+                    a,
+                    b,
+                }
+            }
+
+            fn assign_gadget_container(
+                &self,
+                input_words: &[Word],
+                region: &mut CachedRegion<'_, '_, F>,
+            ) -> Result<(), Error> {
+                let v = input_words[0].to_scalar().unwrap();
+                let a = input_words[1].to_scalar().unwrap();
+                let b = input_words[2].to_scalar().unwrap();
+                let offset = 0;
+
+                self.v.assign(region, offset, Value::known(v))?;
+                self.a.assign(region, offset, Value::known(a))?;
+                self.b.assign(region, offset, Value::known(b))?;
+                self.select_gadget.assign(region, offset, v, a, b)?;
+
+                Ok(())
+            }
+        }
+
+        // choose a check
+        test_math_gadget_container::<Fr, PairSelectionTestContainer<Fr, true>>(
+            vec![Word::from(0), Word::from(0), Word::from(0)],
+            true,
+        );
+
+        test_math_gadget_container::<Fr, PairSelectionTestContainer<Fr, true>>(
+            vec![Word::from(0), Word::from(0), Word::from(1)],
+            true,
+        );
+
+        test_math_gadget_container::<Fr, PairSelectionTestContainer<Fr, true>>(
+            vec![Word::from(0), Word::from(1), Word::from(0)],
+            false,
+        );
+
+        // choose b check
+        test_math_gadget_container::<Fr, PairSelectionTestContainer<Fr, false>>(
+            vec![Word::from(0), Word::from(1), Word::from(0)],
+            true,
+        );
+    }
+
+    #[test]
     fn test_mod() {
         #[derive(Clone)]
         /// a % n == r
