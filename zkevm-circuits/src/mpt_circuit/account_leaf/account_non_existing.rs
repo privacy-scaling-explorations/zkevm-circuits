@@ -80,7 +80,7 @@ in the rows above (except for the `ACCOUNT_NON_EXISTING` row) and continues with
 Note that the selector (being 1 in this case) at `s_main.rlp1` specifies whether it is wrong leaf or nil case.
 
 Lookups:
-The `is_non_existing_account_proof` lookup is enabled in `ACCOUNT_NON_EXISTING` row.
+The `non_existing_account_proof` lookup is enabled in `ACCOUNT_NON_EXISTING` row.
 */
 
 #[derive(Clone, Debug)]
@@ -283,7 +283,7 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
                 In case when there is no wrong leaf, we need to check there is a nil object in the parent branch.
                 Note that the constraints in `branch.rs` ensure that `sel1` is 1 if and only if there is a nil object
                 at `modified_node` position. We check that in case of no wrong leaf in
-                the non-existing-account proof, `sel1` is 1.
+                the non-existing-account proof, `is_nil_object` is 1.
                 */
                 constraints.push((
                     "Nil object in parent branch",

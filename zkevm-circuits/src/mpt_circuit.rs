@@ -604,7 +604,7 @@ impl<F: FieldExt> MPTConfig<F> {
             s_main.clone(),
             c_main.clone(),
             accumulators.clone(),
-            denoter.sel1,
+            denoter.sel2,
             account_leaf.is_in_added_branch,
             power_of_randomness.clone(),
             fixed_table,

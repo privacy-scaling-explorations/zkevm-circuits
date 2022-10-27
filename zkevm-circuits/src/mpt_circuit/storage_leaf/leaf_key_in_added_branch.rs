@@ -25,7 +25,7 @@ use crate::mpt_circuit::param::{
 };
 
 /*
-A storage leaf occupies 5 rows.
+A storage leaf occupies 6 rows.
 Contrary as in the branch rows, the `S` and `C` leaves are not positioned parallel to each other.
 The rows are the following:
 LEAF_KEY_S
@@ -33,6 +33,7 @@ LEAF_VALUE_S
 LEAF_KEY_C
 LEAF_VALUE_C
 LEAF_DRIFTED
+LEAF_NON_EXISTING
 
 An example of leaf rows:
 [226 160 32 235 117 17 208 2 186 74 12 134 238 103 127 37 240 27 164 245 42 218 188 162 9 151 17 57 90 177 190 250 180 61 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 2]
@@ -40,6 +41,7 @@ An example of leaf rows:
 [225 159 63 117 31 216 242 20 172 137 89 10 84 218 35 38 178 182 67 5 68 54 127 178 216 248 46 67 173 108 157 55 18 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 3]
 [17 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 14]
 [225 159 59 117 17 208 2 186 74 12 134 238 103 127 37 240 27 164 245 42 218 188 162 9 151 17 57 90 177 190 250 180 61 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 15]
+[0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 19]
 
 The `LEAF_DRIFTED` row is nonempty when a leaf is added (or deleted) to the position in trie where there is already
 an existing leaf. This appears when an existing leaf and a newly added leaf have the same initial key nibbles.

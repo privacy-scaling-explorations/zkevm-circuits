@@ -16,6 +16,37 @@ use crate::{
     mpt_circuit::witness_row::MptWitnessRow,
 };
 
+/*
+A storage leaf occupies 6 rows.
+Contrary as in the branch rows, the `S` and `C` leaves are not positioned parallel to each other.
+The rows are the following:
+LEAF_KEY_S
+LEAF_VALUE_S
+LEAF_KEY_C
+LEAF_VALUE_C
+LEAF_DRIFTED
+LEAF_NON_EXISTING
+
+An example of leaf rows:
+[226 160 49 236 194 26 116 94 57 104 160 78 149 112 228 66 91 193 143 168 1 156 104 2 129 150 181 70 209 102 156 32 12 104 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 2]
+[1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 13]
+[226 160 49 236 194 26 116 94 57 104 160 78 149 112 228 66 91 193 143 168 1 156 104 2 129 150 181 70 209 102 156 32 12 104 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 3]
+[1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 14]
+[0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 15]
+[1 160 58 99 87 1 44 26 58 224 161 125 48 76 153 32 49 3 130 217 104 235 204 75 23 113 244 28 107 48 66 5 181 112 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 19]
+
+In the above example, there is a wrong leaf case (see `s_rlp1` being 1 in the last row).
+The constrainst here are analogue to the ones in `account_non_existing.rs`, but here it is for the
+non existing storage instead of non existing account. However, more cases need to be handled for storage
+because there can appear 1 or 2 RLP bytes (for account there are always 2). Also, the selectors need
+to be obtained differently - for example, when we are checking the leaf in the first (storage) level,
+we are checking whether we are behind the account leaf (for account proof we are checking whether we
+are in the first level).
+
+Lookups:
+The `non_existing_storage_proof` lookup is enabled in `LEAF_NON_EXISTING` row.
+*/
+
 #[derive(Clone, Debug)]
 pub(crate) struct StorageNonExistingConfig<F> {
     _marker: PhantomData<F>,
@@ -29,8 +60,8 @@ impl<F: FieldExt> StorageNonExistingConfig<F> {
         s_main: MainCols<F>,
         c_main: MainCols<F>,
         accs: AccumulatorCols<F>,
-        sel1: Column<Advice>, /* should be the same as sel2 as both parallel proofs are the same
-                               * for non_existing_storage_proof */
+        sel2: Column<Advice>, /* should be the same as sel1 as both parallel proofs are the same
+                               * for non_existing_storage_proof, but we use C for non-existing storage */
         is_account_leaf_in_added_branch: Column<Advice>,
         power_of_randomness: [Expression<F>; HASH_WIDTH],
         fixed_table: [Column<Fixed>; 3],
@@ -297,6 +328,9 @@ impl<F: FieldExt> StorageNonExistingConfig<F> {
                 key_rlc_acc_long = key_rlc_acc_long + c_rlp1_cur.clone() * key_mult.clone() * power_of_randomness[29].clone();
                 key_rlc_acc_long = key_rlc_acc_long + c_rlp2_cur.clone() * power_of_randomness[30].clone();
 
+                /*
+                Same as for `Storage key RLC (long)`, but here for the cases when there are two RLP bytes.
+                */
                 constraints.push((
                     "Storage key RLC (long)",
                     q_enable.clone()
@@ -309,13 +343,13 @@ impl<F: FieldExt> StorageNonExistingConfig<F> {
                 add_wrong_leaf_constraints(meta, &mut constraints, q_enable.clone(), is_short, c_rlp1_cur,
                     c_rlp2_cur, one.clone() - is_leaf_in_first_storage_level.clone(), is_wrong_leaf.clone());
  
-                let is_nil_object = meta.query_advice(sel1, Rotation(rot_into_first_branch_child));
+                let is_nil_object = meta.query_advice(sel2, Rotation(rot_into_first_branch_child));
 
                 /*
                 In case when there is no wrong leaf, we need to check there is a nil object in the parent branch.
-                Note that the constraints in `branch.rs` ensure that `sel1` is 1 if and only if there is a nil object
+                Note that the constraints in `branch.rs` ensure that `sel2` is 1 if and only if there is a nil object
                 at `modified_node` position. We check that in case of no wrong leaf in
-                the non-existing-account proof, `sel1` is 1.
+                the non-existing-storage proof, `is_nil_object` is 1.
                 */
                 constraints.push((
                     "Nil object in parent branch",
