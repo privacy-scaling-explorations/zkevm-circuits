@@ -44,7 +44,10 @@ impl BlockData {
         )
     }
     /// Create a new block from the given Geth data.
-    pub fn new_from_geth_data(geth_data: GethData, circuits_params: CircuitsParams) -> Self {
+    pub fn new_from_geth_data_with_params(
+        geth_data: GethData,
+        circuits_params: CircuitsParams,
+    ) -> Self {
         let mut sdb = StateDB::new();
         let mut code_db = CodeDB::new();
 
@@ -84,7 +87,7 @@ impl BlockData {
     }
 
     /// Create a new block from the given Geth data with default CircuitsParams.
-    pub fn new_from_geth_data_default(geth_data: GethData) -> Self {
-        Self::new_from_geth_data(geth_data, CircuitsParams::default())
+    pub fn new_from_geth_data(geth_data: GethData) -> Self {
+        Self::new_from_geth_data_with_params(geth_data, CircuitsParams::default())
     }
 }

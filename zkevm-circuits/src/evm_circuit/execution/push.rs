@@ -146,7 +146,7 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
 mod test {
     use crate::{
         evm_circuit::test::rand_bytes,
-        test_util::{run_test_circuits, run_test_circuits_default},
+        test_util::{run_test_circuits, run_test_circuits_with_params},
     };
     use bus_mapping::circuit_input_builder::CircuitsParams;
     use eth_types::bytecode;
@@ -165,7 +165,7 @@ mod test {
         bytecode.write_op(OpcodeId::STOP);
 
         assert_eq!(
-            run_test_circuits_default(
+            run_test_circuits(
                 TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
                 None
             ),
@@ -262,7 +262,7 @@ mod test {
         bytecode.write_op(OpcodeId::STOP);
 
         assert_eq!(
-            run_test_circuits(
+            run_test_circuits_with_params(
                 TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
                 None,
                 CircuitsParams {

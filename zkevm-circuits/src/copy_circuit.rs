@@ -731,7 +731,7 @@ mod tests {
         )
         .unwrap();
         let block: GethData = test_ctx.into();
-        let mut builder = BlockData::new_from_geth_data(
+        let mut builder = BlockData::new_from_geth_data_with_params(
             block.clone(),
             CircuitsParams {
                 max_rws: 8192,
@@ -755,8 +755,7 @@ mod tests {
         };
         let test_ctx = TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap();
         let block: GethData = test_ctx.into();
-        let mut builder =
-            BlockData::new_from_geth_data_default(block.clone()).new_circuit_input_builder();
+        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
         builder
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
@@ -767,7 +766,7 @@ mod tests {
         let (code, _) = gen_sha3_code(0x20, 0x200, MemoryKind::EqualToSize);
         let test_ctx = TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap();
         let block: GethData = test_ctx.into();
-        let mut builder = BlockData::new_from_geth_data(
+        let mut builder = BlockData::new_from_geth_data_with_params(
             block.clone(),
             CircuitsParams {
                 max_rws: 2000,
@@ -794,8 +793,7 @@ mod tests {
         };
         let test_ctx = TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap();
         let block: GethData = test_ctx.into();
-        let mut builder =
-            BlockData::new_from_geth_data_default(block.clone()).new_circuit_input_builder();
+        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
         builder
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();

@@ -303,7 +303,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::test_util::run_test_circuits_default;
+    use crate::test_util::run_test_circuits;
     use eth_types::{
         address, bytecode, evm_types::OpcodeId, geth_types::Account, Address, Bytecode, ToWord,
         Word,
@@ -354,7 +354,7 @@ mod test {
         {
             let code = callee_bytecode(*is_return, *offset, *length);
             assert_eq!(
-                run_test_circuits_default(
+                run_test_circuits(
                     TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap(),
                     None
                 ),
@@ -413,7 +413,7 @@ mod test {
             .unwrap();
 
             assert_eq!(
-                run_test_circuits_default(test_context, None),
+                run_test_circuits(test_context, None),
                 Ok(()),
                 "(callee_offset, callee_length, caller_offset, caller_length, is_return) = {:?}",
                 (
@@ -435,7 +435,7 @@ mod test {
         {
             let tx_input = callee_bytecode(*is_return, *offset, *length).code();
             assert_eq!(
-                run_test_circuits_default(
+                run_test_circuits(
                     TestContext::<1, 1>::new(
                         None,
                         |accs| {
@@ -504,7 +504,7 @@ mod test {
             .unwrap();
 
             assert_eq!(
-                run_test_circuits_default(test_context, None),
+                run_test_circuits(test_context, None),
                 Ok(()),
                 "(offset, length, is_return) = {:?}",
                 (*offset, *length, *is_return),

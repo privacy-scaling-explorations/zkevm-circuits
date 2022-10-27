@@ -89,7 +89,7 @@ impl<F: Field> ExecutionGadget<F> for AddressGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::{evm_circuit::test::rand_bytes, test_util::run_test_circuits_default};
+    use crate::{evm_circuit::test::rand_bytes, test_util::run_test_circuits};
     use eth_types::{bytecode, ToWord, Word};
     use mock::test_ctx::TestContext;
 
@@ -99,7 +99,7 @@ mod test {
             STOP
         };
         assert_eq!(
-            run_test_circuits_default(
+            run_test_circuits(
                 TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
                 None
             ),
@@ -151,7 +151,7 @@ mod test {
         )
         .unwrap();
 
-        assert_eq!(run_test_circuits_default(ctx, None), Ok(()));
+        assert_eq!(run_test_circuits(ctx, None), Ok(()));
     }
 
     #[test]

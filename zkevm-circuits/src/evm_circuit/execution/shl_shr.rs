@@ -187,7 +187,7 @@ impl<F: Field> ExecutionGadget<F> for ShlShrGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::{evm_circuit::test::rand_word, test_util::run_test_circuits_default};
+    use crate::{evm_circuit::test::rand_word, test_util::run_test_circuits};
     use eth_types::evm_types::OpcodeId;
     use eth_types::{bytecode, Word};
     use mock::TestContext;
@@ -202,7 +202,7 @@ mod test {
         };
 
         assert_eq!(
-            run_test_circuits_default(
+            run_test_circuits(
                 TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
                 None
             ),

@@ -157,7 +157,7 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
 
 #[cfg(test)]
 mod tests {
-    use crate::test_util::run_test_circuits;
+    use crate::test_util::run_test_circuits_with_params;
     use bus_mapping::{
         circuit_input_builder::CircuitsParams,
         evm::{gen_sha3_code, MemoryKind},
@@ -167,7 +167,7 @@ mod tests {
     fn test_ok(offset: usize, size: usize, mem_kind: MemoryKind) {
         let (code, _) = gen_sha3_code(offset, size, mem_kind);
         assert_eq!(
-            run_test_circuits(
+            run_test_circuits_with_params(
                 TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap(),
                 None,
                 CircuitsParams {

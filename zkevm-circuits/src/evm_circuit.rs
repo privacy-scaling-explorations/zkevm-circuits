@@ -337,8 +337,9 @@ pub mod test {
     pub fn run_test_circuit_geth_data_default<F: Field>(
         block: GethData,
     ) -> Result<(), Vec<VerifyFailure>> {
-        let mut builder = BlockData::new_from_geth_data(block.clone(), CircuitsParams::default())
-            .new_circuit_input_builder();
+        let mut builder =
+            BlockData::new_from_geth_data_with_params(block.clone(), CircuitsParams::default())
+                .new_circuit_input_builder();
         builder
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
@@ -350,7 +351,7 @@ pub mod test {
         block: GethData,
         circuits_params: CircuitsParams,
     ) -> Result<(), Vec<VerifyFailure>> {
-        let mut builder = BlockData::new_from_geth_data(block.clone(), circuits_params)
+        let mut builder = BlockData::new_from_geth_data_with_params(block.clone(), circuits_params)
             .new_circuit_input_builder();
         builder
             .handle_block(&block.eth_block, &block.geth_traces)

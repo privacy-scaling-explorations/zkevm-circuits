@@ -94,7 +94,7 @@ impl<F: Field> ExecutionGadget<F> for GasPriceGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::test_util::run_test_circuits_default;
+    use crate::test_util::run_test_circuits;
     use eth_types::{bytecode, Word};
     use mock::test_ctx::{helpers::*, TestContext};
 
@@ -122,6 +122,6 @@ mod test {
         )
         .unwrap();
 
-        assert_eq!(run_test_circuits_default(ctx, None), Ok(()));
+        assert_eq!(run_test_circuits(ctx, None), Ok(()));
     }
 }

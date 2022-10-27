@@ -307,8 +307,8 @@ impl<const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: usize>
     /// From the witness data, generate a SuperCircuit instance with all of the
     /// sub-circuits filled with their corresponding witnesses.
     ///
-    /// Also, return with it the minimum required SRS degree for the circuit and
-    /// the Public Inputs needed.
+    /// Also, return with it the minimum required SRS degree for the
+    /// circuit and the Public Inputs needed.
     pub fn build(
         geth_data: GethData,
         rng: &mut (impl RngCore + Clone),
@@ -320,7 +320,7 @@ impl<const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: usize>
             .map(geth_types::Transaction::from)
             .collect();
 
-        let block_data = BlockData::new_from_geth_data_default(geth_data.clone());
+        let block_data = BlockData::new_from_geth_data(geth_data.clone());
         let mut builder = block_data.new_circuit_input_builder();
 
         builder

@@ -88,7 +88,7 @@ impl<F: Field> ExecutionGadget<F> for GasGadget<F> {
 mod test {
     use crate::{
         evm_circuit::{test::run_test_circuit, witness::block_convert},
-        test_util::{run_test_circuits_default, BytecodeTestConfig},
+        test_util::{run_test_circuits, BytecodeTestConfig},
     };
     use bus_mapping::mock::BlockData;
     use eth_types::{address, bytecode, geth_types::GethData, Word};
@@ -101,7 +101,7 @@ mod test {
         };
 
         assert_eq!(
-            run_test_circuits_default(
+            run_test_circuits(
                 TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
                 None
             ),
@@ -146,8 +146,7 @@ mod test {
         .unwrap()
         .into();
 
-        let mut builder =
-            BlockData::new_from_geth_data_default(block.clone()).new_circuit_input_builder();
+        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
         builder
             .handle_block(&block.eth_block, &block.geth_traces)
             .expect("could not handle block tx");

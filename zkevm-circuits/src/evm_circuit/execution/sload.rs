@@ -186,7 +186,7 @@ mod test {
 
     use crate::{
         evm_circuit::test::rand_word,
-        test_util::{run_test_circuits_default, BytecodeTestConfig},
+        test_util::{run_test_circuits, BytecodeTestConfig},
     };
 
     use eth_types::{bytecode, Word};
@@ -233,7 +233,7 @@ mod test {
                 enable_state_circuit_test: true,
                 ..Default::default()
             };
-            assert_eq!(run_test_circuits_default(ctx, Some(test_config),), Ok(()));
+            assert_eq!(run_test_circuits(ctx, Some(test_config),), Ok(()));
         }
     }
 

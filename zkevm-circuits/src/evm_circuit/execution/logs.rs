@@ -273,7 +273,7 @@ mod test {
     use mock::TestContext;
     use rand::Rng;
 
-    use crate::test_util::run_test_circuits;
+    use crate::test_util::run_test_circuits_with_params;
 
     //TODO：add is_persistent = false cases
     #[test]
@@ -346,7 +346,7 @@ mod test {
         code_prepare.append(&code);
 
         assert_eq!(
-            run_test_circuits(
+            run_test_circuits_with_params(
                 TestContext::<2, 1>::simple_ctx_with_bytecode(code_prepare).unwrap(),
                 None,
                 CircuitsParams {
@@ -405,7 +405,7 @@ mod test {
         code_prepare.append(&code);
 
         assert_eq!(
-            run_test_circuits(
+            run_test_circuits_with_params(
                 TestContext::<2, 1>::simple_ctx_with_bytecode(code_prepare).unwrap(),
                 None,
                 CircuitsParams {

@@ -30,7 +30,7 @@ struct CircuitInputBuilderTx {
 
 impl CircuitInputBuilderTx {
     fn new(geth_data: &GethData, geth_step: &GethExecStep) -> Self {
-        let block = crate::mock::BlockData::new_from_geth_data_default(geth_data.clone());
+        let block = crate::mock::BlockData::new_from_geth_data(geth_data.clone());
         let mut builder = block.new_circuit_input_builder();
         let tx = builder
             .new_tx(&block.eth_block.transactions[0], true)

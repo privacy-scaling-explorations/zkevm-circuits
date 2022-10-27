@@ -112,7 +112,7 @@ mod return_tests {
         .unwrap()
         .into();
 
-        let mut builder = BlockData::new_from_geth_data(
+        let mut builder = BlockData::new_from_geth_data_with_params(
             block.clone(),
             CircuitsParams {
                 max_rws: 512,
@@ -183,7 +183,7 @@ mod return_tests {
         .unwrap()
         .into();
 
-        let mut builder = BlockData::new_from_geth_data(
+        let mut builder = BlockData::new_from_geth_data_with_params(
             block.clone(),
             CircuitsParams {
                 max_rws: 512,

@@ -173,8 +173,7 @@ mod calldataload_tests {
         .unwrap()
         .into();
 
-        let mut builder =
-            BlockData::new_from_geth_data_default(block.clone()).new_circuit_input_builder();
+        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
         builder
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
@@ -285,8 +284,7 @@ mod calldataload_tests {
         .unwrap()
         .into();
 
-        let mut builder =
-            BlockData::new_from_geth_data_default(block.clone()).new_circuit_input_builder();
+        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
         builder
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();

@@ -481,7 +481,8 @@ impl StateTest {
             eth_block: eth_block.clone(),
         };
 
-        let block_data = BlockData::new_from_geth_data(geth_data, CircuitsParams::default());
+        let block_data =
+            BlockData::new_from_geth_data_with_params(geth_data, CircuitsParams::default());
         let mut builder = block_data.new_circuit_input_builder();
         builder
             .handle_block(&eth_block, &geth_traces)

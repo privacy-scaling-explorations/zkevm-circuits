@@ -42,13 +42,14 @@ impl Default for BytecodeTestConfig {
 }
 
 /// Test circuit
-pub fn run_test_circuits_default<const NACC: usize, const NTX: usize>(
+pub fn run_test_circuits<const NACC: usize, const NTX: usize>(
     test_ctx: TestContext<NACC, NTX>,
     config: Option<BytecodeTestConfig>,
 ) -> Result<(), Vec<VerifyFailure>> {
     let block: GethData = test_ctx.into();
-    let mut builder = BlockData::new_from_geth_data(block.clone(), CircuitsParams::default())
-        .new_circuit_input_builder();
+    let mut builder =
+        BlockData::new_from_geth_data_with_params(block.clone(), CircuitsParams::default())
+            .new_circuit_input_builder();
     builder
         .handle_block(&block.eth_block, &block.geth_traces)
         .unwrap();
@@ -61,14 +62,14 @@ pub fn run_test_circuits_default<const NACC: usize, const NTX: usize>(
 }
 
 /// Test circuit with big circuit parameters
-pub fn run_test_circuits<const NACC: usize, const NTX: usize>(
+pub fn run_test_circuits_with_params<const NACC: usize, const NTX: usize>(
     test_ctx: TestContext<NACC, NTX>,
     config: Option<BytecodeTestConfig>,
     circuits_params: CircuitsParams,
 ) -> Result<(), Vec<VerifyFailure>> {
     let block: GethData = test_ctx.into();
-    let mut builder =
-        BlockData::new_from_geth_data(block.clone(), circuits_params).new_circuit_input_builder();
+    let mut builder = BlockData::new_from_geth_data_with_params(block.clone(), circuits_params)
+        .new_circuit_input_builder();
     builder
         .handle_block(&block.eth_block, &block.geth_traces)
         .unwrap();
@@ -82,8 +83,9 @@ pub fn run_test_circuits<const NACC: usize, const NTX: usize>(
 
 /// Test circuit using a witness block and default circuits parameters
 pub fn test_circuits_block_geth_data_default(block: GethData) -> Result<(), Vec<VerifyFailure>> {
-    let mut builder = BlockData::new_from_geth_data(block.clone(), CircuitsParams::default())
-        .new_circuit_input_builder();
+    let mut builder =
+        BlockData::new_from_geth_data_with_params(block.clone(), CircuitsParams::default())
+            .new_circuit_input_builder();
     builder
         .handle_block(&block.eth_block, &block.geth_traces)
         .unwrap();
