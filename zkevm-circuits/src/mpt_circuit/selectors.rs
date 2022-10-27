@@ -380,6 +380,10 @@ impl<F: FieldExt> SelectorsConfig<F> {
                     meta.query_advice(storage_leaf.is_in_added_branch, Rotation::prev());
                 let is_leaf_in_added_branch_cur =
                     meta.query_advice(storage_leaf.is_in_added_branch, Rotation::cur());
+                let is_leaf_non_existing_prev =
+                    meta.query_advice(storage_leaf.is_non_existing, Rotation::prev());
+                let is_leaf_non_existing_cur =
+                    meta.query_advice(storage_leaf.is_non_existing, Rotation::cur());
 
                 let is_account_leaf_key_s_prev =
                     meta.query_advice(account_leaf.is_key_s, Rotation::prev());
@@ -437,7 +441,7 @@ impl<F: FieldExt> SelectorsConfig<F> {
                         * (is_branch_init_cur.clone() - is_extension_node_c_prev.clone()) // after branch
                         * (is_branch_init_cur.clone()
                             - is_account_leaf_in_added_branch_prev.clone()) // after account leaf
-                        * (is_branch_init_cur.clone() - is_leaf_in_added_branch_prev), // after storage leaf
+                        * (is_branch_init_cur.clone() - is_leaf_non_existing_prev.clone()), // after storage leaf
                 ));
 
                 // Internal branch selectors (`is_init`, `is_last_child`) are checked in `branch.rs`.
@@ -465,7 +469,7 @@ impl<F: FieldExt> SelectorsConfig<F> {
                 constraints.push((
                     "Account leaf key S can appear only after certain row types",
                     q_not_first.clone()
-                    * (is_leaf_in_added_branch_cur.clone() - is_account_leaf_key_s_cur.clone())
+                    * (is_leaf_non_existing_prev.clone() - is_account_leaf_key_s_cur.clone())
                     * (is_extension_node_c_prev.clone() - is_account_leaf_key_s_cur.clone())
                     * is_account_leaf_key_s_cur.clone(), // this is to check it only when we are in the account leaf key S
                 ));
@@ -578,6 +582,14 @@ impl<F: FieldExt> SelectorsConfig<F> {
                 constraints.push((
                     "Storage leaf value C -> storage leaf in added branch",
                     q_not_first.clone() * (is_leaf_c_value_prev - is_leaf_in_added_branch_cur),
+                ));
+
+                /*
+                Storage non existing row can appear only after storage leaf in added branch.
+                */
+                constraints.push((
+                    "Storage leaf in added branch -> storage leaf non existing row",
+                    q_not_first.clone() * (is_leaf_in_added_branch_prev - is_leaf_non_existing_cur),
                 ));
 
                 let q_enable = meta.query_fixed(position_cols.q_enable, Rotation::cur());

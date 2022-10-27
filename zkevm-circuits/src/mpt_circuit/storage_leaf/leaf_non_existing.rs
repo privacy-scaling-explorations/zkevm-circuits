@@ -574,8 +574,13 @@ impl<F: FieldExt> StorageNonExistingConfig<F> {
         witness: &[MptWitnessRow<F>],
         offset: usize,
     ) {
-        let row_key_c = &witness[offset - (LEAF_NON_EXISTING_IND - LEAF_KEY_C_IND) as usize];
         let row = &witness[offset];
+        if row.get_byte_rev(IS_NON_EXISTING_STORAGE_POS) == 0 {
+            // No need to assign anything when not non-existing-storage proof.
+            return
+        }
+
+        let row_key_c = &witness[offset - (LEAF_NON_EXISTING_IND - LEAF_KEY_C_IND) as usize];
 
         let mut start = S_START - 1;
         if row_key_c.get_byte(0) == 248 {
