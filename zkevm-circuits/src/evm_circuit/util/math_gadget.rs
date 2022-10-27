@@ -2686,4 +2686,50 @@ mod tests {
             false,
         );
     }
+
+    #[test]
+    fn test_absword() {
+        #[derive(Clone)]
+        struct AbsWordGadgetContainer<F> {
+            absword_gadget: AbsWordGadget<F>,
+        }
+
+        impl<F: Field> MathGadgetContainer<F> for AbsWordGadgetContainer<F> {
+            const NAME: &'static str = "AbsWordGadget";
+
+            fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
+                let absword_gadget = AbsWordGadget::<F>::construct(cb);
+                AbsWordGadgetContainer { absword_gadget }
+            }
+
+            fn assign_gadget_container(
+                &self,
+                input_words: &[Word],
+                region: &mut CachedRegion<'_, '_, F>,
+            ) -> Result<(), Error> {
+                let offset = 0;
+                let x = input_words[0];
+                let x_abs = input_words[1];
+                _ = self.absword_gadget.assign(region, offset, x, x_abs);
+
+                Ok(())
+            }
+        }
+
+        test_math_gadget_container::<Fr, AbsWordGadgetContainer<Fr>>(
+            vec![Word::from(0), Word::from(0)],
+            true,
+        );
+
+        test_math_gadget_container::<Fr, AbsWordGadgetContainer<Fr>>(
+            vec![Word::from(1), Word::from(1)],
+            true,
+        );
+
+        test_math_gadget_container::<Fr, AbsWordGadgetContainer<Fr>>(
+            vec![Word::from(1), Word::from(2)],
+            false,
+        );
+
+    }
 }
