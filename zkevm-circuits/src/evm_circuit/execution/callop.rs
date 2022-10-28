@@ -518,12 +518,17 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::evm_circuit::test::run_test_circuit;
-    use crate::evm_circuit::witness::block_convert;
-    use eth_types::bytecode::Bytecode;
-    use eth_types::evm_types::OpcodeId;
-    use eth_types::geth_types::Account;
+    use crate::evm_circuit::test::{
+        run_test_circuit_geth_data, run_test_circuit_geth_data_default,
+    };
+    use bus_mapping::circuit_input_builder::CircuitsParams;
     use eth_types::{address, bytecode, Address, ToWord, Word};
+    use eth_types::{
+        bytecode::Bytecode,
+        evm_types::OpcodeId,
+        geth_types::{Account, GethData},
+    };
+    use halo2_proofs::halo2curves::bn256::Fr;
     use itertools::Itertools;
     use mock::TestContext;
     use std::default::Default;
@@ -772,7 +777,7 @@ mod test {
     }
 
     fn test_ok(caller: Account, callee: Account) {
-        let block = TestContext::<3, 1>::new(
+        let block: GethData = TestContext::<3, 1>::new(
             None,
             |accs| {
                 accs[0]
@@ -799,17 +804,20 @@ mod test {
         )
         .unwrap()
         .into();
-        let block_data = bus_mapping::mock::BlockData::new_from_geth_data(block);
-        let mut builder = block_data.new_circuit_input_builder();
-        builder
-            .handle_block(&block_data.eth_block, &block_data.geth_traces)
-            .unwrap();
-        let block = block_convert(&builder.block, &builder.code_db);
-        assert_eq!(run_test_circuit(block), Ok(()));
+        assert_eq!(
+            run_test_circuit_geth_data::<Fr>(
+                block,
+                CircuitsParams {
+                    max_rws: 4500,
+                    ..Default::default()
+                }
+            ),
+            Ok(())
+        );
     }
 
     fn test_oog(caller: Account, callee: Account) {
-        let block = TestContext::<3, 1>::new(
+        let block: GethData = TestContext::<3, 1>::new(
             None,
             |accs| {
                 accs[0]
@@ -836,13 +844,7 @@ mod test {
         )
         .unwrap()
         .into();
-        let block_data = bus_mapping::mock::BlockData::new_from_geth_data(block);
-        let mut builder = block_data.new_circuit_input_builder();
-        builder
-            .handle_block(&block_data.eth_block, &block_data.geth_traces)
-            .unwrap();
-        let block = block_convert(&builder.block, &builder.code_db);
-        assert_eq!(run_test_circuit(block), Ok(()));
+        assert_eq!(run_test_circuit_geth_data_default::<Fr>(block), Ok(()));
     }
 
     fn test_recursive(opcode: OpcodeId) {

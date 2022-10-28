@@ -14,10 +14,11 @@ use crate::{
     util::{query_expression, Expr},
 };
 use eth_types::Field;
+use gadgets::util::not;
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{Layouter, Region, Value},
-    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector, VirtualCells},
+    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, Selector, VirtualCells},
     poly::Rotation,
 };
 use std::{
@@ -62,7 +63,8 @@ mod memory;
 mod msize;
 mod mul_div_mod;
 mod mulmod;
-mod not;
+#[path = "execution/not.rs"]
+mod opcode_not;
 mod origin;
 mod pc;
 mod pop;
@@ -115,7 +117,7 @@ use memory::MemoryGadget;
 use msize::MsizeGadget;
 use mul_div_mod::MulDivModGadget;
 use mulmod::MulModGadget;
-use not::NotGadget;
+use opcode_not::NotGadget;
 use origin::OriginGadget;
 use pc::PcGadget;
 use pop::PopGadget;
@@ -158,6 +160,8 @@ pub(crate) struct ExecutionConfig<F> {
     // Dynamic selector that is enabled at the rows where each assigned execution step starts (a
     // step has dynamic height).
     q_step: Column<Advice>,
+    // Column to hold constant values used for copy constraints
+    constants: Column<Fixed>,
     num_rows_until_next_step: Column<Advice>,
     num_rows_inv: Column<Advice>,
     // Selector enabled in the row where the first execution step starts.
@@ -284,6 +288,8 @@ impl<F: Field> ExecutionConfig<F> {
     ) -> Self {
         let q_usable = meta.complex_selector();
         let q_step = meta.advice_column();
+        let constants = meta.fixed_column();
+        meta.enable_constant(constants);
         let num_rows_until_next_step = meta.advice_column();
         let num_rows_inv = meta.advice_column();
         let q_step_first = meta.complex_selector();
@@ -301,16 +307,17 @@ impl<F: Field> ExecutionConfig<F> {
 
             let execution_state_selector_constraints = step_curr.state.execution_state.configure();
 
-            let _first_step_check = {
-                let begin_tx_selector =
-                    step_curr.execution_state_selector([ExecutionState::BeginTx]);
+            // NEW: Enabled, this will break hand crafted tests, maybe we can remove them?
+            let first_step_check = {
+                let begin_tx_end_block_selector = step_curr
+                    .execution_state_selector([ExecutionState::BeginTx, ExecutionState::EndBlock]);
                 iter::once((
-                    "First step should be BeginTx",
-                    q_step_first * (1.expr() - begin_tx_selector),
+                    "First step should be BeginTx or EndBlock",
+                    q_step_first * (1.expr() - begin_tx_end_block_selector),
                 ))
             };
 
-            let _last_step_check = {
+            let last_step_check = {
                 let end_block_selector =
                     step_curr.execution_state_selector([ExecutionState::EndBlock]);
                 iter::once((
@@ -322,14 +329,14 @@ impl<F: Field> ExecutionConfig<F> {
             execution_state_selector_constraints
                 .into_iter()
                 .map(move |(name, poly)| (name, q_usable.clone() * q_step.clone() * poly))
-            // TODO: Enable these after incomplete trace is no longer necessary.
-            // .chain(first_step_check)
-            // .chain(last_step_check)
+                .chain(first_step_check)
+                .chain(last_step_check)
         });
 
         meta.create_gate("q_step", |meta| {
             let q_usable = meta.query_selector(q_usable);
             let q_step_first = meta.query_selector(q_step_first);
+            let q_step_last = meta.query_selector(q_step_last);
             let q_step = meta.query_advice(q_step, Rotation::cur());
             let num_rows_left_cur = meta.query_advice(num_rows_until_next_step, Rotation::cur());
             let num_rows_left_next = meta.query_advice(num_rows_until_next_step, Rotation::next());
@@ -337,7 +344,17 @@ impl<F: Field> ExecutionConfig<F> {
 
             let mut cb = BaseConstraintBuilder::default();
             // q_step needs to be enabled on the first row
+            // rw_counter starts at 1
             cb.condition(q_step_first, |cb| {
+                cb.require_equal("q_step == 1", q_step.clone(), 1.expr());
+                cb.require_equal(
+                    "rw_counter is initialized to be 1",
+                    step_curr.state.rw_counter.expr(),
+                    1.expr(),
+                )
+            });
+            // q_step needs to be enabled on the last row
+            cb.condition(q_step_last, |cb| {
                 cb.require_equal("q_step == 1", q_step.clone(), 1.expr());
             });
             // Except when step is enabled, the step counter needs to decrease by 1
@@ -388,6 +405,7 @@ impl<F: Field> ExecutionConfig<F> {
         let config = Self {
             q_usable,
             q_step,
+            constants,
             num_rows_until_next_step,
             num_rows_inv,
             q_step_first,
@@ -544,7 +562,7 @@ impl<F: Field> ExecutionConfig<F> {
                 G::EXECUTION_STATE,
             );
             G::configure(&mut cb);
-            let (_, _, _, height) = cb.build();
+            let (_, _, height) = cb.build();
             height
         };
 
@@ -569,7 +587,7 @@ impl<F: Field> ExecutionConfig<F> {
             (height - 1).expr(),
         );
 
-        let (constraints, constraints_first_step, stored_expressions, _) = cb.build();
+        let (constraints, stored_expressions, _) = cb.build();
         debug_assert!(
             !height_map.contains_key(&G::EXECUTION_STATE),
             "execution state already configured"
@@ -582,13 +600,20 @@ impl<F: Field> ExecutionConfig<F> {
         stored_expressions_map.insert(G::EXECUTION_STATE, stored_expressions);
 
         // Enforce the logic for this opcode
-        let q_steps: &dyn Fn(&mut VirtualCells<F>) -> Expression<F> =
+        let sel_step: &dyn Fn(&mut VirtualCells<F>) -> Expression<F> =
             &|meta| meta.query_advice(q_step, Rotation::cur());
-        let q_steps_first: &dyn Fn(&mut VirtualCells<F>) -> Expression<F> =
+        let sel_step_first: &dyn Fn(&mut VirtualCells<F>) -> Expression<F> =
             &|meta| meta.query_selector(q_step_first);
+        let sel_step_last: &dyn Fn(&mut VirtualCells<F>) -> Expression<F> =
+            &|meta| meta.query_selector(q_step_last);
+        let sel_not_step_last: &dyn Fn(&mut VirtualCells<F>) -> Expression<F> = &|meta| {
+            meta.query_advice(q_step, Rotation::cur()) * not::expr(meta.query_selector(q_step_last))
+        };
         for (selector, constraints) in [
-            (q_steps, constraints),
-            (q_steps_first, constraints_first_step),
+            (sel_step, constraints.step),
+            (sel_step_first, constraints.step_first),
+            (sel_step_last, constraints.step_last),
+            (sel_not_step_last, constraints.not_step_last),
         ] {
             if !constraints.is_empty() {
                 meta.create_gate(G::NAME, |meta| {
@@ -709,7 +734,6 @@ impl<F: Field> ExecutionConfig<F> {
         &self,
         layouter: &mut impl Layouter<F>,
         block: &Block<F>,
-        exact: bool,
     ) -> Result<(), Error> {
         let power_of_randomness = (1..32)
             .map(|exp| block.randomness.pow(&[exp, 0, 0, 0]))
@@ -724,33 +748,52 @@ impl<F: Field> ExecutionConfig<F> {
 
                 self.q_step_first.enable(&mut region, offset)?;
 
-                // handle EndBlock
-                let dummy_tx = Transaction {
-                    calls: vec![Default::default()],
-                    ..Default::default()
-                };
-                let last_tx = block.txs.last().unwrap_or(&dummy_tx);
-                let end_block_state = &ExecStep {
-                    rw_counter: if block.txs.is_empty() {
-                        0
-                    } else {
-                        // if it is the first tx,  less 1 rw lookup, refer to end_tx gadget
-                        last_tx.steps.last().unwrap().rw_counter + 9 - (last_tx.id == 1) as usize
-                    },
-                    execution_state: ExecutionState::EndBlock,
-                    ..Default::default()
-                };
+                let dummy_tx = Transaction::default();
+                let last_call = block
+                    .txs
+                    .last()
+                    .map(|tx| tx.calls[0].clone())
+                    .unwrap_or_else(Call::default);
+                let end_block_not_last = &block.end_block_not_last;
+                let end_block_last = &block.end_block_last;
                 // Collect all steps
                 let mut steps = block
                     .txs
                     .iter()
                     .flat_map(|tx| tx.steps.iter().map(move |step| (tx, step)))
-                    .chain(iter::repeat((last_tx, end_block_state)))
                     .peekable();
 
-                let mut last_height = 0;
-                while let Some((transaction, step)) = steps.next() {
-                    let call = &transaction.calls[step.call_index];
+                let evm_rows = block.evm_circuit_pad_to;
+                let exact = evm_rows == 0;
+                // end_block_rows tracks the remaining EndBlock rows, and is set once all the
+                // transaction steps have been assigned.
+                let mut end_block_rows = None;
+                let mut get_next = |offset: &usize| match steps.next() {
+                    Some((transaction, step)) => {
+                        Some((transaction, &transaction.calls[step.call_index], step))
+                    }
+                    None => {
+                        end_block_rows = Some(match end_block_rows {
+                            None => {
+                                if exact {
+                                    1
+                                } else {
+                                    evm_rows - offset
+                                }
+                            }
+                            Some(i) => i - 1,
+                        });
+                        match end_block_rows {
+                            Some(0) => None,
+                            Some(1) => Some((&dummy_tx, &last_call, end_block_last)),
+                            Some(_) => Some((&dummy_tx, &last_call, end_block_not_last)),
+                            _ => unreachable!(),
+                        }
+                    }
+                };
+                let mut next = get_next(&offset);
+                while let Some((transaction, call, step)) = next {
+                    next = get_next(&offset);
                     let height = self.get_step_height(step.execution_state);
 
                     // Assign the step witness
@@ -762,9 +805,7 @@ impl<F: Field> ExecutionConfig<F> {
                         call,
                         step,
                         height,
-                        steps.peek().map(|&(transaction, step)| {
-                            (transaction, &transaction.calls[step.call_index], step)
-                        }),
+                        next,
                         power_of_randomness,
                     )?;
 
@@ -798,26 +839,19 @@ impl<F: Field> ExecutionConfig<F> {
                     }
 
                     offset += height;
-                    last_height = height;
 
-                    if step.execution_state == ExecutionState::EndBlock {
-                        // evm_circuit_pad_to == 0 means no extra padding
-                        if exact || block.evm_circuit_pad_to == 0 {
-                            // no padding
-                            break;
-                        } else {
-                            // padding
-                            if offset >= block.evm_circuit_pad_to {
-                                if offset > block.evm_circuit_pad_to {
-                                    log::warn!(
-                                        "evm circuit offset larger than padding: {} > {}",
-                                        offset,
-                                        block.evm_circuit_pad_to
-                                    );
-                                }
-                                break;
-                            }
-                        }
+                    if !exact && offset >= evm_rows {
+                        log::error!(
+                            "evm circuit offset larger than padding: {} > {}",
+                            offset,
+                            evm_rows
+                        );
+                        return Err(Error::Synthesis);
+                    }
+
+                    if next.is_none() {
+                        // Assert that EndBlock height is 1
+                        debug_assert_eq!(height, 1);
                     }
                 }
 
@@ -835,7 +869,9 @@ impl<F: Field> ExecutionConfig<F> {
                     || Value::known(F::zero()),
                 )?;
 
-                self.q_step_last.enable(&mut region, offset - last_height)?;
+                const END_BLOCK_HEIGHT: usize = 1;
+                self.q_step_last
+                    .enable(&mut region, offset - END_BLOCK_HEIGHT)?;
 
                 Ok(())
             },
@@ -896,7 +932,7 @@ impl<F: Field> ExecutionConfig<F> {
     ) -> Result<(), Error> {
         log::trace!("assign_exec_step offset:{} step:{:?}", offset, step);
         self.step
-            .assign_exec_step(region, offset, block, transaction, call, step)?;
+            .assign_exec_step(region, offset, block, call, step)?;
 
         macro_rules! assign_exec_step {
             ($gadget:expr) => {
@@ -1124,6 +1160,22 @@ impl<F: Field> ExecutionConfig<F> {
         for (name, value) in assigned_rw_values.iter() {
             if !rlc_assignments.contains(value) {
                 log::error!("rw lookup error: name: {}, step: {:?}", *name, step);
+            }
+        }
+        for (idx, assigned_rw_value) in assigned_rw_values.iter().enumerate() {
+            let rw_idx = step.rw_indices[idx];
+            let rw = block.rws[rw_idx];
+            let table_assignments = rw.table_assignment(block.randomness);
+            let rlc = table_assignments.rlc(block.randomness);
+            if rlc != assigned_rw_value.1 {
+                log::error!(
+                    "incorrect rw witness. lookup input name: \"{}\"\n{:?}\nrw: {:?}, rw index: {:?}, {}th rw of step {:?}",
+                    assigned_rw_value.0,
+                    assigned_rw_value.1,
+                    rw,
+                    rw_idx,
+                    idx,
+                    step.execution_state);
             }
         }
     }
