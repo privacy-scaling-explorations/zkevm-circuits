@@ -302,20 +302,13 @@ impl<const MAX_TXS: usize, const MAX_CALLDATA: usize> SuperCircuit<Fr, MAX_TXS, 
         geth_data: GethData,
         rng: &mut (impl RngCore + Clone),
     ) -> Result<(u32, Self, Vec<Vec<Fr>>), bus_mapping::Error> {
-        let txs: Vec<_> = geth_data
-            .eth_block
-            .transactions
-            .iter()
-            .map(geth_types::Transaction::from)
-            .collect();
-
         let block_data = BlockData::new_from_geth_data(geth_data.clone());
         let mut builder = block_data.new_circuit_input_builder();
         builder
             .handle_block(&geth_data.eth_block, &geth_data.geth_traces)
             .expect("could not handle block tx");
 
-        Self::build_from_circuit_input_builder(geth_data, block_data, builder, geth_data.eth_block, rng)
+        Self::build_from_circuit_input_builder(builder, geth_data.eth_block, rng)
     }
 
     /// From CircuitInputBuilder, generate a SuperCircuit instance with all of
@@ -324,8 +317,6 @@ impl<const MAX_TXS: usize, const MAX_CALLDATA: usize> SuperCircuit<Fr, MAX_TXS, 
     /// Also, return with it the minimum required SRS degree for the circuit and
     /// the Public Inputs needed.
     pub fn build_from_circuit_input_builder(
-        geth_data: GethData,
-        block_data: BlockData,
         builder: CircuitInputBuilder,
         eth_block: eth_types::Block<eth_types::Transaction>,
         rng: &mut (impl RngCore + Clone),
@@ -365,9 +356,9 @@ impl<const MAX_TXS: usize, const MAX_CALLDATA: usize> SuperCircuit<Fr, MAX_TXS, 
         let tx_circuit = TxCircuit::new(aux_generator, chain_id.as_u64(), txs);
 
         let public_data = PublicData {
-            chain_id: geth_data.chain_id,
-            history_hashes: block_data.history_hashes,
-            eth_block: geth_data.eth_block,
+            chain_id: chain_id,
+            history_hashes: builder.block.history_hashes,
+            eth_block: eth_block,
             block_constants: geth_types::BlockConstants {
                 coinbase: block.context.coinbase,
                 timestamp: block.context.timestamp,
