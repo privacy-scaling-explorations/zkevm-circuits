@@ -389,6 +389,8 @@ mod evm_circuit_stats {
     /// This function prints to stdout a table with all the implemented states
     /// and their responsible opcodes with the following stats:
     /// - height: number of rows in the EVM circuit used by the execution state
+    /// - counts of used and unused cells
+    /// - utilization ratios of cells (used / available)
     /// - gas: gas value used for the opcode execution
     /// - height/gas: ratio between circuit cost and gas cost
     ///
@@ -400,6 +402,8 @@ mod evm_circuit_stats {
     pub fn get_evm_states_stats() {
         let mut meta = ConstraintSystem::<Fr>::default();
         let circuit = TestCircuit::configure(&mut meta);
+
+        circuit.evm_circuit.execution.instrument().print();
 
         let mut implemented_states = Vec::new();
         for state in ExecutionState::iter() {
