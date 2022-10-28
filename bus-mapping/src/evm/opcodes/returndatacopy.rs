@@ -27,18 +27,21 @@ impl Opcode for Returndatacopy {
         let memory = &mut call_ctx.memory;
         let length = size.as_usize();
         if length != 0 {
+            let minimal_length = dest_offset.as_usize() + length;
+            memory.extend_at_least(minimal_length);
+
             let mem_starts = dest_offset.as_usize();
             let mem_ends = mem_starts + length;
             let data_starts = offset.as_usize();
             let data_ends = data_starts + length;
-            let minimal_length = dest_offset.as_usize() + length;
+
             if data_ends <= return_data.len() {
-                memory.extend_at_least(minimal_length);
                 memory[mem_starts..mem_ends].copy_from_slice(&return_data[data_starts..data_ends]);
-            } else {
-                assert_eq!(geth_steps.len(), 1);
-                // if overflows this opcode would fails current context, so
-                // there is no more steps.
+            } else if let Some(actual_length) = return_data.len().checked_sub(data_starts) {
+                let ends = mem_starts + actual_length;
+                memory[mem_starts..ends].copy_from_slice(&return_data[data_starts..]);
+                // since we already resize the memory, no need to copy 0s for
+                // out of bound bytes
             }
         }
         Ok(vec![exec_step])
