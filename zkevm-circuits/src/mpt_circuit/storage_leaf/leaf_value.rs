@@ -483,9 +483,7 @@ impl<F: FieldExt> LeafValueConfig<F> {
                 // non_existing_storage proof (see q_enable).
                 constraints.push((
                     "is_wrong_leaf needs to be 0 when not in non_existing_account proof",
-                    q_enable
-                        * (one.clone() - is_non_existing_storage_proof)
-                        * is_wrong_leaf,
+                    q_enable * (one.clone() - is_non_existing_storage_proof) * is_wrong_leaf,
                 ));
             }
 
