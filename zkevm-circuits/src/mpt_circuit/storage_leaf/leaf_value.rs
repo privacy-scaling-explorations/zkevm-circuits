@@ -461,7 +461,7 @@ impl<F: FieldExt> LeafValueConfig<F> {
                 q_enable.clone()
                     * last_level_or_one_nibblelong_check
                     * (last_level + one_nibble)
-                    * (one.clone() - is_leaf_placeholder.clone())
+                    * (one.clone() - is_leaf_placeholder)
                     * is_long,
             ));
 
@@ -483,9 +483,9 @@ impl<F: FieldExt> LeafValueConfig<F> {
                 // non_existing_storage proof (see q_enable).
                 constraints.push((
                     "is_wrong_leaf needs to be 0 when not in non_existing_account proof",
-                    q_enable.clone()
-                        * (one.clone() - is_non_existing_storage_proof.clone())
-                        * is_wrong_leaf.clone(),
+                    q_enable
+                        * (one.clone() - is_non_existing_storage_proof)
+                        * is_wrong_leaf,
                 ));
             }
 

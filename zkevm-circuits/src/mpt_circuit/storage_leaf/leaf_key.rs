@@ -157,7 +157,7 @@ impl<F: FieldExt> LeafKeyConfig<F> {
                     meta.query_advice(denoter.sel2, Rotation(1));
             }
 
-            let is_leaf_placeholder = (one.clone() - is_leaf_in_first_level.clone()) * sel
+            let is_leaf_placeholder = (one.clone() - is_leaf_in_first_level) * sel
                 + leaf_without_branch_and_is_placeholder;
 
             /*
@@ -257,7 +257,7 @@ impl<F: FieldExt> LeafKeyConfig<F> {
                 "Leaf key RLC (last level or one nibble)",
                 q_enable
                     * (last_level + one_nibble)
-                    * (one.clone() - is_leaf_placeholder.clone())
+                    * (one.clone() - is_leaf_placeholder)
                     * (rlc_last_level_or_one_nibble - acc),
             ));
 
@@ -673,7 +673,7 @@ impl<F: FieldExt> LeafKeyConfig<F> {
                 constraints.push((
                     "Total number of storage address nibbles is 64 (not first level, not branch placeholder)",
                     q_enable
-                        * (one.clone() - is_leaf_placeholder.clone())
+                        * (one.clone() - is_leaf_placeholder)
                         * (one.clone() - is_branch_placeholder)
                         // Note: we need to check the number of nibbles being 64 for non_existing_account_proof too
                         // (even if the address being checked here might be the address of the wrong leaf)

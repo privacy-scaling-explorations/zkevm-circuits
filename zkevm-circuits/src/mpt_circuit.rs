@@ -1433,9 +1433,7 @@ impl<F: Field> Circuit<F> for MPTCircuit<F> {
         // TODO: check_zeros is to be removed once the development is finished
         let check_zeros = false;
 
-        let mpt_config = MPTConfig::configure(meta, power_of_randomness, keccak_table, check_zeros);
-
-        mpt_config
+        MPTConfig::configure(meta, power_of_randomness, keccak_table, check_zeros)
     }
 
     fn synthesize(
@@ -1497,7 +1495,7 @@ mod tests {
             })
             .for_each(|f| {
                 let path = f.path();
-                let mut parts = path.to_str().unwrap().split("-");
+                let mut parts = path.to_str().unwrap().split('-');
                 parts.next();
                 let file = std::fs::File::open(path.clone());
                 let reader = std::io::BufReader::new(file.unwrap());
@@ -1525,7 +1523,7 @@ mod tests {
                     .collect();
 
                 let circuit = MPTCircuit::<Fr> {
-                    witness: w.clone(),
+                    witness: w,
                     randomness,
                 };
 

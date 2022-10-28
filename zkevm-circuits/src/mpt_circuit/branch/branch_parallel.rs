@@ -80,6 +80,7 @@ pub(crate) struct BranchParallelConfig<F> {
 }
 
 impl<F: FieldExt> BranchParallelConfig<F> {
+    #[allow(clippy::too_many_arguments)]
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         position_cols: PositionCols<F>,

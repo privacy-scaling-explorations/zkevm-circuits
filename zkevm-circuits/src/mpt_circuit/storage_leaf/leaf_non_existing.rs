@@ -109,7 +109,7 @@ impl<F: FieldExt> StorageNonExistingConfig<F> {
                     mult = mult * power_of_randomness[0].clone();
                 }
                 sum_check_short = sum_check_short + c_rlp1_cur.clone() * mult.clone();
-                sum_prev_check_short = sum_prev_check_short + c_rlp1_prev.clone() * mult.clone();
+                sum_prev_check_short = sum_prev_check_short + c_rlp1_prev.clone() * mult;
 
                 /*
                 We compute the RLC of the key bytes in the STORAGE_NON_EXISTING row. We check whether the computed
@@ -176,7 +176,7 @@ impl<F: FieldExt> StorageNonExistingConfig<F> {
                     q_enable.clone()
                         * correct_level.clone()
                         * is_wrong_leaf.clone()
-                        * (one.clone() - is_short.clone())
+                        * (one.clone() - is_short)
                         * (sum_prev.clone() - sum_prev_check_long),
                 ));
 
@@ -216,7 +216,7 @@ impl<F: FieldExt> StorageNonExistingConfig<F> {
                 let flag1 = meta.query_advice(accs.s_mod_node_rlc, Rotation(rot));
                 let flag2 = meta.query_advice(accs.c_mod_node_rlc, Rotation(rot));
                 let is_long = flag1.clone() * (one.clone() - flag2.clone());
-                let is_short = (one.clone() - flag1.clone()) * flag2.clone();
+                let is_short = (one.clone() - flag1) * flag2;
 
                 // Wrong leaf has a meaning only for non existing storage proof. For this proof, there are two cases:
                 // 1. A leaf is returned that is not at the required key (wrong leaf).
@@ -259,7 +259,7 @@ impl<F: FieldExt> StorageNonExistingConfig<F> {
                         * (one.clone() - is_leaf_in_first_storage_level.clone())
                         * is_wrong_leaf.clone()
                         * is_short.clone()
-                        * (s_bytes0.clone() - c32.clone())
+                        * (s_bytes0 - c32.clone())
                         * is_c1.clone(),
                 ));
 
@@ -273,7 +273,7 @@ impl<F: FieldExt> StorageNonExistingConfig<F> {
 
                 let c_rlp1_cur = meta.query_advice(c_main.rlp1, Rotation::cur());
 
-                key_rlc_acc_short = key_rlc_acc_short + c_rlp1_cur.clone() * key_mult.clone() * power_of_randomness[30].clone();
+                key_rlc_acc_short = key_rlc_acc_short + c_rlp1_cur.clone() * key_mult * power_of_randomness[30].clone();
 
                 // Note: `accs.key.mult` is used for a lookup.
                 let key_rlc = meta.query_advice(accs.key.mult, Rotation::cur());
@@ -302,7 +302,7 @@ impl<F: FieldExt> StorageNonExistingConfig<F> {
 
                 // Long
 
-                let mut key_rlc_acc_long = key_rlc_acc_start.clone()
+                let mut key_rlc_acc_long = key_rlc_acc_start
                     + (s_bytes1.clone() - c48) * key_mult_start.clone() * is_c16.clone();
                 let mut key_mult = key_mult_start.clone() * power_of_randomness[0].clone() * is_c16;
                 key_mult = key_mult + key_mult_start * is_c1.clone(); // set to key_mult_start if sel2, stays key_mult if sel1
@@ -316,7 +316,7 @@ impl<F: FieldExt> StorageNonExistingConfig<F> {
                         * (one.clone() - is_leaf_in_first_storage_level.clone())
                         * is_wrong_leaf.clone()
                         * is_long.clone()
-                        * (s_bytes1.clone() - c32.clone())
+                        * (s_bytes1 - c32.clone())
                         * is_c1,
                 ));
 
@@ -330,7 +330,7 @@ impl<F: FieldExt> StorageNonExistingConfig<F> {
 
                 let c_rlp2_cur = meta.query_advice(c_main.rlp2, Rotation::cur());
 
-                key_rlc_acc_long = key_rlc_acc_long + c_rlp1_cur.clone() * key_mult.clone() * power_of_randomness[29].clone();
+                key_rlc_acc_long = key_rlc_acc_long + c_rlp1_cur.clone() * key_mult * power_of_randomness[29].clone();
                 key_rlc_acc_long = key_rlc_acc_long + c_rlp2_cur.clone() * power_of_randomness[30].clone();
 
                 /*
@@ -392,7 +392,7 @@ impl<F: FieldExt> StorageNonExistingConfig<F> {
                 let flag1 = meta.query_advice(accs.s_mod_node_rlc, Rotation(rot));
                 let flag2 = meta.query_advice(accs.c_mod_node_rlc, Rotation(rot));
                 let is_long = flag1.clone() * (one.clone() - flag2.clone());
-                let is_short = (one.clone() - flag1.clone()) * flag2.clone();
+                let is_short = (one.clone() - flag1) * flag2;
 
                 let is_wrong_leaf = meta.query_advice(s_main.rlp1, Rotation::cur());
 
@@ -443,7 +443,7 @@ impl<F: FieldExt> StorageNonExistingConfig<F> {
                 constraints.push((
                     "Storage leaf key acc s_bytes1 (long)",
                     q_enable.clone()
-                        * (s_bytes1.clone() - c32)
+                        * (s_bytes1 - c32)
                         * is_wrong_leaf.clone()
                         * is_long.clone()
                         * is_leaf_in_first_storage_level.clone(),
@@ -497,7 +497,7 @@ impl<F: FieldExt> StorageNonExistingConfig<F> {
                 let flag1 = meta.query_advice(accs.s_mod_node_rlc, Rotation(rot));
                 let flag2 = meta.query_advice(accs.c_mod_node_rlc, Rotation(rot));
                 let is_long = flag1.clone() * (one.clone() - flag2.clone());
-                let is_short = (one.clone() - flag1.clone()) * flag2.clone();
+                let is_short = (one.clone() - flag1) * flag2;
 
                 let is_wrong_leaf = meta.query_advice(s_main.rlp1, Rotation::cur());
                 let len_prev_short = meta.query_advice(s_main.rlp2, Rotation(-(LEAF_NON_EXISTING_IND - LEAF_KEY_C_IND)));
@@ -533,7 +533,7 @@ impl<F: FieldExt> StorageNonExistingConfig<F> {
             let rot = -(LEAF_NON_EXISTING_IND - LEAF_KEY_C_IND);
             let flag1 = meta.query_advice(accs.s_mod_node_rlc, Rotation(rot));
             let flag2 = meta.query_advice(accs.c_mod_node_rlc, Rotation(rot));
-            let is_short = (one.clone() - flag1.clone()) * flag2.clone();
+            let is_short = (one.clone() - flag1) * flag2;
 
             q_enable * is_short
         };
@@ -542,7 +542,7 @@ impl<F: FieldExt> StorageNonExistingConfig<F> {
             let rot = -(LEAF_NON_EXISTING_IND - LEAF_KEY_C_IND);
             let flag1 = meta.query_advice(accs.s_mod_node_rlc, Rotation(rot));
             let flag2 = meta.query_advice(accs.c_mod_node_rlc, Rotation(rot));
-            let is_long = flag1.clone() * (one.clone() - flag2.clone());
+            let is_long = flag1 * (one.clone() - flag2);
 
             q_enable * is_long
         };

@@ -310,7 +310,7 @@ pub(crate) fn get_branch_len<F: FieldExt>(
     }
 
     let c256 = Expression::Constant(F::from(256_u64));
-    one_rlp_byte * (rlp_byte0.clone() - c192 + one.clone())
+    one_rlp_byte * (rlp_byte0 - c192 + one.clone())
         + two_rlp_bytes * (rlp_byte1.clone() + one.clone() + one.clone())
         + three_rlp_bytes * (rlp_byte1 * c256 + rlp_byte2 + one.clone() + one.clone() + one)
 }

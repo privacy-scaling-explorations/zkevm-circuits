@@ -469,7 +469,7 @@ impl<F: FieldExt> SelectorsConfig<F> {
                 constraints.push((
                     "Account leaf key S can appear only after certain row types",
                     q_not_first.clone()
-                    * (is_leaf_non_existing_prev.clone() - is_account_leaf_key_s_cur.clone())
+                    * (is_leaf_non_existing_prev - is_account_leaf_key_s_cur.clone())
                     * (is_extension_node_c_prev.clone() - is_account_leaf_key_s_cur.clone())
                     * is_account_leaf_key_s_cur.clone(), // this is to check it only when we are in the account leaf key S
                 ));
