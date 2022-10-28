@@ -1373,6 +1373,11 @@ impl<F: Field> ByteSizeGadget<F> {
                             * most_significant_nonzero_byte_inverse.expr(),
                         1.expr(),
                     )
+                } else {
+                    cb.require_zero(
+                        "byte size == 0",
+                        most_significant_nonzero_byte_inverse.expr(),
+                    );
                 }
             });
         }
@@ -1407,6 +1412,12 @@ impl<F: Field> ByteSizeGadget<F> {
                         .invert()
                         .unwrap(),
                 ),
+            )?;
+        } else {
+            self.most_significant_nonzero_byte_inverse.assign(
+                region,
+                offset,
+                Value::known(F::zero()),
             )?;
         }
         Ok(())
