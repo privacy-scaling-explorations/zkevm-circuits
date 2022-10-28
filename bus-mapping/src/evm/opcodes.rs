@@ -20,11 +20,11 @@ pub use self::sha3::sha3_tests::{gen_sha3_code, MemoryKind};
 
 mod address;
 mod balance;
-mod call;
 mod calldatacopy;
 mod calldataload;
 mod calldatasize;
 mod caller;
+mod callop;
 mod callvalue;
 mod chainid;
 mod codecopy;
@@ -57,11 +57,11 @@ mod memory_expansion_test;
 use self::sha3::Sha3;
 use address::Address;
 use balance::Balance;
-use call::Call;
 use calldatacopy::Calldatacopy;
 use calldataload::Calldataload;
 use calldatasize::Calldatasize;
 use caller::Caller;
+use callop::CallOpcode;
 use callvalue::Callvalue;
 use codecopy::Codecopy;
 use codesize::Codesize;
@@ -224,7 +224,8 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         OpcodeId::LOG2 => Log::gen_associated_ops,
         OpcodeId::LOG3 => Log::gen_associated_ops,
         OpcodeId::LOG4 => Log::gen_associated_ops,
-        OpcodeId::CALL => Call::gen_associated_ops,
+        OpcodeId::CALL => CallOpcode::<7>::gen_associated_ops,
+        OpcodeId::STATICCALL => CallOpcode::<6>::gen_associated_ops,
         OpcodeId::RETURN => Return::gen_associated_ops,
         // REVERT is almost the same as RETURN
         OpcodeId::REVERT => Return::gen_associated_ops,
@@ -232,7 +233,7 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
             warn!("Using dummy gen_selfdestruct_ops for opcode SELFDESTRUCT");
             DummySelfDestruct::gen_associated_ops
         }
-        OpcodeId::CALLCODE | OpcodeId::DELEGATECALL | OpcodeId::STATICCALL => {
+        OpcodeId::CALLCODE | OpcodeId::DELEGATECALL => {
             warn!("Using dummy gen_call_ops for opcode {:?}", opcode_id);
             DummyCall::gen_associated_ops
         }
@@ -316,8 +317,9 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
             CallContextField::IsPersistent,
             (call.is_persistent as usize).into(),
         ),
+        (CallContextField::IsSuccess, call.is_success.to_word()),
     ] {
-        state.call_context_read(&mut exec_step, call.call_id, field, value);
+        state.call_context_write(&mut exec_step, call.call_id, field, value);
     }
 
     // Increase caller's nonce
@@ -377,7 +379,39 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
     ) {
         // 1. Creation transaction.
         (true, _, _) => {
-            warn!("Creation transaction is left unimplemented");
+            state.account_read(
+                &mut exec_step,
+                call.address,
+                AccountField::CodeHash,
+                call.code_hash.to_word(),
+                call.code_hash.to_word(),
+            )?;
+            for (field, value) in [
+                (CallContextField::Depth, call.depth.into()),
+                (
+                    CallContextField::CallerAddress,
+                    call.caller_address.to_word(),
+                ),
+                (CallContextField::CalleeAddress, call.address.to_word()),
+                (
+                    CallContextField::CallDataOffset,
+                    call.call_data_offset.into(),
+                ),
+                (
+                    CallContextField::CallDataLength,
+                    state.tx.input.len().into(),
+                ),
+                (CallContextField::Value, call.value),
+                (CallContextField::IsStatic, (call.is_static as usize).into()),
+                (CallContextField::LastCalleeId, 0.into()),
+                (CallContextField::LastCalleeReturnDataOffset, 0.into()),
+                (CallContextField::LastCalleeReturnDataLength, 0.into()),
+                (CallContextField::IsRoot, 1.into()),
+                (CallContextField::IsCreate, 1.into()),
+                (CallContextField::CodeHash, call.code_hash.to_word()),
+            ] {
+                state.call_context_write(&mut exec_step, call.call_id, field, value);
+            }
             Ok(exec_step)
         }
         // 2. Call to precompiled.
@@ -425,7 +459,7 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
                 (CallContextField::IsCreate, 0.into()),
                 (CallContextField::CodeHash, code_hash.to_word()),
             ] {
-                state.call_context_read(&mut exec_step, call.call_id, field, value);
+                state.call_context_write(&mut exec_step, call.call_id, field, value);
             }
 
             Ok(exec_step)
@@ -561,6 +595,24 @@ fn dummy_gen_call_ops(
 ) -> Result<Vec<ExecStep>, Error> {
     let geth_step = &geth_steps[0];
     let mut exec_step = state.new_step(geth_step)?;
+
+    let (args_offset, args_length, ret_offset, ret_length) = {
+        // CALLCODE    (gas, addr, value, argsOffset, argsLength, retOffset, retLength)
+        // DELEGATECALL(gas, addr,        argsOffset, argsLength, retOffset, retLength)
+        // STATICCALL  (gas, addr,        argsOffset, argsLength, retOffset, retLength)
+        let pos = match geth_step.op {
+            OpcodeId::CALLCODE => (3, 4, 5, 6),
+            OpcodeId::DELEGATECALL | OpcodeId::STATICCALL => (2, 3, 4, 5),
+            _ => unreachable!("opcode is not of call type"),
+        };
+        (
+            geth_step.stack.nth_last(pos.0)?.as_usize(),
+            geth_step.stack.nth_last(pos.1)?.as_usize(),
+            geth_step.stack.nth_last(pos.2)?.as_usize(),
+            geth_step.stack.nth_last(pos.3)?.as_usize(),
+        )
+    };
+    state.call_expand_memory(args_offset, args_length, ret_offset, ret_length)?;
 
     let tx_id = state.tx_ctx.id();
     let call = state.parse_call(geth_step)?;

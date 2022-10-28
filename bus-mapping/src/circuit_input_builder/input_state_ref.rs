@@ -16,10 +16,13 @@ use crate::{
     Error,
 };
 use eth_types::{
-    evm_types::{Gas, MemoryAddress, OpcodeId, StackAddress},
-    Address, GethExecStep, ToAddress, ToBigEndian, Word, H256,
+    evm_types::{
+        gas_utils::memory_expansion_gas_cost, Gas, GasCost, MemoryAddress, OpcodeId, StackAddress,
+    },
+    Address, GethExecStep, ToAddress, ToBigEndian, ToWord, Word, H256,
 };
 use ethers_core::utils::{get_contract_address, get_create2_address};
+use std::cmp::max;
 
 /// Reference to the internal state of the CircuitInputBuilder in a particular
 /// [`ExecStep`].
@@ -429,10 +432,7 @@ impl<'a> CircuitInputStateRef<'a> {
             },
         )?;
 
-        let (found, receiver_account) = self.sdb.get_account(&receiver);
-        if !found {
-            return Err(Error::AccountNotFound(receiver));
-        }
+        let (_found, receiver_account) = self.sdb.get_account(&receiver);
         let receiver_balance_prev = receiver_account.balance;
         let receiver_balance = receiver_account.balance + value;
         self.push_op_reversible(
@@ -813,12 +813,112 @@ impl<'a> CircuitInputStateRef<'a> {
             callee_account.code_hash = code_hash;
         }
 
-        // Handle reversion if this call doens't end successfully
-        if !self.call()?.is_success {
+        // Handle reversion if this call doesn't end successfully
+        if !call.is_success {
             self.handle_reversion();
         }
 
         self.tx_ctx.pop_call_ctx();
+
+        Ok(())
+    }
+
+    /// Bus mapping for the RestoreContextGadget as used in RETURN.
+    // TODO: unify this with restore context bus mapping for STOP.
+    // TODO: unify this with the `handle return function above.`
+    pub fn handle_restore_context(
+        &mut self,
+        steps: &[GethExecStep],
+        exec_step: &mut ExecStep,
+    ) -> Result<(), Error> {
+        let call = self.call()?.clone();
+        let caller = self.caller()?.clone();
+        self.call_context_read(
+            exec_step,
+            call.call_id,
+            CallContextField::CallerId,
+            caller.call_id.into(),
+        );
+
+        let geth_step = &steps[0];
+        let geth_step_next = &steps[1];
+
+        let [last_callee_return_data_offset, last_callee_return_data_length] = match geth_step.op {
+            OpcodeId::STOP => [Word::zero(); 2],
+            OpcodeId::REVERT | OpcodeId::RETURN => {
+                let offset = geth_step.stack.nth_last(0)?;
+                let length = geth_step.stack.nth_last(1)?;
+                // This is the convention we are using for memory addresses so that there is no
+                // memory expansion cost when the length is 0.
+                if length.is_zero() {
+                    [Word::zero(); 2]
+                } else {
+                    [offset, length]
+                }
+            }
+            _ => unreachable!(),
+        };
+
+        let curr_memory_word_size = (exec_step.memory_size as u64) / 32;
+        let next_memory_word_size = if !last_callee_return_data_length.is_zero() {
+            std::cmp::max(
+                (last_callee_return_data_offset + last_callee_return_data_length + 31).as_u64()
+                    / 32,
+                curr_memory_word_size,
+            )
+        } else {
+            curr_memory_word_size
+        };
+
+        let memory_expansion_gas_cost =
+            memory_expansion_gas_cost(curr_memory_word_size, next_memory_word_size);
+        let code_deposit_cost = if call.is_create() {
+            GasCost::CODE_DEPOSIT_BYTE_COST.as_u64() * last_callee_return_data_length.as_u64()
+        } else {
+            0
+        };
+        let gas_refund = geth_step.gas.0 - memory_expansion_gas_cost - code_deposit_cost;
+
+        let caller_gas_left = geth_step_next.gas.0 - gas_refund;
+
+        for (field, value) in [
+            (CallContextField::IsRoot, (caller.is_root as u64).into()),
+            (
+                CallContextField::IsCreate,
+                (caller.is_create() as u64).into(),
+            ),
+            (CallContextField::CodeHash, caller.code_hash.to_word()),
+            (CallContextField::ProgramCounter, geth_step_next.pc.0.into()),
+            (
+                CallContextField::StackPointer,
+                geth_step_next.stack.stack_pointer().0.into(),
+            ),
+            (CallContextField::GasLeft, caller_gas_left.into()),
+            (
+                CallContextField::MemorySize,
+                self.caller_ctx()?.memory.word_size().into(),
+            ),
+            (
+                CallContextField::ReversibleWriteCounter,
+                self.caller_ctx()?.reversible_write_counter.into(),
+            ),
+        ] {
+            self.call_context_read(exec_step, caller.call_id, field, value);
+        }
+
+        for (field, value) in [
+            (CallContextField::LastCalleeId, call.call_id.into()),
+            (
+                CallContextField::LastCalleeReturnDataOffset,
+                last_callee_return_data_offset,
+            ),
+            (
+                CallContextField::LastCalleeReturnDataLength,
+                last_callee_return_data_length,
+            ),
+        ] {
+            self.call_context_write(exec_step, caller.call_id, field, value);
+        }
 
         Ok(())
     }
@@ -993,5 +1093,33 @@ impl<'a> CircuitInputStateRef<'a> {
         }
 
         Ok(None)
+    }
+
+    /// Expand memory of the call context when entering a new call context in
+    /// case the call arguments or return arguments go beyond the call
+    /// context current memory.
+    pub(crate) fn call_expand_memory(
+        &mut self,
+        args_offset: usize,
+        args_length: usize,
+        ret_offset: usize,
+        ret_length: usize,
+    ) -> Result<(), Error> {
+        let call_ctx = self.call_ctx_mut()?;
+        let args_minimal = if args_length != 0 {
+            args_offset + args_length
+        } else {
+            0
+        };
+        let ret_minimal = if ret_length != 0 {
+            ret_offset + ret_length
+        } else {
+            0
+        };
+        if args_minimal != 0 || ret_minimal != 0 {
+            let minimal_length = max(args_minimal, ret_minimal);
+            call_ctx.memory.extend_at_least(minimal_length);
+        }
+        Ok(())
     }
 }

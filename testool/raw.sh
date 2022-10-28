@@ -1,0 +1,2 @@
+cargo run --release -- --raw $*
+

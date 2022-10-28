@@ -1,26 +1,23 @@
 use super::Opcode;
-use crate::{
-    circuit_input_builder::{CircuitInputStateRef, ExecStep},
-    operation::{AccountField, CallContextField, TxAccessListAccountOp, RW},
-    Error,
-};
-use eth_types::{
-    evm_types::{
-        gas_utils::{eip150_gas, memory_expansion_gas_cost},
-        GasCost,
-    },
-    GethExecStep, ToWord,
-};
+use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
+use crate::operation::{AccountField, CallContextField, TxAccessListAccountOp, RW};
+use crate::Error;
+use eth_types::evm_types::gas_utils::{eip150_gas, memory_expansion_gas_cost};
+use eth_types::evm_types::GasCost;
+use eth_types::{GethExecStep, ToWord};
 use keccak256::EMPTY_HASH;
 use log::warn;
-use std::cmp::max;
 
 /// Placeholder structure used to implement [`Opcode`] trait over it
-/// corresponding to the `OpcodeId::CALL` `OpcodeId`.
+/// corresponding to the `OpcodeId::CALL` and `OpcodeId::STATICCALL`.
+/// - CALL: N_ARGS = 7
+/// - STATICCALL: N_ARGS = 6
+/// TODO: Suppose to add bus-mapping of `OpcodeId::CALLCODE` and
+/// `OpcodeId::DELEGATECALL` here.
 #[derive(Debug, Copy, Clone)]
-pub(crate) struct Call;
+pub(crate) struct CallOpcode<const N_ARGS: usize>;
 
-impl Opcode for Call {
+impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
     fn gen_associated_ops(
         state: &mut CircuitInputStateRef,
         geth_steps: &[GethExecStep],
@@ -28,27 +25,13 @@ impl Opcode for Call {
         let geth_step = &geth_steps[0];
         let mut exec_step = state.new_step(geth_step)?;
 
-        let args_offset = geth_step.stack.nth_last(3)?.as_usize();
-        let args_length = geth_step.stack.nth_last(4)?.as_usize();
-        let ret_offset = geth_step.stack.nth_last(5)?.as_usize();
-        let ret_length = geth_step.stack.nth_last(6)?.as_usize();
+        let args_offset = geth_step.stack.nth_last(N_ARGS - 4)?.as_usize();
+        let args_length = geth_step.stack.nth_last(N_ARGS - 3)?.as_usize();
+        let ret_offset = geth_step.stack.nth_last(N_ARGS - 2)?.as_usize();
+        let ret_length = geth_step.stack.nth_last(N_ARGS - 1)?.as_usize();
 
         // we need to keep the memory until parse_call complete
-        let call_ctx = state.call_ctx_mut()?;
-        let args_minimal = if args_length != 0 {
-            args_offset + args_length
-        } else {
-            0
-        };
-        let ret_minimal = if ret_length != 0 {
-            ret_offset + ret_length
-        } else {
-            0
-        };
-        if args_minimal != 0 || ret_minimal != 0 {
-            let minimal_length = max(args_minimal, ret_minimal);
-            call_ctx.memory.extend_at_least(minimal_length);
-        }
+        state.call_expand_memory(args_offset, args_length, ret_offset, ret_length)?;
 
         let tx_id = state.tx_ctx.id();
         let call = state.parse_call(geth_step)?;
@@ -77,7 +60,7 @@ impl Opcode for Call {
             state.call_context_read(&mut exec_step, current_call.call_id, field, value);
         }
 
-        for i in 0..7 {
+        for i in 0..N_ARGS {
             state.stack_read(
                 &mut exec_step,
                 geth_step.stack.nth_last_filled(i),
@@ -87,7 +70,7 @@ impl Opcode for Call {
 
         state.stack_write(
             &mut exec_step,
-            geth_step.stack.nth_last_filled(6),
+            geth_step.stack.nth_last_filled(N_ARGS - 1),
             (call.is_success as u64).into(),
         )?;
 
@@ -113,7 +96,7 @@ impl Opcode for Call {
                 (call.is_persistent as u64).into(),
             ),
         ] {
-            state.call_context_read(&mut exec_step, call.call_id, field, value);
+            state.call_context_write(&mut exec_step, call.call_id, field, value);
         }
 
         state.transfer(
@@ -198,7 +181,7 @@ impl Opcode for Call {
                     ),
                     (
                         CallContextField::StackPointer,
-                        (geth_step.stack.stack_pointer().0 + 6).into(),
+                        (geth_step.stack.stack_pointer().0 + N_ARGS - 1).into(),
                     ),
                     (
                         CallContextField::GasLeft,
@@ -248,7 +231,7 @@ impl Opcode for Call {
                     (CallContextField::IsCreate, 0.into()),
                     (CallContextField::CodeHash, call.code_hash.to_word()),
                 ] {
-                    state.call_context_read(&mut exec_step, call.call_id, field, value);
+                    state.call_context_write(&mut exec_step, call.call_id, field, value);
                 }
 
                 Ok(vec![exec_step])
