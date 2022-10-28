@@ -32,14 +32,7 @@ impl Opcode for Stop {
             1.into(),
         );
 
-        if call.is_root {
-            state.call_context_read(
-                &mut exec_step,
-                call.call_id,
-                CallContextField::IsPersistent,
-                1.into(),
-            );
-        } else {
+        if !call.is_root {
             // The following part corresponds to
             // Instruction.step_state_transition_to_restored_context
             // in python spec, and should be reusable among all expected halting opcodes or

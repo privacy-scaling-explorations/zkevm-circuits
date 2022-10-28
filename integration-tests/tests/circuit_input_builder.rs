@@ -1,6 +1,6 @@
 #![cfg(feature = "circuit_input_builder")]
 
-use bus_mapping::circuit_input_builder::BuilderClient;
+use bus_mapping::circuit_input_builder::{BuilderClient, CircuitsParams};
 use integration_tests::{get_client, log_init, GenDataOutput};
 use lazy_static::lazy_static;
 use log::trace;
@@ -11,7 +11,9 @@ lazy_static! {
 
 async fn test_circuit_input_builder_block(block_num: u64) {
     let cli = get_client();
-    let cli = BuilderClient::new(cli).await.unwrap();
+    let cli = BuilderClient::new(cli, CircuitsParams::default())
+        .await
+        .unwrap();
 
     // 1. Query geth for Block, Txs and TxExecTraces
     let (eth_block, geth_trace) = cli.get_block(block_num).await.unwrap();
