@@ -1,6 +1,6 @@
 //! Block-related utility module
 
-use super::{transaction::Transaction, CopyEvent};
+use super::{execution::ExecState, transaction::Transaction, CircuitsParams, CopyEvent, ExecStep};
 use crate::{
     operation::{OperationContainer, RWCounter},
     Error,
@@ -39,6 +39,16 @@ impl BlockContext {
     }
 }
 
+/// Block-wise execution steps that don't belong to any Transaction.
+#[derive(Debug)]
+pub struct BlockSteps {
+    /// EndBlock step that is repeated after the last transaction and before
+    /// reaching the last EVM row.
+    pub end_block_not_last: ExecStep,
+    /// Last EndBlock step that appears in the last EVM row.
+    pub end_block_last: ExecStep,
+}
+
 /// Circuit Input related to a block.
 #[derive(Debug)]
 pub struct Block {
@@ -63,6 +73,8 @@ pub struct Block {
     pub container: OperationContainer,
     /// Transactions contained in the block
     pub txs: Vec<Transaction>,
+    /// Block-wise steps
+    pub block_steps: BlockSteps,
     /// Copy events in this block.
     pub copy_events: Vec<CopyEvent>,
     /// Inputs to the SHA3 opcode
@@ -71,6 +83,8 @@ pub struct Block {
     pub prev_state_root: Word,
 
     code: HashMap<Hash, Vec<u8>>,
+    /// Circuits Setup Paramteres
+    pub circuits_params: CircuitsParams,
 }
 
 impl Block {
@@ -80,6 +94,7 @@ impl Block {
         history_hashes: Vec<Word>,
         prev_state_root: Word,
         eth_block: &eth_types::Block<TX>,
+        circuits_params: CircuitsParams,
     ) -> Result<Self, Error> {
         if eth_block.base_fee_per_gas.is_none() {
             // FIXME: resolve this once we have proper EIP-1559 support
@@ -105,10 +120,21 @@ impl Block {
             base_fee: eth_block.base_fee_per_gas.unwrap_or_default(),
             container: OperationContainer::new(),
             txs: Vec::new(),
+            block_steps: BlockSteps {
+                end_block_not_last: ExecStep {
+                    exec_state: ExecState::EndBlock,
+                    ..ExecStep::default()
+                },
+                end_block_last: ExecStep {
+                    exec_state: ExecState::EndBlock,
+                    ..ExecStep::default()
+                },
+            },
             copy_events: Vec::new(),
             code: HashMap::new(),
             prev_state_root,
             sha3_inputs: Vec::new(),
+            circuits_params,
         })
     }
 

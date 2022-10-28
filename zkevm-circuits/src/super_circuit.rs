@@ -83,10 +83,17 @@ use strum::IntoEnumIterator;
 
 /// Mock randomness used for `SuperCircuit`.
 pub const MOCK_RANDOMNESS: u64 = 0x100;
+// TODO: Figure out if we can remove MAX_TXS, MAX_CALLDATA and MAX_RWS from the
+// struct.
 
 /// Configuration of the Super Circuit
 #[derive(Clone)]
-pub struct SuperCircuitConfig<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> {
+pub struct SuperCircuitConfig<
+    F: Field,
+    const MAX_TXS: usize,
+    const MAX_CALLDATA: usize,
+    const MAX_RWS: usize,
+> {
     tx_table: TxTable,
     rw_table: RwTable,
     mpt_table: MptTable,
@@ -104,7 +111,12 @@ pub struct SuperCircuitConfig<F: Field, const MAX_TXS: usize, const MAX_CALLDATA
 
 /// The Super Circuit contains all the zkEVM circuits
 #[derive(Clone, Default, Debug)]
-pub struct SuperCircuit<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> {
+pub struct SuperCircuit<
+    F: Field,
+    const MAX_TXS: usize,
+    const MAX_CALLDATA: usize,
+    const MAX_RWS: usize,
+> {
     // EVM Circuit
     /// Block witness. Usually derived via
     /// `evm_circuit::witness::block_convert`.
@@ -125,8 +137,8 @@ pub struct SuperCircuit<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usiz
     pub pi_circuit: PiCircuit<F, MAX_TXS, MAX_CALLDATA>,
 }
 
-impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
-    SuperCircuit<F, MAX_TXS, MAX_CALLDATA>
+impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: usize>
+    SuperCircuit<F, MAX_TXS, MAX_CALLDATA, MAX_RWS>
 {
     /// Return the number of rows required to verify a given block
     pub fn get_num_rows_required(block: &Block<F>) -> usize {
@@ -140,10 +152,10 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
     }
 }
 
-impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
-    for SuperCircuit<F, MAX_TXS, MAX_CALLDATA>
+impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: usize> Circuit<F>
+    for SuperCircuit<F, MAX_TXS, MAX_CALLDATA, MAX_RWS>
 {
-    type Config = SuperCircuitConfig<F, MAX_TXS, MAX_CALLDATA>;
+    type Config = SuperCircuitConfig<F, MAX_TXS, MAX_CALLDATA, MAX_RWS>;
     type FloorPlanner = SimpleFloorPlanner;
 
     fn without_witnesses(&self) -> Self {
@@ -232,7 +244,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
         config.rw_table.load(
             &mut layouter,
             &rws,
-            self.block.state_circuit_pad_to,
+            self.block.circuits_params.max_rws,
             self.block.randomness,
         )?;
         config.state_circuit.load(&mut layouter)?;
@@ -251,7 +263,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
         config.state_circuit.assign(
             &mut layouter,
             &rws,
-            self.block.state_circuit_pad_to,
+            self.block.circuits_params.max_rws,
             self.block.randomness,
         )?;
         // --- Tx Circuit ---
@@ -289,12 +301,14 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
     }
 }
 
-impl<const MAX_TXS: usize, const MAX_CALLDATA: usize> SuperCircuit<Fr, MAX_TXS, MAX_CALLDATA> {
+impl<const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: usize>
+    SuperCircuit<Fr, MAX_TXS, MAX_CALLDATA, MAX_RWS>
+{
     /// From the witness data, generate a SuperCircuit instance with all of the
     /// sub-circuits filled with their corresponding witnesses.
     ///
-    /// Also, return with it the minimum required SRS degree for the circuit and
-    /// the Public Inputs needed.
+    /// Also, return with it the minimum required SRS degree for the
+    /// circuit and the Public Inputs needed.
     pub fn build(
         geth_data: GethData,
         rng: &mut (impl RngCore + Clone),
@@ -315,12 +329,12 @@ impl<const MAX_TXS: usize, const MAX_CALLDATA: usize> SuperCircuit<Fr, MAX_TXS, 
         let keccak_inputs = builder.keccak_inputs()?;
         let mut block = block_convert(&builder.block, &builder.code_db);
         block.randomness = Fr::from(MOCK_RANDOMNESS);
-        block.state_circuit_pad_to = 1;
 
         let fixed_table_tags: Vec<FixedTableTag> = FixedTableTag::iter().collect();
         let log2_ceil = |n| u32::BITS - (n as u32).leading_zeros() - (n & (n - 1) == 0) as u32;
 
-        let num_rows_required = Self::get_num_rows_required(&block);
+        let num_rows_required =
+            SuperCircuit::<_, MAX_TXS, MAX_CALLDATA, MAX_RWS>::get_num_rows_required(&block);
 
         let k = log2_ceil(
             64 + fixed_table_tags
@@ -357,7 +371,7 @@ impl<const MAX_TXS: usize, const MAX_CALLDATA: usize> SuperCircuit<Fr, MAX_TXS, 
         };
         let pi_circuit = PiCircuit::new(MOCK_RANDOMNESS, MOCK_RANDOMNESS + 1, public_data);
 
-        let circuit = Self {
+        let circuit = SuperCircuit::<_, MAX_TXS, MAX_CALLDATA, MAX_RWS> {
             block,
             fixed_table_tags,
             tx_circuit,
@@ -440,7 +454,8 @@ mod super_circuit_tests {
         block.sign(&wallets);
 
         let (k, circuit, instance) =
-            SuperCircuit::<_, 1, 32>::build(block, &mut ChaCha20Rng::seed_from_u64(2)).unwrap();
+            SuperCircuit::<_, 1, 32, 256>::build(block, &mut ChaCha20Rng::seed_from_u64(2))
+                .unwrap();
         let prover = MockProver::run(k, &circuit, instance).unwrap();
         let res = prover.verify_par();
         if let Err(err) = res {
