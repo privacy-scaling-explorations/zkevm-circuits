@@ -6,6 +6,9 @@ pub(crate) const STEP_WIDTH: usize = 128;
 pub const MAX_STEP_HEIGHT: usize = 21;
 pub(crate) const N_CELLS_STEP_STATE: usize = 11;
 
+// Number of copy columns
+pub(crate) const N_COPY_COLUMNS: usize = 2;
+
 /// Lookups done per row.
 pub(crate) const LOOKUP_CONFIG: &[(Table, usize)] = &[
     (Table::Fixed, 8),

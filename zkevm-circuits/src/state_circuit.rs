@@ -128,7 +128,7 @@ impl<F: Field> StateCircuitConfig<F> {
         &self,
         layouter: &mut impl Layouter<F>,
         rows: &[Rw],
-        n_rows: usize,
+        n_rows: usize, // 0 means dynamically calculated from `rows`.
         randomness: F,
     ) -> Result<(), Error> {
         let updates = MptUpdates::mock_from(rows);
@@ -143,12 +143,13 @@ impl<F: Field> StateCircuitConfig<F> {
         region: &mut Region<'_, F>,
         rows: &[Rw],
         updates: &MptUpdates,
-        n_rows: usize,
+        n_rows: usize, // 0 means dynamically calculated from `rows`.
         randomness: F,
     ) -> Result<(), Error> {
         let tag_chip = BinaryNumberChip::construct(self.sort_keys.tag);
 
         let (rows, padding_length) = RwMap::table_assignments_prepad(rows, n_rows);
+        let rows_len = rows.len();
         let rows = rows.into_iter();
         let prev_rows = once(None).chain(rows.clone().map(Some));
 
@@ -226,7 +227,7 @@ impl<F: Field> StateCircuitConfig<F> {
                 )?;
             }
 
-            if offset == n_rows - 1 {
+            if offset == rows_len - 1 {
                 // The last row is always a last access, so we need to handle the case where the
                 // state root changes because of an mpt lookup on the last row.
                 if let Some(update) = updates.get(&row) {
@@ -345,7 +346,7 @@ where
                 )?;
                 #[cfg(test)]
                 {
-                    let padding_length = RwMap::padding_len(&self.rows, self.n_rows);
+                    let padding_length = RwMap::padding_len(self.rows.len(), self.n_rows);
                     for ((column, row_offset), &f) in &self.overrides {
                         let advice_column = column.value(&config);
                         let offset =

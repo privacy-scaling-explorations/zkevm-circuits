@@ -90,7 +90,7 @@ pub mod sha3_tests {
     use rand::{random, Rng};
 
     use crate::{
-        circuit_input_builder::ExecState,
+        circuit_input_builder::{CircuitsParams, ExecState},
         mock::BlockData,
         operation::{MemoryOp, StackOp, RW},
     };
@@ -188,7 +188,14 @@ pub mod sha3_tests {
         .unwrap()
         .into();
 
-        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+        let mut builder = BlockData::new_from_geth_data_with_params(
+            block.clone(),
+            CircuitsParams {
+                max_rws: 2048,
+                ..Default::default()
+            },
+        )
+        .new_circuit_input_builder();
         builder
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();

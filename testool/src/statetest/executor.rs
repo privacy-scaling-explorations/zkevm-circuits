@@ -1,6 +1,6 @@
 use crate::config::Config;
 use anyhow::Context;
-use bus_mapping::circuit_input_builder::CircuitInputBuilder;
+use bus_mapping::circuit_input_builder::{CircuitInputBuilder, CircuitsParams};
 use bus_mapping::mock::BlockData;
 use eth_types::{geth_types, geth_types::Account, Address, Bytes, GethExecTrace, H256, U256, U64};
 use ethers_core::types::TransactionRequest;
@@ -341,7 +341,9 @@ impl StateTest {
             zkevm_circuits::evm_circuit::witness::block_convert(&builder.block, &builder.code_db);
 
         // finish requiered tests according to config using this witness block
-        zkevm_circuits::test_util::test_circuits_using_witness_block(block, bytecode_test_config)
+        // TODO: Figure out a better strategy so that for each test we choose small
+        // parameters dynamically.
+        zkevm_circuits::test_util::test_circuits_witness_block(block, bytecode_test_config)
             .expect("circuit should pass");
     }
 
@@ -479,7 +481,8 @@ impl StateTest {
             eth_block: eth_block.clone(),
         };
 
-        let block_data = BlockData::new_from_geth_data(geth_data);
+        let block_data =
+            BlockData::new_from_geth_data_with_params(geth_data, CircuitsParams::default());
         let mut builder = block_data.new_circuit_input_builder();
         builder
             .handle_block(&eth_block, &geth_traces)

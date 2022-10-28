@@ -110,6 +110,8 @@ pub enum ExecState {
     BeginTx,
     /// Virtual step End Tx
     EndTx,
+    /// Virtual step End Block
+    EndBlock,
 }
 
 impl ExecState {

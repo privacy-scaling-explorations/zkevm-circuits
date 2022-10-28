@@ -148,11 +148,7 @@ impl<F: Field> ExecutionGadget<F> for BlockHashGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::{
-        evm_circuit::witness::block_convert,
-        test_util::{test_circuits_using_witness_block, BytecodeTestConfig},
-    };
-    use bus_mapping::mock::BlockData;
+    use crate::test_util::test_circuits_block_geth_data_default;
     use eth_types::{bytecode, geth_types::GethData, U256};
     use mock::test_ctx::{helpers::*, TestContext};
 
@@ -182,16 +178,7 @@ mod test {
         .unwrap()
         .into();
 
-        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
-        builder
-            .handle_block(&block.eth_block, &block.geth_traces)
-            .expect("could not handle block tx");
-
-        test_circuits_using_witness_block(
-            block_convert(&builder.block, &builder.code_db),
-            BytecodeTestConfig::default(),
-        )
-        .unwrap();
+        test_circuits_block_geth_data_default(block).unwrap();
     }
 
     #[test]
