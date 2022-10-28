@@ -16,7 +16,7 @@ use crate::{
     util::Expr,
     witness::{Block, Call, ExecStep},
 };
-use eth_types::{Field, ToLittleEndian, ToScalar, U256};
+use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar, U256};
 use halo2_proofs::{
     circuit::Value,
     plonk::{Error, Expression},
@@ -133,16 +133,20 @@ impl<F: Field> RestoreContextGadget<F> {
             ),
             (
                 CallContextFieldTag::LastCalleeReturnDataLength,
-                return_data_length,
+                return_data_length.clone(),
             ),
         ] {
             cb.call_context_lookup(true.expr(), Some(caller_id.expr()), field_tag, value);
         }
 
+        let code_deposit_cost = cb.curr.state.is_create.expr()
+            * GasCost::CODE_DEPOSIT_BYTE_COST.expr()
+            * return_data_length;
+
         let gas_refund = if cb.execution_state().halts_in_exception() {
             0.expr() // no gas refund if call halts in exception
         } else {
-            cb.curr.state.gas_left.expr() - memory_expansion_cost
+            cb.curr.state.gas_left.expr() - memory_expansion_cost - code_deposit_cost
         };
 
         let gas_left = caller_gas_left.expr() + gas_refund;
