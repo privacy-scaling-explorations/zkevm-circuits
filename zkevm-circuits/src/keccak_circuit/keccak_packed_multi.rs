@@ -2067,7 +2067,7 @@ mod tests {
 
     #[test]
     fn packed_multi_keccak_simple() {
-        let k = 10;
+        let k = 11;
         let inputs = vec![
             vec![],
             (0u8..1).collect::<Vec<_>>(),
