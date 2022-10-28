@@ -208,7 +208,7 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
             .assign(region, offset, step.memory_word_size(), [memory_address])?;
 
         let opcode = step.opcode.unwrap();
-        let topic_count = (opcode.as_u8() - OpcodeId::LOG0.as_u8()) as usize;
+        let topic_count = opcode.postfix().expect("opcode with postfix") as usize;
         assert!(topic_count <= 4);
 
         let is_persistent = call.is_persistent as u64;
