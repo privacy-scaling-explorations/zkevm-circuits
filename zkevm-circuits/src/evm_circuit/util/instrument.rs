@@ -2,8 +2,8 @@ use halo2_proofs::arithmetic::FieldExt;
 use itertools::Itertools;
 
 use crate::evm_circuit::step::ExecutionState;
-use crate::evm_circuit::util::CellType;
 use crate::evm_circuit::util::constraint_builder::ConstraintBuilder;
+use crate::evm_circuit::util::CellType;
 
 /// Instrument captures metrics during the compilation of a circuit.
 #[derive(Clone, Debug, Default)]
@@ -18,8 +18,13 @@ impl Instrument {
         execution_state: ExecutionState,
         cb: &ConstraintBuilder<'a, F>,
     ) {
-        let sizes = cb.curr.cell_manager.get_stats()
-            .into_iter().sorted().collect::<Vec<_>>();
+        let sizes = cb
+            .curr
+            .cell_manager
+            .get_stats()
+            .into_iter()
+            .sorted()
+            .collect::<Vec<_>>();
 
         self.states.push((execution_state, sizes));
     }
@@ -41,10 +46,13 @@ impl Instrument {
             let top_height: usize = sizes.iter().map(|(_, (_, h, _))| *h).max().unwrap();
             let cells: usize = sizes.iter().map(|(_, (_, _, c))| *c).sum();
             let unused_cells = width * top_height - cells;
-            let utilization = ((cells as f64) / (width as f64 * top_height as f64) * 100f64).round();
+            let utilization =
+                ((cells as f64) / (width as f64 * top_height as f64) * 100f64).round();
 
-            println!("            col_type |  width | height |  cells | unused_cells | utilization");
-            println!("    {col_type:<16} | {width:>6} | {top_height:>6} | {cells:>6} | {unused_cells:>12} | {utilization:>6}%");
+            println!(
+                "  column_type        |  width | height |  cells | unused_cells | utilization"
+            );
+            println!("  {col_type:<18} | {width:>6} | {top_height:>6} | {cells:>6} | {unused_cells:>12} | {utilization:>6}%");
 
             sizes.iter().for_each(|(col_type, (width, height, cells))| {
 
@@ -52,7 +60,7 @@ impl Instrument {
                 let col_type = format!("{:?}", col_type);
                 let unused_cells = width * top_height - cells;
                 let utilization = ((*cells as f64) / (*width as f64 * top_height as f64) * 100f64).round();
-                println!("    {col_type:<16} | {width:>6} | {height:>6} | {cells:>6} | {unused_cells:>12} | {utilization:>6}%");
+                println!("  {col_type:<18} | {width:>6} | {height:>6} | {cells:>6} | {unused_cells:>12} | {utilization:>6}%");
             });
 
             println!();

@@ -1,5 +1,5 @@
-use super::util::{CachedRegion, CellManager, StoredExpression};
 use super::util::instrument::Instrument;
+use super::util::{CachedRegion, CellManager, StoredExpression};
 use crate::{
     evm_circuit::{
         param::{MAX_STEP_HEIGHT, STEP_WIDTH},
