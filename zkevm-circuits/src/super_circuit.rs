@@ -278,6 +278,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
             &mut layouter,
             &self.keccak_inputs,
             self.block.randomness,
+            None,
         )?;
         // --- Copy Circuit ---
         config

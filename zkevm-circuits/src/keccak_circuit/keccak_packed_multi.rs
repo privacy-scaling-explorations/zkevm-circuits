@@ -382,13 +382,13 @@ impl<F: Field> KeccakPackedCircuit<F> {
 
     /// The number of keccak_f's that can be done in this circuit
     pub fn capacity(&self) -> usize {
-        // Subtract one for unusable rows
-        self.size / ((NUM_ROUNDS + 1) * get_num_rows_per_round()) - 1
+        // Subtract two for unusable rows
+        self.size / ((NUM_ROUNDS + 1) * get_num_rows_per_round()) - 2
     }
 
     /// Sets the witness using the data to be hashed
     pub fn generate_witness(&mut self, inputs: &[Vec<u8>]) {
-        self.witness = multi_keccak(inputs, KeccakPackedCircuit::r());
+        self.witness = multi_keccak(inputs, KeccakPackedCircuit::r(), Some(self.capacity()));
     }
 }
 
@@ -1544,8 +1544,9 @@ impl<F: Field> KeccakPackedConfig<F> {
         layouter: &mut impl Layouter<F>,
         inputs: &[Vec<u8>],
         r: F,
+        capacity: Option<usize>,
     ) -> Result<(), Error> {
-        let witness = multi_keccak(inputs, r);
+        let witness = multi_keccak(inputs, r, capacity);
         self.assign(layouter, &witness)
     }
 
@@ -2001,7 +2002,7 @@ fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: &[u8], r: F) {
     debug!("data rlc: {:x?}", data_rlc);
 }
 
-fn multi_keccak<F: Field>(bytes: &[Vec<u8>], r: F) -> Vec<KeccakRow<F>> {
+fn multi_keccak<F: Field>(bytes: &[Vec<u8>], r: F, capacity: Option<usize>) -> Vec<KeccakRow<F>> {
     let mut rows: Vec<KeccakRow<F>> = Vec::new();
     // Dummy first row so that the initial data is absorbed
     // The initial data doesn't really matter, `is_final` just needs to be disabled.
@@ -2021,8 +2022,15 @@ fn multi_keccak<F: Field>(bytes: &[Vec<u8>], r: F) -> Vec<KeccakRow<F>> {
             cell_values: Vec::new(),
         });
     }
+    // Actual keccaks
     for bytes in bytes {
         keccak(&mut rows, bytes, r);
+    }
+    if let Some(capacity) = capacity {
+        // Pad with no data hashes to the expected capacity
+        while rows.len() < (1 + capacity * (NUM_ROUNDS + 1)) * get_num_rows_per_round() {
+            keccak(&mut rows, &[], r);
+        }
     }
     rows
 }
