@@ -843,8 +843,6 @@ impl<F: FieldExt> MPTConfig<F> {
         let even_num_of_nibbles = row[start + 1] == 32;
         // If odd number of nibbles, we have nibble+48 in s_advices[0].
         if !even_num_of_nibbles {
-            println!("{:?}", start);
-            println!("{:?}", row);
             *key_rlc += F::from((row[start + 1] - 48) as u64) * *key_rlc_mult;
             *key_rlc_mult *= self.randomness;
 
