@@ -280,7 +280,7 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
 
                 add_wrong_leaf_constraints(meta, &mut constraints, q_enable.clone(), c_rlp1_cur,
                     c_rlp2_cur, one.clone() - is_leaf_in_first_level.clone(), is_wrong_leaf.clone());
- 
+
                 let is_nil_object = meta.query_advice(sel1, Rotation(rot_into_first_branch_child));
 
                 /*

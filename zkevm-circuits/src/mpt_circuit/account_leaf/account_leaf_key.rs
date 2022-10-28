@@ -271,7 +271,7 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
 
                 // `is_branch_placeholder = 0` when in first level
                 is_branch_placeholder = is_branch_placeholder.clone() * (one.clone() - is_leaf_in_first_level.clone());
- 
+
                 let mut key_rlc_acc_start =
                     meta.query_advice(accs.key.rlc, Rotation(rot_into_first_branch_child));
                 let mut key_mult_start =

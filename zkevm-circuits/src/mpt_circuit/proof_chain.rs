@@ -219,7 +219,7 @@ impl<F: FieldExt> ProofChainConfig<F> {
                     * not_first_level_prev.clone()
                     * (one.clone() - not_first_level_cur.clone())
                     * (final_root_prev - start_root_cur),
-            )); 
+            ));
 
             /*
             If `not_first_level` is 0 in a previous row (being in branch init),
@@ -233,7 +233,7 @@ impl<F: FieldExt> ProofChainConfig<F> {
                     * (one.clone() - not_first_level_prev)
                     * (not_first_level_cur.clone() - one.clone()),
             ));
- 
+
             /*
             It needs to be ensured there is an account proof before the
             storage proof. Otherwise the attacker could use only a storage proof with a properly

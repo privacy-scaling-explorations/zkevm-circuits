@@ -96,7 +96,7 @@ impl<F: FieldExt> SelectorsConfig<F> {
             */
             constraints.push((
                 "Type of the row is set",
-                q_enable.clone() 
+                q_enable.clone()
                 * (is_branch_init_cur.clone() + is_branch_child_cur.clone()
                     + is_extension_node_s.clone() + is_extension_node_c.clone()
                     + is_leaf_s_key.clone() + is_leaf_c_key.clone() + is_leaf_s_value.clone() + is_leaf_c_value.clone()
@@ -191,7 +191,7 @@ impl<F: FieldExt> SelectorsConfig<F> {
             constraints.push((
                 "bool check branch sel2",
                 get_bool_constraint(q_enable.clone() * is_branch_child_cur, sel2),
-            )); 
+            ));
             constraints.push((
                 "bool check is_modified",
                 get_bool_constraint(q_enable.clone(), is_modified),
@@ -199,7 +199,7 @@ impl<F: FieldExt> SelectorsConfig<F> {
             constraints.push((
                 "bool check is_at_drifted_pos",
                 get_bool_constraint(q_enable.clone(), is_at_drifted_pos),
-            )); 
+            ));
             constraints.push((
                 "bool check is_extension_node_s",
                 get_bool_constraint(q_enable.clone(), is_extension_node_s),
@@ -236,7 +236,7 @@ impl<F: FieldExt> SelectorsConfig<F> {
             constraints.push((
                 "bool check is_non_existing_account_proof",
                 get_bool_constraint(q_enable.clone(), is_non_existing_account_proof.clone()),
-            )); 
+            ));
             constraints.push((
                 "bool check is_non_existing_storage_proof",
                 get_bool_constraint(q_enable.clone(), is_non_existing_storage_proof.clone()),
@@ -284,7 +284,7 @@ impl<F: FieldExt> SelectorsConfig<F> {
                     * proof_type_cur.clone()
                     * is_non_existing_account_proof.clone()
                     * (is_non_existing_account_row.clone() - one.clone())
-            )); 
+            ));
             constraints.push((
                 "proof_type is 0 everywhere except in ACCOUNT_LEAF_KEY_S row when is_account_delete_mod proof",
                 q_enable.clone()

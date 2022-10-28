@@ -206,17 +206,17 @@ impl<F: FieldExt> BranchConfig<F> {
                 */
                 for ind in 0..16 {
                     let s_rlp2 = meta.query_advice(s_main.rlp2, Rotation(-ind));
-                    let c_rlp2 = meta.query_advice(c_main.rlp2, Rotation(-ind)); 
+                    let c_rlp2 = meta.query_advice(c_main.rlp2, Rotation(-ind));
                     sum_rlp2_s = sum_rlp2_s.clone() + s_rlp2;
                     sum_rlp2_c = sum_rlp2_c.clone() + c_rlp2;
                 }
- 
+
                 let is_last_child = meta.query_advice(branch.is_last_child, Rotation::cur());
                 let is_branch_placeholder_s =
                     meta.query_advice(s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM], Rotation(-16));
                 let is_branch_placeholder_c =
                     meta.query_advice(s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM], Rotation(-16));
- 
+
                 /*
                 This constraint applies for when we have a placeholder branch.
                 In this case, both branches are the same - the placeholder branch and its
@@ -577,7 +577,7 @@ impl<F: FieldExt> BranchConfig<F> {
                     * node_index_cur.clone() // ignore if node_index = 0
                     * (node_index_cur.clone() - node_index_prev - one.clone()),
             ));
- 
+
             let modified_node_prev = meta.query_advice(branch.modified_node, Rotation::prev());
             let modified_node_cur = meta.query_advice(branch.modified_node, Rotation::cur());
 

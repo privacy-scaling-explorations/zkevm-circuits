@@ -644,7 +644,7 @@ impl<F: FieldExt> LeafKeyConfig<F> {
                         * (one.clone() - is_branch_placeholder.clone())
                         * one_nibble.clone(),
                 ));
- 
+
                 // Nibbles count:
                 let mut nibbles_count = meta.query_advice(
                     s_main.bytes[NIBBLES_COUNTER_POS - RLP_NUM],
@@ -659,8 +659,8 @@ impl<F: FieldExt> LeafKeyConfig<F> {
                     ((s_bytes0 - c128.clone()) * (one.clone() + one.clone()) - one.clone()) * is_c16.clone();
                 let leaf_nibbles_short = ((s_rlp2.clone() - c128.clone() - one.clone()) * (one.clone() + one.clone())) * is_c1 +
                     ((s_rlp2 - c128.clone()) * (one.clone() + one.clone()) - one.clone()) * is_c16;
-                let leaf_nibbles_last_level = Expression::Constant(F::zero()); 
-                let leaf_nibbles_one_nibble = one.clone(); 
+                let leaf_nibbles_last_level = Expression::Constant(F::zero());
+                let leaf_nibbles_one_nibble = one.clone();
 
                 let leaf_nibbles = leaf_nibbles_long * is_long + leaf_nibbles_short * is_short
                     + leaf_nibbles_last_level * last_level + leaf_nibbles_one_nibble * one_nibble;

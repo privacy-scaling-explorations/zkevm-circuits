@@ -486,7 +486,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                         + is_ext_long_odd_c1.clone(),
                 ),
             ));
- 
+
             let is_branch_c16 = meta.query_advice(
                 s_main.bytes[IS_BRANCH_C16_POS - RLP_NUM],
                 Rotation(rot_into_branch_init),
@@ -527,7 +527,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
             constrain_sel(is_branch_c1.clone(), is_ext_long_even_c1.clone());
             constrain_sel(is_branch_c16, is_ext_long_odd_c16.clone());
             constrain_sel(is_branch_c1, is_ext_long_odd_c1.clone());
- 
+
             // In C we have nibbles, we check below only for S.
             if is_s {
                 let s_rlp1 = meta.query_advice(s_main.rlp1, Rotation::cur());
