@@ -45,6 +45,58 @@ pub struct MulAddConfig<F> {
     pub overflow: Expression<F>,
 }
 
+impl<F: Field> MulAddConfig<F> {
+    /// 64-bit limbs representing `a` from the equation `a * b + c == d`.
+    pub fn a_limbs_cur(
+        &self,
+        meta: &mut VirtualCells<'_, F>,
+    ) -> (Expression<F>, Expression<F>, Expression<F>, Expression<F>) {
+        (
+            meta.query_advice(self.col0, Rotation::cur()),
+            meta.query_advice(self.col1, Rotation::cur()),
+            meta.query_advice(self.col2, Rotation::cur()),
+            meta.query_advice(self.col3, Rotation::cur()),
+        )
+    }
+
+    /// 64-bit limbs representing `b` from the equation `a * b + c == d`.
+    pub fn b_limbs_cur(
+        &self,
+        meta: &mut VirtualCells<'_, F>,
+    ) -> (Expression<F>, Expression<F>, Expression<F>, Expression<F>) {
+        (
+            meta.query_advice(self.col0, Rotation(1)),
+            meta.query_advice(self.col1, Rotation(1)),
+            meta.query_advice(self.col2, Rotation(1)),
+            meta.query_advice(self.col3, Rotation(1)),
+        )
+    }
+
+    /// 128-bit lo-hi parts of `c` from the equation `a * b + c == d`.
+    pub fn c_lo_hi_cur(&self, meta: &mut VirtualCells<'_, F>) -> (Expression<F>, Expression<F>) {
+        (
+            meta.query_advice(self.col0, Rotation(2)),
+            meta.query_advice(self.col1, Rotation(2)),
+        )
+    }
+
+    /// 128-bit lo-hi parts of `d` from the equation `a * b + c == d`.
+    pub fn d_lo_hi_cur(&self, meta: &mut VirtualCells<'_, F>) -> (Expression<F>, Expression<F>) {
+        (
+            meta.query_advice(self.col2, Rotation(2)),
+            meta.query_advice(self.col3, Rotation(2)),
+        )
+    }
+
+    /// 128-bit lo-hi parts of `d` from the next step.
+    pub fn d_lo_hi_next(&self, meta: &mut VirtualCells<'_, F>) -> (Expression<F>, Expression<F>) {
+        (
+            meta.query_advice(self.col2, Rotation(9)),
+            meta.query_advice(self.col3, Rotation(9)),
+        )
+    }
+}
+
 /// Chip to constrain a * b + c == d (mod 2^256).
 #[derive(Clone, Debug)]
 pub struct MulAddChip<F> {

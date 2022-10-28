@@ -53,10 +53,8 @@ impl<F: Field> ExpCircuit<F> {
         });
 
         // multiplier <- 2^64
-        let multiplier: F = U256::from_dec_str("18446744073709551616")
-            .unwrap()
-            .to_scalar()
-            .unwrap();
+        let two = U256::from(2);
+        let multiplier: F = two.pow(U256::from(64)).to_scalar().unwrap();
 
         meta.create_gate("verify all but the last step", |meta| {
             let mut cb = BaseConstraintBuilder::default();
@@ -76,23 +74,19 @@ impl<F: Field> ExpCircuit<F> {
             // exponentiation by squaring) is passed on as the first
             // multiplicand to the next step. Since the steps are assigned in
             // the reverse order, we have: a::cur == d::next.
-            let (a_limb0, a_limb1, a_limb2, a_limb3) = (
-                meta.query_advice(mul_gadget.col0, Rotation::cur()),
-                meta.query_advice(mul_gadget.col1, Rotation::cur()),
-                meta.query_advice(mul_gadget.col2, Rotation::cur()),
-                meta.query_advice(mul_gadget.col3, Rotation::cur()),
-            );
-            let a_lo = a_limb0 + (a_limb1 * multiplier);
-            let a_hi = a_limb2 + (a_limb3 * multiplier);
+            let (a_limb0, a_limb1, a_limb2, a_limb3) = mul_gadget.a_limbs_cur(meta);
+            let a_lo_cur = a_limb0 + (a_limb1 * multiplier);
+            let a_hi_cur = a_limb2 + (a_limb3 * multiplier);
+            let (d_lo_next, d_hi_next) = mul_gadget.d_lo_hi_next(meta);
             cb.require_equal(
                 "multiplication gadget => a::cur == d::next (lo)",
-                a_lo,
-                meta.query_advice(mul_gadget.col2, Rotation(9)),
+                a_lo_cur,
+                d_lo_next,
             );
             cb.require_equal(
                 "multiplication gadget => a::cur == d::next (hi)",
-                a_hi,
-                meta.query_advice(mul_gadget.col3, Rotation(9)),
+                a_hi_cur,
+                d_hi_next,
             );
 
             // Identifier does not change over the steps of an exponentiation trace.
@@ -132,31 +126,33 @@ impl<F: Field> ExpCircuit<F> {
 
             // For every step, the intermediate exponentiation MUST equal the result of
             // the corresponding multiplication.
+            let (d_lo_cur, d_hi_cur) = mul_gadget.d_lo_hi_cur(meta);
             cb.require_equal(
                 "intermediate exponentiation lo == mul_gadget.d_lo",
                 meta.query_advice(exp_table.exponentiation_lo_hi, Rotation::cur()),
-                meta.query_advice(mul_gadget.col2, Rotation(2)),
+                d_lo_cur,
             );
             cb.require_equal(
                 "intermediate exponentiation hi == mul_gadget.d_hi",
                 meta.query_advice(exp_table.exponentiation_lo_hi, Rotation::next()),
-                meta.query_advice(mul_gadget.col3, Rotation(2)),
+                d_hi_cur,
             );
 
             // For every step, the MulAddChip's `c` MUST be 0, considering the equation `a *
             // b + c == d` applied ONLY for multiplication.
+            let (c_lo_cur, c_hi_cur) = mul_gadget.c_lo_hi_cur(meta);
             cb.require_zero(
                 "mul_gadget.c == 0 (lo)",
-                meta.query_advice(mul_gadget.col0, Rotation(2)),
+                c_lo_cur,
             );
             cb.require_zero(
                 "mul_gadget.c == 0 (hi)",
-                meta.query_advice(mul_gadget.col1, Rotation(2)),
+                c_hi_cur,
             );
 
             // The odd/even assignment is boolean.
-            cb.require_zero("is_odd is boolean (hi == 0)", meta.query_advice(parity_check.col1, Rotation(2)));
-            let is_odd = meta.query_advice(parity_check.col0, Rotation(2));
+            let (is_odd, remainder_hi) = parity_check.c_lo_hi_cur(meta);
+            cb.require_zero("is_odd is boolean (hi == 0)", remainder_hi);
             cb.require_boolean("is_odd is boolean (lo is boolean)", is_odd.clone());
 
             // There should be no overflow in the parity check mul gadget.
@@ -178,21 +174,19 @@ impl<F: Field> ExpCircuit<F> {
                     meta.query_advice(exp_table.exponent_lo_hi, Rotation(8)),
                     meta.query_advice(exp_table.exponent_lo_hi, Rotation(1)),
                 );
-                for (i, mul_gadget_col) in [
-                    mul_gadget.col0,
-                    mul_gadget.col1,
-                    mul_gadget.col2,
-                    mul_gadget.col3,
-                ]
-                .into_iter()
-                .enumerate()
-                {
-                    cb.require_equal(
-                        "exp_table.base_limb[i] == mul_gadget.b[i] (intermediate exponent is odd)",
-                        meta.query_advice(exp_table.base_limb, Rotation(i as i32)),
-                        meta.query_advice(mul_gadget_col, Rotation(1)),
-                    );
-                }
+
+                // base MUST equal b.
+                let (b_limb0, b_limb1, b_limb2, b_limb3) = mul_gadget.b_limbs_cur(meta);
+                let (base_limb0, base_limb1, base_limb2, base_limb3) = (
+                    meta.query_advice(exp_table.base_limb, Rotation::cur()),
+                    meta.query_advice(exp_table.base_limb, Rotation::next()),
+                    meta.query_advice(exp_table.base_limb, Rotation(2)),
+                    meta.query_advice(exp_table.base_limb, Rotation(3)),
+                );
+                cb.require_equal("exp_table.base_limbs[i] == mul_gadget.b[i]", base_limb0, b_limb0);
+                cb.require_equal("exp_table.base_limbs[i] == mul_gadget.b[i]", base_limb1, b_limb1);
+                cb.require_equal("exp_table.base_limbs[i] == mul_gadget.b[i]", base_limb2, b_limb2);
+                cb.require_equal("exp_table.base_limbs[i] == mul_gadget.b[i]", base_limb3, b_limb3);
             });
             // remainder == 0 => exponent is even
             cb.condition(
@@ -200,22 +194,18 @@ impl<F: Field> ExpCircuit<F> {
                     not::expr(meta.query_advice(exp_table.is_last, Rotation::cur())),
                     not::expr(is_odd),
                 ]), |cb| {
+                let (exponent_lo, exponent_hi) = parity_check.d_lo_hi_cur(meta);
                 cb.require_equal(
-                    "intermediate_exponent::next == intermediate_exponent::cur / 2 (equate cur lo)",
+                    "exponent::next == exponent::cur / 2 (equate cur lo)",
                     meta.query_advice(exp_table.exponent_lo_hi, Rotation(0)),
-                    meta.query_advice(parity_check.col2, Rotation(2)),
+                    exponent_lo,
                 );
                 cb.require_equal(
-                    "intermediate_exponent::next == intermediate_exponent::cur / 2 (equate cur hi)",
+                    "exponent::next == exponent::cur / 2 (equate cur hi)",
                     meta.query_advice(exp_table.exponent_lo_hi, Rotation(1)),
-                    meta.query_advice(parity_check.col3, Rotation(2)),
+                    exponent_hi,
                 );
-                let (limb0, limb1, limb2, limb3) = (
-                    meta.query_advice(parity_check.col0, Rotation(1)),
-                    meta.query_advice(parity_check.col1, Rotation(1)),
-                    meta.query_advice(parity_check.col2, Rotation(1)),
-                    meta.query_advice(parity_check.col3, Rotation(1)),
-                );
+                let (limb0, limb1, limb2, limb3) = parity_check.b_limbs_cur(meta);
                 let exponent_next_lo = limb0 + (limb1 * multiplier);
                 let exponent_next_hi = limb2 + (limb3 * multiplier);
                 cb.require_equal(
@@ -228,20 +218,14 @@ impl<F: Field> ExpCircuit<F> {
                     meta.query_advice(exp_table.exponent_lo_hi, Rotation(8)),
                     exponent_next_hi,
                 );
-                for mul_gadget_col in [
-                    mul_gadget.col0,
-                    mul_gadget.col1,
-                    mul_gadget.col2,
-                    mul_gadget.col3,
-                ]
-                .into_iter()
-                {
-                    cb.require_equal(
-                        "mul_gadget.a[i] == mul_gadget.b[i] (intermediate exponent is even)",
-                        meta.query_advice(mul_gadget_col, Rotation(0)),
-                        meta.query_advice(mul_gadget_col, Rotation(1)),
-                    );
-                }
+
+                // a == b
+                let (a_limb0, a_limb1, a_limb2, a_limb3) = mul_gadget.a_limbs_cur(meta);
+                let (b_limb0, b_limb1, b_limb2, b_limb3) = mul_gadget.b_limbs_cur(meta);
+                cb.require_equal("mul_gadget.a[i] == mul_gadget.b[i]", a_limb0, b_limb0);
+                cb.require_equal("mul_gadget.a[i] == mul_gadget.b[i]", a_limb1, b_limb1);
+                cb.require_equal("mul_gadget.a[i] == mul_gadget.b[i]", a_limb2, b_limb2);
+                cb.require_equal("mul_gadget.a[i] == mul_gadget.b[i]", a_limb3, b_limb3);
             });
 
             // For the last step in the exponentiation operation's trace.
@@ -255,26 +239,23 @@ impl<F: Field> ExpCircuit<F> {
                     "if is_last is True: intermediate_exponent == 2 (hi == 0)",
                     meta.query_advice(exp_table.exponent_lo_hi, Rotation::next()),
                 );
-                for (i, mul_gadget_col) in [
-                    mul_gadget.col0,
-                    mul_gadget.col1,
-                    mul_gadget.col2,
-                    mul_gadget.col3,
-                ]
-                .into_iter()
-                .enumerate()
-                {
-                    cb.require_equal(
-                        "if is_last is True: exp_table.base_limb[i] == mul_gadget.a[i]",
-                        meta.query_advice(exp_table.base_limb, Rotation(i as i32)),
-                        meta.query_advice(mul_gadget_col, Rotation(0)),
-                    );
-                    cb.require_equal(
-                        "if is_last is True: exp_table.base_limb[i] == mul_gadget.b[i]",
-                        meta.query_advice(exp_table.base_limb, Rotation(i as i32)),
-                        meta.query_advice(mul_gadget_col, Rotation(1)),
-                    );
-                }
+                // a == b == base
+                let (a_limb0, a_limb1, a_limb2, a_limb3) = mul_gadget.a_limbs_cur(meta);
+                let (b_limb0, b_limb1, b_limb2, b_limb3) = mul_gadget.b_limbs_cur(meta);
+                let (base_limb0, base_limb1, base_limb2, base_limb3) = (
+                    meta.query_advice(exp_table.base_limb, Rotation::cur()),
+                    meta.query_advice(exp_table.base_limb, Rotation::next()),
+                    meta.query_advice(exp_table.base_limb, Rotation(2)),
+                    meta.query_advice(exp_table.base_limb, Rotation(3)),
+                );
+                cb.require_equal("if is_last is True: base == a", base_limb0.clone(), a_limb0);
+                cb.require_equal("if is_last is True: base == a", base_limb1.clone(), a_limb1);
+                cb.require_equal("if is_last is True: base == a", base_limb2.clone(), a_limb2);
+                cb.require_equal("if is_last is True: base == a", base_limb3.clone(), a_limb3);
+                cb.require_equal("if is_last is True: base == b", base_limb0, b_limb0);
+                cb.require_equal("if is_last is True: base == b", base_limb1, b_limb1);
+                cb.require_equal("if is_last is True: base == b", base_limb2, b_limb2);
+                cb.require_equal("if is_last is True: base == b", base_limb3, b_limb3);
             });
 
             cb.gate(and::expr([
