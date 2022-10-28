@@ -253,7 +253,8 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::{evm_circuit::test::rand_bytes, test_util::run_test_circuits};
+    use crate::{evm_circuit::test::rand_bytes, test_util::run_test_circuits_with_params};
+    use bus_mapping::circuit_input_builder::CircuitsParams;
     use eth_types::{bytecode, ToWord, Word};
     use mock::test_ctx::{helpers::*, TestContext};
 
@@ -287,7 +288,17 @@ mod test {
         )
         .unwrap();
 
-        assert_eq!(run_test_circuits(ctx, None), Ok(()));
+        assert_eq!(
+            run_test_circuits_with_params(
+                ctx,
+                None,
+                CircuitsParams {
+                    max_rws: 1024,
+                    ..Default::default()
+                }
+            ),
+            Ok(())
+        );
     }
 
     fn test_ok_internal(
@@ -343,7 +354,17 @@ mod test {
         )
         .unwrap();
 
-        assert_eq!(run_test_circuits(ctx, None), Ok(()));
+        assert_eq!(
+            run_test_circuits_with_params(
+                ctx,
+                None,
+                CircuitsParams {
+                    max_rws: 1024,
+                    ..Default::default()
+                }
+            ),
+            Ok(())
+        );
     }
 
     #[test]

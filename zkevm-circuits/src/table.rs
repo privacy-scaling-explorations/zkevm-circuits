@@ -119,8 +119,15 @@ impl TxTable {
         &self,
         layouter: &mut impl Layouter<F>,
         txs: &[Transaction],
+        max_txs: usize,
         randomness: F,
     ) -> Result<(), Error> {
+        assert!(
+            txs.len() <= max_txs,
+            "txs.len() <= max_txs: txs.len()={}, max_txs={}",
+            txs.len(),
+            max_txs
+        );
         layouter.assign_region(
             || "tx table",
             |mut region| {
@@ -136,7 +143,13 @@ impl TxTable {
                 offset += 1;
 
                 let tx_table_columns = self.columns();
-                for tx in txs.iter() {
+                let padding_txs: Vec<Transaction> = (txs.len()..max_txs)
+                    .map(|i| Transaction {
+                        id: i + 1,
+                        ..Default::default()
+                    })
+                    .collect();
+                for tx in txs.iter().chain(padding_txs.iter()) {
                     for row in tx.table_assignments(randomness) {
                         for (column, value) in tx_table_columns.iter().zip_eq(row) {
                             region.assign_advice(
