@@ -296,7 +296,7 @@ impl<F: Field> ExecutionConfig<F> {
         let q_step_last = meta.complex_selector();
         let advices = [(); STEP_WIDTH].map(|_| meta.advice_column());
 
-        let step_curr = Step::new(meta, advices, 0);
+        let step_curr = Step::new(meta, advices, 0, false);
         let mut height_map = HashMap::new();
 
         meta.create_gate("Constrain execution state", |meta| {
@@ -381,7 +381,7 @@ impl<F: Field> ExecutionConfig<F> {
         });
 
         let mut stored_expressions_map = HashMap::new();
-        let step_next = Step::new(meta, advices, MAX_STEP_HEIGHT);
+        let step_next = Step::new(meta, advices, MAX_STEP_HEIGHT, true);
         macro_rules! configure_gadget {
             () => {
                 Self::configure_gadget(
@@ -567,7 +567,7 @@ impl<F: Field> ExecutionConfig<F> {
         };
 
         // Now actually configure the gadget with the correct minimal height
-        let step_next = &Step::new(meta, advices, height);
+        let step_next = &Step::new(meta, advices, height, true);
         let mut cb = ConstraintBuilder::new(
             step_curr.clone(),
             step_next.clone(),
