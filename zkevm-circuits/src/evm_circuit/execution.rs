@@ -1066,7 +1066,11 @@ impl<F: Field> ExecutionConfig<F> {
         // Fill in the witness values for stored expressions
         let assigned_stored_expressions = self.assign_stored_expressions(region, offset, step)?;
 
-        Self::check_rw_lookup(&assigned_stored_expressions, step, block);
+        // enable with `RUST_LOG=debug`
+        if log::log_enabled!(log::Level::Debug) {
+            // expensive function call
+            Self::check_rw_lookup(&assigned_stored_expressions, step, block);
+        }
         Ok(())
     }
 
