@@ -5,6 +5,7 @@ use crate::evm_circuit::step::ExecutionState;
 use crate::evm_circuit::util::CellType;
 use crate::evm_circuit::util::constraint_builder::ConstraintBuilder;
 
+/// Instrument captures metrics during the compilation of a circuit.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Instrument {
     // States -> Cell Types -> (width, height, num_cells)

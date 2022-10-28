@@ -488,7 +488,9 @@ mod test {
             let test_context = TestContext::<2, 1>::new(
                 None,
                 |accs| {
-                    accs[0].balance(eth(10));
+                    accs[0]
+                        .address(address!("0x000000000000000000000000000000000000cafe"))
+                        .balance(eth(10));
                     accs[1].account(&caller);
                 },
                 |mut txs, accs| {

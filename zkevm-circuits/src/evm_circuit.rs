@@ -112,18 +112,7 @@ impl<F: Field> EvmCircuit<F> {
         layouter: &mut impl Layouter<F>,
         block: &Block<F>,
     ) -> Result<(), Error> {
-        self.execution.assign_block(layouter, block, false)?;
-        Ok(())
-    }
-
-    #[cfg(any(feature = "test", test))]
-    /// Assign exact steps in block without padding for unit test purpose
-    pub fn assign_block_exact(
-        &self,
-        layouter: &mut impl Layouter<F>,
-        block: &Block<F>,
-    ) -> Result<(), Error> {
-        self.execution.assign_block(layouter, block, true)?;
+        self.execution.assign_block(layouter, block)?;
         Ok(())
     }
 
@@ -140,10 +129,16 @@ impl<F: Field> EvmCircuit<F> {
     pub fn get_num_rows_required(&self, block: &Block<F>) -> usize {
         // Start at 1 so we can be sure there is an unused `next` row available
         let mut num_rows = 1;
-        for transaction in &block.txs {
-            for step in &transaction.steps {
-                num_rows += self.execution.get_step_height(step.execution_state);
+        let evm_rows = block.evm_circuit_pad_to;
+        if evm_rows == 0 {
+            for transaction in &block.txs {
+                for step in &transaction.steps {
+                    num_rows += self.execution.get_step_height(step.execution_state);
+                }
             }
+            num_rows += 1; // EndBlock
+        } else {
+            num_rows += block.evm_circuit_pad_to;
         }
         num_rows
     }
@@ -155,9 +150,10 @@ pub mod test {
         evm_circuit::{table::FixedTableTag, witness::Block, EvmCircuit},
         table::{BlockTable, BytecodeTable, CopyTable, KeccakTable, RwTable, TxTable},
         util::{power_of_randomness_from_instance, Challenges},
+        witness::block_convert,
     };
-    use bus_mapping::evm::OpcodeId;
-    use eth_types::{Field, Word};
+    use bus_mapping::{circuit_input_builder::CircuitsParams, evm::OpcodeId, mock::BlockData};
+    use eth_types::{geth_types::GethData, Field, Word};
     use halo2_proofs::{
         circuit::{Layouter, SimpleFloorPlanner, Value},
         dev::{MockProver, VerifyFailure},
@@ -291,14 +287,17 @@ pub mod test {
                 .evm_circuit
                 .load_fixed_table(&mut layouter, self.fixed_table_tags.clone())?;
             config.evm_circuit.load_byte_table(&mut layouter)?;
-            config
-                .tx_table
-                .load(&mut layouter, &self.block.txs, self.block.randomness)?;
+            config.tx_table.load(
+                &mut layouter,
+                &self.block.txs,
+                self.block.circuits_params.max_txs,
+                self.block.randomness,
+            )?;
             self.block.rws.check_rw_counter_sanity();
             config.rw_table.load(
                 &mut layouter,
                 &self.block.rws.table_assignments(),
-                self.block.state_circuit_pad_to,
+                self.block.circuits_params.max_rws,
                 self.block.randomness,
             )?;
             config.bytecode_table.load(
@@ -317,61 +316,87 @@ pub mod test {
                 .keccak_table
                 .dev_load(&mut layouter, &self.block.sha3_inputs, &challenges)?;
 
-            config
-                .evm_circuit
-                .assign_block_exact(&mut layouter, &self.block)
+            config.evm_circuit.assign_block(&mut layouter, &self.block)
         }
     }
 
     impl<F: Field> TestCircuit<F> {
         pub fn get_num_rows_required(block: &Block<F>) -> usize {
             let mut cs = ConstraintSystem::default();
-            let config = TestCircuit::configure(&mut cs);
+            let config = TestCircuit::<F>::configure(&mut cs);
             config.evm_circuit.get_num_rows_required(block)
         }
 
         pub fn get_active_rows(block: &Block<F>) -> (Vec<usize>, Vec<usize>) {
             let mut cs = ConstraintSystem::default();
-            let config = TestCircuit::configure(&mut cs);
+            let config = TestCircuit::<F>::configure(&mut cs);
             config.evm_circuit.get_active_rows(block)
         }
+    }
+
+    pub fn run_test_circuit_geth_data_default<F: Field>(
+        block: GethData,
+    ) -> Result<(), Vec<VerifyFailure>> {
+        let mut builder =
+            BlockData::new_from_geth_data_with_params(block.clone(), CircuitsParams::default())
+                .new_circuit_input_builder();
+        builder
+            .handle_block(&block.eth_block, &block.geth_traces)
+            .unwrap();
+        let block = block_convert(&builder.block, &builder.code_db);
+        run_test_circuit(block)
+    }
+
+    pub fn run_test_circuit_geth_data<F: Field>(
+        block: GethData,
+        circuits_params: CircuitsParams,
+    ) -> Result<(), Vec<VerifyFailure>> {
+        let mut builder = BlockData::new_from_geth_data_with_params(block.clone(), circuits_params)
+            .new_circuit_input_builder();
+        builder
+            .handle_block(&block.eth_block, &block.geth_traces)
+            .unwrap();
+        let block = block_convert(&builder.block, &builder.code_db);
+        run_test_circuit(block)
     }
 
     pub fn run_test_circuit<F: Field>(block: Block<F>) -> Result<(), Vec<VerifyFailure>> {
         let fixed_table_tags = detect_fixed_table_tags(&block);
         let log2_ceil = |n| u32::BITS - (n as u32).leading_zeros() - (n & (n - 1) == 0) as u32;
 
-        let num_rows_required_for_steps = TestCircuit::get_num_rows_required(&block);
-
+        let num_rows_required_for_steps = TestCircuit::<F>::get_num_rows_required(&block);
+        const NUM_BLINDING_ROWS: usize = 64;
         let k = log2_ceil(
-            64 + fixed_table_tags
-                .iter()
-                .map(|tag| tag.build::<F>().count())
-                .sum::<usize>(),
+            NUM_BLINDING_ROWS
+                + fixed_table_tags
+                    .iter()
+                    .map(|tag| tag.build::<F>().count())
+                    .sum::<usize>(),
         );
         let k = k.max(log2_ceil(
-            64 + block
-                .bytecodes
-                .values()
-                .map(|bytecode| bytecode.bytes.len())
-                .sum::<usize>(),
+            NUM_BLINDING_ROWS
+                + block
+                    .bytecodes
+                    .values()
+                    .map(|bytecode| bytecode.bytes.len())
+                    .sum::<usize>(),
         ));
-        let k = k.max(log2_ceil(64 + num_rows_required_for_steps));
+        let k = k.max(log2_ceil(NUM_BLINDING_ROWS + num_rows_required_for_steps));
+        let k = k.max(log2_ceil(NUM_BLINDING_ROWS + block.circuits_params.max_rws));
         log::debug!("evm circuit uses k = {}", k);
 
         let power_of_randomness = (1..32)
             .map(|exp| vec![block.randomness.pow(&[exp, 0, 0, 0]); (1 << k) - 64])
             .collect();
-        let (active_gate_rows, active_lookup_rows) = TestCircuit::get_active_rows(&block);
+        let (active_gate_rows, active_lookup_rows) = TestCircuit::<F>::get_active_rows(&block);
         let circuit = TestCircuit::<F>::new(block, fixed_table_tags);
         let prover = MockProver::<F>::run(k, &circuit, power_of_randomness).unwrap();
-        prover.verify_at_rows(active_gate_rows.into_iter(), active_lookup_rows.into_iter())
+        prover.verify_at_rows_par(active_gate_rows.into_iter(), active_lookup_rows.into_iter())
     }
 }
 
 #[cfg(test)]
 mod evm_circuit_stats {
-
     use super::test::*;
     use super::*;
     use crate::evm_circuit::step::ExecutionState;
@@ -383,7 +408,10 @@ mod evm_circuit_stats {
 
     #[test]
     pub fn empty_evm_circuit() {
-        run_test_circuit(Block::<Fr>::default()).unwrap();
+        let block: GethData = TestContext::<0, 0>::new(None, |_| {}, |_, _| {}, |b, _| b)
+            .unwrap()
+            .into();
+        run_test_circuit_geth_data_default::<Fr>(block).unwrap();
     }
 
     /// This function prints to stdout a table with all the implemented states

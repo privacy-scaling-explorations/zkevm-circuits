@@ -27,8 +27,9 @@ impl RwMap {
     pub fn check_rw_counter_sanity(&self) {
         for (idx, rw_counter) in self
             .0
-            .values()
-            .flatten()
+            .iter()
+            .filter(|(tag, _rs)| !matches!(tag, RwTableTag::Start))
+            .flat_map(|(_tag, rs)| rs)
             .map(|r| r.rw_counter())
             .sorted()
             .enumerate()
@@ -39,15 +40,15 @@ impl RwMap {
     /// Calculates the number of Rw::Start rows needed.
     /// `target_len` is allowed to be 0 as an "auto" mode,
     /// then only 1 Rw::Start row will be prepadded.
-    pub(crate) fn padding_len(rows: &[Rw], target_len: usize) -> usize {
-        if target_len > rows.len() {
-            target_len - rows.len()
+    pub(crate) fn padding_len(rows_len: usize, target_len: usize) -> usize {
+        if target_len > rows_len {
+            target_len - rows_len
         } else {
             if target_len != 0 {
                 log::error!(
-                    "RwMap::padding_len overflow, target_len: {}, rows.len(): {}",
+                    "RwMap::padding_len overflow, target_len: {}, rows_len: {}",
                     target_len,
-                    rows.len()
+                    rows_len
                 );
             }
             1
@@ -55,12 +56,15 @@ impl RwMap {
     }
     /// Prepad Rw::Start rows to target length
     pub fn table_assignments_prepad(rows: &[Rw], target_len: usize) -> (Vec<Rw>, usize) {
-        let padding_length = Self::padding_len(rows, target_len);
+        // Remove Start rows as we will add them from scratch.
+        let rows: Vec<Rw> = rows
+            .iter()
+            .skip_while(|rw| matches!(rw, Rw::Start { .. }))
+            .cloned()
+            .collect();
+        let padding_length = Self::padding_len(rows.len(), target_len);
         let padding = (1..=padding_length).map(|rw_counter| Rw::Start { rw_counter });
-        (
-            padding.chain(rows.iter().cloned()).collect(),
-            padding_length,
-        )
+        (padding.chain(rows.into_iter()).collect(), padding_length)
     }
     /// Build Rws for assignment
     pub fn table_assignments(&self) -> Vec<Rw> {
@@ -584,6 +588,16 @@ impl From<&operation::OperationContainer> for RwMap {
     fn from(container: &operation::OperationContainer) -> Self {
         let mut rws = HashMap::default();
 
+        rws.insert(
+            RwTableTag::Start,
+            container
+                .start
+                .iter()
+                .map(|op| Rw::Start {
+                    rw_counter: op.rwc().into(),
+                })
+                .collect(),
+        );
         rws.insert(
             RwTableTag::TxAccessListAccount,
             container
