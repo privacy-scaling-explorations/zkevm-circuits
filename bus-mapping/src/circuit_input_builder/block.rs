@@ -1,6 +1,8 @@
 //! Block-related utility module
 
-use super::{execution::ExecState, transaction::Transaction, CircuitsParams, CopyEvent, ExecStep, ExpEvent};
+use super::{
+    execution::ExecState, transaction::Transaction, CircuitsParams, CopyEvent, ExecStep, ExpEvent,
+};
 use crate::{
     operation::{OperationContainer, RWCounter},
     Error,
