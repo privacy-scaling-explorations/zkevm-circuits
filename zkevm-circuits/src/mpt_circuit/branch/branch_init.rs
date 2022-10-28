@@ -1,7 +1,7 @@
 use halo2_proofs::{
+    arithmetic::FieldExt,
     plonk::{Column, ConstraintSystem, Expression, Fixed, VirtualCells},
     poly::Rotation,
-    arithmetic::FieldExt,
 };
 use std::marker::PhantomData;
 
@@ -167,7 +167,9 @@ impl<F: FieldExt> BranchInitConfig<F> {
             ));
             constraints.push((
                 "Branch mult S row 0 (1)",
-                q_enable.clone() * one_rlp_byte_s * (randomness.clone() - branch_mult_s_cur.clone()),
+                q_enable.clone()
+                    * one_rlp_byte_s
+                    * (randomness.clone() - branch_mult_s_cur.clone()),
             ));
             constraints.push((
                 "Branch accumulator C row 0 (1)",
@@ -177,7 +179,9 @@ impl<F: FieldExt> BranchInitConfig<F> {
             ));
             constraints.push((
                 "Branch mult C row 0 (1)",
-                q_enable.clone() * one_rlp_byte_c * (randomness.clone() - branch_mult_s_cur.clone()),
+                q_enable.clone()
+                    * one_rlp_byte_c
+                    * (randomness.clone() - branch_mult_s_cur.clone()),
             ));
 
             let acc_s_two = s_rlp1.clone() + s_rlp2.clone() * randomness.clone();
@@ -203,7 +207,9 @@ impl<F: FieldExt> BranchInitConfig<F> {
                 q_enable.clone() * two_rlp_bytes_c * (mult_two - branch_mult_c_cur.clone()),
             ));
 
-            let acc_s_three = s_rlp1 + s_rlp2 * randomness.clone() + s_rlp3 * randomness.clone() * randomness.clone();
+            let acc_s_three = s_rlp1
+                + s_rlp2 * randomness.clone()
+                + s_rlp3 * randomness.clone() * randomness.clone();
             constraints.push((
                 "Branch accumulator S row 0 (3)",
                 q_enable.clone() * three_rlp_bytes_s.clone() * (acc_s_three - branch_acc_s_cur),
@@ -215,7 +221,9 @@ impl<F: FieldExt> BranchInitConfig<F> {
                 q_enable.clone() * three_rlp_bytes_s * (mult_three.clone() - branch_mult_s_cur),
             ));
 
-            let acc_c_three = c_rlp1 + c_rlp2 * randomness.clone() + c_rlp3 * randomness.clone() * randomness.clone();
+            let acc_c_three = c_rlp1
+                + c_rlp2 * randomness.clone()
+                + c_rlp3 * randomness.clone() * randomness.clone();
             constraints.push((
                 "Branch accumulator C row 0 (3)",
                 q_enable.clone() * three_rlp_bytes_c.clone() * (acc_c_three - branch_acc_c_cur),

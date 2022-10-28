@@ -1,22 +1,23 @@
-use halo2_proofs::{arithmetic::FieldExt, circuit::{Region, Value}, plonk::Error};
-use num_enum::TryFromPrimitive;
-use std::{
-    convert::TryFrom,
-    marker::PhantomData,
+use halo2_proofs::{
+    arithmetic::FieldExt,
+    circuit::{Region, Value},
+    plonk::Error,
 };
+use num_enum::TryFromPrimitive;
+use std::{convert::TryFrom, marker::PhantomData};
 
 use crate::{
     mpt_circuit::account_leaf::AccountLeaf,
     mpt_circuit::branch::Branch,
     mpt_circuit::helpers::bytes_into_rlc,
-    mpt_circuit::{MPTConfig, ProofValues},
     mpt_circuit::param::{
         COUNTER_WITNESS_LEN, C_RLP_START, C_START, HASH_WIDTH, IS_ACCOUNT_DELETE_MOD_POS,
         IS_BALANCE_MOD_POS, IS_CODEHASH_MOD_POS, IS_NONCE_MOD_POS, IS_NON_EXISTING_ACCOUNT_POS,
-        IS_NON_EXISTING_STORAGE_POS,
-        IS_STORAGE_MOD_POS, NOT_FIRST_LEVEL_POS, RLP_NUM, S_RLP_START, S_START, WITNESS_ROW_WIDTH,
+        IS_NON_EXISTING_STORAGE_POS, IS_STORAGE_MOD_POS, NOT_FIRST_LEVEL_POS, RLP_NUM, S_RLP_START,
+        S_START, WITNESS_ROW_WIDTH,
     },
     mpt_circuit::storage_leaf::StorageLeaf,
+    mpt_circuit::{MPTConfig, ProofValues},
 };
 
 #[derive(Eq, PartialEq, TryFromPrimitive)]
@@ -345,7 +346,7 @@ impl<F: FieldExt> MptWitnessRow<F> {
             offset,
             || Value::known(F::from(account_leaf.is_in_added_branch as u64)),
         )?;
- 
+
         region.assign_advice(
             || "assign is extension node s".to_string(),
             mpt_config.branch.is_extension_node_s,
@@ -357,7 +358,7 @@ impl<F: FieldExt> MptWitnessRow<F> {
             mpt_config.branch.is_extension_node_c,
             offset,
             || Value::known(F::from(branch.is_extension_node_c as u64)),
-        )?; 
+        )?;
 
         region.assign_advice(
             || "assign s_rlp1".to_string(),

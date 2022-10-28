@@ -1,8 +1,8 @@
 // Currently using 32 - each hash byte goes into its own cell, this might be
 // compressed for optimization purposes in the future.
 pub const HASH_WIDTH: usize = 32; // number of columns used for hash output
-// for S: RLP_NUM cells + HASH_WIDTH cells
-// for C: RLP_NUM cells + HASH_WIDTH cells
+                                  // for S: RLP_NUM cells + HASH_WIDTH cells
+                                  // for C: RLP_NUM cells + HASH_WIDTH cells
 pub const RLP_NUM: usize = 2; // how many bytes are RLP specific before hash output starts in branch children
                               // rows
 pub const S_RLP_START: usize = 0;

@@ -729,7 +729,6 @@ impl KeccakTable {
         challenges: &Challenges<Value<F>>,
         is_big_endian: bool,
     ) -> Vec<[Value<F>; 4]> {
-        
         let mut input_rlc = challenges
             .keccak_input()
             .map(|challenge| rlc::value(input.iter().rev(), challenge));
@@ -754,7 +753,7 @@ impl KeccakTable {
                     Word::from_little_endian(output.as_slice()).to_le_bytes(),
                     challenge,
                 )
-            });   
+            });
         }
 
         vec![[

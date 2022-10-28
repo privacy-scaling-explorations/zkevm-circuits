@@ -1,9 +1,9 @@
 //! The MPT circuit implementation.
 use eth_types::Field;
 use halo2_proofs::{
-    circuit::{Layouter, Region, Value, SimpleFloorPlanner},
-    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, Circuit},
     arithmetic::FieldExt,
+    circuit::{Layouter, Region, SimpleFloorPlanner, Value},
+    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed},
     poly::Rotation,
 };
 
@@ -13,11 +13,11 @@ mod account_leaf;
 mod branch;
 mod columns;
 mod helpers;
+mod param;
 mod proof_chain;
+mod selectors;
 mod storage_leaf;
 mod witness_row;
-mod param;
-mod selectors;
 
 use account_leaf::{
     account_leaf_key::AccountLeafKeyConfig,
@@ -32,7 +32,7 @@ use branch::{
     branch_rlc::BranchRLCConfig, extension_node::ExtensionNodeConfig,
     extension_node_key::ExtensionNodeKeyConfig, Branch, BranchCols, BranchConfig,
 };
-use columns::{AccumulatorCols, DenoteCols, MainCols, ProofTypeCols, PositionCols};
+use columns::{AccumulatorCols, DenoteCols, MainCols, PositionCols, ProofTypeCols};
 use helpers::get_is_extension_node;
 use proof_chain::ProofChainConfig;
 use storage_leaf::{
@@ -41,12 +41,13 @@ use storage_leaf::{
 };
 use witness_row::{MptWitnessRow, MptWitnessRowType};
 
-use param::{
-    HASH_WIDTH,
-};
+use param::HASH_WIDTH;
 use selectors::SelectorsConfig;
 
-use crate::{util::{power_of_randomness_from_instance, Challenges}, table::KeccakTable};
+use crate::{
+    table::KeccakTable,
+    util::{power_of_randomness_from_instance, Challenges},
+};
 
 use self::{columns::MPTTable, storage_leaf::leaf_non_existing::StorageNonExistingConfig};
 
@@ -133,7 +134,7 @@ pub enum FixedTableTag {
     Range16,
     /// 0 - 255
     Range256,
-    /// For checking there are 0s after the RLP stream ends 
+    /// For checking there are 0s after the RLP stream ends
     RangeKeyLen256,
 }
 
@@ -488,7 +489,8 @@ impl<F: FieldExt> MPTConfig<F> {
             meta,
             |meta| {
                 let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
-                let not_first_level = meta.query_advice(position_cols.not_first_level, Rotation::cur());
+                let not_first_level =
+                    meta.query_advice(position_cols.not_first_level, Rotation::cur());
                 let is_leaf_s = meta.query_advice(storage_leaf.is_s_key, Rotation::cur());
 
                 // NOTE/TODO: If having only storage proof is to be allowed, then this needs to
@@ -513,7 +515,8 @@ impl<F: FieldExt> MPTConfig<F> {
             meta,
             |meta| {
                 let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
-                let not_first_level = meta.query_advice(position_cols.not_first_level, Rotation::cur());
+                let not_first_level =
+                    meta.query_advice(position_cols.not_first_level, Rotation::cur());
                 let is_leaf_c = meta.query_advice(storage_leaf.is_c_key, Rotation::cur());
 
                 // NOTE/TODO: If having only storage proof is to be allowed, then this needs to
@@ -538,7 +541,8 @@ impl<F: FieldExt> MPTConfig<F> {
             meta,
             |meta| {
                 let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
-                let not_first_level = meta.query_advice(position_cols.not_first_level, Rotation::cur());
+                let not_first_level =
+                    meta.query_advice(position_cols.not_first_level, Rotation::cur());
                 let is_leaf = meta.query_advice(storage_leaf.is_in_added_branch, Rotation::cur());
 
                 q_not_first * not_first_level * is_leaf
@@ -759,7 +763,8 @@ impl<F: FieldExt> MPTConfig<F> {
             meta,
             |meta| {
                 let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
-                let not_first_level = meta.query_advice(position_cols.not_first_level, Rotation::cur());
+                let not_first_level =
+                    meta.query_advice(position_cols.not_first_level, Rotation::cur());
                 let is_account_leaf_in_added_branch =
                     meta.query_advice(account_leaf.is_in_added_branch, Rotation::cur());
 
@@ -887,7 +892,13 @@ impl<F: FieldExt> MPTConfig<F> {
         s_start_len: (usize, usize),
         c_start_len: (usize, usize),
     ) -> Result<(), Error> {
-        self.compute_acc_and_mult(row, &mut pv.rlc1, &mut F::one(), s_start_len.0, s_start_len.1);
+        self.compute_acc_and_mult(
+            row,
+            &mut pv.rlc1,
+            &mut F::one(),
+            s_start_len.0,
+            s_start_len.1,
+        );
         region.assign_advice(
             || "assign s_mod_node_hash_rlc".to_string(),
             self.accumulators.s_mod_node_rlc,
@@ -895,7 +906,13 @@ impl<F: FieldExt> MPTConfig<F> {
             || Value::known(pv.rlc1),
         )?;
 
-        self.compute_acc_and_mult(row, &mut pv.rlc2, &mut F::one(), c_start_len.0, c_start_len.1);
+        self.compute_acc_and_mult(
+            row,
+            &mut pv.rlc2,
+            &mut F::one(),
+            c_start_len.0,
+            c_start_len.1,
+        );
         region.assign_advice(
             || "assign c_mod_node_hash_rlc".to_string(),
             self.accumulators.c_mod_node_rlc,
@@ -992,7 +1009,12 @@ impl<F: FieldExt> MPTConfig<F> {
     }
 
     /// Make the assignments to the MPTCircuit
-    pub fn assign(&mut self, mut layouter: impl Layouter<F>, witness: &[MptWitnessRow<F>], randomness: F) {
+    pub fn assign(
+        &mut self,
+        mut layouter: impl Layouter<F>,
+        witness: &[MptWitnessRow<F>],
+        randomness: F,
+    ) {
         self.randomness = randomness;
 
         layouter
@@ -1291,7 +1313,11 @@ impl<F: FieldExt> MPTConfig<F> {
             .ok();
     }
 
-    fn load_fixed_table(&self, layouter: &mut impl Layouter<F>, randomness: F) -> Result<(), Error> {
+    fn load_fixed_table(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        randomness: F,
+    ) -> Result<(), Error> {
         layouter.assign_region(
             || "fixed table",
             |mut region| {
@@ -1399,14 +1425,13 @@ impl<F: Field> Circuit<F> for MPTCircuit<F> {
         Self::default()
     }
 
-    fn configure(
-        meta: &mut ConstraintSystem<F>,
-    ) -> Self::Config {
+    fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
         let keccak_table = KeccakTable::construct(meta);
-        let power_of_randomness: [Expression<F>; HASH_WIDTH] = power_of_randomness_from_instance(meta);
+        let power_of_randomness: [Expression<F>; HASH_WIDTH] =
+            power_of_randomness_from_instance(meta);
 
-        // Some constraints require 2^13 table, for testing purposes these constraints can be disabled
-        // by setting check_zeros to false.
+        // Some constraints require 2^13 table, for testing purposes these constraints
+        // can be disabled by setting check_zeros to false.
         // TODO: check_zeros is to be removed once the development is finished
         let check_zeros = false;
 
@@ -1433,12 +1458,10 @@ impl<F: Field> Circuit<F> for MPTCircuit<F> {
         }
 
         let challenges = Challenges::mock(Value::known(self.randomness));
-        config.keccak_table.dev_load(
-            &mut layouter,
-            &to_be_hashed,
-            &challenges,
-            false,
-        ).ok();
+        config
+            .keccak_table
+            .dev_load(&mut layouter, &to_be_hashed, &challenges, false)
+            .ok();
 
         config.load_fixed_table(&mut layouter, self.randomness).ok();
         config.assign(layouter, &witness_rows, self.randomness);
@@ -1455,15 +1478,12 @@ mod tests {
 
     use super::*;
 
-    use halo2_proofs::{
-        dev::MockProver,
-        halo2curves::bn256::Fr,
-    };
-    
+    use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
+
     use std::fs;
 
     #[test]
-    fn test_mpt() { 
+    fn test_mpt() {
         // for debugging:
         let path = "src/mpt_circuit/tests";
         // let path = "tests";
@@ -1484,7 +1504,7 @@ mod tests {
                 let file = std::fs::File::open(path.clone());
                 let reader = std::io::BufReader::new(file.unwrap());
                 let w: Vec<Vec<u8>> = serde_json::from_reader(reader).unwrap();
- 
+
                 let mut pub_root = vec![];
                 let acc_r = Fr::one() + Fr::one();
                 let mut count = 0;
@@ -1500,9 +1520,9 @@ mod tests {
                     count += 1;
                 }
                 // TODO: add pub_root to instances
-                
+
                 let randomness = Fr::one() + Fr::one();
-                let instance: Vec<Vec<Fr>> = (1..HASH_WIDTH+1)
+                let instance: Vec<Vec<Fr>> = (1..HASH_WIDTH + 1)
                     .map(|exp| vec![randomness.pow(&[exp as u64, 0, 0, 0]); count])
                     .collect();
 

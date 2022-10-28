@@ -1,14 +1,14 @@
 use halo2_proofs::{
+    arithmetic::FieldExt,
     plonk::{ConstraintSystem, Expression},
     poly::Rotation,
-    arithmetic::FieldExt,
 };
 use std::marker::PhantomData;
 
 use crate::{
     mpt_circuit::account_leaf::AccountLeafCols,
     mpt_circuit::branch::BranchCols,
-    mpt_circuit::columns::{DenoteCols, ProofTypeCols, PositionCols},
+    mpt_circuit::columns::{DenoteCols, PositionCols, ProofTypeCols},
     mpt_circuit::helpers::get_bool_constraint,
     mpt_circuit::storage_leaf::StorageLeafCols,
 };

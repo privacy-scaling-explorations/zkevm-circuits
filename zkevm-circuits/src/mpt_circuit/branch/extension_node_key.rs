@@ -1,20 +1,20 @@
 use halo2_proofs::{
+    arithmetic::FieldExt,
     plonk::{Advice, Column, ConstraintSystem, Expression, Fixed, VirtualCells},
     poly::Rotation,
-    arithmetic::FieldExt,
 };
 use itertools::Itertools;
 use std::marker::PhantomData;
 
 use crate::{
     mpt_circuit::columns::{AccumulatorCols, MainCols, PositionCols},
-    mpt_circuit::helpers::{compute_rlc, get_is_extension_node, range_lookups, key_len_lookup},
-    mpt_circuit::FixedTableTag,
+    mpt_circuit::helpers::{compute_rlc, get_is_extension_node, key_len_lookup, range_lookups},
     mpt_circuit::param::{
         BRANCH_ROWS_NUM, EXTENSION_ROWS_NUM, HASH_WIDTH, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS,
         IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS, IS_EXT_LONG_ODD_C16_POS,
         IS_EXT_LONG_ODD_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS, RLP_NUM,
     },
+    mpt_circuit::FixedTableTag,
 };
 
 use super::BranchCols;
@@ -98,8 +98,9 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
     #[allow(clippy::too_many_arguments)]
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
-        position_cols: PositionCols<F>, /* `not_first_level` to avoid rotating back when in the first branch (for
-                                          * key rlc) */
+        position_cols: PositionCols<F>, /* `not_first_level` to avoid rotating back when in the
+                                         * first branch (for
+                                         * key rlc) */
         branch: BranchCols<F>,
         is_account_leaf_in_added_branch: Column<Advice>,
         s_main: MainCols<F>,
@@ -870,12 +871,10 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
             // key_len = s_rlp2 - 128 - 1   if is_ext_long_odd_c1
             // key_len = s_rlp2 - 128       if is_ext_long_odd_c16
             // key_len = 1                  if short
-            let key_len = (s_rlp2
-                - c128.clone()
-                - one.clone() * is_even
-                - one.clone() * is_ext_long_odd_c1)
-                * is_long
-                + is_short;
+            let key_len =
+                (s_rlp2 - c128.clone() - one.clone() * is_even - one.clone() * is_ext_long_odd_c1)
+                    * is_long
+                    + is_short;
 
             let mult_diff = meta.query_advice(accs.mult_diff, Rotation(rot_into_branch_init + 1));
 
@@ -892,10 +891,7 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
                 meta.query_fixed(fixed_table[1], Rotation::cur()),
             ));
             constraints.push((
-                is_extension_c_row
-                    * is_extension_node
-                    * mult_diff
-                    * not_first_level,
+                is_extension_c_row * is_extension_node * mult_diff * not_first_level,
                 meta.query_fixed(fixed_table[2], Rotation::cur()),
             ));
 
@@ -909,7 +905,8 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
         for ind in 0..HASH_WIDTH - 1 {
             meta.lookup_any("Extension node second_nibble", |meta| {
                 let mut constraints = vec![];
-                let not_first_level = meta.query_advice(position_cols.not_first_level, Rotation::cur());
+                let not_first_level =
+                    meta.query_advice(position_cols.not_first_level, Rotation::cur());
 
                 let sel1 = meta.query_advice(
                     s_main.bytes[IS_BRANCH_C16_POS - RLP_NUM],
@@ -988,7 +985,15 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
                     fixed_table,
                 )
             }
-            key_len_lookup(meta, sel_long, 32, s_main.bytes[0], c_main.rlp1, 128, fixed_table);
+            key_len_lookup(
+                meta,
+                sel_long,
+                32,
+                s_main.bytes[0],
+                c_main.rlp1,
+                128,
+                fixed_table,
+            );
         }
 
         let sel_s = |meta: &mut VirtualCells<F>| {

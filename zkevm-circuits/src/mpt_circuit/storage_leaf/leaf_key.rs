@@ -1,21 +1,23 @@
 use halo2_proofs::{
+    arithmetic::FieldExt,
     circuit::{Region, Value},
     plonk::{Advice, Column, ConstraintSystem, Expression, Fixed, VirtualCells},
     poly::Rotation,
-    arithmetic::FieldExt,
 };
 use std::marker::PhantomData;
 
 use crate::{
     mpt_circuit::columns::{AccumulatorCols, MainCols},
     mpt_circuit::helpers::{compute_rlc, get_bool_constraint, mult_diff_lookup, range_lookups},
-    mpt_circuit::{FixedTableTag, MPTConfig, ProofValues, helpers::key_len_lookup, columns::DenoteCols},
     mpt_circuit::param::{
         BRANCH_ROWS_NUM, HASH_WIDTH, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS,
-        IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS, NIBBLES_COUNTER_POS, RLP_NUM,
-        POWER_OF_RANDOMNESS_LEN, S_START,
+        IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS, NIBBLES_COUNTER_POS,
+        POWER_OF_RANDOMNESS_LEN, RLP_NUM, S_START,
     },
     mpt_circuit::witness_row::{MptWitnessRow, MptWitnessRowType},
+    mpt_circuit::{
+        columns::DenoteCols, helpers::key_len_lookup, FixedTableTag, MPTConfig, ProofValues,
+    },
 };
 
 /*
@@ -148,9 +150,11 @@ impl<F: FieldExt> LeafKeyConfig<F> {
             if !is_s {
                 sel = meta.query_advice(denoter.sel2, Rotation(rot_into_init + 1));
             }
-            let mut leaf_without_branch_and_is_placeholder = meta.query_advice(denoter.sel1, Rotation(1));
+            let mut leaf_without_branch_and_is_placeholder =
+                meta.query_advice(denoter.sel1, Rotation(1));
             if !is_s {
-                leaf_without_branch_and_is_placeholder = meta.query_advice(denoter.sel2, Rotation(1));
+                leaf_without_branch_and_is_placeholder =
+                    meta.query_advice(denoter.sel2, Rotation(1));
             }
 
             let is_leaf_placeholder = (one.clone() - is_leaf_in_first_level.clone()) * sel
@@ -164,7 +168,10 @@ impl<F: FieldExt> LeafKeyConfig<F> {
             */
             constraints.push((
                 "is_long: s_rlp1 = 248",
-                q_enable.clone() * (one.clone() - is_leaf_placeholder.clone()) * is_long.clone() * (s_rlp1.clone() - c248),
+                q_enable.clone()
+                    * (one.clone() - is_leaf_placeholder.clone())
+                    * is_long.clone()
+                    * (s_rlp1.clone() - c248),
             ));
 
             /*
@@ -179,7 +186,10 @@ impl<F: FieldExt> LeafKeyConfig<F> {
             */
             constraints.push((
                 "last_level: s_rlp2 = 32",
-                q_enable.clone() * last_level.clone() * (one.clone() - is_leaf_placeholder.clone()) * (s_rlp2.clone() - c32.clone()),
+                q_enable.clone()
+                    * last_level.clone()
+                    * (one.clone() - is_leaf_placeholder.clone())
+                    * (s_rlp2.clone() - c32.clone()),
             ));
 
             /*
@@ -213,8 +223,14 @@ impl<F: FieldExt> LeafKeyConfig<F> {
             let c_rlp1 = meta.query_advice(c_main.rlp1, Rotation::cur());
             // c_rlp2 can appear if long and if no branch above leaf
             let c_rlp2 = meta.query_advice(c_main.rlp2, Rotation::cur());
-            rlc = rlc + c_rlp1 * power_of_randomness[POWER_OF_RANDOMNESS_LEN - 1].clone() * power_of_randomness[1].clone();
-            rlc = rlc + c_rlp2 * power_of_randomness[POWER_OF_RANDOMNESS_LEN - 1].clone() * power_of_randomness[2].clone();
+            rlc = rlc
+                + c_rlp1
+                    * power_of_randomness[POWER_OF_RANDOMNESS_LEN - 1].clone()
+                    * power_of_randomness[1].clone();
+            rlc = rlc
+                + c_rlp2
+                    * power_of_randomness[POWER_OF_RANDOMNESS_LEN - 1].clone()
+                    * power_of_randomness[2].clone();
 
             let acc = meta.query_advice(accs.acc_s.rlc, Rotation::cur());
 
@@ -224,7 +240,10 @@ impl<F: FieldExt> LeafKeyConfig<F> {
             */
             constraints.push((
                 "Leaf key RLC (short or long)",
-                q_enable.clone() * (is_short + is_long) * (one.clone() - is_leaf_placeholder.clone()) * (rlc - acc.clone()),
+                q_enable.clone()
+                    * (is_short + is_long)
+                    * (one.clone() - is_leaf_placeholder.clone())
+                    * (rlc - acc.clone()),
             ));
 
             /*
@@ -236,7 +255,10 @@ impl<F: FieldExt> LeafKeyConfig<F> {
             */
             constraints.push((
                 "Leaf key RLC (last level or one nibble)",
-                q_enable * (last_level + one_nibble) * (one.clone() - is_leaf_placeholder.clone()) * (rlc_last_level_or_one_nibble - acc),
+                q_enable
+                    * (last_level + one_nibble)
+                    * (one.clone() - is_leaf_placeholder.clone())
+                    * (rlc_last_level_or_one_nibble - acc),
             ));
 
             constraints
@@ -275,7 +297,15 @@ impl<F: FieldExt> LeafKeyConfig<F> {
                     fixed_table,
                 )
             }
-            key_len_lookup(meta, sel_short, 32, s_main.rlp2, c_main.rlp1, 128, fixed_table);
+            key_len_lookup(
+                meta,
+                sel_short,
+                32,
+                s_main.rlp2,
+                c_main.rlp1,
+                128,
+                fixed_table,
+            );
 
             for ind in 1..HASH_WIDTH {
                 key_len_lookup(
@@ -288,8 +318,24 @@ impl<F: FieldExt> LeafKeyConfig<F> {
                     fixed_table,
                 )
             }
-            key_len_lookup(meta, sel_long, 32, s_main.bytes[0], c_main.rlp1, 128, fixed_table);
-            key_len_lookup(meta, sel_long, 33, s_main.bytes[0], c_main.rlp2, 128, fixed_table);
+            key_len_lookup(
+                meta,
+                sel_long,
+                32,
+                s_main.bytes[0],
+                c_main.rlp1,
+                128,
+                fixed_table,
+            );
+            key_len_lookup(
+                meta,
+                sel_long,
+                33,
+                s_main.bytes[0],
+                c_main.rlp2,
+                128,
+                fixed_table,
+            );
         }
 
         /*
@@ -753,8 +799,8 @@ impl<F: FieldExt> LeafKeyConfig<F> {
             }
 
             let c_rlp1 = meta.query_advice(c_main.rlp1, Rotation::cur());
-            key_rlc_acc_short =
-                key_rlc_acc_short + c_rlp1.clone() * key_mult.clone() * power_of_randomness[30].clone();
+            key_rlc_acc_short = key_rlc_acc_short
+                + c_rlp1.clone() * key_mult.clone() * power_of_randomness[30].clone();
 
             let key_rlc = meta.query_advice(accs.key.rlc, Rotation::cur());
 
@@ -814,7 +860,8 @@ impl<F: FieldExt> LeafKeyConfig<F> {
                 key_rlc_acc_long + c_rlp1 * key_mult.clone() * power_of_randomness[29].clone();
 
             let c_rlp2 = meta.query_advice(c_main.rlp2, Rotation::cur());
-            key_rlc_acc_long = key_rlc_acc_long + c_rlp2 * key_mult * power_of_randomness[30].clone();
+            key_rlc_acc_long =
+                key_rlc_acc_long + c_rlp2 * key_mult * power_of_randomness[30].clone();
 
             /*
             When `is_long` the first key byte is at `s_main.bytes[1]`. We retrieve the key RLC from the
@@ -853,8 +900,7 @@ impl<F: FieldExt> LeafKeyConfig<F> {
             let leaf_nibbles_short = ((s_rlp2.clone() - c128.clone() - one.clone())
                 * (one.clone() + one.clone()))
                 * is_c1
-                + ((s_rlp2 - c128.clone()) * (one.clone() + one.clone()) - one.clone())
-                    * is_c16;
+                + ((s_rlp2 - c128.clone()) * (one.clone() + one.clone()) - one.clone()) * is_c16;
             let leaf_nibbles_one_nibble = one.clone();
 
             let leaf_nibbles = leaf_nibbles_long * is_long

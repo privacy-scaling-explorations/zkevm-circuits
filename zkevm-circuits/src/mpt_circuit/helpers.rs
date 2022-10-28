@@ -1,18 +1,22 @@
 use halo2_proofs::{
+    arithmetic::FieldExt,
     plonk::{Advice, Column, ConstraintSystem, Expression, Fixed, VirtualCells},
     poly::Rotation,
-    arithmetic::FieldExt,
 };
 
 use crate::{
-    mpt_circuit::FixedTableTag,
     mpt_circuit::param::{
         HASH_WIDTH, IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS, IS_EXT_LONG_ODD_C16_POS,
-        IS_EXT_LONG_ODD_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS, RLP_NUM, POWER_OF_RANDOMNESS_LEN,
+        IS_EXT_LONG_ODD_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS, POWER_OF_RANDOMNESS_LEN,
+        RLP_NUM,
     },
+    mpt_circuit::FixedTableTag,
 };
 
-use super::{columns::{MainCols, AccumulatorCols}, param::{BRANCH_0_S_START, BRANCH_0_C_START}};
+use super::{
+    columns::{AccumulatorCols, MainCols},
+    param::{BRANCH_0_C_START, BRANCH_0_S_START},
+};
 
 // Turn 32 hash cells into 4 cells containing keccak words.
 pub(crate) fn into_words_expr<F: FieldExt>(hash: Vec<Expression<F>>) -> Vec<Expression<F>> {
@@ -45,7 +49,10 @@ pub(crate) fn compute_rlc<F: FieldExt>(
         if !r_wrapped {
             rlc = rlc + s * power_of_randomness[rind].clone() * mult.clone();
         } else {
-            rlc = rlc + s * power_of_randomness[rind].clone() * power_of_randomness[POWER_OF_RANDOMNESS_LEN - 1].clone() * mult.clone();
+            rlc = rlc
+                + s * power_of_randomness[rind].clone()
+                    * power_of_randomness[POWER_OF_RANDOMNESS_LEN - 1].clone()
+                    * mult.clone();
         }
         if rind == POWER_OF_RANDOMNESS_LEN - 1 {
             rind = 0;
@@ -240,7 +247,10 @@ pub(crate) fn bytes_into_rlc<F: FieldExt>(expressions: &[u8], r: F) -> F {
     rlc
 }
 
-pub(crate) fn bytes_expr_into_rlc<F: FieldExt>(expressions: &[Expression<F>], r: Expression<F>) -> Expression<F> {
+pub(crate) fn bytes_expr_into_rlc<F: FieldExt>(
+    expressions: &[Expression<F>],
+    r: Expression<F>,
+) -> Expression<F> {
     let mut rlc = Expression::Constant(F::zero());
     let mut mult = Expression::Constant(F::one());
     for expr in expressions.iter() {
@@ -271,8 +281,10 @@ pub(crate) fn get_branch_len<F: FieldExt>(
     let two_rlp_bytes = s1.clone() * (one.clone() - s2.clone());
     let three_rlp_bytes = (one.clone() - s1) * s2;
 
-    let mut rlp_byte0 =
-        meta.query_advice(s_main.bytes[BRANCH_0_S_START - RLP_NUM], Rotation(rot_into_branch_init));
+    let mut rlp_byte0 = meta.query_advice(
+        s_main.bytes[BRANCH_0_S_START - RLP_NUM],
+        Rotation(rot_into_branch_init),
+    );
     let mut rlp_byte1 = meta.query_advice(
         s_main.bytes[BRANCH_0_S_START - RLP_NUM + 1],
         Rotation(rot_into_branch_init),
@@ -283,8 +295,10 @@ pub(crate) fn get_branch_len<F: FieldExt>(
     );
 
     if !is_s {
-        rlp_byte0 =
-            meta.query_advice(s_main.bytes[BRANCH_0_C_START - RLP_NUM], Rotation(rot_into_branch_init));
+        rlp_byte0 = meta.query_advice(
+            s_main.bytes[BRANCH_0_C_START - RLP_NUM],
+            Rotation(rot_into_branch_init),
+        );
         rlp_byte1 = meta.query_advice(
             s_main.bytes[BRANCH_0_C_START - RLP_NUM + 1],
             Rotation(rot_into_branch_init),

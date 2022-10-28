@@ -1,7 +1,7 @@
 use halo2_proofs::{
+    arithmetic::FieldExt,
     plonk::{Advice, Column, ConstraintSystem, Expression, Fixed, VirtualCells},
     poly::Rotation,
-    arithmetic::FieldExt,
 };
 use std::marker::PhantomData;
 
@@ -114,7 +114,8 @@ impl<F: FieldExt> BranchRLCConfig<F> {
                 q_enable.clone()
                     * (one.clone() - is_node_hashed.clone())
                     * (c160.clone() - rlp2.clone())
-                    * (branch_mult_cur.clone() - branch_mult_prev.clone() * power_of_randomness[0].clone()),
+                    * (branch_mult_cur.clone()
+                        - branch_mult_prev.clone() * power_of_randomness[0].clone()),
             ));
 
             let mut expr = c160 * branch_mult_prev.clone();

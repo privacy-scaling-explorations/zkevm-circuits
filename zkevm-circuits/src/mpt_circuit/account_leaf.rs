@@ -5,8 +5,8 @@ pub mod account_leaf_storage_codehash;
 pub mod account_non_existing;
 
 use halo2_proofs::{
-    plonk::{Advice, Column, ConstraintSystem},
     arithmetic::FieldExt,
+    plonk::{Advice, Column, ConstraintSystem},
 };
 use std::marker::PhantomData;
 

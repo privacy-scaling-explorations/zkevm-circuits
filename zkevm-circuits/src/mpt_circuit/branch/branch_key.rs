@@ -1,7 +1,7 @@
 use halo2_proofs::{
+    arithmetic::FieldExt,
     plonk::{Advice, Column, ConstraintSystem, Expression},
     poly::Rotation,
-    arithmetic::FieldExt,
 };
 use std::marker::PhantomData;
 
@@ -163,10 +163,8 @@ impl<F: FieldExt> BranchKeyConfig<F> {
                 meta.query_advice(s_main.bytes[IS_EXT_LONG_ODD_C1_POS - RLP_NUM], Rotation(-1));
 
             let is_extension_key_even = is_ext_long_even_c16 + is_ext_long_even_c1;
-            let is_extension_key_odd = is_ext_long_odd_c16
-                + is_ext_long_odd_c1
-                + is_ext_short_c16
-                + is_ext_short_c1;
+            let is_extension_key_odd =
+                is_ext_long_odd_c16 + is_ext_long_odd_c1 + is_ext_short_c16 + is_ext_short_c1;
 
             let is_extension_node = is_extension_key_even.clone() + is_extension_key_odd.clone();
 

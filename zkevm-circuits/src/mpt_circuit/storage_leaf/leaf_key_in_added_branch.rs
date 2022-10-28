@@ -1,8 +1,8 @@
 use halo2_proofs::{
+    arithmetic::FieldExt,
     circuit::Region,
     plonk::{Advice, Column, ConstraintSystem, Expression, Fixed, VirtualCells},
     poly::Rotation,
-    arithmetic::FieldExt,
 };
 use std::marker::PhantomData;
 
@@ -12,16 +12,21 @@ use crate::{
         compute_rlc, get_bool_constraint, get_is_extension_node, get_is_extension_node_one_nibble,
         mult_diff_lookup, range_lookups,
     },
+    mpt_circuit::witness_row::MptWitnessRow,
+    mpt_circuit::{
+        helpers::{get_leaf_len, key_len_lookup},
+        param::{
+            BRANCH_ROWS_NUM, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, LEAF_DRIFTED_IND, LEAF_KEY_C_IND,
+            LEAF_KEY_S_IND,
+        },
+    },
     mpt_circuit::{FixedTableTag, MPTConfig, ProofValues},
-    mpt_circuit::{param::{
-        BRANCH_ROWS_NUM, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, LEAF_DRIFTED_IND, LEAF_KEY_C_IND,
-        LEAF_KEY_S_IND,
-    }, helpers::{get_leaf_len, key_len_lookup}},
-    mpt_circuit::witness_row::MptWitnessRow, table::KeccakTable,
+    table::KeccakTable,
 };
 
 use crate::mpt_circuit::param::{
-    HASH_WIDTH, IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS, RLP_NUM, POWER_OF_RANDOMNESS_LEN,
+    HASH_WIDTH, IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS, POWER_OF_RANDOMNESS_LEN,
+    RLP_NUM,
 };
 
 /*
@@ -166,9 +171,15 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                 );
 
             let c_rlp1 = meta.query_advice(c_main.rlp1, Rotation::cur());
-            rlc = rlc + c_rlp1 * power_of_randomness[POWER_OF_RANDOMNESS_LEN - 1].clone() * power_of_randomness[1].clone();
+            rlc = rlc
+                + c_rlp1
+                    * power_of_randomness[POWER_OF_RANDOMNESS_LEN - 1].clone()
+                    * power_of_randomness[1].clone();
             let c_rlp2 = meta.query_advice(c_main.rlp2, Rotation::cur());
-            rlc = rlc + c_rlp2 * power_of_randomness[POWER_OF_RANDOMNESS_LEN - 1].clone() * power_of_randomness[2].clone();
+            rlc = rlc
+                + c_rlp2
+                    * power_of_randomness[POWER_OF_RANDOMNESS_LEN - 1].clone()
+                    * power_of_randomness[2].clone();
 
             let acc = meta.query_advice(accs.acc_s.rlc, Rotation::cur());
 
@@ -276,7 +287,15 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                     fixed_table,
                 )
             }
-            key_len_lookup(meta, sel_long, 32, s_main.bytes[0], c_main.rlp1, 128, fixed_table);
+            key_len_lookup(
+                meta,
+                sel_long,
+                32,
+                s_main.bytes[0],
+                c_main.rlp1,
+                128,
+                fixed_table,
+            );
         }
 
         /*
@@ -410,11 +429,14 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                 * (one.clone() - is_one_nibble.clone())
                 + branch_above_placeholder_mult.clone()
                     * is_ext_node.clone()
-                    * is_one_nibble.clone() * is_c1.clone()
+                    * is_one_nibble.clone()
+                    * is_c1.clone()
                 + branch_above_placeholder_mult.clone()
                     * is_ext_node.clone()
-                    * is_one_nibble * power_of_randomness[0].clone() * is_c16.clone()
-                + branch_above_placeholder_mult * (one.clone() - is_ext_node); 
+                    * is_one_nibble
+                    * power_of_randomness[0].clone()
+                    * is_c16.clone()
+                + branch_above_placeholder_mult * (one.clone() - is_ext_node);
 
             let flag1 = meta.query_advice(accs.s_mod_node_rlc, Rotation::cur());
             let flag2 = meta.query_advice(accs.c_mod_node_rlc, Rotation::cur());
@@ -483,7 +505,8 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
 
             for ind in 1..HASH_WIDTH {
                 let s = meta.query_advice(s_main.bytes[ind], Rotation::cur());
-                key_rlc_short = key_rlc_short + s * key_rlc_mult.clone() * power_of_randomness[ind - 1].clone();
+                key_rlc_short =
+                    key_rlc_short + s * key_rlc_mult.clone() * power_of_randomness[ind - 1].clone();
             }
 
             /*
@@ -548,8 +571,8 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                     * is_long.clone(),
             ));
 
-            let mut key_rlc_long = key_rlc_start.clone()
-                + (s_bytes1 - c48.clone()) * is_c16 * key_rlc_mult.clone();
+            let mut key_rlc_long =
+                key_rlc_start.clone() + (s_bytes1 - c48.clone()) * is_c16 * key_rlc_mult.clone();
 
             for ind in 2..HASH_WIDTH {
                 let s = meta.query_advice(s_main.bytes[ind], Rotation::cur());
@@ -644,8 +667,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                                                                          * leaf */
             ));
 
-            let key_rlc_one_nibble =
-                key_rlc_start + (s_rlp2 - c48.clone()) * key_rlc_mult;
+            let key_rlc_one_nibble = key_rlc_start + (s_rlp2 - c48.clone()) * key_rlc_mult;
 
             /*
             When `S` placeholder, `leaf_key_s_rlc` is the key RLC of the leaf before it drifted down

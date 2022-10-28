@@ -1,18 +1,23 @@
 use halo2_proofs::{
+    arithmetic::FieldExt,
     plonk::{Advice, Column, ConstraintSystem, Expression},
     poly::Rotation,
-    arithmetic::FieldExt,
 };
 use std::marker::PhantomData;
 
 use crate::{
     mpt_circuit::columns::{AccumulatorCols, MainCols, PositionCols},
     mpt_circuit::helpers::{bytes_expr_into_rlc, get_is_extension_node},
-    mpt_circuit::{param::{
-        ACCOUNT_LEAF_ROWS, ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND,
-        ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND, IS_BRANCH_C_PLACEHOLDER_POS,
-        IS_BRANCH_S_PLACEHOLDER_POS, IS_C_BRANCH_NON_HASHED_POS, IS_S_BRANCH_NON_HASHED_POS, RLP_NUM,
-    }, helpers::get_branch_len}, table::KeccakTable,
+    mpt_circuit::{
+        helpers::get_branch_len,
+        param::{
+            ACCOUNT_LEAF_ROWS, ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND,
+            ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND, IS_BRANCH_C_PLACEHOLDER_POS,
+            IS_BRANCH_S_PLACEHOLDER_POS, IS_C_BRANCH_NON_HASHED_POS, IS_S_BRANCH_NON_HASHED_POS,
+            RLP_NUM,
+        },
+    },
+    table::KeccakTable,
 };
 
 /*
@@ -104,7 +109,8 @@ impl<F: FieldExt> BranchHashInParentConfig<F> {
             "Branch in first level of account trie - hash compared to root",
             |meta| {
                 let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
-                let not_first_level = meta.query_advice(position_cols.not_first_level, Rotation::cur());
+                let not_first_level =
+                    meta.query_advice(position_cols.not_first_level, Rotation::cur());
 
                 let is_last_branch_child = meta.query_advice(is_last_branch_child, Rotation::cur());
 
@@ -139,9 +145,9 @@ impl<F: FieldExt> BranchHashInParentConfig<F> {
                     * (one.clone() - is_extension_node)
                     * (one.clone() - not_first_level)
                     * (one.clone() - is_branch_placeholder);
-                
+
                 let branch_len = get_branch_len(meta, s_main.clone(), rot_into_branch_init, is_s);
-                                
+
                 let mut table_map = Vec::new();
                 let keccak_is_enabled = meta.query_advice(keccak_table.is_enabled, Rotation::cur());
                 table_map.push((selector.clone(), keccak_is_enabled));
@@ -170,7 +176,8 @@ impl<F: FieldExt> BranchHashInParentConfig<F> {
             "Branch in first level of storage trie - hash compared to the storage root",
             |meta| {
                 // Note: we are in the same row (last branch child) for S and C.
-                let not_first_level = meta.query_advice(position_cols.not_first_level, Rotation::cur());
+                let not_first_level =
+                    meta.query_advice(position_cols.not_first_level, Rotation::cur());
                 let mut is_branch_placeholder = meta.query_advice(
                     s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM],
                     Rotation(rot_into_branch_init),
@@ -337,7 +344,7 @@ impl<F: FieldExt> BranchHashInParentConfig<F> {
             let keccak_output_rlc = meta.query_advice(keccak_table.output_rlc, Rotation::cur());
             table_map.push((selector * mod_node_hash_rlc_cur, keccak_output_rlc));
 
-            table_map            
+            table_map
         });
 
         /*

@@ -313,9 +313,12 @@ pub mod test {
                 .copy_table
                 .load(&mut layouter, &self.block, self.block.randomness)?;
 
-            config
-                .keccak_table
-                .dev_load(&mut layouter, &self.block.sha3_inputs, &challenges, true)?;
+            config.keccak_table.dev_load(
+                &mut layouter,
+                &self.block.sha3_inputs,
+                &challenges,
+                true,
+            )?;
 
             config
                 .evm_circuit

@@ -1,20 +1,24 @@
 use halo2_proofs::{
+    arithmetic::FieldExt,
     circuit::{Region, Value},
     plonk::{Advice, Column, ConstraintSystem, Expression, Fixed, VirtualCells},
     poly::Rotation,
-    arithmetic::FieldExt,
 };
 use std::marker::PhantomData;
 
 use crate::{
     mpt_circuit::columns::{AccumulatorCols, MainCols},
     mpt_circuit::helpers::range_lookups,
-    mpt_circuit::{FixedTableTag, MPTConfig, param::{IS_NON_EXISTING_ACCOUNT_POS, ACCOUNT_LEAF_KEY_C_IND}, helpers::key_len_lookup},
     mpt_circuit::param::{
         ACCOUNT_NON_EXISTING_IND, BRANCH_ROWS_NUM, HASH_WIDTH, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS,
         RLP_NUM,
     },
     mpt_circuit::witness_row::MptWitnessRow,
+    mpt_circuit::{
+        helpers::key_len_lookup,
+        param::{ACCOUNT_LEAF_KEY_C_IND, IS_NON_EXISTING_ACCOUNT_POS},
+        FixedTableTag, MPTConfig,
+    },
 };
 
 /*
@@ -419,8 +423,24 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
                     fixed_table,
                 )
             }
-            key_len_lookup(meta, q_enable, 32, s_main.bytes[0], c_main.rlp1, 128, fixed_table);
-            key_len_lookup(meta, q_enable, 33, s_main.bytes[0], c_main.rlp2, 128, fixed_table);
+            key_len_lookup(
+                meta,
+                q_enable,
+                32,
+                s_main.bytes[0],
+                c_main.rlp1,
+                128,
+                fixed_table,
+            );
+            key_len_lookup(
+                meta,
+                q_enable,
+                33,
+                s_main.bytes[0],
+                c_main.rlp2,
+                128,
+                fixed_table,
+            );
         }
 
         /*
@@ -452,7 +472,8 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
         witness: &[MptWitnessRow<F>],
         offset: usize,
     ) {
-        let leaf_key_c = &witness[offset - (ACCOUNT_NON_EXISTING_IND - ACCOUNT_LEAF_KEY_C_IND) as usize];
+        let leaf_key_c =
+            &witness[offset - (ACCOUNT_NON_EXISTING_IND - ACCOUNT_LEAF_KEY_C_IND) as usize];
         let row = &witness[offset];
         let key_len = leaf_key_c.get_byte(2) as usize - 128;
         let mut sum = F::zero();
@@ -499,7 +520,9 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
                     || "assign lookup enabled".to_string(),
                     mpt_config.proof_type.proof_type,
                     offset,
-                    || Value::known(F::from(4_u64)), // non existing account lookup enabled in this row if it is non_existing_account proof
+                    || Value::known(F::from(4_u64)), /* non existing account lookup enabled in
+                                                      * this row if it is non_existing_account
+                                                      * proof */
                 )
                 .ok();
         }

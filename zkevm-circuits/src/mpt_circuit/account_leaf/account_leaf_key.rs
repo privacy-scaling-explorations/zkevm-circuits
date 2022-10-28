@@ -1,23 +1,26 @@
 use halo2_proofs::{
+    arithmetic::FieldExt,
     circuit::{Region, Value},
     plonk::{Advice, Column, ConstraintSystem, Expression, Fixed, VirtualCells},
     poly::Rotation,
-    arithmetic::FieldExt,
 };
 use std::marker::PhantomData;
 
 use crate::{
-    mpt_circuit::columns::{AccumulatorCols, MainCols, ProofTypeCols, PositionCols},
+    mpt_circuit::columns::{AccumulatorCols, MainCols, PositionCols, ProofTypeCols},
     mpt_circuit::helpers::{compute_rlc, mult_diff_lookup, range_lookups},
-    mpt_circuit::{FixedTableTag, MPTConfig, ProofValues, param::IS_ACCOUNT_DELETE_MOD_POS, helpers::key_len_lookup},
     mpt_circuit::param::{
         BRANCH_ROWS_NUM, HASH_WIDTH, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS,
         IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS, IS_EXT_LONG_EVEN_C16_POS,
         IS_EXT_LONG_EVEN_C1_POS, IS_EXT_LONG_ODD_C16_POS, IS_EXT_LONG_ODD_C1_POS,
-        IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS, NIBBLES_COUNTER_POS, RLP_NUM, POWER_OF_RANDOMNESS_LEN,
-        S_START,
+        IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS, NIBBLES_COUNTER_POS, POWER_OF_RANDOMNESS_LEN,
+        RLP_NUM, S_START,
     },
     mpt_circuit::witness_row::{MptWitnessRow, MptWitnessRowType},
+    mpt_circuit::{
+        helpers::key_len_lookup, param::IS_ACCOUNT_DELETE_MOD_POS, FixedTableTag, MPTConfig,
+        ProofValues,
+    },
 };
 
 /*
@@ -140,8 +143,9 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
             ));
 
             let mut ind = 0;
-            let mut expr =
-                s_rlp1 + meta.query_advice(s_main.rlp2, Rotation::cur()) * power_of_randomness[ind].clone();
+            let mut expr = s_rlp1
+                + meta.query_advice(s_main.rlp2, Rotation::cur())
+                    * power_of_randomness[ind].clone();
             ind += 1;
 
             expr = expr
@@ -156,8 +160,14 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
 
             let c_rlp1 = meta.query_advice(c_main.rlp1, Rotation::cur());
             let c_rlp2 = meta.query_advice(c_main.rlp2, Rotation::cur());
-            expr = expr + c_rlp1 * power_of_randomness[POWER_OF_RANDOMNESS_LEN - 1].clone() * power_of_randomness[1].clone();
-            expr = expr + c_rlp2 * power_of_randomness[POWER_OF_RANDOMNESS_LEN - 1].clone() * power_of_randomness[2].clone();
+            expr = expr
+                + c_rlp1
+                    * power_of_randomness[POWER_OF_RANDOMNESS_LEN - 1].clone()
+                    * power_of_randomness[1].clone();
+            expr = expr
+                + c_rlp2
+                    * power_of_randomness[POWER_OF_RANDOMNESS_LEN - 1].clone()
+                    * power_of_randomness[2].clone();
 
             let acc = meta.query_advice(accs.acc_s.rlc, Rotation::cur());
 
@@ -196,8 +206,24 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
                     fixed_table,
                 )
             }
-            key_len_lookup(meta, q_enable, 32, s_main.bytes[0], c_main.rlp1, 128, fixed_table);
-            key_len_lookup(meta, q_enable, 33, s_main.bytes[0], c_main.rlp2, 128, fixed_table);
+            key_len_lookup(
+                meta,
+                q_enable,
+                32,
+                s_main.bytes[0],
+                c_main.rlp1,
+                128,
+                fixed_table,
+            );
+            key_len_lookup(
+                meta,
+                q_enable,
+                33,
+                s_main.bytes[0],
+                c_main.rlp2,
+                128,
+                fixed_table,
+            );
         }
 
         /*
@@ -428,8 +454,8 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
                 // let key_rlc_acc_start = meta.query_advice(accs.acc_c.rlc, Rotation::cur());
                 // let key_mult_start = meta.query_advice(accs.acc_c.mult, Rotation::cur());
 
-                let is_placeholder_branch_in_first_level =
-                    one.clone() - meta.query_advice(position_cols.not_first_level, Rotation(rot_into_init));
+                let is_placeholder_branch_in_first_level = one.clone()
+                    - meta.query_advice(position_cols.not_first_level, Rotation(rot_into_init));
 
                 // Note: key RLC is in the first branch node (not branch init).
                 let rot_level_above = rot_into_init + 1 - BRANCH_ROWS_NUM;
@@ -525,7 +551,8 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
                 let s_advice1 = meta.query_advice(s_main.bytes[1], Rotation::cur());
                 let mut key_rlc_acc = key_rlc_acc_start
                     + (s_advice1.clone() - c48) * key_mult_start.clone() * sel1.clone();
-                let mut key_mult = key_mult_start.clone() * power_of_randomness[0].clone() * sel1.clone();
+                let mut key_mult =
+                    key_mult_start.clone() * power_of_randomness[0].clone() * sel1.clone();
                 key_mult = key_mult + key_mult_start * sel2.clone(); // set to key_mult_start if sel2, stays key_mult if sel1
 
                 // If sel2 = 1, we have 32 in s_main.bytes[1].
@@ -543,12 +570,14 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
 
                 for ind in 3..HASH_WIDTH {
                     let s = meta.query_advice(s_main.bytes[ind], Rotation::cur());
-                    key_rlc_acc = key_rlc_acc + s * key_mult.clone() * power_of_randomness[ind - 3].clone();
+                    key_rlc_acc =
+                        key_rlc_acc + s * key_mult.clone() * power_of_randomness[ind - 3].clone();
                 }
 
                 let c_rlp1 = meta.query_advice(c_main.rlp1, Rotation::cur());
                 let c_rlp2 = meta.query_advice(c_main.rlp2, Rotation::cur());
-                key_rlc_acc = key_rlc_acc + c_rlp1 * key_mult.clone() * power_of_randomness[29].clone();
+                key_rlc_acc =
+                    key_rlc_acc + c_rlp1 * key_mult.clone() * power_of_randomness[29].clone();
                 key_rlc_acc = key_rlc_acc + c_rlp2 * key_mult * power_of_randomness[30].clone();
 
                 let key_rlc = meta.query_advice(accs.key.rlc, Rotation::cur());
@@ -572,12 +601,14 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
                 let leaf_nibbles = ((s_advice0.clone() - c128.clone() - one.clone())
                     * (one.clone() + one.clone()))
                     * sel2
-                    + ((s_advice0 - c128.clone()) * (one.clone() + one.clone())
-                        - one.clone())
+                    + ((s_advice0 - c128.clone()) * (one.clone() + one.clone()) - one.clone())
                         * sel1;
 
                 let is_branch_in_first_level = one.clone()
-                    - meta.query_advice(position_cols.not_first_level, Rotation(rot_into_first_branch_child));
+                    - meta.query_advice(
+                        position_cols.not_first_level,
+                        Rotation(rot_into_first_branch_child),
+                    );
 
                 /*
                 Note that when the leaf is in the first level (but positioned after the placeholder
@@ -694,7 +725,9 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
                         || "assign lookup enabled".to_string(),
                         mpt_config.proof_type.proof_type,
                         offset,
-                        || Value::known(F::from(5_u64)), // account delete mod lookup enabled in this row if it is is_account_delete proof
+                        || Value::known(F::from(5_u64)), /* account delete mod lookup enabled in
+                                                          * this row if it is is_account_delete
+                                                          * proof */
                     )
                     .ok();
             }

@@ -1,11 +1,11 @@
 pub mod leaf_key;
 pub mod leaf_key_in_added_branch;
-pub mod leaf_value;
 pub mod leaf_non_existing;
+pub mod leaf_value;
 
 use halo2_proofs::{
+    arithmetic::FieldExt,
     plonk::{Advice, Column, ConstraintSystem},
-    arithmetic::FieldExt, 
 };
 use std::marker::PhantomData;
 

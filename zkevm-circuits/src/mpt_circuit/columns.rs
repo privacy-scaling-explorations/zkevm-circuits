@@ -23,7 +23,8 @@ NonExistingStorageProof = 7
 */
 #[derive(Clone, Debug)]
 pub(crate) struct ProofTypeCols<F> {
-    pub(crate) proof_type: Column<Advice>, // between 1 and 6, should correspond to the columns below (it enables lookups with less columns)
+    pub(crate) proof_type: Column<Advice>, /* between 1 and 6, should correspond to the columns
+                                            * below (it enables lookups with less columns) */
     pub(crate) is_storage_mod: Column<Advice>,
     pub(crate) is_nonce_mod: Column<Advice>,
     pub(crate) is_balance_mod: Column<Advice>,

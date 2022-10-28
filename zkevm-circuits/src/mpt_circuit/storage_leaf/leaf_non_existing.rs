@@ -1,19 +1,23 @@
 use halo2_proofs::{
+    arithmetic::FieldExt,
     circuit::{Region, Value},
     plonk::{Advice, Column, ConstraintSystem, Expression, Fixed, VirtualCells},
     poly::Rotation,
-    arithmetic::FieldExt,
 };
 use std::marker::PhantomData;
 
 use crate::{
     mpt_circuit::columns::{AccumulatorCols, MainCols},
     mpt_circuit::helpers::range_lookups,
-    mpt_circuit::{FixedTableTag, MPTConfig, param::{IS_NON_EXISTING_STORAGE_POS, LEAF_NON_EXISTING_IND, LEAF_KEY_C_IND, S_START}, helpers::key_len_lookup, ProofValues},
     mpt_circuit::param::{
         BRANCH_ROWS_NUM, HASH_WIDTH, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, RLP_NUM,
     },
     mpt_circuit::witness_row::MptWitnessRow,
+    mpt_circuit::{
+        helpers::key_len_lookup,
+        param::{IS_NON_EXISTING_STORAGE_POS, LEAF_KEY_C_IND, LEAF_NON_EXISTING_IND, S_START},
+        FixedTableTag, MPTConfig, ProofValues,
+    },
 };
 
 /*
@@ -61,7 +65,8 @@ impl<F: FieldExt> StorageNonExistingConfig<F> {
         c_main: MainCols<F>,
         accs: AccumulatorCols<F>,
         sel2: Column<Advice>, /* should be the same as sel1 as both parallel proofs are the same
-                               * for non_existing_storage_proof, but we use C for non-existing storage */
+                               * for non_existing_storage_proof, but we use C for non-existing
+                               * storage */
         is_account_leaf_in_added_branch: Column<Advice>,
         power_of_randomness: [Expression<F>; HASH_WIDTH],
         fixed_table: [Column<Fixed>; 3],
@@ -88,7 +93,7 @@ impl<F: FieldExt> StorageNonExistingConfig<F> {
                 let sum_prev = meta.query_advice(accs.acc_c.mult, Rotation::cur());
                 let diff_inv = meta.query_advice(accs.acc_s.rlc, Rotation::cur());
 
-                let rot =  - (LEAF_NON_EXISTING_IND - LEAF_KEY_C_IND);
+                let rot = -(LEAF_NON_EXISTING_IND - LEAF_KEY_C_IND);
 
                 let c_rlp1_prev = meta.query_advice(c_main.rlp1, Rotation(rot));
                 let c_rlp2_prev = meta.query_advice(c_main.rlp2, Rotation(rot));
@@ -383,7 +388,7 @@ impl<F: FieldExt> StorageNonExistingConfig<F> {
                     Rotation(rot_into_last_account_row),
                 );
 
-                let rot =  - (LEAF_NON_EXISTING_IND - LEAF_KEY_C_IND);
+                let rot = -(LEAF_NON_EXISTING_IND - LEAF_KEY_C_IND);
                 let flag1 = meta.query_advice(accs.s_mod_node_rlc, Rotation(rot));
                 let flag2 = meta.query_advice(accs.c_mod_node_rlc, Rotation(rot));
                 let is_long = flag1.clone() * (one.clone() - flag2.clone());
@@ -413,11 +418,13 @@ impl<F: FieldExt> StorageNonExistingConfig<F> {
 
                 for ind in 2..HASH_WIDTH {
                     let s = meta.query_advice(s_main.bytes[ind], Rotation::cur());
-                    key_rlc_acc_short = key_rlc_acc_short + s * power_of_randomness[ind - 2].clone();
+                    key_rlc_acc_short =
+                        key_rlc_acc_short + s * power_of_randomness[ind - 2].clone();
                 }
 
                 let c_rlp1_cur = meta.query_advice(c_main.rlp1, Rotation::cur());
-                key_rlc_acc_short = key_rlc_acc_short + c_rlp1_cur.clone() * power_of_randomness[30].clone();
+                key_rlc_acc_short =
+                    key_rlc_acc_short + c_rlp1_cur.clone() * power_of_randomness[30].clone();
 
                 // Note: `accs.key.mult` is used for a lookup.
                 let key_rlc = meta.query_advice(accs.key.mult, Rotation::cur());
@@ -451,8 +458,10 @@ impl<F: FieldExt> StorageNonExistingConfig<F> {
                 }
 
                 let c_rlp2_cur = meta.query_advice(c_main.rlp2, Rotation::cur());
-                key_rlc_acc_long = key_rlc_acc_long + c_rlp1_cur.clone() * power_of_randomness[29].clone();
-                key_rlc_acc_long = key_rlc_acc_long + c_rlp2_cur.clone() * power_of_randomness[30].clone();
+                key_rlc_acc_long =
+                    key_rlc_acc_long + c_rlp1_cur.clone() * power_of_randomness[29].clone();
+                key_rlc_acc_long =
+                    key_rlc_acc_long + c_rlp2_cur.clone() * power_of_randomness[30].clone();
 
                 constraints.push((
                     "Computed key RLC same as value in key_rlc lookup column (long)",
@@ -521,7 +530,7 @@ impl<F: FieldExt> StorageNonExistingConfig<F> {
 
         let sel_short = |meta: &mut VirtualCells<F>| {
             let q_enable = q_enable(meta);
-            let rot =  - (LEAF_NON_EXISTING_IND - LEAF_KEY_C_IND);
+            let rot = -(LEAF_NON_EXISTING_IND - LEAF_KEY_C_IND);
             let flag1 = meta.query_advice(accs.s_mod_node_rlc, Rotation(rot));
             let flag2 = meta.query_advice(accs.c_mod_node_rlc, Rotation(rot));
             let is_short = (one.clone() - flag1.clone()) * flag2.clone();
@@ -530,7 +539,7 @@ impl<F: FieldExt> StorageNonExistingConfig<F> {
         };
         let sel_long = |meta: &mut VirtualCells<F>| {
             let q_enable = q_enable(meta);
-            let rot =  - (LEAF_NON_EXISTING_IND - LEAF_KEY_C_IND);
+            let rot = -(LEAF_NON_EXISTING_IND - LEAF_KEY_C_IND);
             let flag1 = meta.query_advice(accs.s_mod_node_rlc, Rotation(rot));
             let flag2 = meta.query_advice(accs.c_mod_node_rlc, Rotation(rot));
             let is_long = flag1.clone() * (one.clone() - flag2.clone());
@@ -561,7 +570,15 @@ impl<F: FieldExt> StorageNonExistingConfig<F> {
                     fixed_table,
                 )
             }
-            key_len_lookup(meta, sel_short, 32, s_main.rlp2, c_main.rlp1, 128, fixed_table);
+            key_len_lookup(
+                meta,
+                sel_short,
+                32,
+                s_main.rlp2,
+                c_main.rlp1,
+                128,
+                fixed_table,
+            );
 
             for ind in 1..HASH_WIDTH {
                 key_len_lookup(
@@ -574,8 +591,24 @@ impl<F: FieldExt> StorageNonExistingConfig<F> {
                     fixed_table,
                 )
             }
-            key_len_lookup(meta, sel_long, 32, s_main.bytes[0], c_main.rlp1, 128, fixed_table);
-            key_len_lookup(meta, sel_long, 33, s_main.bytes[0], c_main.rlp2, 128, fixed_table);
+            key_len_lookup(
+                meta,
+                sel_long,
+                32,
+                s_main.bytes[0],
+                c_main.rlp1,
+                128,
+                fixed_table,
+            );
+            key_len_lookup(
+                meta,
+                sel_long,
+                33,
+                s_main.bytes[0],
+                c_main.rlp2,
+                128,
+                fixed_table,
+            );
         }
 
         /*
@@ -611,7 +644,7 @@ impl<F: FieldExt> StorageNonExistingConfig<F> {
         let row = &witness[offset];
         if row.get_byte_rev(IS_NON_EXISTING_STORAGE_POS) == 0 {
             // No need to assign anything when not non-existing-storage proof.
-            return
+            return;
         }
 
         let row_key_c = &witness[offset - (LEAF_NON_EXISTING_IND - LEAF_KEY_C_IND) as usize];
@@ -669,7 +702,7 @@ impl<F: FieldExt> StorageNonExistingConfig<F> {
         let mut key_rlc_new = pv.key_rlc;
         let mut key_rlc_mult_new = pv.key_rlc_mult;
         mpt_config.compute_key_rlc(&row.bytes, &mut key_rlc_new, &mut key_rlc_mult_new, start);
-    
+
         region
             .assign_advice(
                 || "assign key_rlc".to_string(),
@@ -685,7 +718,9 @@ impl<F: FieldExt> StorageNonExistingConfig<F> {
                     || "assign lookup enabled".to_string(),
                     mpt_config.proof_type.proof_type,
                     offset,
-                    || Value::known(F::from(7_u64)), // non existing storage lookup enabled in this row if it is non_existing_storage proof
+                    || Value::known(F::from(7_u64)), /* non existing storage lookup enabled in
+                                                      * this row if it is non_existing_storage
+                                                      * proof */
                 )
                 .ok();
         }

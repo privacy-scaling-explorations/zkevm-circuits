@@ -1,11 +1,15 @@
 use halo2_proofs::{
-    plonk::{Advice, Column, ConstraintSystem, Expression, VirtualCells, Fixed},
-    poly::Rotation,
     arithmetic::FieldExt,
+    plonk::{Advice, Column, ConstraintSystem, Expression, Fixed, VirtualCells},
+    poly::Rotation,
 };
 use std::marker::PhantomData;
 
-use crate::mpt_circuit::{columns::{MainCols, PositionCols}, helpers::key_len_lookup, param::HASH_WIDTH};
+use crate::mpt_circuit::{
+    columns::{MainCols, PositionCols},
+    helpers::key_len_lookup,
+    param::HASH_WIDTH,
+};
 
 use super::BranchCols;
 

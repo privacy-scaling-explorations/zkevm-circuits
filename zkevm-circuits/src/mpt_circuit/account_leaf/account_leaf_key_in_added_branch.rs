@@ -1,28 +1,30 @@
 use halo2_proofs::{
+    arithmetic::FieldExt,
     circuit::Region,
     plonk::{Advice, Column, ConstraintSystem, Expression, Fixed, VirtualCells},
     poly::Rotation,
-    arithmetic::FieldExt,
 };
 use std::marker::PhantomData;
 
 use crate::{
     mpt_circuit::columns::{AccumulatorCols, DenoteCols, MainCols},
     mpt_circuit::helpers::{
-        compute_rlc, get_is_extension_node, get_is_extension_node_one_nibble,
-        mult_diff_lookup, range_lookups,
+        compute_rlc, get_is_extension_node, get_is_extension_node_one_nibble, mult_diff_lookup,
+        range_lookups,
     },
-    mpt_circuit::{FixedTableTag, MPTConfig, ProofValues, helpers::key_len_lookup},
     mpt_circuit::param::{
         ACCOUNT_DRIFTED_LEAF_IND, ACCOUNT_LEAF_KEY_C_IND, ACCOUNT_LEAF_KEY_S_IND,
         ACCOUNT_LEAF_NONCE_BALANCE_C_IND, ACCOUNT_LEAF_NONCE_BALANCE_S_IND,
         ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND, ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND, BRANCH_ROWS_NUM,
         IS_BRANCH_C16_POS, IS_BRANCH_C1_POS,
-    }, table::KeccakTable,
+    },
+    mpt_circuit::{helpers::key_len_lookup, FixedTableTag, MPTConfig, ProofValues},
+    table::KeccakTable,
 };
 
 use crate::mpt_circuit::param::{
-    HASH_WIDTH, IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS, RLP_NUM, POWER_OF_RANDOMNESS_LEN,
+    HASH_WIDTH, IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS, POWER_OF_RANDOMNESS_LEN,
+    RLP_NUM,
 };
 
 /*
@@ -122,8 +124,9 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
                 ));
 
                 let mut ind = 0;
-                let mut expr =
-                    s_rlp1 + meta.query_advice(s_main.rlp2, Rotation::cur()) * power_of_randomness[ind].clone();
+                let mut expr = s_rlp1
+                    + meta.query_advice(s_main.rlp2, Rotation::cur())
+                        * power_of_randomness[ind].clone();
                 ind += 1;
 
                 expr = expr
@@ -138,10 +141,14 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
 
                 let c_rlp1 = meta.query_advice(c_main.rlp1, Rotation::cur());
                 let c_rlp2 = meta.query_advice(c_main.rlp2, Rotation::cur());
-                expr =
-                    expr + c_rlp1 * power_of_randomness[POWER_OF_RANDOMNESS_LEN - 1].clone() * power_of_randomness[1].clone();
-                expr =
-                    expr + c_rlp2 * power_of_randomness[POWER_OF_RANDOMNESS_LEN - 1].clone() * power_of_randomness[2].clone();
+                expr = expr
+                    + c_rlp1
+                        * power_of_randomness[POWER_OF_RANDOMNESS_LEN - 1].clone()
+                        * power_of_randomness[1].clone();
+                expr = expr
+                    + c_rlp2
+                        * power_of_randomness[POWER_OF_RANDOMNESS_LEN - 1].clone()
+                        * power_of_randomness[2].clone();
 
                 let acc = meta.query_advice(accs.acc_s.rlc, Rotation::cur());
 
@@ -202,8 +209,24 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
                     fixed_table,
                 )
             }
-            key_len_lookup(meta, sel, 32, s_main.bytes[0], c_main.rlp1, 128, fixed_table);
-            key_len_lookup(meta, sel, 33, s_main.bytes[0], c_main.rlp2, 128, fixed_table);
+            key_len_lookup(
+                meta,
+                sel,
+                32,
+                s_main.bytes[0],
+                c_main.rlp1,
+                128,
+                fixed_table,
+            );
+            key_len_lookup(
+                meta,
+                sel,
+                33,
+                s_main.bytes[0],
+                c_main.rlp2,
+                128,
+                fixed_table,
+            );
         }
 
         /*
@@ -329,11 +352,14 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
                 * (one.clone() - is_one_nibble.clone())
                 + branch_above_placeholder_mult.clone()
                     * is_ext_node.clone()
-                    * is_one_nibble.clone() * is_c1.clone()
+                    * is_one_nibble.clone()
+                    * is_c1.clone()
                 + branch_above_placeholder_mult.clone()
                     * is_ext_node.clone()
-                    * is_one_nibble * power_of_randomness[0].clone() * is_c16.clone()
-                + branch_above_placeholder_mult * (one.clone() - is_ext_node); 
+                    * is_one_nibble
+                    * power_of_randomness[0].clone()
+                    * is_c16.clone()
+                + branch_above_placeholder_mult * (one.clone() - is_ext_node);
 
             /*
             Key RLC of the drifted leaf needs to be the same as key RLC of the leaf
@@ -376,8 +402,8 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
                     * is_c1,
             ));
 
-            let mut key_rlc = key_rlc_start
-                + (s_bytes1 - c48.clone()) * is_c16 * key_rlc_mult.clone();
+            let mut key_rlc =
+                key_rlc_start + (s_bytes1 - c48.clone()) * is_c16 * key_rlc_mult.clone();
 
             for ind in 2..HASH_WIDTH {
                 let s = meta.query_advice(s_main.bytes[ind], Rotation::cur());
@@ -405,15 +431,11 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
             */
             constraints.push((
                 "Drifted leaf key RLC same as the RLC of the leaf before drift (placeholder S)",
-                q_enable.clone()
-                    * is_branch_s_placeholder
-                    * (leaf_key_s_rlc - key_rlc.clone()),
+                q_enable.clone() * is_branch_s_placeholder * (leaf_key_s_rlc - key_rlc.clone()),
             ));
             constraints.push((
                 "Drifted leaf key RLC same as the RLC of the leaf before drift (placeholder C)",
-                q_enable
-                    * is_branch_c_placeholder
-                    * (leaf_key_c_rlc - key_rlc),
+                q_enable * is_branch_c_placeholder * (leaf_key_c_rlc - key_rlc),
             ));
 
             constraints
@@ -488,7 +510,8 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
 
             let s_advices0_nonce = meta.query_advice(s_main.bytes[0], Rotation(nonce_rot));
             let nonce_stored = meta.query_advice(accs.s_mod_node_rlc, Rotation(nonce_rot));
-            let nonce_rlc = (s_advices0_nonce + nonce_stored.clone() * power_of_randomness[0].clone())
+            let nonce_rlc = (s_advices0_nonce
+                + nonce_stored.clone() * power_of_randomness[0].clone())
                 * is_nonce_long.clone()
                 + nonce_stored * (one.clone() - is_nonce_long);
             rlc = rlc + nonce_rlc * power_of_randomness[rind].clone() * acc_mult.clone();
@@ -542,7 +565,8 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
             let keccak_input_rlc = meta.query_advice(keccak_table.input_rlc, Rotation::cur());
             constraints.push((selector.clone() * rlc, keccak_input_rlc));
 
-            let account_len = meta.query_advice(s_main.rlp2, Rotation::cur()) + one.clone() + one.clone();
+            let account_len =
+                meta.query_advice(s_main.rlp2, Rotation::cur()) + one.clone() + one.clone();
 
             let keccak_input_len = meta.query_advice(keccak_table.input_len, Rotation::cur());
             constraints.push((selector.clone() * account_len, keccak_input_len));
