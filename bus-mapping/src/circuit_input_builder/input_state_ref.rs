@@ -16,7 +16,9 @@ use crate::{
     Error,
 };
 use eth_types::{
-    evm_types::{gas_utils::memory_expansion_gas_cost, Gas, MemoryAddress, OpcodeId, StackAddress},
+    evm_types::{
+        gas_utils::memory_expansion_gas_cost, Gas, GasCost, MemoryAddress, OpcodeId, StackAddress,
+    },
     Address, GethExecStep, ToAddress, ToBigEndian, ToWord, Word, H256,
 };
 use ethers_core::utils::{get_contract_address, get_create2_address};
@@ -430,10 +432,7 @@ impl<'a> CircuitInputStateRef<'a> {
             },
         )?;
 
-        let (found, receiver_account) = self.sdb.get_account(&receiver);
-        if !found {
-            return Err(Error::AccountNotFound(receiver));
-        }
+        let (_found, receiver_account) = self.sdb.get_account(&receiver);
         let receiver_balance_prev = receiver_account.balance;
         let receiver_balance = receiver_account.balance + value;
         self.push_op_reversible(
@@ -873,7 +872,13 @@ impl<'a> CircuitInputStateRef<'a> {
 
         let memory_expansion_gas_cost =
             memory_expansion_gas_cost(curr_memory_word_size, next_memory_word_size);
-        let gas_refund = geth_step.gas.0 - memory_expansion_gas_cost;
+        let code_deposit_cost = if call.is_create() {
+            GasCost::CODE_DEPOSIT_BYTE_COST.as_u64() * last_callee_return_data_length.as_u64()
+        } else {
+            0
+        };
+        let gas_refund = geth_step.gas.0 - memory_expansion_gas_cost - code_deposit_cost;
+
         let caller_gas_left = geth_step_next.gas.0 - gas_refund;
 
         for (field, value) in [
