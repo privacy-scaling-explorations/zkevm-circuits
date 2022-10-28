@@ -11,7 +11,7 @@ use crate::{
             },
             math_gadget::{IsZeroGadget, MinMaxGadget},
             memory_gadget::{MemoryAddressGadget, MemoryExpansionGadget},
-            not, CachedRegion, Cell,
+            not, CachedRegion, Cell, RandomLinearCombination,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -20,6 +20,7 @@ use crate::{
 };
 use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId};
 use eth_types::Field;
+use ethers_core::utils::keccak256;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
@@ -39,6 +40,7 @@ pub(crate) struct ReturnGadget<F> {
     return_data_length: Cell<F>,
 
     memory_expansion: MemoryExpansionGadget<F, 1, N_BYTES_MEMORY_WORD_SIZE>,
+    code_hash: Cell<F>,
 }
 
 // TODO: rename this is reflect the fact that is handles REVERT as well.
@@ -91,10 +93,25 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
                 range.length(),
             );
         });
-        cb.condition(
+        let code_hash = cb.condition(
             is_create.clone() * is_success.expr() * not::expr(copy_rw_increase_is_zero.expr()),
-            |_cb| {
-                // TODO: copy_table_lookup for contract creation.
+            |cb| {
+                let code_hash = cb.query_cell();
+                cb.copy_table_lookup(
+                    cb.curr.state.call_id.expr(),
+                    CopyDataType::Memory.expr(),
+                    code_hash.expr(),
+                    CopyDataType::Bytecode.expr(),
+                    range.offset(),
+                    range.address(),
+                    0.expr(),
+                    range.length(),
+                    0.expr(),
+                    copy_rw_increase.expr(),
+                );
+                // We don't need to place any additional constraints on code_hash because the
+                // copy circuit enforces that it is the hash of the bytes in the copy lookup.
+                code_hash
             },
         );
 
@@ -129,7 +146,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
             RestoreContextGadget::construct(
                 cb,
                 is_success.expr(),
-                2.expr() * not::expr(is_create.clone()) + copy_rw_increase.expr(),
+                not::expr(is_create.clone()) * (2.expr() + copy_rw_increase.expr()),
                 range.offset(),
                 range.length(),
                 memory_expansion.gas_cost(),
@@ -195,6 +212,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
             return_data_length,
             restore_context,
             memory_expansion,
+            code_hash,
         }
     }
 
@@ -239,7 +257,23 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
             )?;
         }
 
-        let copy_rw_increase = if call.is_create {
+        if call.is_create && call.is_success {
+            let values: Vec<_> = (3..3 + length.as_usize())
+                .map(|i| block.rws[step.rw_indices[i]].memory_value())
+                .collect();
+            let mut code_hash = keccak256(&values);
+            code_hash.reverse();
+            self.code_hash.assign(
+                region,
+                offset,
+                Value::known(RandomLinearCombination::random_linear_combine(
+                    code_hash,
+                    block.randomness,
+                )),
+            )?;
+        }
+
+        let copy_rw_increase = if call.is_create && call.is_success {
             length.as_u64()
         } else if !call.is_root {
             2 * std::cmp::min(call.return_data_length, length.as_u64())
@@ -252,8 +286,15 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
             .assign(region, offset, F::from(copy_rw_increase))?;
 
         if !call.is_root {
-            self.restore_context
-                .assign(region, offset, block, call, step, 3)?;
+            let rw_counter_offset = 3 + if call.is_create { copy_rw_increase } else { 0 };
+            self.restore_context.assign(
+                region,
+                offset,
+                block,
+                call,
+                step,
+                rw_counter_offset.try_into().unwrap(),
+            )?;
         }
 
         Ok(())
@@ -268,20 +309,20 @@ mod test {
         Word,
     };
     use itertools::Itertools;
-    use mock::TestContext;
+    use mock::{eth, TestContext, MOCK_ACCOUNTS};
 
     const CALLEE_ADDRESS: Address = Address::repeat_byte(0xff);
     const CALLER_ADDRESS: Address = Address::repeat_byte(0x34);
 
     fn callee_bytecode(is_return: bool, offset: u64, length: u64) -> Bytecode {
         let memory_address = 2;
-        let memory_value = Word::MAX;
+        let memory_value = 549;
         let mut code = bytecode! {
-            PUSH32(memory_value)
+            PUSH2(memory_value)
             PUSH1(memory_address)
             MSTORE
-            PUSH32(length)
-            PUSH32(offset)
+            PUSH2(length)
+            PUSH2(offset)
         };
         code.write_op(if is_return {
             OpcodeId::RETURN
@@ -306,7 +347,7 @@ mod test {
     }
 
     #[test]
-    fn test_return_root() {
+    fn test_return_root_noncreate() {
         let test_parameters = [(0, 0), (0, 10), (300, 20), (1000, 0)];
         for ((offset, length), is_return) in
             test_parameters.iter().cartesian_product(&[true, false])
@@ -325,7 +366,7 @@ mod test {
     }
 
     #[test]
-    fn test_return_nonroot() {
+    fn test_return_nonroot_noncreate() {
         let test_parameters = [
             ((0, 0), (0, 0)),
             ((0, 10), (0, 10)),
@@ -382,6 +423,89 @@ mod test {
                     *caller_length,
                     *is_return
                 )
+            );
+        }
+    }
+
+    #[test]
+    fn test_return_root_create() {
+        let test_parameters = [(0, 0), (0, 10), (300, 20), (1000, 0)];
+        for ((offset, length), is_return) in
+            test_parameters.iter().cartesian_product(&[true, false])
+        {
+            let tx_input = callee_bytecode(*is_return, *offset, *length).code();
+            assert_eq!(
+                run_test_circuits(
+                    TestContext::<1, 1>::new(
+                        None,
+                        |accs| {
+                            accs[0].address(MOCK_ACCOUNTS[0]).balance(eth(10));
+                        },
+                        |mut txs, accs| {
+                            txs[0].from(accs[0].address).input(tx_input.into());
+                        },
+                        |block, _| block,
+                    )
+                    .unwrap(),
+                    None
+                ),
+                Ok(()),
+                "(offset, length, is_return) = {:?}",
+                (*offset, *length, *is_return),
+            );
+        }
+    }
+
+    #[test]
+    fn test_return_nonroot_create() {
+        let test_parameters = [(0, 0), (0, 10), (300, 20), (1000, 0)];
+        for ((offset, length), is_return) in
+            test_parameters.iter().cartesian_product(&[true, false])
+        {
+            let initializer = callee_bytecode(*is_return, *offset, *length);
+
+            let root_code = bytecode! {
+                PUSH32(Word::from_big_endian(&initializer.code()))
+                PUSH1(0)
+                MSTORE
+
+                PUSH1(0)        // offset
+                PUSH1(32)       // length
+                PUSH10(100000)  // value
+
+                CREATE
+                STOP
+            };
+
+            let caller = Account {
+                address: CALLER_ADDRESS,
+                code: root_code.into(),
+                nonce: Word::one(),
+                balance: eth(10),
+                ..Default::default()
+            };
+
+            let test_context = TestContext::<2, 1>::new(
+                None,
+                |accs| {
+                    accs[0].balance(eth(10));
+                    accs[1].account(&caller);
+                },
+                |mut txs, accs| {
+                    txs[0]
+                        .from(accs[0].address)
+                        .to(accs[1].address)
+                        .gas(100000u64.into());
+                },
+                |block, _| block,
+            )
+            .unwrap();
+
+            assert_eq!(
+                run_test_circuits(test_context, None),
+                Ok(()),
+                "(offset, length, is_return) = {:?}",
+                (*offset, *length, *is_return),
             );
         }
     }

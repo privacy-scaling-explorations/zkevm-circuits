@@ -377,7 +377,39 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
     ) {
         // 1. Creation transaction.
         (true, _, _) => {
-            warn!("Creation transaction is left unimplemented");
+            state.account_read(
+                &mut exec_step,
+                call.address,
+                AccountField::CodeHash,
+                call.code_hash.to_word(),
+                call.code_hash.to_word(),
+            )?;
+            for (field, value) in [
+                (CallContextField::Depth, call.depth.into()),
+                (
+                    CallContextField::CallerAddress,
+                    call.caller_address.to_word(),
+                ),
+                (CallContextField::CalleeAddress, call.address.to_word()),
+                (
+                    CallContextField::CallDataOffset,
+                    call.call_data_offset.into(),
+                ),
+                (
+                    CallContextField::CallDataLength,
+                    state.tx.input.len().into(),
+                ),
+                (CallContextField::Value, call.value),
+                (CallContextField::IsStatic, (call.is_static as usize).into()),
+                (CallContextField::LastCalleeId, 0.into()),
+                (CallContextField::LastCalleeReturnDataOffset, 0.into()),
+                (CallContextField::LastCalleeReturnDataLength, 0.into()),
+                (CallContextField::IsRoot, 1.into()),
+                (CallContextField::IsCreate, 1.into()),
+                (CallContextField::CodeHash, call.code_hash.to_word()),
+            ] {
+                state.call_context_write(&mut exec_step, call.call_id, field, value);
+            }
             Ok(exec_step)
         }
         // 2. Call to precompiled.
