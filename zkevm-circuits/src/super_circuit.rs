@@ -63,13 +63,10 @@ use crate::witness::{block_convert, Block, MptUpdates};
 
 use bus_mapping::circuit_input_builder::CircuitInputBuilder;
 use bus_mapping::mock::BlockData;
-use eth_types::geth_types::Transaction;
-
-use eth_types::geth_types::{self, GethData};
+use eth_types::geth_types::{self, GethData, Transaction};
 use eth_types::Field;
 use ethers_core::types::H256;
 use halo2_proofs::arithmetic::CurveAffine;
-
 use halo2_proofs::halo2curves::{
     bn256::Fr,
     group::{Curve, Group},
@@ -356,9 +353,9 @@ impl<const MAX_TXS: usize, const MAX_CALLDATA: usize> SuperCircuit<Fr, MAX_TXS, 
         let tx_circuit = TxCircuit::new(aux_generator, chain_id.as_u64(), txs);
 
         let public_data = PublicData {
-            chain_id: chain_id,
+            chain_id,
             history_hashes: builder.block.history_hashes,
-            eth_block: eth_block,
+            eth_block,
             block_constants: geth_types::BlockConstants {
                 coinbase: block.context.coinbase,
                 timestamp: block.context.timestamp,

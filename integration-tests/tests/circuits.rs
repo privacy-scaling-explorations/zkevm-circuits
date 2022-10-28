@@ -214,7 +214,6 @@ declare_tests!(
     "Multiple transfers 0"
 );
 */
-
 declare_tests!(
     circuit_erc20_openzeppelin_transfer_fail,
     "ERC20 OpenZeppelin transfer failed"
