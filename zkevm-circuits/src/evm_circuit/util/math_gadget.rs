@@ -1337,13 +1337,18 @@ impl<F: Field> AbsWordGadget<F> {
 
 #[cfg(test)]
 mod tests {
+    use itertools::Itertools;
     use std::marker::PhantomData;
+    use strum::IntoEnumIterator;
 
     use super::util::StoredExpression;
     use super::*;
     use crate::evm_circuit::param::{MAX_STEP_HEIGHT, STEP_WIDTH};
     use crate::evm_circuit::step::Step;
-    use crate::evm_circuit::{Advice, Column};
+    use crate::evm_circuit::table::{FixedTableTag, Table};
+    use crate::evm_circuit::util::{rlc, CellType};
+    use crate::evm_circuit::{Advice, Column, Fixed};
+    use crate::table::LookupTable;
     use crate::{evm_circuit::step::ExecutionState, util::power_of_randomness_from_instance};
     use eth_types::Word;
     use halo2_proofs::circuit::Layouter;
@@ -1372,6 +1377,7 @@ mod tests {
         G: MathGadgetContainer<F>,
     {
         q_usable: Selector,
+        fixed_table: [Column<Fixed>; 4],
         advices: [Column<Advice>; STEP_WIDTH],
         step: Step<F>,
         stored_expressions: Vec<StoredExpression<F>>,
@@ -1406,13 +1412,14 @@ mod tests {
             UnitTestMathGadgetBaseCircuit {
                 size: 0,
                 input_words: vec![],
-                randomness: F::zero(),
+                randomness: F::from(123456u64),
                 _marker: PhantomData,
             }
         }
 
         fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
             let q_usable = meta.selector();
+            let fixed_table = [(); 4].map(|_| meta.fixed_column());
             let advices = [(); STEP_WIDTH].map(|_| meta.advice_column());
             let step_curr = Step::new(meta, advices, 0);
             let step_next = Step::new(meta, advices, MAX_STEP_HEIGHT);
@@ -1436,8 +1443,28 @@ mod tests {
                 });
             }
 
+            let cell_manager = step_curr.cell_manager.clone();
+            for column in cell_manager.columns().iter() {
+                if let CellType::Lookup(table) = column.cell_type {
+                    match table {
+                        Table::Fixed => {
+                            let name = format!("{:?}", table);
+                            meta.lookup_any(Box::leak(name.into_boxed_str()), |meta| {
+                                let table_expressions = fixed_table.table_exprs(meta);
+                                vec![(
+                                    column.expr(),
+                                    rlc::expr(&table_expressions, &power_of_randomness),
+                                )]
+                            });
+                        }
+                        _ => (),
+                    }
+                }
+            }
+
             UnitTestMathGadgetBaseCircuitConfig::<F, G> {
                 q_usable,
+                fixed_table,
                 advices,
                 step: step_curr,
                 stored_expressions,
@@ -1457,7 +1484,7 @@ mod tests {
                 |mut region| {
                     let offset = 0;
                     config.q_usable.enable(&mut region, offset)?;
-                    let power_of_randomness = [(); 31].map(|_| F::one());
+                    let power_of_randomness = [(); 31].map(|_| self.randomness);
                     let cached_region = &mut CachedRegion::<'_, '_, F>::new(
                         &mut region,
                         power_of_randomness,
@@ -1479,6 +1506,39 @@ mod tests {
                     }
                     Ok(())
                 },
+            )?;
+
+            // assign fixed range tables only as they are the only tables referred by a
+            // specfic math gadget -- ConstantDivisionGadget.
+            layouter.assign_region(
+                || "fixed table",
+                |mut region| {
+                    for (offset, row) in std::iter::once([F::zero(); 4])
+                        .chain(
+                            FixedTableTag::iter()
+                                .filter(|t| {
+                                    matches!(
+                                        t,
+                                        FixedTableTag::Range5
+                                            | FixedTableTag::Range16
+                                            | FixedTableTag::Range32
+                                            | FixedTableTag::Range64
+                                            | FixedTableTag::Range256
+                                            | FixedTableTag::Range512
+                                            | FixedTableTag::Range1024
+                                    )
+                                })
+                                .flat_map(|tag| tag.build()),
+                        )
+                        .enumerate()
+                    {
+                        for (column, value) in config.fixed_table.iter().zip_eq(row) {
+                            region.assign_fixed(|| "", *column, offset, || Value::known(value))?;
+                        }
+                    }
+
+                    Ok(())
+                },
             )
         }
     }
@@ -1487,7 +1547,7 @@ mod tests {
         input_words: Vec<Word>,
         expected_success: bool,
     ) {
-        const K: usize = 9;
+        const K: usize = 12;
         let randomness = F::from(123456u64);
         let power_of_randomness: Vec<Vec<F>> = (1..32)
             .map(|exp| vec![randomness.pow(&[exp, 0, 0, 0]); (1 << K) - 64])
@@ -2035,7 +2095,7 @@ mod tests {
         impl<F: Field, const CHECK_EQ: bool> MathGadgetContainer<F>
             for ComparisonTestContainer<F, CHECK_EQ>
         {
-            const NAME: &'static str = "LtWordGadget";
+            const NAME: &'static str = "ComparisonGadget";
 
             fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
                 let a = cb.query_cell();
@@ -2130,7 +2190,7 @@ mod tests {
         impl<F: Field, const SELECT_A: bool> MathGadgetContainer<F>
             for PairSelectionTestContainer<F, SELECT_A>
         {
-            const NAME: &'static str = "LtWordGadget";
+            const NAME: &'static str = "PairSelectGadget";
 
             fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
                 let v = cb.query_cell();
@@ -2254,20 +2314,20 @@ mod tests {
             true,
         );
 
-        // test_math_gadget_container::<Fr, ConstantDivisionTestContainer<Fr, 5,
-        // 1>>(     vec![Word::from(1)],
-        //     true,
-        // );
+        test_math_gadget_container::<Fr, ConstantDivisionTestContainer<Fr, 5, 1>>(
+            vec![Word::from(1)],
+            true,
+        );
 
-        // test_math_gadget_container::<Fr, ConstantDivisionTestContainer<Fr, 5,
-        // 4>>(     vec![Word::from(1)],
-        //     false,
-        // );
+        test_math_gadget_container::<Fr, ConstantDivisionTestContainer<Fr, 5, 4>>(
+            vec![Word::from(1)],
+            false,
+        );
 
-        // test_math_gadget_container::<Fr, ConstantDivisionTestContainer<Fr, 2,
-        // 0>>(     vec![Word::from(1 << N)],
-        //     true,
-        // );
+        test_math_gadget_container::<Fr, ConstantDivisionTestContainer<Fr, 16, 0>>(
+            vec![Word::from(1 << N)],
+            true,
+        );
     }
 
     #[test]
@@ -2710,7 +2770,7 @@ mod tests {
                 let offset = 0;
                 let x = input_words[0];
                 let x_abs = input_words[1];
-                _ = self.absword_gadget.assign(region, offset, x, x_abs);
+                self.absword_gadget.assign(region, offset, x, x_abs)?;
 
                 Ok(())
             }
@@ -2730,6 +2790,5 @@ mod tests {
             vec![Word::from(1), Word::from(2)],
             false,
         );
-
     }
 }
