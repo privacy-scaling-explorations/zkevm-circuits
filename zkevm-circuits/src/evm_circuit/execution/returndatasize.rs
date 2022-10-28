@@ -151,12 +151,6 @@ mod test {
     }
 
     #[test]
-    #[should_panic]
-    fn returndatasize_gadget_out_of_bound() {
-        test_ok_internal(0x00, 0x0101);
-    }
-
-    #[test]
     fn returndatasize_gadget_zero_length() {
         test_ok_internal(0x00, 0x00);
     }
