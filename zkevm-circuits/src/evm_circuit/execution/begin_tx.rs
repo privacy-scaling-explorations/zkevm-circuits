@@ -9,7 +9,7 @@ use crate::{
                 ConstraintBuilder, ReversionInfo, StepStateTransition,
                 Transition::{Delta, To},
             },
-            math_gadget::{MulWordByU64Gadget, RangeCheckGadget},
+            math_gadget::{IsZeroGadget, MulWordByU64Gadget, RangeCheckGadget},
             select, CachedRegion, Cell, RandomLinearCombination, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
@@ -29,6 +29,7 @@ pub(crate) struct BeginTxGadget<F> {
     tx_gas_price: Word<F>,
     mul_gas_fee_by_gas: MulWordByU64Gadget<F>,
     tx_caller_address: Cell<F>,
+    tx_caller_address_is_zero: IsZeroGadget<F>,
     tx_callee_address: Cell<F>,
     tx_is_create: Cell<F>,
     tx_value: Word<F>,
@@ -75,15 +76,19 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 TxContextFieldTag::CallDataGasCost,
             ]
             .map(|field_tag| cb.tx_context(tx_id.expr(), field_tag, None));
+        let tx_caller_address_is_zero = IsZeroGadget::construct(cb, tx_caller_address.expr());
+        cb.require_equal(
+            "CallerAddress != 0 (not a padding tx)",
+            tx_caller_address_is_zero.expr(),
+            false.expr(),
+        );
         let [tx_gas_price, tx_value] = [TxContextFieldTag::GasPrice, TxContextFieldTag::Value]
             .map(|field_tag| cb.tx_context_as_word(tx_id.expr(), field_tag, None));
 
-        // Add first step constraint to have both rw_counter and tx_id to be 1
-        cb.add_constraint_first_step(
-            "rw_counter is initialized to be 1",
-            1.expr() - cb.curr.state.rw_counter.expr(),
-        );
-        cb.add_constraint_first_step("tx_id is initialized to be 1", 1.expr() - tx_id.expr());
+        // Add first BeginTx step constraint to have tx_id == 1
+        cb.step_first(|cb| {
+            cb.require_equal("tx_id is initialized to be 1", tx_id.expr(), 1.expr());
+        });
 
         // Increase caller's nonce.
         // (tx caller's nonce always increases even tx ends with error)
@@ -215,6 +220,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             tx_gas_price,
             mul_gas_fee_by_gas,
             tx_caller_address,
+            tx_caller_address_is_zero,
             tx_callee_address,
             tx_is_create,
             tx_value,
@@ -251,15 +257,14 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             .assign(region, offset, Some(tx.gas_price.to_le_bytes()))?;
         self.mul_gas_fee_by_gas
             .assign(region, offset, tx.gas_price, tx.gas, gas_fee)?;
-        self.tx_caller_address.assign(
-            region,
-            offset,
-            Value::known(
-                tx.caller_address
-                    .to_scalar()
-                    .expect("unexpected Address -> Scalar conversion failure"),
-            ),
-        )?;
+        let caller_address = tx
+            .caller_address
+            .to_scalar()
+            .expect("unexpected Address -> Scalar conversion failure");
+        self.tx_caller_address
+            .assign(region, offset, Value::known(caller_address))?;
+        self.tx_caller_address_is_zero
+            .assign(region, offset, caller_address)?;
         self.tx_callee_address.assign(
             region,
             offset,
@@ -311,12 +316,10 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::evm_circuit::{
-        test::{rand_bytes, run_test_circuit},
-        witness::block_convert,
-    };
-    use bus_mapping::{evm::OpcodeId, mock::BlockData};
+    use crate::evm_circuit::test::{rand_bytes, run_test_circuit_geth_data_default};
+    use bus_mapping::evm::OpcodeId;
     use eth_types::{self, bytecode, evm_types::GasCost, geth_types::GethData, Word};
+    use halo2_proofs::halo2curves::bn256::Fr;
     use mock::{
         eth, gwei, test_ctx::helpers::account_0_code_account_1_no_code, TestContext, MOCK_ACCOUNTS,
     };
@@ -365,13 +368,7 @@ mod test {
         .unwrap()
         .into();
 
-        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
-
-        builder
-            .handle_block(&block.eth_block, &block.geth_traces)
-            .unwrap();
-        let block = block_convert(&builder.block, &builder.code_db);
-        assert_eq!(run_test_circuit(block), Ok(()));
+        assert_eq!(run_test_circuit_geth_data_default::<Fr>(block), Ok(()));
     }
 
     fn mock_tx(value: Word, gas_price: Word, calldata: Vec<u8>) -> eth_types::Transaction {
@@ -431,13 +428,7 @@ mod test {
         .unwrap()
         .into();
 
-        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
-        builder
-            .handle_block(&block.eth_block, &block.geth_traces)
-            .unwrap();
-        let block = block_convert(&builder.block, &builder.code_db);
-
-        assert_eq!(run_test_circuit(block), Ok(()));
+        assert_eq!(run_test_circuit_geth_data_default::<Fr>(block), Ok(()));
     }
 
     #[test]

@@ -596,6 +596,7 @@ pub mod dev {
     #[derive(Default)]
     struct CopyCircuitTester<F> {
         block: Block<F>,
+        max_txs: usize,
         randomness: F,
     }
 
@@ -605,7 +606,11 @@ pub mod dev {
         }
 
         pub fn new(block: Block<F>, randomness: F) -> Self {
-            Self { block, randomness }
+            Self {
+                block,
+                randomness,
+                max_txs: 4,
+            }
         }
         pub fn r() -> Expression<F> {
             123456u64.expr()
@@ -653,13 +658,16 @@ pub mod dev {
         ) -> Result<(), halo2_proofs::plonk::Error> {
             let challenges = Challenges::mock(Value::known(self.randomness));
 
-            config
-                .tx_table
-                .load(&mut layouter, &self.block.txs, self.randomness)?;
+            config.tx_table.load(
+                &mut layouter,
+                &self.block.txs,
+                self.max_txs,
+                self.randomness,
+            )?;
             config.rw_table.load(
                 &mut layouter,
                 &self.block.rws.table_assignments(),
-                self.block.state_circuit_pad_to,
+                self.block.circuits_params.max_rws,
                 self.randomness,
             )?;
             config.bytecode_table.load(
@@ -689,7 +697,10 @@ pub mod dev {
 mod tests {
     use super::dev::test_copy_circuit;
     use bus_mapping::evm::{gen_sha3_code, MemoryKind};
-    use bus_mapping::{circuit_input_builder::CircuitInputBuilder, mock::BlockData};
+    use bus_mapping::{
+        circuit_input_builder::{CircuitInputBuilder, CircuitsParams},
+        mock::BlockData,
+    };
     use eth_types::{bytecode, geth_types::GethData, Word};
     use mock::test_ctx::helpers::account_0_code_account_1_no_code;
     use mock::TestContext;
@@ -720,7 +731,14 @@ mod tests {
         )
         .unwrap();
         let block: GethData = test_ctx.into();
-        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+        let mut builder = BlockData::new_from_geth_data_with_params(
+            block.clone(),
+            CircuitsParams {
+                max_rws: 8192,
+                ..Default::default()
+            },
+        )
+        .new_circuit_input_builder();
         builder
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
@@ -748,7 +766,14 @@ mod tests {
         let (code, _) = gen_sha3_code(0x20, 0x200, MemoryKind::EqualToSize);
         let test_ctx = TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap();
         let block: GethData = test_ctx.into();
-        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+        let mut builder = BlockData::new_from_geth_data_with_params(
+            block.clone(),
+            CircuitsParams {
+                max_rws: 2000,
+                ..Default::default()
+            },
+        )
+        .new_circuit_input_builder();
         builder
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
