@@ -1,7 +1,7 @@
 use super::util::{CachedRegion, CellManager, CellType};
 use crate::{
     evm_circuit::{
-        param::{MAX_STEP_HEIGHT, STEP_WIDTH},
+        param::{MAX_STEP_HEIGHT, STEP_STATE_HEIGHT, STEP_WIDTH},
         util::{Cell, RandomLinearCombination},
         witness::{Block, Call, ExecStep},
     },
@@ -464,8 +464,14 @@ impl<F: FieldExt> Step<F> {
         meta: &mut ConstraintSystem<F>,
         advices: [Column<Advice>; STEP_WIDTH],
         offset: usize,
+        is_next: bool,
     ) -> Self {
-        let mut cell_manager = CellManager::new(meta, MAX_STEP_HEIGHT, &advices, offset);
+        let height = if is_next {
+            STEP_STATE_HEIGHT // Query only the state of the next step.
+        } else {
+            MAX_STEP_HEIGHT // Query the entire current step.
+        };
+        let mut cell_manager = CellManager::new(meta, height, &advices, offset);
         let state = {
             StepState {
                 execution_state: DynamicSelectorHalf::new(
