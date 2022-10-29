@@ -5,11 +5,14 @@ use crate::evm_circuit::step::ExecutionState;
 use crate::evm_circuit::util::constraint_builder::ConstraintBuilder;
 use crate::evm_circuit::util::CellType;
 
+type StepSize = Vec<(CellType, ColumnSize)>;
+type ColumnSize = (usize, usize, usize);
+
 /// Instrument captures metrics during the compilation of a circuit.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Instrument {
     // States -> Cell Types -> (width, height, num_cells)
-    states: Vec<(ExecutionState, Vec<(CellType, (usize, usize, usize))>)>,
+    states: Vec<(ExecutionState, StepSize)>,
 }
 
 impl Instrument {
