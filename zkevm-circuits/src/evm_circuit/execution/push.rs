@@ -144,7 +144,11 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::{evm_circuit::test::rand_bytes, test_util::run_test_circuits};
+    use crate::{
+        evm_circuit::test::rand_bytes,
+        test_util::{run_test_circuits, run_test_circuits_with_params},
+    };
+    use bus_mapping::circuit_input_builder::CircuitsParams;
     use eth_types::bytecode;
     use eth_types::evm_types::OpcodeId;
     use mock::TestContext;
@@ -258,9 +262,13 @@ mod test {
         bytecode.write_op(OpcodeId::STOP);
 
         assert_eq!(
-            run_test_circuits(
+            run_test_circuits_with_params(
                 TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
-                None
+                None,
+                CircuitsParams {
+                    max_rws: 2048,
+                    ..Default::default()
+                }
             ),
             Ok(())
         );

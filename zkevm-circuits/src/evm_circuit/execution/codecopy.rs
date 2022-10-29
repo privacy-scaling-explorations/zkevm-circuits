@@ -199,10 +199,11 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
 
 #[cfg(test)]
 mod tests {
+    use bus_mapping::circuit_input_builder::CircuitsParams;
     use eth_types::{bytecode, Word};
     use mock::TestContext;
 
-    use crate::test_util::run_test_circuits;
+    use crate::test_util::run_test_circuits_with_params;
 
     fn test_ok(memory_offset: usize, code_offset: usize, size: usize, large: bool) {
         let mut code = bytecode! {};
@@ -221,9 +222,13 @@ mod tests {
         code.append(&tail);
 
         assert_eq!(
-            run_test_circuits(
+            run_test_circuits_with_params(
                 TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap(),
                 None,
+                CircuitsParams {
+                    max_rws: 1024,
+                    ..Default::default()
+                }
             ),
             Ok(()),
         );
