@@ -1326,16 +1326,29 @@ impl<F: Field> KeccakPackedConfig<F> {
         );
         meta.create_gate("is final", |meta| {
             let mut cb = BaseConstraintBuilder::new(MAX_DEGREE);
-            cb.require_equal(
-                "is_final needs to be the same as the last is_padding in the block",
-                meta.query_advice(is_final, Rotation::cur()),
-                last_is_padding_in_block.expr(),
-            );
             // All absorb rows except the first row
-            cb.gate(
+            cb.condition(
                 meta.query_fixed(q_absorb, Rotation::cur())
                     - meta.query_fixed(q_first, Rotation::cur()),
-            )
+                |cb| {
+                    cb.require_equal(
+                        "is_final needs to be the same as the last is_padding in the block",
+                        meta.query_advice(is_final, Rotation::cur()),
+                        last_is_padding_in_block.expr(),
+                    );
+                },
+            );
+            // is_final can only be 1 when q_enable
+            cb.condition(
+                not::expr(meta.query_fixed(q_enable, Rotation::cur())),
+                |cb| {
+                    cb.require_zero(
+                        "is_final only when q_enable",
+                        meta.query_advice(is_final, Rotation::cur()),
+                    );
+                },
+            );
+            cb.gate(1.expr())
         });
 
         // Padding
