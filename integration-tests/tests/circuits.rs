@@ -17,6 +17,7 @@ use log::trace;
 use paste::paste;
 use rand_chacha::rand_core::SeedableRng;
 use rand_chacha::ChaCha20Rng;
+use std::default::Default;
 use std::marker::PhantomData;
 use zkevm_circuits::bytecode_circuit::dev::test_bytecode_circuit;
 use zkevm_circuits::copy_circuit::dev::test_copy_circuit;
@@ -138,18 +139,29 @@ pub async fn test_copy_circuit_block(block_num: u64) {
 }
 
 pub async fn test_super_circuit_block(block_num: u64) {
+    const MAX_TXS: usize = 4;
+    const MAX_CALLDATA: usize = 512;
+    const MAX_RWS: usize = 5888;
+
     log::info!("test super circuit, block number: {}", block_num);
-
     let cli = get_client();
-    let cli = BuilderClient::new(cli).await.unwrap();
-    let (builder, eth_block) = cli.gen_inputs(block_num).await.unwrap();
-
-    let (k, circuit, instance) = SuperCircuit::<_, 4, 255>::build_from_circuit_input_builder(
-        builder,
-        eth_block,
-        &mut ChaCha20Rng::seed_from_u64(2),
+    let cli = BuilderClient::new(
+        cli,
+        CircuitsParams {
+            max_rws: MAX_RWS,
+            ..Default::default()
+        },
     )
+    .await
     .unwrap();
+    let (builder, eth_block) = cli.gen_inputs(block_num).await.unwrap();
+    let (k, circuit, instance) =
+        SuperCircuit::<_, MAX_TXS, MAX_CALLDATA, MAX_RWS>::build_from_circuit_input_builder(
+            builder,
+            eth_block,
+            &mut ChaCha20Rng::seed_from_u64(2),
+        )
+        .unwrap();
     let prover = MockProver::run(k, &circuit, instance).unwrap();
     let res = prover.verify();
     if let Err(err) = res {
