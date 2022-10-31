@@ -41,6 +41,7 @@ impl<F: Field> EvmCircuit<F> {
         block_table: &dyn LookupTable<F>,
         copy_table: &dyn LookupTable<F>,
         keccak_table: &dyn LookupTable<F>,
+        exp_table: &dyn LookupTable<F>,
     ) -> Self {
         let fixed_table = [(); 4].map(|_| meta.fixed_column());
         let byte_table = [(); 1].map(|_| meta.fixed_column());
@@ -55,6 +56,7 @@ impl<F: Field> EvmCircuit<F> {
             block_table,
             copy_table,
             keccak_table,
+            exp_table,
         ));
 
         Self {
@@ -148,7 +150,7 @@ impl<F: Field> EvmCircuit<F> {
 pub mod test {
     use crate::{
         evm_circuit::{table::FixedTableTag, witness::Block, EvmCircuit},
-        table::{BlockTable, BytecodeTable, CopyTable, KeccakTable, RwTable, TxTable},
+        table::{BlockTable, BytecodeTable, CopyTable, ExpTable, KeccakTable, RwTable, TxTable},
         util::{power_of_randomness_from_instance, Challenges},
         witness::block_convert,
     };
@@ -218,6 +220,7 @@ pub mod test {
         block_table: BlockTable,
         copy_table: CopyTable,
         keccak_table: KeccakTable,
+        exp_table: ExpTable,
         pub evm_circuit: EvmCircuit<F>,
     }
 
@@ -252,6 +255,7 @@ pub mod test {
             let q_copy_table = meta.fixed_column();
             let copy_table = CopyTable::construct(meta, q_copy_table);
             let keccak_table = KeccakTable::construct(meta);
+            let exp_table = ExpTable::construct(meta);
 
             let power_of_randomness = power_of_randomness_from_instance(meta);
             let evm_circuit = EvmCircuit::configure(
@@ -263,6 +267,7 @@ pub mod test {
                 &block_table,
                 &copy_table,
                 &keccak_table,
+                &exp_table,
             );
 
             Self::Config {
@@ -272,6 +277,7 @@ pub mod test {
                 block_table,
                 copy_table,
                 keccak_table,
+                exp_table,
                 evm_circuit,
             }
         }
@@ -311,10 +317,10 @@ pub mod test {
             config
                 .copy_table
                 .load(&mut layouter, &self.block, self.block.randomness)?;
-
             config
                 .keccak_table
                 .dev_load(&mut layouter, &self.block.sha3_inputs, &challenges)?;
+            config.exp_table.load(&mut layouter, &self.block)?;
 
             config.evm_circuit.assign_block(&mut layouter, &self.block)
         }

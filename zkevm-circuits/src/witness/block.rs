@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use bus_mapping::circuit_input_builder::{self, CircuitsParams, CopyEvent};
+use bus_mapping::circuit_input_builder::{self, CircuitsParams, CopyEvent, ExpEvent};
 use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word};
 use halo2_proofs::halo2curves::bn256::Fr;
 use itertools::Itertools;
@@ -28,13 +28,17 @@ pub struct Block<F> {
     pub bytecodes: HashMap<Word, Bytecode>,
     /// The block context
     pub context: BlockContext,
-    /// Copy events for the EVM circuit's copy table.
+    /// Copy events for the copy circuit's table.
     pub copy_events: Vec<CopyEvent>,
+    /// Exponentiation traces for the exponentiation circuit's table.
+    pub exp_events: Vec<ExpEvent>,
     // TODO: Rename to `max_evm_rows`, maybe move to CircuitsParams
     /// Pad evm circuit to make selectors fixed, so vk/pk can be universal.
     /// When 0, the EVM circuit contains as many rows for all steps + 1 row
     /// for EndBlock.
     pub evm_circuit_pad_to: usize,
+    /// Pad exponentiation circuit to make selectors fixed.
+    pub exp_circuit_pad_to: usize,
     /// Circuit Setup Parameters
     pub circuits_params: CircuitsParams,
     /// Inputs to the SHA3 opcode
@@ -184,6 +188,7 @@ pub fn block_convert(
             })
             .collect(),
         copy_events: block.copy_events.clone(),
+        exp_events: block.exp_events.clone(),
         sha3_inputs: block.sha3_inputs.clone(),
         circuits_params: block.circuits_params.clone(),
         ..Default::default()
