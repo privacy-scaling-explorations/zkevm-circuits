@@ -1176,6 +1176,29 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         self.rw_counter_offset = self.rw_counter_offset.clone() + self.condition_expr() * rwc_inc;
     }
 
+    // Exponentiation Table
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn exp_table_lookup(
+        &mut self,
+        identifier: Expression<F>,
+        is_last: Expression<F>,
+        base_limbs: [Expression<F>; 4],
+        exponent_lo_hi: [Expression<F>; 2],
+        exponentiation_lo_hi: [Expression<F>; 2],
+    ) {
+        self.add_lookup(
+            "exponentiation lookup",
+            Lookup::ExpTable {
+                identifier,
+                is_last,
+                base_limbs,
+                exponent_lo_hi,
+                exponentiation_lo_hi,
+            },
+        );
+    }
+
     // Keccak Table
 
     pub(crate) fn keccak_table_lookup(
