@@ -1,6 +1,8 @@
 //! Block-related utility module
 
-use super::{execution::ExecState, transaction::Transaction, CircuitsParams, CopyEvent, ExecStep};
+use super::{
+    execution::ExecState, transaction::Transaction, CircuitsParams, CopyEvent, ExecStep, ExpEvent,
+};
 use crate::{
     operation::{OperationContainer, RWCounter},
     Error,
@@ -79,6 +81,8 @@ pub struct Block {
     pub copy_events: Vec<CopyEvent>,
     /// Inputs to the SHA3 opcode
     pub sha3_inputs: Vec<Vec<u8>>,
+    /// Exponentiation events in the block.
+    pub exp_events: Vec<ExpEvent>,
     code: HashMap<Hash, Vec<u8>>,
     /// Circuits Setup Paramteres
     pub circuits_params: CircuitsParams,
@@ -127,6 +131,7 @@ impl Block {
                 },
             },
             copy_events: Vec::new(),
+            exp_events: Vec::new(),
             code: HashMap::new(),
             sha3_inputs: Vec::new(),
             circuits_params,
@@ -146,7 +151,11 @@ impl Block {
 
 impl Block {
     /// Push a copy event to the block.
-    pub fn add_copy_event(&mut self, copy: CopyEvent) {
-        self.copy_events.push(copy);
+    pub fn add_copy_event(&mut self, event: CopyEvent) {
+        self.copy_events.push(event);
+    }
+    /// Push an exponentiation event to the block.
+    pub fn add_exp_event(&mut self, event: ExpEvent) {
+        self.exp_events.push(event);
     }
 }

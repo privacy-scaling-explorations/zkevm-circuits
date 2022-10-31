@@ -23,7 +23,9 @@ use core::fmt::Debug;
 use eth_types::sign_types::{pk_bytes_le, pk_bytes_swap_endianness, SignData};
 use eth_types::{self, geth_types, Address, GethExecStep, GethExecTrace, Word};
 use ethers_providers::JsonRpcClient;
-pub use execution::{CopyDataType, CopyEvent, CopyStep, ExecState, ExecStep, NumberOrHash};
+pub use execution::{
+    CopyDataType, CopyEvent, CopyStep, ExecState, ExecStep, ExpEvent, ExpStep, NumberOrHash,
+};
 pub use input_state_ref::CircuitInputStateRef;
 use itertools::Itertools;
 use std::collections::HashMap;

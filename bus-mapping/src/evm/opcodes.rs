@@ -31,6 +31,7 @@ mod codecopy;
 mod codesize;
 mod create;
 mod dup;
+mod exp;
 mod extcodecopy;
 mod extcodehash;
 mod extcodesize;
@@ -67,6 +68,7 @@ use codecopy::Codecopy;
 use codesize::Codesize;
 use create::DummyCreate;
 use dup::Dup;
+use exp::Exponentiation;
 use extcodecopy::Extcodecopy;
 use extcodehash::Extcodehash;
 use extcodesize::Extcodesize;
@@ -133,7 +135,6 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         OpcodeId::SMOD => StackOnlyOpcode::<2, 1>::gen_associated_ops,
         OpcodeId::ADDMOD => StackOnlyOpcode::<3, 1>::gen_associated_ops,
         OpcodeId::MULMOD => StackOnlyOpcode::<3, 1>::gen_associated_ops,
-        OpcodeId::EXP => StackOnlyOpcode::<2, 1>::gen_associated_ops,
         OpcodeId::SIGNEXTEND => StackOnlyOpcode::<2, 1>::gen_associated_ops,
         OpcodeId::LT => StackOnlyOpcode::<2, 1>::gen_associated_ops,
         OpcodeId::GT => StackOnlyOpcode::<2, 1>::gen_associated_ops,
@@ -161,6 +162,7 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         OpcodeId::GASPRICE => GasPrice::gen_associated_ops,
         OpcodeId::CODECOPY => Codecopy::gen_associated_ops,
         OpcodeId::CODESIZE => Codesize::gen_associated_ops,
+        OpcodeId::EXP => Exponentiation::gen_associated_ops,
         OpcodeId::EXTCODESIZE => Extcodesize::gen_associated_ops,
         OpcodeId::EXTCODECOPY => Extcodecopy::gen_associated_ops,
         OpcodeId::RETURNDATASIZE => Returndatasize::gen_associated_ops,
