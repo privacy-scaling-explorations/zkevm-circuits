@@ -1,6 +1,6 @@
 use bus_mapping::evm::OpcodeId;
 use eth_types::{Field, ToLittleEndian, ToScalar, U256};
-use gadgets::util::{and, not, or, split_u256, sum, Expr};
+use gadgets::util::{and, not, split_u256, sum, Expr};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 use crate::evm_circuit::{
@@ -133,7 +133,10 @@ impl<F: Field> ExecutionGadget<F> for ExponentiationGadget<F> {
         // case, is_first == is_last == true for that step.
         let single_step = cb.query_cell();
         cb.condition(
-            not::expr(or::expr([exponent_is_zero_expr, exponent_is_one_expr])),
+            and::expr([
+                not::expr(exponent_is_zero_expr),
+                not::expr(exponent_is_one_expr),
+            ]),
             |cb| {
                 let base_limbs = [
                     from_bytes::expr(&base_rlc.cells[0x00..0x08]),
