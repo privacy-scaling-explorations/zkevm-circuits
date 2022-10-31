@@ -1338,9 +1338,11 @@ impl<F: Field> KeccakPackedConfig<F> {
                     );
                 },
             );
-            // is_final can only be 1 when q_enable
+            // For all the rows of a round, only the first row can have `is_final == 1`.
             cb.condition(
-                not::expr(meta.query_fixed(q_enable, Rotation::cur())),
+                (1..get_num_rows_per_round() as i32)
+                    .map(|i| meta.query_fixed(q_enable, Rotation(-i)))
+                    .fold(0.expr(), |acc, elem| acc + elem),
                 |cb| {
                     cb.require_zero(
                         "is_final only when q_enable",
@@ -1977,7 +1979,6 @@ fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: &[u8], r: F) {
         }
 
         for round in 0..NUM_ROUNDS + 1 {
-            let is_final = is_final_block && round == NUM_ROUNDS;
             let round_cst = pack_u64(ROUND_CST[round]);
             for row_idx in 0..get_num_rows_per_round() {
                 rows.push(KeccakRow {
@@ -1988,7 +1989,7 @@ fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: &[u8], r: F) {
                     q_padding: row_idx == 0 && round < NUM_WORDS_TO_ABSORB,
                     q_padding_last: row_idx == 0 && round == NUM_WORDS_TO_ABSORB - 1,
                     round_cst,
-                    is_final,
+                    is_final: is_final_block && round == NUM_ROUNDS && row_idx == 0,
                     length: round_lengths[round],
                     data_rlc: round_data_rlcs[round],
                     hash_rlc,
