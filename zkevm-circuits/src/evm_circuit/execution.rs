@@ -773,30 +773,23 @@ impl<F: Field> ExecutionConfig<F> {
 
                 let evm_rows = block.evm_circuit_pad_to;
                 let exact = evm_rows == 0;
-                // end_block_rows tracks the remaining EndBlock rows, and is set once all the
-                // transaction steps have been assigned.
-                let mut end_block_rows = None;
+                let mut block_step = end_block_not_last;
                 let mut get_next = |offset: &usize| match steps.next() {
                     Some((transaction, step)) => {
                         Some((transaction, &transaction.calls[step.call_index], step))
                     }
                     None => {
-                        end_block_rows = Some(match end_block_rows {
-                            None => {
-                                if exact {
-                                    1
-                                } else {
-                                    evm_rows - offset
-                                }
-                            }
-                            Some(i) => i - 1,
-                        });
-                        match end_block_rows {
-                            Some(0) => None,
-                            Some(1) => Some((&dummy_tx, &last_call, end_block_last)),
-                            Some(_) => Some((&dummy_tx, &last_call, end_block_not_last)),
-                            _ => unreachable!(),
+                        if block_step == end_block_last {
+                            return None;
                         }
+
+                        if exact {
+                            block_step = end_block_last;
+                        } else if (evm_rows - offset) == 2 {
+                            block_step = end_block_last;
+                        }
+
+                        Some((&dummy_tx, &last_call, block_step))
                     }
                 };
                 let mut next = get_next(&offset);
@@ -848,7 +841,7 @@ impl<F: Field> ExecutionConfig<F> {
 
                     offset += height;
 
-                    if !exact && offset >= evm_rows {
+                    if !exact && offset > evm_rows {
                         log::error!(
                             "evm circuit offset larger than padding: {} > {}",
                             offset,
