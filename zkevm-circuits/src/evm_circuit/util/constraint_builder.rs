@@ -23,11 +23,11 @@ use halo2_proofs::{
 use super::{rlc, CachedRegion, CellType, StoredExpression};
 
 // Max degree allowed in all expressions passing through the ConstraintBuilder.
-// It aims to cap `extended_k` to 2, which allows constraint degree to 2^2+1,
-// but each ExecutionGadget has implicit selector degree 3, so here it only
-// allows 2^2+1-3 = 2.
-const MAX_DEGREE: usize = 5;
-const IMPLICIT_DEGREE: usize = 3;
+// It aims for `extended_k = k + 3`, which allows constraint degree to 2^3+1=9,
+// but each ExecutionGadget has implicit selector degree 4, so here it only
+// allows 9-4=5.
+const MAX_DEGREE: usize = 9; // 2^3 + 1
+const IMPLICIT_DEGREE: usize = 4; // q_usable + q_step + 2 state selectors
 
 pub(crate) enum Transition<T> {
     Same,

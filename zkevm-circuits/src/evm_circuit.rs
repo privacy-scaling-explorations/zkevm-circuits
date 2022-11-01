@@ -435,6 +435,8 @@ mod evm_circuit_stats {
         let mut meta = ConstraintSystem::<Fr>::default();
         let circuit = TestCircuit::configure(&mut meta);
 
+        println!("Gates max_degree={}", meta.degree());
+
         let mut implemented_states = Vec::new();
         for state in ExecutionState::iter() {
             let height = circuit.evm_circuit.execution.get_step_height_option(state);
