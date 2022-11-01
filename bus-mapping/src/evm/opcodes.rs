@@ -71,11 +71,8 @@ use codecopy::Codecopy;
 use codesize::Codesize;
 use create::DummyCreate;
 use dup::Dup;
-<<<<<<< HEAD
-use exp::Exponentiation;
-=======
 use error_invalid_jump::ErrorInvalidJump;
->>>>>>> 73f85f97 (invalid jump error state circuit)
+use exp::Exponentiation;
 use extcodecopy::Extcodecopy;
 use extcodehash::Extcodehash;
 use extcodesize::Extcodesize;
@@ -309,7 +306,9 @@ pub fn gen_associated_ops(
         exec_step.error = Some(exec_error.clone());
         // for `oog_or_stack_error` error message will be returned by geth_step error
         // field, when this kind of error happens, no more proceeding
-        if !exec_step.oog_or_stack_error() {
+        if exec_step.oog_or_stack_error() {
+            state.gen_restore_context_ops(&mut exec_step, geth_steps)?;
+        } else {
             if geth_step.op.is_call_or_create() {
                 let call = state.parse_call(geth_step)?;
                 // Switch to callee's call context
