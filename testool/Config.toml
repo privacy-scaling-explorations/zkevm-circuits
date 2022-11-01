@@ -3,6 +3,7 @@ id="nightly"
 path="tests/src/GeneralStateTestsFiller/**/*"
 max_gas = 500000
 max_steps = 1000
+max_rws = 51000
 unimplemented_opcodes = [
     "SAR",
     "RETURN",
@@ -28,6 +29,7 @@ id = "light"
 path="tests/src/GeneralStateTestsFiller/**/*"
 max_gas = 500000
 max_steps = 1000
+max_rws = 51000
 unimplemented_opcodes = []
 allow_tests=[
 	"add_d0(add_neg1_neg1)_g0_v0",

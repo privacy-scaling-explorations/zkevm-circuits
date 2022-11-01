@@ -1,6 +1,6 @@
 use super::{AccountMatch, StateTest, StateTestResult};
 use crate::config::TestSuite;
-use bus_mapping::circuit_input_builder::CircuitInputBuilder;
+use bus_mapping::circuit_input_builder::{CircuitInputBuilder, CircuitsParams};
 use bus_mapping::mock::BlockData;
 use eth_types::{geth_types, Address, Bytes, GethExecTrace, U256, U64};
 use ethers_core::k256::ecdsa::SigningKey;
@@ -295,7 +295,8 @@ pub fn run_test(
     let mut builder;
 
     if !circuits_config.super_circuit {
-        let block_data = BlockData::new_from_geth_data(geth_data);
+        let circuits_params = CircuitsParams { max_txs: 1, max_rws :  55000 };
+        let block_data = BlockData::new_from_geth_data_with_params(geth_data, circuits_params);
         
         builder = block_data.new_circuit_input_builder();
         builder
