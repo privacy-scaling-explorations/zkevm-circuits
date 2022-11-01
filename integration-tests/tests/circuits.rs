@@ -17,12 +17,14 @@ use log::trace;
 use paste::paste;
 use rand_chacha::rand_core::SeedableRng;
 use rand_chacha::ChaCha20Rng;
+use std::default::Default;
 use std::marker::PhantomData;
 use zkevm_circuits::bytecode_circuit::dev::test_bytecode_circuit;
 use zkevm_circuits::copy_circuit::dev::test_copy_circuit;
 use zkevm_circuits::evm_circuit::witness::RwMap;
 use zkevm_circuits::evm_circuit::{test::run_test_circuit, witness::block_convert};
 use zkevm_circuits::state_circuit::StateCircuit;
+use zkevm_circuits::super_circuit::SuperCircuit;
 use zkevm_circuits::tx_circuit::{sign_verify::SignVerifyChip, Secp256k1Affine, TxCircuit};
 
 lazy_static! {
@@ -131,6 +133,39 @@ pub async fn test_copy_circuit_block(block_num: u64) {
     assert!(test_copy_circuit(DEGREE, block).is_ok());
 }
 
+pub async fn test_super_circuit_block(block_num: u64) {
+    const MAX_TXS: usize = 4;
+    const MAX_CALLDATA: usize = 512;
+    const MAX_RWS: usize = 5888;
+
+    log::info!("test super circuit, block number: {}", block_num);
+    let cli = get_client();
+    let cli = BuilderClient::new(
+        cli,
+        CircuitsParams {
+            max_rws: MAX_RWS,
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let (builder, eth_block) = cli.gen_inputs(block_num).await.unwrap();
+    let (k, circuit, instance) =
+        SuperCircuit::<_, MAX_TXS, MAX_CALLDATA, MAX_RWS>::build_from_circuit_input_builder(
+            builder,
+            eth_block,
+            &mut ChaCha20Rng::seed_from_u64(2),
+        )
+        .unwrap();
+    let prover = MockProver::run(k, &circuit, instance).unwrap();
+    let res = prover.verify();
+    if let Err(err) = res {
+        eprintln!("Verification failures:");
+        eprintln!("{:#?}", err);
+        panic!("Failed verification");
+    }
+}
+
 macro_rules! declare_tests {
     ($name:ident, $block_tag:expr) => {
         paste! {
@@ -169,6 +204,12 @@ macro_rules! declare_tests {
                 test_copy_circuit_block(*block_num).await;
             }
 
+            #[tokio::test]
+            async fn [<serial_test_super_ $name>]() {
+                log_init();
+                let block_num = GEN_DATA.blocks.get($block_tag).unwrap();
+                test_super_circuit_block(*block_num).await;
+            }
         }
     };
 }

@@ -65,10 +65,10 @@ use crate::tx_circuit::{TxCircuit, TxCircuitConfig};
 use crate::util::Challenges;
 use crate::witness::{block_convert, Block, MptUpdates};
 
+use bus_mapping::circuit_input_builder::CircuitInputBuilder;
 use bus_mapping::mock::BlockData;
-use eth_types::geth_types::{self, GethData};
+use eth_types::geth_types::{self, GethData, Transaction};
 use eth_types::Field;
-
 use ethers_core::types::H256;
 use halo2_proofs::arithmetic::CurveAffine;
 use halo2_proofs::halo2curves::{
@@ -327,19 +327,25 @@ impl<const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: usize>
         geth_data: GethData,
         rng: &mut (impl RngCore + Clone),
     ) -> Result<(u32, Self, Vec<Vec<Fr>>), bus_mapping::Error> {
-        let txs: Vec<_> = geth_data
-            .eth_block
-            .transactions
-            .iter()
-            .map(geth_types::Transaction::from)
-            .collect();
-
         let block_data = BlockData::new_from_geth_data(geth_data.clone());
         let mut builder = block_data.new_circuit_input_builder();
-
         builder
             .handle_block(&geth_data.eth_block, &geth_data.geth_traces)
             .expect("could not handle block tx");
+
+        Self::build_from_circuit_input_builder(builder, geth_data.eth_block, rng)
+    }
+
+    /// From CircuitInputBuilder, generate a SuperCircuit instance with all of
+    /// the sub-circuits filled with their corresponding witnesses.
+    ///
+    /// Also, return with it the minimum required SRS degree for the circuit and
+    /// the Public Inputs needed.
+    pub fn build_from_circuit_input_builder(
+        builder: CircuitInputBuilder,
+        eth_block: eth_types::Block<eth_types::Transaction>,
+        rng: &mut (impl RngCore + Clone),
+    ) -> Result<(u32, Self, Vec<Vec<Fr>>), bus_mapping::Error> {
         let keccak_inputs = builder.keccak_inputs()?;
         let mut block = block_convert(&builder.block, &builder.code_db);
         block.randomness = Fr::from(MOCK_RANDOMNESS);
@@ -367,12 +373,17 @@ impl<const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: usize>
 
         let aux_generator = <Secp256k1Affine as CurveAffine>::CurveExt::random(rng).to_affine();
         let chain_id = block.context.chain_id;
+        let txs: Vec<Transaction> = eth_block
+            .transactions
+            .iter()
+            .map(geth_types::Transaction::from)
+            .collect();
         let tx_circuit = TxCircuit::new(aux_generator, chain_id.as_u64(), txs);
 
         let public_data = PublicData {
-            chain_id: geth_data.chain_id,
-            history_hashes: block_data.history_hashes,
-            eth_block: geth_data.eth_block,
+            chain_id,
+            history_hashes: builder.block.history_hashes,
+            eth_block,
             block_constants: geth_types::BlockConstants {
                 coinbase: block.context.coinbase,
                 timestamp: block.context.timestamp,
