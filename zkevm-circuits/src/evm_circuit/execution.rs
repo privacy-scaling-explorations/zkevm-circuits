@@ -783,9 +783,7 @@ impl<F: Field> ExecutionConfig<F> {
                             return None;
                         }
 
-                        if exact {
-                            block_step = end_block_last;
-                        } else if (evm_rows - offset) == 2 {
+                        if exact || (evm_rows - offset) == 2 {
                             block_step = end_block_last;
                         }
 
