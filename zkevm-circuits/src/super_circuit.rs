@@ -13,6 +13,7 @@
 //! - [x] Tx Circuit
 //! - [x] Bytecode Circuit
 //! - [x] Copy Circuit
+//! - [x] Exponentiation Circuit
 //! - [ ] Keccak Circuit
 //! - [ ] MPT Circuit
 //! - [x] PublicInputs Circuit
@@ -21,6 +22,8 @@
 //!
 //! - [x] Copy Table
 //!   - [x] Copy Circuit
+//!   - [x] EVM Circuit
+//! - [x] Exponentiation Table
 //!   - [x] EVM Circuit
 //! - [ ] Rw Table
 //!   - [ ] State Circuit
@@ -53,10 +56,11 @@ use crate::bytecode_circuit::bytecode_unroller::{
 };
 use crate::copy_circuit::CopyCircuit;
 use crate::evm_circuit::{table::FixedTableTag, EvmCircuit};
+use crate::exp_circuit::ExpCircuit;
 use crate::keccak_circuit::keccak_packed_multi::KeccakPackedConfig as KeccakConfig;
 use crate::pi_circuit::{PiCircuit, PiCircuitConfig, PublicData};
 use crate::state_circuit::StateCircuitConfig;
-use crate::table::{BlockTable, BytecodeTable, CopyTable, MptTable, RwTable, TxTable};
+use crate::table::{BlockTable, BytecodeTable, CopyTable, ExpTable, MptTable, RwTable, TxTable};
 use crate::tx_circuit::{TxCircuit, TxCircuitConfig};
 use crate::util::Challenges;
 use crate::witness::{block_convert, Block, MptUpdates};
@@ -100,6 +104,7 @@ pub struct SuperCircuitConfig<
     bytecode_table: BytecodeTable,
     block_table: BlockTable,
     copy_table: CopyTable,
+    exp_table: ExpTable,
     evm_circuit: EvmCircuit<F>,
     state_circuit: StateCircuitConfig<F>,
     tx_circuit: TxCircuitConfig<F>,
@@ -107,6 +112,7 @@ pub struct SuperCircuitConfig<
     copy_circuit: CopyCircuit<F>,
     keccak_circuit: KeccakConfig<F>,
     pi_circuit: PiCircuitConfig<F, MAX_TXS, MAX_CALLDATA>,
+    exp_circuit: ExpCircuit<F>,
 }
 
 /// The Super Circuit contains all the zkEVM circuits
@@ -170,6 +176,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: u
         let block_table = BlockTable::construct(meta);
         let q_copy_table = meta.fixed_column();
         let copy_table = CopyTable::construct(meta, q_copy_table);
+        let exp_table = ExpTable::construct(meta);
 
         let power_of_randomness = array::from_fn(|i| {
             Expression::Constant(F::from(MOCK_RANDOMNESS).pow(&[1 + i as u64, 0, 0, 0]))
@@ -187,6 +194,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: u
             &block_table,
             &copy_table,
             &keccak_table,
+            &exp_table,
         );
         let state_circuit =
             StateCircuitConfig::configure(meta, power_of_randomness.clone(), &rw_table, &mpt_table);
@@ -200,6 +208,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: u
             bytecode_table: bytecode_table.clone(),
             block_table,
             copy_table,
+            exp_table,
             evm_circuit,
             state_circuit,
             copy_circuit: CopyCircuit::configure(
@@ -225,6 +234,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: u
             ),
             keccak_circuit,
             pi_circuit,
+            exp_circuit: ExpCircuit::configure(meta, exp_table),
         }
     }
 
@@ -284,6 +294,10 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: u
             &bytecodes,
             &challenges,
         )?;
+        // --- Exponentiation Circuit ---
+        config
+            .exp_circuit
+            .assign_block(&mut layouter, &self.block)?;
         // --- Keccak Table ---
         config.keccak_circuit.load(&mut layouter)?;
         config.keccak_circuit.assign_from_witness(
