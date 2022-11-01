@@ -14,7 +14,7 @@ use crate::{
 
 use super::{call::ReversionGroup, Call, CallContext, CallKind, CodeSource, ExecStep};
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 /// Context of a [`Transaction`] which can mutate in an [`ExecStep`].
 pub struct TransactionContext {
     /// Unique identifier of transaction of the block. The value is `index + 1`.
@@ -198,7 +198,7 @@ pub struct Transaction {
     /// Signature
     pub signature: Signature,
     /// Calls made in the transaction
-    calls: Vec<Call>,
+    pub(crate) calls: Vec<Call>,
     /// Execution steps
     steps: Vec<ExecStep>,
 }
@@ -222,6 +222,26 @@ impl From<&Transaction> for geth_types::Transaction {
 }
 
 impl Transaction {
+    /// Create a dummy Transaction with zero values
+    pub fn dummy() -> Self {
+        Self {
+            nonce: 0,
+            gas: 0,
+            gas_price: Word::zero(),
+            from: Address::zero(),
+            to: Address::zero(),
+            value: Word::zero(),
+            input: Vec::new(),
+            signature: Signature {
+                r: Word::zero(),
+                s: Word::zero(),
+                v: 0,
+            },
+            calls: Vec::new(),
+            steps: Vec::new(),
+        }
+    }
+
     /// Create a new Self.
     pub fn new(
         call_id: usize,
@@ -272,6 +292,7 @@ impl Transaction {
                 code_hash,
                 depth: 1,
                 value: eth_tx.value,
+                call_data_length: eth_tx.input.len().try_into().unwrap(),
                 ..Default::default()
             }
         };
@@ -281,7 +302,9 @@ impl Transaction {
             gas: eth_tx.gas.as_u64(),
             gas_price: eth_tx.gas_price.unwrap_or_default(),
             from: eth_tx.from,
-            to: eth_tx.to.unwrap_or_default(),
+            to: eth_tx
+                .to
+                .unwrap_or_else(|| get_contract_address(eth_tx.from, eth_tx.nonce)),
             value: eth_tx.value,
             input: eth_tx.input.to_vec(),
             calls: vec![call],

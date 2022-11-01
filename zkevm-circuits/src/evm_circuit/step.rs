@@ -1,9 +1,9 @@
 use super::util::{CachedRegion, CellManager, CellType};
 use crate::{
     evm_circuit::{
-        param::{MAX_STEP_HEIGHT, STEP_WIDTH},
+        param::{MAX_STEP_HEIGHT, STEP_STATE_HEIGHT, STEP_WIDTH},
         util::{Cell, RandomLinearCombination},
-        witness::{Block, Call, ExecStep, Transaction},
+        witness::{Block, Call, ExecStep},
     },
     util::Expr,
 };
@@ -80,12 +80,11 @@ pub enum ExecutionState {
     SWAP, // SWAP1, SWAP2, ..., SWAP16
     LOG,  // LOG0, LOG1, ..., LOG4
     CREATE,
-    CALL,
+    CALL_STATICCALL,
     CALLCODE,
     RETURN,
     DELEGATECALL,
     CREATE2,
-    STATICCALL,
     REVERT,
     SELFDESTRUCT,
     // Error cases
@@ -309,12 +308,11 @@ impl ExecutionState {
                 OpcodeId::LOG4,
             ],
             Self::CREATE => vec![OpcodeId::CREATE],
-            Self::CALL => vec![OpcodeId::CALL],
+            Self::CALL_STATICCALL => vec![OpcodeId::CALL, OpcodeId::STATICCALL],
             Self::CALLCODE => vec![OpcodeId::CALLCODE],
             Self::RETURN => vec![OpcodeId::RETURN],
             Self::DELEGATECALL => vec![OpcodeId::DELEGATECALL],
             Self::CREATE2 => vec![OpcodeId::CREATE2],
-            Self::STATICCALL => vec![OpcodeId::STATICCALL],
             Self::REVERT => vec![OpcodeId::REVERT],
             Self::SELFDESTRUCT => vec![OpcodeId::SELFDESTRUCT],
             _ => vec![],
@@ -466,8 +464,14 @@ impl<F: FieldExt> Step<F> {
         meta: &mut ConstraintSystem<F>,
         advices: [Column<Advice>; STEP_WIDTH],
         offset: usize,
+        is_next: bool,
     ) -> Self {
-        let mut cell_manager = CellManager::new(meta, MAX_STEP_HEIGHT, &advices, offset);
+        let height = if is_next {
+            STEP_STATE_HEIGHT // Query only the state of the next step.
+        } else {
+            MAX_STEP_HEIGHT // Query the entire current step.
+        };
+        let mut cell_manager = CellManager::new(meta, height, &advices, offset);
         let state = {
             StepState {
                 execution_state: DynamicSelectorHalf::new(
@@ -507,7 +511,6 @@ impl<F: FieldExt> Step<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
-        _: &Transaction,
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {

@@ -129,12 +129,12 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
         self.value
             .assign(region, offset, Some(value.to_le_bytes()))?;
 
-        let num_additional_pushed = (opcode.as_u8() - OpcodeId::PUSH1.as_u8()) as usize;
+        let num_additional_pushed = opcode.postfix().expect("opcode with postfix") - 1;
         for (idx, selector) in self.selectors.iter().enumerate() {
             selector.assign(
                 region,
                 offset,
-                Value::known(F::from((idx < num_additional_pushed) as u64)),
+                Value::known(F::from((idx < num_additional_pushed as usize) as u64)),
             )?;
         }
 
@@ -144,13 +144,17 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::{evm_circuit::test::rand_bytes, test_util::run_test_circuits};
+    use crate::{
+        evm_circuit::test::rand_bytes,
+        test_util::{run_test_circuits, run_test_circuits_with_params},
+    };
+    use bus_mapping::circuit_input_builder::CircuitsParams;
     use eth_types::bytecode;
     use eth_types::evm_types::OpcodeId;
     use mock::TestContext;
 
     fn test_ok(opcode: OpcodeId, bytes: &[u8]) {
-        assert!(bytes.len() as u8 == opcode.as_u8() - OpcodeId::PUSH1.as_u8() + 1,);
+        assert!(bytes.len() == opcode.data_len());
 
         let mut bytecode = bytecode! {
             .write_op(opcode)
@@ -239,7 +243,7 @@ mod test {
     }
 
     fn test_stack_overflow(opcode: OpcodeId, bytes: &[u8]) {
-        assert!(bytes.len() as u8 == opcode.as_u8() - OpcodeId::PUSH1.as_u8() + 1,);
+        assert!(bytes.len() == opcode.data_len());
 
         let mut bytecode = bytecode! {
             .write_op(opcode)
@@ -258,9 +262,13 @@ mod test {
         bytecode.write_op(OpcodeId::STOP);
 
         assert_eq!(
-            run_test_circuits(
+            run_test_circuits_with_params(
                 TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
-                None
+                None,
+                CircuitsParams {
+                    max_rws: 2048,
+                    ..Default::default()
+                }
             ),
             Ok(())
         );

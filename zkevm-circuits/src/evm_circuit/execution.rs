@@ -14,13 +14,17 @@ use crate::{
     util::{query_expression, Expr},
 };
 use eth_types::Field;
+use gadgets::util::not;
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{Layouter, Region, Value},
-    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector, VirtualCells},
+    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, Selector, VirtualCells},
     poly::Rotation,
 };
-use std::{collections::HashMap, iter};
+use std::{
+    collections::{BTreeSet, HashMap},
+    iter,
+};
 use strum::IntoEnumIterator;
 
 mod add_sub;
@@ -31,11 +35,11 @@ mod bitwise;
 mod block_ctx;
 mod blockhash;
 mod byte;
-mod call;
 mod calldatacopy;
 mod calldataload;
 mod calldatasize;
 mod caller;
+mod callop;
 mod callvalue;
 mod chainid;
 mod codecopy;
@@ -47,6 +51,7 @@ mod end_block;
 mod end_tx;
 mod error_oog_constant;
 mod error_oog_static_memory;
+mod exp;
 mod extcodehash;
 mod gas;
 mod gasprice;
@@ -59,12 +64,14 @@ mod memory;
 mod msize;
 mod mul_div_mod;
 mod mulmod;
-mod not;
+#[path = "execution/not.rs"]
+mod opcode_not;
 mod origin;
 mod pc;
 mod pop;
 mod push;
 mod r#return;
+mod returndatasize;
 mod sdiv_smod;
 mod selfbalance;
 mod sha3;
@@ -85,11 +92,11 @@ use bitwise::BitwiseGadget;
 use block_ctx::{BlockCtxU160Gadget, BlockCtxU256Gadget, BlockCtxU64Gadget};
 use blockhash::BlockHashGadget;
 use byte::ByteGadget;
-use call::CallGadget;
 use calldatacopy::CallDataCopyGadget;
 use calldataload::CallDataLoadGadget;
 use calldatasize::CallDataSizeGadget;
 use caller::CallerGadget;
+use callop::CallOpGadget;
 use callvalue::CallValueGadget;
 use chainid::ChainIdGadget;
 use codecopy::CodeCopyGadget;
@@ -100,6 +107,7 @@ use dup::DupGadget;
 use end_block::EndBlockGadget;
 use end_tx::EndTxGadget;
 use error_oog_constant::ErrorOOGConstantGadget;
+use exp::ExponentiationGadget;
 use extcodehash::ExtcodehashGadget;
 use gas::GasGadget;
 use gasprice::GasPriceGadget;
@@ -112,12 +120,13 @@ use memory::MemoryGadget;
 use msize::MsizeGadget;
 use mul_div_mod::MulDivModGadget;
 use mulmod::MulModGadget;
-use not::NotGadget;
+use opcode_not::NotGadget;
 use origin::OriginGadget;
 use pc::PcGadget;
 use pop::PopGadget;
 use push::PushGadget;
 use r#return::ReturnGadget;
+use returndatasize::ReturnDataSizeGadget;
 use sdiv_smod::SignedDivModGadget;
 use selfbalance::SelfbalanceGadget;
 use shl_shr::ShlShrGadget;
@@ -155,6 +164,8 @@ pub(crate) struct ExecutionConfig<F> {
     // Dynamic selector that is enabled at the rows where each assigned execution step starts (a
     // step has dynamic height).
     q_step: Column<Advice>,
+    // Column to hold constant values used for copy constraints
+    constants: Column<Fixed>,
     num_rows_until_next_step: Column<Advice>,
     num_rows_inv: Column<Advice>,
     // Selector enabled in the row where the first execution step starts.
@@ -175,7 +186,7 @@ pub(crate) struct ExecutionConfig<F> {
     address_gadget: AddressGadget<F>,
     bitwise_gadget: BitwiseGadget<F>,
     byte_gadget: ByteGadget<F>,
-    call_gadget: CallGadget<F>,
+    call_op_gadget: CallOpGadget<F>,
     call_value_gadget: CallValueGadget<F>,
     calldatacopy_gadget: CallDataCopyGadget<F>,
     calldataload_gadget: CallDataLoadGadget<F>,
@@ -186,6 +197,7 @@ pub(crate) struct ExecutionConfig<F> {
     codesize_gadget: CodesizeGadget<F>,
     comparator_gadget: ComparatorGadget<F>,
     dup_gadget: DupGadget<F>,
+    exp_gadget: ExponentiationGadget<F>,
     extcodehash_gadget: ExtcodehashGadget<F>,
     gas_gadget: GasGadget<F>,
     gasprice_gadget: GasPriceGadget<F>,
@@ -209,17 +221,15 @@ pub(crate) struct ExecutionConfig<F> {
     sha3_gadget: Sha3Gadget<F>,
     shl_shr_gadget: ShlShrGadget<F>,
     balance_gadget: DummyGadget<F, 1, 1, { ExecutionState::BALANCE }>,
-    exp_gadget: DummyGadget<F, 2, 1, { ExecutionState::EXP }>,
     sar_gadget: DummyGadget<F, 2, 1, { ExecutionState::SAR }>,
     extcodesize_gadget: DummyGadget<F, 1, 1, { ExecutionState::EXTCODESIZE }>,
     extcodecopy_gadget: DummyGadget<F, 4, 0, { ExecutionState::EXTCODECOPY }>,
-    returndatasize_gadget: DummyGadget<F, 0, 1, { ExecutionState::RETURNDATASIZE }>,
+    returndatasize_gadget: ReturnDataSizeGadget<F>,
     returndatacopy_gadget: DummyGadget<F, 3, 0, { ExecutionState::RETURNDATACOPY }>,
     create_gadget: DummyGadget<F, 3, 1, { ExecutionState::CREATE }>,
     callcode_gadget: DummyGadget<F, 7, 1, { ExecutionState::CALLCODE }>,
     delegatecall_gadget: DummyGadget<F, 6, 1, { ExecutionState::DELEGATECALL }>,
     create2_gadget: DummyGadget<F, 4, 1, { ExecutionState::CREATE2 }>,
-    staticcall_gadget: DummyGadget<F, 6, 1, { ExecutionState::STATICCALL }>,
     selfdestruct_gadget: DummyGadget<F, 1, 0, { ExecutionState::SELFDESTRUCT }>,
     signed_comparator_gadget: SignedComparatorGadget<F>,
     signextend_gadget: SignextendGadget<F>,
@@ -279,16 +289,19 @@ impl<F: Field> ExecutionConfig<F> {
         block_table: &dyn LookupTable<F>,
         copy_table: &dyn LookupTable<F>,
         keccak_table: &dyn LookupTable<F>,
+        exp_table: &dyn LookupTable<F>,
     ) -> Self {
         let q_usable = meta.complex_selector();
         let q_step = meta.advice_column();
+        let constants = meta.fixed_column();
+        meta.enable_constant(constants);
         let num_rows_until_next_step = meta.advice_column();
         let num_rows_inv = meta.advice_column();
         let q_step_first = meta.complex_selector();
         let q_step_last = meta.complex_selector();
         let advices = [(); STEP_WIDTH].map(|_| meta.advice_column());
 
-        let step_curr = Step::new(meta, advices, 0);
+        let step_curr = Step::new(meta, advices, 0, false);
         let mut height_map = HashMap::new();
 
         meta.create_gate("Constrain execution state", |meta| {
@@ -299,16 +312,17 @@ impl<F: Field> ExecutionConfig<F> {
 
             let execution_state_selector_constraints = step_curr.state.execution_state.configure();
 
-            let _first_step_check = {
-                let begin_tx_selector =
-                    step_curr.execution_state_selector([ExecutionState::BeginTx]);
+            // NEW: Enabled, this will break hand crafted tests, maybe we can remove them?
+            let first_step_check = {
+                let begin_tx_end_block_selector = step_curr
+                    .execution_state_selector([ExecutionState::BeginTx, ExecutionState::EndBlock]);
                 iter::once((
-                    "First step should be BeginTx",
-                    q_step_first * (1.expr() - begin_tx_selector),
+                    "First step should be BeginTx or EndBlock",
+                    q_step_first * (1.expr() - begin_tx_end_block_selector),
                 ))
             };
 
-            let _last_step_check = {
+            let last_step_check = {
                 let end_block_selector =
                     step_curr.execution_state_selector([ExecutionState::EndBlock]);
                 iter::once((
@@ -320,14 +334,14 @@ impl<F: Field> ExecutionConfig<F> {
             execution_state_selector_constraints
                 .into_iter()
                 .map(move |(name, poly)| (name, q_usable.clone() * q_step.clone() * poly))
-            // TODO: Enable these after incomplete trace is no longer necessary.
-            // .chain(first_step_check)
-            // .chain(last_step_check)
+                .chain(first_step_check)
+                .chain(last_step_check)
         });
 
         meta.create_gate("q_step", |meta| {
             let q_usable = meta.query_selector(q_usable);
             let q_step_first = meta.query_selector(q_step_first);
+            let q_step_last = meta.query_selector(q_step_last);
             let q_step = meta.query_advice(q_step, Rotation::cur());
             let num_rows_left_cur = meta.query_advice(num_rows_until_next_step, Rotation::cur());
             let num_rows_left_next = meta.query_advice(num_rows_until_next_step, Rotation::next());
@@ -335,7 +349,17 @@ impl<F: Field> ExecutionConfig<F> {
 
             let mut cb = BaseConstraintBuilder::default();
             // q_step needs to be enabled on the first row
+            // rw_counter starts at 1
             cb.condition(q_step_first, |cb| {
+                cb.require_equal("q_step == 1", q_step.clone(), 1.expr());
+                cb.require_equal(
+                    "rw_counter is initialized to be 1",
+                    step_curr.state.rw_counter.expr(),
+                    1.expr(),
+                )
+            });
+            // q_step needs to be enabled on the last row
+            cb.condition(q_step_last, |cb| {
                 cb.require_equal("q_step == 1", q_step.clone(), 1.expr());
             });
             // Except when step is enabled, the step counter needs to decrease by 1
@@ -362,7 +386,7 @@ impl<F: Field> ExecutionConfig<F> {
         });
 
         let mut stored_expressions_map = HashMap::new();
-        let step_next = Step::new(meta, advices, MAX_STEP_HEIGHT);
+        let step_next = Step::new(meta, advices, MAX_STEP_HEIGHT, true);
         macro_rules! configure_gadget {
             () => {
                 Self::configure_gadget(
@@ -386,6 +410,7 @@ impl<F: Field> ExecutionConfig<F> {
         let config = Self {
             q_usable,
             q_step,
+            constants,
             num_rows_until_next_step,
             num_rows_inv,
             q_step_first,
@@ -400,7 +425,7 @@ impl<F: Field> ExecutionConfig<F> {
             addmod_gadget: configure_gadget!(),
             bitwise_gadget: configure_gadget!(),
             byte_gadget: configure_gadget!(),
-            call_gadget: configure_gadget!(),
+            call_op_gadget: configure_gadget!(),
             call_value_gadget: configure_gadget!(),
             calldatacopy_gadget: configure_gadget!(),
             calldataload_gadget: configure_gadget!(),
@@ -445,7 +470,6 @@ impl<F: Field> ExecutionConfig<F> {
             callcode_gadget: configure_gadget!(),
             delegatecall_gadget: configure_gadget!(),
             create2_gadget: configure_gadget!(),
-            staticcall_gadget: configure_gadget!(),
             selfdestruct_gadget: configure_gadget!(),
             shl_shr_gadget: configure_gadget!(),
             signed_comparator_gadget: configure_gadget!(),
@@ -502,6 +526,7 @@ impl<F: Field> ExecutionConfig<F> {
             block_table,
             copy_table,
             keccak_table,
+            exp_table,
             &power_of_randomness,
             &cell_manager,
         );
@@ -543,12 +568,12 @@ impl<F: Field> ExecutionConfig<F> {
                 G::EXECUTION_STATE,
             );
             G::configure(&mut cb);
-            let (_, _, _, height) = cb.build();
+            let (_, _, height) = cb.build();
             height
         };
 
         // Now actually configure the gadget with the correct minimal height
-        let step_next = &Step::new(meta, advices, height);
+        let step_next = &Step::new(meta, advices, height, true);
         let mut cb = ConstraintBuilder::new(
             step_curr.clone(),
             step_next.clone(),
@@ -568,7 +593,7 @@ impl<F: Field> ExecutionConfig<F> {
             (height - 1).expr(),
         );
 
-        let (constraints, constraints_first_step, stored_expressions, _) = cb.build();
+        let (constraints, stored_expressions, _) = cb.build();
         debug_assert!(
             !height_map.contains_key(&G::EXECUTION_STATE),
             "execution state already configured"
@@ -581,13 +606,20 @@ impl<F: Field> ExecutionConfig<F> {
         stored_expressions_map.insert(G::EXECUTION_STATE, stored_expressions);
 
         // Enforce the logic for this opcode
-        let q_steps: &dyn Fn(&mut VirtualCells<F>) -> Expression<F> =
+        let sel_step: &dyn Fn(&mut VirtualCells<F>) -> Expression<F> =
             &|meta| meta.query_advice(q_step, Rotation::cur());
-        let q_steps_first: &dyn Fn(&mut VirtualCells<F>) -> Expression<F> =
+        let sel_step_first: &dyn Fn(&mut VirtualCells<F>) -> Expression<F> =
             &|meta| meta.query_selector(q_step_first);
+        let sel_step_last: &dyn Fn(&mut VirtualCells<F>) -> Expression<F> =
+            &|meta| meta.query_selector(q_step_last);
+        let sel_not_step_last: &dyn Fn(&mut VirtualCells<F>) -> Expression<F> = &|meta| {
+            meta.query_advice(q_step, Rotation::cur()) * not::expr(meta.query_selector(q_step_last))
+        };
         for (selector, constraints) in [
-            (q_steps, constraints),
-            (q_steps_first, constraints_first_step),
+            (sel_step, constraints.step),
+            (sel_step_first, constraints.step_first),
+            (sel_step_last, constraints.step_last),
+            (sel_not_step_last, constraints.not_step_last),
         ] {
             if !constraints.is_empty() {
                 meta.create_gate(G::NAME, |meta| {
@@ -674,6 +706,7 @@ impl<F: Field> ExecutionConfig<F> {
         block_table: &dyn LookupTable<F>,
         copy_table: &dyn LookupTable<F>,
         keccak_table: &dyn LookupTable<F>,
+        exp_table: &dyn LookupTable<F>,
         power_of_randomness: &[Expression<F>; 31],
         cell_manager: &CellManager<F>,
     ) {
@@ -690,6 +723,7 @@ impl<F: Field> ExecutionConfig<F> {
                         Table::Byte => byte_table,
                         Table::Copy => copy_table,
                         Table::Keccak => keccak_table,
+                        Table::Exp => exp_table,
                     }
                     .table_exprs(meta);
                     vec![(
@@ -708,7 +742,6 @@ impl<F: Field> ExecutionConfig<F> {
         &self,
         layouter: &mut impl Layouter<F>,
         block: &Block<F>,
-        exact: bool,
     ) -> Result<(), Error> {
         let power_of_randomness = (1..32)
             .map(|exp| block.randomness.pow(&[exp, 0, 0, 0]))
@@ -723,33 +756,52 @@ impl<F: Field> ExecutionConfig<F> {
 
                 self.q_step_first.enable(&mut region, offset)?;
 
-                // handle EndBlock
-                let dummy_tx = Transaction {
-                    calls: vec![Default::default()],
-                    ..Default::default()
-                };
-                let last_tx = block.txs.last().unwrap_or(&dummy_tx);
-                let end_block_state = &ExecStep {
-                    rw_counter: if block.txs.is_empty() {
-                        0
-                    } else {
-                        // if it is the first tx,  less 1 rw lookup, refer to end_tx gadget
-                        last_tx.steps.last().unwrap().rw_counter + 9 - (last_tx.id == 1) as usize
-                    },
-                    execution_state: ExecutionState::EndBlock,
-                    ..Default::default()
-                };
+                let dummy_tx = Transaction::default();
+                let last_call = block
+                    .txs
+                    .last()
+                    .map(|tx| tx.calls[0].clone())
+                    .unwrap_or_else(Call::default);
+                let end_block_not_last = &block.end_block_not_last;
+                let end_block_last = &block.end_block_last;
                 // Collect all steps
                 let mut steps = block
                     .txs
                     .iter()
                     .flat_map(|tx| tx.steps.iter().map(move |step| (tx, step)))
-                    .chain(iter::repeat((last_tx, end_block_state)))
                     .peekable();
 
-                let mut last_height = 0;
-                while let Some((transaction, step)) = steps.next() {
-                    let call = &transaction.calls[step.call_index];
+                let evm_rows = block.evm_circuit_pad_to;
+                let exact = evm_rows == 0;
+                // end_block_rows tracks the remaining EndBlock rows, and is set once all the
+                // transaction steps have been assigned.
+                let mut end_block_rows = None;
+                let mut get_next = |offset: &usize| match steps.next() {
+                    Some((transaction, step)) => {
+                        Some((transaction, &transaction.calls[step.call_index], step))
+                    }
+                    None => {
+                        end_block_rows = Some(match end_block_rows {
+                            None => {
+                                if exact {
+                                    1
+                                } else {
+                                    evm_rows - offset
+                                }
+                            }
+                            Some(i) => i - 1,
+                        });
+                        match end_block_rows {
+                            Some(0) => None,
+                            Some(1) => Some((&dummy_tx, &last_call, end_block_last)),
+                            Some(_) => Some((&dummy_tx, &last_call, end_block_not_last)),
+                            _ => unreachable!(),
+                        }
+                    }
+                };
+                let mut next = get_next(&offset);
+                while let Some((transaction, call, step)) = next {
+                    next = get_next(&offset);
                     let height = self.get_step_height(step.execution_state);
 
                     // Assign the step witness
@@ -761,9 +813,7 @@ impl<F: Field> ExecutionConfig<F> {
                         call,
                         step,
                         height,
-                        steps.peek().map(|&(transaction, step)| {
-                            (transaction, &transaction.calls[step.call_index], step)
-                        }),
+                        next,
                         power_of_randomness,
                     )?;
 
@@ -797,26 +847,19 @@ impl<F: Field> ExecutionConfig<F> {
                     }
 
                     offset += height;
-                    last_height = height;
 
-                    if step.execution_state == ExecutionState::EndBlock {
-                        // evm_circuit_pad_to == 0 means no extra padding
-                        if exact || block.evm_circuit_pad_to == 0 {
-                            // no padding
-                            break;
-                        } else {
-                            // padding
-                            if offset >= block.evm_circuit_pad_to {
-                                if offset > block.evm_circuit_pad_to {
-                                    log::warn!(
-                                        "evm circuit offset larger than padding: {} > {}",
-                                        offset,
-                                        block.evm_circuit_pad_to
-                                    );
-                                }
-                                break;
-                            }
-                        }
+                    if !exact && offset >= evm_rows {
+                        log::error!(
+                            "evm circuit offset larger than padding: {} > {}",
+                            offset,
+                            evm_rows
+                        );
+                        return Err(Error::Synthesis);
+                    }
+
+                    if next.is_none() {
+                        // Assert that EndBlock height is 1
+                        debug_assert_eq!(height, 1);
                     }
                 }
 
@@ -834,7 +877,9 @@ impl<F: Field> ExecutionConfig<F> {
                     || Value::known(F::zero()),
                 )?;
 
-                self.q_step_last.enable(&mut region, offset - last_height)?;
+                const END_BLOCK_HEIGHT: usize = 1;
+                self.q_step_last
+                    .enable(&mut region, offset - END_BLOCK_HEIGHT)?;
 
                 Ok(())
             },
@@ -895,7 +940,7 @@ impl<F: Field> ExecutionConfig<F> {
     ) -> Result<(), Error> {
         log::trace!("assign_exec_step offset:{} step:{:?}", offset, step);
         self.step
-            .assign_exec_step(region, offset, block, transaction, call, step)?;
+            .assign_exec_step(region, offset, block, call, step)?;
 
         macro_rules! assign_exec_step {
             ($gadget:expr) => {
@@ -914,7 +959,7 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::ADDRESS => assign_exec_step!(self.address_gadget),
             ExecutionState::BITWISE => assign_exec_step!(self.bitwise_gadget),
             ExecutionState::BYTE => assign_exec_step!(self.byte_gadget),
-            ExecutionState::CALL => assign_exec_step!(self.call_gadget),
+            ExecutionState::CALL_STATICCALL => assign_exec_step!(self.call_op_gadget),
             ExecutionState::CALLDATACOPY => assign_exec_step!(self.calldatacopy_gadget),
             ExecutionState::CALLDATALOAD => assign_exec_step!(self.calldataload_gadget),
             ExecutionState::CALLDATASIZE => assign_exec_step!(self.calldatasize_gadget),
@@ -925,6 +970,7 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::CODESIZE => assign_exec_step!(self.codesize_gadget),
             ExecutionState::CMP => assign_exec_step!(self.comparator_gadget),
             ExecutionState::DUP => assign_exec_step!(self.dup_gadget),
+            ExecutionState::EXP => assign_exec_step!(self.exp_gadget),
             ExecutionState::EXTCODEHASH => assign_exec_step!(self.extcodehash_gadget),
             ExecutionState::GAS => assign_exec_step!(self.gas_gadget),
             ExecutionState::GASPRICE => assign_exec_step!(self.gasprice_gadget),
@@ -943,6 +989,7 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::POP => assign_exec_step!(self.pop_gadget),
             ExecutionState::PUSH => assign_exec_step!(self.push_gadget),
             ExecutionState::RETURN => assign_exec_step!(self.return_gadget),
+            ExecutionState::RETURNDATASIZE => assign_exec_step!(self.returndatasize_gadget),
             ExecutionState::SCMP => assign_exec_step!(self.signed_comparator_gadget),
             ExecutionState::SDIV_SMOD => assign_exec_step!(self.sdiv_smod_gadget),
             ExecutionState::BLOCKCTXU64 => assign_exec_step!(self.block_ctx_u64_gadget),
@@ -952,17 +999,14 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::SELFBALANCE => assign_exec_step!(self.selfbalance_gadget),
             // dummy gadgets
             ExecutionState::BALANCE => assign_exec_step!(self.balance_gadget),
-            ExecutionState::EXP => assign_exec_step!(self.exp_gadget),
             ExecutionState::SAR => assign_exec_step!(self.sar_gadget),
             ExecutionState::EXTCODESIZE => assign_exec_step!(self.extcodesize_gadget),
             ExecutionState::EXTCODECOPY => assign_exec_step!(self.extcodecopy_gadget),
-            ExecutionState::RETURNDATASIZE => assign_exec_step!(self.returndatasize_gadget),
             ExecutionState::RETURNDATACOPY => assign_exec_step!(self.returndatacopy_gadget),
             ExecutionState::CREATE => assign_exec_step!(self.create_gadget),
             ExecutionState::CALLCODE => assign_exec_step!(self.callcode_gadget),
             ExecutionState::DELEGATECALL => assign_exec_step!(self.delegatecall_gadget),
             ExecutionState::CREATE2 => assign_exec_step!(self.create2_gadget),
-            ExecutionState::STATICCALL => assign_exec_step!(self.staticcall_gadget),
             ExecutionState::SELFDESTRUCT => assign_exec_step!(self.selfdestruct_gadget),
             // end of dummy gadgets
             ExecutionState::SHA3 => assign_exec_step!(self.sha3_gadget),
@@ -1066,7 +1110,11 @@ impl<F: Field> ExecutionConfig<F> {
         // Fill in the witness values for stored expressions
         let assigned_stored_expressions = self.assign_stored_expressions(region, offset, step)?;
 
-        Self::check_rw_lookup(&assigned_stored_expressions, step, block);
+        // enable with `RUST_LOG=debug`
+        if log::log_enabled!(log::Level::Debug) {
+            // expensive function call
+            Self::check_rw_lookup(&assigned_stored_expressions, step, block);
+        }
         Ok(())
     }
 
@@ -1110,6 +1158,18 @@ impl<F: Field> ExecutionConfig<F> {
             }
         }
 
+        let rlc_assignments: BTreeSet<_> = block
+            .rws
+            .table_assignments()
+            .iter()
+            .map(|rw| rw.table_assignment(block.randomness).rlc(block.randomness))
+            .collect();
+
+        for (name, value) in assigned_rw_values.iter() {
+            if !rlc_assignments.contains(value) {
+                log::error!("rw lookup error: name: {}, step: {:?}", *name, step);
+            }
+        }
         for (idx, assigned_rw_value) in assigned_rw_values.iter().enumerate() {
             let rw_idx = step.rw_indices[idx];
             let rw = block.rws[rw_idx];
@@ -1117,8 +1177,9 @@ impl<F: Field> ExecutionConfig<F> {
             let rlc = table_assignments.rlc(block.randomness);
             if rlc != assigned_rw_value.1 {
                 log::error!(
-                    "incorrect rw witness. lookup input name: \"{}\". rw: {:?}, rw index: {:?}, {}th rw of step {:?}",
+                    "incorrect rw witness. lookup input name: \"{}\"\n{:?}\nrw: {:?}, rw index: {:?}, {}th rw of step {:?}",
                     assigned_rw_value.0,
+                    assigned_rw_value.1,
                     rw,
                     rw_idx,
                     idx,

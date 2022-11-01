@@ -287,7 +287,7 @@ mod test {
         )
         .unwrap();
 
-        assert_eq!(run_test_circuits(ctx, None), Ok(()));
+        assert_eq!(run_test_circuits(ctx, None,), Ok(()));
     }
 
     fn test_ok_internal(
@@ -343,7 +343,7 @@ mod test {
         )
         .unwrap();
 
-        assert_eq!(run_test_circuits(ctx, None), Ok(()));
+        assert_eq!(run_test_circuits(ctx, None,), Ok(()));
     }
 
     #[test]

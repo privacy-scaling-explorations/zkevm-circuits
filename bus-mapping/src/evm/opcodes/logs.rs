@@ -3,7 +3,6 @@ use crate::circuit_input_builder::{CircuitInputStateRef, ExecState, ExecStep};
 use crate::circuit_input_builder::{CopyDataType, CopyEvent, NumberOrHash};
 use crate::operation::{CallContextField, TxLogField};
 use crate::Error;
-use eth_types::evm_types::OpcodeId;
 use eth_types::Word;
 use eth_types::{GethExecStep, ToWord};
 
@@ -100,7 +99,7 @@ fn gen_log_step(
 
     // generates topic operation dynamically
     let topic_count = match exec_step.exec_state {
-        ExecState::Op(op_id) => (op_id.as_u8() - OpcodeId::LOG0.as_u8()) as usize,
+        ExecState::Op(op_id) => op_id.postfix().expect("opcode with postfix") as usize,
         _ => panic!("currently only handle successful log state"),
     };
 

@@ -311,14 +311,14 @@ pub fn run_test(
             gas_limit: u64::MAX
         };
 
-        zkevm_circuits::test_util::test_circuits_using_witness_block(block, config)
+        zkevm_circuits::test_util::test_circuits_witness_block(block, config)
             .map_err(|err| StateTestError::VerifierError(format!("{:#?}", err)))?;
 
     } else {
         geth_data.sign(&wallets);
 
         let (k, circuit, instance, _builder) =
-            SuperCircuit::<_, 1, 32>::build(geth_data, &mut ChaCha20Rng::seed_from_u64(2)).unwrap();
+            SuperCircuit::<_, 1, 32, 255>::build(geth_data, &mut ChaCha20Rng::seed_from_u64(2)).unwrap();
         builder = _builder;
 
         let prover = MockProver::run(k, &circuit, instance).unwrap();

@@ -109,14 +109,19 @@ fn go() -> Result<()> {
 
     if let Some(test_id) = args.inspect {
         // Test only one and return
-        let mut state_tests: Vec<_> = state_tests
-            .into_iter()
+        let mut state_tests_filtered: Vec<_> = state_tests
+            .iter()
             .filter(|t| t.id == test_id)
             .collect();
-        if state_tests.is_empty() {
+        
+        if state_tests_filtered.is_empty() {
+            println!("Test '{}' not found but found some that partially matches:", test_id);
+            for test in state_tests.iter().filter(|t| t.id.contains(&test_id)){
+                println!("- {}", test.id);
+            }
             bail!("test '{}' not found", test_id);
         }
-        run_single_test(state_tests.remove(0), circuits_config)?;
+        run_single_test(state_tests_filtered.remove(0).clone(), circuits_config)?;
         return Ok(());
     };
 

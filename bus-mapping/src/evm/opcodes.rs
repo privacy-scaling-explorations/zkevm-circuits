@@ -20,17 +20,18 @@ pub use self::sha3::sha3_tests::{gen_sha3_code, MemoryKind};
 
 mod address;
 mod balance;
-mod call;
 mod calldatacopy;
 mod calldataload;
 mod calldatasize;
 mod caller;
+mod callop;
 mod callvalue;
 mod chainid;
 mod codecopy;
 mod codesize;
 mod create;
 mod dup;
+mod exp;
 mod extcodecopy;
 mod extcodehash;
 mod extcodesize;
@@ -42,6 +43,7 @@ mod number;
 mod origin;
 mod r#return;
 mod returndatacopy;
+mod returndatasize;
 mod selfbalance;
 mod sha3;
 mod sload;
@@ -56,16 +58,17 @@ mod memory_expansion_test;
 use self::sha3::Sha3;
 use address::Address;
 use balance::Balance;
-use call::Call;
 use calldatacopy::Calldatacopy;
 use calldataload::Calldataload;
 use calldatasize::Calldatasize;
 use caller::Caller;
+use callop::CallOpcode;
 use callvalue::Callvalue;
 use codecopy::Codecopy;
 use codesize::Codesize;
 use create::DummyCreate;
 use dup::Dup;
+use exp::Exponentiation;
 use extcodecopy::Extcodecopy;
 use extcodehash::Extcodehash;
 use extcodesize::Extcodesize;
@@ -76,6 +79,7 @@ use mstore::Mstore;
 use origin::Origin;
 use r#return::Return;
 use returndatacopy::Returndatacopy;
+use returndatasize::Returndatasize;
 use selfbalance::Selfbalance;
 use sload::Sload;
 use sstore::Sstore;
@@ -131,7 +135,6 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         OpcodeId::SMOD => StackOnlyOpcode::<2, 1>::gen_associated_ops,
         OpcodeId::ADDMOD => StackOnlyOpcode::<3, 1>::gen_associated_ops,
         OpcodeId::MULMOD => StackOnlyOpcode::<3, 1>::gen_associated_ops,
-        OpcodeId::EXP => StackOnlyOpcode::<2, 1>::gen_associated_ops,
         OpcodeId::SIGNEXTEND => StackOnlyOpcode::<2, 1>::gen_associated_ops,
         OpcodeId::LT => StackOnlyOpcode::<2, 1>::gen_associated_ops,
         OpcodeId::GT => StackOnlyOpcode::<2, 1>::gen_associated_ops,
@@ -159,9 +162,10 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         OpcodeId::GASPRICE => GasPrice::gen_associated_ops,
         OpcodeId::CODECOPY => Codecopy::gen_associated_ops,
         OpcodeId::CODESIZE => Codesize::gen_associated_ops,
+        OpcodeId::EXP => Exponentiation::gen_associated_ops,
         OpcodeId::EXTCODESIZE => Extcodesize::gen_associated_ops,
         OpcodeId::EXTCODECOPY => Extcodecopy::gen_associated_ops,
-        OpcodeId::RETURNDATASIZE => StackOnlyOpcode::<0, 1>::gen_associated_ops,
+        OpcodeId::RETURNDATASIZE => Returndatasize::gen_associated_ops,
         OpcodeId::RETURNDATACOPY => Returndatacopy::gen_associated_ops,
         OpcodeId::EXTCODEHASH => Extcodehash::gen_associated_ops,
         OpcodeId::BLOCKHASH => StackOnlyOpcode::<1, 1>::gen_associated_ops,
@@ -222,7 +226,8 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         OpcodeId::LOG2 => Log::gen_associated_ops,
         OpcodeId::LOG3 => Log::gen_associated_ops,
         OpcodeId::LOG4 => Log::gen_associated_ops,
-        OpcodeId::CALL => Call::gen_associated_ops,
+        OpcodeId::CALL => CallOpcode::<7>::gen_associated_ops,
+        OpcodeId::STATICCALL => CallOpcode::<6>::gen_associated_ops,
         OpcodeId::RETURN => Return::gen_associated_ops,
         // REVERT is almost the same as RETURN
         OpcodeId::REVERT => Return::gen_associated_ops,
@@ -230,7 +235,7 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
             warn!("Using dummy gen_selfdestruct_ops for opcode SELFDESTRUCT");
             DummySelfDestruct::gen_associated_ops
         }
-        OpcodeId::CALLCODE | OpcodeId::DELEGATECALL | OpcodeId::STATICCALL => {
+        OpcodeId::CALLCODE | OpcodeId::DELEGATECALL => {
             warn!("Using dummy gen_call_ops for opcode {:?}", opcode_id);
             DummyCall::gen_associated_ops
         }
@@ -285,6 +290,9 @@ pub fn gen_associated_ops(
         );
 
         exec_step.error = Some(exec_error);
+        if exec_step.oog_or_stack_error() {
+            state.gen_restore_context_ops(&mut exec_step, geth_steps)?;
+        }
         // for `oog_or_stack_error` error message will be returned by geth_step error
         // field, when this kind of error happens, no more proceeding
         if geth_step.op.is_call_or_create() && !exec_step.oog_or_stack_error() {
@@ -376,7 +384,39 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
     ) {
         // 1. Creation transaction.
         (true, _, _) => {
-            warn!("Creation transaction is left unimplemented");
+            state.account_read(
+                &mut exec_step,
+                call.address,
+                AccountField::CodeHash,
+                call.code_hash.to_word(),
+                call.code_hash.to_word(),
+            )?;
+            for (field, value) in [
+                (CallContextField::Depth, call.depth.into()),
+                (
+                    CallContextField::CallerAddress,
+                    call.caller_address.to_word(),
+                ),
+                (CallContextField::CalleeAddress, call.address.to_word()),
+                (
+                    CallContextField::CallDataOffset,
+                    call.call_data_offset.into(),
+                ),
+                (
+                    CallContextField::CallDataLength,
+                    state.tx.input.len().into(),
+                ),
+                (CallContextField::Value, call.value),
+                (CallContextField::IsStatic, (call.is_static as usize).into()),
+                (CallContextField::LastCalleeId, 0.into()),
+                (CallContextField::LastCalleeReturnDataOffset, 0.into()),
+                (CallContextField::LastCalleeReturnDataLength, 0.into()),
+                (CallContextField::IsRoot, 1.into()),
+                (CallContextField::IsCreate, 1.into()),
+                (CallContextField::CodeHash, call.code_hash.to_word()),
+            ] {
+                state.call_context_write(&mut exec_step, call.call_id, field, value);
+            }
             Ok(exec_step)
         }
         // 2. Call to precompiled.

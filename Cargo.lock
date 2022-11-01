@@ -1177,6 +1177,8 @@ dependencies = [
  "serde_json",
  "serde_with",
  "sha3 0.10.4",
+ "strum",
+ "strum_macros",
  "subtle",
  "uint",
 ]

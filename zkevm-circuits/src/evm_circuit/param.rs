@@ -4,7 +4,14 @@ use super::table::Table;
 pub(crate) const STEP_WIDTH: usize = 128;
 /// Step height
 pub const MAX_STEP_HEIGHT: usize = 21;
+/// The height of the state of a step, used by gates that connect two
+/// consecutive steps. We target 1, which is also convenient for padding with
+/// EndBlock steps.
+pub(crate) const STEP_STATE_HEIGHT: usize = 1;
 pub(crate) const N_CELLS_STEP_STATE: usize = 11;
+
+// Number of copy columns
+pub(crate) const N_COPY_COLUMNS: usize = 2;
 
 /// Lookups done per row.
 pub(crate) const LOOKUP_CONFIG: &[(Table, usize)] = &[
@@ -16,6 +23,7 @@ pub(crate) const LOOKUP_CONFIG: &[(Table, usize)] = &[
     (Table::Byte, 24),
     (Table::Copy, 1),
     (Table::Keccak, 1),
+    (Table::Exp, 1),
 ];
 
 /// Maximum number of bytes that an integer can fit in field without wrapping

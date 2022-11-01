@@ -2,7 +2,8 @@
 
 use super::{
     get_call_memory_offset_length, get_create_init_code, Block, BlockContext, Call, CallContext,
-    CallKind, CodeSource, CopyEvent, ExecState, ExecStep, Transaction, TransactionContext,
+    CallKind, CodeSource, CopyEvent, ExecState, ExecStep, ExpEvent, Transaction,
+    TransactionContext,
 };
 use crate::{
     error::{get_step_reported_error, ExecError},
@@ -16,7 +17,9 @@ use crate::{
     Error,
 };
 use eth_types::{
-    evm_types::{gas_utils::memory_expansion_gas_cost, Gas, MemoryAddress, OpcodeId, StackAddress},
+    evm_types::{
+        gas_utils::memory_expansion_gas_cost, Gas, GasCost, MemoryAddress, OpcodeId, StackAddress,
+    },
     Address, GethExecStep, ToAddress, ToBigEndian, ToWord, Word, H256,
 };
 use ethers_core::utils::{get_contract_address, get_create2_address};
@@ -430,10 +433,7 @@ impl<'a> CircuitInputStateRef<'a> {
             },
         )?;
 
-        let (found, receiver_account) = self.sdb.get_account(&receiver);
-        if !found {
-            return Err(Error::AccountNotFound(receiver));
-        }
+        let (_found, receiver_account) = self.sdb.get_account(&receiver);
         let receiver_balance_prev = receiver_account.balance;
         let receiver_balance = receiver_account.balance + value;
         self.push_op_reversible(
@@ -873,7 +873,13 @@ impl<'a> CircuitInputStateRef<'a> {
 
         let memory_expansion_gas_cost =
             memory_expansion_gas_cost(curr_memory_word_size, next_memory_word_size);
-        let gas_refund = geth_step.gas.0 - memory_expansion_gas_cost;
+        let code_deposit_cost = if call.is_create() {
+            GasCost::CODE_DEPOSIT_BYTE_COST.as_u64() * last_callee_return_data_length.as_u64()
+        } else {
+            0
+        };
+        let gas_refund = geth_step.gas.0 - memory_expansion_gas_cost - code_deposit_cost;
+
         let caller_gas_left = geth_step_next.gas.0 - gas_refund;
 
         for (field, value) in [
@@ -919,8 +925,13 @@ impl<'a> CircuitInputStateRef<'a> {
     }
 
     /// Push a copy event to the state.
-    pub fn push_copy(&mut self, copy: CopyEvent) {
-        self.block.add_copy_event(copy);
+    pub fn push_copy(&mut self, event: CopyEvent) {
+        self.block.add_copy_event(event);
+    }
+
+    /// Push a exponentiation event to the state.
+    pub fn push_exponentiation(&mut self, event: ExpEvent) {
+        self.block.add_exp_event(event)
     }
 
     pub(crate) fn get_step_err(
@@ -1115,6 +1126,84 @@ impl<'a> CircuitInputStateRef<'a> {
             let minimal_length = max(args_minimal, ret_minimal);
             call_ctx.memory.extend_at_least(minimal_length);
         }
+        Ok(())
+    }
+
+    pub(crate) fn gen_restore_context_ops(
+        &mut self,
+        exec_step: &mut ExecStep,
+        geth_steps: &[GethExecStep],
+    ) -> Result<(), Error> {
+        let geth_step = &geth_steps[0];
+        let call = self.call()?.clone();
+        if !call.is_success {
+            // add call failure ops for exception cases
+            self.call_context_read(
+                exec_step,
+                call.call_id,
+                CallContextField::IsSuccess,
+                0u64.into(),
+            );
+            self.call_context_read(
+                exec_step,
+                call.call_id,
+                CallContextField::IsPersistent,
+                0u64.into(),
+            );
+            if call.is_root {
+                return Ok(());
+            }
+        }
+
+        let caller = self.caller()?.clone();
+        self.call_context_read(
+            exec_step,
+            call.call_id,
+            CallContextField::CallerId,
+            caller.call_id.into(),
+        );
+
+        let geth_step_next = &geth_steps[1];
+        let caller_ctx = self.caller_ctx()?;
+        let caller_gas_left = if call.is_success {
+            geth_step_next.gas.0 - geth_step.gas.0
+        } else {
+            geth_step_next.gas.0
+        };
+
+        for (field, value) in [
+            (CallContextField::IsRoot, (caller.is_root as u64).into()),
+            (
+                CallContextField::IsCreate,
+                (caller.is_create() as u64).into(),
+            ),
+            (CallContextField::CodeHash, caller.code_hash.to_word()),
+            (CallContextField::ProgramCounter, geth_step_next.pc.0.into()),
+            (
+                CallContextField::StackPointer,
+                geth_step_next.stack.stack_pointer().0.into(),
+            ),
+            (CallContextField::GasLeft, caller_gas_left.into()),
+            (
+                CallContextField::MemorySize,
+                caller_ctx.memory.word_size().into(),
+            ),
+            (
+                CallContextField::ReversibleWriteCounter,
+                self.caller_ctx()?.reversible_write_counter.into(),
+            ),
+        ] {
+            self.call_context_read(exec_step, caller.call_id, field, value);
+        }
+
+        for (field, value) in [
+            (CallContextField::LastCalleeId, call.call_id.into()),
+            (CallContextField::LastCalleeReturnDataOffset, 0.into()),
+            (CallContextField::LastCalleeReturnDataLength, 0.into()),
+        ] {
+            self.call_context_write(exec_step, caller.call_id, field, value);
+        }
+
         Ok(())
     }
 }

@@ -1,5 +1,7 @@
 use crate::evm_circuit::step::ExecutionState;
 use crate::impl_expr;
+pub use crate::table::TxContextFieldTag;
+use bus_mapping::evm::OpcodeId;
 use eth_types::Field;
 use gadgets::util::Expr;
 use halo2_proofs::plonk::Expression;
@@ -22,6 +24,7 @@ pub enum FixedTableTag {
     BitwiseXor,
     ResponsibleOpcode,
     Pow2,
+    ConstantGasCost,
 }
 impl_expr!(FixedTableTag);
 
@@ -91,6 +94,18 @@ impl FixedTableTag {
                 };
                 [tag, F::from(value), pow_lo, pow_hi]
             })),
+            Self::ConstantGasCost => Box::new(
+                OpcodeId::iter()
+                    .filter(move |opcode| opcode.constant_gas_cost().0 > 0)
+                    .map(move |opcode| {
+                        [
+                            tag,
+                            F::from(opcode.as_u64()),
+                            F::from(opcode.constant_gas_cost().0),
+                            F::zero(),
+                        ]
+                    }),
+            ),
         }
     }
 }
@@ -105,6 +120,7 @@ pub(crate) enum Table {
     Byte,
     Copy,
     Keccak,
+    Exp,
 }
 
 #[derive(Clone, Debug)]
@@ -251,6 +267,14 @@ pub(crate) enum Lookup<F> {
         /// the final output keccak256 hash of the input.
         output_rlc: Expression<F>,
     },
+    /// Lookup to exponentiation table.
+    ExpTable {
+        identifier: Expression<F>,
+        is_last: Expression<F>,
+        base_limbs: [Expression<F>; 4],
+        exponent_lo_hi: [Expression<F>; 2],
+        exponentiation_lo_hi: [Expression<F>; 2],
+    },
     /// Conditional lookup enabled by the first element.
     Conditional(Expression<F>, Box<Lookup<F>>),
 }
@@ -270,6 +294,7 @@ impl<F: Field> Lookup<F> {
             Self::Byte { .. } => Table::Byte,
             Self::CopyTable { .. } => Table::Copy,
             Self::KeccakTable { .. } => Table::Keccak,
+            Self::ExpTable { .. } => Table::Exp,
             Self::Conditional(_, lookup) => lookup.table(),
         }
     }
@@ -364,6 +389,25 @@ impl<F: Field> Lookup<F> {
                 input_rlc.clone(),
                 input_len.clone(),
                 output_rlc.clone(),
+            ],
+            Self::ExpTable {
+                identifier,
+                is_last,
+                base_limbs,
+                exponent_lo_hi,
+                exponentiation_lo_hi,
+            } => vec![
+                1.expr(), // is_step
+                identifier.clone(),
+                is_last.clone(),
+                base_limbs[0].clone(),
+                base_limbs[1].clone(),
+                base_limbs[2].clone(),
+                base_limbs[3].clone(),
+                exponent_lo_hi[0].clone(),
+                exponent_lo_hi[1].clone(),
+                exponentiation_lo_hi[0].clone(),
+                exponentiation_lo_hi[1].clone(),
             ],
             Self::Conditional(condition, lookup) => lookup
                 .input_exprs()

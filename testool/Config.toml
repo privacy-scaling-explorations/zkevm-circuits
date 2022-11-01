@@ -4,7 +4,6 @@ path="tests/src/GeneralStateTestsFiller/**/*"
 max_gas = 500000
 max_steps = 1000
 unimplemented_opcodes = [
-    "EXP",
     "SAR",
     "RETURN",
     "REVERT",
@@ -40,7 +39,7 @@ allow_tests=[
 	"smod_d0(smod_2_3)_g0_v0",
 	"addmod_d0(addmod_1_2_2)_g0_v0",
 	"mulmod_d0(mm_1_2_2)_g0_v0",
-	# EXP
+	"exp_d7(exp_2_257)_g0_v0",
 	"signextend_d0(invalid_byte)_g0_v0",
 	"lt_d0(lt_neg2_0)_g0_v0",
 	"gt_d0(gt_neg2_0)_g0_v0",
