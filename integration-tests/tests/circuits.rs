@@ -29,12 +29,15 @@ lazy_static! {
     pub static ref GEN_DATA: GenDataOutput = GenDataOutput::load();
 }
 
+const CIRCUITS_PARAMS: CircuitsParams = CircuitsParams {
+    max_rws: 16384,
+    max_txs: 4,
+};
+
 async fn test_evm_circuit_block(block_num: u64) {
     log::info!("test evm circuit, block number: {}", block_num);
     let cli = get_client();
-    let cli = BuilderClient::new(cli, CircuitsParams::default())
-        .await
-        .unwrap();
+    let cli = BuilderClient::new(cli, CIRCUITS_PARAMS).await.unwrap();
     let (builder, _) = cli.gen_inputs(block_num).await.unwrap();
 
     let block = block_convert(&builder.block, &builder.code_db);
@@ -44,9 +47,7 @@ async fn test_evm_circuit_block(block_num: u64) {
 async fn test_state_circuit_block(block_num: u64) {
     log::info!("test state circuit, block number: {}", block_num);
     let cli = get_client();
-    let cli = BuilderClient::new(cli, CircuitsParams::default())
-        .await
-        .unwrap();
+    let cli = BuilderClient::new(cli, CIRCUITS_PARAMS).await.unwrap();
     let (builder, _) = cli.gen_inputs(block_num).await.unwrap();
 
     // Generate state proof
@@ -79,9 +80,7 @@ async fn test_tx_circuit_block(block_num: u64) {
 
     log::info!("test tx circuit, block number: {}", block_num);
     let cli = get_client();
-    let cli = BuilderClient::new(cli, CircuitsParams::default())
-        .await
-        .unwrap();
+    let cli = BuilderClient::new(cli, CIRCUITS_PARAMS).await.unwrap();
 
     let (_, eth_block) = cli.gen_inputs(block_num).await.unwrap();
     let txs: Vec<_> = eth_block
@@ -113,9 +112,7 @@ pub async fn test_bytecode_circuit_block(block_num: u64) {
 
     log::info!("test bytecode circuit, block number: {}", block_num);
     let cli = get_client();
-    let cli = BuilderClient::new(cli, CircuitsParams::default())
-        .await
-        .unwrap();
+    let cli = BuilderClient::new(cli, CIRCUITS_PARAMS).await.unwrap();
     let (builder, _) = cli.gen_inputs(block_num).await.unwrap();
     let bytecodes: Vec<Vec<u8>> = builder.code_db.0.values().cloned().collect();
 
@@ -127,9 +124,7 @@ pub async fn test_copy_circuit_block(block_num: u64) {
 
     log::info!("test copy circuit, block number: {}", block_num);
     let cli = get_client();
-    let cli = BuilderClient::new(cli, CircuitsParams::default())
-        .await
-        .unwrap();
+    let cli = BuilderClient::new(cli, CIRCUITS_PARAMS).await.unwrap();
     let (builder, _) = cli.gen_inputs(block_num).await.unwrap();
     let block = block_convert(&builder.block, &builder.code_db);
 

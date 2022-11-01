@@ -290,6 +290,9 @@ pub fn gen_associated_ops(
         );
 
         exec_step.error = Some(exec_error);
+        if exec_step.oog_or_stack_error() {
+            state.gen_restore_context_ops(&mut exec_step, geth_steps)?;
+        }
         // for `oog_or_stack_error` error message will be returned by geth_step error
         // field, when this kind of error happens, no more proceeding
         if geth_step.op.is_call_or_create() && !exec_step.oog_or_stack_error() {
