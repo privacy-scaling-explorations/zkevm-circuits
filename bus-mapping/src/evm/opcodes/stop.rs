@@ -4,7 +4,7 @@ use crate::{
     operation::CallContextField,
     Error,
 };
-use eth_types::{GethExecStep, ToWord};
+use eth_types::GethExecStep;
 
 /// Placeholder structure used to implement [`Opcode`] trait over it
 /// corresponding to the [`OpcodeId::STOP`](crate::evm::OpcodeId::STOP)
@@ -36,50 +36,8 @@ impl Opcode for Stop {
             // The following part corresponds to
             // Instruction.step_state_transition_to_restored_context
             // in python spec, and should be reusable among all expected halting opcodes or
-            // exceptions. TODO: Refactor it as a helper function.
-            let caller = state.caller()?.clone();
-            state.call_context_read(
-                &mut exec_step,
-                call.call_id,
-                CallContextField::CallerId,
-                caller.call_id.into(),
-            );
-
-            let geth_step_next = &geth_steps[1];
-            let caller_ctx = state.caller_ctx()?;
-            let caller_gas_left = geth_step_next.gas.0 - geth_step.gas.0;
-            for (field, value) in [
-                (CallContextField::IsRoot, (caller.is_root as u64).into()),
-                (
-                    CallContextField::IsCreate,
-                    (caller.is_create() as u64).into(),
-                ),
-                (CallContextField::CodeHash, caller.code_hash.to_word()),
-                (CallContextField::ProgramCounter, geth_step_next.pc.0.into()),
-                (
-                    CallContextField::StackPointer,
-                    geth_step_next.stack.stack_pointer().0.into(),
-                ),
-                (CallContextField::GasLeft, caller_gas_left.into()),
-                (
-                    CallContextField::MemorySize,
-                    caller_ctx.memory.word_size().into(),
-                ),
-                (
-                    CallContextField::ReversibleWriteCounter,
-                    state.caller_ctx()?.reversible_write_counter.into(),
-                ),
-            ] {
-                state.call_context_read(&mut exec_step, caller.call_id, field, value);
-            }
-
-            for (field, value) in [
-                (CallContextField::LastCalleeId, call.call_id.into()),
-                (CallContextField::LastCalleeReturnDataOffset, 0.into()),
-                (CallContextField::LastCalleeReturnDataLength, 0.into()),
-            ] {
-                state.call_context_write(&mut exec_step, caller.call_id, field, value);
-            }
+            // exceptions.
+            state.gen_restore_context_ops(&mut exec_step, geth_steps)?;
         }
 
         state.handle_return(geth_step)?;

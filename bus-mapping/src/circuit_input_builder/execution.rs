@@ -6,7 +6,7 @@ use crate::{
 };
 use eth_types::{
     evm_types::{Gas, GasCost, OpcodeId, ProgramCounter},
-    GethExecStep, H256,
+    GethExecStep, Word, H256,
 };
 use gadgets::impl_expr;
 use halo2_proofs::plonk::Expression;
@@ -261,4 +261,40 @@ impl CopyEvent {
         };
         source_rw_increase + destination_rw_increase
     }
+}
+
+/// Intermediary multiplication step, representing `a * b == d (mod 2^256)`
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExpStep {
+    /// First multiplicand.
+    pub a: Word,
+    /// Second multiplicand.
+    pub b: Word,
+    /// Multiplication result.
+    pub d: Word,
+}
+
+impl From<(Word, Word, Word)> for ExpStep {
+    fn from(values: (Word, Word, Word)) -> Self {
+        Self {
+            a: values.0,
+            b: values.1,
+            d: values.2,
+        }
+    }
+}
+
+/// Event representating an exponentiation `a ^ b == d (mod 2^256)`.
+#[derive(Clone, Debug)]
+pub struct ExpEvent {
+    /// Identifier for the exponentiation trace.
+    pub identifier: usize,
+    /// Base `a` for the exponentiation.
+    pub base: Word,
+    /// Exponent `b` for the exponentiation.
+    pub exponent: Word,
+    /// Exponentiation result.
+    pub exponentiation: Word,
+    /// Intermediate multiplication results.
+    pub steps: Vec<ExpStep>,
 }

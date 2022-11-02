@@ -138,6 +138,7 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::XOR => ExecutionState::BITWISE,
                     OpcodeId::OR => ExecutionState::BITWISE,
                     OpcodeId::NOT => ExecutionState::NOT,
+                    OpcodeId::EXP => ExecutionState::EXP,
                     OpcodeId::POP => ExecutionState::POP,
                     OpcodeId::PUSH32 => ExecutionState::PUSH,
                     OpcodeId::BYTE => ExecutionState::BYTE,
@@ -179,7 +180,6 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::RETURNDATACOPY => ExecutionState::RETURNDATACOPY,
                     // dummy ops
                     OpcodeId::BALANCE => dummy!(ExecutionState::BALANCE),
-                    OpcodeId::EXP => dummy!(ExecutionState::EXP),
                     OpcodeId::SAR => dummy!(ExecutionState::SAR),
                     OpcodeId::EXTCODESIZE => dummy!(ExecutionState::EXTCODESIZE),
                     OpcodeId::EXTCODECOPY => dummy!(ExecutionState::EXTCODECOPY),

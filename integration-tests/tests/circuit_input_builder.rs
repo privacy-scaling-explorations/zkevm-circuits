@@ -11,9 +11,15 @@ lazy_static! {
 
 async fn test_circuit_input_builder_block(block_num: u64) {
     let cli = get_client();
-    let cli = BuilderClient::new(cli, CircuitsParams::default())
-        .await
-        .unwrap();
+    let cli = BuilderClient::new(
+        cli,
+        CircuitsParams {
+            max_rws: 16384,
+            max_txs: 1,
+        },
+    )
+    .await
+    .unwrap();
 
     // 1. Query geth for Block, Txs and TxExecTraces
     let (eth_block, geth_trace) = cli.get_block(block_num).await.unwrap();

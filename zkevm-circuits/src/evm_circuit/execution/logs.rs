@@ -268,12 +268,11 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use bus_mapping::circuit_input_builder::CircuitsParams;
     use eth_types::{evm_types::OpcodeId, Bytecode, Word};
     use mock::TestContext;
     use rand::Rng;
 
-    use crate::test_util::run_test_circuits_with_params;
+    use crate::test_util::run_test_circuits;
 
     //TODO：add is_persistent = false cases
     #[test]
@@ -346,13 +345,9 @@ mod test {
         code_prepare.append(&code);
 
         assert_eq!(
-            run_test_circuits_with_params(
+            run_test_circuits(
                 TestContext::<2, 1>::simple_ctx_with_bytecode(code_prepare).unwrap(),
-                None,
-                CircuitsParams {
-                    max_rws: 512,
-                    ..Default::default()
-                }
+                None
             ),
             Ok(()),
         );
@@ -405,13 +400,9 @@ mod test {
         code_prepare.append(&code);
 
         assert_eq!(
-            run_test_circuits_with_params(
+            run_test_circuits(
                 TestContext::<2, 1>::simple_ctx_with_bytecode(code_prepare).unwrap(),
                 None,
-                CircuitsParams {
-                    max_rws: 1024,
-                    ..Default::default()
-                }
             ),
             Ok(()),
         );
