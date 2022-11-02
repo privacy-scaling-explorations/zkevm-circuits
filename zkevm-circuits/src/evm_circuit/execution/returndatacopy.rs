@@ -130,7 +130,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
                 dst_memory_addr.offset(),
                 dst_memory_addr.length(),
                 0.expr(), // for RETURNDATACOPY rlc_acc is 0
-                cb.curr.state.rw_counter.expr() + cb.rw_counter_offset().expr(),
+                copy_rwc_inc.expr(),
             );
         });
         cb.condition(not::expr(dst_memory_addr.has_length()), |cb| {
@@ -142,7 +142,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
 
         // State transition
         let step_state_transition = StepStateTransition {
-            rw_counter: Delta(cb.rw_counter_offset() + copy_rwc_inc.expr()),
+            rw_counter: Delta(cb.rw_counter_offset()),
             program_counter: Delta(1.expr()),
             stack_pointer: Delta(3.expr()),
             gas_left: Delta(
@@ -311,7 +311,6 @@ mod test {
             PUSH32(addr_b.to_word()) // addr
             PUSH32(0x1_0000) // gas
             CALL
-            RETURNDATASIZE
             PUSH32(size) // size
             PUSH32(offset) // offset
             PUSH32(dest_offset) // dest_offset

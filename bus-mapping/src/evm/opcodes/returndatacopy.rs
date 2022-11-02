@@ -137,7 +137,6 @@ fn gen_copy_event(
     state: &mut CircuitInputStateRef,
     geth_step: &GethExecStep,
 ) -> Result<CopyEvent, Error> {
-    let rw_counter_start = state.block_ctx.rwc;
     let dst_addr = geth_step.stack.nth_last(0)?.as_u64();
     let data_offset = geth_step.stack.nth_last(1)?.as_u64();
     let length = geth_step.stack.nth_last(2)?.as_u64();
@@ -149,6 +148,7 @@ fn gen_copy_event(
         last_callee_return_data_offset + last_callee_return_data_length,
     );
 
+    let rw_counter_start = state.block_ctx.rwc;
     let mut exec_step = state.new_step(geth_step)?;
     let copy_steps = gen_copy_steps(
         state,
