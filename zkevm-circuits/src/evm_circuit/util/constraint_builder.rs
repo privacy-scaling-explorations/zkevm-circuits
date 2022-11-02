@@ -526,6 +526,17 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         );
     }
 
+       // look up opcode's  min and max stack pointer
+       pub(crate) fn opcode_stack_lookup(&mut self, opcode: Expression<F>, gas: Expression<F>) {
+        self.add_lookup(
+            "constant gas",
+            Lookup::Fixed {
+                tag: FixedTableTag::ConstantGasCost.expr(),
+                values: [opcode, gas, 0.expr()],
+            },
+        );
+    }
+
     // Opcode
 
     pub(crate) fn opcode_lookup(&mut self, opcode: Expression<F>, is_code: Expression<F>) {

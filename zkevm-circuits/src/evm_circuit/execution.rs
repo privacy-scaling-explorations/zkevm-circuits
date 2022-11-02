@@ -51,6 +51,7 @@ mod end_block;
 mod end_tx;
 mod error_oog_constant;
 mod error_oog_static_memory;
+mod error_stack;
 mod exp;
 mod extcodehash;
 mod gas;
@@ -107,6 +108,7 @@ use dup::DupGadget;
 use end_block::EndBlockGadget;
 use end_tx::EndTxGadget;
 use error_oog_constant::ErrorOOGConstantGadget;
+use error_stack::ErrorStackGadget;
 use exp::ExponentiationGadget;
 use extcodehash::ExtcodehashGadget;
 use gas::GasGadget;
@@ -245,8 +247,8 @@ pub(crate) struct ExecutionConfig<F> {
     error_oog_constant: ErrorOOGConstantGadget<F>,
     error_oog_static_memory_gadget:
         DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasStaticMemoryExpansion }>,
-    error_stack_overflow: DummyGadget<F, 0, 0, { ExecutionState::ErrorStackOverflow }>,
-    error_stack_underflow: DummyGadget<F, 0, 0, { ExecutionState::ErrorStackUnderflow }>,
+    error_stack: ErrorStackGadget<F>,
+    //error_stack_underflow: DummyGadget<F, 0, 0, { ExecutionState::ErrorStackUnderflow }>,
     error_oog_dynamic_memory_gadget:
         DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasDynamicMemoryExpansion }>,
     error_oog_log: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasLOG }>,
@@ -484,8 +486,8 @@ impl<F: Field> ExecutionConfig<F> {
             // error gadgets
             error_oog_constant: configure_gadget!(),
             error_oog_static_memory_gadget: configure_gadget!(),
-            error_stack_overflow: configure_gadget!(),
-            error_stack_underflow: configure_gadget!(),
+            error_stack: configure_gadget!(),
+            //error_stack_underflow: configure_gadget!(),
             error_oog_dynamic_memory_gadget: configure_gadget!(),
             error_oog_log: configure_gadget!(),
             error_oog_sload: configure_gadget!(),
@@ -1072,12 +1074,12 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::ErrorOutOfGasCodeStore => {
                 assign_exec_step!(self.error_oog_code_store)
             }
-            ExecutionState::ErrorStackOverflow => {
-                assign_exec_step!(self.error_stack_overflow)
+            ExecutionState::ErrorStack=> {
+                assign_exec_step!(self.error_stack)
             }
-            ExecutionState::ErrorStackUnderflow => {
-                assign_exec_step!(self.error_stack_underflow)
-            }
+            // ExecutionState::ErrorStackUnderflow => {
+            //     assign_exec_step!(self.error_stack_underflow)
+            // }
             ExecutionState::ErrorInsufficientBalance => {
                 assign_exec_step!(self.error_insufficient_balance)
             }

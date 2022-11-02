@@ -76,7 +76,7 @@ impl ExecStep {
     pub fn oog_or_stack_error(&self) -> bool {
         matches!(
             self.error,
-            Some(ExecError::OutOfGas(_) | ExecError::StackOverflow | ExecError::StackUnderflow)
+            Some(ExecError::OutOfGas(_) | ExecError::StackError)
         )
     }
 }
