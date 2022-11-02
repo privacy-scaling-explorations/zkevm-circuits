@@ -114,8 +114,7 @@ fn gen_copy_steps(
     for idx in 0..bytes_left {
         let addr = src_addr + idx;
         let value = if addr < src_addr_end {
-            let byte = state.call_ctx()?.return_data[(addr - src_addr_base) as usize];
-            byte
+            state.call_ctx()?.return_data[(addr - src_addr_base) as usize]
         } else {
             unreachable!("return data copy out of bound")
         };
