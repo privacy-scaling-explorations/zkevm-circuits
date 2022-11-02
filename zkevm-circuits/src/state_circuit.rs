@@ -156,7 +156,7 @@ impl<F: Field> StateCircuitConfig<F> {
 
         let (rows, padding_length) = RwMap::table_assignments_prepad(rows, n_rows);
         let rows_len = rows.len();
-        let rows = rows.into_iter();
+        let rows = rows.iter();
         let prev_rows = once(None).chain(rows.clone().map(Some));
 
         let mut state_root = randomness.map(|_| F::zero());
@@ -196,7 +196,7 @@ impl<F: Field> StateCircuitConfig<F> {
             if let Some(prev_row) = prev_row {
                 let is_first_access = self
                     .lexicographic_ordering
-                    .assign(region, offset, &row, &prev_row)?;
+                    .assign(region, offset, row, prev_row)?;
 
                 if is_first_access {
                     // If previous row was a last access, we need to update the state root.
@@ -204,7 +204,7 @@ impl<F: Field> StateCircuitConfig<F> {
                     state_root = randomness
                         .zip(state_root)
                         .map(|(randomness, mut state_root)| {
-                            if let Some(update) = updates.get(&prev_row) {
+                            if let Some(update) = updates.get(prev_row) {
                                 let (new_root, old_root) = update.root_assignments(randomness);
                                 assert_eq!(state_root, old_root);
                                 state_root = new_root;
@@ -225,7 +225,7 @@ impl<F: Field> StateCircuitConfig<F> {
             // The initial value can be determined from the mpt updates or is 0.
             let initial_value = randomness.map(|randomness| {
                 updates
-                    .get(&row)
+                    .get(row)
                     .map(|u| u.value_assignments(randomness).1)
                     .unwrap_or_default()
             });
@@ -252,7 +252,7 @@ impl<F: Field> StateCircuitConfig<F> {
             if offset == rows_len - 1 {
                 // The last row is always a last access, so we need to handle the case where the
                 // state root changes because of an mpt lookup on the last row.
-                if let Some(update) = updates.get(&row) {
+                if let Some(update) = updates.get(row) {
                     state_root = randomness.zip(state_root).map(|(randomness, state_root)| {
                         let (new_root, old_root) = update.root_assignments(randomness);
                         assert_eq!(state_root, old_root);
