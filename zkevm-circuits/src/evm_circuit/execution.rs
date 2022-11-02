@@ -773,18 +773,20 @@ impl<F: Field> ExecutionConfig<F> {
 
                 let evm_rows = block.evm_circuit_pad_to;
                 let exact = evm_rows == 0;
-                let mut block_step = end_block_not_last;
+                let mut no_next_step = false;
                 let mut get_next = |offset: &usize| match steps.next() {
                     Some((transaction, step)) => {
                         Some((transaction, &transaction.calls[step.call_index], step))
                     }
                     None => {
-                        if block_step == end_block_last {
+                        if no_next_step {
                             return None;
                         }
 
+                        let mut block_step = end_block_not_last;
                         if exact || (evm_rows - offset) == 2 {
                             block_step = end_block_last;
+                            no_next_step = true;
                         }
 
                         Some((&dummy_tx, &last_call, block_step))
