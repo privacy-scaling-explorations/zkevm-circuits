@@ -432,6 +432,65 @@ mod test {
     }
 
     #[test]
+    fn begin_tx_invalid_nonce() {
+        // Use the same nonce value for two transactions.
+        let multibyte_nonce = Word::from(1);
+
+        let to = MOCK_ACCOUNTS[0];
+        let from = MOCK_ACCOUNTS[1];
+
+        let code = bytecode! {
+            STOP
+        };
+
+        let block: GethData = TestContext::<2, 2>::new(
+            None,
+            |accs| {
+                accs[0].address(to).balance(eth(1)).code(code);
+                accs[1].address(from).balance(eth(1)).nonce(multibyte_nonce);
+            },
+            |mut txs, _| {
+                txs[0].to(to).from(from).nonce(multibyte_nonce);
+                txs[1].to(to).from(from).nonce(multibyte_nonce);
+            },
+            |block, _| block,
+        )
+        .unwrap()
+        .into();
+
+        assert_eq!(run_test_circuit_geth_data_default::<Fr>(block), Ok(()));
+    }
+
+    #[test]
+    fn begin_tx_not_enough_gas() {
+        // Set the balance to 0
+        let multibyte_nonce = Word::from(1);
+
+        let to = MOCK_ACCOUNTS[0];
+        let from = MOCK_ACCOUNTS[1];
+
+        let code = bytecode! {
+            STOP
+        };
+
+        let block: GethData = TestContext::<2, 1>::new(
+            None,
+            |accs| {
+                accs[0].address(to).balance(eth(0)).code(code);
+                accs[1].address(from).balance(eth(0)).nonce(multibyte_nonce);
+            },
+            |mut txs, _| {
+                txs[0].to(to).from(from).nonce(multibyte_nonce);
+            },
+            |block, _| block,
+        )
+        .unwrap()
+        .into();
+
+        assert_eq!(run_test_circuit_geth_data_default::<Fr>(block), Ok(()));
+    }
+
+    #[test]
     fn begin_tx_gadget_rand() {
         let random_amount = Word::from_little_endian(&rand_bytes(32)) % eth(1);
         let random_gas_price = Word::from_little_endian(&rand_bytes(32)) % gwei(2);
