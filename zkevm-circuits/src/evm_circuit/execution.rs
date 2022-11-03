@@ -1074,7 +1074,7 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::ErrorOutOfGasCodeStore => {
                 assign_exec_step!(self.error_oog_code_store)
             }
-            ExecutionState::ErrorStack=> {
+            ExecutionState::ErrorStack => {
                 assign_exec_step!(self.error_stack)
             }
             // ExecutionState::ErrorStackUnderflow => {

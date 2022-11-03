@@ -175,7 +175,9 @@ pub(crate) fn get_step_reported_error(op: &OpcodeId, error: &str) -> ExecError {
             _ => OogError::Constant,
         };
         ExecError::OutOfGas(oog_err)
-    } else if error.starts_with(GETH_ERR_STACK_OVERFLOW) | error.starts_with(GETH_ERR_STACK_UNDERFLOW) {
+    } else if error.starts_with(GETH_ERR_STACK_OVERFLOW)
+        | error.starts_with(GETH_ERR_STACK_UNDERFLOW)
+    {
         ExecError::StackError
     // } else if error.starts_with(GETH_ERR_STACK_UNDERFLOW) {
     //     ExecError::StackUnderflow

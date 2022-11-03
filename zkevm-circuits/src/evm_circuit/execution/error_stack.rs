@@ -1,6 +1,6 @@
 use crate::evm_circuit::{
     execution::ExecutionGadget,
-    param::N_BYTES_GAS,
+    param::N_BYTES_STACK,
     step::ExecutionState,
     util::{
         common_gadget::RestoreContextGadget,
@@ -17,12 +17,15 @@ use crate::table::CallContextFieldTag;
 use crate::util::Expr;
 use eth_types::Field;
 use halo2_proofs::{circuit::Value, plonk::Error};
+use itertools::min;
 
 #[derive(Clone, Debug)]
 pub(crate) struct ErrorStackGadget<F> {
     opcode: Cell<F>,
-    gas_required: Cell<F>,
-    insufficient_gas: LtGadget<F, N_BYTES_GAS>,
+    min_stack_pointer: Cell<F>,
+    max_stack_pointer: Cell<F>,
+    is_overflow: LtGadget<F, N_BYTES_STACK>,
+    is_underflow: LtGadget<F, N_BYTES_STACK>,
     restore_context: RestoreContextGadget<F>,
 }
 
@@ -35,16 +38,35 @@ impl<F: Field> ExecutionGadget<F> for ErrorStackGadget<F> {
         let opcode = cb.query_cell();
         cb.opcode_lookup(opcode.expr(), 1.expr());
 
-        let gas_required = cb.query_cell();
+        let min_stack_pointer = cb.query_cell();
+        let max_stack_pointer = cb.query_cell();
 
-        cb.constant_gas_lookup(opcode.expr(), gas_required.expr());
-        // Check if the amount of gas available is less than the amount of gas
-        // required
-        let insufficient_gas =
-            LtGadget::construct(cb, cb.curr.state.gas_left.expr(), gas_required.expr());
+        cb.opcode_stack_lookup(
+            opcode.expr(),
+            min_stack_pointer.expr(),
+            max_stack_pointer.expr(),
+        );
+        // Check current stack pointer is underflow or overflow
+
+        let is_overflow = LtGadget::construct(
+            cb,
+            cb.curr.state.stack_pointer.expr(),
+            min_stack_pointer.expr(),
+        );
+        let is_underflow = LtGadget::construct(
+            cb,
+            max_stack_pointer.expr(),
+            cb.curr.state.stack_pointer.expr(),
+        );
+
+        cb.require_boolean("is_overflow is bool", is_overflow.expr());
+        cb.require_boolean("is_underflow is bool", is_underflow.expr());
+
+        // constrain one of [is_underflow, is_overflow] must be true when stack error
+        // happens
         cb.require_equal(
-            "constant gas left is less than gas required ",
-            insufficient_gas.expr(),
+            "is_underflow + is_overflow = 1",
+            is_underflow.expr() + is_overflow.expr(),
             1.expr(),
         );
 
@@ -91,8 +113,10 @@ impl<F: Field> ExecutionGadget<F> for ErrorStackGadget<F> {
 
         Self {
             opcode,
-            gas_required,
-            insufficient_gas,
+            min_stack_pointer,
+            max_stack_pointer,
+            is_overflow,
+            is_underflow,
             restore_context,
         }
     }
@@ -107,19 +131,28 @@ impl<F: Field> ExecutionGadget<F> for ErrorStackGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         let opcode = step.opcode.unwrap();
+        let min_stack = opcode.stack_pair().0 as u64;
+        let max_stack = opcode.stack_pair().1 as u64;
 
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
         // Inputs/Outputs
-        self.gas_required
-            .assign(region, offset, Value::known(F::from(step.gas_cost)))?;
-        // Gas insufficient check
-        // Get `gas_available` variable here once it's available
-        self.insufficient_gas.assign(
+        self.min_stack_pointer
+            .assign(region, offset, Value::known(F::from(min_stack)))?;
+        self.max_stack_pointer
+            .assign(region, offset, Value::known(F::from(max_stack)))?;
+
+        self.is_overflow.assign(
             region,
             offset,
-            F::from(step.gas_left),
-            F::from(step.gas_cost),
+            F::from(step.stack_pointer as u64),
+            F::from(min_stack),
+        )?;
+        self.is_underflow.assign(
+            region,
+            offset,
+            F::from(max_stack),
+            F::from(step.stack_pointer as u64),
         )?;
 
         self.restore_context
@@ -131,9 +164,9 @@ impl<F: Field> ExecutionGadget<F> for ErrorStackGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::evm_circuit::{
-        test::run_test_circuit, test::run_test_circuit_geth_data_default, witness::block_convert,
-    };
+    use crate::evm_circuit::{test::run_test_circuit_geth_data_default, witness::block_convert};
+    use crate::{evm_circuit::test::rand_word, test_util::run_test_circuits};
+
     use bus_mapping::evm::OpcodeId;
     use eth_types::{
         self, address, bytecode, bytecode::Bytecode, evm_types::GasCost, geth_types::Account,
@@ -145,185 +178,26 @@ mod test {
         eth, gwei, test_ctx::helpers::account_0_code_account_1_no_code, TestContext, MOCK_ACCOUNTS,
     };
 
-    fn gas(call_data: &[u8]) -> Word {
-        Word::from(
-            GasCost::TX.as_u64()
-                + 2 * OpcodeId::PUSH32.constant_gas_cost().as_u64()
-                + call_data
-                    .iter()
-                    .map(|&x| if x == 0 { 4 } else { 16 })
-                    .sum::<u64>(),
-        )
-    }
-
-    fn test_oog_constant(tx: eth_types::Transaction, is_success: bool) {
-        let code = if is_success {
-            bytecode! {
-                PUSH1(0)
-                PUSH1(0)
-                RETURN
-            }
-        } else {
-            bytecode! {
-                PUSH1(0)
-                PUSH1(0)
-            }
-        };
-
-        // Get the execution steps from the external tracer
-        let block: GethData = TestContext::<2, 1>::new(
-            None,
-            account_0_code_account_1_no_code(code),
-            |mut txs, _accs| {
-                txs[0]
-                    .to(tx.to.unwrap())
-                    .from(tx.from)
-                    .gas_price(tx.gas_price.unwrap())
-                    .gas(tx.gas - 1)
-                    .input(tx.input)
-                    .value(tx.value);
-            },
-            |block, _tx| block.number(0xcafeu64),
-        )
-        .unwrap()
-        .into();
-
-        assert_eq!(run_test_circuit_geth_data_default::<Fr>(block), Ok(()));
-    }
-
-    fn mock_tx(value: Word, gas_price: Word, calldata: Vec<u8>) -> eth_types::Transaction {
-        let from = MOCK_ACCOUNTS[1];
-        let to = MOCK_ACCOUNTS[0];
-        eth_types::Transaction {
-            from,
-            to: Some(to),
-            value,
-            gas: gas(&calldata),
-            gas_price: Some(gas_price),
-            input: calldata.into(),
-            ..Default::default()
-        }
-    }
-
-    #[test]
-    fn test_oog_constant_root() {
-        // in root call , out of gas constant happens
-        test_oog_constant(mock_tx(eth(1), gwei(2), vec![]), false);
-    }
-
-    #[derive(Clone, Copy, Debug, Default)]
-    struct Stack {
-        gas: u64,
-        value: Word,
-        cd_offset: u64,
-        cd_length: u64,
-        rd_offset: u64,
-        rd_length: u64,
-    }
-
-    fn caller() -> Account {
-        let terminator = OpcodeId::REVERT;
-
-        let stack = Stack {
-            gas: 10,
-            cd_offset: 64,
-            cd_length: 320,
-            rd_offset: 0,
-            rd_length: 32,
-            ..Default::default()
-        };
+    fn test_stack_underflow(value: Word) {
         let bytecode = bytecode! {
-            PUSH32(Word::from(stack.rd_length))
-            PUSH32(Word::from(stack.rd_offset))
-            PUSH32(Word::from(stack.cd_length))
-            PUSH32(Word::from(stack.cd_offset))
-            PUSH32(stack.value)
-            PUSH32(Address::repeat_byte(0xff).to_word())
-            PUSH32(Word::from(stack.gas))
-            CALL
-            PUSH32(Word::from(stack.rd_length))
-            PUSH32(Word::from(stack.rd_offset))
-            PUSH32(Word::from(stack.cd_length))
-            PUSH32(Word::from(stack.cd_offset))
-            PUSH32(stack.value)
-            PUSH32(Address::repeat_byte(0xff).to_word())
-            PUSH32(Word::from(stack.gas))
-            CALL
-            //PUSH1(0)
-            //PUSH1(0)
-            .write_op(terminator)
-        };
-
-        Account {
-            address: Address::repeat_byte(0xfe),
-            balance: Word::from(10).pow(20.into()),
-            code: bytecode.to_vec().into(),
-            ..Default::default()
-        }
-    }
-
-    fn oog_constant_internal_call(caller: Account, callee: Account) {
-        let block = TestContext::<3, 1>::new(
-            None,
-            |accs| {
-                accs[0]
-                    .address(address!("0x000000000000000000000000000000000000cafe"))
-                    .balance(Word::from(10u64.pow(19)));
-                accs[1]
-                    .address(caller.address)
-                    .code(caller.code)
-                    .nonce(caller.nonce)
-                    .balance(caller.balance);
-                accs[2]
-                    .address(callee.address)
-                    .code(callee.code)
-                    .nonce(callee.nonce)
-                    .balance(callee.balance);
-            },
-            |mut txs, accs| {
-                txs[0]
-                    .from(accs[0].address)
-                    .to(accs[1].address)
-                    .gas(23800.into());
-            },
-            |block, _tx| block.number(0xcafeu64),
-        )
-        .unwrap()
-        .into();
-        let block_data = bus_mapping::mock::BlockData::new_from_geth_data(block);
-        let mut builder = block_data.new_circuit_input_builder();
-        builder
-            .handle_block(&block_data.eth_block, &block_data.geth_traces)
-            .unwrap();
-        let block = block_convert(&builder.block, &builder.code_db);
-        assert_eq!(run_test_circuit(block), Ok(()));
-    }
-
-    fn callee(code: Bytecode) -> Account {
-        let code = code.to_vec();
-        let is_empty = code.is_empty();
-        Account {
-            address: Address::repeat_byte(0xff),
-            code: code.into(),
-            nonce: if is_empty { 0 } else { 1 }.into(),
-            balance: if is_empty { 0 } else { 0xdeadbeefu64 }.into(),
-            ..Default::default()
-        }
-    }
-
-    #[test]
-    fn test_oog_constant_internal() {
-        let bytecode = bytecode! {
-            PUSH32(Word::from(0))
-            PUSH32(Word::from(1))
-            PUSH32(Word::from(2))
-            PUSH32(Word::from(10))
-            PUSH32(Word::from(224))
-            PUSH32(Word::from(1025))
-            PUSH32(Word::from(5089))
+            PUSH32(value)
+            POP
+            POP
             STOP
         };
-        let callee = callee(bytecode);
-        oog_constant_internal_call(caller(), callee);
+
+        assert_eq!(
+            run_test_circuits(
+                TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+                None
+            ),
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn pop_gadget_underflow() {
+        test_stack_underflow(Word::from(0x030201));
+        test_stack_underflow(Word::from(0xab));
     }
 }
