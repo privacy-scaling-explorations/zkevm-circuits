@@ -158,7 +158,7 @@ pub async fn test_super_circuit_block(block_num: u64) {
         cli,
         CircuitsParams {
             max_rws: MAX_RWS,
-            ..Default::default()
+            max_txs: MAX_TXS,
         },
     )
     .await

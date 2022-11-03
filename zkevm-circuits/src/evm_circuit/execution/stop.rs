@@ -130,7 +130,6 @@ mod test {
     use halo2_proofs::halo2curves::bn256::Fr;
     use itertools::Itertools;
     use mock::TestContext;
-    use pretty_assertions::assert_eq;
 
     fn test_ok(bytecode: Bytecode, is_root: bool) {
         let block = if is_root {

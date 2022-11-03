@@ -851,7 +851,6 @@ impl<F: Field> ExecutionConfig<F> {
                             || Value::known(value.invert().unwrap_or(F::zero())),
                         )?;
                     }
-
                     offset += height;
 
                     if !exact && offset > evm_rows {
