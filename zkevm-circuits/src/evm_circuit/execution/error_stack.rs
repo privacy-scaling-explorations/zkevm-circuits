@@ -165,7 +165,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorStackGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::evm_circuit::{test::run_test_circuit_geth_data_default, witness::block_convert};
-    use crate::{evm_circuit::test::rand_word, test_util::run_test_circuits};
+    use crate::{evm_circuit::test::rand_word, test_util::{run_test_circuits_with_params, run_test_circuits}};
 
     use bus_mapping::evm::OpcodeId;
     use eth_types::{
@@ -173,6 +173,7 @@ mod test {
         geth_types::GethData, Address, ToWord, Word,
     };
     use halo2_proofs::halo2curves::bn256::Fr;
+    use bus_mapping::circuit_input_builder::CircuitsParams;
 
     use mock::{
         eth, gwei, test_ctx::helpers::account_0_code_account_1_no_code, TestContext, MOCK_ACCOUNTS,
@@ -200,4 +201,42 @@ mod test {
         test_stack_underflow(Word::from(0x030201));
         test_stack_underflow(Word::from(0xab));
     }
+
+    #[test]
+    fn stack_overflow_simple() {
+        test_stack_overflow(OpcodeId::PUSH1, &[1]);
+    }
+
+    fn test_stack_overflow(opcode: OpcodeId, bytes: &[u8]) {
+        assert!(bytes.len() == opcode.data_len());
+
+        let mut bytecode = bytecode! {
+            .write_op(opcode)
+        };
+        for b in bytes {
+            bytecode.write(*b, false);
+        }
+        // still add 1024 causes stack overflow
+        for _ in 0..1025 {
+            bytecode.write_op(opcode);
+            for b in bytes {
+                bytecode.write(*b, false);
+            }
+        }
+        // append final stop op code
+        bytecode.write_op(OpcodeId::STOP);
+
+        assert_eq!(
+            run_test_circuits_with_params(
+                TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+                None,
+                CircuitsParams {
+                    max_rws: 2048,
+                    ..Default::default()
+                }
+            ),
+            Ok(())
+        );
+    }
+
 }
