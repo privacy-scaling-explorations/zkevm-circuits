@@ -2194,6 +2194,7 @@ dependencies = [
  "paste",
  "pretty_assertions",
  "rand_chacha",
+ "rand_xorshift",
  "serde",
  "serde_json",
  "tokio",
