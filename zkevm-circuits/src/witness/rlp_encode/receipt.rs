@@ -60,6 +60,7 @@ impl<F: FieldExt> RlpWitnessGen<F> for Receipt {
         let mut rows = Vec::with_capacity(rlp_data.len());
 
         let idx = handle_prefix(
+            self.id,
             rlp_data.as_ref(),
             hash,
             &mut rows,
@@ -68,6 +69,7 @@ impl<F: FieldExt> RlpWitnessGen<F> for Receipt {
             0,
         );
         let idx = handle_u256(
+            self.id,
             rlp_data.as_ref(),
             hash,
             &mut rows,
@@ -77,6 +79,7 @@ impl<F: FieldExt> RlpWitnessGen<F> for Receipt {
             idx,
         );
         let idx = handle_u256(
+            self.id,
             rlp_data.as_ref(),
             hash,
             &mut rows,
@@ -86,6 +89,7 @@ impl<F: FieldExt> RlpWitnessGen<F> for Receipt {
             idx,
         );
         let idx = handle_bytes(
+            self.id,
             rlp_data.as_ref(),
             hash,
             &mut rows,
@@ -114,6 +118,7 @@ impl Receipt {
         mut idx: usize,
     ) -> usize {
         idx = handle_prefix(
+            self.id,
             rlp_data,
             hash,
             rows,
@@ -123,6 +128,7 @@ impl Receipt {
         );
         for log in self.logs.iter() {
             idx = handle_prefix(
+                self.id,
                 rlp_data,
                 hash,
                 rows,
@@ -134,6 +140,7 @@ impl Receipt {
             // start of aux tag index and length assignment (0).
             let aux_tag_start0 = idx;
             idx = handle_address(
+                self.id,
                 rlp_data,
                 hash,
                 rows,
@@ -144,6 +151,7 @@ impl Receipt {
                 idx,
             );
             idx = handle_prefix(
+                self.id,
                 rlp_data,
                 hash,
                 rows,
@@ -156,6 +164,7 @@ impl Receipt {
             let aux_tag_start1 = idx;
             for topic in log.topics.iter() {
                 idx = handle_bytes(
+                    self.id,
                     rlp_data,
                     hash,
                     rows,
@@ -179,6 +188,7 @@ impl Receipt {
             }
 
             idx = handle_bytes(
+                self.id,
                 rlp_data,
                 hash,
                 rows,

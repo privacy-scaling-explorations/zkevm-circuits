@@ -2,9 +2,12 @@ use eth_types::{Address, U256};
 use halo2_proofs::arithmetic::FieldExt;
 use num::Zero;
 
+use crate::witness::rlp_encode::witness_gen::RlcOrU256;
+
 use super::witness_gen::{RlpDataType, RlpWitnessRow};
 
 pub fn handle_prefix<F: FieldExt>(
+    id: usize,
     rlp_data: &[u8],
     hash: F,
     rows: &mut Vec<RlpWitnessRow<F>>,
@@ -17,9 +20,11 @@ pub fn handle_prefix<F: FieldExt>(
         let length_of_length = (rlp_data[idx] - 247) as usize;
         let tag_length = length_of_length + 1;
         rows.push(RlpWitnessRow {
+            id,
             index: idx + 1,
             data_type,
             value: rlp_data[idx],
+            value_acc: RlcOrU256::U256(rlp_data[idx].into()),
             tag,
             tag_length,
             tag_index: tag_length,
@@ -33,9 +38,11 @@ pub fn handle_prefix<F: FieldExt>(
         for (k, rlp_byte) in rlp_data.iter().skip(idx).take(length_of_length).enumerate() {
             length_acc = (length_acc * 256) + (*rlp_byte as u64);
             rows.push(RlpWitnessRow {
+                id,
                 index: idx + 1,
                 data_type,
                 value: *rlp_byte,
+                value_acc: RlcOrU256::U256(length_acc.into()),
                 tag,
                 tag_length,
                 tag_index: tag_length - (1 + k),
@@ -56,9 +63,11 @@ pub fn handle_prefix<F: FieldExt>(
             idx,
         );
         rows.push(RlpWitnessRow {
+            id,
             index: idx + 1,
             data_type,
             value: rlp_data[idx],
+            value_acc: RlcOrU256::U256(rlp_data[idx].into()),
             tag,
             tag_length: 1,
             tag_index: 1,
@@ -72,7 +81,9 @@ pub fn handle_prefix<F: FieldExt>(
     idx
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn handle_u256<F: FieldExt>(
+    id: usize,
     rlp_data: &[u8],
     hash: F,
     rows: &mut Vec<RlpWitnessRow<F>>,
@@ -96,9 +107,11 @@ pub fn handle_u256<F: FieldExt>(
             tag,
         );
         rows.push(RlpWitnessRow {
+            id,
             index: idx + 1,
             data_type,
             value: 128,
+            value_acc: RlcOrU256::U256(128.into()),
             tag,
             tag_length: 1,
             tag_index: 1,
@@ -115,9 +128,11 @@ pub fn handle_u256<F: FieldExt>(
             tag,
         );
         rows.push(RlpWitnessRow {
+            id,
             index: idx + 1,
             data_type,
             value: value_bytes[0],
+            value_acc: RlcOrU256::U256(value_bytes[0].into()),
             tag,
             tag_length: 1,
             tag_index: 1,
@@ -135,9 +150,11 @@ pub fn handle_u256<F: FieldExt>(
         );
         let tag_length = 1 + value_bytes.len();
         rows.push(RlpWitnessRow {
+            id,
             index: idx + 1,
             data_type,
             value: rlp_data[idx],
+            value_acc: RlcOrU256::U256(rlp_data[idx].into()),
             tag,
             tag_length,
             aux_tag_index: [0; 2],
@@ -148,6 +165,7 @@ pub fn handle_u256<F: FieldExt>(
         });
         idx += 1;
 
+        let mut value_acc = U256::zero();
         for (i, value_byte) in value_bytes.iter().enumerate() {
             assert!(
                 rlp_data[idx] == *value_byte,
@@ -155,10 +173,13 @@ pub fn handle_u256<F: FieldExt>(
                 tag,
                 i,
             );
+            value_acc = value_acc * 256 + (*value_byte);
             rows.push(RlpWitnessRow {
+                id,
                 index: idx + 1,
                 data_type,
                 value: *value_byte,
+                value_acc: RlcOrU256::U256(value_acc),
                 tag,
                 tag_length,
                 tag_index: tag_length - (1 + i),
@@ -176,6 +197,7 @@ pub fn handle_u256<F: FieldExt>(
 
 #[allow(clippy::too_many_arguments)]
 pub fn handle_address<F: FieldExt>(
+    id: usize,
     rlp_data: &[u8],
     hash: F,
     rows: &mut Vec<RlpWitnessRow<F>>,
@@ -193,9 +215,11 @@ pub fn handle_address<F: FieldExt>(
         prefix_tag,
     );
     rows.push(RlpWitnessRow {
+        id,
         index: idx + 1,
         data_type,
         value: 148,
+        value_acc: RlcOrU256::U256(148.into()),
         tag: prefix_tag,
         tag_length: 1,
         tag_index: 1,
@@ -206,6 +230,7 @@ pub fn handle_address<F: FieldExt>(
     });
     idx += 1;
 
+    let mut value_acc = U256::zero();
     for (i, value_byte) in value_bytes.iter().enumerate() {
         assert!(
             rlp_data[idx] == *value_byte,
@@ -213,10 +238,13 @@ pub fn handle_address<F: FieldExt>(
             tag,
             i,
         );
+        value_acc = value_acc * 256 + (*value_byte);
         rows.push(RlpWitnessRow {
+            id,
             index: idx + 1,
             data_type,
             value: *value_byte,
+            value_acc: RlcOrU256::U256(value_acc),
             tag,
             tag_length: 20,
             tag_index: 20 - i,
@@ -233,6 +261,7 @@ pub fn handle_address<F: FieldExt>(
 
 #[allow(clippy::too_many_arguments)]
 pub fn handle_bytes<F: FieldExt>(
+    id: usize,
     rlp_data: &[u8],
     hash: F,
     rows: &mut Vec<RlpWitnessRow<F>>,
@@ -251,9 +280,11 @@ pub fn handle_bytes<F: FieldExt>(
             prefix_tag,
         );
         rows.push(RlpWitnessRow {
+            id,
             index: idx + 1,
             data_type,
             value: 128,
+            value_acc: RlcOrU256::U256(128.into()),
             tag: prefix_tag,
             tag_length: 1,
             tag_index: 1,
@@ -273,9 +304,11 @@ pub fn handle_bytes<F: FieldExt>(
             prefix_tag,
         );
         rows.push(RlpWitnessRow {
+            id,
             index: idx + 1,
             data_type,
             value: (128 + length) as u8,
+            value_acc: RlcOrU256::U256((128 + length).into()),
             tag: prefix_tag,
             tag_length: 1,
             tag_index: 1,
@@ -294,9 +327,11 @@ pub fn handle_bytes<F: FieldExt>(
                 i,
             );
             rows.push(RlpWitnessRow {
+                id,
                 index: idx + 1,
                 data_type,
                 value: *data_byte,
+                value_acc: RlcOrU256::Rlc(*data_byte),
                 tag,
                 tag_length: length,
                 tag_index: length - i,
@@ -319,9 +354,11 @@ pub fn handle_bytes<F: FieldExt>(
     );
     let tag_length = 1 + length_of_length;
     rows.push(RlpWitnessRow {
+        id,
         index: idx + 1,
         data_type,
         value: (183 + length_of_length) as u8,
+        value_acc: RlcOrU256::U256((183 + length_of_length).into()),
         tag: prefix_tag,
         tag_length,
         tag_index: tag_length,
@@ -348,9 +385,11 @@ pub fn handle_bytes<F: FieldExt>(
         );
         length_acc = length_acc * 256 + (*length_byte as u64);
         rows.push(RlpWitnessRow {
+            id,
             index: idx + 1,
             data_type,
             value: *length_byte,
+            value_acc: RlcOrU256::U256(length_acc.into()),
             tag: prefix_tag,
             tag_length,
             tag_index: tag_length - (1 + i),
@@ -371,9 +410,11 @@ pub fn handle_bytes<F: FieldExt>(
             i,
         );
         rows.push(RlpWitnessRow {
+            id,
             index: idx + 1,
             data_type,
             value: *data_byte,
+            value_acc: RlcOrU256::Rlc(*data_byte),
             tag,
             tag_length,
             tag_index: tag_length - i,

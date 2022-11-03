@@ -14,7 +14,8 @@ mod receipt;
 pub use receipt::Receipt;
 mod rlp_encode;
 pub use rlp_encode::{
-    RlpDataType, RlpReceiptTag, RlpTxTag, RlpWitnessGen, RlpWitnessRow, N_RECEIPT_TAGS, N_TX_TAGS,
+    RlcOrU256, RlpDataType, RlpReceiptTag, RlpTxTag, RlpWitnessGen, RlpWitnessRow, N_RECEIPT_TAGS,
+    N_TX_TAGS,
 };
 mod rw;
 pub use rw::{Rw, RwMap, RwRow};

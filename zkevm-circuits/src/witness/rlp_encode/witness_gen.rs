@@ -1,4 +1,4 @@
-use eth_types::{ToLittleEndian, Word};
+use eth_types::{ToLittleEndian, Word, U256};
 use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
 use rlp::Encodable;
 use sha3::{digest::Digest, Keccak256};
@@ -16,9 +16,22 @@ pub enum RlpDataType {
 
 impl_expr!(RlpDataType);
 
+/// Enum to hold value accumulator over tags like Nonce, Gas, etc.
+#[derive(Clone, Debug)]
+pub enum RlcOrU256 {
+    /// Variant to indicate that the accumulated value should be a random linear
+    /// combination.
+    Rlc(u8),
+    /// Variant to indicate that the accumulated value should be a U64 or H160
+    /// number. We fit both into U256 so do not need a separate variant.
+    U256(U256),
+}
+
 /// Represents the witness in a single row of the RLP circuit.
 #[derive(Clone, Debug)]
 pub struct RlpWitnessRow<F> {
+    /// Denotes the transaction or receipt ID.
+    pub id: usize,
     /// Denotes the index of this row, starting from 0 and ending at n-1 where n
     /// is the byte length of the RLP-encoded data.
     pub index: usize,
@@ -27,6 +40,8 @@ pub struct RlpWitnessRow<F> {
     pub data_type: RlpDataType,
     /// Denotes the byte value in the RLP-encoded data.
     pub value: u8,
+    /// Accumulator value to represent the full value of the tag.
+    pub value_acc: RlcOrU256,
     /// Denotes the row’s tag, which can be a field from the data type encoded.
     pub tag: u8,
     /// Denotes the current tag's length in bytes.

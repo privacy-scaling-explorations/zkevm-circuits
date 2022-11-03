@@ -1,6 +1,6 @@
 //! Circuit implementation for RLP-encoding verification. Please refer: https://hackmd.io/@rohitnarurkar/S1zSz0KM9.
 
-use eth_types::Field;
+use eth_types::{Field, ToScalar};
 use gadgets::{
     comparator::{ComparatorChip, ComparatorConfig, ComparatorInstruction},
     is_equal::{IsEqualChip, IsEqualConfig, IsEqualInstruction},
@@ -17,7 +17,9 @@ use crate::{
         util::{and, constraint_builder::BaseConstraintBuilder, not, or},
         witness::{RlpDataType, RlpReceiptTag, RlpTxTag, RlpWitnessGen, N_RECEIPT_TAGS, N_TX_TAGS},
     },
+    table::{LookupTable, TxContextFieldTag, TxTable},
     util::Expr,
+    witness::RlcOrU256,
 };
 
 #[derive(Clone, Debug)]
@@ -31,6 +33,8 @@ pub struct Config<F> {
     is_first: Column<Advice>,
     /// Denotes whether the row is the last byte in the RLP-encoded data.
     is_last: Column<Advice>,
+    /// Transaction ID.
+    tx_id: Column<Advice>,
     /// Denotes the index of this row, starting from `1` and ending at `n`
     /// where `n` is the byte length of the RLP-encoded data.
     index: Column<Advice>,
@@ -41,6 +45,8 @@ pub struct Config<F> {
     data_type: Column<Advice>,
     /// Denotes the byte value at this row index from the RLP-encoded data.
     value: Column<Advice>,
+    /// Denotes the accumulated value for this span's tag.
+    value_acc: Column<Advice>,
     /// Denotes the tag assigned to this row.
     tag: Column<Advice>,
     /// List of columns that are assigned:
@@ -111,14 +117,16 @@ pub struct Config<F> {
 }
 
 impl<F: Field> Config<F> {
-    pub(crate) fn configure(meta: &mut ConstraintSystem<F>, r: F) -> Self {
+    pub(crate) fn configure(meta: &mut ConstraintSystem<F>, tx_table: TxTable, r: F) -> Self {
         let q_usable = meta.complex_selector();
         let is_first = meta.advice_column();
         let is_last = meta.advice_column();
+        let tx_id = meta.advice_column();
         let index = meta.advice_column();
         let rindex = meta.advice_column();
         let data_type = meta.advice_column();
         let value = meta.advice_column();
+        let value_acc = meta.advice_column();
         let tag = meta.advice_column();
         let aux_tag_index = array_init::array_init(|_| meta.advice_column());
         let tx_tags = array_init::array_init(|_| meta.advice_column());
@@ -163,7 +171,6 @@ impl<F: Field> Config<F> {
             |meta| meta.query_advice(tag_index, Rotation::cur()),
             |_meta| 34.expr(),
         );
-
         let value_gt_127 = LtChip::configure(
             meta,
             cmp_lt_enabled,
@@ -218,56 +225,162 @@ impl<F: Field> Config<F> {
             |meta| meta.query_advice(value, Rotation::cur()),
             |_meta| 256.expr(),
         );
-
         let length_acc_cmp_0 = ComparatorChip::configure(
             meta,
             cmp_lt_enabled,
             |_meta| 0.expr(),
             |meta| meta.query_advice(length_acc, Rotation::cur()),
         );
-
         let rindex_gt_1 = LtChip::configure(
             meta,
             cmp_lt_enabled,
             |_meta| 1.expr(),
             |meta| meta.query_advice(rindex, Rotation::cur()),
         );
-
         let aux_tag_index_eq_1 = IsEqualChip::configure(
             meta,
             cmp_lt_enabled,
             |meta| meta.query_advice(aux_tag_index[1], Rotation::cur()),
             |_meta| 1.expr(),
         );
-
         let keccak_tuple = array_init::array_init(|_| meta.advice_column());
+
+        // Helper macro to declare booleans to check the current row tag.
+        macro_rules! is_tx_tag {
+            ($var:ident, $tag_variant:ident) => {
+                let $var = |meta: &mut VirtualCells<F>| {
+                    1.expr()
+                        - meta.query_advice(tag, Rotation::cur())
+                            * meta.query_advice(
+                                tx_tags[RlpTxTag::$tag_variant as usize - 1],
+                                Rotation::cur(),
+                            )
+                };
+            };
+        }
+        is_tx_tag!(is_prefix, Prefix);
+        is_tx_tag!(is_nonce, Nonce);
+        is_tx_tag!(is_gas_price, GasPrice);
+        is_tx_tag!(is_gas, Gas);
+        is_tx_tag!(is_to_prefix, ToPrefix);
+        is_tx_tag!(is_to, To);
+        is_tx_tag!(is_value, Value);
+        is_tx_tag!(is_data_prefix, DataPrefix);
+        is_tx_tag!(is_data, Data);
+
+        meta.lookup_any("DataType::Transaction (Nonce lookup in TxTable)", |meta| {
+            let (_, tindex_eq) = tag_index_cmp_1.expr(meta, None);
+            let enable = and::expr(vec![
+                meta.query_selector(q_usable),
+                // Since DataType::Transaction = 0, !data_type = 1.
+                not::expr(meta.query_advice(data_type, Rotation::cur())),
+                is_nonce(meta),
+                tindex_eq,
+            ]);
+            vec![
+                meta.query_advice(tx_id, Rotation::cur()),
+                TxContextFieldTag::Nonce.expr(),
+                0.expr(),
+                meta.query_advice(value_acc, Rotation::cur()),
+            ]
+            .into_iter()
+            .zip(tx_table.table_exprs(meta).into_iter())
+            .map(|(arg, table)| (enable.clone() * arg, table))
+            .collect()
+        });
+
+        meta.lookup_any(
+            "DataType::Transaction (GasPrice lookup in TxTable)",
+            |meta| {
+                let (_, tindex_eq) = tag_index_cmp_1.expr(meta, None);
+                let enable = and::expr(vec![
+                    meta.query_selector(q_usable),
+                    // Since DataType::Transaction = 0, !data_type = 1.
+                    not::expr(meta.query_advice(data_type, Rotation::cur())),
+                    is_gas_price(meta),
+                    tindex_eq,
+                ]);
+                vec![
+                    meta.query_advice(tx_id, Rotation::cur()),
+                    TxContextFieldTag::GasPrice.expr(),
+                    0.expr(),
+                    meta.query_advice(value_acc, Rotation::cur()),
+                ]
+                .into_iter()
+                .zip(tx_table.table_exprs(meta).into_iter())
+                .map(|(arg, table)| (enable.clone() * arg, table))
+                .collect()
+            },
+        );
+
+        meta.lookup_any("DataType::Transaction (Gas lookup in TxTable)", |meta| {
+            let (_, tindex_eq) = tag_index_cmp_1.expr(meta, None);
+            let enable = and::expr(vec![
+                meta.query_selector(q_usable),
+                // Since DataType::Transaction = 0, !data_type = 1.
+                not::expr(meta.query_advice(data_type, Rotation::cur())),
+                is_gas(meta),
+                tindex_eq,
+            ]);
+            vec![
+                meta.query_advice(tx_id, Rotation::cur()),
+                TxContextFieldTag::Gas.expr(),
+                0.expr(),
+                meta.query_advice(value_acc, Rotation::cur()),
+            ]
+            .into_iter()
+            .zip(tx_table.table_exprs(meta).into_iter())
+            .map(|(arg, table)| (enable.clone() * arg, table))
+            .collect()
+        });
+
+        meta.lookup_any(
+            "DataType::Transaction (CalleeAddress lookup in TxTable)",
+            |meta| {
+                let (_, tindex_eq) = tag_index_cmp_1.expr(meta, None);
+                let enable = and::expr(vec![
+                    meta.query_selector(q_usable),
+                    // Since DataType::Transaction = 0, !data_type = 1.
+                    not::expr(meta.query_advice(data_type, Rotation::cur())),
+                    is_to(meta),
+                    tindex_eq,
+                ]);
+                vec![
+                    meta.query_advice(tx_id, Rotation::cur()),
+                    TxContextFieldTag::CalleeAddress.expr(),
+                    0.expr(),
+                    meta.query_advice(value_acc, Rotation::cur()),
+                ]
+                .into_iter()
+                .zip(tx_table.table_exprs(meta).into_iter())
+                .map(|(arg, table)| (enable.clone() * arg, table))
+                .collect()
+            },
+        );
+
+        meta.lookup_any("DataType::Transaction (Value lookup in TxTable)", |meta| {
+            let (_, tindex_eq) = tag_index_cmp_1.expr(meta, None);
+            let enable = and::expr(vec![
+                meta.query_selector(q_usable),
+                // Since DataType::Transaction = 0, !data_type = 1.
+                not::expr(meta.query_advice(data_type, Rotation::cur())),
+                is_value(meta),
+                tindex_eq,
+            ]);
+            vec![
+                meta.query_advice(tx_id, Rotation::cur()),
+                TxContextFieldTag::Value.expr(),
+                0.expr(),
+                meta.query_advice(value_acc, Rotation::cur()),
+            ]
+            .into_iter()
+            .zip(tx_table.table_exprs(meta).into_iter())
+            .map(|(arg, table)| (enable.clone() * arg, table))
+            .collect()
+        });
 
         meta.create_gate("DataType::Transaction", |meta| {
             let mut cb = BaseConstraintBuilder::default();
-
-            // Helper macro to declare booleans to check the current row tag.
-            macro_rules! is_tx_tag {
-                ($var:ident, $tag_variant:ident) => {
-                    let $var = |meta: &mut VirtualCells<F>| {
-                        1.expr()
-                            - meta.query_advice(tag, Rotation::cur())
-                                * meta.query_advice(
-                                    tx_tags[RlpTxTag::$tag_variant as usize - 1],
-                                    Rotation::cur(),
-                                )
-                    };
-                };
-            }
-
-            is_tx_tag!(is_prefix, Prefix);
-            is_tx_tag!(is_nonce, Nonce);
-            is_tx_tag!(is_gas_price, GasPrice);
-            is_tx_tag!(is_gas, Gas);
-            is_tx_tag!(is_to_prefix, ToPrefix);
-            is_tx_tag!(is_to, To);
-            is_tx_tag!(is_value, Value);
-            is_tx_tag!(is_data_prefix, DataPrefix);
-            is_tx_tag!(is_data, Data);
 
             let (tindex_lt, tindex_eq) = tag_index_cmp_1.expr(meta, None);
             let (tlength_lt, tlength_eq) = tag_length_cmp_1.expr(meta, None);
@@ -398,6 +511,11 @@ impl<F: Field> Config<F> {
                 is_nonce(meta) * tindex_eq_tlength.clone() * tlength_eq.clone(),
                 |cb| {
                     cb.require_equal("value < 129", value_lt_129.is_lt(meta, None), 1.expr());
+                    cb.require_equal(
+                        "value == value_acc",
+                        meta.query_advice(value, Rotation::cur()),
+                        meta.query_advice(value_acc, Rotation::cur()),
+                    );
                 },
             );
 
@@ -416,6 +534,11 @@ impl<F: Field> Config<F> {
                         "tag_index::next == length_acc",
                         meta.query_advice(tag_index, Rotation::next()),
                         meta.query_advice(length_acc, Rotation::cur()),
+                    );
+                    cb.require_equal(
+                        "value_acc::next == value::next",
+                        meta.query_advice(value_acc, Rotation::next()),
+                        meta.query_advice(value, Rotation::next()),
                     );
                 },
             );
@@ -436,6 +559,12 @@ impl<F: Field> Config<F> {
                     "tag_length::next == tag_length",
                     meta.query_advice(tag_length, Rotation::next()),
                     meta.query_advice(tag_length, Rotation::cur()),
+                );
+                cb.require_equal(
+                    "value_acc::next == value_acc::cur * 256 + value::next",
+                    meta.query_advice(value_acc, Rotation::next()),
+                    meta.query_advice(value_acc, Rotation::cur()) * 256.expr() +
+                        meta.query_advice(value, Rotation::next()),
                 );
             });
 
@@ -476,6 +605,11 @@ impl<F: Field> Config<F> {
                 is_gas_price(meta) * tindex_eq_tlength.clone() * tlength_eq.clone(),
                 |cb| {
                     cb.require_equal("value < 129", value_lt_129.is_lt(meta, None), 1.expr());
+                    cb.require_equal(
+                        "value == value_acc",
+                        meta.query_advice(value, Rotation::cur()),
+                        meta.query_advice(value_acc, Rotation::cur()),
+                    );
                 },
             );
 
@@ -494,6 +628,11 @@ impl<F: Field> Config<F> {
                         "tag_index::next == length_acc",
                         meta.query_advice(tag_index, Rotation::next()),
                         meta.query_advice(length_acc, Rotation::cur()),
+                    );
+                    cb.require_equal(
+                        "value_acc::next == value::next",
+                        meta.query_advice(value_acc, Rotation::next()),
+                        meta.query_advice(value, Rotation::next()),
                     );
                 },
             );
@@ -514,6 +653,12 @@ impl<F: Field> Config<F> {
                     "tag_length::next == tag_length",
                     meta.query_advice(tag_length, Rotation::next()),
                     meta.query_advice(tag_length, Rotation::cur()),
+                );
+                cb.require_equal(
+                    "value_acc_next == (value_acc_cur * r) + value_next",
+                    meta.query_advice(value_acc, Rotation::next()),
+                    meta.query_advice(value_acc, Rotation::cur()) * r
+                        + meta.query_advice(value, Rotation::next()),
                 );
             });
 
@@ -554,6 +699,11 @@ impl<F: Field> Config<F> {
                 is_gas(meta) * tindex_eq_tlength.clone() * tlength_eq.clone(),
                 |cb| {
                     cb.require_equal("value < 129", value_lt_129.is_lt(meta, None), 1.expr());
+                    cb.require_equal(
+                        "value == value_acc",
+                        meta.query_advice(value, Rotation::cur()),
+                        meta.query_advice(value_acc, Rotation::cur()),
+                    );
                 },
             );
 
@@ -592,6 +742,12 @@ impl<F: Field> Config<F> {
                     "tag_length::next == tag_length",
                     meta.query_advice(tag_length, Rotation::next()),
                     meta.query_advice(tag_length, Rotation::cur()),
+                );
+                cb.require_equal(
+                    "value_acc::next == value_acc::cur * 256 + value::next",
+                    meta.query_advice(value_acc, Rotation::next()),
+                    meta.query_advice(value_acc, Rotation::cur()) * 256.expr() +
+                        meta.query_advice(value, Rotation::next()),
                 );
             });
 
@@ -638,6 +794,11 @@ impl<F: Field> Config<F> {
                     meta.query_advice(tag_length, Rotation::next()),
                     20.expr(),
                 );
+                cb.require_equal(
+                    "value_acc::next == value::next",
+                    meta.query_advice(value_acc, Rotation::next()),
+                    meta.query_advice(value, Rotation::next()),
+                );
             });
 
             //////////////////////////////////////////////////////////////////////////////////////
@@ -659,6 +820,12 @@ impl<F: Field> Config<F> {
                     "tag_length::next == tag_length",
                     meta.query_advice(tag_length, Rotation::next()),
                     meta.query_advice(tag_length, Rotation::cur()),
+                );
+                cb.require_equal(
+                    "value_acc::next == value_acc::cur * 256 + value::next",
+                    meta.query_advice(value_acc, Rotation::next()),
+                    meta.query_advice(value_acc, Rotation::cur()) * 256.expr() +
+                        meta.query_advice(value, Rotation::next()),
                 );
             });
 
@@ -699,6 +866,11 @@ impl<F: Field> Config<F> {
                 is_value(meta) * tindex_eq_tlength.clone() * tlength_eq.clone(),
                 |cb| {
                     cb.require_equal("value < 129", value_lt_129.is_lt(meta, None), 1.expr());
+                    cb.require_equal(
+                        "value == value_acc",
+                        meta.query_advice(value, Rotation::cur()),
+                        meta.query_advice(value_acc, Rotation::cur()),
+                    );
                 },
             );
 
@@ -717,6 +889,11 @@ impl<F: Field> Config<F> {
                         "tag_index::next == length_acc",
                         meta.query_advice(tag_index, Rotation::next()),
                         meta.query_advice(length_acc, Rotation::cur()),
+                    );
+                    cb.require_equal(
+                        "value_acc::next == value::next",
+                        meta.query_advice(value_acc, Rotation::next()),
+                        meta.query_advice(value, Rotation::next()),
                     );
                 },
             );
@@ -737,6 +914,12 @@ impl<F: Field> Config<F> {
                     "tag_length::next == tag_length",
                     meta.query_advice(tag_length, Rotation::next()),
                     meta.query_advice(tag_length, Rotation::cur()),
+                );
+                cb.require_equal(
+                    "value_acc_next == (value_acc_cur * r) + value_next",
+                    meta.query_advice(value_acc, Rotation::next()),
+                    meta.query_advice(value_acc, Rotation::cur()) * r
+                        + meta.query_advice(value, Rotation::next()),
                 );
             });
 
@@ -911,37 +1094,37 @@ impl<F: Field> Config<F> {
             ]))
         });
 
+        // Helper macro to declare booleans to check the current row tag.
+        macro_rules! is_receipt_tag {
+            ($var:ident, $tag_variant:ident) => {
+                let $var = |meta: &mut VirtualCells<F>| {
+                    1.expr()
+                        - meta.query_advice(tag, Rotation::cur())
+                            * meta.query_advice(
+                                receipt_tags[RlpReceiptTag::$tag_variant as usize - 1],
+                                Rotation::cur(),
+                            )
+                };
+            };
+        }
+        is_receipt_tag!(is_prefix, Prefix);
+        is_receipt_tag!(is_status, Status);
+        is_receipt_tag!(is_cumulative_gas_used, CumulativeGasUsed);
+        is_receipt_tag!(is_bloom_prefix, BloomPrefix);
+        is_receipt_tag!(is_bloom, Bloom);
+        is_receipt_tag!(is_logs_prefix, LogsPrefix);
+        is_receipt_tag!(is_log_prefix, LogPrefix);
+        is_receipt_tag!(is_log_address_prefix, LogAddressPrefix);
+        is_receipt_tag!(is_log_address, LogAddress);
+        is_receipt_tag!(is_log_topics_prefix, LogTopicsPrefix);
+        is_receipt_tag!(is_log_topic_prefix, LogTopicPrefix);
+        is_receipt_tag!(is_log_topic, LogTopic);
+        is_receipt_tag!(is_log_data_prefix, LogDataPrefix);
+        is_receipt_tag!(is_log_data, LogData);
+
         meta.create_gate("DataType::Receipt", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
-            // Helper macro to declare booleans to check the current row tag.
-            macro_rules! is_receipt_tag {
-                ($var:ident, $tag_variant:ident) => {
-                    let $var = |meta: &mut VirtualCells<F>| {
-                        1.expr()
-                            - meta.query_advice(tag, Rotation::cur())
-                                * meta.query_advice(
-                                    receipt_tags[RlpReceiptTag::$tag_variant as usize - 1],
-                                    Rotation::cur(),
-                                )
-                    };
-                };
-            }
-
-            is_receipt_tag!(is_prefix, Prefix);
-            is_receipt_tag!(is_status, Status);
-            is_receipt_tag!(is_cumulative_gas_used, CumulativeGasUsed);
-            is_receipt_tag!(is_bloom_prefix, BloomPrefix);
-            is_receipt_tag!(is_bloom, Bloom);
-            is_receipt_tag!(is_logs_prefix, LogsPrefix);
-            is_receipt_tag!(is_log_prefix, LogPrefix);
-            is_receipt_tag!(is_log_address_prefix, LogAddressPrefix);
-            is_receipt_tag!(is_log_address, LogAddress);
-            is_receipt_tag!(is_log_topics_prefix, LogTopicsPrefix);
-            is_receipt_tag!(is_log_topic_prefix, LogTopicPrefix);
-            is_receipt_tag!(is_log_topic, LogTopic);
-            is_receipt_tag!(is_log_data_prefix, LogDataPrefix);
-            is_receipt_tag!(is_log_data, LogData);
 
             let (tindex_lt, tindex_eq) = tag_index_cmp_1.expr(meta, None);
             let (tlength_lt, tlength_eq) = tag_length_cmp_1.expr(meta, None);
@@ -1980,10 +2163,12 @@ impl<F: Field> Config<F> {
             q_usable,
             is_first,
             is_last,
+            tx_id,
             index,
             rindex,
             data_type,
             value,
+            value_acc,
             tag,
             tx_tags,
             receipt_tags,
@@ -2059,14 +2244,25 @@ impl<F: Field> Config<F> {
 
                 for witness in witnesses.iter() {
                     let mut value_rlc = F::zero();
+                    let mut tmp_value_acc = F::zero();
                     let rows = witness.gen_witness(self.r);
                     let n_rows = rows.len();
 
                     for (idx, row) in rows.iter().enumerate() {
                         offset += 1;
 
-                        // update value accumulator
+                        // update value accumulator over the entire RLP encoding.
                         value_rlc = value_rlc * self.r + F::from(row.value as u64);
+                        // compute value accumulator for specific tag, used for individual field
+                        // lookups to Tx Table.
+                        let value_acc = match row.value_acc {
+                            RlcOrU256::U256(value_acc) => {
+                                tmp_value_acc = F::zero();
+                                value_acc.to_scalar().unwrap()
+                            }
+                            RlcOrU256::Rlc(byte) => tmp_value_acc * self.r + F::from(byte as u64),
+                        };
+
                         // q_usable
                         self.q_usable.enable(&mut region, offset)?;
                         // is_first
@@ -2084,10 +2280,12 @@ impl<F: Field> Config<F> {
                                 self.is_last,
                                 F::from((row.index == n_rows) as u64),
                             ),
+                            ("tx_id", self.tx_id, F::from(row.id as u64)),
                             ("index", self.index, F::from(row.index as u64)),
                             ("rindex", self.rindex, F::from(rindex)),
                             ("data_type", self.data_type, F::from(row.data_type as u64)),
                             ("value", self.value, F::from(row.value as u64)),
+                            ("value_acc", self.value_acc, value_acc),
                             ("tag", self.tag, F::from(row.tag as u64)),
                             (
                                 "aux_tag_index[0]",
@@ -2500,12 +2698,21 @@ mod tests {
         plonk::{Circuit, ConstraintSystem, Error},
     };
 
-    use crate::evm_circuit::{
-        test::rand_bytes,
-        witness::{Receipt, RlpWitnessGen, Transaction},
+    use crate::{
+        evm_circuit::{
+            test::rand_bytes,
+            witness::{Receipt, Transaction},
+        },
+        table::TxTable,
     };
 
     use super::Config;
+
+    #[derive(Clone)]
+    struct MyConfig<F> {
+        rlp_config: Config<F>,
+        tx_table: TxTable,
+    }
 
     #[derive(Default)]
     struct MyCircuit<F, RLP> {
@@ -2518,9 +2725,46 @@ mod tests {
         fn r() -> F {
             F::random(rand::thread_rng())
         }
+        fn max_txs() -> usize {
+            10
+        }
     }
 
-    impl<F: Field, RLP: RlpWitnessGen<F>> Circuit<F> for MyCircuit<F, RLP> {
+    impl<F: Field> Circuit<F> for MyCircuit<F, Transaction> {
+        type Config = MyConfig<F>;
+        type FloorPlanner = SimpleFloorPlanner;
+
+        fn without_witnesses(&self) -> Self {
+            Self::default()
+        }
+
+        fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
+            let tx_table = TxTable::construct(meta);
+            let rlp_config = Config::configure(meta, tx_table.clone(), Self::r());
+
+            Self::Config {
+                rlp_config,
+                tx_table,
+            }
+        }
+
+        fn synthesize(
+            &self,
+            config: Self::Config,
+            mut layouter: impl Layouter<F>,
+        ) -> Result<(), Error> {
+            config
+                .tx_table
+                .load(&mut layouter, &self.inputs, Self::max_txs(), Self::r())?;
+            config
+                .rlp_config
+                .load(&mut layouter, self.inputs.as_slice())?;
+            config.rlp_config.assign(layouter, self.inputs.as_slice())?;
+            Ok(())
+        }
+    }
+
+    impl<F: Field> Circuit<F> for MyCircuit<F, Receipt> {
         type Config = Config<F>;
         type FloorPlanner = SimpleFloorPlanner;
 
@@ -2529,7 +2773,8 @@ mod tests {
         }
 
         fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-            Config::configure(meta, Self::r())
+            let tx_table = TxTable::construct(meta);
+            Config::configure(meta, tx_table, Self::r())
         }
 
         fn synthesize(
@@ -2543,8 +2788,29 @@ mod tests {
         }
     }
 
-    fn verify<F: Field, RLP: RlpWitnessGen<F>>(k: u32, inputs: Vec<RLP>, success: bool) {
-        let circuit = MyCircuit::<F, RLP> {
+    fn verify_txs<F: Field>(k: u32, inputs: Vec<Transaction>, success: bool) {
+        let circuit = MyCircuit::<F, Transaction> {
+            inputs,
+            size: 2usize.pow(k),
+            _marker: PhantomData,
+        };
+
+        let prover = MockProver::<F>::run(k, &circuit, vec![]).unwrap();
+        let err = prover.verify();
+        let print_failures = true;
+        if err.is_err() && print_failures {
+            for e in err.err().iter() {
+                for s in e.iter() {
+                    println!("{}", s);
+                }
+            }
+        }
+        let err = prover.verify();
+        assert_eq!(err.is_ok(), success);
+    }
+
+    fn verify_receipts<F: Field>(k: u32, inputs: Vec<Receipt>, success: bool) {
+        let circuit = MyCircuit::<F, Receipt> {
             inputs,
             size: 2usize.pow(k),
             _marker: PhantomData,
@@ -2567,6 +2833,7 @@ mod tests {
     fn get_txs() -> [Transaction; 3] {
         [
             Transaction {
+                id: 1,
                 nonce: 0x123u64,
                 gas_price: 100_000_000_000u64.into(),
                 gas: 1_000_000u64,
@@ -2576,6 +2843,7 @@ mod tests {
                 ..Default::default()
             },
             Transaction {
+                id: 2,
                 nonce: 0x00u64,
                 gas_price: 100_000_000u64.into(),
                 gas: 1_000u64,
@@ -2585,6 +2853,7 @@ mod tests {
                 ..Default::default()
             },
             Transaction {
+                id: 3,
                 nonce: 0x01u64,
                 gas_price: 100_000_000u64.into(),
                 gas: 1_000u64,
@@ -2598,23 +2867,23 @@ mod tests {
 
     #[test]
     fn rlp_circuit_tx_1() {
-        verify::<Fr, Transaction>(8, vec![get_txs()[0].clone()], true);
+        verify_txs::<Fr>(8, vec![get_txs()[0].clone()], true);
     }
 
     #[test]
     fn rlp_circuit_tx_2() {
-        verify::<Fr, Transaction>(8, vec![get_txs()[1].clone()], true);
+        verify_txs::<Fr>(8, vec![get_txs()[1].clone()], true);
     }
 
     #[test]
     fn rlp_circuit_tx_3() {
-        verify::<Fr, Transaction>(20, vec![get_txs()[2].clone()], true);
+        verify_txs::<Fr>(20, vec![get_txs()[2].clone()], true);
     }
 
     #[test]
     fn rlp_circuit_multi_txs() {
         let txs = get_txs();
-        verify::<Fr, Transaction>(10, vec![txs[0].clone(), txs[1].clone()], true);
+        verify_txs::<Fr>(10, vec![txs[0].clone(), txs[1].clone()], true);
     }
 
     #[test]
@@ -2638,12 +2907,13 @@ mod tests {
         };
         let logs = vec![rand_log()];
         let receipt = Receipt {
+            id: 1,
             status,
             cumulative_gas_used,
             bloom,
             logs,
         };
-        verify::<Fr, Receipt>(9, vec![receipt], true);
+        verify_receipts::<Fr>(9, vec![receipt], true);
     }
 
     #[test]
@@ -2654,11 +2924,12 @@ mod tests {
         let bloom = Bloom(rand_bytes(256)[..].try_into().unwrap());
         let logs = vec![];
         let receipt = Receipt {
+            id: 2,
             status,
             cumulative_gas_used,
             bloom,
             logs,
         };
-        verify::<Fr, Receipt>(9, vec![receipt], true);
+        verify_receipts::<Fr>(9, vec![receipt], true);
     }
 }
