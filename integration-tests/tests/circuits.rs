@@ -74,7 +74,9 @@ async fn test_state_circuit_block(block_num: u64) {
     let power_of_randomness = circuit.instance();
 
     let prover = MockProver::<Fr>::run(DEGREE as u32, &circuit, power_of_randomness).unwrap();
-    prover.verify().expect("state_circuit verification failed");
+    prover
+        .verify_par()
+        .expect("state_circuit verification failed");
 }
 
 async fn test_tx_circuit_block(block_num: u64) {
@@ -106,7 +108,7 @@ async fn test_tx_circuit_block(block_num: u64) {
 
     let prover = MockProver::run(DEGREE, &circuit, vec![vec![]]).unwrap();
 
-    prover.verify().expect("tx_circuit verification failed");
+    prover.verify_par().expect("tx_circuit verification failed");
 }
 
 pub async fn test_bytecode_circuit_block(block_num: u64) {
@@ -158,7 +160,7 @@ pub async fn test_super_circuit_block(block_num: u64) {
         )
         .unwrap();
     let prover = MockProver::run(k, &circuit, instance).unwrap();
-    let res = prover.verify();
+    let res = prover.verify_par();
     if let Err(err) = res {
         eprintln!("Verification failures:");
         eprintln!("{:#?}", err);
