@@ -12,6 +12,7 @@ use halo2_proofs::{
     },
 };
 use integration_tests::{get_client, log_init, GenDataOutput, CHAIN_ID};
+use itertools::Itertools;
 use lazy_static::lazy_static;
 use log::trace;
 use paste::paste;
@@ -59,6 +60,16 @@ async fn test_state_circuit_block(block_num: u64) {
     trace!("memory_ops: {:#?}", memory_ops);
     let storage_ops = builder.block.container.sorted_storage();
     trace!("storage_ops: {:#?}", storage_ops);
+    let call_context_ops = builder
+        .block
+        .container
+        .call_context
+        .iter()
+        .sorted()
+        .cloned()
+        .collect();
+    trace!("call_context_ops: {:#?}", call_context_ops);
+    // TODO: Add remaining ops to the rw_map
 
     const DEGREE: usize = 17;
 
@@ -66,7 +77,8 @@ async fn test_state_circuit_block(block_num: u64) {
         memory: memory_ops,
         stack: stack_ops,
         storage: storage_ops,
-        ..Default::default()
+        call_context: call_context_ops,
+        ..OperationContainer::default()
     });
 
     let randomness = Fr::from(0xcafeu64);

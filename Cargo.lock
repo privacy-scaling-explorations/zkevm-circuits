@@ -2189,6 +2189,7 @@ dependencies = [
  "eth-types",
  "ethers",
  "halo2_proofs 0.2.0",
+ "itertools",
  "lazy_static",
  "log",
  "paste",
