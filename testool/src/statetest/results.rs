@@ -110,7 +110,11 @@ impl Report {
         self.by_result.print_tty(false)?;
         let (_, files_diff) = self.diffs.gen_info();
         files_diff.print_tty(false)?;
-
+        for (test_id, info)  in &self.tests {
+            if info.level == ResultLevel::Fail || info.level== ResultLevel::Panic {
+                println!("- {:?} {}",info.level,test_id);
+            }
+        }
         Ok(())
     }
     pub fn gen_html(&self) -> Result<String> {
