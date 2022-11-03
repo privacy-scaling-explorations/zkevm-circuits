@@ -60,6 +60,7 @@ impl<F: FieldExt> RlpWitnessGen<F> for Transaction {
             0,
         );
         let idx = handle_u256(
+            randomness,
             self.id,
             rlp_data.as_ref(),
             hash,
@@ -70,6 +71,7 @@ impl<F: FieldExt> RlpWitnessGen<F> for Transaction {
             idx,
         );
         let idx = handle_u256(
+            randomness,
             self.id,
             rlp_data.as_ref(),
             hash,
@@ -80,6 +82,7 @@ impl<F: FieldExt> RlpWitnessGen<F> for Transaction {
             idx,
         );
         let idx = handle_u256(
+            randomness,
             self.id,
             rlp_data.as_ref(),
             hash,
@@ -101,6 +104,7 @@ impl<F: FieldExt> RlpWitnessGen<F> for Transaction {
             idx,
         );
         let idx = handle_u256(
+            randomness,
             self.id,
             rlp_data.as_ref(),
             hash,
@@ -111,6 +115,7 @@ impl<F: FieldExt> RlpWitnessGen<F> for Transaction {
             idx,
         );
         let idx = handle_bytes(
+            randomness,
             self.id,
             rlp_data.as_ref(),
             hash,

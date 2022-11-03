@@ -69,6 +69,7 @@ impl<F: FieldExt> RlpWitnessGen<F> for Receipt {
             0,
         );
         let idx = handle_u256(
+            randomness,
             self.id,
             rlp_data.as_ref(),
             hash,
@@ -79,6 +80,7 @@ impl<F: FieldExt> RlpWitnessGen<F> for Receipt {
             idx,
         );
         let idx = handle_u256(
+            randomness,
             self.id,
             rlp_data.as_ref(),
             hash,
@@ -89,6 +91,7 @@ impl<F: FieldExt> RlpWitnessGen<F> for Receipt {
             idx,
         );
         let idx = handle_bytes(
+            randomness,
             self.id,
             rlp_data.as_ref(),
             hash,
@@ -99,7 +102,7 @@ impl<F: FieldExt> RlpWitnessGen<F> for Receipt {
             self.bloom.as_bytes(),
             idx,
         );
-        let idx = self.handle_logs(rlp_data.as_ref(), hash, &mut rows, idx);
+        let idx = self.handle_logs(randomness, rlp_data.as_ref(), hash, &mut rows, idx);
 
         assert!(
             idx == rlp_data.len(),
@@ -112,6 +115,7 @@ impl<F: FieldExt> RlpWitnessGen<F> for Receipt {
 impl Receipt {
     fn handle_logs<F: FieldExt>(
         &self,
+        randomness: F,
         rlp_data: &[u8],
         hash: F,
         rows: &mut Vec<RlpWitnessRow<F>>,
@@ -164,6 +168,7 @@ impl Receipt {
             let aux_tag_start1 = idx;
             for topic in log.topics.iter() {
                 idx = handle_bytes(
+                    randomness,
                     self.id,
                     rlp_data,
                     hash,
@@ -188,6 +193,7 @@ impl Receipt {
             }
 
             idx = handle_bytes(
+                randomness,
                 self.id,
                 rlp_data,
                 hash,

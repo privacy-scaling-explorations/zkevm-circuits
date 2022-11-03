@@ -1,4 +1,4 @@
-use eth_types::{ToLittleEndian, Word, U256};
+use eth_types::{ToLittleEndian, Word};
 use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
 use rlp::Encodable;
 use sha3::{digest::Digest, Keccak256};
@@ -6,7 +6,7 @@ use sha3::{digest::Digest, Keccak256};
 use crate::{evm_circuit::util::RandomLinearCombination, impl_expr};
 
 /// Data types that are supported by the RLP circuit.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RlpDataType {
     /// Data type for an RLP-encoded legacy transaction.
     Transaction,
@@ -15,17 +15,6 @@ pub enum RlpDataType {
 }
 
 impl_expr!(RlpDataType);
-
-/// Enum to hold value accumulator over tags like Nonce, Gas, etc.
-#[derive(Clone, Debug)]
-pub enum RlcOrU256 {
-    /// Variant to indicate that the accumulated value should be a random linear
-    /// combination.
-    Rlc(u8),
-    /// Variant to indicate that the accumulated value should be a U64 or H160
-    /// number. We fit both into U256 so do not need a separate variant.
-    U256(U256),
-}
 
 /// Represents the witness in a single row of the RLP circuit.
 #[derive(Clone, Debug)]
@@ -41,7 +30,7 @@ pub struct RlpWitnessRow<F> {
     /// Denotes the byte value in the RLP-encoded data.
     pub value: u8,
     /// Accumulator value to represent the full value of the tag.
-    pub value_acc: RlcOrU256,
+    pub value_acc: F,
     /// Denotes the row’s tag, which can be a field from the data type encoded.
     pub tag: u8,
     /// Denotes the current tag's length in bytes.

@@ -2,7 +2,7 @@ use eth_types::{Address, U256};
 use halo2_proofs::arithmetic::FieldExt;
 use num::Zero;
 
-use crate::witness::rlp_encode::witness_gen::RlcOrU256;
+use crate::witness::RlpTxTag;
 
 use super::witness_gen::{RlpDataType, RlpWitnessRow};
 
@@ -24,7 +24,7 @@ pub fn handle_prefix<F: FieldExt>(
             index: idx + 1,
             data_type,
             value: rlp_data[idx],
-            value_acc: RlcOrU256::U256(rlp_data[idx].into()),
+            value_acc: F::from(rlp_data[idx] as u64),
             tag,
             tag_length,
             tag_index: tag_length,
@@ -42,7 +42,7 @@ pub fn handle_prefix<F: FieldExt>(
                 index: idx + 1,
                 data_type,
                 value: *rlp_byte,
-                value_acc: RlcOrU256::U256(length_acc.into()),
+                value_acc: F::from(length_acc as u64),
                 tag,
                 tag_length,
                 tag_index: tag_length - (1 + k),
@@ -67,7 +67,7 @@ pub fn handle_prefix<F: FieldExt>(
             index: idx + 1,
             data_type,
             value: rlp_data[idx],
-            value_acc: RlcOrU256::U256(rlp_data[idx].into()),
+            value_acc: F::from(rlp_data[idx] as u64),
             tag,
             tag_length: 1,
             tag_index: 1,
@@ -83,6 +83,7 @@ pub fn handle_prefix<F: FieldExt>(
 
 #[allow(clippy::too_many_arguments)]
 pub fn handle_u256<F: FieldExt>(
+    randomness: F,
     id: usize,
     rlp_data: &[u8],
     hash: F,
@@ -111,7 +112,7 @@ pub fn handle_u256<F: FieldExt>(
             index: idx + 1,
             data_type,
             value: 128,
-            value_acc: RlcOrU256::U256(128.into()),
+            value_acc: F::from(128),
             tag,
             tag_length: 1,
             tag_index: 1,
@@ -132,7 +133,7 @@ pub fn handle_u256<F: FieldExt>(
             index: idx + 1,
             data_type,
             value: value_bytes[0],
-            value_acc: RlcOrU256::U256(value_bytes[0].into()),
+            value_acc: F::from(value_bytes[0] as u64),
             tag,
             tag_length: 1,
             tag_index: 1,
@@ -154,7 +155,7 @@ pub fn handle_u256<F: FieldExt>(
             index: idx + 1,
             data_type,
             value: rlp_data[idx],
-            value_acc: RlcOrU256::U256(rlp_data[idx].into()),
+            value_acc: F::from(rlp_data[idx] as u64),
             tag,
             tag_length,
             aux_tag_index: [0; 2],
@@ -165,7 +166,7 @@ pub fn handle_u256<F: FieldExt>(
         });
         idx += 1;
 
-        let mut value_acc = U256::zero();
+        let mut value_acc = F::zero();
         for (i, value_byte) in value_bytes.iter().enumerate() {
             assert!(
                 rlp_data[idx] == *value_byte,
@@ -173,13 +174,19 @@ pub fn handle_u256<F: FieldExt>(
                 tag,
                 i,
             );
-            value_acc = value_acc * 256 + (*value_byte);
+            if data_type == RlpDataType::Transaction {
+                if tag == RlpTxTag::Value as u8 || tag == RlpTxTag::GasPrice as u8 {
+                    value_acc = value_acc * randomness + F::from(*value_byte as u64);
+                } else {
+                    value_acc = value_acc * F::from(256) + F::from(*value_byte as u64);
+                }
+            }
             rows.push(RlpWitnessRow {
                 id,
                 index: idx + 1,
                 data_type,
                 value: *value_byte,
-                value_acc: RlcOrU256::U256(value_acc),
+                value_acc,
                 tag,
                 tag_length,
                 tag_index: tag_length - (1 + i),
@@ -219,7 +226,7 @@ pub fn handle_address<F: FieldExt>(
         index: idx + 1,
         data_type,
         value: 148,
-        value_acc: RlcOrU256::U256(148.into()),
+        value_acc: F::from(148),
         tag: prefix_tag,
         tag_length: 1,
         tag_index: 1,
@@ -230,7 +237,7 @@ pub fn handle_address<F: FieldExt>(
     });
     idx += 1;
 
-    let mut value_acc = U256::zero();
+    let mut value_acc = F::zero();
     for (i, value_byte) in value_bytes.iter().enumerate() {
         assert!(
             rlp_data[idx] == *value_byte,
@@ -238,13 +245,13 @@ pub fn handle_address<F: FieldExt>(
             tag,
             i,
         );
-        value_acc = value_acc * 256 + (*value_byte);
+        value_acc = value_acc * F::from(256) + F::from(*value_byte as u64);
         rows.push(RlpWitnessRow {
             id,
             index: idx + 1,
             data_type,
             value: *value_byte,
-            value_acc: RlcOrU256::U256(value_acc),
+            value_acc,
             tag,
             tag_length: 20,
             tag_index: 20 - i,
@@ -261,6 +268,7 @@ pub fn handle_address<F: FieldExt>(
 
 #[allow(clippy::too_many_arguments)]
 pub fn handle_bytes<F: FieldExt>(
+    randomness: F,
     id: usize,
     rlp_data: &[u8],
     hash: F,
@@ -284,7 +292,7 @@ pub fn handle_bytes<F: FieldExt>(
             index: idx + 1,
             data_type,
             value: 128,
-            value_acc: RlcOrU256::U256(128.into()),
+            value_acc: F::from(128),
             tag: prefix_tag,
             tag_length: 1,
             tag_index: 1,
@@ -308,7 +316,7 @@ pub fn handle_bytes<F: FieldExt>(
             index: idx + 1,
             data_type,
             value: (128 + length) as u8,
-            value_acc: RlcOrU256::U256((128 + length).into()),
+            value_acc: F::from((128 + length) as u64),
             tag: prefix_tag,
             tag_length: 1,
             tag_index: 1,
@@ -331,7 +339,7 @@ pub fn handle_bytes<F: FieldExt>(
                 index: idx + 1,
                 data_type,
                 value: *data_byte,
-                value_acc: RlcOrU256::Rlc(*data_byte),
+                value_acc: F::from(*data_byte as u64),
                 tag,
                 tag_length: length,
                 tag_index: length - i,
@@ -358,7 +366,7 @@ pub fn handle_bytes<F: FieldExt>(
         index: idx + 1,
         data_type,
         value: (183 + length_of_length) as u8,
-        value_acc: RlcOrU256::U256((183 + length_of_length).into()),
+        value_acc: F::from((183 + length_of_length) as u64),
         tag: prefix_tag,
         tag_length,
         tag_index: tag_length,
@@ -389,7 +397,7 @@ pub fn handle_bytes<F: FieldExt>(
             index: idx + 1,
             data_type,
             value: *length_byte,
-            value_acc: RlcOrU256::U256(length_acc.into()),
+            value_acc: F::from(length_acc as u64),
             tag: prefix_tag,
             tag_length,
             tag_index: tag_length - (1 + i),
@@ -402,6 +410,7 @@ pub fn handle_bytes<F: FieldExt>(
     }
 
     let tag_length = call_data.len();
+    let mut value_acc = F::zero();
     for (i, data_byte) in call_data.iter().enumerate() {
         assert!(
             rlp_data[idx] == *data_byte,
@@ -409,12 +418,13 @@ pub fn handle_bytes<F: FieldExt>(
             tag,
             i,
         );
+        value_acc = value_acc * randomness + F::from(*data_byte as u64);
         rows.push(RlpWitnessRow {
             id,
             index: idx + 1,
             data_type,
             value: *data_byte,
-            value_acc: RlcOrU256::Rlc(*data_byte),
+            value_acc,
             tag,
             tag_length,
             tag_index: tag_length - i,

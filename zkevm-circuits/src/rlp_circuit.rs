@@ -1,6 +1,6 @@
 //! Circuit implementation for RLP-encoding verification. Please refer: https://hackmd.io/@rohitnarurkar/S1zSz0KM9.
 
-use eth_types::{Field, ToScalar};
+use eth_types::Field;
 use gadgets::{
     comparator::{ComparatorChip, ComparatorConfig, ComparatorInstruction},
     is_equal::{IsEqualChip, IsEqualConfig, IsEqualInstruction},
@@ -19,7 +19,6 @@ use crate::{
     },
     table::{LookupTable, TxContextFieldTag, TxTable},
     util::Expr,
-    witness::RlcOrU256,
 };
 
 #[derive(Clone, Debug)]
@@ -543,6 +542,19 @@ impl<F: Field> Config<F> {
                 },
             );
 
+            // if tag_index < tag_length && tag_index > 1
+            cb.condition(
+                is_nonce(meta) * tindex_lt_tlength.clone() * tindex_lt.clone(),
+                |cb| {
+                    cb.require_equal(
+                        "[nonce] value_acc::next == value_acc::cur * 256 + value::next",
+                        meta.query_advice(value_acc, Rotation::next()),
+                        meta.query_advice(value_acc, Rotation::cur()) * 256.expr() +
+                            meta.query_advice(value, Rotation::next()),
+                    );
+                },
+            );
+
             // if tag_index > 1
             cb.condition(is_nonce(meta) * tindex_lt.clone(), |cb| {
                 cb.require_equal(
@@ -559,12 +571,6 @@ impl<F: Field> Config<F> {
                     "tag_length::next == tag_length",
                     meta.query_advice(tag_length, Rotation::next()),
                     meta.query_advice(tag_length, Rotation::cur()),
-                );
-                cb.require_equal(
-                    "value_acc::next == value_acc::cur * 256 + value::next",
-                    meta.query_advice(value_acc, Rotation::next()),
-                    meta.query_advice(value_acc, Rotation::cur()) * 256.expr() +
-                        meta.query_advice(value, Rotation::next()),
                 );
             });
 
@@ -637,6 +643,19 @@ impl<F: Field> Config<F> {
                 },
             );
 
+            // if tag_index < tag_length && tag_index > 1
+            cb.condition(
+                is_gas_price(meta) * tindex_lt_tlength.clone() * tindex_lt.clone(),
+                |cb| {
+                    cb.require_equal(
+                        "[gas price] value_acc::next == value_acc::cur * randomness + value::next",
+                        meta.query_advice(value_acc, Rotation::next()),
+                        meta.query_advice(value_acc, Rotation::cur()) * r +
+                            meta.query_advice(value, Rotation::next()),
+                    );
+                },
+            );
+
             // if tag_index > 1
             cb.condition(is_gas_price(meta) * tindex_lt.clone(), |cb| {
                 cb.require_equal(
@@ -653,12 +672,6 @@ impl<F: Field> Config<F> {
                     "tag_length::next == tag_length",
                     meta.query_advice(tag_length, Rotation::next()),
                     meta.query_advice(tag_length, Rotation::cur()),
-                );
-                cb.require_equal(
-                    "value_acc_next == (value_acc_cur * r) + value_next",
-                    meta.query_advice(value_acc, Rotation::next()),
-                    meta.query_advice(value_acc, Rotation::cur()) * r
-                        + meta.query_advice(value, Rotation::next()),
                 );
             });
 
@@ -726,6 +739,19 @@ impl<F: Field> Config<F> {
                 },
             );
 
+            // if tag_index < tag_length && tag_index > 1
+            cb.condition(
+                is_gas(meta) * tindex_lt_tlength.clone() * tindex_lt.clone(),
+                |cb| {
+                    cb.require_equal(
+                        "[gas] value_acc::next == value_acc::cur * 256 + value::next",
+                        meta.query_advice(value_acc, Rotation::next()),
+                        meta.query_advice(value_acc, Rotation::cur()) * 256.expr() +
+                            meta.query_advice(value, Rotation::next()),
+                    );
+                },
+            );
+
             // tag_index > 1
             cb.condition(is_gas(meta) * tindex_lt.clone(), |cb| {
                 cb.require_equal(
@@ -742,12 +768,6 @@ impl<F: Field> Config<F> {
                     "tag_length::next == tag_length",
                     meta.query_advice(tag_length, Rotation::next()),
                     meta.query_advice(tag_length, Rotation::cur()),
-                );
-                cb.require_equal(
-                    "value_acc::next == value_acc::cur * 256 + value::next",
-                    meta.query_advice(value_acc, Rotation::next()),
-                    meta.query_advice(value_acc, Rotation::cur()) * 256.expr() +
-                        meta.query_advice(value, Rotation::next()),
                 );
             });
 
@@ -898,6 +918,19 @@ impl<F: Field> Config<F> {
                 },
             );
 
+            // if tag_index < tag_length && tag_index > 1
+            cb.condition(
+                is_value(meta) * tindex_lt_tlength.clone() * tindex_lt.clone(),
+                |cb| {
+                    cb.require_equal(
+                        "[value] value_acc::next == value_acc::cur * randomness + value::next",
+                        meta.query_advice(value_acc, Rotation::next()),
+                        meta.query_advice(value_acc, Rotation::cur()) * r +
+                            meta.query_advice(value, Rotation::next()),
+                    );
+                },
+            );
+
             // if tag_index > 1
             cb.condition(is_value(meta) * tindex_lt.clone(), |cb| {
                 cb.require_equal(
@@ -914,12 +947,6 @@ impl<F: Field> Config<F> {
                     "tag_length::next == tag_length",
                     meta.query_advice(tag_length, Rotation::next()),
                     meta.query_advice(tag_length, Rotation::cur()),
-                );
-                cb.require_equal(
-                    "value_acc_next == (value_acc_cur * r) + value_next",
-                    meta.query_advice(value_acc, Rotation::next()),
-                    meta.query_advice(value_acc, Rotation::cur()) * r
-                        + meta.query_advice(value, Rotation::next()),
                 );
             });
 
@@ -2244,7 +2271,6 @@ impl<F: Field> Config<F> {
 
                 for witness in witnesses.iter() {
                     let mut value_rlc = F::zero();
-                    let mut tmp_value_acc = F::zero();
                     let rows = witness.gen_witness(self.r);
                     let n_rows = rows.len();
 
@@ -2253,15 +2279,6 @@ impl<F: Field> Config<F> {
 
                         // update value accumulator over the entire RLP encoding.
                         value_rlc = value_rlc * self.r + F::from(row.value as u64);
-                        // compute value accumulator for specific tag, used for individual field
-                        // lookups to Tx Table.
-                        let value_acc = match row.value_acc {
-                            RlcOrU256::U256(value_acc) => {
-                                tmp_value_acc = F::zero();
-                                value_acc.to_scalar().unwrap()
-                            }
-                            RlcOrU256::Rlc(byte) => tmp_value_acc * self.r + F::from(byte as u64),
-                        };
 
                         // q_usable
                         self.q_usable.enable(&mut region, offset)?;
@@ -2285,7 +2302,7 @@ impl<F: Field> Config<F> {
                             ("rindex", self.rindex, F::from(rindex)),
                             ("data_type", self.data_type, F::from(row.data_type as u64)),
                             ("value", self.value, F::from(row.value as u64)),
-                            ("value_acc", self.value_acc, value_acc),
+                            ("value_acc", self.value_acc, row.value_acc),
                             ("tag", self.tag, F::from(row.tag as u64)),
                             (
                                 "aux_tag_index[0]",
@@ -2487,6 +2504,7 @@ impl<F: Field> Config<F> {
         for column in [
             self.is_first,
             self.is_last,
+            self.tx_id,
             self.index,
             self.data_type,
             self.tag,
@@ -2495,6 +2513,7 @@ impl<F: Field> Config<F> {
             self.length_acc,
             self.rindex,
             self.value,
+            self.value_acc,
             self.value_rlc,
             self.hash,
             self.aux_tag_index[0],
@@ -2723,7 +2742,7 @@ mod tests {
 
     impl<F: Field, RLP> MyCircuit<F, RLP> {
         fn r() -> F {
-            F::random(rand::thread_rng())
+            F::from(194881236412749812)
         }
         fn max_txs() -> usize {
             10
