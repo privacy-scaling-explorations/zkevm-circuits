@@ -91,8 +91,7 @@ fn test_state_circuit_ok(
         ..Default::default()
     });
 
-    let randomness = Fr::from(0xcafeu64);
-    let circuit = StateCircuit::<Fr>::new(randomness, rw_map, N_ROWS);
+    let circuit = StateCircuit::<Fr>::new(rw_map, N_ROWS);
     let power_of_randomness = circuit.instance();
 
     let prover = MockProver::<Fr>::run(19, &circuit, power_of_randomness).unwrap();
@@ -109,12 +108,10 @@ fn degree() {
 
 #[test]
 fn verifying_key_independent_of_rw_length() {
-    let randomness = Fr::from(0xcafeu64);
     let params = ParamsKZG::<Bn256>::setup(17, rand_chacha::ChaCha20Rng::seed_from_u64(2));
 
-    let no_rows = StateCircuit::<Fr>::new(randomness, RwMap::default(), N_ROWS);
+    let no_rows = StateCircuit::<Fr>::new(RwMap::default(), N_ROWS);
     let one_row = StateCircuit::<Fr>::new(
-        randomness,
         RwMap::from(&OperationContainer {
             memory: vec![Operation::new(
                 RWCounter::from(1),
@@ -335,8 +332,12 @@ fn storage_key_rlc() {
         tx_id: 4,
         committed_value: U256::from(300),
     }];
-
-    assert_eq!(verify(rows), Ok(()));
+    if let Err(errs) = verify(rows) {
+        for err in errs {
+            println!("{}", err);
+        }
+        panic!();
+    }
 }
 
 #[test]
@@ -484,13 +485,13 @@ fn storage_key_byte_out_of_range() {
         committed_value: U256::from(500),
     }];
     let overrides = HashMap::from([
-        ((AdviceColumn::StorageKeyByte0, 0), Fr::from(0xcafeu64)), /* 0xcafeu64 is the fixed
-                                                                    * "randomness" we use for
-                                                                    * this test. */
+        ((AdviceColumn::StorageKeyByte0, 0), Fr::from(0xcafeu64)),
         ((AdviceColumn::StorageKeyByte1, 0), Fr::zero()),
     ]);
 
-    let result = verify_with_overrides(rows, overrides);
+    // This will trigger two errors: an RLC encoding error and the "fit into u8", we
+    // only keep the first one
+    let result = verify_with_overrides(rows, overrides).map_err(|mut err| vec![err.remove(1)]);
 
     assert_error_matches(result, "rlc bytes fit into u8");
 }
@@ -981,14 +982,13 @@ fn bad_initial_tx_receipt_value() {
 }
 
 fn prover(rows: Vec<Rw>, overrides: HashMap<(AdviceColumn, isize), Fr>) -> MockProver<Fr> {
-    let randomness = Fr::from(0xcafeu64);
     let updates = MptUpdates::mock_from(&rows);
     let circuit = StateCircuit::<Fr> {
-        randomness,
         rows,
         updates,
         overrides,
         n_rows: N_ROWS,
+        _marker: std::marker::PhantomData::default(),
     };
     let power_of_randomness = circuit.instance();
 
@@ -1005,8 +1005,11 @@ fn verify_with_overrides(
     rows: Vec<Rw>,
     overrides: HashMap<(AdviceColumn, isize), Fr>,
 ) -> Result<(), Vec<VerifyFailure>> {
-    // Sanity check that the original RwTable without overrides is valid.
-    assert_eq!(verify(rows.clone()), Ok(()));
+    assert_eq!(
+        verify(rows.clone()),
+        Ok(()),
+        "Sanity check that the original RwTable without overrides is valid"
+    );
 
     let n_active_rows = rows.len();
     prover(rows, overrides).verify_at_rows(

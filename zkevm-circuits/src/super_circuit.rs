@@ -78,11 +78,10 @@ use halo2_proofs::halo2curves::{
 };
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
-    plonk::{Circuit, ConstraintSystem, Error, Expression},
+    plonk::{Circuit, ConstraintSystem, Error},
 };
 
 use rand::RngCore;
-use std::array;
 use strum::IntoEnumIterator;
 
 /// Mock randomness used for `SuperCircuit`.
@@ -178,16 +177,15 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: u
         let copy_table = CopyTable::construct(meta, q_copy_table);
         let exp_table = ExpTable::construct(meta);
 
-        let power_of_randomness = array::from_fn(|i| {
-            Expression::Constant(F::from(MOCK_RANDOMNESS).pow(&[1 + i as u64, 0, 0, 0]))
-        });
+        let challenges = Challenges::construct(meta);
+        let challenges_exprs = challenges.exprs(meta);
 
-        let keccak_circuit = KeccakConfig::configure(meta, power_of_randomness[0].clone());
+        let keccak_circuit = KeccakConfig::configure(meta, challenges_exprs.keccak_input());
         let keccak_table = keccak_circuit.keccak_table.clone();
 
         let evm_circuit = EvmCircuit::configure(
             meta,
-            power_of_randomness.clone(),
+            challenges_exprs.evm_word_powers_of_randomness(),
             &tx_table,
             &rw_table,
             &bytecode_table,
@@ -196,10 +194,9 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: u
             &keccak_table,
             &exp_table,
         );
-        let state_circuit =
-            StateCircuitConfig::configure(meta, power_of_randomness.clone(), &rw_table, &mpt_table);
+
+        let state_circuit = StateCircuitConfig::configure(meta, challenges, &rw_table, &mpt_table);
         let pi_circuit = PiCircuitConfig::new(meta, block_table.clone(), tx_table.clone());
-        let challenges = Challenges::mock(power_of_randomness[0].clone());
 
         Self::Config {
             tx_table: tx_table.clone(),
@@ -218,19 +215,19 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: u
                 &bytecode_table,
                 copy_table,
                 q_copy_table,
-                power_of_randomness[0].clone(),
+                challenges_exprs.evm_word(),
             ),
             tx_circuit: TxCircuitConfig::new(
                 meta,
                 tx_table,
                 keccak_table.clone(),
-                challenges.clone(),
+                challenges_exprs.clone(),
             ),
             bytecode_circuit: BytecodeConfig::configure(
                 meta,
                 bytecode_table,
                 keccak_table,
-                challenges,
+                challenges_exprs,
             ),
             keccak_circuit,
             pi_circuit,
@@ -255,7 +252,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: u
             &mut layouter,
             &rws,
             self.block.circuits_params.max_rws,
-            self.block.randomness,
+            Value::known(self.block.randomness),
         )?;
         config.state_circuit.load(&mut layouter)?;
         config
@@ -268,13 +265,13 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: u
         config.mpt_table.load(
             &mut layouter,
             &MptUpdates::mock_from(&rws),
-            self.block.randomness,
+            Value::known(self.block.randomness),
         )?;
         config.state_circuit.assign(
             &mut layouter,
             &rws,
             self.block.circuits_params.max_rws,
-            self.block.randomness,
+            &challenges,
         )?;
         // --- Tx Circuit ---
         config.tx_circuit.load(&mut layouter)?;
