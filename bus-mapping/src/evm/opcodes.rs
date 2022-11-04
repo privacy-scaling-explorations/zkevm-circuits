@@ -571,7 +571,7 @@ pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
     )?;
 
     if !state.tx_ctx.is_last_tx() {
-        state.call_context_read(
+        state.call_context_write(
             &mut exec_step,
             state.block_ctx.rwc.0 + 1,
             CallContextField::TxId,

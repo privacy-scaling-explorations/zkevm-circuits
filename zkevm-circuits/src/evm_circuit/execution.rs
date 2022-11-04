@@ -773,35 +773,41 @@ impl<F: Field> ExecutionConfig<F> {
 
                 let evm_rows = block.evm_circuit_pad_to;
                 let exact = evm_rows == 0;
-                // end_block_rows tracks the remaining EndBlock rows, and is set once all the
-                // transaction steps have been assigned.
-                let mut end_block_rows = None;
-                let mut get_next = |offset: &usize| match steps.next() {
-                    Some((transaction, step)) => {
-                        Some((transaction, &transaction.calls[step.call_index], step))
-                    }
+
+                let mut no_next_step = false;
+                let mut get_next = |cur_state: ExecutionState, offset: &usize| match steps.next() {
+                    Some((transaction, step)) => Ok(Some((
+                        transaction,
+                        &transaction.calls[step.call_index],
+                        step,
+                    ))),
                     None => {
-                        end_block_rows = Some(match end_block_rows {
-                            None => {
-                                if exact {
-                                    1
-                                } else {
-                                    evm_rows - offset
-                                }
-                            }
-                            Some(i) => i - 1,
-                        });
-                        match end_block_rows {
-                            Some(0) => None,
-                            Some(1) => Some((&dummy_tx, &last_call, end_block_last)),
-                            Some(_) => Some((&dummy_tx, &last_call, end_block_not_last)),
-                            _ => unreachable!(),
+                        if no_next_step {
+                            return Ok(None);
                         }
+
+                        let mut block_step = end_block_not_last;
+                        let cur_state_height = self.get_step_height(cur_state);
+                        if !exact && offset + cur_state_height >= evm_rows {
+                            log::error!(
+                                "evm circuit larger than evm_rows: {} >= {}",
+                                offset + cur_state_height,
+                                evm_rows
+                            );
+                            return Err(Error::Synthesis);
+                        }
+                        if exact || evm_rows - (offset + cur_state_height) == 1 {
+                            block_step = end_block_last;
+                            no_next_step = true;
+                        }
+
+                        Ok(Some((&dummy_tx, &last_call, block_step)))
                     }
                 };
-                let mut next = get_next(&offset);
+
+                let mut next = get_next(ExecutionState::BeginTx, &offset)?;
                 while let Some((transaction, call, step)) = next {
-                    next = get_next(&offset);
+                    next = get_next(step.execution_state, &offset)?;
                     let height = self.get_step_height(step.execution_state);
 
                     // Assign the step witness
@@ -845,10 +851,9 @@ impl<F: Field> ExecutionConfig<F> {
                             || Value::known(value.invert().unwrap_or(F::zero())),
                         )?;
                     }
-
                     offset += height;
 
-                    if !exact && offset >= evm_rows {
+                    if !exact && offset > evm_rows {
                         log::error!(
                             "evm circuit offset larger than padding: {} > {}",
                             offset,
