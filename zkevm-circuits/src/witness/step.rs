@@ -175,7 +175,7 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::CODECOPY => ExecutionState::CODECOPY,
                     OpcodeId::CALLDATALOAD => ExecutionState::CALLDATALOAD,
                     OpcodeId::CODESIZE => ExecutionState::CODESIZE,
-                    OpcodeId::RETURN | OpcodeId::REVERT => ExecutionState::RETURN,
+                    OpcodeId::RETURN | OpcodeId::REVERT => ExecutionState::RETURN_REVERT,
                     OpcodeId::RETURNDATASIZE => ExecutionState::RETURNDATASIZE,
                     // dummy ops
                     OpcodeId::BALANCE => dummy!(ExecutionState::BALANCE),
