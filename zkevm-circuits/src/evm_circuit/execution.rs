@@ -70,7 +70,7 @@ mod origin;
 mod pc;
 mod pop;
 mod push;
-mod r#return;
+mod return_revert;
 mod returndatasize;
 mod sdiv_smod;
 mod selfbalance;
@@ -125,7 +125,7 @@ use origin::OriginGadget;
 use pc::PcGadget;
 use pop::PopGadget;
 use push::PushGadget;
-use r#return::ReturnGadget;
+use return_revert::ReturnRevertGadget;
 use returndatasize::ReturnDataSizeGadget;
 use sdiv_smod::SignedDivModGadget;
 use selfbalance::SelfbalanceGadget;
@@ -215,7 +215,7 @@ pub(crate) struct ExecutionConfig<F> {
     pc_gadget: PcGadget<F>,
     pop_gadget: PopGadget<F>,
     push_gadget: PushGadget<F>,
-    return_gadget: ReturnGadget<F>,
+    return_revert_gadget: ReturnRevertGadget<F>,
     sdiv_smod_gadget: SignedDivModGadget<F>,
     selfbalance_gadget: SelfbalanceGadget<F>,
     sha3_gadget: Sha3Gadget<F>,
@@ -453,7 +453,7 @@ impl<F: Field> ExecutionConfig<F> {
             pc_gadget: configure_gadget!(),
             pop_gadget: configure_gadget!(),
             push_gadget: configure_gadget!(),
-            return_gadget: configure_gadget!(),
+            return_revert_gadget: configure_gadget!(),
             sdiv_smod_gadget: configure_gadget!(),
             selfbalance_gadget: configure_gadget!(),
             sha3_gadget: configure_gadget!(),
@@ -988,7 +988,7 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::PC => assign_exec_step!(self.pc_gadget),
             ExecutionState::POP => assign_exec_step!(self.pop_gadget),
             ExecutionState::PUSH => assign_exec_step!(self.push_gadget),
-            ExecutionState::RETURN => assign_exec_step!(self.return_gadget),
+            ExecutionState::RETURN_REVERT => assign_exec_step!(self.return_revert_gadget),
             ExecutionState::RETURNDATASIZE => assign_exec_step!(self.returndatasize_gadget),
             ExecutionState::SCMP => assign_exec_step!(self.signed_comparator_gadget),
             ExecutionState::SDIV_SMOD => assign_exec_step!(self.sdiv_smod_gadget),
