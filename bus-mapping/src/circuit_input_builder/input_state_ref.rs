@@ -807,8 +807,10 @@ impl<'a> CircuitInputStateRef<'a> {
                     let callee_memory = self.call_ctx()?.memory.clone();
                     let caller_ctx = self.caller_ctx_mut()?;
                     caller_ctx.return_data.resize(length, 0);
-                    caller_ctx.return_data[0..length]
-                        .copy_from_slice(&callee_memory.0[offset..offset + length]);
+                    if length != 0 {
+                        caller_ctx.return_data[0..length]
+                            .copy_from_slice(&callee_memory.0[offset..offset + length]);
+                    }
                 }
                 _ => {
                     let caller_ctx = self.caller_ctx_mut()?;
