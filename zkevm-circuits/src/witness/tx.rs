@@ -102,6 +102,17 @@ impl Transaction {
                     F::zero(),
                     F::from(self.call_data_gas_cost),
                 ],
+                {
+                    let rlc = self.call_data.iter().fold(F::zero(), |acc, byte| {
+                        acc * randomness + F::from(*byte as u64)
+                    });
+                    [
+                        F::from(self.id as u64),
+                        F::from(TxContextFieldTag::CallDataRlc as u64),
+                        F::zero(),
+                        rlc,
+                    ]
+                },
             ],
             self.call_data
                 .iter()

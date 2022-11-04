@@ -80,6 +80,8 @@ pub enum TxFieldTag {
     CallDataLength,
     /// Gas cost for transaction call data (4 for byte == 0, 16 otherwise)
     CallDataGasCost,
+    /// RLC-encoded calldata.
+    CallDataRlc,
     /// TxSignHash: Hash of the transaction without the signature, used for
     /// signing.
     TxSignHash,

@@ -327,6 +327,7 @@ pub fn handle_bytes<F: FieldExt>(
         });
         idx += 1;
 
+        let mut value_acc = F::zero();
         for (i, data_byte) in call_data.iter().enumerate() {
             assert!(
                 rlp_data[idx] == *data_byte,
@@ -334,12 +335,13 @@ pub fn handle_bytes<F: FieldExt>(
                 tag,
                 i,
             );
+            value_acc = value_acc * randomness + F::from(*data_byte as u64);
             rows.push(RlpWitnessRow {
                 id,
                 index: idx + 1,
                 data_type,
                 value: *data_byte,
-                value_acc: F::from(*data_byte as u64),
+                value_acc,
                 tag,
                 tag_length: length,
                 tag_index: length - i,

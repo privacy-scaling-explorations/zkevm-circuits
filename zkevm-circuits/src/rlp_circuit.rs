@@ -5,6 +5,7 @@ use gadgets::{
     comparator::{ComparatorChip, ComparatorConfig, ComparatorInstruction},
     is_equal::{IsEqualChip, IsEqualConfig, IsEqualInstruction},
     less_than::{LtChip, LtConfig, LtInstruction},
+    util::select,
 };
 use halo2_proofs::{
     circuit::{Layouter, Region, Value},
@@ -280,7 +281,11 @@ impl<F: Field> Config<F> {
                 meta.query_advice(tx_id, Rotation::cur()),
                 TxContextFieldTag::Nonce.expr(),
                 0.expr(),
-                meta.query_advice(value_acc, Rotation::cur()),
+                select::expr(
+                    value_lt_129.is_lt(meta, None) * value_gt_127.is_lt(meta, None),
+                    0.expr(),
+                    meta.query_advice(value_acc, Rotation::cur()),
+                ),
             ]
             .into_iter()
             .zip(tx_table.table_exprs(meta).into_iter())
@@ -303,7 +308,11 @@ impl<F: Field> Config<F> {
                     meta.query_advice(tx_id, Rotation::cur()),
                     TxContextFieldTag::GasPrice.expr(),
                     0.expr(),
-                    meta.query_advice(value_acc, Rotation::cur()),
+                    select::expr(
+                        value_lt_129.is_lt(meta, None) * value_gt_127.is_lt(meta, None),
+                        0.expr(),
+                        meta.query_advice(value_acc, Rotation::cur()),
+                    ),
                 ]
                 .into_iter()
                 .zip(tx_table.table_exprs(meta).into_iter())
@@ -325,7 +334,11 @@ impl<F: Field> Config<F> {
                 meta.query_advice(tx_id, Rotation::cur()),
                 TxContextFieldTag::Gas.expr(),
                 0.expr(),
-                meta.query_advice(value_acc, Rotation::cur()),
+                select::expr(
+                    value_lt_129.is_lt(meta, None) * value_gt_127.is_lt(meta, None),
+                    0.expr(),
+                    meta.query_advice(value_acc, Rotation::cur()),
+                ),
             ]
             .into_iter()
             .zip(tx_table.table_exprs(meta).into_iter())
@@ -348,7 +361,11 @@ impl<F: Field> Config<F> {
                     meta.query_advice(tx_id, Rotation::cur()),
                     TxContextFieldTag::CalleeAddress.expr(),
                     0.expr(),
-                    meta.query_advice(value_acc, Rotation::cur()),
+                    select::expr(
+                        value_lt_129.is_lt(meta, None) * value_gt_127.is_lt(meta, None),
+                        0.expr(),
+                        meta.query_advice(value_acc, Rotation::cur()),
+                    ),
                 ]
                 .into_iter()
                 .zip(tx_table.table_exprs(meta).into_iter())
@@ -370,13 +387,63 @@ impl<F: Field> Config<F> {
                 meta.query_advice(tx_id, Rotation::cur()),
                 TxContextFieldTag::Value.expr(),
                 0.expr(),
-                meta.query_advice(value_acc, Rotation::cur()),
+                select::expr(
+                    value_lt_129.is_lt(meta, None) * value_gt_127.is_lt(meta, None),
+                    0.expr(),
+                    meta.query_advice(value_acc, Rotation::cur()),
+                ),
             ]
             .into_iter()
             .zip(tx_table.table_exprs(meta).into_iter())
             .map(|(arg, table)| (enable.clone() * arg, table))
             .collect()
         });
+
+        meta.lookup_any(
+            "DataType::Transaction (CalldataLength lookup in TxTable)",
+            |meta| {
+                let (_, tindex_eq) = tag_index_cmp_1.expr(meta, None);
+                let enable = and::expr(vec![
+                    meta.query_selector(q_usable),
+                    not::expr(meta.query_advice(data_type, Rotation::cur())),
+                    is_data_prefix(meta),
+                    tindex_eq,
+                ]);
+                vec![
+                    meta.query_advice(tx_id, Rotation::cur()),
+                    TxContextFieldTag::CallDataLength.expr(),
+                    0.expr(),
+                    meta.query_advice(length_acc, Rotation::cur()),
+                ]
+                .into_iter()
+                .zip(tx_table.table_exprs(meta).into_iter())
+                .map(|(arg, table)| (enable.clone() * arg, table))
+                .collect()
+            },
+        );
+
+        meta.lookup_any(
+            "DataType::Transaction (CallData RLC lookup in TxTable)",
+            |meta| {
+                let (_, tindex_eq) = tag_index_cmp_1.expr(meta, None);
+                let enable = and::expr(vec![
+                    meta.query_selector(q_usable),
+                    not::expr(meta.query_advice(data_type, Rotation::cur())),
+                    is_data(meta),
+                    tindex_eq,
+                ]);
+                vec![
+                    meta.query_advice(tx_id, Rotation::cur()),
+                    TxContextFieldTag::CallDataRlc.expr(),
+                    0.expr(),
+                    meta.query_advice(value_acc, Rotation::cur()),
+                ]
+                .into_iter()
+                .zip(tx_table.table_exprs(meta).into_iter())
+                .map(|(arg, table)| (enable.clone() * arg, table))
+                .collect()
+            },
+        );
 
         meta.create_gate("DataType::Transaction", |meta| {
             let mut cb = BaseConstraintBuilder::default();
@@ -2818,7 +2885,7 @@ mod tests {
         let err = prover.verify();
         let print_failures = true;
         if err.is_err() && print_failures {
-            for e in err.err().iter() {
+            if let Some(e) = err.err() {
                 for s in e.iter() {
                     println!("{}", s);
                 }
@@ -2839,7 +2906,7 @@ mod tests {
         let err = prover.verify();
         let print_failures = true;
         if err.is_err() && print_failures {
-            for e in err.err().iter() {
+            if let Some(e) = err.err() {
                 for s in e.iter() {
                     println!("{}", s);
                 }
@@ -2858,7 +2925,8 @@ mod tests {
                 gas: 1_000_000u64,
                 callee_address: mock::MOCK_ACCOUNTS[0],
                 value: U256::from_dec_str("250000000000000000000").unwrap(),
-                call_data: vec![3u8; 3],
+                call_data: vec![1, 2, 3],
+                call_data_length: 3,
                 ..Default::default()
             },
             Transaction {
@@ -2878,7 +2946,18 @@ mod tests {
                 gas: 1_000u64,
                 callee_address: mock::MOCK_ACCOUNTS[2],
                 value: 10u64.into(),
-                call_data: rand_bytes(200),
+                call_data: vec![
+                    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 1, 2, 3,
+                    4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 1, 2, 3, 4, 5, 6,
+                    7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 1, 2, 3, 4, 5, 6, 7, 8, 9,
+                    10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11,
+                    12, 13, 14, 15, 16, 17, 18, 19, 20, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13,
+                    14, 15, 16, 17, 18, 19, 20, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+                    16, 17, 18, 19, 20, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17,
+                    18, 19, 20, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
+                    20, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
+                ],
+                call_data_length: 200,
                 ..Default::default()
             },
         ]
