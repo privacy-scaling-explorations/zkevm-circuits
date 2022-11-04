@@ -1,7 +1,6 @@
 #![cfg(feature = "circuits")]
 
 use bus_mapping::circuit_input_builder::{BuilderClient, CircuitsParams};
-use bus_mapping::operation::OperationContainer;
 use eth_types::geth_types;
 use halo2_proofs::{
     arithmetic::CurveAffine,
@@ -12,13 +11,11 @@ use halo2_proofs::{
     },
 };
 use integration_tests::{get_client, log_init, GenDataOutput, CHAIN_ID};
-use itertools::Itertools;
 use lazy_static::lazy_static;
 use log::trace;
 use paste::paste;
 use rand_chacha::rand_core::SeedableRng;
 use rand_chacha::ChaCha20Rng;
-use std::default::Default;
 use std::marker::PhantomData;
 use zkevm_circuits::bytecode_circuit::dev::test_bytecode_circuit;
 use zkevm_circuits::copy_circuit::dev::test_copy_circuit;
@@ -54,32 +51,17 @@ async fn test_state_circuit_block(block_num: u64) {
     let (builder, _) = cli.gen_inputs(block_num).await.unwrap();
 
     // Generate state proof
+    // log via trace some of the container ops for debugging purposes
     let stack_ops = builder.block.container.sorted_stack();
     trace!("stack_ops: {:#?}", stack_ops);
     let memory_ops = builder.block.container.sorted_memory();
     trace!("memory_ops: {:#?}", memory_ops);
     let storage_ops = builder.block.container.sorted_storage();
     trace!("storage_ops: {:#?}", storage_ops);
-    let call_context_ops = builder
-        .block
-        .container
-        .call_context
-        .iter()
-        .sorted()
-        .cloned()
-        .collect();
-    trace!("call_context_ops: {:#?}", call_context_ops);
-    // TODO: Add remaining ops to the rw_map
 
     const DEGREE: usize = 17;
 
-    let rw_map = RwMap::from(&OperationContainer {
-        memory: memory_ops,
-        stack: stack_ops,
-        storage: storage_ops,
-        call_context: call_context_ops,
-        ..OperationContainer::default()
-    });
+    let rw_map = RwMap::from(&builder.block.container);
 
     let randomness = Fr::from(0xcafeu64);
     let circuit = StateCircuit::<Fr>::new(randomness, rw_map, 1 << 16);
