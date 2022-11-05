@@ -1,6 +1,8 @@
 //! Block-related utility module
 
-use super::{execution::ExecState, transaction::Transaction, CircuitsParams, CopyEvent, ExecStep};
+use super::{
+    execution::ExecState, transaction::Transaction, CircuitsParams, CopyEvent, ExecStep, ExpEvent,
+};
 use crate::{
     operation::{OperationContainer, RWCounter},
     Error,
@@ -69,6 +71,8 @@ pub struct Block {
     pub difficulty: Word,
     /// base fee
     pub base_fee: Word,
+    /// State root of the previous block
+    pub prev_state_root: Word,
     /// Container of operations done in this block.
     pub container: OperationContainer,
     /// Transactions contained in the block
@@ -79,9 +83,8 @@ pub struct Block {
     pub copy_events: Vec<CopyEvent>,
     /// Inputs to the SHA3 opcode
     pub sha3_inputs: Vec<Vec<u8>>,
-    /// State root of the previous block
-    pub prev_state_root: Word,
-
+    /// Exponentiation events in the block.
+    pub exp_events: Vec<ExpEvent>,
     code: HashMap<Hash, Vec<u8>>,
     /// Circuits Setup Paramteres
     pub circuits_params: CircuitsParams,
@@ -118,6 +121,7 @@ impl Block {
             timestamp: eth_block.timestamp,
             difficulty: eth_block.difficulty,
             base_fee: eth_block.base_fee_per_gas.unwrap_or_default(),
+            prev_state_root,
             container: OperationContainer::new(),
             txs: Vec::new(),
             block_steps: BlockSteps {
@@ -131,8 +135,8 @@ impl Block {
                 },
             },
             copy_events: Vec::new(),
+            exp_events: Vec::new(),
             code: HashMap::new(),
-            prev_state_root,
             sha3_inputs: Vec::new(),
             circuits_params,
         })
@@ -151,7 +155,11 @@ impl Block {
 
 impl Block {
     /// Push a copy event to the block.
-    pub fn add_copy_event(&mut self, copy: CopyEvent) {
-        self.copy_events.push(copy);
+    pub fn add_copy_event(&mut self, event: CopyEvent) {
+        self.copy_events.push(event);
+    }
+    /// Push an exponentiation event to the block.
+    pub fn add_exp_event(&mut self, event: ExpEvent) {
+        self.exp_events.push(event);
     }
 }

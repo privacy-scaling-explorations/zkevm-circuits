@@ -515,6 +515,17 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         );
     }
 
+    // constant gas
+    pub(crate) fn constant_gas_lookup(&mut self, opcode: Expression<F>, gas: Expression<F>) {
+        self.add_lookup(
+            "constant gas",
+            Lookup::Fixed {
+                tag: FixedTableTag::ConstantGasCost.expr(),
+                values: [opcode, gas, 0.expr()],
+            },
+        );
+    }
+
     // Opcode
 
     pub(crate) fn opcode_lookup(&mut self, opcode: Expression<F>, is_code: Expression<F>) {
@@ -1174,6 +1185,29 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
             },
         );
         self.rw_counter_offset = self.rw_counter_offset.clone() + self.condition_expr() * rwc_inc;
+    }
+
+    // Exponentiation Table
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn exp_table_lookup(
+        &mut self,
+        identifier: Expression<F>,
+        is_last: Expression<F>,
+        base_limbs: [Expression<F>; 4],
+        exponent_lo_hi: [Expression<F>; 2],
+        exponentiation_lo_hi: [Expression<F>; 2],
+    ) {
+        self.add_lookup(
+            "exponentiation lookup",
+            Lookup::ExpTable {
+                identifier,
+                is_last,
+                base_limbs,
+                exponent_lo_hi,
+                exponentiation_lo_hi,
+            },
+        );
     }
 
     // Keccak Table

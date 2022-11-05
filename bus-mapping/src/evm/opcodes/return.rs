@@ -94,9 +94,6 @@ impl Opcode for Return {
 
                 caller_ctx.memory.0[return_offset..return_offset + copy_length]
                     .copy_from_slice(&callee_memory.0[offset..offset + copy_length]);
-                caller_ctx.return_data.resize(length, 0);
-                caller_ctx.return_data[0..copy_length]
-                    .copy_from_slice(&callee_memory.0[offset..offset + copy_length]);
 
                 handle_copy(
                     state,
@@ -214,7 +211,6 @@ fn handle_create(
 
 #[cfg(test)]
 mod return_tests {
-    use crate::circuit_input_builder::CircuitsParams;
     use crate::mock::BlockData;
     use eth_types::geth_types::GethData;
     use eth_types::{bytecode, word};
@@ -273,14 +269,7 @@ mod return_tests {
         .unwrap()
         .into();
 
-        let mut builder = BlockData::new_from_geth_data_with_params(
-            block.clone(),
-            CircuitsParams {
-                max_rws: 512,
-                ..Default::default()
-            },
-        )
-        .new_circuit_input_builder();
+        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
         builder
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
@@ -338,14 +327,7 @@ mod return_tests {
         .unwrap()
         .into();
 
-        let mut builder = BlockData::new_from_geth_data_with_params(
-            block.clone(),
-            CircuitsParams {
-                max_rws: 512,
-                ..Default::default()
-            },
-        )
-        .new_circuit_input_builder();
+        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
         builder
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
