@@ -37,6 +37,9 @@ pub(crate) struct BeginTxGadget<F> {
     tx_call_data_gas_cost: Cell<F>,
     reversion_info: ReversionInfo<F>,
     sufficient_gas_left: RangeCheckGadget<F, N_BYTES_GAS>,
+
+    is_sufficient_gas_left_invalid_tx: RangeCheckGadget<F, N_BYTES_GAS>,
+
     transfer_with_gas_fee: TransferWithGasFeeGadget<F>,
     code_hash: Cell<F>,
 }
@@ -108,15 +111,23 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 
         // TODO: Take gas cost of access list (EIP 2930) into consideration.
         // Use intrinsic gas
-        let intrinsic_gas_cost = select::expr(
+        let intrinsic_gas_cost_1 = select::expr(
             tx_is_create.expr(),
             GasCost::CREATION_TX.expr(),
             GasCost::TX.expr(),
         ) + tx_call_data_gas_cost.expr();
 
         // Check gas_left is sufficient
-        let gas_left = tx_gas.expr() - intrinsic_gas_cost;
+        let gas_left = tx_gas.expr() - intrinsic_gas_cost_1;
         let sufficient_gas_left = RangeCheckGadget::construct(cb, gas_left.clone());
+
+        let intrinsic_gas_cost_2 = select::expr(
+            tx_is_create.expr(),
+            GasCost::CREATION_TX.expr(),
+            GasCost::TX.expr(),
+        ) + tx_call_data_gas_cost.expr();
+        let is_gas_not_enough = intrinsic_gas_cost_2 - tx_gas.expr();
+        let is_sufficient_gas_left_invalid_tx = RangeCheckGadget::construct(cb, is_gas_not_enough.clone());
 
         // Prepare access list of caller and callee
         cb.account_access_list_write(
@@ -228,6 +239,9 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             tx_call_data_gas_cost,
             reversion_info,
             sufficient_gas_left,
+
+            is_sufficient_gas_left_invalid_tx,
+
             transfer_with_gas_fee,
             code_hash,
         }
@@ -292,8 +306,13 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             call.rw_counter_end_of_reversion,
             call.is_persistent,
         )?;
+
         self.sufficient_gas_left
             .assign(region, offset, F::from(tx.gas - step.gas_cost))?;
+
+        self.is_sufficient_gas_left_invalid_tx
+            .assign(region, offset, F::from(step.gas_cost - tx.gas))?;
+
         self.transfer_with_gas_fee.assign(
             region,
             offset,
