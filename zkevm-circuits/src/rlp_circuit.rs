@@ -18,8 +18,8 @@ use crate::{
         util::{and, constraint_builder::BaseConstraintBuilder, not, or},
         witness::{RlpDataType, RlpReceiptTag, RlpTxTag, RlpWitnessGen, N_RECEIPT_TAGS, N_TX_TAGS},
     },
-    table::{LookupTable, TxContextFieldTag, TxTable},
-    util::Expr,
+    table::{LookupTable, TxContextFieldTag},
+    util::{Challenges, Expr},
 };
 
 #[derive(Clone, Debug)]
@@ -71,19 +71,16 @@ pub struct Config<F> {
     value_rlc: Column<Advice>,
     /// Denotes the keccak-256 hash of the RLP-encoded data.
     hash: Column<Advice>,
-
     /// Comparison chip to check: 1 <= tag_index.
     tag_index_cmp_1: ComparatorConfig<F, 1>,
     /// Comparison chip to check: tag_index <= tag_length.
     tag_index_length_cmp: ComparatorConfig<F, 1>,
     /// Comparison chip to check: 1 <= tag_length.
     tag_length_cmp_1: ComparatorConfig<F, 1>,
-
     /// Lt chip to check: tag_index < 10.
     tag_index_lt_10: LtConfig<F, 1>,
     /// Lt chip to check: tag_index < 34.
     tag_index_lt_34: LtConfig<F, 1>,
-
     /// Lt chip to check: 127 < value.
     value_gt_127: LtConfig<F, 1>,
     /// Lt chip to check: 183 < value.
@@ -102,22 +99,21 @@ pub struct Config<F> {
     value_lt_248: LtConfig<F, 1>,
     /// Lt chip to check: value < 256.
     value_lt_256: LtConfig<F, 2>,
-
     /// Comparison chip to check: 0 <= length_acc.
     length_acc_cmp_0: ComparatorConfig<F, 1>,
-
     /// Lt chip to check: rindex > 1.
     rindex_gt_1: LtConfig<F, 1>,
-
     /// Eq chip to check: aux_tag_index[1] == 1.
     aux_tag_index_eq_1: IsEqualConfig<F>,
-
-    /// Denotes a tuple (value_rlc, n, 1, keccak256(rlp_encode(input))).
-    keccak_tuple: [Column<Advice>; 4],
 }
 
 impl<F: Field> Config<F> {
-    pub(crate) fn configure(meta: &mut ConstraintSystem<F>, tx_table: TxTable, r: F) -> Self {
+    pub(crate) fn configure(
+        meta: &mut ConstraintSystem<F>,
+        tx_table: &dyn LookupTable<F>,
+        keccak_table: &dyn LookupTable<F>,
+        r: F,
+    ) -> Self {
         let q_usable = meta.complex_selector();
         let is_first = meta.advice_column();
         let is_last = meta.advice_column();
@@ -243,7 +239,6 @@ impl<F: Field> Config<F> {
             |meta| meta.query_advice(aux_tag_index[1], Rotation::cur()),
             |_meta| 1.expr(),
         );
-        let keccak_tuple = array_init::array_init(|_| meta.advice_column());
 
         // Helper macro to declare booleans to check the current row tag.
         macro_rules! is_tx_tag {
@@ -440,6 +435,29 @@ impl<F: Field> Config<F> {
                 ]
                 .into_iter()
                 .zip(tx_table.table_exprs(meta).into_iter())
+                .map(|(arg, table)| (enable.clone() * arg, table))
+                .collect()
+            },
+        );
+
+        meta.lookup_any(
+            "DataType::Transaction (TxHash lookup in KeccakTable)",
+            |meta| {
+                let (_, tindex_eq) = tag_index_cmp_1.expr(meta, None);
+                let enable = and::expr(vec![
+                    meta.query_selector(q_usable),
+                    not::expr(meta.query_advice(data_type, Rotation::cur())),
+                    meta.query_advice(is_last, Rotation::cur()),
+                    tindex_eq,
+                ]);
+                vec![
+                    1.expr(),                                      // is_enabled
+                    meta.query_advice(value_rlc, Rotation::cur()), // input_rlc
+                    meta.query_advice(index, Rotation::cur()),     // input_len
+                    meta.query_advice(hash, Rotation::cur()),      // output_rlc
+                ]
+                .into_iter()
+                .zip(keccak_table.table_exprs(meta).into_iter())
                 .map(|(arg, table)| (enable.clone() * arg, table))
                 .collect()
             },
@@ -2232,26 +2250,6 @@ impl<F: Field> Config<F> {
             ]))
         });
 
-        // Constraints for the last row of the RLP-encoded data.
-        meta.lookup_any("keccak-256 verification for is_last == 1", |meta| {
-            let enable = and::expr(vec![
-                meta.query_selector(q_usable),
-                meta.query_advice(is_last, Rotation::cur()),
-            ]);
-
-            let lookup_columns = vec![value_rlc, index, rindex, hash];
-            lookup_columns
-                .iter()
-                .zip(keccak_tuple.iter())
-                .map(|(keccak_field, column)| {
-                    (
-                        enable.clone() * meta.query_advice(*column, Rotation::cur()),
-                        meta.query_advice(*keccak_field, Rotation::cur()),
-                    )
-                })
-                .collect()
-        });
-
         Self {
             r,
             q_usable,
@@ -2273,15 +2271,11 @@ impl<F: Field> Config<F> {
             length_acc,
             value_rlc,
             hash,
-            keccak_tuple,
-
             tag_index_cmp_1,
             tag_index_length_cmp,
             tag_length_cmp_1,
-
             tag_index_lt_10,
             tag_index_lt_34,
-
             value_gt_127,
             value_gt_183,
             value_gt_191,
@@ -2291,11 +2285,8 @@ impl<F: Field> Config<F> {
             value_lt_192,
             value_lt_248,
             value_lt_256,
-
             length_acc_cmp_0,
-
             rindex_gt_1,
-
             aux_tag_index_eq_1,
         }
     }
@@ -2304,6 +2295,7 @@ impl<F: Field> Config<F> {
         &self,
         mut layouter: impl Layouter<F>,
         witnesses: &[RLP],
+        challenges: &Challenges<Value<F>>,
     ) -> Result<(), Error> {
         let tag_index_cmp_1_chip = ComparatorChip::construct(self.tag_index_cmp_1.clone());
         let tag_index_length_cmp_chip =
@@ -2338,7 +2330,7 @@ impl<F: Field> Config<F> {
 
                 for witness in witnesses.iter() {
                     let mut value_rlc = F::zero();
-                    let rows = witness.gen_witness(self.r);
+                    let rows = witness.gen_witness(self.r, challenges);
                     let n_rows = rows.len();
 
                     for (idx, row) in rows.iter().enumerate() {
@@ -2399,7 +2391,6 @@ impl<F: Field> Config<F> {
                             ),
                             ("length_acc", self.length_acc, F::from(row.length_acc)),
                             ("value_rlc", self.value_rlc, value_rlc),
-                            ("hash", self.hash, row.hash),
                         ] {
                             region.assign_advice(
                                 || format!("assign {} {}", name, offset),
@@ -2408,6 +2399,12 @@ impl<F: Field> Config<F> {
                                 || Value::known(value),
                             )?;
                         }
+                        region.assign_advice(
+                            || format!("assign hash: {}", offset),
+                            self.hash,
+                            offset,
+                            || row.hash,
+                        )?;
 
                         for (name, column, value) in
                             self.tag_invs(Some(row.data_type), Some(row.tag))
@@ -2527,44 +2524,6 @@ impl<F: Field> Config<F> {
                 Ok(())
             },
         )
-    }
-
-    pub(crate) fn load<RLP: RlpWitnessGen<F>>(
-        &self,
-        layouter: &mut impl Layouter<F>,
-        witnesses: &[RLP],
-    ) -> Result<(), Error> {
-        layouter.assign_region(
-            || "keccak table",
-            |mut region| {
-                let mut offset = 0;
-                for witness in witnesses.iter() {
-                    offset += 1;
-                    let rows = witness.gen_witness(self.r);
-                    let hash_rlc = witness.hash(self.r);
-                    let value_rlc = rows.iter().fold(F::zero(), |acc, row| {
-                        acc * F::from(256u64) + F::from(row.value as u64)
-                    });
-
-                    for (name, column, value) in &[
-                        ("value_rlc", self.keccak_tuple[0], value_rlc),
-                        ("index", self.keccak_tuple[1], F::from(rows.len() as u64)),
-                        ("rindex", self.keccak_tuple[2], F::one()),
-                        ("hash_rlc", self.keccak_tuple[3], hash_rlc),
-                    ] {
-                        region.assign_advice(
-                            || format!("keccak table assign {} {}", name, offset),
-                            *column,
-                            offset,
-                            || Value::known(*value),
-                        )?;
-                    }
-                }
-                Ok(())
-            },
-        )?;
-
-        Ok(())
     }
 
     fn assign_padding_rows(&self, region: &mut Region<'_, F>, offset: usize) -> Result<(), Error> {
@@ -2789,7 +2748,8 @@ mod tests {
             test::rand_bytes,
             witness::{Receipt, Transaction},
         },
-        table::TxTable,
+        table::{KeccakTable, TxTable},
+        util::Challenges,
     };
 
     use super::Config;
@@ -2798,6 +2758,7 @@ mod tests {
     struct MyConfig<F> {
         rlp_config: Config<F>,
         tx_table: TxTable,
+        keccak_table: KeccakTable,
     }
 
     #[derive(Default)]
@@ -2817,7 +2778,7 @@ mod tests {
     }
 
     impl<F: Field> Circuit<F> for MyCircuit<F, Transaction> {
-        type Config = MyConfig<F>;
+        type Config = (MyConfig<F>, Challenges);
         type FloorPlanner = SimpleFloorPlanner;
 
         fn without_witnesses(&self) -> Self {
@@ -2826,32 +2787,49 @@ mod tests {
 
         fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
             let tx_table = TxTable::construct(meta);
-            let rlp_config = Config::configure(meta, tx_table.clone(), Self::r());
+            let keccak_table = KeccakTable::construct(meta);
+            let rlp_config = Config::configure(meta, &tx_table, &keccak_table, Self::r());
 
-            Self::Config {
-                rlp_config,
-                tx_table,
-            }
+            (
+                MyConfig {
+                    rlp_config,
+                    tx_table,
+                    keccak_table,
+                },
+                Challenges::construct(meta),
+            )
         }
 
         fn synthesize(
             &self,
-            config: Self::Config,
+            (config, challenges): Self::Config,
             mut layouter: impl Layouter<F>,
         ) -> Result<(), Error> {
+            // load tx table.
             config
                 .tx_table
                 .load(&mut layouter, &self.inputs, Self::max_txs(), Self::r())?;
+
+            // load keccak table.
+            let rlp_encodings = self
+                .inputs
+                .iter()
+                .map(|tx| rlp::encode(tx).to_vec())
+                .collect::<Vec<Vec<u8>>>();
+            let challenges = challenges.values(&mut layouter);
+            config
+                .keccak_table
+                .dev_load(&mut layouter, &rlp_encodings, &challenges)?;
+
+            // assign to the RLP circuit.
             config
                 .rlp_config
-                .load(&mut layouter, self.inputs.as_slice())?;
-            config.rlp_config.assign(layouter, self.inputs.as_slice())?;
-            Ok(())
+                .assign(layouter, self.inputs.as_slice(), &challenges)
         }
     }
 
     impl<F: Field> Circuit<F> for MyCircuit<F, Receipt> {
-        type Config = Config<F>;
+        type Config = (Config<F>, Challenges);
         type FloorPlanner = SimpleFloorPlanner;
 
         fn without_witnesses(&self) -> Self {
@@ -2860,17 +2838,20 @@ mod tests {
 
         fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
             let tx_table = TxTable::construct(meta);
-            Config::configure(meta, tx_table, Self::r())
+            let keccak_table = KeccakTable::construct(meta);
+            (
+                Config::configure(meta, &tx_table, &keccak_table, Self::r()),
+                Challenges::construct(meta),
+            )
         }
 
         fn synthesize(
             &self,
-            config: Self::Config,
-            mut layouter: impl Layouter<F>,
+            (config, challenges): Self::Config,
+            layouter: impl Layouter<F>,
         ) -> Result<(), Error> {
-            config.load(&mut layouter, self.inputs.as_slice())?;
-            config.assign(layouter, self.inputs.as_slice())?;
-            Ok(())
+            let challenges = challenges.values(&mut layouter);
+            config.assign(layouter, self.inputs.as_slice(), &challenges)
         }
     }
 

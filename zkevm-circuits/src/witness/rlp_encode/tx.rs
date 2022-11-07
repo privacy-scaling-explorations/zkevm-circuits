@@ -1,11 +1,6 @@
-use eth_types::{ToLittleEndian, Word};
-use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
-use sha3::{digest::Digest, Keccak256};
+use halo2_proofs::{arithmetic::FieldExt, circuit::Value, plonk::Expression};
 
-use crate::{
-    evm_circuit::{util::RandomLinearCombination, witness::Transaction},
-    impl_expr,
-};
+use crate::{evm_circuit::witness::Transaction, impl_expr, util::Challenges};
 
 use super::{
     common::{handle_address, handle_bytes, handle_prefix, handle_u256},
@@ -43,10 +38,13 @@ impl_expr!(RlpTxTag);
 pub const N_TX_TAGS: usize = 9;
 
 impl<F: FieldExt> RlpWitnessGen<F> for Transaction {
-    fn gen_witness(&self, randomness: F) -> Vec<RlpWitnessRow<F>> {
+    fn gen_witness(
+        &self,
+        randomness: F,
+        challenges: &Challenges<Value<F>>,
+    ) -> Vec<RlpWitnessRow<F>> {
         let rlp_data = rlp::encode(self);
-        let hash = Word::from_big_endian(Keccak256::digest(&rlp_data).as_slice());
-        let hash = RandomLinearCombination::random_linear_combine(hash.to_le_bytes(), randomness);
+        let hash = self.hash(challenges);
 
         let mut rows = Vec::with_capacity(rlp_data.len());
 

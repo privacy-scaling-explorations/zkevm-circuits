@@ -1,5 +1,5 @@
 use eth_types::{Address, U256};
-use halo2_proofs::arithmetic::FieldExt;
+use halo2_proofs::{arithmetic::FieldExt, circuit::Value};
 use num::Zero;
 
 use crate::witness::RlpTxTag;
@@ -9,7 +9,7 @@ use super::witness_gen::{RlpDataType, RlpWitnessRow};
 pub fn handle_prefix<F: FieldExt>(
     id: usize,
     rlp_data: &[u8],
-    hash: F,
+    hash: Value<F>,
     rows: &mut Vec<RlpWitnessRow<F>>,
     data_type: RlpDataType,
     tag: u8,
@@ -86,7 +86,7 @@ pub fn handle_u256<F: FieldExt>(
     randomness: F,
     id: usize,
     rlp_data: &[u8],
-    hash: F,
+    hash: Value<F>,
     rows: &mut Vec<RlpWitnessRow<F>>,
     data_type: RlpDataType,
     tag: u8,
@@ -206,7 +206,7 @@ pub fn handle_u256<F: FieldExt>(
 pub fn handle_address<F: FieldExt>(
     id: usize,
     rlp_data: &[u8],
-    hash: F,
+    hash: Value<F>,
     rows: &mut Vec<RlpWitnessRow<F>>,
     data_type: RlpDataType,
     prefix_tag: u8,
@@ -271,7 +271,7 @@ pub fn handle_bytes<F: FieldExt>(
     randomness: F,
     id: usize,
     rlp_data: &[u8],
-    hash: F,
+    hash: Value<F>,
     rows: &mut Vec<RlpWitnessRow<F>>,
     data_type: RlpDataType,
     prefix_tag: u8,
