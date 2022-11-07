@@ -21,13 +21,24 @@ impl Opcode for ErrorInvalidJump {
         exec_step.error = state.get_step_err(geth_step, next_step).unwrap();
         // assert op code can only be JUMP or JUMPI
         assert!(geth_step.op == OpcodeId::JUMP || geth_step.op == OpcodeId::JUMPI);
+        let is_jumpi = geth_step.op == OpcodeId::JUMPI;
         let dest = geth_steps[0].stack.last()?.to_address();
+        let mut condition = 0;
+        if is_jumpi {
+            condition = geth_step.stack.nth_last(1)?.as_usize();
+        }
         state.stack_read(
             &mut exec_step,
             geth_step.stack.last_filled(),
             dest.to_word(),
         )?;
-
+        if is_jumpi {
+            state.stack_read(
+                &mut exec_step,
+                geth_step.stack.nth_last_filled(1),
+                condition.into(),
+            )?;
+        }
         // `IsSuccess` call context operation is added in gen_restore_context_ops
 
         state.gen_restore_context_ops(&mut exec_step, geth_steps)?;

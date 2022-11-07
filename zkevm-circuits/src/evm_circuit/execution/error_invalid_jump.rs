@@ -10,15 +10,16 @@ use crate::{
                 Transition::{Delta, Same},
             },
             from_bytes,
-            math_gadget::{IsEqualGadget, LtGadget},
-            CachedRegion, Cell, RandomLinearCombination,
+            math_gadget::{IsEqualGadget, IsZeroGadget, LtGadget},
+            CachedRegion, Cell, RandomLinearCombination, Word as RLCWord,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::CallContextFieldTag,
     util::Expr,
 };
-use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian};
+use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian, Word};
+
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
@@ -28,8 +29,11 @@ pub(crate) struct ErrorInvalidJumpGadget<F> {
     code_length: Cell<F>,
     value: Cell<F>,
     is_code: Cell<F>,
-    out_of_range: LtGadget<F, N_BYTES_PROGRAM_COUNTER>,
+    within_range: LtGadget<F, N_BYTES_PROGRAM_COUNTER>,
     is_jump_dest: IsEqualGadget<F>,
+    is_jumpi: IsEqualGadget<F>,
+    condition: Cell<F>,
+    is_condition_zero: IsZeroGadget<F>,
     restore_context: RestoreContextGadget<F>,
 }
 
@@ -43,25 +47,39 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
         let opcode = cb.query_cell();
         let value = cb.query_cell();
         let is_code = cb.query_cell();
+        let condition = cb.query_cell();
 
         cb.require_in_set(
             "ErrorInvalidJump only happend in JUMP or JUMPI",
             opcode.expr(),
             vec![OpcodeId::JUMP.expr(), OpcodeId::JUMPI.expr()],
         );
+
+        let is_jumpi = IsEqualGadget::construct(cb, opcode.expr(), OpcodeId::JUMPI.expr());
+
         // initialize is_jump_dest
         let is_jump_dest = IsEqualGadget::construct(cb, value.expr(), OpcodeId::JUMPDEST.expr());
 
+        // first default this condition, if use will re-construct with real condition
+        // value
+        let is_condition_zero = IsZeroGadget::construct(cb, condition.expr());
+
         // Pop the value from the stack
         cb.stack_pop(destination.expr());
+
+        cb.condition(is_jumpi.expr(), |cb| {
+            cb.stack_pop(condition.expr());
+            // if condition is zero, jump will not happen, so constrain condition not zero
+            cb.require_zero("condition is not zero", is_condition_zero.expr());
+        });
 
         // look up bytecode length
         let code_length = cb.bytecode_length(cb.curr.state.code_hash.expr());
         let dest_value = from_bytes::expr(&destination.cells);
 
-        let out_of_range = LtGadget::construct(cb, code_length.expr(), dest_value.clone());
+        let within_range = LtGadget::construct(cb, dest_value.expr(), code_length.expr());
         //if not out of range, check `dest` is invalid
-        cb.condition(1.expr() - out_of_range.expr(), |cb| {
+        cb.condition(within_range.expr(), |cb| {
             // if not out of range, Lookup real value
             cb.bytecode_lookup(
                 cb.curr.state.code_hash.expr(),
@@ -69,7 +87,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
                 is_code.expr(),
                 value.expr(),
             );
-            cb.require_boolean("is_code is bool type", is_code.expr());
             cb.require_zero(
                 "is_code is false or not JUMPDEST",
                 is_code.expr() * is_jump_dest.expr(),
@@ -91,7 +108,9 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
             // Do step state transition
             cb.require_step_state_transition(StepStateTransition {
                 call_id: Same,
-                rw_counter: Delta(2.expr() + cb.curr.state.reversible_write_counter.expr()),
+                rw_counter: Delta(
+                    2.expr() + is_jumpi.expr() + cb.curr.state.reversible_write_counter.expr(),
+                ),
 
                 ..StepStateTransition::any()
             });
@@ -109,8 +128,11 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
             code_length,
             value,
             is_code,
-            out_of_range,
+            within_range,
             is_jump_dest,
+            is_jumpi,
+            condition,
+            is_condition_zero,
             restore_context,
         }
     }
@@ -125,9 +147,19 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         let opcode = step.opcode.unwrap();
+        let is_jumpi = opcode == OpcodeId::JUMPI;
+
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
         let destination = block.rws[step.rw_indices[0]].stack_value();
+        let condition = if is_jumpi {
+            block.rws[step.rw_indices[1]].stack_value()
+        } else {
+            Word::zero()
+        };
+        let condition_rlc =
+            RLCWord::random_linear_combine(condition.to_le_bytes(), block.randomness);
+
         self.destination.assign(
             region,
             offset,
@@ -164,12 +196,25 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
             F::from(OpcodeId::JUMPDEST.as_u64()),
         )?;
 
-        self.out_of_range.assign(
+        self.within_range.assign(
             region,
             offset,
-            F::from(code_length),
             F::from(destination.as_u64()),
+            F::from(code_length),
         )?;
+
+        self.is_jumpi.assign(
+            region,
+            offset,
+            F::from(opcode.as_u64()),
+            F::from(OpcodeId::JUMPI.as_u64()),
+        )?;
+
+        self.condition
+            .assign(region, offset, Value::known(condition_rlc))?;
+        self.is_condition_zero
+            .assign(region, offset, condition_rlc)?;
+
         self.restore_context
             .assign(region, offset, block, call, step, 2)?;
         Ok(())
@@ -383,5 +428,35 @@ mod test {
             .unwrap();
         let block = block_convert(&builder.block, &builder.code_db);
         assert_eq!(run_test_circuit(block), Ok(()));
+    }
+
+    fn test_invalid_jumpi(destination: usize) {
+        let mut bytecode = bytecode! {
+            PUSH32(destination)
+            PUSH32(100) // condition
+            JUMPI
+        };
+
+        // incorrect assigning for invalid jump
+        for _ in 0..(destination - 33) {
+            bytecode.write(0, false);
+        }
+        bytecode.append(&bytecode! {
+            JUMPDEST
+            STOP
+        });
+
+        assert_eq!(
+            run_test_circuits(
+                TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+                None
+            ),
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn invalid_jumpi_err() {
+        test_invalid_jumpi(34);
     }
 }
