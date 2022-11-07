@@ -37,6 +37,7 @@ impl BlockData {
             Block::new(
                 self.chain_id,
                 self.history_hashes.clone(),
+                Word::default(),
                 &self.eth_block,
                 self.circuits_params.clone(),
             )
