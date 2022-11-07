@@ -138,6 +138,7 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::XOR => ExecutionState::BITWISE,
                     OpcodeId::OR => ExecutionState::BITWISE,
                     OpcodeId::NOT => ExecutionState::NOT,
+                    OpcodeId::EXP => ExecutionState::EXP,
                     OpcodeId::POP => ExecutionState::POP,
                     OpcodeId::PUSH32 => ExecutionState::PUSH,
                     OpcodeId::BYTE => ExecutionState::BYTE,
@@ -175,13 +176,12 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::CALLDATALOAD => ExecutionState::CALLDATALOAD,
                     OpcodeId::CODESIZE => ExecutionState::CODESIZE,
                     OpcodeId::RETURN | OpcodeId::REVERT => ExecutionState::RETURN,
+                    OpcodeId::RETURNDATASIZE => ExecutionState::RETURNDATASIZE,
                     // dummy ops
                     OpcodeId::BALANCE => dummy!(ExecutionState::BALANCE),
-                    OpcodeId::EXP => dummy!(ExecutionState::EXP),
                     OpcodeId::SAR => dummy!(ExecutionState::SAR),
                     OpcodeId::EXTCODESIZE => dummy!(ExecutionState::EXTCODESIZE),
                     OpcodeId::EXTCODECOPY => dummy!(ExecutionState::EXTCODECOPY),
-                    OpcodeId::RETURNDATASIZE => dummy!(ExecutionState::RETURNDATASIZE),
                     OpcodeId::RETURNDATACOPY => dummy!(ExecutionState::RETURNDATACOPY),
                     OpcodeId::CREATE => dummy!(ExecutionState::CREATE),
                     OpcodeId::CALLCODE => dummy!(ExecutionState::CALLCODE),
@@ -193,6 +193,7 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
             }
             circuit_input_builder::ExecState::BeginTx => ExecutionState::BeginTx,
             circuit_input_builder::ExecState::EndTx => ExecutionState::EndTx,
+            circuit_input_builder::ExecState::EndBlock => ExecutionState::EndBlock,
         }
     }
 }
@@ -218,6 +219,7 @@ pub(super) fn step_convert(step: &circuit_input_builder::ExecStep) -> ExecStep {
                     operation::Target::CallContext => RwTableTag::CallContext,
                     operation::Target::TxReceipt => RwTableTag::TxReceipt,
                     operation::Target::TxLog => RwTableTag::TxLog,
+                    operation::Target::Start => RwTableTag::Start,
                 };
                 (tag, x.as_usize())
             })
