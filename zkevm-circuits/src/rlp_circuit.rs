@@ -4,7 +4,6 @@ use eth_types::Field;
 use gadgets::{
     comparator::{ComparatorChip, ComparatorConfig, ComparatorInstruction},
     less_than::{LtChip, LtConfig, LtInstruction},
-    util::select,
 };
 use halo2_proofs::{
     circuit::{Layouter, Region, Value},
@@ -17,7 +16,6 @@ use crate::{
         util::{and, constraint_builder::BaseConstraintBuilder, not, or},
         witness::{RlpTxTag, RlpWitnessGen, N_TX_TAGS},
     },
-    table::{LookupTable, TxContextFieldTag},
     util::{Challenges, Expr},
 };
 
@@ -95,12 +93,7 @@ pub struct Config<F> {
 }
 
 impl<F: Field> Config<F> {
-    pub(crate) fn configure(
-        meta: &mut ConstraintSystem<F>,
-        tx_table: &dyn LookupTable<F>,
-        keccak_table: &dyn LookupTable<F>,
-        r: F,
-    ) -> Self {
+    pub(crate) fn configure(meta: &mut ConstraintSystem<F>, r: F) -> Self {
         let q_usable = meta.complex_selector();
         let is_first = meta.advice_column();
         let is_last = meta.advice_column();
@@ -239,185 +232,6 @@ impl<F: Field> Config<F> {
         is_tx_tag!(is_value, Value);
         is_tx_tag!(is_data_prefix, DataPrefix);
         is_tx_tag!(is_data, Data);
-
-        meta.lookup_any("DataType::Transaction (Nonce lookup in TxTable)", |meta| {
-            let (_, tindex_eq) = tag_index_cmp_1.expr(meta, None);
-            let enable = and::expr(vec![
-                meta.query_selector(q_usable),
-                is_nonce(meta),
-                tindex_eq,
-            ]);
-            vec![
-                meta.query_advice(tx_id, Rotation::cur()),
-                TxContextFieldTag::Nonce.expr(),
-                0.expr(),
-                select::expr(
-                    value_lt_129.is_lt(meta, None) * value_gt_127.is_lt(meta, None),
-                    0.expr(),
-                    meta.query_advice(value_acc, Rotation::cur()),
-                ),
-            ]
-            .into_iter()
-            .zip(tx_table.table_exprs(meta).into_iter())
-            .map(|(arg, table)| (enable.clone() * arg, table))
-            .collect()
-        });
-
-        meta.lookup_any(
-            "DataType::Transaction (GasPrice lookup in TxTable)",
-            |meta| {
-                let (_, tindex_eq) = tag_index_cmp_1.expr(meta, None);
-                let enable = and::expr(vec![
-                    meta.query_selector(q_usable),
-                    is_gas_price(meta),
-                    tindex_eq,
-                ]);
-                vec![
-                    meta.query_advice(tx_id, Rotation::cur()),
-                    TxContextFieldTag::GasPrice.expr(),
-                    0.expr(),
-                    select::expr(
-                        value_lt_129.is_lt(meta, None) * value_gt_127.is_lt(meta, None),
-                        0.expr(),
-                        meta.query_advice(value_acc, Rotation::cur()),
-                    ),
-                ]
-                .into_iter()
-                .zip(tx_table.table_exprs(meta).into_iter())
-                .map(|(arg, table)| (enable.clone() * arg, table))
-                .collect()
-            },
-        );
-
-        meta.lookup_any("DataType::Transaction (Gas lookup in TxTable)", |meta| {
-            let (_, tindex_eq) = tag_index_cmp_1.expr(meta, None);
-            let enable = and::expr(vec![meta.query_selector(q_usable), is_gas(meta), tindex_eq]);
-            vec![
-                meta.query_advice(tx_id, Rotation::cur()),
-                TxContextFieldTag::Gas.expr(),
-                0.expr(),
-                select::expr(
-                    value_lt_129.is_lt(meta, None) * value_gt_127.is_lt(meta, None),
-                    0.expr(),
-                    meta.query_advice(value_acc, Rotation::cur()),
-                ),
-            ]
-            .into_iter()
-            .zip(tx_table.table_exprs(meta).into_iter())
-            .map(|(arg, table)| (enable.clone() * arg, table))
-            .collect()
-        });
-
-        meta.lookup_any(
-            "DataType::Transaction (CalleeAddress lookup in TxTable)",
-            |meta| {
-                let (_, tindex_eq) = tag_index_cmp_1.expr(meta, None);
-                let enable = and::expr(vec![meta.query_selector(q_usable), is_to(meta), tindex_eq]);
-                vec![
-                    meta.query_advice(tx_id, Rotation::cur()),
-                    TxContextFieldTag::CalleeAddress.expr(),
-                    0.expr(),
-                    select::expr(
-                        value_lt_129.is_lt(meta, None) * value_gt_127.is_lt(meta, None),
-                        0.expr(),
-                        meta.query_advice(value_acc, Rotation::cur()),
-                    ),
-                ]
-                .into_iter()
-                .zip(tx_table.table_exprs(meta).into_iter())
-                .map(|(arg, table)| (enable.clone() * arg, table))
-                .collect()
-            },
-        );
-
-        meta.lookup_any("DataType::Transaction (Value lookup in TxTable)", |meta| {
-            let (_, tindex_eq) = tag_index_cmp_1.expr(meta, None);
-            let enable = and::expr(vec![
-                meta.query_selector(q_usable),
-                is_value(meta),
-                tindex_eq,
-            ]);
-            vec![
-                meta.query_advice(tx_id, Rotation::cur()),
-                TxContextFieldTag::Value.expr(),
-                0.expr(),
-                select::expr(
-                    value_lt_129.is_lt(meta, None) * value_gt_127.is_lt(meta, None),
-                    0.expr(),
-                    meta.query_advice(value_acc, Rotation::cur()),
-                ),
-            ]
-            .into_iter()
-            .zip(tx_table.table_exprs(meta).into_iter())
-            .map(|(arg, table)| (enable.clone() * arg, table))
-            .collect()
-        });
-
-        meta.lookup_any(
-            "DataType::Transaction (CalldataLength lookup in TxTable)",
-            |meta| {
-                let (_, tindex_eq) = tag_index_cmp_1.expr(meta, None);
-                let enable = and::expr(vec![
-                    meta.query_selector(q_usable),
-                    is_data_prefix(meta),
-                    tindex_eq,
-                ]);
-                vec![
-                    meta.query_advice(tx_id, Rotation::cur()),
-                    TxContextFieldTag::CallDataLength.expr(),
-                    0.expr(),
-                    meta.query_advice(length_acc, Rotation::cur()),
-                ]
-                .into_iter()
-                .zip(tx_table.table_exprs(meta).into_iter())
-                .map(|(arg, table)| (enable.clone() * arg, table))
-                .collect()
-            },
-        );
-
-        meta.lookup_any(
-            "DataType::Transaction (CallData RLC lookup in TxTable)",
-            |meta| {
-                let (_, tindex_eq) = tag_index_cmp_1.expr(meta, None);
-                let enable = and::expr(vec![
-                    meta.query_selector(q_usable),
-                    is_data(meta),
-                    tindex_eq,
-                ]);
-                vec![
-                    meta.query_advice(tx_id, Rotation::cur()),
-                    TxContextFieldTag::CallDataRlc.expr(),
-                    0.expr(),
-                    meta.query_advice(value_acc, Rotation::cur()),
-                ]
-                .into_iter()
-                .zip(tx_table.table_exprs(meta).into_iter())
-                .map(|(arg, table)| (enable.clone() * arg, table))
-                .collect()
-            },
-        );
-
-        meta.lookup_any(
-            "DataType::Transaction (TxHash lookup in KeccakTable)",
-            |meta| {
-                let (_, tindex_eq) = tag_index_cmp_1.expr(meta, None);
-                let enable = and::expr(vec![
-                    meta.query_selector(q_usable),
-                    meta.query_advice(is_last, Rotation::cur()),
-                    tindex_eq,
-                ]);
-                vec![
-                    1.expr(),                                      // is_enabled
-                    meta.query_advice(value_rlc, Rotation::cur()), // input_rlc
-                    meta.query_advice(index, Rotation::cur()),     // input_len
-                    meta.query_advice(hash, Rotation::cur()),      // output_rlc
-                ]
-                .into_iter()
-                .zip(keccak_table.table_exprs(meta).into_iter())
-                .map(|(arg, table)| (enable.clone() * arg, table))
-                .collect()
-            },
-        );
 
         meta.create_gate("DataType::Transaction", |meta| {
             let mut cb = BaseConstraintBuilder::default();
@@ -1548,19 +1362,13 @@ mod tests {
         plonk::{Circuit, ConstraintSystem, Error},
     };
 
-    use crate::{
-        evm_circuit::witness::Transaction,
-        table::{KeccakTable, TxTable},
-        util::Challenges,
-    };
+    use crate::{evm_circuit::witness::Transaction, util::Challenges};
 
     use super::Config;
 
     #[derive(Clone)]
     struct MyConfig<F> {
         rlp_config: Config<F>,
-        tx_table: TxTable,
-        keccak_table: KeccakTable,
     }
 
     #[derive(Default)]
@@ -1588,18 +1396,9 @@ mod tests {
         }
 
         fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-            let tx_table = TxTable::construct(meta);
-            let keccak_table = KeccakTable::construct(meta);
-            let rlp_config = Config::configure(meta, &tx_table, &keccak_table, Self::r());
+            let rlp_config = Config::configure(meta, Self::r());
 
-            (
-                MyConfig {
-                    rlp_config,
-                    tx_table,
-                    keccak_table,
-                },
-                Challenges::construct(meta),
-            )
+            (MyConfig { rlp_config }, Challenges::construct(meta))
         }
 
         fn synthesize(
@@ -1607,23 +1406,8 @@ mod tests {
             (config, challenges): Self::Config,
             mut layouter: impl Layouter<F>,
         ) -> Result<(), Error> {
-            // load tx table.
-            config
-                .tx_table
-                .load(&mut layouter, &self.inputs, Self::max_txs(), Self::r())?;
-
-            // load keccak table.
-            let rlp_encodings = self
-                .inputs
-                .iter()
-                .map(|tx| rlp::encode(tx).to_vec())
-                .collect::<Vec<Vec<u8>>>();
-            let challenges = challenges.values(&mut layouter);
-            config
-                .keccak_table
-                .dev_load(&mut layouter, &rlp_encodings, &challenges)?;
-
             // assign to the RLP circuit.
+            let challenges = challenges.values(&mut layouter);
             config
                 .rlp_config
                 .assign(layouter, self.inputs.as_slice(), &challenges)
