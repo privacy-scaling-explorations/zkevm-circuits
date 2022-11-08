@@ -100,7 +100,7 @@ impl<T: Clone> Challenges<T> {
 }
 
 impl<F: Field> Challenges<Expression<F>> {
-    ///
+    /// Returns powers of randomness for word RLC encoding
     pub fn evm_word_powers_of_randomness<const S: usize>(&self) -> [Expression<F>; S] {
         std::iter::successors(self.evm_word.clone().into(), |power| {
             (self.evm_word.clone() * power.clone()).into()

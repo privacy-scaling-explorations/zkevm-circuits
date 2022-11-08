@@ -332,12 +332,7 @@ fn storage_key_rlc() {
         tx_id: 4,
         committed_value: U256::from(300),
     }];
-    if let Err(errs) = verify(rows) {
-        for err in errs {
-            println!("{}", err);
-        }
-        panic!();
-    }
+    assert_eq!(verify(rows), Ok(()));
 }
 
 #[test]
@@ -490,8 +485,11 @@ fn storage_key_byte_out_of_range() {
     ]);
 
     // This will trigger two errors: an RLC encoding error and the "fit into u8", we
-    // only keep the first one
-    let result = verify_with_overrides(rows, overrides).map_err(|mut err| vec![err.remove(1)]);
+    // remove the first one
+    let result = verify_with_overrides(rows, overrides).map_err(|mut err| {
+        err.remove(0);
+        err
+    });
 
     assert_error_matches(result, "rlc bytes fit into u8");
 }
@@ -1005,11 +1003,8 @@ fn verify_with_overrides(
     rows: Vec<Rw>,
     overrides: HashMap<(AdviceColumn, isize), Fr>,
 ) -> Result<(), Vec<VerifyFailure>> {
-    assert_eq!(
-        verify(rows.clone()),
-        Ok(()),
-        "Sanity check that the original RwTable without overrides is valid"
-    );
+    // Sanity check that the original RwTable without overrides is valid.
+    assert_eq!(verify(rows.clone()), Ok(()));
 
     let n_active_rows = rows.len();
     prover(rows, overrides).verify_at_rows(
