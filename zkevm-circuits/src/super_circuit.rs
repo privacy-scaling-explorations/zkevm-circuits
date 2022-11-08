@@ -78,10 +78,11 @@ use halo2_proofs::halo2curves::{
 };
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
-    plonk::{Circuit, ConstraintSystem, Error},
+    plonk::{Circuit, ConstraintSystem, Error, Expression},
 };
 
 use rand::RngCore;
+use std::array;
 use strum::IntoEnumIterator;
 
 /// Mock randomness used for `SuperCircuit`.
@@ -177,15 +178,18 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: u
         let copy_table = CopyTable::construct(meta, q_copy_table);
         let exp_table = ExpTable::construct(meta);
 
-        let challenges = Challenges::construct(meta);
-        let challenges_exprs = challenges.exprs(meta);
+        let power_of_randomness = array::from_fn(|i| {
+            Expression::Constant(F::from(MOCK_RANDOMNESS).pow(&[1 + i as u64, 0, 0, 0]))
+        });
 
-        let keccak_circuit = KeccakConfig::configure(meta, challenges_exprs.keccak_input());
+        let challenges = Challenges::mock(power_of_randomness[0].clone());
+
+        let keccak_circuit = KeccakConfig::configure(meta, power_of_randomness[0].clone());
         let keccak_table = keccak_circuit.keccak_table.clone();
 
         let evm_circuit = EvmCircuit::configure(
             meta,
-            challenges_exprs.evm_word_powers_of_randomness(),
+            power_of_randomness.clone(),
             &tx_table,
             &rw_table,
             &bytecode_table,
@@ -194,8 +198,8 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: u
             &keccak_table,
             &exp_table,
         );
-
-        let state_circuit = StateCircuitConfig::configure(meta, challenges, &rw_table, &mpt_table);
+        let state_circuit =
+            StateCircuitConfig::configure(meta, &rw_table, &mpt_table, challenges.clone());
         let pi_circuit = PiCircuitConfig::new(meta, block_table.clone(), tx_table.clone());
 
         Self::Config {
@@ -215,19 +219,19 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: u
                 &bytecode_table,
                 copy_table,
                 q_copy_table,
-                challenges_exprs.evm_word(),
+                power_of_randomness[0].clone(),
             ),
             tx_circuit: TxCircuitConfig::new(
                 meta,
                 tx_table,
                 keccak_table.clone(),
-                challenges_exprs.clone(),
+                challenges.clone(),
             ),
             bytecode_circuit: BytecodeConfig::configure(
                 meta,
                 bytecode_table,
                 keccak_table,
-                challenges_exprs,
+                challenges,
             ),
             keccak_circuit,
             pi_circuit,

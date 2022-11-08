@@ -376,11 +376,13 @@ impl RwTable {
             id: meta.advice_column(),
             address: meta.advice_column(),
             field_tag: meta.advice_column(),
-            storage_key: meta.advice_column(),
-            value: meta.advice_column(),
-            value_prev: meta.advice_column(),
-            aux1: meta.advice_column(),
-            aux2: meta.advice_column(),
+            storage_key: meta.advice_column_in(SecondPhase),
+            value: meta.advice_column_in(SecondPhase),
+            value_prev: meta.advice_column_in(SecondPhase),
+            // It seems that aux1 for the moment is not using randomness
+            // TODO check in a future review
+            aux1: meta.advice_column_in(SecondPhase),
+            aux2: meta.advice_column_in(SecondPhase),
         }
     }
     /// Assign a `RwRow` at offset into the `RwTable`

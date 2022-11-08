@@ -50,16 +50,15 @@ pub struct StateCircuitConfig<F> {
     lexicographic_ordering: LexicographicOrderingConfig,
     lookups: LookupsConfig,
     power_of_randomness: [Expression<F>; N_BYTES_WORD - 1],
-    challenges: Challenges,
 }
 
 impl<F: Field> StateCircuitConfig<F> {
     /// Configure StateCircuit
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
-        challenges: Challenges,
         rw_table: &RwTable,
         mpt_table: &MptTable,
+        challenges: Challenges<Expression<F>>,
     ) -> Self {
         let selector = meta.fixed_column();
         let lookups = LookupsChip::configure(meta);
@@ -69,14 +68,12 @@ impl<F: Field> StateCircuitConfig<F> {
         let id = MpiChip::configure(meta, selector, rw_table.id, lookups);
         let address = MpiChip::configure(meta, selector, rw_table.address, lookups);
 
-        let challenges_expr = challenges.exprs(meta);
-
         let storage_key = RlcChip::configure(
             meta,
             selector,
             rw_table.storage_key,
             lookups,
-            challenges_expr.evm_word_powers_of_randomness(),
+            challenges.evm_word_powers_of_randomness(),
         );
 
         let initial_value = meta.advice_column();
@@ -95,7 +92,7 @@ impl<F: Field> StateCircuitConfig<F> {
             meta,
             sort_keys,
             lookups,
-            challenges_expr.evm_word_powers_of_randomness(),
+            challenges.evm_word_powers_of_randomness(),
         );
 
         let config = Self {
@@ -105,10 +102,9 @@ impl<F: Field> StateCircuitConfig<F> {
             state_root,
             lexicographic_ordering,
             lookups,
-            power_of_randomness: challenges_expr.evm_word_powers_of_randomness(),
+            power_of_randomness: challenges.evm_word_powers_of_randomness(),
             rw_table: *rw_table,
             mpt_table: *mpt_table,
-            challenges,
         };
 
         let mut constraint_builder = ConstraintBuilder::new();
@@ -322,7 +318,7 @@ impl<F: Field> Circuit<F> for StateCircuit<F>
 where
     F: Field,
 {
-    type Config = StateCircuitConfig<F>;
+    type Config = (StateCircuitConfig<F>, Challenges);
     type FloorPlanner = SimpleFloorPlanner;
 
     fn without_witnesses(&self) -> Self {
@@ -333,7 +329,13 @@ where
         let rw_table = RwTable::construct(meta);
         let mpt_table = MptTable::construct(meta);
         let challenges = Challenges::construct(meta);
-        Self::Config::configure(meta, challenges, &rw_table, &mpt_table)
+
+        let config = {
+            let challenges = challenges.exprs(meta);
+            StateCircuitConfig::configure(meta, &rw_table, &mpt_table, challenges)
+        };
+
+        (config, challenges)
     }
 
     fn synthesize(
@@ -341,9 +343,11 @@ where
         config: Self::Config,
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
+        let (config, challenges) = config;
+
         config.load(&mut layouter)?;
 
-        let randomness = config.challenges.values(&mut layouter).evm_word();
+        let randomness = challenges.values(&mut layouter).evm_word();
 
         // Assigning to same columns in different regions should be avoided.
         // Here we use one single region to assign `overrides` to both rw table and
