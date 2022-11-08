@@ -16,6 +16,7 @@ use crate::{
         util::{and, constraint_builder::BaseConstraintBuilder, not, or},
         witness::{RlpTxTag, RlpWitnessGen, N_TX_TAGS},
     },
+    table::RlpTable,
     util::{Challenges, Expr},
 };
 
@@ -30,8 +31,8 @@ pub struct Config<F> {
     is_first: Column<Advice>,
     /// Denotes whether the row is the last byte in the RLP-encoded data.
     is_last: Column<Advice>,
-    /// Transaction ID.
-    tx_id: Column<Advice>,
+    /// Embedded lookup table in RLP circuit.
+    rlp_table: RlpTable,
     /// Denotes the index of this row, starting from `1` and ending at `n`
     /// where `n` is the byte length of the RLP-encoded data.
     index: Column<Advice>,
@@ -40,10 +41,6 @@ pub struct Config<F> {
     rindex: Column<Advice>,
     /// Denotes the byte value at this row index from the RLP-encoded data.
     value: Column<Advice>,
-    /// Denotes the accumulated value for this span's tag.
-    value_acc: Column<Advice>,
-    /// Denotes the tag assigned to this row.
-    tag: Column<Advice>,
     /// List of columns that are assigned:
     /// val := (tag - RlpTxTag::{Variant}).inv()
     tx_tags: [Column<Advice>; N_TX_TAGS],
@@ -97,12 +94,10 @@ impl<F: Field> Config<F> {
         let q_usable = meta.complex_selector();
         let is_first = meta.advice_column();
         let is_last = meta.advice_column();
-        let tx_id = meta.advice_column();
+        let rlp_table = RlpTable::construct(meta);
         let index = meta.advice_column();
         let rindex = meta.advice_column();
         let value = meta.advice_column();
-        let value_acc = meta.advice_column();
-        let tag = meta.advice_column();
         let tx_tags = array_init::array_init(|_| meta.advice_column());
         let tag_index = meta.advice_column();
         let tag_length = meta.advice_column();
@@ -215,7 +210,7 @@ impl<F: Field> Config<F> {
             ($var:ident, $tag_variant:ident) => {
                 let $var = |meta: &mut VirtualCells<F>| {
                     1.expr()
-                        - meta.query_advice(tag, Rotation::cur())
+                        - meta.query_advice(rlp_table.tag, Rotation::cur())
                             * meta.query_advice(
                                 tx_tags[RlpTxTag::$tag_variant as usize - 1],
                                 Rotation::cur(),
@@ -263,7 +258,7 @@ impl<F: Field> Config<F> {
             cb.condition(is_prefix(meta) * tindex_lt.clone(), |cb| {
                 cb.require_equal(
                     "tag::next == RlpTxTag::Prefix",
-                    meta.query_advice(tag, Rotation::next()),
+                    meta.query_advice(rlp_table.tag, Rotation::next()),
                     RlpTxTag::Prefix.expr(),
                 );
                 cb.require_equal(
@@ -282,7 +277,7 @@ impl<F: Field> Config<F> {
             cb.condition(is_prefix(meta) * tindex_eq.clone(), |cb| {
                 cb.require_equal(
                     "tag::next == RlpTxTag::Nonce",
-                    meta.query_advice(tag, Rotation::next()),
+                    meta.query_advice(rlp_table.tag, Rotation::next()),
                     RlpTxTag::Nonce.expr(),
                 );
                 cb.require_equal(
@@ -368,7 +363,7 @@ impl<F: Field> Config<F> {
                     cb.require_equal(
                         "value == value_acc",
                         meta.query_advice(value, Rotation::cur()),
-                        meta.query_advice(value_acc, Rotation::cur()),
+                        meta.query_advice(rlp_table.value_acc, Rotation::cur()),
                     );
                 },
             );
@@ -391,7 +386,7 @@ impl<F: Field> Config<F> {
                     );
                     cb.require_equal(
                         "value_acc::next == value::next",
-                        meta.query_advice(value_acc, Rotation::next()),
+                        meta.query_advice(rlp_table.value_acc, Rotation::next()),
                         meta.query_advice(value, Rotation::next()),
                     );
                 },
@@ -403,8 +398,8 @@ impl<F: Field> Config<F> {
                 |cb| {
                     cb.require_equal(
                         "[nonce] value_acc::next == value_acc::cur * 256 + value::next",
-                        meta.query_advice(value_acc, Rotation::next()),
-                        meta.query_advice(value_acc, Rotation::cur()) * 256.expr() +
+                        meta.query_advice(rlp_table.value_acc, Rotation::next()),
+                        meta.query_advice(rlp_table.value_acc, Rotation::cur()) * 256.expr() +
                             meta.query_advice(value, Rotation::next()),
                     );
                 },
@@ -414,7 +409,7 @@ impl<F: Field> Config<F> {
             cb.condition(is_nonce(meta) * tindex_lt.clone(), |cb| {
                 cb.require_equal(
                     "tag::next == RlpTxTag::Nonce",
-                    meta.query_advice(tag, Rotation::next()),
+                    meta.query_advice(rlp_table.tag, Rotation::next()),
                     RlpTxTag::Nonce.expr(),
                 );
                 cb.require_equal(
@@ -433,7 +428,7 @@ impl<F: Field> Config<F> {
             cb.condition(is_nonce(meta) * tindex_eq.clone(), |cb| {
                 cb.require_equal(
                     "tag::next == RlpTxTag::GasPrice",
-                    meta.query_advice(tag, Rotation::next()),
+                    meta.query_advice(rlp_table.tag, Rotation::next()),
                     RlpTxTag::GasPrice.expr(),
                 );
                 cb.require_equal(
@@ -469,7 +464,7 @@ impl<F: Field> Config<F> {
                     cb.require_equal(
                         "value == value_acc",
                         meta.query_advice(value, Rotation::cur()),
-                        meta.query_advice(value_acc, Rotation::cur()),
+                        meta.query_advice(rlp_table.value_acc, Rotation::cur()),
                     );
                 },
             );
@@ -492,7 +487,7 @@ impl<F: Field> Config<F> {
                     );
                     cb.require_equal(
                         "value_acc::next == value::next",
-                        meta.query_advice(value_acc, Rotation::next()),
+                        meta.query_advice(rlp_table.value_acc, Rotation::next()),
                         meta.query_advice(value, Rotation::next()),
                     );
                 },
@@ -504,8 +499,8 @@ impl<F: Field> Config<F> {
                 |cb| {
                     cb.require_equal(
                         "[gas price] value_acc::next == value_acc::cur * randomness + value::next",
-                        meta.query_advice(value_acc, Rotation::next()),
-                        meta.query_advice(value_acc, Rotation::cur()) * r +
+                        meta.query_advice(rlp_table.value_acc, Rotation::next()),
+                        meta.query_advice(rlp_table.value_acc, Rotation::cur()) * r +
                             meta.query_advice(value, Rotation::next()),
                     );
                 },
@@ -515,7 +510,7 @@ impl<F: Field> Config<F> {
             cb.condition(is_gas_price(meta) * tindex_lt.clone(), |cb| {
                 cb.require_equal(
                     "tag::next == RlpTxTag::GasPrice",
-                    meta.query_advice(tag, Rotation::next()),
+                    meta.query_advice(rlp_table.tag, Rotation::next()),
                     RlpTxTag::GasPrice.expr(),
                 );
                 cb.require_equal(
@@ -534,7 +529,7 @@ impl<F: Field> Config<F> {
             cb.condition(is_gas_price(meta) * tindex_eq.clone(), |cb| {
                 cb.require_equal(
                     "tag::next == RlpTxTag::Gas",
-                    meta.query_advice(tag, Rotation::next()),
+                    meta.query_advice(rlp_table.tag, Rotation::next()),
                     RlpTxTag::Gas.expr(),
                 );
                 cb.require_equal(
@@ -570,7 +565,7 @@ impl<F: Field> Config<F> {
                     cb.require_equal(
                         "value == value_acc",
                         meta.query_advice(value, Rotation::cur()),
-                        meta.query_advice(value_acc, Rotation::cur()),
+                        meta.query_advice(rlp_table.value_acc, Rotation::cur()),
                     );
                 },
             );
@@ -600,8 +595,8 @@ impl<F: Field> Config<F> {
                 |cb| {
                     cb.require_equal(
                         "[gas] value_acc::next == value_acc::cur * 256 + value::next",
-                        meta.query_advice(value_acc, Rotation::next()),
-                        meta.query_advice(value_acc, Rotation::cur()) * 256.expr() +
+                        meta.query_advice(rlp_table.value_acc, Rotation::next()),
+                        meta.query_advice(rlp_table.value_acc, Rotation::cur()) * 256.expr() +
                             meta.query_advice(value, Rotation::next()),
                     );
                 },
@@ -611,7 +606,7 @@ impl<F: Field> Config<F> {
             cb.condition(is_gas(meta) * tindex_lt.clone(), |cb| {
                 cb.require_equal(
                     "tag::next == RlpTxTag::Gas",
-                    meta.query_advice(tag, Rotation::cur()),
+                    meta.query_advice(rlp_table.tag, Rotation::cur()),
                     RlpTxTag::Gas.expr(),
                 );
                 cb.require_equal(
@@ -630,7 +625,7 @@ impl<F: Field> Config<F> {
             cb.condition(is_gas(meta) * tindex_eq.clone(), |cb| {
                 cb.require_equal(
                     "tag::next == RlpTxTag::ToPrefix",
-                    meta.query_advice(tag, Rotation::next()),
+                    meta.query_advice(rlp_table.tag, Rotation::next()),
                     RlpTxTag::ToPrefix.expr(),
                 );
             });
@@ -656,7 +651,7 @@ impl<F: Field> Config<F> {
                 );
                 cb.require_equal(
                     "tag::next == RlpTxTag::To",
-                    meta.query_advice(tag, Rotation::next()),
+                    meta.query_advice(rlp_table.tag, Rotation::next()),
                     RlpTxTag::To.expr(),
                 );
                 cb.require_equal(
@@ -671,7 +666,7 @@ impl<F: Field> Config<F> {
                 );
                 cb.require_equal(
                     "value_acc::next == value::next",
-                    meta.query_advice(value_acc, Rotation::next()),
+                    meta.query_advice(rlp_table.value_acc, Rotation::next()),
                     meta.query_advice(value, Rotation::next()),
                 );
             });
@@ -683,7 +678,7 @@ impl<F: Field> Config<F> {
             cb.condition(is_to(meta) * tindex_lt.clone(), |cb| {
                 cb.require_equal(
                     "tag::next == RlpTxTag::To",
-                    meta.query_advice(tag, Rotation::next()),
+                    meta.query_advice(rlp_table.tag, Rotation::next()),
                     RlpTxTag::To.expr(),
                 );
                 cb.require_equal(
@@ -698,8 +693,8 @@ impl<F: Field> Config<F> {
                 );
                 cb.require_equal(
                     "value_acc::next == value_acc::cur * 256 + value::next",
-                    meta.query_advice(value_acc, Rotation::next()),
-                    meta.query_advice(value_acc, Rotation::cur()) * 256.expr() +
+                    meta.query_advice(rlp_table.value_acc, Rotation::next()),
+                    meta.query_advice(rlp_table.value_acc, Rotation::cur()) * 256.expr() +
                         meta.query_advice(value, Rotation::next()),
                 );
             });
@@ -708,7 +703,7 @@ impl<F: Field> Config<F> {
             cb.condition(is_to(meta) * tindex_eq.clone(), |cb| {
                 cb.require_equal(
                     "tag::next == RlpTxTag::Value",
-                    meta.query_advice(tag, Rotation::next()),
+                    meta.query_advice(rlp_table.tag, Rotation::next()),
                     RlpTxTag::Value.expr(),
                 );
                 cb.require_equal(
@@ -744,7 +739,7 @@ impl<F: Field> Config<F> {
                     cb.require_equal(
                         "value == value_acc",
                         meta.query_advice(value, Rotation::cur()),
-                        meta.query_advice(value_acc, Rotation::cur()),
+                        meta.query_advice(rlp_table.value_acc, Rotation::cur()),
                     );
                 },
             );
@@ -767,7 +762,7 @@ impl<F: Field> Config<F> {
                     );
                     cb.require_equal(
                         "value_acc::next == value::next",
-                        meta.query_advice(value_acc, Rotation::next()),
+                        meta.query_advice(rlp_table.value_acc, Rotation::next()),
                         meta.query_advice(value, Rotation::next()),
                     );
                 },
@@ -779,8 +774,8 @@ impl<F: Field> Config<F> {
                 |cb| {
                     cb.require_equal(
                         "[value] value_acc::next == value_acc::cur * randomness + value::next",
-                        meta.query_advice(value_acc, Rotation::next()),
-                        meta.query_advice(value_acc, Rotation::cur()) * r +
+                        meta.query_advice(rlp_table.value_acc, Rotation::next()),
+                        meta.query_advice(rlp_table.value_acc, Rotation::cur()) * r +
                             meta.query_advice(value, Rotation::next()),
                     );
                 },
@@ -790,7 +785,7 @@ impl<F: Field> Config<F> {
             cb.condition(is_value(meta) * tindex_lt.clone(), |cb| {
                 cb.require_equal(
                     "tag::next == RlpTxTag::Value",
-                    meta.query_advice(tag, Rotation::next()),
+                    meta.query_advice(rlp_table.tag, Rotation::next()),
                     RlpTxTag::Value.expr(),
                 );
                 cb.require_equal(
@@ -809,7 +804,7 @@ impl<F: Field> Config<F> {
             cb.condition(is_value(meta) * tindex_eq.clone(), |cb| {
                 cb.require_equal(
                     "tag::next == RlpTxTag:TxDataPrefix",
-                    meta.query_advice(tag, Rotation::next()),
+                    meta.query_advice(rlp_table.tag, Rotation::next()),
                     RlpTxTag::DataPrefix.expr(),
                 );
             });
@@ -836,7 +831,7 @@ impl<F: Field> Config<F> {
             cb.condition(is_data_prefix(meta) * tindex_lt.clone(), |cb| {
                 cb.require_equal(
                     "tag::next == RlpTxTag::DataPrefix",
-                    meta.query_advice(tag, Rotation::next()),
+                    meta.query_advice(rlp_table.tag, Rotation::next()),
                     RlpTxTag::DataPrefix.expr(),
                 );
                 cb.require_equal(
@@ -869,7 +864,7 @@ impl<F: Field> Config<F> {
                 |cb| {
                     cb.require_equal(
                         "tag::next == RlpTxTag::Data",
-                        meta.query_advice(tag, Rotation::next()),
+                        meta.query_advice(rlp_table.tag, Rotation::next()),
                         RlpTxTag::Data.expr(),
                     );
                     cb.require_equal(
@@ -945,7 +940,7 @@ impl<F: Field> Config<F> {
             cb.condition(is_data(meta) * tindex_lt, |cb| {
                 cb.require_equal(
                     "tag::next == RlpTxTag::Data",
-                    meta.query_advice(tag, Rotation::next()),
+                    meta.query_advice(rlp_table.tag, Rotation::next()),
                     RlpTxTag::Data.expr(),
                 );
                 cb.require_equal(
@@ -1029,6 +1024,11 @@ impl<F: Field> Config<F> {
                 meta.query_advice(hash, Rotation::prev()),
             );
             cb.require_equal(
+                "tx_id == tx_id::prev",
+                meta.query_advice(rlp_table.tx_id, Rotation::cur()),
+                meta.query_advice(rlp_table.tx_id, Rotation::prev()),
+            );
+            cb.require_equal(
                 "value_rlc == (value_rlc_prev * r) + value",
                 meta.query_advice(value_rlc, Rotation::cur()),
                 meta.query_advice(value_rlc, Rotation::prev()) * r
@@ -1046,12 +1046,10 @@ impl<F: Field> Config<F> {
             q_usable,
             is_first,
             is_last,
-            tx_id,
+            rlp_table,
             index,
             rindex,
             value,
-            value_acc,
-            tag,
             tx_tags,
             tag_index,
             tag_length,
@@ -1140,12 +1138,29 @@ impl<F: Field> Config<F> {
                                 self.is_last,
                                 F::from((row.index == n_rows) as u64),
                             ),
-                            ("tx_id", self.tx_id, F::from(row.id as u64)),
+                            (
+                                "rlp_table::tx_id",
+                                self.rlp_table.tx_id,
+                                F::from(row.id as u64),
+                            ),
+                            (
+                                "rlp_table::tag",
+                                self.rlp_table.tag,
+                                F::from(row.tag as u64),
+                            ),
+                            (
+                                "rlp_table::value_acc",
+                                self.rlp_table.value_acc,
+                                row.value_acc,
+                            ),
+                            (
+                                "rlp_table::data_type",
+                                self.rlp_table.data_type,
+                                F::from(row.data_type as u64),
+                            ),
                             ("index", self.index, F::from(row.index as u64)),
                             ("rindex", self.rindex, F::from(rindex)),
                             ("value", self.value, F::from(row.value as u64)),
-                            ("value_acc", self.value_acc, row.value_acc),
-                            ("tag", self.tag, F::from(row.tag as u64)),
                             ("tag_index", self.tag_index, F::from(row.tag_index as u64)),
                             (
                                 "tag_length",
@@ -1285,15 +1300,16 @@ impl<F: Field> Config<F> {
         for column in [
             self.is_first,
             self.is_last,
-            self.tx_id,
+            self.rlp_table.tx_id,
+            self.rlp_table.tag,
+            self.rlp_table.value_acc,
+            self.rlp_table.data_type,
             self.index,
-            self.tag,
             self.tag_index,
             self.tag_length,
             self.length_acc,
             self.rindex,
             self.value,
-            self.value_acc,
             self.value_rlc,
             self.hash,
         ] {

@@ -1282,3 +1282,40 @@ impl<F: Field> LookupTable<F> for ExpTable {
         ]
     }
 }
+
+/// Lookup table embedded in the RLP circuit.
+#[derive(Clone, Copy, Debug)]
+pub struct RlpTable {
+    /// Transaction ID of the transaction. This is not the transaction hash, but
+    /// an incremental ID starting from 1 to indicate the position of the
+    /// transaction within the L2 block.
+    pub tx_id: Column<Advice>,
+    /// Denotes the field/tag that this row represents. Example: nonce, gas,
+    /// gasprice, and so on.
+    pub tag: Column<Advice>,
+    /// Denotes the accumulator value for this field, which is a linear
+    /// combination or random linear combination of the field's bytes.
+    pub value_acc: Column<Advice>,
+    /// Denotes the type of input assigned in this row. Type can either be
+    /// `TxSign` (transaction data that needs to be signed) or `TxHash`
+    /// (signed transaction's data).
+    pub data_type: Column<Advice>,
+}
+
+impl DynamicTableColumns for RlpTable {
+    fn columns(&self) -> Vec<Column<Advice>> {
+        vec![self.tx_id, self.tag, self.value_acc, self.data_type]
+    }
+}
+
+impl RlpTable {
+    /// Construct the RLP table.
+    pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
+        Self {
+            tx_id: meta.advice_column(),
+            tag: meta.advice_column(),
+            value_acc: meta.advice_column(),
+            data_type: meta.advice_column(),
+        }
+    }
+}

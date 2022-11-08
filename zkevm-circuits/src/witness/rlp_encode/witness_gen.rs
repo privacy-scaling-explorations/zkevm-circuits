@@ -8,10 +8,14 @@ use crate::{evm_circuit::util::RandomLinearCombination, impl_expr, util::Challen
 /// Data types that are supported by the RLP circuit.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RlpDataType {
-    /// Data type for an RLP-encoded legacy transaction.
-    Transaction,
-    /// Data type for an RLP-encoded transaction receipt.
-    Receipt,
+    /// Data type for an RLP-encoded unsigned transaction. The encoding consists
+    /// of: [nonce, gas, gasprice, to, value, input, chainid, 0, 0].
+    TxSign,
+    /// Data type for an RLP-encoded signed transaction. The encoding consists
+    /// of: [nonce, gas, gasprice, to, value, input, v, r, s].
+    /// where the fields `v`, `r` and `s` represent the compressed form of an
+    /// ECDSA signature.
+    TxHash,
 }
 
 impl_expr!(RlpDataType);

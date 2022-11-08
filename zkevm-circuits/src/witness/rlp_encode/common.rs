@@ -174,13 +174,13 @@ pub fn handle_u256<F: FieldExt>(
                 tag,
                 i,
             );
-            if data_type == RlpDataType::Transaction {
-                if tag == RlpTxTag::Value as u8 || tag == RlpTxTag::GasPrice as u8 {
-                    value_acc = value_acc * randomness + F::from(*value_byte as u64);
-                } else {
-                    value_acc = value_acc * F::from(256) + F::from(*value_byte as u64);
-                }
+
+            if tag == RlpTxTag::Value as u8 || tag == RlpTxTag::GasPrice as u8 {
+                value_acc = value_acc * randomness + F::from(*value_byte as u64);
+            } else {
+                value_acc = value_acc * F::from(256) + F::from(*value_byte as u64);
             }
+
             rows.push(RlpWitnessRow {
                 id,
                 index: idx + 1,
