@@ -135,17 +135,21 @@ impl<F: FieldExt> RlpWitnessGen<F> for Transaction {
 
 #[cfg(test)]
 mod tests {
-    use halo2_proofs::{arithmetic::Field, halo2curves::bn256::Fr};
+    use halo2_proofs::{arithmetic::Field, circuit::Value, halo2curves::bn256::Fr};
     use num::Zero;
 
-    use crate::evm_circuit::{
-        test::rand_bytes,
-        witness::{RlpTxTag, RlpWitnessGen, Transaction},
+    use crate::{
+        evm_circuit::{
+            test::rand_bytes,
+            witness::{RlpTxTag, RlpWitnessGen, Transaction},
+        },
+        util::Challenges,
     };
 
     #[test]
     fn tx_rlp_witgen_a() {
         let r = Fr::random(rand::thread_rng());
+        let challenges = Challenges::mock(Value::known(r));
 
         let callee_address = mock::MOCK_ACCOUNTS[0];
         let call_data = rand_bytes(55);
@@ -160,7 +164,7 @@ mod tests {
         };
 
         let tx_rlp = rlp::encode(&tx);
-        let witness_rows = tx.gen_witness(r);
+        let witness_rows = tx.gen_witness(r, &challenges);
 
         assert_eq!(tx_rlp.len(), witness_rows.len());
 
@@ -233,6 +237,7 @@ mod tests {
     #[test]
     fn tx_rlp_witgen_b() {
         let r = Fr::random(rand::thread_rng());
+        let challenges = Challenges::mock(Value::known(r));
 
         let nonce = 0x123456u64;
         let gas_price = 0x234567u64.into();
@@ -251,7 +256,7 @@ mod tests {
         };
 
         let tx_rlp = rlp::encode(&tx);
-        let witness_rows = tx.gen_witness(r);
+        let witness_rows = tx.gen_witness(r, &challenges);
 
         assert_eq!(tx_rlp.len(), witness_rows.len());
 
