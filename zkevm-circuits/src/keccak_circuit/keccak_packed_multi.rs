@@ -1540,6 +1540,9 @@ impl<F: Field> KeccakPackedConfig<F> {
     }
 
     /// Sets the witness using the data to be hashed
+    /// The `capacity`, when enabled, sets up the circuit to support a fixed
+    /// number of permutations/keccak_f's, independently of the permutations
+    /// required by `inputs`.
     pub fn assign_from_witness(
         &self,
         layouter: &mut impl Layouter<F>,
