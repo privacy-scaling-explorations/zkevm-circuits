@@ -347,7 +347,7 @@ mod test {
         assert_eq!(
             run_test_circuits(
                 TestContext::<2, 1>::simple_ctx_with_bytecode(code_prepare).unwrap(),
-                None,
+                None
             ),
             Ok(()),
         );

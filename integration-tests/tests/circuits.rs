@@ -1,7 +1,6 @@
 #![cfg(feature = "circuits")]
 
-use bus_mapping::circuit_input_builder::BuilderClient;
-use bus_mapping::operation::OperationContainer;
+use bus_mapping::circuit_input_builder::{BuilderClient, CircuitsParams};
 use eth_types::geth_types;
 use halo2_proofs::{
     arithmetic::CurveAffine,
@@ -23,16 +22,22 @@ use zkevm_circuits::copy_circuit::dev::test_copy_circuit;
 use zkevm_circuits::evm_circuit::witness::RwMap;
 use zkevm_circuits::evm_circuit::{test::run_test_circuit, witness::block_convert};
 use zkevm_circuits::state_circuit::StateCircuit;
+use zkevm_circuits::super_circuit::SuperCircuit;
 use zkevm_circuits::tx_circuit::{sign_verify::SignVerifyChip, Secp256k1Affine, TxCircuit};
 
 lazy_static! {
     pub static ref GEN_DATA: GenDataOutput = GenDataOutput::load();
 }
 
+const CIRCUITS_PARAMS: CircuitsParams = CircuitsParams {
+    max_rws: 16384,
+    max_txs: 4,
+};
+
 async fn test_evm_circuit_block(block_num: u64) {
     log::info!("test evm circuit, block number: {}", block_num);
     let cli = get_client();
-    let cli = BuilderClient::new(cli).await.unwrap();
+    let cli = BuilderClient::new(cli, CIRCUITS_PARAMS).await.unwrap();
     let (builder, _) = cli.gen_inputs(block_num).await.unwrap();
 
     let block = block_convert(&builder.block, &builder.code_db);
@@ -42,10 +47,11 @@ async fn test_evm_circuit_block(block_num: u64) {
 async fn test_state_circuit_block(block_num: u64) {
     log::info!("test state circuit, block number: {}", block_num);
     let cli = get_client();
-    let cli = BuilderClient::new(cli).await.unwrap();
+    let cli = BuilderClient::new(cli, CIRCUITS_PARAMS).await.unwrap();
     let (builder, _) = cli.gen_inputs(block_num).await.unwrap();
 
     // Generate state proof
+    // log via trace some of the container ops for debugging purposes
     let stack_ops = builder.block.container.sorted_stack();
     trace!("stack_ops: {:#?}", stack_ops);
     let memory_ops = builder.block.container.sorted_memory();
@@ -55,19 +61,16 @@ async fn test_state_circuit_block(block_num: u64) {
 
     const DEGREE: usize = 17;
 
-    let rw_map = RwMap::from(&OperationContainer {
-        memory: memory_ops,
-        stack: stack_ops,
-        storage: storage_ops,
-        ..Default::default()
-    });
+    let rw_map = RwMap::from(&builder.block.container);
 
     let randomness = Fr::from(0xcafeu64);
     let circuit = StateCircuit::<Fr>::new(randomness, rw_map, 1 << 16);
     let power_of_randomness = circuit.instance();
 
     let prover = MockProver::<Fr>::run(DEGREE as u32, &circuit, power_of_randomness).unwrap();
-    prover.verify().expect("state_circuit verification failed");
+    prover
+        .verify_par()
+        .expect("state_circuit verification failed");
 }
 
 async fn test_tx_circuit_block(block_num: u64) {
@@ -75,7 +78,7 @@ async fn test_tx_circuit_block(block_num: u64) {
 
     log::info!("test tx circuit, block number: {}", block_num);
     let cli = get_client();
-    let cli = BuilderClient::new(cli).await.unwrap();
+    let cli = BuilderClient::new(cli, CIRCUITS_PARAMS).await.unwrap();
 
     let (_, eth_block) = cli.gen_inputs(block_num).await.unwrap();
     let txs: Vec<_> = eth_block
@@ -99,7 +102,7 @@ async fn test_tx_circuit_block(block_num: u64) {
 
     let prover = MockProver::run(DEGREE, &circuit, vec![vec![]]).unwrap();
 
-    prover.verify().expect("tx_circuit verification failed");
+    prover.verify_par().expect("tx_circuit verification failed");
 }
 
 pub async fn test_bytecode_circuit_block(block_num: u64) {
@@ -107,7 +110,7 @@ pub async fn test_bytecode_circuit_block(block_num: u64) {
 
     log::info!("test bytecode circuit, block number: {}", block_num);
     let cli = get_client();
-    let cli = BuilderClient::new(cli).await.unwrap();
+    let cli = BuilderClient::new(cli, CIRCUITS_PARAMS).await.unwrap();
     let (builder, _) = cli.gen_inputs(block_num).await.unwrap();
     let bytecodes: Vec<Vec<u8>> = builder.code_db.0.values().cloned().collect();
 
@@ -119,11 +122,44 @@ pub async fn test_copy_circuit_block(block_num: u64) {
 
     log::info!("test copy circuit, block number: {}", block_num);
     let cli = get_client();
-    let cli = BuilderClient::new(cli).await.unwrap();
+    let cli = BuilderClient::new(cli, CIRCUITS_PARAMS).await.unwrap();
     let (builder, _) = cli.gen_inputs(block_num).await.unwrap();
     let block = block_convert(&builder.block, &builder.code_db);
 
     assert!(test_copy_circuit(DEGREE, block).is_ok());
+}
+
+pub async fn test_super_circuit_block(block_num: u64) {
+    const MAX_TXS: usize = 4;
+    const MAX_CALLDATA: usize = 512;
+    const MAX_RWS: usize = 5888;
+
+    log::info!("test super circuit, block number: {}", block_num);
+    let cli = get_client();
+    let cli = BuilderClient::new(
+        cli,
+        CircuitsParams {
+            max_rws: MAX_RWS,
+            max_txs: MAX_TXS,
+        },
+    )
+    .await
+    .unwrap();
+    let (builder, eth_block) = cli.gen_inputs(block_num).await.unwrap();
+    let (k, circuit, instance) =
+        SuperCircuit::<_, MAX_TXS, MAX_CALLDATA, MAX_RWS>::build_from_circuit_input_builder(
+            builder,
+            eth_block,
+            &mut ChaCha20Rng::seed_from_u64(2),
+        )
+        .unwrap();
+    let prover = MockProver::run(k, &circuit, instance).unwrap();
+    let res = prover.verify_par();
+    if let Err(err) = res {
+        eprintln!("Verification failures:");
+        eprintln!("{:#?}", err);
+        panic!("Failed verification");
+    }
 }
 
 macro_rules! declare_tests {
@@ -164,6 +200,12 @@ macro_rules! declare_tests {
                 test_copy_circuit_block(*block_num).await;
             }
 
+            #[tokio::test]
+            async fn [<serial_test_super_ $name>]() {
+                log_init();
+                let block_num = GEN_DATA.blocks.get($block_tag).unwrap();
+                test_super_circuit_block(*block_num).await;
+            }
         }
     };
 }
