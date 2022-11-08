@@ -586,25 +586,29 @@ pub mod dev {
     };
 
     #[derive(Clone)]
-    struct CopyCircuitTesterConfig<F> {
+    /// Config for  CopyCircuitTester.
+    pub struct CopyCircuitTesterConfig<F> {
         tx_table: TxTable,
         rw_table: RwTable,
         bytecode_table: BytecodeTable,
         copy_circuit: CopyCircuit<F>,
     }
 
+    /// Helper circuit to test CopyCircuit.
     #[derive(Default)]
-    struct CopyCircuitTester<F> {
+    pub struct CopyCircuitTester<F> {
         block: Block<F>,
         max_txs: usize,
         randomness: F,
     }
 
     impl<F: Field> CopyCircuitTester<F> {
-        fn get_randomness() -> F {
+        /// Returns randomness to test the circuit.
+        pub fn get_randomness() -> F {
             F::random(rand::thread_rng())
         }
 
+        /// Creates test circuit for copy circuit.
         pub fn new(block: Block<F>, randomness: F) -> Self {
             Self {
                 block,
@@ -612,6 +616,8 @@ pub mod dev {
                 max_txs: 4,
             }
         }
+
+        /// Returns the r of the copy circuit.
         pub fn r() -> Expression<F> {
             123456u64.expr()
         }
