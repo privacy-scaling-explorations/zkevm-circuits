@@ -168,7 +168,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 
         cb.condition(is_empty_code_hash.expr(), |cb| {
             cb.require_equal(
-                "Tx to account with empty code should be successful",
+                "Tx to account with empty code should be persistent",
                 reversion_info.is_persistent(),
                 1.expr(),
             );
