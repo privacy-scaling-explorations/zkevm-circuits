@@ -222,8 +222,11 @@ impl<F: Field> Config<F> {
         is_tx_tag!(is_data_prefix, DataPrefix);
         is_tx_tag!(is_data, Data);
         is_tx_tag!(is_chainid, ChainId);
+        is_tx_tag!(is_sig_v, SigV);
+        is_tx_tag!(_is_sig_r, SigR);
+        is_tx_tag!(_is_sig_s, SigS);
 
-        meta.create_gate("DataType::Transaction", |meta| {
+        meta.create_gate("Common constraints", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
             let (tindex_lt, tindex_eq) = tag_index_cmp_1.expr(meta, None);
@@ -900,7 +903,7 @@ impl<F: Field> Config<F> {
 
             // if tag_index < tag_length && tag_length > 1
             cb.condition(
-                is_data_prefix(meta) * tindex_lt_tlength.clone() * tlength_lt.clone(),
+                is_data_prefix(meta) * tindex_lt_tlength * tlength_lt,
                 |cb| {
                     cb.require_equal(
                         "length_acc == (length_acc::prev * 256) + value",
@@ -913,7 +916,7 @@ impl<F: Field> Config<F> {
 
             // if tag_index == tag_length && tag_length == 1
             cb.condition(
-                is_data_prefix(meta) * tindex_eq_tlength.clone() * tlength_eq.clone(),
+                is_data_prefix(meta) * tindex_eq_tlength * tlength_eq,
                 |cb| {
                     cb.require_equal("127 < value", value_gt_127.is_lt(meta, None), 1.expr());
                     cb.require_equal("value < 184", value_lt_184.is_lt(meta, None), 1.expr());
@@ -955,19 +958,58 @@ impl<F: Field> Config<F> {
                 );
             });
 
-            // if tag_index == 1
-            cb.condition(is_data(meta) * tindex_eq.clone(), |cb| {
-                cb.require_equal(
-                    "tag::next == RlpTxTag::ChainId",
-                    meta.query_advice(rlp_table.tag, Rotation::next()),
-                    RlpTxTag::ChainId.expr(),
-                );
-                cb.require_equal(
-                    "tag_index::next == tag_length::next",
-                    meta.query_advice(rlp_table.tag_index, Rotation::next()),
-                    meta.query_advice(tag_length, Rotation::next()),
-                );
-            });
+            // if tag_index == 1 for TxSign
+            cb.condition(
+                and::expr(vec![
+                    is_data(meta),
+                    tindex_eq.clone(),
+                    not::expr(meta.query_advice(rlp_table.data_type, Rotation::cur())),
+                ]),
+                |cb| {
+                    cb.require_equal(
+                        "tag::next == RlpTxTag::ChainId",
+                        meta.query_advice(rlp_table.tag, Rotation::next()),
+                        RlpTxTag::ChainId.expr(),
+                    );
+                    cb.require_equal(
+                        "tag_index::next == tag_length::next",
+                        meta.query_advice(rlp_table.tag_index, Rotation::next()),
+                        meta.query_advice(tag_length, Rotation::next()),
+                    );
+                }
+            );
+
+            // if tag_index == 1 for TxHash
+            cb.condition(
+                and::expr(vec![
+                    is_data(meta),
+                    tindex_eq.clone(),
+                    meta.query_advice(rlp_table.data_type, Rotation::cur()),
+                ]),
+                |cb| {
+                    cb.require_equal(
+                        "tag::next == RlpTxTag::SigV",
+                        meta.query_advice(rlp_table.tag, Rotation::next()),
+                        RlpTxTag::SigV.expr(),
+                    );
+                    cb.require_equal(
+                        "tag_index::next == tag_length::next",
+                        meta.query_advice(rlp_table.tag_index, Rotation::next()),
+                        meta.query_advice(tag_length, Rotation::next()),
+                    );
+                }
+            );
+
+
+            cb.gate(meta.query_selector(q_usable))
+        });
+
+        meta.create_gate("DataType::TxSign (unsigned transaction)", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
+
+            let (tindex_lt, tindex_eq) = tag_index_cmp_1.expr(meta, None);
+            let (tlength_lt, tlength_eq) = tag_length_cmp_1.expr(meta, None);
+            let (tindex_lt_tlength, tindex_eq_tlength) = tag_index_length_cmp.expr(meta, None);
 
             //////////////////////////////////////////////////////////////////////////////////////
             ////////////////////////////////// RlpTxTag::ChainID /////////////////////////////////
@@ -979,7 +1021,6 @@ impl<F: Field> Config<F> {
                     tag_index_lt_10.is_lt(meta, None),
                     1.expr(),
                 );
-
                 // tag_index >= 1
                 cb.require_zero(
                     "1 <= tag_index",
@@ -1145,7 +1186,133 @@ impl<F: Field> Config<F> {
                 );
             });
 
-            cb.gate(meta.query_selector(q_usable))
+            cb.gate(and::expr(vec![
+                meta.query_selector(q_usable),
+                not::expr(meta.query_advice(rlp_table.data_type, Rotation::cur())),
+            ]))
+        });
+
+        meta.create_gate("DataType::TxHash (signed transaction)", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
+
+            let (tindex_lt, tindex_eq) = tag_index_cmp_1.expr(meta, None);
+            let (tlength_lt, tlength_eq) = tag_length_cmp_1.expr(meta, None);
+            let (tindex_lt_tlength, tindex_eq_tlength) = tag_index_length_cmp.expr(meta, None);
+
+            //////////////////////////////////////////////////////////////////////////////////////
+            /////////////////////////////////// RlpTxTag::SigV ///////////////////////////////////
+            //////////////////////////////////////////////////////////////////////////////////////
+            cb.condition(is_sig_v(meta), |cb| {
+                // tag_index < 10
+                cb.require_equal(
+                    "tag_index < 10",
+                    tag_index_lt_10.is_lt(meta, None),
+                    1.expr(),
+                );
+                // tag_index >= 1
+                cb.require_zero(
+                    "1 <= tag_index",
+                    not::expr(or::expr([tindex_lt.clone(), tindex_eq.clone()])),
+                );
+            });
+
+            // if tag_index == tag_length && tag_length == 1
+            cb.condition(
+                is_sig_v(meta) * tindex_eq_tlength.clone() * tlength_eq,
+                |cb| {
+                    cb.require_equal("value < 129", value_lt_129.is_lt(meta, None), 1.expr());
+                    cb.require_equal(
+                        "value == value_acc",
+                        meta.query_advice(value, Rotation::cur()),
+                        meta.query_advice(rlp_table.value_acc, Rotation::cur()),
+                    );
+                },
+            );
+
+            // if tag_index == tag_length && tag_length > 1
+            cb.condition(
+                is_sig_v(meta) * tindex_eq_tlength * tlength_lt,
+                |cb| {
+                    cb.require_equal("127 < value", value_gt_127.is_lt(meta, None), 1.expr());
+                    cb.require_equal("value < 184", value_lt_184.is_lt(meta, None), 1.expr());
+                    cb.require_equal(
+                        "length_acc == value - 0x80",
+                        meta.query_advice(length_acc, Rotation::cur()),
+                        meta.query_advice(value, Rotation::cur()) - 128.expr(),
+                    );
+                    cb.require_equal(
+                        "tag_index::next == length_acc",
+                        meta.query_advice(rlp_table.tag_index, Rotation::next()),
+                        meta.query_advice(length_acc, Rotation::cur()),
+                    );
+                    cb.require_equal(
+                        "value_acc::next == value::next",
+                        meta.query_advice(rlp_table.value_acc, Rotation::next()),
+                        meta.query_advice(value, Rotation::next()),
+                    );
+                },
+            );
+
+            // if tag_index < tag_length && tag_index > 1
+            cb.condition(
+                is_sig_v(meta) * tindex_lt_tlength * tindex_lt.clone(),
+                |cb| {
+                    cb.require_equal(
+                        "value_acc::next == value_acc::cur * 256 + value::next",
+                        meta.query_advice(rlp_table.value_acc, Rotation::next()),
+                        meta.query_advice(rlp_table.value_acc, Rotation::cur()) * 256.expr() +
+                            meta.query_advice(value, Rotation::next()),
+                    );
+                },
+            );
+
+            // if tag_index > 1
+            cb.condition(is_sig_v(meta) * tindex_lt.clone(), |cb| {
+                cb.require_equal(
+                    "tag::next == RlpTxTag::SigV",
+                    meta.query_advice(rlp_table.tag, Rotation::next()),
+                    RlpTxTag::SigV.expr(),
+                );
+                cb.require_equal(
+                    "tag_index::next == tag_index - 1",
+                    meta.query_advice(rlp_table.tag_index, Rotation::next()),
+                    meta.query_advice(rlp_table.tag_index, Rotation::cur()) - 1.expr(),
+                );
+                cb.require_equal(
+                    "tag_length::next == tag_length",
+                    meta.query_advice(tag_length, Rotation::next()),
+                    meta.query_advice(tag_length, Rotation::cur()),
+                );
+            });
+
+            // if tag_index == 1
+            cb.condition(is_sig_v(meta) * tindex_eq.clone(), |cb| {
+                cb.require_equal(
+                    "tag::next == RlpTxTag::SigR",
+                    meta.query_advice(rlp_table.tag, Rotation::next()),
+                    RlpTxTag::SigR.expr(),
+                );
+                cb.require_equal(
+                    "tag_index::next == tag_length::next",
+                    meta.query_advice(rlp_table.tag_index, Rotation::next()),
+                    meta.query_advice(tag_length, Rotation::next()),
+                );
+            });
+
+            //////////////////////////////////////////////////////////////////////////////////////
+            /////////////////////////////////// RlpTxTag::SigR ///////////////////////////////////
+            //////////////////////////////////////////////////////////////////////////////////////
+            // TODO(rohit)
+
+            //////////////////////////////////////////////////////////////////////////////////////
+            /////////////////////////////////// RlpTxTag::SigS ///////////////////////////////////
+            //////////////////////////////////////////////////////////////////////////////////////
+            // TODO(rohit)
+
+            cb.gate(and::expr(vec![
+                meta.query_selector(q_usable),
+                meta.query_advice(rlp_table.data_type, Rotation::cur()),
+            ]))
         });
 
         // Constraints that always need to be satisfied.

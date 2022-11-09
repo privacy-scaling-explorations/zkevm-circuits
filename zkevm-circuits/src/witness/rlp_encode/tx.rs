@@ -34,6 +34,12 @@ pub enum RlpTxTag {
     ChainId,
     /// Denotes a placeholder zero for unsigned transactions, as per EIP-155.
     Zero,
+    /// Used to indicate the {0, 1}-parity of the ECDSA signature.
+    SigV,
+    /// ECDSA signature's X-coordinate.
+    SigR,
+    /// ECDSA signature's Y-coordinate.
+    SigS,
     /// The RLP tag is reserved to hold the RLP-encoding's random linear
     /// combination in its accumulator value. Its used to support a lookup
     /// for rlc(rlp(tx)).
