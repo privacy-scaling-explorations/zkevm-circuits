@@ -46,6 +46,9 @@ packed_multi_keccak_bench: ## Run Packed Multi Keccak Circuit benchmarks
 bytecode_bench: ## Run Bytecode Circuit benchmarks
 	@cargo test --profile bench bench_bytecode_circuit_prover -p circuit-benchmarks --features benches  -- --nocapture
 
+pi_bench: ## Run Public Input Circuit benchmarks
+	@cargo test --profile bench bench_pi_circuit_prover -p circuit-benchmarks --features benches  -- --nocapture
+
 circuit_benches: evm_bench state_bench ## Run All Circuit benchmarks
 
 
