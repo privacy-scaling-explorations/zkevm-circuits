@@ -113,10 +113,10 @@ pub enum OogError {
 pub enum ExecError {
     /// Invalid Opcode
     InvalidOpcode,
-    /// stack overflow or underflow error
-    StackError,
+    /// For opcodes who push more than pop
+    StackOverflow,
     /// For opcodes which pop, DUP and SWAP, which peek deeper element directly
-    // StackUnderflow,
+    StackUnderflow,
     /// Out of Gas
     OutOfGas(OogError),
     /// For SSTORE, LOG0, LOG1, LOG2, LOG3, LOG4, CREATE, CALL, CREATE2,
@@ -175,12 +175,10 @@ pub(crate) fn get_step_reported_error(op: &OpcodeId, error: &str) -> ExecError {
             _ => OogError::Constant,
         };
         ExecError::OutOfGas(oog_err)
-    } else if error.starts_with(GETH_ERR_STACK_OVERFLOW)
-        | error.starts_with(GETH_ERR_STACK_UNDERFLOW)
-    {
-        ExecError::StackError
-    // } else if error.starts_with(GETH_ERR_STACK_UNDERFLOW) {
-    //     ExecError::StackUnderflow
+    } else if error.starts_with(GETH_ERR_STACK_OVERFLOW) {
+        ExecError::StackOverflow
+    } else if error.starts_with(GETH_ERR_STACK_UNDERFLOW) {
+        ExecError::StackUnderflow
     } else {
         panic!("Unknown GethExecStep.error: {}", error);
     }

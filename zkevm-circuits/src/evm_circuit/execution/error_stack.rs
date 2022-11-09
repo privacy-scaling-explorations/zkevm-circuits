@@ -17,7 +17,6 @@ use crate::table::CallContextFieldTag;
 use crate::util::Expr;
 use eth_types::Field;
 use halo2_proofs::{circuit::Value, plonk::Error};
-use itertools::min;
 
 #[derive(Clone, Debug)]
 pub(crate) struct ErrorStackGadget<F> {
@@ -164,25 +163,16 @@ impl<F: Field> ExecutionGadget<F> for ErrorStackGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::evm_circuit::{
-        test::run_test_circuit, test::run_test_circuit_geth_data_default, witness::block_convert,
-    };
-    use crate::{
-        evm_circuit::test::rand_word,
-        test_util::{run_test_circuits, run_test_circuits_with_params},
-    };
+    use crate::evm_circuit::{test::run_test_circuit, witness::block_convert};
+    use crate::test_util::{run_test_circuits, run_test_circuits_with_params};
 
     use bus_mapping::circuit_input_builder::CircuitsParams;
     use bus_mapping::evm::OpcodeId;
     use eth_types::{
-        self, address, bytecode, bytecode::Bytecode, evm_types::GasCost, geth_types::Account,
-        geth_types::GethData, Address, ToWord, Word,
+        self, address, bytecode, bytecode::Bytecode, geth_types::Account, Address, ToWord, Word,
     };
-    use halo2_proofs::halo2curves::bn256::Fr;
 
-    use mock::{
-        eth, gwei, test_ctx::helpers::account_0_code_account_1_no_code, TestContext, MOCK_ACCOUNTS,
-    };
+    use mock::TestContext;
 
     fn test_stack_underflow(value: Word) {
         let bytecode = bytecode! {
