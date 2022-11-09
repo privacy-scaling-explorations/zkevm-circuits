@@ -462,16 +462,16 @@ mod test {
         for ((offset, length), is_return) in
             test_parameters.iter().cartesian_product(&[true, false])
         {
-            let initializer = callee_bytecode(*is_return, *offset, *length);
+            let initializer = callee_bytecode(*is_return, *offset, *length).code();
 
             let root_code = bytecode! {
-                PUSH32(Word::from_big_endian(&initializer.code()))
+                PUSH32(Word::from_big_endian(&initializer))
                 PUSH1(0)
                 MSTORE
 
-                PUSH1(0)        // offset
-                PUSH1(32)       // length
-                PUSH10(100000)  // value
+                PUSH1(initializer.len())        // size
+                PUSH1(32 - initializer.len())   // offset
+                PUSH1(0)                        // value
 
                 CREATE
                 STOP
