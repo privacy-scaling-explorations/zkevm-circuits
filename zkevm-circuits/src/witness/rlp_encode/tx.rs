@@ -49,7 +49,7 @@ pub enum RlpTxTag {
 impl_expr!(RlpTxTag);
 
 /// Denotes the number of tag values in a transaction's RLP trace.
-pub const N_TX_TAGS: usize = 13;
+pub const N_TX_TAGS: usize = 15;
 
 impl<F: FieldExt> RlpWitnessGen<F> for Transaction {
     fn gen_witness(&self, randomness: F) -> Vec<RlpWitnessRow<F>> {

@@ -167,7 +167,15 @@ pub fn handle_u256<F: FieldExt>(
                 i,
             );
 
-            if tag == RlpTxTag::Value as u8 || tag == RlpTxTag::GasPrice as u8 {
+            // appropriately calculate accumulator value.
+            if [
+                RlpTxTag::Value as u8,
+                RlpTxTag::GasPrice as u8,
+                RlpTxTag::SigR as u8,
+                RlpTxTag::SigS as u8,
+            ]
+            .contains(&tag)
+            {
                 value_acc = value_acc * randomness + F::from(*value_byte as u64);
             } else {
                 value_acc = value_acc * F::from(256) + F::from(*value_byte as u64);
