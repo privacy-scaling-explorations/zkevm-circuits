@@ -164,16 +164,21 @@ impl<F: Field> ExecutionGadget<F> for ErrorStackGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::evm_circuit::{test::run_test_circuit_geth_data_default, witness::block_convert};
-    use crate::{evm_circuit::test::rand_word, test_util::{run_test_circuits_with_params, run_test_circuits}};
+    use crate::evm_circuit::{
+        test::run_test_circuit, test::run_test_circuit_geth_data_default, witness::block_convert,
+    };
+    use crate::{
+        evm_circuit::test::rand_word,
+        test_util::{run_test_circuits, run_test_circuits_with_params},
+    };
 
+    use bus_mapping::circuit_input_builder::CircuitsParams;
     use bus_mapping::evm::OpcodeId;
     use eth_types::{
         self, address, bytecode, bytecode::Bytecode, evm_types::GasCost, geth_types::Account,
         geth_types::GethData, Address, ToWord, Word,
     };
     use halo2_proofs::halo2curves::bn256::Fr;
-    use bus_mapping::circuit_input_builder::CircuitsParams;
 
     use mock::{
         eth, gwei, test_ctx::helpers::account_0_code_account_1_no_code, TestContext, MOCK_ACCOUNTS,
@@ -239,4 +244,114 @@ mod test {
         );
     }
 
+    #[derive(Clone, Copy, Debug, Default)]
+    struct Stack {
+        gas: u64,
+        value: Word,
+        cd_offset: u64,
+        cd_length: u64,
+        rd_offset: u64,
+        rd_length: u64,
+    }
+
+    fn caller() -> Account {
+        let terminator = OpcodeId::REVERT;
+
+        let stack = Stack {
+            gas: 10,
+            cd_offset: 64,
+            cd_length: 320,
+            rd_offset: 0,
+            rd_length: 32,
+            ..Default::default()
+        };
+        let bytecode = bytecode! {
+            PUSH32(Word::from(stack.rd_length))
+            PUSH32(Word::from(stack.rd_offset))
+            PUSH32(Word::from(stack.cd_length))
+            PUSH32(Word::from(stack.cd_offset))
+            PUSH32(stack.value)
+            PUSH32(Address::repeat_byte(0xff).to_word())
+            PUSH32(Word::from(stack.gas))
+            CALL
+            PUSH32(Word::from(stack.rd_length))
+            PUSH32(Word::from(stack.rd_offset))
+            PUSH32(Word::from(stack.cd_length))
+            PUSH32(Word::from(stack.cd_offset))
+            PUSH32(stack.value)
+            PUSH32(Address::repeat_byte(0xff).to_word())
+            PUSH32(Word::from(stack.gas))
+            CALL
+            .write_op(terminator)
+        };
+
+        Account {
+            address: Address::repeat_byte(0xfe),
+            balance: Word::from(10).pow(20.into()),
+            code: bytecode.to_vec().into(),
+            ..Default::default()
+        }
+    }
+
+    fn stack_error_internal_call(caller: Account, callee: Account) {
+        let block = TestContext::<3, 1>::new(
+            None,
+            |accs| {
+                accs[0]
+                    .address(address!("0x000000000000000000000000000000000000cafe"))
+                    .balance(Word::from(10u64.pow(19)));
+                accs[1]
+                    .address(caller.address)
+                    .code(caller.code)
+                    .nonce(caller.nonce)
+                    .balance(caller.balance);
+                accs[2]
+                    .address(callee.address)
+                    .code(callee.code)
+                    .nonce(callee.nonce)
+                    .balance(callee.balance);
+            },
+            |mut txs, accs| {
+                txs[0]
+                    .from(accs[0].address)
+                    .to(accs[1].address)
+                    .gas(23800.into());
+            },
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap()
+        .into();
+        let block_data = bus_mapping::mock::BlockData::new_from_geth_data(block);
+        let mut builder = block_data.new_circuit_input_builder();
+        builder
+            .handle_block(&block_data.eth_block, &block_data.geth_traces)
+            .unwrap();
+        let block = block_convert(&builder.block, &builder.code_db);
+        assert_eq!(run_test_circuit(block), Ok(()));
+    }
+
+    fn callee(code: Bytecode) -> Account {
+        let code = code.to_vec();
+        let is_empty = code.is_empty();
+        Account {
+            address: Address::repeat_byte(0xff),
+            code: code.into(),
+            nonce: if is_empty { 0 } else { 1 }.into(),
+            balance: if is_empty { 0 } else { 0xdeadbeefu64 }.into(),
+            ..Default::default()
+        }
+    }
+
+    // internal call error test
+    #[test]
+    fn test_stack_error_internal() {
+        let bytecode = bytecode! {
+            PUSH1(Word::from(11))
+            POP
+            POP // underflow occur in this POP operation
+            STOP
+        };
+        let callee = callee(bytecode);
+        stack_error_internal_call(caller(), callee);
+    }
 }
