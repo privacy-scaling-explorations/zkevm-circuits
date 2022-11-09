@@ -13,6 +13,14 @@ pub struct TestCircuit<F> {
     block: Block<F>,
 }
 
+impl<F: Default> TestCircuit<F> {
+    pub fn new() -> TestCircuit<F> {
+        let mut test_circuit = TestCircuit::default();
+        test_circuit.block = Block::new();
+        test_circuit
+    }
+}
+
 impl<F: Field> Circuit<F> for TestCircuit<F> {
     type Config = EvmCircuit<F>;
     type FloorPlanner = SimpleFloorPlanner;
@@ -83,7 +91,7 @@ mod evm_circ_benches {
             .parse()
             .expect("Cannot parse DEGREE env var as u32");
 
-        let circuit = TestCircuit::<Fr>::default();
+        let circuit = TestCircuit::<Fr>::new();
         let mut rng = XorShiftRng::from_seed([
             0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37, 0x32, 0x54, 0x06,
             0xbc, 0xe5,
