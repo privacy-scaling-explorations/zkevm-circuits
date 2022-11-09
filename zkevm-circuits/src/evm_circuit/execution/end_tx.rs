@@ -148,7 +148,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             cb.next.execution_state_selector([ExecutionState::BeginTx]),
             |cb| {
                 cb.call_context_lookup(
-                    false.expr(),
+                    true.expr(),
                     Some(cb.next.state.rw_counter.expr()),
                     CallContextFieldTag::TxId,
                     tx_id.expr() + 1.expr(),

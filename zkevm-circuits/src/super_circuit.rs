@@ -306,6 +306,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: u
             &mut layouter,
             &self.keccak_inputs,
             self.block.randomness,
+            None,
         )?;
         // --- Copy Circuit ---
         config
@@ -425,6 +426,12 @@ impl<const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: usize>
         instance
     }
 }
+
+// TODO: Add tests
+// - multiple txs == MAX_TXS
+// - multiple txs < MAX_TXS
+// - max_rws padding
+// - evm_rows padding
 
 #[cfg(test)]
 mod super_circuit_tests {
