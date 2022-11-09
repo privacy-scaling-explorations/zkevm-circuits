@@ -4,6 +4,7 @@ use eth_types::Field;
 use gadgets::{
     comparator::{ComparatorChip, ComparatorConfig, ComparatorInstruction},
     less_than::{LtChip, LtConfig, LtInstruction},
+    util::sum,
 };
 use halo2_proofs::{
     circuit::{Layouter, Region, Value},
@@ -223,10 +224,11 @@ impl<F: Field> Config<F> {
         is_tx_tag!(is_data_prefix, DataPrefix);
         is_tx_tag!(is_data, Data);
         is_tx_tag!(is_chainid, ChainId);
-        is_tx_tag!(_is_zero, Zero);
+        is_tx_tag!(is_zero, Zero);
         is_tx_tag!(is_sig_v, SigV);
         is_tx_tag!(is_sig_r, SigR);
         is_tx_tag!(is_sig_s, SigS);
+        is_tx_tag!(is_rlp_summary, Rlp);
 
         meta.create_gate("Common constraints", |meta| {
             let mut cb = BaseConstraintBuilder::default();
@@ -1537,6 +1539,27 @@ impl<F: Field> Config<F> {
             cb.require_boolean(
                 "data_type is boolean",
                 meta.query_advice(rlp_table.data_type, Rotation::cur()),
+            );
+            cb.require_equal(
+                "only one tag is turned on",
+                sum::expr(&[
+                    is_prefix(meta),
+                    is_nonce(meta),
+                    is_gas_price(meta),
+                    is_gas(meta),
+                    is_to_prefix(meta),
+                    is_to(meta),
+                    is_value(meta),
+                    is_data_prefix(meta),
+                    is_data(meta),
+                    is_chainid(meta),
+                    is_zero(meta),
+                    is_sig_v(meta),
+                    is_sig_r(meta),
+                    is_sig_s(meta),
+                    is_rlp_summary(meta),
+                ]),
+                1.expr(),
             );
 
             cb.gate(meta.query_selector(q_usable))
