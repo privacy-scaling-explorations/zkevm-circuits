@@ -83,8 +83,6 @@ pub struct Config<F> {
     value_lt_256: LtConfig<F, 2>,
     /// Comparison chip to check: 0 <= length_acc.
     length_acc_cmp_0: ComparatorConfig<F, 1>,
-    /// Lt chip to check: rindex > 1.
-    rindex_gt_1: LtConfig<F, 1>,
 }
 
 impl<F: Field> Config<F> {
@@ -193,12 +191,6 @@ impl<F: Field> Config<F> {
             cmp_lt_enabled,
             |_meta| 0.expr(),
             |meta| meta.query_advice(length_acc, Rotation::cur()),
-        );
-        let rindex_gt_1 = LtChip::configure(
-            meta,
-            cmp_lt_enabled,
-            |_meta| 1.expr(),
-            |meta| meta.query_advice(rindex, Rotation::cur()),
         );
 
         // Helper macro to declare booleans to check the current row tag.
@@ -1668,7 +1660,6 @@ impl<F: Field> Config<F> {
             value_lt_248,
             value_lt_256,
             length_acc_cmp_0,
-            rindex_gt_1,
         }
     }
 
@@ -1696,8 +1687,6 @@ impl<F: Field> Config<F> {
         let value_lt_256_chip = LtChip::construct(self.value_lt_256);
 
         let length_acc_cmp_0_chip = ComparatorChip::construct(self.length_acc_cmp_0.clone());
-
-        let rindex_gt_1_chip = LtChip::construct(self.rindex_gt_1);
 
         layouter.assign_region(
             || "assign RLP-encoded data",
@@ -1881,7 +1870,6 @@ impl<F: Field> Config<F> {
                             F::zero(),
                             F::from(row.length_acc as u64),
                         )?;
-                        rindex_gt_1_chip.assign(&mut region, offset, F::one(), F::from(rindex))?;
                     }
 
                     // tx sign (unsigned tx)
@@ -2058,7 +2046,6 @@ impl<F: Field> Config<F> {
                             F::zero(),
                             F::from(row.length_acc as u64),
                         )?;
-                        rindex_gt_1_chip.assign(&mut region, offset, F::one(), F::from(rindex))?;
                     }
                 }
 
