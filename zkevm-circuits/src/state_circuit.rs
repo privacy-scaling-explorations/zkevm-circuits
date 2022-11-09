@@ -18,7 +18,10 @@ use eth_types::{Address, Field};
 use gadgets::binary_number::{BinaryNumberChip, BinaryNumberConfig};
 use halo2_proofs::{
     circuit::{Layouter, Region, SimpleFloorPlanner, Value},
-    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
+    plonk::{
+        Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, SecondPhase,
+        VirtualCells,
+    },
     poly::Rotation,
 };
 use lexicographic_ordering::Config as LexicographicOrderingConfig;
@@ -76,8 +79,8 @@ impl<F: Field> StateCircuitConfig<F> {
             challenges.evm_word_powers_of_randomness(),
         );
 
-        let initial_value = meta.advice_column();
-        let state_root = meta.advice_column();
+        let initial_value = meta.advice_column_in(SecondPhase);
+        let state_root = meta.advice_column_in(SecondPhase);
 
         let sort_keys = SortKeysConfig {
             tag,

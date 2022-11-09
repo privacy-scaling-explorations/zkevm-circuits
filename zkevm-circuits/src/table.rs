@@ -385,25 +385,24 @@ impl RwTable {
             aux2: meta.advice_column_in(SecondPhase),
         }
     }
-    /// Assign a `RwRow` at offset into the `RwTable`
-    pub fn assign<F: Field>(
+    fn assign<F: Field>(
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
-        row: &Value<RwRow<F>>,
+        row: &RwRow<Value<F>>,
     ) -> Result<(), Error> {
         for (column, value) in [
-            (self.rw_counter, row.map(|row| row.rw_counter)),
-            (self.is_write, row.map(|row| row.is_write)),
-            (self.tag, row.map(|row| row.tag)),
-            (self.id, row.map(|row| row.id)),
-            (self.address, row.map(|row| row.address)),
-            (self.field_tag, row.map(|row| row.field_tag)),
-            (self.storage_key, row.map(|row| row.storage_key)),
-            (self.value, row.map(|row| row.value)),
-            (self.value_prev, row.map(|row| row.value_prev)),
-            (self.aux1, row.map(|row| row.aux1)),
-            (self.aux2, row.map(|row| row.aux2)),
+            (self.rw_counter, row.rw_counter),
+            (self.is_write, row.is_write),
+            (self.tag, row.tag),
+            (self.id, row.id),
+            (self.address, row.address),
+            (self.field_tag, row.field_tag),
+            (self.storage_key, row.storage_key),
+            (self.value, row.value),
+            (self.value_prev, row.value_prev),
+            (self.aux1, row.aux1),
+            (self.aux2, row.aux2),
         ] {
             region.assign_advice(|| "assign rw row on rw table", column, offset, || value)?;
         }
@@ -434,8 +433,7 @@ impl RwTable {
     ) -> Result<(), Error> {
         let (rows, _) = RwMap::table_assignments_prepad(rws, n_rows);
         for (offset, row) in rows.iter().enumerate() {
-            let row = randomness.map(|randomness| row.table_assignment(randomness));
-            self.assign(region, offset, &row)?;
+            self.assign(region, offset, &row.table_assignment(randomness))?;
         }
         Ok(())
     }
