@@ -17,7 +17,7 @@ use crate::{
         witness::{RlpTxTag, RlpWitnessGen, N_TX_TAGS},
     },
     table::RlpTable,
-    util::{Challenges, Expr},
+    util::Expr,
 };
 
 #[derive(Clone, Debug)]
@@ -53,8 +53,6 @@ pub struct Config<F> {
     length_acc: Column<Advice>,
     /// Denotes an accumulator for the value field over all rows (bytes).
     value_rlc: Column<Advice>,
-    /// Denotes the keccak-256 hash of the RLP-encoded data.
-    hash: Column<Advice>,
     /// Comparison chip to check: 1 <= tag_index.
     tag_index_cmp_1: ComparatorConfig<F, 1>,
     /// Comparison chip to check: tag_index <= tag_length.
@@ -103,7 +101,6 @@ impl<F: Field> Config<F> {
         let tag_length = meta.advice_column();
         let length_acc = meta.advice_column();
         let value_rlc = meta.advice_column();
-        let hash = meta.advice_column();
 
         // Enable the comparator and lt chips if the current row is enabled.
         let cmp_lt_enabled = |meta: &mut VirtualCells<F>| meta.query_selector(q_usable);
@@ -227,6 +224,7 @@ impl<F: Field> Config<F> {
         is_tx_tag!(is_value, Value);
         is_tx_tag!(is_data_prefix, DataPrefix);
         is_tx_tag!(is_data, Data);
+        is_tx_tag!(is_chainid, ChainId);
 
         meta.create_gate("DataType::Transaction", |meta| {
             let mut cb = BaseConstraintBuilder::default();
@@ -851,9 +849,14 @@ impl<F: Field> Config<F> {
                 is_data_prefix(meta) * tindex_eq.clone() * length_acc_eq_0,
                 |cb| {
                     cb.require_equal(
-                        "RlpTxTag::DataPrefix: is_last == 1",
-                        meta.query_advice(is_last, Rotation::cur()),
-                        1.expr(),
+                        "tag::next == RlpTxTag::ChainId",
+                        meta.query_advice(rlp_table.tag, Rotation::next()),
+                        RlpTxTag::ChainId.expr(),
+                    );
+                    cb.require_equal(
+                        "tag_index::next == tag_length::next",
+                        meta.query_advice(tag_index, Rotation::next()),
+                        meta.query_advice(tag_length, Rotation::next()),
                     );
                 },
             );
@@ -900,7 +903,7 @@ impl<F: Field> Config<F> {
 
             // if tag_index < tag_length && tag_length > 1
             cb.condition(
-                is_data_prefix(meta) * tindex_lt_tlength * tlength_lt,
+                is_data_prefix(meta) * tindex_lt_tlength.clone() * tlength_lt.clone(),
                 |cb| {
                     cb.require_equal(
                         "length_acc == (length_acc::prev * 256) + value",
@@ -913,7 +916,7 @@ impl<F: Field> Config<F> {
 
             // if tag_index == tag_length && tag_length == 1
             cb.condition(
-                is_data_prefix(meta) * tindex_eq_tlength * tlength_eq,
+                is_data_prefix(meta) * tindex_eq_tlength.clone() * tlength_eq.clone(),
                 |cb| {
                     cb.require_equal("127 < value", value_gt_127.is_lt(meta, None), 1.expr());
                     cb.require_equal("value < 184", value_lt_184.is_lt(meta, None), 1.expr());
@@ -937,7 +940,7 @@ impl<F: Field> Config<F> {
             });
 
             // if tag_index > 1
-            cb.condition(is_data(meta) * tindex_lt, |cb| {
+            cb.condition(is_data(meta) * tindex_lt.clone(), |cb| {
                 cb.require_equal(
                     "tag::next == RlpTxTag::Data",
                     meta.query_advice(rlp_table.tag, Rotation::next()),
@@ -956,10 +959,191 @@ impl<F: Field> Config<F> {
             });
 
             // if tag_index == 1
-            cb.condition(is_data(meta) * tindex_eq, |cb| {
+            cb.condition(is_data(meta) * tindex_eq.clone(), |cb| {
                 cb.require_equal(
-                    "RlpTxTag::Data: is_last == 1",
-                    meta.query_advice(is_last, Rotation::cur()),
+                    "tag::next == RlpTxTag::ChainId",
+                    meta.query_advice(rlp_table.tag, Rotation::next()),
+                    RlpTxTag::ChainId.expr(),
+                );
+                cb.require_equal(
+                    "tag_index::next == tag_length::next",
+                    meta.query_advice(tag_index, Rotation::next()),
+                    meta.query_advice(tag_length, Rotation::next()),
+                );
+            });
+
+            //////////////////////////////////////////////////////////////////////////////////////
+            ////////////////////////////////// RlpTxTag::ChainID /////////////////////////////////
+            //////////////////////////////////////////////////////////////////////////////////////
+            cb.condition(is_chainid(meta), |cb| {
+                // tag_index < 10
+                cb.require_equal(
+                    "tag_index < 10",
+                    tag_index_lt_10.is_lt(meta, None),
+                    1.expr(),
+                );
+
+                // tag_index >= 1
+                cb.require_zero(
+                    "1 <= tag_index",
+                    not::expr(or::expr([tindex_lt.clone(), tindex_eq.clone()])),
+                );
+            });
+
+            // if tag_index == tag_length && tag_length == 1
+            cb.condition(
+                is_chainid(meta) * tindex_eq_tlength.clone() * tlength_eq,
+                |cb| {
+                    cb.require_equal("value < 129", value_lt_129.is_lt(meta, None), 1.expr());
+                    cb.require_equal(
+                        "value == value_acc",
+                        meta.query_advice(value, Rotation::cur()),
+                        meta.query_advice(rlp_table.value_acc, Rotation::cur()),
+                    );
+                },
+            );
+
+            // if tag_index == tag_length && tag_length > 1
+            cb.condition(
+                is_chainid(meta) * tindex_eq_tlength * tlength_lt,
+                |cb| {
+                    cb.require_equal("127 < value", value_gt_127.is_lt(meta, None), 1.expr());
+                    cb.require_equal("value < 184", value_lt_184.is_lt(meta, None), 1.expr());
+                    cb.require_equal(
+                        "length_acc == value - 0x80",
+                        meta.query_advice(length_acc, Rotation::cur()),
+                        meta.query_advice(value, Rotation::cur()) - 128.expr(),
+                    );
+                    cb.require_equal(
+                        "tag_index::next == length_acc",
+                        meta.query_advice(tag_index, Rotation::next()),
+                        meta.query_advice(length_acc, Rotation::cur()),
+                    );
+                    cb.require_equal(
+                        "value_acc::next == value::next",
+                        meta.query_advice(rlp_table.value_acc, Rotation::next()),
+                        meta.query_advice(value, Rotation::next()),
+                    );
+                },
+            );
+
+            // if tag_index < tag_length && tag_index > 1
+            cb.condition(
+                is_chainid(meta) * tindex_lt_tlength * tindex_lt.clone(),
+                |cb| {
+                    cb.require_equal(
+                        "[nonce] value_acc::next == value_acc::cur * 256 + value::next",
+                        meta.query_advice(rlp_table.value_acc, Rotation::next()),
+                        meta.query_advice(rlp_table.value_acc, Rotation::cur()) * 256.expr() +
+                            meta.query_advice(value, Rotation::next()),
+                    );
+                },
+            );
+
+            // if tag_index > 1
+            cb.condition(is_chainid(meta) * tindex_lt.clone(), |cb| {
+                cb.require_equal(
+                    "tag::next == RlpTxTag::ChainId",
+                    meta.query_advice(rlp_table.tag, Rotation::next()),
+                    RlpTxTag::ChainId.expr(),
+                );
+                cb.require_equal(
+                    "tag_index::next == tag_index - 1",
+                    meta.query_advice(tag_index, Rotation::next()),
+                    meta.query_advice(tag_index, Rotation::cur()) - 1.expr(),
+                );
+                cb.require_equal(
+                    "tag_length::next == tag_length",
+                    meta.query_advice(tag_length, Rotation::next()),
+                    meta.query_advice(tag_length, Rotation::cur()),
+                );
+            });
+
+            // if tag_index == 1
+            cb.condition(is_chainid(meta) * tindex_eq.clone(), |cb| {
+                // checks for RlpTxTag::Zero on the next row.
+                cb.require_equal(
+                    "tag::next == RlpTxTag::Zero",
+                    meta.query_advice(rlp_table.tag, Rotation::next()),
+                    RlpTxTag::Zero.expr(),
+                );
+                cb.require_equal(
+                    "tag_index::next == tag_length::next",
+                    meta.query_advice(tag_index, Rotation::next()),
+                    meta.query_advice(tag_length, Rotation::next()),
+                );
+                cb.require_equal(
+                    "next tag is Zero => tag_index::next == 1",
+                    meta.query_advice(tag_index, Rotation::next()),
+                    1.expr(),
+                );
+                cb.require_equal(
+                    "next tag is Zero => value::next == 128",
+                    meta.query_advice(value, Rotation::next()),
+                    128.expr(),
+                );
+                cb.require_equal(
+                    "next tag is Zero => value_acc::next == 128",
+                    meta.query_advice(rlp_table.value_acc, Rotation::next()),
+                    128.expr(),
+                );
+
+                // checks for RlpTxTag::Zero on the next-to-next row.
+                cb.require_equal(
+                    "tag::Rotation(2) == RlpTxTag::Zero",
+                    meta.query_advice(rlp_table.tag, Rotation(2)),
+                    RlpTxTag::Zero.expr(),
+                );
+                cb.require_equal(
+                    "tag_index::Rotation(2) == tag_length::Rotation(2)",
+                    meta.query_advice(tag_index, Rotation(2)),
+                    meta.query_advice(tag_length, Rotation(2)),
+                );
+                cb.require_equal(
+                    "next-to-next tag is Zero => tag_index::Rotation(2) == 1",
+                    meta.query_advice(tag_index, Rotation(2)),
+                    1.expr(),
+                );
+                cb.require_equal(
+                    "next-to-next tag is Zero => value::Rotation(2) == 128",
+                    meta.query_advice(value, Rotation(2)),
+                    128.expr(),
+                );
+                cb.require_equal(
+                    "next-to-next tag is Zero => value_acc::Rotation(2) == 128",
+                    meta.query_advice(rlp_table.value_acc, Rotation(2)),
+                    128.expr(),
+                );
+
+                // checks for RlpTxTag::Rlp on the next-to-next-to-next row.
+                cb.require_equal(
+                    "tag::Rotation(3) == RlpTxTag::Rlp",
+                    meta.query_advice(rlp_table.tag, Rotation(3)),
+                    RlpTxTag::Rlp.expr(),
+                );
+                cb.require_equal(
+                    "tag_index::Rotation(3) == tag_length::Rotation(3)",
+                    meta.query_advice(tag_index, Rotation(3)),
+                    meta.query_advice(tag_length, Rotation(3)),
+                );
+                cb.require_equal(
+                    "tag_index::Rotation(3) == 1",
+                    meta.query_advice(tag_index, Rotation(3)),
+                    1.expr(),
+                );
+                cb.require_equal(
+                    "last tag is Rlp => value_acc::Rotation(3) == value_rlc::Rotation(3)",
+                    meta.query_advice(rlp_table.value_acc, Rotation(3)),
+                    meta.query_advice(value_rlc, Rotation(3)),
+                );
+                cb.require_equal(
+                    "last tag is Rlp => value_rlc::Rotation(3) == value_rlc::Rotation(2)",
+                    meta.query_advice(value_rlc, Rotation(3)),
+                    meta.query_advice(value_rlc, Rotation(2)),
+                );
+                cb.require_equal(
+                    "last tag is Rlp => is_last::Rotation(3) == 1",
+                    meta.query_advice(is_last, Rotation(3)),
                     1.expr(),
                 );
             });
@@ -978,6 +1162,10 @@ impl<F: Field> Config<F> {
             cb.require_boolean(
                 "is_last is boolean",
                 meta.query_advice(is_last, Rotation::cur()),
+            );
+            cb.require_boolean(
+                "data_type is boolean",
+                meta.query_advice(rlp_table.data_type, Rotation::cur()),
             );
 
             cb.gate(meta.query_selector(q_usable))
@@ -1004,8 +1192,8 @@ impl<F: Field> Config<F> {
             ]))
         });
 
-        // Constraints for every row except the first row.
-        meta.create_gate("is_first == 0", |meta| {
+        // Constraints for every row except the first and last rows.
+        meta.create_gate("is_first == 0 and is_last == 0", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
             cb.require_equal(
@@ -1017,11 +1205,6 @@ impl<F: Field> Config<F> {
                 "rindex == rindex_prev - 1",
                 meta.query_advice(rindex, Rotation::cur()),
                 meta.query_advice(rindex, Rotation::prev()) - 1.expr(),
-            );
-            cb.require_equal(
-                "hash == hash_prev",
-                meta.query_advice(hash, Rotation::cur()),
-                meta.query_advice(hash, Rotation::prev()),
             );
             cb.require_equal(
                 "tx_id == tx_id::prev",
@@ -1038,6 +1221,28 @@ impl<F: Field> Config<F> {
             cb.gate(and::expr(vec![
                 meta.query_selector(q_usable),
                 not::expr(meta.query_advice(is_first, Rotation::cur())),
+                not::expr(meta.query_advice(is_last, Rotation::cur())),
+            ]))
+        });
+
+        // Constraints for the last row, i.e. RLP summary row.
+        meta.create_gate("is_last == 1", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
+
+            cb.require_equal(
+                "is_last == 1 then value_acc == value_rlc",
+                meta.query_advice(rlp_table.value_acc, Rotation::cur()),
+                meta.query_advice(value_rlc, Rotation::cur()),
+            );
+            cb.require_equal(
+                "is_last == 1 then tag == RlpTxTag::Rlp",
+                meta.query_advice(rlp_table.tag, Rotation::cur()),
+                RlpTxTag::Rlp.expr(),
+            );
+
+            cb.gate(and::expr(vec![
+                meta.query_selector(q_usable),
+                meta.query_advice(is_last, Rotation::cur()),
             ]))
         });
 
@@ -1055,7 +1260,6 @@ impl<F: Field> Config<F> {
             tag_length,
             length_acc,
             value_rlc,
-            hash,
             tag_index_cmp_1,
             tag_index_length_cmp,
             tag_length_cmp_1,
@@ -1079,7 +1283,6 @@ impl<F: Field> Config<F> {
         &self,
         mut layouter: impl Layouter<F>,
         witnesses: &[RLP],
-        challenges: &Challenges<Value<F>>,
     ) -> Result<(), Error> {
         let tag_index_cmp_1_chip = ComparatorChip::construct(self.tag_index_cmp_1.clone());
         let tag_index_length_cmp_chip =
@@ -1112,14 +1315,22 @@ impl<F: Field> Config<F> {
 
                 for witness in witnesses.iter() {
                     let mut value_rlc = F::zero();
-                    let rows = witness.gen_witness(self.r, challenges);
+                    let rows = witness.gen_witness(self.r);
                     let n_rows = rows.len();
 
-                    for (idx, row) in rows.iter().enumerate() {
+                    for (idx, row) in rows
+                        .iter()
+                        .chain(std::iter::once(&witness.rlp_row(self.r)))
+                        .enumerate()
+                    {
                         offset += 1;
 
                         // update value accumulator over the entire RLP encoding.
-                        value_rlc = value_rlc * self.r + F::from(row.value as u64);
+                        value_rlc = if row.tag == RlpTxTag::Rlp as u8 {
+                            row.value_acc
+                        } else {
+                            value_rlc * self.r + F::from(row.value as u64)
+                        };
 
                         // q_usable
                         self.q_usable.enable(&mut region, offset)?;
@@ -1133,11 +1344,7 @@ impl<F: Field> Config<F> {
                         // advices
                         let rindex = (n_rows + 1 - row.index) as u64;
                         for (name, column, value) in [
-                            (
-                                "is_last",
-                                self.is_last,
-                                F::from((row.index == n_rows) as u64),
-                            ),
+                            ("is_last", self.is_last, F::from(row.index == n_rows + 1)),
                             (
                                 "rlp_table::tx_id",
                                 self.rlp_table.tx_id,
@@ -1177,12 +1384,6 @@ impl<F: Field> Config<F> {
                                 || Value::known(value),
                             )?;
                         }
-                        region.assign_advice(
-                            || format!("assign hash: {}", offset),
-                            self.hash,
-                            offset,
-                            || row.hash,
-                        )?;
 
                         for (name, column, value) in self.tx_tag_invs(Some(row.tag)) {
                             region.assign_advice(
@@ -1287,9 +1488,10 @@ impl<F: Field> Config<F> {
                     }
                 }
 
-                // end with a dummy row.
-                offset += 1;
-                self.assign_padding_rows(&mut region, offset)?;
+                // end with dummy rows.
+                for i in 1..=3 {
+                    self.assign_padding_rows(&mut region, offset + i)?;
+                }
 
                 Ok(())
             },
@@ -1311,8 +1513,10 @@ impl<F: Field> Config<F> {
             self.rindex,
             self.value,
             self.value_rlc,
-            self.hash,
-        ] {
+        ]
+        .into_iter()
+        .chain(self.tx_tags.into_iter())
+        {
             region.assign_advice(
                 || format!("padding row, offset: {}", offset),
                 column,
@@ -1347,6 +1551,10 @@ impl<F: Field> Config<F> {
                     ("value", self.tx_tags[6], F::one()),
                     ("data_prefix", self.tx_tags[7], F::one()),
                     ("data", self.tx_tags[8], F::one()),
+                    ("chain_id", self.tx_tags[9], F::one()),
+                    ("zero", self.tx_tags[10], F::one()),
+                    ("zero", self.tx_tags[11], F::one()),
+                    ("rlp", self.tx_tags[12], F::one()),
                 ]
             },
             |tag| {
@@ -1360,6 +1568,10 @@ impl<F: Field> Config<F> {
                     ("value", self.tx_tags[6], tx_tag_inv!(tag, Value)),
                     ("data_prefix", self.tx_tags[7], tx_tag_inv!(tag, DataPrefix)),
                     ("data", self.tx_tags[8], tx_tag_inv!(tag, Data)),
+                    ("chain_id", self.tx_tags[9], tx_tag_inv!(tag, ChainId)),
+                    ("zero", self.tx_tags[10], tx_tag_inv!(tag, Zero)),
+                    ("zero", self.tx_tags[11], tx_tag_inv!(tag, Zero)),
+                    ("rlp", self.tx_tags[12], tx_tag_inv!(tag, Rlp)),
                 ]
             },
         )
@@ -1378,7 +1590,7 @@ mod tests {
         plonk::{Circuit, ConstraintSystem, Error},
     };
 
-    use crate::{evm_circuit::witness::Transaction, util::Challenges};
+    use crate::evm_circuit::witness::Transaction;
 
     use super::Config;
 
@@ -1395,7 +1607,7 @@ mod tests {
     }
 
     impl<F: Field, RLP> MyCircuit<F, RLP> {
-        fn r() -> F {
+        fn get_randomness() -> F {
             F::from(194881236412749812)
         }
         fn max_txs() -> usize {
@@ -1404,7 +1616,7 @@ mod tests {
     }
 
     impl<F: Field> Circuit<F> for MyCircuit<F, Transaction> {
-        type Config = (MyConfig<F>, Challenges);
+        type Config = MyConfig<F>;
         type FloorPlanner = SimpleFloorPlanner;
 
         fn without_witnesses(&self) -> Self {
@@ -1412,21 +1624,17 @@ mod tests {
         }
 
         fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-            let rlp_config = Config::configure(meta, Self::r());
+            let rlp_config = Config::configure(meta, Self::get_randomness());
 
-            (MyConfig { rlp_config }, Challenges::construct(meta))
+            MyConfig { rlp_config }
         }
 
         fn synthesize(
             &self,
-            (config, challenges): Self::Config,
-            mut layouter: impl Layouter<F>,
+            config: Self::Config,
+            layouter: impl Layouter<F>,
         ) -> Result<(), Error> {
-            // assign to the RLP circuit.
-            let challenges = challenges.values(&mut layouter);
-            config
-                .rlp_config
-                .assign(layouter, self.inputs.as_slice(), &challenges)
+            config.rlp_config.assign(layouter, self.inputs.as_slice())
         }
     }
 

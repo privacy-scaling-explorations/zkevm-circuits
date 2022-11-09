@@ -1,5 +1,5 @@
 use eth_types::{Address, U256};
-use halo2_proofs::{arithmetic::FieldExt, circuit::Value};
+use halo2_proofs::arithmetic::FieldExt;
 use num::Zero;
 
 use crate::witness::RlpTxTag;
@@ -9,7 +9,6 @@ use super::witness_gen::{RlpDataType, RlpWitnessRow};
 pub fn handle_prefix<F: FieldExt>(
     id: usize,
     rlp_data: &[u8],
-    hash: Value<F>,
     rows: &mut Vec<RlpWitnessRow<F>>,
     data_type: RlpDataType,
     tag: u8,
@@ -31,7 +30,6 @@ pub fn handle_prefix<F: FieldExt>(
             aux_tag_index: [0; 2],
             aux_tag_length: [0; 2],
             length_acc: 0,
-            hash,
         });
         idx += 1;
         let mut length_acc = 0;
@@ -49,7 +47,6 @@ pub fn handle_prefix<F: FieldExt>(
                 aux_tag_index: [0; 2],
                 aux_tag_length: [0; 2],
                 length_acc,
-                hash,
             });
             idx += 1;
         }
@@ -74,7 +71,6 @@ pub fn handle_prefix<F: FieldExt>(
             aux_tag_index: [0; 2],
             aux_tag_length: [0; 2],
             length_acc: (rlp_data[idx] - 192) as u64,
-            hash,
         });
         idx += 1;
     }
@@ -86,7 +82,6 @@ pub fn handle_u256<F: FieldExt>(
     randomness: F,
     id: usize,
     rlp_data: &[u8],
-    hash: Value<F>,
     rows: &mut Vec<RlpWitnessRow<F>>,
     data_type: RlpDataType,
     tag: u8,
@@ -119,7 +114,6 @@ pub fn handle_u256<F: FieldExt>(
             aux_tag_index: [0; 2],
             aux_tag_length: [0; 2],
             length_acc: 0,
-            hash,
         });
         idx += 1;
     } else if value_bytes.len() == 1 && value_bytes[0] < 128 {
@@ -140,7 +134,6 @@ pub fn handle_u256<F: FieldExt>(
             aux_tag_index: [0; 2],
             aux_tag_length: [0; 2],
             length_acc: 0,
-            hash,
         });
         idx += 1;
     } else {
@@ -162,7 +155,6 @@ pub fn handle_u256<F: FieldExt>(
             aux_tag_length: [0; 2],
             tag_index: tag_length,
             length_acc: value_bytes.len() as u64,
-            hash,
         });
         idx += 1;
 
@@ -193,7 +185,6 @@ pub fn handle_u256<F: FieldExt>(
                 aux_tag_index: [0; 2],
                 aux_tag_length: [0; 2],
                 length_acc: 0,
-                hash,
             });
             idx += 1;
         }
@@ -206,7 +197,6 @@ pub fn handle_u256<F: FieldExt>(
 pub fn handle_address<F: FieldExt>(
     id: usize,
     rlp_data: &[u8],
-    hash: Value<F>,
     rows: &mut Vec<RlpWitnessRow<F>>,
     data_type: RlpDataType,
     prefix_tag: u8,
@@ -233,7 +223,6 @@ pub fn handle_address<F: FieldExt>(
         aux_tag_index: [0; 2],
         aux_tag_length: [0; 2],
         length_acc: 20,
-        hash,
     });
     idx += 1;
 
@@ -258,7 +247,6 @@ pub fn handle_address<F: FieldExt>(
             aux_tag_index: [0; 2],
             aux_tag_length: [0; 2],
             length_acc: 0,
-            hash,
         });
         idx += 1;
     }
@@ -271,7 +259,6 @@ pub fn handle_bytes<F: FieldExt>(
     randomness: F,
     id: usize,
     rlp_data: &[u8],
-    hash: Value<F>,
     rows: &mut Vec<RlpWitnessRow<F>>,
     data_type: RlpDataType,
     prefix_tag: u8,
@@ -299,7 +286,6 @@ pub fn handle_bytes<F: FieldExt>(
             aux_tag_index: [0; 2],
             aux_tag_length: [0; 2],
             length_acc: 0,
-            hash,
         });
         idx += 1;
         return idx;
@@ -323,7 +309,6 @@ pub fn handle_bytes<F: FieldExt>(
             aux_tag_index: [0; 2],
             aux_tag_length: [0; 2],
             length_acc: length as u64,
-            hash,
         });
         idx += 1;
 
@@ -348,7 +333,6 @@ pub fn handle_bytes<F: FieldExt>(
                 aux_tag_index: [0; 2],
                 aux_tag_length: [0; 2],
                 length_acc: 0,
-                hash,
             });
             idx += 1;
         }
@@ -375,7 +359,6 @@ pub fn handle_bytes<F: FieldExt>(
         aux_tag_index: [0; 2],
         aux_tag_length: [0; 2],
         length_acc: 0,
-        hash,
     });
     idx += 1;
 
@@ -406,7 +389,6 @@ pub fn handle_bytes<F: FieldExt>(
             aux_tag_index: [0; 2],
             aux_tag_length: [0; 2],
             length_acc,
-            hash,
         });
         idx += 1;
     }
@@ -433,7 +415,6 @@ pub fn handle_bytes<F: FieldExt>(
             aux_tag_index: [0; 2],
             aux_tag_length: [0; 2],
             length_acc: 0,
-            hash,
         });
         idx += 1;
     }

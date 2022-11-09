@@ -31,6 +31,8 @@ pub struct Transaction {
     pub call_data_length: usize,
     /// The gas cost for transaction call data
     pub call_data_gas_cost: u64,
+    /// Chain ID as per EIP-155.
+    pub chain_id: u64,
     /// The calls made in the transaction
     pub calls: Vec<Call>,
     /// The steps executioned in the transaction
@@ -133,17 +135,24 @@ impl Transaction {
 
 impl Encodable for Transaction {
     fn rlp_append(&self, s: &mut rlp::RlpStream) {
-        s.begin_list(6);
+        s.begin_list(9);
         s.append(&Word::from(self.nonce));
         s.append(&self.gas_price);
         s.append(&Word::from(self.gas));
         s.append(&self.callee_address);
         s.append(&self.value);
         s.append(&self.call_data);
+        s.append(&Word::from(self.chain_id));
+        s.append(&Word::zero());
+        s.append(&Word::zero());
     }
 }
 
-pub(super) fn tx_convert(tx: &circuit_input_builder::Transaction, id: usize) -> Transaction {
+pub(super) fn tx_convert(
+    tx: &circuit_input_builder::Transaction,
+    id: usize,
+    chain_id: u64,
+) -> Transaction {
     Transaction {
         id,
         nonce: tx.nonce,
@@ -159,6 +168,7 @@ pub(super) fn tx_convert(tx: &circuit_input_builder::Transaction, id: usize) -> 
             .input
             .iter()
             .fold(0, |acc, byte| acc + if *byte == 0 { 4 } else { 16 }),
+        chain_id,
         calls: tx
             .calls()
             .iter()

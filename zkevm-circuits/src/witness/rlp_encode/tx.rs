@@ -1,6 +1,6 @@
-use halo2_proofs::{arithmetic::FieldExt, circuit::Value, plonk::Expression};
+use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
 
-use crate::{evm_circuit::witness::Transaction, impl_expr, util::Challenges};
+use crate::{evm_circuit::witness::Transaction, impl_expr};
 
 use super::{
     common::{handle_address, handle_bytes, handle_prefix, handle_u256},
@@ -30,28 +30,29 @@ pub enum RlpTxTag {
     DataPrefix,
     /// Denotes the bytes for the tx’s data.
     Data,
+    /// Denotes the chain ID, as per EIP-155.
+    ChainId,
+    /// Denotes a placeholder zero for unsigned transactions, as per EIP-155.
+    Zero,
+    /// The RLP tag is reserved to hold the RLP-encoding's random linear
+    /// combination in its accumulator value. Its used to support a lookup
+    /// for rlc(rlp(tx)).
+    Rlp,
 }
 
 impl_expr!(RlpTxTag);
 
-/// Denotes the number of possible tag values for a tx row.
-pub const N_TX_TAGS: usize = 9;
+/// Denotes the number of tag values in a transaction's RLP trace.
+pub const N_TX_TAGS: usize = 13;
 
 impl<F: FieldExt> RlpWitnessGen<F> for Transaction {
-    fn gen_witness(
-        &self,
-        randomness: F,
-        challenges: &Challenges<Value<F>>,
-    ) -> Vec<RlpWitnessRow<F>> {
+    fn gen_witness(&self, randomness: F) -> Vec<RlpWitnessRow<F>> {
         let rlp_data = rlp::encode(self);
-        let hash = self.hash(challenges);
-
         let mut rows = Vec::with_capacity(rlp_data.len());
 
         let idx = handle_prefix(
             self.id,
             rlp_data.as_ref(),
-            hash,
             &mut rows,
             RlpDataType::TxSign,
             RlpTxTag::Prefix as u8,
@@ -61,7 +62,6 @@ impl<F: FieldExt> RlpWitnessGen<F> for Transaction {
             randomness,
             self.id,
             rlp_data.as_ref(),
-            hash,
             &mut rows,
             RlpDataType::TxSign,
             RlpTxTag::Nonce as u8,
@@ -72,7 +72,6 @@ impl<F: FieldExt> RlpWitnessGen<F> for Transaction {
             randomness,
             self.id,
             rlp_data.as_ref(),
-            hash,
             &mut rows,
             RlpDataType::TxSign,
             RlpTxTag::GasPrice as u8,
@@ -83,7 +82,6 @@ impl<F: FieldExt> RlpWitnessGen<F> for Transaction {
             randomness,
             self.id,
             rlp_data.as_ref(),
-            hash,
             &mut rows,
             RlpDataType::TxSign,
             RlpTxTag::Gas as u8,
@@ -93,7 +91,6 @@ impl<F: FieldExt> RlpWitnessGen<F> for Transaction {
         let idx = handle_address(
             self.id,
             rlp_data.as_ref(),
-            hash,
             &mut rows,
             RlpDataType::TxSign,
             RlpTxTag::ToPrefix as u8,
@@ -105,7 +102,6 @@ impl<F: FieldExt> RlpWitnessGen<F> for Transaction {
             randomness,
             self.id,
             rlp_data.as_ref(),
-            hash,
             &mut rows,
             RlpDataType::TxSign,
             RlpTxTag::Value as u8,
@@ -116,12 +112,41 @@ impl<F: FieldExt> RlpWitnessGen<F> for Transaction {
             randomness,
             self.id,
             rlp_data.as_ref(),
-            hash,
             &mut rows,
             RlpDataType::TxSign,
             RlpTxTag::DataPrefix as u8,
             RlpTxTag::Data as u8,
             &self.call_data,
+            idx,
+        );
+        let idx = handle_u256(
+            randomness,
+            self.id,
+            rlp_data.as_ref(),
+            &mut rows,
+            RlpDataType::TxSign,
+            RlpTxTag::ChainId as u8,
+            self.chain_id.into(),
+            idx,
+        );
+        let idx = handle_u256(
+            randomness,
+            self.id,
+            rlp_data.as_ref(),
+            &mut rows,
+            RlpDataType::TxSign,
+            RlpTxTag::Zero as u8,
+            0.into(),
+            idx,
+        );
+        let idx = handle_u256(
+            randomness,
+            self.id,
+            rlp_data.as_ref(),
+            &mut rows,
+            RlpDataType::TxSign,
+            RlpTxTag::Zero as u8,
+            0.into(),
             idx,
         );
 
@@ -131,25 +156,42 @@ impl<F: FieldExt> RlpWitnessGen<F> for Transaction {
         );
         rows
     }
+
+    fn rlp_row(&self, randomness: F) -> RlpWitnessRow<F> {
+        let rlp_out = rlp::encode(self);
+        let rlc_rlp_out = rlp_out.as_ref().iter().fold(F::zero(), |acc, value| {
+            acc * randomness + F::from(*value as u64)
+        });
+
+        RlpWitnessRow {
+            id: self.id,
+            index: rlp_out.len() + 1,
+            data_type: RlpDataType::TxSign,
+            value: 0,
+            value_acc: rlc_rlp_out,
+            tag: RlpTxTag::Rlp as u8,
+            tag_length: 1,
+            tag_index: 1,
+            aux_tag_index: [0; 2],
+            aux_tag_length: [0; 2],
+            length_acc: 0,
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use halo2_proofs::{arithmetic::Field, circuit::Value, halo2curves::bn256::Fr};
+    use halo2_proofs::{arithmetic::Field, halo2curves::bn256::Fr};
     use num::Zero;
 
-    use crate::{
-        evm_circuit::{
-            test::rand_bytes,
-            witness::{RlpTxTag, RlpWitnessGen, Transaction},
-        },
-        util::Challenges,
+    use crate::evm_circuit::{
+        test::rand_bytes,
+        witness::{RlpTxTag, RlpWitnessGen, Transaction},
     };
 
     #[test]
     fn tx_rlp_witgen_a() {
         let r = Fr::random(rand::thread_rng());
-        let challenges = Challenges::mock(Value::known(r));
 
         let callee_address = mock::MOCK_ACCOUNTS[0];
         let call_data = rand_bytes(55);
@@ -160,11 +202,12 @@ mod tests {
             callee_address,
             value: 4u64.into(),
             call_data: call_data.clone(),
+            chain_id: 4,
             ..Default::default()
         };
 
         let tx_rlp = rlp::encode(&tx);
-        let witness_rows = tx.gen_witness(r, &challenges);
+        let witness_rows = tx.gen_witness(r);
 
         assert_eq!(tx_rlp.len(), witness_rows.len());
 
@@ -237,7 +280,6 @@ mod tests {
     #[test]
     fn tx_rlp_witgen_b() {
         let r = Fr::random(rand::thread_rng());
-        let challenges = Challenges::mock(Value::known(r));
 
         let nonce = 0x123456u64;
         let gas_price = 0x234567u64.into();
@@ -252,11 +294,12 @@ mod tests {
             callee_address,
             value,
             call_data: call_data.clone(),
+            chain_id: 1,
             ..Default::default()
         };
 
         let tx_rlp = rlp::encode(&tx);
-        let witness_rows = tx.gen_witness(r, &challenges);
+        let witness_rows = tx.gen_witness(r);
 
         assert_eq!(tx_rlp.len(), witness_rows.len());
 

@@ -1,6 +1,6 @@
-use halo2_proofs::{arithmetic::FieldExt, circuit::Value, plonk::Expression};
+use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
 
-use crate::{evm_circuit::witness::Receipt, impl_expr, util::Challenges};
+use crate::{evm_circuit::witness::Receipt, impl_expr};
 
 use super::{
     common::{handle_address, handle_bytes, handle_prefix, handle_u256},
@@ -47,20 +47,14 @@ impl_expr!(RlpReceiptTag);
 pub const N_RECEIPT_TAGS: usize = 14;
 
 impl<F: FieldExt> RlpWitnessGen<F> for Receipt {
-    fn gen_witness(
-        &self,
-        randomness: F,
-        challenges: &Challenges<Value<F>>,
-    ) -> Vec<RlpWitnessRow<F>> {
+    fn gen_witness(&self, randomness: F) -> Vec<RlpWitnessRow<F>> {
         let rlp_data = rlp::encode(self);
-        let hash = self.hash(challenges);
 
         let mut rows = Vec::with_capacity(rlp_data.len());
 
         let idx = handle_prefix(
             self.id,
             rlp_data.as_ref(),
-            hash,
             &mut rows,
             RlpDataType::Receipt,
             RlpReceiptTag::Prefix as u8,
@@ -70,7 +64,6 @@ impl<F: FieldExt> RlpWitnessGen<F> for Receipt {
             randomness,
             self.id,
             rlp_data.as_ref(),
-            hash,
             &mut rows,
             RlpDataType::Receipt,
             RlpReceiptTag::Status as u8,
@@ -81,7 +74,6 @@ impl<F: FieldExt> RlpWitnessGen<F> for Receipt {
             randomness,
             self.id,
             rlp_data.as_ref(),
-            hash,
             &mut rows,
             RlpDataType::Receipt,
             RlpReceiptTag::CumulativeGasUsed as u8,
@@ -92,7 +84,6 @@ impl<F: FieldExt> RlpWitnessGen<F> for Receipt {
             randomness,
             self.id,
             rlp_data.as_ref(),
-            hash,
             &mut rows,
             RlpDataType::Receipt,
             RlpReceiptTag::BloomPrefix as u8,
@@ -100,7 +91,7 @@ impl<F: FieldExt> RlpWitnessGen<F> for Receipt {
             self.bloom.as_bytes(),
             idx,
         );
-        let idx = self.handle_logs(randomness, rlp_data.as_ref(), hash, &mut rows, idx);
+        let idx = self.handle_logs(randomness, rlp_data.as_ref(), &mut rows, idx);
 
         assert!(
             idx == rlp_data.len(),
@@ -115,14 +106,12 @@ impl Receipt {
         &self,
         randomness: F,
         rlp_data: &[u8],
-        hash: Value<F>,
         rows: &mut Vec<RlpWitnessRow<F>>,
         mut idx: usize,
     ) -> usize {
         idx = handle_prefix(
             self.id,
             rlp_data,
-            hash,
             rows,
             RlpDataType::Receipt,
             RlpReceiptTag::LogsPrefix as u8,
@@ -132,7 +121,6 @@ impl Receipt {
             idx = handle_prefix(
                 self.id,
                 rlp_data,
-                hash,
                 rows,
                 RlpDataType::Receipt,
                 RlpReceiptTag::LogPrefix as u8,
@@ -144,7 +132,6 @@ impl Receipt {
             idx = handle_address(
                 self.id,
                 rlp_data,
-                hash,
                 rows,
                 RlpDataType::Receipt,
                 RlpReceiptTag::LogAddressPrefix as u8,
@@ -155,7 +142,6 @@ impl Receipt {
             idx = handle_prefix(
                 self.id,
                 rlp_data,
-                hash,
                 rows,
                 RlpDataType::Receipt,
                 RlpReceiptTag::LogTopicsPrefix as u8,
@@ -169,7 +155,6 @@ impl Receipt {
                     randomness,
                     self.id,
                     rlp_data,
-                    hash,
                     rows,
                     RlpDataType::Receipt,
                     RlpReceiptTag::LogTopicPrefix as u8,
@@ -194,7 +179,6 @@ impl Receipt {
                 randomness,
                 self.id,
                 rlp_data,
-                hash,
                 rows,
                 RlpDataType::Receipt,
                 RlpReceiptTag::LogDataPrefix as u8,

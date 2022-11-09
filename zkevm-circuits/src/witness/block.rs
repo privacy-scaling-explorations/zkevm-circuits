@@ -166,7 +166,7 @@ pub fn block_convert(
             .txs()
             .iter()
             .enumerate()
-            .map(|(idx, tx)| tx_convert(tx, idx + 1))
+            .map(|(idx, tx)| tx_convert(tx, idx + 1, block.chain_id.as_u64()))
             .collect(),
         end_block_not_last: step_convert(&block.block_steps.end_block_not_last),
         end_block_last: step_convert(&block.block_steps.end_block_last),

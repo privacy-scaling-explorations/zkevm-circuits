@@ -1,9 +1,7 @@
-use eth_types::{ToLittleEndian, Word};
-use halo2_proofs::{arithmetic::FieldExt, circuit::Value, plonk::Expression};
+use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
 use rlp::Encodable;
-use sha3::{digest::Digest, Keccak256};
 
-use crate::{evm_circuit::util::RandomLinearCombination, impl_expr, util::Challenges};
+use crate::impl_expr;
 
 /// Data types that are supported by the RLP circuit.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -49,8 +47,6 @@ pub struct RlpWitnessRow<F> {
     /// Denotes an accumulator for the length of data, in the case where len >
     /// 55 and the length is represented in its big-endian form.
     pub length_acc: u64,
-    /// Denotes the hash of the RLP-encoded data.
-    pub hash: Value<F>,
 }
 
 /// The RlpWitnessGen trait is implemented by data types who's RLP encoding can
@@ -58,19 +54,8 @@ pub struct RlpWitnessRow<F> {
 pub trait RlpWitnessGen<F: FieldExt>: Encodable + Default + std::marker::Sized {
     /// Generate witness to the RLP-encoding verifier circuit, as a vector of
     /// RlpWitnessRow.
-    fn gen_witness(
-        &self,
-        randomness: F,
-        challenges: &Challenges<Value<F>>,
-    ) -> Vec<RlpWitnessRow<F>>;
+    fn gen_witness(&self, randomness: F) -> Vec<RlpWitnessRow<F>>;
 
-    /// Returns a random linear combination (RLC) of the Keccak-256 hash of the
-    /// RLP-encoded data.
-    fn hash(&self, challenges: &Challenges<Value<F>>) -> Value<F> {
-        let rlp_data = rlp::encode(self);
-        let keccak_hash = Word::from_big_endian(Keccak256::digest(&rlp_data).as_slice());
-        challenges.evm_word().map(|challenge| {
-            RandomLinearCombination::random_linear_combine(keccak_hash.to_le_bytes(), challenge)
-        })
-    }
+    /// Generate the RLP summary row.
+    fn rlp_row(&self, randomness: F) -> RlpWitnessRow<F>;
 }
