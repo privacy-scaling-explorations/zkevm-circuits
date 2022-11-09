@@ -245,13 +245,13 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
         self.memory_copier_gas
             .assign(region, offset, size.as_u64(), memory_expansion_cost)?;
 
-        // rw_counter increase from copy lookup is `length` memory read & writes
+        // rw_counter always increases by `size` reads and `size` writes
         let copy_rwc_inc = size + size;
         self.copy_rwc_inc.assign(
             region,
             offset,
             Value::known(
-                copy_rwc_inc // 1 read & 1 write
+                copy_rwc_inc
                     .to_scalar()
                     .expect("unexpected U256 -> Scalar conversion failure"),
             ),
