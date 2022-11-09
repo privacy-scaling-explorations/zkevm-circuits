@@ -1293,6 +1293,9 @@ pub struct RlpTable {
     /// Denotes the field/tag that this row represents. Example: nonce, gas,
     /// gasprice, and so on.
     pub tag: Column<Advice>,
+    /// Denotes the decrementing index specific to this tag. The final value of
+    /// the field is accumulated in `value_acc` at `tag_index == 1`.
+    pub tag_index: Column<Advice>,
     /// Denotes the accumulator value for this field, which is a linear
     /// combination or random linear combination of the field's bytes.
     pub value_acc: Column<Advice>,
@@ -1304,7 +1307,13 @@ pub struct RlpTable {
 
 impl DynamicTableColumns for RlpTable {
     fn columns(&self) -> Vec<Column<Advice>> {
-        vec![self.tx_id, self.tag, self.value_acc, self.data_type]
+        vec![
+            self.tx_id,
+            self.tag,
+            self.tag_index,
+            self.value_acc,
+            self.data_type,
+        ]
     }
 }
 
@@ -1314,6 +1323,7 @@ impl RlpTable {
         Self {
             tx_id: meta.advice_column(),
             tag: meta.advice_column(),
+            tag_index: meta.advice_column(),
             value_acc: meta.advice_column(),
             data_type: meta.advice_column(),
         }

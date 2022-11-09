@@ -44,8 +44,6 @@ pub struct Config<F> {
     /// List of columns that are assigned:
     /// val := (tag - RlpTxTag::{Variant}).inv()
     tx_tags: [Column<Advice>; N_TX_TAGS],
-    /// Denotes a decrementing index specific to the current tag.
-    tag_index: Column<Advice>,
     /// Denotes the current tag's span in bytes.
     tag_length: Column<Advice>,
     /// Denotes an accumulator for the length of data, in the case where len >
@@ -97,7 +95,6 @@ impl<F: Field> Config<F> {
         let rindex = meta.advice_column();
         let value = meta.advice_column();
         let tx_tags = array_init::array_init(|_| meta.advice_column());
-        let tag_index = meta.advice_column();
         let tag_length = meta.advice_column();
         let length_acc = meta.advice_column();
         let value_rlc = meta.advice_column();
@@ -109,12 +106,12 @@ impl<F: Field> Config<F> {
             meta,
             cmp_lt_enabled,
             |_meta| 1.expr(),
-            |meta| meta.query_advice(tag_index, Rotation::cur()),
+            |meta| meta.query_advice(rlp_table.tag_index, Rotation::cur()),
         );
         let tag_index_length_cmp = ComparatorChip::configure(
             meta,
             cmp_lt_enabled,
-            |meta| meta.query_advice(tag_index, Rotation::cur()),
+            |meta| meta.query_advice(rlp_table.tag_index, Rotation::cur()),
             |meta| meta.query_advice(tag_length, Rotation::cur()),
         );
         let tag_length_cmp_1 = ComparatorChip::configure(
@@ -126,13 +123,13 @@ impl<F: Field> Config<F> {
         let tag_index_lt_10 = LtChip::configure(
             meta,
             cmp_lt_enabled,
-            |meta| meta.query_advice(tag_index, Rotation::cur()),
+            |meta| meta.query_advice(rlp_table.tag_index, Rotation::cur()),
             |_meta| 10.expr(),
         );
         let tag_index_lt_34 = LtChip::configure(
             meta,
             cmp_lt_enabled,
-            |meta| meta.query_advice(tag_index, Rotation::cur()),
+            |meta| meta.query_advice(rlp_table.tag_index, Rotation::cur()),
             |_meta| 34.expr(),
         );
         let value_gt_127 = LtChip::configure(
@@ -261,8 +258,8 @@ impl<F: Field> Config<F> {
                 );
                 cb.require_equal(
                     "tag_index::next == tag_index - 1",
-                    meta.query_advice(tag_index, Rotation::next()),
-                    meta.query_advice(tag_index, Rotation::cur()) - 1.expr(),
+                    meta.query_advice(rlp_table.tag_index, Rotation::next()),
+                    meta.query_advice(rlp_table.tag_index, Rotation::cur()) - 1.expr(),
                 );
                 cb.require_equal(
                     "tag_length::next == tag_length",
@@ -280,7 +277,7 @@ impl<F: Field> Config<F> {
                 );
                 cb.require_equal(
                     "tag_index::next == tag_length::next",
-                    meta.query_advice(tag_index, Rotation::next()),
+                    meta.query_advice(rlp_table.tag_index, Rotation::next()),
                     meta.query_advice(tag_length, Rotation::next()),
                 );
                 cb.require_equal(
@@ -298,7 +295,7 @@ impl<F: Field> Config<F> {
                     cb.require_equal("value < 256", value_lt_256.is_lt(meta, None), 1.expr());
                     cb.require_equal(
                         "tag_index::next == value - 0xf7",
-                        meta.query_advice(tag_index, Rotation::next()),
+                        meta.query_advice(rlp_table.tag_index, Rotation::next()),
                         meta.query_advice(value, Rotation::cur()) - 247.expr(),
                     );
                     cb.require_zero(
@@ -379,7 +376,7 @@ impl<F: Field> Config<F> {
                     );
                     cb.require_equal(
                         "tag_index::next == length_acc",
-                        meta.query_advice(tag_index, Rotation::next()),
+                        meta.query_advice(rlp_table.tag_index, Rotation::next()),
                         meta.query_advice(length_acc, Rotation::cur()),
                     );
                     cb.require_equal(
@@ -412,8 +409,8 @@ impl<F: Field> Config<F> {
                 );
                 cb.require_equal(
                     "tag_index::next == tag_index - 1",
-                    meta.query_advice(tag_index, Rotation::next()),
-                    meta.query_advice(tag_index, Rotation::cur()) - 1.expr(),
+                    meta.query_advice(rlp_table.tag_index, Rotation::next()),
+                    meta.query_advice(rlp_table.tag_index, Rotation::cur()) - 1.expr(),
                 );
                 cb.require_equal(
                     "tag_length::next == tag_length",
@@ -431,7 +428,7 @@ impl<F: Field> Config<F> {
                 );
                 cb.require_equal(
                     "tag_index::next == tag_length::next",
-                    meta.query_advice(tag_index, Rotation::next()),
+                    meta.query_advice(rlp_table.tag_index, Rotation::next()),
                     meta.query_advice(tag_length, Rotation::next()),
                 );
             });
@@ -480,7 +477,7 @@ impl<F: Field> Config<F> {
                     );
                     cb.require_equal(
                         "tag_index::next == length_acc",
-                        meta.query_advice(tag_index, Rotation::next()),
+                        meta.query_advice(rlp_table.tag_index, Rotation::next()),
                         meta.query_advice(length_acc, Rotation::cur()),
                     );
                     cb.require_equal(
@@ -513,8 +510,8 @@ impl<F: Field> Config<F> {
                 );
                 cb.require_equal(
                     "tag_index::next == tag_index - 1",
-                    meta.query_advice(tag_index, Rotation::next()),
-                    meta.query_advice(tag_index, Rotation::cur()) - 1.expr(),
+                    meta.query_advice(rlp_table.tag_index, Rotation::next()),
+                    meta.query_advice(rlp_table.tag_index, Rotation::cur()) - 1.expr(),
                 );
                 cb.require_equal(
                     "tag_length::next == tag_length",
@@ -532,7 +529,7 @@ impl<F: Field> Config<F> {
                 );
                 cb.require_equal(
                     "tag_index::next == tag_length::next",
-                    meta.query_advice(tag_index, Rotation::next()),
+                    meta.query_advice(rlp_table.tag_index, Rotation::next()),
                     meta.query_advice(tag_length, Rotation::next()),
                 );
             });
@@ -581,7 +578,7 @@ impl<F: Field> Config<F> {
                     );
                     cb.require_equal(
                         "tag_index::next == length_acc",
-                        meta.query_advice(tag_index, Rotation::next()),
+                        meta.query_advice(rlp_table.tag_index, Rotation::next()),
                         meta.query_advice(length_acc, Rotation::cur()),
                     );
                 },
@@ -609,8 +606,8 @@ impl<F: Field> Config<F> {
                 );
                 cb.require_equal(
                     "tag_index::next == tag_index - 1",
-                    meta.query_advice(tag_index, Rotation::next()),
-                    meta.query_advice(tag_index, Rotation::cur()) - 1.expr(),
+                    meta.query_advice(rlp_table.tag_index, Rotation::next()),
+                    meta.query_advice(rlp_table.tag_index, Rotation::cur()) - 1.expr(),
                 );
                 cb.require_equal(
                     "tag_length::next == tag_length",
@@ -634,7 +631,7 @@ impl<F: Field> Config<F> {
             cb.condition(is_to_prefix(meta), |cb| {
                 cb.require_equal(
                     "tag_index == 1",
-                    meta.query_advice(tag_index, Rotation::cur()),
+                    meta.query_advice(rlp_table.tag_index, Rotation::cur()),
                     1.expr(),
                 );
                 cb.require_equal(
@@ -654,7 +651,7 @@ impl<F: Field> Config<F> {
                 );
                 cb.require_equal(
                     "tag_index::next == 20",
-                    meta.query_advice(tag_index, Rotation::next()),
+                    meta.query_advice(rlp_table.tag_index, Rotation::next()),
                     20.expr(),
                 );
                 cb.require_equal(
@@ -681,8 +678,8 @@ impl<F: Field> Config<F> {
                 );
                 cb.require_equal(
                     "tag_index::next == tag_index - 1",
-                    meta.query_advice(tag_index, Rotation::next()),
-                    meta.query_advice(tag_index, Rotation::cur()) - 1.expr(),
+                    meta.query_advice(rlp_table.tag_index, Rotation::next()),
+                    meta.query_advice(rlp_table.tag_index, Rotation::cur()) - 1.expr(),
                 );
                 cb.require_equal(
                     "tag_length::next == tag_length",
@@ -706,7 +703,7 @@ impl<F: Field> Config<F> {
                 );
                 cb.require_equal(
                     "tag_index:next == tag_length::next",
-                    meta.query_advice(tag_index, Rotation::next()),
+                    meta.query_advice(rlp_table.tag_index, Rotation::next()),
                     meta.query_advice(tag_length, Rotation::next()),
                 );
             });
@@ -755,7 +752,7 @@ impl<F: Field> Config<F> {
                     );
                     cb.require_equal(
                         "tag_index::next == length_acc",
-                        meta.query_advice(tag_index, Rotation::next()),
+                        meta.query_advice(rlp_table.tag_index, Rotation::next()),
                         meta.query_advice(length_acc, Rotation::cur()),
                     );
                     cb.require_equal(
@@ -788,8 +785,8 @@ impl<F: Field> Config<F> {
                 );
                 cb.require_equal(
                     "tag_index::next == tag_index - 1",
-                    meta.query_advice(tag_index, Rotation::next()),
-                    meta.query_advice(tag_index, Rotation::cur()) - 1.expr(),
+                    meta.query_advice(rlp_table.tag_index, Rotation::next()),
+                    meta.query_advice(rlp_table.tag_index, Rotation::cur()) - 1.expr(),
                 );
                 cb.require_equal(
                     "tag_length::next == tag_length",
@@ -834,8 +831,8 @@ impl<F: Field> Config<F> {
                 );
                 cb.require_equal(
                     "tag_index::next == tag_index - 1",
-                    meta.query_advice(tag_index, Rotation::next()),
-                    meta.query_advice(tag_index, Rotation::cur()) - 1.expr(),
+                    meta.query_advice(rlp_table.tag_index, Rotation::next()),
+                    meta.query_advice(rlp_table.tag_index, Rotation::cur()) - 1.expr(),
                 );
                 cb.require_equal(
                     "tag_length::next == tag_length",
@@ -855,7 +852,7 @@ impl<F: Field> Config<F> {
                     );
                     cb.require_equal(
                         "tag_index::next == tag_length::next",
-                        meta.query_advice(tag_index, Rotation::next()),
+                        meta.query_advice(rlp_table.tag_index, Rotation::next()),
                         meta.query_advice(tag_length, Rotation::next()),
                     );
                 },
@@ -872,7 +869,7 @@ impl<F: Field> Config<F> {
                     );
                     cb.require_equal(
                         "tag_index::next == tag_length::next",
-                        meta.query_advice(tag_index, Rotation::next()),
+                        meta.query_advice(rlp_table.tag_index, Rotation::next()),
                         meta.query_advice(tag_length, Rotation::next()),
                     );
                     cb.require_equal(
@@ -891,7 +888,7 @@ impl<F: Field> Config<F> {
                     cb.require_equal("value < 192", value_lt_192.is_lt(meta, None), 1.expr());
                     cb.require_equal(
                         "tag_index == (value - 0xb7) + 1",
-                        meta.query_advice(tag_index, Rotation::cur()),
+                        meta.query_advice(rlp_table.tag_index, Rotation::cur()),
                         meta.query_advice(value, Rotation::cur()) - 182.expr(),
                     );
                     cb.require_zero(
@@ -948,8 +945,8 @@ impl<F: Field> Config<F> {
                 );
                 cb.require_equal(
                     "tag_index::next == tag_index - 1",
-                    meta.query_advice(tag_index, Rotation::next()),
-                    meta.query_advice(tag_index, Rotation::cur()) - 1.expr(),
+                    meta.query_advice(rlp_table.tag_index, Rotation::next()),
+                    meta.query_advice(rlp_table.tag_index, Rotation::cur()) - 1.expr(),
                 );
                 cb.require_equal(
                     "tag_length::next == tag_length",
@@ -967,7 +964,7 @@ impl<F: Field> Config<F> {
                 );
                 cb.require_equal(
                     "tag_index::next == tag_length::next",
-                    meta.query_advice(tag_index, Rotation::next()),
+                    meta.query_advice(rlp_table.tag_index, Rotation::next()),
                     meta.query_advice(tag_length, Rotation::next()),
                 );
             });
@@ -1016,7 +1013,7 @@ impl<F: Field> Config<F> {
                     );
                     cb.require_equal(
                         "tag_index::next == length_acc",
-                        meta.query_advice(tag_index, Rotation::next()),
+                        meta.query_advice(rlp_table.tag_index, Rotation::next()),
                         meta.query_advice(length_acc, Rotation::cur()),
                     );
                     cb.require_equal(
@@ -1049,8 +1046,8 @@ impl<F: Field> Config<F> {
                 );
                 cb.require_equal(
                     "tag_index::next == tag_index - 1",
-                    meta.query_advice(tag_index, Rotation::next()),
-                    meta.query_advice(tag_index, Rotation::cur()) - 1.expr(),
+                    meta.query_advice(rlp_table.tag_index, Rotation::next()),
+                    meta.query_advice(rlp_table.tag_index, Rotation::cur()) - 1.expr(),
                 );
                 cb.require_equal(
                     "tag_length::next == tag_length",
@@ -1069,12 +1066,12 @@ impl<F: Field> Config<F> {
                 );
                 cb.require_equal(
                     "tag_index::next == tag_length::next",
-                    meta.query_advice(tag_index, Rotation::next()),
+                    meta.query_advice(rlp_table.tag_index, Rotation::next()),
                     meta.query_advice(tag_length, Rotation::next()),
                 );
                 cb.require_equal(
                     "next tag is Zero => tag_index::next == 1",
-                    meta.query_advice(tag_index, Rotation::next()),
+                    meta.query_advice(rlp_table.tag_index, Rotation::next()),
                     1.expr(),
                 );
                 cb.require_equal(
@@ -1096,12 +1093,12 @@ impl<F: Field> Config<F> {
                 );
                 cb.require_equal(
                     "tag_index::Rotation(2) == tag_length::Rotation(2)",
-                    meta.query_advice(tag_index, Rotation(2)),
+                    meta.query_advice(rlp_table.tag_index, Rotation(2)),
                     meta.query_advice(tag_length, Rotation(2)),
                 );
                 cb.require_equal(
                     "next-to-next tag is Zero => tag_index::Rotation(2) == 1",
-                    meta.query_advice(tag_index, Rotation(2)),
+                    meta.query_advice(rlp_table.tag_index, Rotation(2)),
                     1.expr(),
                 );
                 cb.require_equal(
@@ -1123,12 +1120,12 @@ impl<F: Field> Config<F> {
                 );
                 cb.require_equal(
                     "tag_index::Rotation(3) == tag_length::Rotation(3)",
-                    meta.query_advice(tag_index, Rotation(3)),
+                    meta.query_advice(rlp_table.tag_index, Rotation(3)),
                     meta.query_advice(tag_length, Rotation(3)),
                 );
                 cb.require_equal(
                     "tag_index::Rotation(3) == 1",
-                    meta.query_advice(tag_index, Rotation(3)),
+                    meta.query_advice(rlp_table.tag_index, Rotation(3)),
                     1.expr(),
                 );
                 cb.require_equal(
@@ -1256,7 +1253,6 @@ impl<F: Field> Config<F> {
             rindex,
             value,
             tx_tags,
-            tag_index,
             tag_length,
             length_acc,
             value_rlc,
@@ -1356,6 +1352,11 @@ impl<F: Field> Config<F> {
                                 F::from(row.tag as u64),
                             ),
                             (
+                                "rlp_table::tag_index",
+                                self.rlp_table.tag_index,
+                                F::from(row.tag_index as u64),
+                            ),
+                            (
                                 "rlp_table::value_acc",
                                 self.rlp_table.value_acc,
                                 row.value_acc,
@@ -1368,7 +1369,6 @@ impl<F: Field> Config<F> {
                             ("index", self.index, F::from(row.index as u64)),
                             ("rindex", self.rindex, F::from(rindex)),
                             ("value", self.value, F::from(row.value as u64)),
-                            ("tag_index", self.tag_index, F::from(row.tag_index as u64)),
                             (
                                 "tag_length",
                                 self.tag_length,
@@ -1504,10 +1504,10 @@ impl<F: Field> Config<F> {
             self.is_last,
             self.rlp_table.tx_id,
             self.rlp_table.tag,
+            self.rlp_table.tag_index,
             self.rlp_table.value_acc,
             self.rlp_table.data_type,
             self.index,
-            self.tag_index,
             self.tag_length,
             self.length_acc,
             self.rindex,
