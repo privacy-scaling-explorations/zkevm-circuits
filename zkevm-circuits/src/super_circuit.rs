@@ -59,8 +59,11 @@ use crate::evm_circuit::{table::FixedTableTag, EvmCircuit};
 use crate::exp_circuit::ExpCircuitConfig;
 use crate::keccak_circuit::keccak_packed_multi::KeccakPackedConfig as KeccakConfig;
 use crate::pi_circuit::{PiCircuit, PiCircuitConfig, PublicData};
+use crate::rlp_circuit::RlpCircuit;
 use crate::state_circuit::StateCircuitConfig;
-use crate::table::{BlockTable, BytecodeTable, CopyTable, ExpTable, MptTable, RwTable, TxTable};
+use crate::table::{
+    BlockTable, BytecodeTable, CopyTable, ExpTable, MptTable, RlpTable, RwTable, TxTable,
+};
 use crate::tx_circuit::{TxCircuit, TxCircuitConfig};
 use crate::util::Challenges;
 use crate::witness::{block_convert, Block, MptUpdates};
@@ -105,6 +108,7 @@ pub struct SuperCircuitConfig<
     block_table: BlockTable,
     copy_table: CopyTable,
     exp_table: ExpTable,
+    rlp_table: RlpTable,
     evm_circuit: EvmCircuit<F>,
     state_circuit: StateCircuitConfig<F>,
     tx_circuit: TxCircuitConfig<F>,
@@ -113,6 +117,7 @@ pub struct SuperCircuitConfig<
     keccak_circuit: KeccakConfig<F>,
     pi_circuit: PiCircuitConfig<F, MAX_TXS, MAX_CALLDATA>,
     exp_circuit: ExpCircuitConfig<F>,
+    rlp_circuit: RlpCircuit<F>,
 }
 
 /// The Super Circuit contains all the zkEVM circuits
@@ -179,6 +184,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: u
         let q_copy_table = meta.fixed_column();
         let copy_table = CopyTable::construct(meta, q_copy_table);
         let exp_table = ExpTable::construct(meta);
+        let rlp_table = RlpTable::construct(meta);
 
         let power_of_randomness = array::from_fn(|i| {
             Expression::Constant(F::from(MOCK_RANDOMNESS).pow(&[1 + i as u64, 0, 0, 0]))
@@ -212,6 +218,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: u
             block_table,
             copy_table,
             exp_table,
+            rlp_table,
             evm_circuit,
             state_circuit,
             copy_circuit: CopyCircuit::configure(
@@ -227,6 +234,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: u
                 meta,
                 tx_table,
                 keccak_table.clone(),
+                rlp_table,
                 challenges.clone(),
             ),
             bytecode_circuit: BytecodeConfig::configure(
@@ -238,6 +246,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: u
             keccak_circuit,
             pi_circuit,
             exp_circuit: ExpCircuitConfig::configure(meta, exp_table),
+            rlp_circuit: RlpCircuit::configure(meta, power_of_randomness[0].clone()),
         }
     }
 
@@ -378,7 +387,7 @@ impl<const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: usize>
             .iter()
             .map(geth_types::Transaction::from)
             .collect();
-        let tx_circuit = TxCircuit::new(aux_generator, chain_id.as_u64(), txs);
+        let tx_circuit = TxCircuit::new(aux_generator, chain_id.as_u64(), txs, block.randomness);
 
         let public_data = PublicData {
             chain_id,

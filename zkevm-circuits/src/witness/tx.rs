@@ -250,3 +250,36 @@ pub(super) fn tx_convert(
         steps: tx.steps().iter().map(step_convert).collect(),
     }
 }
+
+/// Convert eth_types::geth_types::Transaction to SignedTransaction that can be
+/// used as witness in TxCircuit and RLP Circuit.
+pub fn signed_tx_from_geth_tx(
+    txs: &[eth_types::geth_types::Transaction],
+    chain_id: u64,
+) -> Vec<SignedTransaction> {
+    let mut signed_txs = Vec::with_capacity(txs.len());
+    for (id, geth_tx) in txs.iter().enumerate() {
+        signed_txs.push(SignedTransaction {
+            tx: Transaction {
+                id,
+                nonce: geth_tx.nonce.as_u64(),
+                gas: geth_tx.gas_limit.as_u64(),
+                gas_price: geth_tx.gas_price,
+                caller_address: geth_tx.from,
+                callee_address: geth_tx.to.unwrap_or(Address::zero()),
+                is_create: geth_tx.to.is_none(),
+                value: geth_tx.value,
+                call_data: geth_tx.call_data.to_vec(),
+                call_data_length: geth_tx.call_data.len(),
+                chain_id,
+                ..Default::default()
+            },
+            signature: Signature {
+                r: geth_tx.r,
+                s: geth_tx.s,
+                v: geth_tx.v,
+            },
+        });
+    }
+    signed_txs
+}

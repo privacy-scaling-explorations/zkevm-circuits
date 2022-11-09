@@ -680,7 +680,7 @@ pub mod dev {
         let randomness = CopyCircuitTester::<F>::get_randomness();
         let circuit = CopyCircuitTester::<F>::new(block, randomness);
         let num_rows = 1 << k;
-        const NUM_BLINDING_ROWS: usize = 7 - 1;
+        const NUM_BLINDING_ROWS: usize = 6;
         let instance = vec![vec![randomness; num_rows - NUM_BLINDING_ROWS]];
         let prover = MockProver::<F>::run(k, &circuit, instance).unwrap();
         prover.verify_par()

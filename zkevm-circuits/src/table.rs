@@ -7,7 +7,8 @@ use crate::impl_expr;
 use crate::util::build_tx_log_address;
 use crate::util::Challenges;
 use crate::witness::{
-    Block, BlockContext, Bytecode, MptUpdateRow, MptUpdates, Rw, RwMap, RwRow, Transaction,
+    Block, BlockContext, Bytecode, MptUpdateRow, MptUpdates, RlpWitnessGen, Rw, RwMap, RwRow,
+    SignedTransaction, Transaction,
 };
 use bus_mapping::circuit_input_builder::{CopyDataType, CopyEvent, CopyStep, ExpEvent};
 use core::iter::once;
@@ -1327,5 +1328,67 @@ impl RlpTable {
             value_acc: meta.advice_column(),
             data_type: meta.advice_column(),
         }
+    }
+
+    /// Get assignments to the RLP table. Meant to be used for dev purposes.
+    pub fn dev_assignments<F: Field>(txs: Vec<SignedTransaction>, randomness: F) -> Vec<[F; 5]> {
+        let mut assignments = vec![];
+        for signed_tx in txs {
+            for row in signed_tx
+                .gen_witness(randomness)
+                .iter()
+                .chain(std::iter::once(&signed_tx.rlp_row(randomness)))
+                .chain(signed_tx.tx.gen_witness(randomness).iter())
+                .chain(std::iter::once(&signed_tx.tx.rlp_row(randomness)))
+            {
+                assignments.push([
+                    F::from(row.id as u64),
+                    F::from(row.tag as u64),
+                    F::from(row.tag_index as u64),
+                    row.value_acc,
+                    F::from(row.data_type as u64),
+                ]);
+            }
+        }
+        assignments
+    }
+}
+
+impl RlpTable {
+    /// Load witness into RLP table. Meant to be used for dev purposes.
+    pub fn dev_load<F: Field>(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        txs: Vec<SignedTransaction>,
+        randomness: F,
+    ) -> Result<(), Error> {
+        layouter.assign_region(
+            || "rlp table",
+            |mut region| {
+                let mut offset = 0;
+                for column in self.columns() {
+                    region.assign_advice(
+                        || format!("empty row: {}", offset),
+                        column,
+                        offset,
+                        || Value::known(F::zero()),
+                    )?;
+                }
+
+                for row in Self::dev_assignments(txs.clone(), randomness) {
+                    for (column, value) in self.columns().iter().zip(row) {
+                        region.assign_advice(
+                            || format!("empty row: {}", offset),
+                            *column,
+                            offset,
+                            || Value::known(value),
+                        )?;
+                    }
+                    offset += 1;
+                }
+
+                Ok(())
+            },
+        )
     }
 }

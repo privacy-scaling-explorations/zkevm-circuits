@@ -8,7 +8,7 @@ use gadgets::{
 };
 use halo2_proofs::{
     circuit::{Layouter, Region, Value},
-    plonk::{Advice, Column, ConstraintSystem, Error, Selector, VirtualCells},
+    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector, VirtualCells},
     poly::Rotation,
 };
 
@@ -24,9 +24,7 @@ use crate::{
 
 #[derive(Clone, Debug)]
 /// Config for the RLP circuit.
-pub struct Config<F> {
-    /// Denotes the randomness.
-    r: F,
+pub struct RlpCircuit<F> {
     /// Denotes whether or not the row is enabled.
     q_usable: Selector,
     /// Denotes whether the row is the first row in the layout.
@@ -85,8 +83,8 @@ pub struct Config<F> {
     length_acc_cmp_0: ComparatorConfig<F, 1>,
 }
 
-impl<F: Field> Config<F> {
-    pub(crate) fn configure(meta: &mut ConstraintSystem<F>, r: F) -> Self {
+impl<F: Field> RlpCircuit<F> {
+    pub(crate) fn configure(meta: &mut ConstraintSystem<F>, r: Expression<F>) -> Self {
         let q_usable = meta.complex_selector();
         let is_first = meta.advice_column();
         let is_last = meta.advice_column();
@@ -494,7 +492,7 @@ impl<F: Field> Config<F> {
                     cb.require_equal(
                         "[gasprice] value_acc::next == value_acc::cur * randomness + value::next",
                         meta.query_advice(rlp_table.value_acc, Rotation::next()),
-                        meta.query_advice(rlp_table.value_acc, Rotation::cur()) * r +
+                        meta.query_advice(rlp_table.value_acc, Rotation::cur()) * r.clone() +
                             meta.query_advice(value, Rotation::next()),
                     );
                 },
@@ -769,7 +767,7 @@ impl<F: Field> Config<F> {
                     cb.require_equal(
                         "[value] value_acc::next == value_acc::cur * randomness + value::next",
                         meta.query_advice(rlp_table.value_acc, Rotation::next()),
-                        meta.query_advice(rlp_table.value_acc, Rotation::cur()) * r +
+                        meta.query_advice(rlp_table.value_acc, Rotation::cur()) * r.clone() +
                             meta.query_advice(value, Rotation::next()),
                     );
                 },
@@ -1356,7 +1354,7 @@ impl<F: Field> Config<F> {
                     cb.require_equal(
                         "[sig_r] value_acc::next == value_acc::cur * randomness + value::next",
                         meta.query_advice(rlp_table.value_acc, Rotation::next()),
-                        meta.query_advice(rlp_table.value_acc, Rotation::cur()) * r +
+                        meta.query_advice(rlp_table.value_acc, Rotation::cur()) * r.clone() +
                             meta.query_advice(value, Rotation::next()),
                     );
                 },
@@ -1451,7 +1449,7 @@ impl<F: Field> Config<F> {
                     cb.require_equal(
                         "[sig_s] value_acc::next == value_acc::cur * randomness + value::next",
                         meta.query_advice(rlp_table.value_acc, Rotation::next()),
-                        meta.query_advice(rlp_table.value_acc, Rotation::cur()) * r +
+                        meta.query_advice(rlp_table.value_acc, Rotation::cur()) * r.clone() +
                             meta.query_advice(value, Rotation::next()),
                     );
                 },
@@ -1633,7 +1631,6 @@ impl<F: Field> Config<F> {
         });
 
         Self {
-            r,
             q_usable,
             is_first,
             is_last,
@@ -1667,6 +1664,7 @@ impl<F: Field> Config<F> {
         &self,
         mut layouter: impl Layouter<F>,
         signed_txs: &[SignedTransaction],
+        randomness: F,
     ) -> Result<(), Error> {
         let tag_index_cmp_1_chip = ComparatorChip::construct(self.tag_index_cmp_1.clone());
         let tag_index_length_cmp_chip =
@@ -1691,18 +1689,17 @@ impl<F: Field> Config<F> {
         layouter.assign_region(
             || "assign RLP-encoded data",
             |mut region| {
-                // add a dummy row at offset == 0.
                 let mut offset = 0;
                 self.assign_padding_rows(&mut region, offset)?;
 
                 for signed_tx in signed_txs.iter() {
                     // tx hash (signed tx)
                     let mut value_rlc = F::zero();
-                    let tx_hash_rows = signed_tx.gen_witness(self.r);
+                    let tx_hash_rows = signed_tx.gen_witness(randomness);
                     let n_rows = tx_hash_rows.len();
                     for (idx, row) in tx_hash_rows
                         .iter()
-                        .chain(std::iter::once(&signed_tx.rlp_row(self.r)))
+                        .chain(std::iter::once(&signed_tx.rlp_row(randomness)))
                         .enumerate()
                     {
                         offset += 1;
@@ -1711,7 +1708,7 @@ impl<F: Field> Config<F> {
                         value_rlc = if row.tag == RlpTxTag::Rlp as u8 {
                             row.value_acc
                         } else {
-                            value_rlc * self.r + F::from(row.value as u64)
+                            value_rlc * randomness + F::from(row.value as u64)
                         };
 
                         // q_usable
@@ -1874,11 +1871,11 @@ impl<F: Field> Config<F> {
 
                     // tx sign (unsigned tx)
                     let mut value_rlc = F::zero();
-                    let tx_sign_rows = signed_tx.tx.gen_witness(self.r);
+                    let tx_sign_rows = signed_tx.tx.gen_witness(randomness);
                     let n_rows = tx_sign_rows.len();
                     for (idx, row) in tx_sign_rows
                         .iter()
-                        .chain(std::iter::once(&signed_tx.tx.rlp_row(self.r)))
+                        .chain(std::iter::once(&signed_tx.tx.rlp_row(randomness)))
                         .enumerate()
                     {
                         offset += 1;
@@ -1887,7 +1884,7 @@ impl<F: Field> Config<F> {
                         value_rlc = if row.tag == RlpTxTag::Rlp as u8 {
                             row.value_acc
                         } else {
-                            value_rlc * self.r + F::from(row.value as u64)
+                            value_rlc * randomness + F::from(row.value as u64)
                         };
 
                         // q_usable
@@ -2156,26 +2153,26 @@ mod tests {
     };
     use mock::CORRECT_MOCK_TXS;
 
-    use crate::evm_circuit::witness::SignedTransaction;
+    use crate::{evm_circuit::witness::SignedTransaction, util::power_of_randomness_from_instance};
 
-    use super::Config;
+    use super::RlpCircuit;
 
     #[derive(Clone)]
     struct MyConfig<F> {
-        rlp_config: Config<F>,
+        rlp_config: RlpCircuit<F>,
     }
 
     struct MyCircuit<F, RLP> {
         inputs: Vec<RLP>,
-        size: usize,
+        randomness: F,
         _marker: PhantomData<F>,
     }
 
-    impl<F, RLP> Default for MyCircuit<F, RLP> {
+    impl<F: Field, RLP> Default for MyCircuit<F, RLP> {
         fn default() -> Self {
             Self {
                 inputs: vec![],
-                size: 0,
+                randomness: F::one(),
                 _marker: PhantomData,
             }
         }
@@ -2184,9 +2181,6 @@ mod tests {
     impl<F: Field, RLP> MyCircuit<F, RLP> {
         fn get_randomness() -> F {
             F::from(194881236412749812)
-        }
-        fn max_txs() -> usize {
-            10
         }
     }
 
@@ -2199,7 +2193,8 @@ mod tests {
         }
 
         fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-            let rlp_config = Config::configure(meta, Self::get_randomness());
+            let randomness = power_of_randomness_from_instance::<_, 1>(meta);
+            let rlp_config = RlpCircuit::configure(meta, randomness[0].clone());
 
             MyConfig { rlp_config }
         }
@@ -2209,19 +2204,25 @@ mod tests {
             config: Self::Config,
             layouter: impl Layouter<F>,
         ) -> Result<(), Error> {
-            config.rlp_config.assign(layouter, self.inputs.as_slice())
+            config
+                .rlp_config
+                .assign(layouter, self.inputs.as_slice(), self.randomness)
         }
     }
 
     fn verify_txs<F: Field>(k: u32, inputs: Vec<SignedTransaction>, success: bool) {
+        let randomness = MyCircuit::<F, SignedTransaction>::get_randomness();
         let circuit = MyCircuit::<F, SignedTransaction> {
             inputs,
-            size: 2usize.pow(k),
+            randomness,
             _marker: PhantomData,
         };
 
-        let prover = MockProver::<F>::run(k, &circuit, vec![]).unwrap();
-        let err = prover.verify();
+        let num_rows = 1 << k;
+        const NUM_BLINDING_ROWS: usize = 8;
+        let instance = vec![vec![randomness; num_rows - NUM_BLINDING_ROWS]];
+        let prover = MockProver::<F>::run(k, &circuit, instance).unwrap();
+        let err = prover.verify_par();
         let print_failures = true;
         if err.is_err() && print_failures {
             if let Some(e) = err.err() {
@@ -2230,7 +2231,7 @@ mod tests {
                 }
             }
         }
-        let err = prover.verify();
+        let err = prover.verify_par();
         assert_eq!(err.is_ok(), success);
     }
 

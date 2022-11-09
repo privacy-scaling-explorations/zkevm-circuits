@@ -6,8 +6,9 @@
 
 pub mod sign_verify;
 
-use crate::table::{KeccakTable, TxFieldTag, TxTable};
+use crate::table::{KeccakTable, RlpTable, TxFieldTag, TxTable};
 use crate::util::{random_linear_combine_word as rlc, Challenges};
+use crate::witness::signed_tx_from_geth_tx;
 use bus_mapping::circuit_input_builder::keccak_inputs_tx_circuit;
 use eth_types::{
     sign_types::SignData,
@@ -40,6 +41,7 @@ pub struct TxCircuitConfig<F: Field> {
     value: Column<Advice>,
     sign_verify: SignVerifyConfig,
     keccak_table: KeccakTable,
+    rlp_table: RlpTable,
     _marker: PhantomData<F>,
 }
 
@@ -49,6 +51,7 @@ impl<F: Field> TxCircuitConfig<F> {
         meta: &mut ConstraintSystem<F>,
         tx_table: TxTable,
         keccak_table: KeccakTable,
+        rlp_table: RlpTable,
         challenges: Challenges<Expression<F>>,
     ) -> Self {
         let tx_id = tx_table.tx_id;
@@ -66,6 +69,7 @@ impl<F: Field> TxCircuitConfig<F> {
             value,
             sign_verify,
             keccak_table,
+            rlp_table,
             _marker: PhantomData,
         }
     }
@@ -125,13 +129,20 @@ pub struct TxCircuit<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> 
     pub txs: Vec<Transaction>,
     /// Chain ID
     pub chain_id: u64,
+    /// Randomness.
+    pub randomness: F,
 }
 
 impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
     TxCircuit<F, MAX_TXS, MAX_CALLDATA>
 {
     /// Return a new TxCircuit
-    pub fn new(aux_generator: Secp256k1Affine, chain_id: u64, txs: Vec<Transaction>) -> Self {
+    pub fn new(
+        aux_generator: Secp256k1Affine,
+        chain_id: u64,
+        txs: Vec<Transaction>,
+        randomness: F,
+    ) -> Self {
         TxCircuit::<F, MAX_TXS, MAX_CALLDATA> {
             sign_verify: SignVerifyChip {
                 aux_generator,
@@ -140,6 +151,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
             },
             txs,
             chain_id,
+            randomness,
         }
     }
 
@@ -300,6 +312,10 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
         )?;
         Ok(())
     }
+
+    fn get_randomness() -> F {
+        F::from(123456789u64)
+    }
 }
 
 impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
@@ -315,11 +331,12 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
         let tx_table = TxTable::construct(meta);
         let keccak_table = KeccakTable::construct(meta);
+        let rlp_table = RlpTable::construct(meta);
         let challenges = Challenges::construct(meta);
 
         let config = {
             let challenges = challenges.exprs(meta);
-            TxCircuitConfig::new(meta, tx_table, keccak_table, challenges)
+            TxCircuitConfig::new(meta, tx_table, keccak_table, rlp_table, challenges)
         };
 
         (config, challenges)
@@ -341,6 +358,11 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
                 Error::Synthesis
             })?,
             &challenges,
+        )?;
+        config.rlp_table.dev_load(
+            &mut layouter,
+            signed_tx_from_geth_tx(self.txs.as_slice(), self.chain_id),
+            self.randomness,
         )
     }
 }
@@ -377,6 +399,7 @@ mod tx_circuit_tests {
             },
             txs,
             chain_id,
+            randomness: TxCircuit::<F, MAX_TXS, MAX_CALLDATA>::get_randomness(),
         };
 
         let prover = match MockProver::run(k, &circuit, vec![vec![]]) {
