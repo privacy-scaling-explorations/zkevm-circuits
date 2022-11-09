@@ -257,11 +257,10 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
             ),
         )?;
 
-        let bytes_to_copy = return_data_size - (data_offset + size);
         self.in_bound_check.assign(
             region,
             offset,
-            bytes_to_copy
+            (return_data_size - (data_offset + size))
                 .to_scalar()
                 .expect("unexpected U256 -> Scalar conversion failure"),
         )?;
