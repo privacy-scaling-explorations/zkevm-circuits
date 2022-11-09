@@ -100,7 +100,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
                 - (from_bytes::expr(&data_offset.cells) + from_bytes::expr(&size.cells)),
         );
 
-        // 4 memory copy
+        // 4. memory copy
         // Construct memory address in the destination (memory) to which we copy memory.
         let dst_memory_addr = MemoryAddressGadget::construct(cb, dest_offset, size);
 
@@ -146,7 +146,8 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
             program_counter: Delta(1.expr()),
             stack_pointer: Delta(3.expr()),
             gas_left: Delta(
-                -(OpcodeId::CALLDATACOPY.constant_gas_cost().expr() + memory_copier_gas.gas_cost()),
+                -(OpcodeId::RETURNDATACOPY.constant_gas_cost().expr()
+                    + memory_copier_gas.gas_cost()),
             ),
             memory_word_size: To(memory_expansion.next_memory_word_size()),
             ..Default::default()

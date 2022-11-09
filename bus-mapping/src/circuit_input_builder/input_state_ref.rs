@@ -853,7 +853,6 @@ impl<'a> CircuitInputStateRef<'a> {
         }
 
         // If current call has caller.
-        // TODO: use is_root??
         if let Ok(caller) = self.caller_mut() {
             caller.last_callee_id = call.call_id;
             caller.last_callee_return_data_length = call.return_data_length;
