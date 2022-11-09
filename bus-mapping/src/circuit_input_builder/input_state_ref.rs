@@ -1167,12 +1167,6 @@ impl<'a> CircuitInputStateRef<'a> {
                 CallContextField::IsSuccess,
                 0u64.into(),
             );
-            self.call_context_read(
-                exec_step,
-                call.call_id,
-                CallContextField::IsPersistent,
-                0u64.into(),
-            );
             if call.is_root {
                 return Ok(());
             }
