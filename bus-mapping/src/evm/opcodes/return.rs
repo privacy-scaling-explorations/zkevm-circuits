@@ -94,9 +94,6 @@ impl Opcode for Return {
 
                 caller_ctx.memory.0[return_offset..return_offset + copy_length]
                     .copy_from_slice(&callee_memory.0[offset..offset + copy_length]);
-                caller_ctx.return_data.resize(length, 0);
-                caller_ctx.return_data[0..copy_length]
-                    .copy_from_slice(&callee_memory.0[offset..offset + copy_length]);
 
                 handle_copy(
                     state,
