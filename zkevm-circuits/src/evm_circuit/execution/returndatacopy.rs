@@ -250,7 +250,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
             region,
             offset,
             Value::known(
-                copy_rwc_inc // 1 read & 1 write
+                copy_rwc_inc
                     .to_scalar()
                     .expect("unexpected U256 -> Scalar conversion failure"),
             ),
