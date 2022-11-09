@@ -1,5 +1,6 @@
 use bus_mapping::circuit_input_builder;
-use eth_types::{Address, Field, ToLittleEndian, ToScalar, ToWord, Word};
+use eth_types::{Address, Field, Signature, ToLittleEndian, ToScalar, ToWord, Word};
+use mock::MockTransaction;
 use rlp::Encodable;
 
 use crate::{evm_circuit::util::RandomLinearCombination, table::TxContextFieldTag};
@@ -145,6 +146,60 @@ impl Encodable for Transaction {
         s.append(&Word::from(self.chain_id));
         s.append(&Word::zero());
         s.append(&Word::zero());
+    }
+}
+
+/// Signed transaction in a witness block
+#[derive(Debug, Clone)]
+pub struct SignedTransaction {
+    /// Transaction data.
+    pub tx: Transaction,
+    /// ECDSA signature on the transaction.
+    pub signature: Signature,
+}
+
+impl Encodable for SignedTransaction {
+    fn rlp_append(&self, s: &mut rlp::RlpStream) {
+        s.begin_list(9);
+        s.append(&Word::from(self.tx.nonce));
+        s.append(&self.tx.gas_price);
+        s.append(&Word::from(self.tx.gas));
+        s.append(&self.tx.callee_address);
+        s.append(&self.tx.value);
+        s.append(&self.tx.call_data);
+        s.append(&self.signature.v);
+        s.append(&self.signature.r);
+        s.append(&self.signature.s);
+    }
+}
+
+impl From<MockTransaction> for SignedTransaction {
+    fn from(mock_tx: MockTransaction) -> Self {
+        let is_create = mock_tx.to.is_none();
+        Self {
+            tx: Transaction {
+                id: mock_tx.transaction_index.as_usize(),
+                nonce: mock_tx.nonce.as_u64(),
+                gas: mock_tx.gas.as_u64(),
+                gas_price: mock_tx.gas_price,
+                caller_address: mock_tx.from.address(),
+                callee_address: match mock_tx.to {
+                    Some(to) => to.address(),
+                    None => Address::zero(),
+                },
+                is_create,
+                value: mock_tx.value,
+                call_data: mock_tx.input.to_vec(),
+                call_data_length: mock_tx.input.len(),
+                chain_id: mock_tx.chain_id.as_u64(),
+                ..Default::default()
+            },
+            signature: Signature {
+                r: mock_tx.r.expect("tx expected to be signed"),
+                s: mock_tx.s.expect("tx expected to be signed"),
+                v: mock_tx.v.expect("tx expected to be signed").as_u64(),
+            },
+        }
     }
 }
 

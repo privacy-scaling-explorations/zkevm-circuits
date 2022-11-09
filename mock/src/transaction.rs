@@ -293,7 +293,7 @@ impl MockTransaction {
     }
 
     /// Set chain_id field for the MockTransaction.
-    pub(crate) fn chain_id(&mut self, chain_id: Word) -> &mut Self {
+    pub fn chain_id(&mut self, chain_id: Word) -> &mut Self {
         self.chain_id = chain_id;
         self
     }

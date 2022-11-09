@@ -1,6 +1,6 @@
 use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
 
-use crate::{evm_circuit::witness::Transaction, impl_expr};
+use crate::{evm_circuit::witness::Transaction, impl_expr, witness::tx::SignedTransaction};
 
 use super::{
     common::{handle_address, handle_bytes, handle_prefix, handle_u256},
@@ -173,6 +173,140 @@ impl<F: FieldExt> RlpWitnessGen<F> for Transaction {
             id: self.id,
             index: rlp_out.len() + 1,
             data_type: RlpDataType::TxSign,
+            value: 0,
+            value_acc: rlc_rlp_out,
+            tag: RlpTxTag::Rlp as u8,
+            tag_length: 1,
+            tag_index: 1,
+            aux_tag_index: [0; 2],
+            aux_tag_length: [0; 2],
+            length_acc: 0,
+        }
+    }
+}
+
+impl<F: FieldExt> RlpWitnessGen<F> for SignedTransaction {
+    fn gen_witness(&self, randomness: F) -> Vec<RlpWitnessRow<F>> {
+        let rlp_data = rlp::encode(self);
+        let mut rows = Vec::with_capacity(rlp_data.len());
+
+        let idx = handle_prefix(
+            self.tx.id,
+            rlp_data.as_ref(),
+            &mut rows,
+            RlpDataType::TxHash,
+            RlpTxTag::Prefix as u8,
+            0,
+        );
+        let idx = handle_u256(
+            randomness,
+            self.tx.id,
+            rlp_data.as_ref(),
+            &mut rows,
+            RlpDataType::TxHash,
+            RlpTxTag::Nonce as u8,
+            self.tx.nonce.into(),
+            idx,
+        );
+        let idx = handle_u256(
+            randomness,
+            self.tx.id,
+            rlp_data.as_ref(),
+            &mut rows,
+            RlpDataType::TxHash,
+            RlpTxTag::GasPrice as u8,
+            self.tx.gas_price,
+            idx,
+        );
+        let idx = handle_u256(
+            randomness,
+            self.tx.id,
+            rlp_data.as_ref(),
+            &mut rows,
+            RlpDataType::TxHash,
+            RlpTxTag::Gas as u8,
+            self.tx.gas.into(),
+            idx,
+        );
+        let idx = handle_address(
+            self.tx.id,
+            rlp_data.as_ref(),
+            &mut rows,
+            RlpDataType::TxHash,
+            RlpTxTag::ToPrefix as u8,
+            RlpTxTag::To as u8,
+            self.tx.callee_address,
+            idx,
+        );
+        let idx = handle_u256(
+            randomness,
+            self.tx.id,
+            rlp_data.as_ref(),
+            &mut rows,
+            RlpDataType::TxHash,
+            RlpTxTag::Value as u8,
+            self.tx.value,
+            idx,
+        );
+        let idx = handle_bytes(
+            randomness,
+            self.tx.id,
+            rlp_data.as_ref(),
+            &mut rows,
+            RlpDataType::TxHash,
+            RlpTxTag::DataPrefix as u8,
+            RlpTxTag::Data as u8,
+            &self.tx.call_data,
+            idx,
+        );
+        let idx = handle_u256(
+            randomness,
+            self.tx.id,
+            rlp_data.as_ref(),
+            &mut rows,
+            RlpDataType::TxHash,
+            RlpTxTag::SigV as u8,
+            self.signature.v.into(),
+            idx,
+        );
+        let idx = handle_u256(
+            randomness,
+            self.tx.id,
+            rlp_data.as_ref(),
+            &mut rows,
+            RlpDataType::TxHash,
+            RlpTxTag::SigR as u8,
+            self.signature.r,
+            idx,
+        );
+        let idx = handle_u256(
+            randomness,
+            self.tx.id,
+            rlp_data.as_ref(),
+            &mut rows,
+            RlpDataType::TxHash,
+            RlpTxTag::SigS as u8,
+            self.signature.s,
+            idx,
+        );
+
+        assert!(
+            idx == rlp_data.len(),
+            "RLP data mismatch: idx != len(rlp_data)"
+        );
+        rows
+    }
+
+    fn rlp_row(&self, randomness: F) -> RlpWitnessRow<F> {
+        let rlp_out = rlp::encode(self);
+        let rlc_rlp_out = rlp_out.as_ref().iter().fold(F::zero(), |acc, value| {
+            acc * randomness + F::from(*value as u64)
+        });
+
+        RlpWitnessRow {
+            id: self.tx.id,
+            index: rlp_out.len() + 1,
+            data_type: RlpDataType::TxHash,
             value: 0,
             value_acc: rlc_rlp_out,
             tag: RlpTxTag::Rlp as u8,

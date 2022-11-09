@@ -19,4 +19,4 @@ pub use rw::{Rw, RwMap, RwRow};
 mod step;
 pub use step::ExecStep;
 mod tx;
-pub use tx::Transaction;
+pub use tx::{SignedTransaction, Transaction};

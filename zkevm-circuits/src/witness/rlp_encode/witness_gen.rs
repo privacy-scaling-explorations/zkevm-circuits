@@ -51,7 +51,7 @@ pub struct RlpWitnessRow<F> {
 
 /// The RlpWitnessGen trait is implemented by data types who's RLP encoding can
 /// be verified by the RLP-encoding circuit.
-pub trait RlpWitnessGen<F: FieldExt>: Encodable + Default + std::marker::Sized {
+pub trait RlpWitnessGen<F: FieldExt>: Encodable + std::marker::Sized {
     /// Generate witness to the RLP-encoding verifier circuit, as a vector of
     /// RlpWitnessRow.
     fn gen_witness(&self, randomness: F) -> Vec<RlpWitnessRow<F>>;

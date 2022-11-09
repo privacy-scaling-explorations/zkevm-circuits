@@ -18,6 +18,7 @@ use crate::{
     },
     table::RlpTable,
     util::Expr,
+    witness::SignedTransaction,
 };
 
 #[derive(Clone, Debug)]
@@ -1442,10 +1443,10 @@ impl<F: Field> Config<F> {
         }
     }
 
-    pub(crate) fn assign<RLP: RlpWitnessGen<F>>(
+    pub(crate) fn assign(
         &self,
         mut layouter: impl Layouter<F>,
-        witnesses: &[RLP],
+        signed_txs: &[SignedTransaction],
     ) -> Result<(), Error> {
         let tag_index_cmp_1_chip = ComparatorChip::construct(self.tag_index_cmp_1.clone());
         let tag_index_length_cmp_chip =
@@ -1476,14 +1477,191 @@ impl<F: Field> Config<F> {
                 let mut offset = 0;
                 self.assign_padding_rows(&mut region, offset)?;
 
-                for witness in witnesses.iter() {
+                for signed_tx in signed_txs.iter() {
+                    // tx hash (signed tx)
                     let mut value_rlc = F::zero();
-                    let rows = witness.gen_witness(self.r);
-                    let n_rows = rows.len();
-
-                    for (idx, row) in rows
+                    let tx_hash_rows = signed_tx.gen_witness(self.r);
+                    let n_rows = tx_hash_rows.len();
+                    for (idx, row) in tx_hash_rows
                         .iter()
-                        .chain(std::iter::once(&witness.rlp_row(self.r)))
+                        .chain(std::iter::once(&signed_tx.rlp_row(self.r)))
+                        .enumerate()
+                    {
+                        offset += 1;
+
+                        // update value accumulator over the entire RLP encoding.
+                        value_rlc = if row.tag == RlpTxTag::Rlp as u8 {
+                            row.value_acc
+                        } else {
+                            value_rlc * self.r + F::from(row.value as u64)
+                        };
+
+                        // q_usable
+                        self.q_usable.enable(&mut region, offset)?;
+                        // is_first
+                        region.assign_advice(
+                            || format!("assign is_first {}", offset),
+                            self.is_first,
+                            offset,
+                            || Value::known(F::from((idx == 0) as u64)),
+                        )?;
+                        // advices
+                        let rindex = (n_rows + 1 - row.index) as u64;
+                        for (name, column, value) in [
+                            ("is_last", self.is_last, F::from(row.index == n_rows + 1)),
+                            (
+                                "rlp_table::tx_id",
+                                self.rlp_table.tx_id,
+                                F::from(row.id as u64),
+                            ),
+                            (
+                                "rlp_table::tag",
+                                self.rlp_table.tag,
+                                F::from(row.tag as u64),
+                            ),
+                            (
+                                "rlp_table::tag_index",
+                                self.rlp_table.tag_index,
+                                F::from(row.tag_index as u64),
+                            ),
+                            (
+                                "rlp_table::value_acc",
+                                self.rlp_table.value_acc,
+                                row.value_acc,
+                            ),
+                            (
+                                "rlp_table::data_type",
+                                self.rlp_table.data_type,
+                                F::from(row.data_type as u64),
+                            ),
+                            ("index", self.index, F::from(row.index as u64)),
+                            ("rindex", self.rindex, F::from(rindex)),
+                            ("value", self.value, F::from(row.value as u64)),
+                            (
+                                "tag_length",
+                                self.tag_length,
+                                F::from(row.tag_length as u64),
+                            ),
+                            ("length_acc", self.length_acc, F::from(row.length_acc)),
+                            ("value_rlc", self.value_rlc, value_rlc),
+                        ] {
+                            region.assign_advice(
+                                || format!("assign {} {}", name, offset),
+                                column,
+                                offset,
+                                || Value::known(value),
+                            )?;
+                        }
+
+                        for (name, column, value) in self.tx_tag_invs(Some(row.tag)) {
+                            region.assign_advice(
+                                || format!("assign {} {}", name, offset),
+                                column,
+                                offset,
+                                || Value::known(value),
+                            )?;
+                        }
+
+                        tag_index_cmp_1_chip.assign(
+                            &mut region,
+                            offset,
+                            F::one(),
+                            F::from(row.tag_index as u64),
+                        )?;
+                        tag_index_length_cmp_chip.assign(
+                            &mut region,
+                            offset,
+                            F::from(row.tag_index as u64),
+                            F::from(row.tag_length as u64),
+                        )?;
+                        tag_length_cmp_1_chip.assign(
+                            &mut region,
+                            offset,
+                            F::one(),
+                            F::from(row.tag_length as u64),
+                        )?;
+                        tag_index_lt_10_chip.assign(
+                            &mut region,
+                            offset,
+                            F::from(row.tag_index as u64),
+                            F::from(10u64),
+                        )?;
+                        tag_index_lt_34_chip.assign(
+                            &mut region,
+                            offset,
+                            F::from(row.tag_index as u64),
+                            F::from(34u64),
+                        )?;
+                        value_gt_127_chip.assign(
+                            &mut region,
+                            offset,
+                            F::from(127u64),
+                            F::from(row.value as u64),
+                        )?;
+                        value_gt_183_chip.assign(
+                            &mut region,
+                            offset,
+                            F::from(183u64),
+                            F::from(row.value as u64),
+                        )?;
+                        value_gt_191_chip.assign(
+                            &mut region,
+                            offset,
+                            F::from(191u64),
+                            F::from(row.value as u64),
+                        )?;
+                        value_gt_247_chip.assign(
+                            &mut region,
+                            offset,
+                            F::from(247u64),
+                            F::from(row.value as u64),
+                        )?;
+                        value_lt_129_chip.assign(
+                            &mut region,
+                            offset,
+                            F::from(row.value as u64),
+                            F::from(129u64),
+                        )?;
+                        value_lt_184_chip.assign(
+                            &mut region,
+                            offset,
+                            F::from(row.value as u64),
+                            F::from(184u64),
+                        )?;
+                        value_lt_192_chip.assign(
+                            &mut region,
+                            offset,
+                            F::from(row.value as u64),
+                            F::from(192u64),
+                        )?;
+                        value_lt_248_chip.assign(
+                            &mut region,
+                            offset,
+                            F::from(row.value as u64),
+                            F::from(248u64),
+                        )?;
+                        value_lt_256_chip.assign(
+                            &mut region,
+                            offset,
+                            F::from(row.value as u64),
+                            F::from(256u64),
+                        )?;
+                        length_acc_cmp_0_chip.assign(
+                            &mut region,
+                            offset,
+                            F::zero(),
+                            F::from(row.length_acc as u64),
+                        )?;
+                        rindex_gt_1_chip.assign(&mut region, offset, F::one(), F::from(rindex))?;
+                    }
+
+                    // tx sign (unsigned tx)
+                    let mut value_rlc = F::zero();
+                    let tx_sign_rows = signed_tx.tx.gen_witness(self.r);
+                    let n_rows = tx_sign_rows.len();
+                    for (idx, row) in tx_sign_rows
+                        .iter()
+                        .chain(std::iter::once(&signed_tx.tx.rlp_row(self.r)))
                         .enumerate()
                     {
                         offset += 1;
@@ -1749,15 +1927,16 @@ impl<F: Field> Config<F> {
 mod tests {
     use std::marker::PhantomData;
 
-    use eth_types::{Field, U256};
+    use eth_types::Field;
     use halo2_proofs::{
         circuit::{Layouter, SimpleFloorPlanner},
         dev::MockProver,
         halo2curves::bn256::Fr,
         plonk::{Circuit, ConstraintSystem, Error},
     };
+    use mock::CORRECT_MOCK_TXS;
 
-    use crate::evm_circuit::witness::Transaction;
+    use crate::evm_circuit::witness::SignedTransaction;
 
     use super::Config;
 
@@ -1766,11 +1945,20 @@ mod tests {
         rlp_config: Config<F>,
     }
 
-    #[derive(Default)]
     struct MyCircuit<F, RLP> {
         inputs: Vec<RLP>,
         size: usize,
         _marker: PhantomData<F>,
+    }
+
+    impl<F, RLP> Default for MyCircuit<F, RLP> {
+        fn default() -> Self {
+            Self {
+                inputs: vec![],
+                size: 0,
+                _marker: PhantomData,
+            }
+        }
     }
 
     impl<F: Field, RLP> MyCircuit<F, RLP> {
@@ -1782,7 +1970,7 @@ mod tests {
         }
     }
 
-    impl<F: Field> Circuit<F> for MyCircuit<F, Transaction> {
+    impl<F: Field> Circuit<F> for MyCircuit<F, SignedTransaction> {
         type Config = MyConfig<F>;
         type FloorPlanner = SimpleFloorPlanner;
 
@@ -1805,8 +1993,8 @@ mod tests {
         }
     }
 
-    fn verify_txs<F: Field>(k: u32, inputs: Vec<Transaction>, success: bool) {
-        let circuit = MyCircuit::<F, Transaction> {
+    fn verify_txs<F: Field>(k: u32, inputs: Vec<SignedTransaction>, success: bool) {
+        let circuit = MyCircuit::<F, SignedTransaction> {
             inputs,
             size: 2usize.pow(k),
             _marker: PhantomData,
@@ -1826,71 +2014,31 @@ mod tests {
         assert_eq!(err.is_ok(), success);
     }
 
-    fn get_txs() -> [Transaction; 3] {
-        [
-            Transaction {
-                id: 1,
-                nonce: 0x123u64,
-                gas_price: 100_000_000_000u64.into(),
-                gas: 1_000_000u64,
-                callee_address: mock::MOCK_ACCOUNTS[0],
-                value: U256::from_dec_str("250000000000000000000").unwrap(),
-                call_data: vec![1, 2, 3],
-                call_data_length: 3,
-                ..Default::default()
-            },
-            Transaction {
-                id: 2,
-                nonce: 0x00u64,
-                gas_price: 100_000_000u64.into(),
-                gas: 1_000u64,
-                callee_address: mock::MOCK_ACCOUNTS[1],
-                value: 0.into(),
-                call_data: vec![],
-                ..Default::default()
-            },
-            Transaction {
-                id: 3,
-                nonce: 0x01u64,
-                gas_price: 100_000_000u64.into(),
-                gas: 1_000u64,
-                callee_address: mock::MOCK_ACCOUNTS[2],
-                value: 10u64.into(),
-                call_data: vec![
-                    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 1, 2, 3,
-                    4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 1, 2, 3, 4, 5, 6,
-                    7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 1, 2, 3, 4, 5, 6, 7, 8, 9,
-                    10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11,
-                    12, 13, 14, 15, 16, 17, 18, 19, 20, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13,
-                    14, 15, 16, 17, 18, 19, 20, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
-                    16, 17, 18, 19, 20, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17,
-                    18, 19, 20, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
-                    20, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
-                ],
-                call_data_length: 200,
-                ..Default::default()
-            },
-        ]
-    }
-
     #[test]
     fn rlp_circuit_tx_1() {
-        verify_txs::<Fr>(8, vec![get_txs()[0].clone()], true);
+        verify_txs::<Fr>(8, vec![CORRECT_MOCK_TXS[0].clone().into()], true);
     }
 
     #[test]
     fn rlp_circuit_tx_2() {
-        verify_txs::<Fr>(8, vec![get_txs()[1].clone()], true);
+        verify_txs::<Fr>(8, vec![CORRECT_MOCK_TXS[1].clone().into()], true);
     }
 
     #[test]
     fn rlp_circuit_tx_3() {
-        verify_txs::<Fr>(20, vec![get_txs()[2].clone()], true);
+        verify_txs::<Fr>(20, vec![CORRECT_MOCK_TXS[2].clone().into()], true);
     }
 
     #[test]
     fn rlp_circuit_multi_txs() {
-        let txs = get_txs();
-        verify_txs::<Fr>(10, vec![txs[0].clone(), txs[1].clone()], true);
+        verify_txs::<Fr>(
+            10,
+            vec![
+                CORRECT_MOCK_TXS[0].clone().into(),
+                CORRECT_MOCK_TXS[1].clone().into(),
+                CORRECT_MOCK_TXS[2].clone().into(),
+            ],
+            true,
+        );
     }
 }
