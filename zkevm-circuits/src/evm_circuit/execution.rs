@@ -248,7 +248,6 @@ pub(crate) struct ExecutionConfig<F> {
     error_oog_static_memory_gadget:
         DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasStaticMemoryExpansion }>,
     error_stack: ErrorStackGadget<F>,
-    //error_stack_underflow: DummyGadget<F, 0, 0, { ExecutionState::ErrorStackUnderflow }>,
     error_oog_dynamic_memory_gadget:
         DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasDynamicMemoryExpansion }>,
     error_oog_log: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasLOG }>,
@@ -487,7 +486,6 @@ impl<F: Field> ExecutionConfig<F> {
             error_oog_constant: configure_gadget!(),
             error_oog_static_memory_gadget: configure_gadget!(),
             error_stack: configure_gadget!(),
-            //error_stack_underflow: configure_gadget!(),
             error_oog_dynamic_memory_gadget: configure_gadget!(),
             error_oog_log: configure_gadget!(),
             error_oog_sload: configure_gadget!(),
@@ -1082,9 +1080,7 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::ErrorStack => {
                 assign_exec_step!(self.error_stack)
             }
-            // ExecutionState::ErrorStackUnderflow => {
-            //     assign_exec_step!(self.error_stack_underflow)
-            // }
+
             ExecutionState::ErrorInsufficientBalance => {
                 assign_exec_step!(self.error_insufficient_balance)
             }
