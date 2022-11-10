@@ -139,7 +139,7 @@ impl<F: Field> RestoreContextGadget<F> {
             cb.call_context_lookup(true.expr(), Some(caller_id.expr()), field_tag, value);
         }
 
-        let code_deposit_cost = cb.curr.state.is_create.expr()
+        let code_deposit_cost = cb.curr.state.is_create.expr() * is_success.clone()
             * GasCost::CODE_DEPOSIT_BYTE_COST.expr()
             * return_data_length;
 
