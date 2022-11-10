@@ -668,7 +668,7 @@ pub mod dev {
                 &mut layouter,
                 &self.block.rws.table_assignments(),
                 self.block.circuits_params.max_rws,
-                self.randomness,
+                Value::known(self.randomness),
             )?;
             config.bytecode_table.load(
                 &mut layouter,
