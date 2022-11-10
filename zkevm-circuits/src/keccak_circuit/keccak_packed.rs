@@ -149,7 +149,7 @@ pub struct KeccakPackedConfig<F> {
 #[derive(Default)]
 pub struct KeccakPackedCircuit<F: Field> {
     witness: Vec<KeccakRow<F>>,
-    size: usize,
+    num_rows: usize,
     _marker: PhantomData<F>,
 }
 
@@ -184,23 +184,24 @@ impl<F: Field> Circuit<F> for KeccakPackedCircuit<F> {
 
 impl<F: Field> KeccakPackedCircuit<F> {
     /// Creates a new circuit instance
-    pub fn new(size: usize) -> Self {
+    pub fn new(num_rows: usize) -> Self {
         KeccakPackedCircuit {
             witness: Vec::new(),
-            size,
+            num_rows,
             _marker: PhantomData,
         }
     }
 
     /// The number of keccak_f's that can be done in this circuit
     pub fn capacity(&self) -> usize {
-        // Subtract one for unusable rows
-        self.size / (NUM_ROUNDS + 1) - 1
+        // Subtract two for unusable rows
+        self.num_rows / (NUM_ROUNDS + 1) - 2
     }
 
     /// Sets the witness using the data to be hashed
     pub fn generate_witness(&mut self, inputs: &[Vec<u8>]) {
-        self.witness = multi_keccak(inputs, KeccakPackedCircuit::r());
+        self.witness = multi_keccak(inputs, KeccakPackedCircuit::r(), Some(self.capacity()))
+            .expect("Too many inputs for given capacity");
     }
 }
 
@@ -1223,8 +1224,9 @@ impl<F: Field> KeccakPackedConfig<F> {
         layouter: &mut impl Layouter<F>,
         inputs: &[Vec<u8>],
         r: F,
+        capacity: Option<usize>,
     ) -> Result<(), Error> {
-        let witness = multi_keccak(inputs, r);
+        let witness = multi_keccak(inputs, r, capacity)?;
         self.assign(layouter, &witness)
     }
 
@@ -1650,7 +1652,11 @@ fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: &[u8], r: F) {
     debug!("data rlc: {:x?}", data_rlc);
 }
 
-fn multi_keccak<F: Field>(bytes: &[Vec<u8>], r: F) -> Vec<KeccakRow<F>> {
+fn multi_keccak<F: Field>(
+    bytes: &[Vec<u8>],
+    r: F,
+    capacity: Option<usize>,
+) -> Result<Vec<KeccakRow<F>>, Error> {
     // Dummy first row so that the initial data is absorbed
     // The initial data doesn't really matter, `is_final` just needs to be disabled.
     let mut rows: Vec<KeccakRow<F>> = vec![KeccakRow {
@@ -1673,7 +1679,17 @@ fn multi_keccak<F: Field>(bytes: &[Vec<u8>], r: F) -> Vec<KeccakRow<F>> {
     for bytes in bytes {
         keccak(&mut rows, bytes, r);
     }
-    rows
+    if let Some(capacity) = capacity {
+        // Pad with no data hashes to the expected capacity
+        while rows.len() < (1 + capacity * (NUM_ROUNDS + 1)) {
+            keccak(&mut rows, &[], r);
+        }
+        // Check that we are not over capacity
+        if rows.len() > (1 + capacity * (NUM_ROUNDS + 1)) {
+            return Err(Error::BoundsFailure);
+        }
+    }
+    Ok(rows)
 }
 
 #[cfg(test)]

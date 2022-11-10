@@ -1168,7 +1168,6 @@ impl<'a> CircuitInputStateRef<'a> {
                 CallContextField::IsSuccess,
                 0u64.into(),
             );
-
             if call.is_root {
                 return Ok(());
             }
