@@ -209,23 +209,14 @@ macro_rules! declare_tests {
     };
 }
 
+declare_tests!(circuit_block_transfer_0, "Transfer 0");
 /*
 declare_tests!(
-    test_evm_circuit_block_transfer_0,
-    test_state_circuit_block_transfer_0,
-    "Transfer 0"
-);
-declare_tests!(
-    test_evm_circuit_deploy_greeter,
-    test_state_circuit_deploy_greeter,
+    circuit_deploy_greeter,
     "Deploy Greeter"
 );
-declare_tests!(
-    test_evm_circuit_multiple_transfers_0,
-    test_state_circuit_multiple_transfers_0,
-    "Multiple transfers 0"
-);
 */
+declare_tests!(circuit_multiple_transfers_0, "Multiple transfers 0");
 declare_tests!(
     circuit_erc20_openzeppelin_transfer_fail,
     "ERC20 OpenZeppelin transfer failed"
