@@ -474,7 +474,9 @@ mod test {
                 PUSH1(0)                        // value
 
                 CREATE
-                STOP
+                EXTCODEHASH
+                // PUSH32(0)
+                // EQ
             };
 
             let caller = Account {
