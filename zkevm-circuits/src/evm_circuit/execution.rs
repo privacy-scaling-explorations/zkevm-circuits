@@ -1167,7 +1167,10 @@ impl<F: Field> ExecutionConfig<F> {
             .rws
             .table_assignments()
             .iter()
-            .map(|rw| rw.table_assignment(block.randomness).rlc(block.randomness))
+            .map(|rw| {
+                rw.table_assignment_aux(block.randomness)
+                    .rlc(block.randomness)
+            })
             .collect();
 
         for (name, value) in assigned_rw_values.iter() {
@@ -1178,7 +1181,7 @@ impl<F: Field> ExecutionConfig<F> {
         for (idx, assigned_rw_value) in assigned_rw_values.iter().enumerate() {
             let rw_idx = step.rw_indices[idx];
             let rw = block.rws[rw_idx];
-            let table_assignments = rw.table_assignment(block.randomness);
+            let table_assignments = rw.table_assignment_aux(block.randomness);
             let rlc = table_assignments.rlc(block.randomness);
             if rlc != assigned_rw_value.1 {
                 log::error!(
