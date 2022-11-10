@@ -2,14 +2,14 @@ name: Integration Tests
 
 on:
   pull_request:
-    types: [synchronize, opened, reopened, ready_for_review]
+    types: [synchronize, opened, reopened, ready_for_review, labeled]
   push:
     branches:
       - main
 
 jobs:
   consecutiveness:
-    if: github.event.pull_request.draft == false
+    if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'run-integration-tests')
 
     runs-on: ubuntu-latest
     steps:
@@ -18,8 +18,6 @@ jobs:
         token: ${{ secrets.GITHUB_TOKEN }}
 
   wakeuprunner:
-    if: github.event.pull_request.draft == false
-
     needs: [consecutiveness]
     name: Wake up self-hosted runner
     runs-on: pse-runner
@@ -30,8 +28,6 @@ jobs:
           .github/integrationTestsScripts/wakeUpRunner.sh
 
   integration-tests:
-    if: github.event.pull_request.draft == false
-
     needs: [wakeuprunner]
     name: Integration Tests
     runs-on: integration-tests-runner
