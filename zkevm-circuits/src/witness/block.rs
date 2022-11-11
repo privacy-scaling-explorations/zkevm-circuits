@@ -1,21 +1,16 @@
 use std::collections::HashMap;
 
+use crate::{evm_circuit::util::RandomLinearCombination, table::BlockContextFieldTag};
 use bus_mapping::circuit_input_builder::{self, CircuitsParams, CopyEvent, ExpEvent};
 use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word};
 use halo2_proofs::halo2curves::bn256::Fr;
 use itertools::Itertools;
-use crate::{
-    evm_circuit::util::RandomLinearCombination,
-    table::BlockContextFieldTag,
-    evm_circuit::step::ExecutionState,
-};
 
 use super::{step::step_convert, tx::tx_convert, Bytecode, ExecStep, RwMap, Transaction};
 
-/// Block is the struct used by all circuits, which constraints all the needed
+/// Block is the struct used by all circuits, which contains all the needed
 /// data for witness generation.
-/// TODO: figure out better way to deal with potential ExecutionState mismatch when invoke default trait
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Clone)]
 pub struct Block<F> {
     /// The randomness for random linear combination
     pub randomness: F,
@@ -68,18 +63,6 @@ pub struct BlockContext {
     pub history_hashes: Vec<Word>,
     /// The chain id
     pub chain_id: Word,
-}
-
-impl<F: Default> Block<F> {
-    /// Create a new Self.
-    pub fn new() -> Block<F> {
-        let mut default_block: Block<F> = Default::default();
-        let mut endblock_step = ExecStep::default();
-        endblock_step.execution_state = ExecutionState::EndBlock;
-        default_block.end_block_last = endblock_step.clone();
-        default_block.end_block_not_last = endblock_step.clone();
-        default_block
-    }
 }
 
 impl BlockContext {
@@ -207,6 +190,7 @@ pub fn block_convert(
         exp_events: block.exp_events.clone(),
         sha3_inputs: block.sha3_inputs.clone(),
         circuits_params: block.circuits_params.clone(),
-        ..Default::default()
+        evm_circuit_pad_to: <usize>::default(),
+        exp_circuit_pad_to: <usize>::default(),
     }
 }

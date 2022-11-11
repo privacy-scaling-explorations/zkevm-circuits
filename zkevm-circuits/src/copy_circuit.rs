@@ -595,7 +595,7 @@ pub mod dev {
 
     #[derive(Default)]
     struct CopyCircuitTester<F> {
-        block: Block<F>,
+        block: Option<Block<F>>,
         max_txs: usize,
         randomness: F,
     }
@@ -607,7 +607,7 @@ pub mod dev {
 
         pub fn new(block: Block<F>, randomness: F) -> Self {
             Self {
-                block,
+                block: Some(block),
                 randomness,
                 max_txs: 4,
             }
@@ -656,28 +656,25 @@ pub mod dev {
             config: Self::Config,
             mut layouter: impl Layouter<F>,
         ) -> Result<(), halo2_proofs::plonk::Error> {
+            let block = self.block.as_ref().unwrap();
+
             let challenges = Challenges::mock(Value::known(self.randomness));
 
-            config.tx_table.load(
-                &mut layouter,
-                &self.block.txs,
-                self.max_txs,
-                self.randomness,
-            )?;
+            config
+                .tx_table
+                .load(&mut layouter, &block.txs, self.max_txs, self.randomness)?;
             config.rw_table.load(
                 &mut layouter,
-                &self.block.rws.table_assignments(),
-                self.block.circuits_params.max_rws,
+                &block.rws.table_assignments(),
+                block.circuits_params.max_rws,
                 Value::known(self.randomness),
             )?;
-            config.bytecode_table.load(
-                &mut layouter,
-                self.block.bytecodes.values(),
-                &challenges,
-            )?;
+            config
+                .bytecode_table
+                .load(&mut layouter, block.bytecodes.values(), &challenges)?;
             config
                 .copy_circuit
-                .assign_block(&mut layouter, &self.block, self.randomness)
+                .assign_block(&mut layouter, block, self.randomness)
         }
     }
 
