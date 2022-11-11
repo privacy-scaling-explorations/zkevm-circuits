@@ -452,6 +452,7 @@ mod test {
 
     #[test]
     fn begin_tx_invalid_nonce() {
+        // The nonce of the account doing the transaction is not correct
         // Use the same nonce value for two transactions.
         let multibyte_nonce = Word::from(1);
 
@@ -481,8 +482,8 @@ mod test {
     }
 
     #[test]
-    fn begin_tx_not_enough_gas() {
-        // Set the balance to 0
+    fn begin_tx_not_enough_eth() {
+        // The account does not have enough ETH to pay for eth_value + tx_gas * tx_gas_price.
         let multibyte_nonce = Word::from(1);
 
         let to = MOCK_ACCOUNTS[0];
