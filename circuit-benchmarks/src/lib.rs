@@ -35,3 +35,7 @@ pub mod bytecode_circuit;
 #[cfg(test)]
 #[cfg(feature = "benches")]
 pub mod pi_circuit;
+
+#[cfg(test)]
+#[cfg(feature = "benches")]
+pub mod copy_circuit;
