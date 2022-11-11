@@ -182,6 +182,8 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: u
             Expression::Constant(F::from(MOCK_RANDOMNESS).pow(&[1 + i as u64, 0, 0, 0]))
         });
 
+        let challenges = Challenges::mock(power_of_randomness[0].clone());
+
         let keccak_circuit = KeccakConfig::configure(meta, power_of_randomness[0].clone());
         let keccak_table = keccak_circuit.keccak_table.clone();
 
@@ -197,9 +199,8 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: u
             &exp_table,
         );
         let state_circuit =
-            StateCircuitConfig::configure(meta, power_of_randomness.clone(), &rw_table, &mpt_table);
+            StateCircuitConfig::configure(meta, &rw_table, &mpt_table, challenges.clone());
         let pi_circuit = PiCircuitConfig::new(meta, block_table.clone(), tx_table.clone());
-        let challenges = Challenges::mock(power_of_randomness[0].clone());
 
         Self::Config {
             tx_table: tx_table.clone(),
@@ -255,7 +256,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: u
             &mut layouter,
             &rws,
             self.block.circuits_params.max_rws,
-            self.block.randomness,
+            Value::known(self.block.randomness),
         )?;
         config.state_circuit.load(&mut layouter)?;
         config
@@ -268,13 +269,13 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: u
         config.mpt_table.load(
             &mut layouter,
             &MptUpdates::mock_from(&rws),
-            self.block.randomness,
+            Value::known(self.block.randomness),
         )?;
         config.state_circuit.assign(
             &mut layouter,
             &rws,
             self.block.circuits_params.max_rws,
-            self.block.randomness,
+            &challenges,
         )?;
         // --- Tx Circuit ---
         config.tx_circuit.load(&mut layouter)?;

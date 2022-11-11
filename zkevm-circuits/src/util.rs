@@ -99,6 +99,19 @@ impl<T: Clone> Challenges<T> {
     }
 }
 
+impl<F: Field> Challenges<Expression<F>> {
+    /// Returns powers of randomness for word RLC encoding
+    pub fn evm_word_powers_of_randomness<const S: usize>(&self) -> [Expression<F>; S] {
+        std::iter::successors(self.evm_word.clone().into(), |power| {
+            (self.evm_word.clone() * power.clone()).into()
+        })
+        .take(S)
+        .collect::<Vec<_>>()
+        .try_into()
+        .unwrap()
+    }
+}
+
 pub(crate) fn build_tx_log_address(index: u64, field_tag: TxLogFieldTag, log_id: u64) -> Address {
     (U256::from(index) + (U256::from(field_tag as u64) << 32) + (U256::from(log_id) << 48))
         .to_address()
