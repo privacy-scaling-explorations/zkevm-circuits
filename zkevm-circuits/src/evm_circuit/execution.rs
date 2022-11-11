@@ -742,12 +742,8 @@ impl<F: Field> ExecutionConfig<F> {
         &self,
         layouter: &mut impl Layouter<F>,
         block: &Block<F>,
+        randomness: Value<F>,
     ) -> Result<(), Error> {
-        let power_of_randomness = (1..32)
-            .map(|exp| block.randomness.pow(&[exp, 0, 0, 0]))
-            .collect::<Vec<F>>()
-            .try_into()
-            .unwrap();
 
         layouter.assign_region(
             || "Execution step",
@@ -820,7 +816,7 @@ impl<F: Field> ExecutionConfig<F> {
                         step,
                         height,
                         next,
-                        power_of_randomness,
+                        randomness,
                     )?;
 
                     // q_step logic
@@ -902,14 +898,14 @@ impl<F: Field> ExecutionConfig<F> {
         step: &ExecStep,
         height: usize,
         next: Option<(&Transaction, &Call, &ExecStep)>,
-        power_of_randomness: [F; 31],
+        randomness: Value<F>,
     ) -> Result<(), Error> {
         // Make the region large enough for the current step and the next step.
         // The next step's next step may also be accessed, so make the region large
         // enough for 3 steps.
         let region = &mut CachedRegion::<'_, '_, F>::new(
             region,
-            power_of_randomness,
+            randomness,
             STEP_WIDTH,
             MAX_STEP_HEIGHT * 3,
             self.advices[0].index(),
@@ -928,10 +924,11 @@ impl<F: Field> ExecutionConfig<F> {
                 transaction_next,
                 call_next,
                 step_next,
+                randomness
             )?;
         }
 
-        self.assign_exec_step_int(region, offset, block, transaction, call, step)
+        self.assign_exec_step_int(region, offset, block, transaction, call, step, randomness)
     }
 
     fn assign_exec_step_int(
@@ -942,6 +939,7 @@ impl<F: Field> ExecutionConfig<F> {
         transaction: &Transaction,
         call: &Call,
         step: &ExecStep,
+        randomness: Value<F>,
     ) -> Result<(), Error> {
         log::trace!("assign_exec_step offset:{} step:{:?}", offset, step);
         self.step
@@ -1118,7 +1116,7 @@ impl<F: Field> ExecutionConfig<F> {
         // enable with `RUST_LOG=debug`
         if log::log_enabled!(log::Level::Debug) {
             // expensive function call
-            Self::check_rw_lookup(&assigned_stored_expressions, step, block);
+            Self::check_rw_lookup(&assigned_stored_expressions, step, block, randomness);
         }
         Ok(())
     }
@@ -1148,6 +1146,7 @@ impl<F: Field> ExecutionConfig<F> {
         assigned_stored_expressions: &[(String, F)],
         step: &ExecStep,
         block: &Block<F>,
+        randomness: Value<F>
     ) {
         let mut assigned_rw_values = Vec::new();
         // Reversion lookup expressions have different ordering compared to rw table,
@@ -1168,22 +1167,22 @@ impl<F: Field> ExecutionConfig<F> {
             .table_assignments()
             .iter()
             .map(|rw| {
-                rw.table_assignment_aux(block.randomness)
-                    .rlc(block.randomness)
+                rw.table_assignment(randomness)
+                    .rlc(randomness)
             })
             .collect();
 
         for (name, value) in assigned_rw_values.iter() {
-            if !rlc_assignments.contains(value) {
+            if !rlc_assignments.contains(&Value::known(*value)) {
                 log::error!("rw lookup error: name: {}, step: {:?}", *name, step);
             }
         }
         for (idx, assigned_rw_value) in assigned_rw_values.iter().enumerate() {
             let rw_idx = step.rw_indices[idx];
             let rw = block.rws[rw_idx];
-            let table_assignments = rw.table_assignment_aux(block.randomness);
-            let rlc = table_assignments.rlc(block.randomness);
-            if rlc != assigned_rw_value.1 {
+            let table_assignments = rw.table_assignment(randomness);
+            let rlc = table_assignments.rlc(randomness);
+            if rlc != Value::known(assigned_rw_value.1) {
                 log::error!(
                     "incorrect rw witness. lookup input name: \"{}\"\n{:?}\nrw: {:?}, rw index: {:?}, {}th rw of step {:?}",
                     assigned_rw_value.0,

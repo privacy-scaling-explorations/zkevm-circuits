@@ -379,7 +379,7 @@ impl<F: Field> CopyCircuit<F> {
         &self,
         layouter: &mut impl Layouter<F>,
         block: &Block<F>,
-        randomness: F,
+        randomness: Value<F>,
     ) -> Result<(), Error> {
         let tag_chip = BinaryNumberChip::construct(self.copy_table.tag);
         let lt_chip = LtChip::construct(self.addr_lt_addr_end);
@@ -406,7 +406,7 @@ impl<F: Field> CopyCircuit<F> {
                                     || format!("{} at row: {}", label, offset),
                                     *column,
                                     offset,
-                                    || Value::known(value),
+                                    || value,
                                 )?;
                             }
                         }
@@ -433,7 +433,7 @@ impl<F: Field> CopyCircuit<F> {
                                 || format!("{} at row: {}", label, offset),
                                 *column,
                                 offset,
-                                || Value::known(value),
+                                || value,
                             )?;
                         }
 
@@ -662,7 +662,7 @@ pub mod dev {
                 &mut layouter,
                 &self.block.txs,
                 self.max_txs,
-                self.randomness,
+                Value::known(self.randomness),
             )?;
             config.rw_table.load(
                 &mut layouter,
@@ -677,7 +677,7 @@ pub mod dev {
             )?;
             config
                 .copy_circuit
-                .assign_block(&mut layouter, &self.block, self.randomness)
+                .assign_block(&mut layouter, &self.block, Value::known(self.randomness))
         }
     }
 

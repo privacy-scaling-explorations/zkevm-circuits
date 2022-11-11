@@ -7,14 +7,14 @@ use crate::{
             constraint_builder::{
                 ConstraintBuilder, ReversionInfo, StepStateTransition, Transition::Delta,
             },
-            select, CachedRegion, Cell, Word,
+            select, CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::CallContextFieldTag,
     util::Expr,
 };
-use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar};
+use eth_types::{evm_types::GasCost, Field, ToScalar};
 use halo2_proofs::{
     circuit::Value,
     plonk::{Error, Expression},
@@ -126,28 +126,19 @@ impl<F: Field> ExecutionGadget<F> for SloadGadget<F> {
         self.key.assign(
             region,
             offset,
-            Value::known(Word::random_linear_combine(
-                key.to_le_bytes(),
-                block.randomness,
-            )),
+            region.rlc(key),
         )?;
         self.value.assign(
             region,
             offset,
-            Value::known(Word::random_linear_combine(
-                value.to_le_bytes(),
-                block.randomness,
-            )),
+            region.rlc(value),
         )?;
 
         let (_, committed_value) = block.rws[step.rw_indices[5]].aux_pair();
         self.committed_value.assign(
             region,
             offset,
-            Value::known(Word::random_linear_combine(
-                committed_value.to_le_bytes(),
-                block.randomness,
-            )),
+            region.rlc(committed_value),
         )?;
 
         let (_, is_warm) = block.rws[step.rw_indices[7]].tx_access_list_value_pair();

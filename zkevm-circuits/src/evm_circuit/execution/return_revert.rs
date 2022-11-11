@@ -11,7 +11,7 @@ use crate::{
             },
             math_gadget::{IsZeroGadget, MinMaxGadget},
             memory_gadget::{MemoryAddressGadget, MemoryExpansionGadget},
-            not, CachedRegion, Cell, RandomLinearCombination,
+            not, CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -19,7 +19,7 @@ use crate::{
     util::Expr,
 };
 use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId};
-use eth_types::Field;
+use eth_types::{Field, U256};
 use ethers_core::utils::keccak256;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
@@ -234,7 +234,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
         let [memory_offset, length] = [0, 1].map(|i| block.rws[step.rw_indices[i]].stack_value());
         let range = self
             .range
-            .assign(region, offset, memory_offset, length, block.randomness)?;
+            .assign(region, offset, memory_offset, length, region.get_randomness())?;
         self.memory_expansion
             .assign(region, offset, step.memory_word_size(), [range])?;
 
@@ -266,10 +266,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
             self.code_hash.assign(
                 region,
                 offset,
-                Value::known(RandomLinearCombination::random_linear_combine(
-                    code_hash,
-                    block.randomness,
-                )),
+                region.rlc(U256::from(code_hash)),
             )?;
         }
 

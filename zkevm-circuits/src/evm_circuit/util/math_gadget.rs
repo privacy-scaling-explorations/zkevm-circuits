@@ -58,6 +58,22 @@ impl<F: Field> IsZeroGadget<F> {
             F::zero()
         })
     }
+
+    pub(crate) fn assign_value(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+        value: Value<F>,
+    ) -> Result<Value<F>, Error> {
+        let inverse = value.map(|value| value.invert().unwrap_or(F::zero()));
+        self.inverse.assign(region, offset, inverse)?;
+        Ok(value.map(|value| if value.is_zero().into() {
+            F::one()
+        } else {
+            F::zero()
+        }))
+    }
+
 }
 
 /// Returns `1` when `lhs == rhs`, and returns `0` otherwise.
@@ -90,6 +106,18 @@ impl<F: Field> IsEqualGadget<F> {
     ) -> Result<F, Error> {
         self.is_zero.assign(region, offset, lhs - rhs)
     }
+
+    pub(crate) fn assign_value(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+        lhs: Value<F>,
+        rhs: Value<F>,
+    ) -> Result<Value<F>, Error> {
+        self.is_zero.assign_value(region, offset, lhs - rhs)
+    }
+
+
 }
 
 #[derive(Clone, Debug)]
@@ -145,6 +173,26 @@ impl<F: Field, const N: usize> BatchedIsZeroGadget<F, N> {
 
         Ok(is_zero)
     }
+
+    pub(crate) fn assign_value(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+        values: [Value<F>; N],
+    ) -> Result<F, Error> {
+        let is_zero =
+            if let Some(inverse) = values.iter().find_map(|value| Option::from(value.invert())) {
+                self.nonempty_witness
+                    .assign(region, offset, Value::known(inverse))?;
+                F::zero()
+            } else {
+                F::one()
+            };
+        self.is_zero.assign(region, offset, Value::known(is_zero))?;
+
+        Ok(is_zero)
+    }
+}
 }
 
 /// Construction of 2 256-bit words addition and result, which is useful for
@@ -1226,7 +1274,7 @@ impl<F: Field> ModGadget<F> {
         a: Word,
         n: Word,
         r: Word,
-        randomness: F,
+        randomness: Value<F>,
     ) -> Result<(), Error> {
         let k = if n.is_zero() { Word::zero() } else { a / n };
         let a_or_zero = if n.is_zero() { Word::zero() } else { a };
@@ -1241,11 +1289,11 @@ impl<F: Field> ModGadget<F> {
             .assign(region, offset, F::from(a_or_zero_sum))?;
         self.mul.assign(region, offset, [k, n, r, a_or_zero])?;
         self.lt.assign(region, offset, r, n)?;
-        self.eq.assign(
+        self.eq.assign_value(
             region,
             offset,
-            util::Word::random_linear_combine(a.to_le_bytes(), randomness),
-            util::Word::random_linear_combine(a_or_zero.to_le_bytes(), randomness),
+            region.rlc(a),
+            region.rlc(a_or_zero),
         )?;
 
         Ok(())

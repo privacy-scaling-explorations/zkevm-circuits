@@ -5,7 +5,7 @@ use crate::{
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
-            CachedRegion, Cell, Word,
+            CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -13,7 +13,7 @@ use crate::{
     util::Expr,
 };
 use bus_mapping::evm::OpcodeId;
-use eth_types::{Field, ToLittleEndian, ToScalar};
+use eth_types::{Field, ToScalar};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
@@ -82,10 +82,7 @@ impl<F: Field> ExecutionGadget<F> for SelfbalanceGadget<F> {
         self.self_balance.assign(
             region,
             offset,
-            Value::known(Word::random_linear_combine(
-                self_balance.to_le_bytes(),
-                block.randomness,
-            )),
+            region.rlc(self_balance),
         )?;
 
         Ok(())

@@ -161,7 +161,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: u
 impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: usize> Circuit<F>
     for SuperCircuit<F, MAX_TXS, MAX_CALLDATA, MAX_RWS>
 {
-    type Config = SuperCircuitConfig<F, MAX_TXS, MAX_CALLDATA, MAX_RWS>;
+    type Config = (SuperCircuitConfig<F, MAX_TXS, MAX_CALLDATA, MAX_RWS>, Challenges);
     type FloorPlanner = SimpleFloorPlanner;
 
     fn without_witnesses(&self) -> Self {
@@ -189,7 +189,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: u
 
         let evm_circuit = EvmCircuit::configure(
             meta,
-            power_of_randomness.clone(),
+            challenges.clone(),
             &tx_table,
             &rw_table,
             &bytecode_table,
@@ -256,12 +256,12 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: u
             &mut layouter,
             &rws,
             self.block.circuits_params.max_rws,
-            Value::known(self.block.randomness),
+            challenges.evm_word(),
         )?;
         config.state_circuit.load(&mut layouter)?;
         config
             .block_table
-            .load(&mut layouter, &self.block.context, self.block.randomness)?;
+            .load(&mut layouter, &self.block.context, challenges.evm_word())?;
         config
             .evm_circuit
             .assign_block(&mut layouter, &self.block)?;

@@ -10,7 +10,7 @@ use crate::{
                 Transition::{Delta, To},
             },
             memory_gadget::{MemoryAddressGadget, MemoryExpansionGadget},
-            not, sum, CachedRegion, Cell, Word,
+            not, sum, CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -19,8 +19,8 @@ use crate::{
 };
 use array_init::array_init;
 use bus_mapping::circuit_input_builder::CopyDataType;
-use eth_types::Field;
-use eth_types::{evm_types::GasCost, evm_types::OpcodeId, ToLittleEndian, ToScalar};
+use eth_types::{Field, U256};
+use eth_types::{evm_types::GasCost, evm_types::OpcodeId, ToScalar};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
@@ -201,7 +201,7 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
 
         let memory_address =
             self.memory_address
-                .assign(region, offset, memory_start, msize, block.randomness)?;
+                .assign(region, offset, memory_start, msize, region.get_randomness())?;
 
         // Memory expansion
         self.memory_expansion
@@ -220,18 +220,15 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
         };
 
         for i in 0..4 {
-            let mut topic = Word::random_linear_combine([0; 32], block.randomness);
+            let mut topic = region.rlc(U256::zero());
             if i < topic_count {
-                topic = Word::random_linear_combine(
-                    block.rws[topic_stack_entry].stack_value().to_le_bytes(),
-                    block.randomness,
-                );
+                topic = region.rlc(block.rws[topic_stack_entry].stack_value());
                 self.topic_selectors[i].assign(region, offset, Value::known(F::one()))?;
                 topic_stack_entry.1 += 1;
             } else {
                 self.topic_selectors[i].assign(region, offset, Value::known(F::zero()))?;
             }
-            self.topics[i].assign(region, offset, Value::known(topic))?;
+            self.topics[i].assign(region, offset, topic)?;
         }
 
         self.contract_address.assign(

@@ -10,7 +10,7 @@ use crate::{
                 Transition::{Delta, To},
             },
             math_gadget::{IsZeroGadget, MulWordByU64Gadget, RangeCheckGadget},
-            select, CachedRegion, Cell, RandomLinearCombination, Word,
+            select, CachedRegion, Cell, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -305,10 +305,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         self.code_hash.assign(
             region,
             offset,
-            Value::known(RandomLinearCombination::random_linear_combine(
-                callee_code_hash.to_le_bytes(),
-                block.randomness,
-            )),
+            region.rlc(callee_code_hash),
         )?;
         Ok(())
     }

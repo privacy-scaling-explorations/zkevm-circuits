@@ -17,7 +17,7 @@ use crate::{
     table::{AccountFieldTag, CallContextFieldTag},
     util::Expr,
 };
-use eth_types::{evm_types::GasCost, Field, ToAddress};
+use eth_types::{evm_types::GasCost, Field, ToAddress, U256};
 use halo2_proofs::{circuit::Value, plonk::Error};
 use keccak256::EMPTY_HASH_LE;
 
@@ -156,16 +156,16 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
 
         let [nonce, balance, code_hash] = [5, 6, 7].map(|i| {
             block.rws[step.rw_indices[i]]
-                .table_assignment_aux(block.randomness)
+                .table_assignment(region.get_randomness())
                 .value
         });
 
-        self.nonce.assign(region, offset, Value::known(nonce))?;
-        self.balance.assign(region, offset, Value::known(balance))?;
+        self.nonce.assign(region, offset,nonce)?;
+        self.balance.assign(region, offset,balance)?;
         self.code_hash
-            .assign(region, offset, Value::known(code_hash))?;
+            .assign(region, offset, code_hash)?;
 
-        let empty_code_hash_rlc = Word::random_linear_combine(*EMPTY_HASH_LE, block.randomness);
+        let empty_code_hash_rlc = region.rlc(U256::from(*EMPTY_HASH_LE));
         self.is_empty.assign(
             region,
             offset,

@@ -235,9 +235,10 @@ impl<F: Field> RestoreContextGadget<F> {
         self.caller_code_hash.assign(
             region,
             offset,
-            Value::known(Word::random_linear_combine(
+            region.randomness.map(|randomness| 
+            Word::random_linear_combine(
                 caller_code_hash.to_le_bytes(),
-                block.randomness,
+                randomness,
             )),
         )?;
 

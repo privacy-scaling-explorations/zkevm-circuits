@@ -118,7 +118,7 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
                 .map(|idx| block.rws[idx].stack_value());
         let memory_address =
             self.memory_address
-                .assign(region, offset, memory_offset, size, block.randomness)?;
+                .assign(region, offset, memory_offset, size, region.get_randomness())?;
         self.sha3_rlc
             .assign(region, offset, Some(sha3_output.to_le_bytes()))?;
 
@@ -134,8 +134,8 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
         let values: Vec<u8> = (3..3 + (size.low_u64() as usize))
             .map(|i| block.rws[step.rw_indices[i]].memory_value())
             .collect();
-        let rlc_acc = rlc::value(values.iter().rev(), block.randomness);
-        self.rlc_acc.assign(region, offset, Value::known(rlc_acc))?;
+        let rlc_acc = region.get_randomness().map(|randomness| rlc::value(values.iter().rev(), randomness));
+        self.rlc_acc.assign(region, offset, rlc_acc)?;
 
         // Memory expansion and dynamic gas cost for reading it.
         let (_, memory_expansion_gas_cost) = self.memory_expansion.assign(

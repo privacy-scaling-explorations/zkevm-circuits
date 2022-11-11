@@ -178,7 +178,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
                 .map(|idx| block.rws[idx].stack_value());
         let memory_address =
             self.memory_address
-                .assign(region, offset, memory_offset, length, block.randomness)?;
+                .assign(region, offset, memory_offset, length, region.get_randomness())?;
         self.data_offset.assign(
             region,
             offset,

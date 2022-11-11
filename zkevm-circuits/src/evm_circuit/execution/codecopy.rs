@@ -172,7 +172,7 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
         // assign the destination memory offset.
         let memory_address =
             self.dst_memory_addr
-                .assign(region, offset, dest_offset, size, block.randomness)?;
+                .assign(region, offset, dest_offset, size, region.get_randomness())?;
 
         // assign to gadgets handling memory expansion cost and copying cost.
         let (_, memory_expansion_cost) = self.memory_expansion.assign(

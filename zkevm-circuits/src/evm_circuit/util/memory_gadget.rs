@@ -101,7 +101,7 @@ impl<F: Field> MemoryAddressGadget<F> {
         offset: usize,
         memory_offset: U256,
         memory_length: U256,
-        randomness: F,
+        randomness: Value<F>,
     ) -> Result<u64, Error> {
         let memory_offset_bytes = memory_offset.to_le_bytes();
         let memory_length_bytes = memory_length.to_le_bytes();
@@ -109,7 +109,7 @@ impl<F: Field> MemoryAddressGadget<F> {
         self.memory_offset.assign(
             region,
             offset,
-            Value::known(Word::random_linear_combine(memory_offset_bytes, randomness)),
+            randomness.map(|randomness| Word::random_linear_combine(memory_offset_bytes, randomness)),
         )?;
         self.memory_offset_bytes.assign(
             region,

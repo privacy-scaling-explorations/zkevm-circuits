@@ -5,11 +5,11 @@ use crate::{
     },
     util::{query_expression, Expr},
 };
-use eth_types::U256;
+use eth_types::{U256, ToLittleEndian};
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{AssignedCell, Region, Value},
-    plonk::{Advice, Assigned, Column, ConstraintSystem, Error, Expression, VirtualCells},
+    plonk::{Advice, Assigned, Column, ConstraintSystem, Error, Expression, VirtualCells, InstanceQuery},
     poly::Rotation,
 };
 use std::collections::BTreeMap;
@@ -74,7 +74,7 @@ impl<F: FieldExt> Expr<F> for &Cell<F> {
 pub struct CachedRegion<'r, 'b, F: FieldExt> {
     region: &'r mut Region<'b, F>,
     advice: Vec<Vec<F>>,
-    power_of_randomness: [F; 31],
+    randomness: Value<F>,
     width_start: usize,
     height_start: usize,
 }
@@ -83,7 +83,7 @@ impl<'r, 'b, F: FieldExt> CachedRegion<'r, 'b, F> {
     /// New cached region
     pub(crate) fn new(
         region: &'r mut Region<'b, F>,
-        power_of_randomness: [F; 31],
+        randomness: Value<F>,
         width: usize,
         height: usize,
         width_start: usize,
@@ -92,7 +92,7 @@ impl<'r, 'b, F: FieldExt> CachedRegion<'r, 'b, F> {
         Self {
             region,
             advice: vec![vec![F::zero(); height]; width],
-            power_of_randomness,
+            randomness,
             width_start,
             height_start,
         }
@@ -133,10 +133,14 @@ impl<'r, 'b, F: FieldExt> CachedRegion<'r, 'b, F> {
             [(((row_index - self.height_start) as i32) + rotation.0) as usize]
     }
 
-    pub fn get_instance(&self, _row_index: usize, column_index: usize, _rotation: Rotation) -> F {
-        self.power_of_randomness[column_index]
+    pub fn get_randomness(&self) -> Value<F> {
+        self.randomness
     }
 
+    pub fn rlc(&self, word: U256) -> Value<F> {
+        self.randomness.map(|randomness| Word::random_linear_combine(word.to_le_bytes(), randomness))
+    }
+    
     /// Constrains a cell to have a constant value.
     ///
     /// Returns an error if the cell is in a column where equality has not been
@@ -162,13 +166,25 @@ pub struct StoredExpression<F> {
     expr_id: String,
 }
 
+
 impl<F: FieldExt> StoredExpression<F> {
-    pub fn assign(
-        &self,
+
+    fn is_using_randomness(expr: &Expression<F>) -> bool {
+        match expr {
+            Expression::Advice(_) => true,
+            Expression::Negated(ref expr)
+            | Expression::Scaled(ref expr, _)=> Self::is_using_randomness(expr),
+            Expression::Product(lhe, rhe)
+            | Expression::Sum(lhe,rhe) => Self::is_using_randomness(lhe) || Self::is_using_randomness(rhe),
+            _ => false
+        }
+    }
+
+    fn eval_with_randomness(&self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-    ) -> Result<AssignedCell<F, F>, Error> {
-        let value = self.expr.evaluate(
+        func: impl FnOnce(&InstanceQuery)->F) -> F {
+        self.expr.evaluate(
             &|scalar| scalar,
             &|_| unimplemented!("selector column"),
             &|fixed_query| {
@@ -177,20 +193,33 @@ impl<F: FieldExt> StoredExpression<F> {
             &|advide_query| {
                 region.get_advice(offset, advide_query.column_index(), advide_query.rotation())
             },
-            &|instance_query| {
-                region.get_instance(
-                    offset,
-                    instance_query.column_index(),
-                    instance_query.rotation(),
-                )
-            },
+            &|instance_query| func(&instance_query),
             &|_| unimplemented!(),
             &|a| -a,
             &|a, b| a + b,
             &|a, b| a * b,
             &|a, scalar| a * scalar,
-        );
-        self.cell.assign(region, offset, Value::known(value))
+        )
+    }
+ 
+    pub fn assign(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+    ) -> Result<AssignedCell<F, F>, Error> {
+        
+        let value = if Self::is_using_randomness(&self.expr) {
+            region.randomness.map(|randomness|  {
+                let func = |instance_query: &InstanceQuery| -> F {
+                    randomness.pow(&[instance_query.column_index() as u64,0,0,0])
+                };
+                self.eval_with_randomness(region, offset, func )
+            })
+        } else {
+            Value::known(self.eval_with_randomness(region, offset, |_| unimplemented!()))            
+        };
+
+        self.cell.assign(region, offset, value)
     }
 }
 
@@ -452,7 +481,7 @@ pub(crate) mod rlc {
     }
 
     pub(crate) fn value<'a, F: FieldExt, I>(values: I, randomness: F) -> F
-    where
+        where
         I: IntoIterator<Item = &'a u8>,
         <I as IntoIterator>::IntoIter: DoubleEndedIterator,
     {
@@ -460,6 +489,7 @@ pub(crate) mod rlc {
             acc * randomness + F::from(*value as u64)
         })
     }
+
 }
 
 /// Returns 2**by as FieldExt

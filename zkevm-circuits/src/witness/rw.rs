@@ -210,7 +210,7 @@ pub struct RwRow<F> {
     pub(crate) aux2: F,
 }
 
-impl<F: Field> RwRow<F> {
+impl<F> RwRow<F> {
     pub(crate) fn values(&self) -> [F; 11] {
         [
             self.rw_counter,
@@ -226,12 +226,15 @@ impl<F: Field> RwRow<F> {
             self.aux2,
         ]
     }
-    pub(crate) fn rlc(&self, randomness: F) -> F {
+}
+
+impl<F: Field> RwRow<Value<F>> {
+    pub(crate) fn rlc(&self, randomness: Value<F>) -> Value<F> {
         let values = self.values();
         values
             .iter()
             .rev()
-            .fold(F::zero(), |acc, value| acc * randomness + value)
+            .fold(Value::known(F::zero()), |acc, value| acc * randomness + value)
     }
 }
 
@@ -329,28 +332,6 @@ impl Rw {
         }
     }
 
-    // At this moment is a helper for the EVM circuit until EVM challange API is
-    // applied
-    pub(crate) fn table_assignment_aux<F: Field>(&self, randomness: F) -> RwRow<F> {
-        RwRow {
-            rw_counter: F::from(self.rw_counter() as u64),
-            is_write: F::from(self.is_write() as u64),
-            tag: F::from(self.tag() as u64),
-            id: F::from(self.id().unwrap_or_default() as u64),
-            address: self.address().unwrap_or_default().to_scalar().unwrap(),
-            field_tag: F::from(self.field_tag().unwrap_or_default() as u64),
-            storage_key: RandomLinearCombination::random_linear_combine(
-                self.storage_key().unwrap_or_default().to_le_bytes(),
-                randomness,
-            ),
-            value: self.value_assignment(randomness),
-            value_prev: self.value_prev_assignment(randomness).unwrap_or_default(),
-            aux1: F::zero(), // only used for AccountStorage::tx_id, which moved to key1.
-            aux2: self
-                .committed_value_assignment(randomness)
-                .unwrap_or_default(),
-        }
-    }
 
     pub(crate) fn table_assignment<F: Field>(&self, randomness: Value<F>) -> RwRow<Value<F>> {
         RwRow {

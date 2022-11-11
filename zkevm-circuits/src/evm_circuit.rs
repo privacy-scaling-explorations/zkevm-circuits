@@ -13,7 +13,7 @@ pub(crate) mod util;
 
 pub mod table;
 
-use crate::table::LookupTable;
+use crate::{table::LookupTable, util::Challenges};
 pub use crate::witness;
 use eth_types::Field;
 use execution::ExecutionConfig;
@@ -34,7 +34,7 @@ impl<F: Field> EvmCircuit<F> {
     #[allow(clippy::too_many_arguments)]
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
-        power_of_randomness: [Expression<F>; 31],
+        challenges: Challenges<Expression<F>>,
         tx_table: &dyn LookupTable<F>,
         rw_table: &dyn LookupTable<F>,
         bytecode_table: &dyn LookupTable<F>,
@@ -47,7 +47,7 @@ impl<F: Field> EvmCircuit<F> {
         let byte_table = [(); 1].map(|_| meta.fixed_column());
         let execution = Box::new(ExecutionConfig::configure(
             meta,
-            power_of_randomness,
+            challenges.evm_word_powers_of_randomness(),
             &fixed_table,
             &byte_table,
             tx_table,
@@ -113,8 +113,9 @@ impl<F: Field> EvmCircuit<F> {
         &self,
         layouter: &mut impl Layouter<F>,
         block: &Block<F>,
+        randomness: Value<F>,
     ) -> Result<(), Error> {
-        self.execution.assign_block(layouter, block)?;
+        self.execution.assign_block(layouter, block, randomness)?;
         Ok(())
     }
 
@@ -151,13 +152,13 @@ pub mod test {
     use crate::{
         evm_circuit::{table::FixedTableTag, witness::Block, EvmCircuit},
         table::{BlockTable, BytecodeTable, CopyTable, ExpTable, KeccakTable, RwTable, TxTable},
-        util::{power_of_randomness_from_instance, Challenges},
+        util::Challenges,
         witness::block_convert,
     };
     use bus_mapping::{circuit_input_builder::CircuitsParams, evm::OpcodeId, mock::BlockData};
     use eth_types::{geth_types::GethData, Field, Word};
     use halo2_proofs::{
-        circuit::{Layouter, SimpleFloorPlanner, Value},
+        circuit::{Layouter, SimpleFloorPlanner},
         dev::{MockProver, VerifyFailure},
         plonk::{Circuit, ConstraintSystem, Error},
     };
@@ -222,6 +223,7 @@ pub mod test {
         keccak_table: KeccakTable,
         exp_table: ExpTable,
         pub evm_circuit: EvmCircuit<F>,
+        challenges: Challenges,
     }
 
     #[derive(Default)]
@@ -256,11 +258,12 @@ pub mod test {
             let copy_table = CopyTable::construct(meta, q_copy_table);
             let keccak_table = KeccakTable::construct(meta);
             let exp_table = ExpTable::construct(meta);
+            let challenges = Challenges::construct(meta);
+            let challenges_expr = challenges.exprs(meta);
 
-            let power_of_randomness = power_of_randomness_from_instance(meta);
             let evm_circuit = EvmCircuit::configure(
                 meta,
-                power_of_randomness,
+                challenges_expr,
                 &tx_table,
                 &rw_table,
                 &bytecode_table,
@@ -279,6 +282,7 @@ pub mod test {
                 keccak_table,
                 exp_table,
                 evm_circuit,
+                challenges
             }
         }
 
@@ -286,9 +290,10 @@ pub mod test {
             &self,
             config: Self::Config,
             mut layouter: impl Layouter<F>,
-        ) -> Result<(), Error> {
-            let challenges = Challenges::mock(Value::known(self.block.randomness));
-
+        ) -> Result<(), Error> 
+        {
+            let challenges = config.challenges.values(&mut layouter);
+               
             config
                 .evm_circuit
                 .load_fixed_table(&mut layouter, self.fixed_table_tags.clone())?;
@@ -297,15 +302,16 @@ pub mod test {
                 &mut layouter,
                 &self.block.txs,
                 self.block.circuits_params.max_txs,
-                self.block.randomness,
+                challenges.evm_word(),
             )?;
             self.block.rws.check_rw_counter_sanity();
             config.rw_table.load(
                 &mut layouter,
                 &self.block.rws.table_assignments(),
                 self.block.circuits_params.max_rws,
-                Value::known(self.block.randomness),
+                challenges.evm_word(),
             )?;
+
             config.bytecode_table.load(
                 &mut layouter,
                 self.block.bytecodes.values(),
@@ -313,16 +319,16 @@ pub mod test {
             )?;
             config
                 .block_table
-                .load(&mut layouter, &self.block.context, self.block.randomness)?;
+                .load(&mut layouter, &self.block.context, challenges.evm_word())?;
             config
                 .copy_table
-                .load(&mut layouter, &self.block, self.block.randomness)?;
+                .load(&mut layouter, &self.block, challenges.evm_word())?;
             config
                 .keccak_table
                 .dev_load(&mut layouter, &self.block.sha3_inputs, &challenges)?;
             config.exp_table.load(&mut layouter, &self.block)?;
 
-            config.evm_circuit.assign_block(&mut layouter, &self.block)
+            config.evm_circuit.assign_block(&mut layouter, &self.block, challenges.evm_word())
         }
     }
 
@@ -391,12 +397,9 @@ pub mod test {
         let k = k.max(log2_ceil(NUM_BLINDING_ROWS + block.circuits_params.max_rws));
         log::debug!("evm circuit uses k = {}", k);
 
-        let power_of_randomness = (1..32)
-            .map(|exp| vec![block.randomness.pow(&[exp, 0, 0, 0]); (1 << k) - 64])
-            .collect();
         let (active_gate_rows, active_lookup_rows) = TestCircuit::<F>::get_active_rows(&block);
         let circuit = TestCircuit::<F>::new(block, fixed_table_tags);
-        let prover = MockProver::<F>::run(k, &circuit, power_of_randomness).unwrap();
+        let prover = MockProver::<F>::run(k, &circuit, vec![]).unwrap();
         prover.verify_at_rows_par(active_gate_rows.into_iter(), active_lookup_rows.into_iter())
     }
 }

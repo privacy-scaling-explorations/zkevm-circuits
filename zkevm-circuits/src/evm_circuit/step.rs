@@ -509,6 +509,9 @@ impl<F: FieldExt> Step<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
+
+        let randomness = region.get_randomness();
+
         self.state
             .execution_state
             .assign(region, offset, step.execution_state as usize)?;
@@ -531,9 +534,9 @@ impl<F: FieldExt> Step<F> {
         self.state.code_hash.assign(
             region,
             offset,
-            Value::known(RandomLinearCombination::random_linear_combine(
+            randomness.map(|randomness| RandomLinearCombination::random_linear_combine(
                 call.code_hash.to_le_bytes(),
-                block.randomness,
+                randomness,
             )),
         )?;
         self.state.program_counter.assign(

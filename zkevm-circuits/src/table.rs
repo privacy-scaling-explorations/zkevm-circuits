@@ -122,7 +122,7 @@ impl TxTable {
         layouter: &mut impl Layouter<F>,
         txs: &[Transaction],
         max_txs: usize,
-        randomness: F,
+        randomness: Value<F>,
     ) -> Result<(), Error> {
         assert!(
             txs.len() <= max_txs,
@@ -158,7 +158,7 @@ impl TxTable {
                                 || format!("tx table row {}", offset),
                                 *column,
                                 offset,
-                                || Value::known(value),
+                                || value,
                             )?;
                         }
                         offset += 1;
@@ -664,7 +664,7 @@ impl BlockTable {
         &self,
         layouter: &mut impl Layouter<F>,
         block: &BlockContext,
-        randomness: F,
+        randomness: Value<F>,
     ) -> Result<(), Error> {
         layouter.assign_region(
             || "block table",
@@ -687,7 +687,7 @@ impl BlockTable {
                             || format!("block table row {}", offset),
                             *column,
                             offset,
-                            || Value::known(value),
+                            || value,
                         )?;
                     }
                     offset += 1;
@@ -885,8 +885,8 @@ impl CopyTable {
     /// Generate the copy table and copy circuit assignments from a copy event.
     pub fn assignments<F: Field>(
         copy_event: &CopyEvent,
-        randomness: F,
-    ) -> Vec<(CopyDataType, CopyTableRow<F>, CopyCircuitRow<F>)> {
+        randomness: Value<F>,
+    ) -> Vec<(CopyDataType, CopyTableRow<Value<F>>, CopyCircuitRow<Value<F>>)> {
         let mut assignments = Vec::new();
         // rlc_acc
         let rlc_acc = if copy_event.dst_type == CopyDataType::RlcAcc {
@@ -895,11 +895,11 @@ impl CopyTable {
                 .iter()
                 .map(|(value, _)| *value)
                 .collect::<Vec<u8>>();
-            rlc::value(values.iter().rev(), randomness)
+            randomness.map(|randomness| rlc::value(values.iter().rev(), randomness))
         } else {
-            F::zero()
+            Value::known(F::zero())
         };
-        let mut value_acc = F::zero();
+        let mut value_acc = Value::known(F::zero());
         for (step_idx, (is_read_step, copy_step)) in copy_event
             .bytes
             .iter()
@@ -935,9 +935,9 @@ impl CopyTable {
 
             // id
             let id = if is_read_step {
-                number_or_hash_to_field(&copy_event.src_id, randomness)
+                randomness.map(|randomness| number_or_hash_to_field(&copy_event.src_id, randomness))
             } else {
-                number_or_hash_to_field(&copy_event.dst_id, randomness)
+                randomness.map(|randomness| number_or_hash_to_field(&copy_event.dst_id, randomness))
             };
 
             // tag binary bumber chip
@@ -972,13 +972,13 @@ impl CopyTable {
             // value
             let value = if copy_event.dst_type == CopyDataType::RlcAcc {
                 if is_read_step {
-                    F::from(copy_step.value as u64)
+                    Value::known(F::from(copy_step.value as u64))
                 } else {
-                    value_acc = value_acc * randomness + F::from(copy_step.value as u64);
+                    value_acc = value_acc * randomness + Value::known(F::from(copy_step.value as u64));
                     value_acc
                 }
             } else {
-                F::from(copy_step.value as u64)
+                Value::known(F::from(copy_step.value as u64))
             };
             // is_pad
             let is_pad = F::from(is_read_step && copy_step_addr >= copy_event.src_addr_end);
@@ -989,23 +989,23 @@ impl CopyTable {
             assignments.push((
                 tag,
                 [
-                    (is_first, "is_first"),
+                    (Value::known(is_first), "is_first"),
                     (id, "id"),
-                    (addr, "addr"),
-                    (F::from(copy_event.src_addr_end), "src_addr_end"),
-                    (F::from(bytes_left), "bytes_left"),
+                    (Value::known(addr), "addr"),
+                    (Value::known(F::from(copy_event.src_addr_end)), "src_addr_end"),
+                    (Value::known(F::from(bytes_left)), "bytes_left"),
                     (rlc_acc, "rlc_acc"),
-                    (F::from(copy_event.rw_counter(step_idx)), "rw_counter"),
+                    (Value::known(F::from(copy_event.rw_counter(step_idx))), "rw_counter"),
                     (
-                        F::from(copy_event.rw_counter_increase_left(step_idx)),
+                        Value::known(F::from(copy_event.rw_counter_increase_left(step_idx))),
                         "rwc_inc_left",
                     ),
                 ],
                 [
-                    (is_last, "is_last"),
+                    (Value::known(is_last), "is_last"),
                     (value, "value"),
-                    (is_pad, "is_pad"),
-                    (is_code, "is_code"),
+                    (Value::known(is_pad), "is_pad"),
+                    (Value::known(is_code), "is_code"),
                 ],
             ));
         }
@@ -1017,7 +1017,7 @@ impl CopyTable {
         &self,
         layouter: &mut impl Layouter<F>,
         block: &Block<F>,
-        randomness: F,
+        randomness: Value<F>,
     ) -> Result<(), Error> {
         layouter.assign_region(
             || "copy table",
@@ -1042,7 +1042,7 @@ impl CopyTable {
                                 || format!("{} at row: {}", label, offset),
                                 *column,
                                 offset,
-                                || Value::known(value),
+                                || value,
                             )?;
                         }
                         tag_chip.assign(&mut region, offset, &tag)?;

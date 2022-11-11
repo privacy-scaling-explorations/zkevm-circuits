@@ -213,10 +213,10 @@ impl<F: Field> ExecutionGadget<F> for AddModGadget<F> {
         self.cmp_r_n.assign(region, offset, r, n)?;
         self.cmp_areduced_n.assign(region, offset, a_reduced, n)?;
 
-        self.n_is_zero.assign(
+        self.n_is_zero.assign_value(
             region,
             offset,
-            Word::random_linear_combine(n.to_le_bytes(), block.randomness),
+            region.rlc(n)
         )?;
 
         Ok(())

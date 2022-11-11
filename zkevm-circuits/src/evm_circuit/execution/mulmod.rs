@@ -144,7 +144,7 @@ impl<F: Field> ExecutionGadget<F> for MulModGadget<F> {
         self.e.assign(region, offset, Some(e.to_le_bytes()))?;
 
         self.modword
-            .assign(region, offset, a, n, a_reduced, block.randomness)?;
+            .assign(region, offset, a, n, a_reduced, region.get_randomness())?;
         self.mul512_left
             .assign(region, offset, [a_reduced, b, d, e], None)?;
         self.mul512_right

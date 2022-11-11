@@ -402,6 +402,8 @@ impl<F: Field> Config<F> {
         challenges: &Challenges<Value<F>>,
         fail_fast: bool,
     ) -> Result<(), Error> {
+        let randomness = challenges.evm_word();
+        
         let push_rindex_is_zero_chip = IsZeroChip::construct(self.push_rindex_is_zero.clone());
         let length_is_zero_chip = IsZeroChip::construct(self.length_is_zero.clone());
 
@@ -429,12 +431,10 @@ impl<F: Field> Config<F> {
                             return Err(Error::Synthesis);
                         }
 
-                        let code_hash = challenges.evm_word().map(|challenge| {
-                            RandomLinearCombination::<F, 32>::random_linear_combine(
-                                row.code_hash.to_le_bytes(),
-                                challenge,
-                            )
-                        });
+                        let code_hash = randomness.map(|randomness| RandomLinearCombination::<F, 32>::random_linear_combine(
+                            row.code_hash.to_le_bytes(),
+                            randomness,
+                        ));
 
                         // Track which byte is an opcode and which is push
                         // data
