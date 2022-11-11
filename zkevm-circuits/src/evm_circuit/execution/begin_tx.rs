@@ -9,7 +9,7 @@ use crate::{
                 ConstraintBuilder, ReversionInfo, StepStateTransition,
                 Transition::{Delta, To},
             },
-            math_gadget::{IsZeroGadget, MulWordByU64Gadget, RangeCheckGadget},
+            math_gadget::{IsEqualGadget, IsZeroGadget, MulWordByU64Gadget, RangeCheckGadget},
             select, CachedRegion, Cell, RandomLinearCombination, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
@@ -20,6 +20,7 @@ use crate::{
 use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar};
 use halo2_proofs::circuit::Value;
 use halo2_proofs::plonk::Error;
+use keccak256::EMPTY_HASH_LE;
 
 #[derive(Clone, Debug)]
 pub(crate) struct BeginTxGadget<F> {
@@ -39,6 +40,7 @@ pub(crate) struct BeginTxGadget<F> {
     sufficient_gas_left: RangeCheckGadget<F, N_BYTES_GAS>,
     transfer_with_gas_fee: TransferWithGasFeeGadget<F>,
     code_hash: Cell<F>,
+    is_empty_code_hash: IsEqualGadget<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
@@ -155,62 +157,103 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             code_hash.expr(),
         );
 
-        // Setup first call's context.
-        for (field_tag, value) in [
-            (CallContextFieldTag::Depth, 1.expr()),
-            (CallContextFieldTag::CallerAddress, tx_caller_address.expr()),
-            (CallContextFieldTag::CalleeAddress, tx_callee_address.expr()),
-            (CallContextFieldTag::CallDataOffset, 0.expr()),
-            (
-                CallContextFieldTag::CallDataLength,
-                tx_call_data_length.expr(),
+        let is_empty_code_hash = IsEqualGadget::construct(
+            cb,
+            code_hash.expr(),
+            Word::random_linear_combine_expr(
+                (*EMPTY_HASH_LE).map(|byte| byte.expr()),
+                cb.power_of_randomness(),
             ),
-            (CallContextFieldTag::Value, tx_value.expr()),
-            (CallContextFieldTag::IsStatic, 0.expr()),
-            (CallContextFieldTag::LastCalleeId, 0.expr()),
-            (CallContextFieldTag::LastCalleeReturnDataOffset, 0.expr()),
-            (CallContextFieldTag::LastCalleeReturnDataLength, 0.expr()),
-            (CallContextFieldTag::IsRoot, 1.expr()),
-            (CallContextFieldTag::IsCreate, tx_is_create.expr()),
-            (CallContextFieldTag::CodeHash, code_hash.expr()),
-        ] {
-            cb.call_context_lookup(true.expr(), Some(call_id.expr()), field_tag, value);
-        }
+        );
 
-        cb.require_step_state_transition(StepStateTransition {
-            // 23 reads and writes:
-            //   - Write CallContext TxId
-            //   - Write CallContext RwCounterEndOfReversion
-            //   - Write CallContext IsPersistent
-            //   - Write CallContext IsSuccess
-            //   - Write Account Nonce
-            //   - Write TxAccessListAccount
-            //   - Write TxAccessListAccount
-            //   - Write Account Balance
-            //   - Write Account Balance
-            //   - Read Account CodeHash
-            //   - Write CallContext Depth
-            //   - Write CallContext CallerAddress
-            //   - Write CallContext CalleeAddress
-            //   - Write CallContext CallDataOffset
-            //   - Write CallContext CallDataLength
-            //   - Write CallContext Value
-            //   - Write CallContext IsStatic
-            //   - Write CallContext LastCalleeId
-            //   - Write CallContext LastCalleeReturnDataOffset
-            //   - Write CallContext LastCalleeReturnDataLength
-            //   - Write CallContext IsRoot
-            //   - Write CallContext IsCreate
-            //   - Write CallContext CodeHash
-            rw_counter: Delta(23.expr()),
-            call_id: To(call_id.expr()),
-            is_root: To(true.expr()),
-            is_create: To(tx_is_create.expr()),
-            code_hash: To(code_hash.expr()),
-            gas_left: To(gas_left),
-            reversible_write_counter: To(2.expr()),
-            log_id: To(0.expr()),
-            ..StepStateTransition::new_context()
+        cb.condition(is_empty_code_hash.expr(), |cb| {
+            cb.require_equal(
+                "Tx to account with empty code should be persistent",
+                reversion_info.is_persistent(),
+                1.expr(),
+            );
+            cb.require_equal(
+                "Go to EndTx when Tx to account with empty code",
+                cb.next.execution_state_selector([ExecutionState::EndTx]),
+                1.expr(),
+            );
+
+            cb.require_step_state_transition(StepStateTransition {
+                // 10 reads and writes:
+                //   - Write CallContext TxId
+                //   - Write CallContext RwCounterEndOfReversion
+                //   - Write CallContext IsPersistent
+                //   - Write CallContext IsSuccess
+                //   - Write Account Nonce
+                //   - Write TxAccessListAccount
+                //   - Write TxAccessListAccount
+                //   - Write Account Balance
+                //   - Write Account Balance
+                //   - Read Account CodeHash
+                rw_counter: Delta(10.expr()),
+                call_id: To(call_id.expr()),
+                ..StepStateTransition::any()
+            });
+        });
+
+        cb.condition(1.expr() - is_empty_code_hash.expr(), |cb| {
+            // Setup first call's context.
+            for (field_tag, value) in [
+                (CallContextFieldTag::Depth, 1.expr()),
+                (CallContextFieldTag::CallerAddress, tx_caller_address.expr()),
+                (CallContextFieldTag::CalleeAddress, tx_callee_address.expr()),
+                (CallContextFieldTag::CallDataOffset, 0.expr()),
+                (
+                    CallContextFieldTag::CallDataLength,
+                    tx_call_data_length.expr(),
+                ),
+                (CallContextFieldTag::Value, tx_value.expr()),
+                (CallContextFieldTag::IsStatic, 0.expr()),
+                (CallContextFieldTag::LastCalleeId, 0.expr()),
+                (CallContextFieldTag::LastCalleeReturnDataOffset, 0.expr()),
+                (CallContextFieldTag::LastCalleeReturnDataLength, 0.expr()),
+                (CallContextFieldTag::IsRoot, 1.expr()),
+                (CallContextFieldTag::IsCreate, tx_is_create.expr()),
+                (CallContextFieldTag::CodeHash, code_hash.expr()),
+            ] {
+                cb.call_context_lookup(true.expr(), Some(call_id.expr()), field_tag, value);
+            }
+
+            cb.require_step_state_transition(StepStateTransition {
+                // 23 reads and writes:
+                //   - Write CallContext TxId
+                //   - Write CallContext RwCounterEndOfReversion
+                //   - Write CallContext IsPersistent
+                //   - Write CallContext IsSuccess
+                //   - Write Account Nonce
+                //   - Write TxAccessListAccount
+                //   - Write TxAccessListAccount
+                //   - Write Account Balance
+                //   - Write Account Balance
+                //   - Read Account CodeHash
+                //   - Write CallContext Depth
+                //   - Write CallContext CallerAddress
+                //   - Write CallContext CalleeAddress
+                //   - Write CallContext CallDataOffset
+                //   - Write CallContext CallDataLength
+                //   - Write CallContext Value
+                //   - Write CallContext IsStatic
+                //   - Write CallContext LastCalleeId
+                //   - Write CallContext LastCalleeReturnDataOffset
+                //   - Write CallContext LastCalleeReturnDataLength
+                //   - Write CallContext IsRoot
+                //   - Write CallContext IsCreate
+                //   - Write CallContext CodeHash
+                rw_counter: Delta(23.expr()),
+                call_id: To(call_id.expr()),
+                is_root: To(true.expr()),
+                is_create: To(tx_is_create.expr()),
+                code_hash: To(code_hash.expr()),
+                gas_left: To(gas_left),
+                reversible_write_counter: To(2.expr()),
+                log_id: To(0.expr()),
+                ..StepStateTransition::new_context()
+            });
         });
 
         Self {
@@ -230,6 +273,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             sufficient_gas_left,
             transfer_with_gas_fee,
             code_hash,
+            is_empty_code_hash,
         }
     }
 
@@ -310,6 +354,12 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 block.randomness,
             )),
         )?;
+        self.is_empty_code_hash.assign(
+            region,
+            offset,
+            Word::random_linear_combine(callee_code_hash.to_le_bytes(), block.randomness),
+            Word::random_linear_combine(*EMPTY_HASH_LE, block.randomness),
+        )?;
         Ok(())
     }
 }
@@ -318,11 +368,9 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 mod test {
     use crate::evm_circuit::test::{rand_bytes, run_test_circuit_geth_data_default};
     use bus_mapping::evm::OpcodeId;
-    use eth_types::{self, bytecode, evm_types::GasCost, geth_types::GethData, Word};
+    use eth_types::{self, bytecode, evm_types::GasCost, geth_types::GethData, Bytecode, Word};
     use halo2_proofs::halo2curves::bn256::Fr;
-    use mock::{
-        eth, gwei, test_ctx::helpers::account_0_code_account_1_no_code, TestContext, MOCK_ACCOUNTS,
-    };
+    use mock::{eth, gwei, TestContext, MOCK_ACCOUNTS};
 
     fn gas(call_data: &[u8]) -> Word {
         Word::from(
@@ -335,25 +383,33 @@ mod test {
         )
     }
 
-    fn test_ok(tx: eth_types::Transaction, is_success: bool) {
-        let code = if is_success {
-            bytecode! {
-                PUSH1(0)
-                PUSH1(0)
-                RETURN
-            }
-        } else {
-            bytecode! {
-                PUSH1(0)
-                PUSH1(0)
-                REVERT
-            }
-        };
+    fn code_with_return() -> Bytecode {
+        bytecode! {
+            PUSH1(0)
+            PUSH1(0)
+            RETURN
+        }
+    }
 
+    fn code_with_revert() -> Bytecode {
+        bytecode! {
+            PUSH1(0)
+            PUSH1(0)
+            REVERT
+        }
+    }
+
+    fn test_ok(tx: eth_types::Transaction, code: Option<Bytecode>) {
         // Get the execution steps from the external tracer
         let block: GethData = TestContext::<2, 1>::new(
             None,
-            account_0_code_account_1_no_code(code),
+            |accs| {
+                accs[0].address(MOCK_ACCOUNTS[0]).balance(eth(10));
+                if let Some(code) = code {
+                    accs[0].code(code);
+                }
+                accs[1].address(MOCK_ACCOUNTS[1]).balance(eth(10));
+            },
             |mut txs, _accs| {
                 txs[0]
                     .to(tx.to.unwrap())
@@ -387,16 +443,19 @@ mod test {
 
     #[test]
     fn begin_tx_gadget_simple() {
+        // Transfer 1 ether to account with empty code, successfully
+        test_ok(mock_tx(eth(1), gwei(2), vec![]), None);
+
         // Transfer 1 ether, successfully
-        test_ok(mock_tx(eth(1), gwei(2), vec![]), true);
+        test_ok(mock_tx(eth(1), gwei(2), vec![]), Some(code_with_return()));
 
         // Transfer 1 ether, tx reverts
-        test_ok(mock_tx(eth(1), gwei(2), vec![]), false);
+        test_ok(mock_tx(eth(1), gwei(2), vec![]), Some(code_with_revert()));
 
         // Transfer nothing with some calldata
         test_ok(
             mock_tx(eth(0), gwei(2), vec![1, 2, 3, 4, 0, 0, 0, 0]),
-            false,
+            Some(code_with_return()),
         );
     }
 
@@ -438,16 +497,21 @@ mod test {
         // If this test fails, we want these values to appear in the CI logs.
         dbg!(random_amount, random_gas_price);
 
-        // Transfer random ether, successfully
-        test_ok(mock_tx(random_amount, gwei(2), vec![]), true);
-
-        // Transfer nothing with random gas_price, successfully
-        test_ok(mock_tx(eth(0), random_gas_price, vec![]), true);
-
-        // Transfer random ether, tx reverts
-        test_ok(mock_tx(random_amount, gwei(2), vec![]), false);
-
-        // Transfer nothing with random gas_price, tx reverts
-        test_ok(mock_tx(eth(0), random_gas_price, vec![]), false);
+        for (value, gas_price, calldata, code) in [
+            // Transfer random ether to account with empty code, successfully
+            (random_amount, gwei(2), vec![], None),
+            // Transfer nothing with random gas_price to account with empty code, successfully
+            (eth(0), random_gas_price, vec![], None),
+            // Transfer random ether, successfully
+            (random_amount, gwei(2), vec![], Some(code_with_return())),
+            // Transfer nothing with random gas_price, successfully
+            (eth(0), random_gas_price, vec![], Some(code_with_return())),
+            // Transfer random ether, tx reverts
+            (random_amount, gwei(2), vec![], Some(code_with_revert())),
+            // Transfer nothing with random gas_price, tx reverts
+            (eth(0), random_gas_price, vec![], Some(code_with_revert())),
+        ] {
+            test_ok(mock_tx(value, gas_price, calldata), code);
+        }
     }
 }

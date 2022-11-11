@@ -156,7 +156,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
 
         let [nonce, balance, code_hash] = [5, 6, 7].map(|i| {
             block.rws[step.rw_indices[i]]
-                .table_assignment(block.randomness)
+                .table_assignment_aux(block.randomness)
                 .value
         });
 

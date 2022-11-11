@@ -52,7 +52,6 @@ pi_bench: ## Run Public Input Circuit benchmarks
 copy_bench: ## Run Copy Circuit benchmarks
 	@cargo test --profile bench bench_copy_circuit_prover -p circuit-benchmarks --features benches  -- --nocapture
 
-
 circuit_benches: evm_bench state_bench ## Run All Circuit benchmarks
 
 
