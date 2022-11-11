@@ -435,7 +435,6 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
 
             // 3. Call to account with empty code.
             if is_empty_code_hash {
-                warn!("Call to account with empty code is left unimplemented");
                 return Ok(exec_step);
             }
 
