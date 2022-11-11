@@ -12,6 +12,7 @@ use crate::{
     util::{build_tx_log_expression, Expr},
 };
 use eth_types::Field;
+use gadgets::util::{and, not};
 use halo2_proofs::{
     circuit::Value,
     plonk::{
@@ -723,20 +724,31 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
 
         if let Some(reversion_info) = reversion_info {
             // Revert if is_persistent is 0
-            self.condition(1.expr() - reversion_info.is_persistent(), |cb| {
-                let name = format!("{} with reversion", name);
-                cb.rw_lookup_with_counter(
-                    &name,
-                    reversion_info.rw_counter_of_reversion(),
-                    true.expr(),
-                    tag,
-                    RwValues {
-                        value_prev: values.value,
-                        value: values.value_prev,
-                        ..values
-                    },
-                )
-            });
+            // To allow conditional reversible writes, we extract the prexisting condition
+            // here.
+            let condition = self.condition.clone();
+            self.condition = None;
+            self.condition(
+                and::expr(&[
+                    condition.clone().unwrap_or_else(|| 1.expr()),
+                    not::expr(reversion_info.is_persistent()),
+                ]),
+                |cb| {
+                    let name = format!("{} with reversion", name);
+                    cb.rw_lookup_with_counter(
+                        &name,
+                        reversion_info.rw_counter_of_reversion(),
+                        true.expr(),
+                        tag,
+                        RwValues {
+                            value_prev: values.value,
+                            value: values.value_prev,
+                            ..values
+                        },
+                    )
+                },
+            );
+            self.condition = condition;
         }
     }
 
