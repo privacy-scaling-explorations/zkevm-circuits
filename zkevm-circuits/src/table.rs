@@ -142,12 +142,6 @@ impl TxTable {
                         || Value::known(F::zero()),
                     )?;
                 }
-                region.assign_fixed(
-                    || "tx table all-zero row",
-                    self.tag,
-                    offset,
-                    || Value::known(F::zero()),
-                )?;
                 offset += 1;
 
                 let tx_table_columns = self.columns();
@@ -194,9 +188,8 @@ impl TxTable {
     }
 }
 
-/// TxTable no longer a Dynamic table
 impl TxTable {
-    fn columns(&self) -> Vec<Column<Advice>> {
+    pub(crate) fn columns(&self) -> Vec<Column<Advice>> {
         vec![self.tx_id, self.index, self.value]
     }
 }

@@ -738,7 +738,6 @@ arith:
     }
 
     #[test]
-    #[ignore]
     fn result_pass() -> Result<()> {
         env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
@@ -834,7 +833,6 @@ arith:
     }
 
     #[test]
-    #[ignore]
     fn sstore() -> Result<()> {
         let mut tc = YamlStateTestBuilder::new(&mut Compiler::default()).load_yaml(
             "",
