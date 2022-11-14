@@ -668,7 +668,7 @@ pub mod dev {
                 &mut layouter,
                 &self.block.rws.table_assignments(),
                 self.block.circuits_params.max_rws,
-                self.randomness,
+                Value::known(self.randomness),
             )?;
             config.bytecode_table.load(
                 &mut layouter,
@@ -689,7 +689,7 @@ pub mod dev {
         const NUM_BLINDING_ROWS: usize = 7 - 1;
         let instance = vec![vec![randomness; num_rows - NUM_BLINDING_ROWS]];
         let prover = MockProver::<F>::run(k, &circuit, instance).unwrap();
-        prover.verify()
+        prover.verify_par()
     }
 }
 

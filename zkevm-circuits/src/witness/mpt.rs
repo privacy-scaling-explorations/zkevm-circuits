@@ -1,6 +1,7 @@
 use crate::evm_circuit::{util::RandomLinearCombination, witness::Rw};
 use crate::table::{AccountFieldTag, ProofType};
 use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word};
+use halo2_proofs::circuit::Value;
 use itertools::Itertools;
 use std::collections::HashMap;
 
@@ -52,16 +53,23 @@ impl MptUpdates {
         MptUpdates(map)
     }
 
-    pub(crate) fn table_assignments<F: Field>(&self, randomness: F) -> Vec<MptUpdateRow<F>> {
+    pub(crate) fn table_assignments<F: Field>(
+        &self,
+        randomness: Value<F>,
+    ) -> Vec<MptUpdateRow<Value<F>>> {
         self.0
             .values()
             .map(|update| {
-                let (new_root, old_root) = update.root_assignments(randomness);
-                let (new_value, old_value) = update.value_assignments(randomness);
+                let (new_root, old_root) = randomness
+                    .map(|randomness| update.root_assignments(randomness))
+                    .unzip();
+                let (new_value, old_value) = randomness
+                    .map(|randomness| update.value_assignments(randomness))
+                    .unzip();
                 MptUpdateRow([
-                    update.key.address(),
-                    update.key.storage_key(randomness),
-                    update.key.proof_type(),
+                    Value::known(update.key.address()),
+                    randomness.map(|randomness| update.key.storage_key(randomness)),
+                    Value::known(update.key.proof_type()),
                     new_root,
                     old_root,
                     new_value,
@@ -140,7 +148,7 @@ impl Key {
     }
 }
 
-impl<F: Field> MptUpdateRow<F> {
+impl<F> MptUpdateRow<F> {
     /// The individual values of the row, in the column order used by the
     /// MptTable
     pub fn values(&self) -> impl Iterator<Item = &F> {
