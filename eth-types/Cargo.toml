@@ -22,4 +22,7 @@ subtle = "2.4"
 sha3 = "0.10"
 num = "0.4"
 num-bigint = { version = "0.4" }
+strum_macros = "0.24"
+strum = "0.24"
+
 

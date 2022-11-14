@@ -290,6 +290,9 @@ pub fn gen_associated_ops(
         );
 
         exec_step.error = Some(exec_error);
+        if exec_step.oog_or_stack_error() {
+            state.gen_restore_context_ops(&mut exec_step, geth_steps)?;
+        }
         // for `oog_or_stack_error` error message will be returned by geth_step error
         // field, when this kind of error happens, no more proceeding
         if geth_step.op.is_call_or_create() && !exec_step.oog_or_stack_error() {
@@ -432,7 +435,6 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
 
             // 3. Call to account with empty code.
             if is_empty_code_hash {
-                warn!("Call to account with empty code is left unimplemented");
                 return Ok(exec_step);
             }
 
@@ -568,7 +570,7 @@ pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
     )?;
 
     if !state.tx_ctx.is_last_tx() {
-        state.call_context_read(
+        state.call_context_write(
             &mut exec_step,
             state.block_ctx.rwc.0 + 1,
             CallContextField::TxId,

@@ -80,12 +80,11 @@ pub enum ExecutionState {
     SWAP, // SWAP1, SWAP2, ..., SWAP16
     LOG,  // LOG0, LOG1, ..., LOG4
     CREATE,
-    CALL_STATICCALL,
+    CALL_STATICCALL, // CALL, STATICCALL
     CALLCODE,
-    RETURN,
+    RETURN_REVERT, // RETURN, REVERT
     DELEGATECALL,
     CREATE2,
-    REVERT,
     SELFDESTRUCT,
     // Error cases
     ErrorInvalidOpcode,
@@ -134,10 +133,6 @@ impl ExecutionState {
         Self::iter().count()
     }
 
-    pub(crate) fn halts_in_success(&self) -> bool {
-        matches!(self, Self::STOP | Self::RETURN | Self::SELFDESTRUCT)
-    }
-
     pub(crate) fn halts_in_exception(&self) -> bool {
         matches!(
             self,
@@ -174,7 +169,8 @@ impl ExecutionState {
     }
 
     pub(crate) fn halts(&self) -> bool {
-        self.halts_in_success() || self.halts_in_exception() || matches!(self, Self::REVERT)
+        matches!(self, Self::STOP | Self::RETURN_REVERT | Self::SELFDESTRUCT)
+            || self.halts_in_exception()
     }
 
     pub(crate) fn responsible_opcodes(&self) -> Vec<OpcodeId> {
@@ -310,10 +306,9 @@ impl ExecutionState {
             Self::CREATE => vec![OpcodeId::CREATE],
             Self::CALL_STATICCALL => vec![OpcodeId::CALL, OpcodeId::STATICCALL],
             Self::CALLCODE => vec![OpcodeId::CALLCODE],
-            Self::RETURN => vec![OpcodeId::RETURN],
+            Self::RETURN_REVERT => vec![OpcodeId::RETURN, OpcodeId::REVERT],
             Self::DELEGATECALL => vec![OpcodeId::DELEGATECALL],
             Self::CREATE2 => vec![OpcodeId::CREATE2],
-            Self::REVERT => vec![OpcodeId::REVERT],
             Self::SELFDESTRUCT => vec![OpcodeId::SELFDESTRUCT],
             _ => vec![],
         }
