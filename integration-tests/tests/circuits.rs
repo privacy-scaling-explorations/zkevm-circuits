@@ -63,11 +63,8 @@ async fn test_state_circuit_block(block_num: u64) {
 
     let rw_map = RwMap::from(&builder.block.container);
 
-    let randomness = Fr::from(0xcafeu64);
-    let circuit = StateCircuit::<Fr>::new(randomness, rw_map, 1 << 16);
-    let power_of_randomness = circuit.instance();
-
-    let prover = MockProver::<Fr>::run(DEGREE as u32, &circuit, power_of_randomness).unwrap();
+    let circuit = StateCircuit::<Fr>::new(rw_map, 1 << 16);
+    let prover = MockProver::<Fr>::run(DEGREE as u32, &circuit, circuit.instance()).unwrap();
     prover
         .verify_par()
         .expect("state_circuit verification failed");

@@ -56,7 +56,7 @@ use crate::bytecode_circuit::bytecode_unroller::{
 };
 use crate::copy_circuit::CopyCircuit;
 use crate::evm_circuit::{table::FixedTableTag, EvmCircuit};
-use crate::exp_circuit::ExpCircuit;
+use crate::exp_circuit::ExpCircuitConfig;
 use crate::keccak_circuit::keccak_packed_multi::KeccakPackedConfig as KeccakConfig;
 use crate::pi_circuit::{PiCircuit, PiCircuitConfig, PublicData};
 use crate::state_circuit::StateCircuitConfig;
@@ -112,7 +112,7 @@ pub struct SuperCircuitConfig<
     copy_circuit: CopyCircuit<F>,
     keccak_circuit: KeccakConfig<F>,
     pi_circuit: PiCircuitConfig<F, MAX_TXS, MAX_CALLDATA>,
-    exp_circuit: ExpCircuit<F>,
+    exp_circuit: ExpCircuitConfig<F>,
 }
 
 /// The Super Circuit contains all the zkEVM circuits
@@ -182,6 +182,8 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: u
             Expression::Constant(F::from(MOCK_RANDOMNESS).pow(&[1 + i as u64, 0, 0, 0]))
         });
 
+        let challenges = Challenges::mock(power_of_randomness[0].clone());
+
         let keccak_circuit = KeccakConfig::configure(meta, power_of_randomness[0].clone());
         let keccak_table = keccak_circuit.keccak_table.clone();
 
@@ -197,9 +199,8 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: u
             &exp_table,
         );
         let state_circuit =
-            StateCircuitConfig::configure(meta, power_of_randomness.clone(), &rw_table, &mpt_table);
+            StateCircuitConfig::configure(meta, &rw_table, &mpt_table, challenges.clone());
         let pi_circuit = PiCircuitConfig::new(meta, block_table.clone(), tx_table.clone());
-        let challenges = Challenges::mock(power_of_randomness[0].clone());
 
         Self::Config {
             tx_table: tx_table.clone(),
@@ -234,7 +235,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: u
             ),
             keccak_circuit,
             pi_circuit,
-            exp_circuit: ExpCircuit::configure(meta, exp_table),
+            exp_circuit: ExpCircuitConfig::configure(meta, exp_table),
         }
     }
 
@@ -255,7 +256,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: u
             &mut layouter,
             &rws,
             self.block.circuits_params.max_rws,
-            self.block.randomness,
+            Value::known(self.block.randomness),
         )?;
         config.state_circuit.load(&mut layouter)?;
         config
@@ -268,13 +269,13 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: u
         config.mpt_table.load(
             &mut layouter,
             &MptUpdates::mock_from(&rws),
-            self.block.randomness,
+            Value::known(self.block.randomness),
         )?;
         config.state_circuit.assign(
             &mut layouter,
             &rws,
             self.block.circuits_params.max_rws,
-            self.block.randomness,
+            &challenges,
         )?;
         // --- Tx Circuit ---
         config.tx_circuit.load(&mut layouter)?;
