@@ -6,8 +6,8 @@ use gadgets::{
     util::{and, not, Expr},
 };
 use halo2_proofs::{
-    circuit::{Layouter, Region, Value},
-    plonk::{ConstraintSystem, Error, Selector},
+    circuit::{Layouter, Region, SimpleFloorPlanner, Value},
+    plonk::{Circuit, ConstraintSystem, Error, Selector},
     poly::Rotation,
 };
 
@@ -24,7 +24,7 @@ pub const ROWS_PER_STEP: usize = 4usize;
 
 /// Layout for the Exponentiation circuit.
 #[derive(Clone, Debug)]
-pub struct ExpCircuit<F> {
+pub struct ExpCircuitConfig<F> {
     /// Whether the row is enabled.
     pub q_usable: Selector,
     /// The Exponentiation circuit's table.
@@ -35,7 +35,7 @@ pub struct ExpCircuit<F> {
     pub parity_check: MulAddConfig<F>,
 }
 
-impl<F: Field> ExpCircuit<F> {
+impl<F: Field> ExpCircuitConfig<F> {
     /// Configure the exponentiation circuit.
     pub fn configure(meta: &mut ConstraintSystem<F>, exp_table: ExpTable) -> Self {
         let q_usable = meta.complex_selector();
@@ -378,62 +378,51 @@ impl<F: Field> ExpCircuit<F> {
     }
 }
 
+#[derive(Default)]
+struct ExpCircuit<F> {
+    block: Block<F>,
+}
+
+impl<F: Field> ExpCircuit<F> {
+    pub fn new(block: Block<F>) -> Self {
+        Self { block }
+    }
+}
+
+impl<F: Field> Circuit<F> for ExpCircuit<F> {
+    type Config = ExpCircuitConfig<F>;
+    type FloorPlanner = SimpleFloorPlanner;
+
+    fn without_witnesses(&self) -> Self {
+        Self::default()
+    }
+
+    fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
+        let exp_table = ExpTable::construct(meta);
+        ExpCircuitConfig::configure(meta, exp_table)
+    }
+
+    fn synthesize(
+        &self,
+        config: Self::Config,
+        mut layouter: impl Layouter<F>,
+    ) -> Result<(), halo2_proofs::plonk::Error> {
+        config.assign_block(&mut layouter, &self.block)
+    }
+}
+
 #[cfg(any(feature = "test", test))]
 /// Dev helpers
 pub mod dev {
     use super::*;
     use eth_types::Field;
-    use halo2_proofs::{
-        circuit::{Layouter, SimpleFloorPlanner},
-        dev::{MockProver, VerifyFailure},
-        plonk::{Circuit, ConstraintSystem},
-    };
+    use halo2_proofs::dev::{MockProver, VerifyFailure};
 
     use crate::evm_circuit::witness::Block;
 
-    #[derive(Clone)]
-    struct ExpCircuitTesterConfig<F> {
-        exp_circuit: ExpCircuit<F>,
-    }
-
-    #[derive(Default)]
-    struct ExpCircuitTester<F> {
-        block: Block<F>,
-    }
-
-    impl<F: Field> ExpCircuitTester<F> {
-        pub fn new(block: Block<F>) -> Self {
-            Self { block }
-        }
-    }
-
-    impl<F: Field> Circuit<F> for ExpCircuitTester<F> {
-        type Config = ExpCircuitTesterConfig<F>;
-        type FloorPlanner = SimpleFloorPlanner;
-
-        fn without_witnesses(&self) -> Self {
-            Self::default()
-        }
-
-        fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-            let exp_table = ExpTable::construct(meta);
-            let exp_circuit = ExpCircuit::configure(meta, exp_table);
-
-            ExpCircuitTesterConfig { exp_circuit }
-        }
-
-        fn synthesize(
-            &self,
-            config: Self::Config,
-            mut layouter: impl Layouter<F>,
-        ) -> Result<(), halo2_proofs::plonk::Error> {
-            config.exp_circuit.assign_block(&mut layouter, &self.block)
-        }
-    }
-
     /// Test exponentiation circuit with the provided block witness
     pub fn test_exp_circuit<F: Field>(k: u32, block: Block<F>) -> Result<(), Vec<VerifyFailure>> {
-        let circuit = ExpCircuitTester::<F>::new(block);
+        let circuit = ExpCircuit::<F>::new(block);
         let prover = MockProver::<F>::run(k, &circuit, vec![]).unwrap();
         prover.verify()
     }

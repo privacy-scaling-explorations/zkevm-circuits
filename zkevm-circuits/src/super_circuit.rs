@@ -56,7 +56,7 @@ use crate::bytecode_circuit::bytecode_unroller::{
 };
 use crate::copy_circuit::CopyCircuit;
 use crate::evm_circuit::{table::FixedTableTag, EvmCircuit};
-use crate::exp_circuit::ExpCircuit;
+use crate::exp_circuit::ExpCircuitConfig;
 use crate::keccak_circuit::keccak_packed_multi::KeccakPackedConfig as KeccakConfig;
 use crate::pi_circuit::{PiCircuit, PiCircuitConfig, PublicData};
 use crate::state_circuit::StateCircuitConfig;
@@ -112,7 +112,7 @@ pub struct SuperCircuitConfig<
     copy_circuit: CopyCircuit<F>,
     keccak_circuit: KeccakConfig<F>,
     pi_circuit: PiCircuitConfig<F, MAX_TXS, MAX_CALLDATA>,
-    exp_circuit: ExpCircuit<F>,
+    exp_circuit: ExpCircuitConfig<F>,
 }
 
 /// The Super Circuit contains all the zkEVM circuits
@@ -235,7 +235,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: u
             ),
             keccak_circuit,
             pi_circuit,
-            exp_circuit: ExpCircuit::configure(meta, exp_table),
+            exp_circuit: ExpCircuitConfig::configure(meta, exp_table),
         }
     }
 
