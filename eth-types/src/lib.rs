@@ -222,6 +222,18 @@ impl<F: Field> ToScalar<F> for bool {
     }
 }
 
+impl<F: Field> ToScalar<F> for u64 {
+    fn to_scalar(&self) -> Option<F> {
+        Some(F::from(*self))
+    }
+}
+
+impl<F: Field> ToScalar<F> for usize {
+    fn to_scalar(&self) -> Option<F> {
+        u64::try_from(*self).ok().map(F::from)
+    }
+}
+
 /// Struct used to define the storage proof
 #[derive(Debug, Default, Clone, PartialEq, Eq, Deserialize)]
 pub struct StorageProof {
