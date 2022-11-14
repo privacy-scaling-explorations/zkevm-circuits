@@ -97,7 +97,7 @@ pub struct TxTable {
     /// Tx ID
     pub tx_id: Column<Advice>,
     /// Tag (TxContextFieldTag)
-    pub tag: Column<Advice>,
+    pub tag: Column<Fixed>,
     /// Index for Tag = CallData
     pub index: Column<Advice>,
     /// Value
@@ -109,7 +109,7 @@ impl TxTable {
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
         Self {
             tx_id: meta.advice_column(),
-            tag: meta.advice_column(),
+            tag: meta.fixed_column(),
             index: meta.advice_column(),
             value: meta.advice_column_in(SecondPhase),
         }
@@ -142,6 +142,12 @@ impl TxTable {
                         || Value::known(F::zero()),
                     )?;
                 }
+                region.assign_fixed(
+                    || "tx table all-zero row",
+                    self.tag,
+                    offset,
+                    || Value::known(F::zero()),
+                )?;
                 offset += 1;
 
                 let tx_table_columns = self.columns();
@@ -153,13 +159,33 @@ impl TxTable {
                     .collect();
                 for tx in txs.iter().chain(padding_txs.iter()) {
                     for row in tx.table_assignments(randomness) {
-                        for (column, value) in tx_table_columns.iter().zip_eq(row) {
-                            region.assign_advice(
-                                || format!("tx table row {}", offset),
-                                *column,
-                                offset,
-                                || Value::known(value),
-                            )?;
+                        for (index, value) in row.iter().enumerate() {
+                            if index == 0 {
+                                let column = &tx_table_columns[0];
+                                region.assign_advice(
+                                    || format!("tx table row {}", offset),
+                                    *column,
+                                    offset,
+                                    || Value::known(*value),
+                                )?;
+                            } else if index == 1 {
+                                
+                                region.assign_fixed(
+                                    || format!("tx table row {}", offset), 
+                                    self.tag,
+                                    offset, 
+                                    || Value::known(*value)
+                                )?;
+                                
+                            } else {
+                                let column = &tx_table_columns[index-1];
+                                region.assign_advice(
+                                    || format!("tx table row {}", offset),
+                                    *column,
+                                    offset,
+                                    || Value::known(*value),
+                                )?;
+                            }
                         }
                         offset += 1;
                     }
@@ -172,7 +198,7 @@ impl TxTable {
 
 impl DynamicTableColumns for TxTable {
     fn columns(&self) -> Vec<Column<Advice>> {
-        vec![self.tx_id, self.tag, self.index, self.value]
+        vec![self.tx_id, self.index, self.value]
     }
 }
 
