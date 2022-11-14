@@ -144,7 +144,6 @@ impl TxTable {
                 }
                 offset += 1;
 
-                let tx_table_columns = self.columns();
                 let padding_txs: Vec<Transaction> = (txs.len()..max_txs)
                     .map(|i| Transaction {
                         id: i + 1,
@@ -153,32 +152,30 @@ impl TxTable {
                     .collect();
                 for tx in txs.iter().chain(padding_txs.iter()) {
                     for row in tx.table_assignments(randomness) {
-                        for (index, value) in row.iter().enumerate() {
-                            if index == 0 {
-                                let column = &tx_table_columns[0];
-                                region.assign_advice(
-                                    || format!("tx table row {}", offset),
-                                    *column,
-                                    offset,
-                                    || Value::known(*value),
-                                )?;
-                            } else if index == 1 {
-                                region.assign_fixed(
-                                    || format!("tx table row {}", offset),
-                                    self.tag,
-                                    offset,
-                                    || Value::known(*value),
-                                )?;
-                            } else {
-                                let column = &tx_table_columns[index - 1];
-                                region.assign_advice(
-                                    || format!("tx table row {}", offset),
-                                    *column,
-                                    offset,
-                                    || Value::known(*value),
-                                )?;
-                            }
-                        }
+                        region.assign_advice(
+                            || format!("tx table row {}", offset),
+                            self.tx_id,
+                            offset,
+                            || Value::known(row[0]),
+                        )?;
+                        region.assign_fixed(
+                            || format!("tx table row {}", offset),
+                            self.tag,
+                            offset,
+                            || Value::known(row[1]),
+                        )?;
+                        region.assign_advice(
+                            || format!("tx table row {}", offset),
+                            self.index,
+                            offset,
+                            || Value::known(row[2]),
+                        )?;
+                        region.assign_advice(
+                            || format!("tx table row {}", offset),
+                            self.value,
+                            offset,
+                            || Value::known(row[3]),
+                        )?;
                         offset += 1;
                     }
                 }
