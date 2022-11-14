@@ -169,16 +169,14 @@ impl TxTable {
                                     || Value::known(*value),
                                 )?;
                             } else if index == 1 {
-                                
                                 region.assign_fixed(
-                                    || format!("tx table row {}", offset), 
+                                    || format!("tx table row {}", offset),
                                     self.tag,
-                                    offset, 
-                                    || Value::known(*value)
+                                    offset,
+                                    || Value::known(*value),
                                 )?;
-                                
                             } else {
-                                let column = &tx_table_columns[index-1];
+                                let column = &tx_table_columns[index - 1];
                                 region.assign_advice(
                                     || format!("tx table row {}", offset),
                                     *column,
@@ -196,9 +194,21 @@ impl TxTable {
     }
 }
 
-impl DynamicTableColumns for TxTable {
+/// TxTable no longer a Dynamic table
+impl TxTable {
     fn columns(&self) -> Vec<Column<Advice>> {
         vec![self.tx_id, self.index, self.value]
+    }
+}
+
+impl<F: Field> LookupTable<F> for TxTable {
+    fn table_exprs(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>> {
+        vec![
+            meta.query_advice(self.tx_id, Rotation::cur()),
+            meta.query_fixed(self.tag, Rotation::cur()),
+            meta.query_advice(self.index, Rotation::cur()),
+            meta.query_advice(self.value, Rotation::cur()),
+        ]
     }
 }
 
