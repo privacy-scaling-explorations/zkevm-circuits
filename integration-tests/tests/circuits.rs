@@ -32,6 +32,7 @@ lazy_static! {
 const CIRCUITS_PARAMS: CircuitsParams = CircuitsParams {
     max_rws: 16384,
     max_txs: 4,
+    keccak_padding: None,
 };
 
 async fn test_evm_circuit_block(block_num: u64) {
@@ -63,11 +64,8 @@ async fn test_state_circuit_block(block_num: u64) {
 
     let rw_map = RwMap::from(&builder.block.container);
 
-    let randomness = Fr::from(0xcafeu64);
-    let circuit = StateCircuit::<Fr>::new(randomness, rw_map, 1 << 16);
-    let power_of_randomness = circuit.instance();
-
-    let prover = MockProver::<Fr>::run(DEGREE as u32, &circuit, power_of_randomness).unwrap();
+    let circuit = StateCircuit::<Fr>::new(rw_map, 1 << 16);
+    let prover = MockProver::<Fr>::run(DEGREE as u32, &circuit, circuit.instance()).unwrap();
     prover
         .verify_par()
         .expect("state_circuit verification failed");
@@ -141,6 +139,7 @@ pub async fn test_super_circuit_block(block_num: u64) {
         CircuitsParams {
             max_rws: MAX_RWS,
             max_txs: MAX_TXS,
+            keccak_padding: None,
         },
     )
     .await
