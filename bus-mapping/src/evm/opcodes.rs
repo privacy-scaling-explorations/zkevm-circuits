@@ -1,6 +1,7 @@
 //! Definition of each opcode of the EVM.
 use crate::{
     circuit_input_builder::{CircuitInputStateRef, ExecStep},
+    error::{ExecError, OogError},
     evm::OpcodeId,
     operation::{
         AccountField, CallContextField, TxAccessListAccountOp, TxReceiptField, TxRefundOp, RW,
@@ -31,6 +32,7 @@ mod codecopy;
 mod codesize;
 mod create;
 mod dup;
+mod error_oog_call;
 mod exp;
 mod extcodecopy;
 mod extcodehash;
@@ -68,6 +70,7 @@ use codecopy::Codecopy;
 use codesize::Codesize;
 use create::DummyCreate;
 use dup::Dup;
+use error_oog_call::OOGCall;
 use exp::Exponentiation;
 use extcodecopy::Extcodecopy;
 use extcodehash::Extcodehash;
@@ -254,6 +257,18 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
     }
 }
 
+/// helper to generate corresponding error operations
+fn fn_gen_error_state_associated_ops(error: &ExecError) -> FnGenAssociatedOps {
+    match error {
+        ExecError::OutOfGas(OogError::Call) => OOGCall::gen_associated_ops,
+        // place other error type here when implements
+        _ => {
+            warn!("Using dummy gen_associated_ops for opcode {:?}", error);
+            Dummy::gen_associated_ops
+        }
+    }
+}
+
 #[allow(clippy::collapsible_else_if)]
 /// Generate the associated operations according to the particular
 /// [`OpcodeId`].
@@ -283,19 +298,24 @@ pub fn gen_associated_ops(
         None
     };
     if let Some(exec_error) = state.get_step_err(geth_step, next_step).unwrap() {
-        log::warn!(
+        println!(
             "geth error {:?} occurred in  {:?}",
-            exec_error,
-            geth_step.op
+            exec_error, geth_step.op
         );
 
-        exec_step.error = Some(exec_error);
-        if exec_step.oog_or_stack_error() {
+        exec_step.error = Some(exec_error.clone());
+        if exec_step.oog_or_stack_error() && !geth_step.op.is_call_or_create() {
             state.gen_restore_context_ops(&mut exec_step, geth_steps)?;
         }
         // for `oog_or_stack_error` error message will be returned by geth_step error
         // field, when this kind of error happens, no more proceeding
-        if geth_step.op.is_call_or_create() && !exec_step.oog_or_stack_error() {
+        if geth_step.op.is_call_or_create() {
+            if exec_step.oog_or_stack_error() {
+                let fn_gen_error_associated_ops = fn_gen_error_state_associated_ops(&exec_error);
+
+                return fn_gen_error_associated_ops(state, geth_steps);
+            }
+
             let call = state.parse_call(geth_step)?;
             // Switch to callee's call context
             state.push_call(call);

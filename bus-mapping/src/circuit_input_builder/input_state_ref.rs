@@ -763,6 +763,11 @@ impl<'a> CircuitInputStateRef<'a> {
 
     /// Handle a reversion group
     fn handle_reversion(&mut self) {
+        if self.tx_ctx.reversion_groups.is_empty() {
+            log::info!("reversion_groups is empty now ");
+            return;
+        }
+
         let reversion_group = self
             .tx_ctx
             .reversion_groups
@@ -779,9 +784,11 @@ impl<'a> CircuitInputStateRef<'a> {
                     false,
                     op,
                 );
-                self.tx.steps_mut()[step_index]
-                    .bus_mapping_instance
-                    .push(rev_op_ref);
+                if self.tx.steps().len() > step_index {
+                    self.tx.steps_mut()[step_index]
+                        .bus_mapping_instance
+                        .push(rev_op_ref);
+                }
             }
         }
 
