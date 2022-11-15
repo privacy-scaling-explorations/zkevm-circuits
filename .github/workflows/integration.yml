@@ -20,14 +20,13 @@ jobs:
       uses: actions/github-script@v6
       with:
         script: |
-          /*const { data: comments } = await github.rest.issues.listComments({
+          const { data: comments } = await github.rest.issues.listComments({
             issue_number: context.issue.number,
             owner: context.repo.owner,
             repo: context.repo.repo,
           })
           const botComment = comments.find(comment => comment.user.id === 41898282)
-          */
-          if (true) {
+          if (botComment) {
             const body = '👋 Comment on this pull request with `/test` to run the integration tests.'
             await github.rest.issues.createComment({
               issue_number: context.issue.number,
