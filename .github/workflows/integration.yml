@@ -8,6 +8,9 @@ on:
     branches:
       - main
 
+permissions:
+  pull-requests: 'write'
+
 jobs:
   help:
     if: github.event_name == 'pull_request'
