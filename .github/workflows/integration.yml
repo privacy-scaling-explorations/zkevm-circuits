@@ -12,22 +12,22 @@ jobs:
   help:
     if: github.event_name == 'pull_request'
     permissions:
-      issues: read|write
-      pull-requests: read|write
+      issues: write
+      pull-requests: write
     runs-on: ubuntu-latest
     steps:
     - name: Help
       uses: actions/github-script@v6
       with:
-        github-token: ${{ secrets.GITHUB_TOKEN }}
         script: |
-          const { data: comments } = await github.rest.issues.listComments({
+          /*const { data: comments } = await github.rest.issues.listComments({
             issue_number: context.issue.number,
             owner: context.repo.owner,
             repo: context.repo.repo,
           })
           const botComment = comments.find(comment => comment.user.id === 41898282)
-          if (!botComment) {
+          */
+          if (true) {
             const body = '👋 Comment on this pull request with `/test` to run the integration tests.'
             await github.rest.issues.createComment({
               issue_number: context.issue.number,
