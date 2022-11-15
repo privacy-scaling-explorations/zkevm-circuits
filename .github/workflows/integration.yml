@@ -8,12 +8,10 @@ on:
     branches:
       - main
 
-permissions:
-  pull-requests: 'write'
-
 jobs:
   help:
     if: github.event_name == 'pull_request'
+    permissions: read-all|write-all
     runs-on: ubuntu-latest
     steps:
     - name: Help
