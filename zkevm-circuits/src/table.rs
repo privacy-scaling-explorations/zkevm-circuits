@@ -134,7 +134,8 @@ impl TxTable {
             || "tx table",
             |mut region| {
                 let mut offset = 0;
-                for column in self.columns() {
+                let advice_columns = [self.tx_id, self.index, self.value];
+                for column in advice_columns {
                     region.assign_advice(
                         || "tx table all-zero row",
                         column,
@@ -142,6 +143,12 @@ impl TxTable {
                         || Value::known(F::zero()),
                     )?;
                 }
+                region.assign_fixed(
+                    || "tx table all-zero row",
+                    self.tag,
+                    offset,
+                    || Value::known(F::zero()),
+                )?;
                 offset += 1;
 
                 let padding_txs: Vec<Transaction> = (txs.len()..max_txs)
@@ -152,29 +159,19 @@ impl TxTable {
                     .collect();
                 for tx in txs.iter().chain(padding_txs.iter()) {
                     for row in tx.table_assignments(randomness) {
-                        region.assign_advice(
-                            || format!("tx table row {}", offset),
-                            self.tx_id,
-                            offset,
-                            || Value::known(row[0]),
-                        )?;
+                        for (index, column) in advice_columns.iter().enumerate() {
+                            region.assign_advice(
+                                || format!("tx table row {}", offset),
+                                *column,
+                                offset,
+                                || Value::known(row[if index > 0 { index + 1 } else { index }]),
+                            )?;
+                        }
                         region.assign_fixed(
                             || format!("tx table row {}", offset),
                             self.tag,
                             offset,
                             || Value::known(row[1]),
-                        )?;
-                        region.assign_advice(
-                            || format!("tx table row {}", offset),
-                            self.index,
-                            offset,
-                            || Value::known(row[2]),
-                        )?;
-                        region.assign_advice(
-                            || format!("tx table row {}", offset),
-                            self.value,
-                            offset,
-                            || Value::known(row[3]),
                         )?;
                         offset += 1;
                     }
@@ -182,12 +179,6 @@ impl TxTable {
                 Ok(())
             },
         )
-    }
-}
-
-impl TxTable {
-    pub(crate) fn columns(&self) -> Vec<Column<Advice>> {
-        vec![self.tx_id, self.index, self.value]
     }
 }
 
