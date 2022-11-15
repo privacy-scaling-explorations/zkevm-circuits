@@ -1,9 +1,8 @@
 #![cfg(feature = "circuits")]
 
-use bus_mapping::circuit_input_builder::{BuilderClient, CircuitsParams};
+use bus_mapping::circuit_input_builder::{BuilderClient, CircuitInputBuilder, CircuitsParams};
 use bus_mapping::operation::OperationContainer;
 use eth_types::geth_types;
-use ethers::prelude::k256::ecdsa::DerSignature;
 use halo2_proofs::plonk::{
     create_proof, keygen_pk, keygen_vk, verify_proof, Circuit, ProvingKey, VerifyingKey,
 };
@@ -39,16 +38,26 @@ use zkevm_circuits::bytecode_circuit::dev::BytecodeCircuitTester;
 use zkevm_circuits::copy_circuit::dev::CopyCircuitTester;
 use zkevm_circuits::evm_circuit::test::{test_circuit_degree, test_circuit_instance};
 use zkevm_circuits::evm_circuit::witness::RwMap;
-use zkevm_circuits::evm_circuit::{
-    test::{run_test_circuit, test_cicuit_from_block},
-    witness::block_convert,
-};
+use zkevm_circuits::evm_circuit::{test::test_cicuit_from_block, witness::block_convert};
 use zkevm_circuits::state_circuit::StateCircuit;
-use zkevm_circuits::test_util::test_circuits_witness_block;
 use zkevm_circuits::tx_circuit::{sign_verify::SignVerifyChip, Secp256k1Affine, TxCircuit};
 
 lazy_static! {
     pub static ref GEN_DATA: GenDataOutput = GenDataOutput::load();
+}
+
+async fn gen_inputs(
+    block_num: u64,
+) -> (
+    CircuitInputBuilder,
+    eth_types::Block<eth_types::Transaction>,
+) {
+    let cli = get_client();
+    let cli = BuilderClient::new(cli, CircuitsParams::default())
+        .await
+        .unwrap();
+
+    cli.gen_inputs(block_num).await.unwrap()
 }
 
 fn test_run<ConcreteCircuit: Circuit<Fr>, R: RngCore>(
@@ -154,11 +163,7 @@ async fn test_evm_circuit_block(block_num: u64) {
     ]);
 
     log::info!("test evm circuit, block number: {}", block_num);
-    let cli = get_client();
-    let cli = BuilderClient::new(cli, CircuitsParams::default())
-        .await
-        .unwrap();
-    let (builder, _) = cli.gen_inputs(block_num).await.unwrap();
+    let (builder, _) = gen_inputs(block_num).await;
 
     let block = block_convert(&builder.block, &builder.code_db);
 
@@ -181,11 +186,7 @@ async fn test_state_circuit_block(block_num: u64) {
         0xe5,
     ]);
 
-    let cli = get_client();
-    let cli = BuilderClient::new(cli, CircuitsParams::default())
-        .await
-        .unwrap();
-    let (builder, _) = cli.gen_inputs(block_num).await.unwrap();
+    let (builder, _) = gen_inputs(block_num).await;
 
     // Generate state proof
     let stack_ops = builder.block.container.sorted_stack();
@@ -216,12 +217,8 @@ async fn test_tx_circuit_block(block_num: u64) {
     let mut rng = ChaCha20Rng::seed_from_u64(2);
 
     log::info!("test tx circuit, block number: {}", block_num);
-    let cli = get_client();
-    let cli = BuilderClient::new(cli, CircuitsParams::default())
-        .await
-        .unwrap();
 
-    let (_, eth_block) = cli.gen_inputs(block_num).await.unwrap();
+    let (_, eth_block) = gen_inputs(block_num).await;
     let txs: Vec<_> = eth_block
         .transactions
         .iter()
@@ -252,11 +249,8 @@ pub async fn test_bytecode_circuit_block(block_num: u64) {
     ]);
 
     log::info!("test bytecode circuit, block number: {}", block_num);
-    let cli = get_client();
-    let cli = BuilderClient::new(cli, CircuitsParams::default())
-        .await
-        .unwrap();
-    let (builder, _) = cli.gen_inputs(block_num).await.unwrap();
+    let (builder, _) = gen_inputs(block_num).await;
+
     let bytecodes: Vec<Vec<u8>> = builder.code_db.0.values().cloned().collect();
     let unrolled: Vec<_> = bytecodes.iter().map(|b| unroll::<Fr>(b.clone())).collect();
 
@@ -275,11 +269,7 @@ pub async fn test_copy_circuit_block(block_num: u64) {
     ]);
 
     log::info!("test copy circuit, block number: {}", block_num);
-    let cli = get_client();
-    let cli = BuilderClient::new(cli, CircuitsParams::default())
-        .await
-        .unwrap();
-    let (builder, _) = cli.gen_inputs(block_num).await.unwrap();
+    let (builder, _) = gen_inputs(block_num).await;
     let block = block_convert(&builder.block, &builder.code_db);
 
     let randomness = CopyCircuitTester::<Fr>::get_randomness();
