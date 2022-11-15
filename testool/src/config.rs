@@ -2,7 +2,7 @@ use anyhow::{anyhow, bail, ensure, Context, Result};
 use eth_types::evm_types::OpcodeId;
 use serde::Deserialize;
 
-const CONFIG_FILE : &str = "Config.toml";
+const CONFIG_FILE: &str = "Config.toml";
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
@@ -18,7 +18,7 @@ pub struct TestSuite {
     pub path: String,
     pub max_gas: u64,
     pub max_steps: u64,
-    pub max_rws : u64,
+    pub max_rws: u64,
 
     /// see [Implemented opcodes status](https://github.com/appliedzkp/zkevm-circuits/issues/477)
     pub unimplemented_opcodes: Vec<OpcodeId>,
@@ -59,7 +59,8 @@ impl TestSuite {
 
 impl Config {
     pub fn load() -> Result<Self> {
-        let content = std::fs::read_to_string(CONFIG_FILE).context(format!("Unable to open {}",CONFIG_FILE))?;
+        let content = std::fs::read_to_string(CONFIG_FILE)
+            .context(format!("Unable to open {}", CONFIG_FILE))?;
         let mut config: Config = toml::from_str(&content).context("parsing toml")?;
 
         // Append all tests defined in sets into the tests

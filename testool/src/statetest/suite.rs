@@ -67,7 +67,7 @@ pub fn run_statetests_suite(
 
     // for each test
     tcs.into_par_iter().for_each(|ref tc| {
-        let full_id = format!("{}#{}",tc.id,tc.path);
+        let full_id = format!("{}#{}", tc.id, tc.path);
 
         if !suite.allowed(&tc.id) {
             results

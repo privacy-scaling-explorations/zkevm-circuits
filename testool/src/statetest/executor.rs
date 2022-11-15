@@ -295,31 +295,35 @@ pub fn run_test(
     let mut builder;
 
     if !circuits_config.super_circuit {
-        let circuits_params = CircuitsParams { max_txs: 1, max_rws :  55000 };
+        let circuits_params = CircuitsParams {
+            max_txs: 1,
+            max_rws: 55000,
+            keccak_padding: None,
+        };
         let block_data = BlockData::new_from_geth_data_with_params(geth_data, circuits_params);
-        
+
         builder = block_data.new_circuit_input_builder();
         builder
             .handle_block(&eth_block, &geth_traces)
             .map_err(|err| StateTestError::CircuitInput(err.to_string()))?;
-    
+
         let block =
             zkevm_circuits::evm_circuit::witness::block_convert(&builder.block, &builder.code_db);
 
-        let config  = BytecodeTestConfig {
-            enable_evm_circuit_test : true,
+        let config = BytecodeTestConfig {
+            enable_evm_circuit_test: true,
             enable_state_circuit_test: true,
-            gas_limit: u64::MAX
+            gas_limit: u64::MAX,
         };
 
         zkevm_circuits::test_util::test_circuits_witness_block(block, config)
             .map_err(|err| StateTestError::VerifierError(format!("{:#?}", err)))?;
-
     } else {
         geth_data.sign(&wallets);
 
         let (k, circuit, instance, _builder) =
-            SuperCircuit::<_, 1, 32, 255>::build(geth_data, &mut ChaCha20Rng::seed_from_u64(2)).unwrap();
+            SuperCircuit::<_, 1, 32, 255>::build(geth_data, &mut ChaCha20Rng::seed_from_u64(2))
+                .unwrap();
         builder = _builder;
 
         let prover = MockProver::run(k, &circuit, instance).unwrap();

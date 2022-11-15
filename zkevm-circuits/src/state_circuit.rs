@@ -119,7 +119,7 @@ impl<F: Field> StateCircuitConfig<F> {
         for (name, lookup) in constraint_builder.lookups() {
             meta.lookup_any(name, |_| lookup);
         }
-        
+
         config
     }
 

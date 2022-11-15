@@ -104,15 +104,14 @@ pub struct Report {
 }
 
 impl Report {
-
     pub fn print_tty(&self) -> Result<()> {
         self.by_folder.print_tty(false)?;
         self.by_result.print_tty(false)?;
         let (_, files_diff) = self.diffs.gen_info();
         files_diff.print_tty(false)?;
-        for (test_id, info)  in &self.tests {
-            if info.level == ResultLevel::Fail || info.level== ResultLevel::Panic {
-                println!("- {:?} {}",info.level,test_id);
+        for (test_id, info) in &self.tests {
+            if info.level == ResultLevel::Fail || info.level == ResultLevel::Panic {
+                println!("- {:?} {}", info.level, test_id);
             }
         }
         Ok(())
@@ -157,13 +156,7 @@ impl Results {
             let level = ResultLevel::from_str(split.next().unwrap()).unwrap();
             let id = split.next().unwrap().to_string();
             let details = split.next().unwrap().to_string();
-            tests.insert(
-                id,
-                ResultInfo {
-                    level,
-                    details,
-                },
-            );
+            tests.insert(id, ResultInfo { level, details });
         }
         Ok(Self { cache: None, tests })
     }
@@ -201,7 +194,7 @@ impl Results {
             let (_, file_path) = id.split_once('#').unwrap();
             let filename = &file_path.rsplit_terminator('/').next().unwrap();
             let folder = &file_path[..file_path.len() - filename.len() - 1];
-            
+
             let result = format!("{:?}_{}", info.level, info.details);
 
             folders.insert(folder);
@@ -326,10 +319,7 @@ impl Results {
                     result.details
                 );
             }
-            let entry = format!(
-                "{:?};{};{}\n",
-                result.level, test_id, result.details
-            );
+            let entry = format!("{:?};{};{}\n", result.level, test_id, result.details);
             if let Some(path) = &self.cache {
                 std::fs::OpenOptions::new()
                     .read(true)
