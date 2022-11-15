@@ -1,7 +1,7 @@
 name: Integration Tests
 
 on:
-  on: issue_comment
+  issue_comment:
   pull_request:
     types: [synchronize, opened, reopened, ready_for_review]
   push:
