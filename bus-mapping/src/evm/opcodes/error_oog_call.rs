@@ -30,19 +30,12 @@ impl Opcode for OOGCall {
         let ret_offset = geth_step.stack.nth_last(5)?.as_usize();
         let ret_length = geth_step.stack.nth_last(6)?.as_usize();
 
-        // we need to keep the memory until parse_call complete
         state.call_expand_memory(args_offset, args_length, ret_offset, ret_length)?;
 
         let tx_id = state.tx_ctx.id();
         let call_address = geth_step.stack.nth_last(1)?.to_address();
 
-        //let call = state.parse_call(geth_step)?;
-        // current executing call step which CALL op belong to
         let current_call = state.call()?.clone();
-
-        // NOTE: For `RwCounterEndOfReversion` we use the `0` value as a placeholder,
-        // and later set the proper value in
-        // `CircuitInputBuilder::set_value_ops_call_context_rwc_eor`
         for (field, value) in [
             (CallContextField::TxId, tx_id.into()),
             (CallContextField::RwCounterEndOfReversion, 0.into()),

@@ -1183,9 +1183,6 @@ impl<F: Field> ExecutionConfig<F> {
             }
         }
         for (idx, assigned_rw_value) in assigned_rw_values.iter().enumerate() {
-            if step.rw_indices.is_empty() {
-                break;
-            }
             let rw_idx = step.rw_indices[idx];
             let rw = block.rws[rw_idx];
             let table_assignments = rw.table_assignment_aux(block.randomness);
