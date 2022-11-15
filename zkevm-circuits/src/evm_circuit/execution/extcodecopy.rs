@@ -191,7 +191,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
             .assign(region, offset, Value::known(F::from(is_warm as u64)))?;
 
         let code_hash = block.rws[step.rw_indices[8]]
-            .table_assignment(block.randomness)
+            .table_assignment_aux(block.randomness)
             .value;
         self.code_hash
             .assign(region, offset, Value::known(code_hash))?;

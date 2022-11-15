@@ -126,7 +126,7 @@ fn gen_copy_steps(
     dst_addr: u64,
     src_addr_end: u64,
     bytes_left: u64,
-    code: Bytecode,
+    code: &Bytecode,
 ) -> Result<Vec<(u8, bool)>, Error> {
     let mut copy_steps = Vec::with_capacity(bytes_left as usize);
     for idx in 0..bytes_left {
@@ -154,10 +154,10 @@ fn gen_copy_event(
     let data_offset = geth_step.stack.nth_last(2)?.as_u64();
     let length = geth_step.stack.nth_last(3)?.as_u64();
 
-    let mut exec_step = gen_extcodecopy_step(state, geth_step)?;
     let code_hash = state.sdb.get_account(&external_address).1.code_hash;
     let code: Bytecode = state.code(code_hash)?.into();
     let src_addr_end = code.code.len() as u64;
+    let mut exec_step = state.new_step(geth_step)?;
     let copy_steps = gen_copy_steps(
         state,
         &mut exec_step,
@@ -165,7 +165,7 @@ fn gen_copy_event(
         memory_offset,
         src_addr_end,
         length,
-        code,
+        &code,
     )?;
     Ok(CopyEvent {
         src_addr: data_offset,
