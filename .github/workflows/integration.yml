@@ -11,7 +11,9 @@ on:
 jobs:
   help:
     if: github.event_name == 'pull_request'
-    permissions: 'read-all|write-all'
+    permissions:
+      issues: 'read|write'
+      pull-requests: 'read|write'
     runs-on: ubuntu-latest
     steps:
     - name: Help
