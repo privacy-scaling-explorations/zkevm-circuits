@@ -2,7 +2,7 @@ name: Integration Tests
 
 on:
   issue_comment:
-  pull_request:
+  pull_request_target:
     types: [synchronize, opened, reopened, ready_for_review]
   push:
     branches:
