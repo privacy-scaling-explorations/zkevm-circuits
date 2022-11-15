@@ -16,6 +16,7 @@ jobs:
     - name: Help
       uses: actions/github-script@v6
       with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
         script: |
           const { data: comments } = await github.rest.issues.listComments({
             issue_number: context.issue.number,
