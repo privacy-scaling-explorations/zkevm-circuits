@@ -32,6 +32,7 @@ lazy_static! {
 const CIRCUITS_PARAMS: CircuitsParams = CircuitsParams {
     max_rws: 16384,
     max_txs: 4,
+    keccak_padding: None,
 };
 
 async fn test_evm_circuit_block(block_num: u64) {
@@ -138,6 +139,7 @@ pub async fn test_super_circuit_block(block_num: u64) {
         CircuitsParams {
             max_rws: MAX_RWS,
             max_txs: MAX_TXS,
+            keccak_padding: None,
         },
     )
     .await

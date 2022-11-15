@@ -56,7 +56,7 @@ use crate::bytecode_circuit::bytecode_unroller::{
 };
 use crate::copy_circuit::CopyCircuit;
 use crate::evm_circuit::{table::FixedTableTag, EvmCircuit};
-use crate::exp_circuit::ExpCircuit;
+use crate::exp_circuit::ExpCircuitConfig;
 use crate::keccak_circuit::keccak_packed_multi::KeccakPackedConfig as KeccakConfig;
 use crate::pi_circuit::{PiCircuit, PiCircuitConfig, PublicData};
 use crate::state_circuit::StateCircuitConfig;
@@ -65,7 +65,7 @@ use crate::tx_circuit::{TxCircuit, TxCircuitConfig};
 use crate::util::Challenges;
 use crate::witness::{block_convert, Block, MptUpdates};
 
-use bus_mapping::circuit_input_builder::CircuitInputBuilder;
+use bus_mapping::circuit_input_builder::{CircuitInputBuilder, CircuitsParams};
 use bus_mapping::mock::BlockData;
 use eth_types::geth_types::{self, GethData, Transaction};
 use eth_types::Field;
@@ -112,7 +112,7 @@ pub struct SuperCircuitConfig<
     copy_circuit: CopyCircuit<F>,
     keccak_circuit: KeccakConfig<F>,
     pi_circuit: PiCircuitConfig<F, MAX_TXS, MAX_CALLDATA>,
-    exp_circuit: ExpCircuit<F>,
+    exp_circuit: ExpCircuitConfig<F>,
 }
 
 /// The Super Circuit contains all the zkEVM circuits
@@ -141,6 +141,8 @@ pub struct SuperCircuit<
     pub bytecode_size: usize,
     /// Public Input Circuit
     pub pi_circuit: PiCircuit<F, MAX_TXS, MAX_CALLDATA>,
+    /// Configuration parameters for various parts of the circuit.
+    pub circuits_params: CircuitsParams,
 }
 
 impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: usize>
@@ -235,7 +237,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: u
             ),
             keccak_circuit,
             pi_circuit,
-            exp_circuit: ExpCircuit::configure(meta, exp_table),
+            exp_circuit: ExpCircuitConfig::configure(meta, exp_table),
         }
     }
 
@@ -305,7 +307,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: u
             &mut layouter,
             &self.keccak_inputs,
             self.block.randomness,
-            None,
+            self.circuits_params.keccak_padding,
         )?;
         // --- Copy Circuit ---
         config
@@ -408,6 +410,7 @@ impl<const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: usize>
             // MockProver verification time.
             bytecode_size: bytecodes_len + 64,
             pi_circuit,
+            circuits_params: builder.block.circuits_params,
         };
 
         let instance = circuit.instance();
