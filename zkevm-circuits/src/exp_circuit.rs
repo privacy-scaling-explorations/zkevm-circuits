@@ -380,12 +380,12 @@ impl<F: Field> ExpCircuitConfig<F> {
 
 #[derive(Default)]
 struct ExpCircuit<F> {
-    block: Block<F>,
+    block: Option<Block<F>>,
 }
 
 impl<F: Field> ExpCircuit<F> {
     pub fn new(block: Block<F>) -> Self {
-        Self { block }
+        Self { block: Some(block) }
     }
 }
 
@@ -407,7 +407,8 @@ impl<F: Field> Circuit<F> for ExpCircuit<F> {
         config: Self::Config,
         mut layouter: impl Layouter<F>,
     ) -> Result<(), halo2_proofs::plonk::Error> {
-        config.assign_block(&mut layouter, &self.block)
+        let block = self.block.as_ref().unwrap();
+        config.assign_block(&mut layouter, block)
     }
 }
 
