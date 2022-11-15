@@ -931,6 +931,7 @@ impl<F: Field> ExecutionConfig<F> {
         self.assign_exec_step_int(region, offset, block, transaction, call, step, randomness)
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn assign_exec_step_int(
         &self,
         region: &mut CachedRegion<'_, '_, F>,
@@ -943,7 +944,7 @@ impl<F: Field> ExecutionConfig<F> {
     ) -> Result<(), Error> {
         log::trace!("assign_exec_step offset:{} step:{:?}", offset, step);
         self.step
-            .assign_exec_step(region, offset, block, call, step)?;
+            .assign_exec_step(region, offset, call, step)?;
 
         macro_rules! assign_exec_step {
             ($gadget:expr) => {

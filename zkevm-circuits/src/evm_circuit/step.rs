@@ -3,7 +3,7 @@ use crate::{
     evm_circuit::{
         param::{MAX_STEP_HEIGHT, STEP_STATE_HEIGHT, STEP_WIDTH},
         util::{Cell, RandomLinearCombination},
-        witness::{Block, Call, ExecStep},
+        witness::{Call, ExecStep},
     },
     util::Expr,
 };
@@ -505,7 +505,6 @@ impl<F: FieldExt> Step<F> {
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        block: &Block<F>,
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {

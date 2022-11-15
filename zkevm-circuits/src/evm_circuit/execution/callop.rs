@@ -438,10 +438,10 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             .assign(region, offset, sum::value(&value.to_le_bytes()))?;
         let cd_address =
             self.cd_address
-                .assign(region, offset, cd_offset, cd_length, block.randomness)?;
+                .assign(region, offset, cd_offset, cd_length, region.get_randomness())?;
         let rd_address =
             self.rd_address
-                .assign(region, offset, rd_offset, rd_length, block.randomness)?;
+                .assign(region, offset, rd_offset, rd_length, region.get_randomness())?;
         let (_, memory_expansion_gas_cost) = self.memory_expansion.assign(
             region,
             offset,
@@ -467,49 +467,42 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         self.callee_code_hash.assign(
             region,
             offset,
-            Value::known(Word::random_linear_combine(
-                callee_code_hash.to_le_bytes(),
-                block.randomness,
-            )),
+            region.rlc(callee_code_hash)
         )?;
-        let is_empty_nonce_and_balance = self.is_empty_nonce_and_balance.assign(
+        let is_empty_nonce_and_balance = self.is_empty_nonce_and_balance.assign_value(
             region,
             offset,
             [
-                F::from(callee_nonce.low_u64()),
-                Word::random_linear_combine(callee_balance_pair.1.to_le_bytes(), block.randomness),
+                Value::known(F::from(callee_nonce.low_u64())),
+                region.rlc(callee_balance_pair.1),
             ],
         )?;
-        let is_empty_code_hash = self.is_empty_code_hash.assign(
+        let is_empty_code_hash = self.is_empty_code_hash.assign_value(
             region,
             offset,
-            Word::random_linear_combine(callee_code_hash.to_le_bytes(), block.randomness),
-            Word::random_linear_combine(*EMPTY_HASH_LE, block.randomness),
+            region.rlc(callee_code_hash),
+            region.rlc(U256::from_little_endian(&EMPTY_HASH_LE[..])),
         )?;
         let is_empty_account = is_empty_nonce_and_balance * is_empty_code_hash;
         let has_value = !value.is_zero();
         let gas_cost = if is_warm_prev {
-            GasCost::WARM_ACCESS.as_u64()
+            Value::known(F::from(GasCost::WARM_ACCESS.as_u64()))
         } else {
-            GasCost::COLD_ACCOUNT_ACCESS.as_u64()
+            Value::known(F::from(GasCost::COLD_ACCOUNT_ACCESS.as_u64()))
         } + if has_value {
-            GasCost::CALL_WITH_VALUE.as_u64()
-                + if is_empty_account == F::one() {
-                    GasCost::NEW_ACCOUNT.as_u64()
-                } else {
-                    0
-                }
+            Value::known(F::from(GasCost::CALL_WITH_VALUE.as_u64()))
+                + is_empty_account  *  Value::known(F::from(GasCost::NEW_ACCOUNT.as_u64()))
         } else {
-            0
-        } + memory_expansion_gas_cost;
-        let gas_available = step.gas_left - gas_cost;
+            Value::known(F::from(0))
+        } + Value::known(F::from(memory_expansion_gas_cost));
+        let gas_available = Value::known(F::from(step.gas_left)) - gas_cost;
         self.one_64th_gas
-            .assign(region, offset, gas_available as u128)?;
-        self.capped_callee_gas_left.assign(
+            .assign_value(region, offset, gas_available)?;
+        self.capped_callee_gas_left.assign_value(
             region,
             offset,
-            F::from(gas.low_u64()),
-            F::from(gas_available - gas_available / 64),
+            Value::known(F::from(gas.as_u64())),
+            gas_available - gas_available * Value::known(F::from(64).invert().unwrap()),
         )?;
         Ok(())
     }

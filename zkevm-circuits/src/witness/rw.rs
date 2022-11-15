@@ -210,20 +210,20 @@ pub struct RwRow<F> {
     pub(crate) aux2: F,
 }
 
-impl<F> RwRow<F> {
+impl<F: Clone> RwRow<F> {
     pub(crate) fn values(&self) -> [F; 11] {
         [
-            self.rw_counter,
-            self.is_write,
-            self.tag,
-            self.id,
-            self.address,
-            self.field_tag,
-            self.storage_key,
-            self.value,
-            self.value_prev,
-            self.aux1,
-            self.aux2,
+            self.rw_counter.clone(),
+            self.is_write.clone(),
+            self.tag.clone(),
+            self.id.clone(),
+            self.address.clone(),
+            self.field_tag.clone(),
+            self.storage_key.clone(),
+            self.value.clone(),
+            self.value_prev.clone(),
+            self.aux1.clone(),
+            self.aux2.clone(),
         ]
     }
 }

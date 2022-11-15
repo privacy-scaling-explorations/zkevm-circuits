@@ -13,6 +13,8 @@ use super::{step::step_convert, tx::tx_convert, Bytecode, ExecStep, RwMap, Trans
 /// data for witness generation.
 #[derive(Debug, Default, Clone)]
 pub struct Block<F> {
+    /// The randomness for random linear combination
+    pub randomness: F,    
     /// Transactions in the block
     pub txs: Vec<Transaction>,
     /// EndBlock step that is repeated after the last transaction and before

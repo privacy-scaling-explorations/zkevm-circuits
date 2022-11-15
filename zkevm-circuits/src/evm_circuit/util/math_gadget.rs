@@ -67,13 +67,14 @@ impl<F: Field> IsZeroGadget<F> {
     ) -> Result<Value<F>, Error> {
         let inverse = value.map(|value| value.invert().unwrap_or(F::zero()));
         self.inverse.assign(region, offset, inverse)?;
-        Ok(value.map(|value| if value.is_zero().into() {
-            F::one()
-        } else {
-            F::zero()
+        Ok(value.map(|value| {
+            if value.is_zero().into() {
+                F::one()
+            } else {
+                F::zero()
+            }
         }))
     }
-
 }
 
 /// Returns `1` when `lhs == rhs`, and returns `0` otherwise.
@@ -116,8 +117,6 @@ impl<F: Field> IsEqualGadget<F> {
     ) -> Result<Value<F>, Error> {
         self.is_zero.assign_value(region, offset, lhs - rhs)
     }
-
-
 }
 
 #[derive(Clone, Debug)]
@@ -179,20 +178,12 @@ impl<F: Field, const N: usize> BatchedIsZeroGadget<F, N> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         values: [Value<F>; N],
-    ) -> Result<F, Error> {
-        let is_zero =
-            if let Some(inverse) = values.iter().find_map(|value| Option::from(value.invert())) {
-                self.nonempty_witness
-                    .assign(region, offset, Value::known(inverse))?;
-                F::zero()
-            } else {
-                F::one()
-            };
-        self.is_zero.assign(region, offset, Value::known(is_zero))?;
-
-        Ok(is_zero)
+    ) -> Result<Value<F>, Error> {
+        let values: Value<Vec<F>> = values.into_iter().collect();
+        values
+            .map(|values| self.assign(region, offset, values.try_into().unwrap()))
+            .transpose()
     }
-}
 }
 
 /// Construction of 2 256-bit words addition and result, which is useful for
@@ -444,6 +435,24 @@ impl<F: Field, const N_BYTES: usize> RangeCheckGadget<F, N_BYTES> {
         }
         Ok(())
     }
+
+    pub(crate) fn assign_value(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+        value: Value<F>,
+    ) -> Result<(), Error> {
+        value
+            .map(|value| {
+                let bytes = value.to_repr();
+                for (idx, part) in self.parts.iter().enumerate() {
+                    part.assign(region, offset, Value::known(F::from(bytes[idx] as u64)))?;
+                }
+                Ok::<(),Error>(())
+            })
+            .transpose()?;
+        Ok(())
+    }
 }
 
 /// Returns `1` when `lhs < rhs`, and returns `0` otherwise.
@@ -514,6 +523,18 @@ impl<F: Field, const N_BYTES: usize> LtGadget<F, N_BYTES> {
         }
 
         Ok((if lt { F::one() } else { F::zero() }, diff_bytes.to_vec()))
+    }
+
+    pub(crate) fn assign_value(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+        lhs: Value<F>,
+        rhs: Value<F>,
+    ) -> Result<(Value<F>, Value<Vec<u8>>), Error> {
+        Ok(lhs.zip(rhs).map(|(lhs,rhs)| {
+            self.assign(region, offset, lhs, rhs)
+        }).transpose()?.unzip())
     }
 
     pub(crate) fn diff_bytes(&self) -> Vec<Cell<F>> {
@@ -748,6 +769,25 @@ impl<F: Field, const N_BYTES: usize> ConstantDivisionGadget<F, N_BYTES> {
 
         Ok((quotient, remainder))
     }
+
+    pub(crate) fn assign_value(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+        numerator: Value<F>,
+    ) -> Result<(Value<F>, Value<F>), Error> {
+        let denominator = Value::known(F::from(self.denominator));
+        let denominator_inv = Value::known(F::from(self.denominator).invert().unwrap());
+        let quotient = numerator * denominator_inv;
+        let remainder = numerator - quotient * denominator;
+
+        self.quotient.assign(region, offset, quotient)?;
+        self.remainder.assign(region, offset, remainder)?;
+
+        self.quotient_range_check.assign_value(region, offset, quotient)?;
+
+        Ok((quotient, remainder))
+    }
 }
 
 /// Returns `rhs` when `lhs < rhs`, and returns `lhs` otherwise.
@@ -794,6 +834,16 @@ impl<F: Field, const N_BYTES: usize> MinMaxGadget<F, N_BYTES> {
         } else {
             (lhs, rhs)
         })
+    }
+
+    pub(crate) fn assign_value(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+        lhs: Value<F>,
+        rhs: Value<F>,
+    ) -> Result<(Value<F>, Value<F>), Error> {
+         Ok(lhs.zip(rhs).map(|(lhs,rhs)| self.assign(region, offset, lhs, rhs)).transpose()?.unzip())
     }
 }
 
@@ -1274,7 +1324,6 @@ impl<F: Field> ModGadget<F> {
         a: Word,
         n: Word,
         r: Word,
-        randomness: Value<F>,
     ) -> Result<(), Error> {
         let k = if n.is_zero() { Word::zero() } else { a / n };
         let a_or_zero = if n.is_zero() { Word::zero() } else { a };
@@ -1289,12 +1338,8 @@ impl<F: Field> ModGadget<F> {
             .assign(region, offset, F::from(a_or_zero_sum))?;
         self.mul.assign(region, offset, [k, n, r, a_or_zero])?;
         self.lt.assign(region, offset, r, n)?;
-        self.eq.assign_value(
-            region,
-            offset,
-            region.rlc(a),
-            region.rlc(a_or_zero),
-        )?;
+        self.eq
+            .assign_value(region, offset, region.rlc(a), region.rlc(a_or_zero))?;
 
         Ok(())
     }

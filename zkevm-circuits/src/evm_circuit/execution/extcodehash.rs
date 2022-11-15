@@ -166,7 +166,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
             .assign(region, offset, code_hash)?;
 
         let empty_code_hash_rlc = region.rlc(U256::from(*EMPTY_HASH_LE));
-        self.is_empty.assign(
+        self.is_empty.assign_value(
             region,
             offset,
             [nonce, balance, code_hash - empty_code_hash_rlc],

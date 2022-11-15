@@ -883,6 +883,7 @@ impl CopyTable {
     }
 
     /// Generate the copy table and copy circuit assignments from a copy event.
+    #[allow(clippy::type_complexity)]
     pub fn assignments<F: Field>(
         copy_event: &CopyEvent,
         randomness: Value<F>,

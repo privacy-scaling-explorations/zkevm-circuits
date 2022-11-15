@@ -82,7 +82,6 @@ use halo2_proofs::{
 };
 
 use rand::RngCore;
-use std::array;
 use strum::IntoEnumIterator;
 
 /// Mock randomness used for `SuperCircuit`.
@@ -151,7 +150,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: u
         let num_rows_evm_circuit = {
             let mut cs = ConstraintSystem::default();
             let config = Self::configure(&mut cs);
-            config.evm_circuit.get_num_rows_required(block)
+            config.0.evm_circuit.get_num_rows_required(block)
         };
         let num_rows_tx_circuit = TxCircuitConfig::<F>::get_num_rows_required(MAX_TXS);
         num_rows_evm_circuit.max(num_rows_tx_circuit)
@@ -178,13 +177,11 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: u
         let copy_table = CopyTable::construct(meta, q_copy_table);
         let exp_table = ExpTable::construct(meta);
 
-        let power_of_randomness = array::from_fn(|i| {
-            Expression::Constant(F::from(MOCK_RANDOMNESS).pow(&[1 + i as u64, 0, 0, 0]))
-        });
+        let randomness = Expression::Constant(F::from(MOCK_RANDOMNESS)); 
 
-        let challenges = Challenges::mock(power_of_randomness[0].clone());
+        let challenges = Challenges::mock(randomness.clone());
 
-        let keccak_circuit = KeccakConfig::configure(meta, power_of_randomness[0].clone());
+        let keccak_circuit = KeccakConfig::configure(meta, randomness.clone());
         let keccak_table = keccak_circuit.keccak_table.clone();
 
         let evm_circuit = EvmCircuit::configure(
@@ -202,7 +199,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: u
             StateCircuitConfig::configure(meta, &rw_table, &mpt_table, challenges.clone());
         let pi_circuit = PiCircuitConfig::new(meta, block_table.clone(), tx_table.clone());
 
-        Self::Config {
+        let config = SuperCircuitConfig {
             tx_table: tx_table.clone(),
             rw_table,
             mpt_table,
@@ -219,7 +216,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: u
                 &bytecode_table,
                 copy_table,
                 q_copy_table,
-                power_of_randomness[0].clone(),
+                randomness,
             ),
             tx_circuit: TxCircuitConfig::new(
                 meta,
@@ -236,7 +233,8 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: u
             keccak_circuit,
             pi_circuit,
             exp_circuit: ExpCircuit::configure(meta, exp_table),
-        }
+        };
+        (config, Challenges::construct(meta))
     }
 
     fn synthesize(
@@ -244,7 +242,8 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: u
         config: Self::Config,
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
-        let challenges = Challenges::mock(Value::known(self.block.randomness));
+        let (config, challenges) = config;
+        let challenges = challenges.values(&mut layouter);
 
         // --- EVM Circuit ---
         let rws = self.block.rws.table_assignments();
@@ -264,7 +263,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: u
             .load(&mut layouter, &self.block.context, challenges.evm_word())?;
         config
             .evm_circuit
-            .assign_block(&mut layouter, &self.block)?;
+            .assign_block(&mut layouter, &self.block, challenges.evm_word())?;
         // --- State Circuit ---
         config.mpt_table.load(
             &mut layouter,
@@ -310,7 +309,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: u
         // --- Copy Circuit ---
         config
             .copy_circuit
-            .assign_block(&mut layouter, &self.block, self.block.randomness)?;
+            .assign_block(&mut layouter, &self.block, challenges.evm_word())?;
         // --- Public Input Circuit ---
         self.pi_circuit.synthesize(config.pi_circuit, layouter)?;
         Ok(())

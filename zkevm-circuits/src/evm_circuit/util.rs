@@ -183,7 +183,7 @@ impl<F: FieldExt> StoredExpression<F> {
     fn eval_with_randomness(&self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        func: impl FnOnce(&InstanceQuery)->F) -> F {
+        func: impl Fn(&InstanceQuery)->F) -> F {
         self.expr.evaluate(
             &|scalar| scalar,
             &|_| unimplemented!("selector column"),
