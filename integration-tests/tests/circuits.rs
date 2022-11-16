@@ -176,8 +176,6 @@ async fn test_evm_circuit_block(block_num: u64) {
     let circuit = test_cicuit_from_block(block);
 
     test_run(rng, degree, circuit, instance);
-
-    //run_test_circuit(block).expect("evm_circuit verification failed");
 }
 
 async fn test_state_circuit_block(block_num: u64) {
@@ -264,7 +262,6 @@ pub async fn test_bytecode_circuit_block(block_num: u64) {
 pub async fn test_copy_circuit_block(block_num: u64) {
     const DEGREE: u32 = 16;
 
-    // TODO there is no copy benchmark to take as example, what is rng?
     let rng = XorShiftRng::from_seed([
         0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37, 0x32, 0x54, 0x06, 0xbc,
         0xe5,

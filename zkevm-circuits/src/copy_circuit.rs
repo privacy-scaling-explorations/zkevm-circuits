@@ -616,11 +616,6 @@ pub mod dev {
                 max_txs: 4,
             }
         }
-
-        /// Returns the r of the copy circuit.
-        pub fn r() -> Expression<F> {
-            123456u64.expr()
-        }
     }
 
     impl<F: Field> Circuit<F> for CopyCircuitTester<F> {
