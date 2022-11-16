@@ -406,21 +406,24 @@ impl<F: Field> MulWordByU64Gadget<F> {
 #[derive(Clone, Debug)]
 pub struct RangeCheckGadget<F, const N_BYTES: usize> {
     parts: [Cell<F>; N_BYTES],
+    is_zero: IsZeroGadget<F>,
 }
 
 impl<F: Field, const N_BYTES: usize> RangeCheckGadget<F, N_BYTES> {
     pub(crate) fn construct(cb: &mut ConstraintBuilder<F>, value: Expression<F>) -> Self {
         let parts = cb.query_bytes();
 
+        let is_zero = IsZeroGadget::<F>::construct(cb, from_bytes::expr(&parts));
+
         // Require that the reconstructed value from the parts equals the
         // original value
         cb.require_equal(
             "Constrain bytes recomposited to value",
-            value,
-            from_bytes::expr(&parts),
+            (1.expr() - is_zero.expr()) * value,
+            (1.expr() - is_zero.expr()) * from_bytes::expr(&parts),
         );
 
-        Self { parts }
+        Self { parts, is_zero }
     }
 
     pub(crate) fn assign(
@@ -442,15 +445,7 @@ impl<F: Field, const N_BYTES: usize> RangeCheckGadget<F, N_BYTES> {
         offset: usize,
         value: Value<F>,
     ) -> Result<(), Error> {
-        value
-            .map(|value| {
-                let bytes = value.to_repr();
-                for (idx, part) in self.parts.iter().enumerate() {
-                    part.assign(region, offset, Value::known(F::from(bytes[idx] as u64)))?;
-                }
-                Ok::<(),Error>(())
-            })
-            .transpose()?;
+        value.map(|value| self.assign(region, offset, value)).transpose()?;
         Ok(())
     }
 }

@@ -18,7 +18,7 @@ use gadgets::util::not;
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{Layouter, Region, Value},
-    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, Selector, VirtualCells},
+    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, Selector, VirtualCells, SecondPhase},
     poly::Rotation,
 };
 use std::{
@@ -299,7 +299,7 @@ impl<F: Field> ExecutionConfig<F> {
         let num_rows_inv = meta.advice_column();
         let q_step_first = meta.complex_selector();
         let q_step_last = meta.complex_selector();
-        let advices = [(); STEP_WIDTH].map(|_| meta.advice_column());
+        let advices = [(); STEP_WIDTH].map(|_| meta.advice_column_in(SecondPhase));
 
         let step_curr = Step::new(meta, advices, 0, false);
         let mut height_map = HashMap::new();

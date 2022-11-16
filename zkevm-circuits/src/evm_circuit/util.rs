@@ -9,7 +9,7 @@ use eth_types::{U256, ToLittleEndian};
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{AssignedCell, Region, Value},
-    plonk::{Advice, Assigned, Column, ConstraintSystem, Error, Expression, VirtualCells, InstanceQuery},
+    plonk::{Advice, Assigned, Column, ConstraintSystem, Error, Expression, VirtualCells, InstanceQuery, FirstPhase},
     poly::Rotation,
 };
 use std::collections::BTreeMap;
@@ -171,11 +171,13 @@ impl<F: FieldExt> StoredExpression<F> {
 
     fn is_using_randomness(expr: &Expression<F>) -> bool {
         match expr {
-            Expression::Advice(_) => true,
+            Expression::Advice(_) => false,
+            Expression::Challenge(_) => true,
             Expression::Negated(ref expr)
             | Expression::Scaled(ref expr, _)=> Self::is_using_randomness(expr),
             Expression::Product(lhe, rhe)
             | Expression::Sum(lhe,rhe) => Self::is_using_randomness(lhe) || Self::is_using_randomness(rhe),
+            Expression::Instance(_) => unimplemented!(),
             _ => false
         }
     }
@@ -183,7 +185,8 @@ impl<F: FieldExt> StoredExpression<F> {
     fn eval_with_randomness(&self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        func: impl Fn(&InstanceQuery)->F) -> F {
+        randomness: F
+    ) -> F {
         self.expr.evaluate(
             &|scalar| scalar,
             &|_| unimplemented!("selector column"),
@@ -193,8 +196,8 @@ impl<F: FieldExt> StoredExpression<F> {
             &|advide_query| {
                 region.get_advice(offset, advide_query.column_index(), advide_query.rotation())
             },
-            &|instance_query| func(&instance_query),
             &|_| unimplemented!(),
+            &|_| randomness,
             &|a| -a,
             &|a, b| a + b,
             &|a, b| a * b,
@@ -210,13 +213,10 @@ impl<F: FieldExt> StoredExpression<F> {
         
         let value = if Self::is_using_randomness(&self.expr) {
             region.randomness.map(|randomness|  {
-                let func = |instance_query: &InstanceQuery| -> F {
-                    randomness.pow(&[instance_query.column_index() as u64,0,0,0])
-                };
-                self.eval_with_randomness(region, offset, func )
+                self.eval_with_randomness(region, offset, randomness )
             })
         } else {
-            Value::known(self.eval_with_randomness(region, offset, |_| unimplemented!()))            
+            Value::known(self.eval_with_randomness(region, offset, F::zero()))            
         };
 
         self.cell.assign(region, offset, value)
