@@ -126,7 +126,7 @@ pub struct SuperCircuit<
     // EVM Circuit
     /// Block witness. Usually derived via
     /// `evm_circuit::witness::block_convert`.
-    pub block: Block<F>,
+    pub block: Option<Block<F>>,
     /// Inputs for the keccak circuit
     pub keccak_inputs: Vec<Vec<u8>>,
     /// Passed down to the evm_circuit. Usually that will be
@@ -246,10 +246,11 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: u
         config: Self::Config,
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
-        let challenges = Challenges::mock(Value::known(self.block.randomness));
+        let block = self.block.as_ref().unwrap();
+        let challenges = Challenges::mock(Value::known(block.randomness));
 
         // --- EVM Circuit ---
-        let rws = self.block.rws.table_assignments();
+        let rws = block.rws.table_assignments();
         config
             .evm_circuit
             .load_fixed_table(&mut layouter, self.fixed_table_tags.clone())?;
@@ -257,26 +258,24 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: u
         config.rw_table.load(
             &mut layouter,
             &rws,
-            self.block.circuits_params.max_rws,
-            Value::known(self.block.randomness),
+            block.circuits_params.max_rws,
+            Value::known(block.randomness),
         )?;
         config.state_circuit.load(&mut layouter)?;
         config
             .block_table
-            .load(&mut layouter, &self.block.context, self.block.randomness)?;
-        config
-            .evm_circuit
-            .assign_block(&mut layouter, &self.block)?;
+            .load(&mut layouter, &block.context, block.randomness)?;
+        config.evm_circuit.assign_block(&mut layouter, block)?;
         // --- State Circuit ---
         config.mpt_table.load(
             &mut layouter,
             &MptUpdates::mock_from(&rws),
-            Value::known(self.block.randomness),
+            Value::known(block.randomness),
         )?;
         config.state_circuit.assign(
             &mut layouter,
             &rws,
-            self.block.circuits_params.max_rws,
+            block.circuits_params.max_rws,
             &challenges,
         )?;
         // --- Tx Circuit ---
@@ -284,8 +283,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: u
         self.tx_circuit
             .assign(&config.tx_circuit, &mut layouter, &challenges)?;
         // --- Bytecode Circuit ---
-        let bytecodes: Vec<UnrolledBytecode<F>> = self
-            .block
+        let bytecodes: Vec<UnrolledBytecode<F>> = block
             .bytecodes
             .iter()
             .map(|(_, b)| unroll(b.bytes.clone()))
@@ -298,21 +296,19 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: u
             &challenges,
         )?;
         // --- Exponentiation Circuit ---
-        config
-            .exp_circuit
-            .assign_block(&mut layouter, &self.block)?;
+        config.exp_circuit.assign_block(&mut layouter, block)?;
         // --- Keccak Table ---
         config.keccak_circuit.load(&mut layouter)?;
         config.keccak_circuit.assign_from_witness(
             &mut layouter,
             &self.keccak_inputs,
-            self.block.randomness,
+            block.randomness,
             self.circuits_params.keccak_padding,
         )?;
         // --- Copy Circuit ---
         config
             .copy_circuit
-            .assign_block(&mut layouter, &self.block, self.block.randomness)?;
+            .assign_block(&mut layouter, block, block.randomness)?;
         // --- Public Input Circuit ---
         self.pi_circuit.synthesize(config.pi_circuit, layouter)?;
         Ok(())
@@ -401,7 +397,7 @@ impl<const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: usize>
         let pi_circuit = PiCircuit::new(MOCK_RANDOMNESS, MOCK_RANDOMNESS + 1, public_data);
 
         let circuit = SuperCircuit::<_, MAX_TXS, MAX_CALLDATA, MAX_RWS> {
-            block,
+            block: Some(block),
             fixed_table_tags,
             tx_circuit,
             keccak_inputs,
