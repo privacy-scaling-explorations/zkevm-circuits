@@ -3,6 +3,7 @@ use std::collections::HashMap;
 
 use bus_mapping::operation::{self, AccountField, CallContextField, TxLogField, TxReceiptField};
 use eth_types::{Address, Field, ToAddress, ToLittleEndian, ToScalar, Word, U256};
+use halo2_proofs::circuit::Value;
 use itertools::Itertools;
 
 use crate::util::build_tx_log_address;
@@ -328,7 +329,9 @@ impl Rw {
         }
     }
 
-    pub(crate) fn table_assignment<F: Field>(&self, randomness: F) -> RwRow<F> {
+    // At this moment is a helper for the EVM circuit until EVM challange API is
+    // applied
+    pub(crate) fn table_assignment_aux<F: Field>(&self, randomness: F) -> RwRow<F> {
         RwRow {
             rw_counter: F::from(self.rw_counter() as u64),
             is_write: F::from(self.is_write() as u64),
@@ -346,6 +349,32 @@ impl Rw {
             aux2: self
                 .committed_value_assignment(randomness)
                 .unwrap_or_default(),
+        }
+    }
+
+    pub(crate) fn table_assignment<F: Field>(&self, randomness: Value<F>) -> RwRow<Value<F>> {
+        RwRow {
+            rw_counter: Value::known(F::from(self.rw_counter() as u64)),
+            is_write: Value::known(F::from(self.is_write() as u64)),
+            tag: Value::known(F::from(self.tag() as u64)),
+            id: Value::known(F::from(self.id().unwrap_or_default() as u64)),
+            address: Value::known(self.address().unwrap_or_default().to_scalar().unwrap()),
+            field_tag: Value::known(F::from(self.field_tag().unwrap_or_default() as u64)),
+            storage_key: randomness.map(|randomness| {
+                RandomLinearCombination::random_linear_combine(
+                    self.storage_key().unwrap_or_default().to_le_bytes(),
+                    randomness,
+                )
+            }),
+            value: randomness.map(|randomness| self.value_assignment(randomness)),
+            value_prev: randomness
+                .map(|randomness| self.value_prev_assignment(randomness).unwrap_or_default()),
+            aux1: Value::known(F::zero()), /* only used for AccountStorage::tx_id, which moved to
+                                            * key1. */
+            aux2: randomness.map(|randomness| {
+                self.committed_value_assignment(randomness)
+                    .unwrap_or_default()
+            }),
         }
     }
 

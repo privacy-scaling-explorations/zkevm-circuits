@@ -70,7 +70,8 @@ mod origin;
 mod pc;
 mod pop;
 mod push;
-mod r#return;
+mod return_revert;
+mod returndatacopy;
 mod returndatasize;
 mod sdiv_smod;
 mod selfbalance;
@@ -125,7 +126,8 @@ use origin::OriginGadget;
 use pc::PcGadget;
 use pop::PopGadget;
 use push::PushGadget;
-use r#return::ReturnGadget;
+use return_revert::ReturnRevertGadget;
+use returndatacopy::ReturnDataCopyGadget;
 use returndatasize::ReturnDataSizeGadget;
 use sdiv_smod::SignedDivModGadget;
 use selfbalance::SelfbalanceGadget;
@@ -215,7 +217,7 @@ pub(crate) struct ExecutionConfig<F> {
     pc_gadget: PcGadget<F>,
     pop_gadget: PopGadget<F>,
     push_gadget: PushGadget<F>,
-    return_gadget: ReturnGadget<F>,
+    return_revert_gadget: ReturnRevertGadget<F>,
     sdiv_smod_gadget: SignedDivModGadget<F>,
     selfbalance_gadget: SelfbalanceGadget<F>,
     sha3_gadget: Sha3Gadget<F>,
@@ -225,7 +227,7 @@ pub(crate) struct ExecutionConfig<F> {
     extcodesize_gadget: DummyGadget<F, 1, 1, { ExecutionState::EXTCODESIZE }>,
     extcodecopy_gadget: DummyGadget<F, 4, 0, { ExecutionState::EXTCODECOPY }>,
     returndatasize_gadget: ReturnDataSizeGadget<F>,
-    returndatacopy_gadget: DummyGadget<F, 3, 0, { ExecutionState::RETURNDATACOPY }>,
+    returndatacopy_gadget: ReturnDataCopyGadget<F>,
     create_gadget: DummyGadget<F, 3, 1, { ExecutionState::CREATE }>,
     callcode_gadget: DummyGadget<F, 7, 1, { ExecutionState::CALLCODE }>,
     delegatecall_gadget: DummyGadget<F, 6, 1, { ExecutionState::DELEGATECALL }>,
@@ -453,7 +455,7 @@ impl<F: Field> ExecutionConfig<F> {
             pc_gadget: configure_gadget!(),
             pop_gadget: configure_gadget!(),
             push_gadget: configure_gadget!(),
-            return_gadget: configure_gadget!(),
+            return_revert_gadget: configure_gadget!(),
             sdiv_smod_gadget: configure_gadget!(),
             selfbalance_gadget: configure_gadget!(),
             sha3_gadget: configure_gadget!(),
@@ -773,35 +775,41 @@ impl<F: Field> ExecutionConfig<F> {
 
                 let evm_rows = block.evm_circuit_pad_to;
                 let exact = evm_rows == 0;
-                // end_block_rows tracks the remaining EndBlock rows, and is set once all the
-                // transaction steps have been assigned.
-                let mut end_block_rows = None;
-                let mut get_next = |offset: &usize| match steps.next() {
-                    Some((transaction, step)) => {
-                        Some((transaction, &transaction.calls[step.call_index], step))
-                    }
+
+                let mut no_next_step = false;
+                let mut get_next = |cur_state: ExecutionState, offset: &usize| match steps.next() {
+                    Some((transaction, step)) => Ok(Some((
+                        transaction,
+                        &transaction.calls[step.call_index],
+                        step,
+                    ))),
                     None => {
-                        end_block_rows = Some(match end_block_rows {
-                            None => {
-                                if exact {
-                                    1
-                                } else {
-                                    evm_rows - offset
-                                }
-                            }
-                            Some(i) => i - 1,
-                        });
-                        match end_block_rows {
-                            Some(0) => None,
-                            Some(1) => Some((&dummy_tx, &last_call, end_block_last)),
-                            Some(_) => Some((&dummy_tx, &last_call, end_block_not_last)),
-                            _ => unreachable!(),
+                        if no_next_step {
+                            return Ok(None);
                         }
+
+                        let mut block_step = end_block_not_last;
+                        let cur_state_height = self.get_step_height(cur_state);
+                        if !exact && offset + cur_state_height >= evm_rows {
+                            log::error!(
+                                "evm circuit larger than evm_rows: {} >= {}",
+                                offset + cur_state_height,
+                                evm_rows
+                            );
+                            return Err(Error::Synthesis);
+                        }
+                        if exact || evm_rows - (offset + cur_state_height) == 1 {
+                            block_step = end_block_last;
+                            no_next_step = true;
+                        }
+
+                        Ok(Some((&dummy_tx, &last_call, block_step)))
                     }
                 };
-                let mut next = get_next(&offset);
+
+                let mut next = get_next(ExecutionState::BeginTx, &offset)?;
                 while let Some((transaction, call, step)) = next {
-                    next = get_next(&offset);
+                    next = get_next(step.execution_state, &offset)?;
                     let height = self.get_step_height(step.execution_state);
 
                     // Assign the step witness
@@ -845,10 +853,9 @@ impl<F: Field> ExecutionConfig<F> {
                             || Value::known(value.invert().unwrap_or(F::zero())),
                         )?;
                     }
-
                     offset += height;
 
-                    if !exact && offset >= evm_rows {
+                    if !exact && offset > evm_rows {
                         log::error!(
                             "evm circuit offset larger than padding: {} > {}",
                             offset,
@@ -988,8 +995,9 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::PC => assign_exec_step!(self.pc_gadget),
             ExecutionState::POP => assign_exec_step!(self.pop_gadget),
             ExecutionState::PUSH => assign_exec_step!(self.push_gadget),
-            ExecutionState::RETURN => assign_exec_step!(self.return_gadget),
+            ExecutionState::RETURN_REVERT => assign_exec_step!(self.return_revert_gadget),
             ExecutionState::RETURNDATASIZE => assign_exec_step!(self.returndatasize_gadget),
+            ExecutionState::RETURNDATACOPY => assign_exec_step!(self.returndatacopy_gadget),
             ExecutionState::SCMP => assign_exec_step!(self.signed_comparator_gadget),
             ExecutionState::SDIV_SMOD => assign_exec_step!(self.sdiv_smod_gadget),
             ExecutionState::BLOCKCTXU64 => assign_exec_step!(self.block_ctx_u64_gadget),
@@ -1002,7 +1010,6 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::SAR => assign_exec_step!(self.sar_gadget),
             ExecutionState::EXTCODESIZE => assign_exec_step!(self.extcodesize_gadget),
             ExecutionState::EXTCODECOPY => assign_exec_step!(self.extcodecopy_gadget),
-            ExecutionState::RETURNDATACOPY => assign_exec_step!(self.returndatacopy_gadget),
             ExecutionState::CREATE => assign_exec_step!(self.create_gadget),
             ExecutionState::CALLCODE => assign_exec_step!(self.callcode_gadget),
             ExecutionState::DELEGATECALL => assign_exec_step!(self.delegatecall_gadget),
@@ -1162,7 +1169,10 @@ impl<F: Field> ExecutionConfig<F> {
             .rws
             .table_assignments()
             .iter()
-            .map(|rw| rw.table_assignment(block.randomness).rlc(block.randomness))
+            .map(|rw| {
+                rw.table_assignment_aux(block.randomness)
+                    .rlc(block.randomness)
+            })
             .collect();
 
         for (name, value) in assigned_rw_values.iter() {
@@ -1173,7 +1183,7 @@ impl<F: Field> ExecutionConfig<F> {
         for (idx, assigned_rw_value) in assigned_rw_values.iter().enumerate() {
             let rw_idx = step.rw_indices[idx];
             let rw = block.rws[rw_idx];
-            let table_assignments = rw.table_assignment(block.randomness);
+            let table_assignments = rw.table_assignment_aux(block.randomness);
             let rlc = table_assignments.rlc(block.randomness);
             if rlc != assigned_rw_value.1 {
                 log::error!(

@@ -51,12 +51,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGConstantGadget<F> {
 
         // current call must be failed.
         cb.call_context_lookup(false.expr(), None, CallContextFieldTag::IsSuccess, 0.expr());
-        cb.call_context_lookup(
-            false.expr(),
-            None,
-            CallContextFieldTag::IsPersistent,
-            0.expr(),
-        );
 
         // Go to EndTx only when is_root
         let is_to_end_tx = cb.next.execution_state_selector([ExecutionState::EndTx]);
@@ -71,7 +65,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGConstantGadget<F> {
             // Do step state transition
             cb.require_step_state_transition(StepStateTransition {
                 call_id: Same,
-                rw_counter: Delta(2.expr() + cb.curr.state.reversible_write_counter.expr()),
+                rw_counter: Delta(1.expr() + cb.curr.state.reversible_write_counter.expr()),
                 ..StepStateTransition::any()
             });
         });
@@ -124,7 +118,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGConstantGadget<F> {
         )?;
 
         self.restore_context
-            .assign(region, offset, block, call, step, 2)?;
+            .assign(region, offset, block, call, step, 1)?;
 
         Ok(())
     }

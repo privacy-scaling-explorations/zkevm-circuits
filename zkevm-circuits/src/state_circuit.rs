@@ -10,7 +10,7 @@ mod test;
 use crate::{
     evm_circuit::param::N_BYTES_WORD,
     table::{LookupTable, MptTable, RwTable, RwTableTag},
-    util::{power_of_randomness_from_instance, Expr},
+    util::{Challenges, Expr},
     witness::{MptUpdates, Rw, RwMap},
 };
 use constraint_builder::{ConstraintBuilder, Queries};
@@ -18,7 +18,10 @@ use eth_types::{Address, Field};
 use gadgets::binary_number::{BinaryNumberChip, BinaryNumberConfig};
 use halo2_proofs::{
     circuit::{Layouter, Region, SimpleFloorPlanner, Value},
-    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
+    plonk::{
+        Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, SecondPhase,
+        VirtualCells,
+    },
     poly::Rotation,
 };
 use lexicographic_ordering::Config as LexicographicOrderingConfig;
@@ -27,7 +30,7 @@ use multiple_precision_integer::{Chip as MpiChip, Config as MpiConfig, Queries a
 use random_linear_combination::{Chip as RlcChip, Config as RlcConfig, Queries as RlcQueries};
 #[cfg(test)]
 use std::collections::HashMap;
-use std::iter::once;
+use std::{iter::once, marker::PhantomData};
 
 use self::constraint_builder::{MptUpdateTableQueries, RwTableQueries};
 
@@ -63,9 +66,9 @@ impl<F: Field> StateCircuitConfig<F> {
     /// Configure StateCircuit
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
-        power_of_randomness: [Expression<F>; 31],
         rw_table: &RwTable,
         mpt_table: &MptTable,
+        challenges: Challenges<Expression<F>>,
     ) -> Self {
         let selector = meta.fixed_column();
         let lookups = LookupsChip::configure(meta);
@@ -74,18 +77,19 @@ impl<F: Field> StateCircuitConfig<F> {
         let tag = BinaryNumberChip::configure(meta, selector, Some(rw_table.tag));
         let id = MpiChip::configure(meta, selector, rw_table.id, lookups);
         let address = MpiChip::configure(meta, selector, rw_table.address, lookups);
+
         let storage_key = RlcChip::configure(
             meta,
             selector,
             rw_table.storage_key,
             lookups,
-            power_of_randomness.clone(),
+            challenges.evm_word_powers_of_randomness(),
         );
 
-        let initial_value = meta.advice_column();
-        let is_initial_value_zero = meta.advice_column();
-        let is_new_value_zero = meta.advice_column();
-        let state_root = meta.advice_column();
+        let initial_value = meta.advice_column_in(SecondPhase);
+        let is_initial_value_zero = meta.advice_column_in(SecondPhase);
+        let is_new_value_zero = meta.advice_column_in(SecondPhase);
+        let state_root = meta.advice_column_in(SecondPhase);
 
         let sort_keys = SortKeysConfig {
             tag,
@@ -100,7 +104,7 @@ impl<F: Field> StateCircuitConfig<F> {
             meta,
             sort_keys,
             lookups,
-            power_of_randomness.clone(),
+            challenges.evm_word_powers_of_randomness(),
         );
 
         let config = Self {
@@ -112,7 +116,7 @@ impl<F: Field> StateCircuitConfig<F> {
             state_root,
             lexicographic_ordering,
             lookups,
-            power_of_randomness,
+            power_of_randomness: challenges.evm_word_powers_of_randomness(),
             rw_table: *rw_table,
             mpt_table: *mpt_table,
         };
@@ -141,12 +145,14 @@ impl<F: Field> StateCircuitConfig<F> {
         layouter: &mut impl Layouter<F>,
         rows: &[Rw],
         n_rows: usize, // 0 means dynamically calculated from `rows`.
-        randomness: F,
+        challenges: &Challenges<Value<F>>,
     ) -> Result<(), Error> {
         let updates = MptUpdates::mock_from(rows);
         layouter.assign_region(
             || "state circuit",
-            |mut region| self.assign_with_region(&mut region, rows, &updates, n_rows, randomness),
+            |mut region| {
+                self.assign_with_region(&mut region, rows, &updates, n_rows, challenges.evm_word())
+            },
         )
     }
 
@@ -156,16 +162,16 @@ impl<F: Field> StateCircuitConfig<F> {
         rows: &[Rw],
         updates: &MptUpdates,
         n_rows: usize, // 0 means dynamically calculated from `rows`.
-        randomness: F,
+        randomness: Value<F>,
     ) -> Result<(), Error> {
         let tag_chip = BinaryNumberChip::construct(self.sort_keys.tag);
 
         let (rows, padding_length) = RwMap::table_assignments_prepad(rows, n_rows);
         let rows_len = rows.len();
-        let rows = rows.into_iter();
+        let rows = rows.iter();
         let prev_rows = once(None).chain(rows.clone().map(Some));
 
-        let mut state_root = F::zero();
+        let mut state_root = randomness.map(|_| F::zero());
 
         for (offset, (row, prev_row)) in rows.zip(prev_rows).enumerate() {
             if offset >= padding_length {
@@ -184,12 +190,15 @@ impl<F: Field> StateCircuitConfig<F> {
             self.sort_keys
                 .rw_counter
                 .assign(region, offset, row.rw_counter() as u32)?;
+
             if let Some(id) = row.id() {
                 self.sort_keys.id.assign(region, offset, id as u32)?;
             }
+
             if let Some(address) = row.address() {
                 self.sort_keys.address.assign(region, offset, address)?;
             }
+
             if let Some(storage_key) = row.storage_key() {
                 self.sort_keys
                     .storage_key
@@ -199,49 +208,68 @@ impl<F: Field> StateCircuitConfig<F> {
             if let Some(prev_row) = prev_row {
                 let is_first_access = self
                     .lexicographic_ordering
-                    .assign(region, offset, &row, &prev_row)?;
+                    .assign(region, offset, row, prev_row)?;
 
                 if is_first_access {
                     // If previous row was a last access, we need to update the state root.
-                    if let Some(update) = updates.get(&prev_row) {
-                        let (new_root, old_root) = update.root_assignments(randomness);
-                        assert_eq!(state_root, old_root);
-                        state_root = new_root;
-                    }
 
-                    if matches!(row.tag(), RwTableTag::CallContext) && !row.is_write() {
-                        assert_eq!(row.value_assignment(randomness), F::zero(), "{:?}", row);
-                    }
+                    state_root = randomness
+                        .zip(state_root)
+                        .map(|(randomness, mut state_root)| {
+                            if let Some(update) = updates.get(prev_row) {
+                                let (new_root, old_root) = update.root_assignments(randomness);
+                                assert_eq!(state_root, old_root);
+                                state_root = new_root;
+                            }
+                            if matches!(row.tag(), RwTableTag::CallContext) && !row.is_write() {
+                                assert_eq!(
+                                    row.value_assignment(randomness),
+                                    F::zero(),
+                                    "{:?}",
+                                    row
+                                );
+                            }
+                            state_root
+                        });
                 }
             }
 
             // The initial value can be determined from the mpt updates or is 0.
-            let (new_value, old_value) = updates
-                .get(&row)
-                .map(|u| u.value_assignments(randomness))
-                .unwrap_or_default();
+            let initial_value = randomness.map(|randomness| {
+                updates
+                    .get(row)
+                    .map(|u| u.value_assignments(randomness).1)
+                    .unwrap_or_default()
+            });
             region.assign_advice(
                 || "initial_value",
                 self.initial_value,
                 offset,
-                || Value::known(old_value),
+                || initial_value,
             )?;
 
-            // Check if old value or new value is zero.
-            let is_initial_value_zero =
-                F::one() - old_value * old_value.invert().unwrap_or(F::zero());
+            // Check if initial value or new value is zero.
+            let is_zero_fun = |val: F| F::one() - val * val.invert().unwrap_or(F::zero());
+            let is_initial_value_zero = initial_value.map(is_zero_fun);
             region.assign_advice(
                 || "is_initial_value_zero",
                 self.is_initial_value_zero,
                 offset,
-                || Value::known(is_initial_value_zero),
+                || is_initial_value_zero,
             )?;
-            let is_new_value_zero = F::one() - new_value * new_value.invert().unwrap_or(F::zero());
+            let is_new_value_zero = randomness
+                .map(|randomness| {
+                    updates
+                        .get(row)
+                        .map(|u| u.value_assignments(randomness).0)
+                        .unwrap_or_default()
+                })
+                .map(is_zero_fun);
             region.assign_advice(
                 || "is_new_value_zero",
                 self.is_new_value_zero,
                 offset,
-                || Value::known(is_new_value_zero),
+                || is_new_value_zero,
             )?;
 
             // TODO: Switch from Rw::Start -> Rw::Padding to simplify this logic.
@@ -252,23 +280,25 @@ impl<F: Field> StateCircuitConfig<F> {
                     || "state_root",
                     self.state_root,
                     offset - 1,
-                    || Value::known(state_root),
+                    || state_root,
                 )?;
             }
 
             if offset == rows_len - 1 {
                 // The last row is always a last access, so we need to handle the case where the
                 // state root changes because of an mpt lookup on the last row.
-                if let Some(update) = updates.get(&row) {
-                    let (new_root, old_root) = update.root_assignments(randomness);
-                    assert_eq!(state_root, old_root);
-                    state_root = new_root;
+                if let Some(update) = updates.get(row) {
+                    state_root = randomness.zip(state_root).map(|(randomness, state_root)| {
+                        let (new_root, old_root) = update.root_assignments(randomness);
+                        assert_eq!(state_root, old_root);
+                        new_root
+                    });
                 }
                 region.assign_advice(
                     || "last row state_root",
                     self.state_root,
                     offset,
-                    || Value::known(state_root),
+                    || state_root,
                 )?;
             }
         }
@@ -296,31 +326,29 @@ pub struct StateCircuit<F> {
     pub(crate) rows: Vec<Rw>,
     updates: MptUpdates,
     pub(crate) n_rows: usize,
-    pub(crate) randomness: F,
     #[cfg(test)]
     overrides: HashMap<(test::AdviceColumn, isize), F>,
+    _marker: PhantomData<F>,
 }
 
 impl<F: Field> StateCircuit<F> {
     /// make a new state circuit from an RwMap
-    pub fn new(randomness: F, rw_map: RwMap, n_rows: usize) -> Self {
+    pub fn new(rw_map: RwMap, n_rows: usize) -> Self {
         let rows = rw_map.table_assignments();
         let updates = MptUpdates::mock_from(&rows);
         Self {
-            randomness,
             rows,
             updates,
             n_rows,
             #[cfg(test)]
             overrides: HashMap::new(),
+            _marker: PhantomData::default(),
         }
     }
 
     /// powers of randomness for instance columns
     pub fn instance(&self) -> Vec<Vec<F>> {
-        (1..32)
-            .map(|exp| vec![self.randomness.pow(&[exp, 0, 0, 0]); self.n_rows])
-            .collect()
+        vec![]
     }
 }
 
@@ -328,7 +356,7 @@ impl<F: Field> Circuit<F> for StateCircuit<F>
 where
     F: Field,
 {
-    type Config = StateCircuitConfig<F>;
+    type Config = (StateCircuitConfig<F>, Challenges);
     type FloorPlanner = SimpleFloorPlanner;
 
     fn without_witnesses(&self) -> Self {
@@ -338,8 +366,14 @@ where
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
         let rw_table = RwTable::construct(meta);
         let mpt_table = MptTable::construct(meta);
-        let power_of_randomness: [Expression<F>; 31] = power_of_randomness_from_instance(meta);
-        Self::Config::configure(meta, power_of_randomness, &rw_table, &mpt_table)
+        let challenges = Challenges::construct(meta);
+
+        let config = {
+            let challenges = challenges.exprs(meta);
+            StateCircuitConfig::configure(meta, &rw_table, &mpt_table, challenges)
+        };
+
+        (config, challenges)
     }
 
     fn synthesize(
@@ -347,7 +381,11 @@ where
         config: Self::Config,
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
+        let (config, challenges) = config;
+
         config.load(&mut layouter)?;
+
+        let randomness = challenges.values(&mut layouter).evm_word();
 
         // Assigning to same columns in different regions should be avoided.
         // Here we use one single region to assign `overrides` to both rw table and
@@ -359,19 +397,19 @@ where
                     &mut region,
                     &self.rows,
                     self.n_rows,
-                    self.randomness,
+                    randomness,
                 )?;
 
                 config
                     .mpt_table
-                    .load_with_region(&mut region, &self.updates, self.randomness)?;
+                    .load_with_region(&mut region, &self.updates, randomness)?;
 
                 config.assign_with_region(
                     &mut region,
                     &self.rows,
                     &self.updates,
                     self.n_rows,
-                    self.randomness,
+                    randomness,
                 )?;
                 #[cfg(test)]
                 {

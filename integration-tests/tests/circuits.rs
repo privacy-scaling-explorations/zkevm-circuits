@@ -1,7 +1,6 @@
 #![cfg(feature = "circuits")]
 
 use bus_mapping::circuit_input_builder::{BuilderClient, CircuitsParams};
-use bus_mapping::operation::OperationContainer;
 use eth_types::geth_types;
 use halo2_proofs::{
     arithmetic::CurveAffine,
@@ -17,7 +16,6 @@ use log::trace;
 use paste::paste;
 use rand_chacha::rand_core::SeedableRng;
 use rand_chacha::ChaCha20Rng;
-use std::default::Default;
 use std::marker::PhantomData;
 use zkevm_circuits::bytecode_circuit::dev::test_bytecode_circuit;
 use zkevm_circuits::copy_circuit::dev::test_copy_circuit;
@@ -34,6 +32,7 @@ lazy_static! {
 const CIRCUITS_PARAMS: CircuitsParams = CircuitsParams {
     max_rws: 16384,
     max_txs: 4,
+    keccak_padding: None,
 };
 
 async fn test_evm_circuit_block(block_num: u64) {
@@ -53,6 +52,7 @@ async fn test_state_circuit_block(block_num: u64) {
     let (builder, _) = cli.gen_inputs(block_num).await.unwrap();
 
     // Generate state proof
+    // log via trace some of the container ops for debugging purposes
     let stack_ops = builder.block.container.sorted_stack();
     trace!("stack_ops: {:#?}", stack_ops);
     let memory_ops = builder.block.container.sorted_memory();
@@ -62,19 +62,13 @@ async fn test_state_circuit_block(block_num: u64) {
 
     const DEGREE: usize = 17;
 
-    let rw_map = RwMap::from(&OperationContainer {
-        memory: memory_ops,
-        stack: stack_ops,
-        storage: storage_ops,
-        ..Default::default()
-    });
+    let rw_map = RwMap::from(&builder.block.container);
 
-    let randomness = Fr::from(0xcafeu64);
-    let circuit = StateCircuit::<Fr>::new(randomness, rw_map, 1 << 16);
-    let power_of_randomness = circuit.instance();
-
-    let prover = MockProver::<Fr>::run(DEGREE as u32, &circuit, power_of_randomness).unwrap();
-    prover.verify().expect("state_circuit verification failed");
+    let circuit = StateCircuit::<Fr>::new(rw_map, 1 << 16);
+    let prover = MockProver::<Fr>::run(DEGREE as u32, &circuit, circuit.instance()).unwrap();
+    prover
+        .verify_par()
+        .expect("state_circuit verification failed");
 }
 
 async fn test_tx_circuit_block(block_num: u64) {
@@ -106,7 +100,7 @@ async fn test_tx_circuit_block(block_num: u64) {
 
     let prover = MockProver::run(DEGREE, &circuit, vec![vec![]]).unwrap();
 
-    prover.verify().expect("tx_circuit verification failed");
+    prover.verify_par().expect("tx_circuit verification failed");
 }
 
 pub async fn test_bytecode_circuit_block(block_num: u64) {
@@ -144,7 +138,8 @@ pub async fn test_super_circuit_block(block_num: u64) {
         cli,
         CircuitsParams {
             max_rws: MAX_RWS,
-            ..Default::default()
+            max_txs: MAX_TXS,
+            keccak_padding: None,
         },
     )
     .await
@@ -158,7 +153,7 @@ pub async fn test_super_circuit_block(block_num: u64) {
         )
         .unwrap();
     let prover = MockProver::run(k, &circuit, instance).unwrap();
-    let res = prover.verify();
+    let res = prover.verify_par();
     if let Err(err) = res {
         eprintln!("Verification failures:");
         eprintln!("{:#?}", err);
@@ -214,23 +209,14 @@ macro_rules! declare_tests {
     };
 }
 
+declare_tests!(circuit_block_transfer_0, "Transfer 0");
 /*
 declare_tests!(
-    test_evm_circuit_block_transfer_0,
-    test_state_circuit_block_transfer_0,
-    "Transfer 0"
-);
-declare_tests!(
-    test_evm_circuit_deploy_greeter,
-    test_state_circuit_deploy_greeter,
+    circuit_deploy_greeter,
     "Deploy Greeter"
 );
-declare_tests!(
-    test_evm_circuit_multiple_transfers_0,
-    test_state_circuit_multiple_transfers_0,
-    "Multiple transfers 0"
-);
 */
+declare_tests!(circuit_multiple_transfers_0, "Multiple transfers 0");
 declare_tests!(
     circuit_erc20_openzeppelin_transfer_fail,
     "ERC20 OpenZeppelin transfer failed"
