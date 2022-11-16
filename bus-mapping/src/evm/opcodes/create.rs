@@ -165,6 +165,11 @@ impl<const IS_CREATE2: bool> Opcode for DummyCreate<IS_CREATE2> {
                 current_call.address.to_word(),
             ),
             (CallContextField::CalleeAddress, call.address.to_word()),
+            (
+                CallContextField::RwCounterEndOfReversion,
+                call.rw_counter_end_of_reversion.to_word(),
+            ),
+            (CallContextField::IsPersistent, call.is_persistent.to_word()),
         ] {
             state.call_context_write(&mut exec_step, call.call_id, field, value);
         }

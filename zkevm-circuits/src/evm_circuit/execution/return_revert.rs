@@ -6,21 +6,22 @@ use crate::{
         util::{
             common_gadget::RestoreContextGadget,
             constraint_builder::{
-                ConstraintBuilder, StepStateTransition,
+                ConstraintBuilder, ReversionInfo, StepStateTransition,
                 Transition::{Delta, To},
             },
             math_gadget::{IsZeroGadget, MinMaxGadget},
             memory_gadget::{MemoryAddressGadget, MemoryExpansionGadget},
-            not, CachedRegion, Cell, RandomLinearCombination,
+            not, CachedRegion, Cell, RandomLinearCombination, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    table::CallContextFieldTag,
+    table::{AccountFieldTag, CallContextFieldTag},
     util::Expr,
 };
 use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId};
-use eth_types::Field;
+use eth_types::{Field, ToScalar};
 use ethers_core::utils::keccak256;
+use keccak256::EMPTY_HASH_LE;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
@@ -41,6 +42,10 @@ pub(crate) struct ReturnRevertGadget<F> {
 
     memory_expansion: MemoryExpansionGadget<F, 1, N_BYTES_MEMORY_WORD_SIZE>,
     code_hash: Cell<F>,
+
+    caller_id: Cell<F>,
+    address: Cell<F>,
+    reversion_info: ReversionInfo<F>,
 }
 
 // TODO: rename this is reflect the fact that is handles REVERT as well.
@@ -93,9 +98,13 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
                 range.length(),
             );
         });
-        let code_hash = cb.condition(
-            is_create.clone() * is_success.expr() * not::expr(copy_rw_increase_is_zero.expr()),
+
+        let is_contract_deployed = is_create.clone() * is_success.expr() * not::expr(copy_rw_increase_is_zero.expr());
+        let (caller_id, address, reversion_info, code_hash) = cb.condition(
+            is_contract_deployed.clone(),
             |cb| {
+                // We don't need to place any additional constraints on code_hash because the
+                // copy circuit enforces that it is the hash of the bytes in the copy lookup.
                 let code_hash = cb.query_cell();
                 cb.copy_table_lookup(
                     cb.curr.state.call_id.expr(),
@@ -109,9 +118,25 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
                     0.expr(),
                     copy_rw_increase.expr(),
                 );
-                // We don't need to place any additional constraints on code_hash because the
-                // copy circuit enforces that it is the hash of the bytes in the copy lookup.
-                code_hash
+
+                let caller_id = cb.call_context(None, CallContextFieldTag::CallerId);
+                let address = cb.call_context(None, CallContextFieldTag::CalleeAddress);
+                let mut reversion_info = cb.reversion_info_read(None);
+
+                let empty_code_hash_rlc = Word::random_linear_combine_expr(
+                    (*EMPTY_HASH_LE).map(|byte| byte.expr()),
+                    cb.power_of_randomness(),
+                );
+
+                cb.account_write(
+                    address.expr(),
+                    AccountFieldTag::CodeHash,
+                    code_hash.expr(),
+                    empty_code_hash_rlc,
+                    Some(&mut reversion_info),
+                );
+
+                (caller_id, address, reversion_info, code_hash)
             },
         );
 
@@ -150,6 +175,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
                 range.offset(),
                 range.length(),
                 memory_expansion.gas_cost(),
+                is_contract_deployed, // There is one reversible write when this is the case.
             )
         });
 
@@ -213,6 +239,9 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
             restore_context,
             memory_expansion,
             code_hash,
+            address,
+            caller_id,
+            reversion_info,
         }
     }
 
@@ -286,7 +315,11 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
             .assign(region, offset, F::from(copy_rw_increase))?;
 
         if !call.is_root {
-            let rw_counter_offset = 3 + if call.is_create { copy_rw_increase } else { 0 };
+            let rw_counter_offset = 3 + if call.is_create && call.is_success && !length.is_zero() {
+                5 + length.as_u64()
+            } else {
+                0
+            };
             self.restore_context.assign(
                 region,
                 offset,
@@ -296,6 +329,25 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
                 rw_counter_offset.try_into().unwrap(),
             )?;
         }
+
+        self.caller_id.assign(
+            region,
+            offset,
+            Value::known(call.caller_id.to_scalar().unwrap()),
+        )?;
+
+        self.address.assign(
+            region,
+            offset,
+            Value::known(call.callee_address.to_scalar().unwrap()),
+        )?;
+
+        self.reversion_info.assign(
+            region,
+            offset,
+            call.rw_counter_end_of_reversion,
+            call.is_persistent,
+        )?;
 
         Ok(())
     }
@@ -315,14 +367,14 @@ mod test {
     const CALLER_ADDRESS: Address = Address::repeat_byte(0x34);
 
     fn callee_bytecode(is_return: bool, offset: u64, length: u64) -> Bytecode {
-        let memory_address = 2;
-        let memory_value = 549;
+        let memory_address = 0;
+        let memory_value = Word::from_big_endian(&[0x60; 10]);
         let mut code = bytecode! {
-            PUSH2(memory_value)
+            PUSH10(memory_value)
             PUSH1(memory_address)
             MSTORE
             PUSH2(length)
-            PUSH2(offset)
+            PUSH2(22 + offset)
         };
         code.write_op(if is_return {
             OpcodeId::RETURN
@@ -474,9 +526,6 @@ mod test {
                 PUSH1(0)                        // value
 
                 CREATE
-                EXTCODEHASH
-                // PUSH32(0)
-                // EQ
             };
 
             let caller = Account {
@@ -512,5 +561,57 @@ mod test {
                 (*offset, *length, *is_return),
             );
         }
+    }
+
+    #[test]
+    fn test_nonpersistent_nonroot_create() {
+        // Test the case where the initialization call is successful, but the CREATE call is reverted.
+        let initializer = callee_bytecode(true, 0, 10).code();
+
+        let root_code = bytecode! {
+            PUSH32(Word::from_big_endian(&initializer))
+            PUSH1(0)
+            MSTORE
+
+            PUSH1(initializer.len())        // size
+            PUSH1(32 - initializer.len())   // offset
+            PUSH1(0)                        // value
+
+            CREATE
+            PUSH1(0)
+            PUSH1(0)
+            REVERT
+        };
+
+        let caller = Account {
+            address: CALLER_ADDRESS,
+            code: root_code.into(),
+            nonce: Word::one(),
+            balance: eth(10),
+            ..Default::default()
+        };
+
+        let test_context = TestContext::<2, 1>::new(
+            None,
+            |accs| {
+                accs[0]
+                    .address(address!("0x000000000000000000000000000000000000cafe"))
+                    .balance(eth(10));
+                accs[1].account(&caller);
+            },
+            |mut txs, accs| {
+                txs[0]
+                    .from(accs[0].address)
+                    .to(accs[1].address)
+                    .gas(100000u64.into());
+            },
+            |block, _| block,
+        )
+        .unwrap();
+
+        assert_eq!(
+            run_test_circuits(test_context, None),
+            Ok(()),
+        );
     }
 }
