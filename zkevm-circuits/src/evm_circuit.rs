@@ -226,14 +226,14 @@ pub mod test {
 
     #[derive(Default)]
     pub struct TestCircuit<F> {
-        block: Block<F>,
+        block: Option<Block<F>>,
         fixed_table_tags: Vec<FixedTableTag>,
     }
 
     impl<F> TestCircuit<F> {
         pub fn new(block: Block<F>, fixed_table_tags: Vec<FixedTableTag>) -> Self {
             Self {
-                block,
+                block: Some(block),
                 fixed_table_tags,
             }
         }
@@ -287,7 +287,8 @@ pub mod test {
             config: Self::Config,
             mut layouter: impl Layouter<F>,
         ) -> Result<(), Error> {
-            let challenges = Challenges::mock(Value::known(self.block.randomness));
+            let block = self.block.as_ref().unwrap();
+            let challenges = Challenges::mock(Value::known(block.randomness));
 
             config
                 .evm_circuit
@@ -295,34 +296,32 @@ pub mod test {
             config.evm_circuit.load_byte_table(&mut layouter)?;
             config.tx_table.load(
                 &mut layouter,
-                &self.block.txs,
-                self.block.circuits_params.max_txs,
-                self.block.randomness,
+                &block.txs,
+                block.circuits_params.max_txs,
+                block.randomness,
             )?;
-            self.block.rws.check_rw_counter_sanity();
+            block.rws.check_rw_counter_sanity();
             config.rw_table.load(
                 &mut layouter,
-                &self.block.rws.table_assignments(),
-                self.block.circuits_params.max_rws,
-                Value::known(self.block.randomness),
+                &block.rws.table_assignments(),
+                block.circuits_params.max_rws,
+                Value::known(block.randomness),
             )?;
-            config.bytecode_table.load(
-                &mut layouter,
-                self.block.bytecodes.values(),
-                &challenges,
-            )?;
+            config
+                .bytecode_table
+                .load(&mut layouter, block.bytecodes.values(), &challenges)?;
             config
                 .block_table
-                .load(&mut layouter, &self.block.context, self.block.randomness)?;
+                .load(&mut layouter, &block.context, block.randomness)?;
             config
                 .copy_table
-                .load(&mut layouter, &self.block, self.block.randomness)?;
+                .load(&mut layouter, block, block.randomness)?;
             config
                 .keccak_table
-                .dev_load(&mut layouter, &self.block.sha3_inputs, &challenges)?;
-            config.exp_table.load(&mut layouter, &self.block)?;
+                .dev_load(&mut layouter, &block.sha3_inputs, &challenges)?;
+            config.exp_table.load(&mut layouter, block)?;
 
-            config.evm_circuit.assign_block(&mut layouter, &self.block)
+            config.evm_circuit.assign_block(&mut layouter, block)
         }
     }
 
