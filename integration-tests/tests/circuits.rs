@@ -46,6 +46,120 @@ lazy_static! {
     pub static ref GEN_DATA: GenDataOutput = GenDataOutput::load();
 }
 
+const CIRCUITS_PARAMS: CircuitsParams = CircuitsParams {
+    max_rws: 16384,
+    max_txs: 4,
+    keccak_padding: None,
+};
+
+async fn gen_inputs(
+    block_num: u64,
+) -> (
+    CircuitInputBuilder,
+    eth_types::Block<eth_types::Transaction>,
+) {
+    let cli = get_client();
+    let cli = BuilderClient::new(cli, CIRCUITS_PARAMS).await.unwrap();
+
+    cli.gen_inputs(block_num).await.unwrap()
+}
+
+fn test_run<ConcreteCircuit: Circuit<Fr>, R: RngCore>(
+    mut rng: R,
+    degree: u32,
+    circuit: ConcreteCircuit,
+    instance: Vec<Vec<Fr>>,
+) {
+    fn test_gen_proof<ConcreteCircuit: Circuit<Fr>, R: RngCore>(
+        rng: R,
+        circuit: ConcreteCircuit,
+        general_params: &ParamsKZG<Bn256>,
+        proving_key: &ProvingKey<G1Affine>,
+        mut transcript: Blake2bWrite<Vec<u8>, G1Affine, Challenge255<G1Affine>>,
+        instances: &[&[Fr]],
+    ) -> Vec<u8> {
+        create_proof::<
+            KZGCommitmentScheme<Bn256>,
+            ProverSHPLONK<'_, Bn256>,
+            Challenge255<G1Affine>,
+            R,
+            Blake2bWrite<Vec<u8>, G1Affine, Challenge255<G1Affine>>,
+            ConcreteCircuit,
+        >(
+            general_params,
+            proving_key,
+            &[circuit],
+            &[instances],
+            rng,
+            &mut transcript,
+        )
+        .expect("proof generation should not fail");
+
+        transcript.finalize()
+    }
+
+    fn test_verify(
+        general_params: &ParamsKZG<Bn256>,
+        verifier_params: &ParamsKZG<Bn256>,
+        verifying_key: &VerifyingKey<G1Affine>,
+        proof: &[u8],
+        instances: &[&[Fr]],
+    ) {
+        let mut verifier_transcript = Blake2bRead::<_, G1Affine, Challenge255<_>>::init(proof);
+        let strategy = SingleStrategy::new(general_params);
+
+        verify_proof::<
+            KZGCommitmentScheme<Bn256>,
+            VerifierSHPLONK<'_, Bn256>,
+            Challenge255<G1Affine>,
+            Blake2bRead<&[u8], G1Affine, Challenge255<G1Affine>>,
+            SingleStrategy<'_, Bn256>,
+        >(
+            verifier_params,
+            verifying_key,
+            strategy,
+            &[instances],
+            &mut verifier_transcript,
+        )
+        .expect("failed to verify bench circuit");
+    }
+
+    let mock_prover = MockProver::<Fr>::run(degree, &circuit, instance.clone()).unwrap();
+    mock_prover
+        .verify_par()
+        .expect("state_circuit verification failed");
+
+    let general_params = ParamsKZG::<Bn256>::setup(degree, &mut rng);
+    let verifier_params: ParamsVerifierKZG<Bn256> = general_params.verifier_params().clone();
+
+    let verifying_key = keygen_vk(&general_params, &circuit).expect("keygen_vk should not fail");
+    let proving_key =
+        keygen_pk(&general_params, verifying_key, &circuit).expect("keygen_pk should not fail");
+
+    let transcript = Blake2bWrite::<_, G1Affine, Challenge255<_>>::init(vec![]);
+
+    // change instace to slice
+    let instance: Vec<&[Fr]> = instance.iter().map(|v| v.as_slice()).collect();
+
+    let proof = test_gen_proof(
+        rng,
+        circuit,
+        &general_params,
+        &proving_key,
+        transcript,
+        &instance,
+    );
+
+    let verifying_key = proving_key.get_vk();
+    test_verify(
+        &general_params,
+        &verifier_params,
+        verifying_key,
+        &proof,
+        &instance,
+    );
+}
+
 async fn gen_inputs(
     block_num: u64,
 ) -> (
@@ -189,6 +303,7 @@ async fn test_state_circuit_block(block_num: u64) {
     let (builder, _) = gen_inputs(block_num).await;
 
     // Generate state proof
+    // log via trace some of the container ops for debugging purposes
     let stack_ops = builder.block.container.sorted_stack();
     trace!("stack_ops: {:#?}", stack_ops);
     let memory_ops = builder.block.container.sorted_memory();
@@ -196,16 +311,9 @@ async fn test_state_circuit_block(block_num: u64) {
     let storage_ops = builder.block.container.sorted_storage();
     trace!("storage_ops: {:#?}", storage_ops);
 
-    let rw_map = RwMap::from(&OperationContainer {
-        memory: memory_ops,
-        stack: stack_ops,
-        storage: storage_ops,
-        ..Default::default()
-    });
+    let rw_map = RwMap::from(&builder.block.container);
 
-    let randomness = Fr::from(0xcafeu64);
-    let circuit = StateCircuit::<Fr>::new(randomness, rw_map, 1 << 16);
-
+    let circuit = StateCircuit::<Fr>::new(rw_map, 1 << 16);
     let instance = circuit.instance();
 
     test_run(rng, DEGREE, circuit, instance);
@@ -237,7 +345,9 @@ async fn test_tx_circuit_block(block_num: u64) {
         chain_id: CHAIN_ID,
     };
 
-    test_run(rng, DEGREE, circuit, vec![vec![]]);
+    let prover = MockProver::run(DEGREE, &circuit, vec![vec![]]).unwrap();
+
+    prover.verify().expect("tx_circuit verification failed");
 }
 
 pub async fn test_bytecode_circuit_block(block_num: u64) {
@@ -280,6 +390,38 @@ pub async fn test_copy_circuit_block(block_num: u64) {
     let instance = vec![vec![randomness; num_rows - NUM_BLINDING_ROWS]];
 
     test_run(rng, DEGREE, circuit, instance);
+}
+pub async fn test_super_circuit_block(block_num: u64) {
+    const MAX_TXS: usize = 4;
+    const MAX_CALLDATA: usize = 512;
+    const MAX_RWS: usize = 5888;
+
+    log::info!("test super circuit, block number: {}", block_num);
+    let cli = get_client();
+    let cli = BuilderClient::new(
+        cli,
+        CircuitsParams {
+            max_rws: MAX_RWS,
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let (builder, eth_block) = cli.gen_inputs(block_num).await.unwrap();
+    let (k, circuit, instance) =
+        SuperCircuit::<_, MAX_TXS, MAX_CALLDATA, MAX_RWS>::build_from_circuit_input_builder(
+            builder,
+            eth_block,
+            &mut ChaCha20Rng::seed_from_u64(2),
+        )
+        .unwrap();
+    let prover = MockProver::run(k, &circuit, instance).unwrap();
+    let res = prover.verify();
+    if let Err(err) = res {
+        eprintln!("Verification failures:");
+        eprintln!("{:#?}", err);
+        panic!("Failed verification");
+    }
 }
 
 macro_rules! declare_tests {
@@ -324,23 +466,14 @@ macro_rules! declare_tests {
     };
 }
 
+declare_tests!(circuit_block_transfer_0, "Transfer 0");
 /*
 declare_tests!(
-    test_evm_circuit_block_transfer_0,
-    test_state_circuit_block_transfer_0,
-    "Transfer 0"
-);
-declare_tests!(
-    test_evm_circuit_deploy_greeter,
-    test_state_circuit_deploy_greeter,
+    circuit_deploy_greeter,
     "Deploy Greeter"
 );
-declare_tests!(
-    test_evm_circuit_multiple_transfers_0,
-    test_state_circuit_multiple_transfers_0,
-    "Multiple transfers 0"
-);
 */
+declare_tests!(circuit_multiple_transfers_0, "Multiple transfers 0");
 declare_tests!(
     circuit_erc20_openzeppelin_transfer_fail,
     "ERC20 OpenZeppelin transfer failed"

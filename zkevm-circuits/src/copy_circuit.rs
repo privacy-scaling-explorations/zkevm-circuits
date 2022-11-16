@@ -597,7 +597,7 @@ pub mod dev {
     /// Helper circuit to test CopyCircuit.
     #[derive(Default)]
     pub struct CopyCircuitTester<F> {
-        block: Block<F>,
+        block: Option<Block<F>>,
         max_txs: usize,
         randomness: F,
     }
@@ -611,7 +611,7 @@ pub mod dev {
         /// Creates test circuit for copy circuit.
         pub fn new(block: Block<F>, randomness: F) -> Self {
             Self {
-                block,
+                block: Some(block),
                 randomness,
                 max_txs: 4,
             }
@@ -662,28 +662,25 @@ pub mod dev {
             config: Self::Config,
             mut layouter: impl Layouter<F>,
         ) -> Result<(), halo2_proofs::plonk::Error> {
+            let block = self.block.as_ref().unwrap();
+
             let challenges = Challenges::mock(Value::known(self.randomness));
 
-            config.tx_table.load(
-                &mut layouter,
-                &self.block.txs,
-                self.max_txs,
-                self.randomness,
-            )?;
+            config
+                .tx_table
+                .load(&mut layouter, &block.txs, self.max_txs, self.randomness)?;
             config.rw_table.load(
                 &mut layouter,
-                &self.block.rws.table_assignments(),
-                self.block.circuits_params.max_rws,
-                self.randomness,
-            )?;
-            config.bytecode_table.load(
-                &mut layouter,
-                self.block.bytecodes.values(),
-                &challenges,
+                &block.rws.table_assignments(),
+                block.circuits_params.max_rws,
+                Value::known(self.randomness),
             )?;
             config
+                .bytecode_table
+                .load(&mut layouter, block.bytecodes.values(), &challenges)?;
+            config
                 .copy_circuit
-                .assign_block(&mut layouter, &self.block, self.randomness)
+                .assign_block(&mut layouter, block, self.randomness)
         }
     }
 
@@ -695,7 +692,7 @@ pub mod dev {
         const NUM_BLINDING_ROWS: usize = 7 - 1;
         let instance = vec![vec![randomness; num_rows - NUM_BLINDING_ROWS]];
         let prover = MockProver::<F>::run(k, &circuit, instance).unwrap();
-        prover.verify()
+        prover.verify_par()
     }
 }
 

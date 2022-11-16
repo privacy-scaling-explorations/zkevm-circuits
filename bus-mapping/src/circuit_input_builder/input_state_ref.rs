@@ -477,6 +477,13 @@ impl<'a> CircuitInputStateRef<'a> {
             .map(|caller_idx| &self.tx.calls()[caller_idx])
     }
 
+    /// Mutable reference to the current call's caller Call
+    pub fn caller_mut(&mut self) -> Result<&mut Call, Error> {
+        self.tx_ctx
+            .caller_index()
+            .map(|caller_idx| &mut self.tx.calls_mut()[caller_idx])
+    }
+
     /// Reference to the current Call
     pub fn call(&self) -> Result<&Call, Error> {
         self.tx_ctx
@@ -642,6 +649,7 @@ impl<'a> CircuitInputStateRef<'a> {
         let call = Call {
             call_id: self.block_ctx.rwc.0,
             caller_id: caller.call_id,
+            last_callee_id: 0,
             kind,
             is_static: kind == CallKind::StaticCall || caller.is_static,
             is_root: false,
@@ -658,6 +666,8 @@ impl<'a> CircuitInputStateRef<'a> {
             call_data_length,
             return_data_offset,
             return_data_length,
+            last_callee_return_data_offset: 0,
+            last_callee_return_data_length: 0,
         };
 
         Ok(call)
@@ -796,6 +806,29 @@ impl<'a> CircuitInputStateRef<'a> {
     /// Handle a return step caused by any opcode that causes a return to the
     /// previous call context.
     pub fn handle_return(&mut self, step: &GethExecStep) -> Result<(), Error> {
+        // handle return_data
+        if !self.call()?.is_root {
+            match step.op {
+                OpcodeId::RETURN | OpcodeId::REVERT => {
+                    let offset = step.stack.nth_last(0)?.as_usize();
+                    let length = step.stack.nth_last(1)?.as_usize();
+                    // TODO: Try to get rid of clone.
+                    // At the moment it conflicts with `call_ctx` and `caller_ctx`.
+                    let callee_memory = self.call_ctx()?.memory.clone();
+                    let caller_ctx = self.caller_ctx_mut()?;
+                    caller_ctx.return_data.resize(length, 0);
+                    if length != 0 {
+                        caller_ctx.return_data[0..length]
+                            .copy_from_slice(&callee_memory.0[offset..offset + length]);
+                    }
+                }
+                _ => {
+                    let caller_ctx = self.caller_ctx_mut()?;
+                    caller_ctx.return_data.truncate(0);
+                }
+            }
+        }
+
         let call = self.call()?.clone();
         let call_ctx = self.call_ctx()?;
 
@@ -817,6 +850,13 @@ impl<'a> CircuitInputStateRef<'a> {
         // Handle reversion if this call doesn't end successfully
         if !call.is_success {
             self.handle_reversion();
+        }
+
+        // If current call has caller.
+        if let Ok(caller) = self.caller_mut() {
+            caller.last_callee_id = call.call_id;
+            caller.last_callee_return_data_length = call.return_data_length;
+            caller.last_callee_return_data_offset = call.return_data_offset;
         }
 
         self.tx_ctx.pop_call_ctx();
@@ -1142,12 +1182,6 @@ impl<'a> CircuitInputStateRef<'a> {
                 exec_step,
                 call.call_id,
                 CallContextField::IsSuccess,
-                0u64.into(),
-            );
-            self.call_context_read(
-                exec_step,
-                call.call_id,
-                CallContextField::IsPersistent,
                 0u64.into(),
             );
             if call.is_root {

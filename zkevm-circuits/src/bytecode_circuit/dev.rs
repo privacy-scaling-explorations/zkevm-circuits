@@ -103,7 +103,7 @@ pub fn test_bytecode_circuit_unrolled<F: Field>(
     };
 
     let prover = MockProver::<F>::run(k, &circuit, Vec::new()).unwrap();
-    let result = prover.verify();
+    let result = prover.verify_par();
     if let Err(failures) = &result {
         for failure in failures.iter() {
             println!("{}", failure);

@@ -94,9 +94,6 @@ impl Opcode for Return {
 
                 caller_ctx.memory.0[return_offset..return_offset + copy_length]
                     .copy_from_slice(&callee_memory.0[offset..offset + copy_length]);
-                caller_ctx.return_data.resize(length, 0);
-                caller_ctx.return_data[0..copy_length]
-                    .copy_from_slice(&callee_memory.0[offset..offset + copy_length]);
 
                 handle_copy(
                     state,
@@ -113,6 +110,27 @@ impl Opcode for Return {
                     },
                 )?;
             }
+
+            state.call_context_write(
+                &mut exec_step,
+                state.caller()?.call_id,
+                CallContextField::LastCalleeId,
+                state.call()?.call_id.into(),
+            );
+
+            state.call_context_write(
+                &mut exec_step,
+                state.caller()?.call_id,
+                CallContextField::LastCalleeReturnDataOffset,
+                offset.into(),
+            );
+
+            state.call_context_write(
+                &mut exec_step,
+                state.caller()?.call_id,
+                CallContextField::LastCalleeReturnDataLength,
+                length.into(),
+            );
         }
 
         state.handle_return(step)?;
