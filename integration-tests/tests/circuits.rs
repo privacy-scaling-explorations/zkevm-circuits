@@ -127,7 +127,7 @@ fn test_run<ConcreteCircuit: Circuit<Fr>, R: RngCore>(
     let mock_prover = MockProver::<Fr>::run(degree, &circuit, instance.clone()).unwrap();
     mock_prover
         .verify_par()
-        .expect("state_circuit verification failed");
+        .expect("mock prover verification failed");
 
     let general_params = ParamsKZG::<Bn256>::setup(degree, &mut rng);
     let verifier_params: ParamsVerifierKZG<Bn256> = general_params.verifier_params().clone();
@@ -201,7 +201,9 @@ async fn test_state_circuit_block(block_num: u64) {
     let storage_ops = builder.block.container.sorted_storage();
     trace!("storage_ops: {:#?}", storage_ops);
 
-    let rw_map = RwMap::from(&builder.block.container);
+    // TODO: use rw_map from block
+    // let rw_map = RwMap::from(&builder.block.container);
+    let rw_map = RwMap::default();
 
     let circuit = StateCircuit::<Fr>::new(rw_map, 1 << 16);
     let instance = circuit.instance();
@@ -210,11 +212,11 @@ async fn test_state_circuit_block(block_num: u64) {
 }
 
 async fn test_tx_circuit_block(block_num: u64) {
+    log::info!("test tx circuit, block number: {}", block_num);
+
     const DEGREE: u32 = 20;
 
     let mut rng = ChaCha20Rng::seed_from_u64(2);
-
-    log::info!("test tx circuit, block number: {}", block_num);
 
     let (_, eth_block) = gen_inputs(block_num).await;
     let txs: Vec<_> = eth_block
