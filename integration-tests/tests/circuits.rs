@@ -1,7 +1,6 @@
 #![cfg(feature = "circuits")]
 
 use bus_mapping::circuit_input_builder::{BuilderClient, CircuitInputBuilder, CircuitsParams};
-use bus_mapping::operation::OperationContainer;
 use eth_types::geth_types;
 use halo2_proofs::plonk::{
     create_proof, keygen_pk, keygen_vk, verify_proof, Circuit, ProvingKey, VerifyingKey,
