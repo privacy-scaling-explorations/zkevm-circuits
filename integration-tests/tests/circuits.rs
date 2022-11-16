@@ -40,6 +40,7 @@ use zkevm_circuits::evm_circuit::test::{test_circuit_degree, test_circuit_instan
 use zkevm_circuits::evm_circuit::witness::RwMap;
 use zkevm_circuits::evm_circuit::{test::test_cicuit_from_block, witness::block_convert};
 use zkevm_circuits::state_circuit::StateCircuit;
+use zkevm_circuits::super_circuit::SuperCircuit;
 use zkevm_circuits::tx_circuit::{sign_verify::SignVerifyChip, Secp256k1Affine, TxCircuit};
 
 lazy_static! {
@@ -292,7 +293,8 @@ pub async fn test_super_circuit_block(block_num: u64) {
         cli,
         CircuitsParams {
             max_rws: MAX_RWS,
-            ..Default::default()
+            max_txs: MAX_TXS,
+            keccak_padding: None,
         },
     )
     .await
@@ -306,7 +308,7 @@ pub async fn test_super_circuit_block(block_num: u64) {
         )
         .unwrap();
     let prover = MockProver::run(k, &circuit, instance).unwrap();
-    let res = prover.verify();
+    let res = prover.verify_par();
     if let Err(err) = res {
         eprintln!("Verification failures:");
         eprintln!("{:#?}", err);
@@ -352,6 +354,12 @@ macro_rules! declare_tests {
                 test_copy_circuit_block(*block_num).await;
             }
 
+            #[tokio::test]
+            async fn [<serial_test_super_ $name>]() {
+                log_init();
+                let block_num = GEN_DATA.blocks.get($block_tag).unwrap();
+                test_super_circuit_block(*block_num).await;
+            }
         }
     };
 }
