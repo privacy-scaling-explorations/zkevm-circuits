@@ -38,14 +38,21 @@ const N_LIMBS_ID: usize = 2;
 /// Config for StateCircuit
 #[derive(Clone)]
 pub struct StateCircuitConfig<F> {
-    selector: Column<Fixed>, // Figure out why you get errors when this is Selector.
+    // Figure out why you get errors when this is Selector.
+    selector: Column<Fixed>,
     // https://github.com/privacy-scaling-explorations/zkevm-circuits/issues/407
     rw_table: RwTable,
     mpt_table: MptTable,
     sort_keys: SortKeysConfig,
-    initial_value: Column<Advice>, /* Assigned value at the start of the block. For Rw::Account
-                                    * and Rw::AccountStorage rows this is the committed value in
-                                    * the MPT, for others, it is 0. */
+    // Assigned value at the start of the block. For Rw::Account and
+    // Rw::AccountStorage rows this is the committed value in the MPT, for
+    // others, it is 0.
+    initial_value: Column<Advice>,
+    // For Rw::AccountStorage, identify if committed value or new value is zero.
+    // Will do lookup for ProofType::StorageDoesNotExist if both are zero,
+    // otherwise do lookup for ProofType::StorageChanged (either is non-zero).
+    is_initial_value_zero: Column<Advice>,
+    is_new_value_zero: Column<Advice>,
     state_root: Column<Advice>,
     lexicographic_ordering: LexicographicOrderingConfig,
     lookups: LookupsConfig,
@@ -76,6 +83,8 @@ impl<F: Field> StateCircuitConfig<F> {
         );
 
         let initial_value = meta.advice_column();
+        let is_initial_value_zero = meta.advice_column();
+        let is_new_value_zero = meta.advice_column();
         let state_root = meta.advice_column();
 
         let sort_keys = SortKeysConfig {
@@ -98,6 +107,8 @@ impl<F: Field> StateCircuitConfig<F> {
             selector,
             sort_keys,
             initial_value,
+            is_initial_value_zero,
+            is_new_value_zero,
             state_root,
             lexicographic_ordering,
             lookups,
@@ -123,6 +134,7 @@ impl<F: Field> StateCircuitConfig<F> {
     pub(crate) fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
         LookupsChip::construct(self.lookups).load(layouter)
     }
+
     /// Make the assignments to the StateCircuit
     pub fn assign(
         &self,
@@ -204,15 +216,32 @@ impl<F: Field> StateCircuitConfig<F> {
             }
 
             // The initial value can be determined from the mpt updates or is 0.
-            let initial_value = updates
+            let (new_value, old_value) = updates
                 .get(&row)
-                .map(|u| u.value_assignments(randomness).1)
+                .map(|u| u.value_assignments(randomness))
                 .unwrap_or_default();
             region.assign_advice(
                 || "initial_value",
                 self.initial_value,
                 offset,
-                || Value::known(initial_value),
+                || Value::known(old_value),
+            )?;
+
+            // Check if old value or new value is zero.
+            let is_initial_value_zero =
+                F::one() - old_value * old_value.invert().unwrap_or(F::zero());
+            region.assign_advice(
+                || "is_initial_value_zero",
+                self.is_initial_value_zero,
+                offset,
+                || Value::known(is_initial_value_zero),
+            )?;
+            let is_new_value_zero = F::one() - new_value * new_value.invert().unwrap_or(F::zero());
+            region.assign_advice(
+                || "is_new_value_zero",
+                self.is_new_value_zero,
+                offset,
+                || Value::known(is_new_value_zero),
             )?;
 
             // TODO: Switch from Rw::Start -> Rw::Padding to simplify this logic.
@@ -424,6 +453,8 @@ fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: &StateCircuitConfig<F>) 
         storage_key: RlcQueries::new(meta, c.sort_keys.storage_key),
         initial_value: meta.query_advice(c.initial_value, Rotation::cur()),
         initial_value_prev: meta.query_advice(c.initial_value, Rotation::prev()),
+        is_initial_value_zero: meta.query_advice(c.is_initial_value_zero, Rotation::cur()),
+        is_new_value_zero: meta.query_advice(c.is_new_value_zero, Rotation::cur()),
         lookups: LookupsQueries::new(meta, c.lookups),
         power_of_randomness: c.power_of_randomness.clone(),
         // this isn't binary! only 0 if most significant 4 bits are all 1.
