@@ -85,8 +85,8 @@ pub enum TxFieldTag {
     TxSignHash,
     /// CallData
     CallData,
-    /// Neutral bad tx
-    IsNeutralBadTx
+    /// Neutral invalid tx
+    TxInvalid
 }
 impl_expr!(TxFieldTag);
 
@@ -320,9 +320,6 @@ pub enum CallContextFieldTag {
     MemorySize,
     /// ReversibleWriteCounter
     ReversibleWriteCounter,
-
-    /// Neutral bad tx
-    IsNeutralBadTx
 }
 impl_expr!(CallContextFieldTag);
 

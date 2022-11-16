@@ -197,6 +197,8 @@ pub struct Transaction {
     pub input: Vec<u8>,
     /// Signature
     pub signature: Signature,
+    /// neutral invalid
+    pub neutral_invalid: u64,
     /// Calls made in the transaction
     pub(crate) calls: Vec<Call>,
     /// Execution steps
@@ -237,6 +239,7 @@ impl Transaction {
                 s: Word::zero(),
                 v: 0,
             },
+            neutral_invalid: 0,
             calls: Vec::new(),
             steps: Vec::new(),
         }
@@ -314,6 +317,7 @@ impl Transaction {
                 r: eth_tx.r,
                 s: eth_tx.s,
             },
+            neutral_invalid: 0,
         })
     }
 

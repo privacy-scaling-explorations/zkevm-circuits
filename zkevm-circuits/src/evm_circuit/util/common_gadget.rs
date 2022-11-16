@@ -331,8 +331,8 @@ impl<F: Field, const N_ADDENDS: usize, const INCREASE: bool>
 
 #[derive(Clone, Debug)]
 pub(crate) struct TransferWithGasFeeGadget<F> {
-    sender: UpdateBalanceGadget<F, 3, false>,
-    receiver: UpdateBalanceGadget<F, 2, true>,
+    pub sender: UpdateBalanceGadget<F, 3, false>,
+    pub receiver: UpdateBalanceGadget<F, 2, true>,
 }
 
 impl<F: Field> TransferWithGasFeeGadget<F> {
