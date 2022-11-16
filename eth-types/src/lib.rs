@@ -203,7 +203,9 @@ impl ToWord for u64 {
 
 impl ToWord for usize {
     fn to_word(&self) -> Word {
-        u64::try_from(*self).expect("usize bigger than u64").to_word()
+        u64::try_from(*self)
+            .expect("usize bigger than u64")
+            .to_word()
     }
 }
 

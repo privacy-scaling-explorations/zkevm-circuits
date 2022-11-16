@@ -21,8 +21,8 @@ use crate::{
 use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId};
 use eth_types::{Field, ToScalar};
 use ethers_core::utils::keccak256;
-use keccak256::EMPTY_HASH_LE;
 use halo2_proofs::{circuit::Value, plonk::Error};
+use keccak256::EMPTY_HASH_LE;
 
 #[derive(Clone, Debug)]
 pub(crate) struct ReturnRevertGadget<F> {
@@ -99,10 +99,10 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
             );
         });
 
-        let is_contract_deployed = is_create.clone() * is_success.expr() * not::expr(copy_rw_increase_is_zero.expr());
-        let (caller_id, address, reversion_info, code_hash) = cb.condition(
-            is_contract_deployed.clone(),
-            |cb| {
+        let is_contract_deployed =
+            is_create.clone() * is_success.expr() * not::expr(copy_rw_increase_is_zero.expr());
+        let (caller_id, address, reversion_info, code_hash) =
+            cb.condition(is_contract_deployed.clone(), |cb| {
                 // We don't need to place any additional constraints on code_hash because the
                 // copy circuit enforces that it is the hash of the bytes in the copy lookup.
                 let code_hash = cb.query_cell();
@@ -137,8 +137,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
                 );
 
                 (caller_id, address, reversion_info, code_hash)
-            },
-        );
+            });
 
         // Case B in the specs.
         cb.condition(is_root.expr(), |cb| {
@@ -565,7 +564,8 @@ mod test {
 
     #[test]
     fn test_nonpersistent_nonroot_create() {
-        // Test the case where the initialization call is successful, but the CREATE call is reverted.
+        // Test the case where the initialization call is successful, but the CREATE
+        // call is reverted.
         let initializer = callee_bytecode(true, 0, 10).code();
 
         let root_code = bytecode! {
@@ -609,9 +609,6 @@ mod test {
         )
         .unwrap();
 
-        assert_eq!(
-            run_test_circuits(test_context, None),
-            Ok(()),
-        );
+        assert_eq!(run_test_circuits(test_context, None), Ok(()),);
     }
 }
