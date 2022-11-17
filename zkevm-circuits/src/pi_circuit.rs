@@ -1423,16 +1423,12 @@ fn raw_public_inputs_col<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usi
     for (_i, tx) in public_data.txs().iter().enumerate() {
         for (_index, byte) in tx.call_data.0.iter().enumerate() {
             assert!(calldata_count < MAX_CALLDATA);
-            // result[id_offset + offset] = F::from((i + 1) as u64);
-            // result[index_offset + offset] = F::from(index as u64);
             result[value_offset + offset] = F::from(*byte as u64);
             offset += 1;
             calldata_count += 1;
         }
     }
     for _ in calldata_count..MAX_CALLDATA {
-        // result[id_offset + offset] = F::zero();
-        // result[index_offset + offset] = F::zero();
         result[value_offset + offset] = F::zero();
         offset += 1;
     }
