@@ -1,8 +1,9 @@
 //! State circuit benchmarks
-
 #[cfg(test)]
 mod tests {
     use ark_std::{end_timer, start_timer};
+    use eth_types::Word;
+    use halo2_proofs::arithmetic::Field;
     use halo2_proofs::plonk::{create_proof, keygen_pk, keygen_vk, verify_proof};
     use halo2_proofs::poly::kzg::commitment::{KZGCommitmentScheme, ParamsKZG, ParamsVerifierKZG};
     use halo2_proofs::poly::kzg::multiopen::{ProverSHPLONK, VerifierSHPLONK};
@@ -15,22 +16,33 @@ mod tests {
         },
     };
     use rand::SeedableRng;
+    use rand_chacha::ChaCha20Rng;
     use rand_xorshift::XorShiftRng;
     use std::env::var;
-    use zkevm_circuits::evm_circuit::witness::RwMap;
-    use zkevm_circuits::state_circuit::StateCircuit;
+    use zkevm_circuits::pi_circuit::{PiCircuit, PublicData};
+    use zkevm_circuits::test_util::rand_tx;
 
     #[cfg_attr(not(feature = "benches"), ignore)]
     #[test]
-    fn bench_state_circuit_prover() {
+    fn bench_pi_circuit_prover() {
         let degree: u32 = var("DEGREE")
-            .expect("No DEGREE env var was provided")
+            .unwrap_or_else(|_| "15".to_string())
             .parse()
             .expect("Cannot parse DEGREE env var as u32");
 
-        let empty_circuit = StateCircuit::<Fr>::new(RwMap::default(), 1 << 16);
+        const MAX_TXS: usize = 10;
+        const MAX_CALLDATA: usize = 128;
 
-        // Initialize the polynomial commitment parameters
+        let mut rng = ChaCha20Rng::seed_from_u64(2);
+        let randomness = Fr::random(&mut rng);
+        let rand_rpi = Fr::random(&mut rng);
+        let public_data = generate_publicdata::<MAX_TXS, MAX_CALLDATA>();
+        let circuit =
+            PiCircuit::<Fr, MAX_TXS, MAX_CALLDATA>::new(randomness, rand_rpi, public_data);
+        let public_inputs = circuit.instance();
+        let instance: Vec<&[Fr]> = public_inputs.iter().map(|input| &input[..]).collect();
+        let instances = &[&instance[..]][..];
+
         let mut rng = XorShiftRng::from_seed([
             0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37, 0x32, 0x54, 0x06,
             0xbc, 0xe5,
@@ -44,16 +56,13 @@ mod tests {
         end_timer!(start1);
 
         // Initialize the proving key
-        let vk = keygen_vk(&general_params, &empty_circuit).expect("keygen_vk should not fail");
-        let pk = keygen_pk(&general_params, vk, &empty_circuit).expect("keygen_pk should not fail");
+        let vk = keygen_vk(&general_params, &circuit).expect("keygen_vk should not fail");
+        let pk = keygen_pk(&general_params, vk, &circuit).expect("keygen_pk should not fail");
         // Create a proof
         let mut transcript = Blake2bWrite::<_, G1Affine, Challenge255<_>>::init(vec![]);
 
-        let instance = empty_circuit.instance();
-        let instances: Vec<&[Fr]> = instance.iter().map(|v| v.as_slice()).collect();
-
         // Bench proof generation time
-        let proof_message = format!("State Circuit Proof generation with degree = {}", degree);
+        let proof_message = format!("PI_circuit Proof generation with {} rows", degree);
         let start2 = start_timer!(|| proof_message);
         create_proof::<
             KZGCommitmentScheme<Bn256>,
@@ -61,12 +70,12 @@ mod tests {
             Challenge255<G1Affine>,
             XorShiftRng,
             Blake2bWrite<Vec<u8>, G1Affine, Challenge255<G1Affine>>,
-            StateCircuit<Fr>,
+            PiCircuit<Fr, MAX_TXS, MAX_CALLDATA>,
         >(
             &general_params,
             &pk,
-            &[empty_circuit],
-            &[&instances],
+            &[circuit],
+            instances,
             rng,
             &mut transcript,
         )
@@ -75,7 +84,7 @@ mod tests {
         end_timer!(start2);
 
         // Bench verification time
-        let start3 = start_timer!(|| "State Circuit Proof verification");
+        let start3 = start_timer!(|| "PI_circuit Proof verification");
         let mut verifier_transcript = Blake2bRead::<_, G1Affine, Challenge255<_>>::init(&proof[..]);
         let strategy = SingleStrategy::new(&general_params);
 
@@ -89,10 +98,24 @@ mod tests {
             &verifier_params,
             pk.get_vk(),
             strategy,
-            &[&instances],
+            instances,
             &mut verifier_transcript,
         )
         .expect("failed to verify bench circuit");
         end_timer!(start3);
+    }
+
+    fn generate_publicdata<const MAX_TXS: usize, const MAX_CALLDATA: usize>() -> PublicData {
+        let mut rng = ChaCha20Rng::seed_from_u64(2);
+        let mut public_data = PublicData::default();
+        let chain_id = 1337u64;
+        public_data.chain_id = Word::from(chain_id);
+
+        let n_tx = MAX_TXS;
+        for _ in 0..n_tx {
+            let eth_tx = eth_types::Transaction::from(&rand_tx(&mut rng, chain_id));
+            public_data.eth_block.transactions.push(eth_tx);
+        }
+        public_data
     }
 }

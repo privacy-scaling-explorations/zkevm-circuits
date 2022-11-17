@@ -71,6 +71,7 @@ mod pc;
 mod pop;
 mod push;
 mod return_revert;
+mod returndatacopy;
 mod returndatasize;
 mod sdiv_smod;
 mod selfbalance;
@@ -126,6 +127,7 @@ use pc::PcGadget;
 use pop::PopGadget;
 use push::PushGadget;
 use return_revert::ReturnRevertGadget;
+use returndatacopy::ReturnDataCopyGadget;
 use returndatasize::ReturnDataSizeGadget;
 use sdiv_smod::SignedDivModGadget;
 use selfbalance::SelfbalanceGadget;
@@ -225,7 +227,7 @@ pub(crate) struct ExecutionConfig<F> {
     extcodesize_gadget: DummyGadget<F, 1, 1, { ExecutionState::EXTCODESIZE }>,
     extcodecopy_gadget: DummyGadget<F, 4, 0, { ExecutionState::EXTCODECOPY }>,
     returndatasize_gadget: ReturnDataSizeGadget<F>,
-    returndatacopy_gadget: DummyGadget<F, 3, 0, { ExecutionState::RETURNDATACOPY }>,
+    returndatacopy_gadget: ReturnDataCopyGadget<F>,
     create_gadget: DummyGadget<F, 3, 1, { ExecutionState::CREATE }>,
     callcode_gadget: DummyGadget<F, 7, 1, { ExecutionState::CALLCODE }>,
     delegatecall_gadget: DummyGadget<F, 6, 1, { ExecutionState::DELEGATECALL }>,
@@ -995,6 +997,7 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::PUSH => assign_exec_step!(self.push_gadget),
             ExecutionState::RETURN_REVERT => assign_exec_step!(self.return_revert_gadget),
             ExecutionState::RETURNDATASIZE => assign_exec_step!(self.returndatasize_gadget),
+            ExecutionState::RETURNDATACOPY => assign_exec_step!(self.returndatacopy_gadget),
             ExecutionState::SCMP => assign_exec_step!(self.signed_comparator_gadget),
             ExecutionState::SDIV_SMOD => assign_exec_step!(self.sdiv_smod_gadget),
             ExecutionState::BLOCKCTXU64 => assign_exec_step!(self.block_ctx_u64_gadget),
@@ -1007,7 +1010,6 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::SAR => assign_exec_step!(self.sar_gadget),
             ExecutionState::EXTCODESIZE => assign_exec_step!(self.extcodesize_gadget),
             ExecutionState::EXTCODECOPY => assign_exec_step!(self.extcodecopy_gadget),
-            ExecutionState::RETURNDATACOPY => assign_exec_step!(self.returndatacopy_gadget),
             ExecutionState::CREATE => assign_exec_step!(self.create_gadget),
             ExecutionState::CALLCODE => assign_exec_step!(self.callcode_gadget),
             ExecutionState::DELEGATECALL => assign_exec_step!(self.delegatecall_gadget),
@@ -1167,7 +1169,10 @@ impl<F: Field> ExecutionConfig<F> {
             .rws
             .table_assignments()
             .iter()
-            .map(|rw| rw.table_assignment(block.randomness).rlc(block.randomness))
+            .map(|rw| {
+                rw.table_assignment_aux(block.randomness)
+                    .rlc(block.randomness)
+            })
             .collect();
 
         for (name, value) in assigned_rw_values.iter() {
@@ -1178,7 +1183,7 @@ impl<F: Field> ExecutionConfig<F> {
         for (idx, assigned_rw_value) in assigned_rw_values.iter().enumerate() {
             let rw_idx = step.rw_indices[idx];
             let rw = block.rws[rw_idx];
-            let table_assignments = rw.table_assignment(block.randomness);
+            let table_assignments = rw.table_assignment_aux(block.randomness);
             let rlc = table_assignments.rlc(block.randomness);
             if rlc != assigned_rw_value.1 {
                 log::error!(
