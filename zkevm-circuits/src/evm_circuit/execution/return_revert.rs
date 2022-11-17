@@ -375,7 +375,7 @@ mod test {
             PUSH1(memory_address)
             MSTORE
             PUSH2(length)
-            PUSH2(32u64 - memory_bytes.len().try_into().unwrap() + offset)
+            PUSH2(32u64 - u64::try_from(memory_bytes.len()).unwrap() + offset)
         };
         code.write_op(if is_return {
             OpcodeId::RETURN
