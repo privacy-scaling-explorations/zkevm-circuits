@@ -376,19 +376,20 @@ impl RwTable {
             id: meta.advice_column(),
             address: meta.advice_column(),
             field_tag: meta.advice_column(),
-            storage_key: meta.advice_column(),
-            value: meta.advice_column(),
-            value_prev: meta.advice_column(),
-            aux1: meta.advice_column(),
-            aux2: meta.advice_column(),
+            storage_key: meta.advice_column_in(SecondPhase),
+            value: meta.advice_column_in(SecondPhase),
+            value_prev: meta.advice_column_in(SecondPhase),
+            // It seems that aux1 for the moment is not using randomness
+            // TODO check in a future review
+            aux1: meta.advice_column_in(SecondPhase),
+            aux2: meta.advice_column_in(SecondPhase),
         }
     }
-    /// Assign a `RwRow` at offset into the `RwTable`
-    pub fn assign<F: Field>(
+    fn assign<F: Field>(
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
-        row: &RwRow<F>,
+        row: &RwRow<Value<F>>,
     ) -> Result<(), Error> {
         for (column, value) in [
             (self.rw_counter, row.rw_counter),
@@ -403,12 +404,7 @@ impl RwTable {
             (self.aux1, row.aux1),
             (self.aux2, row.aux2),
         ] {
-            region.assign_advice(
-                || "assign rw row on rw table",
-                column,
-                offset,
-                || Value::known(value),
-            )?;
+            region.assign_advice(|| "assign rw row on rw table", column, offset, || value)?;
         }
         Ok(())
     }
@@ -420,7 +416,7 @@ impl RwTable {
         layouter: &mut impl Layouter<F>,
         rws: &[Rw],
         n_rows: usize,
-        randomness: F,
+        randomness: Value<F>,
     ) -> Result<(), Error> {
         layouter.assign_region(
             || "rw table",
@@ -433,7 +429,7 @@ impl RwTable {
         region: &mut Region<'_, F>,
         rws: &[Rw],
         n_rows: usize,
-        randomness: F,
+        randomness: Value<F>,
     ) -> Result<(), Error> {
         let (rows, _) = RwMap::table_assignments_prepad(rws, n_rows);
         for (offset, row) in rows.iter().enumerate() {
@@ -490,15 +486,10 @@ impl MptTable {
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
-        row: &MptUpdateRow<F>,
+        row: &MptUpdateRow<Value<F>>,
     ) -> Result<(), Error> {
         for (column, value) in self.0.iter().zip_eq(row.values()) {
-            region.assign_advice(
-                || "assign mpt table row value",
-                *column,
-                offset,
-                || Value::known(*value),
-            )?;
+            region.assign_advice(|| "assign mpt table row value", *column, offset, || *value)?;
         }
         Ok(())
     }
@@ -507,7 +498,7 @@ impl MptTable {
         &self,
         layouter: &mut impl Layouter<F>,
         updates: &MptUpdates,
-        randomness: F,
+        randomness: Value<F>,
     ) -> Result<(), Error> {
         layouter.assign_region(
             || "mpt table",
@@ -519,7 +510,7 @@ impl MptTable {
         &self,
         region: &mut Region<'_, F>,
         updates: &MptUpdates,
-        randomness: F,
+        randomness: Value<F>,
     ) -> Result<(), Error> {
         for (offset, row) in updates.table_assignments(randomness).iter().enumerate() {
             self.assign(region, offset, row)?;

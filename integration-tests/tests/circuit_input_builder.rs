@@ -16,13 +16,15 @@ async fn test_circuit_input_builder_block(block_num: u64) {
         CircuitsParams {
             max_rws: 16384,
             max_txs: 1,
+            keccak_padding: None,
         },
     )
     .await
     .unwrap();
 
     // 1. Query geth for Block, Txs and TxExecTraces
-    let (eth_block, geth_trace) = cli.get_block(block_num).await.unwrap();
+    let (eth_block, geth_trace, history_hashes, prev_state_root) =
+        cli.get_block(block_num).await.unwrap();
 
     // 2. Get State Accesses from TxExecTraces
     let access_set = cli.get_state_accesses(&eth_block, &geth_trace).unwrap();
@@ -38,7 +40,14 @@ async fn test_circuit_input_builder_block(block_num: u64) {
     // 5. For each step in TxExecTraces, gen the associated ops and state
     // circuit inputs
     let builder = cli
-        .gen_inputs_from_state(state_db, code_db, &eth_block, &geth_trace)
+        .gen_inputs_from_state(
+            state_db,
+            code_db,
+            &eth_block,
+            &geth_trace,
+            history_hashes,
+            prev_state_root,
+        )
         .unwrap();
 
     trace!("CircuitInputBuilder: {:#?}", builder);

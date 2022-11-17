@@ -77,5 +77,5 @@ jobs:
       - run: ./run.sh --steps "gendata"
       - run: ./run.sh --steps "tests" --tests "rpc"
       - run: ./run.sh --steps "tests" --tests "circuit_input_builder"
-      - run: ./run.sh --steps "tests" --tests "circuits"
+      - run: RUST_TEST_THREADS=1 ./run.sh --steps "tests" --tests "circuits"
       - run: ./run.sh --steps "cleanup"
