@@ -117,6 +117,7 @@ enum Key {
         tx_id: usize,
         address: Address,
         storage_key: Word,
+        is_non_exist: bool,
     },
 }
 
@@ -130,7 +131,13 @@ impl Key {
     }
     fn proof_type<F: Field>(&self) -> F {
         let proof_type = match self {
-            Self::AccountStorage { .. } => ProofType::StorageChanged,
+            Self::AccountStorage { is_non_exist, .. } => {
+                if *is_non_exist {
+                    ProofType::StorageDoesNotExist
+                } else {
+                    ProofType::StorageChanged
+                }
+            }
             Self::Account { field_tag, .. } => (*field_tag).into(),
         };
         F::from(proof_type as u64)
@@ -170,12 +177,19 @@ fn key(row: &Rw) -> Option<Key> {
             tx_id,
             account_address,
             storage_key,
+            value,
+            committed_value,
             ..
-        } => Some(Key::AccountStorage {
-            tx_id: *tx_id,
-            address: *account_address,
-            storage_key: *storage_key,
-        }),
+        } => {
+            // Test
+            let is_non_exist = committed_value.is_zero(); // && value.is_zero();
+            Some(Key::AccountStorage {
+                tx_id: *tx_id,
+                address: *account_address,
+                storage_key: *storage_key,
+                is_non_exist,
+            })
+        }
         _ => None,
     }
 }
