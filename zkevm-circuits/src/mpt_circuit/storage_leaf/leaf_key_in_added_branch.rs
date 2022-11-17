@@ -950,7 +950,6 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
             typ = "last_level";
         }
         mpt_config.assign_long_short(region, typ, offset).ok();
-
         pv.acc_s = F::zero();
         pv.acc_mult_s = F::one();
         let len = if row.get_byte(0) == 248 {

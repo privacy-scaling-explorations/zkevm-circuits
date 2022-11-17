@@ -995,6 +995,11 @@ impl<F: FieldExt> LeafKeyConfig<F> {
         }
         mpt_config.assign_long_short(region, typ, offset).ok();
 
+        println!("111111111111111111111");
+        println!("{:?}", offset);
+        println!("{:?}", typ);
+        println!("{:?}", row.bytes);
+
         pv.acc_s = F::zero();
         pv.acc_mult_s = F::one();
         let len: usize;

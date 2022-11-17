@@ -78,6 +78,10 @@ pub(crate) struct Branch {
     pub(crate) drifted_pos: u8,
     pub(crate) is_extension_node_s: bool,
     pub(crate) is_extension_node_c: bool,
+    pub(crate) is_mod_ext_node_s_before_mod: bool,
+    pub(crate) is_mod_ext_node_c_before_mod: bool,
+    pub(crate) is_mod_ext_node_s_after_mod: bool,
+    pub(crate) is_mod_ext_node_c_after_mod: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -98,6 +102,12 @@ pub(crate) struct BranchCols<F> {
                                                      * and hash of
                                                      * the branch (c_advices) */
     pub(crate) is_extension_node_c: Column<Advice>,
+    // The following four columns are only needed in special cases - when a new extension node is inserted
+    // and replaces an existing extension node.
+    pub(crate) is_mod_ext_node_s_before_mod: Column<Advice>,
+    pub(crate) is_mod_ext_node_c_before_mod: Column<Advice>,
+    pub(crate) is_mod_ext_node_s_after_mod: Column<Advice>,
+    pub(crate) is_mod_ext_node_c_after_mod: Column<Advice>,
     _marker: PhantomData<F>,
 }
 
@@ -114,6 +124,10 @@ impl<F: FieldExt> BranchCols<F> {
             drifted_pos: meta.advice_column(),
             is_extension_node_s: meta.advice_column(),
             is_extension_node_c: meta.advice_column(),
+            is_mod_ext_node_s_before_mod: meta.advice_column(),
+            is_mod_ext_node_c_before_mod: meta.advice_column(),
+            is_mod_ext_node_s_after_mod: meta.advice_column(),
+            is_mod_ext_node_c_after_mod: meta.advice_column(),
             _marker: PhantomData,
         }
     }

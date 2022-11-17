@@ -42,8 +42,11 @@ pub(crate) enum MptWitnessRowType {
     ExtensionNodeC = 17,
     AccountNonExisting = 18,
     StorageNonExisting = 19,
+    ModExtNodeSBeforeMod = 20,
+    ModExtNodeCBeforeMod = 21,
+    ModExtNodeSAfterMod = 22,
+    ModExtNodeCAfterMod = 23,
 }
-
 pub struct MptWitnessRow<F> {
     pub(crate) bytes: Vec<u8>,
     _marker: PhantomData<F>,
@@ -358,6 +361,31 @@ impl<F: FieldExt> MptWitnessRow<F> {
             mpt_config.branch.is_extension_node_c,
             offset,
             || Value::known(F::from(branch.is_extension_node_c as u64)),
+        )?;
+
+        region.assign_advice(
+            || "assign is modified extension node s before modification".to_string(),
+            mpt_config.branch.is_mod_ext_node_s_before_mod,
+            offset,
+            || Value::known(F::from(branch.is_mod_ext_node_s_before_mod as u64)),
+        )?;
+        region.assign_advice(
+            || "assign is modified extension node c before modification".to_string(),
+            mpt_config.branch.is_mod_ext_node_c_before_mod,
+            offset,
+            || Value::known(F::from(branch.is_mod_ext_node_c_before_mod as u64)),
+        )?;
+        region.assign_advice(
+            || "assign is modified extension node s after modification".to_string(),
+            mpt_config.branch.is_mod_ext_node_s_after_mod,
+            offset,
+            || Value::known(F::from(branch.is_mod_ext_node_s_after_mod as u64)),
+        )?;
+        region.assign_advice(
+            || "assign is modified extension node c after modification".to_string(),
+            mpt_config.branch.is_mod_ext_node_c_after_mod,
+            offset,
+            || Value::known(F::from(branch.is_mod_ext_node_c_after_mod as u64)),
         )?;
 
         region.assign_advice(

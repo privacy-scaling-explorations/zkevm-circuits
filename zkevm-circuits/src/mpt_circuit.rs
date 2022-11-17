@@ -1145,6 +1145,14 @@ impl<F: FieldExt> MPTConfig<F> {
                                 branch.is_extension_node_c = true;
                             } else if row.get_type() == MptWitnessRowType::AccountNonExisting {
                                 account_leaf.is_non_existing_account_row = true;
+                            } else if row.get_type() == MptWitnessRowType::ModExtNodeSBeforeMod {
+                                branch.is_mod_ext_node_s_before_mod = true;
+                            } else if row.get_type() == MptWitnessRowType::ModExtNodeCBeforeMod {
+                                branch.is_mod_ext_node_c_before_mod = true;
+                            } else if row.get_type() == MptWitnessRowType::ModExtNodeSAfterMod {
+                                branch.is_mod_ext_node_s_after_mod = true;
+                            } else if row.get_type() == MptWitnessRowType::ModExtNodeCAfterMod {
+                                branch.is_mod_ext_node_c_after_mod = true;
                             }
 
                             row.assign(
