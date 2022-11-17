@@ -181,8 +181,7 @@ fn key(row: &Rw) -> Option<Key> {
             committed_value,
             ..
         } => {
-            // Test
-            let is_non_exist = committed_value.is_zero(); // && value.is_zero();
+            let is_non_exist = value.is_zero() && committed_value.is_zero();
             Some(Key::AccountStorage {
                 tx_id: *tx_id,
                 address: *account_address,
