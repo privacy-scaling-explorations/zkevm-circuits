@@ -41,7 +41,7 @@ mod mload;
 mod mstore;
 mod number;
 mod origin;
-mod r#return;
+mod return_revert;
 mod returndatacopy;
 mod returndatasize;
 mod selfbalance;
@@ -77,7 +77,7 @@ use logs::Log;
 use mload::Mload;
 use mstore::Mstore;
 use origin::Origin;
-use r#return::Return;
+use return_revert::ReturnRevert;
 use returndatacopy::Returndatacopy;
 use returndatasize::Returndatasize;
 use selfbalance::Selfbalance;
@@ -228,9 +228,7 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         OpcodeId::LOG4 => Log::gen_associated_ops,
         OpcodeId::CALL => CallOpcode::<7>::gen_associated_ops,
         OpcodeId::STATICCALL => CallOpcode::<6>::gen_associated_ops,
-        OpcodeId::RETURN => Return::gen_associated_ops,
-        // REVERT is almost the same as RETURN
-        OpcodeId::REVERT => Return::gen_associated_ops,
+        OpcodeId::RETURN | OpcodeId::REVERT => ReturnRevert::gen_associated_ops,
         OpcodeId::SELFDESTRUCT => {
             warn!("Using dummy gen_selfdestruct_ops for opcode SELFDESTRUCT");
             DummySelfDestruct::gen_associated_ops
