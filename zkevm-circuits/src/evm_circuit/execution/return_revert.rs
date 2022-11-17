@@ -48,7 +48,6 @@ pub(crate) struct ReturnRevertGadget<F> {
     reversion_info: ReversionInfo<F>,
 }
 
-// TODO: rename this is reflect the fact that is handles REVERT as well.
 impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
     const NAME: &'static str = "RETURN_REVERT";
 
@@ -99,10 +98,10 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
             );
         });
 
-        let is_contract_deployed =
+        let is_contract_deployment =
             is_create.clone() * is_success.expr() * not::expr(copy_rw_increase_is_zero.expr());
         let (caller_id, address, reversion_info, code_hash) =
-            cb.condition(is_contract_deployed.clone(), |cb| {
+            cb.condition(is_contract_deployment.clone(), |cb| {
                 // We don't need to place any additional constraints on code_hash because the
                 // copy circuit enforces that it is the hash of the bytes in the copy lookup.
                 let code_hash = cb.query_cell();
@@ -119,8 +118,11 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
                     copy_rw_increase.expr(),
                 );
 
-                let caller_id = cb.call_context(None, CallContextFieldTag::CallerId);
-                let address = cb.call_context(None, CallContextFieldTag::CalleeAddress);
+                let [caller_id, address] = [
+                    CallContextFieldTag::CallerId,
+                    CallContextFieldTag::CalleeAddress,
+                ]
+                .map(|tag| cb.call_context(None, tag));
                 let mut reversion_info = cb.reversion_info_read(None);
 
                 let empty_code_hash_rlc = Word::random_linear_combine_expr(
@@ -164,8 +166,6 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
         });
 
         // Case C in the specs.
-        // TODO: have copy_table_lookup update rw_counter expression so that this can go
-        // at the end of the constraints.
         let restore_context = cb.condition(not::expr(is_root.expr()), |cb| {
             RestoreContextGadget::construct(
                 cb,
@@ -174,7 +174,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
                 range.offset(),
                 range.length(),
                 memory_expansion.gas_cost(),
-                is_contract_deployed, // There is one reversible write when this is the case.
+                is_contract_deployment, // There is one reversible write in this case.
             )
         });
 
@@ -313,8 +313,9 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
         self.copy_rw_increase_is_zero
             .assign(region, offset, F::from(copy_rw_increase))?;
 
+        let is_contract_deployment = call.is_create && call.is_success && !length.is_zero();
         if !call.is_root {
-            let rw_counter_offset = 3 + if call.is_create && call.is_success && !length.is_zero() {
+            let rw_counter_offset = 3 + if is_contract_deployment {
                 5 + length.as_u64()
             } else {
                 0
@@ -366,14 +367,15 @@ mod test {
     const CALLER_ADDRESS: Address = Address::repeat_byte(0x34);
 
     fn callee_bytecode(is_return: bool, offset: u64, length: u64) -> Bytecode {
+        let memory_bytes = [0x60; 10];
         let memory_address = 0;
-        let memory_value = Word::from_big_endian(&[0x60; 10]);
+        let memory_value = Word::from_big_endian(&memory_bytes);
         let mut code = bytecode! {
             PUSH10(memory_value)
             PUSH1(memory_address)
             MSTORE
             PUSH2(length)
-            PUSH2(22 + offset)
+            PUSH2(32u64 - memory_bytes.len().try_into().unwrap() + offset)
         };
         code.write_op(if is_return {
             OpcodeId::RETURN

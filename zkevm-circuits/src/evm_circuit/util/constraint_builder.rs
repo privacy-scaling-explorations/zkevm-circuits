@@ -722,10 +722,10 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
 
         self.rw_lookup(name, true.expr(), tag, values.clone());
 
+        // Revert if is_persistent is 0
         if let Some(reversion_info) = reversion_info {
-            // Revert if is_persistent is 0
-            // To allow conditional reversible writes, we extract the prexisting condition
-            // here.
+            // To allow conditional reversible writes, we extract the pre-existing condition
+            // here if it exists, and then reset it afterwards.
             let condition = self.condition.clone();
             self.condition = None;
             self.condition(
