@@ -1,7 +1,7 @@
 use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
 use crate::evm::{Opcode, OpcodeId};
 use crate::Error;
-use eth_types::{GethExecStep, ToAddress, ToWord};
+use eth_types::{GethExecStep, ToAddress, ToWord, Word};
 
 #[derive(Debug, Copy, Clone)]
 pub(crate) struct ErrorInvalidJump;
@@ -23,9 +23,9 @@ impl Opcode for ErrorInvalidJump {
         assert!(geth_step.op == OpcodeId::JUMP || geth_step.op == OpcodeId::JUMPI);
         let is_jumpi = geth_step.op == OpcodeId::JUMPI;
         let dest = geth_steps[0].stack.last()?.to_address();
-        let mut condition = 0;
+        let mut condition: Word = Word::zero();
         if is_jumpi {
-            condition = geth_step.stack.nth_last(1)?.as_usize();
+            condition = geth_step.stack.nth_last(1)?;
         }
         state.stack_read(
             &mut exec_step,
@@ -36,7 +36,7 @@ impl Opcode for ErrorInvalidJump {
             state.stack_read(
                 &mut exec_step,
                 geth_step.stack.nth_last_filled(1),
-                condition.into(),
+                condition,
             )?;
         }
         // `IsSuccess` call context operation is added in gen_restore_context_ops
