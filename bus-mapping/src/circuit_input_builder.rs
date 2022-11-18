@@ -43,6 +43,9 @@ pub struct CircuitsParams {
     /// Maximum number of txs in the Tx Circuit
     pub max_txs: usize,
     // TODO: max_calldata: Maximum number of bytes from all txs calldata in the Tx Circuit
+    /// Pad the keccak circuit with this number of invocations to a static
+    /// capacity
+    pub keccak_padding: Option<usize>,
 }
 
 impl Default for CircuitsParams {
@@ -51,6 +54,7 @@ impl Default for CircuitsParams {
         CircuitsParams {
             max_rws: 1000,
             max_txs: 1,
+            keccak_padding: None,
         }
     }
 }
