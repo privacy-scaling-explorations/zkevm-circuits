@@ -144,7 +144,7 @@ mod tests {
         let mut builder = BlockData::new_from_geth_data_with_params(
             block.clone(),
             CircuitsParams {
-                max_rws: 8192,
+                max_rws: 1 << (degree - 1),
                 ..Default::default()
             },
         )
