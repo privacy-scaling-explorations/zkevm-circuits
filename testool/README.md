@@ -12,7 +12,7 @@ The oneliner spec is invoked by using `--oneliner` parameter
 
 The spec has the following form
 
-`txparams` `account`1 `account`2 ... `account`n
+`txparams` `account 1` `account 2` ... `account n`
 
 where 
 
@@ -27,15 +27,14 @@ where
 
 example
 
-- `call 12;60016002`: call contract `0x...12` that contains the code PUSH1(1) PUSH1(2)
-- `call;;2000 12;PUSH1(0),SLOAD,CALLVALUE,EQ,PUSH1(1),SSTORE;;00:2000`: callthe contract and send 2000 as value, and compare with the stored value (2000) in the slot 0, write into slot 1 
+- `../target/release/testool --oneliner "call 12;60016002"`: call contract `0x...12` that contains the code PUSH1(1) PUSH1(2)
+- `../target/release/testool --oneliner "call;;2000 12;PUSH1(0),SLOAD,CALLVALUE,EQ,PUSH1(1),SSTORE;;00:2000"`: call the contract and send 2000 as value, and compare with the stored value (2000) in the slot 0, write into slot 1 
 
 ## Run the ethereum tests
 
 The "official EVM" ethereum tests are cloned as a gitmodule in `testool/tests`.
 We are using the tests located in `testtool/tests/src/GeneralStateTestsFiller`, but other locations can be specified, also.
 
-There are two ways to execute the tests, in "debug mode
 
 ### The ethereum tests files
 

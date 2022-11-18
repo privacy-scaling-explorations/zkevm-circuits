@@ -43,6 +43,10 @@ struct Args {
     #[clap(long)]
     inspect: Option<String>,
 
+    /// Do not execute any test, just list collected tests
+    #[clap(long)]
+    ls: bool,
+
     /// Cache execution results
     #[clap(long)]
     cache: bool,
@@ -107,6 +111,15 @@ fn go() -> Result<()> {
     let state_tests = load_statetests_suite(&suite.path, config, compiler)?;
     log::info!("{} tests collected in {}", state_tests.len(), suite.path);
 
+    if args.ls {
+        let mut list: Vec<_> = state_tests.into_iter().map(|t| t.id).collect();
+        list.sort();
+        for test in list {
+            println!("{}", test);
+        }
+        return Ok(());
+    }
+
     if let Some(test_id) = args.inspect {
         // Test only one and return
         let mut state_tests_filtered: Vec<_> =
@@ -118,7 +131,7 @@ fn go() -> Result<()> {
                 test_id
             );
             for test in state_tests.iter().filter(|t| t.id.contains(&test_id)) {
-                println!("- {}", test.id);
+                println!("{}", test.id);
             }
             bail!("test '{}' not found", test_id);
         }
