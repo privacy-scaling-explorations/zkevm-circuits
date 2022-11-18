@@ -189,7 +189,6 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
             let mut constraints = vec![];
             let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
             let q_enable = q_enable(meta);
-            let is_branch_init_prev = meta.query_advice(branch.is_init, Rotation::prev());
 
             let mut rot = 0;
             if !is_s {
@@ -226,7 +225,6 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                 "s_main RLC",
                 q_not_first.clone()
                     * q_enable.clone()
-                    * (one.clone() - is_branch_init_prev.clone())
                     * (rlc - acc_s.clone()),
             ));
 
@@ -290,7 +288,6 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                 "Hashed extension node RLC",
                 q_not_first.clone()
                     * q_enable.clone()
-                    * (one.clone() - is_branch_init_prev.clone())
                     * is_branch_hashed.clone()
                     * (rlc - acc_c.clone()),
             ));
@@ -305,7 +302,6 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                 "Non-hashed extension node RLC",
                 q_not_first
                     * q_enable
-                    * (one.clone() - is_branch_init_prev)
                     * (one.clone() - is_branch_hashed)
                     * (rlc_non_hashed_branch - acc_c),
             ));
@@ -362,8 +358,6 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
             let is_ext_node_non_hashed =
                 meta.query_advice(is_ext_node_non_hashed, Rotation(rot_into_branch_init));
 
-            let is_branch_init_prev = meta.query_advice(branch.is_init, Rotation::prev());
-
             /*
             We first check that the selectors in branch init row are boolean.
 
@@ -390,8 +384,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                 "Bool check is_ext_short_c16",
                 get_bool_constraint(
                     q_not_first.clone()
-                        * q_enable.clone()
-                        * (one.clone() - is_branch_init_prev.clone()),
+                        * q_enable.clone(),
                     is_ext_short_c16.clone(),
                 ),
             ));
@@ -399,8 +392,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                 "Bool check is_ext_short_c1",
                 get_bool_constraint(
                     q_not_first.clone()
-                        * q_enable.clone()
-                        * (one.clone() - is_branch_init_prev.clone()),
+                        * q_enable.clone(),
                     is_ext_short_c1.clone(),
                 ),
             ));
@@ -408,8 +400,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                 "Bool check is_ext_long_even_c16",
                 get_bool_constraint(
                     q_not_first.clone()
-                        * q_enable.clone()
-                        * (one.clone() - is_branch_init_prev.clone()),
+                        * q_enable.clone(),
                     is_ext_long_even_c16.clone(),
                 ),
             ));
@@ -417,8 +408,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                 "Bool check is_ext_long_even_c1",
                 get_bool_constraint(
                     q_not_first.clone()
-                        * q_enable.clone()
-                        * (one.clone() - is_branch_init_prev.clone()),
+                        * q_enable.clone(),
                     is_ext_long_even_c1.clone(),
                 ),
             ));
@@ -426,8 +416,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                 "Bool check is_ext_long_odd_c16",
                 get_bool_constraint(
                     q_not_first.clone()
-                        * q_enable.clone()
-                        * (one.clone() - is_branch_init_prev.clone()),
+                        * q_enable.clone(),
                     is_ext_long_odd_c16.clone(),
                 ),
             ));
@@ -435,8 +424,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                 "Bool check is_ext_long_odd_c1",
                 get_bool_constraint(
                     q_not_first.clone()
-                        * q_enable.clone()
-                        * (one.clone() - is_branch_init_prev.clone()),
+                        * q_enable.clone(),
                     is_ext_long_odd_c1.clone(),
                 ),
             ));
@@ -444,8 +432,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                 "Bool check is_ext_longer_than_55",
                 get_bool_constraint(
                     q_not_first.clone()
-                        * q_enable.clone()
-                        * (one.clone() - is_branch_init_prev.clone()),
+                        * q_enable.clone(),
                     is_ext_longer_than_55.clone(),
                 ),
             ));
@@ -453,8 +440,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                 "Bool check is_ext_node_non_hashed",
                 get_bool_constraint(
                     q_not_first.clone()
-                        * q_enable.clone()
-                        * (one.clone() - is_branch_init_prev.clone()),
+                        * q_enable.clone(),
                     is_ext_node_non_hashed,
                 ),
             ));
@@ -476,8 +462,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                 "Bool check extension node selectors sum",
                 get_bool_constraint(
                     q_not_first.clone()
-                        * q_enable.clone()
-                        * (one.clone() - is_branch_init_prev.clone()),
+                        * q_enable.clone(),
                     is_ext_short_c16.clone()
                         + is_ext_short_c1.clone()
                         + is_ext_long_even_c16.clone()
@@ -515,7 +500,6 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                     "Branch c16/c1 selector - extension c16/c1 selector",
                     q_not_first.clone()
                         * q_enable.clone()
-                        * (one.clone() - is_branch_init_prev.clone())
                         * ext_sel.clone()
                         * (branch_sel - ext_sel),
                 ));
@@ -541,8 +525,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                 "Bool check is_inserted_ext_node_s",
                 get_bool_constraint(
                     q_not_first.clone()
-                        * q_enable.clone()
-                        * (one.clone() - is_branch_init_prev.clone()), // TODO: why is this needed?
+                        * q_enable.clone(),
                     is_inserted_ext_node_s.clone(),
                 ),
             ));
@@ -550,8 +533,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                 "Bool check is_inserted_ext_node_c",
                 get_bool_constraint(
                     q_not_first.clone()
-                        * q_enable.clone()
-                        * (one.clone() - is_branch_init_prev.clone()),
+                        * q_enable.clone(),
                     is_inserted_ext_node_c.clone(),
                 ),
             ));
@@ -559,8 +541,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                 "is_inserted_ext_node_s + is_inserted_ext_node_c is boolean",
                 get_bool_constraint(
                     q_not_first.clone()
-                        * q_enable.clone()
-                        * (one.clone() - is_branch_init_prev.clone()),
+                        * q_enable.clone(),
                     (is_inserted_ext_node_s + is_inserted_ext_node_c),
                 ),
             ));
@@ -801,7 +782,6 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
         meta.lookup_any("Extension node branch hash in extension row", |meta| {
             let q_enable = q_enable(meta);
             let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
-            let is_branch_init_prev = meta.query_advice(branch.is_init, Rotation::prev());
 
             let c_rlp2 = meta.query_advice(c_main.rlp2, Rotation::cur());
             let is_branch_hashed = c_rlp2 * c160_inv.clone();
@@ -823,7 +803,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
             let hash_rlc = bytes_expr_into_rlc(&sc_hash, power_of_randomness[0].clone());
 
             let selector =
-                q_not_first * q_enable * (one.clone() - is_branch_init_prev) * is_branch_hashed;
+                q_not_first * q_enable * is_branch_hashed;
 
             let mut table_map = Vec::new();
             let keccak_is_enabled = meta.query_advice(keccak_table.is_enabled, Rotation::cur());
