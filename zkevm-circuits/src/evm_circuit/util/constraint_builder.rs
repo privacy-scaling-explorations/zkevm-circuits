@@ -719,6 +719,8 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
             "Reversible write requires reversible tag"
         );
 
+        
+
         self.rw_lookup(name, true.expr(), tag, values.clone());
 
         if let Some(reversion_info) = reversion_info {

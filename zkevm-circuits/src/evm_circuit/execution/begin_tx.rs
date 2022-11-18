@@ -104,11 +104,11 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         );
 
         cb.require_equal(
-            "nonce, nonce_prev and neutral_invalid_tx",
+            "nonce, nonce_prev and invalid_tx_tx",
             tx_nonce.expr() + 1.expr(),
-            tx_nonce.expr()+ 1.expr() + is_tx_invalid.expr()
+            tx_nonce.expr()+ 1.expr() - is_tx_invalid.expr()
         );
-        let is_nonce_valid = IsZeroGadget::construct(cb, tx_nonce.expr()+ 1.expr() + is_tx_invalid.expr());
+        let is_nonce_valid = IsZeroGadget::construct(cb, 1.expr() + is_tx_invalid.expr());
 
         // TODO: Implement EIP 1559 (currently it only supports legacy
         // transaction format)
@@ -154,14 +154,17 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             &mut reversion_info,
         );
 
+        // Verify transfer
         let sender_balance_prev = transfer_with_gas_fee.sender.balance_prev();
+        
+        /*
         let balance_not_enough = LtWordGadget::construct(
             cb,
             sender_balance_prev,
             &tx_value,
         );
 
-        /*
+        
         let invalid_tx_tmp = MulWordByU64Gadget::construct(
             cb,
             balance_not_enough.product().clone(),
@@ -189,7 +192,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             ),
         );
 
-        cb.condition(is_empty_code_hash.expr() + is_tx_invalid.expr(), |cb| {
+        cb.condition(is_empty_code_hash.expr(), |cb| {
             cb.require_equal(
                 "Tx to account with empty code should be persistent",
                 reversion_info.is_persistent(),

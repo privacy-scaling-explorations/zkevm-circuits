@@ -31,7 +31,7 @@ pub struct Transaction {
     /// The gas cost for transaction call data
     pub call_data_gas_cost: u64,
     /// neutral invalid
-    pub neutral_invalid: u64,
+    pub invalid_tx: u64,
     /// The calls made in the transaction
     pub calls: Vec<Call>,
     /// The steps executioned in the transaction
@@ -107,7 +107,7 @@ impl Transaction {
                     F::from(self.id as u64),
                     F::from(TxContextFieldTag::TxInvalid as u64),
                     F::zero(),
-                    F::from(self.neutral_invalid),
+                    F::from(self.invalid_tx),
                 ]
             ],
             self.call_data
@@ -143,7 +143,7 @@ pub(super) fn tx_convert(tx: &circuit_input_builder::Transaction, id: usize) -> 
             .input
             .iter()
             .fold(0, |acc, byte| acc + if *byte == 0 { 4 } else { 16 }),
-        neutral_invalid: tx.neutral_invalid,
+        invalid_tx: tx.invalid_tx,
         calls: tx
             .calls()
             .iter()
