@@ -7,6 +7,7 @@ use halo2_proofs::{
 use std::marker::PhantomData;
 
 use crate::{
+    mpt_circuit::branch::BranchCols,
     mpt_circuit::columns::{AccumulatorCols, DenoteCols, MainCols},
     mpt_circuit::helpers::{
         compute_rlc, get_is_extension_node, get_is_extension_node_one_nibble, mult_diff_lookup,
@@ -69,6 +70,7 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
         not_first_level: Column<Advice>,
         s_main: MainCols<F>,
         c_main: MainCols<F>,
+        branch: BranchCols<F>,
         accs: AccumulatorCols<F>, /* accs.acc_c contains mult_diff_nonce, initially key_rlc was
                                    * used for mult_diff_nonce, but it caused PoisonedConstraint
                                    * in extension_node_key */
@@ -96,7 +98,7 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
         let rot_branch_init = -ACCOUNT_DRIFTED_LEAF_IND - BRANCH_ROWS_NUM;
 
         meta.create_gate(
-            "Account drifted leaf: intermediate leaf RLC after key",
+            "Account drifted leaf: intermediate leaf RLC after key & inserted extension node selector",
             |meta| {
                 let q_enable = q_enable(meta);
                 let mut constraints = vec![];
@@ -166,9 +168,30 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
                 */
                 constraints.push((
                     "Account leaf key intermediate RLC",
+                    q_enable.clone()
+                        * (is_branch_s_placeholder + is_branch_c_placeholder) // drifted leaf appears only when there is a placeholder branch
+                        * (expr - acc),
+                ));
+                 
+                let is_mod_ext_node_s_before_mod_next = meta.query_advice(branch.is_mod_ext_node_s_before_mod, Rotation(1));
+                let is_inserted_ext_node_s = meta.query_advice(
+                    c_main.rlp1,
+                    Rotation(rot_branch_init),
+                );
+                let is_inserted_ext_node_c = meta.query_advice(
+                    c_main.rlp2,
+                    Rotation(rot_branch_init),
+                );
+
+                /*
+                Ensure there are inserted extension rows after account leaf in case 
+                we have a selector for `is_inserted_ext_node` enabled.
+                */
+                constraints.push((
+                    "Inserted extension node rows after account leaf",
                     q_enable
-                * (is_branch_s_placeholder + is_branch_c_placeholder) // drifted leaf appears only when there is a placeholder branch
-                * (expr - acc),
+                        * (is_inserted_ext_node_s + is_inserted_ext_node_c)
+                        * (one.clone() - is_mod_ext_node_s_before_mod_next),
                 ));
 
                 constraints

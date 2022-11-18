@@ -542,7 +542,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                 get_bool_constraint(
                     q_not_first.clone()
                         * q_enable.clone(),
-                    (is_inserted_ext_node_s + is_inserted_ext_node_c),
+                    is_inserted_ext_node_s + is_inserted_ext_node_c,
                 ),
             ));
 

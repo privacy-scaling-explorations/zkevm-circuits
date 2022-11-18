@@ -638,6 +638,8 @@ impl<F: FieldExt> SelectorsConfig<F> {
                 Note: It needs to be ensured that when an extension node is inserted (specified
                 in the branch init row), there are inserted extension node rows after storage or
                 account leaf (so that constraints related to these rows are checked).
+                This is ensured in the last row of an account leaf and storage leaf: 
+                `ACCOUNT_DRIFTED_LEAF` and `LEAF_NON_EXISTING` respectively.
                 */
                 constraints.push((
                     "Modified extension node S before modification follows storage leaf non existing row or account leaf in added branch row",
