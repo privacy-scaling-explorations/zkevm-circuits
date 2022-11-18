@@ -127,11 +127,7 @@ pub fn test_circuits_witness_block(
 }
 
 /// generate rand tx for pi circuit
-pub fn rand_tx<R: Rng + CryptoRng>(
-    mut rng: R,
-    chain_id: u64,
-    has_calldata: bool,
-) -> Transaction {
+pub fn rand_tx<R: Rng + CryptoRng>(mut rng: R, chain_id: u64, has_calldata: bool) -> Transaction {
     let wallet0 = LocalWallet::new(&mut rng).with_chain_id(chain_id);
     let wallet1 = LocalWallet::new(&mut rng).with_chain_id(chain_id);
     let from = wallet0.address();
