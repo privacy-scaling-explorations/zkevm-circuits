@@ -344,7 +344,7 @@ impl<F: FieldExt> SelectorsConfig<F> {
             is_non_existing_account_proof = 4
             is_account_delete_mod = 5
             is_storage_mod = 6
-            is_non_existing_storage_proof = 7 // TODO
+            is_non_existing_storage_proof = 7
             */
             constraints.push((
                 "Nonce lookup enabled in ACCOUNT_LEAF_NONCE_BALANCE_S row when is_nonce_mod proof",
@@ -507,7 +507,7 @@ impl<F: FieldExt> SelectorsConfig<F> {
                 constraints.push((
                     "Account leaf key S can appear only after certain row types",
                     q_not_first.clone()
-                    * (is_leaf_non_existing_prev - is_account_leaf_key_s_cur.clone())
+                    * (is_leaf_non_existing_prev.clone() - is_account_leaf_key_s_cur.clone())
                     * (is_extension_node_c_prev.clone() - is_account_leaf_key_s_cur.clone())
                     * is_account_leaf_key_s_cur.clone(), // this is to check it only when we are in the account leaf key S
                 ));
@@ -586,7 +586,7 @@ impl<F: FieldExt> SelectorsConfig<F> {
                     "Storage leaf key S follows extension node C or account leaf storage codehash C",
                     q_not_first.clone()
                     * (is_extension_node_c_prev - is_leaf_s_key_cur.clone())
-                    * (is_account_leaf_in_added_branch_prev - is_leaf_s_key_cur.clone()) // when storage leaf without branch
+                    * (is_account_leaf_in_added_branch_prev.clone() - is_leaf_s_key_cur.clone()) // when storage leaf without branch
                     * is_leaf_s_key_cur,
                 ));
 
@@ -630,7 +630,22 @@ impl<F: FieldExt> SelectorsConfig<F> {
                     q_not_first.clone() * (is_leaf_in_added_branch_prev - is_leaf_non_existing_cur),
                 ));
 
-                // TODO: mod_ext_node rows after leaf rows when inserted extension node
+
+                /*
+                Modified extension node S before modification row follows storage leaf non existing row
+                or account leaf in added branch row.
+
+                Note: It needs to be ensured that when an extension node is inserted (specified
+                in the branch init row), there are inserted extension node rows after storage or
+                account leaf (so that constraints related to these rows are checked).
+                */
+                constraints.push((
+                    "Modified extension node S before modification follows storage leaf non existing row or account leaf in added branch row",
+                    q_not_first.clone()
+                        * is_mod_ext_node_s_before_mod_cur.clone() // only if we are in modified extension node S before modification row 
+                        * (is_leaf_non_existing_prev - is_mod_ext_node_s_before_mod_cur.clone())
+                        * (is_account_leaf_in_added_branch_prev - is_mod_ext_node_s_before_mod_cur),
+                ));
 
                 /*
                 Modified extension node S before modification can appear only before modified extension node C before modification.

@@ -528,6 +528,43 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
             constrain_sel(is_branch_c16, is_ext_long_odd_c16.clone());
             constrain_sel(is_branch_c1, is_ext_long_odd_c1.clone());
 
+            let is_inserted_ext_node_s = meta.query_advice(
+                c_main.rlp1,
+                Rotation(rot_into_branch_init),
+            );
+            let is_inserted_ext_node_c = meta.query_advice(
+                c_main.rlp2,
+                Rotation(rot_into_branch_init),
+            );
+
+            constraints.push((
+                "Bool check is_inserted_ext_node_s",
+                get_bool_constraint(
+                    q_not_first.clone()
+                        * q_enable.clone()
+                        * (one.clone() - is_branch_init_prev.clone()), // TODO: why is this needed?
+                    is_inserted_ext_node_s.clone(),
+                ),
+            ));
+            constraints.push((
+                "Bool check is_inserted_ext_node_c",
+                get_bool_constraint(
+                    q_not_first.clone()
+                        * q_enable.clone()
+                        * (one.clone() - is_branch_init_prev.clone()),
+                    is_inserted_ext_node_c.clone(),
+                ),
+            ));
+            constraints.push((
+                "is_inserted_ext_node_s + is_inserted_ext_node_c is boolean",
+                get_bool_constraint(
+                    q_not_first.clone()
+                        * q_enable.clone()
+                        * (one.clone() - is_branch_init_prev.clone()),
+                    (is_inserted_ext_node_s + is_inserted_ext_node_c),
+                ),
+            ));
+
             // In C we have nibbles, we check below only for S.
             if is_s {
                 let s_rlp1 = meta.query_advice(s_main.rlp1, Rotation::cur());
@@ -946,11 +983,27 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                     s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM],
                     Rotation(rot_into_branch_init),
                 );
+                let mut is_inserted_ext_node = meta.query_advice(
+                    /* rlp2 (corresponds to IS_INSERTED_EXT_NODE_C_POS) is correct here,
+                    that means in S proof we have a copy of C extension node,
+                    while the actual S extension node is stored in the rows below the leaf.
+                    */
+                    c_main.rlp2,
+                    Rotation(rot_into_branch_init),
+                );
                 if !is_s {
                     rot_into_branch_init = -18;
                     rot_into_last_branch_child = -2;
                     is_branch_placeholder = meta.query_advice(
                         s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
+                        Rotation(rot_into_branch_init),
+                    );
+                    is_inserted_ext_node = meta.query_advice(
+                        /* rlp1 (corresponds to IS_INSERTED_EXT_NODE_S_POS) is correct here,
+                        that means in C proof we have a copy of S extension node,
+                        while the actual C extension node is stored in the rows below the leaf.
+                        */
+                        c_main.rlp1,
                         Rotation(rot_into_branch_init),
                     );
                 }
@@ -998,6 +1051,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                     * is_extension_node
                     * is_after_last_branch_child
                     * is_account_leaf_in_added_branch
+                    * (one.clone() - is_inserted_ext_node)
                     * (one.clone() - is_branch_placeholder);
 
                 let mut table_map = Vec::new();
