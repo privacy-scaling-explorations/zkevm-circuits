@@ -442,7 +442,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
         let tx_tag_is_cdl_config = IsZeroChip::configure(
             meta,
             |meta| meta.query_selector(q_tx_table),
-            |meta| meta.query_advice(tag, Rotation::cur()) - TxFieldTag::CallDataLength.expr(),
+            |meta| meta.query_fixed(tag, Rotation::cur()) - TxFieldTag::CallDataLength.expr(),
             tx_id_inv,
         );
 
@@ -532,7 +532,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
             offset,
             || Value::known(F::zero()),
         )?;
-        region.assign_advice(
+        region.assign_fixed(
             || "tag",
             self.tx_table.tag,
             offset,
@@ -710,7 +710,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
             calldata_offset,
             || Value::known(tx_id_inv),
         )?;
-        region.assign_advice(
+        region.assign_fixed(
             || "tag",
             self.tx_table.tag,
             calldata_offset,
