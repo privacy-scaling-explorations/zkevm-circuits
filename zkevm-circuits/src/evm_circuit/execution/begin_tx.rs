@@ -10,7 +10,7 @@ use crate::{
                 Transition::{Delta, To},
             },
             math_gadget::{IsEqualGadget, IsZeroGadget, MulWordByU64Gadget, RangeCheckGadget, LtWordGadget},
-            select, CachedRegion, Cell, RandomLinearCombination, Word,
+            select, CachedRegion, Cell, RandomLinearCombination, Word, rlc, from_bytes,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -108,11 +108,13 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             tx_nonce.expr() + 1.expr(),
             tx_nonce.expr()+ 1.expr() - is_tx_invalid.expr()
         );
-        let is_nonce_valid = IsZeroGadget::construct(cb, 1.expr() + is_tx_invalid.expr());
+
+        let is_nonce_valid = IsZeroGadget::construct(cb, is_tx_invalid.expr());
 
         // TODO: Implement EIP 1559 (currently it only supports legacy
         // transaction format)
         // Calculate transaction gas fee
+
         let mul_gas_fee_by_gas =
             MulWordByU64Gadget::construct(cb, tx_gas_price.clone(), tx_gas.expr());
 
@@ -144,33 +146,31 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             None,
         );
 
+
         // Transfer value from caller to callee
+        let intrinsic_tx_value = select::expr(
+            is_tx_invalid.expr(),
+            tx_value.clone().expr(),
+            0.expr()
+        );
+
+        let intrinsic_mul_gas_fee_by_gas = select::expr(
+            is_tx_invalid.expr(),
+            mul_gas_fee_by_gas.product().clone().expr(),
+            0.expr()
+        );
+
         let transfer_with_gas_fee = TransferWithGasFeeGadget::construct(
             cb,
             tx_caller_address.expr(),
             tx_callee_address.expr(),
-            tx_value.clone(),
+            intrinsic_tx_value.expr(), // tx_value.clone(),
             mul_gas_fee_by_gas.product().clone(),
             &mut reversion_info,
         );
 
         // Verify transfer
         let sender_balance_prev = transfer_with_gas_fee.sender.balance_prev();
-        
-        /*
-        let balance_not_enough = LtWordGadget::construct(
-            cb,
-            sender_balance_prev,
-            &tx_value,
-        );
-
-        
-        let invalid_tx_tmp = MulWordByU64Gadget::construct(
-            cb,
-            balance_not_enough.product().clone(),
-            is_nonce_valid.product().clone(),
-        );
-        */
 
         // TODO: Handle creation transaction
         // TODO: Handle precompiled
@@ -192,7 +192,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             ),
         );
 
-        cb.condition(is_empty_code_hash.expr(), |cb| {
+        cb.condition(is_empty_code_hash.expr() + is_tx_invalid.expr(), |cb| {
             cb.require_equal(
                 "Tx to account with empty code should be persistent",
                 reversion_info.is_persistent(),
@@ -470,6 +470,7 @@ mod test {
             ..Default::default()
         }
     }
+
 
     #[test]
     fn begin_tx_gadget_simple() {
