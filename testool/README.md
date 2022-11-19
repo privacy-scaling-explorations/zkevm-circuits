@@ -19,10 +19,10 @@ where
 - `txparams` have the form `call|create`;`calldata`;`value`;`gas`
   - if `create`is specified the `to` field in the tx is left blank, is not the first account specified is used as the contract to call
   - `calldata`,`value` and `gas` are optional
-- `account` have the form `address`;`code`;`balance`;`slot`1:`value`1;..`slot`n..`value`n
+- `account` have the form `address`;`code`;`balance`;`slot 1`:`value 1`;..`slot n`..`value n`
   - `address` can be shortened, eg.`10` and `0x10` is expanded to `0x....10`
   - `code` is optional, and can be specified in hex or in asm (`PUSH1(1),PUSH1(1),MLOAD`)
-  - `balance` and `value` areoptional
+  - `balance` and `value` are optional
   - `slot` and `value` can be specified multiple times 
 
 example
@@ -31,6 +31,17 @@ example
 - `../target/release/testool --oneliner "call;;2000 12;PUSH1(0),SLOAD,CALLVALUE,EQ,PUSH1(1),SSTORE;;00:2000"`: call the contract and send 2000 as value, and compare with the stored value (2000) in the slot 0, write into slot 1 
 
 ## Run the ethereum tests
+
+Run
+
+```
+ ../target/release/testool --suite default
+```
+or
+
+```
+ ../target/release/testool --suite nightly
+```
 
 The "official EVM" ethereum tests are cloned as a gitmodule in `testool/tests`.
 We are using the tests located in `testtool/tests/src/GeneralStateTestsFiller`, but other locations can be specified, also.
@@ -77,7 +88,7 @@ Test sets are created by using the `[[set]]` section and should define
 Sometimes there are some files or specific tests that we want to disable at all. Those are defined with:
 
 - `[[skip_test]]` defines a set of tests that are always ignored.
-- `[[skip_path]]` defined a set of files/folders that are always ignored. This is usefull sice sometimes there are some tests with weird encodings.
+- `[[skip_path]]` defined a set of files/folders that are always ignored. This is useful since sometimes there are some tests with weird encodings.
 
 ### Generating reports
 
@@ -92,7 +103,7 @@ NOTE: if you do not execute with `--report` the tool will exit the process with 
 
 ### Manually executing the tests
 
-Usually we have to debug and run the tests manually to check if everything works ok. We provide a set of command line parameters to help tis.
+Usually we have to debug and run the tests manually to check if everything works ok. We provide a set of command line parameters to help with this.
 
 - `testool [--suite xxx] --cache` to execute all tests, and keeping the results (cache) CSV file. If you delete entries from the cache file, and re-run the tool again, only the deleted tests will be executed again
 
