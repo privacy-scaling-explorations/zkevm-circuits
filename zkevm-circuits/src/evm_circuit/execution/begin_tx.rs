@@ -34,6 +34,7 @@ pub(crate) struct BeginTxGadget<F> {
     tx_callee_address: Cell<F>,
     tx_is_create: Cell<F>,
     tx_value: Word<F>,
+    intrinsic_tx_value: Word<F>,
     tx_call_data_length: Cell<F>,
     tx_call_data_gas_cost: Cell<F>,
     reversion_info: ReversionInfo<F>,
@@ -148,6 +149,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 
 
         // Transfer value from caller to callee
+        /* 
         let intrinsic_tx_value = select::expr(
             is_tx_invalid.expr(),
             tx_value.clone().expr(),
@@ -159,12 +161,30 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             mul_gas_fee_by_gas.product().clone().expr(),
             0.expr()
         );
+        */
+
+        let intrinsic_tx_value = cb.query_word();
+        cb.condition(is_tx_invalid.expr(), |cb| {
+            cb.require_equal(
+                "intrinsic_tx_value == 0",
+                intrinsic_tx_value.expr(),
+                0.expr(),
+            );
+        });
+
+        cb.condition(1.expr() - is_tx_invalid.expr(), |cb| {
+            cb.require_equal(
+                "intrinsic_tx_value == tx_value",
+                intrinsic_tx_value.expr(),
+                tx_value.expr(),
+            );
+        });
 
         let transfer_with_gas_fee = TransferWithGasFeeGadget::construct(
             cb,
             tx_caller_address.expr(),
             tx_callee_address.expr(),
-            intrinsic_tx_value.expr(), // tx_value.clone(),
+            tx_value.clone(),
             mul_gas_fee_by_gas.product().clone(),
             &mut reversion_info,
         );
@@ -293,6 +313,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             tx_callee_address,
             tx_is_create,
             tx_value,
+            intrinsic_tx_value,
             tx_call_data_length,
             tx_call_data_gas_cost,
             reversion_info,
@@ -366,6 +387,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         self.sufficient_gas_left
             .assign(region, offset, F::from(tx.gas - step.gas_cost))?;
 
+        self.intrinsic_tx_value.assign(region, offset, Some(tx.value.to_le_bytes()))?;
+
         self.transfer_with_gas_fee.assign(
             region,
             offset,
@@ -374,6 +397,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             tx.value,
             gas_fee,
         )?;
+
         self.code_hash.assign(
             region,
             offset,
