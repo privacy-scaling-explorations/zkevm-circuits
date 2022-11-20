@@ -17,7 +17,7 @@ use crate::{
     table::{AccountFieldTag, CallContextFieldTag, TxFieldTag as TxContextFieldTag},
     util::Expr,
 };
-use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar};
+use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar, U256};
 use halo2_proofs::circuit::Value;
 use halo2_proofs::plonk::Error;
 use keccak256::EMPTY_HASH_LE;
@@ -387,16 +387,27 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         self.sufficient_gas_left
             .assign(region, offset, F::from(tx.gas - step.gas_cost))?;
 
-        self.intrinsic_tx_value.assign(region, offset, Some(tx.value.to_le_bytes()))?;
-
-        self.transfer_with_gas_fee.assign(
-            region,
-            offset,
-            caller_balance_pair,
-            callee_balance_pair,
-            tx.value,
-            gas_fee,
-        )?;
+        if tx.invalid_tx >= 1 {
+            self.intrinsic_tx_value.assign(region, offset, Some(U256::zero().to_le_bytes()))?;
+            self.transfer_with_gas_fee.assign(
+                region,
+                offset,
+                caller_balance_pair,
+                callee_balance_pair,
+                U256::zero(),
+                U256::zero(),
+            )?;
+        } else {
+            self.intrinsic_tx_value.assign(region, offset, Some(tx.value.to_le_bytes()))?;
+            self.transfer_with_gas_fee.assign(
+                region,
+                offset,
+                caller_balance_pair,
+                callee_balance_pair,
+                tx.value,
+                gas_fee,
+            )?;
+        }
 
         self.code_hash.assign(
             region,
