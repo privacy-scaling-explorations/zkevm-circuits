@@ -250,8 +250,6 @@ pub(crate) struct UpdateBalanceGadget<F, const N_ADDENDS: usize, const INCREASE:
     add_words: AddWordsGadget<F, N_ADDENDS, true>,
 }
 
-
-
 impl<F: Field, const N_ADDENDS: usize, const INCREASE: bool>
     UpdateBalanceGadget<F, N_ADDENDS, INCREASE>
 {
@@ -336,7 +334,6 @@ pub(crate) struct TransferWithGasFeeGadget<F> {
     pub sender: UpdateBalanceGadget<F, 3, false>,
     pub receiver: UpdateBalanceGadget<F, 2, true>,
 }
-
 
 impl<F: Field> TransferWithGasFeeGadget<F> {
     pub(crate) fn construct(

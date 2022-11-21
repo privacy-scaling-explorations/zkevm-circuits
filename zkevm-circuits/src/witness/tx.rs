@@ -108,7 +108,7 @@ impl Transaction {
                     F::from(TxContextFieldTag::TxInvalid as u64),
                     F::zero(),
                     F::from(self.invalid_tx),
-                ]
+                ],
             ],
             self.call_data
                 .iter()

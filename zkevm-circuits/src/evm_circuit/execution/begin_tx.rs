@@ -9,7 +9,10 @@ use crate::{
                 ConstraintBuilder, ReversionInfo, StepStateTransition,
                 Transition::{Delta, To},
             },
-            math_gadget::{IsEqualGadget, IsZeroGadget, MulWordByU64Gadget, RangeCheckGadget, AddWordsGadget, LtWordGadget},
+            math_gadget::{
+                AddWordsGadget, IsEqualGadget, IsZeroGadget, LtWordGadget, MulWordByU64Gadget,
+                RangeCheckGadget,
+            },
             select, CachedRegion, Cell, RandomLinearCombination, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
@@ -42,6 +45,8 @@ pub(crate) struct BeginTxGadget<F> {
     transfer_with_gas_fee: TransferWithGasFeeGadget<F>,
     code_hash: Cell<F>,
     is_empty_code_hash: IsEqualGadget<F>,
+    add_tx_value_and_mul_gas_fee_by_gas_gadget: AddWordsGadget<F, 2, true>,
+    balance_not_enough: LtWordGadget<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
@@ -104,13 +109,16 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             None,
         );
 
+        // is_nonce_valid = instruction.is_zero(tx_nonce - nonce_prev)
+        let is_nonce_valid = IsZeroGadget::construct(cb, tx_nonce.expr() - tx_nonce.expr());
+
+        // instruction.constrain_equal(nonce, nonce_prev.expr() + 1 - is_tx_invalid)
+        // nonce_prev = tx_nonce.expr()
         cb.require_equal(
             "nonce, nonce_prev and invalid_tx_tx",
             tx_nonce.expr() + 1.expr(),
-            tx_nonce.expr()+ 1.expr() - is_tx_invalid.expr()
+            tx_nonce.expr() + 1.expr() - is_tx_invalid.expr(),
         );
-
-        let is_nonce_valid = IsZeroGadget::construct(cb, - is_tx_invalid.expr());
 
         // TODO: Implement EIP 1559 (currently it only supports legacy
         // transaction format)
@@ -147,7 +155,6 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             None,
         );
 
-
         // Transfer value from caller to callee
         let intrinsic_tx_value = cb.query_word();
         cb.condition(is_tx_invalid.expr(), |cb| {
@@ -181,25 +188,37 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         let add_tx_value_and_mul_gas_fee_by_gas = cb.query_word();
 
         // tx_value.int_value + gas_fee.int_value
-        let add_tx_value_and_mul_gas_fee_by_gas_gadget: AddWordsGadget<F, 2, false> = AddWordsGadget::construct(
-            cb, 
-            [tx_value.clone(), mul_gas_fee_by_gas.product().clone()],
-            add_tx_value_and_mul_gas_fee_by_gas.clone()
-        );
-        // sender_balance_prev.int_value < tx_value.int_value + gas_fee.int_value
-        let balance_enough = LtWordGadget::construct(
+        let add_tx_value_and_mul_gas_fee_by_gas_gadget = AddWordsGadget::construct(
             cb,
-            &add_tx_value_and_mul_gas_fee_by_gas.clone(),
-            &sender_balance_prev.clone(),
+            [tx_value.clone(), mul_gas_fee_by_gas.product().clone()],
+            add_tx_value_and_mul_gas_fee_by_gas.clone(),
         );
 
-        let mul_balance_not_enough_and_is_nonce_valid = MulWordByU64Gadget::construct(cb, balance_enough.expr(), is_nonce_valid.expr().clone());
-
-        cb.require_equal(
-            "prover should not give incorrect is_tx_invalid flag.",
-            mul_balance_not_enough_and_is_nonce_valid.product().expr().clone() + is_tx_invalid.expr(),
-            1.expr()
+        // balance_not_enough = sender_balance_prev.int_value < tx_value.int_value +
+        // gas_fee.int_value
+        let balance_not_enough = LtWordGadget::construct(
+            cb,
+            &sender_balance_prev,
+            &add_tx_value_and_mul_gas_fee_by_gas,
         );
+
+        // invalid_tx = 1 - (1 - balance_not_enough) * (is_nonce_valid)
+        // prover should not give incorrect is_tx_invalid flag.
+        // instruction.constrain_equal(is_tx_invalid, invalid_tx)
+        cb.condition(
+            balance_not_enough.expr() + (1.expr() - is_nonce_valid.expr()),
+            |cb| {
+                cb.require_equal("is_tx_invalid is 1", 1.expr(), is_tx_invalid.expr());
+            },
+        );
+
+        cb.condition(1.expr() - balance_not_enough.expr(), |cb| {
+            cb.require_equal("is_tx_invalid is 0", 0.expr(), is_tx_invalid.expr());
+        });
+
+        cb.condition(1.expr() - (1.expr() - is_nonce_valid.expr()), |cb| {
+            cb.require_equal("is_tx_invalid is 0", 0.expr(), is_tx_invalid.expr());
+        });
 
         // TODO: Handle creation transaction
         // TODO: Handle precompiled
@@ -330,6 +349,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             transfer_with_gas_fee,
             code_hash,
             is_empty_code_hash,
+            add_tx_value_and_mul_gas_fee_by_gas_gadget,
+            balance_not_enough,
         }
     }
 
@@ -396,8 +417,24 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         self.sufficient_gas_left
             .assign(region, offset, F::from(tx.gas - step.gas_cost))?;
 
+        let add_tx_value_and_mul_gas_fee_by_gas = tx.value + gas_fee;
+        self.add_tx_value_and_mul_gas_fee_by_gas_gadget.assign(
+            region,
+            offset,
+            [tx.value, gas_fee],
+            add_tx_value_and_mul_gas_fee_by_gas,
+        )?;
+
+        self.balance_not_enough.assign(
+            region,
+            offset,
+            caller_balance_pair.1.clone(),
+            add_tx_value_and_mul_gas_fee_by_gas,
+        )?;
+
         if tx.invalid_tx >= 1 {
-            self.intrinsic_tx_value.assign(region, offset, Some(U256::zero().to_le_bytes()))?;
+            self.intrinsic_tx_value
+                .assign(region, offset, Some(U256::zero().to_le_bytes()))?;
             self.transfer_with_gas_fee.assign(
                 region,
                 offset,
@@ -407,7 +444,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 U256::zero(),
             )?;
         } else {
-            self.intrinsic_tx_value.assign(region, offset, Some(tx.value.to_le_bytes()))?;
+            self.intrinsic_tx_value
+                .assign(region, offset, Some(tx.value.to_le_bytes()))?;
             self.transfer_with_gas_fee.assign(
                 region,
                 offset,
@@ -432,6 +470,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             Word::random_linear_combine(callee_code_hash.to_le_bytes(), block.randomness),
             Word::random_linear_combine(*EMPTY_HASH_LE, block.randomness),
         )?;
+
         Ok(())
     }
 }
@@ -514,7 +553,6 @@ mod test {
             ..Default::default()
         }
     }
-
 
     #[test]
     fn begin_tx_gadget_simple() {
@@ -600,7 +638,8 @@ mod test {
     #[test]
     #[ignore]
     fn begin_tx_not_enough_eth() {
-        // The account does not have enough ETH to pay for eth_value + tx_gas * tx_gas_price.
+        // The account does not have enough ETH to pay for eth_value + tx_gas *
+        // tx_gas_price.
         let multibyte_nonce = Word::from(1);
 
         let to = MOCK_ACCOUNTS[0];

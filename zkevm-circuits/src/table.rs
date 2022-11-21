@@ -86,7 +86,7 @@ pub enum TxFieldTag {
     /// CallData
     CallData,
     /// Neutral invalid tx
-    TxInvalid
+    TxInvalid,
 }
 impl_expr!(TxFieldTag);
 
