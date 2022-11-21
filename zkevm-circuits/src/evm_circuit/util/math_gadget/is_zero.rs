@@ -1,9 +1,9 @@
 use super::CachedRegion;
 use crate::{
-    evm_circuit::util::{self, constraint_builder::ConstraintBuilder, sum, Cell},
+    evm_circuit::util::{self, constraint_builder::ConstraintBuilder, Cell},
     util::Expr,
 };
-use eth_types::{Field, ToLittleEndian};
+use eth_types::Field;
 use halo2_proofs::{
     circuit::Value,
     plonk::{Error, Expression},
@@ -57,6 +57,8 @@ impl<F: Field> IsZeroGadget<F> {
 mod tests {
     use super::util::math_gadget::tests::*;
     use super::*;
+    use crate::{evm_circuit::util::sum, util::Expr};
+    use eth_types::ToLittleEndian;
     use eth_types::Word;
     use halo2_proofs::halo2curves::bn256::Fr;
     use halo2_proofs::plonk::Error;
