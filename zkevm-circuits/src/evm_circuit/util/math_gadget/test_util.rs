@@ -13,12 +13,11 @@ use crate::table::LookupTable;
 use crate::{evm_circuit::step::ExecutionState, util::power_of_randomness_from_instance};
 use eth_types::Word;
 use halo2_proofs::circuit::Layouter;
-use halo2_proofs::halo2curves::bn256::Fr;
 use halo2_proofs::plonk::{ConstraintSystem, Selector};
 use halo2_proofs::plonk::{Error, Expression};
 use halo2_proofs::{circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit};
 
-trait MathGadgetContainer<F: Field>: Clone {
+pub(crate) trait MathGadgetContainer<F: Field>: Clone {
     const NAME: &'static str;
 
     fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self
@@ -108,18 +107,15 @@ impl<F: Field, G: MathGadgetContainer<F>> Circuit<F> for UnitTestMathGadgetBaseC
         let cell_manager = step_curr.cell_manager.clone();
         for column in cell_manager.columns().iter() {
             if let CellType::Lookup(table) = column.cell_type {
-                match table {
-                    Table::Fixed => {
-                        let name = format!("{:?}", table);
-                        meta.lookup_any(Box::leak(name.into_boxed_str()), |meta| {
-                            let table_expressions = fixed_table.table_exprs(meta);
-                            vec![(
-                                column.expr(),
-                                rlc::expr(&table_expressions, &power_of_randomness),
-                            )]
-                        });
-                    }
-                    _ => (),
+                if table == Table::Fixed {
+                    let name = format!("{:?}", table);
+                    meta.lookup_any(Box::leak(name.into_boxed_str()), |meta| {
+                        let table_expressions = fixed_table.table_exprs(meta);
+                        vec![(
+                            column.expr(),
+                            rlc::expr(&table_expressions, &power_of_randomness),
+                        )]
+                    });
                 }
             }
         }

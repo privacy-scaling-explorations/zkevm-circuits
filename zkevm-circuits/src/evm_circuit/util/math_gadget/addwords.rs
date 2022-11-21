@@ -146,8 +146,9 @@ impl<F: Field, const N_ADDENDS: usize, const CHECK_OVREFLOW: bool>
     }
 }
 
+#[cfg(test)]
 mod tests {
-    use super::util::math_gadget::tests::*;
+    use super::super::test_util::*;
     use super::*;
     use eth_types::Word;
     use halo2_proofs::halo2curves::bn256::Fr;

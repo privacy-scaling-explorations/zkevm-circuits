@@ -1,11 +1,9 @@
 use super::CachedRegion;
 use crate::{
-    evm_circuit::util::{
-        self, constraint_builder::ConstraintBuilder, from_bytes, pow_of_two, Cell,
-    },
+    evm_circuit::util::{constraint_builder::ConstraintBuilder, from_bytes, pow_of_two, Cell},
     util::Expr,
 };
-use eth_types::{Field, ToLittleEndian};
+use eth_types::Field;
 use halo2_proofs::{
     circuit::Value,
     plonk::{Error, Expression},
@@ -86,10 +84,11 @@ impl<F: Field, const N_BYTES: usize> LtGadget<F, N_BYTES> {
     }
 }
 
+#[cfg(test)]
 mod tests {
-    use super::util::math_gadget::tests::*;
+    use super::super::test_util::*;
     use super::*;
-    use eth_types::Word;
+    use eth_types::*;
     use halo2_proofs::halo2curves::bn256::Fr;
     use halo2_proofs::plonk::Error;
 
@@ -142,7 +141,7 @@ mod tests {
         );
 
         test_math_gadget_container::<Fr, LtGadgetTestContainer<Fr>>(
-            vec![Word::from(1), Word::from((1u64 << N * 8) - 1)],
+            vec![Word::from(1), Word::from((1u64 << (N * 8)) - 1)],
             true,
         );
 
@@ -153,7 +152,7 @@ mod tests {
 
         // out of range check
         test_math_gadget_container::<Fr, LtGadgetTestContainer<Fr>>(
-            vec![Word::from(1), Word::from(2 << N * 8)],
+            vec![Word::from(1), Word::from(2 << (N * 8))],
             false,
         );
     }

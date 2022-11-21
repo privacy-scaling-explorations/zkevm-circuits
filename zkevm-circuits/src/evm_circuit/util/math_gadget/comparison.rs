@@ -1,16 +1,10 @@
 use super::CachedRegion;
-use crate::{
-    evm_circuit::{
-        util::math_gadget::*,
-        util::{self, constraint_builder::ConstraintBuilder, sum, Cell},
-    },
-    util::Expr,
+use crate::evm_circuit::{
+    util::math_gadget::*,
+    util::{constraint_builder::ConstraintBuilder, sum},
 };
-use eth_types::{Field, ToScalar};
-use halo2_proofs::{
-    circuit::Value,
-    plonk::{Error, Expression},
-};
+use eth_types::Field;
+use halo2_proofs::plonk::{Error, Expression};
 
 /// Returns (lt, eq):
 /// - `lt` is `1` when `lhs < rhs`, `0` otherwise.
@@ -56,10 +50,12 @@ impl<F: Field, const N_BYTES: usize> ComparisonGadget<F, N_BYTES> {
     }
 }
 
+#[cfg(test)]
 mod tests {
-    use super::util::math_gadget::tests::*;
+    use super::test_util::*;
     use super::*;
-    use eth_types::Word;
+    use crate::evm_circuit::util::Cell;
+    use eth_types::*;
     use halo2_proofs::halo2curves::bn256::Fr;
     use halo2_proofs::plonk::Error;
 

@@ -1,12 +1,9 @@
 use super::CachedRegion;
-use crate::{
-    evm_circuit::{
-        util::math_gadget::*,
-        util::{self, constraint_builder::ConstraintBuilder, from_bytes, split_u256},
-    },
-    util::Expr,
+use crate::evm_circuit::{
+    util::math_gadget::*,
+    util::{self, constraint_builder::ConstraintBuilder, from_bytes, split_u256},
 };
-use eth_types::{Field, ToLittleEndian, Word};
+use eth_types::{Field, Word};
 use halo2_proofs::plonk::{Error, Expression};
 
 /// Returns `1` when `lhs < rhs`, and returns `0` otherwise.
@@ -69,10 +66,11 @@ impl<F: Field> LtWordGadget<F> {
     }
 }
 
+#[cfg(test)]
 mod tests {
-    use super::util::math_gadget::tests::*;
+    use super::test_util::*;
     use super::*;
-    use eth_types::Word;
+    use eth_types::*;
     use halo2_proofs::halo2curves::bn256::Fr;
     use halo2_proofs::plonk::Error;
 

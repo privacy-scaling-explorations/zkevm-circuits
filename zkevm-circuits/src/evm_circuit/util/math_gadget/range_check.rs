@@ -1,9 +1,6 @@
 use super::CachedRegion;
-use crate::{
-    evm_circuit::util::{self, constraint_builder::ConstraintBuilder, from_bytes, Cell},
-    util::Expr,
-};
-use eth_types::{Field, ToScalar};
+use crate::evm_circuit::util::{constraint_builder::ConstraintBuilder, from_bytes, Cell};
+use eth_types::Field;
 use halo2_proofs::{
     circuit::Value,
     plonk::{Error, Expression},
@@ -45,10 +42,12 @@ impl<F: Field, const N_BYTES: usize> RangeCheckGadget<F, N_BYTES> {
     }
 }
 
+#[cfg(test)]
 mod tests {
-    use super::util::math_gadget::tests::*;
+    use super::super::test_util::*;
     use super::*;
-    use eth_types::Word;
+    use eth_types::*;
+    use gadgets::util::Expr;
     use halo2_proofs::circuit::Value;
     use halo2_proofs::halo2curves::bn256::Fr;
     use halo2_proofs::plonk::Error;
@@ -82,7 +81,7 @@ mod tests {
                 let a = input_words[0].to_scalar().unwrap();
                 let offset = 0;
 
-                self.a.assign(region, offset, Value::known(F::from(a)))?;
+                self.a.assign(region, offset, Value::known(a))?;
                 self.range_check_gadget.assign(region, 0, a)?;
 
                 Ok(())

@@ -1,6 +1,6 @@
 use super::CachedRegion;
 use crate::{
-    evm_circuit::util::{self, constraint_builder::ConstraintBuilder, Cell},
+    evm_circuit::util::{constraint_builder::ConstraintBuilder, Cell},
     util::Expr,
 };
 use eth_types::Field;
@@ -54,9 +54,11 @@ impl<F: Field> IsZeroGadget<F> {
     }
 }
 
+#[cfg(test)]
 mod tests {
-    use super::util::math_gadget::tests::*;
+    use super::super::test_util::*;
     use super::*;
+    use crate::evm_circuit::util;
     use crate::{evm_circuit::util::sum, util::Expr};
     use eth_types::ToLittleEndian;
     use eth_types::Word;
