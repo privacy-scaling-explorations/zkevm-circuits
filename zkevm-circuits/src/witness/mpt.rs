@@ -15,6 +15,22 @@ pub struct MptUpdate {
     new_root: Word,
 }
 
+impl MptUpdate {
+    fn proof_type<F: Field>(&self) -> F {
+        let proof_type = match self.key {
+            Key::AccountStorage { .. } => {
+                if self.old_value.is_zero() && self.new_value.is_zero() {
+                    ProofType::StorageDoesNotExist
+                } else {
+                    ProofType::StorageChanged
+                }
+            }
+            Key::Account { field_tag, .. } => field_tag.into(),
+        };
+        F::from(proof_type as u64)
+    }
+}
+
 /// All the MPT updates in the MptCircuit, accessible by their key
 #[derive(Default, Clone)]
 pub struct MptUpdates(HashMap<Key, MptUpdate>);
@@ -69,7 +85,7 @@ impl MptUpdates {
                 MptUpdateRow([
                     Value::known(update.key.address()),
                     randomness.map(|randomness| update.key.storage_key(randomness)),
-                    Value::known(update.key.proof_type()),
+                    Value::known(update.proof_type()),
                     new_root,
                     old_root,
                     new_value,
@@ -117,7 +133,6 @@ enum Key {
         tx_id: usize,
         address: Address,
         storage_key: Word,
-        is_non_exist: bool,
     },
 }
 
@@ -128,19 +143,6 @@ impl Key {
                 address.to_scalar().unwrap()
             }
         }
-    }
-    fn proof_type<F: Field>(&self) -> F {
-        let proof_type = match self {
-            Self::AccountStorage { is_non_exist, .. } => {
-                if *is_non_exist {
-                    ProofType::StorageDoesNotExist
-                } else {
-                    ProofType::StorageChanged
-                }
-            }
-            Self::Account { field_tag, .. } => (*field_tag).into(),
-        };
-        F::from(proof_type as u64)
     }
     fn storage_key<F: Field>(&self, randomness: F) -> F {
         match self {
@@ -177,18 +179,12 @@ fn key(row: &Rw) -> Option<Key> {
             tx_id,
             account_address,
             storage_key,
-            value,
-            committed_value,
             ..
-        } => {
-            let is_non_exist = value.is_zero() && committed_value.is_zero();
-            Some(Key::AccountStorage {
-                tx_id: *tx_id,
-                address: *account_address,
-                storage_key: *storage_key,
-                is_non_exist,
-            })
-        }
+        } => Some(Key::AccountStorage {
+            tx_id: *tx_id,
+            address: *account_address,
+            storage_key: *storage_key,
+        }),
         _ => None,
     }
 }
