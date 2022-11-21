@@ -1,0 +1,157 @@
+use super::CachedRegion;
+use crate::{
+    evm_circuit::{
+        param::N_BYTES_WORD,
+        util::{
+            self, constraint_builder::ConstraintBuilder, from_bytes, math_gadget::*, pow_of_two,
+            pow_of_two_expr, select, split_u256, split_u256_limb64, sum, Cell,
+        },
+    },
+    util::Expr,
+};
+use eth_types::{Field, ToLittleEndian, ToScalar, Word};
+use halo2_proofs::{
+    circuit::Value,
+    plonk::{Error, Expression},
+};
+/// Returns (is_a, is_b):
+/// - `is_a` is `1` when `value == a`, else `0`
+/// - `is_b` is `1` when `value == b`, else `0`
+/// `value` is required to be either `a` or `b`.
+/// The benefit of this gadget over `IsEqualGadget` is that the
+/// expression returned is a single value which will make
+/// future expressions depending on this result more efficient.
+#[derive(Clone, Debug)]
+pub struct PairSelectGadget<F> {
+    is_a: Cell<F>,
+    is_b: Expression<F>,
+}
+
+impl<F: Field> PairSelectGadget<F> {
+    pub(crate) fn construct(
+        cb: &mut ConstraintBuilder<F>,
+        value: Expression<F>,
+        a: Expression<F>,
+        b: Expression<F>,
+    ) -> Self {
+        let is_a = cb.query_bool();
+        let is_b = 1.expr() - is_a.expr();
+
+        // Force `is_a` to be `0` when `value != a`
+        cb.add_constraint("is_a ⋅ (value - a)", is_a.expr() * (value.clone() - a));
+        // Force `1 - is_a` to be `0` when `value != b`
+        cb.add_constraint("(1 - is_a) ⋅ (value - b)", is_b.clone() * (value - b));
+
+        Self { is_a, is_b }
+    }
+
+    pub(crate) fn expr(&self) -> (Expression<F>, Expression<F>) {
+        (self.is_a.expr(), self.is_b.clone())
+    }
+
+    pub(crate) fn assign(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+        value: F,
+        a: F,
+        _b: F,
+    ) -> Result<(F, F), Error> {
+        let is_a = if value == a { F::one() } else { F::zero() };
+        self.is_a.assign(region, offset, Value::known(is_a))?;
+
+        Ok((is_a, F::one() - is_a))
+    }
+}
+
+mod tests {
+    use super::util::math_gadget::tests::*;
+    use super::*;
+    use eth_types::Word;
+    use halo2_proofs::halo2curves::bn256::Fr;
+    use halo2_proofs::plonk::Error;
+
+    #[test]
+    fn test_pairselection() {
+        #[derive(Clone)]
+        /// a < b
+        struct PairSelectionTestContainer<F, const SELECT_A: bool> {
+            select_gadget: PairSelectGadget<F>,
+            a: Cell<F>,
+            b: Cell<F>,
+            v: Cell<F>,
+        }
+
+        impl<F: Field, const SELECT_A: bool> MathGadgetContainer<F>
+            for PairSelectionTestContainer<F, SELECT_A>
+        {
+            const NAME: &'static str = "PairSelectGadget";
+
+            fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
+                let v = cb.query_cell();
+                let a = cb.query_cell();
+                let b = cb.query_cell();
+                let select_gadget =
+                    PairSelectGadget::<F>::construct(cb, v.expr(), a.expr(), b.expr());
+                cb.require_equal(
+                    "is_a * is_b == 0",
+                    select_gadget.expr().0 * select_gadget.expr().1,
+                    0.expr(),
+                );
+
+                if SELECT_A {
+                    cb.require_equal("is_a == 1", select_gadget.expr().0, 1.expr());
+                } else {
+                    cb.require_equal("is_b == 1", select_gadget.expr().1, 1.expr());
+                }
+
+                PairSelectionTestContainer {
+                    select_gadget,
+                    v,
+                    a,
+                    b,
+                }
+            }
+
+            fn assign_gadget_container(
+                &self,
+                input_words: &[Word],
+                region: &mut CachedRegion<'_, '_, F>,
+            ) -> Result<(), Error> {
+                let v = input_words[0].to_scalar().unwrap();
+                let a = input_words[1].to_scalar().unwrap();
+                let b = input_words[2].to_scalar().unwrap();
+                let offset = 0;
+
+                self.v.assign(region, offset, Value::known(v))?;
+                self.a.assign(region, offset, Value::known(a))?;
+                self.b.assign(region, offset, Value::known(b))?;
+                self.select_gadget.assign(region, offset, v, a, b)?;
+
+                Ok(())
+            }
+        }
+
+        // choose a check
+        test_math_gadget_container::<Fr, PairSelectionTestContainer<Fr, true>>(
+            vec![Word::from(0), Word::from(0), Word::from(0)],
+            true,
+        );
+
+        test_math_gadget_container::<Fr, PairSelectionTestContainer<Fr, true>>(
+            vec![Word::from(0), Word::from(0), Word::from(1)],
+            true,
+        );
+
+        test_math_gadget_container::<Fr, PairSelectionTestContainer<Fr, true>>(
+            vec![Word::from(0), Word::from(1), Word::from(0)],
+            false,
+        );
+
+        // choose b check
+        test_math_gadget_container::<Fr, PairSelectionTestContainer<Fr, false>>(
+            vec![Word::from(0), Word::from(1), Word::from(0)],
+            true,
+        );
+    }
+}

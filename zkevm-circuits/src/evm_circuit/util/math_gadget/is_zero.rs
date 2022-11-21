@@ -1,9 +1,15 @@
 use super::CachedRegion;
 use crate::{
-    evm_circuit::util::{self, constraint_builder::ConstraintBuilder, sum, Cell},
+    evm_circuit::{
+        param::N_BYTES_WORD,
+        util::{
+            self, constraint_builder::ConstraintBuilder, from_bytes, math_gadget::*, pow_of_two,
+            pow_of_two_expr, select, split_u256, split_u256_limb64, sum, Cell,
+        },
+    },
     util::Expr,
 };
-use eth_types::{Field, ToLittleEndian};
+use eth_types::{Field, ToLittleEndian, ToScalar, Word};
 use halo2_proofs::{
     circuit::Value,
     plonk::{Error, Expression},

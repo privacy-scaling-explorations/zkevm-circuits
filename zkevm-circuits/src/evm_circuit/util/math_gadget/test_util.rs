@@ -18,7 +18,7 @@ use halo2_proofs::plonk::{ConstraintSystem, Selector};
 use halo2_proofs::plonk::{Error, Expression};
 use halo2_proofs::{circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit};
 
-trait MathGadgetContainer<F: Field>: Clone {
+pub(crate) trait MathGadgetContainer<F: Field>: Clone {
     const NAME: &'static str;
 
     fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self
