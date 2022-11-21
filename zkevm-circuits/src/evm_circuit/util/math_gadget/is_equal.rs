@@ -1,12 +1,6 @@
 use super::CachedRegion;
-use crate::{
-    evm_circuit::{
-        util::math_gadget::*,
-        util::{self, constraint_builder::ConstraintBuilder, sum},
-    },
-    util::Expr,
-};
-use eth_types::{Field, ToLittleEndian};
+use crate::evm_circuit::{util::constraint_builder::ConstraintBuilder, util::math_gadget::*};
+use eth_types::Field;
 use halo2_proofs::plonk::{Error, Expression};
 
 /// Returns `1` when `lhs == rhs`, and returns `0` otherwise.
@@ -41,10 +35,12 @@ impl<F: Field> IsEqualGadget<F> {
     }
 }
 
+#[cfg(test)]
 mod tests {
-    use super::util::math_gadget::tests::*;
+    use super::test_util::*;
     use super::*;
-    use eth_types::Word;
+    use eth_types::*;
+    use gadgets::util::sum;
     use halo2_proofs::halo2curves::bn256::Fr;
     use halo2_proofs::plonk::Error;
 
@@ -67,11 +63,7 @@ mod tests {
                 let eq_gadget =
                     IsEqualGadget::<F>::construct(cb, sum::expr(&a.cells), sum::expr(&b.cells));
                 cb.require_equal("Inputs must equal", eq_gadget.expr(), 1.expr());
-                IsEqualGadgetTestContainer {
-                    eq_gadget: eq_gadget,
-                    a,
-                    b,
-                }
+                IsEqualGadgetTestContainer { eq_gadget, a, b }
             }
 
             fn assign_gadget_container(

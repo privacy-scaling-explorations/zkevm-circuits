@@ -1,19 +1,10 @@
 use super::CachedRegion;
 use crate::{
-    evm_circuit::{
-        param::N_BYTES_WORD,
-        util::{
-            self, constraint_builder::ConstraintBuilder, from_bytes, math_gadget::*, pow_of_two,
-            pow_of_two_expr, select, split_u256, split_u256_limb64, sum, Cell,
-        },
-    },
+    evm_circuit::util::{self, constraint_builder::ConstraintBuilder, from_bytes, math_gadget::*},
     util::Expr,
 };
-use eth_types::{Field, ToLittleEndian, ToScalar, Word};
-use halo2_proofs::{
-    circuit::Value,
-    plonk::{Error, Expression},
-};
+use eth_types::{Field, ToLittleEndian, Word};
+use halo2_proofs::plonk::Error;
 /// Construction of 256-bit word original and absolute values, which is useful
 /// for opcodes operated on signed values.
 #[derive(Clone, Debug)]
@@ -100,8 +91,9 @@ impl<F: Field> AbsWordGadget<F> {
     }
 }
 
+#[cfg(test)]
 mod tests {
-    use super::util::math_gadget::tests::*;
+    use super::super::test_util::*;
     use super::*;
     use eth_types::Word;
     use halo2_proofs::halo2curves::bn256::Fr;

@@ -1,7 +1,7 @@
 use super::CachedRegion;
 use crate::{
     evm_circuit::util::{
-        self, constraint_builder::ConstraintBuilder, from_bytes, pow_of_two_expr, split_u256, Cell,
+        self, constraint_builder::ConstraintBuilder, from_bytes, pow_of_two_expr, split_u256,
     },
     util::Expr,
 };
@@ -89,9 +89,11 @@ impl<F: Field> MulWordByU64Gadget<F> {
     }
 }
 
+#[cfg(test)]
 mod tests {
-    use super::util::math_gadget::tests::*;
+    use super::super::test_util::*;
     use super::*;
+    use crate::evm_circuit::util::Cell;
     use eth_types::Word;
     use halo2_proofs::halo2curves::bn256::Fr;
     use halo2_proofs::plonk::Error;

@@ -1,15 +1,9 @@
 use super::CachedRegion;
 use crate::{
-    evm_circuit::{
-        param::N_BYTES_WORD,
-        util::{
-            self, constraint_builder::ConstraintBuilder, from_bytes, math_gadget::*, pow_of_two,
-            pow_of_two_expr, select, split_u256, split_u256_limb64, sum, Cell,
-        },
-    },
+    evm_circuit::util::{constraint_builder::ConstraintBuilder, Cell},
     util::Expr,
 };
-use eth_types::{Field, ToLittleEndian, ToScalar, Word};
+use eth_types::Field;
 use halo2_proofs::{
     circuit::Value,
     plonk::{Error, Expression},
@@ -64,10 +58,11 @@ impl<F: Field> PairSelectGadget<F> {
     }
 }
 
+#[cfg(test)]
 mod tests {
-    use super::util::math_gadget::tests::*;
+    use super::super::test_util::*;
     use super::*;
-    use eth_types::Word;
+    use eth_types::*;
     use halo2_proofs::halo2curves::bn256::Fr;
     use halo2_proofs::plonk::Error;
 

@@ -1,19 +1,7 @@
 use super::CachedRegion;
-use crate::{
-    evm_circuit::{
-        param::N_BYTES_WORD,
-        util::{
-            self, constraint_builder::ConstraintBuilder, from_bytes, math_gadget::*, pow_of_two,
-            pow_of_two_expr, select, split_u256, split_u256_limb64, sum, Cell,
-        },
-    },
-    util::Expr,
-};
-use eth_types::{Field, ToLittleEndian, ToScalar, Word};
-use halo2_proofs::{
-    circuit::Value,
-    plonk::{Error, Expression},
-};
+use crate::evm_circuit::util::{constraint_builder::ConstraintBuilder, math_gadget::*, select};
+use eth_types::Field;
+use halo2_proofs::plonk::{Error, Expression};
 /// Returns `rhs` when `lhs < rhs`, and returns `lhs` otherwise.
 /// lhs and rhs `< 256**N_BYTES`
 /// `N_BYTES` is required to be `<= MAX_N_BYTES_INTEGER`.
@@ -61,9 +49,11 @@ impl<F: Field, const N_BYTES: usize> MinMaxGadget<F, N_BYTES> {
     }
 }
 
+#[cfg(test)]
 mod tests {
-    use super::util::math_gadget::tests::*;
+    use super::test_util::*;
     use super::*;
+    use crate::evm_circuit::util::Cell;
     use eth_types::{ToScalar, Word};
     use halo2_proofs::halo2curves::bn256::Fr;
     use halo2_proofs::plonk::Error;

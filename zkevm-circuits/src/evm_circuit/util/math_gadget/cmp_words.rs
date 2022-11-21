@@ -1,19 +1,12 @@
 use super::CachedRegion;
 use crate::{
-    evm_circuit::{
-        param::N_BYTES_WORD,
-        util::{
-            self, constraint_builder::ConstraintBuilder, from_bytes, math_gadget::*, pow_of_two,
-            pow_of_two_expr, select, split_u256, split_u256_limb64, sum, Cell,
-        },
+    evm_circuit::util::{
+        self, constraint_builder::ConstraintBuilder, from_bytes, math_gadget::*, select,
     },
     util::Expr,
 };
-use eth_types::{Field, ToLittleEndian, ToScalar, Word};
-use halo2_proofs::{
-    circuit::Value,
-    plonk::{Error, Expression},
-};
+use eth_types::{Field, ToLittleEndian, Word};
+use halo2_proofs::plonk::{Error, Expression};
 
 #[derive(Clone, Debug)]
 /// CmpWordsGadget compares two words, exposing `eq`  and `lt`
@@ -90,8 +83,9 @@ impl<F: Field> CmpWordsGadget<F> {
     }
 }
 
+#[cfg(test)]
 mod tests {
-    use super::util::math_gadget::tests::*;
+    use super::test_util::*;
     use super::*;
     use eth_types::Word;
     use halo2_proofs::halo2curves::bn256::Fr;

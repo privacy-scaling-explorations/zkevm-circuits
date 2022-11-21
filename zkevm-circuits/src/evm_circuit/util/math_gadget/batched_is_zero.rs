@@ -1,9 +1,9 @@
 use super::CachedRegion;
 use crate::{
-    evm_circuit::util::{self, constraint_builder::ConstraintBuilder, Cell},
+    evm_circuit::util::{constraint_builder::ConstraintBuilder, Cell},
     util::Expr,
 };
-use eth_types::{Field, ToLittleEndian};
+use eth_types::Field;
 use halo2_proofs::{
     circuit::Value,
     plonk::{Error, Expression},
@@ -64,10 +64,12 @@ impl<F: Field, const N: usize> BatchedIsZeroGadget<F, N> {
     }
 }
 
+#[cfg(test)]
 mod tests {
-    use super::util::math_gadget::tests::*;
+    use super::super::test_util::*;
     use super::*;
-    use eth_types::Word;
+    use crate::evm_circuit::util;
+    use eth_types::*;
     use halo2_proofs::halo2curves::bn256::Fr;
     use halo2_proofs::plonk::Error;
 
