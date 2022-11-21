@@ -3,6 +3,7 @@ pub mod branch_init;
 pub mod branch_key;
 pub mod branch_parallel;
 pub mod branch_rlc;
+pub mod extension;
 pub mod extension_node;
 pub mod extension_node_key;
 

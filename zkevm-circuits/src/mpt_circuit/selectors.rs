@@ -457,8 +457,6 @@ impl<F: FieldExt> SelectorsConfig<F> {
 
                 let is_mod_ext_node_s_after_mod_prev = meta.query_advice(branch.is_mod_ext_node_s_after_mod, Rotation::prev());
                 let is_mod_ext_node_s_after_mod_cur = meta.query_advice(branch.is_mod_ext_node_s_after_mod, Rotation::cur());
-
-                let is_mod_ext_node_c_after_mod_prev = meta.query_advice(branch.is_mod_ext_node_c_after_mod, Rotation::prev());
                 let is_mod_ext_node_c_after_mod_cur = meta.query_advice(branch.is_mod_ext_node_c_after_mod, Rotation::cur());
 
                 let is_non_existing_account_row_prev =
