@@ -9,8 +9,8 @@ use crate::{
                 ConstraintBuilder, ReversionInfo, StepStateTransition,
                 Transition::{Delta, To},
             },
-            math_gadget::{IsEqualGadget, IsZeroGadget, MulWordByU64Gadget, RangeCheckGadget, LtWordGadget},
-            select, CachedRegion, Cell, RandomLinearCombination, Word, rlc, from_bytes,
+            math_gadget::{IsEqualGadget, IsZeroGadget, MulWordByU64Gadget, RangeCheckGadget, AddWordsGadget, LtWordGadget},
+            select, CachedRegion, Cell, RandomLinearCombination, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -110,7 +110,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             tx_nonce.expr()+ 1.expr() - is_tx_invalid.expr()
         );
 
-        let is_nonce_valid = IsZeroGadget::construct(cb, is_tx_invalid.expr());
+        let is_nonce_valid = IsZeroGadget::construct(cb, - is_tx_invalid.expr());
 
         // TODO: Implement EIP 1559 (currently it only supports legacy
         // transaction format)
@@ -149,20 +149,6 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 
 
         // Transfer value from caller to callee
-        /* 
-        let intrinsic_tx_value = select::expr(
-            is_tx_invalid.expr(),
-            tx_value.clone().expr(),
-            0.expr()
-        );
-
-        let intrinsic_mul_gas_fee_by_gas = select::expr(
-            is_tx_invalid.expr(),
-            mul_gas_fee_by_gas.product().clone().expr(),
-            0.expr()
-        );
-        */
-
         let intrinsic_tx_value = cb.query_word();
         cb.condition(is_tx_invalid.expr(), |cb| {
             cb.require_equal(
@@ -191,6 +177,29 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 
         // Verify transfer
         let sender_balance_prev = transfer_with_gas_fee.sender.balance_prev();
+
+        let add_tx_value_and_mul_gas_fee_by_gas = cb.query_word();
+
+        // tx_value.int_value + gas_fee.int_value
+        let add_tx_value_and_mul_gas_fee_by_gas_gadget: AddWordsGadget<F, 2, false> = AddWordsGadget::construct(
+            cb, 
+            [tx_value.clone(), mul_gas_fee_by_gas.product().clone()],
+            add_tx_value_and_mul_gas_fee_by_gas.clone()
+        );
+        // sender_balance_prev.int_value < tx_value.int_value + gas_fee.int_value
+        let balance_enough = LtWordGadget::construct(
+            cb,
+            &add_tx_value_and_mul_gas_fee_by_gas.clone(),
+            &sender_balance_prev.clone(),
+        );
+
+        let mul_balance_not_enough_and_is_nonce_valid = MulWordByU64Gadget::construct(cb, balance_enough.expr(), is_nonce_valid.expr().clone());
+
+        cb.require_equal(
+            "prover should not give incorrect is_tx_invalid flag.",
+            mul_balance_not_enough_and_is_nonce_valid.product().expr().clone() + is_tx_invalid.expr(),
+            1.expr()
+        );
 
         // TODO: Handle creation transaction
         // TODO: Handle precompiled
