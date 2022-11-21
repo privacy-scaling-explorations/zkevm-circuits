@@ -325,7 +325,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
             offset,
             || Value::known(tx_id),
         )?;
-        region.assign_advice(|| "tag", self.tx_table.tag, offset, || Value::known(tag))?;
+        region.assign_fixed(|| "tag", self.tx_table.tag, offset, || Value::known(tag))?;
         region.assign_advice(
             || "index",
             self.tx_table.index,
