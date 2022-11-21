@@ -3,13 +3,20 @@ use halo2_proofs::{
     plonk::{ConstraintSystem, Expression, VirtualCells},
     poly::Rotation,
 };
+use itertools::Itertools;
 
 use crate::{
-    mpt_circuit::columns::{MainCols, PositionCols},
+    mpt_circuit::columns::{AccumulatorCols, MainCols, PositionCols},
     mpt_circuit::param::{
+        HASH_WIDTH,
         IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS,
         IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS, IS_EXT_LONG_ODD_C16_POS,
         IS_EXT_LONG_ODD_C1_POS, RLP_NUM, IS_S_EXT_LONGER_THAN_55_POS,
+    },
+    mpt_circuit::helpers::{
+        bytes_expr_into_rlc, compute_rlc, get_bool_constraint, get_is_extension_node,
+        get_is_extension_node_even_nibbles, get_is_extension_node_long_odd_nibbles,
+        get_is_extension_node_one_nibble,
     },
 };
 
@@ -284,6 +291,144 @@ pub(crate) fn extension_node_rlp<F: FieldExt>(
         proofEl[2] specifies the length of the bytes (for storing nibbles).
         Note that we can't have only one nibble in this case.
         */
+
+        constraints
+    });
+}
+
+pub(crate) fn extension_node_rlc<F: FieldExt>(
+    meta: &mut ConstraintSystem<F>,
+    q_enable: impl Fn(&mut VirtualCells<'_, F>) -> Expression<F>,
+    position_cols: PositionCols<F>,
+    s_main: MainCols<F>,
+    c_main: MainCols<F>,
+    accs: AccumulatorCols<F>,
+    power_of_randomness: [Expression<F>; HASH_WIDTH],
+    is_s: bool,
+) {
+    meta.create_gate("Extension node RLC", |meta| {
+        let mut constraints = vec![];
+        let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
+        let q_enable = q_enable(meta);
+
+        let one = Expression::Constant(F::from(1_u64));
+        let c160_inv = Expression::Constant(F::from(160_u64).invert().unwrap());
+
+        let mut rot = 0;
+        if !is_s {
+            rot = -1;
+        }
+
+        /*
+        s_rlp1, s_rlp2, s_bytes need to be the same in both extension rows.
+        However, to make space for nibble witnesses, we put nibbles in
+        extension row C s_bytes. So we use s_bytes from S row.
+        */
+
+        let s_rlp1 = meta.query_advice(s_main.rlp1, Rotation(rot));
+        let mut rlc = s_rlp1;
+        let s_rlp2 = meta.query_advice(s_main.rlp2, Rotation(rot));
+        rlc = rlc + s_rlp2 * power_of_randomness[0].clone();
+
+        let s_bytes_rlc = compute_rlc(
+            meta,
+            s_main.bytes.to_vec(),
+            1,
+            one.clone(),
+            rot,
+            power_of_randomness.clone(),
+        );
+        rlc = rlc + s_bytes_rlc;
+
+        let acc_s = meta.query_advice(accs.acc_s.rlc, Rotation(rot));
+
+        /*
+        The intermediate RLC after `s_main` bytes needs to be properly computed.
+        */
+        constraints.push((
+            "s_main RLC",
+            q_not_first.clone()
+                * q_enable.clone()
+                * (rlc - acc_s.clone()),
+        ));
+
+        // We use rotation 0 in both cases from now on:
+        let c_rlp2 = meta.query_advice(c_main.rlp2, Rotation::cur());
+        let c160 = Expression::Constant(F::from(160_u64));
+
+        // c_rlp2 = 160 when branch is hashed (longer than 31) and c_rlp2 = 0 otherwise
+        let is_branch_hashed = c_rlp2.clone() * c160_inv.clone();
+
+        /*
+        When the branch is hashed, we have `c_rlp2 = 160` because it specifies the length of the
+        hash: `32 = 160 - 128`.
+        */
+        constraints.push((
+            "c_rlp2 = 160",
+            q_not_first.clone()
+                * q_enable.clone()
+                * is_branch_hashed.clone()
+                * (c_rlp2.clone() - c160),
+        ));
+
+        /*
+        Note: hashed branch has 160 at c_rlp2 and hash in c_advices,
+        non-hashed branch has 0 at c_rlp2 and all the bytes in c_advices
+        */
+
+        let acc_mult_s = meta.query_advice(accs.acc_s.mult, Rotation::cur());
+        let c_advices0 = meta.query_advice(c_main.bytes[0], Rotation::cur());
+        rlc = acc_s.clone() + c_rlp2 * acc_mult_s.clone();
+        let c_advices_rlc = compute_rlc(
+            meta,
+            c_main.bytes.to_vec(),
+            0,
+            acc_mult_s.clone(),
+            0,
+            power_of_randomness.clone(),
+        );
+        rlc = rlc + c_advices_rlc;
+
+        let mut rlc_non_hashed_branch = acc_s + c_advices0 * acc_mult_s.clone();
+        let c_advices_rlc_non_hashed = compute_rlc(
+            meta,
+            c_main.bytes.iter().skip(1).copied().collect_vec(),
+            0,
+            acc_mult_s,
+            0,
+            power_of_randomness.clone(),
+        );
+        rlc_non_hashed_branch = rlc_non_hashed_branch + c_advices_rlc_non_hashed;
+
+        let acc_c = meta.query_advice(accs.acc_c.rlc, Rotation::cur());
+
+        /*
+        Check whether the extension node RLC is properly computed.
+        The RLC is used to check whether the extension node is a node at the appropriate position
+        in the parent node. That means, it is used in a lookup to check whether
+        `(extension_node_RLC, node_hash_RLC)` is in the keccak table.
+        */
+        constraints.push((
+            "Hashed extension node RLC",
+            q_not_first.clone()
+                * q_enable.clone()
+                * is_branch_hashed.clone()
+                * (rlc - acc_c.clone()),
+        ));
+
+        /*
+        Check whether the extension node (non-hashed) RLC is properly computed.
+        The RLC is used to check whether the non-hashed extension node is a node at the appropriate position
+        in the parent node. That means, there is a constraint to ensure that
+        `extension_node_RLC = node_hash_RLC` for some `node` in parent branch.
+        */
+        constraints.push((
+            "Non-hashed extension node RLC",
+            q_not_first
+                * q_enable
+                * (one.clone() - is_branch_hashed)
+                * (rlc_non_hashed_branch - acc_c),
+        ));
 
         constraints
     });
