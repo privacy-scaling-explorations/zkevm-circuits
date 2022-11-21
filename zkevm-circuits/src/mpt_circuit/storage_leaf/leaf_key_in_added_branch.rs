@@ -7,6 +7,7 @@ use halo2_proofs::{
 use std::marker::PhantomData;
 
 use crate::{
+    mpt_circuit::branch::BranchCols,
     mpt_circuit::columns::{AccumulatorCols, MainCols},
     mpt_circuit::helpers::{
         compute_rlc, get_bool_constraint, get_is_extension_node, get_is_extension_node_one_nibble,
@@ -71,6 +72,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
         q_enable: impl Fn(&mut VirtualCells<'_, F>) -> Expression<F> + Copy,
         s_main: MainCols<F>,
         c_main: MainCols<F>,
+        branch: BranchCols<F>,
         accs: AccumulatorCols<F>,
         drifted_pos: Column<Advice>,
         is_account_leaf_in_added_branch: Column<Advice>,
@@ -103,7 +105,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
         Finally, the lookup is used to check that the hash that
         corresponds to the leaf RLC is in the parent branch at `drifted_pos` position.
         */
-        meta.create_gate("Storage leaf in added branch RLC", |meta| {
+        meta.create_gate("Storage leaf in added branch RLC & inserted extension node selector", |meta| {
             let q_enable = q_enable(meta);
             let mut constraints = vec![];
 
@@ -205,11 +207,32 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
             */
             constraints.push((
                 "Leaf key acc last level",
-                q_enable
+                q_enable.clone()
                     * (last_level + one_nibble)
                     * (one.clone() - is_leaf_in_first_storage_level)
                     * (is_branch_s_placeholder + is_branch_c_placeholder) // drifted leaf appears only when there is a placeholder branch
                     * (rlc_last_level - acc),
+            ));
+
+            let is_mod_ext_node_s_before_mod_next_next = meta.query_advice(branch.is_mod_ext_node_s_before_mod, Rotation(2));
+            let is_inserted_ext_node_s = meta.query_advice(
+                c_main.rlp1,
+                Rotation(rot_branch_init),
+            );
+            let is_inserted_ext_node_c = meta.query_advice(
+                c_main.rlp2,
+                Rotation(rot_branch_init),
+            );
+
+            /*
+            Ensure there are inserted extension rows after storage leaf in case 
+            we have a selector for `is_inserted_ext_node` enabled.
+            */
+            constraints.push((
+                "Inserted extension node rows after storage leaf",
+                q_enable
+                    * (is_inserted_ext_node_s + is_inserted_ext_node_c)
+                    * (one.clone() - is_mod_ext_node_s_before_mod_next_next),
             ));
 
             constraints

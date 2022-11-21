@@ -639,7 +639,10 @@ impl<F: FieldExt> SelectorsConfig<F> {
                 in the branch init row), there are inserted extension node rows after storage or
                 account leaf (so that constraints related to these rows are checked).
                 This is ensured in the last row of an account leaf and storage leaf: 
-                `ACCOUNT_DRIFTED_LEAF` and `LEAF_NON_EXISTING` respectively.
+                `ACCOUNT_DRIFTED_LEAF` and `LEAF_DRIFTED` respectively. `LEAF_DRIFTED` is not
+                the last storage row, but it is used instead of the last one `LEAF_NON_EXISTING`
+                because the constraints in `LEAF_NON_EXISTING` are triggered only for storage
+                non-existing proof.
                 */
                 constraints.push((
                     "Modified extension node S before modification follows storage leaf non existing row or account leaf in added branch row",

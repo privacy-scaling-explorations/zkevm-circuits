@@ -7,7 +7,6 @@ use halo2_proofs::{
 use std::marker::PhantomData;
 
 use crate::{
-    mpt_circuit::branch::BranchCols,
     mpt_circuit::columns::{AccumulatorCols, MainCols},
     mpt_circuit::helpers::range_lookups,
     mpt_circuit::param::{
@@ -64,7 +63,6 @@ impl<F: FieldExt> StorageNonExistingConfig<F> {
         q_enable: impl Fn(&mut VirtualCells<'_, F>) -> Expression<F> + Copy,
         s_main: MainCols<F>,
         c_main: MainCols<F>,
-        branch: BranchCols<F>,
         accs: AccumulatorCols<F>,
         sel2: Column<Advice>, /* should be the same as sel1 as both parallel proofs are the same
                                * for non_existing_storage_proof, but we use C for non-existing
@@ -490,7 +488,7 @@ impl<F: FieldExt> StorageNonExistingConfig<F> {
         );
 
         meta.create_gate(
-            "Key of wrong leaf and the enquired key are of the same length & inserted extension node selector",
+            "Key of wrong leaf and the enquired key are of the same length",
             |meta| {
                 let q_enable = q_enable(meta);
                 let mut constraints = vec![];
@@ -524,28 +522,6 @@ impl<F: FieldExt> StorageNonExistingConfig<F> {
                 constraints.push((
                     "The number of nibbles in the wrong leaf and the enquired key are the same (short)",
                     q_enable.clone() * is_wrong_leaf * is_long * (len_cur_long - len_prev_long),
-                ));
-
-                let is_mod_ext_node_s_before_mod_next = meta.query_advice(branch.is_mod_ext_node_s_before_mod, Rotation(1));
-                let is_inserted_ext_node_s = meta.query_advice(
-                    c_main.rlp1,
-                    Rotation(rot_into_first_branch_child - 1),
-                );
-                let is_inserted_ext_node_c = meta.query_advice(
-                    c_main.rlp2,
-                    Rotation(rot_into_first_branch_child - 1),
-                );
-
-                /*
-                Ensure there are inserted extension rows after storage leaf in case 
-                we have a selector for `is_inserted_ext_node` enabled.
-                */
-                // TODO: check
-                constraints.push((
-                    "Inserted extension node rows after storage leaf",
-                    q_enable
-                        * (is_inserted_ext_node_s + is_inserted_ext_node_c)
-                        * (one.clone() - is_mod_ext_node_s_before_mod_next),
                 ));
 
                 constraints
