@@ -106,3 +106,72 @@ impl<F: Field> ByteSizeGadget<F> {
         )
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::super::test_util::*;
+    use super::*;
+    use eth_types::Word;
+    use halo2_proofs::halo2curves::bn256::Fr;
+    use halo2_proofs::plonk::Error;
+
+    #[test]
+    fn test_bytesize() {
+        #[derive(Clone)]
+        struct ByteSizeGadgetContainer<F, const N: u8> {
+            bytesize_gadget: ByteSizeGadget<F>,
+            value_rlc: util::Word<F>,
+        }
+
+        impl<F: Field, const N: u8> MathGadgetContainer<F> for ByteSizeGadgetContainer<F, N> {
+            const NAME: &'static str = "ByteSizeGadget";
+
+            fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
+                let value_rlc = cb.query_word();
+                let bytesize_gadget = ByteSizeGadget::<F>::construct(cb, &value_rlc);
+                cb.require_equal(
+                    "byte size gadget must equal",
+                    bytesize_gadget.byte_size(),
+                    N.expr(),
+                );
+                ByteSizeGadgetContainer {
+                    bytesize_gadget,
+                    value_rlc,
+                }
+            }
+
+            fn assign_gadget_container(
+                &self,
+                input_words: &[Word],
+                region: &mut CachedRegion<'_, '_, F>,
+            ) -> Result<(), Error> {
+                let offset = 0;
+                let x = input_words[0];
+                self.value_rlc
+                    .assign(region, offset, Some(x.to_le_bytes()))?;
+                self.bytesize_gadget.assign(region, offset, x)?;
+
+                Ok(())
+            }
+        }
+
+        test_math_gadget_container::<Fr, ByteSizeGadgetContainer<Fr, 0>>(
+            vec![Word::from(0), Word::from(0)],
+            true,
+        );
+
+        test_math_gadget_container::<Fr, ByteSizeGadgetContainer<Fr, 1>>(vec![Word::from(1)], true);
+
+        test_math_gadget_container::<Fr, ByteSizeGadgetContainer<Fr, 0>>(
+            vec![Word::from(1)],
+            false,
+        );
+
+        test_math_gadget_container::<Fr, ByteSizeGadgetContainer<Fr, 2>>(
+            vec![Word::from(256)],
+            true,
+        );
+
+        test_math_gadget_container::<Fr, ByteSizeGadgetContainer<Fr, 31>>(vec![Word::MAX], true);
+    }
+}
