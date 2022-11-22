@@ -91,90 +91,124 @@ mod tests {
     use halo2_proofs::halo2curves::bn256::Fr;
     use halo2_proofs::plonk::Error;
 
+    #[derive(Clone)]
+    /// a < b
+    struct CmpWordGadgetTestContainer<F, const CHECK_EQ: bool> {
+        cmp_gadget: CmpWordsGadget<F>,
+        a: util::Word<F>,
+        b: util::Word<F>,
+    }
+
+    impl<F: Field, const CHECK_EQ: bool> MathGadgetContainer<F>
+        for CmpWordGadgetTestContainer<F, CHECK_EQ>
+    {
+        const NAME: &'static str = "CmpWordsGadget";
+
+        fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
+            let a = cb.query_word();
+            let b = cb.query_word();
+            let cmp_gadget = CmpWordsGadget::<F>::construct(cb, &a, &b);
+            cb.require_equal(
+                "(a < b) * (a == b) == 0",
+                cmp_gadget.eq.clone() * cmp_gadget.lt.clone(),
+                0.expr(),
+            );
+
+            if CHECK_EQ {
+                cb.require_equal("a == b", cmp_gadget.eq.clone(), 1.expr());
+            } else {
+                cb.require_equal("a < b", cmp_gadget.lt.clone(), 1.expr());
+            }
+
+            CmpWordGadgetTestContainer { cmp_gadget, a, b }
+        }
+
+        fn assign_gadget_container(
+            &self,
+            input_words: &[Word],
+            region: &mut CachedRegion<'_, '_, F>,
+        ) -> Result<(), Error> {
+            let a = input_words[0];
+            let b = input_words[1];
+            let offset = 0;
+
+            self.a.assign(region, offset, Some(a.to_le_bytes()))?;
+            self.b.assign(region, offset, Some(b.to_le_bytes()))?;
+            self.cmp_gadget.assign(region, offset, a, b)?;
+            Ok(())
+        }
+    }
+
     #[test]
-    fn test_cmpword() {
-        #[derive(Clone)]
-        /// a < b
-        struct CmpWordGadgetTestContainer<F, const CHECK_EQ: bool> {
-            cmp_gadget: CmpWordsGadget<F>,
-            a: util::Word<F>,
-            b: util::Word<F>,
-        }
-
-        impl<F: Field, const CHECK_EQ: bool> MathGadgetContainer<F>
-            for CmpWordGadgetTestContainer<F, CHECK_EQ>
-        {
-            const NAME: &'static str = "CmpWordsGadget";
-
-            fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
-                let a = cb.query_word();
-                let b = cb.query_word();
-                let cmp_gadget = CmpWordsGadget::<F>::construct(cb, &a, &b);
-                cb.require_equal(
-                    "(a < b) * (a == b) == 0",
-                    cmp_gadget.eq.clone() * cmp_gadget.lt.clone(),
-                    0.expr(),
-                );
-
-                if CHECK_EQ {
-                    cb.require_equal("a == b", cmp_gadget.eq.clone(), 1.expr());
-                } else {
-                    cb.require_equal("a < b", cmp_gadget.lt.clone(), 1.expr());
-                }
-
-                CmpWordGadgetTestContainer { cmp_gadget, a, b }
-            }
-
-            fn assign_gadget_container(
-                &self,
-                input_words: &[Word],
-                region: &mut CachedRegion<'_, '_, F>,
-            ) -> Result<(), Error> {
-                let a = input_words[0];
-                let b = input_words[1];
-                let offset = 0;
-
-                self.a.assign(region, offset, Some(a.to_le_bytes()))?;
-                self.b.assign(region, offset, Some(b.to_le_bytes()))?;
-                self.cmp_gadget.assign(region, offset, a, b)?;
-                Ok(())
-            }
-        }
-
+    fn test_cmpword_0_eq() {
         // a == b check
         test_math_gadget_container::<Fr, CmpWordGadgetTestContainer<Fr, true>>(
             vec![Word::from(0), Word::from(0)],
             true,
         );
+    }
 
+    #[test]
+    fn test_cmpword_1_eq() {
         test_math_gadget_container::<Fr, CmpWordGadgetTestContainer<Fr, true>>(
             vec![Word::from(1), Word::from(1)],
             true,
         );
+    }
 
+    #[test]
+    fn test_cmpword_wordmax_eq() {
         test_math_gadget_container::<Fr, CmpWordGadgetTestContainer<Fr, true>>(
             vec![Word::MAX, Word::MAX],
             true,
         );
+    }
 
+    #[test]
+    fn test_cmpword_0_neq_wordmax() {
         test_math_gadget_container::<Fr, CmpWordGadgetTestContainer<Fr, true>>(
             vec![Word::from(0), Word::MAX],
             false,
         );
+    }
 
-        // a < b check
+    // a < b check
+    #[test]
+    fn test_cmpword_0_lt_1() {
         test_math_gadget_container::<Fr, CmpWordGadgetTestContainer<Fr, false>>(
             vec![Word::from(0), Word::from(1)],
             true,
         );
+    }
 
+    #[test]
+    fn test_cmpword_1_lt_wordmax() {
         test_math_gadget_container::<Fr, CmpWordGadgetTestContainer<Fr, false>>(
             vec![Word::from(1), Word::MAX],
             true,
         );
+    }
 
+    #[test]
+    fn test_cmpword_1_lt_0() {
         test_math_gadget_container::<Fr, CmpWordGadgetTestContainer<Fr, false>>(
             vec![Word::from(1), Word::from(0)],
+            false,
+        );
+    }
+
+    #[test]
+    fn test_cmpword_lowmax_lt_highmax() {
+        test_math_gadget_container::<Fr, CmpWordGadgetTestContainer<Fr, false>>(
+            vec![WORD_LOW_MAX, WORD_HIGH_MAX],
+            true,
+        );
+    }
+
+    #[test]
+    fn test_cmpword_highmax_lt_lowmax() {
+        test_math_gadget_container::<Fr, CmpWordGadgetTestContainer<Fr, false>>(
+            vec![WORD_HIGH_MAX, WORD_LOW_MAX],
             false,
         );
     }

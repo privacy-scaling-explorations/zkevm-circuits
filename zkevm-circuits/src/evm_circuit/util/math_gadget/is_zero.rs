@@ -58,57 +58,59 @@ impl<F: Field> IsZeroGadget<F> {
 mod tests {
     use super::super::test_util::*;
     use super::*;
-    use crate::evm_circuit::util;
-    use crate::{evm_circuit::util::sum, util::Expr};
-    use eth_types::ToLittleEndian;
-    use eth_types::Word;
+    use crate::evm_circuit::util::Cell;
+    use crate::util::Expr;
+    use eth_types::{ToScalar, Word};
     use halo2_proofs::halo2curves::bn256::Fr;
     use halo2_proofs::plonk::Error;
 
+    #[derive(Clone)]
+    /// n != 0
+    struct IsZeroGadgetTestContainer<F> {
+        z_gadget: IsZeroGadget<F>,
+        n: Cell<F>,
+    }
+
+    impl<F: Field> MathGadgetContainer<F> for IsZeroGadgetTestContainer<F> {
+        const NAME: &'static str = "IsZeroGadget";
+
+        fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
+            let n = cb.query_cell();
+            let z_gadget = IsZeroGadget::<F>::construct(cb, n.expr());
+            cb.require_equal("Input is zero", z_gadget.expr(), 1.expr());
+            IsZeroGadgetTestContainer { z_gadget, n }
+        }
+
+        fn assign_gadget_container(
+            &self,
+            input_words: &[Word],
+            region: &mut CachedRegion<'_, '_, F>,
+        ) -> Result<(), Error> {
+            let n = input_words[0].to_scalar().unwrap();
+            let offset = 0;
+
+            self.n.assign(region, offset, Value::known(n))?;
+            self.z_gadget.assign(region, 0, n)?;
+
+            Ok(())
+        }
+    }
+
     #[test]
-    fn test_iszero() {
-        #[derive(Clone)]
-        /// n != 0
-        struct IsZeroGadgetTestContainer<F> {
-            z_gadget: IsZeroGadget<F>,
-            n: util::Word<F>,
-        }
+    fn test_0_is_zero() {
+        test_math_gadget_container::<Fr, IsZeroGadgetTestContainer<Fr>>(vec![Word::from(0)], true);
+    }
 
-        impl<F: Field> MathGadgetContainer<F> for IsZeroGadgetTestContainer<F> {
-            const NAME: &'static str = "IsZeroGadget";
+    #[test]
+    fn test_1_is_not_zero() {
+        test_math_gadget_container::<Fr, IsZeroGadgetTestContainer<Fr>>(vec![Word::from(1)], false);
+    }
 
-            fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
-                let n = cb.query_word();
-                let z_gadget = IsZeroGadget::<F>::construct(cb, sum::expr(&n.cells));
-                cb.require_equal("Input must not be 0", z_gadget.expr(), 0.expr());
-                IsZeroGadgetTestContainer { z_gadget, n }
-            }
-
-            fn assign_gadget_container(
-                &self,
-                input_words: &[Word],
-                region: &mut CachedRegion<'_, '_, F>,
-            ) -> Result<(), Error> {
-                let n = input_words[0];
-                let offset = 0;
-
-                self.n.assign(region, offset, Some(n.to_le_bytes()))?;
-                self.z_gadget
-                    .assign(region, 0, sum::value(&n.to_le_bytes()))?;
-
-                Ok(())
-            }
-        }
-
-        test_math_gadget_container::<Fr, IsZeroGadgetTestContainer<Fr>>(vec![Word::from(0)], false);
-
-        test_math_gadget_container::<Fr, IsZeroGadgetTestContainer<Fr>>(vec![Word::from(1)], true);
-
+    #[test]
+    fn test_large_num_is_not_zero() {
         test_math_gadget_container::<Fr, IsZeroGadgetTestContainer<Fr>>(
-            vec![Word::from(1000)],
-            true,
+            vec![Word::from(10000)],
+            false,
         );
-
-        test_math_gadget_container::<Fr, IsZeroGadgetTestContainer<Fr>>(vec![Word::MAX], true);
     }
 }

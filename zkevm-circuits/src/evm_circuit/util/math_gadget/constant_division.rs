@@ -34,7 +34,7 @@ impl<F: Field, const N_BYTES: usize> ConstantDivisionGadget<F, N_BYTES> {
         // Require that remainder < denominator
         cb.range_lookup(remainder.expr(), denominator);
 
-        // Require that quotient < 2**N_BYTES
+        // Require that quotient < 256**N_BYTES
         // so we can't have any overflow when doing `quotient * denominator`.
         let quotient_range_check = RangeCheckGadget::construct(cb, quotient.expr());
 
@@ -91,73 +91,110 @@ mod tests {
     use halo2_proofs::halo2curves::bn256::Fr;
     use halo2_proofs::plonk::Error;
 
+    #[derive(Clone)]
+    /// a < b
+    struct ConstantDivisionTestContainer<
+        F,
+        const N_BYTES: usize,
+        const DENOMINATOR: u64,
+        const QUOTIENT: u64,
+        const REMINDER: u64,
+    > {
+        constdiv_gadget: ConstantDivisionGadget<F, N_BYTES>,
+        a: Cell<F>,
+    }
+
+    impl<
+            F: Field,
+            const N_BYTES: usize,
+            const DENOMINATOR: u64,
+            const QUOTIENT: u64,
+            const REMAINDER: u64,
+        > MathGadgetContainer<F>
+        for ConstantDivisionTestContainer<F, N_BYTES, DENOMINATOR, QUOTIENT, REMAINDER>
+    {
+        const NAME: &'static str = "ConstantDivisionGadget";
+
+        fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
+            let a = cb.query_cell();
+            let constdiv_gadget =
+                ConstantDivisionGadget::<F, N_BYTES>::construct(cb, a.expr(), DENOMINATOR);
+
+            cb.require_equal(
+                "correct reminder",
+                constdiv_gadget.remainder(),
+                REMAINDER.expr(),
+            );
+
+            cb.require_equal(
+                "correct quotient",
+                constdiv_gadget.quotient(),
+                QUOTIENT.expr(),
+            );
+
+            ConstantDivisionTestContainer { constdiv_gadget, a }
+        }
+
+        fn assign_gadget_container(
+            &self,
+            input_words: &[Word],
+            region: &mut CachedRegion<'_, '_, F>,
+        ) -> Result<(), Error> {
+            let a = u64::from_le_bytes(input_words[0].to_le_bytes()[..8].try_into().unwrap());
+            let offset = 0;
+
+            self.a.assign(region, offset, Value::known(F::from(a)))?;
+            self.constdiv_gadget.assign(region, offset, a as u128)?;
+
+            Ok(())
+        }
+    }
+
     #[test]
-    fn test_constantdivisiongadget() {
-        const N: usize = 4;
-        #[derive(Clone)]
-        /// a < b
-        struct ConstantDivisionTestContainer<F, const DENOMINATOR: u64, const REMINDER: u64> {
-            constdiv_gadget: ConstantDivisionGadget<F, N>,
-            a: Cell<F>,
-        }
-
-        impl<F: Field, const DENOMINATOR: u64, const REMAINDER: u64> MathGadgetContainer<F>
-            for ConstantDivisionTestContainer<F, DENOMINATOR, REMAINDER>
-        {
-            const NAME: &'static str = "ConstantDivisionGadget";
-
-            fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
-                let a = cb.query_cell();
-                let constdiv_gadget =
-                    ConstantDivisionGadget::<F, N>::construct(cb, a.expr(), DENOMINATOR);
-
-                cb.require_equal(
-                    "a == n * denom",
-                    constdiv_gadget.remainder(),
-                    REMAINDER.expr(),
-                );
-
-                ConstantDivisionTestContainer { constdiv_gadget, a }
-            }
-
-            fn assign_gadget_container(
-                &self,
-                input_words: &[Word],
-                region: &mut CachedRegion<'_, '_, F>,
-            ) -> Result<(), Error> {
-                let a = u64::from_le_bytes(input_words[0].to_le_bytes()[..8].try_into().unwrap());
-                let offset = 0;
-
-                self.a.assign(region, offset, Value::known(F::from(a)))?;
-                self.constdiv_gadget.assign(region, offset, a as u128)?;
-
-                Ok(())
-            }
-        }
-
-        test_math_gadget_container::<Fr, ConstantDivisionTestContainer<Fr, 5, 0>>(
+    fn test_constantdivisiongadget_0div5_rem0() {
+        test_math_gadget_container::<Fr, ConstantDivisionTestContainer<Fr, 4, 5, 0, 0>>(
             vec![Word::from(0)],
             true,
         );
+    }
 
-        test_math_gadget_container::<Fr, ConstantDivisionTestContainer<Fr, 5, 0>>(
+    #[test]
+    fn test_constantdivisiongadget_5div5_rem0() {
+        test_math_gadget_container::<Fr, ConstantDivisionTestContainer<Fr, 4, 5, 1, 0>>(
             vec![Word::from(5)],
             true,
         );
+    }
 
-        test_math_gadget_container::<Fr, ConstantDivisionTestContainer<Fr, 5, 1>>(
+    #[test]
+    fn test_constantdivisiongadget_1div5_rem1() {
+        test_math_gadget_container::<Fr, ConstantDivisionTestContainer<Fr, 4, 5, 0, 1>>(
             vec![Word::from(1)],
             true,
         );
+    }
 
-        test_math_gadget_container::<Fr, ConstantDivisionTestContainer<Fr, 5, 4>>(
+    #[test]
+    fn test_constantdivisiongadget_1div5_rem4() {
+        test_math_gadget_container::<Fr, ConstantDivisionTestContainer<Fr, 4, 5, 1, 4>>(
             vec![Word::from(1)],
             false,
         );
+    }
 
-        test_math_gadget_container::<Fr, ConstantDivisionTestContainer<Fr, 16, 0>>(
-            vec![Word::from(1 << N)],
-            true,
+    #[test]
+    fn test_constantdivisiongadget_quotient_overflow() {
+        test_math_gadget_container::<Fr, ConstantDivisionTestContainer<Fr, 4, 5, 4294967296u64, 1>>(
+            vec![Word::from(1u64 << (4 * 8)) * 5 + 1],
+            false,
+        );
+    }
+
+    #[test]
+    fn test_constantdivisiongadget_33_div16_rem17() {
+        test_math_gadget_container::<Fr, ConstantDivisionTestContainer<Fr, 4, 16, 1, 17>>(
+            vec![Word::from(33)],
+            false,
         );
     }
 }

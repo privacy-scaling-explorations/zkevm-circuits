@@ -59,97 +59,133 @@ mod tests {
     use halo2_proofs::halo2curves::bn256::Fr;
     use halo2_proofs::plonk::Error;
 
+    #[derive(Clone)]
+    /// a < b
+    struct ComparisonTestContainer<F, const N: usize, const CHECK_EQ: bool> {
+        cmp_gadget: ComparisonGadget<F, N>,
+        a: Cell<F>,
+        b: Cell<F>,
+    }
+
+    impl<F: Field, const N: usize, const CHECK_EQ: bool> MathGadgetContainer<F>
+        for ComparisonTestContainer<F, N, CHECK_EQ>
+    {
+        const NAME: &'static str = "ComparisonGadget";
+
+        fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
+            let a = cb.query_cell();
+            let b = cb.query_cell();
+            let cmp_gadget = ComparisonGadget::<F, N>::construct(cb, a.expr(), b.expr());
+            cb.require_equal(
+                "(a < b) * (a == b) == 0",
+                cmp_gadget.expr().0 * cmp_gadget.expr().1,
+                0.expr(),
+            );
+
+            if CHECK_EQ {
+                cb.require_equal("a == b", cmp_gadget.expr().1, 1.expr());
+            } else {
+                cb.require_equal("a < b", cmp_gadget.expr().0, 1.expr());
+            }
+
+            ComparisonTestContainer { cmp_gadget, a, b }
+        }
+
+        fn assign_gadget_container(
+            &self,
+            input_words: &[Word],
+            region: &mut CachedRegion<'_, '_, F>,
+        ) -> Result<(), Error> {
+            let a = input_words[0].to_scalar().unwrap();
+            let b = input_words[1].to_scalar().unwrap();
+            let offset = 0;
+
+            self.a.assign(region, offset, Value::known(a))?;
+            self.b.assign(region, offset, Value::known(b))?;
+            self.cmp_gadget.assign(region, offset, a, b)?;
+
+            Ok(())
+        }
+    }
+
     #[test]
-    fn test_comparison() {
-        const N: usize = 4;
-        #[derive(Clone)]
-        /// a < b
-        struct ComparisonTestContainer<F, const CHECK_EQ: bool> {
-            cmp_gadget: ComparisonGadget<F, N>,
-            a: Cell<F>,
-            b: Cell<F>,
-        }
-
-        impl<F: Field, const CHECK_EQ: bool> MathGadgetContainer<F>
-            for ComparisonTestContainer<F, CHECK_EQ>
-        {
-            const NAME: &'static str = "ComparisonGadget";
-
-            fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
-                let a = cb.query_cell();
-                let b = cb.query_cell();
-                let cmp_gadget = ComparisonGadget::<F, N>::construct(cb, a.expr(), b.expr());
-                cb.require_equal(
-                    "(a < b) * (a == b) == 0",
-                    cmp_gadget.expr().0 * cmp_gadget.expr().1,
-                    0.expr(),
-                );
-
-                if CHECK_EQ {
-                    cb.require_equal("a == b", cmp_gadget.expr().1, 1.expr());
-                } else {
-                    cb.require_equal("a < b", cmp_gadget.expr().0, 1.expr());
-                }
-
-                ComparisonTestContainer { cmp_gadget, a, b }
-            }
-
-            fn assign_gadget_container(
-                &self,
-                input_words: &[Word],
-                region: &mut CachedRegion<'_, '_, F>,
-            ) -> Result<(), Error> {
-                let a = input_words[0].to_scalar().unwrap();
-                let b = input_words[1].to_scalar().unwrap();
-                let offset = 0;
-
-                self.a.assign(region, offset, Value::known(a))?;
-                self.b.assign(region, offset, Value::known(b))?;
-                self.cmp_gadget.assign(region, offset, a, b)?;
-
-                Ok(())
-            }
-        }
-
+    fn test_comparison_0_eq() {
         // a == b check
-        test_math_gadget_container::<Fr, ComparisonTestContainer<Fr, true>>(
+        test_math_gadget_container::<Fr, ComparisonTestContainer<Fr, 4, true>>(
             vec![Word::from(0), Word::from(0)],
             true,
         );
+    }
 
-        test_math_gadget_container::<Fr, ComparisonTestContainer<Fr, true>>(
+    #[test]
+    fn test_comparison_1_eq() {
+        test_math_gadget_container::<Fr, ComparisonTestContainer<Fr, 4, true>>(
             vec![Word::from(1), Word::from(1)],
             true,
         );
+    }
 
-        test_math_gadget_container::<Fr, ComparisonTestContainer<Fr, true>>(
-            vec![Word::from(1 << N), Word::from(1 << N)],
+    #[test]
+    fn test_comparison_max_eq() {
+        test_math_gadget_container::<Fr, ComparisonTestContainer<Fr, 4, true>>(
+            vec![Word::from(1 << 4), Word::from(1 << 4)],
             true,
         );
+    }
 
-        test_math_gadget_container::<Fr, ComparisonTestContainer<Fr, true>>(
-            vec![Word::from(0), Word::from(1 << N)],
+    #[test]
+    fn test_comparison_0_neq_max() {
+        test_math_gadget_container::<Fr, ComparisonTestContainer<Fr, 4, true>>(
+            vec![Word::from(0), Word::from(1 << 4)],
             false,
         );
+    }
 
-        // a < b check
-        test_math_gadget_container::<Fr, ComparisonTestContainer<Fr, false>>(
+    // a < b check
+    #[test]
+    fn test_comparison_0_lt_1() {
+        test_math_gadget_container::<Fr, ComparisonTestContainer<Fr, 4, false>>(
             vec![Word::from(0), Word::from(1)],
             true,
         );
+    }
 
-        test_math_gadget_container::<Fr, ComparisonTestContainer<Fr, false>>(
-            vec![Word::from(1), Word::from(1 << N)],
+    #[test]
+    fn test_comparison_1_lt_max() {
+        test_math_gadget_container::<Fr, ComparisonTestContainer<Fr, 4, false>>(
+            vec![Word::from(1), Word::from(1 << 4)],
             true,
         );
+    }
 
-        test_math_gadget_container::<Fr, ComparisonTestContainer<Fr, false>>(
+    #[test]
+    fn test_comparison_1_lt_0() {
+        test_math_gadget_container::<Fr, ComparisonTestContainer<Fr, 4, false>>(
             vec![Word::from(1), Word::from(0)],
             false,
         );
+    }
 
-        test_math_gadget_container::<Fr, ComparisonTestContainer<Fr, false>>(
-            vec![Word::from(10000), Word::from(2 << N)],
+    #[test]
+    fn test_comparison_8bytes_lowmax_lt_highmax() {
+        const N_BYTES: usize = 16;
+        let half_max_lo = U256([u64::MAX, 0, 0, 0]);
+        let half_max_hi = U256([0, u64::MAX, 0, 0]);
+        test_math_gadget_container::<Fr, ComparisonTestContainer<Fr, N_BYTES, false>>(
+            vec![half_max_lo, half_max_hi],
+            true,
+        );
+
+        test_math_gadget_container::<Fr, ComparisonTestContainer<Fr, N_BYTES, false>>(
+            vec![half_max_hi, half_max_lo],
+            false,
+        );
+    }
+
+    #[test]
+    fn test_comparison_overflow() {
+        test_math_gadget_container::<Fr, ComparisonTestContainer<Fr, 4, false>>(
+            vec![Word::from(10000), Word::from(1 << (4 + 1))],
             false,
         );
     }

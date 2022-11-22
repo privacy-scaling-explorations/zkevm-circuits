@@ -73,62 +73,76 @@ mod tests {
     use halo2_proofs::halo2curves::bn256::Fr;
     use halo2_proofs::plonk::Error;
 
+    const N: usize = 32;
+    #[derive(Clone)]
+    /// all(n.cells) == 0
+    struct IsZeroGadgetTestContainer<F> {
+        z_gadget: BatchedIsZeroGadget<F, N>,
+        n: util::Word<F>,
+    }
+
+    impl<F: Field> MathGadgetContainer<F> for IsZeroGadgetTestContainer<F> {
+        const NAME: &'static str = "BatchedIsZeroGadget";
+
+        fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
+            let n = cb.query_word();
+            let z_gadget = BatchedIsZeroGadget::<F, N>::construct(
+                cb,
+                n.cells
+                    .iter()
+                    .map(|cell| cell.expr())
+                    .collect::<Vec<Expression<F>>>()
+                    .try_into()
+                    .unwrap(),
+            );
+            cb.require_equal("Input must be all 0", z_gadget.expr(), 1.expr());
+            IsZeroGadgetTestContainer { z_gadget, n }
+        }
+
+        fn assign_gadget_container(
+            &self,
+            input_words: &[Word],
+            region: &mut CachedRegion<'_, '_, F>,
+        ) -> Result<(), Error> {
+            let n = input_words[0];
+            let offset = 0;
+
+            self.n.assign(region, offset, Some(n.to_le_bytes()))?;
+            self.z_gadget
+                .assign(region, 0, n.to_le_bytes().map(|byte| F::from(byte as u64)))?;
+
+            Ok(())
+        }
+    }
+
     #[test]
-    fn test_batched_iszero() {
-        const N: usize = 32;
-        #[derive(Clone)]
-        /// all(n.cells) == 0
-        struct IsZeroGadgetTestContainer<F> {
-            z_gadget: BatchedIsZeroGadget<F, N>,
-            n: util::Word<F>,
-        }
-
-        impl<F: Field> MathGadgetContainer<F> for IsZeroGadgetTestContainer<F> {
-            const NAME: &'static str = "BatchedIsZeroGadget";
-
-            fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
-                let n = cb.query_word();
-                let z_gadget = BatchedIsZeroGadget::<F, N>::construct(
-                    cb,
-                    n.cells
-                        .iter()
-                        .map(|cell| cell.expr())
-                        .collect::<Vec<Expression<F>>>()
-                        .try_into()
-                        .unwrap(),
-                );
-                cb.require_equal("Input must be all 0", z_gadget.expr(), 1.expr());
-                IsZeroGadgetTestContainer { z_gadget, n }
-            }
-
-            fn assign_gadget_container(
-                &self,
-                input_words: &[Word],
-                region: &mut CachedRegion<'_, '_, F>,
-            ) -> Result<(), Error> {
-                let n = input_words[0];
-                let offset = 0;
-
-                self.n.assign(region, offset, Some(n.to_le_bytes()))?;
-                self.z_gadget.assign(
-                    region,
-                    0,
-                    n.to_le_bytes().map(|byte| F::from(byte as u64)),
-                )?;
-
-                Ok(())
-            }
-        }
-
+    fn test_batched_single_iszero() {
         test_math_gadget_container::<Fr, IsZeroGadgetTestContainer<Fr>>(vec![Word::from(0)], true);
+    }
 
+    #[test]
+    fn test_batched_single_bit_1_not_iszero() {
         test_math_gadget_container::<Fr, IsZeroGadgetTestContainer<Fr>>(vec![Word::from(1)], false);
+    }
 
+    #[test]
+    fn test_batched_single_bit_1024_not_iszero() {
+        test_math_gadget_container::<Fr, IsZeroGadgetTestContainer<Fr>>(
+            vec![Word::from(1024)],
+            false,
+        );
+    }
+
+    #[test]
+    fn test_batched_bignum_bytes_not_iszero() {
         test_math_gadget_container::<Fr, IsZeroGadgetTestContainer<Fr>>(
             vec![Word::from(1u64 << 32)],
             false,
         );
+    }
 
+    #[test]
+    fn test_batched_wordmax_bytes_not_iszero() {
         test_math_gadget_container::<Fr, IsZeroGadgetTestContainer<Fr>>(vec![Word::MAX], false);
     }
 }
