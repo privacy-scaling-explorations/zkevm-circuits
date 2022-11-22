@@ -149,9 +149,16 @@ mod tests {
             vec![Word::from(0), Word::from(0), Word::from(0)],
             true,
         );
-
         test_math_gadget_container::<Fr, ModGadgetTestContainer<Fr>>(
             vec![Word::from(1), Word::from(0), Word::from(0)],
+            true,
+        );
+        test_math_gadget_container::<Fr, ModGadgetTestContainer<Fr>>(
+            vec![Word::from(548), Word::from(50), Word::from(48)],
+            true,
+        );
+        test_math_gadget_container::<Fr, ModGadgetTestContainer<Fr>>(
+            vec![Word::from(30), Word::from(50), Word::from(30)],
             true,
         );
     }
@@ -162,9 +169,12 @@ mod tests {
             vec![Word::from(1), Word::from(1), Word::from(0)],
             true,
         );
-
         test_math_gadget_container::<Fr, ModGadgetTestContainer<Fr>>(
             vec![Word::from(1), Word::from(1), Word::from(1)],
+            false,
+        );
+        test_math_gadget_container::<Fr, ModGadgetTestContainer<Fr>>(
+            vec![Word::from(46), Word::from(50), Word::from(48)],
             false,
         );
     }

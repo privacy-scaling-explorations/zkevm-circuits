@@ -109,32 +109,53 @@ mod tests {
 
     #[test]
     fn test_minmax_eq() {
+        // a == b == 0
         test_math_gadget_container::<Fr, MinMaxTestContainer<Fr, true>>(
             vec![Word::from(0), Word::from(0)],
+            true,
+        );
+        test_math_gadget_container::<Fr, MinMaxTestContainer<Fr, true>>(
+            vec![Word::from(5), Word::from(5)],
             true,
         );
     }
 
     #[test]
     fn test_minmax_expect_min_a() {
+        // min == a, max == b
         test_math_gadget_container::<Fr, MinMaxTestContainer<Fr, true>>(
             vec![Word::from(0), Word::from(1)],
+            true,
+        );
+        test_math_gadget_container::<Fr, MinMaxTestContainer<Fr, true>>(
+            vec![Word::from(3), Word::from(5)],
             true,
         );
     }
 
     #[test]
     fn test_minmx_unexpect_min_a() {
+        // min == b, max == a
         test_math_gadget_container::<Fr, MinMaxTestContainer<Fr, true>>(
             vec![Word::from(1), Word::from(0)],
+            false,
+        );
+        test_math_gadget_container::<Fr, MinMaxTestContainer<Fr, true>>(
+            vec![Word::from(256), Word::from(3)],
             false,
         );
     }
 
     #[test]
     fn test_minmax_expect_min_b() {
+        // min == a, max == b
         test_math_gadget_container::<Fr, MinMaxTestContainer<Fr, false>>(
             vec![Word::from(1), Word::from(0)],
+            true,
+        );
+
+        test_math_gadget_container::<Fr, MinMaxTestContainer<Fr, false>>(
+            vec![Word::from(777), Word::from(44)],
             true,
         );
     }

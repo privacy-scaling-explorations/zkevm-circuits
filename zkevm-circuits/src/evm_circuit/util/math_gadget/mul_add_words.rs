@@ -225,6 +225,36 @@ mod tests {
             vec![Word::from(1), Word::from(1), Word::from(1), Word::from(2)],
             true,
         );
+        // 100 * 54 + 98 == 5498
+        test_math_gadget_container::<Fr, MulAddGadgetContainer<Fr>>(
+            vec![
+                Word::from(100),
+                Word::from(54),
+                Word::from(98),
+                Word::from(5498),
+            ],
+            true,
+        );
+        // 100 * 54 + low_max == low_max + 5400
+        test_math_gadget_container::<Fr, MulAddGadgetContainer<Fr>>(
+            vec![
+                Word::from(100),
+                Word::from(54),
+                WORD_LOW_MAX,
+                Word::from(5400) + WORD_LOW_MAX,
+            ],
+            true,
+        );
+        // 100 * 54 + low_max == low_max + 5400
+        test_math_gadget_container::<Fr, MulAddGadgetContainer<Fr>>(
+            vec![
+                Word::from(100),
+                Word::from(54),
+                WORD_HIGH_MAX,
+                Word::from(5400) + WORD_HIGH_MAX,
+            ],
+            true,
+        );
     }
 
     #[test]

@@ -125,9 +125,13 @@ mod tests {
     }
 
     #[test]
-    fn test_pairselect_both() {
+    fn test_pairselect_eq() {
         test_math_gadget_container::<Fr, PairSelectionTestContainer<Fr, true>>(
             vec![Word::from(0), Word::from(0), Word::from(0)],
+            true,
+        );
+        test_math_gadget_container::<Fr, PairSelectionTestContainer<Fr, true>>(
+            vec![Word::from(2898), Word::from(2898), Word::from(2898)],
             true,
         );
     }
@@ -138,6 +142,23 @@ mod tests {
             vec![Word::from(0), Word::from(0), Word::from(1)],
             true,
         );
+        test_math_gadget_container::<Fr, PairSelectionTestContainer<Fr, true>>(
+            vec![Word::from(2898), Word::from(2898), Word::from(1)],
+            true,
+        );
+        test_math_gadget_container::<Fr, PairSelectionTestContainer<Fr, true>>(
+            vec![WORD_LOW_MAX, WORD_LOW_MAX, Word::from(1)],
+            true,
+        );
+        // overflow?
+        test_math_gadget_container::<Fr, PairSelectionTestContainer<Fr, true>>(
+            vec![WORD_HIGH_MAX, WORD_HIGH_MAX, Word::from(1)],
+            false,
+        );
+        test_math_gadget_container::<Fr, PairSelectionTestContainer<Fr, true>>(
+            vec![Word::MAX, Word::MAX, Word::from(1)],
+            false,
+        );
     }
 
     #[test]
@@ -146,12 +167,20 @@ mod tests {
             vec![Word::from(0), Word::from(1), Word::from(0)],
             false,
         );
+        test_math_gadget_container::<Fr, PairSelectionTestContainer<Fr, true>>(
+            vec![Word::from(2989), Word::from(1), Word::from(2989)],
+            false,
+        );
     }
 
     #[test]
     fn test_pairselect_expect_b_and_b() {
         test_math_gadget_container::<Fr, PairSelectionTestContainer<Fr, false>>(
             vec![Word::from(0), Word::from(1), Word::from(0)],
+            true,
+        );
+        test_math_gadget_container::<Fr, PairSelectionTestContainer<Fr, false>>(
+            vec![Word::from(2989), Word::from(1), Word::from(2989)],
             true,
         );
     }

@@ -115,33 +115,42 @@ mod tests {
     }
 
     #[test]
-    fn test_ltword_0lt1() {
+    fn test_ltword_expect() {
         test_math_gadget_container::<Fr, LtWordTestContainer<Fr>>(
             vec![Word::from(0), Word::from(1)],
             true,
         );
-    }
-
-    #[test]
-    fn test_ltword_1lt_max() {
         test_math_gadget_container::<Fr, LtWordTestContainer<Fr>>(
             vec![Word::from(1), Word::MAX],
+            true,
+        );
+        test_math_gadget_container::<Fr, LtWordTestContainer<Fr>>(
+            vec![WORD_LOW_MAX, WORD_HIGH_MAX],
+            true,
+        );
+        test_math_gadget_container::<Fr, LtWordTestContainer<Fr>>(
+            vec![Word::from(90), WORD_LOW_MAX],
+            true,
+        );
+        test_math_gadget_container::<Fr, LtWordTestContainer<Fr>>(
+            vec![Word::from(90), WORD_HIGH_MAX],
             true,
         );
     }
 
     #[test]
-    fn test_ltword_1nlt0() {
+    fn test_ltword_unexpect() {
         test_math_gadget_container::<Fr, LtWordTestContainer<Fr>>(
             vec![Word::from(1), Word::from(0)],
             false,
         );
-    }
-
-    #[test]
-    fn test_ltword_max_nlt_max() {
         test_math_gadget_container::<Fr, LtWordTestContainer<Fr>>(
             vec![Word::MAX, Word::MAX],
+            false,
+        );
+
+        test_math_gadget_container::<Fr, LtWordTestContainer<Fr>>(
+            vec![WORD_HIGH_MAX, WORD_LOW_MAX],
             false,
         );
     }

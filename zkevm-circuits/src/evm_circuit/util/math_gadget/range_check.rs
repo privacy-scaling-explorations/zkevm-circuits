@@ -97,6 +97,7 @@ mod tests {
             true,
         );
     }
+
     #[test]
     fn test_rangecheck_out_of_range() {
         test_math_gadget_container::<Fr, RangeCheckTestContainer<Fr>>(

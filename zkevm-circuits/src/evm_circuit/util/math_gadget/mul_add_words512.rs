@@ -298,6 +298,50 @@ mod tests {
             ],
             true,
         );
+        // 100 * 54 + 0 == 0 * 2**256 + 5400
+        test_math_gadget_container::<Fr, MulAddWords512GadgetContainer<Fr>>(
+            vec![
+                Word::from(100),
+                Word::from(54),
+                Word::from(0),
+                Word::from(5400),
+                Word::from(0),
+            ],
+            true,
+        );
+        // 100 * 54 + max == 1 * 2**256 + 5400
+        test_math_gadget_container::<Fr, MulAddWords512GadgetContainer<Fr>>(
+            vec![
+                Word::from(100),
+                Word::from(54),
+                Word::from(1),
+                Word::from(5399),
+                Word::MAX,
+            ],
+            true,
+        );
+        // 100 * 54 + low_max == 0 * 2**256 + 5400 + low_max
+        test_math_gadget_container::<Fr, MulAddWords512GadgetContainer<Fr>>(
+            vec![
+                Word::from(100),
+                Word::from(54),
+                Word::from(0),
+                Word::from(5400) + WORD_LOW_MAX,
+                WORD_LOW_MAX,
+            ],
+            true,
+        );
+        // 100 * 54 + high_max == 0 * 2**256 + 5400 + high_max
+        test_math_gadget_container::<Fr, MulAddWords512GadgetContainer<Fr>>(
+            vec![
+                Word::from(100),
+                Word::from(54),
+                Word::from(0),
+                Word::from(5400) + WORD_HIGH_MAX,
+                WORD_HIGH_MAX,
+            ],
+            true,
+        );
     }
 
     #[test]

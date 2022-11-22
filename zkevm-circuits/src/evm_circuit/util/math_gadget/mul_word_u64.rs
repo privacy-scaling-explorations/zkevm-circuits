@@ -170,12 +170,27 @@ mod tests {
             vec![Word::from(2), Word::from(2), Word::from(4)],
             true,
         );
+        // 22222 * 500 = 11111000
+        test_math_gadget_container::<Fr, MulWordByU64TestContainer<Fr>>(
+            vec![Word::from(22222), Word::from(500), Word::from(11111000)],
+            true,
+        );
+        // low_max * 2 = low_max << 1
+        test_math_gadget_container::<Fr, MulWordByU64TestContainer<Fr>>(
+            vec![WORD_LOW_MAX, Word::from(2), WORD_LOW_MAX << 1],
+            true,
+        );
     }
 
     #[test]
     fn test_mulwordu64_unexpect() {
         test_math_gadget_container::<Fr, MulWordByU64TestContainer<Fr>>(
             vec![Word::MAX, Word::from(1), Word::from(1)],
+            false,
+        );
+        // high_max * 2 = overflow
+        test_math_gadget_container::<Fr, MulWordByU64TestContainer<Fr>>(
+            vec![WORD_HIGH_MAX, Word::from(2), WORD_HIGH_MAX << 1],
             false,
         );
     }

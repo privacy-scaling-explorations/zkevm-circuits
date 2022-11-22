@@ -11,11 +11,14 @@ use crate::evm_circuit::util::{rlc, CellType};
 use crate::evm_circuit::{Advice, Column, Fixed};
 use crate::table::LookupTable;
 use crate::{evm_circuit::step::ExecutionState, util::power_of_randomness_from_instance};
-use eth_types::Word;
+use eth_types::{Word, U256};
 use halo2_proofs::circuit::Layouter;
 use halo2_proofs::plonk::{ConstraintSystem, Selector};
 use halo2_proofs::plonk::{Error, Expression};
 use halo2_proofs::{circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit};
+
+pub(crate) const WORD_LOW_MAX: Word = U256([u64::MAX, u64::MAX, 0, 0]);
+pub(crate) const WORD_HIGH_MAX: Word = U256([0, 0, u64::MAX, u64::MAX]);
 
 pub(crate) trait MathGadgetContainer<F: Field>: Clone {
     const NAME: &'static str;

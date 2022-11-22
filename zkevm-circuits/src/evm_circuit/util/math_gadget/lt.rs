@@ -134,15 +134,11 @@ mod tests {
     }
 
     #[test]
-    fn test_lt_0lt1() {
+    fn test_lt_expect() {
         test_math_gadget_container::<Fr, LtGadgetTestContainer<Fr>>(
             vec![Word::from(0), Word::from(1)],
             true,
         );
-    }
-
-    #[test]
-    fn test_lt_0nlt0() {
         test_math_gadget_container::<Fr, LtGadgetTestContainer<Fr>>(
             vec![Word::from(0), Word::from(0)],
             false,
