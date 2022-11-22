@@ -150,15 +150,6 @@ mod tests {
             vec![WORD_LOW_MAX, WORD_LOW_MAX, Word::from(1)],
             true,
         );
-        // overflow?
-        test_math_gadget_container::<Fr, PairSelectionTestContainer<Fr, true>>(
-            vec![WORD_HIGH_MAX, WORD_HIGH_MAX, Word::from(1)],
-            false,
-        );
-        test_math_gadget_container::<Fr, PairSelectionTestContainer<Fr, true>>(
-            vec![Word::MAX, Word::MAX, Word::from(1)],
-            false,
-        );
     }
 
     #[test]
