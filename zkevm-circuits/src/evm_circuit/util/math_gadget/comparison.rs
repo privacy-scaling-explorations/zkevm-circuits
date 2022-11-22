@@ -132,6 +132,7 @@ mod tests {
             true,
         );
     }
+
     #[test]
     fn test_comparison_0_neq_max() {
         test_math_gadget_container::<Fr, ComparisonTestContainer<Fr, 4, true>>(
@@ -161,6 +162,22 @@ mod tests {
     fn test_comparison_1_lt_0() {
         test_math_gadget_container::<Fr, ComparisonTestContainer<Fr, 4, false>>(
             vec![Word::from(1), Word::from(0)],
+            false,
+        );
+    }
+
+    #[test]
+    fn test_comparison_8bytes_lowmax_lt_highmax() {
+        const N_BYTES: usize = 16;
+        let half_max_lo = U256([u64::MAX, 0, 0, 0]);
+        let half_max_hi = U256([0, u64::MAX, 0, 0]);
+        test_math_gadget_container::<Fr, ComparisonTestContainer<Fr, N_BYTES, false>>(
+            vec![half_max_lo, half_max_hi],
+            true,
+        );
+
+        test_math_gadget_container::<Fr, ComparisonTestContainer<Fr, N_BYTES, false>>(
+            vec![half_max_hi, half_max_lo],
             false,
         );
     }
