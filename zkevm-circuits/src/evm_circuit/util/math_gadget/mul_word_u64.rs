@@ -98,76 +98,99 @@ mod tests {
     use halo2_proofs::halo2curves::bn256::Fr;
     use halo2_proofs::plonk::Error;
 
+    #[derive(Clone)]
+    /// product = a*(b as u64)
+    struct MulWordByU64TestContainer<F> {
+        mulwords_u64_gadget: MulWordByU64Gadget<F>,
+        a: util::Word<F>,
+        b: Cell<F>,
+        product: util::Word<F>,
+    }
+
+    impl<F: Field> MathGadgetContainer<F> for MulWordByU64TestContainer<F> {
+        const NAME: &'static str = "MulWordByU64Gadget";
+
+        fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
+            let a = cb.query_word();
+            let b = cb.query_cell();
+            let product = cb.query_word();
+            let mulwords_u64_gadget = MulWordByU64Gadget::<F>::construct(cb, a.clone(), b.expr());
+            MulWordByU64TestContainer {
+                mulwords_u64_gadget,
+                a,
+                b,
+                product,
+            }
+        }
+
+        fn assign_gadget_container(
+            &self,
+            input_words: &[Word],
+            region: &mut CachedRegion<'_, '_, F>,
+        ) -> Result<(), Error> {
+            let a = input_words[0];
+            let b = u64::from_le_bytes(input_words[1].to_le_bytes()[..8].try_into().unwrap());
+            let product = input_words[2];
+            let offset = 0;
+
+            self.a.assign(region, offset, Some(a.to_le_bytes()))?;
+            self.b.assign(region, offset, Value::known(F::from(b)))?;
+            self.product
+                .assign(region, offset, Some(product.to_le_bytes()))?;
+            self.mulwords_u64_gadget.assign(region, 0, a, b, product)?;
+
+            Ok(())
+        }
+    }
+
     #[test]
-    fn test_mul_word_u64() {
-        #[derive(Clone)]
-        /// product = a*(b as u64)
-        struct MulWordByU64TestContainer<F> {
-            mulwords_u64_gadget: MulWordByU64Gadget<F>,
-            a: util::Word<F>,
-            b: Cell<F>,
-            product: util::Word<F>,
-        }
-
-        impl<F: Field> MathGadgetContainer<F> for MulWordByU64TestContainer<F> {
-            const NAME: &'static str = "MulWordByU64Gadget";
-
-            fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
-                let a = cb.query_word();
-                let b = cb.query_cell();
-                let product = cb.query_word();
-                let mulwords_u64_gadget =
-                    MulWordByU64Gadget::<F>::construct(cb, a.clone(), b.expr());
-                MulWordByU64TestContainer {
-                    mulwords_u64_gadget,
-                    a,
-                    b,
-                    product,
-                }
-            }
-
-            fn assign_gadget_container(
-                &self,
-                input_words: &[Word],
-                region: &mut CachedRegion<'_, '_, F>,
-            ) -> Result<(), Error> {
-                let a = input_words[0];
-                let b = u64::from_le_bytes(input_words[1].to_le_bytes()[..8].try_into().unwrap());
-                let product = input_words[2];
-                let offset = 0;
-
-                self.a.assign(region, offset, Some(a.to_le_bytes()))?;
-                self.b.assign(region, offset, Value::known(F::from(b)))?;
-                self.product
-                    .assign(region, offset, Some(product.to_le_bytes()))?;
-                self.mulwords_u64_gadget.assign(region, 0, a, b, product)?;
-
-                Ok(())
-            }
-        }
-
+    fn test_mulwordu64_expect() {
+        // 0 * 0 = 0
         test_math_gadget_container::<Fr, MulWordByU64TestContainer<Fr>>(
             vec![Word::from(0), Word::from(0), Word::from(0)],
             true,
         );
-
+        // max * 0 = 0
         test_math_gadget_container::<Fr, MulWordByU64TestContainer<Fr>>(
             vec![Word::MAX, Word::from(0), Word::from(0)],
             true,
         );
-
+        // 1 * 1 = 1
         test_math_gadget_container::<Fr, MulWordByU64TestContainer<Fr>>(
             vec![Word::from(1), Word::from(1), Word::from(1)],
             true,
         );
-
+        // max * 1 = max
         test_math_gadget_container::<Fr, MulWordByU64TestContainer<Fr>>(
             vec![Word::MAX, Word::from(1), Word::MAX],
             true,
         );
+        // 2 * 2 = 4
+        test_math_gadget_container::<Fr, MulWordByU64TestContainer<Fr>>(
+            vec![Word::from(2), Word::from(2), Word::from(4)],
+            true,
+        );
+        // 22222 * 500 = 11111000
+        test_math_gadget_container::<Fr, MulWordByU64TestContainer<Fr>>(
+            vec![Word::from(22222), Word::from(500), Word::from(11111000)],
+            true,
+        );
+        // low_max * 2 = low_max << 1
+        test_math_gadget_container::<Fr, MulWordByU64TestContainer<Fr>>(
+            vec![WORD_LOW_MAX, Word::from(2), WORD_LOW_MAX << 1],
+            true,
+        );
+    }
 
+    #[test]
+    fn test_mulwordu64_unexpect() {
         test_math_gadget_container::<Fr, MulWordByU64TestContainer<Fr>>(
             vec![Word::MAX, Word::from(1), Word::from(1)],
+            false,
+        );
+        // high_max * 2 = overflow
+        test_math_gadget_container::<Fr, MulWordByU64TestContainer<Fr>>(
+            vec![WORD_HIGH_MAX, Word::from(2), WORD_HIGH_MAX << 1],
             false,
         );
     }
