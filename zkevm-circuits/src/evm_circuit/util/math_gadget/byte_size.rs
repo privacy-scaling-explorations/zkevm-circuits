@@ -115,63 +115,72 @@ mod tests {
     use halo2_proofs::halo2curves::bn256::Fr;
     use halo2_proofs::plonk::Error;
 
+    #[derive(Clone)]
+    struct ByteSizeGadgetContainer<F, const N: u8> {
+        bytesize_gadget: ByteSizeGadget<F>,
+        value_rlc: util::Word<F>,
+    }
+
+    impl<F: Field, const N: u8> MathGadgetContainer<F> for ByteSizeGadgetContainer<F, N> {
+        const NAME: &'static str = "ByteSizeGadget";
+
+        fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
+            let value_rlc = cb.query_word();
+            let bytesize_gadget = ByteSizeGadget::<F>::construct(cb, &value_rlc);
+            cb.require_equal(
+                "byte size gadget must equal",
+                bytesize_gadget.byte_size(),
+                N.expr(),
+            );
+            ByteSizeGadgetContainer {
+                bytesize_gadget,
+                value_rlc,
+            }
+        }
+
+        fn assign_gadget_container(
+            &self,
+            input_words: &[Word],
+            region: &mut CachedRegion<'_, '_, F>,
+        ) -> Result<(), Error> {
+            let offset = 0;
+            let x = input_words[0];
+            self.value_rlc
+                .assign(region, offset, Some(x.to_le_bytes()))?;
+            self.bytesize_gadget.assign(region, offset, x)?;
+
+            Ok(())
+        }
+    }
+
     #[test]
-    fn test_bytesize() {
-        #[derive(Clone)]
-        struct ByteSizeGadgetContainer<F, const N: u8> {
-            bytesize_gadget: ByteSizeGadget<F>,
-            value_rlc: util::Word<F>,
-        }
+    fn test_bytesize_0() {
+        test_math_gadget_container::<Fr, ByteSizeGadgetContainer<Fr, 0>>(vec![Word::from(0)], true);
+    }
 
-        impl<F: Field, const N: u8> MathGadgetContainer<F> for ByteSizeGadgetContainer<F, N> {
-            const NAME: &'static str = "ByteSizeGadget";
-
-            fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
-                let value_rlc = cb.query_word();
-                let bytesize_gadget = ByteSizeGadget::<F>::construct(cb, &value_rlc);
-                cb.require_equal(
-                    "byte size gadget must equal",
-                    bytesize_gadget.byte_size(),
-                    N.expr(),
-                );
-                ByteSizeGadgetContainer {
-                    bytesize_gadget,
-                    value_rlc,
-                }
-            }
-
-            fn assign_gadget_container(
-                &self,
-                input_words: &[Word],
-                region: &mut CachedRegion<'_, '_, F>,
-            ) -> Result<(), Error> {
-                let offset = 0;
-                let x = input_words[0];
-                self.value_rlc
-                    .assign(region, offset, Some(x.to_le_bytes()))?;
-                self.bytesize_gadget.assign(region, offset, x)?;
-
-                Ok(())
-            }
-        }
-
-        test_math_gadget_container::<Fr, ByteSizeGadgetContainer<Fr, 0>>(
-            vec![Word::from(0), Word::from(0)],
-            true,
-        );
-
+    #[test]
+    fn test_bytesize_1() {
         test_math_gadget_container::<Fr, ByteSizeGadgetContainer<Fr, 1>>(vec![Word::from(1)], true);
+    }
 
+    #[test]
+    fn test_bytesize_1_neq_0() {
         test_math_gadget_container::<Fr, ByteSizeGadgetContainer<Fr, 0>>(
             vec![Word::from(1)],
             false,
         );
+    }
 
+    #[test]
+    fn test_bytesize_256_eq_2() {
         test_math_gadget_container::<Fr, ByteSizeGadgetContainer<Fr, 2>>(
             vec![Word::from(256)],
             true,
         );
+    }
 
-        test_math_gadget_container::<Fr, ByteSizeGadgetContainer<Fr, 31>>(vec![Word::MAX], true);
+    #[test]
+    fn test_bytesize_wordmax_eq_32() {
+        test_math_gadget_container::<Fr, ByteSizeGadgetContainer<Fr, 32>>(vec![Word::MAX], true);
     }
 }

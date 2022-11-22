@@ -91,70 +91,82 @@ mod tests {
     use halo2_proofs::halo2curves::bn256::Fr;
     use halo2_proofs::plonk::Error;
 
+    const N: usize = 4;
+    #[derive(Clone)]
+    /// a < b
+    struct ConstantDivisionTestContainer<F, const DENOMINATOR: u64, const REMINDER: u64> {
+        constdiv_gadget: ConstantDivisionGadget<F, N>,
+        a: Cell<F>,
+    }
+
+    impl<F: Field, const DENOMINATOR: u64, const REMAINDER: u64> MathGadgetContainer<F>
+        for ConstantDivisionTestContainer<F, DENOMINATOR, REMAINDER>
+    {
+        const NAME: &'static str = "ConstantDivisionGadget";
+
+        fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
+            let a = cb.query_cell();
+            let constdiv_gadget =
+                ConstantDivisionGadget::<F, N>::construct(cb, a.expr(), DENOMINATOR);
+
+            cb.require_equal(
+                "a == n * denom",
+                constdiv_gadget.remainder(),
+                REMAINDER.expr(),
+            );
+
+            ConstantDivisionTestContainer { constdiv_gadget, a }
+        }
+
+        fn assign_gadget_container(
+            &self,
+            input_words: &[Word],
+            region: &mut CachedRegion<'_, '_, F>,
+        ) -> Result<(), Error> {
+            let a = u64::from_le_bytes(input_words[0].to_le_bytes()[..8].try_into().unwrap());
+            let offset = 0;
+
+            self.a.assign(region, offset, Value::known(F::from(a)))?;
+            self.constdiv_gadget.assign(region, offset, a as u128)?;
+
+            Ok(())
+        }
+    }
+
     #[test]
-    fn test_constantdivisiongadget() {
-        const N: usize = 4;
-        #[derive(Clone)]
-        /// a < b
-        struct ConstantDivisionTestContainer<F, const DENOMINATOR: u64, const REMINDER: u64> {
-            constdiv_gadget: ConstantDivisionGadget<F, N>,
-            a: Cell<F>,
-        }
-
-        impl<F: Field, const DENOMINATOR: u64, const REMAINDER: u64> MathGadgetContainer<F>
-            for ConstantDivisionTestContainer<F, DENOMINATOR, REMAINDER>
-        {
-            const NAME: &'static str = "ConstantDivisionGadget";
-
-            fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
-                let a = cb.query_cell();
-                let constdiv_gadget =
-                    ConstantDivisionGadget::<F, N>::construct(cb, a.expr(), DENOMINATOR);
-
-                cb.require_equal(
-                    "a == n * denom",
-                    constdiv_gadget.remainder(),
-                    REMAINDER.expr(),
-                );
-
-                ConstantDivisionTestContainer { constdiv_gadget, a }
-            }
-
-            fn assign_gadget_container(
-                &self,
-                input_words: &[Word],
-                region: &mut CachedRegion<'_, '_, F>,
-            ) -> Result<(), Error> {
-                let a = u64::from_le_bytes(input_words[0].to_le_bytes()[..8].try_into().unwrap());
-                let offset = 0;
-
-                self.a.assign(region, offset, Value::known(F::from(a)))?;
-                self.constdiv_gadget.assign(region, offset, a as u128)?;
-
-                Ok(())
-            }
-        }
-
+    fn test_constantdivisiongadget_0div5_rem0() {
         test_math_gadget_container::<Fr, ConstantDivisionTestContainer<Fr, 5, 0>>(
             vec![Word::from(0)],
             true,
         );
+    }
 
+    #[test]
+    fn test_constantdivisiongadget_5div5_rem0() {
         test_math_gadget_container::<Fr, ConstantDivisionTestContainer<Fr, 5, 0>>(
             vec![Word::from(5)],
             true,
         );
+    }
 
+    #[test]
+    fn test_constantdivisiongadget_1div5_rem1() {
         test_math_gadget_container::<Fr, ConstantDivisionTestContainer<Fr, 5, 1>>(
             vec![Word::from(1)],
             true,
         );
+    }
 
+    #[test]
+    fn test_constantdivisiongadget_1div5_rem4() {
         test_math_gadget_container::<Fr, ConstantDivisionTestContainer<Fr, 5, 4>>(
             vec![Word::from(1)],
             false,
         );
+    }
 
+    #[test]
+    fn test_constantdivisiongadget_max_div16_rem0() {
         test_math_gadget_container::<Fr, ConstantDivisionTestContainer<Fr, 16, 0>>(
             vec![Word::from(1 << N)],
             true,
