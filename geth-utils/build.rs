@@ -1,3 +1,4 @@
+use log::info;
 use std::env;
 use std::io::{self, Write};
 
@@ -31,12 +32,12 @@ fn main() {
         "./go.mod",
     ];
     for file in dep_files {
-        println!("cargo:rerun-if-changed={}", file);
+        info!("cargo:rerun-if-changed={}", file);
     }
 
     // Link
-    println!("cargo:rustc-link-search=native={}", out_dir);
-    println!("cargo:rustc-link-lib=static={}", lib_name);
+    info!("cargo:rustc-link-search=native={}", out_dir);
+    info!("cargo:rustc-link-lib=static={}", lib_name);
 }
 
 fn fail(message: String) {

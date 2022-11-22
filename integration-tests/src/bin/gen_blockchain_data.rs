@@ -15,7 +15,7 @@ use integration_tests::{
     get_client, get_provider, get_wallet, log_init, CompiledContract, GenDataOutput, CONTRACTS,
     CONTRACTS_PATH,
 };
-use log::{debug, info};
+use log::{error, info};
 use std::collections::HashMap;
 use std::fs::File;
 use std::path::Path;
@@ -123,7 +123,7 @@ async fn main() {
                 break;
             }
             Err(err) => {
-                debug!("Geth not available: {:?}", err);
+                error!("Geth not available: {:?}", err);
                 sleep(Duration::from_millis(500));
             }
         }

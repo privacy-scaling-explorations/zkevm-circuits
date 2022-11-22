@@ -488,6 +488,7 @@ mod state_circuit_stats {
     use eth_types::{bytecode, evm_types::OpcodeId, geth_types::GethData, Address};
     use halo2_proofs::halo2curves::bn256::Fr;
     use halo2_proofs::plonk::{Circuit, ConstraintSystem};
+    use log::info;
     use mock::{eth, test_ctx::TestContext, MOCK_ACCOUNTS};
     use strum::IntoEnumIterator;
 
@@ -593,13 +594,13 @@ mod state_circuit_stats {
             }
         }
 
-        println!(
+        info!(
             "| {: <14} | {: <14} | {: <2} | {: >6} | {: <5} |",
             "state", "opcode", "h", "g", "h/g"
         );
-        println!("| ---            | ---            | ---|    --- | ---   |");
+        info!("| ---            | ---            | ---|    --- | ---   |");
         for (state, opcode, height, gas_cost) in stats {
-            println!(
+            info!(
                 "| {: <14?} | {: <14?} | {: >2} | {: >6} | {: >1.3} |",
                 state,
                 opcode,

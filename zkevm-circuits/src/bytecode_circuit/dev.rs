@@ -7,6 +7,7 @@ use halo2_proofs::{
     plonk::{ConstraintSystem, Error},
 };
 use halo2_proofs::{circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit};
+use log::{debug, error, info};
 
 /// BytecodeCircuitTester
 #[derive(Default)]
@@ -84,7 +85,7 @@ impl<F: Field> BytecodeCircuitTester<F> {
         let result = prover.verify();
         if let Err(failures) = &result {
             for failure in failures.iter() {
-                println!("{}", failure);
+                error!("{}", failure);
             }
         }
         assert_eq!(result.is_ok(), success);
@@ -112,7 +113,7 @@ pub fn test_bytecode_circuit_unrolled<F: Field>(
     let result = prover.verify_par();
     if let Err(failures) = &result {
         for failure in failures.iter() {
-            println!("{}", failure);
+            error!("{}", failure);
         }
     }
     assert_eq!(result.is_ok(), success);

@@ -1758,7 +1758,9 @@ dependencies = [
 name = "geth-utils"
 version = "0.1.0"
 dependencies = [
+ "env_logger",
  "gobuild",
+ "log",
 ]
 
 [[package]]
@@ -2266,10 +2268,12 @@ checksum = "f9b7d56ba4a8344d6be9729995e6b06f928af29998cdf79fe390cbf6b1fee838"
 name = "keccak256"
 version = "0.1.0"
 dependencies = [
+ "env_logger",
  "eth-types",
  "halo2_proofs 0.1.0",
  "itertools",
  "lazy_static",
+ "log",
  "num-bigint",
  "num-traits",
  "plotters",

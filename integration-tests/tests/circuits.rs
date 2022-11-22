@@ -12,7 +12,7 @@ use halo2_proofs::{
 };
 use integration_tests::{get_client, log_init, GenDataOutput, CHAIN_ID};
 use lazy_static::lazy_static;
-use log::trace;
+use log::{error, trace};
 use paste::paste;
 use rand_chacha::rand_core::SeedableRng;
 use rand_chacha::ChaCha20Rng;
@@ -155,8 +155,7 @@ pub async fn test_super_circuit_block(block_num: u64) {
     let prover = MockProver::run(k, &circuit, instance).unwrap();
     let res = prover.verify_par();
     if let Err(err) = res {
-        eprintln!("Verification failures:");
-        eprintln!("{:#?}", err);
+        error!("Verification failures: {:#?}", err);
         panic!("Failed verification");
     }
 }

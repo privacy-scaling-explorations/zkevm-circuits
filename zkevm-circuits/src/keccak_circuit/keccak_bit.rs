@@ -1008,6 +1008,7 @@ fn multi_keccak<F: Field>(
 mod tests {
     use super::*;
     use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
+    use log::error;
 
     fn verify<F: Field>(k: u32, inputs: Vec<Vec<u8>>, success: bool) {
         let mut circuit = KeccakBitCircuit::new(2usize.pow(k));
@@ -1018,7 +1019,7 @@ mod tests {
         if verify_result.is_ok() != success {
             if let Some(errors) = verify_result.err() {
                 for error in errors.iter() {
-                    println!("{}", error);
+                    error!("{}", error);
                 }
             }
             panic!();
