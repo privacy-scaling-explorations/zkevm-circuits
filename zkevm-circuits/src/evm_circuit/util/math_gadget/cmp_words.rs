@@ -196,4 +196,20 @@ mod tests {
             false,
         );
     }
+
+    #[test]
+    fn test_cmpword_lowmax_lt_highmax() {
+        test_math_gadget_container::<Fr, CmpWordGadgetTestContainer<Fr, false>>(
+            vec![WORD_LOW_MAX, WORD_HIGH_MAX],
+            true,
+        );
+    }
+
+    #[test]
+    fn test_cmpword_highmax_lt_lowmax() {
+        test_math_gadget_container::<Fr, CmpWordGadgetTestContainer<Fr, false>>(
+            vec![WORD_HIGH_MAX, WORD_LOW_MAX],
+            false,
+        );
+    }
 }

@@ -59,17 +59,16 @@ mod tests {
     use halo2_proofs::halo2curves::bn256::Fr;
     use halo2_proofs::plonk::Error;
 
-    const N: usize = 4;
     #[derive(Clone)]
     /// a < b
-    struct ComparisonTestContainer<F, const CHECK_EQ: bool> {
+    struct ComparisonTestContainer<F, const N: usize, const CHECK_EQ: bool> {
         cmp_gadget: ComparisonGadget<F, N>,
         a: Cell<F>,
         b: Cell<F>,
     }
 
-    impl<F: Field, const CHECK_EQ: bool> MathGadgetContainer<F>
-        for ComparisonTestContainer<F, CHECK_EQ>
+    impl<F: Field, const N: usize, const CHECK_EQ: bool> MathGadgetContainer<F>
+        for ComparisonTestContainer<F, N, CHECK_EQ>
     {
         const NAME: &'static str = "ComparisonGadget";
 
@@ -108,11 +107,11 @@ mod tests {
             Ok(())
         }
     }
-    
+
     #[test]
     fn test_comparison_0_eq() {
         // a == b check
-        test_math_gadget_container::<Fr, ComparisonTestContainer<Fr, true>>(
+        test_math_gadget_container::<Fr, ComparisonTestContainer<Fr, 4, true>>(
             vec![Word::from(0), Word::from(0)],
             true,
         );
@@ -120,7 +119,7 @@ mod tests {
 
     #[test]
     fn test_comparison_1_eq() {
-        test_math_gadget_container::<Fr, ComparisonTestContainer<Fr, true>>(
+        test_math_gadget_container::<Fr, ComparisonTestContainer<Fr, 4, true>>(
             vec![Word::from(1), Word::from(1)],
             true,
         );
@@ -128,15 +127,15 @@ mod tests {
 
     #[test]
     fn test_comparison_max_eq() {
-        test_math_gadget_container::<Fr, ComparisonTestContainer<Fr, true>>(
-            vec![Word::from(1 << N), Word::from(1 << N)],
+        test_math_gadget_container::<Fr, ComparisonTestContainer<Fr, 4, true>>(
+            vec![Word::from(1 << 4), Word::from(1 << 4)],
             true,
         );
     }
     #[test]
     fn test_comparison_0_neq_max() {
-        test_math_gadget_container::<Fr, ComparisonTestContainer<Fr, true>>(
-            vec![Word::from(0), Word::from(1 << N)],
+        test_math_gadget_container::<Fr, ComparisonTestContainer<Fr, 4, true>>(
+            vec![Word::from(0), Word::from(1 << 4)],
             false,
         );
     }
@@ -144,7 +143,7 @@ mod tests {
     // a < b check
     #[test]
     fn test_comparison_0_lt_1() {
-        test_math_gadget_container::<Fr, ComparisonTestContainer<Fr, false>>(
+        test_math_gadget_container::<Fr, ComparisonTestContainer<Fr, 4, false>>(
             vec![Word::from(0), Word::from(1)],
             true,
         );
@@ -152,15 +151,15 @@ mod tests {
 
     #[test]
     fn test_comparison_1_lt_max() {
-        test_math_gadget_container::<Fr, ComparisonTestContainer<Fr, false>>(
-            vec![Word::from(1), Word::from(1 << N)],
+        test_math_gadget_container::<Fr, ComparisonTestContainer<Fr, 4, false>>(
+            vec![Word::from(1), Word::from(1 << 4)],
             true,
         );
     }
 
     #[test]
     fn test_comparison_1_lt_0() {
-        test_math_gadget_container::<Fr, ComparisonTestContainer<Fr, false>>(
+        test_math_gadget_container::<Fr, ComparisonTestContainer<Fr, 4, false>>(
             vec![Word::from(1), Word::from(0)],
             false,
         );
@@ -168,8 +167,8 @@ mod tests {
 
     #[test]
     fn test_comparison_overflow() {
-        test_math_gadget_container::<Fr, ComparisonTestContainer<Fr, false>>(
-            vec![Word::from(10000), Word::from(2 << N)],
+        test_math_gadget_container::<Fr, ComparisonTestContainer<Fr, 4, false>>(
+            vec![Word::from(10000), Word::from(1 << (4 + 1))],
             false,
         );
     }

@@ -58,10 +58,9 @@ impl<F: Field> IsZeroGadget<F> {
 mod tests {
     use super::super::test_util::*;
     use super::*;
-    use crate::evm_circuit::util;
-    use crate::{evm_circuit::util::sum, util::Expr};
-    use eth_types::ToLittleEndian;
-    use eth_types::Word;
+    use crate::evm_circuit::util::Cell;
+    use crate::util::Expr;
+    use eth_types::{ToScalar, Word};
     use halo2_proofs::halo2curves::bn256::Fr;
     use halo2_proofs::plonk::Error;
 
@@ -69,15 +68,15 @@ mod tests {
     /// n != 0
     struct IsZeroGadgetTestContainer<F> {
         z_gadget: IsZeroGadget<F>,
-        n: util::Word<F>,
+        n: Cell<F>,
     }
 
     impl<F: Field> MathGadgetContainer<F> for IsZeroGadgetTestContainer<F> {
         const NAME: &'static str = "IsZeroGadget";
 
         fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
-            let n = cb.query_word();
-            let z_gadget = IsZeroGadget::<F>::construct(cb, sum::expr(&n.cells));
+            let n = cb.query_cell();
+            let z_gadget = IsZeroGadget::<F>::construct(cb, n.expr());
             cb.require_equal("Input is zero", z_gadget.expr(), 1.expr());
             IsZeroGadgetTestContainer { z_gadget, n }
         }
@@ -87,12 +86,11 @@ mod tests {
             input_words: &[Word],
             region: &mut CachedRegion<'_, '_, F>,
         ) -> Result<(), Error> {
-            let n = input_words[0];
+            let n = input_words[0].to_scalar().unwrap();
             let offset = 0;
 
-            self.n.assign(region, offset, Some(n.to_le_bytes()))?;
-            self.z_gadget
-                .assign(region, 0, sum::value(&n.to_le_bytes()))?;
+            self.n.assign(region, offset, Value::known(n))?;
+            self.z_gadget.assign(region, 0, n)?;
 
             Ok(())
         }
@@ -114,10 +112,5 @@ mod tests {
             vec![Word::from(10000)],
             false,
         );
-    }
-
-    #[test]
-    fn test_word_max_is_not_zero() {
-        test_math_gadget_container::<Fr, IsZeroGadgetTestContainer<Fr>>(vec![Word::MAX], false);
     }
 }
