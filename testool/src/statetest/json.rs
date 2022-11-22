@@ -1,6 +1,6 @@
 #![allow(dead_code, unused_imports)]
 
-use super::executor::{AccountMatch, Env, StateTest};
+use super::spec::{AccountMatch, Env, StateTest};
 use crate::abi;
 use crate::compiler::Compiler;
 use crate::utils::MainnetFork;
