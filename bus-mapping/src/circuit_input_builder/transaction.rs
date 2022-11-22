@@ -317,7 +317,7 @@ impl Transaction {
                 r: eth_tx.r,
                 s: eth_tx.s,
             },
-            invalid_tx: 0,
+            invalid_tx: 0, // FIXME: How and where to assign invalid_tx?
         })
     }
 
