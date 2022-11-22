@@ -74,63 +74,72 @@ mod tests {
     use halo2_proofs::halo2curves::bn256::Fr;
     use halo2_proofs::plonk::Error;
 
+    #[derive(Clone)]
+    /// a < b
+    struct LtWordTestContainer<F> {
+        ltword_gadget: LtWordGadget<F>,
+        a: util::Word<F>,
+        b: util::Word<F>,
+    }
+
+    impl<F: Field> MathGadgetContainer<F> for LtWordTestContainer<F> {
+        const NAME: &'static str = "LtWordGadget";
+
+        fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
+            let a = cb.query_word();
+            let b = cb.query_word();
+            let ltword_gadget = LtWordGadget::<F>::construct(cb, &a, &b);
+            cb.require_equal("a < b", ltword_gadget.expr(), 1.expr());
+            LtWordTestContainer {
+                ltword_gadget,
+                a,
+                b,
+            }
+        }
+
+        fn assign_gadget_container(
+            &self,
+            input_words: &[Word],
+            region: &mut CachedRegion<'_, '_, F>,
+        ) -> Result<(), Error> {
+            let a = input_words[0];
+            let b = input_words[1];
+            let offset = 0;
+
+            self.a.assign(region, offset, Some(a.to_le_bytes()))?;
+            self.b.assign(region, offset, Some(b.to_le_bytes()))?;
+            self.ltword_gadget.assign(region, 0, a, b)?;
+
+            Ok(())
+        }
+    }
+
     #[test]
-    fn test_ltword() {
-        #[derive(Clone)]
-        /// a < b
-        struct LtWordTestContainer<F> {
-            ltword_gadget: LtWordGadget<F>,
-            a: util::Word<F>,
-            b: util::Word<F>,
-        }
-
-        impl<F: Field> MathGadgetContainer<F> for LtWordTestContainer<F> {
-            const NAME: &'static str = "LtWordGadget";
-
-            fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
-                let a = cb.query_word();
-                let b = cb.query_word();
-                let ltword_gadget = LtWordGadget::<F>::construct(cb, &a, &b);
-                cb.require_equal("a < b", ltword_gadget.expr(), 1.expr());
-                LtWordTestContainer {
-                    ltword_gadget,
-                    a,
-                    b,
-                }
-            }
-
-            fn assign_gadget_container(
-                &self,
-                input_words: &[Word],
-                region: &mut CachedRegion<'_, '_, F>,
-            ) -> Result<(), Error> {
-                let a = input_words[0];
-                let b = input_words[1];
-                let offset = 0;
-
-                self.a.assign(region, offset, Some(a.to_le_bytes()))?;
-                self.b.assign(region, offset, Some(b.to_le_bytes()))?;
-                self.ltword_gadget.assign(region, 0, a, b)?;
-
-                Ok(())
-            }
-        }
-
+    fn test_ltword_0lt1() {
         test_math_gadget_container::<Fr, LtWordTestContainer<Fr>>(
             vec![Word::from(0), Word::from(1)],
             true,
         );
+    }
 
+    #[test]
+    fn test_ltword_1lt_max() {
         test_math_gadget_container::<Fr, LtWordTestContainer<Fr>>(
             vec![Word::from(1), Word::MAX],
             true,
         );
+    }
 
+    #[test]
+    fn test_ltword_1nlt0() {
         test_math_gadget_container::<Fr, LtWordTestContainer<Fr>>(
             vec![Word::from(1), Word::from(0)],
             false,
         );
+    }
 
+    #[test]
+    fn test_ltword_max_nlt_max() {
         test_math_gadget_container::<Fr, LtWordTestContainer<Fr>>(
             vec![Word::MAX, Word::MAX],
             false,

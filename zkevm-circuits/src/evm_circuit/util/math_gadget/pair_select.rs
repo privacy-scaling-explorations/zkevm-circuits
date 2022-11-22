@@ -66,84 +66,90 @@ mod tests {
     use halo2_proofs::halo2curves::bn256::Fr;
     use halo2_proofs::plonk::Error;
 
+    #[derive(Clone)]
+    /// a < b
+    struct PairSelectionTestContainer<F, const SELECT_A: bool> {
+        select_gadget: PairSelectGadget<F>,
+        a: Cell<F>,
+        b: Cell<F>,
+        v: Cell<F>,
+    }
+
+    impl<F: Field, const SELECT_A: bool> MathGadgetContainer<F>
+        for PairSelectionTestContainer<F, SELECT_A>
+    {
+        const NAME: &'static str = "PairSelectGadget";
+
+        fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
+            let v = cb.query_cell();
+            let a = cb.query_cell();
+            let b = cb.query_cell();
+            let select_gadget = PairSelectGadget::<F>::construct(cb, v.expr(), a.expr(), b.expr());
+            cb.require_equal(
+                "is_a * is_b == 0",
+                select_gadget.expr().0 * select_gadget.expr().1,
+                0.expr(),
+            );
+
+            if SELECT_A {
+                cb.require_equal("is_a == 1", select_gadget.expr().0, 1.expr());
+            } else {
+                cb.require_equal("is_b == 1", select_gadget.expr().1, 1.expr());
+            }
+
+            PairSelectionTestContainer {
+                select_gadget,
+                v,
+                a,
+                b,
+            }
+        }
+
+        fn assign_gadget_container(
+            &self,
+            input_words: &[Word],
+            region: &mut CachedRegion<'_, '_, F>,
+        ) -> Result<(), Error> {
+            let v = input_words[0].to_scalar().unwrap();
+            let a = input_words[1].to_scalar().unwrap();
+            let b = input_words[2].to_scalar().unwrap();
+            let offset = 0;
+
+            self.v.assign(region, offset, Value::known(v))?;
+            self.a.assign(region, offset, Value::known(a))?;
+            self.b.assign(region, offset, Value::known(b))?;
+            self.select_gadget.assign(region, offset, v, a, b)?;
+
+            Ok(())
+        }
+    }
+
     #[test]
-    fn test_pairselection() {
-        #[derive(Clone)]
-        /// a < b
-        struct PairSelectionTestContainer<F, const SELECT_A: bool> {
-            select_gadget: PairSelectGadget<F>,
-            a: Cell<F>,
-            b: Cell<F>,
-            v: Cell<F>,
-        }
-
-        impl<F: Field, const SELECT_A: bool> MathGadgetContainer<F>
-            for PairSelectionTestContainer<F, SELECT_A>
-        {
-            const NAME: &'static str = "PairSelectGadget";
-
-            fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
-                let v = cb.query_cell();
-                let a = cb.query_cell();
-                let b = cb.query_cell();
-                let select_gadget =
-                    PairSelectGadget::<F>::construct(cb, v.expr(), a.expr(), b.expr());
-                cb.require_equal(
-                    "is_a * is_b == 0",
-                    select_gadget.expr().0 * select_gadget.expr().1,
-                    0.expr(),
-                );
-
-                if SELECT_A {
-                    cb.require_equal("is_a == 1", select_gadget.expr().0, 1.expr());
-                } else {
-                    cb.require_equal("is_b == 1", select_gadget.expr().1, 1.expr());
-                }
-
-                PairSelectionTestContainer {
-                    select_gadget,
-                    v,
-                    a,
-                    b,
-                }
-            }
-
-            fn assign_gadget_container(
-                &self,
-                input_words: &[Word],
-                region: &mut CachedRegion<'_, '_, F>,
-            ) -> Result<(), Error> {
-                let v = input_words[0].to_scalar().unwrap();
-                let a = input_words[1].to_scalar().unwrap();
-                let b = input_words[2].to_scalar().unwrap();
-                let offset = 0;
-
-                self.v.assign(region, offset, Value::known(v))?;
-                self.a.assign(region, offset, Value::known(a))?;
-                self.b.assign(region, offset, Value::known(b))?;
-                self.select_gadget.assign(region, offset, v, a, b)?;
-
-                Ok(())
-            }
-        }
-
-        // choose a check
+    fn test_pairselect_both() {
         test_math_gadget_container::<Fr, PairSelectionTestContainer<Fr, true>>(
             vec![Word::from(0), Word::from(0), Word::from(0)],
             true,
         );
+    }
 
+    #[test]
+    fn test_pairselect_expect_a_and_a() {
         test_math_gadget_container::<Fr, PairSelectionTestContainer<Fr, true>>(
             vec![Word::from(0), Word::from(0), Word::from(1)],
             true,
         );
+    }
 
+    #[test]
+    fn test_pairselect_expect_a_but_b() {
         test_math_gadget_container::<Fr, PairSelectionTestContainer<Fr, true>>(
             vec![Word::from(0), Word::from(1), Word::from(0)],
             false,
         );
+    }
 
-        // choose b check
+    #[test]
+    fn test_pairselect_expect_b_and_b() {
         test_math_gadget_container::<Fr, PairSelectionTestContainer<Fr, false>>(
             vec![Word::from(0), Word::from(1), Word::from(0)],
             true,

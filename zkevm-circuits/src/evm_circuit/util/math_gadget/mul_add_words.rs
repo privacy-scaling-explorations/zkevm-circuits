@@ -156,75 +156,80 @@ mod tests {
     use halo2_proofs::halo2curves::bn256::Fr;
     use halo2_proofs::plonk::Error;
 
+    #[derive(Clone)]
+    /// a*b + c == d
+    struct MulAddGadgetContainer<F> {
+        math_gadget: MulAddWordsGadget<F>,
+        a: util::Word<F>,
+        b: util::Word<F>,
+        c: util::Word<F>,
+        d: util::Word<F>,
+    }
+
+    impl<F: Field> MathGadgetContainer<F> for MulAddGadgetContainer<F> {
+        const NAME: &'static str = "MulAddGadget";
+
+        fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
+            let a = cb.query_word();
+            let b = cb.query_word();
+            let c = cb.query_word();
+            let d = cb.query_word();
+            let math_gadget = MulAddWordsGadget::<F>::construct(cb, [&a, &b, &c, &d]);
+            MulAddGadgetContainer {
+                math_gadget,
+                a,
+                b,
+                c,
+                d,
+            }
+        }
+
+        fn assign_gadget_container(
+            &self,
+            input_words: &[Word],
+            region: &mut CachedRegion<'_, '_, F>,
+        ) -> Result<(), Error> {
+            let offset = 0;
+            self.a
+                .assign(region, offset, Some(input_words[0].to_le_bytes()))?;
+            self.b
+                .assign(region, offset, Some(input_words[1].to_le_bytes()))?;
+            self.c
+                .assign(region, offset, Some(input_words[2].to_le_bytes()))?;
+            self.d
+                .assign(region, offset, Some(input_words[3].to_le_bytes()))?;
+            self.math_gadget
+                .assign(region, offset, input_words.try_into().unwrap())
+        }
+    }
+
     #[test]
-    fn test_muladd() {
-        #[derive(Clone)]
-        /// a*b + c == d
-        struct MulAddGadgetContainer<F> {
-            math_gadget: MulAddWordsGadget<F>,
-            a: util::Word<F>,
-            b: util::Word<F>,
-            c: util::Word<F>,
-            d: util::Word<F>,
-        }
-
-        impl<F: Field> MathGadgetContainer<F> for MulAddGadgetContainer<F> {
-            const NAME: &'static str = "MulAddGadget";
-
-            fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
-                let a = cb.query_word();
-                let b = cb.query_word();
-                let c = cb.query_word();
-                let d = cb.query_word();
-                let math_gadget = MulAddWordsGadget::<F>::construct(cb, [&a, &b, &c, &d]);
-                MulAddGadgetContainer {
-                    math_gadget,
-                    a,
-                    b,
-                    c,
-                    d,
-                }
-            }
-
-            fn assign_gadget_container(
-                &self,
-                input_words: &[Word],
-                region: &mut CachedRegion<'_, '_, F>,
-            ) -> Result<(), Error> {
-                let offset = 0;
-                self.a
-                    .assign(region, offset, Some(input_words[0].to_le_bytes()))?;
-                self.b
-                    .assign(region, offset, Some(input_words[1].to_le_bytes()))?;
-                self.c
-                    .assign(region, offset, Some(input_words[2].to_le_bytes()))?;
-                self.d
-                    .assign(region, offset, Some(input_words[3].to_le_bytes()))?;
-                self.math_gadget
-                    .assign(region, offset, input_words.try_into().unwrap())
-            }
-        }
-
+    fn test_muladd_expect() {
+        // 0 * 0 + 0 == 0
         test_math_gadget_container::<Fr, MulAddGadgetContainer<Fr>>(
             vec![Word::from(0), Word::from(0), Word::from(0), Word::from(0)],
             true,
         );
-
+        // 1 * 0 + 0 == 0
         test_math_gadget_container::<Fr, MulAddGadgetContainer<Fr>>(
             vec![Word::from(1), Word::from(0), Word::from(0), Word::from(0)],
             true,
         );
-
+        // 1 * 1 + 0 == 1
         test_math_gadget_container::<Fr, MulAddGadgetContainer<Fr>>(
             vec![Word::from(1), Word::from(1), Word::from(0), Word::from(1)],
             true,
         );
-
+        // 1 * 1 + 1 == 2
         test_math_gadget_container::<Fr, MulAddGadgetContainer<Fr>>(
             vec![Word::from(1), Word::from(1), Word::from(1), Word::from(2)],
             true,
         );
+    }
 
+    #[test]
+    fn test_muladd_unexpect() {
+        // 10 * 1 + 1 != 3
         test_math_gadget_container::<Fr, MulAddGadgetContainer<Fr>>(
             vec![Word::from(10), Word::from(1), Word::from(1), Word::from(3)],
             false,

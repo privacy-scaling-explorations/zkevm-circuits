@@ -100,51 +100,51 @@ mod tests {
     use halo2_proofs::halo2curves::bn256::Fr;
     use halo2_proofs::plonk::Error;
 
+    #[derive(Clone)]
+    /// a % n == r
+    struct ModGadgetTestContainer<F> {
+        mod_gadget: ModGadget<F>,
+        a: util::Word<F>,
+        n: util::Word<F>,
+        r: util::Word<F>,
+    }
+
+    impl<F: Field> MathGadgetContainer<F> for ModGadgetTestContainer<F> {
+        const NAME: &'static str = "ModGadget";
+
+        fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
+            let a = cb.query_word();
+            let n = cb.query_word();
+            let r = cb.query_word();
+            let mod_gadget = ModGadget::<F>::construct(cb, [&a, &n, &r]);
+            ModGadgetTestContainer {
+                mod_gadget,
+                a,
+                n,
+                r,
+            }
+        }
+
+        fn assign_gadget_container(
+            &self,
+            input_words: &[Word],
+            region: &mut CachedRegion<'_, '_, F>,
+        ) -> Result<(), Error> {
+            let a = input_words[0];
+            let n = input_words[1];
+            let a_reduced = input_words[2];
+            let offset = 0;
+
+            self.a.assign(region, offset, Some(a.to_le_bytes()))?;
+            self.n.assign(region, offset, Some(n.to_le_bytes()))?;
+            self.r
+                .assign(region, offset, Some(a_reduced.to_le_bytes()))?;
+            self.mod_gadget.assign(region, 0, a, n, a_reduced, F::one())
+        }
+    }
+
     #[test]
-    fn test_mod() {
-        #[derive(Clone)]
-        /// a % n == r
-        struct ModGadgetTestContainer<F> {
-            mod_gadget: ModGadget<F>,
-            a: util::Word<F>,
-            n: util::Word<F>,
-            r: util::Word<F>,
-        }
-
-        impl<F: Field> MathGadgetContainer<F> for ModGadgetTestContainer<F> {
-            const NAME: &'static str = "ModGadget";
-
-            fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
-                let a = cb.query_word();
-                let n = cb.query_word();
-                let r = cb.query_word();
-                let mod_gadget = ModGadget::<F>::construct(cb, [&a, &n, &r]);
-                ModGadgetTestContainer {
-                    mod_gadget,
-                    a,
-                    n,
-                    r,
-                }
-            }
-
-            fn assign_gadget_container(
-                &self,
-                input_words: &[Word],
-                region: &mut CachedRegion<'_, '_, F>,
-            ) -> Result<(), Error> {
-                let a = input_words[0];
-                let n = input_words[1];
-                let a_reduced = input_words[2];
-                let offset = 0;
-
-                self.a.assign(region, offset, Some(a.to_le_bytes()))?;
-                self.n.assign(region, offset, Some(n.to_le_bytes()))?;
-                self.r
-                    .assign(region, offset, Some(a_reduced.to_le_bytes()))?;
-                self.mod_gadget.assign(region, 0, a, n, a_reduced, F::one())
-            }
-        }
-
+    fn test_mod_n_eq0() {
         test_math_gadget_container::<Fr, ModGadgetTestContainer<Fr>>(
             vec![Word::from(0), Word::from(0), Word::from(0)],
             true,
@@ -154,7 +154,10 @@ mod tests {
             vec![Word::from(1), Word::from(0), Word::from(0)],
             true,
         );
+    }
 
+    #[test]
+    fn test_mod_n_neq0() {
         test_math_gadget_container::<Fr, ModGadgetTestContainer<Fr>>(
             vec![Word::from(1), Word::from(1), Word::from(0)],
             true,

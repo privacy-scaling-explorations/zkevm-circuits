@@ -92,65 +92,73 @@ mod tests {
     use halo2_proofs::halo2curves::bn256::Fr;
     use halo2_proofs::plonk::Error;
 
+    const N: usize = 3;
+    #[derive(Clone)]
+    /// a < b
+    struct LtGadgetTestContainer<F> {
+        lt_gadget: LtGadget<F, N>,
+        a: Cell<F>,
+        b: Cell<F>,
+    }
+
+    impl<F: Field> MathGadgetContainer<F> for LtGadgetTestContainer<F> {
+        const NAME: &'static str = "LtGadget";
+
+        fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
+            let a = cb.query_cell();
+            let b = cb.query_cell();
+            let lt_gadget = LtGadget::<F, N>::construct(cb, a.expr(), b.expr());
+            cb.require_equal("a < b", lt_gadget.expr(), 1.expr());
+            LtGadgetTestContainer { lt_gadget, a, b }
+        }
+
+        fn assign_gadget_container(
+            &self,
+            input_words: &[Word],
+            region: &mut CachedRegion<'_, '_, F>,
+        ) -> Result<(), Error> {
+            let a = F::from(u64::from_le_bytes(
+                input_words[0].to_le_bytes()[..8].try_into().unwrap(),
+            ));
+            let b = F::from(u64::from_le_bytes(
+                input_words[1].to_le_bytes()[..8].try_into().unwrap(),
+            ));
+            let offset = 0;
+
+            self.a.assign(region, offset, Value::known(a))?;
+            self.b.assign(region, offset, Value::known(b))?;
+            self.lt_gadget.assign(region, offset, a, b)?;
+
+            Ok(())
+        }
+    }
+
     #[test]
-    fn test_lt() {
-        const N: usize = 3;
-        #[derive(Clone)]
-        /// a < b
-        struct LtGadgetTestContainer<F> {
-            lt_gadget: LtGadget<F, N>,
-            a: Cell<F>,
-            b: Cell<F>,
-        }
-
-        impl<F: Field> MathGadgetContainer<F> for LtGadgetTestContainer<F> {
-            const NAME: &'static str = "LtGadget";
-
-            fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
-                let a = cb.query_cell();
-                let b = cb.query_cell();
-                let lt_gadget = LtGadget::<F, N>::construct(cb, a.expr(), b.expr());
-                cb.require_equal("a < b", lt_gadget.expr(), 1.expr());
-                LtGadgetTestContainer { lt_gadget, a, b }
-            }
-
-            fn assign_gadget_container(
-                &self,
-                input_words: &[Word],
-                region: &mut CachedRegion<'_, '_, F>,
-            ) -> Result<(), Error> {
-                let a = F::from(u64::from_le_bytes(
-                    input_words[0].to_le_bytes()[..8].try_into().unwrap(),
-                ));
-                let b = F::from(u64::from_le_bytes(
-                    input_words[1].to_le_bytes()[..8].try_into().unwrap(),
-                ));
-                let offset = 0;
-
-                self.a.assign(region, offset, Value::known(a))?;
-                self.b.assign(region, offset, Value::known(b))?;
-                self.lt_gadget.assign(region, offset, a, b)?;
-
-                Ok(())
-            }
-        }
-
+    fn test_lt_0lt1() {
         test_math_gadget_container::<Fr, LtGadgetTestContainer<Fr>>(
             vec![Word::from(0), Word::from(1)],
             true,
         );
+    }
 
-        test_math_gadget_container::<Fr, LtGadgetTestContainer<Fr>>(
-            vec![Word::from(1), Word::from((1u64 << (N * 8)) - 1)],
-            true,
-        );
-
+    #[test]
+    fn test_lt_0nlt0() {
         test_math_gadget_container::<Fr, LtGadgetTestContainer<Fr>>(
             vec![Word::from(0), Word::from(0)],
             false,
         );
+    }
 
-        // out of range check
+    #[test]
+    fn test_lt_just_in_range() {
+        test_math_gadget_container::<Fr, LtGadgetTestContainer<Fr>>(
+            vec![Word::from(1), Word::from((1u64 << (N * 8)) - 1)],
+            true,
+        );
+    }
+
+    #[test]
+    fn test_lt_out_of_range() {
         test_math_gadget_container::<Fr, LtGadgetTestContainer<Fr>>(
             vec![Word::from(1), Word::from(2 << (N * 8))],
             false,
