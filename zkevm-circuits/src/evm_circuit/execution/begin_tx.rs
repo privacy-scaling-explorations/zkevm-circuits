@@ -13,7 +13,7 @@ use crate::{
                 AddWordsGadget, IsEqualGadget, IsZeroGadget, LtWordGadget, MulWordByU64Gadget,
                 RangeCheckGadget,
             },
-            select, CachedRegion, Cell, RandomLinearCombination, Word,
+            select, CachedRegion, Cell, RandomLinearCombination, Word, from_bytes,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -160,7 +160,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         cb.condition(is_tx_invalid.expr(), |cb| {
             cb.require_equal(
                 "intrinsic_tx_value == 0",
-                intrinsic_tx_value.expr(),
+                from_bytes::expr(&intrinsic_tx_value.cells),
                 0.expr(),
             );
         });
@@ -177,7 +177,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             cb,
             tx_caller_address.expr(),
             tx_callee_address.expr(),
-            tx_value.clone(),
+            intrinsic_tx_value.clone(),
             mul_gas_fee_by_gas.product().clone(),
             &mut reversion_info,
         );
@@ -205,6 +205,13 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         // invalid_tx = 1 - (1 - balance_not_enough) * (is_nonce_valid)
         // prover should not give incorrect is_tx_invalid flag.
         // instruction.constrain_equal(is_tx_invalid, invalid_tx)
+        cb.require_equal(
+            "is_tx_invalid is correct",
+            1.expr() - (1.expr() - balance_not_enough.expr()) * (is_nonce_valid.expr()),
+            is_tx_invalid.expr()
+        );
+
+        /*
         cb.condition(
             balance_not_enough.expr() + (1.expr() - is_nonce_valid.expr()),
             |cb| {
@@ -219,6 +226,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         cb.condition(1.expr() - (1.expr() - is_nonce_valid.expr()), |cb| {
             cb.require_equal("is_tx_invalid is 0", 0.expr(), is_tx_invalid.expr());
         });
+        */
 
         // TODO: Handle creation transaction
         // TODO: Handle precompiled
