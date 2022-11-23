@@ -208,8 +208,12 @@ impl<F: Field, G: MathGadgetContainer<F>> Circuit<F> for UnitTestMathGadgetBaseC
     }
 }
 
+/// test_math_gadget_container takes math gadget container and run a container
+/// based circuit. All test logic should be included in the container, and
+/// witness words are used for both input & output data. How to deal with the
+/// witness words is left to each container.
 pub(crate) fn test_math_gadget_container<F: Field, G: MathGadgetContainer<F>>(
-    input_words: Vec<Word>,
+    witness_words: Vec<Word>,
     expected_success: bool,
 ) {
     const K: usize = 12;
@@ -217,7 +221,7 @@ pub(crate) fn test_math_gadget_container<F: Field, G: MathGadgetContainer<F>>(
     let power_of_randomness: Vec<Vec<F>> = (1..32)
         .map(|exp| vec![randomness.pow(&[exp, 0, 0, 0]); (1 << K) - 64])
         .collect();
-    let circuit = UnitTestMathGadgetBaseCircuit::<F, G>::new(K, input_words, randomness);
+    let circuit = UnitTestMathGadgetBaseCircuit::<F, G>::new(K, witness_words, randomness);
 
     let prover = MockProver::<F>::run(K as u32, &circuit, power_of_randomness).unwrap();
     if expected_success {
