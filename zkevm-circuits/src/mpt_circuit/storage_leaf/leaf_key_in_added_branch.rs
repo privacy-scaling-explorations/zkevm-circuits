@@ -58,6 +58,13 @@ The constraints for `LEAF_DRIFTED` row are very similar to the ones for `LEAF_KE
 different selectors (different row) and there are some scenarios that do not appear here, like being in
 the first level of the trie. Also, when computing the leaf RLC, we need to take a different approach because
 the leaf value for the drifted leaf is stored in a parallel proof.
+
+Note that it is important that it is ensured that only one modification has been done to the trie.
+To achieve this it needs to be ensured that the new branch contains only two elements:
+the leaf that was added and the old leaf that drifted into a new branch.
+And it also needs to be ensured that the drifted leaf is the same as it was before the modification
+except for the change in its key (otherwise the attacker might hide one modification - the modification
+of the drifted leaf).
 */
 
 #[derive(Clone, Debug)]

@@ -30,6 +30,7 @@ use branch::{
     branch_hash_in_parent::BranchHashInParentConfig, branch_init::BranchInitConfig,
     branch_key::BranchKeyConfig, branch_parallel::BranchParallelConfig,
     branch_rlc::BranchRLCConfig, extension_node::ExtensionNodeConfig,
+    extension_node_inserted::ExtensionNodeInsertedConfig,
     extension_node_key::ExtensionNodeKeyConfig, Branch, BranchCols, BranchConfig,
 };
 use columns::{AccumulatorCols, DenoteCols, MainCols, PositionCols, ProofTypeCols};
@@ -120,6 +121,8 @@ pub struct MPTConfig<F> {
     storage_leaf_value_c: LeafValueConfig<F>,
     storage_leaf_key_in_added_branch: LeafKeyInAddedBranchConfig<F>,
     storage_non_existing: StorageNonExistingConfig<F>,
+    ext_node_s_before_mod_config: ExtensionNodeInsertedConfig<F>,
+    ext_node_c_before_mod_config: ExtensionNodeInsertedConfig<F>,
     pub(crate) randomness: F,
     pub(crate) check_zeros: bool,
     pub(crate) mpt_table: MPTTable,
@@ -778,9 +781,47 @@ impl<F: FieldExt> MPTConfig<F> {
             accumulators.clone(),
             branch.drifted_pos,
             denoter.clone(),
-            power_of_randomness,
+            power_of_randomness.clone(),
             fixed_table,
             keccak_table.clone(),
+            check_zeros,
+        );
+
+        let ext_node_s_before_mod_config = ExtensionNodeInsertedConfig::<F>::configure(
+            meta,
+            |meta| {
+                meta.query_advice(branch.is_mod_ext_node_s_before_mod, Rotation::cur())
+            },
+            inter_start_root,
+            position_cols.clone(),
+            account_leaf.is_in_added_branch,
+            branch.clone(),
+            s_main.clone(),
+            c_main.clone(),
+            accumulators.clone(),
+            keccak_table.clone(),
+            power_of_randomness.clone(),
+            fixed_table,
+            true,
+            check_zeros,
+        );
+
+        let ext_node_c_before_mod_config = ExtensionNodeInsertedConfig::<F>::configure(
+            meta,
+            |meta| {
+                meta.query_advice(branch.is_mod_ext_node_c_before_mod, Rotation::cur())
+            },
+            inter_final_root,
+            position_cols.clone(),
+            account_leaf.is_in_added_branch,
+            branch.clone(),
+            s_main.clone(),
+            c_main.clone(),
+            accumulators.clone(),
+            keccak_table.clone(),
+            power_of_randomness.clone(),
+            fixed_table,
+            false,
             check_zeros,
         );
 
@@ -792,7 +833,7 @@ impl<F: FieldExt> MPTConfig<F> {
             value,
             root_prev: inter_start_root,
             root: inter_final_root,
-        };
+        }; 
 
         let randomness = F::zero();
         MPTConfig {
@@ -829,6 +870,8 @@ impl<F: FieldExt> MPTConfig<F> {
             storage_leaf_value_c,
             storage_leaf_key_in_added_branch,
             storage_non_existing,
+            ext_node_s_before_mod_config,
+            ext_node_c_before_mod_config,
             randomness,
             check_zeros,
             mpt_table,
@@ -1308,6 +1351,24 @@ impl<F: FieldExt> MPTConfig<F> {
                                     self,
                                     witness,
                                     offset,
+                                );
+                            } else if row.get_type() == MptWitnessRowType::ModExtNodeSBeforeMod {
+                                self.ext_node_s_before_mod_config.assign(
+                                    &mut region,
+                                    self,
+                                    &mut pv,
+                                    row,
+                                    offset,
+                                    true,
+                                );
+                            } else if row.get_type() == MptWitnessRowType::ModExtNodeCBeforeMod {
+                                self.ext_node_c_before_mod_config.assign(
+                                    &mut region,
+                                    self,
+                                    &mut pv,
+                                    row,
+                                    offset,
+                                    false,
                                 );
                             }
 
