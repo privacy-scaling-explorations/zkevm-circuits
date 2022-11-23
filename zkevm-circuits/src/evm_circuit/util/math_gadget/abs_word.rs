@@ -96,20 +96,25 @@ impl<F: Field> AbsWordGadget<F> {
 mod tests {
     use super::super::test_util::*;
     use super::*;
-    use eth_types::Word;
+    use eth_types::{Word, U256};
     use halo2_proofs::halo2curves::bn256::Fr;
     use halo2_proofs::plonk::Error;
 
     #[derive(Clone)]
-    struct AbsWordGadgetContainer<F> {
+    struct AbsWordGadgetContainer<F, const IS_NEG: bool> {
         absword_gadget: AbsWordGadget<F>,
     }
 
-    impl<F: Field> MathGadgetContainer<F> for AbsWordGadgetContainer<F> {
+    impl<F: Field, const IS_NEG: bool> MathGadgetContainer<F> for AbsWordGadgetContainer<F, IS_NEG> {
         const NAME: &'static str = "AbsWordGadget";
 
         fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
             let absword_gadget = AbsWordGadget::<F>::construct(cb);
+            cb.require_equal(
+                "is_neg is correct",
+                absword_gadget.is_neg().expr(),
+                IS_NEG.expr(),
+            );
             AbsWordGadgetContainer { absword_gadget }
         }
 
@@ -129,7 +134,7 @@ mod tests {
 
     #[test]
     fn test_abs_0_eq_0() {
-        test_math_gadget_container::<Fr, AbsWordGadgetContainer<Fr>>(
+        test_math_gadget_container::<Fr, AbsWordGadgetContainer<Fr, false>>(
             vec![Word::from(0), Word::from(0)],
             true,
         );
@@ -137,7 +142,7 @@ mod tests {
 
     #[test]
     fn test_abs_1_eq_1() {
-        test_math_gadget_container::<Fr, AbsWordGadgetContainer<Fr>>(
+        test_math_gadget_container::<Fr, AbsWordGadgetContainer<Fr, false>>(
             vec![Word::from(1), Word::from(1)],
             true,
         );
@@ -145,7 +150,7 @@ mod tests {
 
     #[test]
     fn test_abs_1_neq_2() {
-        test_math_gadget_container::<Fr, AbsWordGadgetContainer<Fr>>(
+        test_math_gadget_container::<Fr, AbsWordGadgetContainer<Fr, false>>(
             vec![Word::from(1), Word::from(2)],
             false,
         );
@@ -153,9 +158,34 @@ mod tests {
 
     #[test]
     fn test_abs_wordmax_eq_minus1() {
-        test_math_gadget_container::<Fr, AbsWordGadgetContainer<Fr>>(
+        test_math_gadget_container::<Fr, AbsWordGadgetContainer<Fr, true>>(
             vec![Word::MAX, Word::from(1)],
             true,
+        );
+    }
+
+    #[test]
+    fn test_abs_word_high_max() {
+        let abs_high_max = U256([0, 0, 1, 0]);
+        test_math_gadget_container::<Fr, AbsWordGadgetContainer<Fr, true>>(
+            vec![WORD_HIGH_MAX, abs_high_max],
+            true,
+        );
+    }
+
+    #[test]
+    fn test_abs_word_low_max() {
+        test_math_gadget_container::<Fr, AbsWordGadgetContainer<Fr, false>>(
+            vec![WORD_LOW_MAX, WORD_LOW_MAX],
+            true,
+        );
+    }
+
+    #[test]
+    fn test_abs_unexpected_is_neg() {
+        test_math_gadget_container::<Fr, AbsWordGadgetContainer<Fr, false>>(
+            vec![Word::MAX, Word::from(1)],
+            false,
         );
     }
 }

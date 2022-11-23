@@ -3,7 +3,7 @@ use eth_types::Field;
 use halo2_proofs::plonk::Expression;
 
 mod abs_word;
-mod addwords;
+mod add_words;
 mod batched_is_zero;
 mod byte_size;
 mod cmp_words;
@@ -24,7 +24,7 @@ mod range_check;
 mod test_util;
 
 pub(crate) use abs_word::AbsWordGadget;
-pub(crate) use addwords::AddWordsGadget;
+pub(crate) use add_words::AddWordsGadget;
 pub(crate) use batched_is_zero::BatchedIsZeroGadget;
 pub(crate) use byte_size::ByteSizeGadget;
 pub(crate) use cmp_words::CmpWordsGadget;
