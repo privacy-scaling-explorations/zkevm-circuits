@@ -49,6 +49,7 @@ mod dummy;
 mod dup;
 mod end_block;
 mod end_tx;
+mod error_invalid_jump;
 mod error_oog_constant;
 mod error_oog_static_memory;
 mod exp;
@@ -107,6 +108,7 @@ use dummy::DummyGadget;
 use dup::DupGadget;
 use end_block::EndBlockGadget;
 use end_tx::EndTxGadget;
+use error_invalid_jump::ErrorInvalidJumpGadget;
 use error_oog_constant::ErrorOOGConstantGadget;
 use exp::ExponentiationGadget;
 use extcodehash::ExtcodehashGadget;
@@ -267,7 +269,7 @@ pub(crate) struct ExecutionConfig<F> {
     error_oog_self_destruct: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasSELFDESTRUCT }>,
     error_oog_code_store: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasCodeStore }>,
     error_insufficient_balance: DummyGadget<F, 0, 0, { ExecutionState::ErrorInsufficientBalance }>,
-    error_invalid_jump: DummyGadget<F, 0, 0, { ExecutionState::ErrorInvalidJump }>,
+    error_invalid_jump: ErrorInvalidJumpGadget<F>,
     error_depth: DummyGadget<F, 0, 0, { ExecutionState::ErrorDepth }>,
     error_write_protection: DummyGadget<F, 0, 0, { ExecutionState::ErrorWriteProtection }>,
     error_contract_address_collision:
