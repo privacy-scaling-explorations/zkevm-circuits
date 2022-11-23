@@ -1,10 +1,10 @@
 use super::Opcode;
 use crate::{
     circuit_input_builder::{CircuitInputStateRef, ExecStep},
-    operation::{AccountField, CallContextField, RW},
+    operation::{AccountField, CallContextField},
     Error,
 };
-use eth_types::{GethExecStep, ToAddress, ToWord};
+use eth_types::{GethExecStep, ToWord};
 
 /// Placeholder structure used to implement [`Opcode`] trait over it
 /// corresponding to the `OpcodeId::CALL` `OpcodeId`.
@@ -32,9 +32,7 @@ impl Opcode for InsufficientBalance {
 
         state.call_expand_memory(args_offset, args_length, ret_offset, ret_length)?;
 
-        let tx_id = state.tx_ctx.id();
-
-        let call= state.parse_call(geth_step).unwrap();
+        let call = state.parse_call(geth_step).unwrap();
         let current_call = state.call()?.clone();
 
         for i in 0..7 {
@@ -50,13 +48,26 @@ impl Opcode for InsufficientBalance {
             geth_step.stack.nth_last_filled(6),
             (0u64).into(), // must fail
         )?;
- 
+
+        state.call_context_read(
+            &mut exec_step,
+            current_call.call_id,
+            CallContextField::CalleeAddress,
+            current_call.address.to_word(),
+        );
+
         let (_, callee_account) = state.sdb.get_account(&current_call.address);
-     
-        state.account_read(&mut exec_step, current_call.address,  AccountField::Balance, callee_account.balance, callee_account.balance)?;
+
+        state.account_read(
+            &mut exec_step,
+            current_call.address,
+            AccountField::Balance,
+            callee_account.balance,
+            callee_account.balance,
+        )?;
 
         state.push_call(call);
-        state.gen_restore_context_ops(&mut exec_step, geth_steps)?;
+        //state.gen_restore_context_ops(&mut exec_step, geth_steps)?;
         state.handle_return(geth_step)?;
         Ok(vec![exec_step])
     }

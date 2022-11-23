@@ -534,24 +534,6 @@ mod test {
     use std::default::Default;
 
     #[test]
-    fn callop_insufficient_balance() {
-        let opcodes = [OpcodeId::CALL, OpcodeId::STATICCALL];
-        let stacks = [Stack {
-            // this value is bigger than caller's balance
-            value: Word::from(11).pow(18.into()),
-            ..Default::default()
-        }];
-        let callees = [callee(bytecode! {}), callee(bytecode! { STOP })];
-        for ((opcode, stack), callee) in opcodes
-            .into_iter()
-            .cartesian_product(stacks.into_iter())
-            .cartesian_product(callees.into_iter())
-        {
-            test_ok(caller_for_insufficient_balance(opcode, stack), callee);
-        }
-    }
-
-    #[test]
     fn callop_nested() {
         for opcode in [OpcodeId::CALL, OpcodeId::STATICCALL] {
             test_nested(opcode);
