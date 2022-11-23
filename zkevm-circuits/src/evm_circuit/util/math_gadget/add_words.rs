@@ -150,7 +150,7 @@ impl<F: Field, const N_ADDENDS: usize, const CHECK_OVERFLOW: bool>
 mod tests {
     use super::super::test_util::*;
     use super::*;
-    use eth_types::Word;
+    use eth_types::{Word, U256};
     use halo2_proofs::halo2curves::bn256::Fr;
     use halo2_proofs::plonk::Error;
 
@@ -175,6 +175,8 @@ mod tests {
                 addends.clone(),
                 sum.clone(),
             );
+
+            assert_eq!(addwords_gadget.addends(), N_ADDENDS);
             AddWordsTestContainer {
                 addwords_gadget,
                 addends,
@@ -236,6 +238,14 @@ mod tests {
     }
 
     #[test]
+    fn test_addwords_high_low_max() {
+        test_math_gadget_container::<Fr, AddWordsTestContainer<Fr, 2, true>>(
+            vec![WORD_LOW_MAX, WORD_HIGH_MAX, Word::MAX],
+            false,
+        );
+    }
+
+    #[test]
     fn test_addwords_overflow() {
         test_math_gadget_container::<Fr, AddWordsTestContainer<Fr, 2, true>>(
             vec![Word::MAX, Word::from(1), Word::from(0)],
@@ -244,7 +254,7 @@ mod tests {
     }
 
     #[test]
-    fn test_addwords_neq0() {
+    fn test_addwords_wrong_sum0() {
         test_math_gadget_container::<Fr, AddWordsTestContainer<Fr, 2, true>>(
             vec![Word::from(1), Word::from(0), Word::from(0)],
             false,
@@ -252,7 +262,7 @@ mod tests {
     }
 
     #[test]
-    fn test_addwords_neq2() {
+    fn test_addwords_wrong_sum2() {
         test_math_gadget_container::<Fr, AddWordsTestContainer<Fr, 2, true>>(
             vec![Word::from(2), Word::from(1), Word::from(2)],
             false,
@@ -281,6 +291,24 @@ mod tests {
         test_math_gadget_container::<Fr, AddWordsTestContainer<Fr, 3, true>>(
             vec![Word::MAX, Word::from(1), Word::from(0), Word::from(0)],
             false,
+        );
+    }
+
+    #[test]
+    fn test_addwords_7_addends_with_overflow_check() {
+        let sum_7_low_max = U256([0xfffffffffffffff9u64, 0xffffffffffffffffu64, 6u64, 0u64]);
+        test_math_gadget_container::<Fr, AddWordsTestContainer<Fr, 7, true>>(
+            vec![
+                WORD_LOW_MAX,
+                WORD_LOW_MAX,
+                WORD_LOW_MAX,
+                WORD_LOW_MAX,
+                WORD_LOW_MAX,
+                WORD_LOW_MAX,
+                WORD_LOW_MAX,
+                sum_7_low_max,
+            ],
+            true,
         );
     }
 
