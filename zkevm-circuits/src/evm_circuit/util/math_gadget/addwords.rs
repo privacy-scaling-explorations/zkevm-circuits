@@ -204,7 +204,7 @@ mod tests {
     }
 
     #[test]
-    fn test_add_0_0() {
+    fn test_addwords_0_0() {
         test_math_gadget_container::<Fr, AddWordsTestContainer<Fr, 2, true>>(
             vec![Word::from(0), Word::from(0), Word::from(0)],
             true,
