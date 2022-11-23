@@ -368,7 +368,9 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 mod test {
     use crate::evm_circuit::test::{rand_bytes, run_test_circuit_geth_data_default};
     use bus_mapping::evm::OpcodeId;
-    use eth_types::{self, bytecode, evm_types::GasCost, geth_types::GethData, Bytecode, Word};
+    use eth_types::{
+        self, bytecode, evm_types::GasCost, geth_types::GethData, word, Bytecode, Word,
+    };
     use halo2_proofs::halo2curves::bn256::Fr;
     use mock::{eth, gwei, TestContext, MOCK_ACCOUNTS};
 
@@ -513,5 +515,88 @@ mod test {
         ] {
             test_ok(mock_tx(value, gas_price, calldata), code);
         }
+    }
+
+    #[test]
+    fn begin_tx_no_code() {
+        let block: GethData = TestContext::<2, 1>::new(
+            None,
+            |accs| {
+                accs[0].address(MOCK_ACCOUNTS[0]).balance(eth(20));
+                accs[1].address(MOCK_ACCOUNTS[1]).balance(eth(10));
+            },
+            |mut txs, _accs| {
+                txs[0]
+                    .from(MOCK_ACCOUNTS[0])
+                    .to(MOCK_ACCOUNTS[1])
+                    .gas_price(gwei(2))
+                    .gas(Word::from(0x10000))
+                    .value(eth(2));
+            },
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap()
+        .into();
+
+        assert_eq!(run_test_circuit_geth_data_default::<Fr>(block), Ok(()));
+    }
+
+    #[test]
+    fn begin_tx_no_account() {
+        let block: GethData = TestContext::<1, 1>::new(
+            None,
+            |accs| {
+                accs[0].address(MOCK_ACCOUNTS[0]).balance(eth(20));
+            },
+            |mut txs, _accs| {
+                txs[0]
+                    .from(MOCK_ACCOUNTS[0])
+                    .to(MOCK_ACCOUNTS[1])
+                    .gas_price(gwei(2))
+                    .gas(Word::from(0x10000))
+                    .value(eth(2));
+            },
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap()
+        .into();
+
+        assert_eq!(run_test_circuit_geth_data_default::<Fr>(block), Ok(()));
+    }
+
+    // TODO: Enable this test once we have support for contract deployment from
+    // BeginTx.
+    #[ignore]
+    #[test]
+    fn begin_tx_deploy() {
+        let code = bytecode! {
+            // [ADDRESS, STOP]
+            PUSH32(word!("3000000000000000000000000000000000000000000000000000000000000000"))
+            PUSH1(0)
+            MSTORE
+
+            PUSH1(2)
+            PUSH1(0)
+            RETURN
+        };
+        let block: GethData = TestContext::<1, 1>::new(
+            None,
+            |accs| {
+                accs[0].address(MOCK_ACCOUNTS[0]).balance(eth(20));
+            },
+            |mut txs, _accs| {
+                txs[0]
+                    .from(MOCK_ACCOUNTS[0])
+                    .gas_price(gwei(2))
+                    .gas(Word::from(0x10000))
+                    .value(eth(2))
+                    .input(code.into());
+            },
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap()
+        .into();
+
+        assert_eq!(run_test_circuit_geth_data_default::<Fr>(block), Ok(()));
     }
 }

@@ -63,6 +63,27 @@ impl Bytecode {
         }
         rows
     }
+
+    /// get byte value and is_code pair
+    pub fn get(&self, dest: usize) -> [u8; 2] {
+        let mut push_data_left = 0;
+        for (idx, byte) in self.bytes.iter().enumerate() {
+            let mut is_code = true;
+            if push_data_left > 0 {
+                is_code = false;
+                push_data_left -= 1;
+            } else if (OpcodeId::PUSH1.as_u8()..=OpcodeId::PUSH32.as_u8()).contains(byte) {
+                push_data_left = *byte as usize - (OpcodeId::PUSH1.as_u8() - 1) as usize;
+            }
+
+            if idx == dest {
+                return [*byte, is_code as u8];
+            }
+        }
+
+        // here dest > bytecodes len
+        panic!("can not find byte in the bytecodes list")
+    }
 }
 
 impl From<&eth_types::bytecode::Bytecode> for Bytecode {

@@ -1,17 +1,16 @@
 use std::collections::HashMap;
 
+use crate::{evm_circuit::util::RandomLinearCombination, table::BlockContextFieldTag};
 use bus_mapping::circuit_input_builder::{self, CircuitsParams, CopyEvent, ExpEvent};
 use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word};
 use halo2_proofs::halo2curves::bn256::Fr;
 use itertools::Itertools;
 
-use crate::{evm_circuit::util::RandomLinearCombination, table::BlockContextFieldTag};
-
 use super::{step::step_convert, tx::tx_convert, Bytecode, ExecStep, RwMap, Transaction};
 
-/// Block is the struct used by all circuits, which constains all the needed
+/// Block is the struct used by all circuits, which contains all the needed
 /// data for witness generation.
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Clone)]
 pub struct Block<F> {
     /// The randomness for random linear combination
     pub randomness: F,
@@ -191,6 +190,7 @@ pub fn block_convert(
         exp_events: block.exp_events.clone(),
         sha3_inputs: block.sha3_inputs.clone(),
         circuits_params: block.circuits_params.clone(),
-        ..Default::default()
+        evm_circuit_pad_to: <usize>::default(),
+        exp_circuit_pad_to: <usize>::default(),
     }
 }
