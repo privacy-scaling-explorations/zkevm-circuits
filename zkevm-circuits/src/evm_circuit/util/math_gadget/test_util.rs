@@ -2,20 +2,24 @@ use itertools::Itertools;
 use std::marker::PhantomData;
 use strum::IntoEnumIterator;
 
-use super::util::StoredExpression;
-use super::*;
-use crate::evm_circuit::param::{MAX_STEP_HEIGHT, STEP_WIDTH};
-use crate::evm_circuit::step::Step;
-use crate::evm_circuit::table::{FixedTableTag, Table};
-use crate::evm_circuit::util::{rlc, CellType};
-use crate::evm_circuit::{Advice, Column, Fixed};
+use crate::evm_circuit::{
+    param::{MAX_STEP_HEIGHT, STEP_WIDTH},
+    step::{ExecutionState, Step},
+    table::{FixedTableTag, Table},
+    util::{
+        constraint_builder::ConstraintBuilder, rlc, CachedRegion, CellType, Expr, StoredExpression,
+    },
+    Advice, Column, Fixed,
+};
 use crate::table::LookupTable;
-use crate::{evm_circuit::step::ExecutionState, util::power_of_randomness_from_instance};
-use eth_types::{Word, U256};
-use halo2_proofs::circuit::Layouter;
-use halo2_proofs::plonk::{ConstraintSystem, Selector};
-use halo2_proofs::plonk::{Error, Expression};
-use halo2_proofs::{circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit};
+use crate::util::power_of_randomness_from_instance;
+use eth_types::{Field, Word, U256};
+pub(crate) use halo2_proofs::circuit::{Layouter, Value};
+use halo2_proofs::{
+    circuit::SimpleFloorPlanner,
+    dev::MockProver,
+    plonk::{Circuit, ConstraintSystem, Error, Expression, Selector},
+};
 
 pub(crate) const WORD_LOW_MAX: Word = U256([u64::MAX, u64::MAX, 0, 0]);
 pub(crate) const WORD_HIGH_MAX: Word = U256([0, 0, u64::MAX, u64::MAX]);

@@ -1,10 +1,6 @@
-use super::CachedRegion;
-use crate::{
-    evm_circuit::util::{self, constraint_builder::ConstraintBuilder},
-    util::Expr,
-};
+use crate::util::Expr;
 use eth_types::Field;
-use halo2_proofs::{circuit::Value, plonk::Expression};
+use halo2_proofs::plonk::Expression;
 
 mod abs_word;
 mod add_words;
@@ -18,12 +14,13 @@ mod is_zero;
 mod lt;
 mod lt_word;
 mod min_max;
-mod mod_gadget;
+mod modulo;
 mod mul_add_words;
 mod mul_add_words512;
 mod mul_word_u64;
 mod pair_select;
 mod range_check;
+#[cfg(test)]
 mod test_util;
 
 pub(crate) use abs_word::AbsWordGadget;
@@ -38,7 +35,7 @@ pub(crate) use is_zero::IsZeroGadget;
 pub(crate) use lt::LtGadget;
 pub(crate) use lt_word::LtWordGadget;
 pub(crate) use min_max::MinMaxGadget;
-pub(crate) use mod_gadget::ModGadget;
+pub(crate) use modulo::ModGadget;
 pub(crate) use mul_add_words::MulAddWordsGadget;
 pub(crate) use mul_add_words512::MulAddWords512Gadget;
 pub(crate) use mul_word_u64::MulWordByU64Gadget;

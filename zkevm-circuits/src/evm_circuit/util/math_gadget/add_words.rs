@@ -1,8 +1,7 @@
-use super::CachedRegion;
 use crate::{
     evm_circuit::util::{
         self, constraint_builder::ConstraintBuilder, from_bytes, pow_of_two_expr, split_u256, sum,
-        Cell,
+        CachedRegion, Cell,
     },
     util::Expr,
 };
@@ -176,7 +175,7 @@ mod tests {
                 sum.clone(),
             );
 
-            assert_eq!(addwords_gadget.addends(), N_ADDENDS);
+            assert_eq!(addwords_gadget.addends().len(), N_ADDENDS);
             AddWordsTestContainer {
                 addwords_gadget,
                 addends,
@@ -241,7 +240,7 @@ mod tests {
     fn test_addwords_high_low_max() {
         test_math_gadget_container::<Fr, AddWordsTestContainer<Fr, 2, true>>(
             vec![WORD_LOW_MAX, WORD_HIGH_MAX, Word::MAX],
-            false,
+            true,
         );
     }
 

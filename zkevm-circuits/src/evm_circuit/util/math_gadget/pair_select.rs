@@ -1,6 +1,5 @@
-use super::CachedRegion;
 use crate::{
-    evm_circuit::util::{constraint_builder::ConstraintBuilder, Cell},
+    evm_circuit::util::{constraint_builder::ConstraintBuilder, CachedRegion, Cell},
     util::Expr,
 };
 use eth_types::Field;
