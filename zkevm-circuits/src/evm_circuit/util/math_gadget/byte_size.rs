@@ -1,8 +1,7 @@
-use super::CachedRegion;
 use crate::{
     evm_circuit::{
         param::N_BYTES_WORD,
-        util::{self, constraint_builder::ConstraintBuilder, sum, Cell},
+        util::{self, constraint_builder::ConstraintBuilder, sum, CachedRegion, Cell},
     },
     util::Expr,
 };

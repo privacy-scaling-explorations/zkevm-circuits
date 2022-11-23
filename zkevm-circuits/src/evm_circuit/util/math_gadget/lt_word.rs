@@ -1,7 +1,6 @@
-use super::CachedRegion;
 use crate::evm_circuit::{
     util::math_gadget::*,
-    util::{self, constraint_builder::ConstraintBuilder, from_bytes, split_u256},
+    util::{self, constraint_builder::ConstraintBuilder, from_bytes, split_u256, CachedRegion},
 };
 use eth_types::{Field, Word};
 use halo2_proofs::plonk::{Error, Expression};

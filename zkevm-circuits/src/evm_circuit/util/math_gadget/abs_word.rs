@@ -1,6 +1,7 @@
-use super::CachedRegion;
 use crate::{
-    evm_circuit::util::{self, constraint_builder::ConstraintBuilder, from_bytes, math_gadget::*},
+    evm_circuit::util::{
+        self, constraint_builder::ConstraintBuilder, from_bytes, math_gadget::*, CachedRegion,
+    },
     util::Expr,
 };
 use eth_types::{Field, ToLittleEndian, Word};

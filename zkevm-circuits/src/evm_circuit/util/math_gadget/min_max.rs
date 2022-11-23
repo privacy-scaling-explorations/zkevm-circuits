@@ -1,5 +1,6 @@
-use super::CachedRegion;
-use crate::evm_circuit::util::{constraint_builder::ConstraintBuilder, math_gadget::*, select};
+use crate::evm_circuit::util::{
+    constraint_builder::ConstraintBuilder, math_gadget::*, select, CachedRegion,
+};
 use eth_types::Field;
 use halo2_proofs::plonk::{Error, Expression};
 /// Returns `rhs` when `lhs < rhs`, and returns `lhs` otherwise.

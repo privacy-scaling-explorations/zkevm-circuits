@@ -1,7 +1,6 @@
-use super::CachedRegion;
 use crate::evm_circuit::{
     util::math_gadget::*,
-    util::{constraint_builder::ConstraintBuilder, sum},
+    util::{constraint_builder::ConstraintBuilder, sum, CachedRegion},
 };
 use eth_types::Field;
 use halo2_proofs::plonk::{Error, Expression};
