@@ -14,10 +14,12 @@ use halo2_proofs::{
     circuit::Value,
     plonk::{Error, Expression},
 };
+use paste::paste;
 
 /// Returns `1` when `value == 0`, and returns `0` otherwise.
 #[derive(Clone, Debug)]
 pub struct IsZeroGadget<F> {
+    assigned: Cell<F>,
     inverse: Cell<F>,
     is_zero: Expression<F>,
 }
@@ -25,19 +27,20 @@ pub struct IsZeroGadget<F> {
 impl<F: Field> IsZeroGadget<F> {
     pub(crate) fn construct(cb: &mut ConstraintBuilder<F>, value: Expression<F>) -> Self {
         let inverse = cb.query_cell();
+        let assigned = cb.query_bool();
 
         let is_zero = 1.expr() - (value.clone() * inverse.expr());
         // when `value != 0` check `inverse = a.invert()`: value * (1 - value *
         // inverse)
-        cb.add_constraint("value ⋅ (1 - value ⋅ value_inv)", value * is_zero.clone());
+        cb.add_constraint("value ⋅ (1 - value ⋅ value_inv)", assigned.expr() * value * is_zero.clone());
         // when `value == 0` check `inverse = 0`: `inverse ⋅ (1 - value *
         // inverse)`
         cb.add_constraint(
             "value_inv ⋅ (1 - value ⋅ value_inv)",
-            inverse.expr() * is_zero.clone(),
+            assigned.expr() * inverse.expr() * is_zero.clone(),
         );
 
-        Self { inverse, is_zero }
+        Self { inverse, is_zero, assigned }
     }
 
     pub(crate) fn expr(&self) -> Expression<F> {
@@ -469,6 +472,7 @@ pub struct LtGadget<F, const N_BYTES: usize> {
 
 impl<F: Field, const N_BYTES: usize> LtGadget<F, N_BYTES> {
     pub(crate) fn construct(
+        name: &'static str,
         cb: &mut ConstraintBuilder<F>,
         lhs: Expression<F>,
         rhs: Expression<F>,
@@ -516,6 +520,9 @@ impl<F: Field, const N_BYTES: usize> LtGadget<F, N_BYTES> {
                 Value::known(F::from(diff_bytes[idx] as u64)),
             )?;
         }
+        let range : F = pow_of_two(N_BYTES * 8);
+        let lt_f = if lt { F::one() } else { F:: zero() };
+        assert!(lhs - rhs - ( diff - (lt_f * range)) == F::zero());
 
         Ok((if lt { F::one() } else { F::zero() }, diff_bytes.to_vec()))
     }
@@ -557,6 +564,7 @@ impl<F: Field> LtWordGadget<F> {
             from_bytes::expr(&rhs.cells[16..]),
         );
         let lt_lo = LtGadget::construct(
+            "LtWordGadget-Lt",
             cb,
             from_bytes::expr(&lhs.cells[..16]),
             from_bytes::expr(&rhs.cells[..16]),
@@ -614,7 +622,7 @@ impl<F: Field, const N_BYTES: usize> ComparisonGadget<F, N_BYTES> {
         lhs: Expression<F>,
         rhs: Expression<F>,
     ) -> Self {
-        let lt = LtGadget::<F, N_BYTES>::construct(cb, lhs, rhs);
+        let lt = LtGadget::<F, N_BYTES>::construct("ComparationGaget-lt",cb, lhs, rhs);
         let eq = IsZeroGadget::<F>::construct(cb, sum::expr(&lt.diff_bytes()));
 
         Self { lt, eq }
@@ -797,11 +805,12 @@ pub struct MinMaxGadget<F, const N_BYTES: usize> {
 
 impl<F: Field, const N_BYTES: usize> MinMaxGadget<F, N_BYTES> {
     pub(crate) fn construct(
+        name: &'static str,
         cb: &mut ConstraintBuilder<F>,
         lhs: Expression<F>,
         rhs: Expression<F>,
     ) -> Self {
-        let lt = LtGadget::construct(cb, lhs.clone(), rhs.clone());
+        let lt = LtGadget::construct("min-max-gadget-lt", cb, lhs.clone(), rhs.clone());
         let max = select::expr(lt.expr(), rhs.clone(), lhs.clone());
         let min = select::expr(lt.expr(), lhs, rhs);
 
@@ -837,8 +846,8 @@ impl<F: Field, const N_BYTES: usize> MinMaxGadget<F, N_BYTES> {
         offset: usize,
         lhs: Value<F>,
         rhs: Value<F>,
-    ) -> Result<(Value<F>, Value<F>), Error> {
-         Ok(lhs.zip(rhs).map(|(lhs,rhs)| self.assign(region, offset, lhs, rhs)).transpose()?.unzip())
+    ) -> Result<(Value<F>, Value<F>), Error> { 
+        Ok(lhs.zip(rhs).map(|(lhs,rhs)| self.assign(region, offset, lhs, rhs)).transpose()?.unzip())
     }
 }
 
@@ -1360,7 +1369,7 @@ impl<F: Field> AbsWordGadget<F> {
         let x_hi = from_bytes::expr(&x.cells[16..32]);
         let x_abs_lo = from_bytes::expr(&x_abs.cells[0..16]);
         let x_abs_hi = from_bytes::expr(&x_abs.cells[16..32]);
-        let is_neg = LtGadget::construct(cb, 127.expr(), x.cells[31].expr());
+        let is_neg = LtGadget::construct("AbsWordGadget-Lt", cb, 127.expr(), x.cells[31].expr());
 
         cb.add_constraint(
             "x_abs_lo == x_lo when x >= 0",

@@ -56,8 +56,8 @@ impl<F: Field> ExecutionGadget<F> for SignedComparatorGadget<F> {
         // number is negative if the most significant cell >= 128
         // (0b10000000). a and b being in the little-endian notation, the
         // most-significant byte is the last byte.
-        let sign_check_a = LtGadget::construct(cb, a.cells[31].expr(), 128.expr());
-        let sign_check_b = LtGadget::construct(cb, b.cells[31].expr(), 128.expr());
+        let sign_check_a = LtGadget::construct("sign_check_a", cb, a.cells[31].expr(), 128.expr());
+        let sign_check_b = LtGadget::construct("sign_check_b", cb, b.cells[31].expr(), 128.expr());
 
         // sign_check_a_lt expression implies a is positive since its MSB < 2**7
         // sign_check_b_lt expression implies b is positive since its MSB < 2**7
@@ -73,6 +73,7 @@ impl<F: Field> ExecutionGadget<F> for SignedComparatorGadget<F> {
         // values, we have: a < b == 1 iff ((a_hi < b_hi) || ((a_hi ==
         // b_hi) && (a_lo < b_lo)))
         let lt_lo = LtGadget::construct(
+            "",
             cb,
             from_bytes::expr(&a.cells[0..16]),
             from_bytes::expr(&b.cells[0..16]),

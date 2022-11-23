@@ -34,6 +34,7 @@ integer = { path = "../../halo2wrong/integer" }
 libsecp256k1 = "0.7"
 num-bigint = { version = "0.4" }
 subtle = "2.4"
+paste = "1.0"
 
 [dev-dependencies]
 bus-mapping = { path = "../bus-mapping", features = ["test"] }

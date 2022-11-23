@@ -160,7 +160,7 @@ pub mod test {
     use halo2_proofs::{
         circuit::{Layouter, SimpleFloorPlanner},
         dev::{MockProver, VerifyFailure},
-        plonk::{Circuit, ConstraintSystem, Error},
+        plonk::{Circuit, ConstraintSystem, Error, SecondPhase},
     };
     use rand::{
         distributions::uniform::{SampleRange, SampleUniform},

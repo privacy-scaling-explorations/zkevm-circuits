@@ -125,6 +125,7 @@ impl<F: Field> ExecutionGadget<F> for StopGadget<F> {
 
 #[cfg(test)]
 mod test {
+    use pretty_assertions::assert_eq;
     use crate::evm_circuit::test::run_test_circuit_geth_data_default;
     use eth_types::{address, bytecode, Bytecode, Word};
     use halo2_proofs::halo2curves::bn256::Fr;
@@ -210,4 +211,13 @@ mod test {
             test_ok(bytecode, is_root);
         }
     }
+    #[test]
+    fn stop_gadget_simple_1() {
+        let bytecode = 
+            bytecode! {
+                PUSH1(0)
+            };
+            test_ok(bytecode, false);
+    }
+
 }

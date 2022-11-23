@@ -47,12 +47,14 @@ impl<F: Field> ExecutionGadget<F> for BlockHashGadget<F> {
         );
 
         let block_lt = LtGadget::construct(
+            "block_lt",
             cb,
             from_bytes::expr(&block_number.cells),
             current_block_number.expr(),
         );
 
         let diff_lt = LtGadget::construct(
+            "diff_lt",
             cb,
             current_block_number.expr(),
             257.expr() + from_bytes::expr(&block_number.cells),

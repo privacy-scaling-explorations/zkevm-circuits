@@ -210,7 +210,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         let gas_available = cb.curr.state.gas_left.expr() - gas_cost.clone();
         let one_64th_gas = ConstantDivisionGadget::construct(cb, gas_available.clone(), 64);
         let all_but_one_64th_gas = gas_available - one_64th_gas.quotient();
-        let capped_callee_gas_left = MinMaxGadget::construct(cb, gas, all_but_one_64th_gas.clone());
+        let capped_callee_gas_left = MinMaxGadget::construct("capped_callee_gas_left", cb, gas, all_but_one_64th_gas.clone());
         let callee_gas_left = select::expr(
             gas_is_u64.expr(),
             capped_callee_gas_left.min(),
@@ -498,6 +498,11 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         let gas_available = Value::known(F::from(step.gas_left)) - gas_cost;
         self.one_64th_gas
             .assign_value(region, offset, gas_available)?;
+        
+        // HERE
+        dbg!(region.get_randomness());
+        // dbg!(Value::known(F::from(gas.as_u64())), gas_available - gas_available * Value::known(F::from(64).invert().unwrap()) );
+        
         self.capped_callee_gas_left.assign_value(
             region,
             offset,

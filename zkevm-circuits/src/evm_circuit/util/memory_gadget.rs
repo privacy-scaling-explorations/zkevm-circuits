@@ -230,6 +230,7 @@ impl<F: Field, const N: usize, const N_BYTES_MEMORY_WORD_SIZE: usize>
         let mut next_memory_word_size = curr_memory_word_size.clone();
         let max_memory_word_sizes = array_init(|idx| {
             let max_memory_word_size = MinMaxGadget::construct(
+                "MemoryExpansionGadget",
                 cb,
                 next_memory_word_size.clone(),
                 memory_word_sizes[idx].expr(),
@@ -437,7 +438,7 @@ impl<F: Field, const MAX_BYTES: usize, const ADDR_SIZE_IN_BYTES: usize>
         // The constraints on bound_dist[0].
         //   bound_dist[0] == addr_end - addr_start if addr_start < addr_end
         //   bound_dist[0] == 0 if addr_start >= addr_end
-        let min_gadget = MinMaxGadget::construct(cb, addr_start, addr_end.clone());
+        let min_gadget = MinMaxGadget::construct("BufferReaderGadget", cb, addr_start, addr_end.clone());
         cb.require_equal(
             "bound_dist[0] == addr_end - min(addr_start, add_end)",
             bound_dist[0].expr(),
