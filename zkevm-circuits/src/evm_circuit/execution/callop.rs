@@ -30,6 +30,7 @@ pub(crate) struct CallOpGadget<F> {
     opcode: Cell<F>,
     is_call: IsZeroGadget<F>,
     is_delegatecall: IsZeroGadget<F>,
+    is_staticcall: IsZeroGadget<F>,
     tx_id: Cell<F>,
     reversion_info: ReversionInfo<F>,
     current_address: Cell<F>,
@@ -69,7 +70,14 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         let is_call = IsZeroGadget::construct(cb, opcode.expr() - OpcodeId::CALL.expr());
         let is_delegatecall =
             IsZeroGadget::construct(cb, opcode.expr() - OpcodeId::DELEGATECALL.expr());
-        let is_staticcall = 1.expr() - is_call.expr() - is_delegatecall.expr();
+        let is_staticcall =
+            IsZeroGadget::construct(cb, opcode.expr() - OpcodeId::STATICCALL.expr());
+
+        cb.require_equal(
+            "Opcode should be CALL, DELEGATECALL or STATICCALL",
+            is_call.expr() + is_delegatecall.expr() + is_staticcall.expr(),
+            1.expr(),
+        );
 
         let gas_word = cb.query_word();
         let code_address_word = cb.query_word();
@@ -310,7 +318,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     select::expr(is_delegatecall.expr(), parent_value.expr(), value.expr()),
                 ),
                 (CallContextFieldTag::IsSuccess, is_success.expr()),
-                (CallContextFieldTag::IsStatic, is_staticcall),
+                (CallContextFieldTag::IsStatic, is_staticcall.expr()),
                 (CallContextFieldTag::LastCalleeId, 0.expr()),
                 (CallContextFieldTag::LastCalleeReturnDataOffset, 0.expr()),
                 (CallContextFieldTag::LastCalleeReturnDataLength, 0.expr()),
@@ -343,6 +351,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             opcode,
             is_call,
             is_delegatecall,
+            is_staticcall,
             tx_id,
             reversion_info,
             current_address,
@@ -447,6 +456,11 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             region,
             offset,
             F::from(opcode.as_u64()) - F::from(OpcodeId::DELEGATECALL.as_u64()),
+        )?;
+        self.is_staticcall.assign(
+            region,
+            offset,
+            F::from(opcode.as_u64()) - F::from(OpcodeId::STATICCALL.as_u64()),
         )?;
         self.tx_id
             .assign(region, offset, Value::known(F::from(tx_id.low_u64())))?;
