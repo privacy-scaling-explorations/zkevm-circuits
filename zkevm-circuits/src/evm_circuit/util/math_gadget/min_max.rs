@@ -134,7 +134,7 @@ mod tests {
     }
 
     #[test]
-    fn test_minmx_unexpect_min_a() {
+    fn test_minmax_unexpect_min_a() {
         // min == b, max == a
         test_math_gadget_container::<Fr, MinMaxTestContainer<Fr, true>>(
             vec![Word::from(1), Word::from(0)],
