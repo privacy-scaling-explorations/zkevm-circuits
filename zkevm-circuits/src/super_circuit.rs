@@ -260,12 +260,6 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: u
             block.circuits_params.max_rws,
             Value::known(block.randomness),
         )?;
-        config.tx_table.load(
-            &mut layouter,
-            &block.txs,
-            block.circuits_params.max_txs,
-            block.randomness,
-        )?;
         config.state_circuit.load(&mut layouter)?;
         config
             .block_table
