@@ -1,7 +1,7 @@
-use super::CachedRegion;
 use crate::{
     evm_circuit::util::{
         self, constraint_builder::ConstraintBuilder, from_bytes, math_gadget::*, select,
+        CachedRegion,
     },
     util::Expr,
 };

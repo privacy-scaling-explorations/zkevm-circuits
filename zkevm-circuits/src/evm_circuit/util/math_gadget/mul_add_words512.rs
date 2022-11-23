@@ -1,8 +1,7 @@
-use super::CachedRegion;
 use crate::{
     evm_circuit::util::{
         self, constraint_builder::ConstraintBuilder, from_bytes, pow_of_two_expr, split_u256,
-        split_u256_limb64, Cell,
+        split_u256_limb64, CachedRegion, Cell,
     },
     util::Expr,
 };

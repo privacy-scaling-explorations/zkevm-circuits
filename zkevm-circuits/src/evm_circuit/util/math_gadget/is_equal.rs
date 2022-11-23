@@ -1,5 +1,7 @@
-use super::CachedRegion;
-use crate::evm_circuit::{util::constraint_builder::ConstraintBuilder, util::math_gadget::*};
+use crate::evm_circuit::{
+    util::constraint_builder::ConstraintBuilder,
+    util::{math_gadget::*, CachedRegion},
+};
 use eth_types::Field;
 use halo2_proofs::plonk::{Error, Expression};
 
@@ -39,7 +41,7 @@ impl<F: Field> IsEqualGadget<F> {
 mod tests {
     use super::test_util::*;
     use super::*;
-    use crate::evm_circuit::util::Cell;
+    use crate::evm_circuit::util::{CachedRegion, Cell};
     use eth_types::*;
     use halo2_proofs::halo2curves::bn256::Fr;
     use halo2_proofs::plonk::Error;
