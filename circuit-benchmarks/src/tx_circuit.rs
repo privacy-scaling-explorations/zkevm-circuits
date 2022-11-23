@@ -4,7 +4,6 @@
 mod tests {
     use ark_std::{end_timer, start_timer};
     use env_logger::Env;
-    use halo2_proofs::halo2curves::CurveAffine;
     use halo2_proofs::plonk::{create_proof, keygen_pk, keygen_vk, verify_proof};
     use halo2_proofs::poly::kzg::commitment::{KZGCommitmentScheme, ParamsKZG, ParamsVerifierKZG};
     use halo2_proofs::poly::kzg::multiopen::{ProverSHPLONK, VerifierSHPLONK};
@@ -18,9 +17,7 @@ mod tests {
     };
     use rand::SeedableRng;
     use rand_chacha::ChaCha20Rng;
-    use std::marker::PhantomData;
-    use zkevm_circuits::tx_circuit::{sign_verify::SignVerifyChip, Curve, TxCircuit};
-    use zkevm_circuits::tx_circuit::{Group, Secp256k1Affine};
+    use zkevm_circuits::tx_circuit::TxCircuit;
 
     use crate::bench_params::DEGREE;
 
@@ -36,22 +33,9 @@ mod tests {
 
         let mut rng = ChaCha20Rng::seed_from_u64(42);
 
-        let aux_generator =
-            <Secp256k1Affine as CurveAffine>::CurveExt::random(&mut rng).to_affine();
         let chain_id: u64 = mock::MOCK_CHAIN_ID.low_u64();
-
         let txs = vec![mock::CORRECT_MOCK_TXS[0].clone().into()];
-
-        // SignVerifyChip -> ECDSAChip -> MainGate instance column
-        let circuit = TxCircuit::<Fr, MAX_TXS, MAX_CALLDATA> {
-            sign_verify: SignVerifyChip {
-                aux_generator,
-                window_size: 2,
-                _marker: PhantomData,
-            },
-            txs,
-            chain_id,
-        };
+        let circuit = TxCircuit::<Fr>::new(MAX_TXS, MAX_CALLDATA, chain_id, txs);
 
         // Bench setup generation
         let setup_message = format!("Setup generation with degree = {}", DEGREE);
@@ -75,7 +59,7 @@ mod tests {
             Challenge255<G1Affine>,
             ChaCha20Rng,
             Blake2bWrite<Vec<u8>, G1Affine, Challenge255<G1Affine>>,
-            TxCircuit<Fr, MAX_TXS, MAX_CALLDATA>,
+            TxCircuit<Fr>,
         >(
             &general_params,
             &pk,
