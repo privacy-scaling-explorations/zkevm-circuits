@@ -46,6 +46,8 @@ pub(crate) enum MptWitnessRowType {
     ModExtNodeCBeforeMod = 21,
     ModExtNodeSAfterMod = 22,
     ModExtNodeCAfterMod = 23,
+    ModExtNodeBeforeModSelectors = 24,
+    ModExtNodeAfterModSelectors = 25,
 }
 pub struct MptWitnessRow<F> {
     pub(crate) bytes: Vec<u8>,
@@ -386,6 +388,18 @@ impl<F: FieldExt> MptWitnessRow<F> {
             mpt_config.branch.is_mod_ext_node_c_after_mod,
             offset,
             || Value::known(F::from(branch.is_mod_ext_node_c_after_mod as u64)),
+        )?;
+        region.assign_advice(
+            || "assign is modified extension node before modification selectors".to_string(),
+            mpt_config.branch.is_mod_ext_node_before_mod_selectors,
+            offset,
+            || Value::known(F::from(branch.is_mod_ext_node_before_mod_selectors as u64)),
+        )?;
+        region.assign_advice(
+            || "assign is modified extension node after modification selectors".to_string(),
+            mpt_config.branch.is_mod_ext_node_after_mod_selectors,
+            offset,
+            || Value::known(F::from(branch.is_mod_ext_node_after_mod_selectors as u64)),
         )?;
 
         region.assign_advice(

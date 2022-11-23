@@ -80,12 +80,14 @@ pub(crate) fn extension_node_rlp<F: FieldExt>(
         let is_even_nibbles = is_ext_long_even_c16 + is_ext_long_even_c1;
         let is_long_odd_nibbles = is_ext_long_odd_c16 + is_ext_long_odd_c1;
 
+        /*
         if rot_into_branch_init < -19 {
             constraints.push((
                 "debug foo",
                 q_not_first.clone() * q_enable.clone() * one.clone(),
             ));
         }
+        */
 
         /*
         This constraint prevents the attacker to set the number of nibbles to be even

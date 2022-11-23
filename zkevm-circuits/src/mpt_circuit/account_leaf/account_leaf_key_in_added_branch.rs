@@ -180,7 +180,7 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
                         * (expr - acc),
                 ));
                  
-                let is_mod_ext_node_s_before_mod_next = meta.query_advice(branch.is_mod_ext_node_s_before_mod, Rotation(1));
+                let is_mod_ext_node_before_mod_selectors_next = meta.query_advice(branch.is_mod_ext_node_before_mod_selectors, Rotation(1));
                 let is_inserted_ext_node_s = meta.query_advice(
                     c_main.rlp1,
                     Rotation(rot_branch_init),
@@ -198,7 +198,7 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
                     "Inserted extension node rows after account leaf",
                     q_enable
                         * (is_inserted_ext_node_s + is_inserted_ext_node_c)
-                        * (one.clone() - is_mod_ext_node_s_before_mod_next),
+                        * (one.clone() - is_mod_ext_node_before_mod_selectors_next),
                 ));
 
                 constraints

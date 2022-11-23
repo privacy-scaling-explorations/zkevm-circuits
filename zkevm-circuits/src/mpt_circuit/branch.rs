@@ -84,6 +84,8 @@ pub(crate) struct Branch {
     pub(crate) is_mod_ext_node_c_before_mod: bool,
     pub(crate) is_mod_ext_node_s_after_mod: bool,
     pub(crate) is_mod_ext_node_c_after_mod: bool,
+    pub(crate) is_mod_ext_node_before_mod_selectors: bool,
+    pub(crate) is_mod_ext_node_after_mod_selectors: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -110,6 +112,8 @@ pub(crate) struct BranchCols<F> {
     pub(crate) is_mod_ext_node_c_before_mod: Column<Advice>,
     pub(crate) is_mod_ext_node_s_after_mod: Column<Advice>,
     pub(crate) is_mod_ext_node_c_after_mod: Column<Advice>,
+    pub(crate) is_mod_ext_node_before_mod_selectors: Column<Advice>,
+    pub(crate) is_mod_ext_node_after_mod_selectors: Column<Advice>,
     _marker: PhantomData<F>,
 }
 
@@ -130,6 +134,8 @@ impl<F: FieldExt> BranchCols<F> {
             is_mod_ext_node_c_before_mod: meta.advice_column(),
             is_mod_ext_node_s_after_mod: meta.advice_column(),
             is_mod_ext_node_c_after_mod: meta.advice_column(),
+            is_mod_ext_node_before_mod_selectors: meta.advice_column(),
+            is_mod_ext_node_after_mod_selectors: meta.advice_column(),
             _marker: PhantomData,
         }
     }

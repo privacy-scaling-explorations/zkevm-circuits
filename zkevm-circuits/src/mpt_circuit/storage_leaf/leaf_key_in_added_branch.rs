@@ -221,7 +221,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                     * (rlc_last_level - acc),
             ));
 
-            let is_mod_ext_node_s_before_mod_next_next = meta.query_advice(branch.is_mod_ext_node_s_before_mod, Rotation(2));
+            let is_mod_ext_node_before_mod_selectors_next_next = meta.query_advice(branch.is_mod_ext_node_before_mod_selectors, Rotation(2));
             let is_inserted_ext_node_s = meta.query_advice(
                 c_main.rlp1,
                 Rotation(rot_branch_init),
@@ -239,7 +239,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                 "Inserted extension node rows after storage leaf",
                 q_enable
                     * (is_inserted_ext_node_s + is_inserted_ext_node_c)
-                    * (one.clone() - is_mod_ext_node_s_before_mod_next_next),
+                    * (one.clone() - is_mod_ext_node_before_mod_selectors_next_next),
             ));
 
             constraints

@@ -1087,7 +1087,7 @@ impl<F: FieldExt> MPTConfig<F> {
                             offset,
                             || Value::known(F::one()),
                         )?;
-
+                        
                         if row.get_type() == MptWitnessRowType::AccountLeafKeyS {
                             // account leaf key
                             pv.before_account_leaf = false;
@@ -1198,6 +1198,10 @@ impl<F: FieldExt> MPTConfig<F> {
                                 branch.is_mod_ext_node_s_after_mod = true;
                             } else if row.get_type() == MptWitnessRowType::ModExtNodeCAfterMod {
                                 branch.is_mod_ext_node_c_after_mod = true;
+                            } else if row.get_type() == MptWitnessRowType::ModExtNodeBeforeModSelectors {
+                                branch.is_mod_ext_node_before_mod_selectors = true;
+                            } else if row.get_type() == MptWitnessRowType::ModExtNodeAfterModSelectors {
+                                branch.is_mod_ext_node_after_mod_selectors = true;
                             }
 
                             row.assign(

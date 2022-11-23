@@ -745,13 +745,8 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
         row: &MptWitnessRow<F>,
         offset: usize,
         is_s: bool,
-    ) {
-        println!("111111111111111111111");
-        println!("{:?}", offset);
-        println!("{:?}", row.bytes);
-
+    ) { 
         if pv.is_extension_node {
-            println!("222222222222222222");
             if is_s {
                 // [228,130,0,149,160,114,253,150,133,18,192,156,19,241,162,51,210,24,1,151,16,
                 // 48,7,177,42,60,49,34,230,254,242,79,132,165,90,75,249]

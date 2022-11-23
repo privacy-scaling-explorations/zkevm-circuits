@@ -75,8 +75,11 @@ impl<F: FieldExt> SelectorsConfig<F> {
             let is_extension_node_s = meta.query_advice(branch.is_extension_node_s, Rotation::cur());
             let is_extension_node_c = meta.query_advice(branch.is_extension_node_c, Rotation::cur());
 
+            let is_mod_ext_node_before_mod_selectors = meta.query_advice(branch.is_mod_ext_node_before_mod_selectors, Rotation::cur());
             let is_mod_ext_node_s_before_mod = meta.query_advice(branch.is_mod_ext_node_s_before_mod, Rotation::cur());
             let is_mod_ext_node_c_before_mod = meta.query_advice(branch.is_mod_ext_node_c_before_mod, Rotation::cur());
+
+            let is_mod_ext_node_after_mod_selectors = meta.query_advice(branch.is_mod_ext_node_after_mod_selectors, Rotation::cur());
             let is_mod_ext_node_s_after_mod = meta.query_advice(branch.is_mod_ext_node_s_after_mod, Rotation::cur());
             let is_mod_ext_node_c_after_mod = meta.query_advice(branch.is_mod_ext_node_c_after_mod, Rotation::cur());
 
@@ -111,8 +114,10 @@ impl<F: FieldExt> SelectorsConfig<F> {
                     + is_account_leaf_nonce_balance_s.clone() + is_account_leaf_nonce_balance_c.clone()
                     + is_account_leaf_storage_codehash_s.clone() + is_account_leaf_storage_codehash_c.clone()
                     + is_account_leaf_in_added_branch.clone()
+                    + is_mod_ext_node_before_mod_selectors.clone()
                     + is_mod_ext_node_s_before_mod.clone()
                     + is_mod_ext_node_c_before_mod.clone()
+                    + is_mod_ext_node_after_mod_selectors.clone()
                     + is_mod_ext_node_s_after_mod.clone()
                     + is_mod_ext_node_c_after_mod.clone()
                     - one.clone())
@@ -219,12 +224,21 @@ impl<F: FieldExt> SelectorsConfig<F> {
             ));
 
             constraints.push((
+                "bool check is_mod_ext_node_before_mod_selectors",
+                get_bool_constraint(q_enable.clone(), is_mod_ext_node_before_mod_selectors),
+            ));
+            constraints.push((
                 "bool check is_mod_ext_node_s_before_mod",
                 get_bool_constraint(q_enable.clone(), is_mod_ext_node_s_before_mod),
             ));
             constraints.push((
                 "bool check is_mod_ext_node_c_before_mod",
                 get_bool_constraint(q_enable.clone(), is_mod_ext_node_c_before_mod),
+            ));
+
+            constraints.push((
+                "bool check is_mod_ext_node_after_mod_selectors",
+                get_bool_constraint(q_enable.clone(), is_mod_ext_node_after_mod_selectors),
             ));
             constraints.push((
                 "bool check is_mod_ext_node_s_after_mod",
@@ -449,14 +463,21 @@ impl<F: FieldExt> SelectorsConfig<F> {
                 let is_extension_node_c_cur =
                     meta.query_advice(branch.is_extension_node_c, Rotation::cur());
 
+                let is_mod_ext_node_before_mod_selectors_prev = meta.query_advice(branch.is_mod_ext_node_before_mod_selectors, Rotation::prev());
+                let is_mod_ext_node_before_mod_selectors_cur = meta.query_advice(branch.is_mod_ext_node_before_mod_selectors, Rotation::cur());
+
                 let is_mod_ext_node_s_before_mod_prev = meta.query_advice(branch.is_mod_ext_node_s_before_mod, Rotation::prev());
                 let is_mod_ext_node_s_before_mod_cur = meta.query_advice(branch.is_mod_ext_node_s_before_mod, Rotation::cur());
 
                 let is_mod_ext_node_c_before_mod_prev = meta.query_advice(branch.is_mod_ext_node_c_before_mod, Rotation::prev());
                 let is_mod_ext_node_c_before_mod_cur = meta.query_advice(branch.is_mod_ext_node_c_before_mod, Rotation::cur());
 
+                let is_mod_ext_node_after_mod_selectors_prev = meta.query_advice(branch.is_mod_ext_node_after_mod_selectors, Rotation::prev());
+                let is_mod_ext_node_after_mod_selectors_cur = meta.query_advice(branch.is_mod_ext_node_after_mod_selectors, Rotation::cur());
+
                 let is_mod_ext_node_s_after_mod_prev = meta.query_advice(branch.is_mod_ext_node_s_after_mod, Rotation::prev());
                 let is_mod_ext_node_s_after_mod_cur = meta.query_advice(branch.is_mod_ext_node_s_after_mod, Rotation::cur());
+
                 let is_mod_ext_node_c_after_mod_cur = meta.query_advice(branch.is_mod_ext_node_c_after_mod, Rotation::cur());
 
                 let is_non_existing_account_row_prev =
@@ -643,11 +664,19 @@ impl<F: FieldExt> SelectorsConfig<F> {
                 non-existing proof.
                 */
                 constraints.push((
-                    "Modified extension node S before modification follows storage leaf non existing row or account leaf in added branch row",
+                    "Modified extension node before modification selectors follows storage leaf non existing row or account leaf in added branch row",
                     q_not_first.clone()
-                        * is_mod_ext_node_s_before_mod_cur.clone() // only if we are in modified extension node S before modification row 
-                        * (is_leaf_non_existing_prev - is_mod_ext_node_s_before_mod_cur.clone())
-                        * (is_account_leaf_in_added_branch_prev - is_mod_ext_node_s_before_mod_cur),
+                        * is_mod_ext_node_before_mod_selectors_cur.clone() // only if we are in modified extension node S before modification row 
+                        * (is_leaf_non_existing_prev - one.clone())
+                        * (is_account_leaf_in_added_branch_prev - one.clone()),
+                ));
+
+                /*
+                Modified extension node before modification selectors row can appear only before modified extension node S before modification.
+                */
+                constraints.push((
+                    "Modified extension node before modification selectors -> modified extension node S before modification",
+                    q_not_first.clone() * (is_mod_ext_node_before_mod_selectors_prev - is_mod_ext_node_s_before_mod_cur),
                 ));
 
                 /*
@@ -659,11 +688,19 @@ impl<F: FieldExt> SelectorsConfig<F> {
                 ));
 
                 /*
-                Modified extension node C before modification can appear only before modified extension node S after modification.
+                Modified extension node C before modification can appear only before modified extension node after modification selectors.
                 */
                 constraints.push((
-                    "Modified extension node C before modification -> modified extension node S after modification",
-                    q_not_first.clone() * (is_mod_ext_node_c_before_mod_prev - is_mod_ext_node_s_after_mod_cur),
+                    "Modified extension node C before modification -> modified extension node after modification selectors",
+                    q_not_first.clone() * (is_mod_ext_node_c_before_mod_prev - is_mod_ext_node_after_mod_selectors_cur),
+                ));
+
+                /*
+                Modified extension node after modification selectors can appear only before modified extension node S after modification.
+                */
+                constraints.push((
+                    "Modified extension node after modification selectors -> modified extension node S after modification",
+                    q_not_first.clone() * (is_mod_ext_node_after_mod_selectors_prev - is_mod_ext_node_s_after_mod_cur),
                 ));
 
                 /*
