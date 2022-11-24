@@ -97,11 +97,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
 
         // Calculate the next memory size and the gas cost for this memory
         // access
-        let memory_expansion = MemoryExpansionGadget::construct(
-            cb,
-            cb.curr.state.memory_word_size.expr(),
-            [memory_address.address()],
-        );
+        let memory_expansion = MemoryExpansionGadget::construct(cb, [memory_address.address()]);
         let memory_copier_gas = MemoryCopierGasGadget::construct(
             cb,
             memory_address.length(),
