@@ -13,7 +13,7 @@ use crate::{
                 AddWordsGadget, IsEqualGadget, IsZeroGadget, LtWordGadget, MulWordByU64Gadget,
                 RangeCheckGadget,
             },
-            select, CachedRegion, Cell, RandomLinearCombination, Word, from_bytes,
+            select, CachedRegion, Cell, RandomLinearCombination, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -38,6 +38,7 @@ pub(crate) struct BeginTxGadget<F> {
     tx_is_create: Cell<F>,
     tx_value: Word<F>,
     intrinsic_tx_value: Word<F>,
+    intrinsic_tx_value_is_zero: IsZeroGadget<F>,
     tx_call_data_length: Cell<F>,
     tx_call_data_gas_cost: Cell<F>,
     reversion_info: ReversionInfo<F>,
@@ -157,12 +158,13 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 
         // Transfer value from caller to callee
         let intrinsic_tx_value = cb.query_word();
+        let intrinsic_tx_value_is_zero = IsZeroGadget::construct(cb, intrinsic_tx_value.expr());
         cb.condition(is_tx_invalid.expr(), |cb| {
             cb.require_equal(
                 "intrinsic_tx_value == 0",
-                from_bytes::expr(&intrinsic_tx_value.cells),
-                0.expr(),
-            );
+                intrinsic_tx_value_is_zero.expr(),
+                false.expr(),
+            )
         });
 
         cb.condition(1.expr() - is_tx_invalid.expr(), |cb| {
@@ -207,26 +209,9 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         // instruction.constrain_equal(is_tx_invalid, invalid_tx)
         cb.require_equal(
             "is_tx_invalid is correct",
-            1.expr() - (1.expr() - balance_not_enough.expr()) * (is_nonce_valid.expr()),
-            is_tx_invalid.expr()
+            1.expr() - (1.expr() - balance_not_enough.expr()) * is_nonce_valid.expr(),
+            is_tx_invalid.expr(),
         );
-
-        /*
-        cb.condition(
-            balance_not_enough.expr() + (1.expr() - is_nonce_valid.expr()),
-            |cb| {
-                cb.require_equal("is_tx_invalid is 1", 1.expr(), is_tx_invalid.expr());
-            },
-        );
-
-        cb.condition(1.expr() - balance_not_enough.expr(), |cb| {
-            cb.require_equal("is_tx_invalid is 0", 0.expr(), is_tx_invalid.expr());
-        });
-
-        cb.condition(1.expr() - (1.expr() - is_nonce_valid.expr()), |cb| {
-            cb.require_equal("is_tx_invalid is 0", 0.expr(), is_tx_invalid.expr());
-        });
-        */
 
         // TODO: Handle creation transaction
         // TODO: Handle precompiled
@@ -350,6 +335,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             tx_is_create,
             tx_value,
             intrinsic_tx_value,
+            intrinsic_tx_value_is_zero,
             tx_call_data_length,
             tx_call_data_gas_cost,
             reversion_info,
@@ -443,6 +429,13 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         if tx.invalid_tx >= 1 {
             self.intrinsic_tx_value
                 .assign(region, offset, Some(U256::zero().to_le_bytes()))?;
+            self.intrinsic_tx_value_is_zero.assign(
+                region,
+                offset,
+                U256::zero()
+                    .to_scalar()
+                    .expect("unexpected U256::zero() -> Scalar conversion failure"),
+            )?;
             self.transfer_with_gas_fee.assign(
                 region,
                 offset,
@@ -454,6 +447,13 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         } else {
             self.intrinsic_tx_value
                 .assign(region, offset, Some(tx.value.to_le_bytes()))?;
+            self.intrinsic_tx_value_is_zero.assign(
+                region,
+                offset,
+                tx.value
+                    .to_scalar()
+                    .expect("unexpected tx_value -> Scalar conversion failure"),
+            )?;
             self.transfer_with_gas_fee.assign(
                 region,
                 offset,
