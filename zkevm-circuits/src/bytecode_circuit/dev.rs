@@ -7,7 +7,7 @@ use halo2_proofs::{
     plonk::{ConstraintSystem, Error},
 };
 use halo2_proofs::{circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit};
-use log::{debug, error, info};
+use log::error;
 
 /// BytecodeCircuitTester
 #[derive(Default)]

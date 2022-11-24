@@ -2,7 +2,7 @@ use std::str::FromStr;
 
 use anyhow::{bail, Result};
 use eth_types::{bytecode::OpcodeWithData, Bytecode, GethExecTrace, U256};
-use log::{debug, error, info};
+use log::{error, info};
 use prettytable::Table;
 use std::process::Command;
 
