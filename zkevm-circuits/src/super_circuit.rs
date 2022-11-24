@@ -442,6 +442,15 @@ mod super_circuit_tests {
 
     use eth_types::{address, bytecode, geth_types::GethData, Word};
 
+    #[test]
+    fn super_circuit_degree() {
+        let mut cs = ConstraintSystem::<Fr>::default();
+        SuperCircuit::<_, 1, 32, 256>::configure(&mut cs);
+        log::info!("super circuit degree: {}", cs.degree());
+        log::info!("super circuit minimum_rows: {}", cs.minimum_rows());
+        assert!(cs.degree() <= 9);
+    }
+
     // High memory usage test.  Run in serial with:
     // `cargo test [...] serial_ -- --ignored --test-threads 1`
     #[ignore]
