@@ -67,7 +67,6 @@ impl Opcode for InsufficientBalance {
         )?;
 
         state.push_call(call);
-        //state.gen_restore_context_ops(&mut exec_step, geth_steps)?;
         state.handle_return(geth_step)?;
         Ok(vec![exec_step])
     }
