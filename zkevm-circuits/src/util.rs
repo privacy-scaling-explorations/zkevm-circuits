@@ -97,6 +97,13 @@ impl<T: Clone> Challenges<T> {
             keccak_input: challenge,
         }
     }
+
+    pub(crate) fn mock_diff(challenge1: T, challenge2: T) -> Self {
+        Self {
+            evm_word: challenge1,
+            keccak_input: challenge2,
+        }
+    }
 }
 
 impl<F: Field> Challenges<Expression<F>> {
