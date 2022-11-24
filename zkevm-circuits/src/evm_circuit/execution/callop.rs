@@ -33,9 +33,9 @@ pub(crate) struct CallOpGadget<F> {
     is_staticcall: IsZeroGadget<F>,
     tx_id: Cell<F>,
     reversion_info: ReversionInfo<F>,
-    current_address: Cell<F>,
-    parent_address: Cell<F>,
-    parent_value: Cell<F>,
+    current_callee_address: Cell<F>,
+    current_caller_address: Cell<F>,
+    current_value: Cell<F>,
     is_static: Cell<F>,
     depth: Cell<F>,
     gas: Word<F>,
@@ -93,14 +93,14 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
 
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
         let mut reversion_info = cb.reversion_info_read(None);
-        let [is_static, depth, current_address] = [
+        let [is_static, depth, current_callee_address] = [
             CallContextFieldTag::IsStatic,
             CallContextFieldTag::Depth,
             CallContextFieldTag::CalleeAddress,
         ]
         .map(|field_tag| cb.call_context(None, field_tag));
 
-        let [parent_address, parent_value] = cb.condition(is_delegatecall.expr(), |cb| {
+        let [current_caller_address, current_value] = cb.condition(is_delegatecall.expr(), |cb| {
             [
                 CallContextFieldTag::CallerAddress,
                 CallContextFieldTag::Value,
@@ -138,18 +138,19 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         );
 
         // `code_address` is poped from stack and used to check if it exists in access
-        // list and get code hash. Caller and callee addresses are `parent_address` and
-        // `current_address` for opcode `DELEGATECALL`, otherwise are `current_address`
+        // list and get code hash. Caller and callee addresses are
+        // `current_caller_address` and `current_callee_address` for opcode
+        // `DELEGATECALL`, otherwise are `current_callee_address`
         // and `code_address`.
         let code_address = from_bytes::expr(&code_address_word.cells[..N_BYTES_ACCOUNT_ADDRESS]);
         let caller_address = select::expr(
             is_delegatecall.expr(),
-            parent_address.expr(),
-            current_address.expr(),
+            current_caller_address.expr(),
+            current_callee_address.expr(),
         );
         let callee_address = select::expr(
             is_delegatecall.expr(),
-            current_address.expr(),
+            current_callee_address.expr(),
             code_address.expr(),
         );
 
@@ -315,7 +316,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 (CallContextFieldTag::ReturnDataLength, rd_address.length()),
                 (
                     CallContextFieldTag::Value,
-                    select::expr(is_delegatecall.expr(), parent_value.expr(), value.expr()),
+                    select::expr(is_delegatecall.expr(), current_value.expr(), value.expr()),
                 ),
                 (CallContextFieldTag::IsSuccess, is_success.expr()),
                 (CallContextFieldTag::IsStatic, is_staticcall.expr()),
@@ -354,9 +355,9 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             is_staticcall,
             tx_id,
             reversion_info,
-            current_address,
-            parent_address,
-            parent_value,
+            current_callee_address,
+            current_caller_address,
+            current_value,
             is_static,
             depth,
             gas: gas_word,
@@ -393,7 +394,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         let opcode = step.opcode.unwrap();
         let is_call = opcode == OpcodeId::CALL;
         let is_delegatecall = opcode == OpcodeId::DELEGATECALL;
-        let [tx_id, is_static, depth, current_address] = [
+        let [tx_id, is_static, depth, current_callee_address] = [
             step.rw_indices[0],
             step.rw_indices[3],
             step.rw_indices[4],
@@ -405,7 +406,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         // `DELEGATECALL` has two extra call context lookups - parent caller
         // address and value.
         let mut rw_offset = 0;
-        let [parent_address, parent_value] = if is_delegatecall {
+        let [current_caller_address, current_value] = if is_delegatecall {
             rw_offset += 2;
             [step.rw_indices[6], step.rw_indices[7]].map(|idx| block.rws[idx].call_context_value())
         } else {
@@ -470,29 +471,29 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             call.rw_counter_end_of_reversion,
             call.is_persistent,
         )?;
-        self.current_address.assign(
+        self.current_callee_address.assign(
             region,
             offset,
             Value::known(
-                current_address
+                current_callee_address
                     .to_scalar()
                     .expect("unexpected Address -> Scalar conversion failure"),
             ),
         )?;
-        self.parent_address.assign(
+        self.current_caller_address.assign(
             region,
             offset,
             Value::known(
-                parent_address
+                current_caller_address
                     .to_scalar()
                     .expect("unexpected Address -> Scalar conversion failure"),
             ),
         )?;
-        self.parent_value.assign(
+        self.current_value.assign(
             region,
             offset,
             Value::known(
-                parent_value
+                current_value
                     .to_scalar()
                     .expect("unexpected U256 -> Scalar conversion failure"),
             ),
