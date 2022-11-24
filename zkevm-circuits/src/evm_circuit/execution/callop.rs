@@ -7,8 +7,7 @@ use crate::evm_circuit::util::constraint_builder::{
     ConstraintBuilder, ReversionInfo, StepStateTransition,
 };
 use crate::evm_circuit::util::math_gadget::{
-    generate_lagrange_base_polynomial, BatchedIsZeroGadget, ConstantDivisionGadget, IsEqualGadget,
-    IsZeroGadget, MinMaxGadget,
+    BatchedIsZeroGadget, ConstantDivisionGadget, IsEqualGadget, IsZeroGadget, MinMaxGadget,
 };
 use crate::evm_circuit::util::memory_gadget::{MemoryAddressGadget, MemoryExpansionGadget};
 use crate::evm_circuit::util::{from_bytes, select, sum, CachedRegion, Cell, Word};
@@ -19,7 +18,7 @@ use bus_mapping::evm::OpcodeId;
 use eth_types::evm_types::{GasCost, GAS_STIPEND_CALL_WITH_VALUE};
 use eth_types::{Field, ToLittleEndian, ToScalar, U256};
 use halo2_proofs::circuit::Value;
-use halo2_proofs::plonk::{Error, Expression};
+use halo2_proofs::plonk::Error;
 use keccak256::EMPTY_HASH_LE;
 
 /// Gadget for call related opcodes. It supports `OpcodeId::CALL`,
@@ -600,17 +599,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         )?;
         Ok(())
     }
-}
-
-#[inline]
-fn is_opcode<F: Field>(opcode: &Cell<F>, opcode_id: OpcodeId) -> Expression<F> {
-    generate_lagrange_base_polynomial(
-        opcode,
-        opcode_id.as_u8() as usize,
-        [OpcodeId::CALL, OpcodeId::DELEGATECALL, OpcodeId::STATICCALL]
-            .into_iter()
-            .map(|op_id| op_id.as_u8() as usize),
-    )
 }
 
 #[cfg(test)]
