@@ -31,9 +31,8 @@ pub(crate) struct ErrorInsufficientBalance<F> {
     cd_length: Cell<F>,
     rd_offset: Cell<F>,
     rd_length: Cell<F>,
-    //memory_expansion: MemoryExpansionGadget<F, 2, N_BYTES_MEMORY_WORD_SIZE>,
     is_success: Cell<F>,
-    insufficient_value: CmpWordsGadget<F>,
+    insufficient_balance: CmpWordsGadget<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for ErrorInsufficientBalance<F> {
@@ -78,6 +77,9 @@ impl<F: Field> ExecutionGadget<F> for ErrorInsufficientBalance<F> {
         .map(|expression| cb.stack_pop(expression));
         cb.stack_push(is_success.expr());
 
+        // if is_success_rlc value is zero then decode RLC should also be zero
+        cb.require_zero("is_success is false", is_success.expr());
+
         cb.call_context_lookup(
             0.expr(),
             None,
@@ -91,20 +93,19 @@ impl<F: Field> ExecutionGadget<F> for ErrorInsufficientBalance<F> {
         );
 
         // compare value and balance
-        let insufficient_value = CmpWordsGadget::construct(cb, &balance, &value);
+        let insufficient_balance = CmpWordsGadget::construct(cb, &balance, &value);
         cb.require_equal(
             "balance is less than transfer value",
-            insufficient_value.clone().lt,
+            insufficient_balance.clone().lt,
             1.expr(),
         );
-
-        // even if root call fail, this kind of error doesn't always led to end_tx.
 
         // Do step state transition
         cb.require_step_state_transition(StepStateTransition {
             call_id: Same,
             rw_counter: Delta(10.expr()),
             stack_pointer: Delta(6.expr()),
+            program_counter: Delta(1.expr()),
             ..StepStateTransition::any()
         });
 
@@ -120,7 +121,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorInsufficientBalance<F> {
             rd_offset,
             rd_length,
             is_success,
-            insufficient_value,
+            insufficient_balance,
         }
     }
 
@@ -181,7 +182,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorInsufficientBalance<F> {
         self.balance
             .assign(region, offset, Some(balance.to_le_bytes()))?;
 
-        self.insufficient_value
+        self.insufficient_balance
             .assign(region, offset, balance, value)?;
 
         Ok(())
