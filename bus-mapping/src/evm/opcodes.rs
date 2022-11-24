@@ -54,6 +54,7 @@ mod stop;
 mod swap;
 
 mod error_insufficient_balance;
+mod error_invalid_jump;
 
 #[cfg(test)]
 mod memory_expansion_test;
@@ -72,6 +73,7 @@ use codesize::Codesize;
 use create::DummyCreate;
 use dup::Dup;
 use error_insufficient_balance::InsufficientBalance;
+use error_invalid_jump::ErrorInvalidJump;
 use exp::Exponentiation;
 use extcodecopy::Extcodecopy;
 use extcodehash::Extcodehash;
@@ -260,6 +262,7 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
 
 fn fn_gen_error_state_associated_ops(error: &ExecError) -> FnGenAssociatedOps {
     match error {
+        ExecError::InvalidJump => ErrorInvalidJump::gen_associated_ops,
         ExecError::InsufficientBalance => InsufficientBalance::gen_associated_ops,
         // more future errors place here
         _ => {
