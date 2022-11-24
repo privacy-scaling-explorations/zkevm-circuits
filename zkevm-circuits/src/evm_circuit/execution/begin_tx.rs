@@ -32,13 +32,14 @@ pub(crate) struct BeginTxGadget<F> {
     tx_gas: Cell<F>,
     tx_gas_price: Word<F>,
     mul_gas_fee_by_gas: MulWordByU64Gadget<F>,
+    intrinsic_mul_gas_fee_by_gas: Word<F>,
     tx_caller_address: Cell<F>,
     tx_caller_address_is_zero: IsZeroGadget<F>,
     tx_callee_address: Cell<F>,
     tx_is_create: Cell<F>,
     tx_value: Word<F>,
     intrinsic_tx_value: Word<F>,
-    intrinsic_tx_value_is_zero: BatchedIsZeroGadget<F, 1>,
+    intrinsic_tx_value_and_gas_fee_is_zero: BatchedIsZeroGadget<F, 2>,
     tx_call_data_length: Cell<F>,
     tx_call_data_gas_cost: Cell<F>,
     reversion_info: ReversionInfo<F>,
@@ -158,14 +159,20 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 
         // Transfer value from caller to callee
         let intrinsic_tx_value = cb.query_word();
-        let intrinsic_tx_value_is_zero =
-            BatchedIsZeroGadget::construct(cb, [intrinsic_tx_value.expr()]);
+        let intrinsic_mul_gas_fee_by_gas = cb.query_word();
+        let intrinsic_tx_value_and_gas_fee_is_zero = BatchedIsZeroGadget::construct(
+            cb,
+            [
+                intrinsic_tx_value.expr(),
+                intrinsic_mul_gas_fee_by_gas.expr(),
+            ],
+        );
         cb.condition(is_tx_invalid.expr(), |cb| {
             cb.require_equal(
-                "intrinsic_tx_value == 0",
-                intrinsic_tx_value_is_zero.expr(),
+                "intrinsic_tx_value == 0 && intrinsic_mul_gas_fee_by_gas == 0",
+                intrinsic_tx_value_and_gas_fee_is_zero.expr(),
                 false.expr(),
-            )
+            );
         });
 
         cb.condition(1.expr() - is_tx_invalid.expr(), |cb| {
@@ -174,6 +181,11 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 intrinsic_tx_value.expr(),
                 tx_value.expr(),
             );
+            cb.require_equal(
+                "intrinsic_tx_value == tx_value",
+                intrinsic_mul_gas_fee_by_gas.expr(),
+                mul_gas_fee_by_gas.product().expr(),
+            );
         });
 
         let transfer_with_gas_fee = TransferWithGasFeeGadget::construct(
@@ -181,7 +193,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             tx_caller_address.expr(),
             tx_callee_address.expr(),
             intrinsic_tx_value.clone(),
-            mul_gas_fee_by_gas.product().clone(),
+            intrinsic_mul_gas_fee_by_gas.clone(),
             &mut reversion_info,
         );
 
@@ -330,13 +342,14 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             tx_gas,
             tx_gas_price,
             mul_gas_fee_by_gas,
+            intrinsic_mul_gas_fee_by_gas,
             tx_caller_address,
             tx_caller_address_is_zero,
             tx_callee_address,
             tx_is_create,
             tx_value,
             intrinsic_tx_value,
-            intrinsic_tx_value_is_zero,
+            intrinsic_tx_value_and_gas_fee_is_zero,
             tx_call_data_length,
             tx_call_data_gas_cost,
             reversion_info,
@@ -430,13 +443,18 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         if tx.invalid_tx >= 1 {
             self.intrinsic_tx_value
                 .assign(region, offset, Some(U256::zero().to_le_bytes()))?;
-            self.intrinsic_tx_value_is_zero.assign(
+            self.intrinsic_mul_gas_fee_by_gas.assign(
                 region,
                 offset,
-                [Word::random_linear_combine(
-                    U256::zero().to_le_bytes(),
-                    block.randomness,
-                )],
+                Some(U256::zero().to_le_bytes()),
+            )?;
+            self.intrinsic_tx_value_and_gas_fee_is_zero.assign(
+                region,
+                offset,
+                [
+                    Word::random_linear_combine(U256::zero().to_le_bytes(), block.randomness),
+                    Word::random_linear_combine(U256::zero().to_le_bytes(), block.randomness),
+                ],
             )?;
             self.transfer_with_gas_fee.assign(
                 region,
@@ -449,13 +467,18 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         } else {
             self.intrinsic_tx_value
                 .assign(region, offset, Some(tx.value.to_le_bytes()))?;
-            self.intrinsic_tx_value_is_zero.assign(
+            self.intrinsic_mul_gas_fee_by_gas.assign(
                 region,
                 offset,
-                [Word::random_linear_combine(
-                    tx.value.to_le_bytes(),
-                    block.randomness,
-                )],
+                Some(gas_fee.to_le_bytes()),
+            )?;
+            self.intrinsic_tx_value_and_gas_fee_is_zero.assign(
+                region,
+                offset,
+                [
+                    Word::random_linear_combine(tx.value.to_le_bytes(), block.randomness),
+                    Word::random_linear_combine(gas_fee.to_le_bytes(), block.randomness),
+                ],
             )?;
             self.transfer_with_gas_fee.assign(
                 region,
@@ -636,7 +659,11 @@ mod test {
             },
             |mut txs, _| {
                 txs[0].to(to).from(from).nonce(multibyte_nonce);
-                txs[1].to(to).from(from).nonce(multibyte_nonce);
+                txs[1]
+                    .to(to)
+                    .from(from)
+                    .nonce(multibyte_nonce)
+                    .invalid_tx(Word::from(1));
             },
             |block, _| block,
         )
@@ -656,18 +683,25 @@ mod test {
         let to = MOCK_ACCOUNTS[0];
         let from = MOCK_ACCOUNTS[1];
 
-        let code = bytecode! {
-            STOP
-        };
-
+        let balance = Word::from(1) * Word::from(10u64.pow(5));
         let block: GethData = TestContext::<2, 1>::new(
             None,
             |accs| {
-                accs[0].address(to).balance(eth(0)).code(code);
-                accs[1].address(from).balance(eth(0)).nonce(multibyte_nonce);
+                accs[0].address(to).balance(gwei(0));
+                accs[1]
+                    .address(from)
+                    .balance(balance)
+                    .nonce(multibyte_nonce);
             },
             |mut txs, _| {
-                txs[0].to(to).from(from).nonce(multibyte_nonce);
+                txs[0]
+                    .to(to)
+                    .from(from)
+                    .nonce(multibyte_nonce)
+                    .gas_price(gwei(1))
+                    .gas(Word::from(10u64.pow(5)))
+                    .value(gwei(1))
+                    .invalid_tx(Word::from(1));
             },
             |block, _| block,
         )
