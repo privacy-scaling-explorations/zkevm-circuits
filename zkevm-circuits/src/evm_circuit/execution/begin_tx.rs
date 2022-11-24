@@ -171,7 +171,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             cb.require_equal(
                 "intrinsic_tx_value == 0 && intrinsic_mul_gas_fee_by_gas == 0",
                 intrinsic_tx_value_and_gas_fee_is_zero.expr(),
-                false.expr(),
+                true.expr(),
             );
         });
 
