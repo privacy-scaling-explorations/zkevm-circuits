@@ -10,8 +10,8 @@ use crate::{
                 Transition::{Delta, To},
             },
             math_gadget::{
-                AddWordsGadget, IsEqualGadget, IsZeroGadget, LtWordGadget, MulWordByU64Gadget,
-                RangeCheckGadget,
+                AddWordsGadget, BatchedIsZeroGadget, IsEqualGadget, IsZeroGadget, LtWordGadget,
+                MulWordByU64Gadget, RangeCheckGadget,
             },
             select, CachedRegion, Cell, RandomLinearCombination, Word,
         },
@@ -38,7 +38,7 @@ pub(crate) struct BeginTxGadget<F> {
     tx_is_create: Cell<F>,
     tx_value: Word<F>,
     intrinsic_tx_value: Word<F>,
-    intrinsic_tx_value_is_zero: IsZeroGadget<F>,
+    intrinsic_tx_value_is_zero: BatchedIsZeroGadget<F, 1>,
     tx_call_data_length: Cell<F>,
     tx_call_data_gas_cost: Cell<F>,
     reversion_info: ReversionInfo<F>,
@@ -158,7 +158,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 
         // Transfer value from caller to callee
         let intrinsic_tx_value = cb.query_word();
-        let intrinsic_tx_value_is_zero = IsZeroGadget::construct(cb, intrinsic_tx_value.expr());
+        let intrinsic_tx_value_is_zero =
+            BatchedIsZeroGadget::construct(cb, [intrinsic_tx_value.expr()]);
         cb.condition(is_tx_invalid.expr(), |cb| {
             cb.require_equal(
                 "intrinsic_tx_value == 0",
@@ -432,9 +433,10 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             self.intrinsic_tx_value_is_zero.assign(
                 region,
                 offset,
-                U256::zero()
-                    .to_scalar()
-                    .expect("unexpected U256::zero() -> Scalar conversion failure"),
+                [Word::random_linear_combine(
+                    U256::zero().to_le_bytes(),
+                    block.randomness,
+                )],
             )?;
             self.transfer_with_gas_fee.assign(
                 region,
@@ -450,9 +452,10 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             self.intrinsic_tx_value_is_zero.assign(
                 region,
                 offset,
-                tx.value
-                    .to_scalar()
-                    .expect("unexpected tx_value -> Scalar conversion failure"),
+                [Word::random_linear_combine(
+                    tx.value.to_le_bytes(),
+                    block.randomness,
+                )],
             )?;
             self.transfer_with_gas_fee.assign(
                 region,
