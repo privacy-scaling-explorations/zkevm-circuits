@@ -173,7 +173,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
             // Do step state transition
             cb.require_step_state_transition(StepStateTransition {
                 call_id: Same,
-                rw_counter: Delta(18.expr() + cb.curr.state.reversible_write_counter.expr()),
+                rw_counter: Delta(17.expr() + cb.curr.state.reversible_write_counter.expr()),
 
                 ..StepStateTransition::any()
             });
