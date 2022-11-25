@@ -1,82 +1,15 @@
-# Replace `trigger-integration-tests` with a label of your choice.
-# A github personal access token secret `GH_PA` is required to trigger `pull_request:labeled`
-# from the `add-label` step. Only requires the `Pull requests: Read and write` permission.
 name: Integration Tests
 
 on:
-  pull_request_target:
-    types: [synchronize, opened, reopened, ready_for_review, labeled]
-  issue_comment:
-    types: [created, edited]
+  pull_request:
+    types: [synchronize, opened, reopened, ready_for_review]
   push:
     branches:
       - main
 
 jobs:
-  help:
-    # Leaves a helpful message on a pull request.
-    if: github.event_name == 'pull_request_target'
-    permissions:
-      issues: write
-      pull-requests: write
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/github-script@v6
-        with:
-          script: |
-            const { data: comments } = await github.rest.issues.listComments({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-            })
-            const botComment = comments.find(comment => comment.user.id === 41898282)
-            if (!botComment) {
-              const body = '👋 Comment on this pull request with `/test` to trigger the integration tests.'
-              await github.rest.issues.createComment({
-                body,
-                issue_number: context.issue.number,
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-              })
-            }
-
-  add-label:
-    # Attaches a label to the pull request to trigger the workflow again within the PR context.
-    if: github.event.issue.pull_request && github.event.comment.body == '/test'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/github-script@v6
-        with:
-          # pull_request:labeled is only triggered if a personal access token is used
-          github-token: ${{ secrets.GH_PAT }}
-          script: |
-            await github.rest.issues.addLabels({
-              labels: ['trigger-integration-tests'],
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-            })
-
-  remove-label:
-    # Removes the trigger label from the pull request.
-    if: contains(github.event.pull_request.labels.*.name, 'trigger-integration-tests')
-    permissions:
-      issues: write
-      pull-requests: write
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/github-script@v6
-        with:
-          script: |
-            await github.rest.issues.removeLabel({
-              name: 'trigger-integration-tests',
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-            })
-
   consecutiveness:
-    if: github.event_name == 'push' || contains(github.event.pull_request.labels.*.name, 'trigger-integration-tests')
+    if: github.event.pull_request.draft == false
 
     runs-on: ubuntu-latest
     steps:
@@ -85,6 +18,8 @@ jobs:
         token: ${{ secrets.GITHUB_TOKEN }}
 
   wakeuprunner:
+    if: github.event.pull_request.draft == false
+
     needs: [consecutiveness]
     name: Wake up self-hosted runner
     runs-on: pse-runner
@@ -95,6 +30,8 @@ jobs:
           .github/integrationTestsScripts/wakeUpRunner.sh
 
   integration-tests:
+    if: github.event.pull_request.draft == false
+
     needs: [wakeuprunner]
     name: Integration Tests
     runs-on: integration-tests-runner
@@ -104,8 +41,6 @@ jobs:
         working-directory: ./integration-tests
     steps:
       - uses: actions/checkout@v2
-        with:
-          ref: ${{ (github.event.pull_request && format('refs/pull/{0}/head', github.event.pull_request.number)) || github.ref }}
       - uses: actions-rs/toolchain@v1
         with:
           override: false
