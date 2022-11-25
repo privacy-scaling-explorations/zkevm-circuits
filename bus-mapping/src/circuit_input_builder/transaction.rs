@@ -197,7 +197,7 @@ pub struct Transaction {
     pub input: Vec<u8>,
     /// Signature
     pub signature: Signature,
-    /// neutral invalid
+    /// Invalid tx
     pub invalid_tx: u64,
     /// Calls made in the transaction
     pub(crate) calls: Vec<Call>,

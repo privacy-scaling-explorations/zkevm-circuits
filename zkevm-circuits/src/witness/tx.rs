@@ -30,7 +30,7 @@ pub struct Transaction {
     pub call_data_length: usize,
     /// The gas cost for transaction call data
     pub call_data_gas_cost: u64,
-    /// neutral invalid
+    /// Invalid tx
     pub invalid_tx: u64,
     /// The calls made in the transaction
     pub calls: Vec<Call>,

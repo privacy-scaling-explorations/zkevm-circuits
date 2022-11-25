@@ -21,6 +21,7 @@ use crate::{
     util::Expr,
 };
 use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar, U256};
+use gadgets::util::{not, or};
 use halo2_proofs::circuit::Value;
 use halo2_proofs::plonk::Error;
 use keccak256::EMPTY_HASH_LE;
@@ -32,14 +33,14 @@ pub(crate) struct BeginTxGadget<F> {
     tx_gas: Cell<F>,
     tx_gas_price: Word<F>,
     mul_gas_fee_by_gas: MulWordByU64Gadget<F>,
-    intrinsic_mul_gas_fee_by_gas: Word<F>,
     tx_caller_address: Cell<F>,
     tx_caller_address_is_zero: IsZeroGadget<F>,
     tx_callee_address: Cell<F>,
     tx_is_create: Cell<F>,
     tx_value: Word<F>,
-    intrinsic_tx_value: Word<F>,
-    intrinsic_tx_value_and_gas_fee_is_zero: BatchedIsZeroGadget<F, 2>,
+    effective_tx_value: Word<F>,
+    effective_gas_fee: Word<F>,
+    effective_tx_value_and_gas_fee_is_zero: BatchedIsZeroGadget<F, 2>,
     tx_call_data_length: Cell<F>,
     tx_call_data_gas_cost: Cell<F>,
     reversion_info: ReversionInfo<F>,
@@ -47,7 +48,7 @@ pub(crate) struct BeginTxGadget<F> {
     transfer_with_gas_fee: TransferWithGasFeeGadget<F>,
     code_hash: Cell<F>,
     is_empty_code_hash: IsEqualGadget<F>,
-    add_tx_value_and_mul_gas_fee_by_gas_gadget: AddWordsGadget<F, 2, true>,
+    total_eth_cost: AddWordsGadget<F, 2, true>,
     balance_not_enough: LtWordGadget<F>,
 }
 
@@ -158,32 +159,32 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         );
 
         // Transfer value from caller to callee
-        let intrinsic_tx_value = cb.query_word();
-        let intrinsic_mul_gas_fee_by_gas = cb.query_word();
-        let intrinsic_tx_value_and_gas_fee_is_zero = BatchedIsZeroGadget::construct(
+        let effective_tx_value = cb.query_word();
+        let effective_gas_fee = cb.query_word();
+        let effective_tx_value_and_gas_fee_is_zero = BatchedIsZeroGadget::construct(
             cb,
             [
-                intrinsic_tx_value.expr(),
-                intrinsic_mul_gas_fee_by_gas.expr(),
+                effective_tx_value.expr(),
+                effective_gas_fee.expr(),
             ],
         );
         cb.condition(is_tx_invalid.expr(), |cb| {
             cb.require_equal(
-                "intrinsic_tx_value == 0 && intrinsic_mul_gas_fee_by_gas == 0",
-                intrinsic_tx_value_and_gas_fee_is_zero.expr(),
+                "effective_tx_value == 0 && effective_gas_fee == 0",
+                effective_tx_value_and_gas_fee_is_zero.expr(),
                 true.expr(),
             );
         });
 
         cb.condition(1.expr() - is_tx_invalid.expr(), |cb| {
             cb.require_equal(
-                "intrinsic_tx_value == tx_value",
-                intrinsic_tx_value.expr(),
+                "effective_tx_value == tx_value",
+                effective_tx_value.expr(),
                 tx_value.expr(),
             );
             cb.require_equal(
-                "intrinsic_tx_value == tx_value",
-                intrinsic_mul_gas_fee_by_gas.expr(),
+                "effective_gas_fee == mul_gas_fee_by_gas",
+                effective_gas_fee.expr(),
                 mul_gas_fee_by_gas.product().expr(),
             );
         });
@@ -192,8 +193,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             cb,
             tx_caller_address.expr(),
             tx_callee_address.expr(),
-            intrinsic_tx_value.clone(),
-            intrinsic_mul_gas_fee_by_gas.clone(),
+            effective_tx_value.clone(),
+            effective_gas_fee.clone(),
             &mut reversion_info,
         );
 
@@ -203,7 +204,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         let add_tx_value_and_mul_gas_fee_by_gas = cb.query_word();
 
         // tx_value.int_value + gas_fee.int_value
-        let add_tx_value_and_mul_gas_fee_by_gas_gadget = AddWordsGadget::construct(
+        let total_eth_cost = AddWordsGadget::construct(
             cb,
             [tx_value.clone(), mul_gas_fee_by_gas.product().clone()],
             add_tx_value_and_mul_gas_fee_by_gas.clone(),
@@ -222,7 +223,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         // instruction.constrain_equal(is_tx_invalid, invalid_tx)
         cb.require_equal(
             "is_tx_invalid is correct",
-            1.expr() - (1.expr() - balance_not_enough.expr()) * is_nonce_valid.expr(),
+            or::expr([balance_not_enough.expr(), not::expr(is_nonce_valid.expr())]),
             is_tx_invalid.expr(),
         );
 
@@ -342,14 +343,14 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             tx_gas,
             tx_gas_price,
             mul_gas_fee_by_gas,
-            intrinsic_mul_gas_fee_by_gas,
             tx_caller_address,
             tx_caller_address_is_zero,
             tx_callee_address,
             tx_is_create,
             tx_value,
-            intrinsic_tx_value,
-            intrinsic_tx_value_and_gas_fee_is_zero,
+            effective_tx_value,
+            effective_gas_fee,
+            effective_tx_value_and_gas_fee_is_zero,
             tx_call_data_length,
             tx_call_data_gas_cost,
             reversion_info,
@@ -357,7 +358,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             transfer_with_gas_fee,
             code_hash,
             is_empty_code_hash,
-            add_tx_value_and_mul_gas_fee_by_gas_gadget,
+            total_eth_cost,
             balance_not_enough,
         }
     }
@@ -426,7 +427,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             .assign(region, offset, F::from(tx.gas - step.gas_cost))?;
 
         let add_tx_value_and_mul_gas_fee_by_gas = tx.value + gas_fee;
-        self.add_tx_value_and_mul_gas_fee_by_gas_gadget.assign(
+        self.total_eth_cost.assign(
             region,
             offset,
             [tx.value, gas_fee],
@@ -441,14 +442,14 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         )?;
 
         if tx.invalid_tx >= 1 {
-            self.intrinsic_tx_value
+            self.effective_tx_value
                 .assign(region, offset, Some(U256::zero().to_le_bytes()))?;
-            self.intrinsic_mul_gas_fee_by_gas.assign(
+            self.effective_gas_fee.assign(
                 region,
                 offset,
                 Some(U256::zero().to_le_bytes()),
             )?;
-            self.intrinsic_tx_value_and_gas_fee_is_zero.assign(
+            self.effective_tx_value_and_gas_fee_is_zero.assign(
                 region,
                 offset,
                 [
@@ -465,14 +466,14 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 U256::zero(),
             )?;
         } else {
-            self.intrinsic_tx_value
+            self.effective_tx_value
                 .assign(region, offset, Some(tx.value.to_le_bytes()))?;
-            self.intrinsic_mul_gas_fee_by_gas.assign(
+            self.effective_gas_fee.assign(
                 region,
                 offset,
                 Some(gas_fee.to_le_bytes()),
             )?;
-            self.intrinsic_tx_value_and_gas_fee_is_zero.assign(
+            self.effective_tx_value_and_gas_fee_is_zero.assign(
                 region,
                 offset,
                 [
