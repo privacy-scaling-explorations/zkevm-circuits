@@ -40,7 +40,7 @@ pub(crate) struct BeginTxGadget<F> {
     tx_value: Word<F>,
     effective_tx_value: Word<F>,
     effective_gas_fee: Word<F>,
-    effective_tx_value_and_gas_fee_is_zero: BatchedIsZeroGadget<F, 2>,
+    effective_tx_value_and_gas_fee_are_zero: BatchedIsZeroGadget<F, 2>,
     tx_call_data_length: Cell<F>,
     tx_call_data_gas_cost: Cell<F>,
     reversion_info: ReversionInfo<F>,
@@ -159,19 +159,18 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         );
 
         // Transfer value from caller to callee
+        // Use cb.query_word and BatchedIsZeroGadget as TransferWithGasFeeGadget
+        // expects words instead of expressions for tx_value and gas_fee
         let effective_tx_value = cb.query_word();
         let effective_gas_fee = cb.query_word();
-        let effective_tx_value_and_gas_fee_is_zero = BatchedIsZeroGadget::construct(
+        let effective_tx_value_and_gas_fee_are_zero = BatchedIsZeroGadget::construct(
             cb,
-            [
-                effective_tx_value.expr(),
-                effective_gas_fee.expr(),
-            ],
+            [effective_tx_value.expr(), effective_gas_fee.expr()],
         );
         cb.condition(is_tx_invalid.expr(), |cb| {
             cb.require_equal(
                 "effective_tx_value == 0 && effective_gas_fee == 0",
-                effective_tx_value_and_gas_fee_is_zero.expr(),
+                effective_tx_value_and_gas_fee_are_zero.expr(),
                 true.expr(),
             );
         });
@@ -350,7 +349,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             tx_value,
             effective_tx_value,
             effective_gas_fee,
-            effective_tx_value_and_gas_fee_is_zero,
+            effective_tx_value_and_gas_fee_are_zero,
             tx_call_data_length,
             tx_call_data_gas_cost,
             reversion_info,
@@ -441,55 +440,36 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             add_tx_value_and_mul_gas_fee_by_gas,
         )?;
 
-        if tx.invalid_tx >= 1 {
-            self.effective_tx_value
-                .assign(region, offset, Some(U256::zero().to_le_bytes()))?;
-            self.effective_gas_fee.assign(
-                region,
-                offset,
-                Some(U256::zero().to_le_bytes()),
-            )?;
-            self.effective_tx_value_and_gas_fee_is_zero.assign(
-                region,
-                offset,
-                [
-                    Word::random_linear_combine(U256::zero().to_le_bytes(), block.randomness),
-                    Word::random_linear_combine(U256::zero().to_le_bytes(), block.randomness),
-                ],
-            )?;
-            self.transfer_with_gas_fee.assign(
-                region,
-                offset,
-                caller_balance_pair,
-                callee_balance_pair,
-                U256::zero(),
-                U256::zero(),
-            )?;
+        let intrinsic_tx_value = if tx.invalid_tx >= 1 {
+            U256::zero()
         } else {
-            self.effective_tx_value
-                .assign(region, offset, Some(tx.value.to_le_bytes()))?;
-            self.effective_gas_fee.assign(
-                region,
-                offset,
-                Some(gas_fee.to_le_bytes()),
-            )?;
-            self.effective_tx_value_and_gas_fee_is_zero.assign(
-                region,
-                offset,
-                [
-                    Word::random_linear_combine(tx.value.to_le_bytes(), block.randomness),
-                    Word::random_linear_combine(gas_fee.to_le_bytes(), block.randomness),
-                ],
-            )?;
-            self.transfer_with_gas_fee.assign(
-                region,
-                offset,
-                caller_balance_pair,
-                callee_balance_pair,
-                tx.value,
-                gas_fee,
-            )?;
-        }
+            tx.value
+        };
+        let intrinsic_gas_fee = if tx.invalid_tx >= 1 {
+            U256::zero()
+        } else {
+            gas_fee
+        };
+        self.effective_tx_value
+            .assign(region, offset, Some(intrinsic_tx_value.to_le_bytes()))?;
+        self.effective_gas_fee
+            .assign(region, offset, Some(intrinsic_gas_fee.to_le_bytes()))?;
+        self.effective_tx_value_and_gas_fee_are_zero.assign(
+            region,
+            offset,
+            [
+                Word::random_linear_combine(intrinsic_tx_value.to_le_bytes(), block.randomness),
+                Word::random_linear_combine(intrinsic_gas_fee.to_le_bytes(), block.randomness),
+            ],
+        )?;
+        self.transfer_with_gas_fee.assign(
+            region,
+            offset,
+            caller_balance_pair,
+            callee_balance_pair,
+            intrinsic_tx_value,
+            intrinsic_gas_fee,
+        )?;
 
         self.code_hash.assign(
             region,
