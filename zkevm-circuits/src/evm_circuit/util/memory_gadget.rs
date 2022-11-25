@@ -214,11 +214,7 @@ impl<F: Field, const N: usize, const N_BYTES_MEMORY_WORD_SIZE: usize>
     /// - `next_memory_word_size < 256**MAX_MEMORY_SIZE_IN_BYTES`
     /// - `gas_cost <= GAS_MEM*256**MAX_MEMORY_SIZE_IN_BYTES +
     ///   256**MAX_QUAD_COST_IN_BYTES`
-    pub(crate) fn construct(
-        cb: &mut ConstraintBuilder<F>,
-        curr_memory_word_size: Expression<F>,
-        addresses: [Expression<F>; N],
-    ) -> Self {
+    pub(crate) fn construct(cb: &mut ConstraintBuilder<F>, addresses: [Expression<F>; N]) -> Self {
         // Calculate the memory size of the memory access
         // `address_memory_word_size < 256**MAX_MEMORY_SIZE_IN_BYTES`
         let memory_word_sizes =
@@ -227,6 +223,7 @@ impl<F: Field, const N: usize, const N_BYTES_MEMORY_WORD_SIZE: usize>
         // The memory size needs to be updated if this memory access
         // requires expanding the memory.
         // `next_memory_word_size < 256**MAX_MEMORY_SIZE_IN_BYTES`
+        let curr_memory_word_size = cb.curr.state.memory_word_size.expr();
         let mut next_memory_word_size = curr_memory_word_size.clone();
         let max_memory_word_sizes = array_init(|idx| {
             let max_memory_word_size = MinMaxGadget::construct(

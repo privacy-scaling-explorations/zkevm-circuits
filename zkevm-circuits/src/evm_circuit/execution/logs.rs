@@ -119,11 +119,7 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
 
         // Calculate the next memory size and the gas cost for this memory
         // access
-        let memory_expansion = MemoryExpansionGadget::construct(
-            cb,
-            cb.curr.state.memory_word_size.expr(),
-            [memory_address.address()],
-        );
+        let memory_expansion = MemoryExpansionGadget::construct(cb, [memory_address.address()]);
 
         let copy_rwc_inc = cb.query_cell();
         let dst_addr = build_tx_log_expression(

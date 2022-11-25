@@ -655,7 +655,8 @@ pub mod dev {
         ) -> Result<(), halo2_proofs::plonk::Error> {
             let block = self.block.as_ref().unwrap();
 
-            let challenges = Challenges::mock(Value::known(self.randomness));
+            let challenges =
+                Challenges::mock(Value::known(self.randomness), Value::known(self.randomness));
 
             config
                 .tx_table
