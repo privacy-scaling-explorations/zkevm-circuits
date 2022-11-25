@@ -333,7 +333,14 @@ impl<const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: usize>
         geth_data: GethData,
         rng: &mut (impl RngCore + Clone),
     ) -> Result<(u32, Self, Vec<Vec<Fr>>, CircuitInputBuilder), bus_mapping::Error> {
-        let block_data = BlockData::new_from_geth_data(geth_data.clone());
+        let block_data = BlockData::new_from_geth_data_with_params(
+            geth_data.clone(),
+            CircuitsParams {
+                max_rws: MAX_RWS,
+                max_txs: MAX_TXS,
+                keccak_padding: None,
+            },
+        );
         let mut builder = block_data.new_circuit_input_builder();
         builder
             .handle_block(&geth_data.eth_block, &geth_data.geth_traces)
