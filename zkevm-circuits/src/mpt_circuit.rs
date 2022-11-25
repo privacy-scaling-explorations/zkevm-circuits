@@ -123,6 +123,8 @@ pub struct MPTConfig<F> {
     storage_non_existing: StorageNonExistingConfig<F>,
     ext_node_s_before_mod_config: ExtensionNodeInsertedConfig<F>,
     ext_node_c_before_mod_config: ExtensionNodeInsertedConfig<F>,
+    ext_node_s_after_mod_config: ExtensionNodeInsertedConfig<F>,
+    ext_node_c_after_mod_config: ExtensionNodeInsertedConfig<F>,
     pub(crate) randomness: F,
     pub(crate) check_zeros: bool,
     pub(crate) mpt_table: MPTTable,
@@ -803,6 +805,7 @@ impl<F: FieldExt> MPTConfig<F> {
             power_of_randomness.clone(),
             fixed_table,
             true,
+            true,
             check_zeros,
         );
 
@@ -821,6 +824,47 @@ impl<F: FieldExt> MPTConfig<F> {
             keccak_table.clone(),
             power_of_randomness.clone(),
             fixed_table,
+            false,
+            true,
+            check_zeros,
+        );
+
+        let ext_node_s_after_mod_config = ExtensionNodeInsertedConfig::<F>::configure(
+            meta,
+            |meta| {
+                meta.query_advice(branch.is_mod_ext_node_s_after_mod, Rotation::cur())
+            },
+            inter_start_root,
+            position_cols.clone(),
+            account_leaf.is_in_added_branch,
+            branch.clone(),
+            s_main.clone(),
+            c_main.clone(),
+            accumulators.clone(),
+            keccak_table.clone(),
+            power_of_randomness.clone(),
+            fixed_table,
+            true,
+            false,
+            check_zeros,
+        );
+
+        let ext_node_c_after_mod_config = ExtensionNodeInsertedConfig::<F>::configure(
+            meta,
+            |meta| {
+                meta.query_advice(branch.is_mod_ext_node_c_after_mod, Rotation::cur())
+            },
+            inter_final_root,
+            position_cols.clone(),
+            account_leaf.is_in_added_branch,
+            branch.clone(),
+            s_main.clone(),
+            c_main.clone(),
+            accumulators.clone(),
+            keccak_table.clone(),
+            power_of_randomness.clone(),
+            fixed_table,
+            false,
             false,
             check_zeros,
         );
@@ -872,6 +916,8 @@ impl<F: FieldExt> MPTConfig<F> {
             storage_non_existing,
             ext_node_s_before_mod_config,
             ext_node_c_before_mod_config,
+            ext_node_s_after_mod_config,
+            ext_node_c_after_mod_config,
             randomness,
             check_zeros,
             mpt_table,
@@ -1367,6 +1413,24 @@ impl<F: FieldExt> MPTConfig<F> {
                                 );
                             } else if row.get_type() == MptWitnessRowType::ModExtNodeCBeforeMod {
                                 self.ext_node_c_before_mod_config.assign(
+                                    &mut region,
+                                    self,
+                                    &mut pv,
+                                    row,
+                                    offset,
+                                    false,
+                                );
+                            } else if row.get_type() == MptWitnessRowType::ModExtNodeSAfterMod {
+                                self.ext_node_s_after_mod_config.assign(
+                                    &mut region,
+                                    self,
+                                    &mut pv,
+                                    row,
+                                    offset,
+                                    true,
+                                );
+                            } else if row.get_type() == MptWitnessRowType::ModExtNodeCAfterMod {
+                                self.ext_node_c_after_mod_config.assign(
                                     &mut region,
                                     self,
                                     &mut pv,

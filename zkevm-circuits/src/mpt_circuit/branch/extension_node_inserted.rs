@@ -33,7 +33,7 @@ use crate::{
 };
 
 use super::BranchCols;
-use super::extension::{extension_node_rlp, extension_node_rlc};
+use super::extension::{extension_node_rlp, extension_node_rlc, extension_node_selectors};
 
 /*
 This file contains constraints for the inserted extension node rows which appear after the leaf rows.
@@ -69,6 +69,7 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
         power_of_randomness: [Expression<F>; HASH_WIDTH],
         fixed_table: [Column<Fixed>; 3],
         is_s: bool,
+        is_before: bool,
         check_zeros: bool,
     ) -> Self {
         let config = ExtensionNodeInsertedConfig {
@@ -78,47 +79,27 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
         let c128 = Expression::Constant(F::from(128));
         let c160_inv = Expression::Constant(F::from(160_u64).invert().unwrap());
         let c192 = Expression::Constant(F::from(192));
-        // let mut rot_into_branch_init = -17;
-        let mut rot_into_branch_init = -22;
+        let mut rot_into_ext_node = -1;
         if !is_s {
-            rot_into_branch_init = -18;
+            rot_into_ext_node = -2;
+        }
+
+
+        let mut rot_into_branch_init = -1;
+        if !is_s {
+            rot_into_branch_init = -2;
         }
 
         if is_s {
-            /*
-            TODO: check rot_into_branch_init which is different here than in extension_node.rs - it is not only
-            about rot_into_branch_init, it is that the selectors need to be computed differently (not
-            given in branch init row)
-            */
             extension_node_rlp(
                 meta,
                 q_enable.clone(),
                 position_cols.clone(),
                 s_main.clone(),
                 c_main.clone(),
-                rot_into_branch_init,
+                rot_into_ext_node,
             );
         } 
-
-        /*
-        meta.create_gate(
-            "debug",
-            |meta| {
-                let mut constraints = vec![];
-                let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
-                let q_enable = q_enable(meta);
-
-                let c_rlp2 = meta.query_advice(c_main.rlp2, Rotation::cur());
-                
-                constraints.push((
-                    "foo",
-                    q_not_first * q_enable * one.clone(),
-                ));
-
-                constraints
-            },
-        );
-        */
 
         extension_node_rlc(
             meta,
@@ -131,7 +112,18 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
             is_s,
         );
         
-        // TODO: selectors constraints?
+        extension_node_selectors(
+            meta,
+            q_enable.clone(),
+            position_cols.clone(),
+            s_main.clone(),
+            c_main.clone(),
+            is_account_leaf_in_added_branch.clone(),
+            rot_into_ext_node,
+            true,
+            is_s,
+            is_before,
+        );
 
         /*
         Check whether branch hash is in the extension node row - we check that the branch hash RLC

@@ -21,7 +21,7 @@ use crate::{
             ACCOUNT_LEAF_ROWS, ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND,
             ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND, BRANCH_ROWS_NUM, C_RLP_START, C_START, HASH_WIDTH,
             IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, IS_BRANCH_C_PLACEHOLDER_POS,
-            IS_BRANCH_S_PLACEHOLDER_POS, IS_C_EXT_LONGER_THAN_55_POS, IS_C_EXT_NODE_NON_HASHED_POS,
+            IS_BRANCH_S_PLACEHOLDER_POS, IS_C_EXT_NODE_NON_HASHED_POS,
             IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS, IS_EXT_LONG_ODD_C16_POS,
             IS_EXT_LONG_ODD_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS,
             IS_S_EXT_LONGER_THAN_55_POS, IS_S_EXT_NODE_NON_HASHED_POS, NIBBLES_COUNTER_POS,
@@ -33,7 +33,7 @@ use crate::{
 };
 
 use super::BranchCols;
-use super::extension::{extension_node_rlp, extension_node_rlc};
+use super::extension::{extension_node_rlp, extension_node_rlc, extension_node_selectors};
 
 /*
 A branch occupies 19 rows:
@@ -206,245 +206,18 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
             is_s,
         );
 
-        meta.create_gate("Extension node selectors", |meta| {
-            let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
-            let q_enable = q_enable(meta);
-            let mut constraints = vec![];
-
-            // NOTE: even and odd is for number of nibbles that are compactly encoded.
-
-            // To reduce the expression degree, we pack together multiple information.
-            let is_ext_short_c16 = meta.query_advice(
-                s_main.bytes[IS_EXT_SHORT_C16_POS - RLP_NUM],
-                Rotation(rot_into_branch_init),
-            );
-            let is_ext_short_c1 = meta.query_advice(
-                s_main.bytes[IS_EXT_SHORT_C1_POS - RLP_NUM],
-                Rotation(rot_into_branch_init),
-            );
-            let is_ext_long_even_c16 = meta.query_advice(
-                s_main.bytes[IS_EXT_LONG_EVEN_C16_POS - RLP_NUM],
-                Rotation(rot_into_branch_init),
-            );
-            let is_ext_long_even_c1 = meta.query_advice(
-                s_main.bytes[IS_EXT_LONG_EVEN_C1_POS - RLP_NUM],
-                Rotation(rot_into_branch_init),
-            );
-            let is_ext_long_odd_c16 = meta.query_advice(
-                s_main.bytes[IS_EXT_LONG_ODD_C16_POS - RLP_NUM],
-                Rotation(rot_into_branch_init),
-            );
-            let is_ext_long_odd_c1 = meta.query_advice(
-                s_main.bytes[IS_EXT_LONG_ODD_C1_POS - RLP_NUM],
-                Rotation(rot_into_branch_init),
-            );
-            let mut is_ext_longer_than_55 = meta.query_advice(
-                s_main.bytes[IS_S_EXT_LONGER_THAN_55_POS - RLP_NUM],
-                Rotation(rot_into_branch_init),
-            );
-            if !is_s {
-                is_ext_longer_than_55 = meta.query_advice(
-                    s_main.bytes[IS_C_EXT_LONGER_THAN_55_POS - RLP_NUM],
-                    Rotation(rot_into_branch_init),
-                );
-            }
-            let mut is_ext_node_non_hashed = s_main.bytes[IS_S_EXT_NODE_NON_HASHED_POS - RLP_NUM];
-            if !is_s {
-                is_ext_node_non_hashed = s_main.bytes[IS_C_EXT_NODE_NON_HASHED_POS - RLP_NUM];
-            }
-            let is_ext_node_non_hashed =
-                meta.query_advice(is_ext_node_non_hashed, Rotation(rot_into_branch_init));
-
-            /*
-            We first check that the selectors in branch init row are boolean.
-
-            We have the following selectors in branch init:
-            ```
-            is_ext_short_c16
-            is_ext_short_c1
-            is_ext_long_even_c16
-            is_ext_long_even_c1
-            is_ext_long_odd_c16
-            is_ext_long_odd_c1
-            ```
-
-            `short` means there is only one nibble in the extension node, `long` means there
-            are at least two. `even` means the number of nibbles is even, `odd` means the number
-            of nibbles is odd. `c16` means that above the branch there are even number of
-            nibbles (the same as saying that `modified_node` of the branch needs to be
-            multiplied by 16 in the computation of the key RLC), `c1` means
-            that above the branch there are odd number of
-            nibbles (the same as saying that `modified_node` of the branch needs to be
-            multiplied by 1 in the computation of the key RLC).
-            */
-            constraints.push((
-                "Bool check is_ext_short_c16",
-                get_bool_constraint(
-                    q_not_first.clone()
-                        * q_enable.clone(),
-                    is_ext_short_c16.clone(),
-                ),
-            ));
-            constraints.push((
-                "Bool check is_ext_short_c1",
-                get_bool_constraint(
-                    q_not_first.clone()
-                        * q_enable.clone(),
-                    is_ext_short_c1.clone(),
-                ),
-            ));
-            constraints.push((
-                "Bool check is_ext_long_even_c16",
-                get_bool_constraint(
-                    q_not_first.clone()
-                        * q_enable.clone(),
-                    is_ext_long_even_c16.clone(),
-                ),
-            ));
-            constraints.push((
-                "Bool check is_ext_long_even_c1",
-                get_bool_constraint(
-                    q_not_first.clone()
-                        * q_enable.clone(),
-                    is_ext_long_even_c1.clone(),
-                ),
-            ));
-            constraints.push((
-                "Bool check is_ext_long_odd_c16",
-                get_bool_constraint(
-                    q_not_first.clone()
-                        * q_enable.clone(),
-                    is_ext_long_odd_c16.clone(),
-                ),
-            ));
-            constraints.push((
-                "Bool check is_ext_long_odd_c1",
-                get_bool_constraint(
-                    q_not_first.clone()
-                        * q_enable.clone(),
-                    is_ext_long_odd_c1.clone(),
-                ),
-            ));
-            constraints.push((
-                "Bool check is_ext_longer_than_55",
-                get_bool_constraint(
-                    q_not_first.clone()
-                        * q_enable.clone(),
-                    is_ext_longer_than_55.clone(),
-                ),
-            ));
-            constraints.push((
-                "Bool check is_ext_node_non_hashed",
-                get_bool_constraint(
-                    q_not_first.clone()
-                        * q_enable.clone(),
-                    is_ext_node_non_hashed,
-                ),
-            ));
-
-            /*
-            Only one of the six options can appear. When we have an extension node it holds:
-            `is_ext_short_c16 + is_ext_short_c1 + is_ext_long_even_c16 + is_ext_long_even_c1 + is_ext_long_odd_c16 + is_ext_long_odd_c1 = 1`.
-            And when it is a regular branch:
-            `is_ext_short_c16 + is_ext_short_c1 + is_ext_long_even_c16 + is_ext_long_even_c1 + is_ext_long_odd_c16 + is_ext_long_odd_c1 = 0`.
-
-            Note that if the attacker sets `is_extension_node = 1`
-            for a regular branch (or `is_extension_node = 0` for the extension node),
-            the final key RLC check fails because key RLC is computed differently
-            for extension nodes and regular branches - a regular branch occupies only one
-            key nibble (`modified_node`), while extension node occupies at least one additional
-            nibble (the actual extension of the extension node).
-            */
-            constraints.push((
-                "Bool check extension node selectors sum",
-                get_bool_constraint(
-                    q_not_first.clone()
-                        * q_enable.clone(),
-                    is_ext_short_c16.clone()
-                        + is_ext_short_c1.clone()
-                        + is_ext_long_even_c16.clone()
-                        + is_ext_long_even_c1.clone()
-                        + is_ext_long_odd_c16.clone()
-                        + is_ext_long_odd_c1.clone(),
-                ),
-            ));
-
-            let is_branch_c16 = meta.query_advice(
-                s_main.bytes[IS_BRANCH_C16_POS - RLP_NUM],
-                Rotation(rot_into_branch_init),
-            );
-            let is_branch_c1 = meta.query_advice(
-                s_main.bytes[IS_BRANCH_C1_POS - RLP_NUM],
-                Rotation(rot_into_branch_init),
-            );
-
-            /*
-            `is_branch_c16` and `is_branch_c1` information is duplicated with
-            extension node selectors when we have an extension node (while in case of a regular
-            branch the extension node selectors do not hold this information).
-            That means when we have an extension node and `is_branch_c16 = 1`,
-            there is `is_ext_short_c16 = 1` or
-            `is_ext_long_even_c16 = 1` or `is_ext_long_odd_c16 = 1`.
-
-            We have such a duplication to reduce the expression degree - for example instead of
-            using `is_ext_long_even * is_branch_c16` we just use `is_ext_long_even_c16`.
-
-            But we need to check that `is_branch_c16` and `is_branch_c1` are consistent
-            with extension node selectors.
-            */
-            let mut constrain_sel = |branch_sel: Expression<F>, ext_sel: Expression<F>| {
-                constraints.push((
-                    "Branch c16/c1 selector - extension c16/c1 selector",
-                    q_not_first.clone()
-                        * q_enable.clone()
-                        * ext_sel.clone()
-                        * (branch_sel - ext_sel),
-                ));
-            };
-
-            constrain_sel(is_branch_c16.clone(), is_ext_short_c16.clone());
-            constrain_sel(is_branch_c1.clone(), is_ext_short_c1.clone());
-            constrain_sel(is_branch_c16.clone(), is_ext_long_even_c16.clone());
-            constrain_sel(is_branch_c1.clone(), is_ext_long_even_c1.clone());
-            constrain_sel(is_branch_c16, is_ext_long_odd_c16.clone());
-            constrain_sel(is_branch_c1, is_ext_long_odd_c1.clone());
-
-            let is_inserted_ext_node_s = meta.query_advice(
-                c_main.rlp1,
-                Rotation(rot_into_branch_init),
-            );
-            let is_inserted_ext_node_c = meta.query_advice(
-                c_main.rlp2,
-                Rotation(rot_into_branch_init),
-            );
-
-            constraints.push((
-                "Bool check is_inserted_ext_node_s",
-                get_bool_constraint(
-                    q_not_first.clone()
-                        * q_enable.clone(),
-                    is_inserted_ext_node_s.clone(),
-                ),
-            ));
-            constraints.push((
-                "Bool check is_inserted_ext_node_c",
-                get_bool_constraint(
-                    q_not_first.clone()
-                        * q_enable.clone(),
-                    is_inserted_ext_node_c.clone(),
-                ),
-            ));
-            constraints.push((
-                "is_inserted_ext_node_s + is_inserted_ext_node_c is boolean",
-                get_bool_constraint(
-                    q_not_first.clone()
-                        * q_enable.clone(),
-                    is_inserted_ext_node_s + is_inserted_ext_node_c,
-                ),
-            ));
-
-            constraints
-        });
+        extension_node_selectors(
+            meta,
+            q_enable.clone(),
+            position_cols.clone(),
+            s_main.clone(),
+            c_main.clone(),
+            is_account_leaf_in_added_branch.clone(),
+            rot_into_branch_init,
+            false,
+            is_s,
+            false,
+        );
 
         // Note: acc_mult is checked in `extension_node_key.rs`.
 

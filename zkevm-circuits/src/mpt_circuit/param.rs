@@ -115,6 +115,8 @@ pub const LEAF_VALUE_C_IND: i32 = 3;
 pub const LEAF_DRIFTED_IND: i32 = 4;
 pub const LEAF_NON_EXISTING_IND: i32 = 5;
 
+pub const LEAF_ROWS_NUM: i32 = 6;
+
 // indexes for account leaf:
 pub const ACCOUNT_LEAF_KEY_S_IND: i32 = 0;
 pub const ACCOUNT_LEAF_KEY_C_IND: i32 = 1;
@@ -125,3 +127,11 @@ pub const ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND: i32 = 5;
 pub const ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND: i32 = 6;
 pub const ACCOUNT_DRIFTED_LEAF_IND: i32 = 7;
 pub const ACCOUNT_LEAF_ROWS: i32 = 8;
+
+pub const ACCOUNT_LEAF_ROWS_NUM: i32 = 9;
+
+// indexes for inserted extension node (at the place of the existing extension node):
+pub const INSERTED_EXT_NODE_BEFORE_S: i32 = 0;
+pub const INSERTED_EXT_NODE_BEFORE_C: i32 = 1;
+pub const INSERTED_EXT_NODE_AFTER_S: i32 = 2;
+pub const INSERTED_EXT_NODE_AFTER_C: i32 = 3;

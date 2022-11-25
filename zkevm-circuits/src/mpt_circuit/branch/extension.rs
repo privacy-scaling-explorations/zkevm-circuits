@@ -1,6 +1,7 @@
+use gadgets::util::Expr;
 use halo2_proofs::{
     arithmetic::FieldExt,
-    plonk::{ConstraintSystem, Expression, VirtualCells},
+    plonk::{Advice, Column, ConstraintSystem, Expression, VirtualCells},
     poly::Rotation,
 };
 use itertools::Itertools;
@@ -8,10 +9,12 @@ use itertools::Itertools;
 use crate::{
     mpt_circuit::columns::{AccumulatorCols, MainCols, PositionCols},
     mpt_circuit::param::{
-        HASH_WIDTH,
+        HASH_WIDTH, IS_S_EXT_NODE_NON_HASHED_POS, IS_C_EXT_NODE_NON_HASHED_POS,
         IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS,
         IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS, IS_EXT_LONG_ODD_C16_POS,
         IS_EXT_LONG_ODD_C1_POS, RLP_NUM, IS_S_EXT_LONGER_THAN_55_POS,
+        IS_C_EXT_LONGER_THAN_55_POS, INSERTED_EXT_NODE_BEFORE_S, INSERTED_EXT_NODE_BEFORE_C,
+        IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, ACCOUNT_LEAF_ROWS_NUM, LEAF_ROWS_NUM, BRANCH_ROWS_NUM,
     },
     mpt_circuit::helpers::{
         bytes_expr_into_rlc, compute_rlc, get_bool_constraint, get_is_extension_node,
@@ -79,15 +82,6 @@ pub(crate) fn extension_node_rlp<F: FieldExt>(
         let is_short = is_ext_short_c16 + is_ext_short_c1;
         let is_even_nibbles = is_ext_long_even_c16 + is_ext_long_even_c1;
         let is_long_odd_nibbles = is_ext_long_odd_c16 + is_ext_long_odd_c1;
-
-        /*
-        if rot_into_branch_init < -19 {
-            constraints.push((
-                "debug foo",
-                q_not_first.clone() * q_enable.clone() * one.clone(),
-            ));
-        }
-        */
 
         /*
         This constraint prevents the attacker to set the number of nibbles to be even
@@ -196,7 +190,7 @@ pub(crate) fn extension_node_rlp<F: FieldExt>(
                 * (is_even_nibbles + is_long_odd_nibbles)
                 * (one.clone() - is_branch_hashed.clone())
                 * (s_rlp1.clone() - c192.clone() - (s_rlp2.clone() - c128.clone()) - one.clone()
-                    - (c_bytes0.clone() - c192.clone()) - one.clone()),
+                    - (c_bytes0.clone() - c192.clone()) - one.clone() - one.clone()),
         ));
 
         /*
@@ -438,6 +432,309 @@ pub(crate) fn extension_node_rlc<F: FieldExt>(
                 * (one.clone() - is_branch_hashed)
                 * (rlc_non_hashed_branch - acc_c),
         ));
+
+        constraints
+    });
+}
+
+pub(crate) fn extension_node_selectors<F: FieldExt>(
+    meta: &mut ConstraintSystem<F>,
+    q_enable: impl Fn(&mut VirtualCells<'_, F>) -> Expression<F>,
+    position_cols: PositionCols<F>,
+    s_main: MainCols<F>,
+    c_main: MainCols<F>,
+    is_account_leaf_in_added_branch: Column<Advice>, // for inserted extension node to know whether it is account or storage leaf above (to know the rotation)
+    /*
+    `rot_into_ext_node` and `rot_into_branch_init` are different for inserted extension node (inserted
+    at the place of some existing extension node). We use `rot_into_branch_init` for inserted
+    extension node to retrieve information about `is_branch_c16` and `is_branch_c1` - the
+    constraints for these two flags are implemented in the branch configs.
+    */
+    rot_into_branch_init: i32,
+    is_inserted: bool,
+    is_s: bool,
+    is_before: bool, // only needed for inserted extension node
+) {
+    meta.create_gate("Extension node selectors", |meta| {
+        let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
+        let q_enable = q_enable(meta);
+        let mut constraints = vec![];
+
+        // NOTE: even and odd is for number of nibbles that are compactly encoded.
+
+        // To reduce the expression degree, we pack together multiple information.
+        let is_ext_short_c16 = meta.query_advice(
+            s_main.bytes[IS_EXT_SHORT_C16_POS - RLP_NUM],
+            Rotation(rot_into_branch_init),
+        );
+        let is_ext_short_c1 = meta.query_advice(
+            s_main.bytes[IS_EXT_SHORT_C1_POS - RLP_NUM],
+            Rotation(rot_into_branch_init),
+        );
+        let is_ext_long_even_c16 = meta.query_advice(
+            s_main.bytes[IS_EXT_LONG_EVEN_C16_POS - RLP_NUM],
+            Rotation(rot_into_branch_init),
+        );
+        let is_ext_long_even_c1 = meta.query_advice(
+            s_main.bytes[IS_EXT_LONG_EVEN_C1_POS - RLP_NUM],
+            Rotation(rot_into_branch_init),
+        );
+        let is_ext_long_odd_c16 = meta.query_advice(
+            s_main.bytes[IS_EXT_LONG_ODD_C16_POS - RLP_NUM],
+            Rotation(rot_into_branch_init),
+        );
+        let is_ext_long_odd_c1 = meta.query_advice(
+            s_main.bytes[IS_EXT_LONG_ODD_C1_POS - RLP_NUM],
+            Rotation(rot_into_branch_init),
+        );
+        let mut is_ext_longer_than_55 = meta.query_advice(
+            s_main.bytes[IS_S_EXT_LONGER_THAN_55_POS - RLP_NUM],
+            Rotation(rot_into_branch_init),
+        );
+        if !is_s {
+            is_ext_longer_than_55 = meta.query_advice(
+                s_main.bytes[IS_C_EXT_LONGER_THAN_55_POS - RLP_NUM],
+                Rotation(rot_into_branch_init),
+            );
+        }
+        let mut is_ext_node_non_hashed = s_main.bytes[IS_S_EXT_NODE_NON_HASHED_POS - RLP_NUM];
+        if !is_s {
+            is_ext_node_non_hashed = s_main.bytes[IS_C_EXT_NODE_NON_HASHED_POS - RLP_NUM];
+        }
+        let is_ext_node_non_hashed =
+            meta.query_advice(is_ext_node_non_hashed, Rotation(rot_into_branch_init));
+
+        /*
+        We first check that the selectors in branch init row are boolean.
+
+        We have the following selectors in branch init:
+        ```
+        is_ext_short_c16
+        is_ext_short_c1
+        is_ext_long_even_c16
+        is_ext_long_even_c1
+        is_ext_long_odd_c16
+        is_ext_long_odd_c1
+        ```
+
+        `short` means there is only one nibble in the extension node, `long` means there
+        are at least two. `even` means the number of nibbles is even, `odd` means the number
+        of nibbles is odd. `c16` means that above the branch there are even number of
+        nibbles (the same as saying that `modified_node` of the branch needs to be
+        multiplied by 16 in the computation of the key RLC), `c1` means
+        that above the branch there are odd number of
+        nibbles (the same as saying that `modified_node` of the branch needs to be
+        multiplied by 1 in the computation of the key RLC).
+        */
+        constraints.push((
+            "Bool check is_ext_short_c16",
+            get_bool_constraint(
+                q_not_first.clone()
+                    * q_enable.clone(),
+                is_ext_short_c16.clone(),
+            ),
+        ));
+        constraints.push((
+            "Bool check is_ext_short_c1",
+            get_bool_constraint(
+                q_not_first.clone()
+                    * q_enable.clone(),
+                is_ext_short_c1.clone(),
+            ),
+        ));
+        constraints.push((
+            "Bool check is_ext_long_even_c16",
+            get_bool_constraint(
+                q_not_first.clone()
+                    * q_enable.clone(),
+                is_ext_long_even_c16.clone(),
+            ),
+        ));
+        constraints.push((
+            "Bool check is_ext_long_even_c1",
+            get_bool_constraint(
+                q_not_first.clone()
+                    * q_enable.clone(),
+                is_ext_long_even_c1.clone(),
+            ),
+        ));
+        constraints.push((
+            "Bool check is_ext_long_odd_c16",
+            get_bool_constraint(
+                q_not_first.clone()
+                    * q_enable.clone(),
+                is_ext_long_odd_c16.clone(),
+            ),
+        ));
+        constraints.push((
+            "Bool check is_ext_long_odd_c1",
+            get_bool_constraint(
+                q_not_first.clone()
+                    * q_enable.clone(),
+                is_ext_long_odd_c1.clone(),
+            ),
+        ));
+        constraints.push((
+            "Bool check is_ext_longer_than_55",
+            get_bool_constraint(
+                q_not_first.clone()
+                    * q_enable.clone(),
+                is_ext_longer_than_55.clone(),
+            ),
+        ));
+        constraints.push((
+            "Bool check is_ext_node_non_hashed",
+            get_bool_constraint(
+                q_not_first.clone()
+                    * q_enable.clone(),
+                is_ext_node_non_hashed,
+            ),
+        ));
+
+        /*
+        Only one of the six options can appear. When we have an extension node it holds:
+        `is_ext_short_c16 + is_ext_short_c1 + is_ext_long_even_c16 + is_ext_long_even_c1 + is_ext_long_odd_c16 + is_ext_long_odd_c1 = 1`.
+        And when it is a regular branch:
+        `is_ext_short_c16 + is_ext_short_c1 + is_ext_long_even_c16 + is_ext_long_even_c1 + is_ext_long_odd_c16 + is_ext_long_odd_c1 = 0`.
+
+        Note that if the attacker sets `is_extension_node = 1`
+        for a regular branch (or `is_extension_node = 0` for the extension node),
+        the final key RLC check fails because key RLC is computed differently
+        for extension nodes and regular branches - a regular branch occupies only one
+        key nibble (`modified_node`), while extension node occupies at least one additional
+        nibble (the actual extension of the extension node).
+        */
+        constraints.push((
+            "Bool check extension node selectors sum",
+            get_bool_constraint(
+                q_not_first.clone()
+                    * q_enable.clone(),
+                is_ext_short_c16.clone()
+                    + is_ext_short_c1.clone()
+                    + is_ext_long_even_c16.clone()
+                    + is_ext_long_even_c1.clone()
+                    + is_ext_long_odd_c16.clone()
+                    + is_ext_long_odd_c1.clone(),
+            ),
+        ));
+
+        let is_branch_c16: Expression<F>;
+        let is_branch_c1: Expression<F>;
+        if !is_inserted {
+            is_branch_c16 = meta.query_advice(
+                s_main.bytes[IS_BRANCH_C16_POS - RLP_NUM],
+                Rotation(rot_into_branch_init),
+            );
+            is_branch_c1 = meta.query_advice(
+                s_main.bytes[IS_BRANCH_C1_POS - RLP_NUM],
+                Rotation(rot_into_branch_init),
+            );
+        } else {
+            let rot: i32; // going into the last row above the inserted extension node rows
+            if is_before {
+                rot = - INSERTED_EXT_NODE_BEFORE_S - 1;
+            } else {
+                rot = - INSERTED_EXT_NODE_BEFORE_C - 1;
+            }
+
+            // Whether it is an account leaf above inserted extension node rows:
+            let is_account_leaf = meta.query_advice(
+                is_account_leaf_in_added_branch,
+                Rotation(rot),
+            );
+
+            let rot_storage_leaf = rot - LEAF_ROWS_NUM - BRANCH_ROWS_NUM + 1;
+            let rot_account_leaf = rot - ACCOUNT_LEAF_ROWS_NUM - BRANCH_ROWS_NUM + 1;
+            let one = Expression::Constant(F::from(1_u64));
+
+            is_branch_c16 = meta.query_advice(
+                s_main.bytes[IS_BRANCH_C16_POS - RLP_NUM],
+                Rotation(rot_storage_leaf),
+            ) * (one.clone() - is_account_leaf.clone()) + 
+                meta.query_advice(
+                    s_main.bytes[IS_BRANCH_C16_POS - RLP_NUM],
+                    Rotation(rot_account_leaf),
+                ) * is_account_leaf.clone();
+
+            is_branch_c1 = meta.query_advice(
+                s_main.bytes[IS_BRANCH_C1_POS - RLP_NUM],
+                Rotation(rot_storage_leaf),
+            ) * (one.clone() - is_account_leaf.clone()) + 
+                meta.query_advice(
+                    s_main.bytes[IS_BRANCH_C1_POS - RLP_NUM],
+                    Rotation(rot_account_leaf),
+                ) * is_account_leaf.clone();
+        }
+
+        /*
+        `is_branch_c16` and `is_branch_c1` information is duplicated with
+        extension node selectors when we have an extension node (while in case of a regular
+        branch the extension node selectors do not hold this information).
+        That means when we have an extension node and `is_branch_c16 = 1`,
+        there is `is_ext_short_c16 = 1` or
+        `is_ext_long_even_c16 = 1` or `is_ext_long_odd_c16 = 1`.
+
+        We have such a duplication to reduce the expression degree - for example instead of
+        using `is_ext_long_even * is_branch_c16` we just use `is_ext_long_even_c16`.
+
+        But we need to check that `is_branch_c16` and `is_branch_c1` are consistent
+        with extension node selectors.
+        */
+        let mut constrain_sel = |branch_sel: Expression<F>, ext_sel: Expression<F>| {
+            constraints.push((
+                "Branch c16/c1 selector - extension c16/c1 selector",
+                q_not_first.clone()
+                    * q_enable.clone()
+                    * ext_sel.clone()
+                    * (branch_sel - ext_sel),
+            ));
+        };
+
+        constrain_sel(is_branch_c16.clone(), is_ext_short_c16.clone());
+        constrain_sel(is_branch_c1.clone(), is_ext_short_c1.clone());
+        constrain_sel(is_branch_c16.clone(), is_ext_long_even_c16.clone());
+        constrain_sel(is_branch_c1.clone(), is_ext_long_even_c1.clone());
+        constrain_sel(is_branch_c16, is_ext_long_odd_c16.clone());
+        constrain_sel(is_branch_c1, is_ext_long_odd_c1.clone());
+
+        // Needs to be cheched when in a regular extension node - to check whether
+        // there is an inserted extension node in the parallel proof (and corresponding
+        // rows below the leaf).
+        if !is_inserted {
+            let is_inserted_ext_node_s = meta.query_advice(
+                c_main.rlp1,
+                Rotation(rot_into_branch_init),
+            );
+            let is_inserted_ext_node_c = meta.query_advice(
+                c_main.rlp2,
+                Rotation(rot_into_branch_init),
+            );
+
+            constraints.push((
+                "Bool check is_inserted_ext_node_s",
+                get_bool_constraint(
+                    q_not_first.clone()
+                        * q_enable.clone(),
+                    is_inserted_ext_node_s.clone(),
+                ),
+            ));
+            constraints.push((
+                "Bool check is_inserted_ext_node_c",
+                get_bool_constraint(
+                    q_not_first.clone()
+                        * q_enable.clone(),
+                    is_inserted_ext_node_c.clone(),
+                ),
+            ));
+            constraints.push((
+                "is_inserted_ext_node_s + is_inserted_ext_node_c is boolean",
+                get_bool_constraint(
+                    q_not_first.clone()
+                        * q_enable.clone(),
+                    is_inserted_ext_node_s + is_inserted_ext_node_c,
+                ),
+            ));
+        }
 
         constraints
     });
