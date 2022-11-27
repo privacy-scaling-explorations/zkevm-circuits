@@ -91,10 +91,10 @@ impl<T: Clone> Challenges<T> {
         self.keccak_input.clone()
     }
 
-    pub(crate) fn mock(challenge: T) -> Self {
+    pub(crate) fn mock(evm_word: T, keccak_input: T) -> Self {
         Self {
-            evm_word: challenge.clone(),
-            keccak_input: challenge,
+            evm_word,
+            keccak_input,
         }
     }
 }
