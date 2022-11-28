@@ -204,9 +204,9 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
         let tx_value_inv = meta.advice_column();
         let tx_id_diff_inv = meta.advice_column();
         // The difference of tx_id of adjacent rows in calldata part of tx table
-        // lies in the interval [0, 2^16). We do not use 2^8 for the reason that
-        // a large block may have more than 2^8 transfer transactions which have
-        // 21000*2^8 (~ 5.376M) gas.
+        // lies in the interval [0, 2^16] if their tx_id both do not equal to zero.
+        // We do not use 2^8 for the reason that a large block may have more than
+        // 2^8 transfer transactions which have 21000*2^8 (~ 5.376M) gas.
         let fixed_u16 = meta.fixed_column();
         let calldata_gas_cost = meta.advice_column();
         let is_final = meta.advice_column();
@@ -353,10 +353,10 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
 
             let tx_id_next_nonzero = tx_id_next.expr() * tx_id_inv_next;
             let tx_id_not_equal_to_next = (tx_id_next.expr() - tx_id.expr()) * tx_id_diff_inv;
-            let tx_id_diff = tx_id_next - tx_id - 1.expr();
+            let tx_id_diff_minus_one = tx_id_next - tx_id - 1.expr();
 
             vec![(
-                tx_id_diff * tx_id_next_nonzero * tx_id_not_equal_to_next,
+                tx_id_diff_minus_one * tx_id_next_nonzero * tx_id_not_equal_to_next,
                 fixed_u16_table,
             )]
         });
@@ -423,7 +423,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
                 (tx_idx_next.expr() - tx_idx.expr()) * (is_final.expr() - 1.expr());
 
             // if tx_id != 0 then
-            //    1. q_calldata_start * (tx_id - 1) == 0 and
+            //    1. q_calldata_start * (index - 0) == 0 and
             //    2. q_calldata_start * (gas_cost - gas) == 0.
 
             vec![
