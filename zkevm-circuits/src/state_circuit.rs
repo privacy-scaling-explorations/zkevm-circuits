@@ -51,11 +51,10 @@ pub struct StateCircuitConfig<F> {
     // Rw::AccountStorage rows this is the committed value in the MPT, for
     // others, it is 0.
     initial_value: Column<Advice>,
-    // For Rw::AccountStorage, identify if committed value or new value is zero.
-    // Will do lookup for ProofType::StorageDoesNotExist if both are zero,
-    // otherwise do lookup for ProofType::StorageChanged (either is non-zero).
-    is_initial_value_zero: Column<Advice>,
-    is_new_value_zero: Column<Advice>,
+    // For Rw::AccountStorage, identify non-existing if both committed value and
+    // new value are zero. Will do lookup for ProofType::StorageDoesNotExist if
+    // non-existing, otherwise do lookup for ProofType::StorageChanged.
+    is_non_exist: Column<Advice>,
     state_root: Column<Advice>,
     lexicographic_ordering: LexicographicOrderingConfig,
     lookups: LookupsConfig,
@@ -87,8 +86,7 @@ impl<F: Field> StateCircuitConfig<F> {
         );
 
         let initial_value = meta.advice_column_in(SecondPhase);
-        let is_initial_value_zero = meta.advice_column_in(SecondPhase);
-        let is_new_value_zero = meta.advice_column_in(SecondPhase);
+        let is_non_exist = meta.advice_column_in(SecondPhase);
         let state_root = meta.advice_column_in(SecondPhase);
 
         let sort_keys = SortKeysConfig {
@@ -111,8 +109,7 @@ impl<F: Field> StateCircuitConfig<F> {
             selector,
             sort_keys,
             initial_value,
-            is_initial_value_zero,
-            is_new_value_zero,
+            is_non_exist,
             state_root,
             lexicographic_ordering,
             lookups,
@@ -248,28 +245,21 @@ impl<F: Field> StateCircuitConfig<F> {
                 || initial_value,
             )?;
 
-            // Check if initial value or new value is zero.
-            let is_zero_fun = |val: F| F::one() - val * val.invert().unwrap_or(F::zero());
-            let is_initial_value_zero = initial_value.map(is_zero_fun);
+            // Identify non-existing if both committed value and new value are zero.
+            let is_non_exist = randomness.map(|randomness| {
+                let (committed_value, new_value) = updates
+                    .get(row)
+                    .map(|u| u.value_assignments(randomness))
+                    .unwrap_or_default();
+
+                (F::one() - committed_value * committed_value.invert().unwrap_or(F::zero()))
+                    * (F::one() - new_value * new_value.invert().unwrap_or(F::zero()))
+            });
             region.assign_advice(
-                || "is_initial_value_zero",
-                self.is_initial_value_zero,
+                || "is_non_exist",
+                self.is_non_exist,
                 offset,
-                || is_initial_value_zero,
-            )?;
-            let is_new_value_zero = randomness
-                .map(|randomness| {
-                    updates
-                        .get(row)
-                        .map(|u| u.value_assignments(randomness).0)
-                        .unwrap_or_default()
-                })
-                .map(is_zero_fun);
-            region.assign_advice(
-                || "is_new_value_zero",
-                self.is_new_value_zero,
-                offset,
-                || is_new_value_zero,
+                || is_non_exist,
             )?;
 
             // TODO: Switch from Rw::Start -> Rw::Padding to simplify this logic.
@@ -491,8 +481,7 @@ fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: &StateCircuitConfig<F>) 
         storage_key: RlcQueries::new(meta, c.sort_keys.storage_key),
         initial_value: meta.query_advice(c.initial_value, Rotation::cur()),
         initial_value_prev: meta.query_advice(c.initial_value, Rotation::prev()),
-        is_initial_value_zero: meta.query_advice(c.is_initial_value_zero, Rotation::cur()),
-        is_new_value_zero: meta.query_advice(c.is_new_value_zero, Rotation::cur()),
+        is_non_exist: meta.query_advice(c.is_non_exist, Rotation::cur()),
         lookups: LookupsQueries::new(meta, c.lookups),
         power_of_randomness: c.power_of_randomness.clone(),
         // this isn't binary! only 0 if most significant 4 bits are all 1.

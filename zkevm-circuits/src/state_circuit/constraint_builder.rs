@@ -55,8 +55,7 @@ pub struct Queries<F: Field> {
     pub storage_key: RlcQueries<F, N_BYTES_WORD>,
     pub initial_value: Expression<F>,
     pub initial_value_prev: Expression<F>,
-    pub is_initial_value_zero: Expression<F>,
-    pub is_new_value_zero: Expression<F>,
+    pub is_non_exist: Expression<F>,
     pub lookups: LookupsQueries<F>,
     pub power_of_randomness: [Expression<F>; N_BYTES_WORD - 1],
     pub first_access: Expression<F>,
@@ -235,7 +234,7 @@ impl<F: Field> ConstraintBuilder<F> {
         // TODO: cold VS warm
         self.require_zero("field_tag is 0 for AccountStorage", q.field_tag());
 
-        let is_non_exist = q.is_initial_value_zero() * q.is_new_value_zero();
+        let is_non_exist = q.is_non_exist();
 
         self.condition(q.last_access(), |cb| {
             cb.add_lookup(
@@ -485,12 +484,8 @@ impl<F: Field> Queries<F> {
         self.initial_value_prev.clone()
     }
 
-    fn is_initial_value_zero(&self) -> Expression<F> {
-        self.is_initial_value_zero.clone()
-    }
-
-    fn is_new_value_zero(&self) -> Expression<F> {
-        self.is_new_value_zero.clone()
+    fn is_non_exist(&self) -> Expression<F> {
+        self.is_non_exist.clone()
     }
 
     fn tag_matches(&self, tag: RwTableTag) -> Expression<F> {
