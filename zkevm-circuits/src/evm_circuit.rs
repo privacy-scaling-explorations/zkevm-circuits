@@ -288,7 +288,10 @@ pub mod test {
             mut layouter: impl Layouter<F>,
         ) -> Result<(), Error> {
             let block = self.block.as_ref().unwrap();
-            let challenges = Challenges::mock(Value::known(block.randomness));
+            let challenges = Challenges::mock(
+                Value::known(block.randomness),
+                Value::known(block.randomness),
+            );
 
             config
                 .evm_circuit
