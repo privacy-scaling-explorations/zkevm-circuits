@@ -203,6 +203,10 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
         let tx_id_inv = meta.advice_column();
         let tx_value_inv = meta.advice_column();
         let tx_id_diff_inv = meta.advice_column();
+        // The difference of tx_id of adjacent rows in calldata part of tx table
+        // lies in the interval [0, 2^16). We do not use 2^8 for the reason that
+        // a large block may have more than 2^8 transfer transactions which have
+        // 21000*2^8 (~ 5.376M) gas.
         let fixed_u16 = meta.fixed_column();
         let calldata_gas_cost = meta.advice_column();
         let is_final = meta.advice_column();
