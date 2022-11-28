@@ -25,7 +25,8 @@ use crate::{
             IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS, IS_EXT_LONG_ODD_C16_POS,
             IS_EXT_LONG_ODD_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS,
             IS_S_EXT_LONGER_THAN_55_POS, IS_S_EXT_NODE_NON_HASHED_POS, NIBBLES_COUNTER_POS,
-            RLP_NUM,
+            RLP_NUM, ACCOUNT_LEAF_ROWS_NUM, LEAF_ROWS_NUM, EXISTING_EXT_NODE_BEFORE_S,
+            EXISTING_EXT_NODE_AFTER_S,
         },
     },
     mpt_circuit::{MPTConfig, ProofValues},
@@ -36,16 +37,34 @@ use super::BranchCols;
 use super::extension::{extension_node_rlp, extension_node_rlc, extension_node_selectors};
 
 /*
-This file contains constraints for the inserted extension node rows which appear after the leaf rows.
+An existing extension node (which gets modified because of an inserted extension node) occupies 6 rows.
+The rows are the following:
+EXISTING_EXT_NODE_BEFORE_SELECTORS
+EXISTING_EXT_NODE_BEFORE_S
+EXISTING_EXT_NODE_BEFORE_C
+EXISTING_EXT_NODE_AFTER_SELECTORS
+EXISTING_EXT_NODE_AFTER_S
+EXISTING_EXT_NODE_AFTER_C
+
+This file contains constraints for the existing extension node rows which appear after the leaf rows.
 Some constraints are the same as as for the extension node rows that appear in the branch rows (RLP, RLC),
 some are different (extension node selectors).
 
 It needs to be checked that the newly inserted extension node branch only has two elements:
 the leaf that caused a new extension node to be added and the old extension node that drifted into
 a branch of the newly added extension node.
-And it also needs to be ensured that the drifted extension node is the same as it was before
+And it needs to be ensured that the drifted extension node is the same as it was before
 the modification except for the change in its key (otherwise the attacker might hide one modification
 - the modification of the drifted extension node).
+
+The constraints that are implemented in `extension_node_key.rs` are not implemented for an existing
+extension node as we do not have the underlying branch and other elements down to the leaf for it.
+From `extension_node_key.rs` constraints we only need to implement the constraints related
+to the second nibbles.
+
+Note that `S` and `C` hashes (values in `c_main`) in the two `before` rows are the same. Likewise for
+the two `after` rows. So the constraints like RLC and RLP are checked only for `S` rows (`c_main`
+in `C` rows is never used, we need `C` rows only for the second nibbles).
 */
 
 #[derive(Clone, Debug)]
@@ -68,7 +87,6 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
         keccak_table: KeccakTable,
         power_of_randomness: [Expression<F>; HASH_WIDTH],
         fixed_table: [Column<Fixed>; 3],
-        is_s: bool,
         is_before: bool,
         check_zeros: bool,
     ) -> Self {
@@ -79,27 +97,16 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
         let c128 = Expression::Constant(F::from(128));
         let c160_inv = Expression::Constant(F::from(160_u64).invert().unwrap());
         let c192 = Expression::Constant(F::from(192));
-        let mut rot_into_ext_node = -1;
-        if !is_s {
-            rot_into_ext_node = -2;
-        }
+        let rot_into_ext_node_selectors = -1;
 
-
-        let mut rot_into_branch_init = -1;
-        if !is_s {
-            rot_into_branch_init = -2;
-        }
-
-        if is_s {
-            extension_node_rlp(
-                meta,
-                q_enable.clone(),
-                position_cols.clone(),
-                s_main.clone(),
-                c_main.clone(),
-                rot_into_ext_node,
-            );
-        } 
+        extension_node_rlp(
+            meta,
+            q_enable.clone(),
+            position_cols.clone(),
+            s_main.clone(),
+            c_main.clone(),
+            rot_into_ext_node_selectors,
+        );
 
         extension_node_rlc(
             meta,
@@ -109,7 +116,7 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
             c_main.clone(),
             accs.clone(),
             power_of_randomness.clone(),
-            is_s,
+            true,
         );
         
         extension_node_selectors(
@@ -119,12 +126,11 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
             s_main.clone(),
             c_main.clone(),
             is_account_leaf_in_added_branch.clone(),
-            rot_into_ext_node,
+            rot_into_ext_node_selectors,
             true,
-            is_s,
+            true,
             is_before,
         );
-
 
         /*
         TODO: Correspondence between nibbles in C and bytes in S to be checked (for
@@ -134,16 +140,25 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
         /*
         When we have an extension node in the first level of the account trie,
         its hash needs to be compared to the root of the trie.
+
+        Note that existing extension node never appears in the first level (it can in `getProof`
+        response) because the witness generator puts it after the leaf of the inserted extension
+        node rows. So to check whether the existing extension node is in the first level, we need
+        to check whether the inserted extension node is in the first level.
         */
-        /*
         meta.lookup_any(
-            "Account first level (inserted) extension node hash - compared to root",
+            "Account first level (existing) extension node hash - compared to root",
             |meta| {
                 let q_enable = q_enable(meta);
 
+                let mut rot_into_branch = - EXISTING_EXT_NODE_BEFORE_S - 1 - ACCOUNT_LEAF_ROWS_NUM;
+                if !is_before {
+                    rot_into_branch = - EXISTING_EXT_NODE_AFTER_S - 1 - ACCOUNT_LEAF_ROWS_NUM;
+                }
+
                 let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
                 let not_first_level =
-                    meta.query_advice(position_cols.not_first_level, Rotation::cur());
+                    meta.query_advice(position_cols.not_first_level, Rotation(rot_into_branch));
 
                 let acc_c = meta.query_advice(accs.acc_c.rlc, Rotation::cur());
                 let root = meta.query_advice(inter_root, Rotation::cur());
@@ -157,12 +172,8 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
                 let keccak_input_rlc = meta.query_advice(keccak_table.input_rlc, Rotation::cur());
                 table_map.push((selector.clone() * acc_c, keccak_input_rlc));
 
-                let mut rot = 0;
-                if !is_s {
-                    rot = -1;
-                }
                 let ext_len =
-                    meta.query_advice(s_main.rlp1, Rotation(rot)) - c192.clone() + one.clone();
+                    meta.query_advice(s_main.rlp1, Rotation::cur()) - c192.clone() + one.clone();
 
                 let keccak_input_len = meta.query_advice(keccak_table.input_len, Rotation::cur());
                 table_map.push((selector.clone() * ext_len, keccak_input_len));
@@ -173,7 +184,6 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
                 table_map
             },
         );
-        */
 
         /*
         When extension node is in the first level of the storage trie, we need to check whether
@@ -607,92 +617,66 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
         pv: &mut ProofValues<F>,
         row: &MptWitnessRow<F>,
         offset: usize,
-        is_s: bool,
     ) { 
         if pv.is_extension_node {
-            if is_s {
-                // [228,130,0,149,160,114,253,150,133,18,192,156,19,241,162,51,210,24,1,151,16,
-                // 48,7,177,42,60,49,34,230,254,242,79,132,165,90,75,249]
+            // [228,130,0,149,160,114,253,150,133,18,192,156,19,241,162,51,210,24,1,151,16,
+            // 48,7,177,42,60,49,34,230,254,242,79,132,165,90,75,249]
 
-                // One nibble:
-                // [226,16,160,172,105,12...
-                // Could also be non-hashed branch:
-                // [223,16,221,198,132,32,0,0,0,1,198,132,32,0,0,0,1,128,128,128,128,128,128,
-                // 128,128,128,128,128,128,128,128,128]
+            // One nibble:
+            // [226,16,160,172,105,12...
+            // Could also be non-hashed branch:
+            // [223,16,221,198,132,32,0,0,0,1,198,132,32,0,0,0,1,128,128,128,128,128,128,
+            // 128,128,128,128,128,128,128,128,128]
 
-                // [247,160,16,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-                // 213,128,194,32,1,128,194,32,1,128,128,128,128,128,128,128,128,128,128,128,
-                // 128,128] [248,58,159,16,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-                // 0,0,0,0,0,0,0,0,0,0,0,0,217,128,196,130,32,0,1,128,196,130,32,0,1,128,128,
-                // 128,128,128,128,128,128,128,128,128,128,128]
+            // [247,160,16,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+            // 213,128,194,32,1,128,194,32,1,128,128,128,128,128,128,128,128,128,128,128,
+            // 128,128] [248,58,159,16,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+            // 0,0,0,0,0,0,0,0,0,0,0,0,217,128,196,130,32,0,1,128,196,130,32,0,1,128,128,
+            // 128,128,128,128,128,128,128,128,128,128,128]
 
-                // Intermediate RLC value and mult (after key)
-                // to know which mult we need to use in c_advices.
-                pv.acc_s = F::zero();
-                pv.acc_mult_s = F::one();
-                let len: usize;
-                if row.get_byte(1) <= 32 {
-                    // key length is 1
-                    len = 2 // [length byte, key]
-                } else if row.get_byte(0) < 248 {
-                    len = (row.get_byte(1) - 128) as usize + 2;
-                } else {
-                    len = (row.get_byte(2) - 128) as usize + 3;
-                }
-                mpt_config.compute_acc_and_mult(
-                    &row.bytes,
-                    &mut pv.acc_s,
-                    &mut pv.acc_mult_s,
-                    0,
-                    len,
-                );
-
-                // Final RLC value.
-                pv.acc_c = pv.acc_s;
-                pv.acc_mult_c = pv.acc_mult_s;
-                let mut start = C_RLP_START + 1;
-                let mut len = HASH_WIDTH + 1;
-                if row.get_byte(C_RLP_START + 1) == 0 {
-                    // non-hashed branch in extension node
-                    start = C_START;
-                    len = HASH_WIDTH;
-                }
-                mpt_config.compute_acc_and_mult(
-                    &row.bytes,
-                    &mut pv.acc_c,
-                    &mut pv.acc_mult_c,
-                    start,
-                    len,
-                );
-
-                mpt_config
-                    .assign_acc(region, pv.acc_s, pv.acc_mult_s, pv.acc_c, F::zero(), offset)
-                    .ok();
+            // Intermediate RLC value and mult (after key)
+            // to know which mult we need to use in c_advices.
+            pv.acc_s = F::zero();
+            pv.acc_mult_s = F::one();
+            let len: usize;
+            if row.get_byte(1) <= 32 {
+                // key length is 1
+                len = 2 // [length byte, key]
+            } else if row.get_byte(0) < 248 {
+                len = (row.get_byte(1) - 128) as usize + 2;
             } else {
-                // We use intermediate value from previous row (because
-                // up to acc_s it's about key and this is the same
-                // for both S and C).
-                pv.acc_c = pv.acc_s;
-                pv.acc_mult_c = pv.acc_mult_s;
-                let mut start = C_RLP_START + 1;
-                let mut len = HASH_WIDTH + 1;
-                if row.get_byte(C_RLP_START + 1) == 0 {
-                    // non-hashed branch in extension node
-                    start = C_START;
-                    len = HASH_WIDTH;
-                }
-                mpt_config.compute_acc_and_mult(
-                    &row.bytes,
-                    &mut pv.acc_c,
-                    &mut pv.acc_mult_c,
-                    start,
-                    len,
-                );
-
-                mpt_config
-                    .assign_acc(region, pv.acc_s, pv.acc_mult_s, pv.acc_c, F::zero(), offset)
-                    .ok();
+                len = (row.get_byte(2) - 128) as usize + 3;
             }
+            mpt_config.compute_acc_and_mult(
+                &row.bytes,
+                &mut pv.acc_s,
+                &mut pv.acc_mult_s,
+                0,
+                len,
+            );
+
+            // Final RLC value.
+            pv.acc_c = pv.acc_s;
+            pv.acc_mult_c = pv.acc_mult_s;
+            let mut start = C_RLP_START + 1;
+            let mut len = HASH_WIDTH + 1;
+            if row.get_byte(C_RLP_START + 1) == 0 {
+                // non-hashed branch in extension node
+                start = C_START;
+                len = HASH_WIDTH;
+            }
+            mpt_config.compute_acc_and_mult(
+                &row.bytes,
+                &mut pv.acc_c,
+                &mut pv.acc_mult_c,
+                start,
+                len,
+            );
+
+            mpt_config
+                .assign_acc(region, pv.acc_s, pv.acc_mult_s, pv.acc_c, F::zero(), offset)
+                .ok();
+
             region
                 .assign_advice(
                     || "assign key_rlc".to_string(),

@@ -803,15 +803,14 @@ impl<F: FieldExt> MPTConfig<F> {
             power_of_randomness.clone(),
             fixed_table,
             true,
-            true,
             check_zeros,
         );
 
         /*
         Note: we do not need any constraints (except for the correspondence of first/second
         nibbles) for `ext_node_c_before_mode_config` and `ext_node_c_before_mode_config`
-        because S and C rows are the same (except for the second nibbles) for before and after
-        - C is used only the second nibbles.
+        because `S` and `C` rows are the same (except for the second nibbles) for before and after
+        - `C` is used only the second nibbles.
         */
 
         let ext_node_s_after_mod_config = ExtensionNodeInsertedConfig::<F>::configure(
@@ -829,7 +828,6 @@ impl<F: FieldExt> MPTConfig<F> {
             keccak_table.clone(),
             power_of_randomness.clone(),
             fixed_table,
-            true,
             false,
             check_zeros,
         );
@@ -1372,7 +1370,6 @@ impl<F: FieldExt> MPTConfig<F> {
                                     &mut pv,
                                     row,
                                     offset,
-                                    true,
                                 );
                             } else if row.get_type() == MptWitnessRowType::ModExtNodeSAfterMod {
                                 self.ext_node_s_after_mod_config.assign(
@@ -1381,7 +1378,6 @@ impl<F: FieldExt> MPTConfig<F> {
                                     &mut pv,
                                     row,
                                     offset,
-                                    true,
                                 );
                             }
 
