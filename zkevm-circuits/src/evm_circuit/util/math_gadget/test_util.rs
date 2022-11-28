@@ -37,7 +37,7 @@ pub(crate) trait MathGadgetContainer<F: Field>: Clone {
 
     fn assign_gadget_container(
         &self,
-        input_words: &[Word],
+        witness_words: &[Word],
         region: &mut CachedRegion<'_, '_, F>,
     ) -> Result<(), Error>;
 }
@@ -59,16 +59,16 @@ where
 
 pub(crate) struct UnitTestMathGadgetBaseCircuit<F, G> {
     size: usize,
-    input_words: Vec<Word>,
+    witness_words: Vec<Word>,
     randomness: F,
     _marker: PhantomData<G>,
 }
 
 impl<F: Field, G> UnitTestMathGadgetBaseCircuit<F, G> {
-    fn new(size: usize, input_words: Vec<Word>, randomness: F) -> Self {
+    fn new(size: usize, witness_words: Vec<Word>, randomness: F) -> Self {
         UnitTestMathGadgetBaseCircuit {
             size,
-            input_words,
+            witness_words,
             randomness,
             _marker: PhantomData,
         }
@@ -82,7 +82,7 @@ impl<F: Field, G: MathGadgetContainer<F>> Circuit<F> for UnitTestMathGadgetBaseC
     fn without_witnesses(&self) -> Self {
         UnitTestMathGadgetBaseCircuit {
             size: 0,
-            input_words: vec![],
+            witness_words: vec![],
             randomness: F::from(123456u64),
             _marker: PhantomData,
         }
@@ -169,7 +169,7 @@ impl<F: Field, G: MathGadgetContainer<F>> Circuit<F> for UnitTestMathGadgetBaseC
                 )?;
                 config
                     .math_gadget_container
-                    .assign_gadget_container(&self.input_words, cached_region)?;
+                    .assign_gadget_container(&self.witness_words, cached_region)?;
                 for stored_expr in &config.stored_expressions {
                     stored_expr.assign(cached_region, offset)?;
                 }
@@ -235,3 +235,14 @@ pub(crate) fn test_math_gadget_container<F: Field, G: MathGadgetContainer<F>>(
         assert_ne!(prover.verify(), Ok(()));
     }
 }
+
+// #[macro_export]
+/// simple macro for less code & better readability
+macro_rules! try_test {
+    ($base_class:ty, $witnesses:expr, $expect_success:expr) => {{
+        test_math_gadget_container::<Fr, $base_class>($witnesses.to_vec(), $expect_success)
+    }};
+}
+
+#[cfg(test)]
+pub(crate) use try_test;

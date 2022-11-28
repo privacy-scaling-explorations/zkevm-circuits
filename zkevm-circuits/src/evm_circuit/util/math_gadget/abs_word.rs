@@ -120,72 +120,71 @@ mod tests {
 
         fn assign_gadget_container(
             &self,
-            input_words: &[Word],
+            witness_words: &[Word],
             region: &mut CachedRegion<'_, '_, F>,
         ) -> Result<(), Error> {
             let offset = 0;
-            let x = input_words[0];
-            let x_abs = input_words[1];
+            let x = witness_words[0];
+            let x_abs = witness_words[1];
             self.absword_gadget.assign(region, offset, x, x_abs)?;
 
             Ok(())
         }
     }
 
+    macro_rules! try_test {
+        ($base_class:ty, $x:expr, $x_abs:expr, $expect_success:expr) => {{
+            test_math_gadget_container::<Fr, $base_class>(vec![$x, $x_abs], $expect_success)
+        }};
+    }
+
+    macro_rules! try_test_x {
+        ($x:expr; is neg, abs eq $x_abs:expr, $expect_success:expr) => {{
+            try_test!(AbsWordGadgetContainer<Fr, true>, $x, $x_abs, $expect_success)
+        }};
+        ($x:expr; is not neg, abs eq $x_abs:expr, $expect_success:expr) => {{
+            try_test!(AbsWordGadgetContainer<Fr, false>, $x, $x_abs, $expect_success)
+        }};
+    }
+
     #[test]
     fn test_abs_0_eq_0() {
-        test_math_gadget_container::<Fr, AbsWordGadgetContainer<Fr, false>>(
-            vec![Word::from(0), Word::from(0)],
-            true,
-        );
+        try_test_x!(Word::from(0); is not neg, abs eq Word::from(0), true);
     }
 
     #[test]
     fn test_abs_1_eq_1() {
-        test_math_gadget_container::<Fr, AbsWordGadgetContainer<Fr, false>>(
-            vec![Word::from(1), Word::from(1)],
-            true,
-        );
+        try_test_x!(Word::from(1); is not neg, abs eq Word::from(1), true);
     }
 
     #[test]
     fn test_abs_1_neq_2() {
-        test_math_gadget_container::<Fr, AbsWordGadgetContainer<Fr, false>>(
-            vec![Word::from(1), Word::from(2)],
-            false,
-        );
+        try_test_x!(Word::from(1); is not neg, abs eq Word::from(2), false);
     }
 
     #[test]
     fn test_abs_wordmax_eq_minus1() {
-        test_math_gadget_container::<Fr, AbsWordGadgetContainer<Fr, true>>(
-            vec![Word::MAX, Word::from(1)],
-            true,
-        );
+        try_test_x!(Word::MAX; is neg, abs eq Word::from(1), true);
     }
 
     #[test]
     fn test_abs_word_high_max() {
         let abs_high_max = U256([0, 0, 1, 0]);
-        test_math_gadget_container::<Fr, AbsWordGadgetContainer<Fr, true>>(
-            vec![WORD_HIGH_MAX, abs_high_max],
-            true,
-        );
+        try_test_x!(WORD_HIGH_MAX; is neg, abs eq abs_high_max, true);
     }
 
     #[test]
     fn test_abs_word_low_max() {
-        test_math_gadget_container::<Fr, AbsWordGadgetContainer<Fr, false>>(
-            vec![WORD_LOW_MAX, WORD_LOW_MAX],
-            true,
-        );
+        try_test_x!(WORD_LOW_MAX; is not neg, abs eq WORD_LOW_MAX, true);
     }
 
     #[test]
-    fn test_abs_unexpected_is_neg() {
-        test_math_gadget_container::<Fr, AbsWordGadgetContainer<Fr, false>>(
-            vec![Word::MAX, Word::from(1)],
-            false,
-        );
+    fn test_abs_unexpected_is_neg_for_postive() {
+        try_test_x!(WORD_LOW_MAX; is neg, abs eq WORD_LOW_MAX, false);
+    }
+
+    #[test]
+    fn test_abs_unexpected_is_neg_for_negtive() {
+        try_test_x!(Word::MAX; is not neg, abs eq Word::from(1), false);
     }
 }
