@@ -618,89 +618,52 @@ pub(crate) fn extension_node_selectors<F: FieldExt>(
             ),
         ));
 
-        let is_branch_c16: Expression<F>;
-        let is_branch_c1: Expression<F>;
+        // When there is an inserted extension node at the place of the old extension node,
+        // the witness does not contain the extension node underlying branch.
         if !is_inserted {
-            is_branch_c16 = meta.query_advice(
+            let is_branch_c16 = meta.query_advice(
                 s_main.bytes[IS_BRANCH_C16_POS - RLP_NUM],
                 Rotation(rot_into_branch_init),
             );
-            is_branch_c1 = meta.query_advice(
+            let is_branch_c1 = meta.query_advice(
                 s_main.bytes[IS_BRANCH_C1_POS - RLP_NUM],
                 Rotation(rot_into_branch_init),
             );
-        } else {
-            let rot: i32; // going into the last row above the inserted extension node rows
-            if is_before {
-                rot = - INSERTED_EXT_NODE_BEFORE_S - 1;
-            } else {
-                rot = - INSERTED_EXT_NODE_BEFORE_C - 1;
-            }
 
-            // Whether it is an account leaf above inserted extension node rows:
-            let is_account_leaf = meta.query_advice(
-                is_account_leaf_in_added_branch,
-                Rotation(rot),
-            );
+            /*
+            `is_branch_c16` and `is_branch_c1` information is duplicated with
+            extension node selectors when we have an extension node (while in case of a regular
+            branch the extension node selectors do not hold this information).
+            That means when we have an extension node and `is_branch_c16 = 1`,
+            there is `is_ext_short_c16 = 1` or
+            `is_ext_long_even_c16 = 1` or `is_ext_long_odd_c16 = 1`.
 
-            let rot_storage_leaf = rot - LEAF_ROWS_NUM - BRANCH_ROWS_NUM + 1;
-            let rot_account_leaf = rot - ACCOUNT_LEAF_ROWS_NUM - BRANCH_ROWS_NUM + 1;
-            let one = Expression::Constant(F::from(1_u64));
+            We have such a duplication to reduce the expression degree - for example instead of
+            using `is_ext_long_even * is_branch_c16` we just use `is_ext_long_even_c16`.
 
-            is_branch_c16 = meta.query_advice(
-                s_main.bytes[IS_BRANCH_C16_POS - RLP_NUM],
-                Rotation(rot_storage_leaf),
-            ) * (one.clone() - is_account_leaf.clone()) + 
-                meta.query_advice(
-                    s_main.bytes[IS_BRANCH_C16_POS - RLP_NUM],
-                    Rotation(rot_account_leaf),
-                ) * is_account_leaf.clone();
+            But we need to check that `is_branch_c16` and `is_branch_c1` are consistent
+            with extension node selectors.
+            */
+            let mut constrain_sel = |branch_sel: Expression<F>, ext_sel: Expression<F>| {
+                constraints.push((
+                    "Branch c16/c1 selector - extension c16/c1 selector",
+                    q_not_first.clone()
+                        * q_enable.clone()
+                        * ext_sel.clone()
+                        * (branch_sel - ext_sel),
+                ));
+            };
 
-            is_branch_c1 = meta.query_advice(
-                s_main.bytes[IS_BRANCH_C1_POS - RLP_NUM],
-                Rotation(rot_storage_leaf),
-            ) * (one.clone() - is_account_leaf.clone()) + 
-                meta.query_advice(
-                    s_main.bytes[IS_BRANCH_C1_POS - RLP_NUM],
-                    Rotation(rot_account_leaf),
-                ) * is_account_leaf.clone();
-        }
+            constrain_sel(is_branch_c16.clone(), is_ext_short_c16.clone());
+            constrain_sel(is_branch_c1.clone(), is_ext_short_c1.clone());
+            constrain_sel(is_branch_c16.clone(), is_ext_long_even_c16.clone());
+            constrain_sel(is_branch_c1.clone(), is_ext_long_even_c1.clone());
+            constrain_sel(is_branch_c16, is_ext_long_odd_c16.clone());
+            constrain_sel(is_branch_c1, is_ext_long_odd_c1.clone());
 
-        /*
-        `is_branch_c16` and `is_branch_c1` information is duplicated with
-        extension node selectors when we have an extension node (while in case of a regular
-        branch the extension node selectors do not hold this information).
-        That means when we have an extension node and `is_branch_c16 = 1`,
-        there is `is_ext_short_c16 = 1` or
-        `is_ext_long_even_c16 = 1` or `is_ext_long_odd_c16 = 1`.
-
-        We have such a duplication to reduce the expression degree - for example instead of
-        using `is_ext_long_even * is_branch_c16` we just use `is_ext_long_even_c16`.
-
-        But we need to check that `is_branch_c16` and `is_branch_c1` are consistent
-        with extension node selectors.
-        */
-        let mut constrain_sel = |branch_sel: Expression<F>, ext_sel: Expression<F>| {
-            constraints.push((
-                "Branch c16/c1 selector - extension c16/c1 selector",
-                q_not_first.clone()
-                    * q_enable.clone()
-                    * ext_sel.clone()
-                    * (branch_sel - ext_sel),
-            ));
-        };
-
-        constrain_sel(is_branch_c16.clone(), is_ext_short_c16.clone());
-        constrain_sel(is_branch_c1.clone(), is_ext_short_c1.clone());
-        constrain_sel(is_branch_c16.clone(), is_ext_long_even_c16.clone());
-        constrain_sel(is_branch_c1.clone(), is_ext_long_even_c1.clone());
-        constrain_sel(is_branch_c16, is_ext_long_odd_c16.clone());
-        constrain_sel(is_branch_c1, is_ext_long_odd_c1.clone());
-
-        // Needs to be cheched when in a regular extension node - to check whether
-        // there is an inserted extension node in the parallel proof (and corresponding
-        // rows below the leaf).
-        if !is_inserted {
+            // The following needs to be cheched when in a regular extension node - to check whether
+            // there is an inserted extension node in the parallel proof (and corresponding
+            // rows below the leaf).
             let is_inserted_ext_node_s = meta.query_advice(
                 c_main.rlp1,
                 Rotation(rot_into_branch_init),
@@ -734,6 +697,7 @@ pub(crate) fn extension_node_selectors<F: FieldExt>(
                     is_inserted_ext_node_s + is_inserted_ext_node_c,
                 ),
             ));
+
         }
 
         constraints
