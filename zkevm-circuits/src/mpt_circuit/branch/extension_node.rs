@@ -402,11 +402,9 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
         meta.lookup_any(
             "Extension node in first level of storage trie - hash compared to the storage root",
             |meta| {
-                let not_first_level =
-                    meta.query_advice(position_cols.not_first_level, Rotation::cur());
+                let q_enable = q_enable(meta);
 
                 let mut rot_into_branch_init = -17;
-                let mut rot_into_last_branch_child = -1;
                 let mut is_branch_placeholder = meta.query_advice(
                     s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM],
                     Rotation(rot_into_branch_init),
@@ -421,7 +419,6 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                 );
                 if !is_s {
                     rot_into_branch_init = -18;
-                    rot_into_last_branch_child = -2;
                     is_branch_placeholder = meta.query_advice(
                         s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
                         Rotation(rot_into_branch_init),
@@ -436,7 +433,9 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                     );
                 }
 
-                // Only check if there is an account above the leaf.
+                // Check if there is an account leaf above the extension node (corresponds to the check
+                // whether the extension node is in the first level for the case when extension node
+                // in the account proof).
                 let is_account_leaf_in_added_branch = meta.query_advice(
                     is_account_leaf_in_added_branch,
                     Rotation(rot_into_branch_init - 1),
@@ -444,10 +443,6 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
 
                 let is_extension_node =
                     get_is_extension_node(meta, s_main.bytes, rot_into_branch_init);
-
-                // We need to do the lookup only if we are in the last branch child.
-                let is_after_last_branch_child =
-                    meta.query_advice(branch.is_last_child, Rotation(rot_into_last_branch_child));
 
                 // Note: acc_c in both cases.
                 let acc = meta.query_advice(accs.acc_c.rlc, Rotation::cur());
@@ -475,9 +470,8 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                 }
                 let hash_rlc = bytes_expr_into_rlc(&sc_hash, power_of_randomness[0].clone());
 
-                let selector = not_first_level
+                let selector = q_enable
                     * is_extension_node
-                    * is_after_last_branch_child
                     * is_account_leaf_in_added_branch
                     * (one.clone() - is_inserted_ext_node)
                     * (one.clone() - is_branch_placeholder);

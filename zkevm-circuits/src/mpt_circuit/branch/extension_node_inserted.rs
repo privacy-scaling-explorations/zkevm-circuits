@@ -190,66 +190,35 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
         `hash(ext_node) = storage_trie_root`. We do this by checking whether
         `(ext_node_RLC, storage_trie_root_RLC)` is in the keccak table.
 
+        Only check for the `before` row as this presents the extension node before the modification.
+        The `after` row present the modified extension node which needs to be checked to correspond
+        to the existing extension node that was modified due to inserted extension node.
+
         Note: extension node in the first level cannot be shorter than 32 bytes (it is always hashed).
         */
-        /*
-        meta.lookup_any(
-            "Extension node in first level of storage trie - hash compared to the storage root",
-            |meta| {
-                let not_first_level =
-                    meta.query_advice(position_cols.not_first_level, Rotation::cur());
+        if is_before {
+            meta.lookup_any(
+                "(Existing) extension node in first level of storage trie - hash compared to the storage root",
+                |meta| {
+                    let q_enable = q_enable(meta);
 
-                let mut rot_into_branch_init = -17;
-                let mut rot_into_last_branch_child = -1;
-                let mut is_branch_placeholder = meta.query_advice(
-                    s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM],
-                    Rotation(rot_into_branch_init),
-                );
-                let mut is_inserted_ext_node = meta.query_advice(
-                    /* rlp2 (corresponds to IS_INSERTED_EXT_NODE_C_POS) is correct here,
-                    that means in S proof we have a copy (as a placeholder) of C extension node,
-                    while the actual S extension node is stored in the rows below the leaf.
-                    */
-                    c_main.rlp2,
-                    Rotation(rot_into_branch_init),
-                );
-                if !is_s {
-                    rot_into_branch_init = -18;
-                    rot_into_last_branch_child = -2;
-                    is_branch_placeholder = meta.query_advice(
-                        s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
-                        Rotation(rot_into_branch_init),
-                    );
-                    is_inserted_ext_node = meta.query_advice(
-                        /* rlp1 (corresponds to IS_INSERTED_EXT_NODE_S_POS) is correct here,
-                        that means in C proof we have a copy (as a placeholder) of S extension node,
-                        while the actual C extension node is stored in the rows below the leaf.
-                        */
-                        c_main.rlp1,
-                        Rotation(rot_into_branch_init),
-                    );
-                }
+                    let mut rot_into_last_leaf_row = - EXISTING_EXT_NODE_BEFORE_S - 1;
+                    if !is_before {
+                        rot_into_last_leaf_row = - EXISTING_EXT_NODE_AFTER_S - 1;
+                    }
+                    let rot_into_branch_init = rot_into_last_leaf_row - LEAF_ROWS_NUM - BRANCH_ROWS_NUM + 1;
 
-                // Only check if there is an account above the leaf.
-                let is_account_leaf_in_added_branch = meta.query_advice(
-                    is_account_leaf_in_added_branch,
-                    Rotation(rot_into_branch_init - 1),
-                );
+                    // Check if there is an account above the existing extension node rows:
+                    let is_account_leaf = meta.query_advice(
+                        is_account_leaf_in_added_branch,
+                        Rotation(rot_into_branch_init - 1),
+                    ); 
 
-                let is_extension_node =
-                    get_is_extension_node(meta, s_main.bytes, rot_into_branch_init);
+                    let acc = meta.query_advice(accs.acc_c.rlc, Rotation::cur());
 
-                // We need to do the lookup only if we are in the last branch child.
-                let is_after_last_branch_child =
-                    meta.query_advice(branch.is_last_child, Rotation(rot_into_last_branch_child));
-
-                // Note: acc_c in both cases.
-                let acc = meta.query_advice(accs.acc_c.rlc, Rotation::cur());
-
-                let mut sc_hash = vec![];
-                // Note: storage root is always in `s_main.bytes`.
-                for column in s_main.bytes.iter() {
-                    if is_s {
+                    let mut sc_hash = vec![];
+                    // Note: storage root is always in `s_main.bytes`.
+                    for column in s_main.bytes.iter() {
                         sc_hash.push(meta.query_advice(
                             *column,
                             Rotation(
@@ -257,49 +226,32 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
                                     - (ACCOUNT_LEAF_ROWS - ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND),
                             ),
                         ));
-                    } else {
-                        sc_hash.push(meta.query_advice(
-                            *column,
-                            Rotation(
-                                rot_into_branch_init
-                                    - (ACCOUNT_LEAF_ROWS - ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND),
-                            ),
-                        ));
                     }
-                }
-                let hash_rlc = bytes_expr_into_rlc(&sc_hash, power_of_randomness[0].clone());
+                    let hash_rlc = bytes_expr_into_rlc(&sc_hash, power_of_randomness[0].clone());
 
-                let selector = not_first_level
-                    * is_extension_node
-                    * is_after_last_branch_child
-                    * is_account_leaf_in_added_branch
-                    * (one.clone() - is_inserted_ext_node)
-                    * (one.clone() - is_branch_placeholder);
+                    let selector = q_enable * is_account_leaf;
 
-                let mut table_map = Vec::new();
-                let keccak_is_enabled = meta.query_advice(keccak_table.is_enabled, Rotation::cur());
-                table_map.push((selector.clone(), keccak_is_enabled));
+                    let mut table_map = Vec::new();
+                    let keccak_is_enabled = meta.query_advice(keccak_table.is_enabled, Rotation::cur());
+                    table_map.push((selector.clone(), keccak_is_enabled));
 
-                let keccak_input_rlc = meta.query_advice(keccak_table.input_rlc, Rotation::cur());
-                table_map.push((selector.clone() * acc, keccak_input_rlc));
+                    let keccak_input_rlc = meta.query_advice(keccak_table.input_rlc, Rotation::cur());
+                    table_map.push((selector.clone() * acc, keccak_input_rlc));
 
-                let mut rot = 0;
-                if !is_s {
-                    rot = -1;
-                }
-                let ext_len =
-                    meta.query_advice(s_main.rlp1, Rotation(rot)) - c192.clone() + one.clone();
+                    let ext_len =
+                        meta.query_advice(s_main.rlp1, Rotation::cur()) - c192.clone() + one.clone();
 
-                let keccak_input_len = meta.query_advice(keccak_table.input_len, Rotation::cur());
-                table_map.push((selector.clone() * ext_len, keccak_input_len));
+                    let keccak_input_len = meta.query_advice(keccak_table.input_len, Rotation::cur());
+                    table_map.push((selector.clone() * ext_len, keccak_input_len));
 
-                let keccak_output_rlc = meta.query_advice(keccak_table.output_rlc, Rotation::cur());
-                table_map.push((selector * hash_rlc, keccak_output_rlc));
+                    let keccak_output_rlc = meta.query_advice(keccak_table.output_rlc, Rotation::cur());
+                    table_map.push((selector * hash_rlc, keccak_output_rlc));
 
-                table_map
-            },
-        );
-        */
+                    table_map
+                },
+            );
+        }
+        // TODO: else
 
         /*
         Check whether the extension node hash is in the parent branch.
@@ -317,6 +269,20 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
             let is_account_leaf_in_added_branch = meta.query_advice(
                 is_account_leaf_in_added_branch,
                 Rotation(rot_into_branch_init - 1),
+            );
+
+            /*
+            Note: `is_inserted_ext_node` means the extension node was inserted (as
+            opposed to deleted) - means that in the `before` rows below the leaf we have
+            the extension node that corresponds to `S` proof.
+            */
+            let mut is_inserted_ext_node = meta.query_advice(
+                /* rlp2 (corresponds to IS_INSERTED_EXT_NODE_C_POS) is correct here,
+                that means in S proof we have a copy (as a placeholder) of C extension node,
+                while the actual S extension node is stored in the rows below the leaf.
+                */
+                c_main.rlp2,
+                Rotation(rot_into_branch_init),
             );
 
             // When placeholder extension, we don't check its hash in a parent.
