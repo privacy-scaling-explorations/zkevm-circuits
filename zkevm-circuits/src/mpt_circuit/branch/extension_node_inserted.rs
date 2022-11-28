@@ -125,148 +125,19 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
             is_before,
         );
 
-        /*
-        Check whether branch hash is in the extension node row - we check that the branch hash RLC
-        (computed over the first 17 rows) corresponds to the extension node hash stored in
-        the extension node row. That means `(branch_RLC, extension_node_hash_RLC`) needs to
-        be in a keccak table.
-        */
-        /*
-        meta.lookup_any("Extension node branch hash in extension row", |meta| {
-            let q_enable = q_enable(meta);
-            let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
-
-            let c_rlp2 = meta.query_advice(c_main.rlp2, Rotation::cur());
-            let is_branch_hashed = c_rlp2 * c160_inv.clone();
-
-            let mut acc = meta.query_advice(accs.acc_s.rlc, Rotation(-1));
-            let mut mult = meta.query_advice(accs.acc_s.mult, Rotation(-1));
-            if !is_s {
-                acc = meta.query_advice(accs.acc_c.rlc, Rotation(-2));
-                mult = meta.query_advice(accs.acc_c.mult, Rotation(-2));
-            }
-            // TODO: acc currently doesn't have branch ValueNode info (which 128 if nil)
-            let branch_acc = acc + c128.clone() * mult;
-
-            let mut sc_hash = vec![];
-            // Note: extension node has branch hash always in c_advices.
-            for column in c_main.bytes.iter() {
-                sc_hash.push(meta.query_advice(*column, Rotation::cur()));
-            }
-            let hash_rlc = bytes_expr_into_rlc(&sc_hash, power_of_randomness[0].clone());
-
-            let selector =
-                q_not_first * q_enable * is_branch_hashed;
-
-            let mut table_map = Vec::new();
-            let keccak_is_enabled = meta.query_advice(keccak_table.is_enabled, Rotation::cur());
-            table_map.push((selector.clone(), keccak_is_enabled));
-
-            let keccak_input_rlc = meta.query_advice(keccak_table.input_rlc, Rotation::cur());
-            table_map.push((selector.clone() * branch_acc, keccak_input_rlc));
-
-            let branch_len = get_branch_len(meta, s_main.clone(), rot_into_branch_init, is_s);
-
-            let keccak_input_len = meta.query_advice(keccak_table.input_len, Rotation::cur());
-            table_map.push((selector.clone() * branch_len, keccak_input_len));
-
-            let keccak_output_rlc = meta.query_advice(keccak_table.output_rlc, Rotation::cur());
-            table_map.push((selector * hash_rlc, keccak_output_rlc));
-
-            table_map
-        });
-        */
 
         /*
-        meta.create_gate(
-            "Extension node branch hash in extension row (non-hashed branch)",
-            |meta| {
-                let mut constraints = vec![];
-                let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
-                let q_enable = q_enable(meta);
-
-                let c_rlp2 = meta.query_advice(c_main.rlp2, Rotation::cur());
-                // c_rlp2 = 160 when branch is hashed (longer than 31) and c_rlp2 = 0 otherwise
-                let is_branch_hashed = c_rlp2 * c160_inv.clone();
-
-                let mut acc = meta.query_advice(accs.acc_s.rlc, Rotation(-1));
-                let mut mult = meta.query_advice(accs.acc_s.mult, Rotation(-1));
-                if !is_s {
-                    acc = meta.query_advice(accs.acc_c.rlc, Rotation(-2));
-                    mult = meta.query_advice(accs.acc_c.mult, Rotation(-2));
-                }
-                // TODO: acc currently doesn't have branch ValueNode info (which 128 if nil)
-                let branch_acc = acc + c128.clone() * mult;
-
-                let mut branch_in_ext = vec![];
-                // Note: extension node has branch hash always in c_advices.
-                for column in c_main.bytes.iter() {
-                    branch_in_ext.push(meta.query_advice(*column, Rotation::cur()));
-                }
-                let rlc = bytes_expr_into_rlc(&branch_in_ext, power_of_randomness[0].clone());
-
-                /*
-                Check whether branch is in extension node row (non-hashed branch) -
-                we check that the branch RLC is the same as the extension node branch part RLC
-                (RLC computed over `c_main.bytes`).
-
-                Note: there need to be 0s after branch ends in the extension node `c_main.bytes`
-                (see below).
-                */
-                constraints.push((
-                    "Non-hashed branch in extension node",
-                    q_not_first * q_enable * (one.clone() - is_branch_hashed) * (branch_acc - rlc),
-                ));
-
-                constraints
-            },
-        );
-        */
-
-        /*
-        let sel_branch_non_hashed = |meta: &mut VirtualCells<F>| {
-            let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
-            let q_enable = q_enable(meta);
-
-            let c_rlp2 = meta.query_advice(c_main.rlp2, Rotation::cur());
-            // c_rlp2 = 160 when branch is hashed (longer than 31) and c_rlp2 = 0 otherwise
-            let is_branch_hashed = c_rlp2 * c160_inv.clone();
-
-            q_not_first * q_enable * (one.clone() - is_branch_hashed)
-        };
-
-        /*
-        There are 0s after non-hashed branch ends in `c_main.bytes`.
-        */
-        if check_zeros {
-            for ind in 1..HASH_WIDTH {
-                key_len_lookup(
-                    meta,
-                    sel_branch_non_hashed,
-                    ind,
-                    c_main.bytes[0],
-                    c_main.bytes[ind],
-                    192,
-                    fixed_table,
-                )
-            }
-        }
-        */
-
-        /*
-        Note: Correspondence between nibbles in C and bytes in S is checked in
-        extension_node_key.
+        TODO: Correspondence between nibbles in C and bytes in S to be checked (for
+        regular extension nodes this is done in extension_node_key.rs).
         */
 
         /*
         When we have an extension node in the first level of the account trie,
         its hash needs to be compared to the root of the trie.
-
-        Note: the branch counterpart is implemented in `branch_hash_in_parent.rs`.
         */
         /*
         meta.lookup_any(
-            "Account first level extension node hash - compared to root",
+            "Account first level (inserted) extension node hash - compared to root",
             |meta| {
                 let q_enable = q_enable(meta);
 
