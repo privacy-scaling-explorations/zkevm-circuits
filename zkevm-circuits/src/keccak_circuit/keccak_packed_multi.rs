@@ -395,7 +395,7 @@ impl<F: Field> KeccakPackedCircuit<F> {
     /// Creates a new circuit instance
     pub fn new(num_rows: usize, inputs: Vec<Vec<u8>>) -> Self {
         KeccakPackedCircuit {
-            inputs: inputs,
+            inputs,
             num_rows,
             _marker: PhantomData,
         }
@@ -2023,7 +2023,7 @@ fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: &[u8], challenges: Chal
                     is_final: is_final_block && round == NUM_ROUNDS && row_idx == 0,
                     length: round_lengths[round],
                     data_rlc: round_data_rlcs[round],
-                    hash_rlc: hash_rlc,
+                    hash_rlc,
                     cell_values: regions[round].rows[row_idx].clone(),
                 });
             }
