@@ -216,7 +216,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                 "Leaf key acc last level",
                 q_enable.clone()
                     * (last_level + one_nibble)
-                    * (one.clone() - is_leaf_in_first_storage_level)
+                    * (one.clone() - is_leaf_in_first_storage_level.clone())
                     * (is_branch_s_placeholder + is_branch_c_placeholder) // drifted leaf appears only when there is a placeholder branch
                     * (rlc_last_level - acc),
             ));
@@ -238,6 +238,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
             constraints.push((
                 "Inserted extension node rows after storage leaf",
                 q_enable
+                    * (one.clone() - is_leaf_in_first_storage_level.clone())
                     * (is_inserted_ext_node_s + is_inserted_ext_node_c)
                     * (one.clone() - is_mod_ext_node_before_mod_selectors_next_next),
             ));
