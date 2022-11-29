@@ -31,7 +31,9 @@ use rand_chacha::rand_core::SeedableRng;
 use rand_chacha::ChaCha20Rng;
 use rand_core::RngCore;
 use rand_xorshift::XorShiftRng;
+use std::collections::HashMap;
 use std::marker::PhantomData;
+use std::sync::Mutex;
 use zkevm_circuits::bytecode_circuit::bytecode_unroller::unroll;
 use zkevm_circuits::bytecode_circuit::dev::BytecodeCircuitTester;
 use zkevm_circuits::copy_circuit::dev::CopyCircuitTester;
@@ -43,7 +45,12 @@ use zkevm_circuits::super_circuit::SuperCircuit;
 use zkevm_circuits::tx_circuit::{sign_verify::SignVerifyChip, Secp256k1Affine, TxCircuit};
 
 lazy_static! {
-    pub static ref GEN_DATA: GenDataOutput = GenDataOutput::load();
+    static ref GEN_DATA: GenDataOutput = GenDataOutput::load();
+    static ref RNG: XorShiftRng = XorShiftRng::from_seed([
+        0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37, 0x32, 0x54, 0x06, 0xbc,
+        0xe5,
+    ]);
+    static ref GEN_PARAMS: Mutex<HashMap<u32, ParamsKZG<Bn256>>> = Mutex::new(HashMap::new());
 }
 
 const CIRCUITS_PARAMS: CircuitsParams = CircuitsParams {
@@ -51,6 +58,17 @@ const CIRCUITS_PARAMS: CircuitsParams = CircuitsParams {
     max_txs: 4,
     keccak_padding: None,
 };
+
+fn get_general_params(degree: u32) -> ParamsKZG<Bn256> {
+    match GEN_PARAMS.lock().unwrap().get(&degree) {
+        Some(params) => params.clone(),
+        None => {
+            let params = ParamsKZG::<Bn256>::setup(degree, RNG.clone());
+            GEN_PARAMS.lock().unwrap().insert(degree, params.clone());
+            params
+        }
+    }
+}
 
 async fn gen_inputs(
     block_num: u64,
@@ -64,12 +82,7 @@ async fn gen_inputs(
     cli.gen_inputs(block_num).await.unwrap()
 }
 
-fn test_run<C: Circuit<Fr>, R: RngCore>(
-    mut rng: R,
-    degree: u32,
-    circuit: C,
-    instance: Vec<Vec<Fr>>,
-) {
+fn test_run<C: Circuit<Fr>>(degree: u32, circuit: C, instance: Vec<Vec<Fr>>) {
     fn test_gen_proof<C: Circuit<Fr>, R: RngCore>(
         rng: R,
         circuit: C,
@@ -129,7 +142,7 @@ fn test_run<C: Circuit<Fr>, R: RngCore>(
         .verify_par()
         .expect("mock prover verification failed");
 
-    let general_params = ParamsKZG::<Bn256>::setup(degree, &mut rng);
+    let general_params = get_general_params(degree);
     let verifier_params: ParamsVerifierKZG<Bn256> = general_params.verifier_params().clone();
 
     let verifying_key = keygen_vk(&general_params, &circuit).expect("keygen_vk should not fail");
@@ -142,7 +155,7 @@ fn test_run<C: Circuit<Fr>, R: RngCore>(
     let instance: Vec<&[Fr]> = instance.iter().map(|v| v.as_slice()).collect();
 
     let proof = test_gen_proof(
-        rng,
+        RNG.clone(),
         circuit,
         &general_params,
         &proving_key,
@@ -161,11 +174,6 @@ fn test_run<C: Circuit<Fr>, R: RngCore>(
 }
 
 async fn test_evm_circuit_block(block_num: u64) {
-    let rng = XorShiftRng::from_seed([
-        0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37, 0x32, 0x54, 0x06, 0xbc,
-        0xe5,
-    ]);
-
     log::info!("test evm circuit, block number: {}", block_num);
     let (builder, _) = gen_inputs(block_num).await;
 
@@ -175,18 +183,13 @@ async fn test_evm_circuit_block(block_num: u64) {
     let instance = test_circuit_instance(&block);
     let circuit = test_cicuit_from_block(block);
 
-    test_run(rng, degree, circuit, instance);
+    test_run(degree, circuit, instance);
 }
 
 async fn test_state_circuit_block(block_num: u64) {
     log::info!("test state circuit, block number: {}", block_num);
 
     const DEGREE: u32 = 17;
-
-    let rng = XorShiftRng::from_seed([
-        0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37, 0x32, 0x54, 0x06, 0xbc,
-        0xe5,
-    ]);
 
     let (builder, _) = gen_inputs(block_num).await;
 
@@ -206,15 +209,13 @@ async fn test_state_circuit_block(block_num: u64) {
     let circuit = StateCircuit::<Fr>::new(rw_map, 1 << 16);
     let instance = circuit.instance();
 
-    test_run(rng, DEGREE, circuit, instance);
+    test_run(DEGREE, circuit, instance);
 }
 
 async fn test_tx_circuit_block(block_num: u64) {
     log::info!("test tx circuit, block number: {}", block_num);
 
     const DEGREE: u32 = 20;
-
-    let mut rng = ChaCha20Rng::seed_from_u64(2);
 
     let (_, eth_block) = gen_inputs(block_num).await;
     let txs: Vec<_> = eth_block
@@ -223,7 +224,7 @@ async fn test_tx_circuit_block(block_num: u64) {
         .map(geth_types::Transaction::from)
         .collect();
 
-    let aux_generator = <Secp256k1Affine as CurveAffine>::CurveExt::random(&mut rng).to_affine();
+    let aux_generator = <Secp256k1Affine as CurveAffine>::CurveExt::random(RNG.clone()).to_affine();
 
     let circuit = TxCircuit::<Fr, 4, { 4 * (4 + 32 + 32) }> {
         sign_verify: SignVerifyChip {
@@ -235,18 +236,11 @@ async fn test_tx_circuit_block(block_num: u64) {
         chain_id: CHAIN_ID,
     };
 
-    let prover = MockProver::run(DEGREE, &circuit, vec![vec![]]).unwrap();
-
-    prover.verify().expect("tx_circuit verification failed");
+    test_run(DEGREE, circuit, vec![vec![]]);
 }
 
 pub async fn test_bytecode_circuit_block(block_num: u64) {
     const DEGREE: u32 = 16;
-
-    let rng = XorShiftRng::from_seed([
-        0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37, 0x32, 0x54, 0x06, 0xbc,
-        0xe5,
-    ]);
 
     log::info!("test bytecode circuit, block number: {}", block_num);
     let (builder, _) = gen_inputs(block_num).await;
@@ -256,16 +250,11 @@ pub async fn test_bytecode_circuit_block(block_num: u64) {
 
     let circuit = BytecodeCircuitTester::<Fr>::new(unrolled, 2usize.pow(DEGREE));
 
-    test_run(rng, DEGREE, circuit, Vec::new());
+    test_run(DEGREE, circuit, Vec::new());
 }
 
 pub async fn test_copy_circuit_block(block_num: u64) {
     const DEGREE: u32 = 16;
-
-    let rng = XorShiftRng::from_seed([
-        0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37, 0x32, 0x54, 0x06, 0xbc,
-        0xe5,
-    ]);
 
     log::info!("test copy circuit, block number: {}", block_num);
     let (builder, _) = gen_inputs(block_num).await;
@@ -278,10 +267,9 @@ pub async fn test_copy_circuit_block(block_num: u64) {
     const NUM_BLINDING_ROWS: usize = 7 - 1;
     let instance = vec![vec![randomness; num_rows - NUM_BLINDING_ROWS]];
 
-    test_run(rng, DEGREE, circuit, instance);
+    test_run(DEGREE, circuit, instance);
 }
 
-// TODO: add actual prover
 pub async fn test_super_circuit_block(block_num: u64) {
     const MAX_TXS: usize = 4;
     const MAX_CALLDATA: usize = 512;
@@ -307,6 +295,7 @@ pub async fn test_super_circuit_block(block_num: u64) {
             &mut ChaCha20Rng::seed_from_u64(2),
         )
         .unwrap();
+    // TODO: add actual prover
     let prover = MockProver::run(k, &circuit, instance).unwrap();
     let res = prover.verify_par();
     if let Err(err) = res {
