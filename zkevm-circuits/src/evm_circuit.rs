@@ -365,7 +365,7 @@ pub mod test {
         run_test_circuit(block)
     }
 
-    pub fn test_circuit_degree<F: Field>(block: &Block<F>) -> u32 {
+    pub fn get_test_degree<F: Field>(block: &Block<F>) -> u32 {
         let log2_ceil = |n| u32::BITS - (n as u32).leading_zeros() - (n & (n - 1) == 0) as u32;
 
         let num_rows_required_for_steps = TestCircuit::<F>::get_num_rows_required(block);
@@ -395,14 +395,14 @@ pub mod test {
         k
     }
 
-    pub fn test_cicuit_from_block<F: Field>(block: Block<F>) -> TestCircuit<F> {
+    pub fn get_test_cicuit_from_block<F: Field>(block: Block<F>) -> TestCircuit<F> {
         let fixed_table_tags = detect_fixed_table_tags(&block);
 
         TestCircuit::<F>::new(block, fixed_table_tags)
     }
 
-    pub fn test_circuit_instance<F: Field>(block: &Block<F>) -> Vec<Vec<F>> {
-        let k = test_circuit_degree(block);
+    pub fn get_test_instance<F: Field>(block: &Block<F>) -> Vec<Vec<F>> {
+        let k = get_test_degree(block);
 
         (1..32)
             .map(|exp| vec![block.randomness.pow(&[exp, 0, 0, 0]); (1 << k) - 64])
@@ -410,13 +410,13 @@ pub mod test {
     }
 
     pub fn run_test_circuit<F: Field>(block: Block<F>) -> Result<(), Vec<VerifyFailure>> {
-        let k = test_circuit_degree(&block);
+        let k = get_test_degree(&block);
 
         let (active_gate_rows, active_lookup_rows) = TestCircuit::<F>::get_active_rows(&block);
 
-        let power_of_randomness = test_circuit_instance(&block);
+        let power_of_randomness = get_test_instance(&block);
 
-        let circuit = test_cicuit_from_block(block);
+        let circuit = get_test_cicuit_from_block(block);
         let prover = MockProver::<F>::run(k, &circuit, power_of_randomness).unwrap();
         prover.verify_at_rows_par(active_gate_rows.into_iter(), active_lookup_rows.into_iter())
     }

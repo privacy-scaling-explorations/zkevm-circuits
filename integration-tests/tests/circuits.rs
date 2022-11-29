@@ -37,9 +37,9 @@ use std::sync::Mutex;
 use zkevm_circuits::bytecode_circuit::bytecode_unroller::unroll;
 use zkevm_circuits::bytecode_circuit::dev::BytecodeCircuitTester;
 use zkevm_circuits::copy_circuit::dev::CopyCircuitTester;
-use zkevm_circuits::evm_circuit::test::{test_circuit_degree, test_circuit_instance};
+use zkevm_circuits::evm_circuit::test::{get_test_degree, get_test_instance};
 use zkevm_circuits::evm_circuit::witness::RwMap;
-use zkevm_circuits::evm_circuit::{test::test_cicuit_from_block, witness::block_convert};
+use zkevm_circuits::evm_circuit::{test::get_test_cicuit_from_block, witness::block_convert};
 use zkevm_circuits::state_circuit::StateCircuit;
 use zkevm_circuits::super_circuit::SuperCircuit;
 use zkevm_circuits::tx_circuit::{sign_verify::SignVerifyChip, Secp256k1Affine, TxCircuit};
@@ -179,9 +179,9 @@ async fn test_evm_circuit_block(block_num: u64) {
 
     let block = block_convert(&builder.block, &builder.code_db);
 
-    let degree = test_circuit_degree(&block);
-    let instance = test_circuit_instance(&block);
-    let circuit = test_cicuit_from_block(block);
+    let degree = get_test_degree(&block);
+    let instance = get_test_instance(&block);
+    let circuit = get_test_cicuit_from_block(block);
 
     test_run(degree, circuit, instance);
 }
