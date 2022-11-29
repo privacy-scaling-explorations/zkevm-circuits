@@ -906,6 +906,15 @@ impl<F: Field> ExecutionConfig<F> {
         next: Option<(&Transaction, &Call, &ExecStep)>,
         power_of_randomness: [F; 31],
     ) -> Result<(), Error> {
+        if !matches!(step.execution_state, ExecutionState::EndBlock) {
+            log::trace!(
+                "assign_exec_step offset: {} state {:?} step: {:?} call: {:?}",
+                offset,
+                step.execution_state,
+                step,
+                call
+            );
+        }
         // Make the region large enough for the current step and the next step.
         // The next step's next step may also be accessed, so make the region large
         // enough for 3 steps.
@@ -945,7 +954,6 @@ impl<F: Field> ExecutionConfig<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        log::trace!("assign_exec_step offset:{} step:{:?}", offset, step);
         self.step
             .assign_exec_step(region, offset, block, call, step)?;
 
