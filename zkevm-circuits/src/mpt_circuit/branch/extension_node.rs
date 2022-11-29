@@ -16,7 +16,7 @@ use crate::{
     },
     mpt_circuit::witness_row::MptWitnessRow,
     mpt_circuit::{
-        helpers::{get_branch_len, key_len_lookup},
+        helpers::{get_branch_len, key_len_lookup, get_is_inserted_extension_node},
         param::{
             ACCOUNT_LEAF_ROWS, ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND,
             ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND, BRANCH_ROWS_NUM, C_RLP_START, C_START, HASH_WIDTH,
@@ -404,31 +404,16 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
             |meta| {
                 let q_enable = q_enable(meta);
 
-                let mut rot_into_branch_init = -17;
                 let mut is_branch_placeholder = meta.query_advice(
                     s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM],
                     Rotation(rot_into_branch_init),
                 );
-                let mut is_inserted_ext_node = meta.query_advice(
-                    /* rlp2 (corresponds to IS_INSERTED_EXT_NODE_C_POS) is correct here,
-                    that means in S proof we have a copy (as a placeholder) of C extension node,
-                    while the actual S extension node is stored in the rows below the leaf.
-                    */
-                    c_main.rlp2,
-                    Rotation(rot_into_branch_init),
-                );
+                let is_inserted_ext_node = get_is_inserted_extension_node(
+                    meta, c_main.rlp1, c_main.rlp2, rot_into_branch_init, is_s);
+
                 if !is_s {
-                    rot_into_branch_init = -18;
                     is_branch_placeholder = meta.query_advice(
                         s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
-                        Rotation(rot_into_branch_init),
-                    );
-                    is_inserted_ext_node = meta.query_advice(
-                        /* rlp1 (corresponds to IS_INSERTED_EXT_NODE_S_POS) is correct here,
-                        that means in C proof we have a copy (as a placeholder) of S extension node,
-                        while the actual C extension node is stored in the rows below the leaf.
-                        */
-                        c_main.rlp1,
                         Rotation(rot_into_branch_init),
                     );
                 }
@@ -505,8 +490,6 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
         That means we check whether
         `(extension_node_RLC, node_hash_RLC)` is in the keccak table where `node` is a parent
         brach child at `modified_node` position.
-
-        Note: do not check if it is in the first storage level (see `storage_root_in_account_leaf.rs`).
         */
         meta.lookup_any("Extension node hash in parent branch", |meta| {
             let q_enable = q_enable(meta);
@@ -516,6 +499,9 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                 is_account_leaf_in_added_branch,
                 Rotation(rot_into_branch_init - 1),
             );
+
+            let is_inserted_ext_node = get_is_inserted_extension_node(
+                meta, c_main.rlp1, c_main.rlp2, rot_into_branch_init, is_s);
 
             // When placeholder extension, we don't check its hash in a parent.
             let mut is_branch_placeholder = s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM];
@@ -544,6 +530,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                 * q_enable
                 * (one.clone() - is_account_leaf_in_added_branch)
                 * (one.clone() - is_branch_placeholder)
+                * (one.clone() - is_inserted_ext_node)
                 * (one.clone() - is_ext_node_non_hashed);
 
             let mut table_map = Vec::new();
@@ -576,6 +563,9 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                 let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
                 let not_first_level =
                     meta.query_advice(position_cols.not_first_level, Rotation::cur());
+
+                let is_inserted_ext_node = get_is_inserted_extension_node(
+                    meta, c_main.rlp1, c_main.rlp2, rot_into_branch_init, is_s);
 
                 let is_account_leaf_in_added_branch = meta.query_advice(
                     is_account_leaf_in_added_branch,
@@ -620,6 +610,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                         * (one.clone() - is_account_leaf_in_added_branch)
                         * (one.clone() - is_branch_placeholder)
                         * is_ext_node_non_hashed
+                        * (one.clone() - is_inserted_ext_node)
                         * (mod_node_hash_rlc_cur - acc_c),
                 ));
 

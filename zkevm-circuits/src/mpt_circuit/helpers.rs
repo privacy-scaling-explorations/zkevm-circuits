@@ -236,6 +236,35 @@ pub(crate) fn get_is_extension_node_long_odd_nibbles<F: FieldExt>(
     is_ext_long_odd_c16 + is_ext_long_odd_c1
 }
 
+pub(crate) fn get_is_inserted_extension_node<F: FieldExt>(
+    meta: &mut VirtualCells<F>,
+    c_rlp1: Column<Advice>,
+    c_rlp2: Column<Advice>,
+    rot_into_branch_init: i32,
+    is_s: bool,
+) -> Expression<F> {
+    let mut is_inserted_ext_node = meta.query_advice(
+        /* rlp2 (corresponds to IS_INSERTED_EXT_NODE_C_POS) is correct here,
+        that means in S proof we have a copy (as a placeholder) of C extension node,
+        while the actual S extension node is stored in the rows below the leaf.
+        */
+        c_rlp2,
+        Rotation(rot_into_branch_init),
+    );
+    if !is_s {
+        is_inserted_ext_node = meta.query_advice(
+            /* rlp1 (corresponds to IS_INSERTED_EXT_NODE_S_POS) is correct here,
+            that means in C proof we have a copy (as a placeholder) of S extension node,
+            while the actual C extension node is stored in the rows below the leaf.
+            */
+            c_rlp1,
+            Rotation(rot_into_branch_init),
+        );
+    }
+
+    is_inserted_ext_node
+}
+
 pub(crate) fn bytes_into_rlc<F: FieldExt>(expressions: &[u8], r: F) -> F {
     let mut rlc = F::zero();
     let mut mult = F::one();
