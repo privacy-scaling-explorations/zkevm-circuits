@@ -308,22 +308,19 @@ pub fn gen_associated_ops(
         );
 
         exec_step.error = Some(exec_error.clone());
-        // for `oog_or_stack_error` error message will be returned by geth_step error
-        // field, when this kind of error happens, no more proceeding
+        // TODO: after more error state handled, refactor all error handling in
+        // fn_gen_error_state_associated_ops method
         if exec_step.oog_or_stack_error() && !geth_step.op.is_call_or_create() {
             state.gen_restore_context_ops(&mut exec_step, geth_steps)?;
-        }
-
-        if geth_step.op.is_call_or_create() {
-            if exec_step.oog_or_stack_error() {
+        } else {
+            if geth_step.op.is_call_or_create() && !exec_step.oog_or_stack_error() {
+                let call = state.parse_call(geth_step)?;
+                // Switch to callee's call context
+                state.push_call(call);
+            } else {
                 let fn_gen_error_associated_ops = fn_gen_error_state_associated_ops(&exec_error);
-
                 return fn_gen_error_associated_ops(state, geth_steps);
             }
-
-            let call = state.parse_call(geth_step)?;
-            // Switch to callee's call context
-            state.push_call(call);
         }
 
         state.handle_return(geth_step)?;
