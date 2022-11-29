@@ -17,6 +17,7 @@ use crate::evm_circuit::{
 };
 use crate::table::{AccountFieldTag, CallContextFieldTag};
 use crate::util::Expr;
+use bus_mapping::evm::OpcodeId;
 use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar};
 use halo2_proofs::{circuit::Value, plonk::Error};
 use keccak256::EMPTY_HASH_LE;
@@ -30,8 +31,6 @@ pub(crate) struct ErrorOOGCallGadget<F> {
     gas: Word<F>,
     callee_address: Word<F>,
     value: Word<F>,
-    is_success: Cell<F>,
-    gas_is_u64: IsZeroGadget<F>,
     is_warm: Cell<F>,
     is_warm_prev: Cell<F>,
     value_is_zero: IsZeroGadget<F>,
@@ -55,6 +54,13 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
         cb.opcode_lookup(opcode.expr(), 1.expr());
+        // TODO: add CallCode etc. when handle ErrorOutOfGasCALLCODE in furture
+        // implementation
+        cb.require_equal(
+            "ErrorOutOfGasCall opcode is Call",
+            opcode.expr(),
+            OpcodeId::CALL.expr(),
+        );
 
         let gas_word = cb.query_word();
         let callee_address_word = cb.query_word();
@@ -63,7 +69,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
         let cd_length = cb.query_rlc();
         let rd_offset = cb.query_cell();
         let rd_length = cb.query_rlc();
-        let is_success = cb.query_bool();
         let balance = cb.query_word();
 
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
@@ -80,12 +85,11 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
         cb.stack_pop(cd_length.expr());
         cb.stack_pop(rd_offset.expr());
         cb.stack_pop(rd_length.expr());
-        cb.stack_push(is_success.expr());
+        cb.stack_push(0.expr());
 
         // Recomposition of random linear combination to integer
         let callee_address =
             from_bytes::expr(&callee_address_word.cells[..N_BYTES_ACCOUNT_ADDRESS]);
-        let gas_is_u64 = IsZeroGadget::construct(cb, sum::expr(&gas_word.cells[N_BYTES_GAS..]));
         let cd_address = MemoryAddressGadget::construct(cb, cd_offset, cd_length);
         let rd_address = MemoryAddressGadget::construct(cb, rd_offset, rd_length);
         let memory_expansion = MemoryExpansionGadget::construct(
@@ -105,7 +109,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
             Some(&mut reversion_info),
         );
 
-        // Verify transfer
         let value_is_zero = IsZeroGadget::construct(cb, sum::expr(&value.cells));
         let has_value = 1.expr() - value_is_zero.expr();
         cb.condition(has_value.clone(), |cb| {
@@ -152,7 +155,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
         // required
         let insufficient_gas = LtGadget::construct(cb, cb.curr.state.gas_left.expr(), gas_cost);
         cb.require_equal(
-            "constant gas left is less than gas required ",
+            "gas left is less than gas required ",
             insufficient_gas.expr(),
             1.expr(),
         );
@@ -173,7 +176,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
             // Do step state transition
             cb.require_step_state_transition(StepStateTransition {
                 call_id: Same,
-                rw_counter: Delta(17.expr() + cb.curr.state.reversible_write_counter.expr()),
+                rw_counter: Delta(18.expr() + cb.curr.state.reversible_write_counter.expr()),
 
                 ..StepStateTransition::any()
             });
@@ -193,8 +196,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
             gas: gas_word,
             callee_address: callee_address_word,
             value,
-            is_success,
-            gas_is_u64,
             is_warm,
             is_warm_prev,
             value_is_zero,
@@ -227,18 +228,16 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
         let [tx_id, is_static] =
             [step.rw_indices[0], step.rw_indices[3]].map(|idx| block.rws[idx].call_context_value());
         let stack_index = 4;
-        let [gas, callee_address, value, cd_offset, cd_length, rd_offset, rd_length, is_success] =
-            [
-                step.rw_indices[stack_index],
-                step.rw_indices[stack_index + 1],
-                step.rw_indices[stack_index + 2],
-                step.rw_indices[stack_index + 3],
-                step.rw_indices[stack_index + 4],
-                step.rw_indices[stack_index + 5],
-                step.rw_indices[stack_index + 6],
-                step.rw_indices[stack_index + 7],
-            ]
-            .map(|idx| block.rws[idx].stack_value());
+        let [gas, callee_address, value, cd_offset, cd_length, rd_offset, rd_length] = [
+            step.rw_indices[stack_index],
+            step.rw_indices[stack_index + 1],
+            step.rw_indices[stack_index + 2],
+            step.rw_indices[stack_index + 3],
+            step.rw_indices[stack_index + 4],
+            step.rw_indices[stack_index + 5],
+            step.rw_indices[stack_index + 6],
+        ]
+        .map(|idx| block.rws[idx].stack_value());
 
         let (is_warm, is_warm_prev) = block.rws[step.rw_indices[12]].tx_access_list_value_pair();
         let [callee_balance_pair, (callee_nonce, _), (callee_code_hash, _)] = [
@@ -265,13 +264,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
             .assign(region, offset, Some(callee_address.to_le_bytes()))?;
         self.value
             .assign(region, offset, Some(value.to_le_bytes()))?;
-        self.is_success
-            .assign(region, offset, Value::known(F::from(is_success.low_u64())))?;
-        self.gas_is_u64.assign(
-            region,
-            offset,
-            sum::value(&gas.to_le_bytes()[N_BYTES_GAS..]),
-        )?;
 
         self.is_warm
             .assign(region, offset, Value::known(F::from(is_warm as u64)))?;
