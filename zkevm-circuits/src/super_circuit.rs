@@ -183,7 +183,10 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: u
             Expression::Constant(F::from(MOCK_RANDOMNESS).pow(&[1 + i as u64, 0, 0, 0]))
         });
 
-        let challenges = Challenges::mock(power_of_randomness[0].clone());
+        let challenges = Challenges::mock(
+            power_of_randomness[0].clone(),
+            power_of_randomness[0].clone(),
+        );
 
         let keccak_circuit = KeccakConfig::configure(meta, power_of_randomness[0].clone());
         let keccak_table = keccak_circuit.keccak_table.clone();
@@ -246,7 +249,10 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: u
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
         let block = self.block.as_ref().unwrap();
-        let challenges = Challenges::mock(Value::known(block.randomness));
+        let challenges = Challenges::mock(
+            Value::known(block.randomness),
+            Value::known(block.randomness),
+        );
 
         // --- EVM Circuit ---
         let rws = block.rws.table_assignments();
@@ -405,7 +411,7 @@ impl<const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: usize>
             // Instead of using 1 << k - NUM_BLINDING_ROWS, we use a much smaller number of enabled
             // rows for the Bytecode Circuit because otherwise it penalizes significantly the
             // MockProver verification time.
-            bytecode_size: bytecodes_len + 64,
+            bytecode_size: bytecodes_len + 128,
             pi_circuit,
             circuits_params: builder.block.circuits_params.clone(),
         };

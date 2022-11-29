@@ -233,6 +233,7 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         OpcodeId::LOG3 => Log::gen_associated_ops,
         OpcodeId::LOG4 => Log::gen_associated_ops,
         OpcodeId::CALL => CallOpcode::<7>::gen_associated_ops,
+        OpcodeId::DELEGATECALL => CallOpcode::<6>::gen_associated_ops,
         OpcodeId::STATICCALL => CallOpcode::<6>::gen_associated_ops,
         OpcodeId::RETURN => Return::gen_associated_ops,
         // REVERT is almost the same as RETURN
@@ -241,7 +242,7 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
             warn!("Using dummy gen_selfdestruct_ops for opcode SELFDESTRUCT");
             DummySelfDestruct::gen_associated_ops
         }
-        OpcodeId::CALLCODE | OpcodeId::DELEGATECALL => {
+        OpcodeId::CALLCODE => {
             warn!("Using dummy gen_call_ops for opcode {:?}", opcode_id);
             DummyCall::gen_associated_ops
         }
@@ -626,11 +627,8 @@ fn dummy_gen_call_ops(
 
     let (args_offset, args_length, ret_offset, ret_length) = {
         // CALLCODE    (gas, addr, value, argsOffset, argsLength, retOffset, retLength)
-        // DELEGATECALL(gas, addr,        argsOffset, argsLength, retOffset, retLength)
-        // STATICCALL  (gas, addr,        argsOffset, argsLength, retOffset, retLength)
         let pos = match geth_step.op {
             OpcodeId::CALLCODE => (3, 4, 5, 6),
-            OpcodeId::DELEGATECALL | OpcodeId::STATICCALL => (2, 3, 4, 5),
             _ => unreachable!("opcode is not of call type"),
         };
         (
