@@ -64,15 +64,15 @@ async fn gen_inputs(
     cli.gen_inputs(block_num).await.unwrap()
 }
 
-fn test_run<ConcreteCircuit: Circuit<Fr>, R: RngCore>(
+fn test_run<C: Circuit<Fr>, R: RngCore>(
     mut rng: R,
     degree: u32,
-    circuit: ConcreteCircuit,
+    circuit: C,
     instance: Vec<Vec<Fr>>,
 ) {
-    fn test_gen_proof<ConcreteCircuit: Circuit<Fr>, R: RngCore>(
+    fn test_gen_proof<C: Circuit<Fr>, R: RngCore>(
         rng: R,
-        circuit: ConcreteCircuit,
+        circuit: C,
         general_params: &ParamsKZG<Bn256>,
         proving_key: &ProvingKey<G1Affine>,
         mut transcript: Blake2bWrite<Vec<u8>, G1Affine, Challenge255<G1Affine>>,
@@ -84,7 +84,7 @@ fn test_run<ConcreteCircuit: Circuit<Fr>, R: RngCore>(
             Challenge255<G1Affine>,
             R,
             Blake2bWrite<Vec<u8>, G1Affine, Challenge255<G1Affine>>,
-            ConcreteCircuit,
+            C,
         >(
             general_params,
             proving_key,
