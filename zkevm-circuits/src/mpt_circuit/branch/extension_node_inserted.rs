@@ -311,44 +311,41 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
             });
         }
 
-        /*
         meta.create_gate(
-            "Extension node in parent branch (non-hashed extension node)",
+            "(Existing) extension node in parent branch (non-hashed extension node)",
             |meta| {
                 let q_enable = q_enable(meta);
                 let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
                 let not_first_level =
                     meta.query_advice(position_cols.not_first_level, Rotation::cur());
 
-                let is_account_leaf_in_added_branch = meta.query_advice(
+                let rot_into_last_leaf_row = - EXISTING_EXT_NODE_BEFORE_S - 1;
+                let rot_into_branch_init = rot_into_last_leaf_row - LEAF_ROWS_NUM - BRANCH_ROWS_NUM + 1;
+
+                // Check if there is an account above the existing extension node rows:
+                let is_account_leaf = meta.query_advice(
                     is_account_leaf_in_added_branch,
                     Rotation(rot_into_branch_init - 1),
                 );
 
-                // When placeholder extension, we don't check its hash in a parent.
-                let mut is_branch_placeholder = s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM];
-                if !is_s {
-                    is_branch_placeholder = s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM];
-                }
-                let is_branch_placeholder =
-                    meta.query_advice(is_branch_placeholder, Rotation(rot_into_branch_init));
-
-                let mut is_ext_node_non_hashed =
-                    s_main.bytes[IS_S_EXT_NODE_NON_HASHED_POS - RLP_NUM];
-                if !is_s {
-                    is_ext_node_non_hashed = s_main.bytes[IS_C_EXT_NODE_NON_HASHED_POS - RLP_NUM];
-                }
                 let is_ext_node_non_hashed =
-                    meta.query_advice(is_ext_node_non_hashed, Rotation(rot_into_branch_init));
+                    meta.query_advice(s_main.bytes[IS_S_EXT_NODE_NON_HASHED_POS - RLP_NUM], Rotation(-1));
 
                 let mut constraints = vec![];
 
                 let acc_c = meta.query_advice(accs.acc_c.rlc, Rotation::cur());
-                let mut mod_node_hash_rlc_cur =
-                    meta.query_advice(accs.s_mod_node_rlc, Rotation(-21));
-                if !is_s {
-                    mod_node_hash_rlc_cur = meta.query_advice(accs.c_mod_node_rlc, Rotation(-21));
-                }
+
+                let is_c_inserted_ext_node = get_is_inserted_extension_node(
+                    meta, c_main.rlp1, c_main.rlp2, rot_into_branch_init, true);
+
+                let rot_into_branch = rot_into_last_leaf_row - LEAF_ROWS_NUM - BRANCH_ROWS_NUM - EXTENSION_ROWS_NUM;
+
+                let mod_node_hash_rlc_cur =
+                    meta.query_advice(accs.s_mod_node_rlc, Rotation(rot_into_branch))
+                    * is_c_inserted_ext_node.clone()
+                    + meta.query_advice(accs.c_mod_node_rlc, Rotation(rot_into_branch))
+                    * (one.clone() - is_c_inserted_ext_node);
+
 
                 /*
                 When an extension node is not hashed, we do not check whether it is in a parent
@@ -360,8 +357,7 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
                     q_not_first
                         * not_first_level
                         * q_enable
-                        * (one.clone() - is_account_leaf_in_added_branch)
-                        * (one.clone() - is_branch_placeholder)
+                        * (one.clone() - is_account_leaf)
                         * is_ext_node_non_hashed
                         * (mod_node_hash_rlc_cur - acc_c),
                 ));
@@ -369,7 +365,6 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
                 constraints
             },
         );
-        */
 
         /*
         We need to make sure the total number of nibbles is 64. This constraint ensures the number
