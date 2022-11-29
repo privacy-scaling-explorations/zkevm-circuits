@@ -92,11 +92,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
             from_bytes::expr(&callee_address_word.cells[..N_BYTES_ACCOUNT_ADDRESS]);
         let cd_address = MemoryAddressGadget::construct(cb, cd_offset, cd_length);
         let rd_address = MemoryAddressGadget::construct(cb, rd_offset, rd_length);
-        let memory_expansion = MemoryExpansionGadget::construct(
-            cb,
-            cb.curr.state.memory_word_size.expr(),
-            [cd_address.address(), rd_address.address()],
-        );
+        let memory_expansion =
+            MemoryExpansionGadget::construct(cb, [cd_address.address(), rd_address.address()]);
 
         // Add callee to access list
         let is_warm = cb.query_bool();
