@@ -280,6 +280,8 @@ pub async fn test_copy_circuit_block(block_num: u64) {
 
     test_run(rng, DEGREE, circuit, instance);
 }
+
+// TODO: add actual prover
 pub async fn test_super_circuit_block(block_num: u64) {
     const MAX_TXS: usize = 4;
     const MAX_CALLDATA: usize = 512;
