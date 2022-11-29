@@ -61,11 +61,7 @@ mod balance_tests {
     use mock::test_ctx::{helpers::*, TestContext};
     use pretty_assertions::assert_eq;
 
-    /// EVM behaviour
-    /// The BALANCE opcode pops address (20 bytes of data) off the stack
-    ///    * And pushes the balance of the corresponding account onto the stack.
-    ///    * If the given account doesn't exist (by checking non existing flag),
-    ///      then it will push 0 onto the stack instead.
+    // If the given account doesn't exist, it will push 0 onto the stack instead.
     #[test]
     fn test_balance_of_non_exists_address() {
         let code = bytecode! {
