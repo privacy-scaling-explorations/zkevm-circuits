@@ -116,25 +116,15 @@ mod tests {
         }
     }
 
-    macro_rules! try_test_batched_all_is_zero {
-        ($N: expr, $witnesses:expr, $expected_success:expr) => {
-            try_test!(
-                IsZeroGadgetTestContainer<Fr, $N>,
-                $witnesses,
-                $expected_success
-            );
-        };
-    }
-
     #[test]
     fn test_batched_iszero() {
-        try_test_batched_all_is_zero!(5, [Word::from(0); 5], true);
+        try_test!(IsZeroGadgetTestContainer<Fr, 5>, [Word::from(0); 5], true);
     }
 
     #[test]
     fn test_batched_1_in_array_not_iszero() {
-        try_test_batched_all_is_zero!(
-            5,
+        try_test!(
+            IsZeroGadgetTestContainer<Fr, 5>,
             vec![
                 Word::from(0),
                 Word::from(1),
@@ -150,23 +140,23 @@ mod tests {
     fn test_batched_big_array_not_iszero() {
         let mut test_nums = vec![Word::from(1)];
         test_nums.extend(vec![Word::from(0); 31]);
-        try_test_batched_all_is_zero!(32, test_nums, false);
+        try_test!(IsZeroGadgetTestContainer<Fr, 32>, test_nums, false);
     }
 
     #[test]
     fn test_batched_single_cell_iszero() {
-        try_test_batched_all_is_zero!(1, [Word::from(0)], true);
+        try_test!(IsZeroGadgetTestContainer<Fr, 1>, [Word::from(0)], true);
     }
 
     #[test]
     fn test_batched_single_cell_not_iszero() {
-        try_test_batched_all_is_zero!(1, vec![WORD_LOW_MAX], false);
+        try_test!(IsZeroGadgetTestContainer<Fr, 1>, vec![WORD_LOW_MAX], false);
     }
 
     #[test]
     fn test_batched_wordmax_bytes_not_iszero() {
-        try_test_batched_all_is_zero!(
-            5,
+        try_test!(
+            IsZeroGadgetTestContainer<Fr, 5>,
             vec![
                 WORD_LOW_MAX,
                 WORD_LOW_MAX,

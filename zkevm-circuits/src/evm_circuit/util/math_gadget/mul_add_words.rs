@@ -151,18 +151,19 @@ impl<F: Field> MulAddWordsGadget<F> {
 mod tests {
     use super::super::test_util::*;
     use super::*;
-    use eth_types::Word;
+    use eth_types::{ToScalar, Word};
     use halo2_proofs::halo2curves::bn256::Fr;
     use halo2_proofs::plonk::Error;
 
     #[derive(Clone)]
-    /// a*b + c == d
+    /// a*b + c == d + carry*(2**256)
     struct MulAddGadgetContainer<F> {
-        math_gadget: MulAddWordsGadget<F>,
+        muladd_words_gadget: MulAddWordsGadget<F>,
         a: util::Word<F>,
         b: util::Word<F>,
         c: util::Word<F>,
         d: util::Word<F>,
+        carry: Cell<F>,
     }
 
     impl<F: Field> MathGadgetContainer<F> for MulAddGadgetContainer<F> {
@@ -173,13 +174,16 @@ mod tests {
             let b = cb.query_word();
             let c = cb.query_word();
             let d = cb.query_word();
+            let carry = cb.query_cell();
             let math_gadget = MulAddWordsGadget::<F>::construct(cb, [&a, &b, &c, &d]);
+            cb.require_equal("carry is correct", math_gadget.overflow(), carry.expr());
             MulAddGadgetContainer {
-                math_gadget,
+                muladd_words_gadget: math_gadget,
                 a,
                 b,
                 c,
                 d,
+                carry,
             }
         }
 
@@ -197,8 +201,13 @@ mod tests {
                 .assign(region, offset, Some(witnesses[2].to_le_bytes()))?;
             self.d
                 .assign(region, offset, Some(witnesses[3].to_le_bytes()))?;
-            self.math_gadget
-                .assign(region, offset, witnesses.try_into().unwrap())
+            self.carry.assign(
+                region,
+                offset,
+                Value::known(witnesses[4].to_scalar().unwrap()),
+            )?;
+            self.muladd_words_gadget
+                .assign(region, offset, witnesses[..4].try_into().unwrap())
         }
     }
 
@@ -207,25 +216,49 @@ mod tests {
         // 0 * 0 + 0 == 0
         try_test!(
             MulAddGadgetContainer<Fr>,
-            vec![Word::from(0), Word::from(0), Word::from(0), Word::from(0)],
+            vec![
+                Word::from(0),
+                Word::from(0),
+                Word::from(0),
+                Word::from(0),
+                Word::from(0)
+            ],
             true,
         );
         // 1 * 0 + 0 == 0
         try_test!(
             MulAddGadgetContainer<Fr>,
-            vec![Word::from(1), Word::from(0), Word::from(0), Word::from(0)],
+            vec![
+                Word::from(1),
+                Word::from(0),
+                Word::from(0),
+                Word::from(0),
+                Word::from(0)
+            ],
             true,
         );
         // 1 * 1 + 0 == 1
         try_test!(
             MulAddGadgetContainer<Fr>,
-            vec![Word::from(1), Word::from(1), Word::from(0), Word::from(1)],
+            vec![
+                Word::from(1),
+                Word::from(1),
+                Word::from(0),
+                Word::from(1),
+                Word::from(0)
+            ],
             true,
         );
         // 1 * 1 + 1 == 2
         try_test!(
             MulAddGadgetContainer<Fr>,
-            vec![Word::from(1), Word::from(1), Word::from(1), Word::from(2)],
+            vec![
+                Word::from(1),
+                Word::from(1),
+                Word::from(1),
+                Word::from(2),
+                Word::from(0)
+            ],
             true,
         );
         // 100 * 54 + 98 == 5498
@@ -236,6 +269,7 @@ mod tests {
                 Word::from(54),
                 Word::from(98),
                 Word::from(5498),
+                Word::from(0)
             ],
             true,
         );
@@ -247,6 +281,7 @@ mod tests {
                 Word::from(54),
                 WORD_LOW_MAX,
                 Word::from(5400) + WORD_LOW_MAX,
+                Word::from(0)
             ],
             true,
         );
@@ -258,6 +293,43 @@ mod tests {
                 Word::from(54),
                 WORD_HIGH_MAX,
                 Word::from(5400) + WORD_HIGH_MAX,
+                Word::from(0)
+            ],
+            true,
+        );
+    }
+
+    #[test]
+    fn test_overflow_expected() {
+        // high_max + low_max + 1 == 0 with overflow 1
+        try_test!(
+            MulAddGadgetContainer<Fr>,
+            vec![
+                WORD_LOW_MAX + 1,
+                Word::from(1),
+                WORD_HIGH_MAX,
+                Word::from(0),
+                Word::from(1)
+            ],
+            true,
+        );
+    }
+
+    #[test]
+    #[ignore]
+    fn test_max_carry() {
+        // max * max + max = max < 256
+        try_test!(
+            MulAddGadgetContainer<Fr>,
+            vec![
+                Word::MAX,
+                Word::MAX,
+                Word::MAX,
+                Word::from(0),
+                Word::from_dec_str(
+                    "6350874878119819312338956282401532410528162663560392320966563075034087161850"
+                )
+                .unwrap(), //WORD::MAX
             ],
             true,
         );
@@ -268,7 +340,39 @@ mod tests {
         // 10 * 1 + 1 != 3
         try_test!(
             MulAddGadgetContainer<Fr>,
-            vec![Word::from(10), Word::from(1), Word::from(1), Word::from(3)],
+            vec![
+                Word::from(10),
+                Word::from(1),
+                Word::from(1),
+                Word::from(3),
+                Word::from(0)
+            ],
+            false,
+        );
+
+        // 100 * 54 + low_max == low_max + 5400, no overflow
+        try_test!(
+            MulAddGadgetContainer<Fr>,
+            vec![
+                Word::from(100),
+                Word::from(54),
+                WORD_HIGH_MAX,
+                Word::from(5400) + WORD_HIGH_MAX,
+                Word::from(1)
+            ],
+            false,
+        );
+
+        // high_max + low_max + 1 == 0 with overflow 1
+        try_test!(
+            MulAddGadgetContainer<Fr>,
+            vec![
+                WORD_LOW_MAX + 1,
+                Word::from(1),
+                WORD_HIGH_MAX,
+                Word::from(0),
+                Word::from(0)
+            ],
             false,
         );
     }

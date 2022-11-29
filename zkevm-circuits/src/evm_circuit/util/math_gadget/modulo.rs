@@ -145,7 +145,7 @@ mod tests {
     }
 
     #[test]
-    fn test_mod_n_eq0() {
+    fn test_mod_n_expected_rem() {
         try_test!(
             ModGadgetTestContainer<Fr>,
             vec![Word::from(0), Word::from(0), Word::from(0)],
@@ -166,15 +166,25 @@ mod tests {
             vec![Word::from(30), Word::from(50), Word::from(30)],
             true,
         );
+        try_test!(
+            ModGadgetTestContainer<Fr>,
+            vec![WORD_LOW_MAX, Word::from(1024), Word::from(1023)],
+            true,
+        );
+        try_test!(
+            ModGadgetTestContainer<Fr>,
+            vec![WORD_HIGH_MAX, Word::from(1024), Word::from(0)],
+            true,
+        );
+        try_test!(
+            ModGadgetTestContainer<Fr>,
+            vec![WORD_CELL_MAX, Word::from(2), Word::from(0)],
+            true,
+        );
     }
 
     #[test]
-    fn test_mod_n_neq0() {
-        try_test!(
-            ModGadgetTestContainer<Fr>,
-            vec![Word::from(1), Word::from(1), Word::from(0)],
-            true,
-        );
+    fn test_mod_n_unexpected_rem() {
         try_test!(
             ModGadgetTestContainer<Fr>,
             vec![Word::from(1), Word::from(1), Word::from(1)],
@@ -183,6 +193,16 @@ mod tests {
         try_test!(
             ModGadgetTestContainer<Fr>,
             vec![Word::from(46), Word::from(50), Word::from(48)],
+            false,
+        );
+        try_test!(
+            ModGadgetTestContainer<Fr>,
+            vec![WORD_LOW_MAX, Word::from(1024), Word::from(1)],
+            false,
+        );
+        try_test!(
+            ModGadgetTestContainer<Fr>,
+            vec![WORD_HIGH_MAX, Word::from(1024), Word::from(1)],
             false,
         );
     }

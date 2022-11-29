@@ -23,6 +23,13 @@ use halo2_proofs::{
 
 pub(crate) const WORD_LOW_MAX: Word = U256([u64::MAX, u64::MAX, 0, 0]);
 pub(crate) const WORD_HIGH_MAX: Word = U256([0, 0, u64::MAX, u64::MAX]);
+// from bn256::MODULES - 1
+pub(crate) const WORD_CELL_MAX: Word = U256([
+    0x43e1f593f0000000,
+    0x2833e84879b97091,
+    0xb85045b68181585d,
+    0x30644e72e131a029,
+]);
 
 pub(crate) fn generate_power_of_randomness<F: Field>(randomness: F) -> Vec<F> {
     (1..32).map(|exp| randomness.pow(&[exp, 0, 0, 0])).collect()

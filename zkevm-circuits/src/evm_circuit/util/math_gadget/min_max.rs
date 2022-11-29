@@ -59,24 +59,25 @@ mod tests {
     use halo2_proofs::halo2curves::bn256::Fr;
     use halo2_proofs::plonk::Error;
 
-    const N: usize = 4;
     #[derive(Clone)]
 
-    struct MinMaxTestContainer<F, const MIN_A: bool> {
-        minmax_gadget: MinMaxGadget<F, N>,
+    struct MinMaxTestContainer<F, const N_BYTES: usize, const MIN_IS_A: bool> {
+        minmax_gadget: MinMaxGadget<F, N_BYTES>,
         a: Cell<F>,
         b: Cell<F>,
     }
 
-    impl<F: Field, const MIN_A: bool> MathGadgetContainer<F> for MinMaxTestContainer<F, MIN_A> {
+    impl<F: Field, const N_BYTES: usize, const MIN_IS_A: bool> MathGadgetContainer<F>
+        for MinMaxTestContainer<F, N_BYTES, MIN_IS_A>
+    {
         const NAME: &'static str = "MinMaxGadget";
 
         fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
             let a = cb.query_cell();
             let b = cb.query_cell();
-            let minmax_gadget = MinMaxGadget::<F, N>::construct(cb, a.expr(), b.expr());
+            let minmax_gadget = MinMaxGadget::<F, N_BYTES>::construct(cb, a.expr(), b.expr());
 
-            if MIN_A {
+            if MIN_IS_A {
                 cb.require_equal("min == a", minmax_gadget.min(), a.expr());
                 cb.require_equal("max == b", minmax_gadget.max(), b.expr());
             } else {
@@ -110,15 +111,20 @@ mod tests {
 
     #[test]
     fn test_minmax_eq() {
-        // a == b == 0
+        // a == b
         try_test!(
-            MinMaxTestContainer<Fr, true>,
+            MinMaxTestContainer<Fr, 4, true>,
             vec![Word::from(0), Word::from(0)],
             true,
         );
         try_test!(
-            MinMaxTestContainer<Fr, true>,
+            MinMaxTestContainer<Fr, 4, true>,
             vec![Word::from(5), Word::from(5)],
+            true,
+        );
+        try_test!(
+            MinMaxTestContainer<Fr, 16, true>,
+            vec![WORD_LOW_MAX, WORD_LOW_MAX],
             true,
         );
     }
@@ -127,13 +133,18 @@ mod tests {
     fn test_minmax_expect_min_a() {
         // min == a, max == b
         try_test!(
-            MinMaxTestContainer<Fr, true>,
+            MinMaxTestContainer<Fr, 1, true>,
             vec![Word::from(0), Word::from(1)],
             true,
         );
         try_test!(
-            MinMaxTestContainer<Fr, true>,
+            MinMaxTestContainer<Fr, 1, true>,
             vec![Word::from(3), Word::from(5)],
+            true,
+        );
+        try_test!(
+            MinMaxTestContainer<Fr, 31, true>,
+            vec![WORD_LOW_MAX, WORD_LOW_MAX],
             true,
         );
     }
@@ -142,13 +153,18 @@ mod tests {
     fn test_minmax_unexpect_min_a() {
         // min == b, max == a
         try_test!(
-            MinMaxTestContainer<Fr, true>,
+            MinMaxTestContainer<Fr, 1, true>,
             vec![Word::from(1), Word::from(0)],
             false,
         );
         try_test!(
-            MinMaxTestContainer<Fr, true>,
+            MinMaxTestContainer<Fr, 1, true>,
             vec![Word::from(256), Word::from(3)],
+            false,
+        );
+        try_test!(
+            MinMaxTestContainer<Fr, 31, true>,
+            vec![WORD_LOW_MAX, Word::from(123456)],
             false,
         );
     }
@@ -157,14 +173,20 @@ mod tests {
     fn test_minmax_expect_min_b() {
         // min == a, max == b
         try_test!(
-            MinMaxTestContainer<Fr, false>,
+            MinMaxTestContainer<Fr, 1, false>,
             vec![Word::from(1), Word::from(0)],
             true,
         );
 
         try_test!(
-            MinMaxTestContainer<Fr, false>,
+            MinMaxTestContainer<Fr, 4, false>,
             vec![Word::from(777), Word::from(44)],
+            true,
+        );
+
+        try_test!(
+            MinMaxTestContainer<Fr, 17, false>,
+            vec![WORD_LOW_MAX+1, WORD_LOW_MAX],
             true,
         );
     }
