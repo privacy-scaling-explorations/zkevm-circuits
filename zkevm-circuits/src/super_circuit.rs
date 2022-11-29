@@ -206,40 +206,40 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: u
             StateCircuitConfig::configure(meta, &rw_table, &mpt_table, challenges.clone());
         let pi_circuit = PiCircuitConfig::new(meta, block_table.clone(), tx_table.clone());
 
+        let copy_circuit = CopyCircuit::configure(
+            meta,
+            &tx_table,
+            &rw_table,
+            &bytecode_table,
+            copy_table,
+            q_copy_table,
+            power_of_randomness[0].clone(),
+        );
+        let tx_circuit = TxCircuitConfig::new(
+            meta,
+            tx_table.clone(),
+            keccak_table.clone(),
+            challenges.clone(),
+        );
+        let bytecode_circuit =
+            BytecodeConfig::configure(meta, bytecode_table.clone(), keccak_table, challenges);
+        let exp_circuit = ExpCircuitConfig::configure(meta, exp_table);
         Self::Config {
-            tx_table: tx_table.clone(),
+            tx_table,
             rw_table,
             mpt_table,
-            bytecode_table: bytecode_table.clone(),
+            bytecode_table,
             block_table,
             copy_table,
             exp_table,
             evm_circuit,
             state_circuit,
-            copy_circuit: CopyCircuit::configure(
-                meta,
-                &tx_table,
-                &rw_table,
-                &bytecode_table,
-                copy_table,
-                q_copy_table,
-                power_of_randomness[0].clone(),
-            ),
-            tx_circuit: TxCircuitConfig::new(
-                meta,
-                tx_table,
-                keccak_table.clone(),
-                challenges.clone(),
-            ),
-            bytecode_circuit: BytecodeConfig::configure(
-                meta,
-                bytecode_table,
-                keccak_table,
-                challenges,
-            ),
+            copy_circuit,
+            tx_circuit,
+            bytecode_circuit,
             keccak_circuit,
             pi_circuit,
-            exp_circuit: ExpCircuitConfig::configure(meta, exp_table),
+            exp_circuit,
         }
     }
 
@@ -447,6 +447,15 @@ mod super_circuit_tests {
     use std::collections::HashMap;
 
     use eth_types::{address, bytecode, geth_types::GethData, Word};
+
+    #[test]
+    fn super_circuit_degree() {
+        let mut cs = ConstraintSystem::<Fr>::default();
+        SuperCircuit::<_, 1, 32, 256>::configure(&mut cs);
+        log::info!("super circuit degree: {}", cs.degree());
+        log::info!("super circuit minimum_rows: {}", cs.minimum_rows());
+        assert!(cs.degree() <= 9);
+    }
 
     // High memory usage test.  Run in serial with:
     // `cargo test [...] serial_ -- --ignored --test-threads 1`

@@ -32,7 +32,10 @@ use random_linear_combination::{Chip as RlcChip, Config as RlcConfig, Queries as
 use std::collections::HashMap;
 use std::{iter::once, marker::PhantomData};
 
-use self::constraint_builder::{MptUpdateTableQueries, RwTableQueries};
+use self::{
+    constraint_builder::{MptUpdateTableQueries, RwTableQueries},
+    lexicographic_ordering::LimbIndex,
+};
 
 const N_LIMBS_RW_COUNTER: usize = 2;
 const N_LIMBS_ACCOUNT_ADDRESS: usize = 10;
@@ -51,6 +54,7 @@ pub struct StateCircuitConfig<F> {
                                     * the MPT, for others, it is 0. */
     state_root: Column<Advice>,
     lexicographic_ordering: LexicographicOrderingConfig,
+    not_first_access: Column<Advice>,
     lookups: LookupsConfig,
     power_of_randomness: [Expression<F>; N_BYTES_WORD - 1],
 }
@@ -104,6 +108,7 @@ impl<F: Field> StateCircuitConfig<F> {
             initial_value,
             state_root,
             lexicographic_ordering,
+            not_first_access: meta.advice_column(),
             lookups,
             power_of_randomness: challenges.evm_word_powers_of_randomness(),
             rw_table: *rw_table,
@@ -194,13 +199,21 @@ impl<F: Field> StateCircuitConfig<F> {
             }
 
             if let Some(prev_row) = prev_row {
-                let is_first_access = self
+                let index = self
                     .lexicographic_ordering
                     .assign(region, offset, row, prev_row)?;
+                let is_first_access =
+                    !matches!(index, LimbIndex::RwCounter0 | LimbIndex::RwCounter1);
+
+                region.assign_advice(
+                    || "not_first_access",
+                    self.not_first_access,
+                    offset,
+                    || Value::known(if is_first_access { F::zero() } else { F::one() }),
+                )?;
 
                 if is_first_access {
                     // If previous row was a last access, we need to update the state root.
-
                     state_root = randomness
                         .zip(state_root)
                         .map(|(randomness, mut state_root)| {
@@ -458,23 +471,10 @@ fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: &StateCircuitConfig<F>) 
         initial_value_prev: meta.query_advice(c.initial_value, Rotation::prev()),
         lookups: LookupsQueries::new(meta, c.lookups),
         power_of_randomness: c.power_of_randomness.clone(),
-        // this isn't binary! only 0 if most significant 4 bits are all 1.
-        first_access: 4.expr()
-            - meta.query_advice(first_different_limb.bits[0], Rotation::cur())
-            - meta.query_advice(first_different_limb.bits[1], Rotation::cur())
-            - meta.query_advice(first_different_limb.bits[2], Rotation::cur())
-            - meta.query_advice(first_different_limb.bits[3], Rotation::cur()),
-        // 1 if first_different_limb is in the rw counter, 0 otherwise (i.e. any of the 4 most
-        // significant bits are 0)
-        not_first_access: meta.query_advice(first_different_limb.bits[0], Rotation::cur())
-            * meta.query_advice(first_different_limb.bits[1], Rotation::cur())
-            * meta.query_advice(first_different_limb.bits[2], Rotation::cur())
-            * meta.query_advice(first_different_limb.bits[3], Rotation::cur()),
-        last_access: 1.expr()
-            - meta.query_advice(first_different_limb.bits[0], Rotation::next())
-                * meta.query_advice(first_different_limb.bits[1], Rotation::next())
-                * meta.query_advice(first_different_limb.bits[2], Rotation::next())
-                * meta.query_advice(first_different_limb.bits[3], Rotation::next()),
+        first_different_limb: [0, 1, 2, 3]
+            .map(|idx| meta.query_advice(first_different_limb.bits[idx], Rotation::cur())),
+        not_first_access: meta.query_advice(c.not_first_access, Rotation::cur()),
+        last_access: 1.expr() - meta.query_advice(c.not_first_access, Rotation::next()),
         state_root: meta.query_advice(c.state_root, Rotation::cur()),
         state_root_prev: meta.query_advice(c.state_root, Rotation::prev()),
     }
