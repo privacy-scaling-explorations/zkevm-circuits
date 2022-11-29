@@ -82,10 +82,10 @@ mod tests {
 
         fn assign_gadget_container(
             &self,
-            input_words: &[Word],
+            witnesses: &[Word],
             region: &mut CachedRegion<'_, '_, F>,
         ) -> Result<(), Error> {
-            let n = input_words[0].to_scalar().unwrap();
+            let n = witnesses[0].to_scalar().unwrap();
             let offset = 0;
 
             self.n.assign(region, offset, Value::known(n))?;
@@ -97,17 +97,18 @@ mod tests {
 
     #[test]
     fn test_0_is_zero() {
-        test_math_gadget_container::<Fr, IsZeroGadgetTestContainer<Fr>>(vec![Word::from(0)], true);
+        try_test!(IsZeroGadgetTestContainer<Fr>, vec![Word::from(0)], true);
     }
 
     #[test]
     fn test_1_is_not_zero() {
-        test_math_gadget_container::<Fr, IsZeroGadgetTestContainer<Fr>>(vec![Word::from(1)], false);
+        try_test!(IsZeroGadgetTestContainer<Fr>, vec![Word::from(1)], false);
     }
 
     #[test]
     fn test_large_num_is_not_zero() {
-        test_math_gadget_container::<Fr, IsZeroGadgetTestContainer<Fr>>(
+        try_test!(
+            IsZeroGadgetTestContainer<Fr>,
             vec![Word::from(10000)],
             false,
         );

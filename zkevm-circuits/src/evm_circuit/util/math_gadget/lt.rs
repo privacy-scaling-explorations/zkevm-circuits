@@ -115,14 +115,14 @@ mod tests {
 
         fn assign_gadget_container(
             &self,
-            input_words: &[Word],
+            witnesses: &[Word],
             region: &mut CachedRegion<'_, '_, F>,
         ) -> Result<(), Error> {
             let a = F::from(u64::from_le_bytes(
-                input_words[0].to_le_bytes()[..8].try_into().unwrap(),
+                witnesses[0].to_le_bytes()[..8].try_into().unwrap(),
             ));
             let b = F::from(u64::from_le_bytes(
-                input_words[1].to_le_bytes()[..8].try_into().unwrap(),
+                witnesses[1].to_le_bytes()[..8].try_into().unwrap(),
             ));
             let offset = 0;
 
@@ -136,11 +136,13 @@ mod tests {
 
     #[test]
     fn test_lt_expect() {
-        test_math_gadget_container::<Fr, LtGadgetTestContainer<Fr>>(
+        try_test!(
+            LtGadgetTestContainer<Fr>,
             vec![Word::from(0), Word::from(1)],
             true,
         );
-        test_math_gadget_container::<Fr, LtGadgetTestContainer<Fr>>(
+        try_test!(
+            LtGadgetTestContainer<Fr>,
             vec![Word::from(0), Word::from(0)],
             false,
         );
@@ -148,7 +150,8 @@ mod tests {
 
     #[test]
     fn test_lt_just_in_range() {
-        test_math_gadget_container::<Fr, LtGadgetTestContainer<Fr>>(
+        try_test!(
+            LtGadgetTestContainer<Fr>,
             vec![Word::from(1), Word::from((1u64 << (N * 8)) - 1)],
             true,
         );
@@ -156,7 +159,8 @@ mod tests {
 
     #[test]
     fn test_lt_out_of_range() {
-        test_math_gadget_container::<Fr, LtGadgetTestContainer<Fr>>(
+        try_test!(
+            LtGadgetTestContainer<Fr>,
             vec![Word::from(1), Word::from(2 << (N * 8))],
             false,
         );

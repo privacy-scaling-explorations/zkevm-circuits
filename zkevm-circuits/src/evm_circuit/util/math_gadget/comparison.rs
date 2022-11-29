@@ -92,11 +92,11 @@ mod tests {
 
         fn assign_gadget_container(
             &self,
-            input_words: &[Word],
+            witnesses: &[Word],
             region: &mut CachedRegion<'_, '_, F>,
         ) -> Result<(), Error> {
-            let a = input_words[0].to_scalar().unwrap();
-            let b = input_words[1].to_scalar().unwrap();
+            let a = witnesses[0].to_scalar().unwrap();
+            let b = witnesses[1].to_scalar().unwrap();
             let offset = 0;
 
             self.a.assign(region, offset, Value::known(a))?;
@@ -110,7 +110,8 @@ mod tests {
     #[test]
     fn test_comparison_0_eq() {
         // a == b check
-        test_math_gadget_container::<Fr, ComparisonTestContainer<Fr, 4, true>>(
+        try_test!(
+            ComparisonTestContainer<Fr, 4, true>,
             vec![Word::from(0), Word::from(0)],
             true,
         );
@@ -118,7 +119,8 @@ mod tests {
 
     #[test]
     fn test_comparison_1_eq() {
-        test_math_gadget_container::<Fr, ComparisonTestContainer<Fr, 4, true>>(
+        try_test!(
+            ComparisonTestContainer<Fr, 4, true>,
             vec![Word::from(1), Word::from(1)],
             true,
         );
@@ -126,7 +128,8 @@ mod tests {
 
     #[test]
     fn test_comparison_max_eq() {
-        test_math_gadget_container::<Fr, ComparisonTestContainer<Fr, 4, true>>(
+        try_test!(
+            ComparisonTestContainer<Fr, 4, true>,
             vec![Word::from(1 << 4), Word::from(1 << 4)],
             true,
         );
@@ -134,7 +137,8 @@ mod tests {
 
     #[test]
     fn test_comparison_0_neq_max() {
-        test_math_gadget_container::<Fr, ComparisonTestContainer<Fr, 4, true>>(
+        try_test!(
+            ComparisonTestContainer<Fr, 4, true>,
             vec![Word::from(0), Word::from(1 << 4)],
             false,
         );
@@ -143,7 +147,8 @@ mod tests {
     // a < b check
     #[test]
     fn test_comparison_0_lt_1() {
-        test_math_gadget_container::<Fr, ComparisonTestContainer<Fr, 4, false>>(
+        try_test!(
+            ComparisonTestContainer<Fr, 4, false>,
             vec![Word::from(0), Word::from(1)],
             true,
         );
@@ -151,7 +156,8 @@ mod tests {
 
     #[test]
     fn test_comparison_1_lt_max() {
-        test_math_gadget_container::<Fr, ComparisonTestContainer<Fr, 4, false>>(
+        try_test!(
+            ComparisonTestContainer<Fr, 4, false>,
             vec![Word::from(1), Word::from(1 << 4)],
             true,
         );
@@ -159,7 +165,8 @@ mod tests {
 
     #[test]
     fn test_comparison_1_lt_0() {
-        test_math_gadget_container::<Fr, ComparisonTestContainer<Fr, 4, false>>(
+        try_test!(
+            ComparisonTestContainer<Fr, 4, false>,
             vec![Word::from(1), Word::from(0)],
             false,
         );
@@ -170,12 +177,14 @@ mod tests {
         const N_BYTES: usize = 16;
         let half_max_lo = U256([u64::MAX, 0, 0, 0]);
         let half_max_hi = U256([0, u64::MAX, 0, 0]);
-        test_math_gadget_container::<Fr, ComparisonTestContainer<Fr, N_BYTES, false>>(
+        try_test!(
+            ComparisonTestContainer<Fr, N_BYTES, false>,
             vec![half_max_lo, half_max_hi],
             true,
         );
 
-        test_math_gadget_container::<Fr, ComparisonTestContainer<Fr, N_BYTES, false>>(
+        try_test!(
+            ComparisonTestContainer<Fr, N_BYTES, false>,
             vec![half_max_hi, half_max_lo],
             false,
         );
@@ -183,7 +192,8 @@ mod tests {
 
     #[test]
     fn test_comparison_overflow() {
-        test_math_gadget_container::<Fr, ComparisonTestContainer<Fr, 4, false>>(
+        try_test!(
+            ComparisonTestContainer<Fr, 4, false>,
             vec![Word::from(10000), Word::from(1 << (4 + 1))],
             false,
         );

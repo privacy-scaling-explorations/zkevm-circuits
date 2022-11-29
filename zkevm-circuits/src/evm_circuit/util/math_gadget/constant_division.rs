@@ -138,10 +138,10 @@ mod tests {
 
         fn assign_gadget_container(
             &self,
-            input_words: &[Word],
+            witnesses: &[Word],
             region: &mut CachedRegion<'_, '_, F>,
         ) -> Result<(), Error> {
-            let a = u64::from_le_bytes(input_words[0].to_le_bytes()[..8].try_into().unwrap());
+            let a = u64::from_le_bytes(witnesses[0].to_le_bytes()[..8].try_into().unwrap());
             let offset = 0;
 
             self.a.assign(region, offset, Value::known(F::from(a)))?;
@@ -153,7 +153,8 @@ mod tests {
 
     #[test]
     fn test_constantdivisiongadget_0div5_rem0() {
-        test_math_gadget_container::<Fr, ConstantDivisionTestContainer<Fr, 4, 5, 0, 0>>(
+        try_test!(
+            ConstantDivisionTestContainer<Fr, 4, 5, 0, 0>,
             vec![Word::from(0)],
             true,
         );
@@ -161,7 +162,8 @@ mod tests {
 
     #[test]
     fn test_constantdivisiongadget_5div5_rem0() {
-        test_math_gadget_container::<Fr, ConstantDivisionTestContainer<Fr, 4, 5, 1, 0>>(
+        try_test!(
+            ConstantDivisionTestContainer<Fr, 4, 5, 1, 0>,
             vec![Word::from(5)],
             true,
         );
@@ -169,7 +171,8 @@ mod tests {
 
     #[test]
     fn test_constantdivisiongadget_1div5_rem1() {
-        test_math_gadget_container::<Fr, ConstantDivisionTestContainer<Fr, 4, 5, 0, 1>>(
+        try_test!(
+            ConstantDivisionTestContainer<Fr, 4, 5, 0, 1>,
             vec![Word::from(1)],
             true,
         );
@@ -177,7 +180,8 @@ mod tests {
 
     #[test]
     fn test_constantdivisiongadget_1div5_rem4() {
-        test_math_gadget_container::<Fr, ConstantDivisionTestContainer<Fr, 4, 5, 1, 4>>(
+        try_test!(
+            ConstantDivisionTestContainer<Fr, 4, 5, 1, 4>,
             vec![Word::from(1)],
             false,
         );
@@ -185,7 +189,8 @@ mod tests {
 
     #[test]
     fn test_constantdivisiongadget_quotient_overflow() {
-        test_math_gadget_container::<Fr, ConstantDivisionTestContainer<Fr, 4, 5, 4294967296u64, 1>>(
+        try_test!(
+            ConstantDivisionTestContainer<Fr, 4, 5, 4294967296u64, 1>,
             vec![Word::from(1u64 << (4 * 8)) * 5 + 1],
             false,
         );
@@ -193,7 +198,8 @@ mod tests {
 
     #[test]
     fn test_constantdivisiongadget_33_div16_rem17() {
-        test_math_gadget_container::<Fr, ConstantDivisionTestContainer<Fr, 4, 16, 1, 17>>(
+        try_test!(
+            ConstantDivisionTestContainer<Fr, 4, 16, 1, 17>,
             vec![Word::from(33)],
             false,
         );

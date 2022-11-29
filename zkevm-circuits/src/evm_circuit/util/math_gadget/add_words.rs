@@ -197,152 +197,99 @@ mod tests {
 
         fn assign_gadget_container(
             &self,
-            input_words: &[Word],
+            witnesses: &[Word],
             region: &mut CachedRegion<'_, '_, F>,
         ) -> Result<(), Error> {
-            assert_eq!(N_ADDENDS, input_words.len() - 1);
+            assert_eq!(N_ADDENDS, witnesses.len() - 1);
             let offset = 0;
             for (i, addend) in self.addends.iter().enumerate() {
-                let a = input_words[i];
+                let a = witnesses[i];
                 addend.assign(region, offset, Some(a.to_le_bytes()))?;
             }
-            let sum = input_words[N_ADDENDS];
+            let sum = witnesses[N_ADDENDS];
             self.sum.assign(region, offset, Some(sum.to_le_bytes()))?;
 
-            let addends = input_words[0..N_ADDENDS].try_into().unwrap();
+            let addends = witnesses[0..N_ADDENDS].try_into().unwrap();
             self.addwords_gadget.assign(region, 0, addends, sum)?;
 
             Ok(())
         }
     }
 
-    macro_rules! try_test_add_words {
-        ($N: expr, $carry: expr, $check_overflow: expr, sum $addends:expr; eq $result: expr, $expected_success:expr $(,)?) => {
-            let mut witnesses = $addends.to_vec();
-            witnesses.push($result);
-            try_test!(
-                AddWordsTestContainer<Fr, $N, $carry, $check_overflow>,
-                witnesses,
-                $expected_success
-            );
-        };
-    }
-
     #[test]
     fn test_addwords_0_0() {
-        try_test_add_words!(
-            2, 0u64, true, sum vec![Word::from(0), Word::from(0)]; eq Word::from(0), true
-        );
+        try_test!(AddWordsTestContainer<Fr, 2, 0u64, true>, vec![Word::from(0), Word::from(0), Word::from(0)], true);
     }
 
     #[test]
     fn test_addwords_1_1() {
-        try_test_add_words!(
-            2, 0u64, true, sum vec![Word::from(1), Word::from(1)]; eq Word::from(2), true
-        );
+        try_test!(AddWordsTestContainer<Fr, 2, 0u64, true>, vec![Word::from(1), Word::from(1), Word::from(2)], true);
     }
 
     #[test]
     fn test_addwords_1000_1000() {
-        try_test_add_words!(
-            2, 0u64, true, sum vec![Word::from(1000), Word::from(1000)]; eq Word::from(2000), true
-        );
+        try_test!(AddWordsTestContainer<Fr, 2, 0u64, true>, vec![Word::from(1000), Word::from(1000), Word::from(2000)], true);
     }
 
     #[test]
     fn test_addwords_to_wordmax() {
-        try_test_add_words!(
-            2,
-            0u64,
-            true,
-            sum vec![Word::MAX - 1, Word::from(1)]; eq Word::MAX,
-            true
-        );
+        try_test!(AddWordsTestContainer<Fr, 2,0u64,true,>, vec![Word::MAX - 1, Word::from(1), Word::MAX],true);
     }
 
     #[test]
     fn test_addwords_high_low_max() {
-        try_test_add_words!(
-            2,
-            0u64,
-            true,
-            sum vec![WORD_LOW_MAX, WORD_HIGH_MAX]; eq Word::MAX,
-            true
-        );
+        try_test!(AddWordsTestContainer<Fr, 2, 0u64, true,>, vec![WORD_LOW_MAX, WORD_HIGH_MAX, Word::MAX],true);
     }
 
     #[test]
     fn test_addwords_overflow() {
-        try_test_add_words!(2, 0u64, true,
-            sum [Word::MAX, Word::from(1)]; eq  Word::from(0),
-            false
-        );
+        try_test!(AddWordsTestContainer<Fr, 2, 0u64, true,>, [Word::MAX, Word::from(1),  Word::from(0)],false);
     }
 
     #[test]
     fn test_addwords_wrong_sum0() {
-        try_test_add_words!(2, 0u64, true,
-            sum [Word::from(1), Word::from(0)]; eq  Word::from(0),
-            false
-        );
+        try_test!(AddWordsTestContainer<Fr, 2, 0u64, true,>, [Word::from(1), Word::from(0),  Word::from(0)],false);
     }
 
     #[test]
     fn test_addwords_wrong_sum2() {
-        try_test_add_words!(2, 0u64, true,
-            sum [Word::from(2), Word::from(1)]; eq  Word::from(2),
-            false
-        );
+        try_test!(AddWordsTestContainer<Fr, 2, 0u64, true,>, [Word::from(2), Word::from(1),  Word::from(2)],false);
     }
 
     //non overflow check cases
     #[test]
     fn test_addwords_no_overflow_check() {
-        try_test_add_words!(2, 1u64, false,
-            sum [Word::MAX, Word::from(1)]; eq  Word::from(0),
-            true
-        );
+        try_test!(AddWordsTestContainer<Fr, 2, 1u64, false,>, [Word::MAX, Word::from(1),  Word::from(0)],true);
     }
 
     #[test]
     fn test_addwords_incorrect_carry_check() {
-        try_test_add_words!(2, 0u64, false,
-            sum [Word::MAX, Word::from(1)]; eq  Word::from(0),
-            false
-        );
+        try_test!(AddWordsTestContainer<Fr, 2, 0u64, false,>, [Word::MAX, Word::from(1),  Word::from(0)],false);
     }
 
     #[test]
     fn test_addwords_3_addends() {
-        try_test_add_words!(3, 0u64, false,
-            sum [Word::from(0), Word::from(1), Word::from(0)]; eq  Word::from(1),
-            true
-        );
+        try_test!(AddWordsTestContainer<Fr, 3, 0u64, false,>, [Word::from(0), Word::from(1), Word::from(0),  Word::from(1)],true);
     }
 
     #[test]
     fn test_addwords_3_addends_with_overflow_check() {
-        try_test_add_words!(3, 0u64, true,
-            sum [Word::MAX, Word::from(1), Word::from(0)]; eq  Word::from(0),
-            false
-        );
+        try_test!(AddWordsTestContainer<Fr, 3, 0u64, true,>, [Word::MAX, Word::from(1), Word::from(0),  Word::from(0)],false);
     }
 
     #[test]
     fn test_addwords_3_addends_with_carry() {
         const CARRY_HI: u64 = 1u64;
-        try_test_add_words!(3, CARRY_HI, false,
-            sum [Word::MAX, Word::from(1), WORD_HIGH_MAX]; eq  WORD_HIGH_MAX,
-            true
-        );
+        try_test!(AddWordsTestContainer<Fr, 3, CARRY_HI, false,>, [Word::MAX, Word::from(1), WORD_HIGH_MAX,  WORD_HIGH_MAX],true);
     }
 
     #[test]
     fn test_addwords_7_addends_with_carry() {
         const CARRY_HI: u64 = 6u64;
         let sum_7_low_max = U256([0xfffffffffffffff9u64, 0xffffffffffffffffu64, CARRY_HI, 0u64]);
-        try_test_add_words!(7, 0u64, true,
-            sum [
+        try_test!(
+            AddWordsTestContainer<Fr,7, 0u64, true,>,
+            vec![
                 WORD_LOW_MAX,
                 WORD_LOW_MAX,
                 WORD_LOW_MAX,
@@ -350,7 +297,7 @@ mod tests {
                 WORD_LOW_MAX,
                 WORD_LOW_MAX,
                 WORD_LOW_MAX,
-                ]; eq sum_7_low_max,
+                sum_7_low_max],
             true
         );
     }

@@ -239,7 +239,7 @@ pub(crate) fn test_math_gadget_container<F: Field, G: MathGadgetContainer<F>>(
 // #[macro_export]
 /// simple macro for less code & better readability
 macro_rules! try_test {
-    ($base_class:ty, $witnesses:expr, $expect_success:expr) => {{
+    ($base_class:ty, $witnesses:expr, $expect_success:expr $(,)?) => {{
         test_math_gadget_container::<Fr, $base_class>($witnesses.to_vec(), $expect_success)
     }};
 }

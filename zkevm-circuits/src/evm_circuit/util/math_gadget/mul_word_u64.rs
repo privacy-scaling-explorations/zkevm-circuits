@@ -125,12 +125,12 @@ mod tests {
 
         fn assign_gadget_container(
             &self,
-            input_words: &[Word],
+            witnesses: &[Word],
             region: &mut CachedRegion<'_, '_, F>,
         ) -> Result<(), Error> {
-            let a = input_words[0];
-            let b = u64::from_le_bytes(input_words[1].to_le_bytes()[..8].try_into().unwrap());
-            let product = input_words[2];
+            let a = witnesses[0];
+            let b = u64::from_le_bytes(witnesses[1].to_le_bytes()[..8].try_into().unwrap());
+            let product = witnesses[2];
             let offset = 0;
 
             self.a.assign(region, offset, Some(a.to_le_bytes()))?;
@@ -146,37 +146,44 @@ mod tests {
     #[test]
     fn test_mulwordu64_expect() {
         // 0 * 0 = 0
-        test_math_gadget_container::<Fr, MulWordByU64TestContainer<Fr>>(
+        try_test!(
+            MulWordByU64TestContainer<Fr>,
             vec![Word::from(0), Word::from(0), Word::from(0)],
             true,
         );
         // max * 0 = 0
-        test_math_gadget_container::<Fr, MulWordByU64TestContainer<Fr>>(
+        try_test!(
+            MulWordByU64TestContainer<Fr>,
             vec![Word::MAX, Word::from(0), Word::from(0)],
             true,
         );
         // 1 * 1 = 1
-        test_math_gadget_container::<Fr, MulWordByU64TestContainer<Fr>>(
+        try_test!(
+            MulWordByU64TestContainer<Fr>,
             vec![Word::from(1), Word::from(1), Word::from(1)],
             true,
         );
         // max * 1 = max
-        test_math_gadget_container::<Fr, MulWordByU64TestContainer<Fr>>(
+        try_test!(
+            MulWordByU64TestContainer<Fr>,
             vec![Word::MAX, Word::from(1), Word::MAX],
             true,
         );
         // 2 * 2 = 4
-        test_math_gadget_container::<Fr, MulWordByU64TestContainer<Fr>>(
+        try_test!(
+            MulWordByU64TestContainer<Fr>,
             vec![Word::from(2), Word::from(2), Word::from(4)],
             true,
         );
         // 22222 * 500 = 11111000
-        test_math_gadget_container::<Fr, MulWordByU64TestContainer<Fr>>(
+        try_test!(
+            MulWordByU64TestContainer<Fr>,
             vec![Word::from(22222), Word::from(500), Word::from(11111000)],
             true,
         );
         // low_max * 2 = low_max << 1
-        test_math_gadget_container::<Fr, MulWordByU64TestContainer<Fr>>(
+        try_test!(
+            MulWordByU64TestContainer<Fr>,
             vec![WORD_LOW_MAX, Word::from(2), WORD_LOW_MAX << 1],
             true,
         );
@@ -184,12 +191,14 @@ mod tests {
 
     #[test]
     fn test_mulwordu64_unexpect() {
-        test_math_gadget_container::<Fr, MulWordByU64TestContainer<Fr>>(
+        try_test!(
+            MulWordByU64TestContainer<Fr>,
             vec![Word::MAX, Word::from(1), Word::from(1)],
             false,
         );
         // high_max * 2 = overflow
-        test_math_gadget_container::<Fr, MulWordByU64TestContainer<Fr>>(
+        try_test!(
+            MulWordByU64TestContainer<Fr>,
             vec![WORD_HIGH_MAX, Word::from(2), WORD_HIGH_MAX << 1],
             false,
         );

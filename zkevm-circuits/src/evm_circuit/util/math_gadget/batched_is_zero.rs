@@ -97,10 +97,10 @@ mod tests {
 
         fn assign_gadget_container(
             &self,
-            input_words: &[Word],
+            witnesses: &[Word],
             region: &mut CachedRegion<'_, '_, F>,
         ) -> Result<(), Error> {
-            let values = input_words
+            let values = witnesses
                 .iter()
                 .map(|num| num.to_scalar().unwrap())
                 .collect::<Vec<F>>();
