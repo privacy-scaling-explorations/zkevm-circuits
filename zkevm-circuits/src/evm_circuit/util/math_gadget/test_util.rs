@@ -37,7 +37,7 @@ pub(crate) trait MathGadgetContainer<F: Field>: Clone {
 
     fn assign_gadget_container(
         &self,
-        witness_words: &[Word],
+        witnesses: &[Word],
         region: &mut CachedRegion<'_, '_, F>,
     ) -> Result<(), Error>;
 }
@@ -59,16 +59,16 @@ where
 
 pub(crate) struct UnitTestMathGadgetBaseCircuit<F, G> {
     size: usize,
-    witness_words: Vec<Word>,
+    witnesses: Vec<Word>,
     randomness: F,
     _marker: PhantomData<G>,
 }
 
 impl<F: Field, G> UnitTestMathGadgetBaseCircuit<F, G> {
-    fn new(size: usize, witness_words: Vec<Word>, randomness: F) -> Self {
+    fn new(size: usize, witnesses: Vec<Word>, randomness: F) -> Self {
         UnitTestMathGadgetBaseCircuit {
             size,
-            witness_words,
+            witnesses,
             randomness,
             _marker: PhantomData,
         }
@@ -82,7 +82,7 @@ impl<F: Field, G: MathGadgetContainer<F>> Circuit<F> for UnitTestMathGadgetBaseC
     fn without_witnesses(&self) -> Self {
         UnitTestMathGadgetBaseCircuit {
             size: 0,
-            witness_words: vec![],
+            witnesses: vec![],
             randomness: F::from(123456u64),
             _marker: PhantomData,
         }
@@ -169,7 +169,7 @@ impl<F: Field, G: MathGadgetContainer<F>> Circuit<F> for UnitTestMathGadgetBaseC
                 )?;
                 config
                     .math_gadget_container
-                    .assign_gadget_container(&self.witness_words, cached_region)?;
+                    .assign_gadget_container(&self.witnesses, cached_region)?;
                 for stored_expr in &config.stored_expressions {
                     stored_expr.assign(cached_region, offset)?;
                 }
@@ -217,7 +217,7 @@ impl<F: Field, G: MathGadgetContainer<F>> Circuit<F> for UnitTestMathGadgetBaseC
 /// witness words are used for both input & output data. How to deal with the
 /// witness words is left to each container.
 pub(crate) fn test_math_gadget_container<F: Field, G: MathGadgetContainer<F>>(
-    witness_words: Vec<Word>,
+    witnesses: Vec<Word>,
     expected_success: bool,
 ) {
     const K: usize = 12;
@@ -226,7 +226,7 @@ pub(crate) fn test_math_gadget_container<F: Field, G: MathGadgetContainer<F>>(
         .iter()
         .map(|power_of_randomn: &F| vec![*power_of_randomn; (1 << K) - 64])
         .collect();
-    let circuit = UnitTestMathGadgetBaseCircuit::<F, G>::new(K, witness_words, randomness);
+    let circuit = UnitTestMathGadgetBaseCircuit::<F, G>::new(K, witnesses, randomness);
 
     let prover = MockProver::<F>::run(K as u32, &circuit, power_of_randomness_instances).unwrap();
     if expected_success {

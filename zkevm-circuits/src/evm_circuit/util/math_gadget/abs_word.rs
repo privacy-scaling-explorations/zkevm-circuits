@@ -120,12 +120,12 @@ mod tests {
 
         fn assign_gadget_container(
             &self,
-            witness_words: &[Word],
+            witnesses: &[Word],
             region: &mut CachedRegion<'_, '_, F>,
         ) -> Result<(), Error> {
             let offset = 0;
-            let x = witness_words[0];
-            let x_abs = witness_words[1];
+            let x = witnesses[0];
+            let x_abs = witnesses[1];
             self.absword_gadget.assign(region, offset, x, x_abs)?;
 
             Ok(())
