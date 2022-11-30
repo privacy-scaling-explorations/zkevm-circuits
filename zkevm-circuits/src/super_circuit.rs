@@ -188,7 +188,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: u
             power_of_randomness[0].clone(),
         );
 
-        let keccak_circuit = KeccakConfig::configure(meta, power_of_randomness[0].clone());
+        let keccak_circuit = KeccakConfig::configure(meta, challenges.clone());
         let keccak_table = keccak_circuit.keccak_table.clone();
 
         let evm_circuit = EvmCircuit::configure(
@@ -307,7 +307,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: u
         config.keccak_circuit.assign_from_witness(
             &mut layouter,
             &self.keccak_inputs,
-            block.randomness,
+            challenges,
             self.circuits_params.keccak_padding,
         )?;
         // --- Copy Circuit ---
