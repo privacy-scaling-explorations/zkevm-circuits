@@ -228,10 +228,10 @@ pub async fn test_evm_circuit_block(block_num: u64, actual: bool) {
     let instance = get_test_instance(&block);
     let circuit = get_test_cicuit_from_block(block);
 
-    test_mock(degree, &circuit, instance.clone());
-
     if actual {
         test_actual(degree, circuit, instance, None);
+    } else {
+        test_mock(degree, &circuit, instance);
     }
 }
 
@@ -257,8 +257,6 @@ pub async fn test_state_circuit_block(block_num: u64, actual: bool) {
     let circuit = StateCircuit::<Fr>::new(rw_map, 1 << 16);
     let instance = circuit.instance();
 
-    test_mock(STATE_CIRCUIT_DEGREE, &circuit, instance.clone());
-
     if actual {
         test_actual(
             STATE_CIRCUIT_DEGREE,
@@ -266,6 +264,8 @@ pub async fn test_state_circuit_block(block_num: u64, actual: bool) {
             instance,
             Some((*STATE_CIRCUIT_KEY).clone()),
         );
+    } else {
+        test_mock(STATE_CIRCUIT_DEGREE, &circuit, instance);
     }
 }
 
@@ -292,8 +292,6 @@ pub async fn test_tx_circuit_block(block_num: u64, actual: bool) {
         chain_id: CHAIN_ID,
     };
 
-    test_mock(TX_CIRCUIT_DEGREE, &circuit, vec![vec![]]);
-
     if actual {
         test_actual(
             TX_CIRCUIT_DEGREE,
@@ -301,6 +299,8 @@ pub async fn test_tx_circuit_block(block_num: u64, actual: bool) {
             vec![vec![]],
             Some((*TX_CIRCUIT_KEY).clone()),
         );
+    } else {
+        test_mock(TX_CIRCUIT_DEGREE, &circuit, vec![vec![]]);
     }
 }
 
@@ -314,8 +314,6 @@ pub async fn test_bytecode_circuit_block(block_num: u64, actual: bool) {
 
     let circuit = BytecodeCircuitTester::<Fr>::new(unrolled, 2usize.pow(BYTECODE_CIRCUIT_DEGREE));
 
-    test_mock(BYTECODE_CIRCUIT_DEGREE, &circuit, Vec::new());
-
     if actual {
         test_actual(
             BYTECODE_CIRCUIT_DEGREE,
@@ -323,6 +321,8 @@ pub async fn test_bytecode_circuit_block(block_num: u64, actual: bool) {
             Vec::new(),
             Some((*BYTECODE_CIRCUIT_KEY).clone()),
         );
+    } else {
+        test_mock(BYTECODE_CIRCUIT_DEGREE, &circuit, Vec::new());
     }
 }
 
@@ -339,8 +339,6 @@ pub async fn test_copy_circuit_block(block_num: u64, actual: bool) {
     const NUM_BLINDING_ROWS: usize = 7 - 1;
     let instance = vec![vec![randomness; num_rows - NUM_BLINDING_ROWS]];
 
-    test_mock(COPY_CIRCUIT_DEGREE, &circuit, instance.clone());
-
     if actual {
         test_actual(
             COPY_CIRCUIT_DEGREE,
@@ -348,6 +346,8 @@ pub async fn test_copy_circuit_block(block_num: u64, actual: bool) {
             instance,
             Some((*COPY_CIRCUIT_KEY).clone()),
         );
+    } else {
+        test_mock(COPY_CIRCUIT_DEGREE, &circuit, instance);
     }
 }
 
