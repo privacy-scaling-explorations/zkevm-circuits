@@ -43,13 +43,6 @@ macro_rules! declare_tests {
                 let block_num = GEN_DATA.blocks.get($block_tag).unwrap();
                 test_copy_circuit_block(*block_num, true).await;
             }
-
-            #[tokio::test]
-            async fn [<serial_test_super_ $name>]() {
-                log_init();
-                let block_num = GEN_DATA.blocks.get($block_tag).unwrap();
-                test_super_circuit_block(*block_num).await;
-            }
         }
     };
 }
