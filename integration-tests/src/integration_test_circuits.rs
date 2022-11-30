@@ -1,5 +1,4 @@
-#![cfg(feature = "circuits")]
-
+use crate::{get_client, GenDataOutput, CHAIN_ID};
 use bus_mapping::circuit_input_builder::{BuilderClient, CircuitInputBuilder, CircuitsParams};
 use eth_types::geth_types;
 use halo2_proofs::plonk::{
@@ -23,10 +22,8 @@ use halo2_proofs::{
         Blake2bRead, Blake2bWrite, Challenge255, TranscriptReadBuffer, TranscriptWriterBuffer,
     },
 };
-use integration_tests::{get_client, log_init, GenDataOutput, CHAIN_ID};
 use lazy_static::lazy_static;
 use log::trace;
-use paste::paste;
 use rand_chacha::rand_core::SeedableRng;
 use rand_chacha::ChaCha20Rng;
 use rand_core::RngCore;
@@ -45,7 +42,8 @@ use zkevm_circuits::super_circuit::SuperCircuit;
 use zkevm_circuits::tx_circuit::{sign_verify::SignVerifyChip, Secp256k1Affine, TxCircuit};
 
 lazy_static! {
-    static ref GEN_DATA: GenDataOutput = GenDataOutput::load();
+    /// Data generation.
+    pub static ref GEN_DATA: GenDataOutput = GenDataOutput::load();
     static ref RNG: XorShiftRng = XorShiftRng::from_seed([
         0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37, 0x32, 0x54, 0x06, 0xbc,
         0xe5,
@@ -82,7 +80,7 @@ async fn gen_inputs(
     cli.gen_inputs(block_num).await.unwrap()
 }
 
-fn test_run<C: Circuit<Fr>>(degree: u32, circuit: C, instance: Vec<Vec<Fr>>) {
+fn test_actual<C: Circuit<Fr>>(degree: u32, circuit: C, instance: Vec<Vec<Fr>>) {
     fn test_gen_proof<C: Circuit<Fr>, R: RngCore>(
         rng: R,
         circuit: C,
@@ -137,11 +135,6 @@ fn test_run<C: Circuit<Fr>>(degree: u32, circuit: C, instance: Vec<Vec<Fr>>) {
         .expect("failed to verify bench circuit");
     }
 
-    let mock_prover = MockProver::<Fr>::run(degree, &circuit, instance.clone()).unwrap();
-    mock_prover
-        .verify_par()
-        .expect("mock prover verification failed");
-
     let general_params = get_general_params(degree);
     let verifier_params: ParamsVerifierKZG<Bn256> = general_params.verifier_params().clone();
 
@@ -173,7 +166,15 @@ fn test_run<C: Circuit<Fr>>(degree: u32, circuit: C, instance: Vec<Vec<Fr>>) {
     );
 }
 
-async fn test_evm_circuit_block(block_num: u64) {
+fn test_mock<C: Circuit<Fr>>(degree: u32, circuit: &C, instance: Vec<Vec<Fr>>) {
+    let mock_prover = MockProver::<Fr>::run(degree, circuit, instance).unwrap();
+    mock_prover
+        .verify_par()
+        .expect("mock prover verification failed");
+}
+
+/// Integration test for evm circuit.
+pub async fn test_evm_circuit_block(block_num: u64, actual: bool) {
     log::info!("test evm circuit, block number: {}", block_num);
     let (builder, _) = gen_inputs(block_num).await;
 
@@ -183,10 +184,15 @@ async fn test_evm_circuit_block(block_num: u64) {
     let instance = get_test_instance(&block);
     let circuit = get_test_cicuit_from_block(block);
 
-    test_run(degree, circuit, instance);
+    test_mock(degree, &circuit, instance.clone());
+
+    if actual {
+        test_actual(degree, circuit, instance);
+    }
 }
 
-async fn test_state_circuit_block(block_num: u64) {
+/// Integration test for state circuit.
+pub async fn test_state_circuit_block(block_num: u64, actual: bool) {
     log::info!("test state circuit, block number: {}", block_num);
 
     const DEGREE: u32 = 17;
@@ -209,10 +215,15 @@ async fn test_state_circuit_block(block_num: u64) {
     let circuit = StateCircuit::<Fr>::new(rw_map, 1 << 16);
     let instance = circuit.instance();
 
-    test_run(DEGREE, circuit, instance);
+    test_mock(DEGREE, &circuit, instance.clone());
+
+    if actual {
+        test_actual(DEGREE, circuit, instance);
+    }
 }
 
-async fn test_tx_circuit_block(block_num: u64) {
+/// Integration test for tx circuit.
+pub async fn test_tx_circuit_block(block_num: u64, actual: bool) {
     log::info!("test tx circuit, block number: {}", block_num);
 
     const DEGREE: u32 = 20;
@@ -236,10 +247,15 @@ async fn test_tx_circuit_block(block_num: u64) {
         chain_id: CHAIN_ID,
     };
 
-    test_run(DEGREE, circuit, vec![vec![]]);
+    test_mock(DEGREE, &circuit, vec![vec![]]);
+
+    if actual {
+        test_actual(DEGREE, circuit, vec![vec![]]);
+    }
 }
 
-pub async fn test_bytecode_circuit_block(block_num: u64) {
+/// Integration test for bytecode circuit.
+pub async fn test_bytecode_circuit_block(block_num: u64, actual: bool) {
     const DEGREE: u32 = 16;
 
     log::info!("test bytecode circuit, block number: {}", block_num);
@@ -250,10 +266,15 @@ pub async fn test_bytecode_circuit_block(block_num: u64) {
 
     let circuit = BytecodeCircuitTester::<Fr>::new(unrolled, 2usize.pow(DEGREE));
 
-    test_run(DEGREE, circuit, Vec::new());
+    test_mock(DEGREE, &circuit, Vec::new());
+
+    if actual {
+        test_actual(DEGREE, circuit, Vec::new());
+    }
 }
 
-pub async fn test_copy_circuit_block(block_num: u64) {
+/// Integration test for copy circuit.
+pub async fn test_copy_circuit_block(block_num: u64, actual: bool) {
     const DEGREE: u32 = 16;
 
     log::info!("test copy circuit, block number: {}", block_num);
@@ -267,9 +288,14 @@ pub async fn test_copy_circuit_block(block_num: u64) {
     const NUM_BLINDING_ROWS: usize = 7 - 1;
     let instance = vec![vec![randomness; num_rows - NUM_BLINDING_ROWS]];
 
-    test_run(DEGREE, circuit, instance);
+    test_mock(DEGREE, &circuit, instance.clone());
+
+    if actual {
+        test_actual(DEGREE, circuit, instance);
+    }
 }
 
+/// Integration test for super circuit.
 pub async fn test_super_circuit_block(block_num: u64) {
     const MAX_TXS: usize = 4;
     const MAX_CALLDATA: usize = 512;
@@ -304,72 +330,3 @@ pub async fn test_super_circuit_block(block_num: u64) {
         panic!("Failed verification");
     }
 }
-
-macro_rules! declare_tests {
-    ($name:ident, $block_tag:expr) => {
-        paste! {
-            #[tokio::test]
-            async fn [<serial_test_evm_ $name>]() {
-                log_init();
-                let block_num = GEN_DATA.blocks.get($block_tag).unwrap();
-                test_evm_circuit_block(*block_num).await;
-            }
-
-            #[tokio::test]
-            async fn [<serial_test_state_ $name>]() {
-                log_init();
-                let block_num = GEN_DATA.blocks.get($block_tag).unwrap();
-                test_state_circuit_block(*block_num).await;
-            }
-
-            #[tokio::test]
-            async fn [<serial_test_tx_ $name>]() {
-                log_init();
-                let block_num = GEN_DATA.blocks.get($block_tag).unwrap();
-                test_tx_circuit_block(*block_num).await;
-            }
-
-            #[tokio::test]
-            async fn [<serial_test_bytecode_ $name>]() {
-                log_init();
-                let block_num = GEN_DATA.blocks.get($block_tag).unwrap();
-                test_bytecode_circuit_block(*block_num).await;
-            }
-
-            #[tokio::test]
-            async fn [<serial_test_copy_ $name>]() {
-                log_init();
-                let block_num = GEN_DATA.blocks.get($block_tag).unwrap();
-                test_copy_circuit_block(*block_num).await;
-            }
-
-            #[tokio::test]
-            async fn [<serial_test_super_ $name>]() {
-                log_init();
-                let block_num = GEN_DATA.blocks.get($block_tag).unwrap();
-                test_super_circuit_block(*block_num).await;
-            }
-        }
-    };
-}
-
-declare_tests!(circuit_block_transfer_0, "Transfer 0");
-/*
-declare_tests!(
-    circuit_deploy_greeter,
-    "Deploy Greeter"
-);
-*/
-declare_tests!(circuit_multiple_transfers_0, "Multiple transfers 0");
-declare_tests!(
-    circuit_erc20_openzeppelin_transfer_fail,
-    "ERC20 OpenZeppelin transfer failed"
-);
-declare_tests!(
-    circuit_erc20_openzeppelin_transfer_succeed,
-    "ERC20 OpenZeppelin transfer successful"
-);
-declare_tests!(
-    circuit_multiple_erc20_openzeppelin_transfers,
-    "Multiple ERC20 OpenZeppelin transfers"
-);

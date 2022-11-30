@@ -137,3 +137,6 @@ pub struct CompiledContract {
     /// Runtime Bytecode
     pub bin_runtime: Bytes,
 }
+
+/// Common code for integration tests of circuits.
+pub mod integration_test_circuits;
