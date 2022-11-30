@@ -94,6 +94,8 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
             _marker: PhantomData,
         };
         let one = Expression::Constant(F::from(1_u64));
+        let c16 = Expression::Constant(F::from(16));
+        let c16inv = Expression::Constant(F::from(16).invert().unwrap());
         let c128 = Expression::Constant(F::from(128));
         let c160_inv = Expression::Constant(F::from(160_u64).invert().unwrap());
         let c192 = Expression::Constant(F::from(192));
@@ -131,11 +133,6 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
             true,
             is_before,
         );
-
-        /*
-        TODO: Correspondence between nibbles in C and bytes in S to be checked (for
-        regular extension nodes this is done in extension_node_key.rs).
-        */
 
         /*
         When we have an extension node in the first level of the account trie,
@@ -363,7 +360,57 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
             },
         );
 
-        // TODO: constraints for `selectors` row
+        /*
+        To know each nibble individually (they come in pairs as bytes), the second nibbles
+        are in `C` row, from which we can compute the first nibbles.
+
+        Correspondence between nibbles in C and bytes in S for
+        regular extension nodes is ensured in `extension_node_key.rs`.
+        */
+        meta.create_gate("Existing node: first nibble / second nibble", |meta| {
+            let q_enable = q_enable(meta);
+            let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
+
+            let mut constraints = vec![];
+
+            for ind in 0..HASH_WIDTH-1 {
+                let s = meta.query_advice(s_main.bytes[1+ind], Rotation::cur());
+                let second_nibble = meta.query_advice(s_main.bytes[ind], Rotation::next());
+                let first_nibble = (s.clone() - second_nibble.clone()) * c16inv.clone();
+                /*
+                Note that first_nibble and second_nibble need to be between 0 and 15 - this
+                is checked in a lookup below.
+                */
+                constraints.push((
+                    "First_nibble second_nibble (existing extension node)",
+                    q_enable.clone()
+                        * q_not_first.clone()
+                        * (s - first_nibble.clone() * c16.clone() - second_nibble.clone())
+                ));
+            }
+            
+            constraints
+        });
+
+        for ind in 0..HASH_WIDTH - 1 {
+            meta.lookup_any("(Existing) extension node second_nibble", |meta| {
+                let q_enable = q_enable(meta);
+                let mut constraints = vec![];
+
+                let second_nibble = meta.query_advice(s_main.bytes[ind], Rotation::next());
+
+                constraints.push((
+                    Expression::Constant(F::from(FixedTableTag::Range16 as u64)),
+                    meta.query_fixed(fixed_table[0], Rotation::cur()),
+                ));
+                constraints.push((
+                    q_enable * second_nibble,
+                    meta.query_fixed(fixed_table[1], Rotation::cur()),
+                ));
+
+                constraints
+            });
+        }
 
         /*
         Note: range_lookups for regular extension nodes are in `extension_node_key.rs`, but

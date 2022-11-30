@@ -575,7 +575,7 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
                 let first_nibble = (s.clone() - second_nibble.clone()) * c16inv.clone();
 
                 /*
-                In this constraints we check whether the list of `second_nibbles` is correct.
+                With these constraints we ensure that the list of `second_nibbles` is correct.
 
                 Note that first_nibble and second_nibble need to be between 0 and 15 - this
                 is checked in a lookup below.
