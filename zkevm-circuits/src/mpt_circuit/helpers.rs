@@ -65,6 +65,11 @@ pub(crate) fn compute_rlc<F: FieldExt>(
     rlc
 }
 
+/*
+`range_lookups` is not called in some central place, but instead in each config separately
+because: (i) some columns not need to be checked in some rows because they are checked to be
+RLP compliant, (ii) branch init row specifies the length of the branch which can be bigger than 255. 
+*/
 pub(crate) fn range_lookups<F: FieldExt>(
     meta: &mut ConstraintSystem<F>,
     q_enable: impl Fn(&mut VirtualCells<'_, F>) -> Expression<F>,
@@ -90,6 +95,36 @@ pub(crate) fn range_lookups<F: FieldExt>(
             constraints
         });
     }
+}
+
+pub(crate) fn range256_check<F: FieldExt>(
+    meta: &mut ConstraintSystem<F>,
+    q_enable: impl Fn(&mut VirtualCells<'_, F>) -> Expression<F> + Clone,
+    s_main: MainCols<F>,
+    c_main: MainCols<F>,
+    fixed_table: [Column<Fixed>; 3],
+) {
+    range_lookups(
+        meta,
+        q_enable.clone(),
+        s_main.bytes.to_vec(),
+        FixedTableTag::Range256,
+        fixed_table,
+    );
+    range_lookups(
+        meta,
+        q_enable.clone(),
+        c_main.bytes.to_vec(),
+        FixedTableTag::Range256,
+        fixed_table,
+    );
+    range_lookups(
+        meta,
+        q_enable,
+        [s_main.rlp1, s_main.rlp2, c_main.rlp1, c_main.rlp2].to_vec(),
+        FixedTableTag::Range256,
+        fixed_table,
+    );
 }
 
 // The columns after the key stops have to be 0 to prevent attacks on RLC using

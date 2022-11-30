@@ -369,11 +369,24 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
         Note: range_lookups for regular extension nodes are in `extension_node_key.rs`, but
         we do not have it for inserted extension nodes.
         */
-        // TODO: better to move all range_lookups to one place and execute it for all rows
+        range_lookups(
+            meta,
+            q_enable.clone(),
+            s_main.bytes.to_vec(),
+            FixedTableTag::Range256,
+            fixed_table,
+        );
+        range_lookups(
+            meta,
+            q_enable.clone(),
+            c_main.bytes.to_vec(),
+            FixedTableTag::Range256,
+            fixed_table,
+        );
         range_lookups(
             meta,
             q_enable,
-            s_main.bytes.to_vec(),
+            [s_main.rlp1, s_main.rlp2, c_main.rlp1, c_main.rlp2].to_vec(),
             FixedTableTag::Range256,
             fixed_table,
         );

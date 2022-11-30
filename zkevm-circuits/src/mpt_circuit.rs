@@ -3,7 +3,7 @@ use eth_types::Field;
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{Layouter, Region, SimpleFloorPlanner, Value},
-    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed},
+    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
 
@@ -34,7 +34,7 @@ use branch::{
     extension_node_key::ExtensionNodeKeyConfig, Branch, BranchCols, BranchConfig,
 };
 use columns::{AccumulatorCols, DenoteCols, MainCols, PositionCols, ProofTypeCols};
-use helpers::get_is_extension_node;
+use helpers::{get_is_extension_node, range256_check};
 use proof_chain::ProofChainConfig;
 use storage_leaf::{
     leaf_key::LeafKeyConfig, leaf_key_in_added_branch::LeafKeyInAddedBranchConfig,
