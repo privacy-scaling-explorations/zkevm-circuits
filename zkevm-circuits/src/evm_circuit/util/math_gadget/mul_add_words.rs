@@ -80,7 +80,7 @@ impl<F: Field> MulAddWordsGadget<F> {
         let overflow = carry_hi_expr.clone()
             + a_limbs[1].clone() * b_limbs[3].clone()
             + a_limbs[2].clone() * b_limbs[2].clone()
-            + a_limbs[3].clone() * b_limbs[2].clone()
+            + a_limbs[3].clone() * b_limbs[1].clone()
             + a_limbs[2].clone() * b_limbs[3].clone()
             + a_limbs[3].clone() * b_limbs[2].clone()
             + a_limbs[3].clone() * b_limbs[3].clone();
@@ -318,7 +318,9 @@ mod tests {
     #[test]
     #[ignore]
     fn test_max_carry() {
-        // max * max + max = max < 256
+        // max * max + max = max << 256
+        // overflow is not really carry value, but kind of a flag.
+        // overflow == 73786976294838206460 + ((1<<64)-1)*((1<<64)-1)*6
         try_test!(
             MulAddGadgetContainer<Fr>,
             vec![
@@ -326,10 +328,7 @@ mod tests {
                 Word::MAX,
                 Word::MAX,
                 Word::from(0),
-                Word::from_dec_str(
-                    "6350874878119819312338956282401532410528162663560392320966563075034087161850"
-                )
-                .unwrap(), //WORD::MAX
+                Word::from_dec_str("2041694201525630780632673692000932855810").unwrap(),
             ],
             true,
         );
