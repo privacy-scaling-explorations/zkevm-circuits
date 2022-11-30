@@ -92,11 +92,12 @@ lazy_static! {
 }
 
 fn get_general_params(degree: u32) -> ParamsKZG<Bn256> {
-    match GEN_PARAMS.lock().unwrap().get(&degree) {
+    let mut map = GEN_PARAMS.lock().unwrap();
+    match map.get(&degree) {
         Some(params) => params.clone(),
         None => {
             let params = ParamsKZG::<Bn256>::setup(degree, RNG.clone());
-            GEN_PARAMS.lock().unwrap().insert(degree, params.clone());
+            map.insert(degree, params.clone());
             params
         }
     }
