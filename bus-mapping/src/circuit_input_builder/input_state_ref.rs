@@ -808,7 +808,7 @@ impl<'a> CircuitInputStateRef<'a> {
     pub fn handle_return(&mut self, step: &GethExecStep) -> Result<(), Error> {
         // handle return_data
         if !self.call()?.is_root {
-            match step.op {
+            let (offset, length) = match step.op {
                 OpcodeId::RETURN | OpcodeId::REVERT => {
                     let offset = step.stack.nth_last(0)?.as_usize();
                     let length = step.stack.nth_last(1)?.as_usize();
@@ -821,12 +821,18 @@ impl<'a> CircuitInputStateRef<'a> {
                         caller_ctx.return_data[0..length]
                             .copy_from_slice(&callee_memory.0[offset..offset + length]);
                     }
+                    (offset, length)
                 }
                 _ => {
                     let caller_ctx = self.caller_ctx_mut()?;
                     caller_ctx.return_data.truncate(0);
+                    (0, 0)
                 }
-            }
+            };
+
+            let call = self.call_mut()?;
+            call.return_data_offset = offset.try_into().unwrap();
+            call.return_data_length = length.try_into().unwrap();
         }
 
         let call = self.call()?.clone();
