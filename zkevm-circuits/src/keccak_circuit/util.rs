@@ -452,3 +452,12 @@ pub fn load_lookup_table<F: Field>(
         },
     )
 }
+
+pub(crate) fn extract_field<F: Field>(value: Value<F>) -> F {
+    let mut field = F::zero();
+    let _ = value.map(|f| {
+        field = f;
+        f
+    });
+    field
+}

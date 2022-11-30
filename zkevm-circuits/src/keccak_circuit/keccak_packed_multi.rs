@@ -9,6 +9,7 @@ use crate::keccak_circuit::util::{
     NUM_WORDS_TO_SQUEEZE, RATE, RATE_IN_BITS, RHO_MATRIX, ROUND_CST,
 };
 use crate::table::KeccakTable;
+use crate::util::Challenges;
 use crate::{evm_circuit::util::constraint_builder::BaseConstraintBuilder, util::Expr};
 use eth_types::Field;
 use gadgets::util::{and, select, sum};
@@ -16,7 +17,9 @@ use halo2_proofs::arithmetic::FieldExt;
 use halo2_proofs::plonk::VirtualCells;
 use halo2_proofs::{
     circuit::{Layouter, Region, SimpleFloorPlanner, Value},
-    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, TableColumn},
+    plonk::{
+        Advice, Challenge, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, TableColumn,
+    },
     poly::Rotation,
 };
 use log::{debug, info};
@@ -66,7 +69,7 @@ pub(crate) struct SqueezeData<F: Field> {
 }
 
 /// KeccakRow
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub(crate) struct KeccakRow<F: Field> {
     q_enable: bool,
     q_round: bool,
@@ -78,8 +81,8 @@ pub(crate) struct KeccakRow<F: Field> {
     is_final: bool,
     cell_values: Vec<F>,
     length: usize,
-    data_rlc: F,
-    hash_rlc: F,
+    data_rlc: Value<F>,
+    hash_rlc: Value<F>,
 }
 
 /// Part
@@ -176,6 +179,24 @@ impl<F: FieldExt> Cell<F> {
             self.column_idx,
             ((offset as i32) + self.rotation) as usize,
             value,
+        );
+    }
+
+    pub(crate) fn assign_value(&self, region: &mut KeccakRegion<F>, offset: i32, value: Value<F>) {
+        // This is really ugly. But since there's no way to easily adapt the CellManager
+        // API customized for this impl specifically, for now I'm opening the
+        // value and extracting it. Once https://github.com/privacy-scaling-explorations/zkevm-circuits/issues/933 is resolved,
+        // this shouldn't be needed.
+        let mut value_f = F::zero();
+        value.map(|f| {
+            value_f = f;
+            f
+        });
+
+        region.assign(
+            self.column_idx,
+            ((offset as i32) + self.rotation) as usize,
+            value_f,
         );
     }
 }
@@ -336,19 +357,13 @@ pub struct KeccakPackedConfig<F> {
 /// KeccakPackedCircuit
 #[derive(Default)]
 pub struct KeccakPackedCircuit<F: Field> {
-    witness: Vec<KeccakRow<F>>,
+    inputs: Vec<Vec<u8>>,
     num_rows: usize,
     _marker: PhantomData<F>,
 }
 
-impl<F: Field> KeccakPackedCircuit<F> {
-    fn r() -> F {
-        F::from(123456)
-    }
-}
-
 impl<F: Field> Circuit<F> for KeccakPackedCircuit<F> {
-    type Config = KeccakPackedConfig<F>;
+    type Config = (KeccakPackedConfig<F>, Challenges<Challenge>);
     type FloorPlanner = SimpleFloorPlanner;
 
     fn without_witnesses(&self) -> Self {
@@ -356,7 +371,12 @@ impl<F: Field> Circuit<F> for KeccakPackedCircuit<F> {
     }
 
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-        KeccakPackedConfig::configure(meta, Expression::Constant(KeccakPackedCircuit::r()))
+        let challenges = Challenges::construct(meta);
+        let challenge_exprs = challenges.exprs(meta);
+        (
+            KeccakPackedConfig::configure(meta, challenge_exprs),
+            challenges,
+        )
     }
 
     fn synthesize(
@@ -364,17 +384,18 @@ impl<F: Field> Circuit<F> for KeccakPackedCircuit<F> {
         config: Self::Config,
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
-        config.load(&mut layouter)?;
-        config.assign(&mut layouter, &self.witness)?;
+        config.0.load(&mut layouter)?;
+        let witness = self.generate_witness(config.1.values(&mut layouter));
+        config.0.assign(&mut layouter, witness.as_slice())?;
         Ok(())
     }
 }
 
 impl<F: Field> KeccakPackedCircuit<F> {
     /// Creates a new circuit instance
-    pub fn new(num_rows: usize) -> Self {
+    pub fn new(num_rows: usize, inputs: Vec<Vec<u8>>) -> Self {
         KeccakPackedCircuit {
-            witness: Vec::new(),
+            inputs,
             num_rows,
             _marker: PhantomData,
         }
@@ -387,9 +408,9 @@ impl<F: Field> KeccakPackedCircuit<F> {
     }
 
     /// Sets the witness using the data to be hashed
-    pub fn generate_witness(&mut self, inputs: &[Vec<u8>]) {
-        self.witness = multi_keccak(inputs, KeccakPackedCircuit::r(), Some(self.capacity()))
-            .expect("Too many inputs for given capacity");
+    pub(crate) fn generate_witness(&self, challenges: Challenges<Value<F>>) -> Vec<KeccakRow<F>> {
+        multi_keccak(self.inputs.as_slice(), challenges, Some(self.capacity()))
+            .expect("Too many inputs for given capacity")
     }
 }
 
@@ -778,7 +799,10 @@ mod transform_to {
 }
 
 impl<F: Field> KeccakPackedConfig<F> {
-    pub(crate) fn configure(meta: &mut ConstraintSystem<F>, r: Expression<F>) -> Self {
+    pub(crate) fn configure(
+        meta: &mut ConstraintSystem<F>,
+        challenges: Challenges<Expression<F>>,
+    ) -> Self {
         let q_enable = meta.fixed_column();
         let q_first = meta.fixed_column();
         let q_round = meta.fixed_column();
@@ -1289,7 +1313,7 @@ impl<F: Field> KeccakPackedConfig<F> {
                 });
             }
             let hash_bytes_le = hash_bytes.into_iter().rev().collect::<Vec<_>>();
-            let rlc = compose_rlc::expr(&hash_bytes_le, r.clone());
+            let rlc = compose_rlc::expr(&hash_bytes_le, challenges.evm_word());
             cb.condition(start_new_hash, |cb| {
                 cb.require_equal(
                     "hash rlc check",
@@ -1483,7 +1507,7 @@ impl<F: Field> KeccakPackedConfig<F> {
                     new_data_rlc = select::expr(
                         is_padding.expr(),
                         new_data_rlc.clone(),
-                        new_data_rlc.clone() * r.clone() + byte.expr.clone(),
+                        new_data_rlc.clone() * challenges.keccak_input() + byte.expr.clone(),
                     );
                     if idx < data_rlcs.len() - 1 {
                         cb.require_equal(
@@ -1562,10 +1586,10 @@ impl<F: Field> KeccakPackedConfig<F> {
         &self,
         layouter: &mut impl Layouter<F>,
         inputs: &[Vec<u8>],
-        r: F,
+        challenges: Challenges<Value<F>>,
         capacity: Option<usize>,
     ) -> Result<(), Error> {
-        let witness = multi_keccak(inputs, r, capacity)?;
+        let witness = multi_keccak(inputs, challenges, capacity)?;
         self.assign(layouter, &witness)
     }
 
@@ -1617,9 +1641,9 @@ impl<F: Field> KeccakPackedConfig<F> {
             region,
             offset,
             [
-                F::from(row.is_final),
+                Value::known(F::from(row.is_final)),
                 row.data_rlc,
-                F::from(row.length as u64),
+                Value::known(F::from(row.length as u64)),
                 row.hash_rlc,
             ],
         )?;
@@ -1665,7 +1689,7 @@ impl<F: Field> KeccakPackedConfig<F> {
     }
 }
 
-fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: &[u8], r: F) {
+fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: &[u8], challenges: Challenges<Value<F>>) {
     let mut bits = into_bits(bytes);
     let mut s = [[F::zero(); 5]; 5];
     let absorb_positions = get_absorb_positions();
@@ -1680,7 +1704,7 @@ fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: &[u8], r: F) {
     bits.push(1);
 
     let mut length = 0usize;
-    let mut data_rlc = F::zero();
+    let mut data_rlc = Value::known(F::zero());
     let chunks = bits.chunks(RATE_IN_BITS);
     let num_chunks = chunks.len();
     for (idx, chunk) in chunks.enumerate() {
@@ -1704,7 +1728,7 @@ fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: &[u8], r: F) {
         let mut cell_managers = Vec::new();
         let mut regions = Vec::new();
 
-        let mut hash_rlc = F::zero();
+        let mut hash_rlc = Value::known(F::zero());
         let mut round_lengths = Vec::new();
         let mut round_data_rlcs = Vec::new();
         for round in 0..NUM_ROUNDS + 1 {
@@ -1792,14 +1816,14 @@ fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: &[u8], r: F) {
                     is_padding.assign(&mut region, 0, if padding { F::one() } else { F::zero() });
                 }
 
-                data_rlcs[0].assign(&mut region, 0, data_rlc);
+                data_rlcs[0].assign_value(&mut region, 0, data_rlc);
                 for (idx, (byte, padding)) in input_bytes.iter().zip(paddings.iter()).enumerate() {
                     if !*padding {
-                        let byte_value: F = byte.value;
-                        data_rlc = data_rlc * r + byte_value;
+                        let byte_value = Value::known(byte.value);
+                        data_rlc = data_rlc * challenges.keccak_input() + byte_value;
                     }
                     if idx < data_rlcs.len() - 1 {
-                        data_rlcs[idx + 1].assign(&mut region, 0, data_rlc);
+                        data_rlcs[idx + 1].assign_value(&mut region, 0, data_rlc);
                     }
                 }
             }
@@ -1953,9 +1977,11 @@ fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: &[u8], r: F) {
                     .flat_map(|a| to_bytes::value(&unpack(a[0])))
                     .rev()
                     .collect::<Vec<_>>();
-                rlc::value(&hash_bytes_le, r)
+                challenges
+                    .evm_word()
+                    .map(|challenge_value| rlc::value(&hash_bytes_le, challenge_value))
             } else {
-                F::zero()
+                Value::known(F::zero())
             };
 
             // The words to squeeze out
@@ -2022,7 +2048,7 @@ fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: &[u8], r: F) {
 
 fn multi_keccak<F: Field>(
     bytes: &[Vec<u8>],
-    r: F,
+    challenges: Challenges<Value<F>>,
     capacity: Option<usize>,
 ) -> Result<Vec<KeccakRow<F>>, Error> {
     let mut rows: Vec<KeccakRow<F>> = Vec::new();
@@ -2039,19 +2065,19 @@ fn multi_keccak<F: Field>(
             round_cst: F::zero(),
             is_final: false,
             length: 0usize,
-            data_rlc: F::zero(),
-            hash_rlc: F::zero(),
+            data_rlc: Value::known(F::zero()),
+            hash_rlc: Value::known(F::zero()),
             cell_values: Vec::new(),
         });
     }
     // Actual keccaks
     for bytes in bytes {
-        keccak(&mut rows, bytes, r);
+        keccak(&mut rows, bytes, challenges);
     }
     if let Some(capacity) = capacity {
         // Pad with no data hashes to the expected capacity
         while rows.len() < (1 + capacity * (NUM_ROUNDS + 1)) * get_num_rows_per_round() {
-            keccak(&mut rows, &[], r);
+            keccak(&mut rows, &[], challenges);
         }
         // Check that we are not over capacity
         if rows.len() > (1 + capacity * (NUM_ROUNDS + 1)) * get_num_rows_per_round() {
@@ -2067,8 +2093,7 @@ mod tests {
     use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
 
     fn verify<F: Field>(k: u32, inputs: Vec<Vec<u8>>, success: bool) {
-        let mut circuit = KeccakPackedCircuit::new(2usize.pow(k));
-        circuit.generate_witness(&inputs);
+        let circuit = KeccakPackedCircuit::new(2usize.pow(k), inputs);
 
         let prover = MockProver::<F>::run(k, &circuit, vec![]).unwrap();
         let verify_result = prover.verify();
