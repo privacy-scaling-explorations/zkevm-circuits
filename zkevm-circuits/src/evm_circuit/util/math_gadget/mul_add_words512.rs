@@ -47,7 +47,7 @@ pub(crate) struct MulAddWords512Gadget<F> {
 }
 
 impl<F: Field> MulAddWords512Gadget<F> {
-    /// words argument is: a, b, d, e
+    /// The words argument is: a, b, d, e
     /// Addend is the optional c.
     pub(crate) fn construct(
         cb: &mut ConstraintBuilder<F>,
@@ -201,7 +201,7 @@ mod tests {
     use halo2_proofs::plonk::Error;
 
     #[derive(Clone)]
-    /// a * b + c == d * 2**256 + e
+    /// MulAddWords512GadgetContainer: require(a * b + c == d * 2**256 + e)
     struct MulAddWords512GadgetContainer<F> {
         math_gadget: MulAddWords512Gadget<F>,
         a: util::Word<F>,

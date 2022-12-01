@@ -60,7 +60,7 @@ mod tests {
     use halo2_proofs::plonk::Error;
 
     #[derive(Clone)]
-
+    /// MinMaxTestContainer: require(min(a, b) == (a if MIN_IS_A else b))
     struct MinMaxTestContainer<F, const N_BYTES: usize, const MIN_IS_A: bool> {
         minmax_gadget: MinMaxGadget<F, N_BYTES>,
         a: Cell<F>,

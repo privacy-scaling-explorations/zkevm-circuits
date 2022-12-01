@@ -92,7 +92,7 @@ mod tests {
     use halo2_proofs::plonk::Error;
 
     #[derive(Clone)]
-    /// a < b
+    /// CmpWordGadgetTestContainer: require(a == b if CHECK_EQ else a < b)
     struct CmpWordGadgetTestContainer<F, const CHECK_EQ: bool> {
         cmp_gadget: CmpWordsGadget<F>,
         a: util::Word<F>,

@@ -23,7 +23,7 @@ use halo2_proofs::{
 
 pub(crate) const WORD_LOW_MAX: Word = U256([u64::MAX, u64::MAX, 0, 0]);
 pub(crate) const WORD_HIGH_MAX: Word = U256([0, 0, u64::MAX, u64::MAX]);
-// from bn256::MODULES - 1
+// Maximum field value in bn256: bn256::MODULES - 1
 pub(crate) const WORD_CELL_MAX: Word = U256([
     0x43e1f593f0000000,
     0x2833e84879b97091,
@@ -217,10 +217,10 @@ impl<F: Field, G: MathGadgetContainer<F>> Circuit<F> for UnitTestMathGadgetBaseC
     }
 }
 
-/// test_math_gadget_container takes math gadget container and run a container
-/// based circuit. All test logic should be included in the container, and
-/// witness words are used for both input & output data. How to deal with the
-/// witness words is left to each container.
+/// This fn test_math_gadget_container takes math gadget container and run a
+/// container based circuit. All test logic should be included in the container,
+/// and witness words are used for both input & output data. How to deal with
+/// the witness words is left to each container.
 pub(crate) fn test_math_gadget_container<F: Field, G: MathGadgetContainer<F>>(
     witnesses: Vec<Word>,
     expected_success: bool,
@@ -241,8 +241,7 @@ pub(crate) fn test_math_gadget_container<F: Field, G: MathGadgetContainer<F>>(
     }
 }
 
-// #[macro_export]
-/// simple macro for less code & better readability
+/// A simple macro for less code & better readability
 macro_rules! try_test {
     ($base_class:ty, $witnesses:expr, $expect_success:expr $(,)?) => {{
         test_math_gadget_container::<Fr, $base_class>($witnesses.to_vec(), $expect_success)

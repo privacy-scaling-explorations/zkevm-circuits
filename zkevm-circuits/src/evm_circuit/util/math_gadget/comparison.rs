@@ -59,7 +59,7 @@ mod tests {
     use halo2_proofs::plonk::Error;
 
     #[derive(Clone)]
-    /// a < b
+    /// ComparisonTestContainer: require(a == b if CHECK_EQ else a < b)
     struct ComparisonTestContainer<F, const N: usize, const CHECK_EQ: bool> {
         cmp_gadget: ComparisonGadget<F, N>,
         a: Cell<F>,

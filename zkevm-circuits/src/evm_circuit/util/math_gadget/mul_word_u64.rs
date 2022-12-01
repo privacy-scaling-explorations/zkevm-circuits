@@ -99,7 +99,7 @@ mod tests {
     use halo2_proofs::plonk::Error;
 
     #[derive(Clone)]
-    /// product = a*(b as u64)
+    /// MulWordByU64TestContainer: require(product = a*(b as u64))
     struct MulWordByU64TestContainer<F> {
         mulwords_u64_gadget: MulWordByU64Gadget<F>,
         a: util::Word<F>,

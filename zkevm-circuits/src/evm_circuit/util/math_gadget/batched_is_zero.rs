@@ -72,7 +72,7 @@ mod tests {
     use halo2_proofs::plonk::Error;
 
     #[derive(Clone)]
-    /// all(cells) == 0
+    /// IsZeroGadgetTestContainer: require(all(cells) == 0)
     struct IsZeroGadgetTestContainer<F, const N: usize> {
         z_gadget: BatchedIsZeroGadget<F, N>,
         nums: [Cell<F>; N],

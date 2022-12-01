@@ -95,7 +95,7 @@ mod tests {
 
     const N: usize = 3;
     #[derive(Clone)]
-    /// a < b
+    /// LtGadgetTestContainer: require(a < b)
     struct LtGadgetTestContainer<F> {
         lt_gadget: LtGadget<F, N>,
         a: Cell<F>,

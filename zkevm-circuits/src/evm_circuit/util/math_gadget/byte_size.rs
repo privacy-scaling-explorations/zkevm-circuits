@@ -115,9 +115,10 @@ mod tests {
     use halo2_proofs::plonk::Error;
 
     #[derive(Clone)]
+    /// ByteSizeGadgetContainer: require(N = byte_size(a))
     struct ByteSizeGadgetContainer<F, const N: u8> {
         bytesize_gadget: ByteSizeGadget<F>,
-        value_rlc: util::Word<F>,
+        a: util::Word<F>,
     }
 
     impl<F: Field, const N: u8> MathGadgetContainer<F> for ByteSizeGadgetContainer<F, N> {
@@ -131,7 +132,7 @@ mod tests {
             );
             ByteSizeGadgetContainer {
                 bytesize_gadget,
-                value_rlc,
+                a: value_rlc,
             }
         }
 
@@ -142,8 +143,7 @@ mod tests {
         ) -> Result<(), Error> {
             let offset = 0;
             let x = witnesses[0];
-            self.value_rlc
-                .assign(region, offset, Some(x.to_le_bytes()))?;
+            self.a.assign(region, offset, Some(x.to_le_bytes()))?;
             self.bytesize_gadget.assign(region, offset, x)?;
 
             Ok(())

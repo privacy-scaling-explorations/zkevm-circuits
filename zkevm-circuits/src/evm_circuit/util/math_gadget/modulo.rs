@@ -102,7 +102,7 @@ mod tests {
     use halo2_proofs::plonk::Error;
 
     #[derive(Clone)]
-    /// a % n == r
+    /// ModGadgetTestContainer: require(a % n == r)
     struct ModGadgetTestContainer<F> {
         mod_gadget: ModGadget<F>,
         a: util::Word<F>,

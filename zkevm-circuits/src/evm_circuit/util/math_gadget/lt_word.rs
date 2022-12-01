@@ -74,7 +74,7 @@ mod tests {
     use halo2_proofs::plonk::Error;
 
     #[derive(Clone)]
-    /// a < b
+    /// LtWordTestContainer: require(a < b)
     struct LtWordTestContainer<F> {
         ltword_gadget: LtWordGadget<F>,
         a: util::Word<F>,

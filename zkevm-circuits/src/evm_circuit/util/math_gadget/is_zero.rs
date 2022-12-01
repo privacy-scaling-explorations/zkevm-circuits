@@ -64,7 +64,7 @@ mod tests {
     use halo2_proofs::plonk::Error;
 
     #[derive(Clone)]
-    /// n != 0
+    /// IsZeroGadgetTestContainer: require(n != 0)
     struct IsZeroGadgetTestContainer<F> {
         z_gadget: IsZeroGadget<F>,
         n: Cell<F>,

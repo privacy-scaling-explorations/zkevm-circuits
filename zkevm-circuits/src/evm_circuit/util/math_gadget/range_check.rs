@@ -54,16 +54,18 @@ mod tests {
     use halo2_proofs::plonk::Error;
 
     #[derive(Clone)]
-    /// a in [0..1<<32]
-    struct RangeCheckTestContainer<F> {
-        range_check_gadget: RangeCheckGadget<F, 4>,
+    /// RangeCheckTestContainer: require(a in [0..1<<(8*N_BYTES)])
+    struct RangeCheckTestContainer<F, const N_BYTES: usize> {
+        range_check_gadget: RangeCheckGadget<F, N_BYTES>,
         a: Cell<F>,
     }
 
-    impl<F: Field> MathGadgetContainer<F> for RangeCheckTestContainer<F> {
+    impl<F: Field, const N_BYTES: usize> MathGadgetContainer<F>
+        for RangeCheckTestContainer<F, N_BYTES>
+    {
         fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
             let a = cb.query_cell();
-            let range_check_gadget = RangeCheckGadget::<F, 4>::construct(cb, a.expr());
+            let range_check_gadget = RangeCheckGadget::<F, N_BYTES>::construct(cb, a.expr());
             RangeCheckTestContainer {
                 range_check_gadget,
                 a,
@@ -87,12 +89,12 @@ mod tests {
 
     #[test]
     fn test_rangecheck_just_in_range() {
-        try_test!(RangeCheckTestContainer<Fr>, vec![Word::from(0)], true);
+        try_test!(RangeCheckTestContainer<Fr, 4>, vec![Word::from(0)], true);
 
-        try_test!(RangeCheckTestContainer<Fr>, vec![Word::from(1)], true);
+        try_test!(RangeCheckTestContainer<Fr, 4>, vec![Word::from(1)], true);
         // max - 1
         try_test!(
-            RangeCheckTestContainer<Fr>,
+            RangeCheckTestContainer<Fr, 4>,
             vec![Word::from((1u64 << 32) - 1)],
             true,
         );
@@ -101,7 +103,7 @@ mod tests {
     #[test]
     fn test_rangecheck_out_of_range() {
         try_test!(
-            RangeCheckTestContainer<Fr>,
+            RangeCheckTestContainer<Fr, 4>,
             vec![Word::from(1u64 << 32)],
             false,
         );

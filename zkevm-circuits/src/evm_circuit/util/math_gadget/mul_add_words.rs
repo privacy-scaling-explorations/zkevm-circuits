@@ -156,7 +156,7 @@ mod tests {
     use halo2_proofs::plonk::Error;
 
     #[derive(Clone)]
-    /// a*b + c == d + carry*(2**256)
+    /// MulAddGadgetContainer: require(a*b + c == d + carry*(2**256))
     struct MulAddGadgetContainer<F> {
         muladd_words_gadget: MulAddWordsGadget<F>,
         a: util::Word<F>,

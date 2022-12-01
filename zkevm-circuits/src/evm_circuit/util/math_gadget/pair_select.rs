@@ -66,7 +66,7 @@ mod tests {
     use halo2_proofs::plonk::Error;
 
     #[derive(Clone)]
-    /// a < b
+    /// PairSelectionTestContainer: require(v == a if SELECT_A else b)
     struct PairSelectionTestContainer<F, const SELECT_A: bool> {
         select_gadget: PairSelectGadget<F>,
         a: Cell<F>,

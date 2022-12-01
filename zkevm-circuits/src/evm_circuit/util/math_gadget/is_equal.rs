@@ -47,7 +47,7 @@ mod tests {
     use halo2_proofs::plonk::Error;
 
     #[derive(Clone)]
-    /// a == b
+    /// IsEqualGadgetTestContainer: require(a == b)
     struct IsEqualGadgetTestContainer<F> {
         eq_gadget: IsEqualGadget<F>,
         a: Cell<F>,

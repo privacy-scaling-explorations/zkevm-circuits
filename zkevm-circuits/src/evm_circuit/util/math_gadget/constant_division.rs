@@ -93,7 +93,8 @@ mod tests {
     use halo2_proofs::plonk::Error;
 
     #[derive(Clone)]
-    /// a < b
+    /// ConstantDivisionTestContainer:
+    /// require(a(N_BYTES) == DENOMINATOR * QUOTIENT + REMAINDER)
     struct ConstantDivisionTestContainer<
         F,
         const N_BYTES: usize,

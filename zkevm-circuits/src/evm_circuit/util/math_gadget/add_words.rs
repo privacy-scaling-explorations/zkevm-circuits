@@ -154,7 +154,7 @@ mod tests {
     use halo2_proofs::plonk::Error;
 
     #[derive(Clone)]
-    /// sum = a + b
+    /// AddWordsTestContainer: require(sum = sum(addends))
     struct AddWordsTestContainer<
         F,
         const N_ADDENDS: usize,

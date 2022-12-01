@@ -101,6 +101,7 @@ mod tests {
     use halo2_proofs::plonk::Error;
 
     #[derive(Clone)]
+    /// AbsWordGadgetContainer: require(abs(a) == -a if IS_NEG else a)
     struct AbsWordGadgetContainer<F, const IS_NEG: bool> {
         absword_gadget: AbsWordGadget<F>,
     }
