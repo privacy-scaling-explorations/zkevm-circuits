@@ -1,6 +1,5 @@
-use crate::{get_client, GenDataOutput, CHAIN_ID};
+use crate::{get_client, GenDataOutput};
 use bus_mapping::circuit_input_builder::{BuilderClient, CircuitInputBuilder, CircuitsParams};
-use eth_types::geth_types;
 use halo2_proofs::plonk::{
     create_proof, keygen_pk, keygen_vk, verify_proof, Circuit, ProvingKey, VerifyingKey,
 };
@@ -8,14 +7,7 @@ use halo2_proofs::poly::commitment::ParamsProver;
 use halo2_proofs::poly::kzg::commitment::{KZGCommitmentScheme, ParamsKZG, ParamsVerifierKZG};
 use halo2_proofs::poly::kzg::multiopen::{ProverSHPLONK, VerifierSHPLONK};
 use halo2_proofs::poly::kzg::strategy::SingleStrategy;
-use halo2_proofs::{
-    arithmetic::CurveAffine,
-    dev::MockProver,
-    halo2curves::{
-        bn256::Fr,
-        group::{Curve, Group},
-    },
-};
+use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
 use halo2_proofs::{
     halo2curves::bn256::{Bn256, G1Affine},
     transcript::{
@@ -25,11 +17,9 @@ use halo2_proofs::{
 use lazy_static::lazy_static;
 use log::trace;
 use rand_chacha::rand_core::SeedableRng;
-use rand_chacha::ChaCha20Rng;
 use rand_core::RngCore;
 use rand_xorshift::XorShiftRng;
 use std::collections::HashMap;
-use std::marker::PhantomData;
 use std::sync::Mutex;
 use zkevm_circuits::bytecode_circuit::bytecode_unroller::{unroll, BytecodeCircuit};
 use zkevm_circuits::copy_circuit::CopyCircuit;
@@ -38,7 +28,7 @@ use zkevm_circuits::evm_circuit::witness::RwMap;
 use zkevm_circuits::evm_circuit::{test::get_test_cicuit_from_block, witness::block_convert};
 use zkevm_circuits::state_circuit::StateCircuit;
 use zkevm_circuits::super_circuit::SuperCircuit;
-use zkevm_circuits::tx_circuit::{sign_verify::SignVerifyChip, Secp256k1Affine, TxCircuit};
+use zkevm_circuits::tx_circuit::TxCircuit;
 use zkevm_circuits::util::SubCircuit;
 
 const CIRCUITS_PARAMS: CircuitsParams = CircuitsParams {
@@ -62,33 +52,39 @@ lazy_static! {
         0xe5,
     ]);
     static ref GEN_PARAMS: Mutex<HashMap<u32, ParamsKZG<Bn256>>> = Mutex::new(HashMap::new());
+}
+
+lazy_static! {
     static ref STATE_CIRCUIT_KEY: ProvingKey<G1Affine> = {
         let circuit = StateCircuit::<Fr>::default();
         let general_params = get_general_params(STATE_CIRCUIT_DEGREE);
 
-        let verifying_key = keygen_vk(&general_params, &circuit).expect("keygen_vk should not fail");
+        let verifying_key =
+            keygen_vk(&general_params, &circuit).expect("keygen_vk should not fail");
         keygen_pk(&general_params, verifying_key, &circuit).expect("keygen_pk should not fail")
     };
     static ref TX_CIRCUIT_KEY: ProvingKey<G1Affine> = {
         let circuit = TxCircuit::<Fr>::default();
         let general_params = get_general_params(TX_CIRCUIT_DEGREE);
 
-        let verifying_key = keygen_vk(&general_params, &circuit).expect("keygen_vk should not fail");
+        let verifying_key =
+            keygen_vk(&general_params, &circuit).expect("keygen_vk should not fail");
         keygen_pk(&general_params, verifying_key, &circuit).expect("keygen_pk should not fail")
     };
-
     static ref BYTECODE_CIRCUIT_KEY: ProvingKey<G1Affine> = {
         let circuit = BytecodeCircuit::<Fr>::default();
         let general_params = get_general_params(BYTECODE_CIRCUIT_DEGREE);
 
-        let verifying_key = keygen_vk(&general_params, &circuit).expect("keygen_vk should not fail");
+        let verifying_key =
+            keygen_vk(&general_params, &circuit).expect("keygen_vk should not fail");
         keygen_pk(&general_params, verifying_key, &circuit).expect("keygen_pk should not fail")
     };
     static ref COPY_CIRCUIT_KEY: ProvingKey<G1Affine> = {
         let circuit = CopyCircuit::<Fr>::default();
         let general_params = get_general_params(COPY_CIRCUIT_DEGREE);
 
-        let verifying_key = keygen_vk(&general_params, &circuit).expect("keygen_vk should not fail");
+        let verifying_key =
+            keygen_vk(&general_params, &circuit).expect("keygen_vk should not fail");
         keygen_pk(&general_params, verifying_key, &circuit).expect("keygen_pk should not fail")
     };
 }
@@ -361,7 +357,7 @@ pub async fn test_super_circuit_block(block_num: u64) {
     )
     .await
     .unwrap();
-    let (builder, eth_block) = cli.gen_inputs(block_num).await.unwrap();
+    let (builder, _) = cli.gen_inputs(block_num).await.unwrap();
     let (k, circuit, instance) =
         SuperCircuit::<_, MAX_TXS, MAX_CALLDATA, MAX_RWS>::build_from_circuit_input_builder(
             &builder,
