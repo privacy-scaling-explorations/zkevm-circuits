@@ -8,8 +8,6 @@ use ethers_core::types::TransactionRequest;
 use ethers_signers::{LocalWallet, Signer};
 use external_tracer::TraceConfig;
 use halo2_proofs::dev::MockProver;
-use rand::SeedableRng;
-use rand_chacha::ChaCha20Rng;
 use std::{collections::HashMap, str::FromStr};
 use thiserror::Error;
 use zkevm_circuits::{super_circuit::SuperCircuit, test_util::BytecodeTestConfig};
@@ -264,6 +262,9 @@ pub fn run_test(
             nonce: tx.nonce,
             gas: tx.gas_limit,
             transaction_index: Some(U64::from(index)),
+            r: tx.r,
+            s: tx.s,
+            v: U64::from(tx.v),
             ..eth_types::Transaction::default()
         })
         .collect();
@@ -298,6 +299,8 @@ pub fn run_test(
         let circuits_params = CircuitsParams {
             max_txs: 1,
             max_rws: 55000,
+            max_calldata: 5000,
+            max_bytecode: 5000,
             keccak_padding: None,
         };
         let block_data = BlockData::new_from_geth_data_with_params(geth_data, circuits_params);
@@ -308,7 +311,8 @@ pub fn run_test(
             .map_err(|err| StateTestError::CircuitInput(err.to_string()))?;
 
         let block =
-            zkevm_circuits::evm_circuit::witness::block_convert(&builder.block, &builder.code_db);
+            zkevm_circuits::evm_circuit::witness::block_convert(&builder.block, &builder.code_db)
+                .unwrap();
 
         let config = BytecodeTestConfig {
             enable_evm_circuit_test: true,
@@ -322,8 +326,7 @@ pub fn run_test(
         geth_data.sign(&wallets);
 
         let (k, circuit, instance, _builder) =
-            SuperCircuit::<_, 1, 32, 255>::build(geth_data, &mut ChaCha20Rng::seed_from_u64(2))
-                .unwrap();
+            SuperCircuit::<_, 1, 32, 255>::build(geth_data).unwrap();
         builder = _builder;
 
         let prover = MockProver::run(k, &circuit, instance).unwrap();

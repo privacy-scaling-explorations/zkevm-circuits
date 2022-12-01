@@ -14,6 +14,8 @@ use halo2_proofs::{
 use crate::{
     evm_circuit::{util::constraint_builder::BaseConstraintBuilder, witness::Block},
     table::ExpTable,
+    util::{Challenges, SubCircuit, SubCircuitConfig},
+    witness,
 };
 
 /// The number of rows assigned for each step in an exponentiation trace.
@@ -35,9 +37,11 @@ pub struct ExpCircuitConfig<F> {
     pub parity_check: MulAddConfig<F>,
 }
 
-impl<F: Field> ExpCircuitConfig<F> {
-    /// Configure the exponentiation circuit.
-    pub fn configure(meta: &mut ConstraintSystem<F>, exp_table: ExpTable) -> Self {
+impl<F: Field> SubCircuitConfig<F> for ExpCircuitConfig<F> {
+    type ConfigArgs = ExpTable;
+
+    /// Return a new ExpCircuitConfig
+    fn new(meta: &mut ConstraintSystem<F>, exp_table: Self::ConfigArgs) -> Self {
         let q_usable = meta.complex_selector();
         let mul_gadget = MulAddChip::configure(meta, |meta| {
             and::expr([
@@ -271,7 +275,9 @@ impl<F: Field> ExpCircuitConfig<F> {
             parity_check,
         }
     }
+}
 
+impl<F: Field> ExpCircuitConfig<F> {
     /// Assign witness to the exponentiation circuit.
     pub fn assign_block(
         &self,
@@ -378,19 +384,40 @@ impl<F: Field> ExpCircuitConfig<F> {
     }
 }
 
-#[derive(Default)]
-struct ExpCircuit<F> {
+/// ExpCircuit
+#[derive(Default, Clone, Debug)]
+pub struct ExpCircuit<F> {
     block: Option<Block<F>>,
 }
 
 impl<F: Field> ExpCircuit<F> {
-    pub fn new(block: Block<F>) -> Self {
+    pub(crate) fn new(block: Block<F>) -> Self {
         Self { block: Some(block) }
     }
 }
 
-impl<F: Field> Circuit<F> for ExpCircuit<F> {
+impl<F: Field> SubCircuit<F> for ExpCircuit<F> {
     type Config = ExpCircuitConfig<F>;
+
+    fn new_from_block(block: &witness::Block<F>) -> Self {
+        Self::new(block.clone())
+    }
+
+    /// Make the assignments to the ExpCircuit
+    fn synthesize_sub(
+        &self,
+        config: &Self::Config,
+        _challenges: &Challenges<Value<F>>,
+        layouter: &mut impl Layouter<F>,
+    ) -> Result<(), Error> {
+        let block = self.block.as_ref().unwrap();
+        config.assign_block(layouter, block)
+    }
+}
+
+#[cfg(any(feature = "test", test))]
+impl<F: Field> Circuit<F> for ExpCircuit<F> {
+    type Config = (ExpCircuitConfig<F>, Challenges);
     type FloorPlanner = SimpleFloorPlanner;
 
     fn without_witnesses(&self) -> Self {
@@ -399,16 +426,17 @@ impl<F: Field> Circuit<F> for ExpCircuit<F> {
 
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
         let exp_table = ExpTable::construct(meta);
-        ExpCircuitConfig::configure(meta, exp_table)
+        let challenges = Challenges::construct(meta);
+        (ExpCircuitConfig::new(meta, exp_table), challenges)
     }
 
     fn synthesize(
         &self,
-        config: Self::Config,
+        (config, challenges): Self::Config,
         mut layouter: impl Layouter<F>,
     ) -> Result<(), halo2_proofs::plonk::Error> {
-        let block = self.block.as_ref().unwrap();
-        config.assign_block(&mut layouter, block)
+        let challenges = challenges.values(&mut layouter);
+        self.synthesize_sub(&config, &challenges, &mut layouter)
     }
 }
 
@@ -470,14 +498,14 @@ mod tests {
     fn test_ok(base: Word, exponent: Word, k: Option<u32>) {
         let code = gen_code_single(base, exponent);
         let builder = gen_data(code);
-        let block = block_convert(&builder.block, &builder.code_db);
+        let block = block_convert(&builder.block, &builder.code_db).unwrap();
         assert_eq!(test_exp_circuit(k.unwrap_or(10), block), Ok(()));
     }
 
     fn test_ok_multiple(args: Vec<(Word, Word)>) {
         let code = gen_code_multiple(args);
         let builder = gen_data(code);
-        let block = block_convert(&builder.block, &builder.code_db);
+        let block = block_convert(&builder.block, &builder.code_db).unwrap();
         assert_eq!(test_exp_circuit(20, block), Ok(()));
     }
 
