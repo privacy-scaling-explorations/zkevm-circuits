@@ -11,7 +11,7 @@ use crate::{
     mpt_circuit::columns::{AccumulatorCols, MainCols},
     mpt_circuit::helpers::{
         compute_rlc, get_bool_constraint, get_is_extension_node, get_is_extension_node_one_nibble,
-        mult_diff_lookup, range_lookups,
+        mult_diff_lookup, range_lookups, get_is_inserted_extension_node
     },
     mpt_circuit::witness_row::MptWitnessRow,
     mpt_circuit::{
@@ -796,8 +796,17 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                 let rot = -17;
                 let is_branch_s_placeholder = meta.query_advice(
                     s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM],
-                    Rotation(-23),
+                    Rotation(rot_branch_init),
                 );
+            
+                /*
+                When extension node is inserted, the leaf is only a placeholder (as well as branch) -
+                the constraints for this case are in `extension_node_inserted.rs`.
+                */
+                let is_c_inserted_ext_node = get_is_inserted_extension_node(
+                    meta, c_main.rlp1, c_main.rlp2, rot_branch_init, true);
+                let is_s_inserted_ext_node = get_is_inserted_extension_node(
+                    meta, c_main.rlp1, c_main.rlp2, rot_branch_init, false);
 
                 /*
                 `s_mod_node_hash_rlc` in the placeholder branch stores the hash of a neighbour leaf.
@@ -817,6 +826,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
 
                 let selector = q_enable
                     * is_branch_s_placeholder
+                    * (one.clone() - is_s_inserted_ext_node - is_c_inserted_ext_node)
                     * (one.clone() - is_leaf_in_first_storage_level);
 
                 let mut table_map = Vec::new();
@@ -902,6 +912,15 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                 );
 
                 /*
+                When extension node is inserted, the leaf is only a placeholder (as well as branch) -
+                the constraints for this case are in `extension_node_inserted.rs`.
+                */
+                let is_c_inserted_ext_node = get_is_inserted_extension_node(
+                    meta, c_main.rlp1, c_main.rlp2, rot_branch_init, true);
+                let is_s_inserted_ext_node = get_is_inserted_extension_node(
+                    meta, c_main.rlp1, c_main.rlp2, rot_branch_init, false);
+
+                /*
                 `c_mod_node_hash_rlc` in the placeholder branch stores the hash of a neighbour leaf.
                 This is because `s_mod_node_hash_rlc` in the deleted branch stores the hash of
                 `modified_node` (the leaf that is to be deleted):
@@ -919,6 +938,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
 
                 let selector = q_enable
                     * is_branch_c_placeholder
+                    * (one.clone() - is_s_inserted_ext_node - is_c_inserted_ext_node)
                     * (one.clone() - is_leaf_in_first_storage_level);
 
                 let mut table_map = Vec::new();

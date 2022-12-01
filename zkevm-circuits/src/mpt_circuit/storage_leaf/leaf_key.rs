@@ -16,7 +16,7 @@ use crate::{
     },
     mpt_circuit::witness_row::{MptWitnessRow, MptWitnessRowType},
     mpt_circuit::{
-        columns::DenoteCols, helpers::key_len_lookup, FixedTableTag, MPTConfig, ProofValues,
+        columns::DenoteCols, helpers::{key_len_lookup, get_is_inserted_extension_node}, FixedTableTag, MPTConfig, ProofValues,
     },
 };
 
@@ -776,6 +776,15 @@ impl<F: FieldExt> LeafKeyConfig<F> {
                 + key_mult_start.clone() * is_c1.clone(); // set to key_mult_start if sel2, stays key_mult if sel1
 
             /*
+            When extension node is inserted, the leaf is only a placeholder (as well as branch) -
+            we need to compare the hash of the extension node in the inserted extension node row
+            to the hash in the branch above the placeholder branch
+            (see `extension_node_inserted.rs`).
+            */
+            let is_inserted_ext_node = get_is_inserted_extension_node(
+                meta, c_main.rlp1, c_main.rlp2, rot_into_init, is_s);
+
+            /*
             If `is_c1 = 1` which means there is an even number of nibbles stored in a leaf,
             we have 32 in `s_main.bytes[0]`.
             */
@@ -786,6 +795,7 @@ impl<F: FieldExt> LeafKeyConfig<F> {
                     * is_c1.clone()
                     * is_branch_placeholder.clone()
                     * (one.clone() - is_leaf_in_first_level.clone())
+                    * (one.clone() - is_inserted_ext_node.clone())
                     * is_short.clone(),
             ));
 
@@ -824,6 +834,7 @@ impl<F: FieldExt> LeafKeyConfig<F> {
                     * (key_rlc_acc_short - key_rlc.clone())
                     * is_branch_placeholder.clone()
                     * (one.clone() - is_leaf_in_first_level.clone())
+                    * (one.clone() - is_inserted_ext_node.clone())
                     * is_short.clone(),
             ));
 
@@ -844,6 +855,7 @@ impl<F: FieldExt> LeafKeyConfig<F> {
                     * is_c1.clone()
                     * is_branch_placeholder.clone()
                     * (one.clone() - is_leaf_in_first_level.clone())
+                    * (one.clone() - is_inserted_ext_node.clone())
                     * is_long.clone(),
             ));
 
@@ -883,6 +895,7 @@ impl<F: FieldExt> LeafKeyConfig<F> {
                     * (key_rlc_acc_long - key_rlc)
                     * is_branch_placeholder.clone()
                     * (one.clone() - is_leaf_in_first_level.clone())
+                    * (one.clone() - is_inserted_ext_node.clone())
                     * is_long.clone(),
             ));
 
@@ -928,6 +941,7 @@ impl<F: FieldExt> LeafKeyConfig<F> {
                 q_enable
                     * is_branch_placeholder
                     * (one.clone() - is_leaf_in_first_level)
+                    * (one.clone() - is_inserted_ext_node)
                     * (nibbles_count + leaf_nibbles - c64.clone()),
             ));
 

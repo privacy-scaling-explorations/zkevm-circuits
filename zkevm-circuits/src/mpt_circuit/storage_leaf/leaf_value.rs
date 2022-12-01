@@ -12,7 +12,7 @@ use crate::{
     mpt_circuit::witness_row::{MptWitnessRow, MptWitnessRowType},
     mpt_circuit::{
         columns::ProofTypeCols,
-        helpers::{get_leaf_len, key_len_lookup},
+        helpers::{get_leaf_len, key_len_lookup, get_is_inserted_extension_node},
         param::{
             ACCOUNT_LEAF_ROWS, ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND,
             ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND, BRANCH_ROWS_NUM, HASH_WIDTH,
@@ -115,6 +115,7 @@ impl<F: FieldExt> LeafValueConfig<F> {
         position_cols: PositionCols<F>,
         is_leaf_value: Column<Advice>,
         s_main: MainCols<F>,
+        c_main: MainCols<F>,
         keccak_table: KeccakTable,
         /*
         - key_rlc_mult (accs.key.mult) to store key_rlc from previous row (to enable lookup)
@@ -654,15 +655,20 @@ impl<F: FieldExt> LeafValueConfig<F> {
                         s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
                         Rotation(rot_into_init),
                     );
-                }
-
-                if !is_s {
                     rot_into_storage_root = -LEAF_VALUE_C_IND
                         - (ACCOUNT_LEAF_ROWS - ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND)
                         - BRANCH_ROWS_NUM;
                     rot_into_last_account_row = -LEAF_VALUE_C_IND - 1;
                     rot_into_last_account_row_placeholder = -LEAF_VALUE_C_IND - 1 - BRANCH_ROWS_NUM;
                 }
+
+                /*
+                When extension node is inserted, the leaf is only a placeholder (as well as branch) -
+                the constraints for this case are in `extension_node_inserted.rs`.
+                */
+                let is_inserted_ext_node = get_is_inserted_extension_node(
+                    meta, c_main.rlp1, c_main.rlp2, rot_into_init, is_s);
+
 
                 // Only check if there is an account above the leaf.
                 let is_account_leaf_in_added_branch_placeholder = meta.query_advice(
@@ -687,6 +693,7 @@ impl<F: FieldExt> LeafValueConfig<F> {
                     * is_leaf
                     * (one.clone() - is_account_leaf_in_added_branch) // if account is directly above storage leaf, there is no placeholder branch
                     * is_account_leaf_in_added_branch_placeholder
+                    * (one.clone() - is_inserted_ext_node)
                     * is_branch_placeholder;
 
                 let mut table_map = Vec::new();
@@ -876,6 +883,14 @@ impl<F: FieldExt> LeafValueConfig<F> {
                 s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM],
                 Rotation(rot_into_init),
             );
+
+            /*
+            When extension node is inserted, the leaf is only a placeholder (as well as branch) -
+            the constraints for this case are in `extension_node_inserted.rs`.
+            */
+            let is_inserted_ext_node = get_is_inserted_extension_node(
+                meta, c_main.rlp1, c_main.rlp2, rot_into_init, is_s);
+
             if !is_s {
                 is_branch_placeholder = meta.query_advice(
                     s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
@@ -916,6 +931,7 @@ impl<F: FieldExt> LeafValueConfig<F> {
                 * (one.clone() - sel)
                 * (one.clone() - is_leaf_without_branch_after_placeholder)
                 * (one.clone() - is_leaf_without_branch)
+                * (one.clone() - is_inserted_ext_node)
                 * is_branch_placeholder;
 
             let mut table_map = Vec::new();

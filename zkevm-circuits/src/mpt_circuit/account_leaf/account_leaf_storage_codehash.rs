@@ -8,7 +8,7 @@ use std::marker::PhantomData;
 
 use crate::{
     mpt_circuit::columns::{AccumulatorCols, DenoteCols, MainCols, PositionCols, ProofTypeCols},
-    mpt_circuit::helpers::range_lookups,
+    mpt_circuit::helpers::{range_lookups, get_is_inserted_extension_node},
     mpt_circuit::param::{
         ACCOUNT_LEAF_KEY_C_IND, ACCOUNT_LEAF_KEY_S_IND, ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND,
         ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND, ACCOUNT_NON_EXISTING_IND, BRANCH_ROWS_NUM, C_START,
@@ -90,6 +90,10 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
             _marker: PhantomData,
         };
         let one = Expression::Constant(F::one());
+        let mut rot_into_branch_init = -ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND - BRANCH_ROWS_NUM;
+        if !is_s {
+            rot_into_branch_init = -ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND - BRANCH_ROWS_NUM;
+        }
 
         // Note: We do not need to check `acc_mult` because it is not used after this
         // row.
@@ -382,12 +386,12 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
             // Rotate into branch init:
             let mut is_branch_placeholder = meta.query_advice(
                 s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM],
-                Rotation(-ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND - BRANCH_ROWS_NUM),
+                Rotation(rot_into_branch_init),
             );
             if !is_s {
                 is_branch_placeholder = meta.query_advice(
                     s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
-                    Rotation(-ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND - BRANCH_ROWS_NUM),
+                    Rotation(rot_into_branch_init),
                 );
             }
 
@@ -455,18 +459,26 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
             // Rotate into branch init:
             let mut is_branch_placeholder = meta.query_advice(
                 s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM],
-                Rotation(-ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND - BRANCH_ROWS_NUM),
+                Rotation(rot_into_branch_init),
             );
             if !is_s {
                 is_branch_placeholder = meta.query_advice(
                     s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
-                    Rotation(-ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND - BRANCH_ROWS_NUM),
+                    Rotation(rot_into_branch_init),
                 );
             }
+    
+            /*
+            When extension node is inserted, the leaf is only a placeholder (as well as branch) -
+            the constraints for this case are in `extension_node_inserted.rs`.
+            */
+            let is_inserted_ext_node = get_is_inserted_extension_node(
+                meta, c_main.rlp1, c_main.rlp2, rot_into_branch_init, is_s);
 
             let selector = account_not_first_level
                 * branch_placeholder_not_in_first_level
                 * is_branch_placeholder
+                * (one.clone() - is_inserted_ext_node)
                 * is_account_leaf_storage_codehash;
 
             // Note: accumulated in s (not in c) for c:
@@ -529,18 +541,26 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
                 // Rotate into branch init:
                 let mut is_branch_placeholder = meta.query_advice(
                     s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM],
-                    Rotation(-ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND - BRANCH_ROWS_NUM),
+                    Rotation(rot_into_branch_init),
                 );
                 if !is_s {
                     is_branch_placeholder = meta.query_advice(
                         s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
-                        Rotation(-ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND - BRANCH_ROWS_NUM),
+                        Rotation(rot_into_branch_init),
                     );
                 }
+                
+                /*
+                When extension node is inserted, the leaf is only a placeholder (as well as branch) -
+                the constraints for this case are in `extension_node_inserted.rs`.
+                */
+                let is_inserted_ext_node = get_is_inserted_extension_node(
+                    meta, c_main.rlp1, c_main.rlp2, rot_into_branch_init, is_s);
 
                 let selector = account_not_first_level
                     * branch_placeholder_in_first_level
                     * is_branch_placeholder
+                    * (one.clone() - is_inserted_ext_node)
                     * is_account_leaf_storage_codehash;
 
                 // Note: accumulated in s (not in c) for c:

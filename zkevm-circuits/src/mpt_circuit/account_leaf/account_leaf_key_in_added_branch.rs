@@ -19,7 +19,7 @@ use crate::{
         ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND, ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND, BRANCH_ROWS_NUM,
         IS_BRANCH_C16_POS, IS_BRANCH_C1_POS,
     },
-    mpt_circuit::{helpers::key_len_lookup, FixedTableTag, MPTConfig, ProofValues},
+    mpt_circuit::{helpers::{key_len_lookup, get_is_inserted_extension_node}, FixedTableTag, MPTConfig, ProofValues},
     table::KeccakTable,
 };
 
@@ -587,7 +587,19 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
                 );
             }
 
-            let selector = q_enable * is_branch_placeholder;
+            /*
+            When extension node is inserted, the leaf is only a placeholder (as well as branch) -
+            the constraints for this case are in `extension_node_inserted.rs`.
+            */
+            let is_c_inserted_ext_node = get_is_inserted_extension_node(
+                meta, c_main.rlp1, c_main.rlp2, rot_branch_init, true);
+            let is_s_inserted_ext_node = get_is_inserted_extension_node(
+                meta, c_main.rlp1, c_main.rlp2, rot_branch_init, false);
+
+
+            let selector = q_enable
+                * (one.clone() - is_s_inserted_ext_node - is_c_inserted_ext_node)
+                * is_branch_placeholder;
 
             let keccak_is_enabled = meta.query_advice(keccak_table.is_enabled, Rotation::cur());
             constraints.push((selector.clone(), keccak_is_enabled));

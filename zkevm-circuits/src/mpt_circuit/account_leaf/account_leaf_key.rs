@@ -8,7 +8,7 @@ use std::marker::PhantomData;
 
 use crate::{
     mpt_circuit::columns::{AccumulatorCols, MainCols, PositionCols, ProofTypeCols},
-    mpt_circuit::helpers::{compute_rlc, mult_diff_lookup, range_lookups},
+    mpt_circuit::helpers::{compute_rlc, mult_diff_lookup, range_lookups, get_is_inserted_extension_node},
     mpt_circuit::param::{
         BRANCH_ROWS_NUM, HASH_WIDTH, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS,
         IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS, IS_EXT_LONG_EVEN_C16_POS,
@@ -547,6 +547,15 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
 
                 let sel2 = one.clone() - sel1.clone();
 
+                /*
+                When extension node is inserted, the leaf is only a placeholder (as well as branch) -
+                we need to compare the hash of the extension node in the inserted extension node row
+                to the hash in the branch above the placeholder branch
+                (see `extension_node_inserted.rs`).
+                */
+                let is_inserted_ext_node = get_is_inserted_extension_node(
+                    meta, c_main.rlp1, c_main.rlp2, rot_into_init, is_s);
+
                 // If sel1 = 1, we have nibble+48 in s_main.bytes[0].
                 let s_advice1 = meta.query_advice(s_main.bytes[1], Rotation::cur());
                 let mut key_rlc_acc = key_rlc_acc_start
@@ -562,6 +571,7 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
                         * (s_advice1 - c32)
                         * sel2.clone()
                         * is_branch_placeholder.clone()
+                        * (one.clone() - is_inserted_ext_node.clone())
                         * (one.clone() - is_leaf_in_first_level.clone()),
                 ));
 
@@ -594,6 +604,7 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
                     q_enable.clone()
                         * is_branch_placeholder.clone()
                         * (one.clone() - is_leaf_in_first_level.clone())
+                        * (one.clone() - is_inserted_ext_node.clone())
                         * (key_rlc_acc - key_rlc),
                 ));
 
@@ -625,6 +636,7 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
                     q_enable
                         * is_branch_placeholder
                         * (one.clone() - is_leaf_in_first_level)
+                        * (one.clone() - is_inserted_ext_node.clone())
                         * (nibbles_count + leaf_nibbles - c64.clone()),
                 ));
 
