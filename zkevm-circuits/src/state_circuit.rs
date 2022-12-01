@@ -10,8 +10,8 @@ mod test;
 use crate::{
     evm_circuit::param::N_BYTES_WORD,
     table::{LookupTable, MptTable, RwTable, RwTableTag},
-    util::{Challenges, Expr},
-    witness::{MptUpdates, Rw, RwMap},
+    util::{Challenges, Expr, SubCircuit, SubCircuitConfig},
+    witness::{self, MptUpdates, Rw, RwMap},
 };
 use constraint_builder::{ConstraintBuilder, Queries};
 use eth_types::{Address, Field};
@@ -47,7 +47,6 @@ pub struct StateCircuitConfig<F> {
     selector: Column<Fixed>, // Figure out why you get errors when this is Selector.
     // https://github.com/privacy-scaling-explorations/zkevm-circuits/issues/407
     rw_table: RwTable,
-    mpt_table: MptTable,
     sort_keys: SortKeysConfig,
     initial_value: Column<Advice>, /* Assigned value at the start of the block. For Rw::Account
                                     * and Rw::AccountStorage rows this is the committed value in
@@ -57,15 +56,31 @@ pub struct StateCircuitConfig<F> {
     not_first_access: Column<Advice>,
     lookups: LookupsConfig,
     power_of_randomness: [Expression<F>; N_BYTES_WORD - 1],
+    // External tables
+    mpt_table: MptTable,
 }
 
-impl<F: Field> StateCircuitConfig<F> {
-    /// Configure StateCircuit
-    pub fn configure(
+/// Circuit configuration arguments
+pub struct StateCircuitConfigArgs<F: Field> {
+    /// RwTable
+    pub rw_table: RwTable,
+    /// MptTable
+    pub mpt_table: MptTable,
+    /// Challenges
+    pub challenges: Challenges<Expression<F>>,
+}
+
+impl<F: Field> SubCircuitConfig<F> for StateCircuitConfig<F> {
+    type ConfigArgs = StateCircuitConfigArgs<F>;
+
+    /// Return a new StateCircuitConfig
+    fn new(
         meta: &mut ConstraintSystem<F>,
-        rw_table: &RwTable,
-        mpt_table: &MptTable,
-        challenges: Challenges<Expression<F>>,
+        Self::ConfigArgs {
+            rw_table,
+            mpt_table,
+            challenges,
+        }: Self::ConfigArgs,
     ) -> Self {
         let selector = meta.fixed_column();
         let lookups = LookupsChip::configure(meta);
@@ -111,8 +126,8 @@ impl<F: Field> StateCircuitConfig<F> {
             not_first_access: meta.advice_column(),
             lookups,
             power_of_randomness: challenges.evm_word_powers_of_randomness(),
-            rw_table: *rw_table,
-            mpt_table: *mpt_table,
+            rw_table,
+            mpt_table,
         };
 
         let mut constraint_builder = ConstraintBuilder::new();
@@ -127,9 +142,11 @@ impl<F: Field> StateCircuitConfig<F> {
 
         config
     }
+}
 
+impl<F: Field> StateCircuitConfig<F> {
     /// load fixed tables
-    pub(crate) fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
+    pub(crate) fn load_aux_tables(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
         LookupsChip::construct(self.lookups).load(layouter)
     }
     /// Make the assignments to the StateCircuit
@@ -299,9 +316,10 @@ pub struct SortKeysConfig {
 type Lookup<F> = (&'static str, Expression<F>, Expression<F>);
 
 /// State Circuit for proving RwTable is valid
-#[derive(Default, Clone)]
+#[derive(Default, Clone, Debug)]
 pub struct StateCircuit<F> {
-    pub(crate) rows: Vec<Rw>,
+    /// Rw rows
+    pub rows: Vec<Rw>,
     updates: MptUpdates,
     pub(crate) n_rows: usize,
     #[cfg(test)]
@@ -323,47 +341,26 @@ impl<F: Field> StateCircuit<F> {
             _marker: PhantomData::default(),
         }
     }
-
-    /// powers of randomness for instance columns
-    pub fn instance(&self) -> Vec<Vec<F>> {
-        vec![]
-    }
 }
 
-impl<F: Field> Circuit<F> for StateCircuit<F>
-where
-    F: Field,
-{
-    type Config = (StateCircuitConfig<F>, Challenges);
-    type FloorPlanner = SimpleFloorPlanner;
+#[cfg(any(feature = "test", test))]
+impl<F: Field> SubCircuit<F> for StateCircuit<F> {
+    type Config = StateCircuitConfig<F>;
 
-    fn without_witnesses(&self) -> Self {
-        Self::default()
+    fn new_from_block(block: &witness::Block<F>) -> Self {
+        Self::new(block.rws.clone(), block.circuits_params.max_rws)
     }
 
-    fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-        let rw_table = RwTable::construct(meta);
-        let mpt_table = MptTable::construct(meta);
-        let challenges = Challenges::construct(meta);
-
-        let config = {
-            let challenges = challenges.exprs(meta);
-            StateCircuitConfig::configure(meta, &rw_table, &mpt_table, challenges)
-        };
-
-        (config, challenges)
-    }
-
-    fn synthesize(
+    /// Make the assignments to the StateCircuit
+    fn synthesize_sub(
         &self,
-        config: Self::Config,
-        mut layouter: impl Layouter<F>,
+        config: &Self::Config,
+        challenges: &Challenges<Value<F>>,
+        layouter: &mut impl Layouter<F>,
     ) -> Result<(), Error> {
-        let (config, challenges) = config;
+        config.load_aux_tables(layouter)?;
 
-        config.load(&mut layouter)?;
-
-        let randomness = challenges.values(&mut layouter).evm_word();
+        let randomness = challenges.evm_word();
 
         // Assigning to same columns in different regions should be avoided.
         // Here we use one single region to assign `overrides` to both rw table and
@@ -393,7 +390,7 @@ where
                 {
                     let padding_length = RwMap::padding_len(self.rows.len(), self.n_rows);
                     for ((column, row_offset), &f) in &self.overrides {
-                        let advice_column = column.value(&config);
+                        let advice_column = column.value(config);
                         let offset =
                             usize::try_from(isize::try_from(padding_length).unwrap() + *row_offset)
                                 .unwrap();
@@ -409,6 +406,53 @@ where
                 Ok(())
             },
         )
+    }
+
+    /// powers of randomness for instance columns
+    fn instance(&self) -> Vec<Vec<F>> {
+        vec![]
+    }
+}
+
+#[cfg(any(feature = "test", test))]
+impl<F: Field> Circuit<F> for StateCircuit<F>
+where
+    F: Field,
+{
+    type Config = (StateCircuitConfig<F>, Challenges);
+    type FloorPlanner = SimpleFloorPlanner;
+
+    fn without_witnesses(&self) -> Self {
+        Self::default()
+    }
+
+    fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
+        let rw_table = RwTable::construct(meta);
+        let mpt_table = MptTable::construct(meta);
+        let challenges = Challenges::construct(meta);
+
+        let config = {
+            let challenges = challenges.exprs(meta);
+            StateCircuitConfig::new(
+                meta,
+                StateCircuitConfigArgs {
+                    rw_table,
+                    mpt_table,
+                    challenges,
+                },
+            )
+        };
+
+        (config, challenges)
+    }
+
+    fn synthesize(
+        &self,
+        (config, challenges): Self::Config,
+        mut layouter: impl Layouter<F>,
+    ) -> Result<(), Error> {
+        let challenges = challenges.values(&mut layouter);
+        self.synthesize_sub(&config, &challenges, &mut layouter)
     }
 }
 
@@ -483,7 +527,7 @@ fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: &StateCircuitConfig<F>) 
 #[cfg(test)]
 mod state_circuit_stats {
     use crate::evm_circuit::step::ExecutionState;
-    use crate::evm_circuit::test::TestCircuit;
+    use crate::evm_circuit::EvmCircuit;
     use bus_mapping::{circuit_input_builder::ExecState, mock::BlockData};
     use eth_types::{bytecode, evm_types::OpcodeId, geth_types::GethData, Address};
     use halo2_proofs::halo2curves::bn256::Fr;
@@ -508,11 +552,11 @@ mod state_circuit_stats {
         // and querying the step height for each possible execution state (only those
         // implemented will return a Some value).
         let mut meta = ConstraintSystem::<Fr>::default();
-        let circuit = TestCircuit::configure(&mut meta);
+        let circuit = EvmCircuit::configure(&mut meta);
 
         let mut implemented_states = Vec::new();
         for state in ExecutionState::iter() {
-            let height = circuit.evm_circuit.execution.get_step_height_option(state);
+            let height = circuit.execution.get_step_height_option(state);
             if height.is_some() {
                 implemented_states.push(state);
             }
