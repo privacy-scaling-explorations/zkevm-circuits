@@ -54,7 +54,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGStaticMemoryGadget<F> {
         // Get the next memory size and the gas cost for this memory access
         let memory_expansion = MemoryExpansionGadget::construct(
             cb,
-            cb.curr.state.memory_word_size.expr(),
             [address_low::expr(&address) + 1.expr() + (is_not_mstore8 * 31.expr())],
         );
 

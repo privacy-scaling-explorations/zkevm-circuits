@@ -2,6 +2,7 @@
 
 use crate::{
     state_circuit::StateCircuit,
+    util::SubCircuit,
     witness::{block_convert, Block, Rw},
 };
 use bus_mapping::{circuit_input_builder::CircuitsParams, mock::BlockData};
@@ -55,7 +56,7 @@ pub fn run_test_circuits<const NACC: usize, const NTX: usize>(
         .unwrap();
 
     // build a witness block from trace result
-    let block = crate::witness::block_convert(&builder.block, &builder.code_db);
+    let block = crate::witness::block_convert(&builder.block, &builder.code_db).unwrap();
 
     // finish required tests according to config using this witness block
     test_circuits_witness_block(block, config.unwrap_or_default())
@@ -75,7 +76,7 @@ pub fn run_test_circuits_with_params<const NACC: usize, const NTX: usize>(
         .unwrap();
 
     // build a witness block from trace result
-    let block = crate::witness::block_convert(&builder.block, &builder.code_db);
+    let block = crate::witness::block_convert(&builder.block, &builder.code_db).unwrap();
 
     // finish required tests according to config using this witness block
     test_circuits_witness_block(block, config.unwrap_or_default())
@@ -89,7 +90,7 @@ pub fn test_circuits_block_geth_data_default(block: GethData) -> Result<(), Vec<
     builder
         .handle_block(&block.eth_block, &block.geth_traces)
         .unwrap();
-    let block = block_convert(&builder.block, &builder.code_db);
+    let block = block_convert(&builder.block, &builder.code_db).unwrap();
     test_circuits_witness_block(block, BytecodeTestConfig::default())
 }
 

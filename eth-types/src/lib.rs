@@ -34,7 +34,7 @@ use halo2_proofs::{
 
 use crate::evm_types::{memory::Memory, stack::Stack, storage::Storage};
 use crate::evm_types::{Gas, GasCost, OpcodeId, ProgramCounter};
-pub use ethers_core::abi::ethereum_types::U512;
+pub use ethers_core::abi::ethereum_types::{BigEndianHash, U512};
 use ethers_core::types;
 pub use ethers_core::types::{
     transaction::{eip2930::AccessList, response::Transaction},

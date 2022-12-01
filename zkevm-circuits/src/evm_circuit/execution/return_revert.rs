@@ -79,11 +79,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
         let copy_rw_increase = cb.query_cell();
         let copy_rw_increase_is_zero = IsZeroGadget::construct(cb, copy_rw_increase.expr());
 
-        let memory_expansion = MemoryExpansionGadget::construct(
-            cb,
-            cb.curr.state.memory_word_size.expr(),
-            [range.address()],
-        );
+        let memory_expansion = MemoryExpansionGadget::construct(cb, [range.address()]);
 
         // Case A in the specs.
         cb.condition(is_create.clone() * is_success.expr(), |cb| {
