@@ -603,12 +603,12 @@ pub mod dev {
     }
 
     impl<F: Field> CopyCircuitTester<F> {
-        /// get randomness
+        /// Generate randomness for copy circuit tester
         pub fn get_randomness() -> F {
             F::random(rand::thread_rng())
         }
 
-        ///  new CopyCircuitTester
+        ///  New CopyCircuitTester
         pub fn new(block: Block<F>, randomness: F) -> Self {
             Self {
                 block: Some(block),
@@ -617,7 +617,7 @@ pub mod dev {
             }
         }
 
-        /// r.expr()
+        /// Return a randomness
         pub fn r() -> Expression<F> {
             123456u64.expr()
         }
