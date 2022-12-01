@@ -1,6 +1,6 @@
 use super::util::{
-    get_num_bits_per_lookup, load_lookup_table, load_normalize_table, load_pack_table,
-    CHI_BASE_LOOKUP_TABLE, NUM_ROUNDS,
+    extract_field, get_num_bits_per_lookup, load_lookup_table, load_normalize_table,
+    load_pack_table, CHI_BASE_LOOKUP_TABLE, NUM_ROUNDS,
 };
 use crate::evm_circuit::util::{not, rlc};
 use crate::keccak_circuit::util::{
@@ -186,11 +186,7 @@ impl<F: FieldExt> Cell<F> {
         // API customized for this impl specifically, for now I'm opening the
         // value and extracting it. Once https://github.com/privacy-scaling-explorations/zkevm-circuits/issues/933 is resolved,
         // this shouldn't be needed.
-        let mut value_f = F::zero();
-        value.map(|f| {
-            value_f = f;
-            f
-        });
+        let value_f = extract_field(value);
 
         region.assign(
             self.column_idx,
