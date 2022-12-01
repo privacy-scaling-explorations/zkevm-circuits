@@ -47,7 +47,7 @@ pub(crate) struct MulAddWords512Gadget<F> {
 }
 
 impl<F: Field> MulAddWords512Gadget<F> {
-    /// words argument is: a, b, d, e
+    /// The words argument is: a, b, d, e
     /// Addend is the optional c.
     pub(crate) fn construct(
         cb: &mut ConstraintBuilder<F>,
@@ -201,7 +201,7 @@ mod tests {
     use halo2_proofs::plonk::Error;
 
     #[derive(Clone)]
-    /// a * b + c == d * 2**256 + e
+    /// MulAddWords512GadgetContainer: require(a * b + c == d * 2**256 + e)
     struct MulAddWords512GadgetContainer<F> {
         math_gadget: MulAddWords512Gadget<F>,
         a: util::Word<F>,
@@ -212,8 +212,6 @@ mod tests {
     }
 
     impl<F: Field> MathGadgetContainer<F> for MulAddWords512GadgetContainer<F> {
-        const NAME: &'static str = "MulAddWords512Gadget";
-
         fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
             let a = cb.query_word();
             let b = cb.query_word();
@@ -234,30 +232,25 @@ mod tests {
 
         fn assign_gadget_container(
             &self,
-            input_words: &[Word],
+            witnesses: &[Word],
             region: &mut CachedRegion<'_, '_, F>,
         ) -> Result<(), Error> {
             let offset = 0;
             self.a
-                .assign(region, offset, Some(input_words[0].to_le_bytes()))?;
+                .assign(region, offset, Some(witnesses[0].to_le_bytes()))?;
             self.b
-                .assign(region, offset, Some(input_words[1].to_le_bytes()))?;
+                .assign(region, offset, Some(witnesses[1].to_le_bytes()))?;
             self.d
-                .assign(region, offset, Some(input_words[2].to_le_bytes()))?;
+                .assign(region, offset, Some(witnesses[2].to_le_bytes()))?;
             self.e
-                .assign(region, offset, Some(input_words[3].to_le_bytes()))?;
+                .assign(region, offset, Some(witnesses[3].to_le_bytes()))?;
             self.addend
-                .assign(region, offset, Some(input_words[4].to_le_bytes()))?;
+                .assign(region, offset, Some(witnesses[4].to_le_bytes()))?;
             self.math_gadget.assign(
                 region,
                 offset,
-                [
-                    input_words[0],
-                    input_words[1],
-                    input_words[2],
-                    input_words[3],
-                ],
-                Some(input_words[4]),
+                [witnesses[0], witnesses[1], witnesses[2], witnesses[3]],
+                Some(witnesses[4]),
             )
         }
     }
@@ -265,7 +258,8 @@ mod tests {
     #[test]
     fn test_muladd512_expect() {
         // 0 * 0 + 0 == 0 * 2**256 + 0
-        test_math_gadget_container::<Fr, MulAddWords512GadgetContainer<Fr>>(
+        try_test!(
+            MulAddWords512GadgetContainer<Fr>,
             vec![
                 Word::from(0),
                 Word::from(0),
@@ -276,7 +270,8 @@ mod tests {
             true,
         );
         // 1 * 0 + 0 == 0 * 2**256 + 0
-        test_math_gadget_container::<Fr, MulAddWords512GadgetContainer<Fr>>(
+        try_test!(
+            MulAddWords512GadgetContainer<Fr>,
             vec![
                 Word::from(1),
                 Word::from(0),
@@ -287,7 +282,8 @@ mod tests {
             true,
         );
         // 1 * 1 + 0 == 0 * 2**256 + 1
-        test_math_gadget_container::<Fr, MulAddWords512GadgetContainer<Fr>>(
+        try_test!(
+            MulAddWords512GadgetContainer<Fr>,
             vec![
                 Word::from(1),
                 Word::from(1),
@@ -298,7 +294,8 @@ mod tests {
             true,
         );
         // 100 * 54 + 0 == 0 * 2**256 + 5400
-        test_math_gadget_container::<Fr, MulAddWords512GadgetContainer<Fr>>(
+        try_test!(
+            MulAddWords512GadgetContainer<Fr>,
             vec![
                 Word::from(100),
                 Word::from(54),
@@ -309,7 +306,8 @@ mod tests {
             true,
         );
         // 100 * 54 + max == 1 * 2**256 + 5400
-        test_math_gadget_container::<Fr, MulAddWords512GadgetContainer<Fr>>(
+        try_test!(
+            MulAddWords512GadgetContainer<Fr>,
             vec![
                 Word::from(100),
                 Word::from(54),
@@ -320,7 +318,8 @@ mod tests {
             true,
         );
         // 100 * 54 + low_max == 0 * 2**256 + 5400 + low_max
-        test_math_gadget_container::<Fr, MulAddWords512GadgetContainer<Fr>>(
+        try_test!(
+            MulAddWords512GadgetContainer<Fr>,
             vec![
                 Word::from(100),
                 Word::from(54),
@@ -331,7 +330,8 @@ mod tests {
             true,
         );
         // 100 * 54 + high_max == 0 * 2**256 + 5400 + high_max
-        test_math_gadget_container::<Fr, MulAddWords512GadgetContainer<Fr>>(
+        try_test!(
+            MulAddWords512GadgetContainer<Fr>,
             vec![
                 Word::from(100),
                 Word::from(54),
@@ -346,7 +346,8 @@ mod tests {
     #[test]
     fn test_muladd512_unexpect() {
         // 10 * 1 + 0 != 1 * 2**256 + 3
-        test_math_gadget_container::<Fr, MulAddWords512GadgetContainer<Fr>>(
+        try_test!(
+            MulAddWords512GadgetContainer<Fr>,
             vec![
                 Word::from(10),
                 Word::from(1),

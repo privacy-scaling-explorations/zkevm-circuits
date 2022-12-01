@@ -102,7 +102,7 @@ mod tests {
     use halo2_proofs::plonk::Error;
 
     #[derive(Clone)]
-    /// a % n == r
+    /// ModGadgetTestContainer: require(a % n == r)
     struct ModGadgetTestContainer<F> {
         mod_gadget: ModGadget<F>,
         a: util::Word<F>,
@@ -111,8 +111,6 @@ mod tests {
     }
 
     impl<F: Field> MathGadgetContainer<F> for ModGadgetTestContainer<F> {
-        const NAME: &'static str = "ModGadget";
-
         fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
             let a = cb.query_word();
             let n = cb.query_word();
@@ -128,12 +126,12 @@ mod tests {
 
         fn assign_gadget_container(
             &self,
-            input_words: &[Word],
+            witnesses: &[Word],
             region: &mut CachedRegion<'_, '_, F>,
         ) -> Result<(), Error> {
-            let a = input_words[0];
-            let n = input_words[1];
-            let a_reduced = input_words[2];
+            let a = witnesses[0];
+            let n = witnesses[1];
+            let a_reduced = witnesses[2];
             let offset = 0;
 
             self.a.assign(region, offset, Some(a.to_le_bytes()))?;
@@ -145,37 +143,69 @@ mod tests {
     }
 
     #[test]
-    fn test_mod_n_eq0() {
-        test_math_gadget_container::<Fr, ModGadgetTestContainer<Fr>>(
+    fn test_mod_n_expected_rem() {
+        try_test!(
+            ModGadgetTestContainer<Fr>,
             vec![Word::from(0), Word::from(0), Word::from(0)],
             true,
         );
-        test_math_gadget_container::<Fr, ModGadgetTestContainer<Fr>>(
+        try_test!(
+            ModGadgetTestContainer<Fr>,
             vec![Word::from(1), Word::from(0), Word::from(0)],
             true,
         );
-        test_math_gadget_container::<Fr, ModGadgetTestContainer<Fr>>(
+        try_test!(
+            ModGadgetTestContainer<Fr>,
             vec![Word::from(548), Word::from(50), Word::from(48)],
             true,
         );
-        test_math_gadget_container::<Fr, ModGadgetTestContainer<Fr>>(
+        try_test!(
+            ModGadgetTestContainer<Fr>,
             vec![Word::from(30), Word::from(50), Word::from(30)],
+            true,
+        );
+        try_test!(
+            ModGadgetTestContainer<Fr>,
+            vec![WORD_LOW_MAX, Word::from(1024), Word::from(1023)],
+            true,
+        );
+        try_test!(
+            ModGadgetTestContainer<Fr>,
+            vec![WORD_HIGH_MAX, Word::from(1024), Word::from(0)],
+            true,
+        );
+        try_test!(
+            ModGadgetTestContainer<Fr>,
+            vec![WORD_CELL_MAX, Word::from(2), Word::from(0)],
             true,
         );
     }
 
     #[test]
-    fn test_mod_n_neq0() {
-        test_math_gadget_container::<Fr, ModGadgetTestContainer<Fr>>(
-            vec![Word::from(1), Word::from(1), Word::from(0)],
-            true,
-        );
-        test_math_gadget_container::<Fr, ModGadgetTestContainer<Fr>>(
+    fn test_mod_n_unexpected_rem() {
+        try_test!(
+            ModGadgetTestContainer<Fr>,
             vec![Word::from(1), Word::from(1), Word::from(1)],
             false,
         );
-        test_math_gadget_container::<Fr, ModGadgetTestContainer<Fr>>(
+        try_test!(
+            ModGadgetTestContainer<Fr>,
             vec![Word::from(46), Word::from(50), Word::from(48)],
+            false,
+        );
+        try_test!(
+            ModGadgetTestContainer<Fr>,
+            vec![WORD_LOW_MAX, Word::from(999999), Word::from(888888)],
+            false,
+        );
+        try_test!(
+            ModGadgetTestContainer<Fr>,
+            vec![WORD_CELL_MAX, Word::from(999999999), Word::from(666666666)],
+            false,
+        );
+        try_test!(
+            ModGadgetTestContainer<Fr>,
+            vec![WORD_HIGH_MAX, Word::from(999999), Word::from(777777)],
             false,
         );
     }

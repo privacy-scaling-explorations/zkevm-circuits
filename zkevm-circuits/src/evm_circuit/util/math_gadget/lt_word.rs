@@ -74,7 +74,7 @@ mod tests {
     use halo2_proofs::plonk::Error;
 
     #[derive(Clone)]
-    /// a < b
+    /// LtWordTestContainer: require(a < b)
     struct LtWordTestContainer<F> {
         ltword_gadget: LtWordGadget<F>,
         a: util::Word<F>,
@@ -82,8 +82,6 @@ mod tests {
     }
 
     impl<F: Field> MathGadgetContainer<F> for LtWordTestContainer<F> {
-        const NAME: &'static str = "LtWordGadget";
-
         fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
             let a = cb.query_word();
             let b = cb.query_word();
@@ -98,11 +96,11 @@ mod tests {
 
         fn assign_gadget_container(
             &self,
-            input_words: &[Word],
+            witnesses: &[Word],
             region: &mut CachedRegion<'_, '_, F>,
         ) -> Result<(), Error> {
-            let a = input_words[0];
-            let b = input_words[1];
+            let a = witnesses[0];
+            let b = witnesses[1];
             let offset = 0;
 
             self.a.assign(region, offset, Some(a.to_le_bytes()))?;
@@ -115,23 +113,28 @@ mod tests {
 
     #[test]
     fn test_ltword_expect() {
-        test_math_gadget_container::<Fr, LtWordTestContainer<Fr>>(
+        try_test!(
+            LtWordTestContainer<Fr>,
             vec![Word::from(0), Word::from(1)],
             true,
         );
-        test_math_gadget_container::<Fr, LtWordTestContainer<Fr>>(
+        try_test!(
+            LtWordTestContainer<Fr>,
             vec![Word::from(1), Word::MAX],
             true,
         );
-        test_math_gadget_container::<Fr, LtWordTestContainer<Fr>>(
+        try_test!(
+            LtWordTestContainer<Fr>,
             vec![WORD_LOW_MAX, WORD_HIGH_MAX],
             true,
         );
-        test_math_gadget_container::<Fr, LtWordTestContainer<Fr>>(
+        try_test!(
+            LtWordTestContainer<Fr>,
             vec![Word::from(90), WORD_LOW_MAX],
             true,
         );
-        test_math_gadget_container::<Fr, LtWordTestContainer<Fr>>(
+        try_test!(
+            LtWordTestContainer<Fr>,
             vec![Word::from(90), WORD_HIGH_MAX],
             true,
         );
@@ -139,16 +142,15 @@ mod tests {
 
     #[test]
     fn test_ltword_unexpect() {
-        test_math_gadget_container::<Fr, LtWordTestContainer<Fr>>(
+        try_test!(
+            LtWordTestContainer<Fr>,
             vec![Word::from(1), Word::from(0)],
             false,
         );
-        test_math_gadget_container::<Fr, LtWordTestContainer<Fr>>(
-            vec![Word::MAX, Word::MAX],
-            false,
-        );
+        try_test!(LtWordTestContainer<Fr>, vec![Word::MAX, Word::MAX], false,);
 
-        test_math_gadget_container::<Fr, LtWordTestContainer<Fr>>(
+        try_test!(
+            LtWordTestContainer<Fr>,
             vec![WORD_HIGH_MAX, WORD_LOW_MAX],
             false,
         );

@@ -66,7 +66,7 @@ mod tests {
     use halo2_proofs::plonk::Error;
 
     #[derive(Clone)]
-    /// a < b
+    /// PairSelectionTestContainer: require(v == a if SELECT_A else b)
     struct PairSelectionTestContainer<F, const SELECT_A: bool> {
         select_gadget: PairSelectGadget<F>,
         a: Cell<F>,
@@ -77,8 +77,6 @@ mod tests {
     impl<F: Field, const SELECT_A: bool> MathGadgetContainer<F>
         for PairSelectionTestContainer<F, SELECT_A>
     {
-        const NAME: &'static str = "PairSelectGadget";
-
         fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
             let v = cb.query_cell();
             let a = cb.query_cell();
@@ -106,12 +104,12 @@ mod tests {
 
         fn assign_gadget_container(
             &self,
-            input_words: &[Word],
+            witnesses: &[Word],
             region: &mut CachedRegion<'_, '_, F>,
         ) -> Result<(), Error> {
-            let v = input_words[0].to_scalar().unwrap();
-            let a = input_words[1].to_scalar().unwrap();
-            let b = input_words[2].to_scalar().unwrap();
+            let v = witnesses[0].to_scalar().unwrap();
+            let a = witnesses[1].to_scalar().unwrap();
+            let b = witnesses[2].to_scalar().unwrap();
             let offset = 0;
 
             self.v.assign(region, offset, Value::known(v))?;
@@ -125,11 +123,13 @@ mod tests {
 
     #[test]
     fn test_pairselect_eq() {
-        test_math_gadget_container::<Fr, PairSelectionTestContainer<Fr, true>>(
+        try_test!(
+            PairSelectionTestContainer<Fr, true>,
             vec![Word::from(0), Word::from(0), Word::from(0)],
             true,
         );
-        test_math_gadget_container::<Fr, PairSelectionTestContainer<Fr, true>>(
+        try_test!(
+            PairSelectionTestContainer<Fr, true>,
             vec![Word::from(2898), Word::from(2898), Word::from(2898)],
             true,
         );
@@ -137,15 +137,18 @@ mod tests {
 
     #[test]
     fn test_pairselect_expect_a_and_a() {
-        test_math_gadget_container::<Fr, PairSelectionTestContainer<Fr, true>>(
+        try_test!(
+            PairSelectionTestContainer<Fr, true>,
             vec![Word::from(0), Word::from(0), Word::from(1)],
             true,
         );
-        test_math_gadget_container::<Fr, PairSelectionTestContainer<Fr, true>>(
+        try_test!(
+            PairSelectionTestContainer<Fr, true>,
             vec![Word::from(2898), Word::from(2898), Word::from(1)],
             true,
         );
-        test_math_gadget_container::<Fr, PairSelectionTestContainer<Fr, true>>(
+        try_test!(
+            PairSelectionTestContainer<Fr, true>,
             vec![WORD_LOW_MAX, WORD_LOW_MAX, Word::from(1)],
             true,
         );
@@ -153,11 +156,13 @@ mod tests {
 
     #[test]
     fn test_pairselect_expect_a_but_b() {
-        test_math_gadget_container::<Fr, PairSelectionTestContainer<Fr, true>>(
+        try_test!(
+            PairSelectionTestContainer<Fr, true>,
             vec![Word::from(0), Word::from(1), Word::from(0)],
             false,
         );
-        test_math_gadget_container::<Fr, PairSelectionTestContainer<Fr, true>>(
+        try_test!(
+            PairSelectionTestContainer<Fr, true>,
             vec![Word::from(2989), Word::from(1), Word::from(2989)],
             false,
         );
@@ -165,11 +170,13 @@ mod tests {
 
     #[test]
     fn test_pairselect_expect_b_and_b() {
-        test_math_gadget_container::<Fr, PairSelectionTestContainer<Fr, false>>(
+        try_test!(
+            PairSelectionTestContainer<Fr, false>,
             vec![Word::from(0), Word::from(1), Word::from(0)],
             true,
         );
-        test_math_gadget_container::<Fr, PairSelectionTestContainer<Fr, false>>(
+        try_test!(
+            PairSelectionTestContainer<Fr, false>,
             vec![Word::from(2989), Word::from(1), Word::from(2989)],
             true,
         );

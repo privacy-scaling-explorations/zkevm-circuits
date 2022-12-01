@@ -47,7 +47,7 @@ mod tests {
     use halo2_proofs::plonk::Error;
 
     #[derive(Clone)]
-    /// a == b
+    /// IsEqualGadgetTestContainer: require(a == b)
     struct IsEqualGadgetTestContainer<F> {
         eq_gadget: IsEqualGadget<F>,
         a: Cell<F>,
@@ -55,8 +55,6 @@ mod tests {
     }
 
     impl<F: Field> MathGadgetContainer<F> for IsEqualGadgetTestContainer<F> {
-        const NAME: &'static str = "IsEqualGadget";
-
         fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
             let a = cb.query_cell();
             let b = cb.query_cell();
@@ -67,11 +65,11 @@ mod tests {
 
         fn assign_gadget_container(
             &self,
-            input_words: &[Word],
+            witnesses: &[Word],
             region: &mut CachedRegion<'_, '_, F>,
         ) -> Result<(), Error> {
-            let a = input_words[0].to_scalar().unwrap();
-            let b = input_words[1].to_scalar().unwrap();
+            let a = witnesses[0].to_scalar().unwrap();
+            let b = witnesses[1].to_scalar().unwrap();
             let offset = 0;
 
             self.a.assign(region, offset, Value::known(a))?;
@@ -84,7 +82,8 @@ mod tests {
 
     #[test]
     fn test_isequal_0() {
-        test_math_gadget_container::<Fr, IsEqualGadgetTestContainer<Fr>>(
+        try_test!(
+            IsEqualGadgetTestContainer<Fr>,
             vec![Word::from(0), Word::from(0)],
             true,
         );
@@ -92,7 +91,8 @@ mod tests {
 
     #[test]
     fn test_isequal_1() {
-        test_math_gadget_container::<Fr, IsEqualGadgetTestContainer<Fr>>(
+        try_test!(
+            IsEqualGadgetTestContainer<Fr>,
             vec![Word::from(1), Word::from(1)],
             true,
         );
@@ -100,7 +100,8 @@ mod tests {
 
     #[test]
     fn test_isequal_1000() {
-        test_math_gadget_container::<Fr, IsEqualGadgetTestContainer<Fr>>(
+        try_test!(
+            IsEqualGadgetTestContainer<Fr>,
             vec![Word::from(1000), Word::from(1000)],
             true,
         );
@@ -108,7 +109,8 @@ mod tests {
 
     #[test]
     fn test_isequal_1_0() {
-        test_math_gadget_container::<Fr, IsEqualGadgetTestContainer<Fr>>(
+        try_test!(
+            IsEqualGadgetTestContainer<Fr>,
             vec![Word::from(1), Word::from(0)],
             false,
         );
@@ -116,7 +118,8 @@ mod tests {
 
     #[test]
     fn test_isequal_0_1() {
-        test_math_gadget_container::<Fr, IsEqualGadgetTestContainer<Fr>>(
+        try_test!(
+            IsEqualGadgetTestContainer<Fr>,
             vec![Word::from(0), Word::from(1)],
             false,
         );

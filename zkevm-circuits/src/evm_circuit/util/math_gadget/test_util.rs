@@ -23,17 +23,26 @@ use halo2_proofs::{
 
 pub(crate) const WORD_LOW_MAX: Word = U256([u64::MAX, u64::MAX, 0, 0]);
 pub(crate) const WORD_HIGH_MAX: Word = U256([0, 0, u64::MAX, u64::MAX]);
+// Maximum field value in bn256: bn256::MODULES - 1
+pub(crate) const WORD_CELL_MAX: Word = U256([
+    0x43e1f593f0000000,
+    0x2833e84879b97091,
+    0xb85045b68181585d,
+    0x30644e72e131a029,
+]);
+
+pub(crate) fn generate_power_of_randomness<F: Field>(randomness: F) -> Vec<F> {
+    (1..32).map(|exp| randomness.pow(&[exp, 0, 0, 0])).collect()
+}
 
 pub(crate) trait MathGadgetContainer<F: Field>: Clone {
-    const NAME: &'static str;
-
     fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self
     where
         Self: Sized;
 
     fn assign_gadget_container(
         &self,
-        input_words: &[Word],
+        witnesses: &[Word],
         region: &mut CachedRegion<'_, '_, F>,
     ) -> Result<(), Error>;
 }
@@ -55,16 +64,16 @@ where
 
 pub(crate) struct UnitTestMathGadgetBaseCircuit<F, G> {
     size: usize,
-    input_words: Vec<Word>,
+    witnesses: Vec<Word>,
     randomness: F,
     _marker: PhantomData<G>,
 }
 
 impl<F: Field, G> UnitTestMathGadgetBaseCircuit<F, G> {
-    fn new(size: usize, input_words: Vec<Word>, randomness: F) -> Self {
+    fn new(size: usize, witnesses: Vec<Word>, randomness: F) -> Self {
         UnitTestMathGadgetBaseCircuit {
             size,
-            input_words,
+            witnesses,
             randomness,
             _marker: PhantomData,
         }
@@ -78,7 +87,7 @@ impl<F: Field, G: MathGadgetContainer<F>> Circuit<F> for UnitTestMathGadgetBaseC
     fn without_witnesses(&self) -> Self {
         UnitTestMathGadgetBaseCircuit {
             size: 0,
-            input_words: vec![],
+            witnesses: vec![],
             randomness: F::from(123456u64),
             _marker: PhantomData,
         }
@@ -103,7 +112,7 @@ impl<F: Field, G: MathGadgetContainer<F>> Circuit<F> for UnitTestMathGadgetBaseC
 
         if !constraints.step.is_empty() {
             let step_constraints = constraints.step;
-            meta.create_gate(G::NAME, |meta| {
+            meta.create_gate("MathGadgetTestContainer", |meta| {
                 let q_usable = meta.query_selector(q_usable);
                 step_constraints
                     .into_iter()
@@ -149,10 +158,10 @@ impl<F: Field, G: MathGadgetContainer<F>> Circuit<F> for UnitTestMathGadgetBaseC
             |mut region| {
                 let offset = 0;
                 config.q_usable.enable(&mut region, offset)?;
-                let power_of_randomness = [(); 31].map(|_| self.randomness);
+                let power_of_randomness = generate_power_of_randomness(self.randomness);
                 let cached_region = &mut CachedRegion::<'_, '_, F>::new(
                     &mut region,
-                    power_of_randomness,
+                    power_of_randomness.try_into().unwrap(),
                     STEP_WIDTH,
                     MAX_STEP_HEIGHT * 3,
                     config.advices[0].index(), // TODO
@@ -165,7 +174,7 @@ impl<F: Field, G: MathGadgetContainer<F>> Circuit<F> for UnitTestMathGadgetBaseC
                 )?;
                 config
                     .math_gadget_container
-                    .assign_gadget_container(&self.input_words, cached_region)?;
+                    .assign_gadget_container(&self.witnesses, cached_region)?;
                 for stored_expr in &config.stored_expressions {
                     stored_expr.assign(cached_region, offset)?;
                 }
@@ -208,25 +217,36 @@ impl<F: Field, G: MathGadgetContainer<F>> Circuit<F> for UnitTestMathGadgetBaseC
     }
 }
 
-/// test_math_gadget_container takes math gadget container and run a container
-/// based circuit. All test logic should be included in the container, and
-/// witness words are used for both input & output data. How to deal with the
-/// witness words is left to each container.
+/// This fn test_math_gadget_container takes math gadget container and run a
+/// container based circuit. All test logic should be included in the container,
+/// and witness words are used for both input & output data. How to deal with
+/// the witness words is left to each container.
 pub(crate) fn test_math_gadget_container<F: Field, G: MathGadgetContainer<F>>(
-    witness_words: Vec<Word>,
+    witnesses: Vec<Word>,
     expected_success: bool,
 ) {
     const K: usize = 12;
     let randomness = F::from(123456u64);
-    let power_of_randomness: Vec<Vec<F>> = (1..32)
-        .map(|exp| vec![randomness.pow(&[exp, 0, 0, 0]); (1 << K) - 64])
+    let power_of_randomness_instances: Vec<Vec<F>> = generate_power_of_randomness(randomness)
+        .iter()
+        .map(|power_of_randomn: &F| vec![*power_of_randomn; (1 << K) - 64])
         .collect();
-    let circuit = UnitTestMathGadgetBaseCircuit::<F, G>::new(K, witness_words, randomness);
+    let circuit = UnitTestMathGadgetBaseCircuit::<F, G>::new(K, witnesses, randomness);
 
-    let prover = MockProver::<F>::run(K as u32, &circuit, power_of_randomness).unwrap();
+    let prover = MockProver::<F>::run(K as u32, &circuit, power_of_randomness_instances).unwrap();
     if expected_success {
         assert_eq!(prover.verify(), Ok(()));
     } else {
         assert_ne!(prover.verify(), Ok(()));
     }
 }
+
+/// A simple macro for less code & better readability
+macro_rules! try_test {
+    ($base_class:ty, $witnesses:expr, $expect_success:expr $(,)?) => {{
+        test_math_gadget_container::<Fr, $base_class>($witnesses.to_vec(), $expect_success)
+    }};
+}
+
+#[cfg(test)]
+pub(crate) use try_test;

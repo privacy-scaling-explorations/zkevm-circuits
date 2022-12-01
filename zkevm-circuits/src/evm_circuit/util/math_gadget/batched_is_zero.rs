@@ -67,81 +67,102 @@ impl<F: Field, const N: usize> BatchedIsZeroGadget<F, N> {
 mod tests {
     use super::super::test_util::*;
     use super::*;
-    use crate::evm_circuit::util;
     use eth_types::*;
     use halo2_proofs::halo2curves::bn256::Fr;
     use halo2_proofs::plonk::Error;
 
-    const N: usize = 32;
     #[derive(Clone)]
-    /// all(n.cells) == 0
-    struct IsZeroGadgetTestContainer<F> {
+    /// IsZeroGadgetTestContainer: require(all(cells) == 0)
+    struct IsZeroGadgetTestContainer<F, const N: usize> {
         z_gadget: BatchedIsZeroGadget<F, N>,
-        n: util::Word<F>,
+        nums: [Cell<F>; N],
     }
 
-    impl<F: Field> MathGadgetContainer<F> for IsZeroGadgetTestContainer<F> {
-        const NAME: &'static str = "BatchedIsZeroGadget";
-
+    impl<F: Field, const N: usize> MathGadgetContainer<F> for IsZeroGadgetTestContainer<F, N> {
         fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
-            let n = cb.query_word();
+            let nums = [(); N].map(|_| cb.query_cell());
             let z_gadget = BatchedIsZeroGadget::<F, N>::construct(
                 cb,
-                n.cells
-                    .iter()
+                nums.iter()
                     .map(|cell| cell.expr())
                     .collect::<Vec<Expression<F>>>()
                     .try_into()
                     .unwrap(),
             );
             cb.require_equal("Input must be all 0", z_gadget.expr(), 1.expr());
-            IsZeroGadgetTestContainer { z_gadget, n }
+            IsZeroGadgetTestContainer { z_gadget, nums }
         }
 
         fn assign_gadget_container(
             &self,
-            input_words: &[Word],
+            witnesses: &[Word],
             region: &mut CachedRegion<'_, '_, F>,
         ) -> Result<(), Error> {
-            let n = input_words[0];
+            let values = witnesses
+                .iter()
+                .map(|num| num.to_scalar().unwrap())
+                .collect::<Vec<F>>();
             let offset = 0;
 
-            self.n.assign(region, offset, Some(n.to_le_bytes()))?;
+            for (i, num) in self.nums.iter().enumerate() {
+                num.assign(region, offset, Value::known(values[i]))?;
+            }
             self.z_gadget
-                .assign(region, 0, n.to_le_bytes().map(|byte| F::from(byte as u64)))?;
+                .assign(region, offset, values.try_into().unwrap())?;
 
             Ok(())
         }
     }
 
     #[test]
-    fn test_batched_single_iszero() {
-        test_math_gadget_container::<Fr, IsZeroGadgetTestContainer<Fr>>(vec![Word::from(0)], true);
+    fn test_batched_iszero() {
+        try_test!(IsZeroGadgetTestContainer<Fr, 5>, [Word::from(0); 5], true);
     }
 
     #[test]
-    fn test_batched_single_bit_1_not_iszero() {
-        test_math_gadget_container::<Fr, IsZeroGadgetTestContainer<Fr>>(vec![Word::from(1)], false);
-    }
-
-    #[test]
-    fn test_batched_single_bit_1024_not_iszero() {
-        test_math_gadget_container::<Fr, IsZeroGadgetTestContainer<Fr>>(
-            vec![Word::from(1024)],
-            false,
+    fn test_batched_1_in_array_not_iszero() {
+        try_test!(
+            IsZeroGadgetTestContainer<Fr, 5>,
+            vec![
+                Word::from(0),
+                Word::from(1),
+                Word::from(0),
+                Word::from(0),
+                Word::from(0),
+            ],
+            false
         );
     }
 
     #[test]
-    fn test_batched_bignum_bytes_not_iszero() {
-        test_math_gadget_container::<Fr, IsZeroGadgetTestContainer<Fr>>(
-            vec![Word::from(1u64 << 32)],
-            false,
-        );
+    fn test_batched_big_array_not_iszero() {
+        let mut test_nums = vec![Word::from(1)];
+        test_nums.extend(vec![Word::from(0); 31]);
+        try_test!(IsZeroGadgetTestContainer<Fr, 32>, test_nums, false);
+    }
+
+    #[test]
+    fn test_batched_single_cell_iszero() {
+        try_test!(IsZeroGadgetTestContainer<Fr, 1>, [Word::from(0)], true);
+    }
+
+    #[test]
+    fn test_batched_single_cell_not_iszero() {
+        try_test!(IsZeroGadgetTestContainer<Fr, 1>, vec![WORD_LOW_MAX], false);
     }
 
     #[test]
     fn test_batched_wordmax_bytes_not_iszero() {
-        test_math_gadget_container::<Fr, IsZeroGadgetTestContainer<Fr>>(vec![Word::MAX], false);
+        try_test!(
+            IsZeroGadgetTestContainer<Fr, 5>,
+            vec![
+                WORD_LOW_MAX,
+                WORD_LOW_MAX,
+                WORD_LOW_MAX,
+                WORD_LOW_MAX,
+                WORD_LOW_MAX,
+            ],
+            false
+        );
     }
 }
