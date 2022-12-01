@@ -212,8 +212,6 @@ mod tests {
     }
 
     impl<F: Field> MathGadgetContainer<F> for MulAddWords512GadgetContainer<F> {
-        const NAME: &'static str = "MulAddWords512Gadget";
-
         fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
             let a = cb.query_word();
             let b = cb.query_word();

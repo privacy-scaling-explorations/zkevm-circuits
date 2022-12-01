@@ -169,8 +169,6 @@ mod tests {
     impl<F: Field, const N_ADDENDS: usize, const CARRY_HI: u64, const CHECK_OVERFLOW: bool>
         MathGadgetContainer<F> for AddWordsTestContainer<F, N_ADDENDS, CARRY_HI, CHECK_OVERFLOW>
     {
-        const NAME: &'static str = "AddWordsGadget";
-
         fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
             let addends = [(); N_ADDENDS].map(|_| cb.query_word());
             let sum = cb.query_word();

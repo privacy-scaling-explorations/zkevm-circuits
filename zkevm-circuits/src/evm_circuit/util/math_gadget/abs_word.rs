@@ -106,8 +106,6 @@ mod tests {
     }
 
     impl<F: Field, const IS_NEG: bool> MathGadgetContainer<F> for AbsWordGadgetContainer<F, IS_NEG> {
-        const NAME: &'static str = "AbsWordGadget";
-
         fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
             let absword_gadget = AbsWordGadget::<F>::construct(cb);
             cb.require_equal(

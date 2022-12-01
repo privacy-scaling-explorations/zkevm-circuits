@@ -121,8 +121,6 @@ mod tests {
     }
 
     impl<F: Field, const N: u8> MathGadgetContainer<F> for ByteSizeGadgetContainer<F, N> {
-        const NAME: &'static str = "ByteSizeGadget";
-
         fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
             let value_rlc = cb.query_word();
             let bytesize_gadget = ByteSizeGadget::<F>::construct(cb, &value_rlc);

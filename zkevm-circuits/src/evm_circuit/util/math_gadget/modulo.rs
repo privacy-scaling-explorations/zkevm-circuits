@@ -111,8 +111,6 @@ mod tests {
     }
 
     impl<F: Field> MathGadgetContainer<F> for ModGadgetTestContainer<F> {
-        const NAME: &'static str = "ModGadget";
-
         fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
             let a = cb.query_word();
             let n = cb.query_word();
@@ -197,12 +195,17 @@ mod tests {
         );
         try_test!(
             ModGadgetTestContainer<Fr>,
-            vec![WORD_LOW_MAX, Word::from(1024), Word::from(1)],
+            vec![WORD_LOW_MAX, Word::from(999999), Word::from(888888)],
             false,
         );
         try_test!(
             ModGadgetTestContainer<Fr>,
-            vec![WORD_HIGH_MAX, Word::from(1024), Word::from(1)],
+            vec![WORD_CELL_MAX, Word::from(999999999), Word::from(666666666)],
+            false,
+        );
+        try_test!(
+            ModGadgetTestContainer<Fr>,
+            vec![WORD_HIGH_MAX, Word::from(999999), Word::from(777777)],
             false,
         );
     }

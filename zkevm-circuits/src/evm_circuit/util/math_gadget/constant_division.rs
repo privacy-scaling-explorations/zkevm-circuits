@@ -114,8 +114,6 @@ mod tests {
         > MathGadgetContainer<F>
         for ConstantDivisionTestContainer<F, N_BYTES, DENOMINATOR, QUOTIENT, REMAINDER>
     {
-        const NAME: &'static str = "ConstantDivisionGadget";
-
         fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
             let a = cb.query_cell();
             let constdiv_gadget =

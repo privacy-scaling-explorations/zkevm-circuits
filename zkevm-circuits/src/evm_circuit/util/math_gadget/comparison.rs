@@ -69,8 +69,6 @@ mod tests {
     impl<F: Field, const N: usize, const CHECK_EQ: bool> MathGadgetContainer<F>
         for ComparisonTestContainer<F, N, CHECK_EQ>
     {
-        const NAME: &'static str = "ComparisonGadget";
-
         fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
             let a = cb.query_cell();
             let b = cb.query_cell();

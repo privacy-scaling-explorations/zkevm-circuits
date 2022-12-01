@@ -61,8 +61,6 @@ mod tests {
     }
 
     impl<F: Field> MathGadgetContainer<F> for RangeCheckTestContainer<F> {
-        const NAME: &'static str = "RangeCheckGadget";
-
         fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
             let a = cb.query_cell();
             let range_check_gadget = RangeCheckGadget::<F, 4>::construct(cb, a.expr());

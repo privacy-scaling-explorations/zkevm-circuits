@@ -55,8 +55,6 @@ mod tests {
     }
 
     impl<F: Field> MathGadgetContainer<F> for IsEqualGadgetTestContainer<F> {
-        const NAME: &'static str = "IsEqualGadget";
-
         fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
             let a = cb.query_cell();
             let b = cb.query_cell();

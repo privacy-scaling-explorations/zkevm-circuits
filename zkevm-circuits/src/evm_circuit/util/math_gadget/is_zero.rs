@@ -71,8 +71,6 @@ mod tests {
     }
 
     impl<F: Field> MathGadgetContainer<F> for IsZeroGadgetTestContainer<F> {
-        const NAME: &'static str = "IsZeroGadget";
-
         fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
             let n = cb.query_cell();
             let z_gadget = IsZeroGadget::<F>::construct(cb, n.expr());

@@ -108,8 +108,6 @@ mod tests {
     }
 
     impl<F: Field> MathGadgetContainer<F> for MulWordByU64TestContainer<F> {
-        const NAME: &'static str = "MulWordByU64Gadget";
-
         fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
             let a = cb.query_word();
             let b = cb.query_cell();

@@ -70,8 +70,6 @@ mod tests {
     impl<F: Field, const N_BYTES: usize, const MIN_IS_A: bool> MathGadgetContainer<F>
         for MinMaxTestContainer<F, N_BYTES, MIN_IS_A>
     {
-        const NAME: &'static str = "MinMaxGadget";
-
         fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
             let a = cb.query_cell();
             let b = cb.query_cell();

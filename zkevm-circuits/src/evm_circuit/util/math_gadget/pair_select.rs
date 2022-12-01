@@ -77,8 +77,6 @@ mod tests {
     impl<F: Field, const SELECT_A: bool> MathGadgetContainer<F>
         for PairSelectionTestContainer<F, SELECT_A>
     {
-        const NAME: &'static str = "PairSelectGadget";
-
         fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
             let v = cb.query_cell();
             let a = cb.query_cell();

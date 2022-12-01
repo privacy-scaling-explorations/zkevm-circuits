@@ -36,8 +36,6 @@ pub(crate) fn generate_power_of_randomness<F: Field>(randomness: F) -> Vec<F> {
 }
 
 pub(crate) trait MathGadgetContainer<F: Field>: Clone {
-    const NAME: &'static str;
-
     fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self
     where
         Self: Sized;
@@ -114,7 +112,7 @@ impl<F: Field, G: MathGadgetContainer<F>> Circuit<F> for UnitTestMathGadgetBaseC
 
         if !constraints.step.is_empty() {
             let step_constraints = constraints.step;
-            meta.create_gate(G::NAME, |meta| {
+            meta.create_gate("MathGadgetTestContainer", |meta| {
                 let q_usable = meta.query_selector(q_usable);
                 step_constraints
                     .into_iter()
