@@ -1,7 +1,7 @@
 #![cfg(feature = "circuits_actual")]
 use integration_tests::integration_test_circuits::{
     test_bytecode_circuit_block, test_copy_circuit_block, test_evm_circuit_block,
-    test_state_circuit_block, test_super_circuit_block, test_tx_circuit_block, GEN_DATA,
+    test_state_circuit_block, test_tx_circuit_block, GEN_DATA,
 };
 use integration_tests::log_init;
 use paste::paste;
