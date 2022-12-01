@@ -37,7 +37,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
         let current_call = state.call()?.clone();
 
         // For both CALLCODE and DELEGATECALL opcodes, `call.address` is caller
-        // address which is different with callee address (code address).
+        // address which is different from callee_address (code address).
         let callee_address = match call.code_source {
             CodeSource::Address(address) => address,
             _ => call.address,
