@@ -147,7 +147,7 @@ pub async fn test_super_circuit_block(block_num: u64) {
     let (builder, eth_block) = cli.gen_inputs(block_num).await.unwrap();
     let (k, circuit, instance) =
         SuperCircuit::<_, MAX_TXS, MAX_CALLDATA, MAX_RWS>::build_from_circuit_input_builder(
-            builder,
+            &builder,
             eth_block,
             &mut ChaCha20Rng::seed_from_u64(2),
         )

@@ -26,7 +26,6 @@ pub enum ResultLevel {
 pub struct ResultInfo {
     pub level: ResultLevel,
     pub details: String,
-    pub path: String,
 }
 
 impl ResultLevel {
@@ -48,12 +47,12 @@ pub struct DiffEntry {
 }
 
 pub struct Diffs {
-    info: String,
+    previous: String,
     tests: Vec<DiffEntry>,
 }
 
 impl Diffs {
-    pub fn gen_info(&self) -> Vec<String> {
+    pub fn gen_info(&self) -> (String, Table) {
         let mut stat: HashMap<ResultLevel, isize> = HashMap::new();
         let mut stat_news = 0isize;
 
@@ -66,26 +65,34 @@ impl Diffs {
             }
         }
 
-        let mut buff = String::default();
-        buff.push_str(&format!("new: {:+} ", stat_news));
+        let mut summary = String::default();
+        if stat_news > 0 {
+            summary.push_str(&format!("new: {:+} ", stat_news));
+        }
         for (lvl, n) in stat {
-            buff.push_str(&format!("/ {:?}: {:+} ", lvl, n));
+            summary.push_str(&format!("/ {:?}: {:+} ", lvl, n));
+        }
+        if summary.is_empty() {
+            summary.push_str("No changes");
         }
 
-        let mut out = Vec::new();
-        out.push(format!("DIFFS {}\n", self.info));
-        out.push(buff);
+        summary.push_str(&format!(" [diff from {}]", self.previous));
+
+        let mut table = Table::new();
         for t in &self.tests {
             if let Some(prev) = &t.prev {
                 let curr = t.curr.as_ref().unwrap();
-                out.push(format!(
-                    "{} : {:?}({}) => {:?}({})\n",
-                    t.id, prev.level, prev.details, curr.level, curr.details
-                ));
+                table.add_row(row![
+                    t.id,
+                    format!(
+                        "{:?}({}) => {:?}({})",
+                        prev.level, prev.details, curr.level, curr.details
+                    ),
+                ]);
             }
         }
-
-        out
+        table.add_row(row!["Summary", summary]);
+        (summary, table)
     }
 }
 
@@ -100,7 +107,13 @@ impl Report {
     pub fn print_tty(&self) -> Result<()> {
         self.by_folder.print_tty(false)?;
         self.by_result.print_tty(false)?;
-        println!("{:#?}", self.diffs.gen_info());
+        let (_, files_diff) = self.diffs.gen_info();
+        files_diff.print_tty(false)?;
+        for (test_id, info) in &self.tests {
+            if info.level == ResultLevel::Fail || info.level == ResultLevel::Panic {
+                println!("- {:?} {}", info.level, test_id);
+            }
+        }
         Ok(())
     }
     pub fn gen_html(&self) -> Result<String> {
@@ -108,14 +121,16 @@ impl Report {
         let reg = Handlebars::new();
         let mut by_folder = Vec::new();
         let mut by_result = Vec::new();
+        let mut diffs = Vec::new();
 
         self.by_folder.print_html(&mut by_folder)?;
         self.by_result.print_html(&mut by_result)?;
+        self.diffs.gen_info().1.print_html(&mut diffs)?;
 
         let data = &json!({
                 "by_folder": String::from_utf8(by_folder)?,
                 "by_result" : String::from_utf8(by_result)? ,
-                "diffs" : self.diffs.gen_info(),
+                "diffs" : String::from_utf8(diffs)?,
                 "all_results" : self.tests
         });
 
@@ -137,19 +152,11 @@ impl Results {
         file.read_to_string(&mut buf)?;
         let mut tests = HashMap::new();
         for line in buf.lines().filter(|l| l.len() > 1) {
-            let mut split = line.splitn(4, ';');
+            let mut split = line.splitn(3, ';');
             let level = ResultLevel::from_str(split.next().unwrap()).unwrap();
             let id = split.next().unwrap().to_string();
-            let path = split.next().unwrap().to_string();
             let details = split.next().unwrap().to_string();
-            tests.insert(
-                id,
-                ResultInfo {
-                    level,
-                    path,
-                    details,
-                },
-            );
+            tests.insert(id, ResultInfo { level, details });
         }
         Ok(Self { cache: None, tests })
     }
@@ -174,18 +181,20 @@ impl Results {
         let mut count_by_result: HashMap<String, usize> = HashMap::new();
 
         let mut diffs = Diffs {
-            info: String::default(),
+            previous: "<no previous commit>".into(),
             tests: Vec::new(),
         };
         let mut prev_results = None;
         if let Some((prev_info, p_results)) = previous {
-            diffs.info = prev_info;
+            diffs.previous = prev_info;
             prev_results = Some(p_results);
         }
 
         for (id, info) in &self.tests {
-            let name = &info.path.rsplit_terminator('/').next().unwrap();
-            let folder = &info.path[..info.path.len() - name.len() - 1];
+            let (_, file_path) = id.split_once('#').unwrap();
+            let filename = &file_path.rsplit_terminator('/').next().unwrap();
+            let folder = &file_path[..file_path.len() - filename.len() - 1];
+
             let result = format!("{:?}_{}", info.level, info.details);
 
             folders.insert(folder);
@@ -222,7 +231,7 @@ impl Results {
         // generate tables
 
         let mut by_folder = Table::new();
-        let mut header = vec![String::from("path")];
+        let mut header = vec![String::from("By path")];
 
         let levels: Vec<_> = ResultLevel::iter().collect();
 
@@ -262,6 +271,7 @@ impl Results {
         by_folder.add_row(Row::from_iter(cells));
 
         let mut by_result = Table::new();
+        by_result.add_row(row!["By type", "Count"]);
         let mut info = Vec::new();
         for (result, count) in count_by_result {
             info.push((count, result));
@@ -280,6 +290,13 @@ impl Results {
         }
     }
 
+    pub fn success(&self) -> bool {
+        !self
+            .tests
+            .values()
+            .any(|result| result.level == ResultLevel::Fail || result.level == ResultLevel::Panic)
+    }
+
     pub fn contains(&self, test: &str) -> bool {
         self.tests.contains_key(test)
     }
@@ -287,18 +304,22 @@ impl Results {
     #[allow(clippy::map_entry)]
     pub fn insert(&mut self, test_id: String, result: ResultInfo) -> Result<()> {
         if !self.tests.contains_key(&test_id) {
-            log::info!(
-                "{} {}/{} {}",
-                result.level.display_string(),
-                result.path,
-                test_id,
-                result.details
-            );
-
-            let entry = format!(
-                "{:?};{};{};{}\n",
-                result.level, test_id, result.path, result.details
-            );
+            if result.level == ResultLevel::Ignored {
+                log::debug!(
+                    "{} {} {}",
+                    result.level.display_string(),
+                    test_id,
+                    result.details
+                );
+            } else {
+                log::info!(
+                    "{} {} {}",
+                    result.level.display_string(),
+                    test_id,
+                    result.details
+                );
+            }
+            let entry = format!("{:?};{};{}\n", result.level, test_id, result.details);
             if let Some(path) = &self.cache {
                 std::fs::OpenOptions::new()
                     .read(true)

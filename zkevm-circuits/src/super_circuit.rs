@@ -64,7 +64,6 @@ use crate::table::{BlockTable, BytecodeTable, CopyTable, ExpTable, MptTable, RwT
 use crate::tx_circuit::{TxCircuit, TxCircuitConfig};
 use crate::util::Challenges;
 use crate::witness::{block_convert, Block, MptUpdates};
-
 use bus_mapping::circuit_input_builder::{CircuitInputBuilder, CircuitsParams};
 use bus_mapping::mock::BlockData;
 use eth_types::geth_types::{self, GethData, Transaction};
@@ -323,17 +322,19 @@ impl<const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: usize>
     ///
     /// Also, return with it the minimum required SRS degree for the
     /// circuit and the Public Inputs needed.
+    #[allow(clippy::type_complexity)]
     pub fn build(
         geth_data: GethData,
         rng: &mut (impl RngCore + Clone),
-    ) -> Result<(u32, Self, Vec<Vec<Fr>>), bus_mapping::Error> {
+    ) -> Result<(u32, Self, Vec<Vec<Fr>>, CircuitInputBuilder), bus_mapping::Error> {
         let block_data = BlockData::new_from_geth_data(geth_data.clone());
         let mut builder = block_data.new_circuit_input_builder();
         builder
             .handle_block(&geth_data.eth_block, &geth_data.geth_traces)
             .expect("could not handle block tx");
 
-        Self::build_from_circuit_input_builder(builder, geth_data.eth_block, rng)
+        let ret = Self::build_from_circuit_input_builder(&builder, geth_data.eth_block, rng)?;
+        Ok((ret.0, ret.1, ret.2, builder))
     }
 
     /// From CircuitInputBuilder, generate a SuperCircuit instance with all of
@@ -342,7 +343,7 @@ impl<const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: usize>
     /// Also, return with it the minimum required SRS degree for the circuit and
     /// the Public Inputs needed.
     pub fn build_from_circuit_input_builder(
-        builder: CircuitInputBuilder,
+        builder: &CircuitInputBuilder,
         eth_block: eth_types::Block<eth_types::Transaction>,
         rng: &mut (impl RngCore + Clone),
     ) -> Result<(u32, Self, Vec<Vec<Fr>>), bus_mapping::Error> {
@@ -382,7 +383,7 @@ impl<const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: usize>
 
         let public_data = PublicData {
             chain_id,
-            history_hashes: builder.block.history_hashes,
+            history_hashes: builder.block.history_hashes.clone(),
             eth_block,
             block_constants: geth_types::BlockConstants {
                 coinbase: block.context.coinbase,
@@ -406,7 +407,7 @@ impl<const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: usize>
             // MockProver verification time.
             bytecode_size: bytecodes_len + 64,
             pi_circuit,
-            circuits_params: builder.block.circuits_params,
+            circuits_params: builder.block.circuits_params.clone(),
         };
 
         let instance = circuit.instance();
@@ -485,7 +486,7 @@ mod super_circuit_tests {
 
         block.sign(&wallets);
 
-        let (k, circuit, instance) =
+        let (k, circuit, instance, _) =
             SuperCircuit::<_, 1, 32, 256>::build(block, &mut ChaCha20Rng::seed_from_u64(2))
                 .unwrap();
         let prover = MockProver::run(k, &circuit, instance).unwrap();
