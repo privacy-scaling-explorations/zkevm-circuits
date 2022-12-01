@@ -9,7 +9,8 @@ use crate::keccak_circuit::util::{
     NUM_WORDS_TO_SQUEEZE, RATE, RATE_IN_BITS, RHO_MATRIX, ROUND_CST,
 };
 use crate::table::KeccakTable;
-use crate::util::Challenges;
+use crate::util::{Challenges, SubCircuit, SubCircuitConfig};
+use crate::witness;
 use crate::{evm_circuit::util::constraint_builder::BaseConstraintBuilder, util::Expr};
 use eth_types::Field;
 use gadgets::util::{and, select, sum};
@@ -17,9 +18,7 @@ use halo2_proofs::arithmetic::FieldExt;
 use halo2_proofs::plonk::VirtualCells;
 use halo2_proofs::{
     circuit::{Layouter, Region, SimpleFloorPlanner, Value},
-    plonk::{
-        Advice, Challenge, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, TableColumn,
-    },
+    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, TableColumn},
     poly::Rotation,
 };
 use log::{debug, info};
@@ -334,7 +333,7 @@ impl<F: FieldExt> CellManager<F> {
 
 /// KeccakConfig
 #[derive(Clone, Debug)]
-pub struct KeccakPackedConfig<F> {
+pub struct KeccakCircuitConfig<F> {
     q_enable: Column<Fixed>,
     q_first: Column<Fixed>,
     q_round: Column<Fixed>,
@@ -354,16 +353,43 @@ pub struct KeccakPackedConfig<F> {
     _marker: PhantomData<F>,
 }
 
-/// KeccakPackedCircuit
-#[derive(Default)]
-pub struct KeccakPackedCircuit<F: Field> {
+/// KeccakCircuit
+#[derive(Default, Clone, Debug)]
+pub struct KeccakCircuit<F: Field> {
     inputs: Vec<Vec<u8>>,
-    num_rows: usize,
+    num_rows: Option<usize>,
     _marker: PhantomData<F>,
 }
 
-impl<F: Field> Circuit<F> for KeccakPackedCircuit<F> {
-    type Config = (KeccakPackedConfig<F>, Challenges<Challenge>);
+impl<F: Field> SubCircuit<F> for KeccakCircuit<F> {
+    type Config = KeccakCircuitConfig<F>;
+
+    /// The `block.circuits_params.keccak_padding` parmeter, when enabled, sets
+    /// up the circuit to support a fixed number of permutations/keccak_f's,
+    /// independently of the permutations required by `inputs`.
+    fn new_from_block(block: &witness::Block<F>) -> Self {
+        Self::new(
+            block.circuits_params.keccak_padding,
+            block.keccak_inputs.clone(),
+        )
+    }
+
+    /// Make the assignments to the KeccakCircuit
+    fn synthesize_sub(
+        &self,
+        config: &Self::Config,
+        challenges: &Challenges<Value<F>>,
+        layouter: &mut impl Layouter<F>,
+    ) -> Result<(), Error> {
+        config.load_aux_tables(layouter)?;
+        let witness = self.generate_witness(*challenges);
+        config.assign(layouter, witness.as_slice())
+    }
+}
+
+#[cfg(any(feature = "test", test))]
+impl<F: Field> Circuit<F> for KeccakCircuit<F> {
+    type Config = (KeccakCircuitConfig<F>, Challenges);
     type FloorPlanner = SimpleFloorPlanner;
 
     fn without_witnesses(&self) -> Self {
@@ -371,30 +397,36 @@ impl<F: Field> Circuit<F> for KeccakPackedCircuit<F> {
     }
 
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
+        let keccak_table = KeccakTable::construct(meta);
         let challenges = Challenges::construct(meta);
-        let challenge_exprs = challenges.exprs(meta);
-        (
-            KeccakPackedConfig::configure(meta, challenge_exprs),
-            challenges,
-        )
+
+        let config = {
+            let challenges = challenges.exprs(meta);
+            KeccakCircuitConfig::new(
+                meta,
+                KeccakCircuitConfigArgs {
+                    keccak_table,
+                    challenges,
+                },
+            )
+        };
+        (config, challenges)
     }
 
     fn synthesize(
         &self,
-        config: Self::Config,
+        (config, challenges): Self::Config,
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
-        config.0.load(&mut layouter)?;
-        let witness = self.generate_witness(config.1.values(&mut layouter));
-        config.0.assign(&mut layouter, witness.as_slice())?;
-        Ok(())
+        let challenges = challenges.values(&mut layouter);
+        self.synthesize_sub(&config, &challenges, &mut layouter)
     }
 }
 
-impl<F: Field> KeccakPackedCircuit<F> {
+impl<F: Field> KeccakCircuit<F> {
     /// Creates a new circuit instance
-    pub fn new(num_rows: usize, inputs: Vec<Vec<u8>>) -> Self {
-        KeccakPackedCircuit {
+    pub fn new(num_rows: Option<usize>, inputs: Vec<Vec<u8>>) -> Self {
+        KeccakCircuit {
             inputs,
             num_rows,
             _marker: PhantomData,
@@ -402,14 +434,15 @@ impl<F: Field> KeccakPackedCircuit<F> {
     }
 
     /// The number of keccak_f's that can be done in this circuit
-    pub fn capacity(&self) -> usize {
+    pub fn capacity(&self) -> Option<usize> {
         // Subtract two for unusable rows
-        self.num_rows / ((NUM_ROUNDS + 1) * get_num_rows_per_round()) - 2
+        self.num_rows
+            .map(|num_rows| num_rows / ((NUM_ROUNDS + 1) * get_num_rows_per_round()) - 2)
     }
 
     /// Sets the witness using the data to be hashed
     pub(crate) fn generate_witness(&self, challenges: Challenges<Value<F>>) -> Vec<KeccakRow<F>> {
-        multi_keccak(self.inputs.as_slice(), challenges, Some(self.capacity()))
+        multi_keccak(self.inputs.as_slice(), challenges, self.capacity())
             .expect("Too many inputs for given capacity")
     }
 }
@@ -798,10 +831,24 @@ mod transform_to {
     }
 }
 
-impl<F: Field> KeccakPackedConfig<F> {
-    pub(crate) fn configure(
+/// Circuit configuration arguments
+pub struct KeccakCircuitConfigArgs<F: Field> {
+    /// KeccakTable
+    pub keccak_table: KeccakTable,
+    /// Challenges randomness
+    pub challenges: Challenges<Expression<F>>,
+}
+
+impl<F: Field> SubCircuitConfig<F> for KeccakCircuitConfig<F> {
+    type ConfigArgs = KeccakCircuitConfigArgs<F>;
+
+    /// Return a new KeccakCircuitConfig
+    fn new(
         meta: &mut ConstraintSystem<F>,
-        challenges: Challenges<Expression<F>>,
+        Self::ConfigArgs {
+            keccak_table,
+            challenges,
+        }: Self::ConfigArgs,
     ) -> Self {
         let q_enable = meta.fixed_column();
         let q_first = meta.fixed_column();
@@ -812,7 +859,6 @@ impl<F: Field> KeccakPackedConfig<F> {
         let q_padding_last = meta.fixed_column();
         let round_cst = meta.fixed_column();
 
-        let keccak_table = KeccakTable::construct(meta);
         let is_final = keccak_table.is_enabled;
         let length = keccak_table.input_len;
         let data_rlc = keccak_table.input_rlc;
@@ -1558,7 +1604,7 @@ impl<F: Field> KeccakPackedConfig<F> {
             target_part_sizes(get_num_bits_per_theta_c_lookup())
         );
 
-        KeccakPackedConfig {
+        KeccakCircuitConfig {
             q_enable,
             q_first,
             q_round,
@@ -1577,22 +1623,9 @@ impl<F: Field> KeccakPackedConfig<F> {
             _marker: PhantomData,
         }
     }
+}
 
-    /// Sets the witness using the data to be hashed
-    /// The `capacity`, when enabled, sets up the circuit to support a fixed
-    /// number of permutations/keccak_f's, independently of the permutations
-    /// required by `inputs`.
-    pub fn assign_from_witness(
-        &self,
-        layouter: &mut impl Layouter<F>,
-        inputs: &[Vec<u8>],
-        challenges: Challenges<Value<F>>,
-        capacity: Option<usize>,
-    ) -> Result<(), Error> {
-        let witness = multi_keccak(inputs, challenges, capacity)?;
-        self.assign(layouter, &witness)
-    }
-
+impl<F: Field> KeccakCircuitConfig<F> {
     pub(crate) fn assign(
         &self,
         layouter: &mut impl Layouter<F>,
@@ -1674,7 +1707,7 @@ impl<F: Field> KeccakPackedConfig<F> {
         Ok(())
     }
 
-    pub(crate) fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
+    pub(crate) fn load_aux_tables(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
         load_normalize_table(layouter, "normalize_6", &self.normalize_6, 6u64)?;
         load_normalize_table(layouter, "normalize_4", &self.normalize_4, 4u64)?;
         load_normalize_table(layouter, "normalize_3", &self.normalize_3, 3u64)?;
@@ -2093,7 +2126,7 @@ mod tests {
     use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
 
     fn verify<F: Field>(k: u32, inputs: Vec<Vec<u8>>, success: bool) {
-        let circuit = KeccakPackedCircuit::new(2usize.pow(k), inputs);
+        let circuit = KeccakCircuit::new(Some(2usize.pow(k)), inputs);
 
         let prover = MockProver::<F>::run(k, &circuit, vec![]).unwrap();
         let verify_result = prover.verify();

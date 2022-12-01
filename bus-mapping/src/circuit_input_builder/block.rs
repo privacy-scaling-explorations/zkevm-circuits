@@ -51,6 +51,7 @@ pub struct BlockSteps {
     pub end_block_last: ExecStep,
 }
 
+// TODO: Remove fields that are duplicated in`eth_block`
 /// Circuit Input related to a block.
 #[derive(Debug)]
 pub struct Block {
@@ -88,15 +89,17 @@ pub struct Block {
     code: HashMap<Hash, Vec<u8>>,
     /// Circuits Setup Paramteres
     pub circuits_params: CircuitsParams,
+    /// Original block from geth
+    pub eth_block: eth_types::Block<eth_types::Transaction>,
 }
 
 impl Block {
     /// Create a new block.
-    pub fn new<TX>(
+    pub fn new(
         chain_id: Word,
         history_hashes: Vec<Word>,
         prev_state_root: Word,
-        eth_block: &eth_types::Block<TX>,
+        eth_block: &eth_types::Block<eth_types::Transaction>,
         circuits_params: CircuitsParams,
     ) -> Result<Self, Error> {
         if eth_block.base_fee_per_gas.is_none() {
@@ -139,6 +142,7 @@ impl Block {
             code: HashMap::new(),
             sha3_inputs: Vec::new(),
             circuits_params,
+            eth_block: eth_block.clone(),
         })
     }
 
