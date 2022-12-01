@@ -23,7 +23,7 @@ mod tests {
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
     use std::env::var;
-    use zkevm_circuits::copy_circuit::dev::CopyCircuitTester;
+    use zkevm_circuits::copy_circuit::CopyCircuit;
     use zkevm_circuits::evm_circuit::witness::{block_convert, Block};
 
     #[cfg_attr(not(feature = "benches"), ignore)]
@@ -44,8 +44,8 @@ mod tests {
         let num_rows = 1 << degree;
         const NUM_BLINDING_ROWS: usize = 7 - 1;
         let block = generate_full_events_block(degree);
-        let randomness = CopyCircuitTester::<Fr>::get_randomness();
-        let circuit = CopyCircuitTester::<Fr>::new(block, randomness);
+        let randomness = CopyCircuit::<Fr>::get_randomness();
+        let circuit = CopyCircuit::<Fr>::new(1, block, randomness);
         let instance = vec![randomness; num_rows - NUM_BLINDING_ROWS];
 
         // Bench setup generation
@@ -70,7 +70,7 @@ mod tests {
             Challenge255<G1Affine>,
             XorShiftRng,
             Blake2bWrite<Vec<u8>, G1Affine, Challenge255<G1Affine>>,
-            CopyCircuitTester<Fr>,
+            CopyCircuit<Fr>,
         >(
             &general_params,
             &pk,
@@ -152,7 +152,7 @@ mod tests {
         builder
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
-        let block = block_convert(&builder.block, &builder.code_db);
+        let block = block_convert(&builder.block, &builder.code_db).unwrap();
         assert_eq!(block.copy_events.len(), copy_event_num);
         block
     }
