@@ -34,6 +34,7 @@ integer =   { git = "https://github.com/privacy-scaling-explorations/halo2wrong"
 libsecp256k1 = "0.7"
 num-bigint = { version = "0.4" }
 subtle = "2.4"
+rand_chacha = "0.3"
 
 [dev-dependencies]
 bus-mapping = { path = "../bus-mapping", features = ["test"] }
@@ -44,7 +45,6 @@ hex = "0.4.3"
 itertools = "0.10.1"
 mock = { path = "../mock" }
 pretty_assertions = "1.0.0"
-rand_chacha = "0.3"
 
 [features]
 default = []

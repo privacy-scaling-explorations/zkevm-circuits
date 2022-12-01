@@ -31,19 +31,21 @@ use rand_xorshift::XorShiftRng;
 use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::sync::Mutex;
-use zkevm_circuits::bytecode_circuit::bytecode_unroller::unroll;
-use zkevm_circuits::bytecode_circuit::dev::BytecodeCircuitTester;
-use zkevm_circuits::copy_circuit::dev::CopyCircuitTester;
+use zkevm_circuits::bytecode_circuit::bytecode_unroller::{unroll, BytecodeCircuit};
+use zkevm_circuits::copy_circuit::CopyCircuit;
 use zkevm_circuits::evm_circuit::test::{get_test_degree, get_test_instance};
 use zkevm_circuits::evm_circuit::witness::RwMap;
 use zkevm_circuits::evm_circuit::{test::get_test_cicuit_from_block, witness::block_convert};
 use zkevm_circuits::state_circuit::StateCircuit;
 use zkevm_circuits::super_circuit::SuperCircuit;
 use zkevm_circuits::tx_circuit::{sign_verify::SignVerifyChip, Secp256k1Affine, TxCircuit};
+use zkevm_circuits::util::SubCircuit;
 
 const CIRCUITS_PARAMS: CircuitsParams = CircuitsParams {
     max_rws: 16384,
     max_txs: 4,
+    max_calldata: 4000,
+    max_bytecode: 4000,
     keccak_padding: None,
 };
 
@@ -68,7 +70,7 @@ lazy_static! {
         keygen_pk(&general_params, verifying_key, &circuit).expect("keygen_pk should not fail")
     };
     static ref TX_CIRCUIT_KEY: ProvingKey<G1Affine> = {
-        let circuit = TxCircuit::<Fr, 4, { 4 * (4 + 32 + 32) }>::default();
+        let circuit = TxCircuit::<Fr>::default();
         let general_params = get_general_params(TX_CIRCUIT_DEGREE);
 
         let verifying_key = keygen_vk(&general_params, &circuit).expect("keygen_vk should not fail");
@@ -76,14 +78,14 @@ lazy_static! {
     };
 
     static ref BYTECODE_CIRCUIT_KEY: ProvingKey<G1Affine> = {
-        let circuit = BytecodeCircuitTester::<Fr>::default();
+        let circuit = BytecodeCircuit::<Fr>::default();
         let general_params = get_general_params(BYTECODE_CIRCUIT_DEGREE);
 
         let verifying_key = keygen_vk(&general_params, &circuit).expect("keygen_vk should not fail");
         keygen_pk(&general_params, verifying_key, &circuit).expect("keygen_pk should not fail")
     };
     static ref COPY_CIRCUIT_KEY: ProvingKey<G1Affine> = {
-        let circuit = CopyCircuitTester::<Fr>::default();
+        let circuit = CopyCircuit::<Fr>::default();
         let general_params = get_general_params(COPY_CIRCUIT_DEGREE);
 
         let verifying_key = keygen_vk(&general_params, &circuit).expect("keygen_vk should not fail");
@@ -223,7 +225,7 @@ pub async fn test_evm_circuit_block(block_num: u64, actual: bool) {
     log::info!("test evm circuit, block number: {}", block_num);
     let (builder, _) = gen_inputs(block_num).await;
 
-    let block = block_convert(&builder.block, &builder.code_db);
+    let block = block_convert(&builder.block, &builder.code_db).unwrap();
 
     let degree = get_test_degree(&block);
     let instance = get_test_instance(&block);
@@ -274,24 +276,10 @@ pub async fn test_state_circuit_block(block_num: u64, actual: bool) {
 pub async fn test_tx_circuit_block(block_num: u64, actual: bool) {
     log::info!("test tx circuit, block number: {}", block_num);
 
-    let (_, eth_block) = gen_inputs(block_num).await;
-    let txs: Vec<_> = eth_block
-        .transactions
-        .iter()
-        .map(geth_types::Transaction::from)
-        .collect();
+    let (builder, _) = gen_inputs(block_num).await;
 
-    let aux_generator = <Secp256k1Affine as CurveAffine>::CurveExt::random(RNG.clone()).to_affine();
-
-    let circuit = TxCircuit::<Fr, 4, { 4 * (4 + 32 + 32) }> {
-        sign_verify: SignVerifyChip {
-            aux_generator,
-            window_size: 2,
-            _marker: PhantomData,
-        },
-        txs,
-        chain_id: CHAIN_ID,
-    };
+    let block = block_convert(&builder.block, &builder.code_db).unwrap();
+    let circuit = TxCircuit::<Fr>::new_from_block(&block);
 
     if actual {
         test_actual(
@@ -313,7 +301,7 @@ pub async fn test_bytecode_circuit_block(block_num: u64, actual: bool) {
     let bytecodes: Vec<Vec<u8>> = builder.code_db.0.values().cloned().collect();
     let unrolled: Vec<_> = bytecodes.iter().map(|b| unroll::<Fr>(b.clone())).collect();
 
-    let circuit = BytecodeCircuitTester::<Fr>::new(unrolled, 2usize.pow(BYTECODE_CIRCUIT_DEGREE));
+    let circuit = BytecodeCircuit::<Fr>::new(unrolled, 2usize.pow(BYTECODE_CIRCUIT_DEGREE));
 
     if actual {
         test_actual(
@@ -331,10 +319,10 @@ pub async fn test_bytecode_circuit_block(block_num: u64, actual: bool) {
 pub async fn test_copy_circuit_block(block_num: u64, actual: bool) {
     log::info!("test copy circuit, block number: {}", block_num);
     let (builder, _) = gen_inputs(block_num).await;
-    let block = block_convert(&builder.block, &builder.code_db);
+    let block = block_convert(&builder.block, &builder.code_db).unwrap();
 
-    let randomness = CopyCircuitTester::<Fr>::get_randomness();
-    let circuit = CopyCircuitTester::<Fr>::new(block, randomness);
+    let randomness = CopyCircuit::<Fr>::get_randomness();
+    let circuit = CopyCircuit::<Fr>::new(4, block, randomness);
 
     let num_rows = 1 << COPY_CIRCUIT_DEGREE;
     const NUM_BLINDING_ROWS: usize = 7 - 1;
@@ -357,6 +345,7 @@ pub async fn test_super_circuit_block(block_num: u64) {
     const MAX_TXS: usize = 4;
     const MAX_CALLDATA: usize = 512;
     const MAX_RWS: usize = 5888;
+    const MAX_BYTECODE: usize = 5000;
 
     log::info!("test super circuit, block number: {}", block_num);
     let cli = get_client();
@@ -365,6 +354,8 @@ pub async fn test_super_circuit_block(block_num: u64) {
         CircuitsParams {
             max_rws: MAX_RWS,
             max_txs: MAX_TXS,
+            max_calldata: MAX_CALLDATA,
+            max_bytecode: MAX_BYTECODE,
             keccak_padding: None,
         },
     )
@@ -373,9 +364,7 @@ pub async fn test_super_circuit_block(block_num: u64) {
     let (builder, eth_block) = cli.gen_inputs(block_num).await.unwrap();
     let (k, circuit, instance) =
         SuperCircuit::<_, MAX_TXS, MAX_CALLDATA, MAX_RWS>::build_from_circuit_input_builder(
-            builder,
-            eth_block,
-            &mut ChaCha20Rng::seed_from_u64(2),
+            &builder,
         )
         .unwrap();
     // TODO: add actual prover

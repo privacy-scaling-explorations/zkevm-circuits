@@ -31,6 +31,10 @@ thiserror = "1.0"
 toml = "0.5"
 yaml-rust = "0.4.5"
 zkevm-circuits = { path="../zkevm-circuits", features=["test"] }
+rand_chacha = "0.3"
+rand = "0.8"
+halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2.git", tag = "v2022_09_10" }
+
 
 [features]
 ignore-test-docker = []

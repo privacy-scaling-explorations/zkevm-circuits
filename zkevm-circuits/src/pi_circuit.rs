@@ -6,15 +6,16 @@ use eth_types::geth_types::BlockConstants;
 use eth_types::sign_types::SignData;
 use eth_types::H256;
 use eth_types::{
-    geth_types::Transaction, Address, Field, ToBigEndian, ToLittleEndian, ToScalar, Word,
+    geth_types::Transaction, Address, BigEndianHash, Field, ToBigEndian, ToLittleEndian, ToScalar,
+    Word,
 };
-use ethers_core::types::Block;
 use halo2_proofs::plonk::Instance;
 
 use crate::table::BlockTable;
 use crate::table::TxFieldTag;
 use crate::table::TxTable;
-use crate::util::random_linear_combine_word as rlc;
+use crate::util::{random_linear_combine_word as rlc, Challenges, SubCircuit, SubCircuitConfig};
+use crate::witness;
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter, Region, SimpleFloorPlanner, Value},
     plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Selector},
@@ -69,12 +70,14 @@ pub struct PublicData {
     /// History hashes contains the most recent 256 block hashes in history,
     /// where the latest one is at history_hashes[history_hashes.len() - 1].
     pub history_hashes: Vec<Word>,
-    /// Block from geth
-    pub eth_block: Block<eth_types::Transaction>,
-    /// Constants related to Ethereum block
-    pub block_constants: BlockConstants,
+    /// Block Transactions
+    pub transactions: Vec<eth_types::Transaction>,
+    /// Block State Root
+    pub state_root: H256,
     /// Previous block root
     pub prev_state_root: H256,
+    /// Constants related to Ethereum block
+    pub block_constants: BlockConstants,
 }
 
 impl PublicData {
@@ -131,28 +134,27 @@ impl PublicData {
     /// Returns struct with the extra values
     pub fn get_extra_values(&self) -> ExtraValues {
         ExtraValues {
-            // block_hash: self.eth_block.hash.unwrap_or_else(H256::zero),
-            state_root: self.eth_block.state_root,
+            // block_hash: self.hash.unwrap_or_else(H256::zero),
+            state_root: self.state_root,
             prev_state_root: self.prev_state_root,
         }
     }
 
     fn txs(&self) -> Vec<Transaction> {
-        self.eth_block
-            .transactions
-            .iter()
-            .map(Transaction::from)
-            .collect()
+        self.transactions.iter().map(Transaction::from).collect()
     }
 }
 
 /// Config for PiCircuit
 #[derive(Clone, Debug)]
-pub struct PiCircuitConfig<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> {
+pub struct PiCircuitConfig<F: Field> {
+    /// Max number of supported transactions
+    max_txs: usize,
+    /// Max number of supported calldata bytes
+    max_calldata: usize,
+
     q_block_table: Selector,
-    block_table: BlockTable,
     q_tx_table: Selector,
-    tx_table: TxTable,
     raw_public_inputs: Column<Advice>,
     rpi_rlc_acc: Column<Advice>,
     rand_rpi: Column<Advice>,
@@ -162,13 +164,36 @@ pub struct PiCircuitConfig<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: u
     pi: Column<Instance>, // rpi_rand, rpi_rlc, chain_ID, state_root, prev_state_root
 
     _marker: PhantomData<F>,
+    // External tables
+    block_table: BlockTable,
+    tx_table: TxTable,
 }
 
-impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
-    PiCircuitConfig<F, MAX_TXS, MAX_CALLDATA>
-{
+/// Circuit configuration arguments
+pub struct PiCircuitConfigArgs {
+    /// Max number of supported transactions
+    pub max_txs: usize,
+    /// Max number of supported calldata bytes
+    pub max_calldata: usize,
+    /// TxTable
+    pub tx_table: TxTable,
+    /// BlockTable
+    pub block_table: BlockTable,
+}
+
+impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
+    type ConfigArgs = PiCircuitConfigArgs;
+
     /// Return a new PiCircuitConfig
-    pub fn new(meta: &mut ConstraintSystem<F>, block_table: BlockTable, tx_table: TxTable) -> Self {
+    fn new(
+        meta: &mut ConstraintSystem<F>,
+        Self::ConfigArgs {
+            max_txs,
+            max_calldata,
+            block_table,
+            tx_table,
+        }: Self::ConfigArgs,
+    ) -> Self {
         let q_block_table = meta.selector();
 
         let q_tx_table = meta.selector();
@@ -230,7 +255,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
         });
 
         let offset = BLOCK_LEN + 1 + EXTRA_LEN;
-        let tx_table_len = MAX_TXS * TX_LEN + 1 + MAX_CALLDATA;
+        let tx_table_len = max_txs * TX_LEN + 1 + max_calldata;
 
         //  0.3 Tx table -> {tx_id, index, value} column match with raw_public_inputs
         // at expected offset
@@ -278,6 +303,8 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
         );
 
         Self {
+            max_txs,
+            max_calldata,
             q_block_table,
             block_table,
             q_tx_table,
@@ -291,12 +318,14 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
             _marker: PhantomData,
         }
     }
+}
 
+impl<F: Field> PiCircuitConfig<F> {
     /// Return the number of rows in the circuit
     #[inline]
-    fn circuit_len() -> usize {
+    fn circuit_len(&self) -> usize {
         // +1 empty row in block table, +1 empty row in tx_table
-        BLOCK_LEN + 1 + EXTRA_LEN + 3 * (TX_LEN * MAX_TXS + 1 + MAX_CALLDATA)
+        BLOCK_LEN + 1 + EXTRA_LEN + 3 * (TX_LEN * self.max_txs + 1 + self.max_calldata)
     }
 
     /// Assigns a tx_table row and stores the values in a vec for the
@@ -325,7 +354,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
             offset,
             || Value::known(tx_id),
         )?;
-        region.assign_advice(|| "tag", self.tx_table.tag, offset, || Value::known(tag))?;
+        region.assign_fixed(|| "tag", self.tx_table.tag, offset, || Value::known(tag))?;
         region.assign_advice(
             || "index",
             self.tx_table.index,
@@ -340,7 +369,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
         )?;
 
         // Assign vals to raw_public_inputs column
-        let tx_table_len = TX_LEN * MAX_TXS + 1 + MAX_CALLDATA;
+        let tx_table_len = TX_LEN * self.max_txs + 1 + self.max_calldata;
 
         let id_offset = BLOCK_LEN + 1 + EXTRA_LEN;
         let index_offset = id_offset + tx_table_len;
@@ -601,7 +630,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
         rand_rpi: F,
         raw_pi_vals: Vec<F>,
     ) -> Result<(AssignedCell<F, F>, AssignedCell<F, F>), Error> {
-        let circuit_len = Self::circuit_len();
+        let circuit_len = self.circuit_len();
         assert_eq!(circuit_len, raw_pi_vals.len());
 
         // Last row
@@ -658,54 +687,116 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
 
 /// Public Inputs Circuit
 #[derive(Clone, Default, Debug)]
-pub struct PiCircuit<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> {
+pub struct PiCircuit<F: Field> {
+    max_txs: usize,
+    max_calldata: usize,
     /// Randomness for RLC encdoing
     pub randomness: F,
-
     /// Randomness for PI encoding
     pub rand_rpi: F,
-
     /// PublicInputs data known by the verifier
     pub public_data: PublicData,
 }
 
-impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
-    PiCircuit<F, MAX_TXS, MAX_CALLDATA>
-{
+impl<F: Field> PiCircuit<F> {
     /// Creates a new PiCircuit
-    pub fn new(randomness: impl Into<F>, rand_rpi: impl Into<F>, public_data: PublicData) -> Self {
+    pub fn new(
+        max_txs: usize,
+        max_calldata: usize,
+        randomness: impl Into<F>,
+        rand_rpi: impl Into<F>,
+        public_data: PublicData,
+    ) -> Self {
         Self {
+            max_txs,
+            max_calldata,
             randomness: randomness.into(),
             rand_rpi: rand_rpi.into(),
             public_data,
         }
     }
 }
-impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
-    for PiCircuit<F, MAX_TXS, MAX_CALLDATA>
-{
-    type Config = PiCircuitConfig<F, MAX_TXS, MAX_CALLDATA>;
-    type FloorPlanner = SimpleFloorPlanner;
 
-    fn without_witnesses(&self) -> Self {
-        Self::default()
+impl<F: Field> SubCircuit<F> for PiCircuit<F> {
+    type Config = PiCircuitConfig<F>;
+
+    fn new_from_block(block: &witness::Block<F>) -> Self {
+        let public_data = PublicData {
+            chain_id: block.context.chain_id,
+            history_hashes: block.context.history_hashes.clone(),
+            transactions: block.eth_block.transactions.clone(),
+            state_root: block.eth_block.state_root,
+            prev_state_root: H256::from_uint(&block.prev_state_root),
+            block_constants: BlockConstants {
+                coinbase: block.context.coinbase,
+                timestamp: block.context.timestamp,
+                number: block.context.number.as_u64().into(),
+                difficulty: block.context.difficulty,
+                gas_limit: block.context.gas_limit.into(),
+                base_fee: block.context.base_fee,
+            },
+        };
+        PiCircuit::new(
+            block.circuits_params.max_txs,
+            block.circuits_params.max_calldata,
+            block.randomness,
+            block.randomness + F::from_u128(1),
+            public_data,
+        )
     }
 
-    fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-        let block_table = BlockTable::construct(meta);
-        let tx_table = TxTable::construct(meta);
-        PiCircuitConfig::new(meta, block_table, tx_table)
+    /// Compute the public inputs for this circuit.
+    fn instance(&self) -> Vec<Vec<F>> {
+        let rlc_rpi_col = raw_public_inputs_col::<F>(
+            self.max_txs,
+            self.max_calldata,
+            &self.public_data,
+            self.randomness,
+        );
+        assert_eq!(
+            rlc_rpi_col.len(),
+            BLOCK_LEN + 1 + EXTRA_LEN + 3 * (TX_LEN * self.max_txs + 1 + self.max_calldata)
+        );
+
+        // Computation of raw_pulic_inputs
+        let rlc_rpi = rlc_rpi_col
+            .iter()
+            .rev()
+            .fold(F::zero(), |acc, val| acc * self.rand_rpi + val);
+
+        // let block_hash = public_data
+        //     .eth_block
+        //     .hash
+        //     .unwrap_or_else(H256::zero)
+        //     .to_fixed_bytes();
+        let public_inputs = vec![
+            self.rand_rpi,
+            rlc_rpi,
+            F::from(self.public_data.chain_id.as_u64()),
+            rlc(
+                self.public_data.state_root.to_fixed_bytes(),
+                self.randomness,
+            ),
+            rlc(
+                self.public_data.prev_state_root.to_fixed_bytes(),
+                self.randomness,
+            ),
+        ];
+
+        vec![public_inputs]
     }
 
-    fn synthesize(
+    /// Make the assignments to the PiCircuit
+    fn synthesize_sub(
         &self,
-        config: Self::Config,
-        mut layouter: impl Layouter<F>,
+        config: &Self::Config,
+        _challenges: &Challenges<Value<F>>,
+        layouter: &mut impl Layouter<F>,
     ) -> Result<(), Error> {
         let pi_cells = layouter.assign_region(
             || "region 0",
             |mut region| {
-                let circuit_len = Self::Config::circuit_len();
+                let circuit_len = config.circuit_len();
                 let mut raw_pi_vals = vec![F::zero(); circuit_len];
 
                 // Assign block table
@@ -729,7 +820,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
                 let mut offset = 0;
                 // Assign Tx table
                 let txs = self.public_data.get_tx_table_values();
-                assert!(txs.len() <= MAX_TXS);
+                assert!(txs.len() <= config.max_txs);
                 let tx_default = TxValues::default();
 
                 // Add empty row
@@ -744,7 +835,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
                 )?;
                 offset += 1;
 
-                for i in 0..MAX_TXS {
+                for i in 0..config.max_txs {
                     let tx = if i < txs.len() { &txs[i] } else { &tx_default };
 
                     for (tag, value) in &[
@@ -792,7 +883,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
                 let mut calldata_count = 0;
                 for (i, tx) in self.public_data.txs().iter().enumerate() {
                     for (index, byte) in tx.call_data.0.iter().enumerate() {
-                        assert!(calldata_count < MAX_CALLDATA);
+                        assert!(calldata_count < config.max_calldata);
                         config.assign_tx_row(
                             &mut region,
                             offset,
@@ -806,7 +897,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
                         calldata_count += 1;
                     }
                 }
-                for _ in calldata_count..MAX_CALLDATA {
+                for _ in calldata_count..config.max_calldata {
                     config.assign_tx_row(
                         &mut region,
                         offset,
@@ -842,50 +933,61 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
     }
 }
 
-impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
-    PiCircuit<F, MAX_TXS, MAX_CALLDATA>
+// We define the PiTestCircuit as a wrapper over PiCircuit extended to take the
+// generic const parameters MAX_TXS and MAX_CALLDATA.  This is necessary because
+// the trait Circuit requires an implementation of `configure` that doesn't take
+// any circuit parameters, and the PiCircuit defines gates that use rotations
+// that depend on MAX_TXS and MAX_CALLDATA, so these two values are required
+// during the configuration.
+/// Test Circuit for PiCircuit
+#[cfg(any(feature = "test", test))]
+#[derive(Default)]
+pub struct PiTestCircuit<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>(
+    pub PiCircuit<F>,
+);
+
+#[cfg(any(feature = "test", test))]
+impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
+    for PiTestCircuit<F, MAX_TXS, MAX_CALLDATA>
 {
-    /// Compute the public inputs for this circuit.
-    pub fn instance(&self) -> Vec<Vec<F>> {
-        let rlc_rpi_col =
-            raw_public_inputs_col::<F, MAX_TXS, MAX_CALLDATA>(&self.public_data, self.randomness);
-        assert_eq!(
-            rlc_rpi_col.len(),
-            BLOCK_LEN + 1 + EXTRA_LEN + 3 * (TX_LEN * MAX_TXS + 1 + MAX_CALLDATA)
-        );
+    type Config = (PiCircuitConfig<F>, Challenges);
+    type FloorPlanner = SimpleFloorPlanner;
 
-        // Computation of raw_pulic_inputs
-        let rlc_rpi = rlc_rpi_col
-            .iter()
-            .rev()
-            .fold(F::zero(), |acc, val| acc * self.rand_rpi + val);
+    fn without_witnesses(&self) -> Self {
+        Self::default()
+    }
 
-        // let block_hash = public_data
-        //     .eth_block
-        //     .hash
-        //     .unwrap_or_else(H256::zero)
-        //     .to_fixed_bytes();
-
-        let public_inputs = vec![
-            self.rand_rpi,
-            rlc_rpi,
-            F::from(self.public_data.chain_id.as_u64()),
-            rlc(
-                self.public_data.eth_block.state_root.to_fixed_bytes(),
-                self.randomness,
+    fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
+        let block_table = BlockTable::construct(meta);
+        let tx_table = TxTable::construct(meta);
+        (
+            PiCircuitConfig::new(
+                meta,
+                PiCircuitConfigArgs {
+                    max_txs: MAX_TXS,
+                    max_calldata: MAX_CALLDATA,
+                    block_table,
+                    tx_table,
+                },
             ),
-            rlc(
-                self.public_data.prev_state_root.to_fixed_bytes(),
-                self.randomness,
-            ),
-        ];
+            Challenges::construct(meta),
+        )
+    }
 
-        vec![public_inputs]
+    fn synthesize(
+        &self,
+        (config, challenges): Self::Config,
+        mut layouter: impl Layouter<F>,
+    ) -> Result<(), Error> {
+        let challenges = challenges.values(&mut layouter);
+        self.0.synthesize_sub(&config, &challenges, &mut layouter)
     }
 }
 
 /// Compute the raw_public_inputs column from the verifier's perspective.
-fn raw_public_inputs_col<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>(
+fn raw_public_inputs_col<F: Field>(
+    max_txs: usize,
+    max_calldata: usize,
     public_data: &PublicData,
     randomness: F, // For RLC encoding
 ) -> Vec<F> {
@@ -895,7 +997,7 @@ fn raw_public_inputs_col<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usi
 
     let mut offset = 0;
     let mut result =
-        vec![F::zero(); BLOCK_LEN + 1 + EXTRA_LEN + 3 * (TX_LEN * MAX_TXS + 1 + MAX_CALLDATA)];
+        vec![F::zero(); BLOCK_LEN + 1 + EXTRA_LEN + 3 * (TX_LEN * max_txs + 1 + max_calldata)];
 
     //  Insert Block Values
     // zero row
@@ -936,10 +1038,10 @@ fn raw_public_inputs_col<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usi
 
     // Insert Tx table
     offset = 0;
-    assert!(txs.len() <= MAX_TXS);
+    assert!(txs.len() <= max_txs);
     let tx_default = TxValues::default();
 
-    let tx_table_len = TX_LEN * MAX_TXS + 1 + MAX_CALLDATA;
+    let tx_table_len = TX_LEN * max_txs + 1 + max_calldata;
 
     let id_offset = BLOCK_LEN + 1 + EXTRA_LEN;
     let index_offset = id_offset + tx_table_len;
@@ -952,7 +1054,7 @@ fn raw_public_inputs_col<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usi
 
     offset += 1;
 
-    for i in 0..MAX_TXS {
+    for i in 0..max_txs {
         let tx = if i < txs.len() { &txs[i] } else { &tx_default };
 
         for val in &[
@@ -977,7 +1079,7 @@ fn raw_public_inputs_col<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usi
     let mut calldata_count = 0;
     for (i, tx) in public_data.txs().iter().enumerate() {
         for (index, byte) in tx.call_data.0.iter().enumerate() {
-            assert!(calldata_count < MAX_CALLDATA);
+            assert!(calldata_count < max_calldata);
             result[id_offset + offset] = F::from((i + 1) as u64);
             result[index_offset + offset] = F::from(index as u64);
             result[value_offset + offset] = F::from(*byte as u64);
@@ -985,7 +1087,7 @@ fn raw_public_inputs_col<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usi
             calldata_count += 1;
         }
     }
-    for _ in calldata_count..MAX_CALLDATA {
+    for _ in calldata_count..max_calldata {
         result[id_offset + offset] = F::zero();
         result[index_offset + offset] = F::zero();
         result[value_offset + offset] = F::zero();
@@ -1016,12 +1118,14 @@ mod pi_circuit_test {
         let randomness = F::random(&mut rng);
         let rand_rpi = F::random(&mut rng);
 
-        let circuit = PiCircuit::<F, MAX_TXS, MAX_CALLDATA> {
+        let circuit = PiTestCircuit::<F, MAX_TXS, MAX_CALLDATA>(PiCircuit::new(
+            MAX_TXS,
+            MAX_CALLDATA,
             randomness,
             rand_rpi,
             public_data,
-        };
-        let public_inputs = circuit.instance();
+        ));
+        let public_inputs = circuit.0.instance();
 
         let prover = match MockProver::run(k, &circuit, public_inputs) {
             Ok(prover) => prover,
@@ -1054,7 +1158,7 @@ mod pi_circuit_test {
         let n_tx = 2;
         for _ in 0..n_tx {
             let eth_tx = eth_types::Transaction::from(&rand_tx(&mut rng, chain_id));
-            public_data.eth_block.transactions.push(eth_tx);
+            public_data.transactions.push(eth_tx);
         }
 
         let k = 13;

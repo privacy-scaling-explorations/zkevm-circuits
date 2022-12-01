@@ -1,8 +1,19 @@
+[[suite]]
+id="default"
+path="tests/src/GeneralStateTestsFiller/**/*"
 max_gas = 500000
 max_steps = 1000
+max_rws = 51000
+unimplemented_opcodes = []
+ignore_tests = []
 
+[[suite]]
+id="nightly"
+path="tests/src/GeneralStateTestsFiller/**/*"
+max_gas = 500000
+max_steps = 1000
+max_rws = 51000
 unimplemented_opcodes = [
-    "EXP",
     "SAR",
     "RETURN",
     "REVERT",
@@ -20,20 +31,174 @@ unimplemented_opcodes = [
     "STATICCALL",
     "SELFDESTRUCT"
 ]
+ignore_tests=["&tofix"]
 
-# ignored tests, must fix  ---------------------------------------------------------------
+[[suite]]
+id = "light"
+path="tests/src/GeneralStateTestsFiller/**/*"
+max_gas = 500000
+max_steps = 1000
+max_rws = 51000
+unimplemented_opcodes = []
+allow_tests=[
+	"add_d0(add_neg1_neg1)_g0_v0",
+	"mul_d0(mul_2_3)_g0_v0",
+	"sub_d0(sub_23_1)_g0_v0",
+	"div_d0(div_2_big)_g0_v0",
+	"sdiv_d0(sdiv_1_neg1)_g0_v0",
+	"mod_d0(mod_2_3)_g0_v0",
+	"smod_d0(smod_2_3)_g0_v0",
+	"addmod_d0(addmod_1_2_2)_g0_v0",
+	"mulmod_d0(mm_1_2_2)_g0_v0",
+	"exp_d7(exp_2_257)_g0_v0",
+	"signextend_d0(invalid_byte)_g0_v0",
+	"lt_d0(lt_neg2_0)_g0_v0",
+	"gt_d0(gt_neg2_0)_g0_v0",
+	"slt_d0(slt_neg2_0)_g0_v0",
+	"sgt_d0(sgt_neg2_0)_g0_v0",
+	"eq_d0(eq_neg5_neg3)_g0_v0",
+	"iszero_d0(iszero_neg1)_g0_v0",
+	"and_d0(and_2_2)_g0_v0",
+	"or_d0(or_2_2)_g0_v0",
+	"xor_d0(xor_2_2)_g0_v0",
+	"not_d0_g0_v0",
+	"byte_d0(byte_31_big)_g0_v0",
+	"shl_-1_0_d0_g0_v0",
+	"shr_-1_0_d0_g0_v0",
+	# SAR
+	# KECCAK
+	# ADDRESS
+	# BALANCE
+	"envInfo_d8(origin)_g0_v0",
+	"envInfo_d4(caller)_g0_v0",
+	"envInfo_d5(callvalue)_g0_v0",
+	"calldataload_d0(two_bytes)_g0_v0",
+	"envInfo_d9(calldatasize)_g0_v0",
+	"calldatacopy_d7(sec)_g0_v0",
+	"envInfo_d6(codesize)_g0_v0",
+	"envInfo_d1(codecopy)_g0_v0",
+	"envInfo_d7(gasprice)_g0_v0",
+	# EXTCODESIZE
+	# EXTCODECOPY
+	# RETURNCODESIZE
+	# RETURNCODECOPY
+	# EXTCODEHASH (need to find a test for it)
+	"blockInfo_d0(coinbase)_g0_v0",
+	"blockInfo_d4(timestamp)_g0_v0",
+	"blockInfo_d3(number)_g0_v0",
+	"blockInfo_d1(difficulty)_g0_v0",
+	"blockInfo_d2(gaslimit)_g0_v0",
+	"chainId_d0_g0_v0",
+	"selfBalance_d0_g0_v0",
+	# no tests for BASEFEE ?
+	"refundMax_d0_g0_v0", # POP
+	"mload16bitBound_d0_g0_v0",
+	"gasCostMemory_d44_g0_v0", # MSTORE
+	"randomStatetest148_d0_g0_v0", # MSTORE8
+	"SLOAD_Bounds_d0_g0_v0",
+	"sstoreGas_d0_g0_v0",
+	"JUMP_Bounds2_d0_g0_v0",
+	"JUMPI_Bounds_d0_g0_v0",
+	"callcode_checkPC_d0_g0_v0", # PC
+	"randomStatetest310_d0_g0_v0", # MSIZE
+	"RawCallGas_d0_g0_v0",
+	# JUMPDEST
+	"push_d0(push1)_g0_v0",
+	"push_d1(push2)_g0_v0",
+	"push_d2(push3)_g0_v0",
+	"push_d3(push4)_g0_v0",
+	"push_d4(push5)_g0_v0",
+	"push_d5(push6)_g0_v0",
+	"push_d6(push7)_g0_v0",
+	"push_d7(push8)_g0_v0",
+	"push_d8(push9)_g0_v0",
+	"push_d9(push10)_g0_v0",
+	"push_d10(push11)_g0_v0",
+	"push_d11(push12)_g0_v0",
+	"push_d12(push13)_g0_v0",
+	"push_d13(push14)_g0_v0",
+	"push_d14(push15)_g0_v0",
+	"push_d15(push16)_g0_v0",
+	"push_d16(push17)_g0_v0",
+	"push_d17(push18)_g0_v0",
+	"push_d18(push19)_g0_v0",
+	"push_d19(push20)_g0_v0",
+	"push_d20(push21)_g0_v0",
+	"push_d21(push22)_g0_v0",
+	"push_d22(push23)_g0_v0",
+	"push_d23(push24)_g0_v0",
+	"push_d24(push25)_g0_v0",
+	"push_d25(push26)_g0_v0",
+	"push_d26(push27)_g0_v0",
+	"push_d27(push28)_g0_v0",
+	"push_d28(push29)_g0_v0",
+	"push_d29(push30)_g0_v0",
+	"push_d30(push31)_g0_v0",
+	"push_d31(push32)_g0_v0",
+	"dup_d0(dup1)_g0_v0",
+	"dup_d1(dup2)_g0_v0",
+	"dup_d2(dup3)_g0_v0",
+	"dup_d3(dup4)_g0_v0",
+	"dup_d4(dup5)_g0_v0",
+	"dup_d5(dup6)_g0_v0",
+	"dup_d6(dup7)_g0_v0",
+	"dup_d7(dup8)_g0_v0",
+	"dup_d8(dup9)_g0_v0",
+	"dup_d9(dup10)_g0_v0",
+	"dup_d10(dup11)_g0_v0",
+	"dup_d11(dup12)_g0_v0",
+	"dup_d12(dup13)_g0_v0",
+	"dup_d13(dup14)_g0_v0",
+	"dup_d14(dup15)_g0_v0",
+	"dup_d15(dup16)_g0_v0",
+	"swap_d0(swap1)_g0_v0",
+	"swap_d1(swap2)_g0_v0",
+	"swap_d2(swap3)_g0_v0",
+	"swap_d3(swap4)_g0_v0",
+	"swap_d4(swap5)_g0_v0",
+	"swap_d5(swap6)_g0_v0",
+	"swap_d6(swap7)_g0_v0",
+	"swap_d7(swap8)_g0_v0",
+	"swap_d8(swap9)_g0_v0",
+	"swap_d9(swap10)_g0_v0",
+	"swap_d10(swap11)_g0_v0",
+	"swap_d11(swap12)_g0_v0",
+	"swap_d12(swap13)_g0_v0",
+	"swap_d13(swap14)_g0_v0",
+	"swap_d14(swap15)_g0_v0",
+	"swap_d15(swap16)_g0_v0",
+	"log0_emptyMem_d0_g0_v0",
+	"log1_emptyMem_d0_g0_v0",
+	"log2_emptyMem_d0_g0_v0",
+	"log3_emptyMem_d0_g0_v0",
+	"log4_emptyMem_d0_g0_v0",
+	# CREATE
+	"callcode_checkPC_d0_g0_v0", # for CALL
+	# CALLCODE
+	# RETURN
+	# DELEGATECALL
+	# CREATE2
+	# STATICCALL
+	# REVERT
 
-[[ignore_test]]
+]
+
+# must fix  ------------------------------------------------------------------------------
+
+[[set]]
+id  = "tofix"
 desc = "***panicked at 'circuit should pass', contraint error"
-ids=["random_d3(random3)_g0_v0","random_d4(random4)_g0_v0"]
+tests=["random_d3(random3)_g0_v0","random_d4(random4)_g0_v0"]
 
-[[ignore_test]]
+[[set]]
+id = "tofix"
 desc = "***incorrect rw witness."
-ids = ["invalidAddr_d31(ok)_g0_v0"]
+tests = ["invalidAddr_d31(ok)_g0_v0"]
 
-[[ignore_test]]
+[[set]]
+id = "tofix"
 desc = "gen_associated_ops memory check error"
-ids = [
+tests = [
     "callDataCopyOffset_d0_g0_v0",
     "calldatacopy_dejavu2_d0_g0_v0",
     "codeCopyOffset_d0_g0_v0",
@@ -59,17 +224,19 @@ ids = [
 	"bufferSrcOffset_d6(ok)_g0_v0"
 ]
 
-[[ignore_test]]
+[[set]]
+id = "tofix"
 desc = "NotEnoughRowsAvailable { current_k: 12 }"
-ids = [
+tests = [
     "oog_d2(success)_g0_v0", 
     "oog_d4(success)_g0_v0",
     "push32withoutByte_d0_g0_v0"
 ]
 
-[[ignore_test]]
+[[set]]
+id = "tofix"
 desc = "a an inexistent contract at address is called, but parse_call() (or alike) does not support it yet"
-ids = [
+tests = [
     "invalidAddr_d41(ok)_g0_v0",
     "underflowTest_d91(CALL-7)_g0_v0",
     "CallToNameRegistratorAddressTooBigRight_d0_g0_v0",
@@ -78,23 +245,26 @@ ids = [
     "randomStatetest138_d0_g0_v0",
 ]
 
-[[ignore_test]]
+[[set]]
+id = "tofix"
 desc = "Integer overflow when casting to u64"
-ids = ["envInfo_d3(codecopy_neg_offset)_g0_v0", "codecopy_dejavu2_d0_g0_v0","randomStatetest222_d0_g0_v0"]
+tests = ["envInfo_d3(codecopy_neg_offset)_g0_v0", "codecopy_dejavu2_d0_g0_v0","randomStatetest222_d0_g0_v0"]
 
-[[ignore_test]]
+[[set]]
+id = "tofix"
 desc = "call with value and not enough value to send"
-ids= ["callWithHighValue_d0_g0_v0"]
+tests= ["callWithHighValue_d0_g0_v0"]
 
-[[ignore_test]]
+[[set]]
+id = "tofix"
 desc = "Fully implement PUSHn #633"
-ids = ["randomStatetest0_d0_g0_v0"]
+tests = ["randomStatetest0_d0_g0_v0"]
 
 # skipped tests, do not need to be fixed  --------------------------------------------------
 
-[[skip_test]]
+[[skip_tests]]
 desc = "maximum geth trace size (10MB)"
-ids = [
+tests = [
     "randomStatetest163_d0_g0_v0",
     "randomStatetest150_d0_g0_v0",
     "randomStatetest154_d0_g0_v0",
@@ -178,7 +348,7 @@ ids = [
 
 # ignored paths -------------------------------------------------------------------------
 
-[[skip_path]]
+[[skip_paths]]
 desc = "unimplemented"
 paths = [
     "EIP1559",
@@ -187,7 +357,7 @@ paths = [
     "stZeroKnowledge"
 ]
 
-[[skip_path]]
+[[skip_paths]]
 desc = "too big"
 paths = [
     "stTimeConsuming",
@@ -196,7 +366,7 @@ paths = [
     "50000"
 ]
 
-[[skip_path]]
+[[skip_paths]]
 desc = "defines asm"
 paths = [ 
     "stackLimitGas_1023Filler.json",
@@ -215,7 +385,7 @@ paths = [
     "chainIdGasCostFiller.json"
 ]
 
-[[skip_path]]
+[[skip_paths]]
 desc = "bad json"
 paths = [
     "Opcodes_TransactionInitFiller",
@@ -229,7 +399,7 @@ paths = [
     "ValueOverflowFiller" # weird 0x:biginteger 0x...
 ]
 
-[[skip_path]]
+[[skip_paths]]
 desc = "uses :solidity"
 paths = [
     "RevertRemoteSubCallStorageOOGFiller.yml",

@@ -97,7 +97,7 @@ pub struct TxTable {
     /// Tx ID
     pub tx_id: Column<Advice>,
     /// Tag (TxContextFieldTag)
-    pub tag: Column<Advice>,
+    pub tag: Column<Fixed>,
     /// Index for Tag = CallData
     pub index: Column<Advice>,
     /// Value
@@ -109,7 +109,7 @@ impl TxTable {
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
         Self {
             tx_id: meta.advice_column(),
-            tag: meta.advice_column(),
+            tag: meta.fixed_column(),
             index: meta.advice_column(),
             value: meta.advice_column_in(SecondPhase),
         }
@@ -134,7 +134,8 @@ impl TxTable {
             || "tx table",
             |mut region| {
                 let mut offset = 0;
-                for column in self.columns() {
+                let advice_columns = [self.tx_id, self.index, self.value];
+                for column in advice_columns {
                     region.assign_advice(
                         || "tx table all-zero row",
                         column,
@@ -142,9 +143,14 @@ impl TxTable {
                         || Value::known(F::zero()),
                     )?;
                 }
+                region.assign_fixed(
+                    || "tx table all-zero row",
+                    self.tag,
+                    offset,
+                    || Value::known(F::zero()),
+                )?;
                 offset += 1;
 
-                let tx_table_columns = self.columns();
                 let padding_txs: Vec<Transaction> = (txs.len()..max_txs)
                     .map(|i| Transaction {
                         id: i + 1,
@@ -153,14 +159,20 @@ impl TxTable {
                     .collect();
                 for tx in txs.iter().chain(padding_txs.iter()) {
                     for row in tx.table_assignments(randomness) {
-                        for (column, value) in tx_table_columns.iter().zip_eq(row) {
+                        for (index, column) in advice_columns.iter().enumerate() {
                             region.assign_advice(
                                 || format!("tx table row {}", offset),
                                 *column,
                                 offset,
-                                || Value::known(value),
+                                || Value::known(row[if index > 0 { index + 1 } else { index }]),
                             )?;
                         }
+                        region.assign_fixed(
+                            || format!("tx table row {}", offset),
+                            self.tag,
+                            offset,
+                            || Value::known(row[1]),
+                        )?;
                         offset += 1;
                     }
                 }
@@ -170,9 +182,14 @@ impl TxTable {
     }
 }
 
-impl DynamicTableColumns for TxTable {
-    fn columns(&self) -> Vec<Column<Advice>> {
-        vec![self.tx_id, self.tag, self.index, self.value]
+impl<F: Field> LookupTable<F> for TxTable {
+    fn table_exprs(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>> {
+        vec![
+            meta.query_advice(self.tx_id, Rotation::cur()),
+            meta.query_fixed(self.tag, Rotation::cur()),
+            meta.query_advice(self.index, Rotation::cur()),
+            meta.query_advice(self.value, Rotation::cur()),
+        ]
     }
 }
 
@@ -761,15 +778,10 @@ impl KeccakTable {
         &self,
         region: &mut Region<F>,
         offset: usize,
-        values: [F; 4],
+        values: [Value<F>; 4],
     ) -> Result<(), Error> {
         for (column, value) in self.columns().iter().zip(values.iter()) {
-            region.assign_advice(
-                || format!("assign {}", offset),
-                *column,
-                offset,
-                || Value::known(*value),
-            )?;
+            region.assign_advice(|| format!("assign {}", offset), *column, offset, || *value)?;
         }
         Ok(())
     }
