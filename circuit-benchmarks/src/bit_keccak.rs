@@ -28,12 +28,11 @@ mod tests {
             .parse()
             .expect("Cannot parse DEGREE env var as u32");
 
-        // Create the circuit. Leave last dozens of rows for blinding.
-        let mut circuit = KeccakBitCircuit::new(2usize.pow(degree) - 64);
-
         // Use the complete circuit
-        let inputs = vec![(0u8..135).collect::<Vec<_>>(); circuit.capacity()];
-        circuit.generate_witness(&inputs);
+        let inputs = vec![(0u8..135).collect::<Vec<_>>(); 3];
+
+        // Create the circuit. Leave last dozens of rows for blinding.
+        let circuit = KeccakBitCircuit::new(2usize.pow(degree) - 64, inputs.to_vec());
 
         // Initialize the polynomial commitment parameters
         let mut rng = XorShiftRng::from_seed([

@@ -1,6 +1,7 @@
 use super::{StateCircuit, StateCircuitConfig};
 use crate::{
     table::{AccountFieldTag, CallContextFieldTag, RwTableTag, TxLogFieldTag, TxReceiptFieldTag},
+    util::SubCircuit,
     witness::{MptUpdates, Rw, RwMap},
 };
 use bus_mapping::operation::{
