@@ -19,6 +19,7 @@ mod tests {
     use std::env::var;
     use zkevm_circuits::evm_circuit::witness::RwMap;
     use zkevm_circuits::state_circuit::StateCircuit;
+    use zkevm_circuits::util::SubCircuit;
 
     #[cfg_attr(not(feature = "benches"), ignore)]
     #[test]

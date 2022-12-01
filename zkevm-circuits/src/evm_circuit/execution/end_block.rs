@@ -163,7 +163,7 @@ mod test {
             .unwrap();
 
         // build a witness block from trace result
-        let mut block = crate::witness::block_convert(&builder.block, &builder.code_db);
+        let mut block = crate::witness::block_convert(&builder.block, &builder.code_db).unwrap();
         block.evm_circuit_pad_to = evm_circuit_pad_to;
 
         // finish required tests using this witness block
