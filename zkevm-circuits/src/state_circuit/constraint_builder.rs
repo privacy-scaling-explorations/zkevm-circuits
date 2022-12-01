@@ -58,7 +58,7 @@ pub struct Queries<F: Field> {
     pub is_non_exist: Expression<F>,
     pub lookups: LookupsQueries<F>,
     pub power_of_randomness: [Expression<F>; N_BYTES_WORD - 1],
-    pub first_access: Expression<F>,
+    pub first_different_limb: [Expression<F>; 4],
     pub not_first_access: Expression<F>,
     pub last_access: Expression<F>,
     pub state_root: Expression<F>,
@@ -136,6 +136,17 @@ impl<F: Field> ConstraintBuilder<F> {
     fn build_general_constraints(&mut self, q: &Queries<F>) {
         // tag value in RwTableTag range is enforced in BinaryNumberChip
         self.require_boolean("is_write is boolean", q.is_write());
+
+        // 1 if first_different_limb is in the rw counter, 0 otherwise (i.e. any of the
+        // 4 most significant bits are 0)
+        self.require_equal(
+            "not_first_access when first 16 limbs are same",
+            q.not_first_access.clone(),
+            q.first_different_limb[0].clone()
+                * q.first_different_limb[1].clone()
+                * q.first_different_limb[2].clone()
+                * q.first_different_limb[3].clone(),
+        );
 
         // When at least one of the keys (tag, id, address, field_tag, or storage_key)
         // in the current row differs from the previous row.
@@ -493,7 +504,7 @@ impl<F: Field> Queries<F> {
     }
 
     fn first_access(&self) -> Expression<F> {
-        self.first_access.clone()
+        not::expr(self.not_first_access.clone())
     }
 
     fn address_change(&self) -> Expression<F> {

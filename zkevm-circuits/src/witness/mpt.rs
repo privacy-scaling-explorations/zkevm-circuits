@@ -32,7 +32,7 @@ impl MptUpdate {
 }
 
 /// All the MPT updates in the MptCircuit, accessible by their key
-#[derive(Default, Clone)]
+#[derive(Default, Clone, Debug)]
 pub struct MptUpdates(HashMap<Key, MptUpdate>);
 
 /// The field element encoding of an MPT update, which is used by the MptTable
