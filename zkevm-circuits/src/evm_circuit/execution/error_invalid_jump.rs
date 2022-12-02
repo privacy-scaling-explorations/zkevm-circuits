@@ -119,7 +119,15 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
         // When it's an internal call, need to restore caller's state as finishing this
         // call. Restore caller state to next StepState
         let restore_context = cb.condition(1.expr() - cb.curr.state.is_root.expr(), |cb| {
-            RestoreContextGadget::construct(cb, 0.expr(), 0.expr(), 0.expr(), 0.expr(), 0.expr())
+            RestoreContextGadget::construct(
+                cb,
+                0.expr(),
+                0.expr(),
+                0.expr(),
+                0.expr(),
+                0.expr(),
+                0.expr(),
+            )
         });
 
         Self {
