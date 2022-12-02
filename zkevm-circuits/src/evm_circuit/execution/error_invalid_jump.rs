@@ -266,7 +266,7 @@ mod test {
         test_invalid_jump(40, true);
     }
 
-    // TODO: add internal call test
+    // internal call test
     struct Stack {
         gas: u64,
         value: Word,
