@@ -61,12 +61,13 @@ impl Opcode for OOGCall {
         )?;
 
         let is_warm = state.sdb.check_account_in_access_list(&call_address);
-        state.read_op_reversible(
+        state.push_op(
             &mut exec_step,
+            RW::READ,
             TxAccessListAccountOp {
                 tx_id,
                 address: call_address,
-                is_warm: true,
+                is_warm,
                 is_warm_prev: is_warm,
             },
         )?;
