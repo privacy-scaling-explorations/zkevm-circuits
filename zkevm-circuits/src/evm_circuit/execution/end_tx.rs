@@ -53,6 +53,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
         let is_persistent = cb.call_context(None, CallContextFieldTag::IsPersistent);
+        let is_tx_invalid = cb.tx_context(tx_id.expr(), TxContextFieldTag::TxInvalid, None);
 
         let [tx_gas, tx_caller_address] =
             [TxContextFieldTag::Gas, TxContextFieldTag::CallerAddress]
@@ -69,6 +70,16 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
         let refund = cb.query_cell();
         cb.tx_refund_read(tx_id.expr(), refund.expr());
         let effective_refund = MinMaxGadget::construct(cb, max_refund.quotient(), refund.expr());
+
+        // gas_used & refund == 0 if tx is invalid
+        cb.require_zero(
+            "is_tx_invalid * gas_used == 0",
+            is_tx_invalid.expr() * gas_used.expr(),
+        );
+        cb.require_zero(
+            "is_tx_invalid * effective_refund == 0",
+            is_tx_invalid.expr() * effective_refund.min().expr(),
+        );
 
         // Add effective_refund * tx_gas_price back to caller's balance
         let mul_gas_price_by_refund = MulWordByU64Gadget::construct(
