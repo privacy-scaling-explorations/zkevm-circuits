@@ -16,6 +16,8 @@ async fn test_circuit_input_builder_block(block_num: u64) {
         CircuitsParams {
             max_rws: 16384,
             max_txs: 1,
+            max_calldata: 4000,
+            max_bytecode: 4000,
             keccak_padding: None,
         },
     )

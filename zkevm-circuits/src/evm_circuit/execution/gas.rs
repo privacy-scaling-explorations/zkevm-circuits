@@ -150,7 +150,7 @@ mod test {
         builder
             .handle_block(&block.eth_block, &block.geth_traces)
             .expect("could not handle block tx");
-        let mut block = block_convert(&builder.block, &builder.code_db);
+        let mut block = block_convert(&builder.block, &builder.code_db).unwrap();
 
         // The above block has 2 steps (GAS and STOP). We forcefully assign a
         // wrong `gas_left` value for the second step, to assert that

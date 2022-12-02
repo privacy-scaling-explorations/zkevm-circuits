@@ -29,6 +29,7 @@ pub use execution::{
 };
 pub use input_state_ref::CircuitInputStateRef;
 use itertools::Itertools;
+use log::warn;
 use std::collections::HashMap;
 pub use transaction::{Transaction, TransactionContext};
 
@@ -42,9 +43,13 @@ pub struct CircuitsParams {
     // TODO: evm_rows: Maximum number of rows in the EVM Circuit
     /// Maximum number of txs in the Tx Circuit
     pub max_txs: usize,
-    // TODO: max_calldata: Maximum number of bytes from all txs calldata in the Tx Circuit
+    /// Maximum number of bytes from all txs calldata in the Tx Circuit
+    pub max_calldata: usize,
+    /// Maximum number of bytes supported in the Bytecode Circuit
+    pub max_bytecode: usize,
+    // TODO: Rename for consistency
     /// Pad the keccak circuit with this number of invocations to a static
-    /// capacity
+    /// capacity.  Number of keccak_f that the Keccak circuit will support.
     pub keccak_padding: Option<usize>,
 }
 
@@ -54,6 +59,8 @@ impl Default for CircuitsParams {
         CircuitsParams {
             max_rws: 1000,
             max_txs: 1,
+            max_calldata: 256,
+            max_bytecode: 512,
             keccak_padding: None,
         }
     }
@@ -271,27 +278,24 @@ impl<'a> CircuitInputBuilder {
 
         Ok(())
     }
+}
 
-    /// Return all the keccak inputs used during the processing of the current
-    /// block.
-    pub fn keccak_inputs(&self) -> Result<Vec<Vec<u8>>, Error> {
-        let mut keccak_inputs = Vec::new();
-        // Tx Circuit
-        let txs: Vec<geth_types::Transaction> = self.block.txs.iter().map(|tx| tx.into()).collect();
-        keccak_inputs.extend_from_slice(&keccak_inputs_tx_circuit(
-            &txs,
-            self.block.chain_id.as_u64(),
-        )?);
-        // Bytecode Circuit
-        for bytecode in self.code_db.0.values() {
-            keccak_inputs.push(bytecode.clone());
-        }
-        // EVM Circuit
-        keccak_inputs.extend_from_slice(&self.block.sha3_inputs);
-        // MPT Circuit
-        // TODO https://github.com/privacy-scaling-explorations/zkevm-circuits/issues/696
-        Ok(keccak_inputs)
+/// Return all the keccak inputs used during the processing of the current
+/// block.
+pub fn keccak_inputs(block: &Block, code_db: &CodeDB) -> Result<Vec<Vec<u8>>, Error> {
+    let mut keccak_inputs = Vec::new();
+    // Tx Circuit
+    let txs: Vec<geth_types::Transaction> = block.txs.iter().map(|tx| tx.into()).collect();
+    keccak_inputs.extend_from_slice(&keccak_inputs_tx_circuit(&txs, block.chain_id.as_u64())?);
+    // Bytecode Circuit
+    for bytecode in code_db.0.values() {
+        keccak_inputs.push(bytecode.clone());
     }
+    // EVM Circuit
+    keccak_inputs.extend_from_slice(&block.sha3_inputs);
+    // MPT Circuit
+    // TODO https://github.com/privacy-scaling-explorations/zkevm-circuits/issues/696
+    Ok(keccak_inputs)
 }
 
 /// Generate the keccak inputs required by the SignVerify Chip from the
@@ -316,7 +320,19 @@ pub fn keccak_inputs_tx_circuit(
     chain_id: u64,
 ) -> Result<Vec<Vec<u8>>, Error> {
     let mut inputs = Vec::new();
-    let sign_datas: Vec<SignData> = txs.iter().map(|tx| tx.sign_data(chain_id)).try_collect()?;
+    let sign_datas: Vec<SignData> = txs
+        .iter()
+        .enumerate()
+        .filter(|(i, tx)| {
+            if tx.v == 0 && tx.r.is_zero() && tx.s.is_zero() {
+                warn!("tx {} is not signed, skipping tx circuit keccak input", i);
+                false
+            } else {
+                true
+            }
+        })
+        .map(|(_, tx)| tx.sign_data(chain_id))
+        .try_collect()?;
     // Keccak inputs from SignVerify Chip
     let sign_verify_inputs = keccak_inputs_sign_verify(&sign_datas);
     inputs.extend_from_slice(&sign_verify_inputs);

@@ -3,6 +3,7 @@
 use eth_types::{Field, ToScalar, Word};
 use halo2_proofs::{
     circuit::{Layouter, Value},
+    halo2curves::FieldExt,
     plonk::{Error, TableColumn},
 };
 use itertools::Itertools;
@@ -451,4 +452,13 @@ pub fn load_lookup_table<F: Field>(
             Ok(())
         },
     )
+}
+
+pub(crate) fn extract_field<F: FieldExt>(value: Value<F>) -> F {
+    let mut field = F::zero();
+    let _ = value.map(|f| {
+        field = f;
+        f
+    });
+    field
 }
