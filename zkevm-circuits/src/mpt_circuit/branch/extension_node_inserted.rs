@@ -179,6 +179,10 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
                 },
             );
         }
+        /*
+        Note: else case (!is_before) is not needed here as the `after` extension node 
+        needs to be checked to be the neighbour leaf in the branch (no comparison with trie root).
+        */
 
         /*
         When extension node is in the first level of the storage trie, we need to check whether
@@ -244,7 +248,7 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
             );
         } 
         /*
-        Note: else case (!is_before) is not needed here as it the `after` extension node 
+        Note: else case (!is_before) is not needed here as the `after` extension node 
         needs to be checked to be the neighbour leaf in the branch (no comparison with trie root).
         */
 
@@ -260,12 +264,12 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
                 let not_first_level = meta.query_advice(position_cols.not_first_level, Rotation::cur());
 
                 let rot_into_last_leaf_row = - EXISTING_EXT_NODE_BEFORE_S - 1;
-                let rot_into_branch_init = rot_into_last_leaf_row - LEAF_ROWS_NUM - BRANCH_ROWS_NUM + 1;
+                let rot_into_branch_init_storage = rot_into_last_leaf_row - LEAF_ROWS_NUM - BRANCH_ROWS_NUM + 1;
+                let rot_into_branch_init_account = rot_into_last_leaf_row - ACCOUNT_LEAF_ROWS_NUM - BRANCH_ROWS_NUM + 1;
 
-                // Check if there is an account above the existing extension node rows:
-                let is_account_leaf = meta.query_advice(
+                let is_account_proof = meta.query_advice(
                     is_account_leaf_in_added_branch,
-                    Rotation(rot_into_branch_init - 1),
+                    Rotation(rot_into_last_leaf_row),
                 );
 
                 let is_ext_node_non_hashed =
@@ -274,19 +278,25 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
                 let acc_c = meta.query_advice(accs.acc_c.rlc, Rotation::cur());
 
                 let is_c_inserted_ext_node = get_is_inserted_extension_node(
-                    meta, c_main.rlp1, c_main.rlp2, rot_into_branch_init, true);
+                    meta, c_main.rlp1, c_main.rlp2, rot_into_branch_init_storage, true);
 
-                let rot_into_branch = rot_into_last_leaf_row - LEAF_ROWS_NUM - BRANCH_ROWS_NUM - EXTENSION_ROWS_NUM;
+                let rot_into_branch_storage = rot_into_last_leaf_row - LEAF_ROWS_NUM - BRANCH_ROWS_NUM - EXTENSION_ROWS_NUM;
+                let rot_into_branch_account = rot_into_last_leaf_row - ACCOUNT_LEAF_ROWS_NUM - BRANCH_ROWS_NUM - EXTENSION_ROWS_NUM;
 
                 let mod_node_hash_rlc_cur =
-                    meta.query_advice(accs.s_mod_node_rlc, Rotation(rot_into_branch))
+                    is_account_proof.clone() *
+                    (meta.query_advice(accs.s_mod_node_rlc, Rotation(rot_into_branch_account))
                     * is_c_inserted_ext_node.clone()
-                    + meta.query_advice(accs.c_mod_node_rlc, Rotation(rot_into_branch))
-                    * (one.clone() - is_c_inserted_ext_node);
+                    + meta.query_advice(accs.c_mod_node_rlc, Rotation(rot_into_branch_account))
+                    * (one.clone() - is_c_inserted_ext_node.clone()))
+                    + (one.clone() - is_account_proof.clone()) *
+                    (meta.query_advice(accs.s_mod_node_rlc, Rotation(rot_into_branch_storage))
+                    * is_c_inserted_ext_node.clone()
+                    + meta.query_advice(accs.c_mod_node_rlc, Rotation(rot_into_branch_storage))
+                    * (one.clone() - is_c_inserted_ext_node));
 
                 let selector = not_first_level
                     * q_enable
-                    * (one.clone() - is_account_leaf)
                     * (one.clone() - is_ext_node_non_hashed);
 
                 let mut table_map = Vec::new();
@@ -312,11 +322,13 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
             TODO: In branch where the existing extension node was pushed into, mod_node_hash_rlc
             needs to be set so that the comparison of the `after` extension node with mod_node_hash_rlc
             will be possible. Also, `drifted_pos` and `is_branch_placeholder` need to be set.
+            */
             
             meta.lookup_any("(Drifted) extension node hash in parent branch", |meta| {
                 let q_enable = q_enable(meta);
                 let not_first_level = meta.query_advice(position_cols.not_first_level, Rotation::cur());
 
+                // TODO: rotations when in account proof
                 let rot_into_last_leaf_row = - EXISTING_EXT_NODE_AFTER_S - 1;
                 let rot_into_branch_init = rot_into_last_leaf_row - LEAF_ROWS_NUM - BRANCH_ROWS_NUM + 1;
 
@@ -328,7 +340,7 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
                 let is_c_inserted_ext_node = get_is_inserted_extension_node(
                     meta, c_main.rlp1, c_main.rlp2, rot_into_branch_init, true);
 
-                let rot_into_branch = rot_into_last_leaf_row - LEAF_ROWS_NUM - BRANCH_ROWS_NUM - EXTENSION_ROWS_NUM;
+                let rot_into_branch = rot_into_branch_init + 1;
 
                 let mod_node_hash_rlc_cur =
                     meta.query_advice(accs.s_mod_node_rlc, Rotation(rot_into_branch))
@@ -358,7 +370,6 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
 
                 table_map
             });
-            */
         }
 
         meta.create_gate(
@@ -367,14 +378,9 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
                 let q_enable = q_enable(meta);
                 let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
 
+                // TODO: rotations when in account proof
                 let rot_into_last_leaf_row = - EXISTING_EXT_NODE_BEFORE_S - 1;
                 let rot_into_branch_init = rot_into_last_leaf_row - LEAF_ROWS_NUM - BRANCH_ROWS_NUM + 1;
-
-                // Check if there is an account above the existing extension node rows:
-                let is_account_leaf = meta.query_advice(
-                    is_account_leaf_in_added_branch,
-                    Rotation(rot_into_branch_init - 1),
-                );
 
                 let is_ext_node_non_hashed =
                     meta.query_advice(s_main.bytes[IS_S_EXT_NODE_NON_HASHED_POS - RLP_NUM], Rotation(-1));
@@ -394,7 +400,6 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
                     + meta.query_advice(accs.c_mod_node_rlc, Rotation(rot_into_branch))
                     * (one.clone() - is_c_inserted_ext_node);
 
-
                 /*
                 When an extension node is not hashed, we do not check whether it is in a parent
                 branch using a lookup (see above), instead we need to check whether the branch child
@@ -404,7 +409,6 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
                     "Non-hashed extension node in parent branch",
                     q_not_first
                         * q_enable
-                        * (one.clone() - is_account_leaf)
                         * is_ext_node_non_hashed
                         * (mod_node_hash_rlc_cur - acc_c),
                 ));
@@ -549,6 +553,12 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
                 start = C_START;
                 len = HASH_WIDTH;
             }
+
+            println!("{:?}", offset);
+            println!("{:?}", row.bytes);
+            println!("{:?}", start);
+            println!("{:?}", len);
+
             mpt_config.compute_acc_and_mult(
                 &row.bytes,
                 &mut pv.acc_c,
