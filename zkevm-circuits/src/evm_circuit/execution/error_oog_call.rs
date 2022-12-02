@@ -5,7 +5,7 @@ use crate::evm_circuit::{
     util::{
         common_gadget::RestoreContextGadget,
         constraint_builder::{
-            ConstraintBuilder, ReversionInfo, StepStateTransition,
+            ConstraintBuilder, StepStateTransition,
             Transition::{Delta, Same},
         },
         from_bytes,
@@ -26,7 +26,6 @@ use keccak256::EMPTY_HASH_LE;
 pub(crate) struct ErrorOOGCallGadget<F> {
     opcode: Cell<F>,
     tx_id: Cell<F>,
-    reversion_info: ReversionInfo<F>,
     is_static: Cell<F>,
     gas: Word<F>,
     callee_address: Word<F>,
@@ -73,9 +72,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
 
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
 
-        let mut reversion_info = cb.reversion_info_read(None);
-        let [is_static] =
-            [CallContextFieldTag::IsStatic].map(|field_tag| cb.call_context(None, field_tag));
+        let is_static = cb.call_context(None, CallContextFieldTag::IsStatic);
 
         // Lookup values from stack
         cb.stack_pop(gas_word.expr());
@@ -98,23 +95,15 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
         // Add callee to access list
         let is_warm = cb.query_bool();
         let is_warm_prev = cb.query_bool();
-        cb.account_access_list_write(
+        cb.account_access_list_read(
             tx_id.expr(),
             callee_address.clone(),
             is_warm.expr(),
             is_warm_prev.expr(),
-            Some(&mut reversion_info),
         );
 
         let value_is_zero = IsZeroGadget::construct(cb, sum::expr(&value.cells));
         let has_value = 1.expr() - value_is_zero.expr();
-        cb.condition(has_value.clone(), |cb| {
-            cb.require_zero(
-                "CALL with value must not be in static call stack",
-                is_static.expr(),
-            );
-        });
-
         cb.account_read(
             callee_address.clone(),
             AccountFieldTag::Balance,
@@ -173,7 +162,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
             // Do step state transition
             cb.require_step_state_transition(StepStateTransition {
                 call_id: Same,
-                rw_counter: Delta(18.expr() + cb.curr.state.reversible_write_counter.expr()),
+                rw_counter: Delta(15.expr() + cb.curr.state.reversible_write_counter.expr()),
 
                 ..StepStateTransition::any()
             });
@@ -182,13 +171,12 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
         // When it's an internal call, need to restore caller's state as finishing this
         // call. Restore caller state to next StepState
         let restore_context = cb.condition(1.expr() - cb.curr.state.is_root.expr(), |cb| {
-            RestoreContextGadget::construct(cb, 0.expr(), 1.expr(), 0.expr(), 0.expr(), 0.expr())
+            RestoreContextGadget::construct(cb, 0.expr(), 0.expr(), 0.expr(), 0.expr(), 0.expr())
         });
 
         Self {
             opcode,
             tx_id,
-            reversion_info,
             is_static,
             gas: gas_word,
             callee_address: callee_address_word,
@@ -223,8 +211,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
 
         let [tx_id, is_static] =
-            [step.rw_indices[0], step.rw_indices[3]].map(|idx| block.rws[idx].call_context_value());
-        let stack_index = 4;
+            [step.rw_indices[0], step.rw_indices[1]].map(|idx| block.rws[idx].call_context_value());
+        let stack_index = 2;
         let [gas, callee_address, value, cd_offset, cd_length, rd_offset, rd_length] = [
             step.rw_indices[stack_index],
             step.rw_indices[stack_index + 1],
@@ -236,22 +224,16 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
         ]
         .map(|idx| block.rws[idx].stack_value());
 
-        let (is_warm, is_warm_prev) = block.rws[step.rw_indices[12]].tx_access_list_value_pair();
+        let (is_warm, is_warm_prev) = block.rws[step.rw_indices[10]].tx_access_list_value_pair();
         let [callee_balance_pair, (callee_nonce, _), (callee_code_hash, _)] = [
+            step.rw_indices[11],
+            step.rw_indices[12],
             step.rw_indices[13],
-            step.rw_indices[14],
-            step.rw_indices[15],
         ]
         .map(|idx| block.rws[idx].account_value_pair());
 
         self.tx_id
             .assign(region, offset, Value::known(F::from(tx_id.low_u64())))?;
-        self.reversion_info.assign(
-            region,
-            offset,
-            call.rw_counter_end_of_reversion,
-            call.is_persistent,
-        )?;
 
         self.is_static
             .assign(region, offset, Value::known(F::from(is_static.low_u64())))?;
@@ -339,7 +321,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
             .assign(region, offset, F::from(step.gas_left), F::from(gas_cost))?;
 
         self.restore_context
-            .assign(region, offset, block, call, step, 17)?;
+            .assign(region, offset, block, call, step, 15)?;
         Ok(())
     }
 }
@@ -441,7 +423,7 @@ mod test {
             .handle_block(&block_data.eth_block, &block_data.geth_traces)
             .unwrap();
         let block = block_convert(&builder.block, &builder.code_db);
-        assert_eq!(run_test_circuit(block), Ok(()));
+        assert_eq!(run_test_circuit(block.unwrap()), Ok(()));
     }
 
     #[test]

@@ -1,7 +1,7 @@
 use super::Opcode;
 use crate::{
     circuit_input_builder::{CircuitInputStateRef, ExecStep},
-    operation::{AccountField, CallContextField, TxAccessListAccountOp, RW},
+    operation::{AccountField, CallContextField, TxAccessListAccountOp},
     Error,
 };
 use eth_types::{GethExecStep, ToAddress, ToWord};
@@ -38,11 +38,6 @@ impl Opcode for OOGCall {
         let current_call = state.call()?.clone();
         for (field, value) in [
             (CallContextField::TxId, tx_id.into()),
-            (CallContextField::RwCounterEndOfReversion, 0.into()),
-            (
-                CallContextField::IsPersistent,
-                (current_call.is_persistent as u64).into(),
-            ),
             (
                 CallContextField::IsStatic,
                 (current_call.is_static as u64).into(),
@@ -66,9 +61,8 @@ impl Opcode for OOGCall {
         )?;
 
         let is_warm = state.sdb.check_account_in_access_list(&call_address);
-        state.push_op_reversible(
+        state.read_op_reversible(
             &mut exec_step,
-            RW::WRITE,
             TxAccessListAccountOp {
                 tx_id,
                 address: call_address,

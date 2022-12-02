@@ -194,6 +194,24 @@ impl<'a> CircuitInputStateRef<'a> {
         Ok(())
     }
 
+    /// Push a read [`Operation`](crate::operation::Operation) to be into the
+    /// [`OperationContainer`](crate::operation::OperationContainer) with the
+    /// next [`RWCounter`](crate::operation::RWCounter) and then adds a
+    /// reference to the stored operation
+    /// ([`OperationRef`]) inside the
+    /// bus-mapping instance of the current [`ExecStep`]. Then increase the
+    /// block_ctx [`RWCounter`](crate::operation::RWCounter) by one.
+    pub fn read_op_reversible<T: Op>(&mut self, step: &mut ExecStep, op: T) -> Result<(), Error> {
+        let op_ref = self.block.container.insert(Operation::new_reversible(
+            self.block_ctx.rwc.inc_pre(),
+            RW::READ,
+            op,
+        ));
+        step.bus_mapping_instance.push(op_ref);
+
+        Ok(())
+    }
+
     /// Push a read type [`MemoryOp`] into the
     /// [`OperationContainer`](crate::operation::OperationContainer) with the
     /// next [`RWCounter`](crate::operation::RWCounter) and `call_id`, and then
@@ -789,11 +807,9 @@ impl<'a> CircuitInputStateRef<'a> {
                     false,
                     op,
                 );
-                if self.tx.steps().len() > step_index {
-                    self.tx.steps_mut()[step_index]
-                        .bus_mapping_instance
-                        .push(rev_op_ref);
-                }
+                self.tx.steps_mut()[step_index]
+                    .bus_mapping_instance
+                    .push(rev_op_ref);
             }
         }
 
