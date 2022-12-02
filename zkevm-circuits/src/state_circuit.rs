@@ -44,13 +44,19 @@ const N_LIMBS_ID: usize = 2;
 /// Config for StateCircuit
 #[derive(Clone)]
 pub struct StateCircuitConfig<F> {
-    selector: Column<Fixed>, // Figure out why you get errors when this is Selector.
+    // Figure out why you get errors when this is Selector.
+    selector: Column<Fixed>,
     // https://github.com/privacy-scaling-explorations/zkevm-circuits/issues/407
     rw_table: RwTable,
     sort_keys: SortKeysConfig,
-    initial_value: Column<Advice>, /* Assigned value at the start of the block. For Rw::Account
-                                    * and Rw::AccountStorage rows this is the committed value in
-                                    * the MPT, for others, it is 0. */
+    // Assigned value at the start of the block. For Rw::Account and
+    // Rw::AccountStorage rows this is the committed value in the MPT, for
+    // others, it is 0.
+    initial_value: Column<Advice>,
+    // For Rw::AccountStorage, identify non-existing if both committed value and
+    // new value are zero. Will do lookup for ProofType::StorageDoesNotExist if
+    // non-existing, otherwise do lookup for ProofType::StorageChanged.
+    is_non_exist: Column<Advice>,
     state_root: Column<Advice>,
     lexicographic_ordering: LexicographicOrderingConfig,
     not_first_access: Column<Advice>,
@@ -99,6 +105,7 @@ impl<F: Field> SubCircuitConfig<F> for StateCircuitConfig<F> {
         );
 
         let initial_value = meta.advice_column_in(SecondPhase);
+        let is_non_exist = meta.advice_column_in(SecondPhase);
         let state_root = meta.advice_column_in(SecondPhase);
 
         let sort_keys = SortKeysConfig {
@@ -121,6 +128,7 @@ impl<F: Field> SubCircuitConfig<F> for StateCircuitConfig<F> {
             selector,
             sort_keys,
             initial_value,
+            is_non_exist,
             state_root,
             lexicographic_ordering,
             not_first_access: meta.advice_column(),
@@ -149,6 +157,7 @@ impl<F: Field> StateCircuitConfig<F> {
     pub(crate) fn load_aux_tables(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
         LookupsChip::construct(self.lookups).load(layouter)
     }
+
     /// Make the assignments to the StateCircuit
     pub fn assign(
         &self,
@@ -259,12 +268,28 @@ impl<F: Field> StateCircuitConfig<F> {
                     .map(|u| u.value_assignments(randomness).1)
                     .unwrap_or_default()
             });
-
             region.assign_advice(
                 || "initial_value",
                 self.initial_value,
                 offset,
                 || initial_value,
+            )?;
+
+            // Identify non-existing if both committed value and new value are zero.
+            let is_non_exist = randomness.map(|randomness| {
+                let (committed_value, new_value) = updates
+                    .get(row)
+                    .map(|u| u.value_assignments(randomness))
+                    .unwrap_or_default();
+
+                (F::one() - committed_value * committed_value.invert().unwrap_or(F::zero()))
+                    * (F::one() - new_value * new_value.invert().unwrap_or(F::zero()))
+            });
+            region.assign_advice(
+                || "is_non_exist",
+                self.is_non_exist,
+                offset,
+                || is_non_exist,
             )?;
 
             // TODO: Switch from Rw::Start -> Rw::Padding to simplify this logic.
@@ -513,6 +538,7 @@ fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: &StateCircuitConfig<F>) 
         storage_key: RlcQueries::new(meta, c.sort_keys.storage_key),
         initial_value: meta.query_advice(c.initial_value, Rotation::cur()),
         initial_value_prev: meta.query_advice(c.initial_value, Rotation::prev()),
+        is_non_exist: meta.query_advice(c.is_non_exist, Rotation::cur()),
         lookups: LookupsQueries::new(meta, c.lookups),
         power_of_randomness: c.power_of_randomness.clone(),
         first_different_limb: [0, 1, 2, 3]

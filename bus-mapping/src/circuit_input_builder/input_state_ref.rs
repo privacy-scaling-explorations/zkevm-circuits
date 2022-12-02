@@ -758,9 +758,8 @@ impl<'a> CircuitInputStateRef<'a> {
                 match op.field {
                     AccountField::Nonce => account.nonce = op.value,
                     AccountField::Balance => account.balance = op.value,
-                    AccountField::CodeHash => {
-                        account.code_hash = op.value.to_be_bytes().into();
-                    }
+                    AccountField::CodeHash => account.code_hash = op.value.to_be_bytes().into(),
+                    AccountField::NonExisting => (),
                 }
             }
             OpEnum::TxRefund(op) => {
