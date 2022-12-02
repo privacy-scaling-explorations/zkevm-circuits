@@ -668,10 +668,13 @@ pub mod dev {
     };
 
     impl<F: Field> CopyCircuit<F> {
-        fn get_randomness() -> F {
+        /// Generate randomness for copy circuit tester
+        pub fn get_randomness() -> F {
             F::random(rand::thread_rng())
         }
-        pub(crate) fn r() -> Expression<F> {
+
+        /// Return a randomness
+        pub fn r() -> Expression<F> {
             123456u64.expr()
         }
     }
