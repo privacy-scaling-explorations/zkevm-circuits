@@ -1,7 +1,7 @@
 use super::Opcode;
 use crate::{
     circuit_input_builder::{CircuitInputStateRef, ExecStep},
-    operation::{AccountField, CallContextField, TxAccessListAccountOp},
+    operation::{AccountField, CallContextField, TxAccessListAccountOp, RW},
     Error,
 };
 use eth_types::{GethExecStep, ToAddress, ToWord};
@@ -70,7 +70,7 @@ impl Opcode for OOGCall {
                 is_warm,
                 is_warm_prev: is_warm,
             },
-        )?;
+        );
 
         let (_, callee_account) = state.sdb.get_account(&call_address);
         let callee_nonce = callee_account.nonce;
