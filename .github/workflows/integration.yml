@@ -2,7 +2,7 @@ name: Integration Tests
 
 on:
   pull_request:
-    types: [synchronize, opened, reopened, ready_for_review, labeled]
+    types: [synchronize, labeled]
   push:
     branches:
       - main
