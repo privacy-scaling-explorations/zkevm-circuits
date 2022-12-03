@@ -539,7 +539,7 @@ impl Rw {
                 AccountFieldTag::CodeHash | AccountFieldTag::Balance => {
                     RandomLinearCombination::random_linear_combine(value.to_le_bytes(), randomness)
                 }
-                AccountFieldTag::Nonce => value.to_scalar().unwrap(),
+                AccountFieldTag::Nonce | AccountFieldTag::NonExisting => value.to_scalar().unwrap(),
             },
             Self::AccountStorage { value, .. } | Self::Stack { value, .. } => {
                 RandomLinearCombination::random_linear_combine(value.to_le_bytes(), randomness)
@@ -575,7 +575,9 @@ impl Rw {
                         randomness,
                     )
                 }
-                AccountFieldTag::Nonce => value_prev.to_scalar().unwrap(),
+                AccountFieldTag::Nonce | AccountFieldTag::NonExisting => {
+                    value_prev.to_scalar().unwrap()
+                }
             }),
             Self::AccountStorage { value_prev, .. } => {
                 Some(RandomLinearCombination::random_linear_combine(
@@ -685,6 +687,7 @@ impl From<&operation::OperationContainer> for RwMap {
                         AccountField::Nonce => AccountFieldTag::Nonce,
                         AccountField::Balance => AccountFieldTag::Balance,
                         AccountField::CodeHash => AccountFieldTag::CodeHash,
+                        AccountField::NonExisting => AccountFieldTag::NonExisting,
                     },
                     value: op.op().value,
                     value_prev: op.op().value_prev,

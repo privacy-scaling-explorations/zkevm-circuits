@@ -3,6 +3,10 @@
 #[cfg(test)]
 mod tests {
     use ark_std::{end_timer, start_timer};
+    use bus_mapping::circuit_input_builder::CircuitsParams;
+    use bus_mapping::mock::BlockData;
+    use eth_types::geth_types::GethData;
+    use eth_types::{bytecode, Word};
     use halo2_proofs::plonk::{create_proof, keygen_pk, keygen_vk, verify_proof};
     use halo2_proofs::poly::kzg::commitment::{KZGCommitmentScheme, ParamsKZG, ParamsVerifierKZG};
     use halo2_proofs::poly::kzg::multiopen::{ProverSHPLONK, VerifierSHPLONK};
@@ -14,31 +18,35 @@ mod tests {
             Blake2bRead, Blake2bWrite, Challenge255, TranscriptReadBuffer, TranscriptWriterBuffer,
         },
     };
+    use mock::test_ctx::helpers::*;
+    use mock::test_ctx::TestContext;
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
     use std::env::var;
-    use zkevm_circuits::keccak_circuit::keccak_packed::KeccakPackedCircuit;
+    use zkevm_circuits::copy_circuit::CopyCircuit;
+    use zkevm_circuits::evm_circuit::witness::{block_convert, Block};
 
     #[cfg_attr(not(feature = "benches"), ignore)]
     #[test]
-    fn bench_packed_keccak_circuit_prover() {
+    fn bench_copy_circuit_prover() {
         let degree: u32 = var("DEGREE")
-            .expect("No DEGREE env var was provided")
+            .unwrap_or_else(|_| "14".to_string())
             .parse()
             .expect("Cannot parse DEGREE env var as u32");
-
-        // Create the circuit. Leave last dozens of rows for blinding.
-        let mut circuit = KeccakPackedCircuit::new(2usize.pow(degree) - 64);
-
-        // Use the complete circuit
-        let inputs = vec![(0u8..135).collect::<Vec<_>>(); circuit.capacity()];
-        circuit.generate_witness(&inputs);
 
         // Initialize the polynomial commitment parameters
         let mut rng = XorShiftRng::from_seed([
             0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37, 0x32, 0x54, 0x06,
             0xbc, 0xe5,
         ]);
+
+        // Create the circuit
+        let num_rows = 1 << degree;
+        const NUM_BLINDING_ROWS: usize = 7 - 1;
+        let block = generate_full_events_block(degree);
+        let randomness = CopyCircuit::<Fr>::get_randomness();
+        let circuit = CopyCircuit::<Fr>::new(1, block, randomness);
+        let instance = vec![randomness; num_rows - NUM_BLINDING_ROWS];
 
         // Bench setup generation
         let setup_message = format!("Setup generation with degree = {}", degree);
@@ -54,7 +62,7 @@ mod tests {
         let mut transcript = Blake2bWrite::<_, G1Affine, Challenge255<_>>::init(vec![]);
 
         // Bench proof generation time
-        let proof_message = format!("Packed Keccak Proof generation with degree = {}", degree);
+        let proof_message = format!("Copy_circuit Proof generation with {} rows", degree);
         let start2 = start_timer!(|| proof_message);
         create_proof::<
             KZGCommitmentScheme<Bn256>,
@@ -62,12 +70,12 @@ mod tests {
             Challenge255<G1Affine>,
             XorShiftRng,
             Blake2bWrite<Vec<u8>, G1Affine, Challenge255<G1Affine>>,
-            KeccakPackedCircuit<Fr>,
+            CopyCircuit<Fr>,
         >(
             &general_params,
             &pk,
             &[circuit],
-            &[&[]],
+            &[&[instance.as_slice()][..]][..],
             rng,
             &mut transcript,
         )
@@ -76,7 +84,7 @@ mod tests {
         end_timer!(start2);
 
         // Bench verification time
-        let start3 = start_timer!(|| "Packed Keccak Proof verification");
+        let start3 = start_timer!(|| "Copy_circuit Proof verification");
         let mut verifier_transcript = Blake2bRead::<_, G1Affine, Challenge255<_>>::init(&proof[..]);
         let strategy = SingleStrategy::new(&general_params);
 
@@ -90,10 +98,62 @@ mod tests {
             &verifier_params,
             pk.get_vk(),
             strategy,
-            &[&[]],
+            &[&[instance.as_slice()][..]][..],
             &mut verifier_transcript,
         )
         .expect("failed to verify bench circuit");
         end_timer!(start3);
+    }
+
+    /// generate enough copy events to fillup copy circuit
+    fn generate_full_events_block(degree: u32) -> Block<Fr> {
+        // A empiric value 55 here to let the code generate enough copy event without
+        // exceed the max_rws limit.
+        let copy_event_num = (1 << degree) / 55;
+        let calldata = vec![0, 1, 2, 3];
+        let code = bytecode! {
+            PUSH32(Word::from(copy_event_num))  // config loop counter
+            JUMPDEST                            // PC offset 0x21
+            PUSH32(Word::from(0x04))
+            PUSH32(Word::from(0x00))
+            PUSH32(Word::from(0x00))
+            CALLDATACOPY                        // do calldatacopy to generate copy event
+            PUSH32(Word::from(0x01))
+            SWAP1
+            SUB
+            DUP1
+            PUSH32(Word::from(0x21))
+            JUMPI                               // goto JUMPDEST(0x21) if (--copy_event_num > 0)
+            STOP
+        };
+
+        let test_ctx = TestContext::<2, 1>::new(
+            None,
+            account_0_code_account_1_no_code(code),
+            |mut txs, accs| {
+                txs[0]
+                    .from(accs[1].address)
+                    .to(accs[0].address)
+                    .input(calldata.into())
+                    .gas((1e16 as u64).into());
+            },
+            |block, _txs| block.number(0xcafeu64),
+        )
+        .unwrap();
+        let block: GethData = test_ctx.into();
+        let mut builder = BlockData::new_from_geth_data_with_params(
+            block.clone(),
+            CircuitsParams {
+                max_rws: 1 << (degree - 1),
+                ..Default::default()
+            },
+        )
+        .new_circuit_input_builder();
+        builder
+            .handle_block(&block.eth_block, &block.geth_traces)
+            .unwrap();
+        let block = block_convert(&builder.block, &builder.code_db).unwrap();
+        assert_eq!(block.copy_events.len(), copy_event_num);
+        block
     }
 }

@@ -253,6 +253,8 @@ pub enum AccountFieldTag {
     Balance,
     /// CodeHash field
     CodeHash,
+    /// NonExisting field
+    NonExisting,
 }
 impl_expr!(AccountFieldTag);
 
@@ -464,12 +466,14 @@ pub enum ProofType {
     BalanceChanged = AccountFieldTag::Balance as isize,
     /// Code hash exists
     CodeHashExists = AccountFieldTag::CodeHash as isize,
+    /// Account does not exist
+    AccountDoesNotExist = AccountFieldTag::NonExisting as isize,
     /// Account destroyed
     AccountDestructed,
-    /// Account does not exist
-    AccountDoesNotExist,
     /// Storage updated
     StorageChanged,
+    /// Storage does not exist
+    StorageDoesNotExist,
 }
 impl_expr!(ProofType);
 
@@ -479,6 +483,7 @@ impl From<AccountFieldTag> for ProofType {
             AccountFieldTag::Nonce => Self::NonceChanged,
             AccountFieldTag::Balance => Self::BalanceChanged,
             AccountFieldTag::CodeHash => Self::CodeHashExists,
+            AccountFieldTag::NonExisting => Self::AccountDoesNotExist,
         }
     }
 }
@@ -778,15 +783,10 @@ impl KeccakTable {
         &self,
         region: &mut Region<F>,
         offset: usize,
-        values: [F; 4],
+        values: [Value<F>; 4],
     ) -> Result<(), Error> {
         for (column, value) in self.columns().iter().zip(values.iter()) {
-            region.assign_advice(
-                || format!("assign {}", offset),
-                *column,
-                offset,
-                || Value::known(*value),
-            )?;
+            region.assign_advice(|| format!("assign {}", offset), *column, offset, || *value)?;
         }
         Ok(())
     }

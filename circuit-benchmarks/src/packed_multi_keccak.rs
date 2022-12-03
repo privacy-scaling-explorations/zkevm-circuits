@@ -17,7 +17,7 @@ mod tests {
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
     use std::env::var;
-    use zkevm_circuits::keccak_circuit::keccak_packed_multi::KeccakPackedCircuit;
+    use zkevm_circuits::keccak_circuit::keccak_packed_multi::KeccakCircuit;
 
     #[cfg_attr(not(feature = "benches"), ignore)]
     #[test]
@@ -27,12 +27,11 @@ mod tests {
             .parse()
             .expect("Cannot parse DEGREE env var as u32");
 
-        // Create the circuit. Leave last dozens of rows for blinding.
-        let mut circuit = KeccakPackedCircuit::new(2usize.pow(degree) - 64);
-
         // Use the complete circuit
-        let inputs = vec![(0u8..135).collect::<Vec<_>>(); circuit.capacity()];
-        circuit.generate_witness(&inputs);
+        let inputs = vec![(0u8..135).collect::<Vec<_>>(); 3];
+
+        // Create the circuit. Leave last dozens of rows for blinding.
+        let circuit = KeccakCircuit::new(Some(2usize.pow(degree) - 64), inputs);
 
         // Initialize the polynomial commitment parameters
         let mut rng = XorShiftRng::from_seed([
@@ -65,7 +64,7 @@ mod tests {
             Challenge255<G1Affine>,
             XorShiftRng,
             Blake2bWrite<Vec<u8>, G1Affine, Challenge255<G1Affine>>,
-            KeccakPackedCircuit<Fr>,
+            KeccakCircuit<Fr>,
         >(
             &general_params,
             &pk,
