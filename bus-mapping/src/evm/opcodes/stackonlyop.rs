@@ -53,6 +53,7 @@ mod stackonlyop_tests {
     };
     use itertools::Itertools;
     use mock::test_ctx::{helpers::*, TestContext};
+    use mock::{MOCK_BASEFEE, MOCK_DIFFICULTY, MOCK_GASLIMIT};
     use pretty_assertions::assert_eq;
     use std::ops::{BitOr, BitXor};
 
@@ -358,7 +359,6 @@ mod stackonlyop_tests {
         );
     }
 
-    // 0x44 DIFFICULTY
     #[test]
     fn difficulty_opcode_impl() {
         stack_only_opcode_impl::<0, 1>(
@@ -368,7 +368,7 @@ mod stackonlyop_tests {
                 STOP
             },
             vec![],
-            vec![StackOp::new(1, StackAddress(1023), word!("0x200000"))],
+            vec![StackOp::new(1, StackAddress(1023), *MOCK_DIFFICULTY)],
         );
     }
 
@@ -381,14 +381,10 @@ mod stackonlyop_tests {
                 STOP
             },
             vec![],
-            vec![StackOp::new(
-                1,
-                StackAddress(1023),
-                word!("0x2386f26fc10000"),
-            )],
+            vec![StackOp::new(1, StackAddress(1023), *MOCK_GASLIMIT)],
         );
     }
-    // 0x48 BASEFEE
+
     #[test]
     fn basefee_opcode_impl() {
         stack_only_opcode_impl::<0, 1>(
@@ -398,7 +394,7 @@ mod stackonlyop_tests {
                 STOP
             },
             vec![],
-            vec![StackOp::new(1, StackAddress(1023), word!("0x00"))],
+            vec![StackOp::new(1, StackAddress(1023), *MOCK_BASEFEE)],
         );
     }
 }
