@@ -74,7 +74,15 @@ impl<F: Field> ExecutionGadget<F> for StopGadget<F> {
 
         // When it's an internal call
         let restore_context = cb.condition(1.expr() - cb.curr.state.is_root.expr(), |cb| {
-            RestoreContextGadget::construct(cb, true.expr(), 0.expr(), 0.expr(), 0.expr(), 0.expr())
+            RestoreContextGadget::construct(
+                cb,
+                true.expr(),
+                0.expr(),
+                0.expr(),
+                0.expr(),
+                0.expr(),
+                0.expr(),
+            )
         });
 
         Self {

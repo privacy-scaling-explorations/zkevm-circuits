@@ -9,11 +9,10 @@ use keccak256::EMPTY_HASH;
 use log::warn;
 
 /// Placeholder structure used to implement [`Opcode`] trait over it
-/// corresponding to the `OpcodeId::CALL`, `OpcodeId::DELEGATECALL` and
-/// `OpcodeId::STATICCALL`.
-/// - CALL: N_ARGS = 7
+/// corresponding to the `OpcodeId::CALL`, `OpcodeId::CALLCODE`,
+/// `OpcodeId::DELEGATECALL` and `OpcodeId::STATICCALL`.
+/// - CALL and CALLCODE: N_ARGS = 7
 /// - DELEGATECALL and STATICCALL: N_ARGS = 6
-/// TODO: Suppose to also add bus-mapping of `OpcodeId::CALLCODE` here.
 #[derive(Debug, Copy, Clone)]
 pub(crate) struct CallOpcode<const N_ARGS: usize>;
 
@@ -37,8 +36,8 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
         let call = state.parse_call(geth_step)?;
         let current_call = state.call()?.clone();
 
-        // For opcode `DELEGATECALL`, `call.address` is caller address which is
-        // different with callee address (code address).
+        // For both CALLCODE and DELEGATECALL opcodes, `call.address` is caller
+        // address which is different from callee_address (code address).
         let callee_address = match call.code_source {
             CodeSource::Address(address) => address,
             _ => call.address,

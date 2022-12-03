@@ -1,6 +1,8 @@
-use super::bytecode_unroller::{unroll, Config, UnrolledBytecode};
+use super::bytecode_unroller::{
+    unroll, BytecodeCircuit, BytecodeCircuitConfig, BytecodeCircuitConfigArgs, UnrolledBytecode,
+};
 use crate::table::{BytecodeTable, KeccakTable};
-use crate::util::Challenges;
+use crate::util::{Challenges, SubCircuit, SubCircuitConfig};
 use eth_types::Field;
 use halo2_proofs::{
     circuit::Layouter,
@@ -8,22 +10,8 @@ use halo2_proofs::{
 };
 use halo2_proofs::{circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit};
 
-/// BytecodeCircuitTester
-#[derive(Default)]
-pub struct BytecodeCircuitTester<F: Field> {
-    bytecodes: Vec<UnrolledBytecode<F>>,
-    size: usize,
-}
-
-impl<F: Field> BytecodeCircuitTester<F> {
-    /// new BytecodeCircuitTester
-    pub fn new(bytecodes: Vec<UnrolledBytecode<F>>, size: usize) -> Self {
-        BytecodeCircuitTester { bytecodes, size }
-    }
-}
-
-impl<F: Field> Circuit<F> for BytecodeCircuitTester<F> {
-    type Config = (Config<F>, Challenges);
+impl<F: Field> Circuit<F> for BytecodeCircuit<F> {
+    type Config = (BytecodeCircuitConfig<F>, Challenges);
     type FloorPlanner = SimpleFloorPlanner;
 
     fn without_witnesses(&self) -> Self {
@@ -37,7 +25,14 @@ impl<F: Field> Circuit<F> for BytecodeCircuitTester<F> {
 
         let config = {
             let challenges = challenges.exprs(meta);
-            Config::configure(meta, bytecode_table, keccak_table, challenges)
+            BytecodeCircuitConfig::new(
+                meta,
+                BytecodeCircuitConfigArgs {
+                    bytecode_table,
+                    keccak_table,
+                    challenges,
+                },
+            )
         };
 
         (config, challenges)
@@ -50,24 +45,17 @@ impl<F: Field> Circuit<F> for BytecodeCircuitTester<F> {
     ) -> Result<(), Error> {
         let challenges = challenges.values(&mut layouter);
 
-        config.load(&mut layouter)?;
         config.keccak_table.dev_load(
             &mut layouter,
             self.bytecodes.iter().map(|b| &b.bytes),
             &challenges,
         )?;
-        config.assign_internal(
-            &mut layouter,
-            self.size,
-            &self.bytecodes,
-            &challenges,
-            false,
-        )?;
+        self.synthesize_sub(&config, &challenges, &mut layouter)?;
         Ok(())
     }
 }
 
-impl<F: Field> BytecodeCircuitTester<F> {
+impl<F: Field> BytecodeCircuit<F> {
     /// Verify that the selected bytecode fulfills the circuit
     pub fn verify_raw(k: u32, bytecodes: Vec<Vec<u8>>) {
         let unrolled: Vec<_> = bytecodes.iter().map(|b| unroll(b.clone())).collect();
@@ -75,10 +63,7 @@ impl<F: Field> BytecodeCircuitTester<F> {
     }
 
     pub(crate) fn verify(k: u32, bytecodes: Vec<UnrolledBytecode<F>>, success: bool) {
-        let circuit = BytecodeCircuitTester::<F> {
-            bytecodes,
-            size: 2usize.pow(k),
-        };
+        let circuit = BytecodeCircuit::<F>::new(bytecodes, 2usize.pow(k));
 
         let prover = MockProver::<F>::run(k, &circuit, Vec::new()).unwrap();
         let result = prover.verify();
@@ -103,10 +88,7 @@ pub fn test_bytecode_circuit_unrolled<F: Field>(
     bytecodes: Vec<UnrolledBytecode<F>>,
     success: bool,
 ) {
-    let circuit = BytecodeCircuitTester::<F> {
-        bytecodes,
-        size: 2usize.pow(k),
-    };
+    let circuit = BytecodeCircuit::<F>::new(bytecodes, 2usize.pow(k));
 
     let prover = MockProver::<F>::run(k, &circuit, Vec::new()).unwrap();
     let result = prover.verify_par();
