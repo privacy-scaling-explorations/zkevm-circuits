@@ -120,7 +120,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             1.expr(),
             tx_id.expr(),
             TxReceiptFieldTag::PostStateOrStatus,
-            is_persistent.expr(),
+            (1.expr() - is_tx_invalid.expr())*is_persistent.expr(),
         );
         cb.tx_receipt_lookup(
             1.expr(),
@@ -128,6 +128,13 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             TxReceiptFieldTag::LogLength,
             cb.curr.state.log_id.expr(),
         );
+        // constrain tx status matches with `PostStateOrStatus` of TxReceipt tag in RW
+        cb.condition(is_tx_invalid.expr(), |cb| {
+            cb.require_zero(
+                "log_id is zero when tx is invalid",
+                cb.curr.state.log_id.expr(),
+            );
+        });
 
         let is_first_tx = IsEqualGadget::construct(cb, tx_id.expr(), 1.expr());
 
