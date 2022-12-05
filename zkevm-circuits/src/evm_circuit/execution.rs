@@ -49,6 +49,7 @@ mod dummy;
 mod dup;
 mod end_block;
 mod end_tx;
+mod error_invalid_jump;
 mod error_oog_constant;
 mod error_oog_static_memory;
 mod exp;
@@ -107,6 +108,7 @@ use dummy::DummyGadget;
 use dup::DupGadget;
 use end_block::EndBlockGadget;
 use end_tx::EndTxGadget;
+use error_invalid_jump::ErrorInvalidJumpGadget;
 use error_oog_constant::ErrorOOGConstantGadget;
 use exp::ExponentiationGadget;
 use extcodehash::ExtcodehashGadget;
@@ -229,8 +231,6 @@ pub(crate) struct ExecutionConfig<F> {
     returndatasize_gadget: ReturnDataSizeGadget<F>,
     returndatacopy_gadget: ReturnDataCopyGadget<F>,
     create_gadget: DummyGadget<F, 3, 1, { ExecutionState::CREATE }>,
-    callcode_gadget: DummyGadget<F, 7, 1, { ExecutionState::CALLCODE }>,
-    delegatecall_gadget: DummyGadget<F, 6, 1, { ExecutionState::DELEGATECALL }>,
     create2_gadget: DummyGadget<F, 4, 1, { ExecutionState::CREATE2 }>,
     selfdestruct_gadget: DummyGadget<F, 1, 0, { ExecutionState::SELFDESTRUCT }>,
     signed_comparator_gadget: SignedComparatorGadget<F>,
@@ -267,7 +267,7 @@ pub(crate) struct ExecutionConfig<F> {
     error_oog_self_destruct: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasSELFDESTRUCT }>,
     error_oog_code_store: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasCodeStore }>,
     error_insufficient_balance: DummyGadget<F, 0, 0, { ExecutionState::ErrorInsufficientBalance }>,
-    error_invalid_jump: DummyGadget<F, 0, 0, { ExecutionState::ErrorInvalidJump }>,
+    error_invalid_jump: ErrorInvalidJumpGadget<F>,
     error_depth: DummyGadget<F, 0, 0, { ExecutionState::ErrorDepth }>,
     error_write_protection: DummyGadget<F, 0, 0, { ExecutionState::ErrorWriteProtection }>,
     error_contract_address_collision:
@@ -469,8 +469,6 @@ impl<F: Field> ExecutionConfig<F> {
             returndatasize_gadget: configure_gadget!(),
             returndatacopy_gadget: configure_gadget!(),
             create_gadget: configure_gadget!(),
-            callcode_gadget: configure_gadget!(),
-            delegatecall_gadget: configure_gadget!(),
             create2_gadget: configure_gadget!(),
             selfdestruct_gadget: configure_gadget!(),
             shl_shr_gadget: configure_gadget!(),
@@ -906,6 +904,15 @@ impl<F: Field> ExecutionConfig<F> {
         next: Option<(&Transaction, &Call, &ExecStep)>,
         power_of_randomness: [F; 31],
     ) -> Result<(), Error> {
+        if !matches!(step.execution_state, ExecutionState::EndBlock) {
+            log::trace!(
+                "assign_exec_step offset: {} state {:?} step: {:?} call: {:?}",
+                offset,
+                step.execution_state,
+                step,
+                call
+            );
+        }
         // Make the region large enough for the current step and the next step.
         // The next step's next step may also be accessed, so make the region large
         // enough for 3 steps.
@@ -945,7 +952,6 @@ impl<F: Field> ExecutionConfig<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        log::trace!("assign_exec_step offset:{} step:{:?}", offset, step);
         self.step
             .assign_exec_step(region, offset, block, call, step)?;
 
@@ -966,7 +972,7 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::ADDRESS => assign_exec_step!(self.address_gadget),
             ExecutionState::BITWISE => assign_exec_step!(self.bitwise_gadget),
             ExecutionState::BYTE => assign_exec_step!(self.byte_gadget),
-            ExecutionState::CALL_STATICCALL => assign_exec_step!(self.call_op_gadget),
+            ExecutionState::CALL_OP => assign_exec_step!(self.call_op_gadget),
             ExecutionState::CALLDATACOPY => assign_exec_step!(self.calldatacopy_gadget),
             ExecutionState::CALLDATALOAD => assign_exec_step!(self.calldataload_gadget),
             ExecutionState::CALLDATASIZE => assign_exec_step!(self.calldatasize_gadget),
@@ -1011,8 +1017,6 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::EXTCODESIZE => assign_exec_step!(self.extcodesize_gadget),
             ExecutionState::EXTCODECOPY => assign_exec_step!(self.extcodecopy_gadget),
             ExecutionState::CREATE => assign_exec_step!(self.create_gadget),
-            ExecutionState::CALLCODE => assign_exec_step!(self.callcode_gadget),
-            ExecutionState::DELEGATECALL => assign_exec_step!(self.delegatecall_gadget),
             ExecutionState::CREATE2 => assign_exec_step!(self.create2_gadget),
             ExecutionState::SELFDESTRUCT => assign_exec_step!(self.selfdestruct_gadget),
             // end of dummy gadgets

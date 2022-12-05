@@ -56,7 +56,6 @@ impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
         // access
         let memory_expansion = MemoryExpansionGadget::construct(
             cb,
-            cb.curr.state.memory_word_size.expr(),
             [from_bytes::expr(&address.cells) + 1.expr() + (is_not_mstore8.clone() * 31.expr())],
         );
 

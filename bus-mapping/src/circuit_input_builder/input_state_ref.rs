@@ -1169,6 +1169,7 @@ impl<'a> CircuitInputStateRef<'a> {
         Ok(())
     }
 
+    /// gen bus mapping operations for context restore purpose
     pub(crate) fn gen_restore_context_ops(
         &mut self,
         exec_step: &mut ExecStep,

@@ -1,6 +1,7 @@
 //! Definition of each opcode of the EVM.
 use crate::{
     circuit_input_builder::{CircuitInputStateRef, ExecStep},
+    error::ExecError,
     evm::OpcodeId,
     operation::{
         AccountField, CallContextField, TxAccessListAccountOp, TxReceiptField, TxRefundOp, RW,
@@ -52,6 +53,8 @@ mod stackonlyop;
 mod stop;
 mod swap;
 
+mod error_invalid_jump;
+
 #[cfg(test)]
 mod memory_expansion_test;
 
@@ -68,6 +71,7 @@ use codecopy::Codecopy;
 use codesize::Codesize;
 use create::DummyCreate;
 use dup::Dup;
+use error_invalid_jump::ErrorInvalidJump;
 use exp::Exponentiation;
 use extcodecopy::Extcodecopy;
 use extcodehash::Extcodehash;
@@ -226,18 +230,14 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         OpcodeId::LOG2 => Log::gen_associated_ops,
         OpcodeId::LOG3 => Log::gen_associated_ops,
         OpcodeId::LOG4 => Log::gen_associated_ops,
-        OpcodeId::CALL => CallOpcode::<7>::gen_associated_ops,
-        OpcodeId::STATICCALL => CallOpcode::<6>::gen_associated_ops,
+        OpcodeId::CALL | OpcodeId::CALLCODE => CallOpcode::<7>::gen_associated_ops,
+        OpcodeId::DELEGATECALL | OpcodeId::STATICCALL => CallOpcode::<6>::gen_associated_ops,
         OpcodeId::RETURN => Return::gen_associated_ops,
         // REVERT is almost the same as RETURN
         OpcodeId::REVERT => Return::gen_associated_ops,
         OpcodeId::SELFDESTRUCT => {
             warn!("Using dummy gen_selfdestruct_ops for opcode SELFDESTRUCT");
             DummySelfDestruct::gen_associated_ops
-        }
-        OpcodeId::CALLCODE | OpcodeId::DELEGATECALL => {
-            warn!("Using dummy gen_call_ops for opcode {:?}", opcode_id);
-            DummyCall::gen_associated_ops
         }
         OpcodeId::CREATE => {
             warn!("Using dummy gen_create_ops for opcode {:?}", opcode_id);
@@ -254,6 +254,16 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
     }
 }
 
+fn fn_gen_error_state_associated_ops(error: &ExecError) -> FnGenAssociatedOps {
+    match error {
+        ExecError::InvalidJump => ErrorInvalidJump::gen_associated_ops,
+        // more future errors place here
+        _ => {
+            warn!("Using dummy gen_associated_ops for error state {:?}", error);
+            Dummy::gen_associated_ops
+        }
+    }
+}
 #[allow(clippy::collapsible_else_if)]
 /// Generate the associated operations according to the particular
 /// [`OpcodeId`].
@@ -289,16 +299,20 @@ pub fn gen_associated_ops(
             geth_step.op
         );
 
-        exec_step.error = Some(exec_error);
-        if exec_step.oog_or_stack_error() {
-            state.gen_restore_context_ops(&mut exec_step, geth_steps)?;
-        }
+        exec_step.error = Some(exec_error.clone());
         // for `oog_or_stack_error` error message will be returned by geth_step error
         // field, when this kind of error happens, no more proceeding
-        if geth_step.op.is_call_or_create() && !exec_step.oog_or_stack_error() {
-            let call = state.parse_call(geth_step)?;
-            // Switch to callee's call context
-            state.push_call(call);
+        if exec_step.oog_or_stack_error() {
+            state.gen_restore_context_ops(&mut exec_step, geth_steps)?;
+        } else {
+            if geth_step.op.is_call_or_create() {
+                let call = state.parse_call(geth_step)?;
+                // Switch to callee's call context
+                state.push_call(call);
+            } else {
+                let fn_gen_error_associated_ops = fn_gen_error_state_associated_ops(&exec_error);
+                return fn_gen_error_associated_ops(state, geth_steps);
+            }
         }
 
         state.handle_return(geth_step)?;
@@ -579,79 +593,6 @@ pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
     }
 
     Ok(exec_step)
-}
-
-#[derive(Debug, Copy, Clone)]
-struct DummyCall;
-
-impl Opcode for DummyCall {
-    fn gen_associated_ops(
-        state: &mut CircuitInputStateRef,
-        geth_steps: &[GethExecStep],
-    ) -> Result<Vec<ExecStep>, Error> {
-        dummy_gen_call_ops(state, geth_steps)
-    }
-}
-
-fn dummy_gen_call_ops(
-    state: &mut CircuitInputStateRef,
-    geth_steps: &[GethExecStep],
-) -> Result<Vec<ExecStep>, Error> {
-    let geth_step = &geth_steps[0];
-    let mut exec_step = state.new_step(geth_step)?;
-
-    let (args_offset, args_length, ret_offset, ret_length) = {
-        // CALLCODE    (gas, addr, value, argsOffset, argsLength, retOffset, retLength)
-        // DELEGATECALL(gas, addr,        argsOffset, argsLength, retOffset, retLength)
-        // STATICCALL  (gas, addr,        argsOffset, argsLength, retOffset, retLength)
-        let pos = match geth_step.op {
-            OpcodeId::CALLCODE => (3, 4, 5, 6),
-            OpcodeId::DELEGATECALL | OpcodeId::STATICCALL => (2, 3, 4, 5),
-            _ => unreachable!("opcode is not of call type"),
-        };
-        (
-            geth_step.stack.nth_last(pos.0)?.as_usize(),
-            geth_step.stack.nth_last(pos.1)?.as_usize(),
-            geth_step.stack.nth_last(pos.2)?.as_usize(),
-            geth_step.stack.nth_last(pos.3)?.as_usize(),
-        )
-    };
-    state.call_expand_memory(args_offset, args_length, ret_offset, ret_length)?;
-
-    let tx_id = state.tx_ctx.id();
-    let call = state.parse_call(geth_step)?;
-
-    let (_, account) = state.sdb.get_account(&call.address);
-    let callee_code_hash = account.code_hash;
-
-    let is_warm = state.sdb.check_account_in_access_list(&call.address);
-    state.push_op_reversible(
-        &mut exec_step,
-        RW::WRITE,
-        TxAccessListAccountOp {
-            tx_id,
-            address: call.address,
-            is_warm: true,
-            is_warm_prev: is_warm,
-        },
-    )?;
-
-    state.push_call(call.clone());
-
-    match (
-        state.is_precompiled(&call.address),
-        callee_code_hash.to_fixed_bytes() == *EMPTY_HASH,
-    ) {
-        // 1. Call to precompiled.
-        (true, _) => Ok(vec![exec_step]),
-        // 2. Call to account with empty code.
-        (_, true) => {
-            state.handle_return(geth_step)?;
-            Ok(vec![exec_step])
-        }
-        // 3. Call to account with non-empty code.
-        (_, false) => Ok(vec![exec_step]),
-    }
 }
 
 #[derive(Debug, Copy, Clone)]

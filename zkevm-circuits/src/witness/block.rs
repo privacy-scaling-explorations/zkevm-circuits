@@ -1,13 +1,17 @@
 use std::collections::HashMap;
 
 use crate::{evm_circuit::util::RandomLinearCombination, table::BlockContextFieldTag};
-use bus_mapping::circuit_input_builder::{self, CircuitsParams, CopyEvent, ExpEvent};
+use bus_mapping::{
+    circuit_input_builder::{self, CircuitsParams, CopyEvent, ExpEvent},
+    Error,
+};
 use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word};
 use halo2_proofs::halo2curves::bn256::Fr;
 use itertools::Itertools;
 
 use super::{step::step_convert, tx::tx_convert, Bytecode, ExecStep, RwMap, Transaction};
 
+// TODO: Remove fields that are duplicated in`eth_block`
 /// Block is the struct used by all circuits, which contains all the needed
 /// data for witness generation.
 #[derive(Debug, Clone)]
@@ -42,6 +46,12 @@ pub struct Block<F> {
     pub circuits_params: CircuitsParams,
     /// Inputs to the SHA3 opcode
     pub sha3_inputs: Vec<Vec<u8>>,
+    /// State root of the previous block
+    pub prev_state_root: Word, // TODO: Make this H256
+    /// Keccak inputs
+    pub keccak_inputs: Vec<Vec<u8>>,
+    /// Original Block from geth
+    pub eth_block: eth_types::Block<eth_types::Transaction>,
 }
 
 /// Block context for execution
@@ -156,8 +166,8 @@ impl From<&circuit_input_builder::Block> for BlockContext {
 pub fn block_convert(
     block: &circuit_input_builder::Block,
     code_db: &bus_mapping::state_db::CodeDB,
-) -> Block<Fr> {
-    Block {
+) -> Result<Block<Fr>, Error> {
+    Ok(Block {
         // randomness: Fr::from(0xcafeu64), // TODO: Uncomment
         randomness: Fr::from(0x100), // Special value to reveal elements after RLC
         context: block.into(),
@@ -192,5 +202,8 @@ pub fn block_convert(
         circuits_params: block.circuits_params.clone(),
         evm_circuit_pad_to: <usize>::default(),
         exp_circuit_pad_to: <usize>::default(),
-    }
+        prev_state_root: block.prev_state_root,
+        keccak_inputs: circuit_input_builder::keccak_inputs(block, code_db)?,
+        eth_block: block.eth_block.clone(),
+    })
 }
