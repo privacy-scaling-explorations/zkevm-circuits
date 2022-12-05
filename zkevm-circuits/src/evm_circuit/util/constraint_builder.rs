@@ -12,6 +12,7 @@ use crate::{
     util::{build_tx_log_expression, Expr},
 };
 use eth_types::Field;
+use gadgets::util::{and, not};
 use halo2_proofs::{
     circuit::Value,
     plonk::{
@@ -721,22 +722,33 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
 
         self.rw_lookup(name, true.expr(), tag, values.clone());
 
+        // Revert if is_persistent is 0
         if let Some(reversion_info) = reversion_info {
-            // Revert if is_persistent is 0
-            self.condition(1.expr() - reversion_info.is_persistent(), |cb| {
-                let name = format!("{} with reversion", name);
-                cb.rw_lookup_with_counter(
-                    &name,
-                    reversion_info.rw_counter_of_reversion(),
-                    true.expr(),
-                    tag,
-                    RwValues {
-                        value_prev: values.value,
-                        value: values.value_prev,
-                        ..values
-                    },
-                )
-            });
+            // To allow conditional reversible writes, we extract the pre-existing condition
+            // here if it exists, and then reset it afterwards.
+            let condition = self.condition.clone();
+            self.condition = None;
+            self.condition(
+                and::expr(&[
+                    condition.clone().unwrap_or_else(|| 1.expr()),
+                    not::expr(reversion_info.is_persistent()),
+                ]),
+                |cb| {
+                    let name = format!("{} with reversion", name);
+                    cb.rw_lookup_with_counter(
+                        &name,
+                        reversion_info.rw_counter_of_reversion(),
+                        true.expr(),
+                        tag,
+                        RwValues {
+                            value_prev: values.value,
+                            value: values.value_prev,
+                            ..values
+                        },
+                    )
+                },
+            );
+            self.condition = condition;
         }
     }
 
@@ -764,6 +776,29 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
                 0.expr(),
             ),
             reversion_info,
+        );
+    }
+
+    pub(crate) fn account_access_list_read(
+        &mut self,
+        tx_id: Expression<F>,
+        account_address: Expression<F>,
+        value: Expression<F>,
+    ) {
+        self.rw_lookup(
+            "account access list read",
+            false.expr(),
+            RwTableTag::TxAccessListAccount,
+            RwValues::new(
+                tx_id,
+                account_address,
+                0.expr(),
+                0.expr(),
+                value.clone(),
+                value,
+                0.expr(),
+                0.expr(),
+            ),
         );
     }
 

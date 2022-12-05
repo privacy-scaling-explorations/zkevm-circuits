@@ -195,6 +195,20 @@ impl ToWord for bool {
     }
 }
 
+impl ToWord for u64 {
+    fn to_word(&self) -> Word {
+        Word::from(*self)
+    }
+}
+
+impl ToWord for usize {
+    fn to_word(&self) -> Word {
+        u64::try_from(*self)
+            .expect("usize bigger than u64")
+            .to_word()
+    }
+}
+
 impl<F: Field> ToScalar<F> for Address {
     fn to_scalar(&self) -> Option<F> {
         let mut bytes = [0u8; 32];
@@ -207,6 +221,18 @@ impl<F: Field> ToScalar<F> for Address {
 impl<F: Field> ToScalar<F> for bool {
     fn to_scalar(&self) -> Option<F> {
         self.to_word().to_scalar()
+    }
+}
+
+impl<F: Field> ToScalar<F> for u64 {
+    fn to_scalar(&self) -> Option<F> {
+        Some(F::from(*self))
+    }
+}
+
+impl<F: Field> ToScalar<F> for usize {
+    fn to_scalar(&self) -> Option<F> {
+        u64::try_from(*self).ok().map(F::from)
     }
 }
 
