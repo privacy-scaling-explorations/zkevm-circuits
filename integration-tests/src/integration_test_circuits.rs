@@ -193,7 +193,7 @@ fn test_actual<C: Circuit<Fr>>(
             &[instances],
             &mut verifier_transcript,
         )
-        .expect("failed to verify bench circuit");
+        .expect("failed to verify circuit");
     }
 
     let general_params = get_general_params(degree);
@@ -317,10 +317,8 @@ pub async fn test_bytecode_circuit_block(block_num: u64, actual: bool) {
     log::info!("test bytecode circuit, block number: {}", block_num);
     let (builder, _) = gen_inputs(block_num).await;
 
-    let bytecodes: Vec<Vec<u8>> = builder.code_db.0.values().cloned().collect();
-    let unrolled: Vec<_> = bytecodes.iter().map(|b| unroll::<Fr>(b.clone())).collect();
-
-    let circuit = BytecodeCircuit::<Fr>::new(unrolled, 2usize.pow(BYTECODE_CIRCUIT_DEGREE));
+    let block = block_convert(&builder.block, &builder.code_db).unwrap();
+    let circuit = BytecodeCircuit::<Fr>::new_from_block(&block);
 
     if actual {
         test_actual(
