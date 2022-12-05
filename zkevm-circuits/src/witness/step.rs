@@ -169,7 +169,10 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::CALLDATACOPY => ExecutionState::CALLDATACOPY,
                     OpcodeId::CHAINID => ExecutionState::CHAINID,
                     OpcodeId::ISZERO => ExecutionState::ISZERO,
-                    OpcodeId::CALL | OpcodeId::STATICCALL => ExecutionState::CALL_STATICCALL,
+                    OpcodeId::CALL
+                    | OpcodeId::CALLCODE
+                    | OpcodeId::DELEGATECALL
+                    | OpcodeId::STATICCALL => ExecutionState::CALL_OP,
                     OpcodeId::ORIGIN => ExecutionState::ORIGIN,
                     OpcodeId::CODECOPY => ExecutionState::CODECOPY,
                     OpcodeId::CALLDATALOAD => ExecutionState::CALLDATALOAD,
@@ -183,8 +186,6 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::EXTCODESIZE => dummy!(ExecutionState::EXTCODESIZE),
                     OpcodeId::EXTCODECOPY => dummy!(ExecutionState::EXTCODECOPY),
                     OpcodeId::CREATE => dummy!(ExecutionState::CREATE),
-                    OpcodeId::CALLCODE => dummy!(ExecutionState::CALLCODE),
-                    OpcodeId::DELEGATECALL => dummy!(ExecutionState::DELEGATECALL),
                     OpcodeId::CREATE2 => dummy!(ExecutionState::CREATE2),
                     OpcodeId::SELFDESTRUCT => dummy!(ExecutionState::SELFDESTRUCT),
                     _ => unimplemented!("unimplemented opcode {:?}", op),
