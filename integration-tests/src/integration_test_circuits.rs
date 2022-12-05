@@ -1,5 +1,7 @@
 use crate::{get_client, GenDataOutput};
 use bus_mapping::circuit_input_builder::{BuilderClient, CircuitInputBuilder, CircuitsParams};
+use bus_mapping::mock::BlockData;
+use eth_types::geth_types::GethData;
 use halo2_proofs::plonk::{
     create_proof, keygen_pk, keygen_vk, verify_proof, Circuit, ProvingKey, VerifyingKey,
 };
@@ -16,6 +18,7 @@ use halo2_proofs::{
 };
 use lazy_static::lazy_static;
 use log::trace;
+use mock::test_ctx::TestContext;
 use rand_chacha::rand_core::SeedableRng;
 use rand_core::RngCore;
 use rand_xorshift::XorShiftRng;
@@ -30,6 +33,7 @@ use zkevm_circuits::state_circuit::StateCircuit;
 use zkevm_circuits::super_circuit::SuperCircuit;
 use zkevm_circuits::tx_circuit::TxCircuit;
 use zkevm_circuits::util::SubCircuit;
+use zkevm_circuits::witness::Block;
 
 const CIRCUITS_PARAMS: CircuitsParams = CircuitsParams {
     max_rws: 16384,
@@ -59,7 +63,8 @@ lazy_static! {
 
 lazy_static! {
     static ref STATE_CIRCUIT_KEY: ProvingKey<G1Affine> = {
-        let circuit = StateCircuit::<Fr>::default();
+        let block = new_empty_block();
+        let circuit = StateCircuit::<Fr>::new_from_block(&block);
         let general_params = get_general_params(STATE_CIRCUIT_DEGREE);
 
         let verifying_key =
@@ -67,7 +72,8 @@ lazy_static! {
         keygen_pk(&general_params, verifying_key, &circuit).expect("keygen_pk should not fail")
     };
     static ref TX_CIRCUIT_KEY: ProvingKey<G1Affine> = {
-        let circuit = TxCircuit::<Fr>::default();
+        let block = new_empty_block();
+        let circuit = TxCircuit::<Fr>::new_from_block(&block);
         let general_params = get_general_params(TX_CIRCUIT_DEGREE);
 
         let verifying_key =
@@ -75,7 +81,8 @@ lazy_static! {
         keygen_pk(&general_params, verifying_key, &circuit).expect("keygen_pk should not fail")
     };
     static ref BYTECODE_CIRCUIT_KEY: ProvingKey<G1Affine> = {
-        let circuit = BytecodeCircuit::<Fr>::default();
+        let block = new_empty_block();
+        let circuit = BytecodeCircuit::<Fr>::new_from_block(&block);
         let general_params = get_general_params(BYTECODE_CIRCUIT_DEGREE);
 
         let verifying_key =
@@ -83,13 +90,26 @@ lazy_static! {
         keygen_pk(&general_params, verifying_key, &circuit).expect("keygen_pk should not fail")
     };
     static ref COPY_CIRCUIT_KEY: ProvingKey<G1Affine> = {
-        let circuit = CopyCircuit::<Fr>::default();
+        let block = new_empty_block();
+        let circuit = CopyCircuit::<Fr>::new_from_block(&block);
         let general_params = get_general_params(COPY_CIRCUIT_DEGREE);
 
         let verifying_key =
             keygen_vk(&general_params, &circuit).expect("keygen_vk should not fail");
         keygen_pk(&general_params, verifying_key, &circuit).expect("keygen_pk should not fail")
     };
+}
+
+fn new_empty_block() -> Block<Fr> {
+    let block: GethData = TestContext::<0, 0>::new(None, |_| {}, |_, _| {}, |b, _| b)
+        .unwrap()
+        .into();
+    let mut builder = BlockData::new_from_geth_data_with_params(block.clone(), CIRCUITS_PARAMS)
+        .new_circuit_input_builder();
+    builder
+        .handle_block(&block.eth_block, &block.geth_traces)
+        .unwrap();
+    block_convert(&builder.block, &builder.code_db).unwrap()
 }
 
 fn get_general_params(degree: u32) -> ParamsKZG<Bn256> {

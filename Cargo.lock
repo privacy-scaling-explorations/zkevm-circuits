@@ -2191,6 +2191,7 @@ dependencies = [
  "halo2_proofs 0.2.0",
  "lazy_static",
  "log",
+ "mock",
  "paste",
  "pretty_assertions",
  "rand_chacha",
