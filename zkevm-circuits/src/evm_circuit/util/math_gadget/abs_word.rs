@@ -163,12 +163,12 @@ mod tests {
     }
 
     #[test]
-    fn test_abs_unexpected_is_neg_for_postive() {
+    fn test_abs_incorrect_is_neg_for_positive() {
         try_test!(AbsWordGadgetContainer<Fr, true>, [WORD_LOW_MAX, WORD_LOW_MAX], false);
     }
 
     #[test]
-    fn test_abs_unexpected_is_neg_for_negtive() {
+    fn test_abs_unexpected_is_neg_for_negitive() {
         try_test!(AbsWordGadgetContainer<Fr, false>, [Word::MAX, Word::from(1)], false);
     }
 }

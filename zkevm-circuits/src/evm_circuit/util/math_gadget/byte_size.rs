@@ -126,7 +126,7 @@ mod tests {
             let value_rlc = cb.query_word();
             let bytesize_gadget = ByteSizeGadget::<F>::construct(cb, &value_rlc);
             cb.require_equal(
-                "byte size gadget must equal",
+                "byte size gadget must equal N",
                 bytesize_gadget.byte_size(),
                 N.expr(),
             );

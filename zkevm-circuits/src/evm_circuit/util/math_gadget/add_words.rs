@@ -231,54 +231,53 @@ mod tests {
 
     #[test]
     fn test_addwords_to_wordmax() {
-        try_test!(AddWordsTestContainer<Fr, 2,0u64,true,>, vec![Word::MAX - 1, Word::from(1), Word::MAX],true);
+        try_test!(AddWordsTestContainer<Fr, 2,0u64, true>, vec![Word::MAX - 1, Word::from(1), Word::MAX], true);
     }
 
     #[test]
     fn test_addwords_high_low_max() {
-        try_test!(AddWordsTestContainer<Fr, 2, 0u64, true,>, vec![WORD_LOW_MAX, WORD_HIGH_MAX, Word::MAX],true);
+        try_test!(AddWordsTestContainer<Fr, 2, 0u64, true>, vec![WORD_LOW_MAX, WORD_HIGH_MAX, Word::MAX], true);
     }
 
     #[test]
     fn test_addwords_overflow() {
-        try_test!(AddWordsTestContainer<Fr, 2, 0u64, true,>, [Word::MAX, Word::from(1),  Word::from(0)],false);
+        try_test!(AddWordsTestContainer<Fr, 2, 0u64, true>, [Word::MAX, Word::from(1),  Word::from(0)], false);
     }
 
     #[test]
     fn test_addwords_wrong_sum0() {
-        try_test!(AddWordsTestContainer<Fr, 2, 0u64, true,>, [Word::from(1), Word::from(0),  Word::from(0)],false);
+        try_test!(AddWordsTestContainer<Fr, 2, 0u64, true>, [Word::from(1), Word::from(0),  Word::from(0)], false);
     }
 
     #[test]
     fn test_addwords_wrong_sum2() {
-        try_test!(AddWordsTestContainer<Fr, 2, 0u64, true,>, [Word::from(2), Word::from(1),  Word::from(2)],false);
+        try_test!(AddWordsTestContainer<Fr, 2, 0u64, true>, [Word::from(2), Word::from(1),  Word::from(2)], false);
     }
 
-    //non overflow check cases
     #[test]
     fn test_addwords_no_overflow_check() {
-        try_test!(AddWordsTestContainer<Fr, 2, 1u64, false,>, [Word::MAX, Word::from(1),  Word::from(0)],true);
+        try_test!(AddWordsTestContainer<Fr, 2, 1u64, false,>, [Word::MAX, Word::from(1),  Word::from(0)], true);
     }
 
     #[test]
     fn test_addwords_incorrect_carry_check() {
-        try_test!(AddWordsTestContainer<Fr, 2, 0u64, false,>, [Word::MAX, Word::from(1),  Word::from(0)],false);
+        try_test!(AddWordsTestContainer<Fr, 2, 0u64, false,>, [Word::MAX, Word::from(1),  Word::from(0)], false);
     }
 
     #[test]
     fn test_addwords_3_addends() {
-        try_test!(AddWordsTestContainer<Fr, 3, 0u64, false,>, [Word::from(0), Word::from(1), Word::from(0),  Word::from(1)],true);
+        try_test!(AddWordsTestContainer<Fr, 3, 0u64, false,>, [Word::from(0), Word::from(1), Word::from(0),  Word::from(1)], true);
     }
 
     #[test]
     fn test_addwords_3_addends_with_overflow_check() {
-        try_test!(AddWordsTestContainer<Fr, 3, 0u64, true,>, [Word::MAX, Word::from(1), Word::from(0),  Word::from(0)],false);
+        try_test!(AddWordsTestContainer<Fr, 3, 0u64, true>, [Word::MAX, Word::from(1), Word::from(0),  Word::from(0)], false);
     }
 
     #[test]
     fn test_addwords_3_addends_with_carry() {
         const CARRY_HI: u64 = 1u64;
-        try_test!(AddWordsTestContainer<Fr, 3, CARRY_HI, false,>, [Word::MAX, Word::from(1), WORD_HIGH_MAX,  WORD_HIGH_MAX],true);
+        try_test!(AddWordsTestContainer<Fr, 3, CARRY_HI, false,>, [Word::MAX, Word::from(1), WORD_HIGH_MAX,  WORD_HIGH_MAX], true);
     }
 
     #[test]
@@ -286,7 +285,7 @@ mod tests {
         const CARRY_HI: u64 = 6u64;
         let sum_7_low_max = U256([0xfffffffffffffff9u64, 0xffffffffffffffffu64, CARRY_HI, 0u64]);
         try_test!(
-            AddWordsTestContainer<Fr,7, 0u64, true,>,
+            AddWordsTestContainer<Fr,7, 0u64, true>,
             vec![
                 WORD_LOW_MAX,
                 WORD_LOW_MAX,
