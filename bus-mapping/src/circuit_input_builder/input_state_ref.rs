@@ -758,9 +758,8 @@ impl<'a> CircuitInputStateRef<'a> {
                 match op.field {
                     AccountField::Nonce => account.nonce = op.value,
                     AccountField::Balance => account.balance = op.value,
-                    AccountField::CodeHash => {
-                        account.code_hash = op.value.to_be_bytes().into();
-                    }
+                    AccountField::CodeHash => account.code_hash = op.value.to_be_bytes().into(),
+                    AccountField::NonExisting => (),
                 }
             }
             OpEnum::TxRefund(op) => {
@@ -913,7 +912,7 @@ impl<'a> CircuitInputStateRef<'a> {
 
         let memory_expansion_gas_cost =
             memory_expansion_gas_cost(curr_memory_word_size, next_memory_word_size);
-        let code_deposit_cost = if call.is_create() {
+        let code_deposit_cost = if call.is_create() && call.is_success {
             GasCost::CODE_DEPOSIT_BYTE_COST.as_u64() * last_callee_return_data_length.as_u64()
         } else {
             0

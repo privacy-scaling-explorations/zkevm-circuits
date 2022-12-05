@@ -119,7 +119,15 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
         // When it's an internal call, need to restore caller's state as finishing this
         // call. Restore caller state to next StepState
         let restore_context = cb.condition(1.expr() - cb.curr.state.is_root.expr(), |cb| {
-            RestoreContextGadget::construct(cb, 0.expr(), 0.expr(), 0.expr(), 0.expr(), 0.expr())
+            RestoreContextGadget::construct(
+                cb,
+                0.expr(),
+                0.expr(),
+                0.expr(),
+                0.expr(),
+                0.expr(),
+                0.expr(),
+            )
         });
 
         Self {
@@ -266,7 +274,7 @@ mod test {
         test_invalid_jump(40, true);
     }
 
-    // TODO: add internal call test
+    // internal call test
     struct Stack {
         gas: u64,
         value: Word,
@@ -426,7 +434,7 @@ mod test {
         builder
             .handle_block(&block_data.eth_block, &block_data.geth_traces)
             .unwrap();
-        let block = block_convert(&builder.block, &builder.code_db);
+        let block = block_convert(&builder.block, &builder.code_db).unwrap();
         assert_eq!(run_test_circuit(block), Ok(()));
     }
 

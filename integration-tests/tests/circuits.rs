@@ -1,29 +1,18 @@
 #![cfg(feature = "circuits")]
 
 use bus_mapping::circuit_input_builder::{BuilderClient, CircuitsParams};
-use eth_types::geth_types;
-use halo2_proofs::{
-    arithmetic::CurveAffine,
-    dev::MockProver,
-    halo2curves::{
-        bn256::Fr,
-        group::{Curve, Group},
-    },
-};
-use integration_tests::{get_client, log_init, GenDataOutput, CHAIN_ID};
+use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
+use integration_tests::{get_client, log_init, GenDataOutput};
 use lazy_static::lazy_static;
 use log::{error, trace};
 use paste::paste;
-use rand_chacha::rand_core::SeedableRng;
-use rand_chacha::ChaCha20Rng;
-use std::marker::PhantomData;
 use zkevm_circuits::bytecode_circuit::dev::test_bytecode_circuit;
 use zkevm_circuits::copy_circuit::dev::test_copy_circuit;
-use zkevm_circuits::evm_circuit::witness::RwMap;
 use zkevm_circuits::evm_circuit::{test::run_test_circuit, witness::block_convert};
 use zkevm_circuits::state_circuit::StateCircuit;
 use zkevm_circuits::super_circuit::SuperCircuit;
-use zkevm_circuits::tx_circuit::{sign_verify::SignVerifyChip, Secp256k1Affine, TxCircuit};
+use zkevm_circuits::tx_circuit::TxCircuit;
+use zkevm_circuits::util::SubCircuit;
 
 lazy_static! {
     pub static ref GEN_DATA: GenDataOutput = GenDataOutput::load();
@@ -32,6 +21,8 @@ lazy_static! {
 const CIRCUITS_PARAMS: CircuitsParams = CircuitsParams {
     max_rws: 16384,
     max_txs: 4,
+    max_calldata: 4000,
+    max_bytecode: 4000,
     keccak_padding: None,
 };
 
@@ -41,30 +32,19 @@ async fn test_evm_circuit_block(block_num: u64) {
     let cli = BuilderClient::new(cli, CIRCUITS_PARAMS).await.unwrap();
     let (builder, _) = cli.gen_inputs(block_num).await.unwrap();
 
-    let block = block_convert(&builder.block, &builder.code_db);
+    let block = block_convert(&builder.block, &builder.code_db).unwrap();
     run_test_circuit(block).expect("evm_circuit verification failed");
 }
 
 async fn test_state_circuit_block(block_num: u64) {
+    const DEGREE: usize = 17;
     log::info!("test state circuit, block number: {}", block_num);
     let cli = get_client();
     let cli = BuilderClient::new(cli, CIRCUITS_PARAMS).await.unwrap();
     let (builder, _) = cli.gen_inputs(block_num).await.unwrap();
+    let block = block_convert(&builder.block, &builder.code_db).unwrap();
 
-    // Generate state proof
-    // log via trace some of the container ops for debugging purposes
-    let stack_ops = builder.block.container.sorted_stack();
-    trace!("stack_ops: {:#?}", stack_ops);
-    let memory_ops = builder.block.container.sorted_memory();
-    trace!("memory_ops: {:#?}", memory_ops);
-    let storage_ops = builder.block.container.sorted_storage();
-    trace!("storage_ops: {:#?}", storage_ops);
-
-    const DEGREE: usize = 17;
-
-    let rw_map = RwMap::from(&builder.block.container);
-
-    let circuit = StateCircuit::<Fr>::new(rw_map, 1 << 16);
+    let circuit = StateCircuit::<Fr>::new_from_block(&block);
     let prover = MockProver::<Fr>::run(DEGREE as u32, &circuit, circuit.instance()).unwrap();
     prover
         .verify_par()
@@ -78,25 +58,9 @@ async fn test_tx_circuit_block(block_num: u64) {
     let cli = get_client();
     let cli = BuilderClient::new(cli, CIRCUITS_PARAMS).await.unwrap();
 
-    let (_, eth_block) = cli.gen_inputs(block_num).await.unwrap();
-    let txs: Vec<_> = eth_block
-        .transactions
-        .iter()
-        .map(geth_types::Transaction::from)
-        .collect();
-
-    let mut rng = ChaCha20Rng::seed_from_u64(2);
-    let aux_generator = <Secp256k1Affine as CurveAffine>::CurveExt::random(&mut rng).to_affine();
-
-    let circuit = TxCircuit::<Fr, 4, { 4 * (4 + 32 + 32) }> {
-        sign_verify: SignVerifyChip {
-            aux_generator,
-            window_size: 2,
-            _marker: PhantomData,
-        },
-        txs,
-        chain_id: CHAIN_ID,
-    };
+    let (builder, _) = cli.gen_inputs(block_num).await.unwrap();
+    let block = block_convert(&builder.block, &builder.code_db).unwrap();
+    let circuit = TxCircuit::<Fr>::new_from_block(&block);
 
     let prover = MockProver::run(DEGREE, &circuit, vec![vec![]]).unwrap();
 
@@ -122,7 +86,7 @@ pub async fn test_copy_circuit_block(block_num: u64) {
     let cli = get_client();
     let cli = BuilderClient::new(cli, CIRCUITS_PARAMS).await.unwrap();
     let (builder, _) = cli.gen_inputs(block_num).await.unwrap();
-    let block = block_convert(&builder.block, &builder.code_db);
+    let block = block_convert(&builder.block, &builder.code_db).unwrap();
 
     assert!(test_copy_circuit(DEGREE, block).is_ok());
 }
@@ -131,6 +95,7 @@ pub async fn test_super_circuit_block(block_num: u64) {
     const MAX_TXS: usize = 4;
     const MAX_CALLDATA: usize = 512;
     const MAX_RWS: usize = 5888;
+    const MAX_BYTECODE: usize = 5000;
 
     log::info!("test super circuit, block number: {}", block_num);
     let cli = get_client();
@@ -139,17 +104,17 @@ pub async fn test_super_circuit_block(block_num: u64) {
         CircuitsParams {
             max_rws: MAX_RWS,
             max_txs: MAX_TXS,
+            max_calldata: MAX_CALLDATA,
+            max_bytecode: MAX_BYTECODE,
             keccak_padding: None,
         },
     )
     .await
     .unwrap();
-    let (builder, eth_block) = cli.gen_inputs(block_num).await.unwrap();
+    let (builder, _) = cli.gen_inputs(block_num).await.unwrap();
     let (k, circuit, instance) =
         SuperCircuit::<_, MAX_TXS, MAX_CALLDATA, MAX_RWS>::build_from_circuit_input_builder(
             &builder,
-            eth_block,
-            &mut ChaCha20Rng::seed_from_u64(2),
         )
         .unwrap();
     let prover = MockProver::run(k, &circuit, instance).unwrap();

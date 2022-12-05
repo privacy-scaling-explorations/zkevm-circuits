@@ -539,6 +539,8 @@ pub enum AccountField {
     Balance,
     /// Account Code Hash
     CodeHash,
+    /// Account non existing
+    NonExisting,
 }
 
 /// Represents a change in the Account field implied by a `BeginTx`,
