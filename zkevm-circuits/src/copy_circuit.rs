@@ -606,7 +606,7 @@ impl<F: Field> CopyCircuitConfig<F> {
 }
 
 /// Copy Circuit
-#[derive(Clone, Default, Debug)]
+#[derive(Clone, Debug)]
 pub struct CopyCircuit<F: Field> {
     /// Block
     pub block: Option<Block<F>>,
@@ -623,6 +623,16 @@ impl<F: Field> CopyCircuit<F> {
             block: Some(block),
             max_txs,
             randomness,
+        }
+    }
+}
+
+impl<F: Field> Default for CopyCircuit<F> {
+    fn default() -> Self {
+        Self {
+            block: Some(Block::default()),
+            max_txs: usize::default(),
+            randomness: F::default(),
         }
     }
 }
