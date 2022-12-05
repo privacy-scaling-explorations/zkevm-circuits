@@ -101,6 +101,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorStackGadget<F> {
                 0.expr(),
                 0.expr(),
                 0.expr(),
+                0.expr(),
             )
         });
 
@@ -311,7 +312,7 @@ mod test {
             .handle_block(&block_data.eth_block, &block_data.geth_traces)
             .unwrap();
         let block = block_convert(&builder.block, &builder.code_db);
-        assert_eq!(run_test_circuit(block), Ok(()));
+        assert_eq!(run_test_circuit(block.unwrap()), Ok(()));
     }
 
     fn callee(code: Bytecode) -> Account {
