@@ -277,8 +277,10 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
 
                 let acc_c = meta.query_advice(accs.acc_c.rlc, Rotation::cur());
 
-                let is_c_inserted_ext_node = get_is_inserted_extension_node(
+                let is_c_inserted_ext_node_storage = get_is_inserted_extension_node(
                     meta, c_main.rlp1, c_main.rlp2, rot_into_branch_init_storage, true);
+                let is_c_inserted_ext_node_account = get_is_inserted_extension_node(
+                    meta, c_main.rlp1, c_main.rlp2, rot_into_branch_init_account, true);
 
                 let rot_into_branch_storage = rot_into_last_leaf_row - LEAF_ROWS_NUM - BRANCH_ROWS_NUM - EXTENSION_ROWS_NUM;
                 let rot_into_branch_account = rot_into_last_leaf_row - ACCOUNT_LEAF_ROWS_NUM - BRANCH_ROWS_NUM - EXTENSION_ROWS_NUM;
@@ -286,14 +288,14 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
                 let mod_node_hash_rlc_cur =
                     is_account_proof.clone() *
                     (meta.query_advice(accs.s_mod_node_rlc, Rotation(rot_into_branch_account))
-                    * is_c_inserted_ext_node.clone()
+                    * is_c_inserted_ext_node_account.clone()
                     + meta.query_advice(accs.c_mod_node_rlc, Rotation(rot_into_branch_account))
-                    * (one.clone() - is_c_inserted_ext_node.clone()))
+                    * (one.clone() - is_c_inserted_ext_node_account.clone()))
                     + (one.clone() - is_account_proof.clone()) *
                     (meta.query_advice(accs.s_mod_node_rlc, Rotation(rot_into_branch_storage))
-                    * is_c_inserted_ext_node.clone()
+                    * is_c_inserted_ext_node_storage.clone()
                     + meta.query_advice(accs.c_mod_node_rlc, Rotation(rot_into_branch_storage))
-                    * (one.clone() - is_c_inserted_ext_node));
+                    * (one.clone() - is_c_inserted_ext_node_storage));
 
                 let selector = not_first_level
                     * q_enable
@@ -319,34 +321,43 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
             });
         } else {
             /*
-            TODO: In branch where the existing extension node was pushed into, mod_node_hash_rlc
-            needs to be set so that the comparison of the `after` extension node with mod_node_hash_rlc
-            will be possible. Also, `drifted_pos` and `is_branch_placeholder` need to be set.
+            Placeholder branch stores in `mod_node_hash_rlc` the hash of the drifted extension node.
             */
             
             meta.lookup_any("(Drifted) extension node hash in parent branch", |meta| {
                 let q_enable = q_enable(meta);
                 let not_first_level = meta.query_advice(position_cols.not_first_level, Rotation::cur());
 
-                // TODO: rotations when in account proof
                 let rot_into_last_leaf_row = - EXISTING_EXT_NODE_AFTER_S - 1;
-                let rot_into_branch_init = rot_into_last_leaf_row - LEAF_ROWS_NUM - BRANCH_ROWS_NUM + 1;
+                let rot_into_branch_init_storage = rot_into_last_leaf_row - LEAF_ROWS_NUM - BRANCH_ROWS_NUM + 1;
+                let rot_into_branch_init_account = rot_into_last_leaf_row - ACCOUNT_LEAF_ROWS_NUM - BRANCH_ROWS_NUM + 1;
+
+                let is_account_proof = meta.query_advice(
+                    is_account_leaf_in_added_branch,
+                    Rotation(rot_into_last_leaf_row),
+                );
 
                 let is_ext_node_non_hashed =
                     meta.query_advice(s_main.bytes[IS_S_EXT_NODE_NON_HASHED_POS - RLP_NUM], Rotation(-1));
 
                 let acc_c = meta.query_advice(accs.acc_c.rlc, Rotation::cur());
 
-                let is_c_inserted_ext_node = get_is_inserted_extension_node(
-                    meta, c_main.rlp1, c_main.rlp2, rot_into_branch_init, true);
-
-                let rot_into_branch = rot_into_branch_init + 1;
+                let is_c_inserted_ext_node_storage = get_is_inserted_extension_node(
+                    meta, c_main.rlp1, c_main.rlp2, rot_into_branch_init_storage, true);
+                let is_c_inserted_ext_node_account = get_is_inserted_extension_node(
+                    meta, c_main.rlp1, c_main.rlp2, rot_into_branch_init_account, true);
 
                 let mod_node_hash_rlc_cur =
-                    meta.query_advice(accs.s_mod_node_rlc, Rotation(rot_into_branch))
-                    * is_c_inserted_ext_node.clone()
-                    + meta.query_advice(accs.c_mod_node_rlc, Rotation(rot_into_branch))
-                    * (one.clone() - is_c_inserted_ext_node);
+                    is_account_proof.clone() *
+                    (meta.query_advice(accs.s_mod_node_rlc, Rotation(rot_into_branch_init_account + 1))
+                    * is_c_inserted_ext_node_account.clone()
+                    + meta.query_advice(accs.c_mod_node_rlc, Rotation(rot_into_branch_init_account + 1))
+                    * (one.clone() - is_c_inserted_ext_node_account.clone()))
+                    + (one.clone() - is_account_proof.clone()) *
+                    (meta.query_advice(accs.s_mod_node_rlc, Rotation(rot_into_branch_init_storage + 1))
+                    * is_c_inserted_ext_node_storage.clone()
+                    + meta.query_advice(accs.c_mod_node_rlc, Rotation(rot_into_branch_init_storage + 1))
+                    * (one.clone() - is_c_inserted_ext_node_storage));
 
                 let selector = not_first_level
                     * q_enable
@@ -378,9 +389,14 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
                 let q_enable = q_enable(meta);
                 let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
 
-                // TODO: rotations when in account proof
-                let rot_into_last_leaf_row = - EXISTING_EXT_NODE_BEFORE_S - 1;
-                let rot_into_branch_init = rot_into_last_leaf_row - LEAF_ROWS_NUM - BRANCH_ROWS_NUM + 1;
+                let rot_into_last_leaf_row = - EXISTING_EXT_NODE_AFTER_S - 1;
+                let rot_into_branch_init_storage = rot_into_last_leaf_row - LEAF_ROWS_NUM - BRANCH_ROWS_NUM + 1;
+                let rot_into_branch_init_account = rot_into_last_leaf_row - ACCOUNT_LEAF_ROWS_NUM - BRANCH_ROWS_NUM + 1;
+
+                let is_account_proof = meta.query_advice(
+                    is_account_leaf_in_added_branch,
+                    Rotation(rot_into_last_leaf_row),
+                );
 
                 let is_ext_node_non_hashed =
                     meta.query_advice(s_main.bytes[IS_S_EXT_NODE_NON_HASHED_POS - RLP_NUM], Rotation(-1));
@@ -389,16 +405,22 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
 
                 let acc_c = meta.query_advice(accs.acc_c.rlc, Rotation::cur());
 
-                let is_c_inserted_ext_node = get_is_inserted_extension_node(
-                    meta, c_main.rlp1, c_main.rlp2, rot_into_branch_init, true);
-
-                let rot_into_branch = rot_into_last_leaf_row - LEAF_ROWS_NUM - BRANCH_ROWS_NUM - EXTENSION_ROWS_NUM;
+                let is_c_inserted_ext_node_storage = get_is_inserted_extension_node(
+                    meta, c_main.rlp1, c_main.rlp2, rot_into_branch_init_storage, true);
+                let is_c_inserted_ext_node_account = get_is_inserted_extension_node(
+                    meta, c_main.rlp1, c_main.rlp2, rot_into_branch_init_account, true);
 
                 let mod_node_hash_rlc_cur =
-                    meta.query_advice(accs.s_mod_node_rlc, Rotation(rot_into_branch))
-                    * is_c_inserted_ext_node.clone()
-                    + meta.query_advice(accs.c_mod_node_rlc, Rotation(rot_into_branch))
-                    * (one.clone() - is_c_inserted_ext_node);
+                    is_account_proof.clone() *
+                    (meta.query_advice(accs.s_mod_node_rlc, Rotation(rot_into_branch_init_account + 1))
+                    * is_c_inserted_ext_node_account.clone()
+                    + meta.query_advice(accs.c_mod_node_rlc, Rotation(rot_into_branch_init_account + 1))
+                    * (one.clone() - is_c_inserted_ext_node_account.clone()))
+                    + (one.clone() - is_account_proof.clone()) *
+                    (meta.query_advice(accs.s_mod_node_rlc, Rotation(rot_into_branch_init_storage + 1))
+                    * is_c_inserted_ext_node_storage.clone()
+                    + meta.query_advice(accs.c_mod_node_rlc, Rotation(rot_into_branch_init_storage + 1))
+                    * (one.clone() - is_c_inserted_ext_node_storage));
 
                 /*
                 When an extension node is not hashed, we do not check whether it is in a parent
