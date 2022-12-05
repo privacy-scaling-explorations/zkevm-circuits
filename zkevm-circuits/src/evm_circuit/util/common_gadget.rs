@@ -105,6 +105,7 @@ impl<F: Field> RestoreContextGadget<F> {
         return_data_offset: Expression<F>,
         return_data_length: Expression<F>,
         memory_expansion_cost: Expression<F>,
+        reversible_write_counter_increase: Expression<F>,
     ) -> Self {
         // Read caller's context for restore
         let caller_id = cb.call_context(None, CallContextFieldTag::CallerId);
@@ -140,6 +141,7 @@ impl<F: Field> RestoreContextGadget<F> {
         }
 
         let code_deposit_cost = cb.curr.state.is_create.expr()
+            * is_success.clone()
             * GasCost::CODE_DEPOSIT_BYTE_COST.expr()
             * return_data_length;
 
@@ -156,6 +158,7 @@ impl<F: Field> RestoreContextGadget<F> {
         // failure, we don't need to accumulate reversible_write_counter because
         // what happened in the sub-call has been reverted.
         let reversible_write_counter = caller_reversible_write_counter.expr()
+            + reversible_write_counter_increase
             + is_success.clone() * cb.curr.state.reversible_write_counter.expr();
 
         let rw_counter_offset = cb.rw_counter_offset()
