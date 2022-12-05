@@ -446,7 +446,7 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
         Correspondence between nibbles in C and bytes in S for
         regular extension nodes is ensured in `extension_node_key.rs`.
         */
-        meta.create_gate("Existing node: first nibble / second nibble", |meta| {
+        meta.create_gate("Existing node: first nibble / second nibble & s_main bytes are 0 when short extension node", |meta| {
             let q_enable = q_enable(meta);
             let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
 
@@ -465,6 +465,31 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
                     q_enable.clone()
                         * q_not_first.clone()
                         * (s - first_nibble.clone() * c16.clone() - second_nibble.clone())
+                ));
+            }
+
+            let is_ext_short_c16 = meta.query_advice(
+                s_main.bytes[IS_EXT_SHORT_C16_POS - RLP_NUM],
+                Rotation(-1),
+            );
+            let is_ext_short_c1 = meta.query_advice(
+                s_main.bytes[IS_EXT_SHORT_C1_POS - RLP_NUM],
+                Rotation(-1),
+            );
+
+            /*
+            We need to ensure `s_main.bytes` are all 0 when short - the only nibble is in `s_main.rlp2`.
+            For long version, the constraints to have 0s after nibbles end in `s_main.bytes` are
+            implemented using `key_len_lookup`.
+            */
+            for ind in 0..HASH_WIDTH {
+                let s = meta.query_advice(s_main.bytes[ind], Rotation::cur());
+                constraints.push((
+                    "s_main.bytes[i] = 0 for short",
+                        q_enable.clone()
+                        * q_not_first.clone()
+                        * (is_ext_short_c1.clone() + is_ext_short_c16.clone())
+                        * s,
                 ));
             }
             
@@ -491,9 +516,91 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
             });
         }
 
+        let sel_branch_non_hashed = |meta: &mut VirtualCells<F>| {
+            let q_enable = q_enable(meta);
+
+            let c_rlp2 = meta.query_advice(c_main.rlp2, Rotation::cur());
+            // c_rlp2 = 160 when branch is hashed (longer than 31) and c_rlp2 = 0 otherwise
+            let is_branch_hashed = c_rlp2 * c160_inv.clone();
+
+            q_enable * (one.clone() - is_branch_hashed)
+        };
+
+        let sel_long = |meta: &mut VirtualCells<F>| {
+            let is_ext_long_even_c16 = meta.query_advice(
+                s_main.bytes[IS_EXT_LONG_EVEN_C16_POS - RLP_NUM],
+                Rotation(-1),
+            );
+            let is_ext_long_even_c1 = meta.query_advice(
+                s_main.bytes[IS_EXT_LONG_EVEN_C1_POS - RLP_NUM],
+                Rotation(-1),
+            );
+            let is_ext_long_odd_c16 = meta.query_advice(
+                s_main.bytes[IS_EXT_LONG_ODD_C16_POS - RLP_NUM],
+                Rotation(-1),
+            );
+            let is_ext_long_odd_c1 = meta.query_advice(
+                s_main.bytes[IS_EXT_LONG_ODD_C1_POS - RLP_NUM],
+                Rotation(-1),
+            );
+            let is_long = is_ext_long_even_c16
+                + is_ext_long_even_c1
+                + is_ext_long_odd_c16
+                + is_ext_long_odd_c1;
+
+            is_long
+        };
+
+        /*
+        `s_main.bytes[i] = 0` after last extension node nibble.
+
+        Note that for a short version (only one nibble), all
+        `s_main.bytes` need to be 0 (the only nibble is in `s_main.rlp2`) - this is checked
+        separately.
+        */
+        if check_zeros {
+            for ind in 1..HASH_WIDTH {
+                key_len_lookup(
+                    meta,
+                    sel_long,
+                    ind,
+                    s_main.bytes[0],
+                    s_main.bytes[ind],
+                    128,
+                    fixed_table,
+                )
+            }
+            key_len_lookup(
+                meta,
+                sel_long,
+                32,
+                s_main.bytes[0],
+                c_main.rlp1,
+                128,
+                fixed_table,
+            );
+        }
+
+        /*
+        There are 0s after non-hashed branch ends in `c_main.bytes`.
+        */
+        if check_zeros {
+            for ind in 1..HASH_WIDTH {
+                key_len_lookup(
+                    meta,
+                    sel_branch_non_hashed,
+                    ind,
+                    c_main.bytes[0],
+                    c_main.bytes[ind],
+                    192,
+                    fixed_table,
+                )
+            }
+        }
+
         /*
         Note: range_lookups for regular extension nodes are in `extension_node_key.rs`, but
-        we do not have it for inserted extension nodes.
+        we do not have `_key.rs` for the inserted extension node.
         */
         range_lookups(
             meta,
