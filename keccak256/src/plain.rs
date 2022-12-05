@@ -52,18 +52,16 @@ impl Keccak {
     /// Returns keccak hash based on current state
     pub fn digest(&mut self) -> Vec<u8> {
         let len = self.scratch.len();
-        if len > 0 {
-            let padding_total = self.sponge.rate - (len % self.sponge.rate);
-            if padding_total == 1 {
-                self.scratch.push(0x81);
-            } else {
-                self.scratch.push(0x01);
-                self.scratch.resize(len + padding_total - 1, 0x00);
-                self.scratch.push(0x80);
-            }
-            self.sponge.absorb(&mut self.state, &self.scratch);
-            self.scratch.truncate(0);
+        let padding_total = self.sponge.rate - (len % self.sponge.rate);
+        if padding_total == 1 {
+            self.scratch.push(0x81);
+        } else {
+            self.scratch.push(0x01);
+            self.scratch.resize(len + padding_total - 1, 0x00);
+            self.scratch.push(0x80);
         }
+        self.sponge.absorb(&mut self.state, &self.scratch);
+        self.scratch.truncate(0);
         self.sponge.squeeze(&mut self.state)
     }
 }
