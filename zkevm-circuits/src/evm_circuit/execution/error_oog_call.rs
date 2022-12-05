@@ -94,12 +94,10 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
 
         // Add callee to access list
         let is_warm = cb.query_bool();
-        let is_warm_prev = cb.query_bool();
         cb.account_access_list_read(
             tx_id.expr(),
             callee_address.clone(),
             is_warm.expr(),
-            is_warm_prev.expr(),
         );
 
         let value_is_zero = IsZeroGadget::construct(cb, sum::expr(&value.cells));

@@ -784,7 +784,6 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         tx_id: Expression<F>,
         account_address: Expression<F>,
         value: Expression<F>,
-        value_prev: Expression<F>,
     ) {
         self.rw_lookup(
             "account access list read",
@@ -795,8 +794,8 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
                 account_address,
                 0.expr(),
                 0.expr(),
+                value.clone(),
                 value,
-                value_prev,
                 0.expr(),
                 0.expr(),
             ),
