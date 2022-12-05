@@ -636,7 +636,7 @@ impl From<&operation::OperationContainer> for RwMap {
                 .iter()
                 .map(|op| Rw::TxAccessListAccount {
                     rw_counter: op.rwc().into(),
-                    is_write: true,
+                    is_write: op.rw().is_write(),
                     tx_id: op.op().tx_id,
                     account_address: op.op().address,
                     is_warm: op.op().is_warm,

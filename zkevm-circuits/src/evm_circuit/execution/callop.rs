@@ -624,9 +624,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::evm_circuit::test::{
-        run_test_circuit_geth_data, run_test_circuit_geth_data_default,
-    };
+    use crate::evm_circuit::test::run_test_circuit_geth_data;
     use bus_mapping::circuit_input_builder::CircuitsParams;
     use eth_types::{address, bytecode, Address, ToWord, Word};
     use eth_types::{
@@ -667,35 +665,6 @@ mod test {
     fn callop_nested() {
         for opcode in TEST_CALL_OPCODES {
             test_nested(opcode);
-        }
-    }
-
-    #[test]
-    fn callop_oog() {
-        let stacks = [
-            // With gas and memory expansion
-            Stack {
-                gas: 100,
-                cd_offset: 64,
-                cd_length: 320,
-                rd_offset: 0,
-                rd_length: 32,
-                ..Default::default()
-            },
-        ];
-
-        let bytecode = bytecode! {
-            PUSH32(Word::from(0))
-            PUSH32(Word::from(0))
-            STOP
-        };
-        let callees = [callee(bytecode)];
-        for ((opcode, stack), callee) in TEST_CALL_OPCODES
-            .iter()
-            .cartesian_product(stacks.into_iter())
-            .cartesian_product(callees.into_iter())
-        {
-            test_oog(caller(opcode, stack, true), callee);
         }
     }
 
@@ -924,37 +893,6 @@ mod test {
             ),
             Ok(())
         );
-    }
-
-    fn test_oog(caller: Account, callee: Account) {
-        let block: GethData = TestContext::<3, 1>::new(
-            None,
-            |accs| {
-                accs[0]
-                    .address(address!("0x000000000000000000000000000000000000cafe"))
-                    .balance(Word::from(10u64.pow(19)));
-                accs[1]
-                    .address(caller.address)
-                    .code(caller.code)
-                    .nonce(caller.nonce)
-                    .balance(caller.balance);
-                accs[2]
-                    .address(callee.address)
-                    .code(callee.code)
-                    .nonce(callee.nonce)
-                    .balance(callee.balance);
-            },
-            |mut txs, accs| {
-                txs[0]
-                    .from(accs[0].address)
-                    .to(accs[1].address)
-                    .gas(21100.into());
-            },
-            |block, _tx| block.number(0xcafeu64),
-        )
-        .unwrap()
-        .into();
-        assert_eq!(run_test_circuit_geth_data_default::<Fr>(block), Ok(()));
     }
 
     fn test_recursive(opcode: &OpcodeId) {
