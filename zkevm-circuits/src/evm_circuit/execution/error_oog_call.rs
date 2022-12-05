@@ -31,7 +31,6 @@ pub(crate) struct ErrorOOGCallGadget<F> {
     callee_address: Word<F>,
     value: Word<F>,
     is_warm: Cell<F>,
-    is_warm_prev: Cell<F>,
     value_is_zero: IsZeroGadget<F>,
     cd_address: MemoryAddressGadget<F>,
     rd_address: MemoryAddressGadget<F>,
@@ -94,11 +93,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
 
         // Add callee to access list
         let is_warm = cb.query_bool();
-        cb.account_access_list_read(
-            tx_id.expr(),
-            callee_address.clone(),
-            is_warm.expr(),
-        );
+        cb.account_access_list_read(tx_id.expr(), callee_address.clone(), is_warm.expr());
 
         let value_is_zero = IsZeroGadget::construct(cb, sum::expr(&value.cells));
         let has_value = 1.expr() - value_is_zero.expr();
@@ -128,7 +123,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
         let is_empty_account = is_empty_nonce_and_balance.expr() * is_empty_code_hash.expr();
         // Sum up gas cost
         let gas_cost = select::expr(
-            is_warm_prev.expr(),
+            is_warm.expr(),
             GasCost::WARM_ACCESS.expr(),
             GasCost::COLD_ACCOUNT_ACCESS.expr(),
         ) + has_value
@@ -188,7 +183,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
             callee_address: callee_address_word,
             value,
             is_warm,
-            is_warm_prev,
             value_is_zero,
             cd_address,
             rd_address,
@@ -252,8 +246,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
 
         self.is_warm
             .assign(region, offset, Value::known(F::from(is_warm as u64)))?;
-        self.is_warm_prev
-            .assign(region, offset, Value::known(F::from(is_warm_prev as u64)))?;
 
         self.value_is_zero
             .assign(region, offset, sum::value(&value.to_le_bytes()))?;
