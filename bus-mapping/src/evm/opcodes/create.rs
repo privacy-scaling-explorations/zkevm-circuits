@@ -30,6 +30,9 @@ impl<const IS_CREATE2: bool> Opcode for DummyCreate<IS_CREATE2> {
 
         let mut exec_step = state.new_step(geth_step)?;
 
+        // TODO: rename this to initialization call?
+        let call = state.parse_call(geth_step)?;
+
         let n_pop = if IS_CREATE2 { 4 } else { 3 };
         for i in 0..n_pop {
             state.stack_read(
@@ -45,8 +48,6 @@ impl<const IS_CREATE2: bool> Opcode for DummyCreate<IS_CREATE2> {
             state.create_address()?
         };
 
-        // TODO: rename this to initialization call?
-        let call = state.parse_call(geth_step)?;
         state.stack_write(
             &mut exec_step,
             geth_step.stack.nth_last_filled(n_pop - 1),
@@ -93,9 +94,6 @@ impl<const IS_CREATE2: bool> Opcode for DummyCreate<IS_CREATE2> {
             },
         )?;
 
-        dbg!(call.caller_address, call.address);
-        dbg!(current_call.address);
-
         for (field, value) in [(CallContextField::CalleeAddress, current_call.address)] {
             state.call_context_read(&mut exec_step, current_call.call_id, field, value.to_word());
         }
@@ -116,8 +114,19 @@ impl<const IS_CREATE2: bool> Opcode for DummyCreate<IS_CREATE2> {
         // here in gadget.....
 
         state.push_call(call.clone());
-
+        dbg!(current_call.call_id);
+        dbg!(call.call_id);
         // Increase callee's nonce
+        for (field, value) in [
+            (
+                CallContextField::RwCounterEndOfReversion,
+                call.rw_counter_end_of_reversion.to_word(),
+            ),
+            (CallContextField::IsPersistent, call.is_persistent.to_word()),
+        ] {
+            state.call_context_write(&mut exec_step, call.call_id, field, value);
+        }
+
         let nonce_prev = state.sdb.get_nonce(&call.address);
         debug_assert!(nonce_prev == 0);
         state.push_op_reversible(

@@ -50,6 +50,8 @@ pub(crate) struct CreateGadget<F> {
 
     caller_address: Cell<F>,
     nonce: Cell<F>,
+
+    // callee_reversion_info: ReversionInfo<F>,
     //
     // // transfer value to new address
     // transfer: TransferGadget<F>,
@@ -82,6 +84,9 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::CREATE;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+        // Use rw_counter of the step which triggers next call as its call_id.
+        let callee_call_id = cb.curr.state.rw_counter.clone();
+
         let opcode = cb.query_cell();
         cb.opcode_lookup(opcode.expr(), 1.expr());
 
@@ -127,8 +132,20 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             AccountFieldTag::Nonce,
             nonce.expr() + 1.expr(),
             nonce.expr(),
-            None,
+            Some(&mut reversion_info),
+            // None,
         );
+
+        // let caller_address = cb.call_context(None, CallContextFieldTag::CalleeAddress);
+
+        // let mut callee_reversion_info = cb.reversion_info_write(Some(callee_call_id.expr()));
+        // cb.account_write(
+        //     new_address.expr(),
+        //     AccountFieldTag::Nonce,
+        //     1.expr()
+        //     0.expr(),
+        //     None,
+        // );
 
         // let caller_address = cb.call_context(None,
         // CallContextFieldTag::CalleeAddress); let [callee_address, value,
@@ -209,6 +226,7 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             new_address,
             caller_address,
             nonce,
+            // callee_reversion_info,
         }
     }
 
@@ -303,6 +321,21 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
         // unwrap(); self.new_address.assign(
         //     region, offset,
         //     Some(address_bytes)
+        // )?;
+
+        // let [callee_rw_counter_end_of_reversion, callee_is_persistent] = [10, 11]
+        //     .map(|i| block.rws[step.rw_indices[i + usize::from(is_create2)]].call_context_value());
+
+        // dbg!(callee_rw_counter_end_of_reversion, callee_is_persistent);
+
+        // self.callee_reversion_info.assign(
+        //     region,
+        //     offset,
+        //     callee_rw_counter_end_of_reversion
+        //         .low_u64()
+        //         .try_into()
+        //         .unwrap(),
+        //     callee_is_persistent.low_u64() != 0,
         // )?;
 
         Ok(())
