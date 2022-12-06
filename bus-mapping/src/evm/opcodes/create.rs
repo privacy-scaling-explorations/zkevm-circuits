@@ -117,19 +117,6 @@ impl<const IS_CREATE2: bool> Opcode for DummyCreate<IS_CREATE2> {
 
         // here in gadget.....
 
-        // Add callee into access list
-        let is_warm = state.sdb.check_account_in_access_list(&call.address);
-        state.push_op_reversible(
-            &mut exec_step,
-            RW::WRITE,
-            TxAccessListAccountOp {
-                tx_id,
-                address: call.address,
-                is_warm: true,
-                is_warm_prev: is_warm,
-            },
-        )?;
-
         state.push_call(call.clone());
 
         // Increase callee's nonce
@@ -173,9 +160,9 @@ impl<const IS_CREATE2: bool> Opcode for DummyCreate<IS_CREATE2> {
             (CallContextField::MemorySize, next_memory_word_size.into()),
             (
                 CallContextField::ReversibleWriteCounter,
-                // +3 is because we do some transfers after pushing the call. can be just push the
+                // +2 is because we do some reversible writes before pushing the call. can be just push the
                 // call later?
-                (exec_step.reversible_write_counter + 3).into(),
+                (exec_step.reversible_write_counter + 2).into(),
             ),
         ] {
             state.call_context_write(&mut exec_step, current_call.call_id, field, value);
