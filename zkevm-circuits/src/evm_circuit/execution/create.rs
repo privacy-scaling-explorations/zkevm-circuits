@@ -1,3 +1,4 @@
+use crate::evm_circuit::util::RandomLinearCombination;
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
@@ -22,11 +23,10 @@ use crate::{
     table::{AccountFieldTag, CallContextFieldTag},
     util::Expr,
 };
-use crate::evm_circuit::util::RandomLinearCombination;
 use bus_mapping::evm::OpcodeId;
 use eth_types::{
     evm_types::{GasCost, GAS_STIPEND_CALL_WITH_VALUE},
-    Field, ToLittleEndian, ToScalar, U256, ToAddress,
+    Field, ToAddress, ToLittleEndian, ToScalar, U256,
 };
 use halo2_proofs::{circuit::Value, plonk::Error};
 use keccak256::EMPTY_HASH_LE;
@@ -37,9 +37,13 @@ pub(crate) struct CreateGadget<F> {
     opcode: Cell<F>,
     is_create2: Cell<F>,
 
-    // new_address: RandomLinearCombination<F, N_BYTES_ACCOUNT_ADDRESS>,
+    initialization_code_start: Word<F>,
+    initialization_code_length: Word<F>,
+    value: Word<F>,
+    salt: Word<F>,
+    new_address: RandomLinearCombination<F, N_BYTES_ACCOUNT_ADDRESS>,
     //
-    // // tx access list for new address
+    // tx access list for new address
     // tx_id: Cell<F>,
     // is_warm_prev: Cell<F>,
     // reversion_info: ReversionInfo<F>,
@@ -89,6 +93,19 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             ),
         );
 
+        let [initialization_code_start, initialization_code_length, value] = [(); 3].map(|_| {
+            let cell = cb.query_word();
+            cb.stack_pop(cell.expr());
+            cell
+        });
+        let salt = cb.condition(is_create2.expr(), |cb| {
+            let salt = cb.query_word();
+            cb.stack_pop(salt.expr());
+            salt
+        });
+        let new_address = cb.query_rlc();
+        cb.stack_push(new_address.expr());
+
         // let new_address = cb.query_rlc();
         // let mut reversion_info = cb.reversion_info_read(None);
         // let is_warm_prev = cb.query_bool();
@@ -100,7 +117,6 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
         //     is_warm_prev.expr(),
         //     Some(&mut reversion_info),
         // );
-
 
         // let access_list = AccountAccessListGadget::construct(cb,
         // callee_address.expr()); cb.add_account_to_access_list(callee_address.
@@ -179,6 +195,11 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             // tx_id,
             // is_warm_prev,
             // new_address,
+            initialization_code_start,
+            initialization_code_length,
+            value,
+            salt,
+            new_address,
         }
     }
 
@@ -192,16 +213,43 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         let opcode = step.opcode.unwrap();
+        let is_create2 = opcode == OpcodeId::CREATE2;
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
         self.is_create2.assign(
             region,
             offset,
-            Value::known((opcode == OpcodeId::CREATE2).to_scalar().unwrap()),
+            Value::known(is_create2.to_scalar().unwrap()),
+        )?;
+
+        let [initialization_code_start, initialization_code_length, value, new_address] =
+            [0, 1, 2, 3 + usize::from(is_create2)]
+                .map(|i| step.rw_indices[i])
+                .map(|idx| block.rws[idx].stack_value());
+        let salt = if is_create2 {
+            block.rws[step.rw_indices[3]].stack_value()
+        } else {
+            U256::zero()
+        };
+
+        for (word, assignment) in [
+            (&self.initialization_code_start, initialization_code_start),
+            (&self.initialization_code_length, initialization_code_length),
+            (&self.value, value),
+            (&self.salt, salt),
+        ] {
+            word.assign(region, offset, Some(assignment.to_le_bytes()))?;
+        }
+
+        self.new_address.assign(
+            region,
+            offset,
+            Some(new_address.to_le_bytes()[0..20].try_into().unwrap()),
         )?;
 
         // self.tx_id.assign(region, offset, Value::known(tx.id.to_scalar().unwrap()))?;
-        // self.is_warm_prev.assign(region, offset, Value::known(false.to_scalar().unwrap()))?;
+        // self.is_warm_prev.assign(region, offset,
+        // Value::known(false.to_scalar().unwrap()))?;
         //
         // self.reversion_info.assign(
         //     region,
@@ -210,8 +258,9 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
         //     call.is_persistent,
         // )?;
         //
-        // let address_bytes = block.rws[step.rw_indices[2]].stack_value().to_le_bytes()[0..20].try_into().unwrap();
-        // self.new_address.assign(
+        // let address_bytes =
+        // block.rws[step.rw_indices[2]].stack_value().to_le_bytes()[0..20].try_into().
+        // unwrap(); self.new_address.assign(
         //     region, offset,
         //     Some(address_bytes)
         // )?;
