@@ -42,11 +42,11 @@ pub(crate) struct CreateGadget<F> {
     value: Word<F>,
     salt: Word<F>,
     new_address: RandomLinearCombination<F, N_BYTES_ACCOUNT_ADDRESS>,
-    //
+
     // tx access list for new address
-    // tx_id: Cell<F>,
-    // is_warm_prev: Cell<F>,
+    tx_id: Cell<F>,
     // reversion_info: ReversionInfo<F>,
+    // is_warm_prev: Cell<F>,
     //
     // // transfer value to new address
     // transfer: TransferGadget<F>,
@@ -106,10 +106,9 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
         let new_address = cb.query_rlc();
         cb.stack_push(new_address.expr());
 
-        // let new_address = cb.query_rlc();
+        let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
         // let mut reversion_info = cb.reversion_info_read(None);
         // let is_warm_prev = cb.query_bool();
-        // let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
         // cb.account_access_list_write(
         //     tx_id.expr(),
         //     from_bytes::expr(&new_address.cells),
@@ -192,7 +191,7 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             opcode,
             is_create2,
             // reversion_info,
-            // tx_id,
+            tx_id,
             // is_warm_prev,
             // new_address,
             initialization_code_start,
@@ -247,7 +246,7 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             Some(new_address.to_le_bytes()[0..20].try_into().unwrap()),
         )?;
 
-        // self.tx_id.assign(region, offset, Value::known(tx.id.to_scalar().unwrap()))?;
+        self.tx_id.assign(region, offset, Value::known(tx.id.to_scalar().unwrap()))?;
         // self.is_warm_prev.assign(region, offset,
         // Value::known(false.to_scalar().unwrap()))?;
         //

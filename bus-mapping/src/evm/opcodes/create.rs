@@ -57,21 +57,36 @@ impl<const IS_CREATE2: bool> Opcode for DummyCreate<IS_CREATE2> {
             },
         )?;
 
-        let tx_id = state.tx_ctx.id();
-        let current_call = state.call()?.clone();
-
         // Quote from [EIP-2929](https://eips.ethereum.org/EIPS/eip-2929)
         // > When a CREATE or CREATE2 opcode is called,
         // > immediately (i.e. before checks are done to determine
         // > whether or not the address is unclaimed)
         // > add the address being created to accessed_addresses,
         // > but gas costs of CREATE and CREATE2 are unchanged
+
+        let tx_id = state.tx_ctx.id();
+        let current_call = state.call()?.clone();
+
+        for (field, value) in [
+            (CallContextField::TxId, tx_id.to_word()),
+            (
+                CallContextField::RwCounterEndOfReversion,
+                current_call.rw_counter_end_of_reversion.to_word(),
+            ),
+            (
+                CallContextField::IsPersistent,
+                current_call.is_persistent.to_word(),
+            ),
+        ] {
+            state.call_context_read(&mut exec_step, current_call.call_id, field, value);
+        }
+
         let is_warm = state.sdb.check_account_in_access_list(&address);
         state.push_op_reversible(
             &mut exec_step,
             RW::WRITE,
             TxAccessListAccountOp {
-                tx_id: state.tx_ctx.id(),
+                tx_id,
                 address,
                 is_warm: true,
                 is_warm_prev: is_warm,
