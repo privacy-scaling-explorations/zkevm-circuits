@@ -17,7 +17,6 @@ use halo2_proofs::{
     },
 };
 use lazy_static::lazy_static;
-use log::trace;
 use mock::test_ctx::TestContext;
 use rand_chacha::rand_core::SeedableRng;
 use rand_core::RngCore;
@@ -27,7 +26,6 @@ use std::sync::Mutex;
 use zkevm_circuits::bytecode_circuit::bytecode_unroller::BytecodeCircuit;
 use zkevm_circuits::copy_circuit::CopyCircuit;
 use zkevm_circuits::evm_circuit::test::{get_test_degree, get_test_instance};
-use zkevm_circuits::evm_circuit::witness::RwMap;
 use zkevm_circuits::evm_circuit::{test::get_test_cicuit_from_block, witness::block_convert};
 use zkevm_circuits::state_circuit::StateCircuit;
 use zkevm_circuits::super_circuit::SuperCircuit;
@@ -262,21 +260,9 @@ pub async fn test_state_circuit_block(block_num: u64, actual: bool) {
     log::info!("test state circuit, block number: {}", block_num);
 
     let (builder, _) = gen_inputs(block_num).await;
+    let block = block_convert(&builder.block, &builder.code_db).unwrap();
 
-    // Generate state proof
-    // log via trace some of the container ops for debugging purposes
-    let stack_ops = builder.block.container.sorted_stack();
-    trace!("stack_ops: {:#?}", stack_ops);
-    let memory_ops = builder.block.container.sorted_memory();
-    trace!("memory_ops: {:#?}", memory_ops);
-    let storage_ops = builder.block.container.sorted_storage();
-    trace!("storage_ops: {:#?}", storage_ops);
-
-    // TODO: use rw_map from block
-    // let rw_map = RwMap::from(&builder.block.container);
-    let rw_map = RwMap::default();
-
-    let circuit = StateCircuit::<Fr>::new(rw_map, 1 << 16);
+    let circuit = StateCircuit::<Fr>::new_from_block(&block);
     let instance = circuit.instance();
 
     if actual {
