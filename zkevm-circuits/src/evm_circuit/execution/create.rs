@@ -51,7 +51,7 @@ pub(crate) struct CreateGadget<F> {
     caller_address: Cell<F>,
     nonce: Cell<F>,
 
-    // callee_reversion_info: ReversionInfo<F>,
+    callee_reversion_info: ReversionInfo<F>,
     //
     // // transfer value to new address
     // transfer: TransferGadget<F>,
@@ -136,9 +136,10 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             // None,
         );
 
-        // let caller_address = cb.call_context(None, CallContextFieldTag::CalleeAddress);
+        // let caller_address = cb.call_context(None,
+        // CallContextFieldTag::CalleeAddress);
 
-        // let mut callee_reversion_info = cb.reversion_info_write(Some(callee_call_id.expr()));
+        let mut callee_reversion_info = cb.reversion_info_write(Some(callee_call_id.expr()));
         // cb.account_write(
         //     new_address.expr(),
         //     AccountFieldTag::Nonce,
@@ -226,7 +227,7 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             new_address,
             caller_address,
             nonce,
-            // callee_reversion_info,
+            callee_reversion_info,
         }
     }
 
@@ -323,20 +324,20 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
         //     Some(address_bytes)
         // )?;
 
-        // let [callee_rw_counter_end_of_reversion, callee_is_persistent] = [10, 11]
-        //     .map(|i| block.rws[step.rw_indices[i + usize::from(is_create2)]].call_context_value());
+        let [callee_rw_counter_end_of_reversion, callee_is_persistent] = [10, 11]
+            .map(|i| block.rws[step.rw_indices[i + usize::from(is_create2)]].call_context_value());
 
-        // dbg!(callee_rw_counter_end_of_reversion, callee_is_persistent);
+        dbg!(callee_rw_counter_end_of_reversion, callee_is_persistent);
 
-        // self.callee_reversion_info.assign(
-        //     region,
-        //     offset,
-        //     callee_rw_counter_end_of_reversion
-        //         .low_u64()
-        //         .try_into()
-        //         .unwrap(),
-        //     callee_is_persistent.low_u64() != 0,
-        // )?;
+        self.callee_reversion_info.assign(
+            region,
+            offset,
+            callee_rw_counter_end_of_reversion
+                .low_u64()
+                .try_into()
+                .unwrap(),
+            callee_is_persistent.low_u64() != 0,
+        )?;
 
         Ok(())
     }
