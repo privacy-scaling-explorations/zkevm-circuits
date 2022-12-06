@@ -318,7 +318,8 @@ pub async fn test_bytecode_circuit_block(block_num: u64, actual: bool) {
     let (builder, _) = gen_inputs(block_num).await;
 
     let block = block_convert(&builder.block, &builder.code_db).unwrap();
-    let circuit = BytecodeCircuit::<Fr>::new_from_block(&block);
+    let circuit =
+        BytecodeCircuit::<Fr>::new_from_block_sized(&block, 2usize.pow(BYTECODE_CIRCUIT_DEGREE));
 
     if actual {
         test_actual(
