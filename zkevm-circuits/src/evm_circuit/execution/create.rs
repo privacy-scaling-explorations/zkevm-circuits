@@ -53,7 +53,6 @@ pub(crate) struct CreateGadget<F> {
 
     callee_reversion_info: ReversionInfo<F>,
 
-
     transfer: TransferGadget<F>,
     //
     // // transfer value to new address
