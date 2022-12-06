@@ -93,6 +93,8 @@ impl<const IS_CREATE2: bool> Opcode for DummyCreate<IS_CREATE2> {
             },
         )?;
 
+        // here in gadget.....
+
         // Increase caller's nonce
         let nonce_prev = state.sdb.get_nonce(&call.caller_address);
         state.push_op_reversible(

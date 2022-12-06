@@ -655,7 +655,7 @@ impl<'a> CircuitInputStateRef<'a> {
             is_root: false,
             is_persistent: caller.is_persistent && is_success,
             is_success,
-            rw_counter_end_of_reversion: 0,
+            rw_counter_end_of_reversion: 0, // here????
             caller_address,
             address,
             code_source,

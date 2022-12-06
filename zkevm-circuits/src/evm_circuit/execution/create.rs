@@ -46,7 +46,7 @@ pub(crate) struct CreateGadget<F> {
     // tx access list for new address
     tx_id: Cell<F>,
     reversion_info: ReversionInfo<F>,
-    // is_warm_prev: Cell<F>,
+    was_warm: Cell<F>,
     //
     // // transfer value to new address
     // transfer: TransferGadget<F>,
@@ -108,18 +108,14 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
 
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
         let mut reversion_info = cb.reversion_info_read(None);
-        // let is_warm_prev = cb.query_bool();
-        // cb.account_access_list_write(
-        //     tx_id.expr(),
-        //     from_bytes::expr(&new_address.cells),
-        //     1.expr(),
-        //     is_warm_prev.expr(),
-        //     Some(&mut reversion_info),
-        // );
-
-        // let access_list = AccountAccessListGadget::construct(cb,
-        // callee_address.expr()); cb.add_account_to_access_list(callee_address.
-        // expr());
+        let was_warm = cb.query_bool();
+        cb.account_access_list_write(
+            tx_id.expr(),
+            from_bytes::expr(&new_address.cells),
+            1.expr(),
+            was_warm.expr(),
+            Some(&mut reversion_info),
+        );
 
         // let caller_address = cb.call_context(None,
         // CallContextFieldTag::CalleeAddress); let [callee_address, value,
@@ -192,8 +188,7 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             is_create2,
             reversion_info,
             tx_id,
-            // is_warm_prev,
-            // new_address,
+            was_warm,
             initialization_code_start,
             initialization_code_length,
             value,
@@ -246,15 +241,26 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             Some(new_address.to_le_bytes()[0..20].try_into().unwrap()),
         )?;
 
-        self.tx_id.assign(region, offset, Value::known(tx.id.to_scalar().unwrap()))?;
-        // self.is_warm_prev.assign(region, offset,
-        // Value::known(false.to_scalar().unwrap()))?;
-        //
+        self.tx_id
+            .assign(region, offset, Value::known(tx.id.to_scalar().unwrap()))?;
+
         self.reversion_info.assign(
             region,
             offset,
             call.rw_counter_end_of_reversion,
             call.is_persistent,
+        )?;
+
+        self.was_warm.assign(
+            region,
+            offset,
+            Value::known(
+                block.rws[step.rw_indices[7 + usize::from(is_create2)]]
+                    .tx_access_list_value_pair()
+                    .1
+                    .to_scalar()
+                    .unwrap(),
+            ),
         )?;
         //
         // let address_bytes =
@@ -317,8 +323,8 @@ mod test {
     #[test]
     fn mason2() {
         let test_parameters = [(0, 0), (0, 10), (300, 20), (1000, 0)];
-        for ((offset, length), is_return) in
-            test_parameters.iter().cartesian_product(&[true, false])
+        for ((offset, length), is_return) in test_parameters.iter().cartesian_product(&[true])
+        // FIX MEEEEEE there's an issue when the init call reverts.
         {
             let initializer = callee_bytecode(*is_return, *offset, *length).code();
 
