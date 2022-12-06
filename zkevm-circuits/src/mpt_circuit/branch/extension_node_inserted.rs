@@ -342,7 +342,7 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
         });
 
         meta.create_gate(
-            "(Existing) extension node in parent branch (non-hashed extension node)",
+            "Extension node in parent branch (non-hashed extension node)",
             |meta| {
                 let q_enable = q_enable(meta);
                 let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
@@ -408,6 +408,43 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
                 constraints
             },
         );
+
+        if !is_before {
+            meta.create_gate(
+                "Existing and drifted extension node differ only in nibbles",
+                |meta| {
+                    let q_enable = q_enable(meta);
+                    let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
+
+                    let mut constraints = vec![];
+
+                    let mut before_branch = vec![];
+                    let mut after_branch = vec![];
+                    for column in c_main.bytes.iter() {
+                        before_branch.push(meta.query_advice(*column, Rotation(-(EXISTING_EXT_NODE_AFTER_S - EXISTING_EXT_NODE_BEFORE_S))));
+                        after_branch.push(meta.query_advice(*column, Rotation::cur()));
+                    }
+                    let before_rlc = bytes_expr_into_rlc(&before_branch, power_of_randomness[0].clone());
+                    let after_rlc = bytes_expr_into_rlc(&after_branch, power_of_randomness[0].clone());
+
+                    /*
+                    Existing and drifted extension node have the same `c_main.bytes` - same underlying branch.
+                    */
+                    constraints.push((
+                        "Existing and drifted extension node have the same underlying branch",
+                        q_not_first
+                            * q_enable
+                            * (after_rlc - before_rlc),
+                    ));
+
+                    // TODO: number of nibbles in existing = number of nibbles of inserted + number of nibbles of drifted
+
+                    // TODO: RLC of nibbles of existing = RLC of nibbles of inserted and nibbles of drifted
+
+                    constraints
+                },
+            );
+        }
 
         /*
         To know each nibble individually (they come in pairs as bytes), the second nibbles
