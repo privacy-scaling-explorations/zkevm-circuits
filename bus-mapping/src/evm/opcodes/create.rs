@@ -96,9 +96,7 @@ impl<const IS_CREATE2: bool> Opcode for DummyCreate<IS_CREATE2> {
         dbg!(call.caller_address, call.address);
         dbg!(current_call.address);
 
-        for (field, value) in [
-            (CallContextField::CalleeAddress, current_call.address),
-        ] {
+        for (field, value) in [(CallContextField::CalleeAddress, current_call.address)] {
             state.call_context_read(&mut exec_step, current_call.call_id, field, value.to_word());
         }
 
@@ -160,8 +158,8 @@ impl<const IS_CREATE2: bool> Opcode for DummyCreate<IS_CREATE2> {
             (CallContextField::MemorySize, next_memory_word_size.into()),
             (
                 CallContextField::ReversibleWriteCounter,
-                // +2 is because we do some reversible writes before pushing the call. can be just push the
-                // call later?
+                // +2 is because we do some reversible writes before pushing the call. can be just
+                // push the call later?
                 (exec_step.reversible_write_counter + 2).into(),
             ),
         ] {

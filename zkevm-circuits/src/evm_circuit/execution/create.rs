@@ -280,11 +280,14 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
 
         dbg!(call.callee_address);
         self.caller_address.assign(
-            region, offset, Value::known(call.callee_address.to_scalar().unwrap())
+            region,
+            offset,
+            Value::known(call.callee_address.to_scalar().unwrap()),
         )?;
 
         self.nonce.assign(
-            region, offset,
+            region,
+            offset,
             Value::known(
                 block.rws[step.rw_indices[9 + usize::from(is_create2)]]
                     .account_value_pair()
