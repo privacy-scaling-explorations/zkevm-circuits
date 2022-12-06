@@ -45,7 +45,7 @@ pub(crate) struct CreateGadget<F> {
 
     // tx access list for new address
     tx_id: Cell<F>,
-    // reversion_info: ReversionInfo<F>,
+    reversion_info: ReversionInfo<F>,
     // is_warm_prev: Cell<F>,
     //
     // // transfer value to new address
@@ -107,7 +107,7 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
         cb.stack_push(new_address.expr());
 
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
-        // let mut reversion_info = cb.reversion_info_read(None);
+        let mut reversion_info = cb.reversion_info_read(None);
         // let is_warm_prev = cb.query_bool();
         // cb.account_access_list_write(
         //     tx_id.expr(),
@@ -190,7 +190,7 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
         Self {
             opcode,
             is_create2,
-            // reversion_info,
+            reversion_info,
             tx_id,
             // is_warm_prev,
             // new_address,
@@ -250,12 +250,12 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
         // self.is_warm_prev.assign(region, offset,
         // Value::known(false.to_scalar().unwrap()))?;
         //
-        // self.reversion_info.assign(
-        //     region,
-        //     offset,
-        //     call.rw_counter_end_of_reversion,
-        //     call.is_persistent,
-        // )?;
+        self.reversion_info.assign(
+            region,
+            offset,
+            call.rw_counter_end_of_reversion,
+            call.is_persistent,
+        )?;
         //
         // let address_bytes =
         // block.rws[step.rw_indices[2]].stack_value().to_le_bytes()[0..20].try_into().
