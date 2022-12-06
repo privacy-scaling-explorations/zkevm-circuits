@@ -514,13 +514,13 @@ mod evm_circuit_stats {
             }
         }
 
-        info!(
+        println!(
             "| {: <14} | {: <14} | {: <2} | {: >6} | {: <5} |",
             "state", "opcode", "h", "g", "h/g"
         );
-        info!("| ---            | ---            | ---|    --- | ---   |");
+        println!("| ---            | ---            | ---|    --- | ---   |");
         for (state, opcode, height, gas_cost) in stats {
-            info!(
+            println!(
                 "| {: <14?} | {: <14?} | {: >2} | {: >6} | {: >1.3} |",
                 state,
                 opcode,
