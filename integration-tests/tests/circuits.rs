@@ -4,7 +4,7 @@ use bus_mapping::circuit_input_builder::{BuilderClient, CircuitsParams};
 use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
 use integration_tests::{get_client, log_init, GenDataOutput};
 use lazy_static::lazy_static;
-use log::{error, trace};
+use log::error;
 use paste::paste;
 use zkevm_circuits::bytecode_circuit::dev::test_bytecode_circuit;
 use zkevm_circuits::copy_circuit::dev::test_copy_circuit;
