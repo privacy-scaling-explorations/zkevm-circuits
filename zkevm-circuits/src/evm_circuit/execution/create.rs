@@ -140,13 +140,13 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
         // CallContextFieldTag::CalleeAddress);
 
         let mut callee_reversion_info = cb.reversion_info_write(Some(callee_call_id.expr()));
-        // cb.account_write(
-        //     new_address.expr(),
-        //     AccountFieldTag::Nonce,
-        //     1.expr()
-        //     0.expr(),
-        //     None,
-        // );
+        cb.account_write(
+            new_address.expr(),
+            AccountFieldTag::Nonce,
+            1.expr(),
+            0.expr(),
+            Some(&mut callee_reversion_info),
+        );
 
         // let caller_address = cb.call_context(None,
         // CallContextFieldTag::CalleeAddress); let [callee_address, value,
