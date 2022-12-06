@@ -111,8 +111,6 @@ impl<const IS_CREATE2: bool> Opcode for DummyCreate<IS_CREATE2> {
             },
         )?;
 
-        // here in gadget.....
-
         state.push_call(call.clone());
         // Increase callee's nonce
         for (field, value) in [
@@ -138,6 +136,7 @@ impl<const IS_CREATE2: bool> Opcode for DummyCreate<IS_CREATE2> {
             },
         )?;
 
+        // here in gadget.....
         state.transfer(
             &mut exec_step,
             call.caller_address,
