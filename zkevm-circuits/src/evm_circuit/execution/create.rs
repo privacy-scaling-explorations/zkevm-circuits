@@ -47,6 +47,9 @@ pub(crate) struct CreateGadget<F> {
     tx_id: Cell<F>,
     reversion_info: ReversionInfo<F>,
     was_warm: Cell<F>,
+
+    caller_address: Cell<F>,
+    // nonce: Cell<F>,
     //
     // // transfer value to new address
     // transfer: TransferGadget<F>,
@@ -116,6 +119,16 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             was_warm.expr(),
             Some(&mut reversion_info),
         );
+
+        let caller_address = cb.call_context(None, CallContextFieldTag::CalleeAddress);
+        // let nonce = cb.query_cell();
+        // cb.account_write(
+        //     caller_address.expr(),
+        //     AccountFieldTag::Nonce,
+        //     nonce.expr() + 1.expr(),
+        //     nonce.expr(),
+        //     None,
+        // );
 
         // let caller_address = cb.call_context(None,
         // CallContextFieldTag::CalleeAddress); let [callee_address, value,
@@ -194,6 +207,8 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             value,
             salt,
             new_address,
+            caller_address,
+            // nonce,
         }
     }
 
@@ -262,6 +277,23 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
                     .unwrap(),
             ),
         )?;
+
+        dbg!(call.callee_address);
+        self.caller_address.assign(
+            region, offset, Value::known(call.callee_address.to_scalar().unwrap())
+        )?;
+
+        // self.nonce.assign(
+        //     region, offset,
+        //     Value::known(
+        //         block.rws[step.rw_indices[9 + usize::from(is_create2)]]
+        //             .account_value_pair()
+        //             .1
+        //             .to_scalar()
+        //             .unwrap(),
+        //     ),
+        // )?;
+
         //
         // let address_bytes =
         // block.rws[step.rw_indices[2]].stack_value().to_le_bytes()[0..20].try_into().

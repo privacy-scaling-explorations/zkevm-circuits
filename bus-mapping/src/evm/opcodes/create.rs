@@ -93,7 +93,14 @@ impl<const IS_CREATE2: bool> Opcode for DummyCreate<IS_CREATE2> {
             },
         )?;
 
-        // here in gadget.....
+        dbg!(call.caller_address, call.address);
+        dbg!(current_call.address);
+
+        for (field, value) in [
+            (CallContextField::CalleeAddress, current_call.address),
+        ] {
+            state.call_context_read(&mut exec_step, current_call.call_id, field, value.to_word());
+        }
 
         // Increase caller's nonce
         let nonce_prev = state.sdb.get_nonce(&call.caller_address);
@@ -107,6 +114,8 @@ impl<const IS_CREATE2: bool> Opcode for DummyCreate<IS_CREATE2> {
                 value_prev: nonce_prev.into(),
             },
         )?;
+
+        // here in gadget.....
 
         // Add callee into access list
         let is_warm = state.sdb.check_account_in_access_list(&call.address);

@@ -588,6 +588,7 @@ impl<'a> CircuitInputStateRef<'a> {
         let caller = self.call()?;
         let caller_ctx = self.call_ctx()?;
 
+        dbg!(caller.address);
         let (caller_address, address, value) = match kind {
             CallKind::Call => (
                 caller.address,

@@ -258,6 +258,8 @@ impl<F: Field> StateCircuitConfig<F> {
                             }
                             state_root
                         });
+                } else if !row.is_write() {
+                    assert_eq!(row.value_assignment(F::one()), prev_row.value_assignment(F::one()));
                 }
             }
 
