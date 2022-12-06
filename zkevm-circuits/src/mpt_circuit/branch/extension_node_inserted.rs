@@ -347,7 +347,10 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
                 let q_enable = q_enable(meta);
                 let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
 
-                let rot_into_last_leaf_row = - EXISTING_EXT_NODE_AFTER_S - 1;
+                let mut rot_into_last_leaf_row = - EXISTING_EXT_NODE_BEFORE_S - 1;
+                if !is_before{
+                    rot_into_last_leaf_row = - EXISTING_EXT_NODE_AFTER_S - 1;
+                }
                 let rot_into_branch_init_storage = rot_into_last_leaf_row - LEAF_ROWS_NUM - BRANCH_ROWS_NUM + 1;
                 let rot_into_branch_init_account = rot_into_last_leaf_row - ACCOUNT_LEAF_ROWS_NUM - BRANCH_ROWS_NUM + 1;
 
@@ -368,16 +371,25 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
                 let is_c_inserted_ext_node_account = get_is_inserted_extension_node(
                     meta, c_main.rlp1, c_main.rlp2, rot_into_branch_init_account, true);
 
+                // Rotation into a branch above the last branch:
+                let mut rot_into_branch_storage = rot_into_branch_init_storage - 1 - EXTENSION_ROWS_NUM;
+                let mut rot_into_branch_account = rot_into_branch_init_account - 1 - EXTENSION_ROWS_NUM;
+                if !is_before {
+                    // Rotation into the last branch:
+                    rot_into_branch_storage = rot_into_branch_init_storage + 1;
+                    rot_into_branch_account = rot_into_branch_init_account + 1;
+                }
+
                 let mod_node_hash_rlc_cur =
                     is_account_proof.clone() *
-                    (meta.query_advice(accs.s_mod_node_rlc, Rotation(rot_into_branch_init_account + 1))
+                    (meta.query_advice(accs.s_mod_node_rlc, Rotation(rot_into_branch_account))
                     * is_c_inserted_ext_node_account.clone()
-                    + meta.query_advice(accs.c_mod_node_rlc, Rotation(rot_into_branch_init_account + 1))
+                    + meta.query_advice(accs.c_mod_node_rlc, Rotation(rot_into_branch_account))
                     * (one.clone() - is_c_inserted_ext_node_account.clone()))
                     + (one.clone() - is_account_proof.clone()) *
-                    (meta.query_advice(accs.s_mod_node_rlc, Rotation(rot_into_branch_init_storage + 1))
+                    (meta.query_advice(accs.s_mod_node_rlc, Rotation(rot_into_branch_storage))
                     * is_c_inserted_ext_node_storage.clone()
-                    + meta.query_advice(accs.c_mod_node_rlc, Rotation(rot_into_branch_init_storage + 1))
+                    + meta.query_advice(accs.c_mod_node_rlc, Rotation(rot_into_branch_storage))
                     * (one.clone() - is_c_inserted_ext_node_storage));
 
                 /*
