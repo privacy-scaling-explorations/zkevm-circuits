@@ -1,20 +1,22 @@
 use super::Opcode;
 use crate::circuit_input_builder::{CopyDataType, CopyEvent, NumberOrHash};
+use crate::operation::AccountOp;
 use crate::operation::MemoryOp;
 use crate::{
     circuit_input_builder::CircuitInputStateRef,
     evm::opcodes::ExecStep,
-    operation::{CallContextField, RW},
+    operation::{AccountField, CallContextField, RW},
     Error,
 };
-use eth_types::{Bytecode, GethExecStep, ToWord, H256};
+use eth_types::{Bytecode, GethExecStep, ToWord, Word, H256};
 use ethers_core::utils::keccak256;
+use keccak256::EMPTY_HASH_LE;
 
 #[derive(Debug, Copy, Clone)]
-pub(crate) struct Return;
+pub(crate) struct ReturnRevert;
 
 // TODO: rename to indicate this handles REVERT (and maybe STOP)?
-impl Opcode for Return {
+impl Opcode for ReturnRevert {
     fn gen_associated_ops(
         state: &mut CircuitInputStateRef,
         steps: &[GethExecStep],
@@ -49,13 +51,36 @@ impl Opcode for Return {
         if call.is_create() && call.is_success && length > 0 {
             // Note: handle_return updates state.code_db. All we need to do here is push the
             // copy event.
-            handle_create(
+            let code_hash = handle_create(
                 state,
                 &mut exec_step,
                 Source {
                     id: call.call_id,
                     offset,
                     length,
+                },
+            )?;
+
+            for (field, value) in [
+                (CallContextField::CallerId, call.caller_id.to_word()),
+                (CallContextField::CalleeAddress, call.address.to_word()),
+                (
+                    CallContextField::RwCounterEndOfReversion,
+                    call.rw_counter_end_of_reversion.to_word(),
+                ),
+                (CallContextField::IsPersistent, call.is_persistent.to_word()),
+            ] {
+                state.call_context_read(&mut exec_step, state.call()?.call_id, field, value);
+            }
+
+            state.push_op_reversible(
+                &mut exec_step,
+                RW::WRITE,
+                AccountOp {
+                    address: state.call()?.address,
+                    field: AccountField::CodeHash,
+                    value: code_hash.to_word(),
+                    value_prev: Word::from_little_endian(&*EMPTY_HASH_LE),
                 },
             )?;
         }
@@ -196,9 +221,10 @@ fn handle_create(
     state: &mut CircuitInputStateRef,
     step: &mut ExecStep,
     source: Source,
-) -> Result<(), Error> {
+) -> Result<H256, Error> {
     let values = state.call_ctx()?.memory.0[source.offset..source.offset + source.length].to_vec();
-    let dst_id = NumberOrHash::Hash(H256(keccak256(&values)));
+    let code_hash = H256(keccak256(&values));
+    let dst_id = NumberOrHash::Hash(code_hash);
     let bytes: Vec<_> = Bytecode::from(values)
         .code
         .iter()
@@ -227,7 +253,7 @@ fn handle_create(
         bytes,
     });
 
-    Ok(())
+    Ok(code_hash)
 }
 
 #[cfg(test)]
