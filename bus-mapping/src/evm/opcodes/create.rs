@@ -136,7 +136,7 @@ impl<const IS_CREATE2: bool> Opcode for DummyCreate<IS_CREATE2> {
             },
         )?;
 
-        // here in gadget.....
+        dbg!(call.value);
         state.transfer(
             &mut exec_step,
             call.caller_address,
@@ -144,6 +144,7 @@ impl<const IS_CREATE2: bool> Opcode for DummyCreate<IS_CREATE2> {
             call.value,
         )?;
 
+        // here in gadget.....
         let memory_expansion_gas_cost =
             memory_expansion_gas_cost(curr_memory_word_size, next_memory_word_size);
 

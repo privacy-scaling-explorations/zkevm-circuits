@@ -52,6 +52,9 @@ pub(crate) struct CreateGadget<F> {
     nonce: Cell<F>,
 
     callee_reversion_info: ReversionInfo<F>,
+
+
+    transfer: TransferGadget<F>,
     //
     // // transfer value to new address
     // transfer: TransferGadget<F>,
@@ -101,7 +104,7 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             ),
         );
 
-        let [initialization_code_start, initialization_code_length, value] = [(); 3].map(|_| {
+        let [value, initialization_code_start, initialization_code_length] = [(); 3].map(|_| {
             let cell = cb.query_word();
             cb.stack_pop(cell.expr());
             cell
@@ -146,6 +149,14 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             1.expr(),
             0.expr(),
             Some(&mut callee_reversion_info),
+        );
+
+        let transfer = TransferGadget::construct(
+            cb,
+            caller_address.expr(),
+            new_address.expr(),
+            value.clone(),
+            &mut callee_reversion_info,
         );
 
         // let caller_address = cb.call_context(None,
@@ -228,6 +239,7 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             caller_address,
             nonce,
             callee_reversion_info,
+            transfer,
         }
     }
 
@@ -250,7 +262,7 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             Value::known(is_create2.to_scalar().unwrap()),
         )?;
 
-        let [initialization_code_start, initialization_code_length, value, new_address] =
+        let [value, initialization_code_start, initialization_code_length, new_address] =
             [0, 1, 2, 3 + usize::from(is_create2)]
                 .map(|i| step.rw_indices[i])
                 .map(|idx| block.rws[idx].stack_value());
@@ -337,6 +349,17 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
                 .try_into()
                 .unwrap(),
             callee_is_persistent.low_u64() != 0,
+        )?;
+
+        let [caller_balance_pair, callee_balance_pair] = [13, 14]
+            .map(|i| block.rws[step.rw_indices[i + usize::from(is_create2)]].account_value_pair());
+        dbg!(caller_balance_pair, callee_balance_pair, value);
+        self.transfer.assign(
+            region,
+            offset,
+            caller_balance_pair,
+            callee_balance_pair,
+            value,
         )?;
 
         Ok(())
