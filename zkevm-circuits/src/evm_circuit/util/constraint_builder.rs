@@ -779,6 +779,29 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         );
     }
 
+    pub(crate) fn account_access_list_read(
+        &mut self,
+        tx_id: Expression<F>,
+        account_address: Expression<F>,
+        value: Expression<F>,
+    ) {
+        self.rw_lookup(
+            "account access list read",
+            false.expr(),
+            RwTableTag::TxAccessListAccount,
+            RwValues::new(
+                tx_id,
+                account_address,
+                0.expr(),
+                0.expr(),
+                value.clone(),
+                value,
+                0.expr(),
+                0.expr(),
+            ),
+        );
+    }
+
     pub(crate) fn account_storage_access_list_write(
         &mut self,
         tx_id: Expression<F>,
