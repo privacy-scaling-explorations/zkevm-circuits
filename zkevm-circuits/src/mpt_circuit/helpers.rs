@@ -1,3 +1,4 @@
+use crate::util::Expr;
 use halo2_proofs::{
     arithmetic::FieldExt,
     plonk::{Advice, Column, ConstraintSystem, Expression, Fixed, VirtualCells},
@@ -332,4 +333,135 @@ pub(crate) fn get_leaf_len<F: FieldExt>(
 
     is_leaf_long.clone() * (rlp2 + one.clone() + one.clone())
         + (one.clone() - is_leaf_long) * (rlp1 - c192 + one)
+}
+
+#[derive(Clone)]
+pub(crate) struct ColumnTransition<F> {
+    cur: Expression<F>,
+    prev: Expression<F>,
+}
+
+impl<F: FieldExt> ColumnTransition<F> {
+    pub(crate) fn new(meta: &mut VirtualCells<F>, column: Column<Advice>) -> ColumnTransition<F> {
+        ColumnTransition {
+            cur: meta.query_advice(column, Rotation::cur()),
+            prev: meta.query_advice(column, Rotation::prev()),
+        }
+    }
+
+    pub(crate) fn cur(&self) -> Expression<F> {
+        self.cur.clone()
+    }
+
+    pub(crate) fn prev(&self) -> Expression<F> {
+        self.prev.clone()
+    }
+}
+
+impl<F: FieldExt> Expr<F> for ColumnTransition<F> {
+    fn expr(&self) -> Expression<F> {
+        self.cur.clone()
+    }
+}
+
+#[derive(Default)]
+pub struct BaseConstraintBuilder<F> {
+    pub constraints: Vec<(&'static str, Expression<F>)>,
+    pub max_degree: usize,
+    pub conditions: Vec<Expression<F>>,
+}
+
+impl<F: FieldExt> BaseConstraintBuilder<F> {
+    pub(crate) fn new(max_degree: usize) -> Self {
+        BaseConstraintBuilder {
+            constraints: Vec::new(),
+            max_degree,
+            conditions: Vec::new(),
+        }
+    }
+
+    pub(crate) fn require_zero(&mut self, name: &'static str, constraint: Expression<F>) {
+        self.add_constraint(name, constraint);
+    }
+
+    pub(crate) fn require_equal(
+        &mut self,
+        name: &'static str,
+        lhs: Expression<F>,
+        rhs: Expression<F>,
+    ) {
+        self.add_constraint(name, lhs - rhs);
+    }
+
+    pub(crate) fn require_boolean(&mut self, name: &'static str, value: Expression<F>) {
+        self.add_constraint(name, value.clone() * (1u64.expr() - value));
+    }
+
+    pub(crate) fn require_in_set(
+        &mut self,
+        name: &'static str,
+        value: Expression<F>,
+        set: Vec<Expression<F>>,
+    ) {
+        self.add_constraint(
+            name,
+            set.iter()
+                .fold(1.expr(), |acc, item| acc * (value.clone() - item.clone())),
+        );
+    }
+
+    pub(crate) fn condition<R>(
+        &mut self,
+        condition: Expression<F>,
+        constraint: impl FnOnce(&mut Self) -> R,
+    ) -> R {
+        self.conditions.push(condition);
+        let ret = constraint(self);
+        self.conditions.pop();
+        ret
+    }
+
+    pub(crate) fn add_constraints(&mut self, constraints: Vec<(&'static str, Expression<F>)>) {
+        for (name, constraint) in constraints {
+            self.add_constraint(name, constraint);
+        }
+    }
+
+    pub(crate) fn add_constraint(&mut self, name: &'static str, constraint: Expression<F>) {
+        let constraint = if self.conditions.is_empty() {
+            constraint
+        } else {
+            constraint
+                * self
+                    .conditions
+                    .iter()
+                    .fold(1.expr(), |acc, x| acc * x.clone())
+        };
+        self.validate_degree(constraint.degree(), name);
+        self.constraints.push((name, constraint));
+    }
+
+    pub(crate) fn validate_degree(&self, degree: usize, name: &'static str) {
+        if self.max_degree > 0 {
+            debug_assert!(
+                degree <= self.max_degree,
+                "Expression {} degree too high: {} > {}",
+                name,
+                degree,
+                self.max_degree,
+            );
+        }
+    }
+
+    pub(crate) fn gate(&self, selector: Expression<F>) -> Vec<(&'static str, Expression<F>)> {
+        self.constraints
+            .clone()
+            .into_iter()
+            .map(|(name, constraint)| (name, selector.clone() * constraint))
+            .filter(|(name, constraint)| {
+                self.validate_degree(constraint.degree(), name);
+                true
+            })
+            .collect()
+    }
 }
