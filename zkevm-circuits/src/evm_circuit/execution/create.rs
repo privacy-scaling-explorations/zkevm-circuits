@@ -57,6 +57,8 @@ pub(crate) struct CreateGadget<F> {
 
     initialization_code: MemoryAddressGadget<F>,
     memory_expansion: MemoryExpansionGadget<F, 1, N_BYTES_MEMORY_WORD_SIZE>,
+
+    gas_left: ConstantDivisionGadget<F, N_BYTES_GAS>,
     //
     // // transfer value to new address
     // transfer: TransferGadget<F>,
@@ -167,8 +169,13 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             MemoryExpansionGadget::construct(cb, [initialization_code.address()]);
 
         let stack_pointer_delta = 2.expr() + is_create2.expr();
-        // let gas_cost =
-        // let callee_gas_left =
+
+        // EIP-150: all but one 64th of the caller's gas is sent to the callee.
+        // let caller_gas_left =
+        // (geth_step.gas.0 - geth_step.gas_cost.0 - memory_expansion_gas_cost) / 64;
+
+        let gas_cost = GasCost::CREATE.expr() + memory_expansion.gas_cost();
+        let gas_left = ConstantDivisionGadget::construct(cb, cb.curr.state.gas_left.expr() - gas_cost, 64);
         for (field_tag, value) in [
             (
                 CallContextFieldTag::ProgramCounter,
@@ -178,10 +185,7 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
                 CallContextFieldTag::StackPointer,
                 cb.curr.state.stack_pointer.expr() + stack_pointer_delta,
             ),
-            // (
-            //     CallContextFieldTag::GasLeft,
-            //     cb.curr.state.gas_left.expr() - gas_cost - callee_gas_left.clone(),
-            // ),
+            (CallContextFieldTag::GasLeft, gas_left.quotient()),
             // (
             //     CallContextFieldTag::MemorySize,
             //     memory_expansion.next_memory_word_size(),
@@ -275,6 +279,7 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             transfer,
             initialization_code,
             memory_expansion,
+            gas_left,
         }
     }
 
@@ -410,6 +415,8 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             step.memory_word_size(),
             [initialization_code_address],
         )?;
+
+        self.gas_left.assign(region, offset, (step.gas_left - GasCost::CREATE.as_u64()).into())?;
 
         Ok(())
     }
