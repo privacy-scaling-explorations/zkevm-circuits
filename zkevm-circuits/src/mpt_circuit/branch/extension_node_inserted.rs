@@ -26,7 +26,8 @@ use crate::{
             IS_EXT_LONG_ODD_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS,
             IS_S_EXT_LONGER_THAN_55_POS, IS_S_EXT_NODE_NON_HASHED_POS, NIBBLES_COUNTER_POS,
             RLP_NUM, ACCOUNT_LEAF_ROWS_NUM, LEAF_ROWS_NUM, EXISTING_EXT_NODE_BEFORE_S,
-            EXISTING_EXT_NODE_AFTER_S, EXTENSION_ROWS_NUM,
+            EXISTING_EXT_NODE_AFTER_S, EXISTING_EXT_NODE_AFTER_SELECTORS,
+            EXISTING_EXT_NODE_BEFORE_SELECTORS, EXTENSION_ROWS_NUM,
         },
     },
     mpt_circuit::{MPTConfig, ProofValues, FixedTableTag},
@@ -432,14 +433,106 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
                     */
                     constraints.push((
                         "Existing and drifted extension node have the same underlying branch",
-                        q_not_first
-                            * q_enable
+                        q_not_first.clone()
+                            * q_enable.clone()
                             * (after_rlc - before_rlc),
                     ));
 
                     // TODO: number of nibbles in existing = number of nibbles of inserted + number of nibbles of drifted
-
                     // TODO: RLC of nibbles of existing = RLC of nibbles of inserted and nibbles of drifted
+                    // TODO: inserted extension node branch has an extension node (drifted_pos)
+                    // at the proper nibble
+                    /*
+                    Note: otherwise the existing extension node (corrupted nibbles) might not lead
+                    to the requested address (account proof) or storage key (storage proof).
+                    */
+
+                    let rot_into_last_leaf_row = - EXISTING_EXT_NODE_AFTER_S - 1;
+                    let rot_into_branch_init_storage = rot_into_last_leaf_row - LEAF_ROWS_NUM - BRANCH_ROWS_NUM + 1;
+                    let rot_into_branch_init_account = rot_into_last_leaf_row - ACCOUNT_LEAF_ROWS_NUM - BRANCH_ROWS_NUM + 1;
+
+                    let is_account_proof = meta.query_advice(
+                        is_account_leaf_in_added_branch,
+                        Rotation(rot_into_last_leaf_row),
+                    );
+
+                    // inserted extension node:
+                    let is_ext_longer_than_55 = meta.query_advice(
+                        s_main.bytes[IS_S_EXT_LONGER_THAN_55_POS - RLP_NUM],
+                        Rotation(rot_into_branch_init_account)) * is_account_proof.clone()
+                        + meta.query_advice(
+                        s_main.bytes[IS_S_EXT_LONGER_THAN_55_POS - RLP_NUM],
+                        Rotation(rot_into_branch_init_storage)) * (one.clone() - is_account_proof.clone());
+                    let is_short =
+                        get_is_extension_node_one_nibble(meta, s_main.bytes, rot_into_branch_init_account) * is_account_proof.clone()
+                        + get_is_extension_node_one_nibble(meta, s_main.bytes, rot_into_branch_init_storage) * (one.clone() - is_account_proof.clone());
+                    let is_even_nibbles =
+                        get_is_extension_node_even_nibbles(meta, s_main.bytes, rot_into_branch_init_account) * is_account_proof.clone()
+                        + get_is_extension_node_even_nibbles(meta, s_main.bytes, rot_into_branch_init_storage) * (one.clone() - is_account_proof.clone());
+                    let is_long_odd_nibbles = get_is_extension_node_long_odd_nibbles(
+                        meta,s_main.bytes, rot_into_branch_init_account) * is_account_proof.clone()
+                        + get_is_extension_node_long_odd_nibbles(
+                        meta,s_main.bytes, rot_into_branch_init_storage) * (one.clone() - is_account_proof.clone());
+
+                    let rot_selectors_before = -(EXISTING_EXT_NODE_AFTER_S - EXISTING_EXT_NODE_BEFORE_SELECTORS);
+                    let rot_selectors_after = -(EXISTING_EXT_NODE_AFTER_S - EXISTING_EXT_NODE_AFTER_SELECTORS);
+
+                    let is_before_longer_than_55 = meta.query_advice(
+                        s_main.bytes[IS_S_EXT_LONGER_THAN_55_POS - RLP_NUM],
+                        Rotation(rot_selectors_before),
+                    );
+                    // existing extension node cannot be short, otherwise no extension node could be inserted
+                    let is_before_even_nibbles =
+                        get_is_extension_node_even_nibbles(meta, s_main.bytes, rot_selectors_before);
+                    let is_before_long_odd_nibbles = get_is_extension_node_long_odd_nibbles(
+                        meta,
+                        s_main.bytes,
+                        rot_selectors_before,
+                    );
+
+                    let is_after_longer_than_55 = meta.query_advice(
+                        s_main.bytes[IS_S_EXT_LONGER_THAN_55_POS - RLP_NUM],
+                        Rotation(rot_selectors_after),
+                    );
+                    let is_after_short =
+                        get_is_extension_node_one_nibble(meta, s_main.bytes, rot_selectors_after);
+                    let is_after_even_nibbles =
+                        get_is_extension_node_even_nibbles(meta, s_main.bytes, rot_selectors_after);
+                    let is_after_long_odd_nibbles = get_is_extension_node_long_odd_nibbles(
+                        meta,
+                        s_main.bytes,
+                        -(EXISTING_EXT_NODE_AFTER_S - EXISTING_EXT_NODE_AFTER_SELECTORS),
+                    );
+
+                    let s_rlp2 =
+                        meta.query_advice(s_main.rlp2, Rotation(rot_into_branch_init_account)) * is_account_proof.clone()
+                        + meta.query_advice(s_main.rlp2, Rotation(rot_into_branch_init_storage)) * (one.clone() - is_account_proof.clone());
+                    let s_rlp2_before =
+                        meta.query_advice(s_main.rlp2, Rotation(-(EXISTING_EXT_NODE_AFTER_S - EXISTING_EXT_NODE_BEFORE_S)));
+                    let s_rlp2_after =
+                        meta.query_advice(s_main.rlp2, Rotation::cur());
+
+                    let c2 = Expression::Constant(F::from(2));
+
+                    // TODO: longer than 55, is_short
+                    let nibbles_num =
+                        is_even_nibbles.clone() * (s_rlp2.clone() - c128.clone() - one.clone()) * c2.clone()
+                        + (one.clone() - is_even_nibbles.clone()) * (s_rlp2.clone() - c128.clone()) * c2.clone() - one.clone();
+                    
+                    let before_nibbles_num =
+                        is_before_even_nibbles.clone() * (s_rlp2_before.clone() - c128.clone() - one.clone()) * c2.clone()
+                        + (one.clone() - is_before_even_nibbles.clone()) * (s_rlp2_before.clone() - c128.clone()) * c2.clone() - one.clone();
+
+                    let after_nibbles_num =
+                        is_after_even_nibbles.clone() * (s_rlp2_after.clone() - c128.clone() - one.clone()) * c2.clone()
+                        + (one.clone() - is_after_even_nibbles.clone()) * (s_rlp2_after.clone() - c128.clone()) * c2.clone() - one.clone();
+                    
+                    constraints.push((
+                        "The number of nibbles of the existing extension node corresponds to the nibbles in the inserted extension node",
+                        q_not_first
+                            * q_enable
+                            * (before_nibbles_num - nibbles_num - after_nibbles_num),
+                    ));
 
                     constraints
                 },
