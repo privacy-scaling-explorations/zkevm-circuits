@@ -4,6 +4,7 @@ use itertools::Itertools;
 pub struct Keccak {
     state: State,
     sponge: Sponge,
+    scratch: Vec<u8>,
 }
 
 impl Default for Keccak {
@@ -14,29 +15,53 @@ impl Default for Keccak {
             state: [[0; 5]; 5],
             // rate & capacity in bytes
             sponge: Sponge::new(security_level.0 / 8, security_level.1 / 8),
+            scratch: Vec::new(),
         }
     }
 }
 
 impl Keccak {
     pub fn update(&mut self, input: &[u8]) {
-        let padding_total = self.sponge.rate - (input.len() % self.sponge.rate);
-        let mut padding: Vec<u8>;
+        let rate = self.sponge.rate;
+        // offset for `input`
+        let mut offset = 0;
 
-        if padding_total == 1 {
-            padding = vec![0x81];
-        } else {
-            padding = vec![0x01];
-            padding.resize(padding_total - 1, 0x00);
-            padding.push(0x80);
+        let scratch_len = self.scratch.len();
+        if scratch_len > 0 && scratch_len + input.len() >= rate {
+            // concat scratch and input up to the next full `rate`
+            offset = rate - scratch_len;
+            self.scratch.extend(&input[0..offset]);
+            self.sponge.absorb(&mut self.state, &self.scratch);
+            self.scratch.truncate(0);
         }
 
-        let padded_input: &[u8] = &[input, &padding].concat();
-        self.sponge.absorb(&mut self.state, padded_input);
+        let chunks_total = (input.len() - offset) / rate;
+        if chunks_total != 0 {
+            // absorb all chunks
+            let tail = offset + (rate * chunks_total);
+            self.sponge.absorb(&mut self.state, &input[offset..tail]);
+            offset = tail;
+        }
+
+        if offset != input.len() {
+            // save the remainder
+            self.scratch.extend(&input[offset..]);
+        }
     }
 
     /// Returns keccak hash based on current state
     pub fn digest(&mut self) -> Vec<u8> {
+        let len = self.scratch.len();
+        let padding_total = self.sponge.rate - (len % self.sponge.rate);
+        if padding_total == 1 {
+            self.scratch.push(0x81);
+        } else {
+            self.scratch.push(0x01);
+            self.scratch.resize(len + padding_total - 1, 0x00);
+            self.scratch.push(0x80);
+        }
+        self.sponge.absorb(&mut self.state, &self.scratch);
+        self.scratch.truncate(0);
         self.sponge.squeeze(&mut self.state)
     }
 }
@@ -185,7 +210,17 @@ impl Sponge {
 fn keccak256(msg: &[u8]) -> Vec<u8> {
     let mut keccak = Keccak::default();
     keccak.update(msg);
-    keccak.digest()
+    let a = keccak.digest();
+
+    let mut keccak = Keccak::default();
+    for byte in msg {
+        keccak.update(&[*byte]);
+    }
+    let b = keccak.digest();
+
+    assert_eq!(a, b);
+
+    a
 }
 
 #[test]
